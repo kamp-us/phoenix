@@ -840,7 +840,8 @@ open PRs were red on exactly that, all healthy, and a red meaning "not yet" is a
 reading. A check-run has the state a job conclusion does not: it can stay `in_progress`.
 
 So `--publish-check` writes the answer to a check-run named **`governance floor at head`** — a stable
-name, distinct from the job's — and this map is the whole of it:
+name, distinct from the job's — which needs a token holding `checks: write`, and this map is the
+whole of it:
 
 | Floor | Check-run | Why |
 |---|---|---|
@@ -1031,6 +1032,7 @@ fabrika ship floor-batch --sha 03135b91 [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 There is no PR argument, and its absence is the point: a `merge_group` ref is not a pull request.
+It writes a check-run, so its token needs `checks: write`, as the check-run mode of `ship floor` does.
 
 **Output** — three lines, the same grammar the check-run mode prints:
 

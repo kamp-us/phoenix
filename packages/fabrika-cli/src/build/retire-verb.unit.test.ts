@@ -51,11 +51,19 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r", ...GH_TOKEN_ENV} as Record<string, string | undefined>,
 };
 
-/** `git worktree list --porcelain`, as blocks of `worktree`/`HEAD`/`branch` lines. */
-const trees = (...held: ReadonlyArray<{path: string; branch: string}>) =>
+/**
+ * `git worktree list --porcelain`, as blocks of `worktree`/`HEAD`/`branch` lines, plus git's own
+ * `locked [<reason>]` line for a tree whose `locked` is set.
+ */
+const trees = (...held: ReadonlyArray<{path: string; branch: string; locked?: string}>) =>
 	okOut(
 		held
-			.map((tree) => `worktree ${tree.path}\nHEAD 0000000\nbranch refs/heads/${tree.branch}\n`)
+			.map(
+				(tree) =>
+					`worktree ${tree.path}\nHEAD 0000000\nbranch refs/heads/${tree.branch}\n${
+						tree.locked === undefined ? "" : `${`locked ${tree.locked}`.trimEnd()}\n`
+					}`,
+			)
 			.join("\n"),
 	);
 
@@ -407,6 +415,104 @@ describe("runRetire — the salvage runs before the tree goes", () => {
 	});
 });
 
+describe("runRetire — a released tree's harness lock", () => {
+	const UNLOCK = /^git worktree unlock /;
+	const HARNESS_LOCK = "claude agent a9bd (pid 4242)";
+
+	it("unlocks a released locked tree, then removes it plainly and reports it under its license", async () => {
+		const {out, calls} = await run([
+			[PRUNE, okOut("")],
+			[once(TREES), trees({path: ORPHAN, branch: BRANCH, locked: HARNESS_LOCK})],
+			[ISSUE, issue({state: "closed"})],
+			...CLAIMED,
+			[SELF, here],
+			[UNLOCK, okOut("")],
+			[REMOVE, okOut("")],
+			[TREES, trees()],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			answer: "retired",
+			retired: [{path: ORPHAN, license: "ticket-terminal", unlocked: true}],
+			held: [],
+		});
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toMatch(/\(ticket-terminal\); its lock was released under that license/);
+		expect(stderr).not.toMatch(/incident/);
+		expect(calls.filter((line) => UNLOCK.test(line) || REMOVE.test(line))).toEqual([
+			`git worktree unlock ${ORPHAN}`,
+			`git worktree remove ${ORPHAN}`,
+		]);
+		expect(calls.some((line) => line.includes("--force"))).toBe(false);
+	});
+
+	it("unlocks a locked tree the unclaimed-lane license released, once its residue is read", async () => {
+		const {out, calls} = await run([
+			[PRUNE, okOut("")],
+			[once(TREES), trees({path: ORPHAN, branch: BRANCH, locked: ""})],
+			[ISSUE, issue()],
+			[COMMENTS, comments()],
+			[SELF, here],
+			[REVLIST, okOut("0\n")],
+			[UNLOCK, okOut("")],
+			[REMOVE, okOut("")],
+			[TREES, trees()],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).retired).toMatchObject([
+			{license: "lane-unclaimed", unlocked: true},
+		]);
+		expect(calls.findIndex((line) => REVLIST.test(line))).toBeLessThan(
+			calls.findIndex((line) => UNLOCK.test(line)),
+		);
+	});
+
+	it("unlocks nothing on a released tree that carries no lock", async () => {
+		const {out, calls} = await run([
+			[PRUNE, okOut("")],
+			[once(TREES), trees({path: ORPHAN, branch: BRANCH})],
+			[ISSUE, issue({state: "closed"})],
+			...CLAIMED,
+			[SELF, here],
+			[REMOVE, okOut("")],
+			[TREES, trees()],
+		]);
+
+		expect(JSON.parse(out.stdout).retired).toMatchObject([{unlocked: false}]);
+		expect(calls.some((line) => UNLOCK.test(line))).toBe(false);
+	});
+
+	it("never unlocks a held tree — the lock comes off only under a Release verdict", async () => {
+		const {out, calls} = await run([
+			[PRUNE, okOut("")],
+			[TREES, trees({path: ORPHAN, branch: BRANCH, locked: HARNESS_LOCK})],
+			[ISSUE, issue()],
+			...CLAIMED,
+			[SELF, here],
+		]);
+
+		expect(out.code).toBe(WORKTREE_HELD);
+		expect(calls.some((line) => UNLOCK.test(line) || REMOVE.test(line))).toBe(false);
+	});
+
+	it("removes nothing when git refuses the unlock", async () => {
+		const {out, calls} = await run([
+			[PRUNE, okOut("")],
+			[TREES, trees({path: ORPHAN, branch: BRANCH, locked: HARNESS_LOCK})],
+			[ISSUE, issue({state: "closed"})],
+			...CLAIMED,
+			[SELF, here],
+			[UNLOCK, errOut("fatal: permission denied")],
+		]);
+
+		expect(out.code).toBe(WRITE_UNKNOWN);
+		expect(out.stderr.join("\n")).toMatch(/git worktree unlock refused, so nothing was removed/);
+		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
+	});
+});
+
 describe("runRetire — the removal is proven, never reported", () => {
 	it("reports a refused removal as an incident rather than overriding it with --force", async () => {
 		const {out} = await run([
@@ -415,7 +521,7 @@ describe("runRetire — the removal is proven, never reported", () => {
 			[ISSUE, issue({state: "closed"})],
 			...CLAIMED,
 			[SELF, here],
-			[REMOVE, errOut("cannot remove a locked working tree")],
+			[REMOVE, errOut("fatal: '/trees/agent-a9bd' contains modified or untracked files")],
 		]);
 
 		expect(out.code).toBe(WRITE_UNKNOWN);

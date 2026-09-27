@@ -85,7 +85,7 @@ const render = leafCommand(
 		authSecretFrom: Flag.string("auth-secret-from").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"a file holding a session-signing secret to use instead of the repo's own — rarely needed, because omitted this verb resolves the committed preview key at infra/preview-auth-key/key.txt, which is what every pr-<n> preview worker deploys with and is public on purpose, so a seat needs no flag, no credential and no environment variable; in a checkout carrying no such file the ambient $BETTER_AUTH_SECRET stands in, and any resolved value is refused on 11 when it is empty or carries the insecure_ placeholder an example env file ships",
+				"a file holding a session-signing secret to use instead of the repo's own (default: the committed infra/preview-auth-key/key.txt, else $BETTER_AUTH_SECRET); sourcing: the review-ui contract's \"Required environment\"",
 			),
 		),
 		repo: repoFlag,
@@ -139,8 +139,27 @@ const render = leafCommand(
 ).pipe(
 	Command.withShortDescription("Capture the named surfaces from a PR's preview deployment."),
 	Command.withDescription(
-		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface per viewport, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per shot (surface, viewport, path, dimensions, sha256, page errors); every shot's outcome is enumerated on stderr. --viewport is crossed with --surface, so two of each is four captures whose file names carry the viewport label. A tier-naming surface signs its cookie with the key the preview worker deploys with: the committed preview key at infra/preview-auth-key/key.txt, resolved from this checkout with no flag and no credential, overridden by --auth-secret-from when one is passed and falling back to the ambient $BETTER_AUTH_SECRET in a checkout carrying no committed key — and refused rather than signed with when the resolved value is empty or carries the insecure_ placeholder. --locale seeds the localStorage key .fabrika.jsonc's uiCapture.locale declares into every shot's context before navigation and proves each shot against the page's document.documentElement.lang. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, a --surface names a :state nothing renders — the realized set is auth, auth-caylak, a --viewport names a viewport outside the closed set desktop, mobile or is passed twice, a --flag operand is not a <key>=<on|off> pair, --flag was passed with an anonymous surface, or --locale was passed with no uiCapture.locale declared or with a value outside its declared list), 11 (a read failed, the declared uiSurfaces are unreadable, --locale was passed and the declared uiCapture is unreadable, the preview comment is malformed or names several apps, a --surface is served by an app this preview does not announce, a capture's validity is undeterminable, a tier-naming surface was requested with that tier's session token unset, with the resolved signing secret empty or carrying the insecure_ placeholder, or with --auth-secret-from naming a file that could not be read, a tier-naming surface's session proof did not come back signed in or came back at another tier, a forced flag evaluated at its default anyway, or a seeded shot's page lang did not read back as the --locale value), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route), 19 (a capture's PNG width read back from its own bytes is not the requested viewport's width). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano --viewport desktop --viewport mobile",
+		[
+			"Captures the named surfaces from a PR's preview deployment and prints one JSON capture record.",
+			"  7: PR absent or closed",
+			"  10: an operand off its closed set, or --flag or --locale it cannot honor",
+			"  11: a read, a session proof or a capture check failed (UNKNOWN)",
+			"  12: the preview deploys a stale head",
+			"  13: a surface threw during render",
+			"  14: a surface is unreachable",
+			"  15: a capture is invalid",
+			"  16: no preview-deploy comment (the CANT-SEE route)",
+			"  19: a capture's PNG width is not the requested viewport's",
+			'  Derivation: the review-ui skill\'s contract.md, "review-ui render"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika review-ui render --pr 4321 --out judged --surface /pano --viewport desktop --viewport mobile",
+			description: "Capture one surface at both viewports",
+		},
+	]),
 );
 
 const post = leafCommand(
@@ -203,8 +222,31 @@ const post = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the review-ui verdict on stdin as one comment."),
 	Command.withDescription(
-		"Post the review-ui verdict on STDIN as ONE comment for this namespace — re-resolve the live head, read the evidence set through its manifest, re-validate every capture, verify-upload every capture BEFORE anything posts, compose the first line through the `verdict-marker` wire format, leak-scan, APPEND into this head's own comment, and read it back from live state. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one. There is no --namespace: this group emits review-ui and nothing else. Prints one JSON object whose `upsert` field is `created` or `superseded`. Exits 3 (empty stdin), 4 (the evidence set has no readable manifest.json, or the declared `uiCapture` violates its schema), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker, or an embedded capture in the posted comment does not open as the judged bytes — POSTED, so inspect the comment; on the evidence case the verdict stays and a plain note beside it says why it does not count, and ship gate and lane prove re-check the gallery's evidence against the sha256 each capture records, so they will not count it while it does not open), 10 (bad --polarity or --carrier, advisory with FAIL, or --evidence passed more than once — one capture set per post, refused before anything is read, uploaded or posted), 11 (a precondition read failed — nothing uploaded or posted), 12 (the live head moved past --sha, or the set was rendered at another head), 15 (a capture fails its manifest sha), 17 (an evidence upload or its read-back failed — the hosted asset, rendered through the GitHub markdown renderer, must serve HTTP 200 with the exact capture bytes — nothing was posted), 18 (a standing verdict of the OPPOSITE polarity at this head would be retired and --supersede was not passed — nothing posted). Example: fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause \"changes-requested\" --evidence judged < verdict.md",
+		[
+			"Posts the stdin verdict and its verified evidence as one comment; prints one JSON object.",
+			"  3: empty stdin",
+			"  4: no evidence manifest, or a bad `uiCapture`",
+			"  5: machine-local path",
+			"  6: bare @ reference",
+			"  7: PR absent or closed",
+			"  8: write failed (UNKNOWN)",
+			"  9: posted, but the read-back fails",
+			"  10: bad --polarity, --carrier or --evidence",
+			"  11: a precondition read failed",
+			"  12: head moved, or set rendered at another head",
+			"  15: a capture fails its manifest sha",
+			"  17: evidence upload failed",
+			"  18: opposite verdict needs --supersede",
+			'  Derivation: the review-ui skill\'s contract.md, "review-ui post"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged < verdict.md',
+			description: "Post a FAIL over the judged capture set",
+		},
+	]),
 );
 
 const note = leafCommand(
@@ -223,8 +265,25 @@ const note = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post a blocker note when the surfaces cannot be seen."),
 	Command.withDescription(
-		"Post the blocker note on STDIN as one new comment — the typed non-verdict write for a proven can't-see or escalation state. Append-only, leak-scanned, and read back. A body whose first line parses as a verdict marker or an advisory carrier is refused: a verdict goes through review-ui post. Prints one JSON object. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent or closed), 8 (the post failed — UNKNOWN), 9 (the comment does not read back as sent), 10 (the body is verdict-shaped), 11 (a precondition read failed — nothing was posted). Example: fabrika review-ui note 4321 < blocker.md",
+		[
+			"Posts the stdin blocker note as one new, non-verdict comment and prints one JSON object.",
+			"  3: empty stdin",
+			"  5: machine-local path",
+			"  6: bare @ reference",
+			"  7: PR absent or closed",
+			"  8: the post failed (UNKNOWN)",
+			"  9: the comment does not read back as sent",
+			"  10: the body is verdict-shaped",
+			"  11: a precondition read failed",
+			'  Derivation: the review-ui skill\'s contract.md, "review-ui note"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command: "fabrika review-ui note 4321 < blocker.md",
+			description: "Post a can't-see blocker note",
+		},
+	]),
 );
 
 const route = leafCommand(
@@ -273,8 +332,28 @@ const route = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record that this PR renders nothing, so no verdict is owed."),
 	Command.withDescription(
-		"Record, bound to the head whose diff you read, that this PR moves no pixels — so review-ui owes it no verdict and ship's gate resolves the namespace as routed. The reasoning arrives on STDIN, the record's first line is composed through the `routed-elsewhere` wire format, and both are leak-scanned, upserted as one comment and read back. It is not a verdict: the format carries no polarity, the record is head-bound so any push voids it, and no capture evidence is involved either way. Whether the diff renders anything is your judgment over `review diff`, never a verb's. Where the route rests on a hand-verification instead, --verified-at names the head that ran at and the route is refused when any file in the range to --sha raises the ui class — the same isUiSurface over the same prefixes, and a comparison at GitHub's 300-file ceiling, or one whose two heads have diverged, is UNKNOWN rather than a cleared range. The review-code verdict in force at --sha is read as well, through the same carriers and ordering review verdicts and ship gate use: a standing FAIL refuses, and so does an absent verdict on a --verified-at route, whose record asserts that PASS. The changed-file list is read through platformFileSet, so the changed_files the pull-request record declares prints as a disagreement line and never refuses; an empty list and one at GitHub's 3000-file ceiling still refuse, because neither leaves a ui count anybody read. Prints one JSON object. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent, closed, empty, served an empty changed-file list, or its diff raises no ui class — nothing to route), 8 (the post failed — UNKNOWN), 9 (the record does not read back as sent), 10 (bad --sha or --verified-at, or a blank --clause), 11 (a precondition read failed, the changed-file list came back at the 3000-file ceiling, or the --verified-at comparison came back capped or diverged — nothing was posted), 12 (the live head moved past --sha, or a ui-class file changed since --verified-at), 20 (review-code stands FAIL at --sha, or no review-code verdict binds it on a --verified-at route). Example: fabrika review-ui route 6326 --sha 6c6fe226 --clause \"no rendered delta; both files are prose only\" < why.md",
+		[
+			"Records that a PR renders nothing, bound to --sha, so no verdict is owed; prints one JSON.",
+			"  3: empty stdin",
+			"  5: machine-local path",
+			"  6: bare @ reference",
+			"  7: nothing to route, or PR absent or closed",
+			"  8: the post failed (UNKNOWN)",
+			"  9: read-back mismatch",
+			"  10: bad --sha or --verified-at, or a blank --clause",
+			"  11: a read failed, came back capped, or diverged",
+			"  12: head moved, or a ui file changed since --verified-at",
+			"  20: review-code FAIL, or absent on a --verified-at route",
+			'  Derivation: the review-ui skill\'s contract.md, "review-ui route"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika review-ui route 6326 --sha 6c6fe226 --clause "no rendered delta; both files are prose only" < why.md',
+			description: "Route a prose-only PR away from review-ui",
+		},
+	]),
 );
 
 export const reviewUiCommand = Command.make("review-ui").pipe(

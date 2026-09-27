@@ -83,8 +83,14 @@ const scope = leafCommand(
 ).pipe(
 	Command.withShortDescription("A PR's head, lifecycle, linked issue, classes and CP state."),
 	Command.withDescription(
-		"Report one PR's head, lifecycle state, linked issue, artifact classes with the review namespaces they require, and the three-state §CP classification derived from .github/CODEOWNERS at the base branch. First stdout line is `scoped\\t<head>\\t<open|draft|merged|closed>\\t<fixes:n|part-of:n|->`, then one `class\\t<name>\\t<files>` line per present class, one `namespace\\t<ns>` line per required namespace, `cp\\t<state>`, `landing\\t<queue|direct|none|unknown>\\t<squash|merge|rebase|->` and `files\\t<n>`. The landing line names which of the two landing paths this base branch has — `queue` is `ship enqueue`'s, `direct` is `ship merge`'s. It is the one field that degrades to `unknown` rather than refusing; `ship merge` re-derives the same fact and refuses on its own read. A merged, draft or closed PR is an ANSWER, not a refusal. Before any of that it proves the checkout it runs in is not the repository's main working tree, so a shipper that never got the worktree its spawn asked for stops instead of reading a driver's checkout whose branch can move mid-drive. The partition is taken over the enumerated changed-file list; a list disagreeing with the pull-request record's own `changed_files` is reported on stderr and never refused on, because GitHub computes that count against a base it cached at the last push. Exits 7 (PR proven absent, the enumerated file list is empty, or a non-empty diff deriving zero namespaces — a vacuous conjunction), 11 (the PR, its file list, the §CP boundary or the worktree fact could not be read — the scope is UNKNOWN), 13 (the file list came back at GitHub's 3000-file ceiling, where the Link header ends as a complete read ends, so a class, a namespace or a §CP path could sit in the part the platform never served), 33 (this is the main working tree — respawn the shipper with `isolation: worktree`). Example: fabrika ship scope 4321",
+		"Prints one PR's head, state, linked issue, classes, namespaces, §CP state and landing path." +
+			"\n  7: the PR is absent, has no changed files, or its diff derives no namespace" +
+			"\n  11: a read failed; the scope is UNKNOWN" +
+			"\n  13: the changed-file list hit GitHub's 3000-file ceiling, so it is partial" +
+			"\n  33: this is the main working tree; respawn the shipper with `isolation: worktree`" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship scope"',
 	),
+	Command.withExamples([{command: "fabrika ship scope 4321"}]),
 );
 
 const cpApproval = leafCommand(
@@ -98,8 +104,13 @@ const cpApproval = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether the control-plane approval is discharged at a head."),
 	Command.withDescription(
-		"Discharge the §CP approval cardinality table at one head: `cp-approval\\t<discharge|stop|n/a>\\t<mechanism>`. The roster is the control-plane team parsed off .github/CODEOWNERS, read fresh; every discharge signal is head-bound, so a stale approval on a superseded head never counts. A failed read is UNRESOLVED, never `stop` and never `awaiting-approval`. A stderr notice fires when the banked head is behind the base. The boundary is classified over the enumerated changed-file list; a list disagreeing with the pull-request record's own `changed_files` is reported on stderr and never refused on, because GitHub computes that count against a base it cached at the last push. Exits 7 (PR proven absent or closed, or the enumerated file list is empty — classification over no files would answer not-control-plane), 11 (the boundary, roster, reviews, markers or live head could not be read), 13 (the comment enumeration is provably short of the declared count; or the review read — which the platform gives no count for — never reached a terminal page with no `next` link; or the changed-file list came back at GitHub's 3000-file ceiling, where the Link header ends as a complete read ends, so a control-plane path could sit in the part the platform never served). Example: fabrika ship cp-approval 4321 --sha 03135b91",
+		"Prints whether one PR's §CP approval is discharged at a head: discharge, stop or n/a, and how." +
+			"\n  7: the PR is absent or closed, or has no changed files" +
+			"\n  11: the boundary, roster, reviews, markers or live head could not be read" +
+			"\n  13: a comment, review or changed-file read is provably incomplete" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship cp-approval"',
 	),
+	Command.withExamples([{command: "fabrika ship cp-approval 4321 --sha 03135b91"}]),
 );
 
 const gate = leafCommand(
@@ -141,8 +152,16 @@ const gate = leafCommand(
 ).pipe(
 	Command.withShortDescription("The verdict conjunction over every required namespace."),
 	Command.withDescription(
-		"Resolve the verdict conjunction over every required namespace at one head. First stdout line is `gate\\t<satisfied|blocked>\\t<sha>`, then one `ns\\t<namespace>\\t<pass|fail|absent|stale|routed|unopened>\\t<marker|advisory|review-fold|routed-elsewhere|->` line per required namespace, in the order required; `satisfied` iff every one reads pass or routed, and the coverage of the required set is asserted before that word is printed. In-force resolution is head-bound-first then by write stamp, ACL-gated fail-closed. Without --cp an advisory never resolves a namespace, but an authorized one bound to --sha in a required namespace is named on stderr, because the printed row then describes an older comment rather than that current verdict; an unreadable ACL on such an advisory is a notice, not 11. Both `absent` and `stale` block. `routed` is the fifth state: a head-bound `routed-elsewhere` record, readable only for `review-ui`, saying the gate owes this PR no verdict; it satisfies beside pass and carries no polarity. `unopened` is the sixth: a `review-ui` verdict counts only while its evidence opens, so the in-force one is re-read — each hosted capture in its gallery fetched through GitHub's renderer and held to the sha256 the gallery records — and one that does not open, or records no digest, does not count and blocks; stderr names why. The required set is a floor the verb raises from the diff itself: a PR touching one of the repo's declared governed roots gates on `governance` whether or not --require named it. The file set the floor is raised from is the enumerated changed-file list; a list disagreeing with the pull-request record's own `changed_files` is reported on stderr and never refused on, because GitHub computes that count against a base it cached at the last push. Exits 7 (PR proven absent or closed, or the enumerated file list is empty), 10 (a --require value is not a gateable namespace), 11 (the changed-file list, comments, reviews, the ACL or a review-ui verdict's rendered comment could not be read — the conjunction is UNKNOWN, never blocked and never satisfied), 13 (the changed-file list came back at GitHub's 3000-file ceiling, where the Link header ends as a complete read ends, so the floor would be raised over a provably partial list; or the comment enumeration is provably short of the declared count; or the review read — which the platform gives no count for — never reached a terminal page with no `next` link). Example: fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-doc",
+		"Prints whether every required namespace's verdict holds at one head, then one line per namespace." +
+			"\n  7: the PR is absent or closed, or has no changed files" +
+			"\n  10: a --require value is not a gateable namespace" +
+			"\n  11: a read failed; the conjunction is UNKNOWN, never blocked or satisfied" +
+			"\n  13: a changed-file, comment or review read is provably incomplete" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship gate"',
 	),
+	Command.withExamples([
+		{command: "fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-doc"},
+	]),
 );
 
 const floor = leafCommand(
@@ -153,7 +172,7 @@ const floor = leafCommand(
 		publishCheck: Flag.boolean("publish-check").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				"publish the answer as a check-run on the head instead of seating it on this verb's exit code; the process then exits 0 whenever the check-run landed",
+				"publish the answer as the `governance floor at head` check-run (needs `checks: write`) instead of seating it on this verb's exit code; the process then exits 0 whenever the check-run landed",
 			),
 		),
 		repo: repoFlag,
@@ -173,8 +192,19 @@ const floor = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether a governance-root diff carries its governance verdict."),
 	Command.withDescription(
-		"Decide whether the governance floor binds on this PR at one head, and seat the answer on an exit code a CI job can red on. Prints `floor\\t<satisfied|n/a>\\t<sha>` then `ns\\tgovernance\\t<pass|->`; `n/a` is a proven answer about the diff — it touches no governance root — and never a discharged verdict. The verdict itself is `ship gate`'s, asked for the one `governance` namespace; this decides nothing about enqueue. Whether the floor binds is read off the enumerated changed-file list; a list disagreeing with the pull-request record's own `changed_files` is reported on stderr and never refused on. Exits 7 (PR proven absent or closed, or the enumerated file list is empty — whether it touches a governance root is unanswerable), 11 (the PR, its file list or the conjunction could not be read — the floor is UNKNOWN, never n/a), 13 (the changed-file list came back at GitHub's 3000-file ceiling, where the Link header ends as a complete read ends, so a governance root could sit in the part the platform never served), 18 (the diff touches a governance root and its governance verdict is absent, stale or fail — the one refusal that means a human owes this PR a verdict). With --publish-check the same answer is seated on a check-run named `governance floor at head` instead (`checks: write` required): `satisfied`/`n/a` conclude success, `absent` leaves the check-run in_progress, `stale`/`fail` conclude failure, and UNKNOWN concludes failure too — the check fails closed. In that mode the process exits 0 whenever the check-run landed — a non-zero means the verb could not publish, never that the floor is unmet — and it seats 8 (the check-run could not be written) and 9 (GitHub echoed a state this run did not decide). Every other caller's exit semantics are unchanged. Example: fabrika ship floor 4321 --sha 03135b91",
+		"Prints whether the governance floor binds on one PR at a head: satisfied or n/a, and the verdict." +
+			"\n  7: the PR is absent or closed, or has no changed files" +
+			"\n  8: --publish-check only: the check-run could not be written" +
+			"\n  9: --publish-check only: GitHub echoed a state this run did not decide" +
+			"\n  11: a read failed; the floor is UNKNOWN, never n/a" +
+			"\n  13: the changed-file list hit GitHub's 3000-file ceiling, so it is partial" +
+			"\n  18: the governance verdict is absent, stale or fail; a human owes this PR one" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship floor"',
 	),
+	Command.withExamples([
+		{command: "fabrika ship floor 4321 --sha 03135b91"},
+		{command: "fabrika ship floor 4321 --sha 03135b91 --publish-check"},
+	]),
 );
 
 const floorBatch = leafCommand(
@@ -190,8 +220,13 @@ const floorBatch = leafCommand(
 ).pipe(
 	Command.withShortDescription("Put the floor's required context on a merge queue's batch ref."),
 	Command.withDescription(
-		"Publish the `governance floor at head` check-run on a merge queue's batched `merge_group` head, concluded success (`checks: write` required). Prints `check\\t<status>\\t<conclusion>\\t<id>`, then `floor\\tbatch\\t<sha>` and `ns\\tgovernance\\t-`. It takes no PR number and resolves no floor: a batch ref is not a pull request, so `ship floor` has no input on it. What still holds the floor, and why the batch needs its own publish, is in claude-plugins/fabrika/skills/ship/contract.md. Exits 1 (usage: --sha is not 7-40 lowercase hex, or no target repo resolves), 8 (the check-run could not be written), 9 (GitHub echoed a state this run did not decide), 11 (the check-runs at the head could not be enumerated, so nothing was published rather than a duplicate row). Example: fabrika ship floor-batch --sha 03135b91",
+		"Publishes the governance floor check-run on a merge queue's batch head and prints what landed." +
+			"\n  8: the check-run could not be written" +
+			"\n  9: GitHub echoed a state this run did not decide" +
+			"\n  11: the head's check-runs could not be enumerated; nothing was published" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship floor-batch"',
 	),
+	Command.withExamples([{command: "fabrika ship floor-batch --sha 03135b91"}]),
 );
 
 const checks = leafCommand(
@@ -248,8 +283,14 @@ const checks = leafCommand(
 ).pipe(
 	Command.withShortDescription("Roll up the head CI, latest run per context."),
 	Command.withDescription(
-		"Roll up the head CI from REST check-runs, latest-per-context. First stdout line is `checks\\t<sha>\\t<green|red|pending|wedged|no-runs|no-producer>`, then `run\\t<count>` — the latest-per-context runs read, gating and informational both — then the collapsed tally of those runs, one `check\\t<status>/<gating|informational>\\t<count>` line per class, count-descending with ties broken on the class, and `facts\\tworkflows:<n>\\truns:<n>` — the zero-checkset discriminators. The runs a terminal reads by name are named on stderr instead: the wedged run, and the failing gating runs to route to heal-ci (informational failures are excluded — they gate nothing). A repo with zero repo-authored `.github/workflows/…` workflows is `no-producer`, never `pending` — the platform's `dynamic/<provider>/<name>` entries do not count, while `facts` still counts the whole active inventory. That case refuses unless `.fabrika.jsonc` declares `ci.noProducer: \"degrade\"`. A `green` is served only over bytes a gate of this repo's own inspected: where the rollup would be green the head's workflow runs are read against the active inventory through the same `review ci` coverage module, repo-authored `.github/workflows/…` paths told from the platform's `dynamic/<provider>/<name>` ones, and each run judged by its own provenance besides — it counts only where it carries the resolved head and its event opened that head, so a base-context `pull_request_target` run gates nothing while an exact-head `workflow_dispatch` one does. `--sha` is resolved to its full object name first, because the Actions run list filters `head_sha` as an exact string, so an abbreviated operand and its full form judge the same. A head where the repo declares workflows and none of them inspected it refuses on 20; otherwise the coverage rides the notes channel. With --wait a `settle\\t<settled|budget-exhausted|head-moved>` line leads the emission. The rollup is fail-closed on the ambiguous rows, and the gating axis is the base branch's declared required set — branch protection unioned with the rulesets matching the base — so a failing check outside it tallies as informational, is named on stderr as reported-never-blocking, and does not red this head; a base branch declaring nothing falls back to the informational-name denylist, so every non-informational check gates there; a wedge is diagnosed and named, and the cancel-and-rerun lever stays an operator's. Exits 7 (PR or --sha proven absent, or zero repo-authored workflows under the default, since a rollup with no producer to read fails closed), 11 (the check-run read, the workflow read, the base branch's required-set read or `.fabrika.jsonc` failed — CI state is UNKNOWN, never green), 13 (entries received < declared, or the base branch's ruleset walk never reached a terminal page), 20 (every check passed and no workflow the repo authors inspected this head — no gate inspected these bytes; an operand resolving to no full commit is 11 instead). Example: fabrika ship checks 4321 --sha 03135b91 --wait",
+		"Prints one PR's head CI rollup, latest run per context, then its tally by class." +
+			"\n  7: the PR or --sha is absent, or the repo has no repo-authored workflow and does not degrade" +
+			"\n  11: a check-run, workflow, required-set or config read failed; CI is UNKNOWN" +
+			"\n  13: a run count or the base's ruleset walk is provably incomplete" +
+			"\n  20: every check passed but no workflow this repo authors inspected this head" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship checks"',
 	),
+	Command.withExamples([{command: "fabrika ship checks 4321 --sha 03135b91 --wait"}]),
 );
 
 const threads = leafCommand(
@@ -261,8 +302,13 @@ const threads = leafCommand(
 ).pipe(
 	Command.withShortDescription("Every unresolved review thread with its class facts."),
 	Command.withDescription(
-		"List every unresolved review thread with its class facts, both pagination layers count-proved. First stdout line is `threads\\t<count>` — 0 is a proven answer — then one `thread\\t<id>\\t<bot|human>\\t<path:line|pr-level>\\t<author>\\t<excerpt>` line each. A thread is `bot` only when EVERY comment author is a GraphQL Bot; everything else is human by construction, with no login-suffix inference and no allowlist. This is the sanctioned GraphQL exception — thread resolution state has no REST equivalent. Exits 7 (PR proven absent), 11 (the thread read failed or fails shape validation — UNKNOWN, never zero), 13 (a thread or comment enumeration is provably short). Example: fabrika ship threads 4321",
+		"Prints the count of one PR's unresolved review threads, then one line per thread with its class." +
+			"\n  7: the PR is absent" +
+			"\n  11: the thread read failed or is malformed; UNKNOWN, never zero" +
+			"\n  13: a thread or comment enumeration is provably short" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship threads"',
 	),
+	Command.withExamples([{command: "fabrika ship threads 4321"}]),
 );
 
 const resolve = leafCommand(
@@ -290,8 +336,20 @@ const resolve = leafCommand(
 ).pipe(
 	Command.withShortDescription("Resolve one bot-classed review thread with a rationale."),
 	Command.withDescription(
-		"Resolve ONE bot-classed review thread: re-derive its live state and class, leak-scan the rationale on STDIN, post the rationale as a reply, fire the resolve mutation, and read both back. Prints `resolved\\t<thread-id>\\t<comment-url>`. The rationale arrives on stdin only; there is no path flag. Exits 3 (no rationale — a silent resolve is unauditable), 5 (machine-local path in the rationale), 6 (bare @ reference), 7 (PR or thread proven absent), 8 (the reply, the mutation or the confirming re-read failed — UNKNOWN what landed), 9 (the read-back does not show it resolved with the rationale), 11 (the thread's state could not be re-derived — nothing was written), 16 (proven: already resolved, or not positively bot-classed — a human objection is theirs to resolve). Example: fabrika ship resolve 4321 --thread PRRT_kwDOLxx1 < rationale.md",
+		"Resolves one bot-classed review thread with the rationale on stdin and prints the reply URL." +
+			"\n  3: no rationale on stdin" +
+			"\n  5: the rationale carries a machine-local path" +
+			"\n  6: the rationale carries a bare @ reference" +
+			"\n  7: the PR or thread is absent" +
+			"\n  8: a write or its re-read failed; what landed is UNKNOWN" +
+			"\n  9: the read-back does not show it resolved with the rationale" +
+			"\n  11: the thread's state could not be read; nothing was written" +
+			"\n  16: already resolved, or not positively bot-classed" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship resolve"',
 	),
+	Command.withExamples([
+		{command: "fabrika ship resolve 4321 --thread PRRT_kwDOLxx1 < rationale.md"},
+	]),
 );
 
 const enqueue = leafCommand(
@@ -318,8 +376,17 @@ const enqueue = leafCommand(
 ).pipe(
 	Command.withShortDescription("Arm the merge queue at a pinned head and prove it landed."),
 	Command.withDescription(
-		"Arm the merge queue's auto-merge at a pinned head and prove the arm landed. Prints `enqueued\\t<sha>\\t<queued|settling>` — `settling` is the normal race, not a failure. There is NO merge-method flag: the queue owns the method. `auto_merge: null` post-enqueue is expected and is never read as a jam. Before any mergeability read, it reads whose PR this is: a PR whose author is outside the repo's ownAccounts (the running account alone when that set is empty), with no valid takeover grant on it, is its author's to land and refuses on 22 — `fabrika build takeover` is how a trusted account hands one over. Before the arm, a DEFINITE and TRUE `mergeable` is asserted: `mergeable` is computed lazily so an indefinite value is re-read on a backoff across --mergeability-seconds (default 60), and if it is still indefinite it is UNKNOWN and refuses on 11; a definite `mergeable: false` refuses, and it refuses on two codes because the lane charges them to two budgets — 21 for a `mergeable_state: dirty`, which is the base having moved under the branch, and 16 for every other definite not-mergeable value, which is a fact about the head. Neither arms and neither moves a branch: rebasing the head, and the re-review a moved base owes because the digest every verdict binds covers the merge-base blob too (see src/review/content-binding.ts), are the builder's round. Exits 7 (PR proven absent, closed or already merged), 8 (the arm or its confirming read-back failed — whether an intent is parked is UNKNOWN, so run `fabrika ship disarm --site refuse` before stopping), 11 (the live head, whose PR it is, or the mergeability could not be read, or mergeability stayed indefinite — nothing was armed), 12 (the live head moved past --sha — refusing to arm a tree nobody verified), 16 (the PR is provably not mergeable for a reason other than a conflicted base — nothing was armed), 21 (the base moved under the branch and the merge conflicts — nothing was armed; report it as BASE-CONFLICTED, which spends a machinery lap rather than a repair round), 22 (the PR is not ours and no valid takeover grant stands on it — nothing was armed). Example: fabrika ship enqueue 4321 --sha 03135b91",
+		"Arms the merge queue's auto-merge at a pinned head and prints `enqueued`, queued or settling." +
+			"\n  7: the PR is absent, closed or already merged" +
+			"\n  8: the arm or its read-back failed; run `ship disarm --site refuse` before stopping" +
+			"\n  11: head, owner or mergeability unread or indefinite; nothing was armed" +
+			"\n  12: the live head moved past --sha" +
+			"\n  16: provably not mergeable for a reason other than a conflicted base" +
+			"\n  21: the base moved and the merge conflicts; report BASE-CONFLICTED" +
+			"\n  22: PR not ours, no takeover grant; nothing was armed" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship enqueue"',
 	),
+	Command.withExamples([{command: "fabrika ship enqueue 4321 --sha 03135b91"}]),
 );
 
 const merge = leafCommand(
@@ -346,8 +413,18 @@ const merge = leafCommand(
 ).pipe(
 	Command.withShortDescription("Land a PR on a base no merge queue governs, proof read back."),
 	Command.withDescription(
-		"Land a pull request directly on a base branch NO merge queue governs, and prove the landing. Prints `merged\\t<merge-commit-sha>\\t<squash|merge|rebase>`. This is the second landing path, not a flag on the first: `ship enqueue` stays method-free. The method is READ off the repository's allow_squash_merge / allow_merge_commit / allow_rebase_merge, preferring squash because its subject is the `(#<pr>)` anchor `ship reconcile` proves a landing with; a repo permitting none refuses rather than guessing. Before the landing read, it reads whose PR this is: a PR whose author is outside the repo's ownAccounts (the running account alone when that set is empty), with no valid takeover grant on it, is its author's to land and refuses on 22 — `fabrika build takeover` is how a trusted account hands one over. A definite `mergeable_state` is asserted before the write and a definite `false` refuses; `mergeable` is computed lazily, so an indefinite value is re-read on a backoff across --mergeability-seconds (default 60) and only a value still indefinite at the end of that window is UNKNOWN. The merge call's own response is never the proof — `merged` plus the merge commit are read back off the PR after it. Exits 7 (PR proven absent, closed or already merged), 8 (the merge, or its confirming read-back, failed — whether it landed is UNKNOWN; re-read the PR), 9 (the read-back does not show it merged at a commit), 11 (the live head, whose PR it is, the landing path or the mergeability could not be read, or mergeability stayed indefinite — nothing was merged), 12 (the live head moved past --sha), 16 (a merge queue governs the base — run `fabrika ship enqueue`; or the PR is provably not mergeable), 19 (the repository permits no merge method at all — a human enables one in the repository settings), 22 (the PR is not ours and no valid takeover grant stands on it — nothing was merged). Example: fabrika ship merge 4321 --sha 03135b91",
+		"Lands one PR on a base no merge queue governs and prints the merge commit and method." +
+			"\n  7: the PR is absent, closed or already merged" +
+			"\n  8: the merge or its read-back failed; landing is UNKNOWN" +
+			"\n  9: the read-back does not show it merged at a commit" +
+			"\n  11: a read failed or stayed indefinite; nothing merged" +
+			"\n  12: the live head moved past --sha" +
+			"\n  16: a merge queue governs the base (use `ship enqueue`), or not mergeable" +
+			"\n  19: the repository permits no merge method; a human must enable one" +
+			"\n  22: PR not ours, no takeover grant; nothing merged" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship merge"',
 	),
+	Command.withExamples([{command: "fabrika ship merge 4321 --sha 03135b91"}]),
 );
 
 const reconcile = leafCommand(
@@ -380,8 +457,13 @@ const reconcile = leafCommand(
 ).pipe(
 	Command.withShortDescription("Watch a queued PR to a terminal classification."),
 	Command.withDescription(
-		"Watch a queued PR to a terminal classification. Prints `reconcile\\t<landed|ejected|unresolved|parked>\\t<polls-used>\\t<horizon-seconds>` — all four are proven answers at exit 0. `landed` on merged:true or a base-branch squash whose subject ENDS with `(#<pr>)`; `ejected` only on a removal NOT paired with a merge; `unresolved` means still-queued at the horizon, the expected outcome of a healthy long dwell; `parked` means the arm never entered a queue on a queue-governed base. Exits 7 (PR proven absent), 11 (every poll failed to read — UNKNOWN, distinct from `unresolved`), 13 (the timeline read — which the platform gives no count for — never reached a terminal page with no `next` link). Example: fabrika ship reconcile 4321",
+		"Watches a queued PR and prints landed, ejected, unresolved or parked, with the polls used." +
+			"\n  7: the PR is absent" +
+			"\n  11: every poll failed to read; UNKNOWN, not unresolved" +
+			"\n  13: the timeline read never reached a terminal page" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship reconcile"',
 	),
+	Command.withExamples([{command: "fabrika ship reconcile 4321"}]),
 );
 
 const disarm = leafCommand(
@@ -402,8 +484,13 @@ const disarm = leafCommand(
 ).pipe(
 	Command.withShortDescription("Clear or deliberately keep a parked merge intent."),
 	Command.withDescription(
-		"Clear or deliberately keep a parked merge intent at one merge-intent lifecycle site. Prints `disarm\\t<kept|disarmed>\\t<site>\\t<reason>`, where kept reasons are the closed set merged | live-queued | not-armed | pre-queue-regime and the disarmed reason is `cleared`, proven by re-reading auto_merge after the write; the disable call's own exit status is never trusted. An unreadable armed-state reads armed and an unreadable queue regime reads queue-governed; a live queue entry is never disturbed. There is no 7 seat: a disarm aimed at a merged or absent PR answers `kept`. Exits 8 (the re-read cannot confirm the intent is clear — report `merge intent: NOT cleared`), 10 (--site is not one of the four sites), 11 (the armed-state read failed before any write). Example: fabrika ship disarm 4321 --site preflight",
+		"Clears or deliberately keeps a parked merge intent at one site and prints kept or disarmed." +
+			"\n  8: the re-read cannot confirm the intent is clear; report `merge intent: NOT cleared`" +
+			"\n  10: --site is not one of the four sites" +
+			"\n  11: the armed-state read failed before any write" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship disarm"',
 	),
+	Command.withExamples([{command: "fabrika ship disarm 4321 --site preflight"}]),
 );
 
 const nudge = leafCommand(
@@ -415,8 +502,17 @@ const nudge = leafCommand(
 ).pipe(
 	Command.withShortDescription("Remedy a dropped CI trigger by close then reopen, once."),
 	Command.withDescription(
-		"Remedy a dropped CI trigger by close→reopen, at most once per head, after re-deriving the precondition itself. Prints `nudged\\t<sha>`. The verb trusts nothing it was told: zero check runs, zero commit statuses, at least one workflow and an open PR are all re-read here. The head ref is untouched by construction, so SHA-bound verdicts survive. Exits 7 (PR proven absent), 8 (the close failed — nothing changed state), 11 (a precondition read failed — nothing was proven, nothing touched), 12 (the live head moved past --sha), 13 (the timeline read never reached a terminal page with no `next` link — the platform gives no count for it), 16 (proven not in the dropped-trigger state, or this head was already nudged), 17 (THE CLOSE LANDED AND THE REOPEN IS UNCONFIRMED — the PR may be closed; reopen it by hand now). Example: fabrika ship nudge 4322 --sha 9fe12ab0",
+		"Closes and reopens one PR, once per head, to remedy a dropped CI trigger; prints `nudged`." +
+			"\n  7: the PR is absent" +
+			"\n  8: the close failed; nothing changed state" +
+			"\n  11: a precondition read failed; nothing was touched" +
+			"\n  12: the live head moved past --sha" +
+			"\n  13: the timeline read never reached a terminal page" +
+			"\n  16: not in the dropped-trigger state, or this head was already nudged" +
+			"\n  17: THE CLOSE LANDED AND THE REOPEN IS UNCONFIRMED; reopen the PR by hand now" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship nudge"',
 	),
+	Command.withExamples([{command: "fabrika ship nudge 4322 --sha 9fe12ab0"}]),
 );
 
 const note = leafCommand(
@@ -436,8 +532,17 @@ const note = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the durable stop-path note on stdin to the PR."),
 	Command.withDescription(
-		"Post the durable stop-path note on STDIN as a new PR comment, leak-scanned and read back. Prints `noted\\t<comment-url>`. Stop-path notes are a history, not a state: each run's refusal is its own record, and a note on a closed or merged PR is legal. Exits 3 (no body on stdin — a silent stop is the defect), 5 (machine-local path), 6 (bare @ reference), 7 (PR proven absent), 8 (the create or its confirming re-read failed — UNKNOWN whether it landed), 9 (it landed and the read-back does not match), 11 (the PR could not be read — nothing was posted). Example: fabrika ship note 4322 < stop.md",
+		"Posts the stop-path note on stdin as a new PR comment and prints its URL." +
+			"\n  3: no body on stdin" +
+			"\n  5: the body carries a machine-local path" +
+			"\n  6: the body carries a bare @ reference" +
+			"\n  7: the PR is absent" +
+			"\n  8: the create or its re-read failed; whether it landed is UNKNOWN" +
+			"\n  9: it landed and the read-back does not match" +
+			"\n  11: the PR could not be read; nothing was posted" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship note"',
 	),
+	Command.withExamples([{command: "fabrika ship note 4322 < stop.md"}]),
 );
 
 const release = leafCommand(
@@ -449,8 +554,16 @@ const release = leafCommand(
 ).pipe(
 	Command.withShortDescription("Detect a dark ship and queue its issue for release."),
 	Command.withDescription(
-		"Detect a dark ship over the PR itself and queue its linked issue for release. Prints `release\\t<queued|n/a|no-issue>\\t<flag-key|->`. Three ground-truth signals, any one sufficient: the diff adds a flag declaration, the body carries a `Flag:` line, or the body names a key declared in the registry at the base branch inside a gating-context line. The linked issue's inherited `Containment:` stamp is NEVER read — it describes the epic, not this PR. `no-issue` is its own answer, never folded into n/a. Agents deploy, humans release — this ends at the label. The scan runs over the enumerated changed-file list; a list disagreeing with the pull-request record's own `changed_files` is reported on stderr and never refused on, because GitHub computes that count against a base it cached at the last push. Exits 7 (PR proven absent, or the enumerated file list is empty — a zero carries no declaration to find, and n/a there would be a dark ship nobody queued), 8 (the label write or its re-read failed — escalate), 9 (it landed and the read-back does not show it), 11 (the diff, body, registry or linked issue could not be read — dark-ship-ness is UNKNOWN, never n/a), 13 (the changed-file list came back at GitHub's 3000-file ceiling, where the Link header ends as a complete read ends, so a flag declaration could sit in the part the platform never served). Example: fabrika ship release 4321",
+		"Prints whether one PR is a dark ship, and queues its linked issue for release when it is." +
+			"\n  7: the PR is absent, or has no changed files" +
+			"\n  8: the label write or its re-read failed; escalate" +
+			"\n  9: the label landed and the read-back does not show it" +
+			"\n  11: the diff, body, registry or linked issue could not be read; UNKNOWN" +
+			"\n  13: the changed-file list hit GitHub's 3000-file ceiling, so it is partial" +
+			"\n  23: the release label is absent from the repository's taxonomy" +
+			'\n  Derivation: the ship skill\'s contract.md, "ship release"',
 	),
+	Command.withExamples([{command: "fabrika ship release 4321"}]),
 );
 
 export const shipCommand = Command.make("ship").pipe(

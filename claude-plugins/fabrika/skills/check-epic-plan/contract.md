@@ -123,6 +123,15 @@ reason. A conforming marker from an off-roster account therefore reads `absent` 
 never `absent` — an unread authority list is UNKNOWN, and collapsing it to "not approved" is the
 same fail-open shape in reverse.
 
+**Both verbs resolve the roster from `.github/CODEOWNERS` on the default branch**, through the same
+modules `ship cp-approval` uses — `plan approve` at write time, `plan approval` at read time.
+`plan approve` answers
+`{"answer":"approved","epic":n,"digest":"…","by":"…","at":"…","comment":id}`. `plan approval`
+answers `{"answer":"approval","epic":n,"state":"current|stale|absent","by":"…","markerDigest":"…",
+"derivedDigest":"…","at":"…","comment":id,"disregarded":k,"unauthorized":k}` at exit `0` whatever
+the state. It prints both digests so a `stale` answer shows what moved, and a marker that reaches
+for the format and drifts is counted in `disregarded` rather than folded into `absent`.
+
 **The refusal is seated in the three verbs that re-derive the floor**, on `25` `PLAN_UNAPPROVED`.
 Each reads the epic's comments and resolves the roster itself, against the digest it has just
 derived — never one a caller carried, since an approval measured against a caller-supplied scope
@@ -135,7 +144,8 @@ plan, the other to read it again.
 
 **Considered and not derived: a `plan defects --explain` verb.** A defect's *remedy* is the
 planner's judgment, and a verb that authored one would be minting advice the floor cannot check.
-The defect types are self-describing and `plan check --help` prints the table.
+The defect types are self-describing, and [The floor — fifteen defect types](#the-floor--fifteen-defect-types)
+lists every one with its trigger.
 
 ## The ledger grammar this gate reads
 

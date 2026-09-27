@@ -1,7 +1,8 @@
 /**
  * `ci annotate` pure core — turn tsc/tsgo diagnostics into GitHub `::error` workflow
- * commands so a failing CI typecheck renders inline on the PR diff. IO-free and
- * total: every decision is a deterministic transform over already-captured text.
+ * commands so a failing CI typecheck renders inline on the PR diff. The verb exists
+ * because tsc ships no annotations reporter. IO-free and total: every decision is a
+ * deterministic transform over already-captured text.
  *
  * Three non-obvious facts the parser is built around, all observed from a real
  * `pnpm turbo run typecheck` failure rather than assumed:

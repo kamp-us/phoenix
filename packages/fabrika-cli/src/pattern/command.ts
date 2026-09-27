@@ -51,8 +51,14 @@ const corpus = leafCommand(
 ).pipe(
 	Command.withShortDescription("Every pattern doc at a base ref, with its registration."),
 	Command.withDescription(
-		'The library at a base ref: every doc, its index registration, its section and its last-touching commit. Prints `corpus <library|none|absent> <docs> <unregistered> <unknown> <dangling>` then one `doc` line per doc and one `dangling` line per index row pointing outside the corpus — all three outcomes at exit 0, because an empty or absent library is a fact a repo adopting fabrika must be able to act on. Exits 11 (the base could not be fetched, or a tree or history read failed — UNKNOWN, never "none"). Example: fabrika pattern corpus --dir .patterns',
+		[
+			"Prints the pattern library at a base ref: a `corpus` line, then one line per doc and dangling row.",
+			"  library, none and absent are all answers.",
+			"  11: the base fetch or a tree or history read failed (UNKNOWN)",
+			'  Derivation: the write-pattern skill\'s contract.md, "pattern corpus"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika pattern corpus --dir .patterns"}]),
 );
 
 const drift = leafCommand(
@@ -64,8 +70,15 @@ const drift = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether the in-repo source a doc cites has moved."),
 	Command.withDescription(
-		'Whether the in-repo source a doc cites moved since the doc was last written. Prints `drift <drifted|current|unanchored|unborn> <anchor-sha> <cited> <in-repo> <unresolved> <moved>` then one `path` line per moved path — all four outcomes at exit 0. `unanchored` is not a clearance: it says the doc cites nothing this verb can follow. Exits 11 (a fetch, tree or history read failed — UNKNOWN, never "current"), 12 (no doc for the slug, in the working tree or at the base). Example: fabrika pattern drift worker-queue-retry',
+		[
+			"Prints whether the source a doc cites moved since it was written, then one line per moved path.",
+			"  Every outcome is an answer, and `unanchored` is not a clearance.",
+			"  11: a fetch, tree or history read failed (UNKNOWN)",
+			"  12: no doc for the slug",
+			'  Derivation: the write-pattern skill\'s contract.md, "pattern drift"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika pattern drift worker-queue-retry"}]),
 );
 
 const anchor = leafCommand(
@@ -88,8 +101,15 @@ const anchor = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether the dependency version a doc declares still matches."),
 	Command.withDescription(
-		'Whether the dependency version a doc declares still matches what the workspace pins, compared byte for byte across default and named catalogs. A declared dependency with conflicting pins refuses at exit 11; unrelated conflicts do not block an answer. Prints `anchor <matched|moved|malformed|unpinned|unanchored|unborn> <declared> <moved> <unpinned> <malformed>` then one `pkg` line per declaration — every outcome at exit 0. A line that claims an anchor and does not parse is `malformed`, never absent. Exits 11 (the base could not be fetched, or the doc or manifest could not be read — every pin is UNKNOWN, never "unpinned"), 12 (no doc for the slug). Example: fabrika pattern anchor worker-queue-retry',
+		[
+			"Prints whether a doc's declared dependency versions match the workspace pins, then one line each.",
+			"  Every outcome is an answer, and an unparseable anchor line is `malformed`, never absent.",
+			"  11: a fetch or read failed, or a declared dependency has conflicting pins",
+			"  12: no doc for the slug",
+			'  Derivation: the write-pattern skill\'s contract.md, "pattern anchor"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika pattern anchor worker-queue-retry"}]),
 );
 
 const create = leafCommand(
@@ -155,8 +175,20 @@ const create = leafCommand(
 ).pipe(
 	Command.withShortDescription("Scaffold a new pattern doc from the canonical template."),
 	Command.withDescription(
-		"Scaffold <dir>/<slug>.md for a current pattern, or a prospective pattern with --decision. Optional --source-repo inspection derives a canonical origin, full HEAD commit, relevant package version and representative source/test/docs paths without serializing the local path; use --source-package when a monorepo is ambiguous. Writes exactly one file. Exits 8 (write UNKNOWN), 13 (target exists), 17 (source evidence refused). Example: fabrika pattern new worker-queue-retry --decision https://forge.example/acme/repo/issues/1 --source-repo ../acme --source-package acme-queue",
+		[
+			"Scaffolds exactly one <dir>/<slug>.md, current or prospective, from the canonical template.",
+			"  8: the write is UNKNOWN",
+			"  13: the target exists",
+			"  17: the source evidence was refused",
+			'  Derivation: the write-pattern skill\'s contract.md, "pattern new"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika pattern new worker-queue-retry --decision https://forge.example/acme/repo/issues/1 --source-repo ../acme --source-package acme-queue",
+		},
+	]),
 );
 
 const register = leafCommand(
@@ -183,8 +215,24 @@ const register = leafCommand(
 ).pipe(
 	Command.withShortDescription("Insert the doc's row into the index under a named section."),
 	Command.withDescription(
-		'Insert the doc\'s row into <dir>/index.md under a named section, proving the edit changed no other line before it writes and reading the row back after. Prints `<inserted|already> <path> <section>`. Exits 8/9 (the write failed, the read-back does not carry the row), 10 (no such section — every section carrying a table is named), 12 (no doc to point the row at), 14 (the edit would have changed a line beyond the new row), 15 (the index is absent or holds no parseable table), 16 (the section name matches more than one heading). Example: fabrika pattern register worker-queue-retry --section "Index — Effect domain layer" --topic "Retry and backoff" --read-when "Adding a queue consumer"',
+		[
+			"Inserts a doc's index row under a section and prints `<inserted|already> <path> <section>`.",
+			"  8: the write failed",
+			"  9: the read-back does not carry the row",
+			"  10: no such section; every section with a table is named",
+			"  12: no doc to point the row at",
+			"  14: the edit would change a line beyond the new row",
+			"  15: the index is absent or holds no parseable table",
+			"  16: the section name matches more than one heading",
+			'  Derivation: the write-pattern skill\'s contract.md, "pattern register"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika pattern register worker-queue-retry --section "Index — Effect domain layer" --topic "Retry and backoff" --read-when "Adding a queue consumer"',
+		},
+	]),
 );
 
 export const patternCommand = Command.make("pattern").pipe(

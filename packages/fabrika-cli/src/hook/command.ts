@@ -36,8 +36,14 @@ const claudeSpend = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record Claude model and token usage from a native hook."),
 	Command.withDescription(
-		"Collect Claude native response usage from a hook payload on stdin. A systemMessage warning on stdout and diagnostics on stderr; no hook decisions or model context. Always exits 0, including visible collection failures. Replay the payload to recover.",
+		[
+			"Records Claude model and token usage from the native hook payload on stdin.",
+			"  stdout: a `systemMessage` warning when collection fails; diagnostics go to stderr",
+			"  Never refuses: a collection failure is a visible warning; replay the payload to recover.",
+			"  Derivation: the fabrika plugin's docs/claude-usage.md",
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika hook claude-spend"}]),
 );
 
 const check = leafCommand(
@@ -49,8 +55,15 @@ const check = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether the hook envelope on stdin is one fabrika can read."),
 	Command.withDescription(
-		"Say whether the harness hook envelope on STDIN is one fabrika can read. Stdout is the single line `conforms\\t<hook_event_name>\\t<field-count>`. The bytes judged are on stderr on every path. Exits 3 (stdin was read and held nothing), 12 (bytes arrived and are provably not a hook envelope), 13 (fd 0 could not be read — UNKNOWN, never malformed). Example: fabrika hook check",
+		[
+			"Prints whether the harness hook envelope on stdin is one fabrika can read.",
+			"  stdout: `conforms\\t<hook_event_name>\\t<field-count>`; the judged bytes go to stderr",
+			"  3: stdin held nothing",
+			"  12: the bytes are not a hook envelope",
+			"  13: fd 0 could not be read (UNKNOWN, never malformed)",
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika hook check"}]),
 );
 
 const cliFloor = leafCommand(
@@ -69,8 +82,15 @@ const cliFloor = leafCommand(
 ).pipe(
 	Command.withShortDescription("Warn when this CLI is older than the plugin's minimum version."),
 	Command.withDescription(
-		"Compare the running CLI's version with the `minimum` in `cli-floor.json` under $CLAUDE_PLUGIN_ROOT, the fabrika plugin's declared minimum @kampus/fabrika-cli version, which the harness sets for the plugin's own hooks. Reads no stdin. Stdout is one hook-output JSON object at exit 0: below the minimum it carries `systemMessage`, the warning the harness shows the user, naming both versions and the upgrade command; at or above it carries `suppressOutput` and a `fabrika` token (`outcome: met`), so the user sees nothing new. Both carry `fabrika.installed` and `fabrika.minimum`. Exits 23 (no plugin root, or the floor file or a version in it unreadable — UNKNOWN, never a pass). A non-zero exit on SessionStart shows stderr and lets the session start. Example: fabrika hook cli-floor",
+		[
+			"Warns when this CLI is older than the plugin's `cli-floor.json` minimum, as hook-output JSON.",
+			"  stdout: `systemMessage` below the minimum, else `suppressOutput`; reads no stdin",
+			"  23: the plugin root, floor file or a version is unreadable (UNKNOWN, never a pass)",
+			"  Any non-zero exit shows stderr and lets the session start.",
+			'  Derivation: the fabrika plugin\'s docs/hook-surface.md, "hook cli-floor"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika hook cli-floor"}]),
 );
 
 const codes = leafCommand(
@@ -82,8 +102,11 @@ const codes = leafCommand(
 ).pipe(
 	Command.withShortDescription("Print the exit taxonomy this group allocates from."),
 	Command.withDescription(
-		"Print the exit taxonomy every verb in this group allocates from. Stdout is one `<code>\\t<meaning>` line per code. Reads nothing and always exits 0. Example: fabrika hook codes",
+		[
+			"Prints the exit taxonomy every hook verb allocates from, one `<code>\\t<meaning>` line each.",
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika hook codes"}]),
 );
 
 const preBash = leafCommand(
@@ -97,8 +120,19 @@ const preBash = leafCommand(
 ).pipe(
 	Command.withShortDescription("Refuse a Bash command that jumps out of its isolated worktree."),
 	Command.withDescription(
-		"Judge the PreToolUse Bash envelope on STDIN and refuse a command whose LEADING directory jump (`cd`, `pushd`) resolves outside the linked worktree it runs in — whatever follows it, because a program that reaches git in a child process carries no `git` token for the harness's textual check to match and has moved a shared checkout's HEAD in the field. The jump is read through the wrappers it can be written inside — a subshell, a command substitution, a brace group, and `VAR=value` prefixes — so `(cd <outside> && …)` is the same refusal as the bare jump; a jump behind a word whose meaning is run-time (`eval`, a wrapper script) is out of key and allowed. Arms only inside a linked worktree; the primary checkout and a cwd under no repository are allowed untouched, since isolation is the operator's call. A jump whose target expands at run time is refused too — where it lands cannot be decided before it runs. THE VERDICT IS JSON ON STDOUT, NEVER AN EXIT CODE: a deny is `hookSpecificOutput.permissionDecision` at exit 0, because `2` is the harness's one blocking code and fabrika allocates it nowhere; an allow carries no decision field at all, since `allow` would bypass the operator's own permission rules. Exits 3 (stdin held nothing), 12 (not a hook envelope), 13 (fd 0 unreadable — UNKNOWN), 14 (an event or tool this verb does not judge), 19 (the cwd's working tree could not be established — the jump was NOT judged and the command proceeds). Every non-zero exit shows stderr and lets the command through. Example: fabrika hook pre-bash",
+		[
+			"Denies a Bash command whose leading `cd` or `pushd` leaves its linked worktree.",
+			"  The verdict is hook-output JSON on stdout, never an exit code; an allow carries no decision.",
+			"  3: stdin held nothing",
+			"  12: not a hook envelope",
+			"  13: fd 0 could not be read (UNKNOWN)",
+			"  14: an event or tool this verb does not judge",
+			"  19: the cwd's working tree is unknown; the jump was NOT judged",
+			"  Any non-zero exit shows stderr and lets the command through.",
+			'  Derivation: the fabrika plugin\'s docs/hook-surface.md, "hook pre-bash"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika hook pre-bash"}]),
 );
 
 /**
@@ -136,8 +170,23 @@ const worktreeCreate = leafCommand(
 ).pipe(
 	Command.withShortDescription("Provision the isolation worktree a WorktreeCreate envelope names."),
 	Command.withDescription(
-		"Create the `isolation: worktree` tree the WorktreeCreate envelope on STDIN names, with its deps installed, and print its absolute path on stdout — the path the harness adopts. THE TREE GOES UNDER THE CLONE'S PRIMARY WORKING TREE, NEVER UNDER THE SESSION'S CWD: the envelope's `cwd` is where the session was launched, possibly a subdirectory or a linked worktree, so `git rev-parse --show-toplevel` is run there and `git worktree list --porcelain -z` in the toplevel it names (under --dry-run too), and the tree is `<primary>/.claude/worktrees/<name>`, where `<primary>` is the listing's first record; a `cwd` that resolves to no toplevel, or a clone whose primary tree is bare or unreadable, refuses at 15 naming the `cwd`, with no fallback to it. REAPS BEFORE IT PROVISIONS: it runs `fabrika build reap --execute --limit 4` as a child in the repository the envelope named, before the fetch and the add, because whatever creates a worktree is what bounds how many accumulate and the failure it prevents is a full volume refusing the add — freeing the disk after that refusal is a spawn too late. It is a child rather than a call so the sweep runs in that repository rather than in the hook's own cwd, it is bounded by --limit and by a 120s timeout so the fetch and the add still fit in the hook's 600s budget, and NOTHING IT ANSWERS CAN REFUSE THE SPAWN — a reclaimer that could block one would turn a housekeeping miss into the total stop it exists to end, so a failed or cut-off sweep is a stderr line and the provisioning proceeds. TAKES ONE REPO-LEVEL LOCK AROUND THE FETCH AND THE ADD, AND NOTHING ELSE: `fabrika/worktree-create.lock` in the clone's common git dir, shared by every worktree of the clone, so parallel spawns take turns at those two commands; a lock whose holder's process is gone, or older than 660s, is taken over. Fetches the base into a per-spawn ref and resolves it to a commit id — never the shared `FETCH_HEAD`, which a sibling spawn's fetch truncates mid-read — then runs `git worktree add --detach` at that id with git hooks switched off, releases the lock, and only then runs the repo's own `post-checkout` hook itself (`git hook run post-checkout`) under a PATH that resolves the toolchain, so the dependency installs of concurrent spawns overlap instead of queueing. Refuses unless the tree exists and its virtual store landed. The fetch and the add each still recover from the two sibling-worktree faults a `git worktree add` outside this hook or a dead one can cause — a fetch reading a half-built `worktrees/<name>/HEAD`, an add reading a half-built `worktrees/<name>/commondir` — by pruning dead worktree entries and re-attempting, bounded to five attempts and up to 3s of delay per command; any other diagnostic refuses on the first attempt. Exits 3 (stdin held nothing), 12 (not a hook envelope), 13 (fd 0 unreadable — UNKNOWN), 14 (a harness event this verb does not judge), 15 (the envelope names no creatable worktree), 16 (the base could not be fetched), 17 (`git worktree add` failed), 18 (the tree was created dep-less), 24 (the creation lock could not be taken — a live holder kept it past 240s, or it could not be created; nothing was fetched or added). Every non-zero exit blocks the spawn. Example: fabrika hook worktree-create",
+		[
+			"Creates the worktree the WorktreeCreate envelope on stdin names and prints its absolute path.",
+			"  It first runs `fabrika build reap`; its answer never blocks the spawn.",
+			"  3: stdin held nothing",
+			"  12: not a hook envelope",
+			"  13: fd 0 unreadable (UNKNOWN)",
+			"  14: an event this verb does not judge",
+			"  15: no creatable worktree",
+			"  16: the base fetch failed",
+			"  17: `git worktree add` failed",
+			"  18: the tree was created dep-less",
+			"  24: the creation lock was not taken; nothing fetched or added",
+			"  Any non-zero exit blocks the spawn.",
+			'  Derivation: the fabrika plugin\'s docs/hook-surface.md, "hook worktree-create"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika hook worktree-create"}]),
 );
 
 const pluginSync = leafCommand(
@@ -156,8 +205,22 @@ const pluginSync = leafCommand(
 ).pipe(
 	Command.withShortDescription("Advance the checkout a directory-source plugin is served from."),
 	Command.withDescription(
-		"Fast-forward the primary worktree of the checkout a directory-source marketplace is registered against, so the next spawned shell's `skills:` preload carries the skill text that landed. A preload is rendered from the harness's COPY of the plugin tree, taken from that directory at whatever commit its primary worktree sat at, so a skill-class merge binds no shell until the directory advances — and the failure is silent, since preloaded text names no version. Reads the SessionStart envelope on STDIN, resolves the clone's primary worktree from its `cwd` through the shared git common dir (never the session's own linked worktree), fetches `origin/<default>` and TAKES A FAST-FORWARD AND NOTHING ELSE: a parked branch, a detached HEAD, a diverged branch, or uncommitted work the incoming commits would write over is refused with its reason, because where a human's checkout sits is a human's call. UNCOMMITTED WORK OUTSIDE THE INCOMING COMMITS' PATHS IS NOT ONE OF THOSE STATES — the refusal compares the uncommitted paths (untracked files included, each named individually) against the paths the incoming range changes and fires only on an overlap, which is the same overlap `git merge --ff-only` itself refuses on. EVERY REFUSAL LEADS STDERR WITH ITS REASON, and carries the scope line and any install lines after it: a failed SessionStart hook surfaces one line in the session, so a refusal whose first line named the directory it judged named no cause at all. It then READS THE HARNESS'S OWN INSTALL RECORDS AND REPORTS, never drives, the second link: re-copying the advanced directory into the plugin cache is the harness's `autoUpdate` pass, so every install still bound to an earlier commit is named on stderr. Names no repository, marketplace or plugin — the marketplace is selected by the directory it declares. Stdout is `current\\t<branch>\\t<commit>` or `advanced\\t<branch>\\t<commit>`. Exits 3 (stdin held nothing), 12 (not a hook envelope), 13 (fd 0 unreadable — UNKNOWN), 14 (a harness event this verb does not judge), 19 (no clone's primary worktree could be read), 20 (the checkout is in no state to advance — nothing moved), 21 (the remote could not be fetched — UNKNOWN), 22 (the planned fast-forward failed). Every non-zero exit shows stderr and lets the session start. Example: fabrika hook plugin-sync",
+		[
+			"Fast-forwards the checkout a directory-source plugin is served from, per the envelope on stdin.",
+			"  stdout: `current\\t<branch>\\t<commit>` or `advanced\\t<branch>\\t<commit>`",
+			"  3: stdin held nothing",
+			"  12: not a hook envelope",
+			"  13: fd 0 could not be read (UNKNOWN)",
+			"  14: a harness event this verb does not judge",
+			"  19: no clone's primary worktree could be read",
+			"  20: the checkout cannot be advanced",
+			"  21: the remote could not be fetched (UNKNOWN)",
+			"  22: the planned fast-forward failed",
+			"  Any non-zero exit lets the session start.",
+			'  Derivation: the fabrika plugin\'s docs/hook-surface.md, "hook plugin-sync"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika hook plugin-sync"}]),
 );
 
 export const hookCommand = Command.make("hook").pipe(

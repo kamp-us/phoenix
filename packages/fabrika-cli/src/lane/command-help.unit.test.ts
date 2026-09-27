@@ -3,9 +3,12 @@
  * the derivation and refusal semantics in ground.ts rather than preserving the old cwd-relative
  * story on commands that happen not to exercise that branch in their verb unit tests.
  */
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import type {CommandNode} from "../unknown-subcommand.ts";
 import {laneCommand} from "./command.ts";
+import {LANE_CONTRACT, ROOT_EXITS} from "./help.ts";
 import {PARK_CAUSE_TOKENS} from "./report.ts";
 
 /** A flag as this test reads it: a combinator chain over a `Single` carrying the help text. */
@@ -22,7 +25,8 @@ interface DescribedCommand extends Omit<CommandNode, "subcommands"> {
 
 const group: DescribedCommand = laneCommand;
 const leaves = group.subcommands.flatMap((set) => set.commands);
-const ROOTED_VERBS = [
+/** Rooted verbs whose help is on the leaf help rule; the lanes-root derivation is in the contract. */
+const MIGRATED_ROOTED_VERBS = [
 	"status",
 	"transition",
 	"report",
@@ -32,12 +36,33 @@ const ROOTED_VERBS = [
 	"open",
 	"emit",
 	"amend",
-	"assembly",
-	"push",
 	"brief",
+	"dispatch",
+	"assembly",
+	"integrate",
+	"refresh",
+	"push",
 	"stale",
+	"attach-integrate",
 	"seats",
 	"migrate",
+	"reconcile",
+	"recover",
+	"archive",
+	"settle",
+] as const;
+
+/** Every verb whose help points at the operate contract, and so needs its section there. */
+const CONTRACT_VERBS = [
+	...MIGRATED_ROOTED_VERBS,
+	"clear",
+	"assembly-pr",
+	"assembly-body",
+	"retrigger",
+	"claim",
+	"release",
+	"adopt",
+	"scratch",
 ] as const;
 
 const leafNamed = (name: string): DescribedCommand => {
@@ -55,22 +80,37 @@ const flagHelp = (leaf: DescribedCommand): string => {
 
 describe("the lane group's repository-root help contract", () => {
 	it.each(
-		ROOTED_VERBS,
-	)("lane %s describes repository derivation and both refusal seats", (name) => {
-		const description = leafNamed(name).description ?? "";
+		MIGRATED_ROOTED_VERBS,
+	)("lane %s names both lanes-root refusals on its own exit lines", (name) => {
+		const lines = (leafNamed(name).description ?? "").split("\n");
 
-		expect(description).toContain("owning repository");
-		expect(description).toContain("derive the default lanes root");
-		expect(description).toContain("unreadable repository identity is UNKNOWN at 11");
-		expect(description).not.toContain("neither .fabrika nor .git");
-		expect(description).not.toContain("relative lanes root");
+		expect(lines).toContain(`  39: ${ROOT_EXITS[39]}`);
+		expect(lines).toContain(`  65: ${ROOT_EXITS[65]}`);
 	});
 
-	it.each(ROOTED_VERBS)("lane %s advertises the shared repository-owned --root default", (name) => {
+	it.each(
+		MIGRATED_ROOTED_VERBS,
+	)("lane %s advertises the shared repository-owned --root default", (name) => {
 		const help = flagHelp(leafNamed(name));
 
 		expect(help).toContain("the owning repository's .fabrika/lanes");
 		expect(help).toContain("derived off the primary checkout");
+	});
+});
+
+describe("the operate contract the migrated lane help points at", () => {
+	const contract = readFileSync(
+		fileURLToPath(new URL(`../../../../${LANE_CONTRACT}`, import.meta.url)),
+		"utf8",
+	);
+
+	it.each(CONTRACT_VERBS)("lane %s has the section its help pointer names", (name) => {
+		expect(leafNamed(name).description).toContain(`"lane ${name}"`);
+		expect(contract.split("\n")).toContain(`## \`lane ${name}\``);
+	});
+
+	it("carries the lanes-root derivation the exit lines no longer state", () => {
+		expect(contract).toContain("An unreadable repository identity is UNKNOWN at `11`.");
 	});
 });
 

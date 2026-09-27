@@ -106,7 +106,7 @@ describe("fabrika guard, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () 
 
 	it.each([
 		["homing-guard", "standing-lane"],
-		["pitch-guard", "Rabbit-holes"],
+		["pitch-guard", "lane-entering"],
 		["roadmap-guard", "milestone"],
 		["unresolved-threads-guard", "review-code"],
 	])("reaches %s's check leaf by its registration alone", (guard, marker) => {
@@ -119,19 +119,19 @@ describe("fabrika guard, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () 
 	// is the whole reason to spawn them: a leaf mis-registered under the wrong name is invisible to
 	// every in-process test and shows up only as an unknown-subcommand refusal in CI.
 	it.each([
-		["path-filter-guard", "check", "Example: fabrika guard path-filter-guard check"],
-		["change-detect-guard", "check", "Example: fabrika guard change-detect-guard check"],
-		["codeowners-cp", "check", "Example: fabrika guard codeowners-cp check"],
-		["decisions-index", "validate", "Example: fabrika guard decisions-index validate"],
-		["design-token-guard", "check", "Example: fabrika guard design-token-guard check"],
-		["design-inventory", "check", "Example: fabrika guard design-inventory check"],
-		["design-inventory", "generate", "Example: fabrika guard design-inventory generate"],
-		["i18n-guard", "check", "Example: fabrika guard i18n-guard check"],
-		["no-gh", "check", "Example: fabrika guard no-gh check"],
-	])("reaches %s's %s leaf by its registration alone", (guard, leaf, marker) => {
+		["path-filter-guard", "check"],
+		["change-detect-guard", "check"],
+		["codeowners-cp", "check"],
+		["decisions-index", "validate"],
+		["design-token-guard", "check"],
+		["design-inventory", "check"],
+		["design-inventory", "generate"],
+		["i18n-guard", "check"],
+		["no-gh", "check"],
+	])("reaches %s's %s leaf by its registration alone", (guard, leaf) => {
 		const run = fabrika(["guard", guard, leaf, "--help"]);
 		expect(run.code).toBe(0);
-		expect(run.stdout).toContain(marker);
+		expect(run.stdout).toContain(`EXAMPLES\n  fabrika guard ${guard} ${leaf}\n`);
 	});
 
 	it("reds a duplicate ADR id through the real decisions-index leaf", () => {

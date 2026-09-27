@@ -148,6 +148,7 @@ as the sibling contracts do):
 | `ledger write` | splice the staged plan and topology into the epic body, byte-verified | anchor resolution + a guarded PATCH with a round-trip diff — no judgment |
 | `ledger edges` | write the epic's written `## Dependencies` block into the native `blocked_by` graph, reconciling rather than replacing | a total derivation from the block to the pairs it owes, plus a guarded write with a read-back — no judgment; *what the topology should be* was decided at `ledger topology` |
 | `ledger supersede` | retire a child the re-plan no longer contains | an ordered three-leg write with a read-back; *which child to retire* is the skill's |
+| `ledger defer` | take a child out of the plan and leave its issue open as the follow-up | an ordered two-leg write with a read-back; *whether to defer* was the founder's |
 | `ledger retopology` | rewrite the `## Dependencies` block from the live child links, so a descope stops wedging `lane emit` | a total derivation from the live child set to a block, plus a guarded PATCH with a round-trip diff — no judgment; *which child to descope* was the founder's |
 | `ledger digest` | print the live body digest `--body-digest` takes, staging nothing, so the repair route needs no plan run | one hash of one body — no judgment at all |
 
@@ -1602,6 +1603,73 @@ $ echo $?
 
 ---
 
+## `ledger defer`
+
+**Invocation**
+
+```
+fabrika ledger defer 3 --child 8 --reason "deferred to a follow-up cycle by founder ruling" --token <claim-token>
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `<number>` | positional integer | yes | — | the parent epic |
+| `--child` | integer | yes | — | the child leaving the plan, and staying open |
+| `--reason` | string | yes | — | why the plan changed; posted as the journal comment |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed |
+| `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
+
+**Output** — machine.
+`{"answer": "deferred", "epic": 3, "child": 8, "comment": 5230661234, "unlinked": true, "state": "open"}`
+
+Two legs in a fixed order — **comment, unlink** — then a re-read proving the child is still `open`
+and no longer a sub-issue. The comment goes first so the reason survives a failed unlink. The
+read-back proves the pair rather than reporting the calls as made; a child that comes back closed is
+a write nobody here issued, and it needs a person rather than a retry.
+
+**It never calls the close endpoint.** That is the whole difference from `ledger supersede`: a
+superseded child is work the plan abandoned and closes `not_planned`, while a deferred child is work
+the founder still wants, moved out of *this* epic's scope, so closing it would delete the follow-up.
+This verb is the board half of an authorized deferral;
+`fabrika lane amend <lane> --defer <task> --defer-reason "<why>"` is the ledger half, and neither
+does the other's work. It reads no staged plan run, because a descoped epic is found with its run
+cleared (§Shared conventions).
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `5` | `--reason` carries a machine-local path |
+| `6` | `--reason` is a bare `@` path reference |
+| `7` | the epic is proven absent or closed, or the child is proven absent or already closed — a deferral keeps an open follow-up and there is none |
+| `8` | a leg was attempted and its outcome could not be proven — UNKNOWN |
+| `9` | the legs landed and the child does not read back open and unlinked |
+| `10` | the issue is not a `type:epic`; `--child` is not a sub-issue of it; or `--reason` says nothing |
+| `11` | a precondition read failed — **nothing was written** |
+| `15` | this lane does not hold the epic's claim |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `ledger defer: the reason carries a machine-local path (<masked>).` | 5 | refusal |
+| `ledger defer: the reason carries a bare @ path reference — it cannot be redacted.` | 6 | refusal |
+| `ledger defer: issue #<c> is proven absent or closed — a deferral keeps an OPEN follow-up, and there is none here.` | 7 | refusal |
+| `ledger defer: wrote <k> of 2 legs on #<c> and could not prove the rest — the child is UNKNOWN.` | 8 | refusal |
+| `ledger defer: #<c> does not read back as open and unlinked — it needs a human eye.` | 9 | refusal |
+| `ledger defer: #<c> is not a sub-issue of #<n> — there is nothing to defer out of this epic.` | 10 | refusal |
+| `ledger defer: the reason says nothing — a deferral records why the plan changed, so nothing was written.` | 10 | refusal |
+| `ledger defer: #<n> is not a type:epic.` | 10 | refusal |
+| `ledger defer: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
+| `ledger defer: this lane does not hold #<n>'s claim.` | 15 | refusal |
+
+**Scope** — one child: one comment, one unlink, one confirming read. Zero scope is unreachable:
+`--child` is required.
+
+---
+
 ## `ledger retopology`
 
 **Invocation**
@@ -1829,7 +1897,7 @@ an Errors row; every judging verb states its scope and its zero-scope behavior; 
 a v1 script, another skill's prose, or the authoring session — every cross-reference is to a
 **landed sibling fabrika contract or a shipped module by path**.
 
-The three hand-checks the presence tests cannot perform:
+The four hand-checks the presence tests cannot perform:
 
 1. **Every reachable outcome has a code or a state word.** Walked per verb, including the modes v1
    had no name for: a stale base (`20`), an epic body that moved (`21`), a plan region that cannot
@@ -1854,7 +1922,8 @@ The three hand-checks the presence tests cannot perform:
    `type:epic` check (`10`), `assertGround` (`11`), the imported `requireClaim` (`15`) and the
    same `7` trigger, with documented widenings of `7` — `topology`'s empty run manifest,
    `edges`' epic that declares no topology, `retopology`'s epic with no block or no live
-   children, `supersede`'s absent or closed child, and `adopt`'s absent or closed adoptee — stated
+   children, `supersede`'s absent or closed child, `defer`'s absent or already-closed child, and
+   `adopt`'s absent or closed adoptee — stated
    in their own tables. `open` states the other divergence — it alone proves freshness (`20`) —
    with its reason: the ground is established once and inherited. `13` is seated by no verb here;
    `--require-clean` is `build tree`'s flag at the skill's step 1.
