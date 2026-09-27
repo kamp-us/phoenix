@@ -212,6 +212,14 @@
 	// green — and `ci.yml`'s own jobs stay the deciding authority on these files.
 	"workflowValidators": [],
 
+	// The repo's own commands that machine-read a root config file no `build check` surface opens.
+	// Every `fabrika build check` run whose diff touches a file an entry `reads` spawns that entry,
+	// whatever `--surface` names, so a config-only diff can go green (ADR 0412, #9875). `reads` is
+	// exact paths, never a glob. A config file no entry reads stays unvalidatable and refuses `22`.
+	"configValidators": [
+		{ "command": ["pnpm", "exec", "lefthook", "validate"], "reads": ["lefthook.yml"] }
+	],
+
 	// What fabrika may assume about this repo's CI producer. `mainAlarm` is the one half declared
 	// here: who the main-went-red alarm wakes. The shipped `mention` is empty — a handle baked into
 	// the package would ping a stranger in every adopting repo — so the founder's handle is this
