@@ -38,6 +38,7 @@ import {
 	repoDefaultBranch,
 	searchOpenIssues,
 	setMilestone,
+	timelineFacts,
 } from "./issues.ts";
 
 const TOKEN = "ghp_scripted";
@@ -573,6 +574,7 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 	const cappedReads: ReadonlyArray<readonly [string, () => Shell<Attempt<unknown>>]> = [
 		["openIssuesTitled", () => openIssuesTitled("o/r", "map: portability")],
 		["issueTimeline", () => issueTimeline("o/r", 1)],
+		["timelineFacts", () => timelineFacts("o/r", 1)],
 		["openIssuesWithLabel", () => openIssuesWithLabel("o/r", "status:needs-triage")],
 		["listLabels", () => listLabels("o/r")],
 		["listOpenMilestones", () => listOpenMilestones("o/r")],
@@ -891,6 +893,99 @@ describe("issueTimeline", () => {
 			scripted([[/timeline/, {status: 502, body: {message: "Bad gateway"}}]]),
 		);
 		expect(result._tag).toBe("Failure");
+	});
+});
+
+describe("timelineFacts", () => {
+	it("keeps same-repository references with their state, and every reopen", async () => {
+		const http = scripted([
+			[
+				/timeline/,
+				{
+					status: 200,
+					body: [
+						{event: "labeled"},
+						{event: "reopened", created_at: "2026-10-02T00:00:00Z"},
+						{
+							event: "cross-referenced",
+							source: {
+								issue: {
+									number: 12,
+									title: 'Revert "Faster exports"',
+									state: "closed",
+									created_at: "2026-10-01T00:00:00Z",
+									labels: [],
+									repository_url: "https://api.github.com/repos/o/r",
+									pull_request: {url: "u", merged_at: "2026-10-01T01:00:00Z"},
+								},
+							},
+						},
+						{
+							event: "cross-referenced",
+							source: {
+								issue: {
+									number: 13,
+									title: "Exports crash",
+									state: "open",
+									created_at: "2026-10-03T00:00:00Z",
+									labels: [{name: "type:bug"}],
+									repository_url: "https://api.github.com/repos/o/r",
+								},
+							},
+						},
+						{
+							event: "cross-referenced",
+							source: {
+								issue: {
+									number: 9,
+									title: "Elsewhere",
+									state: "open",
+									created_at: "2026-10-03T00:00:00Z",
+									labels: [],
+									repository_url: "https://api.github.com/repos/other/repo",
+								},
+							},
+						},
+					],
+				},
+			],
+		]);
+		expect(await against(timelineFacts("o/r", 7), http)).toEqual({
+			_tag: "Ok",
+			value: {
+				reopenedAt: ["2026-10-02T00:00:00Z"],
+				references: [
+					{
+						number: 12,
+						title: 'Revert "Faster exports"',
+						isPullRequest: true,
+						open: false,
+						merged: true,
+						labels: [],
+						createdAt: "2026-10-01T00:00:00Z",
+					},
+					{
+						number: 13,
+						title: "Exports crash",
+						isPullRequest: false,
+						open: true,
+						merged: false,
+						labels: ["type:bug"],
+						createdAt: "2026-10-03T00:00:00Z",
+					},
+				],
+			},
+		});
+	});
+
+	it("refuses a cross-reference it cannot read rather than dropping it", async () => {
+		const http = scripted([
+			[
+				/timeline/,
+				{status: 200, body: [{event: "cross-referenced", source: {issue: {number: 1}}}]},
+			],
+		]);
+		expect((await against(timelineFacts("o/r", 7), http))._tag).toBe("Failure");
 	});
 });
 

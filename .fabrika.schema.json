@@ -682,6 +682,39 @@
 					"minimum": 1,
 					"description": "Days after ship before a bet returns as `check`. Default 14."
 				},
+				"evidenceSources": {
+					"type": "array",
+					"description": "Commands `fabrika table prep` runs for each shipped bet it brings back as a check; each one's standard output is attached to the check as text. Each runs as an argv (never through a shell) in the repository root, with only PATH, HOME, LANG, LC_ALL, TZ and TMPDIR inherited plus FABRIKA_CHECK_REPO, FABRIKA_CHECK_ISSUE, FABRIKA_CHECK_PRS (space-separated) and FABRIKA_CHECK_SHIPPED_AT. A source that exits non-zero, times out or cannot start is reported on the check and prep goes on. Default none: the check still carries the Success line, GitHub signals and fabrika's own numbers.",
+					"items": {
+						"type": "object",
+						"properties": {
+							"name": {
+								"type": "string",
+								"minLength": 1,
+								"description": "The name the check shows the output under."
+							},
+							"command": {
+								"type": "array",
+								"items": {
+									"type": "string"
+								},
+								"minItems": 1,
+								"description": "The argv to run — e.g. [\"pnpm\", \"metrics\", \"--since\", \"14d\"]."
+							},
+							"timeoutSeconds": {
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 600,
+								"description": "Seconds before the source is stopped and reported as timed out. Default 60, at most 600."
+							}
+						},
+						"required": [
+							"name",
+							"command"
+						],
+						"additionalProperties": false
+					}
+				},
 				"project": {
 					"type": "object",
 					"description": "Which GitHub project holds the table. Leave both out to have `fabrika table setup` find or create one on the repository's own owner.",

@@ -38,6 +38,7 @@ import {FIELD} from "./shape.ts";
 import type {Row, Write} from "./sync.ts";
 
 export const PROPOSED = "proposed";
+export const CHECK_STAGE = "check";
 export const READY_FOR_HUMAN = "ready-for:human";
 
 export const TAILS = "Tails";
@@ -300,7 +301,7 @@ export interface RowCells {
 const flat = (text: string): string => text.replace(/\s+/g, " ").trim();
 
 /** The issue's own plain-language summary, else its title: one line either way. */
-export const plainWordsOf = (issue: ListedIssue): string => {
+export const plainWordsOf = (issue: Pick<ListedIssue, "title" | "body">): string => {
 	const read = readPlainSummary(issue.body);
 	return read._tag === "Found" ? flat(read.value.summary) : flat(issue.title);
 };
@@ -471,6 +472,16 @@ export interface PrepInput {
 	readonly rollover: ReadonlyArray<number>;
 	/** `proposed` rows whose issue has closed. */
 	readonly removals: ReadonlyArray<number>;
+	/** Shipped rows coming back as checks, each already a row whatever its issue's state. */
+	readonly checks: ReadonlyArray<CheckRow>;
+}
+
+/** The cells a check row carries. Its Size, Outcome and every other cell stay as they read. */
+export interface CheckRow {
+	readonly issue: number;
+	readonly section: string;
+	readonly rec: string;
+	readonly plainWords: string;
 }
 
 /**
@@ -560,6 +571,44 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 			);
 		}
 		if (textOf(row, FIELD.rec) !== null) clear(row, FIELD.rec, fields.rec);
+	}
+
+	for (const check of input.checks) {
+		const row = rows.get(check.issue);
+		if (row === undefined) continue;
+		if (optionOf(row, FIELD.stage) !== CHECK_STAGE) {
+			setOn(row, FIELD.stage, fields.stage.id, option(fields.stage, CHECK_STAGE), CHECK_STAGE);
+		}
+		if (optionOf(row, FIELD.section) !== check.section) {
+			setOn(
+				row,
+				FIELD.section,
+				fields.section.id,
+				option(fields.section, check.section),
+				check.section,
+			);
+		}
+		if (weekOf(row) !== target.id) {
+			setOn(
+				row,
+				FIELD.week,
+				fields.week,
+				{_tag: "Iteration", iterationId: target.id},
+				target.title,
+			);
+		}
+		if (textOf(row, FIELD.rec) !== check.rec) {
+			setOn(row, FIELD.rec, fields.rec, {_tag: "Text", text: check.rec}, `"${check.rec}"`);
+		}
+		if (textOf(row, FIELD.plainWords) !== check.plainWords) {
+			setOn(
+				row,
+				FIELD.plainWords,
+				fields.plainWords,
+				{_tag: "Text", text: check.plainWords},
+				`"${check.plainWords}"`,
+			);
+		}
 	}
 
 	for (const issue of input.removals) {

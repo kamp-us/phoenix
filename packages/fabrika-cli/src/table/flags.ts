@@ -49,6 +49,8 @@ export interface HeadRow {
 	readonly children: number;
 	/** The Stage values set on the group's member rows. */
 	readonly memberStages: ReadonlyArray<string>;
+	/** The head row's Origin option, or `null` when it has none. */
+	readonly origin: string | null;
 }
 
 export const sizeOf = (name: string | null): Size | null =>

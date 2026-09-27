@@ -67,6 +67,20 @@ export interface FabrikaShare {
 	readonly labels: ReadonlyArray<string>;
 }
 
+/**
+ * One declared evidence source: a command `table prep` runs for each bet it brings back as a check,
+ * whose output is attached to the check as text. An argv, never a shell line, and bounded by its
+ * timeout, so a source can only add text and can never hang or load anything into prep.
+ */
+export interface EvidenceSource {
+	readonly name: string;
+	readonly command: readonly [string, ...ReadonlyArray<string>];
+	readonly timeoutSeconds: number;
+}
+
+export const EVIDENCE_TIMEOUT_DEFAULT = 60;
+export const EVIDENCE_TIMEOUT_MAX = 600;
+
 /** Which project the table lives in. A `null` field is derived: the repo's owner, or a new project. */
 export interface ProjectTarget {
 	readonly owner: string | null;
@@ -90,6 +104,8 @@ export interface TableSettings {
 	readonly fabrikaShare: FabrikaShare;
 	/** Days after ship before a bet returns as `check`. */
 	readonly checkDelayDays: number;
+	/** Commands whose output a check carries. Empty: the check carries GitHub's and fabrika's own evidence. */
+	readonly evidenceSources: ReadonlyArray<EvidenceSource>;
 	readonly project: ProjectTarget;
 }
 
@@ -104,6 +120,7 @@ export const SHIPPED_TABLE: TableSettings = {
 	activeCampaignFlag: 3,
 	fabrikaShare: {percent: 40, forTables: 4, thenPercent: 30, labels: []},
 	checkDelayDays: 14,
+	evidenceSources: [],
 	project: {owner: null, number: null},
 };
 
@@ -222,6 +239,60 @@ const login: Field<string> = (raw, path) =>
 		? {_tag: "Value", value: raw}
 		: malformed(`${named(path)} is not a GitHub user or organization login`);
 
+const evidenceSource = (raw: unknown, path: string): Decoded<EvidenceSource> => {
+	const record = asRecord(raw);
+	if (record === null) return malformed(`${named(path)} is not an object`);
+	const known = ["name", "command", "timeoutSeconds"];
+	const stray = Object.keys(record).find((key) => !known.includes(key));
+	if (stray !== undefined) {
+		return malformed(`${named(child(path, stray))} is not a setting — one of ${known.join(", ")}`);
+	}
+	const {name, command, timeoutSeconds} = record;
+	if (typeof name !== "string" || name.trim() === "") {
+		return malformed(`${named(child(path, "name"))} is not a source name`);
+	}
+	if (
+		!Array.isArray(command) ||
+		command.length === 0 ||
+		command.some((part) => typeof part !== "string") ||
+		(command[0] as string).trim() === ""
+	) {
+		return malformed(
+			`${named(child(path, "command"))} is not a non-empty argv of strings — e.g. ["pnpm", "metrics"]`,
+		);
+	}
+	const timeout = timeoutSeconds ?? EVIDENCE_TIMEOUT_DEFAULT;
+	if (
+		typeof timeout !== "number" ||
+		!Number.isInteger(timeout) ||
+		timeout < 1 ||
+		timeout > EVIDENCE_TIMEOUT_MAX
+	) {
+		return malformed(
+			`${named(child(path, "timeoutSeconds"))} is not a whole number of seconds from 1 to ${EVIDENCE_TIMEOUT_MAX}`,
+		);
+	}
+	const [binary, ...args] = command as string[];
+	return {
+		_tag: "Value",
+		value: {name: name.trim(), command: [binary as string, ...args], timeoutSeconds: timeout},
+	};
+};
+
+const evidenceSources: Field<ReadonlyArray<EvidenceSource>> = (raw, path) => {
+	if (!Array.isArray(raw)) return malformed(`${named(path)} is not a list of evidence sources`);
+	const sources: EvidenceSource[] = [];
+	for (const [index, entry] of raw.entries()) {
+		const decoded = evidenceSource(entry, `${path}[${index}]`);
+		if (decoded._tag === "Malformed") return decoded;
+		if (sources.some((one) => one.name === decoded.value.name)) {
+			return malformed(`${named(path)} names the source "${decoded.value.name}" twice`);
+		}
+		sources.push(decoded.value);
+	}
+	return {_tag: "Value", value: sources};
+};
+
 const SUB_KEYS: {readonly [K in keyof TableSettings]: Field<TableSettings[K]>} = {
 	cadence: oneOf(CADENCES),
 	day: oneOf(WEEKDAYS),
@@ -236,6 +307,7 @@ const SUB_KEYS: {readonly [K in keyof TableSettings]: Field<TableSettings[K]>} =
 		SHIPPED_TABLE.fabrikaShare,
 	),
 	checkDelayDays: positiveInteger,
+	evidenceSources,
 	project: objectOf<ProjectTarget>(
 		{owner: nullable(login), number: nullable(positiveInteger)},
 		SHIPPED_TABLE.project,
@@ -316,6 +388,35 @@ export const tableKey: KeyGroup<TableSettings> = {
 				additionalProperties: false,
 			},
 			checkDelayDays: integer("Days after ship before a bet returns as `check`. Default 14."),
+			evidenceSources: {
+				type: "array",
+				description:
+					"Commands `fabrika table prep` runs for each shipped bet it brings back as a check; each one's standard output is attached to the check as text. Each runs as an argv (never through a shell) in the repository root, with only PATH, HOME, LANG, LC_ALL, TZ and TMPDIR inherited plus FABRIKA_CHECK_REPO, FABRIKA_CHECK_ISSUE, FABRIKA_CHECK_PRS (space-separated) and FABRIKA_CHECK_SHIPPED_AT. A source that exits non-zero, times out or cannot start is reported on the check and prep goes on. Default none: the check still carries the Success line, GitHub signals and fabrika's own numbers.",
+				items: {
+					type: "object",
+					properties: {
+						name: {
+							type: "string",
+							minLength: 1,
+							description: "The name the check shows the output under.",
+						},
+						command: {
+							type: "array",
+							items: {type: "string"},
+							minItems: 1,
+							description: 'The argv to run — e.g. ["pnpm", "metrics", "--since", "14d"].',
+						},
+						timeoutSeconds: {
+							type: "integer",
+							minimum: 1,
+							maximum: EVIDENCE_TIMEOUT_MAX,
+							description: `Seconds before the source is stopped and reported as timed out. Default ${EVIDENCE_TIMEOUT_DEFAULT}, at most ${EVIDENCE_TIMEOUT_MAX}.`,
+						},
+					},
+					required: ["name", "command"],
+					additionalProperties: false,
+				},
+			},
 			project: {
 				type: "object",
 				description:

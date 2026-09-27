@@ -29,6 +29,7 @@ export const FIELD = {
 	origin: "Origin",
 	rec: "Rec",
 	plainWords: "In plain words",
+	outcome: "Outcome",
 	week: "Week",
 } as const;
 
@@ -53,6 +54,13 @@ export const ORIGINS: ReadonlyArray<Choice> = [
 	{name: "driver pick", description: "The driving agent picked it without a bet."},
 	{name: "found mid-lane", description: "Found while doing other work."},
 	{name: "experiment", description: "A try-it-and-see."},
+];
+
+/** A person's answer to a check. Prep and sync never write it, so the answer stands once given. */
+export const OUTCOMES: ReadonlyArray<Choice> = [
+	{name: "worked", description: "It did what its Success line said."},
+	{name: "didn't", description: "It did not do what its Success line said."},
+	{name: "can't tell", description: "The evidence does not say either way."},
 ];
 
 const KNOWN_SECTIONS: Readonly<Record<string, string>> = {
@@ -113,6 +121,7 @@ const WIDE_FIELDS: ReadonlyArray<string> = [
 	FIELD.spent,
 	FIELD.asks,
 	FIELD.rec,
+	FIELD.outcome,
 	FIELD.week,
 ];
 
@@ -120,7 +129,7 @@ export const VIEWS: ReadonlyArray<ViewShape> = [
 	{
 		name: "Agenda",
 		layout: "TABLE_LAYOUT",
-		filter: `is:open ${filterKey(FIELD.week)}:@current has:${filterKey(FIELD.section)} -${filterKey(FIELD.section)}:${quote(OUTSIDE_THE_BETS)} has:${filterKey(FIELD.rec)}`,
+		filter: `${filterKey(FIELD.week)}:@current has:${filterKey(FIELD.section)} -${filterKey(FIELD.section)}:${quote(OUTSIDE_THE_BETS)} has:${filterKey(FIELD.rec)}`,
 		fields: [
 			FIELD.title,
 			FIELD.stage,
@@ -129,6 +138,7 @@ export const VIEWS: ReadonlyArray<ViewShape> = [
 			FIELD.asks,
 			FIELD.rec,
 			FIELD.plainWords,
+			FIELD.outcome,
 		],
 	},
 	{
@@ -206,6 +216,7 @@ export const renderReadme = (
 		"## Before the table (fabrika does this)",
 		`- Adds up to ${settings.agendaCap} **proposed** rows, each with a size, a rec and a line in plain words.`,
 		"- Carries every running bet into the new week. Only a flagged one comes back on the agenda; the rest keep going quietly, with no rec.",
+		`- Brings back every bet **shipped** ${settings.checkDelayDays} days ago or more as a **check**, with its evidence posted on the issue. A bet is a row whose **${FIELD.origin}** reads \`bet\`; a row that ran without a bet stays where it is.`,
 		"- Posts the health numbers as the project's **status update**.",
 		`- Needs the week to exist: keep the coming weeks added under **${FIELD.week}** in the project's settings.`,
 		"",
@@ -213,7 +224,8 @@ export const renderReadme = (
 		"1. Read the latest status update: click the status badge at the top of the project.",
 		`2. Open **Agenda** and go top to bottom: ${agendaOrder}.`,
 		`3. Per row: read **${FIELD.plainWords}** and the **${FIELD.rec}**, then set **${FIELD.stage}** to \`bet\` or \`not now\`. Open the issue only if that isn't enough.`,
-		`4. Open **${OUTSIDE_THE_BETS}**: for each thing that ran without a bet, say keep, finish, or drop.`,
+		`4. Per **check** row: read the check comment on its issue, then set **${FIELD.outcome}** to ${OUTCOMES.map((outcome) => `\`${outcome.name}\``).join(", ")}.`,
+		`5. Open **${OUTSIDE_THE_BETS}**: for each thing that ran without a bet, say keep, finish, or drop.`,
 		"",
 		"## During the week",
 		"- **Lanes** is the board: what's bet, in a lane, shipped, or due for its check.",
@@ -258,7 +270,9 @@ export const renderReadme = (
 		`## ${FIELD.plainWords}`,
 		"One line saying what the row is, written for a person deciding it.",
 		"",
-		`A shipped bet comes back as \`check\` ${settings.checkDelayDays} days after it ships.`,
+		`## ${FIELD.outcome}: did it work?`,
+		`A shipped bet comes back as \`check\` ${settings.checkDelayDays} days after it ships, with its Success line, what happened on GitHub since, and any evidence this repository collects. Answer it here; fabrika never changes the answer.`,
+		...OUTCOMES.map((outcome) => `- **${outcome.name}**: ${outcome.description}`),
 	];
 	return lines.join("\n");
 };
@@ -300,6 +314,7 @@ export const tableShape = (
 			{_tag: "SingleSelect", name: FIELD.origin, options: options(ORIGINS)},
 			{_tag: "Text", name: FIELD.rec},
 			{_tag: "Text", name: FIELD.plainWords},
+			{_tag: "SingleSelect", name: FIELD.outcome, options: options(OUTCOMES)},
 			{
 				_tag: "Iteration",
 				name: FIELD.week,

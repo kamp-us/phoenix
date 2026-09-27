@@ -24,6 +24,8 @@ const DAY_MS = 86_400_000;
 /** Lane outcomes that mean the work landed. */
 const LANDED: ReadonlySet<string> = new Set(["complete", "board:landed"]);
 
+export const isLanded = (lane: LaneRecord): boolean => LANDED.has(lane.outcome);
+
 /** The next table day on or after `now`, at midnight UTC. */
 export const nextTableDay = (settings: TableSettings, now: Date): Date => {
 	const ahead = (WEEKDAYS.indexOf(settings.day) - now.getUTCDay() + 7) % 7;
@@ -128,7 +130,7 @@ export const healthOf = (input: HealthInput): Health => {
 	}
 	return {
 		lanes: lanes.length,
-		landed: lanes.filter((lane) => LANDED.has(lane.outcome)).length,
+		landed: lanes.filter(isLanded).length,
 		staleLanes: input.flags.filter((flag) => flag._tag === "Stuck").length,
 		spentUsd: cents(spentUsd),
 		unmeasuredLanes,
