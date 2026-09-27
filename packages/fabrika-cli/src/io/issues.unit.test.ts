@@ -13,6 +13,7 @@ import {
 	addLabels,
 	clearMilestone,
 	closeCompleted,
+	closedIssuesWithLabel,
 	closeNotPlanned,
 	createComment,
 	createIssue,
@@ -25,6 +26,7 @@ import {
 	listCommentsReconciled,
 	listLabels,
 	listMilestones,
+	listOpenIssueFacts,
 	listOpenIssues,
 	listOpenMilestones,
 	openIssuesTitled,
@@ -427,6 +429,59 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 			scripted([[/issues/, {status: 200, body: [{message: "Not Found"}]}]]),
 		);
 		expect(refused._tag).toBe("Failure");
+	});
+
+	it("listOpenIssueFacts carries who filed each issue and how they relate to the repository", async () => {
+		const read = await against(
+			listOpenIssueFacts("o/r"),
+			scripted([
+				[
+					/issues/,
+					{
+						status: 200,
+						body: [
+							issue({number: 1, author_association: "NONE"}),
+							issue({number: 2, pull_request: {}}),
+							issue({number: 3}),
+						],
+					},
+				],
+			]),
+		);
+		expect(read).toMatchObject({
+			_tag: "Ok",
+			value: [
+				{number: 1, association: "NONE"},
+				{number: 3, association: ""},
+			],
+		});
+	});
+
+	it("closedIssuesWithLabel reads a settled sub-issue summary as no open child, and a missing one as maybe", async () => {
+		const read = await against(
+			closedIssuesWithLabel("o/r", "type:epic"),
+			scripted([
+				[
+					/state=closed&labels=type%3Aepic/,
+					{
+						status: 200,
+						body: [
+							issue({number: 1, sub_issues_summary: {total: 3, completed: 3}}),
+							issue({number: 2, sub_issues_summary: {total: 3, completed: 2}}),
+							issue({number: 4}),
+						],
+					},
+				],
+			]),
+		);
+		expect(read).toEqual({
+			_tag: "Ok",
+			value: [
+				{number: 1, mayHaveOpenChildren: false},
+				{number: 2, mayHaveOpenChildren: true},
+				{number: 4, mayHaveOpenChildren: true},
+			],
+		});
 	});
 });
 

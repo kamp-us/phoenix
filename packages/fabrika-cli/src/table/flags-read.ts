@@ -16,7 +16,7 @@ import {PRECONDITION_UNKNOWN, SCOPE_MISSING} from "./codes.ts";
 import {type HeadRow, type StageCell, sizeOf} from "./flags.ts";
 import {membersOf} from "./group.ts";
 import {FIELD} from "./shape.ts";
-import type {Row} from "./sync.ts";
+import type {Row, SyncNode} from "./sync.ts";
 import {type Refusal, readRecords, readScope, rowsOf, type TableBoard} from "./sync-verb.ts";
 
 export interface Heads {
@@ -24,6 +24,10 @@ export interface Heads {
 	readonly project: ProjectSnapshot;
 	readonly rows: ReadonlyArray<HeadRow>;
 	readonly records: ReadonlyMap<number, ReadonlyArray<LaneRecord>>;
+	/** Every row of the repository's issues on the table, by issue. */
+	readonly table: ReadonlyMap<number, Row>;
+	/** The issue graph read to decide the rows' groups. */
+	readonly graph: ReadonlyMap<number, SyncNode>;
 }
 
 const refused = (code: number, reason: string): Refusal => ({_tag: "Refused", code, reason});
@@ -95,5 +99,12 @@ export const readHeads = <R>(
 				},
 			];
 		});
-		return {_tag: "Heads", project, rows: heads, records: read.records};
+		return {
+			_tag: "Heads",
+			project,
+			rows: heads,
+			records: read.records,
+			table: rows,
+			graph: scoped.graph,
+		};
 	});

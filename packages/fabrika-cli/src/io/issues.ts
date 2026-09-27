@@ -982,6 +982,85 @@ export const openUnlabeledIssues = (repo: string): Shell<Attempt<ReadonlyArray<Q
 export const listOpenIssues = (repo: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
 	openIssueRecords(`repos/${repo}/issues?state=open`);
 
+/** An open issue as the table's agenda reads it: its words, its labels, and who filed it. */
+export interface ListedIssue {
+	readonly number: number;
+	readonly title: string;
+	readonly body: string;
+	readonly labels: ReadonlyArray<string>;
+	readonly author: string;
+	/**
+	 * GitHub's `author_association`: `OWNER`, `MEMBER` or `COLLABORATOR` for someone who works on the
+	 * repository, anything else for someone who only uses it. `""` when the payload carried none.
+	 */
+	readonly association: string;
+}
+
+/**
+ * Every open issue with its filer's association, paged, pull requests filtered out. One list read,
+ * so the agenda sorts the whole open board without reading any issue twice.
+ */
+export const listOpenIssueFacts = (repo: string): Shell<Attempt<ReadonlyArray<ListedIssue>>> =>
+	withToken((token) =>
+		Effect.map(provenList(token, `repos/${repo}/issues?state=open`), (read) =>
+			then(read, (entries) => {
+				const out: ListedIssue[] = [];
+				for (const value of withoutPullRequests(entries)) {
+					const record = toIssueRecord(value);
+					if (record === null || !isRecord(value)) {
+						return fail("GitHub answered 200 but one entry is not an issue");
+					}
+					out.push({
+						number: record.number,
+						title: record.title,
+						body: record.body,
+						labels: record.labels,
+						author: record.author,
+						association:
+							typeof value.author_association === "string" ? value.author_association : "",
+					});
+				}
+				return ok(out);
+			}),
+		),
+	);
+
+/** A closed issue and whether it still has sub-issues open, as far as its list entry says. */
+export interface ClosedParent {
+	readonly number: number;
+	/**
+	 * `false` when the entry's `sub_issues_summary` proves every sub-issue closed (or none exist);
+	 * `true` otherwise, including when the entry carried no summary, so the caller reads the children.
+	 */
+	readonly mayHaveOpenChildren: boolean;
+}
+
+/** Every closed issue carrying `label`, paged, pull requests filtered out. */
+export const closedIssuesWithLabel = (
+	repo: string,
+	label: string,
+): Shell<Attempt<ReadonlyArray<ClosedParent>>> =>
+	withToken((token) =>
+		Effect.map(
+			provenList(token, `repos/${repo}/issues?state=closed&labels=${encodeURIComponent(label)}`),
+			(read) =>
+				then(read, (entries) => {
+					const out: ClosedParent[] = [];
+					for (const value of withoutPullRequests(entries)) {
+						if (!isRecord(value) || typeof value.number !== "number") return fail(NOT_ISSUES);
+						const summary = isRecord(value.sub_issues_summary) ? value.sub_issues_summary : null;
+						const settled =
+							summary !== null &&
+							typeof summary.total === "number" &&
+							typeof summary.completed === "number" &&
+							summary.completed >= summary.total;
+						out.push({number: value.number, mayHaveOpenChildren: !settled});
+					}
+					return ok(out);
+				}),
+		),
+	);
+
 /** All issues, including closed and unlabelled partial creates; no search index is involved. */
 export const listAllIssueRecords = (repo: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
 	withToken((token) =>

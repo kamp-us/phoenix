@@ -282,3 +282,17 @@ next shell. `lane brief` refuses at exit 71 and the driver parks the lane with c
 The stop needs the `project` scope on the driver's token. Without it, a repo whose `.fabrika.jsonc`
 has no `table` block is not stopped: `lane brief` goes on and prints `size stop NOT checked`. Once
 you declare `table.project.number`, a missing scope refuses the brief at 11 instead.
+
+**Prep fills the agenda before each table.** Run `fabrika table prep` before the table meets. It
+readies the Week iteration your next table day falls in. That iteration must already exist, so keep
+the coming weeks added under the Week field in the project's settings: GitHub's API can only add one
+by rewriting the whole list, which empties every row's Week, so prep stops at exit 25 instead. Prep
+proposes up to `table.agendaCap` rows (25 by default), section by section: Tails, Customers, then
+New bets. Every row is a real, open issue with a Size, a Rec and an In plain words line taken from
+the summary triage writes. A row with open blockers comes as one chain row with them. A row that
+waits on a ruling reads "needs your pick" with its options. A customer report nobody triaged is
+listed for triage first instead of proposed. Running bets move into the new week: a flagged one
+comes back under Tails, the rest keep going with no agenda row. Prep then posts the week's health as
+the project's status update, Inbox count included. Once that update stands, a second run adds
+nothing. The Agenda view shows only rows with a Rec, so re-run `fabrika table setup` once after
+upgrading to align its filter.

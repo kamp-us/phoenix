@@ -120,7 +120,7 @@ export const VIEWS: ReadonlyArray<ViewShape> = [
 	{
 		name: "Agenda",
 		layout: "TABLE_LAYOUT",
-		filter: `is:open ${filterKey(FIELD.week)}:@current has:${filterKey(FIELD.section)} -${filterKey(FIELD.section)}:${quote(OUTSIDE_THE_BETS)}`,
+		filter: `is:open ${filterKey(FIELD.week)}:@current has:${filterKey(FIELD.section)} -${filterKey(FIELD.section)}:${quote(OUTSIDE_THE_BETS)} has:${filterKey(FIELD.rec)}`,
 		fields: [
 			FIELD.title,
 			FIELD.stage,
@@ -205,7 +205,9 @@ export const renderReadme = (
 		"",
 		"## Before the table (fabrika does this)",
 		`- Adds up to ${settings.agendaCap} **proposed** rows, each with a size, a rec and a line in plain words.`,
+		"- Carries every running bet into the new week. Only a flagged one comes back on the agenda; the rest keep going quietly, with no rec.",
 		"- Posts the health numbers as the project's **status update**.",
+		`- Needs the week to exist: keep the coming weeks added under **${FIELD.week}** in the project's settings.`,
 		"",
 		"## At the table",
 		"1. Read the latest status update: click the status badge at the top of the project.",

@@ -13,6 +13,7 @@ import {
 	addItem,
 	clearFieldValue,
 	createField,
+	deleteItem,
 	PROJECT_SCOPE_FIX,
 	postStatusUpdate,
 	readItems,
@@ -20,6 +21,8 @@ import {
 	readIterationHistory,
 	readProjectByNumber,
 	readRepository,
+	readStatusUpdates,
+	readStatusUpdatesPage,
 	readWeekField,
 	scopeWithheld,
 	setFieldValue,
@@ -555,5 +558,45 @@ describe("the Week field's history", () => {
 		const cut = {...week, configuration: {iterations: week.configuration.iterations}};
 
 		expect(readWeekField({node: {field: cut}})._tag).toBe("Failure");
+	});
+});
+
+describe("status updates and item removal", () => {
+	it("reads every status update with its body and start date", async () => {
+		const {result} = await runWith(
+			[
+				reply({
+					data: {
+						node: {
+							statusUpdates: {
+								pageInfo: {hasNextPage: false, endCursor: "MQ"},
+								nodes: [{id: "PVTSU_1", body: "**Table notes**", startDate: "2026-09-26"}],
+							},
+						},
+					},
+				}),
+			],
+			() => readStatusUpdates(TOKEN, "PVT_1"),
+		);
+
+		expect(result).toEqual({
+			_tag: "Ok",
+			value: [{id: "PVTSU_1", body: "**Table notes**", startDate: "2026-09-26"}],
+		});
+	});
+
+	it("fails rather than read a malformed update as none", () => {
+		expect(
+			readStatusUpdatesPage({node: {statusUpdates: {pageInfo: {}, nodes: [{id: "PVTSU_1"}]}}})._tag,
+		).toBe("Failure");
+	});
+
+	it("answers the deleted item's id", async () => {
+		const {result} = await runWith(
+			[reply({data: {deleteProjectV2Item: {deletedItemId: "PVTI_1"}}})],
+			() => deleteItem(TOKEN, "PVT_1", "PVTI_1"),
+		);
+
+		expect(result).toEqual({_tag: "Ok", value: "PVTI_1"});
 	});
 });

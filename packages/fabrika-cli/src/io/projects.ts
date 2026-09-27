@@ -1244,6 +1244,94 @@ export const postStatusUpdate = (
 			: fail("GitHub answered 200 but posted no status update");
 	});
 
+/** One status update as the table reads it back. */
+export interface StatusUpdate {
+	readonly id: string;
+	readonly body: string;
+	/** `YYYY-MM-DD`, or `null` when the update names no start. */
+	readonly startDate: string | null;
+}
+
+const STATUS_UPDATES_QUERY = `
+query TableStatusUpdates($id: ID!, $cursor: String) {
+  node(id: $id) {
+    ... on ProjectV2 {
+      statusUpdates(first: 50, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { id body startDate }
+      }
+    }
+  }
+}`;
+
+/** One page of a project's status updates, parsed; exported so a recorded page can prove the parse. */
+export const readStatusUpdatesPage = (
+	data: Record<string, unknown>,
+): Attempt<{readonly updates: ReadonlyArray<StatusUpdate>; readonly next: string | null}> => {
+	const project = isRecord(data.node) ? data.node : null;
+	const connection =
+		project !== null && isRecord(project.statusUpdates) ? project.statusUpdates : null;
+	if (connection === null || !Array.isArray(connection.nodes)) {
+		return fail("GitHub answered 200 but the project lists no status updates");
+	}
+	const updates: StatusUpdate[] = [];
+	for (const node of connection.nodes) {
+		if (!isRecord(node) || !str(node.id) || typeof node.body !== "string") {
+			return fail("GitHub answered 200 but one status update is malformed");
+		}
+		updates.push({
+			id: node.id,
+			body: node.body,
+			startDate: str(node.startDate) ? node.startDate : null,
+		});
+	}
+	return ok({updates, next: nextCursor(connection)});
+};
+
+/** Every status update posted on the project, read to the last page. */
+export const readStatusUpdates = (
+	token: string,
+	projectId: string,
+): Api<ProjectsAnswer<ReadonlyArray<StatusUpdate>>> =>
+	Effect.gen(function* () {
+		const updates: StatusUpdate[] = [];
+		let cursor: string | null = null;
+		for (let page = 0; page < PAGE_CAP; page++) {
+			const answer: ProjectsAnswer<{
+				readonly updates: ReadonlyArray<StatusUpdate>;
+				readonly next: string | null;
+			}> = yield* exchange(
+				token,
+				STATUS_UPDATES_QUERY,
+				{id: projectId, cursor},
+				readStatusUpdatesPage,
+			);
+			if (answer._tag !== "Ok") return answer;
+			updates.push(...answer.value.updates);
+			if (answer.value.next === null) return done(updates);
+			cursor = answer.value.next;
+		}
+		return failed(`project ${projectId} holds more status updates than ${PAGE_CAP} pages hold`);
+	});
+
+const DELETE_ITEM = `
+mutation TableDeleteItem($projectId: ID!, $itemId: ID!) {
+  deleteProjectV2Item(input: {projectId: $projectId, itemId: $itemId}) { deletedItemId }
+}`;
+
+/** Take one item off the project. The issue it stood for is untouched. Answers the deleted id. */
+export const deleteItem = (
+	token: string,
+	projectId: string,
+	itemId: string,
+): Api<ProjectsAnswer<string>> =>
+	exchange(token, DELETE_ITEM, {projectId, itemId}, (data) => {
+		const payload = isRecord(data.deleteProjectV2Item) ? data.deleteProjectV2Item : null;
+		return payload !== null && str(payload.deletedItemId)
+			? ok(payload.deletedItemId)
+			: fail("GitHub answered 200 but deleted no item");
+	});
+
 /**
  * Run `use` under the ambient credential and transport. No credential is `Failed`: it is not a
  * scope problem, and naming the scope fix for a token that does not exist sends the operator to the
