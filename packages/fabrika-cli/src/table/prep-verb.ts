@@ -1,12 +1,15 @@
 /**
- * `table prep` — fill the next table's agenda, carry the running bets into its iteration, and post
- * the week's health as the project's status update.
+ * `table prep` — fill the next table's agenda, carry the running bets into its iteration, bring
+ * the bets shipped long enough ago back as checks, and post the week's health as the project's
+ * status update.
  *
  * Everything is read before anything is written: the rows and their lane records the way
  * `table flags` reads them, the Week iteration the next table day falls in, the status updates
- * already posted, and the open board. The writes then run like `table sync`'s: adds first, the rows
- * re-read so each new item has an id, then the cells, then a last read whose plan must be empty.
- * The status update goes last, so it stands only over an agenda that landed whole.
+ * already posted, the open board, and each check's evidence. Check comments post first, so a re-run
+ * after a later write fails still finds them and posts none twice. The row writes then run like
+ * `table sync`'s: adds first, the rows re-read so each new item has an id, then the cells, then a
+ * last read whose plan must be empty. The status update goes last, so it stands only over an agenda
+ * that landed whole.
  *
  * **One prep per iteration.** The update names its iteration, and once one stands the agenda is
  * closed: a second run adds no row, carries no bet and posts nothing. It still takes a `proposed`
@@ -21,12 +24,16 @@ import {appetiteSizesKey} from "../config/keys/appetite-sizes.ts";
 import {OUTSIDE_THE_BETS, type TableSettings, tableKey} from "../config/keys/table.ts";
 import {readKey} from "../config/read-key.ts";
 import {subIssues} from "../io/edges.ts";
+import {execRecord} from "../io/exec.ts";
 import {type Attempt, fail, ok} from "../io/git.ts";
 import {
 	closedIssuesWithLabel,
+	createComment,
+	getIssue,
 	type ListedIssue,
 	listOpenIssueFacts,
 	resolveRepo,
+	timelineFacts,
 } from "../io/issues.ts";
 import {
 	deleteItem,
@@ -44,6 +51,7 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	type AgendaRow,
 	admit,
+	CHECK_STAGE,
 	candidatesOf,
 	cellsOf,
 	closedProposals,
@@ -52,6 +60,7 @@ import {
 	type FollowUp,
 	onAgenda,
 	optionOf,
+	PROPOSED,
 	type PrepFields,
 	type PrepWrite,
 	planPrep,
@@ -60,6 +69,8 @@ import {
 	textOf,
 } from "./agenda.ts";
 import {BET_STAGE} from "./bets.ts";
+import {dueChecks} from "./check.ts";
+import {type CheckBoard, type GatheredCheck, gatherChecks} from "./check-read.ts";
 import {
 	CONFIG_MALFORMED,
 	NO_ITERATION,
@@ -97,7 +108,14 @@ const VERB = "table prep";
 /** Every board act the verb takes, passed in so the verb stays provable offline. */
 export interface PrepBoard<R>
 	extends Pick<FlagsBoard<R>, "locate" | "items" | "node" | "comments" | "week" | "deciders">,
-		Pick<SyncBoard<R>, "add" | "set" | "clear"> {
+		Pick<SyncBoard<R>, "add" | "set" | "clear">,
+		CheckBoard<R> {
+	/** Post a comment on the issue: a check's evidence. */
+	readonly comment: (
+		repo: string,
+		issue: number,
+		body: string,
+	) => Effect.Effect<Attempt<unknown>, never, R>;
 	readonly statusUpdates: (
 		projectId: string,
 	) => Effect.Effect<ProjectsAnswer<ReadonlyArray<StatusUpdate>>, never, R>;
@@ -156,7 +174,7 @@ export const prepFields = (project: ProjectSnapshot, settings: TableSettings): R
 		}
 		return field.id;
 	};
-	const stage = select(FIELD.stage, ["proposed"]);
+	const stage = select(FIELD.stage, [PROPOSED, CHECK_STAGE]);
 	const section = select(FIELD.section, settings.sections);
 	const size = select(FIELD.size, ["S", "M", "L"]);
 	const rec = text(FIELD.rec);
@@ -433,6 +451,8 @@ export const runPrep = <R>(
 		let selection: Selection = EMPTY_SELECTION;
 		let triageFirst: ReadonlyArray<TriageFirst> = [];
 		let rollover: ReadonlyArray<number> = [];
+		let checks: ReadonlyArray<GatheredCheck> = [];
+		let vanished: ReadonlyArray<number> = [];
 		if (!prepped) {
 			const followUps = yield* board.followUps(repo);
 			if (followUps._tag === "Failure") {
@@ -466,6 +486,19 @@ export const runPrep = <R>(
 				)
 				.map((row) => row.group.head)
 				.sort((a, b) => a - b);
+
+			const gathered = yield* gatherChecks(board, {
+				verb: VERB,
+				repo,
+				cwd: options.cwd,
+				env: options.env,
+				settings: table,
+				now,
+				due: dueChecks(heads.rows, table.checkDelayDays, now),
+				records: heads.records,
+			});
+			if (gathered._tag === "Refused") return refuse(gathered.code, gathered.reason);
+			({checks, vanished} = gathered);
 		}
 
 		const agenda: ReadonlyArray<AgendaRow> = selection.chosen.map((chosen) => ({
@@ -480,6 +513,20 @@ export const runPrep = <R>(
 		}));
 		const outside = outsideOf(heads.table, openSet);
 
+		const commented: number[] = [];
+		for (const check of checks) {
+			if (check.comment === null) continue;
+			const sent = yield* board.comment(repo, check.evidence.issue, check.comment);
+			if (sent._tag === "Failure") {
+				const so = commented.length > 0 ? ` after the check comments on ${numbers(commented)}` : "";
+				return refuse(
+					WRITE_UNKNOWN,
+					`${VERB}: the check comment on #${check.evidence.issue} did not post — UNKNOWN${so}: ${sent.reason}; re-run prep to finish.`,
+				);
+			}
+			commented.push(check.evidence.issue);
+		}
+
 		const converged = yield* converge(board, project, repo, heads.table, (rows) =>
 			planPrep({
 				fields: fields.fields,
@@ -489,6 +536,7 @@ export const runPrep = <R>(
 				agenda,
 				rollover,
 				removals,
+				checks: checks.map((check) => check.row),
 			}),
 		);
 		if (converged._tag === "Refused") return refuse(converged.code, converged.reason);
@@ -567,6 +615,22 @@ export const runPrep = <R>(
 							? [`${VERB}: carried into ${target.title}: ${numbers(rollover)}.`]
 							: []),
 					]),
+			...checks.map(
+				(check) =>
+					`${VERB}: #${check.evidence.issue} is back as a check, shipped ${check.evidence.shippedAt.slice(0, 10)}; its evidence ${check.comment === null ? "already stands" : "was posted"} on the issue.`,
+			),
+			...checks.flatMap((check) =>
+				check.evidence.sources.flatMap((source) =>
+					source._tag === "Failed"
+						? [
+								`${VERB}: evidence source "${source.name}" on #${check.evidence.issue} failed: ${source.reason}.`,
+							]
+						: [],
+				),
+			),
+			...vanished.map(
+				(issue) => `${VERB}: #${issue} is shipped and due a check, but it is no issue any more.`,
+			),
 			...triageFirst.map(
 				(one) =>
 					`${VERB}: #${one.issue} is a Customers report to triage first${one.waitingOnFiler ? " — waiting on filer" : ""}.`,
@@ -582,11 +646,13 @@ export const runPrep = <R>(
 			),
 			...changes.map((change) => `${VERB}: ${change}.`),
 			...(posted ? [`${VERB}: posted the status update for ${target.title}.`] : []),
-			...(changes.length === 0 && !posted ? [`${VERB}: nothing was written.`] : []),
+			...(changes.length === 0 && commented.length === 0 && !posted
+				? [`${VERB}: nothing was written.`]
+				: []),
 		];
 		return answer(
 			`${JSON.stringify({
-				answer: changes.length > 0 || posted ? "prepped" : "unchanged",
+				answer: changes.length > 0 || commented.length > 0 || posted ? "prepped" : "unchanged",
 				repo,
 				project: {number: project.number, title: project.title, url: project.url},
 				iteration: {id: target.id, title: target.title, startDate: target.startDate},
@@ -597,6 +663,11 @@ export const runPrep = <R>(
 					flagged: agenda.filter((row) => row.flaggedBet).map((row) => row.issue),
 				},
 				removed: removals,
+				checks: checks.map((check) => ({
+					...check.evidence,
+					rec: check.row.rec,
+					comment: check.comment === null ? "standing" : "posted",
+				})),
 				triageFirst,
 				outside,
 				health: {posted, alreadyPosted: prepped, ...health},
@@ -640,5 +711,9 @@ export const prepBoard: PrepBoard<
 	openIssues: listOpenIssueFacts,
 	followUps: readFollowUps,
 	remove: (projectId, itemId) => withProjects((token) => deleteItem(token, projectId, itemId)),
+	issue: getIssue,
+	timeline: timelineFacts,
+	comment: createComment,
+	source: execRecord,
 	post: (projectId, update) => withProjects((token) => postStatusUpdate(token, projectId, update)),
 };

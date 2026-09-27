@@ -8,7 +8,8 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeShell, unconfigured} from "../fakes.test-support.ts";
-import {absent, type ListedIssue, present} from "../io/issues.ts";
+import type {ChildOutcome, ChildRequest} from "../io/exec.ts";
+import {absent, type ListedIssue, present, type TimelineFacts} from "../io/issues.ts";
 import type {
 	BoardIteration,
 	FieldValue,
@@ -20,9 +21,10 @@ import type {
 	StatusUpdateInput,
 } from "../io/projects.ts";
 import {emit, type Instant, type LaneRecord} from "../wire/lane-record.ts";
+import {checkMarker} from "./check.ts";
 import {NO_ITERATION} from "./codes.ts";
 import {type PrepBoard, runPrep} from "./prep-verb.ts";
-import {ORIGINS, STAGES} from "./shape.ts";
+import {ORIGINS, OUTCOMES, STAGES} from "./shape.ts";
 import type {SyncNode} from "./sync.ts";
 
 const REPO = "acme/widgets";
@@ -69,6 +71,11 @@ const PROJECT: ProjectSnapshot = {
 		),
 		{_tag: "Plain", id: "F_rec", name: "Rec", dataType: "TEXT"},
 		{_tag: "Plain", id: "F_plain", name: "In plain words", dataType: "TEXT"},
+		selectField(
+			"F_outcome",
+			"Outcome",
+			OUTCOMES.map((outcome) => outcome.name),
+		),
 		{_tag: "Iteration", id: "F_week", name: "Week", duration: 7, startDay: 1},
 	],
 	views: [],
@@ -86,6 +93,7 @@ interface IssueSpec {
 	readonly subIssues?: ReadonlyArray<number>;
 	readonly blockedBy?: ReadonlyArray<number>;
 	readonly records?: ReadonlyArray<LaneRecord>;
+	readonly timeline?: TimelineFacts;
 }
 
 type Cells = Readonly<Record<string, string | number>>;
@@ -200,10 +208,20 @@ const ROWS: Readonly<Record<number, Cells>> = {
 	90: {Stage: "in lane", Section: "Outside the bets", Origin: "driver pick", "Spent $": 12},
 };
 
+const ran = (stdout: string, exitCode: number | null = 0, stderr = ""): ChildOutcome => ({
+	_tag: "Ran",
+	exitCode,
+	timedOut: exitCode === null,
+	stdout: new TextEncoder().encode(stdout),
+	stderr: new TextEncoder().encode(stderr),
+	truncated: false,
+});
+
 const world = (
 	issues: Readonly<Record<number, IssueSpec>> = ISSUES,
 	rows: Readonly<Record<number, Cells>> = ROWS,
 	iterations: ReadonlyArray<BoardIteration> = [PREVIOUS, NEXT],
+	source: (request: ChildRequest) => ChildOutcome = () => ran(""),
 ) => {
 	const ok = <A>(value: A): ProjectsAnswer<A> => ({_tag: "Ok", value});
 	const items = new Map<number, {itemId: string; values: ItemFieldValue[]}>();
@@ -221,6 +239,8 @@ const world = (
 	}
 	const updates: StatusUpdate[] = [];
 	const posts: StatusUpdateInput[] = [];
+	const comments = new Map<number, string[]>();
+	const spawned: ChildRequest[] = [];
 	const itemByid = (itemId: string) => [...items.values()].find((item) => item.itemId === itemId);
 	const nodeOf = (number: number): SyncNode | null => {
 		const spec = issues[number];
@@ -277,7 +297,45 @@ const world = (
 			return Effect.succeed(found === null ? absent<SyncNode>() : present(found));
 		},
 		comments: (_repo, number) =>
-			Effect.succeed({_tag: "Ok" as const, value: (issues[number]?.records ?? []).map(emit)}),
+			Effect.sync(() => ({
+				_tag: "Ok" as const,
+				value: [...(issues[number]?.records ?? []).map(emit), ...(comments.get(number) ?? [])],
+			})),
+		comment: (_repo, number, body) =>
+			Effect.sync(() => {
+				comments.set(number, [...(comments.get(number) ?? []), body]);
+				return {_tag: "Ok" as const, value: undefined};
+			}),
+		issue: (_repo, number) => {
+			const spec = issues[number];
+			if (spec === undefined) return Effect.succeed(absent());
+			return Effect.succeed(
+				present({
+					number,
+					title: spec.title ?? `Issue ${number}`,
+					body: spec.body ?? "",
+					state: (spec.open ?? true) ? "open" : "closed",
+					labels: spec.labels ?? [],
+					url: `https://github.com/${REPO}/issues/${number}`,
+					author: spec.author ?? OWNER,
+					milestone: null,
+					stateReason: null,
+					comments: 0,
+					isPullRequest: false,
+					parent: {_tag: "None" as const},
+				}),
+			);
+		},
+		timeline: (_repo, number) =>
+			Effect.succeed({
+				_tag: "Ok" as const,
+				value: issues[number]?.timeline ?? {references: [], reopenedAt: []},
+			}),
+		source: (request) =>
+			Effect.sync(() => {
+				spawned.push(request);
+				return source(request);
+			}),
 		week: () => Effect.succeed(ok({running: iterations, completed: []})),
 		deciders: () => Effect.succeed({_tag: "Roster" as const, logins: new Set([OWNER])}),
 		statusUpdates: () => Effect.sync(() => ok([...updates])),
@@ -352,13 +410,17 @@ const world = (
 				return value.date;
 		}
 	};
-	return {board, items, posts, cell};
+	return {board, items, posts, cell, comments, spawned};
 };
 
-const prep = (board: PrepBoard<never>, config = unconfigured) =>
+const prep = (
+	board: PrepBoard<never>,
+	config = unconfigured,
+	env: Readonly<Record<string, string>> = {},
+) =>
 	Effect.runPromise(
 		Effect.provide(
-			runPrep({repo: REPO, cwd: "/repo", env: {}, now: NOW, board}),
+			runPrep({repo: REPO, cwd: "/repo", env, now: NOW, board}),
 			Layer.mergeAll(config, fakeShell([]).layer),
 		),
 	);
@@ -565,5 +627,223 @@ describe("table prep with no .fabrika.jsonc", () => {
 		expect(items.get(71)?.values.find((one) => one.fieldName === "Week")?.value).toMatchObject({
 			iterationId: PREVIOUS.id,
 		});
+	});
+});
+
+const daysBefore = (days: number): string =>
+	new Date(NOW.getTime() - days * 86_400_000).toISOString();
+
+const SHIPPED_AT = daysBefore(15);
+
+const withPr = (issue: number, pr: number): LaneRecord => ({
+	...record(issue, 30, "complete"),
+	prs: [pr],
+});
+
+/** A shipped, fabrika-labelled bet with a Success line, and what GitHub saw after it shipped. */
+const SHIPPED_ISSUES: Readonly<Record<number, IssueSpec>> = {
+	...ISSUES,
+	50: {
+		open: false,
+		title: "Faster exports",
+		labels: ["type:feature", "fabrika"],
+		body: `${PITCH("M")}\n**Success:** exports finish under 2s`,
+		records: [withPr(50, 500)],
+		timeline: {references: [], reopenedAt: ["2026-09-20T00:00:00Z"]},
+	},
+	500: {
+		open: false,
+		timeline: {
+			reopenedAt: [],
+			references: [
+				{
+					number: 501,
+					title: 'Revert "Faster exports"',
+					isPullRequest: true,
+					open: false,
+					merged: true,
+					labels: [],
+					createdAt: "2026-09-13T00:00:00Z",
+				},
+				{
+					number: 502,
+					title: "Exports crash on Safari",
+					isPullRequest: false,
+					open: true,
+					merged: false,
+					labels: ["type:bug"],
+					createdAt: "2026-09-20T00:00:00Z",
+				},
+				{
+					number: 503,
+					title: "Exports are slow",
+					isPullRequest: false,
+					open: false,
+					merged: false,
+					labels: [],
+					createdAt: "2026-09-01T00:00:00Z",
+				},
+			],
+		},
+	},
+};
+
+const shippedRows = (setAt: string): Readonly<Record<number, Cells>> => ({
+	...ROWS,
+	50: {Stage: "shipped", setAt, Section: "New bets", Size: "M", Week: PREVIOUS.id},
+});
+
+const configured = (table: unknown) =>
+	fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify({table})}}).layer;
+
+const FABRIKA_LABELLED = configured({fabrikaShare: {labels: ["fabrika"]}});
+
+describe("table prep's outcome check", () => {
+	it("brings a bet shipped 14 days ago back as a check with its Success line, GitHub signals and fabrika's numbers", async () => {
+		const {board, cell, comments} = world(SHIPPED_ISSUES, shippedRows(SHIPPED_AT));
+		const out = await prep(board, FABRIKA_LABELLED);
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		expect(cell(50, "Stage")).toBe("check");
+		expect(cell(50, "Section")).toBe("Tails");
+		expect(cell(50, "Week")).toBe(NEXT.id);
+		expect(cell(50, "Size")).toBe("M");
+		const rec = String(cell(50, "Rec"));
+		expect(rec).toContain("Success: exports finish under 2s");
+		expect(rec).toContain("1 new issue (1 bug), 1 revert, 1 reopened, 0 open follow-ups");
+		expect(cell(50, "In plain words")).toBe("Faster exports");
+
+		const posted = comments.get(50) ?? [];
+		expect(posted).toHaveLength(1);
+		const body = posted[0] ?? "";
+		expect(body).toContain("**Success:** exports finish under 2s");
+		expect(body).toContain("- Pull requests: #500.");
+		expect(body).toContain("- New issues mentioning them: #502 Exports crash on Safari (bug).");
+		expect(body).not.toContain("#503");
+		expect(body).toContain('- Reverts: #501 Revert "Faster exports" (merged).');
+		expect(body).toContain("- Reopened: #50.");
+		expect(body).toContain("### fabrika's numbers");
+		expect(body).toContain("- Land rate: no lane ended in the 14 days before it shipped");
+		expect(body).toContain(checkMarker(50));
+
+		const answer = JSON.parse(out.stdout);
+		expect(answer.checks).toMatchObject([{issue: 50, shippedAt: SHIPPED_AT, comment: "posted"}]);
+		expect(answer.agenda.some((row: AgendaOut) => row.issue === 50)).toBe(false);
+	});
+
+	it("still carries the Success line and GitHub signals with no evidence source and no fabrika label", async () => {
+		const {board, comments, spawned} = world(SHIPPED_ISSUES, shippedRows(SHIPPED_AT));
+		await prep(board);
+
+		const body = comments.get(50)?.[0] ?? "";
+		expect(body).toContain("**Success:** exports finish under 2s");
+		expect(body).toContain("- New issues mentioning them: #502");
+		expect(body).not.toContain("fabrika's numbers");
+		expect(body).not.toContain("Evidence sources");
+		expect(spawned).toHaveLength(0);
+	});
+
+	it("says so when the pitch names no Success line", async () => {
+		const {board, cell, comments} = world(
+			{...SHIPPED_ISSUES, 50: {...SHIPPED_ISSUES[50], body: PITCH("M")}},
+			shippedRows(SHIPPED_AT),
+		);
+		await prep(board);
+
+		expect(comments.get(50)?.[0]).toContain("**Success:** none.");
+		expect(String(cell(50, "Rec"))).toContain("No Success line.");
+	});
+
+	it("attaches each evidence source's output, and reports a failing or timed-out one without failing prep", async () => {
+		const scripts: Readonly<Record<string, ChildOutcome>> = {
+			"./latency.sh": ran("p95 1.8s\n"),
+			"./errors.sh": ran("", 2, "no credentials\n"),
+			"./slow.sh": ran("", null),
+			"./gone.sh": {_tag: "Unstartable", reason: "ENOENT"},
+		};
+		const {board, cell, comments, spawned} = world(
+			SHIPPED_ISSUES,
+			shippedRows(SHIPPED_AT),
+			[PREVIOUS, NEXT],
+			(request) => scripts[request.file] ?? ran(""),
+		);
+		const out = await prep(
+			board,
+			configured({
+				evidenceSources: [
+					{name: "latency", command: ["./latency.sh", "--days", "14"]},
+					{name: "errors", command: ["./errors.sh"]},
+					{name: "slow", command: ["./slow.sh"], timeoutSeconds: 2},
+					{name: "gone", command: ["./gone.sh"]},
+				],
+			}),
+			{PATH: "/usr/bin", GITHUB_TOKEN: "ghp_secret"},
+		);
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		expect(cell(50, "Stage")).toBe("check");
+		const body = comments.get(50)?.[0] ?? "";
+		expect(body).toContain("### Evidence sources");
+		expect(body).toContain("**latency**:\n\n```\np95 1.8s\n```");
+		expect(body).toContain("**errors**: failed, exited 2: no credentials.");
+		expect(body).toContain("**slow**: failed, timed out after 2s.");
+		expect(body).toContain("**gone**: failed, could not start: ENOENT.");
+		expect(out.stderr.join("\n")).toContain(
+			'evidence source "errors" on #50 failed: exited 2: no credentials.',
+		);
+
+		const latency = spawned.find((request) => request.file === "./latency.sh");
+		expect(latency).toMatchObject({args: ["--days", "14"], cwd: "/repo", timeoutSeconds: 60});
+		expect(latency?.env).toEqual({
+			PATH: "/usr/bin",
+			FABRIKA_CHECK_REPO: REPO,
+			FABRIKA_CHECK_ISSUE: "50",
+			FABRIKA_CHECK_PRS: "500",
+			FABRIKA_CHECK_SHIPPED_AT: SHIPPED_AT,
+		});
+	});
+
+	it("reads the check delay from .fabrika.jsonc, 14 days by default", async () => {
+		const recent = shippedRows(daysBefore(10));
+		const byDefault = world(SHIPPED_ISSUES, recent);
+		await prep(byDefault.board);
+		expect(byDefault.cell(50, "Stage")).toBe("shipped");
+		expect(byDefault.comments.get(50)).toBeUndefined();
+
+		const tuned = world(SHIPPED_ISSUES, recent);
+		await prep(tuned.board, configured({checkDelayDays: 7}));
+		expect(tuned.cell(50, "Stage")).toBe("check");
+	});
+
+	it("keeps a person's Outcome answer and never re-asks a check", async () => {
+		const answered = {
+			...ROWS,
+			50: {
+				Stage: "check",
+				Section: "Tails",
+				Week: PREVIOUS.id,
+				Rec: "did it work?",
+				Outcome: "worked",
+			},
+		};
+		const {board, cell, comments} = world(SHIPPED_ISSUES, answered);
+		const out = await prep(board);
+
+		expect(out.code).toBe(0);
+		expect(cell(50, "Stage")).toBe("check");
+		expect(cell(50, "Outcome")).toBe("worked");
+		expect(cell(50, "Week")).toBe(PREVIOUS.id);
+		expect(comments.get(50)).toBeUndefined();
+		expect(JSON.parse(out.stdout).checks).toEqual([]);
+	});
+
+	it("posts no second check comment when one already stands", async () => {
+		const {board, cell, comments} = world(SHIPPED_ISSUES, shippedRows(SHIPPED_AT));
+		comments.set(50, [`an earlier run\n${checkMarker(50)}`]);
+		const out = await prep(board);
+
+		expect(cell(50, "Stage")).toBe("check");
+		expect(comments.get(50)).toHaveLength(1);
+		expect(JSON.parse(out.stdout).checks).toMatchObject([{issue: 50, comment: "standing"}]);
 	});
 });

@@ -1156,6 +1156,86 @@ export const issueTimeline = (
 		),
 	);
 
+/** An issue or pull request of the same repository that referenced this one, as filed. */
+export interface TimelineReference {
+	readonly number: number;
+	readonly title: string;
+	readonly isPullRequest: boolean;
+	readonly open: boolean;
+	/** A pull request that merged; always `false` for an issue. */
+	readonly merged: boolean;
+	readonly labels: ReadonlyArray<string>;
+	/** When the referencing issue or pull request was opened. */
+	readonly createdAt: string;
+}
+
+/** What an issue's or pull request's timeline says happened to it: who referenced it, when it reopened. */
+export interface TimelineFacts {
+	readonly references: ReadonlyArray<TimelineReference>;
+	readonly reopenedAt: ReadonlyArray<string>;
+}
+
+const TIMELINE_REFERENCE = "GitHub answered 200 but a cross-reference is not an issue";
+
+const labelNames = (raw: unknown): ReadonlyArray<string> | null => {
+	if (!Array.isArray(raw)) return null;
+	const names = raw.map((label) =>
+		isRecord(label) && typeof label.name === "string" ? label.name : null,
+	);
+	return names.includes(null) ? null : (names as ReadonlyArray<string>);
+};
+
+/**
+ * The same-repository cross-references and the reopen events on an issue's or pull request's
+ * timeline, paged. A reference from another repository is left out: its number names an issue
+ * there, not here.
+ */
+export const timelineFacts = (repo: string, issue: number): Shell<Attempt<TimelineFacts>> =>
+	withToken((token) =>
+		Effect.map(provenList(token, `repos/${repo}/issues/${issue}/timeline`), (read) =>
+			then(read, (entries) => {
+				const references: TimelineReference[] = [];
+				const reopenedAt: string[] = [];
+				for (const entry of entries) {
+					if (!isRecord(entry)) return fail("GitHub answered 200 but its body is not a timeline");
+					if (entry.event === "reopened") {
+						if (typeof entry.created_at !== "string") {
+							return fail("GitHub answered 200 but a reopen names no time");
+						}
+						reopenedAt.push(entry.created_at);
+						continue;
+					}
+					if (entry.event !== "cross-referenced") continue;
+					const source = isRecord(entry.source) ? entry.source.issue : undefined;
+					if (!isRecord(source)) return fail(TIMELINE_REFERENCE);
+					const {number, title, state, created_at: createdAt} = source;
+					const labels = labelNames(source.labels ?? []);
+					if (
+						typeof number !== "number" ||
+						typeof title !== "string" ||
+						typeof createdAt !== "string" ||
+						labels === null
+					) {
+						return fail(TIMELINE_REFERENCE);
+					}
+					const from = source.repository_url;
+					if (typeof from === "string" && !from.endsWith(`/repos/${repo}`)) continue;
+					const pull = isRecord(source.pull_request) ? source.pull_request : null;
+					references.push({
+						number,
+						title,
+						isPullRequest: pull !== null,
+						open: state === "open",
+						merged: pull !== null && typeof pull.merged_at === "string",
+						labels,
+						createdAt,
+					});
+				}
+				return ok({references, reopenedAt});
+			}),
+		),
+	);
+
 /**
  * The repository's default branch.
  *

@@ -22,6 +22,7 @@ describe("the shipped table", () => {
 			activeCampaignFlag: 3,
 			fabrikaShare: {percent: 40, forTables: 4, thenPercent: 30, labels: []},
 			checkDelayDays: 14,
+			evidenceSources: [],
 			project: {owner: null, number: null},
 		});
 	});
@@ -105,6 +106,27 @@ describe("a declared table block", () => {
 		});
 	});
 
+	it("takes evidence sources, each timeout defaulting when left out", () => {
+		const resolved = declared({
+			checkDelayDays: 7,
+			evidenceSources: [
+				{name: " metrics ", command: ["pnpm", "metrics"]},
+				{name: "errors", command: ["./errors.sh"], timeoutSeconds: 5},
+			],
+		});
+
+		expect(resolved).toMatchObject({
+			_tag: "Declared",
+			value: {
+				checkDelayDays: 7,
+				evidenceSources: [
+					{name: "metrics", command: ["pnpm", "metrics"], timeoutSeconds: 60},
+					{name: "errors", command: ["./errors.sh"], timeoutSeconds: 5},
+				],
+			},
+		});
+	});
+
 	it("takes a project target", () => {
 		const resolved = declared({project: {owner: "acme", number: 4}});
 
@@ -129,6 +151,27 @@ describe("a declared table block", () => {
 		[{sections: []}, "`table.sections`"],
 		[{sections: ["Tails", "Tails", OUTSIDE_THE_BETS]}, "twice"],
 		[{sections: ["Tails", "New bets"]}, OUTSIDE_THE_BETS],
+		[{checkDelayDays: 0}, "`table.checkDelayDays`"],
+		[{evidenceSources: {name: "x"}}, "`table.evidenceSources`"],
+		[{evidenceSources: [{name: "x", command: []}]}, "`table.evidenceSources[0].command`"],
+		[{evidenceSources: [{name: "", command: ["x"]}]}, "`table.evidenceSources[0].name`"],
+		[
+			{evidenceSources: [{name: "x", command: ["x"], timeoutSeconds: 601}]},
+			"`table.evidenceSources[0].timeoutSeconds`",
+		],
+		[
+			{evidenceSources: [{name: "x", command: ["x"], shell: true}]},
+			"`table.evidenceSources[0].shell`",
+		],
+		[
+			{
+				evidenceSources: [
+					{name: "x", command: ["a"]},
+					{name: "x", command: ["b"]},
+				],
+			},
+			"twice",
+		],
 		[{unknown: 1}, "`table.unknown`"],
 		["weekly", "`table` is not an object"],
 	])("refuses %j whole, naming %s", (table, named) => {

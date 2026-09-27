@@ -296,3 +296,27 @@ comes back under Tails, the rest keep going with no agenda row. Prep then posts 
 the project's status update, Inbox count included. Once that update stands, a second run adds
 nothing. The Agenda view shows only rows with a Rec, so re-run `fabrika table setup` once after
 upgrading to align its filter.
+
+**Shipped bets come back as checks.** When prep runs, a row that has been `shipped` for
+`table.checkDelayDays` days (14 by default) moves to Stage `check` on the agenda. Prep posts its
+evidence as a comment on the issue: the pitch's `**Success:**` line, what happened on GitHub since
+(new issues mentioning its pull requests, reverts, reopens, open follow-ups), and fabrika's land rate
+and spend before and after it shipped when the issue carries a `table.fabrikaShare.labels` label.
+Answer on the row's Outcome field: `worked`, `didn't` or `can't tell`. Prep never changes that answer
+and never asks again. To attach your own numbers, declare commands under `table.evidenceSources`:
+
+```jsonc
+{
+  "table": {
+    "evidenceSources": [
+      {"name": "error rate", "command": ["pnpm", "metrics:errors"], "timeoutSeconds": 30}
+    ]
+  }
+}
+```
+
+Each command runs in the repo root as an argv, not through a shell. It gets only PATH, HOME, LANG,
+LC_ALL, TZ and TMPDIR, plus `FABRIKA_CHECK_REPO`, `FABRIKA_CHECK_ISSUE`, `FABRIKA_CHECK_PRS` and
+`FABRIKA_CHECK_SHIPPED_AT`. Its output is attached to the check as text, cut at 4000 bytes. A
+command that fails, times out or cannot start is reported on the check, and prep goes on. The
+Outcome field is new, so re-run `fabrika table setup` once after upgrading to add it.

@@ -228,7 +228,8 @@ Read the board, settings and installed skill roster for a new session. Use `stat
 ## The `table` group
 
 Set up the repository's weekly betting table on GitHub Projects (v2), fill its columns from lane
-records, read the flags that bring work back to it, and prepare each table's agenda. Use
+records, read the flags that bring work back to it, and prepare each table's agenda, including the
+checks that bring shipped bets back with their evidence. Use
 `table --help`, `table setup --help`, `table sync --help`, `table flags --help` and
 `table prep --help`. The token needs the
 `project` scope; the

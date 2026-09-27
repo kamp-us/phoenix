@@ -68,8 +68,12 @@ describe("table setup on a repo with no `table` block", () => {
 			["Origin", "SINGLE_SELECT"],
 			["Rec", "TEXT"],
 			["In plain words", "TEXT"],
+			["Outcome", "SINGLE_SELECT"],
 			["Week", "ITERATION"],
 		]);
+		expect(
+			custom.find((field) => field.name === "Outcome")?.options?.map((option) => option.name),
+		).toEqual(["worked", "didn't", "can't tell"]);
 		const week = custom.find((field) => field.name === "Week");
 		expect(week?.iteration).toEqual({duration: 7, startDay: 1});
 		expect(
@@ -90,7 +94,7 @@ describe("table setup on a repo with no `table` block", () => {
 		expect(views.get("Inbox")?.filter).toBe("is:open no:label");
 		expect(views.get("Lanes")?.layout).toBe("BOARD_LAYOUT");
 		expect(views.get("Agenda")?.filter).toBe(
-			'is:open week:@current has:section -section:"Outside the bets" has:rec',
+			'week:@current has:section -section:"Outside the bets" has:rec',
 		);
 		const idOf = new Map((project?.fields ?? []).map((field) => [field.id, field.name]));
 		expect(views.get("Agenda")?.fieldIds.map((id) => idOf.get(id))).toEqual([
@@ -101,6 +105,7 @@ describe("table setup on a repo with no `table` block", () => {
 			"Asks",
 			"Rec",
 			"In plain words",
+			"Outcome",
 		]);
 
 		expect(project?.readme).toContain("# What the columns mean");
@@ -113,6 +118,7 @@ describe("table setup on a repo with no `table` block", () => {
 			"Origin",
 			"Rec",
 			"In plain words",
+			"Outcome",
 			"Week",
 		]) {
 			expect(project?.readme).toContain(`## ${column}`);
