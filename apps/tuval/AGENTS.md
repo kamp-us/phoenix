@@ -22,7 +22,7 @@ proofs; read the selected proof's contract before running it.
 A hand-verification desk — the scratch instance a builder drives by hand, since this app deploys to
 no preview and a reviewer has no address to render
 ([ADR 0391](../../.decisions/0391-hand-verification-binds-ui-content.md)) — lives entirely under the
-path `fabrika build scratch <n> --slug desk --token <t>` prints: the project directory the desk
+path `fabrika build scratch <n> --slug desk --token <t>` prints: the project folders the desk
 opens, the scratch agent home it runs under — which is where its checkpoints land, under that
 home's `.tuval/projects/<key>`
 ([ADR 0402](../../.decisions/0402-tuval-state-lives-under-home.md)) — and its driver scripts. Never
@@ -31,6 +31,10 @@ session shares
 ([build](../../claude-plugins/fabrika/skills/build/SKILL.md),
 [build-ui](../../claude-plugins/fabrika/skills/build-ui/SKILL.md)).
 
-The [README](README.md) owns local setup. Use the shared
+One desk opens and closes many projects, and a project's rows never replace global rows
+([ADR 0419](../../.decisions/0419-one-desk-opens-many-projects.md)). Don't build on the old
+one-project-per-desk shape.
+
+The [README](README.md) owns local setup, the `tuval` command and the author loop. Use the shared
 [pattern index](../../.patterns/index.md) for the relevant kernel, backend, layout
 or test guidance.

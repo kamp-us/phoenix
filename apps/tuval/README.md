@@ -137,7 +137,8 @@ question, then prints the desk's answer; a refusal exits 1. With no desk running
 whose page does not answer, is from a desk that crashed. `tuval` says so, removes it, and starts a
 new desk. A `--no-page` desk writes no record, since a caller reaches a desk through its page.
 
-One running desk holds several projects (#9685). The `--project` folder is the first one it opens,
+One running desk holds several projects (#9685); [ADR 0419](../../.decisions/0419-one-desk-opens-many-projects.md)
+records the whole project model. The `--project` folder is the first one it opens,
 and the `project open` spell opens another into the running desk with no restart: its config
 layer is read, its rows join the registry, its graph starts, its checkpointed processes come back
 from its own state directory, and a `kind: "module"` renderer it declares is served to the page (an
@@ -192,8 +193,9 @@ the trust prompt.
 Nothing Tuval saves goes into the project. The process manifest, the checkpoints and the Pi session
 files live under `~/.tuval/projects/<key>`, where the key is that checkout's absolute path written
 as one folder name — the same shape Claude Code keys its projects by, and the reason two worktrees
-of one repository are two desks with no shared state
-([ADR 0402](../../.decisions/0402-tuval-state-lives-under-home.md)). Each directory holds a
+of one repository are two projects with no shared state, which one desk can hold side by side
+([ADR 0402](../../.decisions/0402-tuval-state-lives-under-home.md),
+[ADR 0419](../../.decisions/0419-one-desk-opens-many-projects.md)). Each directory holds a
 `project.json` naming the path it was derived from, so a key reads back. A project needs zero files
 to be a project; `<project>/.tuval/` is a config directory and may hold `tuval.config.ts` and
 nothing else. State an older build left under `<project>/.tuval` is moved into the home-dir key on
@@ -970,6 +972,27 @@ run in CI) packs both packages, installs them with npm in a temp folder outside 
 `tuval open .` over a program written there against a scratch home, trusts a second folder through
 the desk's own question, edits the program and sees the running process switch, and fails if the desk
 resolved a file inside the checkout or loaded a second SDK.
+
+## The author loop
+
+An author outside phoenix writes a program in their own folder and runs it on the packed desk
+(ruling #9668 R6.1, [ADR 0419](../../.decisions/0419-one-desk-opens-many-projects.md)):
+
+1. `npm i @kampus/tuval-sdk`, plus `@kampus/tuval` for the `tuval` command (`npm i -g`, or beside
+   the SDK). A program that imports Effect itself takes the `effect` version the SDK pins, so the
+   desk still loads one copy.
+2. Write the program against `@kampus/tuval-sdk/authoring` (see "The public API"). Give its row an
+   `sdk` range if it needs one; a row with none supports the desk's SDK major.
+3. Add the row, and a graph node if it should start on open, to `.tuval/tuval.config.ts` in that
+   folder.
+4. `tuval open .` opens the folder as a project: in the running desk, or in a new desk when none is
+   running.
+5. Answer "Trust this folder?" with yes. A folder is asked once; the answer is kept per path. A
+   folder that starts a new desk is not asked yet; #9884 tracks that gap.
+6. Edit the program. Saving the config, or any file it imports by path, reloads it in the running
+   desk (see "Spells"), and the process keeps the state it had.
+
+`pnpm proof:outside` runs these steps from packed tarballs in CI (see "The packed desk").
 
 ## The static root
 

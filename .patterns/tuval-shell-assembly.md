@@ -15,7 +15,8 @@ The parts below it are their own docs: the command framework is
 
 ```
 src/desk-layer.ts          the shell row + its graph node, below every file (desk-owned)
-.tuval/tuval.config.ts     the demo rows + the sessions + the graph         (user-owned)
+~/.tuval/tuval.config.ts   global rows: the harness sessions, the flags     (user-owned)
+<project>/.tuval/…         each open project's rows + graph, as <project>/<id> (user-owned)
   └─ boot / start          registry → wiring → kernel → launch → restore    (src/boot.ts)
        ├─ shell process    the desk's state; its Cmds run in src/shell/host/effects.ts
        ├─ serveDesk        one WebSocket per page                           (src/shell/host/serve.ts)
@@ -98,13 +99,14 @@ visible is the row's own type: `aiAgentProgram` is generic over the leftover req
 it is handed (`src/ai-agent/program.ts`), so an agent row over a layer that still needs `SpellBridge`
 says `SpellBridge` on its services rather than closing it.
 
-The `claude-session` row in `apps/tuval/.tuval/tuval.config.ts` is the live instance, and it is why
+The `claude-session` row in `apps/tuval/global/tuval.config.ts` is the live instance, and it is why
 the seam has to work this way: a config module is imported inside `boot`, before the bridge exists,
 so the only thing it can name is the `scope` its kernel tools call under — the bridge itself has to
 arrive at spawn (#7958).
 
-`pi-session` is the second instance, over `Features` — the merged feature flags as a kernel service
-(`src/feature-flags.ts`). Same forcing constraint: `loadLayeredConfig` merges the layers *after*
+`pi-session` is the second instance, over `Features` — the global config's feature flags as a kernel
+service (`src/feature-flags.ts`; a project config may not state flags, ADR
+[0419](../.decisions/0419-one-desk-opens-many-projects.md)). Same forcing constraint: `loadLayeredConfig` merges the layers *after*
 every config module has been evaluated, so a row built inside one is a closure that cannot read the
 merge. Before the flags rode this seam, `PiAiAgent`'s host read `featuresDefault` directly and a
 config layer stating a flag moved the browser and nothing on the node side (#8595). Any node-side
