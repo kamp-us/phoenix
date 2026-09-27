@@ -168,8 +168,25 @@ const dispatch = leafCommand(
 ).pipe(
 	Command.withShortDescription("Dispatch one active lane task to Codex in a verified worktree."),
 	Command.withDescription(
-		"Create a dedicated detached git worktree and run codex exec with a fixed skill preload envelope and the emitted lane brief unchanged. Preserves Codex model and policy configuration. On an epic run's child it first refreshes the assembly branch the worktree is about to be cut from, through `lane refresh` itself and before the brief is emitted, gated by `assemblyRefresh.onDispatch`, read from the `.fabrika.jsonc` of the repository that OWNS the cwd rather than the cwd's own copy — the driver's cwd is routinely a linked worktree, while the worktree spawning further down keeps reading the cwd itself: under the shipped `off` it fetches, merges and reads nothing, so the dispatch path is byte for byte the one it is today, and `on` merges the trunk in so the child builds and runs its verbs in a tree at least as new as the trunk. A conflict there refuses at 42 with the branch proven back at its pre-merge head and no worktree created — record the park the refusal names (--cause assembly-conflict) rather than dispatching over the unrefreshed branch. That gate refuses no cwd for standing outside a repository — it reads the shipped arm at that cwd — and answers 11 only when the repository identity cannot be read; the 39 below is the lanes-root resolution ahead of every read, which refuses on either of its two arms: --root absent and no repository derivable off the cwd, or a present --root that is relative and a cwd that itself holds neither .fabrika nor .git. Requires a new task terminal and fresh artifact proof; process exit zero alone is not completion. stdout: {harness, task, event, worktree}. Worktrees are retained. Exits 11 (missing input, isolation, process or state failure), 18 (unsupported harness or inactive state), 22 (no unique terminal), 39 (the lanes root resolves nowhere, on either arm above), plus lane refresh, lane brief and lane prove refusals. Example: fabrika lane dispatch 5673 --harness codex --skills /installed/fabrika/skills --worktree /scratch/lane-5673",
+		laneHelp(
+			"dispatch",
+			"Runs one lane task under Codex in a fresh worktree and prints {harness, task, event, worktree}.",
+			{
+				11: "input, isolation, process or state failure",
+				18: "unsupported harness or inactive state",
+				22: "no unique new terminal",
+				39: ROOT_EXITS[39],
+				42: "assembly refresh conflicted, nothing created",
+				65: ROOT_EXITS[65],
+			},
+		),
 	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika lane dispatch 5673 --harness codex --skills /installed/fabrika/skills --worktree /scratch/lane-5673",
+		},
+	]),
 );
 
 const status = leafCommand(
@@ -931,7 +948,9 @@ const assembly = leafCommand(
 		),
 		remove: Flag.boolean("remove").pipe(
 			Flag.withDefault(false),
-			Flag.withDescription("remove the run's assembly worktree instead of placing it"),
+			Flag.withDescription(
+				"remove the run's assembly worktree instead of placing it — the lane's terminal step; fetches nothing and never forces",
+			),
 		),
 		root: rootFlag,
 	},
@@ -955,8 +974,23 @@ const assembly = leafCommand(
 ).pipe(
 	Command.withShortDescription("Place, resume or remove an epic run's assembly worktree."),
 	Command.withDescription(
-		"Place the working tree an epic run assembles in — `epic/<n>` checked out at `.claude/worktrees/epic-<n>`, both derived from the epic number and never taken from the caller — and print its absolute path on stdout. The invoking checkout is NEVER switched. Idempotent in both directions: a worktree already holding the branch is resumed and its path answered with nothing written, and a branch that outlived its worktree — the state `--remove` at a terminal leaves behind — is checked out again as it stands, never re-cut off a fresh base. A worktree whose directory is gone but whose record git still carries (`prunable`) is that same state: the registration is cleared and the branch placed again, never answered as a live path. EVERY RESUME FETCHES FIRST and asks one question of the branch it found: does `origin/HEAD` already carry its content. A multi-phase epic that shipped an intermediate tail lands in exactly that state — the branch holds nothing the trunk lacks and conflicts with everything the trunk took since, and until this read the verb could not tell it from an ordinary unlanded resume. The read is squash-aware because this trunk is: ancestry is the fast path, and a branch it calls unlanded is settled by cumulative patch id — the branch's own net diff against the trunk, matched against the patches the trunk took since their merge base, limited to the paths the branch touches (200 commits back). A match means it landed as a squash, and a branch that adds nothing to the trunk at all counts the same. A contained branch is re-cut off `origin/HEAD` in one `worktree add --no-track -B`, and the note says it re-cut and which of the three proofs opened it; its seat, if it still has one, is dropped first WITHOUT `--force`, so git refusing to drop uncommitted work is what keeps unlanded bytes out of a re-cut. Containment is the whole warrant: a branch that is not contained — including one whose squash carried a conflict resolution, so its patch does not match — resumes exactly as before, and an unreadable containment answer — a failed fetch, an `origin/HEAD` naming no commit, a diff or patch read that failed — refuses at 11 rather than resolving either way. No board is read: whether the tail PR merged is never asked. `--remove` is the lane's terminal step, fetches nothing and never forces — a dirty assembly tree is unlanded work, so git's refusal is the answer. Every mode reads the outcome back off `git worktree list` before answering. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (the placement or removal ran and did not read back, or a contained branch's seat would not drop — UNKNOWN), 11 (the working trees, the branches, the fetch, `origin/HEAD` or the containment read could not be read — nothing was placed or removed), 33 (`epic/<n>` is checked out in the main working tree — switch that tree off it first), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root). Examples: fabrika lane assembly 5680 · fabrika lane assembly 5680 --remove",
+		laneHelp(
+			"assembly",
+			"Places, resumes or removes an epic run's assembly worktree and prints its absolute path.",
+			{
+				4: "lane record is not the shape",
+				7: "no lane",
+				8: "placement or removal did not read back, UNKNOWN",
+				11: "read failed, nothing placed or removed",
+				33: "epic/<n> is checked out in the main tree",
+				...ROOT_EXITS,
+			},
+		),
 	),
+	Command.withExamples([
+		{command: "fabrika lane assembly 5680"},
+		{command: "fabrika lane assembly 5680 --remove"},
+	]),
 );
 
 const assemblyPr = leafCommand(
@@ -967,7 +1001,7 @@ const assemblyPr = leafCommand(
 		),
 		field: Flag.string("field").pipe(
 			Flag.withDescription(
-				`which piece of the PR's prose to print: ${FIELDS.join(" or ")} — one bare value per call, so the caller interpolates rather than parses`,
+				`which piece of the PR's prose to print: ${FIELDS.join(" or ")} — one bare value per call, so the caller interpolates rather than parses; about prints nothing, reason on stderr, when the epic has no Pitch Problem paragraph`,
 			),
 		),
 		repo: Flag.string("repo").pipe(
@@ -985,8 +1019,21 @@ const assemblyPr = leafCommand(
 ).pipe(
 	Command.withShortDescription("The assembly PR's title and About section, derived from the epic."),
 	Command.withDescription(
-		"Derive one piece of the prose an epic run's single assembly PR opens with, and print it bare on stdout so the `gh pr create` fence interpolates a value instead of deriving one. `--field title` prints `feat(epic): <the epic issue's own title>`; the conventional type is `build/pr-title.ts`'s map, reused rather than re-derived, because release-please classifies the squash subject and that rule lives in exactly one place — this verb only stamps the `(epic)` scope over it. `--field about` prints the `## About this epic` section derived from the epic's `## Pitch` **Problem** paragraph, read through the same section reader `guard pitch-guard check` uses. That text is never passed through raw: a closing keyword is swapped for a word GitHub's documented keyword list does not carry (the `#<n>` it aimed at is left as written), the paragraph is cut to its opening sentences under a word budget so a triage-length Problem does not land as the section, with `[…]` marking what was left behind, and what is lifted lands as a block quote in the epic's own words — the shape `build pr`'s body guard already reads as reproduced rather than asserted, so a Problem naming `type:epic`, a priority or control-plane keeps its sentence intact instead of being reworded into something that only looks safe. The result is then re-read through `build pr`'s own body predicates, so a section this verb answers cannot be one that guard refuses. An epic with no `## Pitch`, or a pitch with no Problem paragraph, is an ANSWER and not a refusal — empty stdout with the reason on stderr, so the run still publishes its PR with no section rather than being stranded over prose. It opens, edits and reads back no pull request. Exits 1 (`--field` is not `title` or `about`, or the target repo could not be resolved), 7 (the epic is proven absent or closed), 11 (the epic could not be read — UNKNOWN, never a derived title), 56 (the issue carries no `type:epic`, so an assembly PR's prose is not its to give), 57 (the derived section still carries a stray closing keyword or a classification claim after neutralisation — reword the epic's Problem paragraph, or write the section by hand; `--field title` is unaffected). Examples: fabrika lane assembly-pr 8070 --field title · fabrika lane assembly-pr 8070 --field about",
+		laneHelp(
+			"assembly-pr",
+			"Prints one bare piece of an epic run's assembly PR prose: its title or its About section.",
+			{
+				7: "epic absent or closed",
+				11: "epic unreadable, UNKNOWN",
+				56: "issue is not type:epic",
+				57: "section still carries a closing keyword or classification",
+			},
+		),
 	),
+	Command.withExamples([
+		{command: "fabrika lane assembly-pr 8070 --field title"},
+		{command: "fabrika lane assembly-pr 8070 --field about"},
+	]),
 );
 
 const assemblyBody = leafCommand(
@@ -1004,8 +1051,23 @@ const assemblyBody = leafCommand(
 		"Relay an assembly PR body, refusing one that does not close the epic.",
 	),
 	Command.withDescription(
-		"Guard the epic run's single assembly PR body on its way to `gh pr create`, reading it from STDIN and relaying it unchanged on stdout when it closes the epic — the same bytes, plus a trailing newline when the body lacked one. An epic run is one branch and one PR, so that PR is the run's whole landing: a tail body reaching the epic through `Part of #<epic>`, or closing only its landed children, merges without closing it, and the lane folds to `shipped` and then `complete` over an epic the board still calls open — an operator re-dispatched on it parks on `LANE-TERMINAL` with no door out. The link reader is `issueRefsOf`, the very one `lane/closure.ts` judges the merged PR with, so this guard refuses exactly the bodies that reader would later call partial or leave unreadable, and the two seams cannot disagree about one body. The tail's other closing keywords — one per landed child, by contract — are not judged: what is required is a closing keyword whose target is the epic itself, tested by membership rather than by first match, because a scalar reader would answer off whichever child leads. It reads no board and takes no --repo: the number's epic-ness was established one command earlier in the same fence by `lane assembly-pr`'s 56, and a second network read would only add an UNKNOWN to a judgement the bytes on stdin fully decide. It opens, edits and reads back no pull request. Exits 1 (stdin could not be read — the body is UNKNOWN, never empty), 3 (stdin was read and held nothing), 5 (the body carries a machine-local path — redact before opening), 6 (the body is a bare @ path reference — write the body, not a pointer to it), 58 (no closing keyword aims at the epic; stderr names what the body reaches it by instead — write `Fixes #<epic>`, or leave the run's PR unopened). Example: fabrika lane assembly-body 8070 < body.md | gh pr create --draft --head epic/8070 --title \"<title>\" --body-file -",
+		laneHelp(
+			"assembly-body",
+			"Relays an assembly PR body from stdin to stdout unchanged when it closes the epic.",
+			{
+				3: "stdin held nothing",
+				5: "body carries a machine-local path",
+				6: "body is a bare @ path reference",
+				58: "no closing keyword aims at the epic",
+			},
+		),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika lane assembly-body 8070 < body.md | gh pr create --draft --head epic/8070 --title "<title>" --body-file -',
+		},
+	]),
 );
 
 const integrate = leafCommand(
@@ -1043,8 +1105,30 @@ const integrate = leafCommand(
 		"Merge one reviewed child into an epic run's assembly and prove it holds.",
 	),
 	Command.withDescription(
-		"Merge one reviewed child's branch into the epic run's assembly worktree — `epic/<n>` at the path `lane assembly` placed, both derived from the epic number and never taken from the caller — and prove the merged tree holds together before the branch keeps it. The order is the verb: `git merge --no-ff`, then the repo's declared `dependencyReconciler` (for example `pnpm install --frozen-lockfile`) run IN that worktree so the install reads the lockfile the merge just brought, then the repo's declared `codeValidators` over the merged tree — reconciling after the merge, never before, since an assembly worktree placed before a child existed still holds the pre-merge install. Every refusal below the merge resets the assembly branch to ORIG_HEAD and reads its head back, so a recorded FAIL names a branch that never carried the bad merge; nothing is ever pushed here — that is `lane push`, and recording the DONE is the driver's. A textual collision is not always the end of the run: under `assemblyReplay.onCollision` (shipped `off`), the child's commits are replayed onto the tip, hunks that are a plain keep-both — both sides adding lines where the base had none — are kept both ways, a pick whose every unmerged path is a lockfile named in `assemblyReplay.lockfileRegenerator.lockfiles` and marked `merge=binary` in .gitattributes is regenerated by that declared command and staged, the child's own branch is moved onto the replayed range, and that range is merged `--no-ff` like any other landing; a hunk that is not resets through the captured head, proves the reset, and names `--cause replay-conflict` as the park to record. With the key off, exit 42 is byte-identical to what it always was. On exit 0 the last stdout line is `INTEGRATE-VERDICT: MERGED`, or `INTEGRATE-VERDICT: REPLAYED` after a replay; the line above it is the merged head either way, and above that a replay prints its machinery event — {event, child, replay, onto, range, resolved, regenerated, commits, reReview, budget} — whose `range` is the moved range the child owes one review round over and whose `budget` reads `unspent`, because a replay is machinery working rather than the child failing. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (a restore or a head read-back did not land — UNKNOWN, so nothing may be recorded), 11 (the working trees, the branches, the head, `.fabrika.jsonc` or a validator could not be read, or the repo declares no `codeValidators` — UNKNOWN, never green), 22 (no branch by that name — take it off `lane prove`'s evidence), 33 (`epic/<n>` is checked out in the main working tree), 41 (no working tree holds `epic/<n>` — place it with `lane assembly`), 42 (the child conflicts and was not replayed — the merge was aborted and nothing was installed; or the replay hit a hunk that is not a plain keep-both, or a lockfile regenerator that failed, could not start, or wrote beyond the lockfiles, and the branch was reset and proved back), 43 (the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file), 44 (the merged tree failed a code validator — the semantic collision), 45 (the assembly worktree already held modified tracked files before the merge, so nothing was merged, installed or validated — that dirt is the driver's tree and not the child's range; clean the seat and integrate again), 54 (the replay landed and the child's branch would not follow it onto the replayed range — usually a working tree still standing on that branch; nothing was merged and the seat is back, so free the branch with `fabrika build retire` or park on `--cause worktree-holds-branch`), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root). Example: fabrika lane integrate 7140 --child build/7162-app-bootstrap-5558c9a2",
+		laneHelp(
+			"integrate",
+			"Merges a reviewed child into the assembly worktree and validates it; ends on INTEGRATE-VERDICT.",
+			{
+				4: "bad lane record",
+				7: "no lane",
+				8: "reset or read-back unlanded, UNKNOWN",
+				11: "read failed or no codeValidators, UNKNOWN",
+				22: "no such child branch",
+				33: "epic/<n> in the main tree",
+				39: ROOT_EXITS[39],
+				41: "no worktree holds epic/<n>",
+				42: "child conflicts, reset",
+				43: "merged lockfile does not install",
+				44: "merged tree fails a validator",
+				45: "assembly worktree was dirty",
+				54: "child branch did not follow the replay",
+				65: ROOT_EXITS[65],
+			},
+		),
 	),
+	Command.withExamples([
+		{command: "fabrika lane integrate 7140 --child build/7162-app-bootstrap-5558c9a2"},
+	]),
 );
 
 const refresh = leafCommand(
@@ -1062,7 +1146,7 @@ const refresh = leafCommand(
 		onReview: Flag.boolean("on-review").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				"this is the automatic call on the tail's way into review, so `assemblyRefresh.onReview` gates it — under the shipped `off` it declines and merges nothing. A hand call omits this and is never gated. The other automatic call, `assemblyRefresh.onDispatch`, is made by `lane dispatch` itself and is never typed.",
+				"this is the automatic call on the tail's way into review, so `assemblyRefresh.onReview` gates it — under the shipped `off` it declines and merges nothing. A hand call omits this and is never gated.",
 			),
 		),
 		root: rootFlag,
@@ -1102,8 +1186,29 @@ const refresh = leafCommand(
 		"Merge the trunk into an epic run's assembly branch, proving the head.",
 	),
 	Command.withDescription(
-		"Merge the trunk into the epic run's assembly worktree — `epic/<n>` at the path `lane assembly` placed, both derived from the epic number and never taken from the caller — so the tail's review binds to a head the merge queue can take. Nothing else in this package touches trunk after the first cut: `lane assembly` cuts off origin/HEAD once and a resume fetches only to judge whether the branch is already landed, merging nothing, so the branch drifts behind trunk with nothing to notice and `lane push` names \"fetch and re-merge\" as the remedy for its exit 29 without any verb performing it. The order is the verb: refuse a dirty seat, `git fetch origin`, resolve --base to a commit, answer CURRENT when the branch already carries it, else `git merge --no-ff` and re-read HEAD. A clean merge is silent and parks nothing; a conflict aborts, resets through ORIG_HEAD and PROVES the reset by re-reading HEAD, and the refusal names `--cause assembly-conflict` as the park to record. A reset that will not take is exit 8, never the clean conflict refusal. Two callers reach the verb automatically and each is gated by its own `assemblyRefresh` arm: --on-review, typed by the driver on the tail's way into review (`onReview`), whose arm is read from the `.fabrika.jsonc` of the repository that owns the cwd rather than the cwd's own, and the pre-dispatch call `lane dispatch` makes itself before it cuts a child's worktree off the branch (`onDispatch`), which is never typed and whose arm still reads the cwd's own copy. Both ship off. Nothing is pushed and no lane log is written — publishing the refreshed head is `lane push`'s and recording the park is the driver's. On exit 0 the last stdout line is `REFRESH-VERDICT: MERGED`, `REFRESH-VERDICT: CURRENT`, or `REFRESH-VERDICT: DECLINED` under a gated automatic call whose arm reads off, and the line above it the head (a DECLINED prints no head, because nothing was read). Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (the restore or a head read-back did not land, or the merge reported success and the head did not move — UNKNOWN, so nothing may be recorded), 11 (the working trees, the head, the seat's cleanliness or the fetch could not be read — UNKNOWN, never green), 21 (`assemblyRefresh` is malformed in .fabrika.jsonc — whether this repo refreshes its assembly branch is UNKNOWN), 22 (--base names no commit after the fetch), 33 (`epic/<n>` is checked out in the main working tree), 41 (no working tree holds `epic/<n>` — place it with `lane assembly`), 45 (the assembly worktree already held modified tracked files, so nothing was fetched or merged; clean the seat and refresh again), 42 (the trunk conflicts with the assembly branch; the merge was aborted and the branch was proven back at its pre-merge head), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root). Examples: fabrika lane refresh 8810 · fabrika lane refresh 8810 --on-review",
+		laneHelp(
+			"refresh",
+			"Merges the trunk into an epic run's assembly worktree; ends on a REFRESH-VERDICT line.",
+			{
+				4: "bad lane record",
+				7: "no lane",
+				8: "reset or head read-back unlanded, UNKNOWN",
+				11: "read failed, UNKNOWN",
+				21: "assemblyRefresh is malformed",
+				22: "--base names no commit",
+				33: "epic/<n> in the main tree",
+				39: ROOT_EXITS[39],
+				41: "no worktree holds epic/<n>",
+				42: "trunk conflicts, branch proven back",
+				45: "assembly worktree was dirty",
+				65: ROOT_EXITS[65],
+			},
+		),
 	),
+	Command.withExamples([
+		{command: "fabrika lane refresh 8810"},
+		{command: "fabrika lane refresh 8810 --on-review"},
+	]),
 );
 
 const retrigger = leafCommand(
@@ -1127,8 +1232,17 @@ const retrigger = leafCommand(
 		"Schedule fresh checks on the children an assembly push left stale.",
 	),
 	Command.withDescription(
-		"Schedule a fresh CI run on every OPEN pull request based on an epic run's assembly branch — `epic/<n>`, derived from the epic number and never taken from the caller — after `lane push` moved that branch. GitHub recomputes `refs/pull/<n>/merge` when a base moves, but emits no pull_request event for a base push (the event fires on opened, synchronize and reopened), so nothing schedules a run and every child keeps reporting checks over the tree its base had before the push. A workflow re-run cannot serve: it replays the original event's GITHUB_SHA and GITHUB_REF, which is the stale merge commit. Close/reopen is forbidden — it tears the pull request's preview stage down mid-deploy. So the head is moved instead, through GitHub's own `PUT /pulls/{n}/update-branch`, which merges the base into the head branch and is a synchronize: a run is scheduled against a merge ref computed now, nothing is closed, nothing is force-pushed and no commit is rewritten. Idempotent by construction: a child whose head already contains the base tip is read, reported `current` and never written to, so a second call right after a first writes nothing. The staleness read is the platform's own comparison against the base as it stands, never the pull request's frozen `base.sha`. Each write carries `expected_head_sha`, so it is refused rather than misaddressed when a sibling moved the head first. Nothing is pushed, no working tree is touched and no lane log is written. On exit 0 the last stdout line is `RETRIGGER-VERDICT: RETRIGGERED`, `RETRIGGER-VERDICT: CURRENT` (children exist and all already carried the base) or `RETRIGGER-VERDICT: NONE` (no open pull request is based on the branch), and the lines above it are one row per child: `#<pr> current`, or `#<pr> <commits behind> behind, <head before> -> <head after>`. Exits 8 (an update was accepted and the head did not move inside its 60s window, or a read failed after this sweep had already moved a child's head — a merge may still be in flight, so re-read before writing again), 11 (the pull request list or a comparison could not be read and this sweep had written to no child — UNKNOWN over an untouched sweep, never an empty one), 42 (the assembly branch does not merge into one or more of the head branches, so those children need a repair round before their checks can run at all). Example: fabrika lane retrigger 8716",
+		laneHelp(
+			"retrigger",
+			"Updates each open PR based on epic/<n> so its checks rerun; ends on a RETRIGGER-VERDICT line.",
+			{
+				8: "a head did not move, or a read failed after a write",
+				11: "read failed before any write, UNKNOWN",
+				42: "the assembly branch does not merge into a head",
+			},
+		),
 	),
+	Command.withExamples([{command: "fabrika lane retrigger 8716"}]),
 );
 
 const pushLane = leafCommand(
@@ -1159,8 +1273,22 @@ const pushLane = leafCommand(
 ).pipe(
 	Command.withShortDescription("Publish an epic run's assembly branch, confirming the ref moved."),
 	Command.withDescription(
-		"Publish the assembly branch of one epic run — `epic/<n>`, derived from the epic number and never taken from the caller — and INDEPENDENTLY confirm the remote ref moved by reading it back with git ls-remote. The sanctioned push for the one branch no spawned shell owns — `build push` refuses that branch, because the branch carries no build claim's nonce. The whole report is stdout, single-stream, so `tail -1` of stdout on exit 0 is always `PUSH-VERDICT: MOVED`. No force flag exists: the assembly branch only ever grows, one merge per landed child. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (pushed, but the remote ref could not be re-read — the outcome is UNKNOWN), 11 (the lane, HEAD, the remote ref or containment could not be read — nothing was pushed), 26 (the tree is not on the assembly branch, or HEAD is detached), 29 (the push would drop commits the remote holds — fetch and merge, never rewrite), 30 (proven: the remote ref did not move), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root). Example: fabrika lane push 5680",
+		laneHelp(
+			"push",
+			"Pushes an epic run's assembly branch and reads the remote ref back; ends on PUSH-VERDICT: MOVED.",
+			{
+				4: "lane record is not the shape",
+				7: "no lane",
+				8: "pushed, remote ref unreadable, UNKNOWN",
+				11: "read failed, nothing pushed",
+				26: "tree not on the assembly branch",
+				29: "push would drop remote commits",
+				30: "proven: the remote ref did not move",
+				...ROOT_EXITS,
+			},
+		),
 	),
+	Command.withExamples([{command: "fabrika lane push 5680"}]),
 );
 
 const brief = leafCommand(
@@ -1196,8 +1324,27 @@ const brief = leafCommand(
 ).pipe(
 	Command.withShortDescription("The spawn prompt for one task's current leaf state."),
 	Command.withDescription(
-		"Print the spawn prompt for one task's current leaf state, folded fresh from the ledger — so a driver pastes a brief rather than composing one. stdout is the `lane-brief` wire format: which lane, task, state and shell, this driver's lanes root resolved absolute (the shell passes it back to `lane report` as --root; a relative one would resolve against the shell's own worktree), the fabrika entrypoint resolved for this repo (repo-relative in a checkout of fabrika's own repo so each worktree runs its own copy, absolute for an installed one no worktree has a node_modules for), the resolved issue and PR URLs (URLs only — the spawned shell re-reads its own ground), and the format's byte-fixed rules. Hand the bytes to the spawn verbatim — a line appended under them is text the format's own reader calls malformed. On an epic lane a child's state resolves no PR at all and briefs the epic issue, the epic branch and the range to judge, while the tail task briefs the run's single PR under the same refusals — and the tail's `build`, the repair round its review's FAIL retries into, briefs that PR together with the assembly branch `epic/<lane>` its head sits on, under a rules paragraph naming the lane driver as the one shell that moves that branch. Every brief standing on that assembly branch is also checked against it: the `fabrika:` entrypoint is repo-relative in a checkout, so it resolves inside the shell's own worktree, and a branch cut before a lane verb landed on the trunk hands that shell a copy of this CLI which cannot execute the contract the brief states — the shell does the work, produces its verdict, and cannot record it. So the branch's own tree is read for every lane verb the brief tells the shell to run (`lane report` today), and a missing one refuses at 59 naming it and the remedy, `lane refresh`. An absolute entrypoint is an installed copy the branch does not carry and is not judged. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane, the issue, its PRs, this fabrika's own entrypoint, the assembly branch's tree or — on a child `review` state — this tree's branches could not be read, UNKNOWN; a shallow clone whose graft boundary is the assembly tip or the child's fork point seats here too, since every ancestry answer over it is wrong — the stderr names `git fetch --deepen=25`), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 18 (the leaf state routes to no shell — `queued`, `blocked`, `human:*`, a final), 19 (neither the task nor the lane names an issue, or that issue is proven absent), 20 (zero open PRs where the state needs one — the tail's repair round needs one too — or several where one is required), 21 (the key is not a lane key), 22 and 25 (a child `review` state's range, on the seats `lane prove` already spends on the same two facts — no local branch in this tree carries the child's commits, or several do), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root), 59 (the assembly branch does not carry a lane verb this brief tells the shell to run — refresh the branch, then brief again). Example: fabrika lane brief 5680 --task issue_5729",
+		laneHelp(
+			"brief",
+			"Prints the lane-brief spawn prompt for one task's current state, to hand to the spawn verbatim.",
+			{
+				4: "bad lane record",
+				7: "no lane",
+				11: "read failed, UNKNOWN",
+				13: "task not in the machine, or --task missing",
+				18: "state routes to no shell",
+				19: "no issue, or the issue is absent",
+				20: "zero or several open PRs where one is needed",
+				21: "bad key",
+				22: "no local branch carries the child's commits",
+				25: "several branches carry the child's commits",
+				39: ROOT_EXITS[39],
+				59: "assembly branch lacks a verb the brief names",
+				65: ROOT_EXITS[65],
+			},
+		),
 	),
+	Command.withExamples([{command: "fabrika lane brief 5680 --task issue_5729"}]),
 );
 
 const laneTokenFlag = Flag.string("token").pipe(
@@ -1359,7 +1506,7 @@ const stale = leafCommand(
 		olderThan: Flag.integer("older-than").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				`override the horizon for every lane, in minutes (default: each lane's own shell budget — ${SHELL_BUDGETS.build.minutes} for a build, ${SHELL_BUDGETS.review.minutes} for a review, ${SHELL_BUDGETS.ship.minutes} for a ship, ${DISPATCH_BUDGET.minutes} for a task awaiting dispatch)`,
+				`override the horizon for every lane, in non-negative minutes (default: each lane's own shell budget — ${SHELL_BUDGETS.build.minutes} for a build, ${SHELL_BUDGETS.review.minutes} for a review, ${SHELL_BUDGETS.ship.minutes} for a ship, ${DISPATCH_BUDGET.minutes} for a task awaiting dispatch)`,
 			),
 		),
 		claims: Flag.boolean("claims").pipe(
@@ -1404,8 +1551,20 @@ const stale = leafCommand(
 ).pipe(
 	Command.withShortDescription("Which lanes have gone quiet with something owed on them."),
 	Command.withDescription(
-		`Sweep every lane on disk and answer which ones nothing is driving. A lane's ledger records state, not liveness, so a shell that dies leaves the lane reading active forever; the age here comes off the \`at\` every event line already carries — nothing new is stored. How long a lane may be silent is its OWN horizon, not one number for the pipeline: each lane is judged against the budget of the work driving it — a build shell's, a review shell's, a ship shell's, or the dispatch budget for a task nothing has picked up — and every row reports the budgetMinutes it was judged against. --older-than overrides that for every lane; without it, olderThanMinutes in the answer is null, which says the budgets did the judging. stdout is {now, olderThanMinutes, scanned, summary, lanes}, oldest silence first, each lane carrying its folded stateValue, its last event's timestamp, its age in minutes, the budget it was judged against and one verdict: "stale" (non-terminal, unparked and silent past the threshold), "moving", "parked" (blocked or a human:* hold — a park is meant to sit), "terminal", "unstarted" (a lane with no events at all, so no age to judge) or "unreadable" (the lane is there and its record is not readable — it is reported, never dropped). Both default roots are swept unless --root names one; an absent root holds no lanes and is not a fault, and zero lanes is an empty answer at exit 0. Stale lanes exit 0 too — this reports, it never resumes. Without --claims the whole sweep runs off disk and makes no network call. --claims additionally reads the board and pairs each NON-TERMINAL lane with the claim standing on its issue, which is the other half a session limit strands: the dead builder's claim marker outlives it, and the lane log cannot see that. Each paired row then carries claims: {"state":"held",token,session,author,commentId} | {"state":"unclaimed"} | {"state":"unknown",reason} — a board read that failed is unknown, never "unclaimed" — and the answer carries a top-level claims summary, null when the board was never asked. Chore lanes drive no issue and are not paired. Nothing here clears a claim: a stranded BUILD claim leaves through "fabrika build adopt" then "fabrika build release", and the LANE claim a killed operator seat strands on the same issue — which this sweep does not read — leaves through "fabrika lane adopt" then "fabrika lane release". "fabrika build claimants <n>" reads one issue's build claims the same way. Exits 1 (--older-than is not a non-negative number of minutes), 11 (a root is there and could not be listed — the lane set is UNKNOWN, never a short list), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot), 65 (the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop --root). Examples: fabrika lane stale · fabrika lane stale --older-than 120 · fabrika lane stale --claims`,
+		laneHelp(
+			"stale",
+			"Prints which lanes on disk have gone silent past their horizon as JSON, oldest silence first.",
+			{
+				11: "a root could not be listed, UNKNOWN",
+				...ROOT_EXITS,
+			},
+		),
 	),
+	Command.withExamples([
+		{command: "fabrika lane stale"},
+		{command: "fabrika lane stale --older-than 120"},
+		{command: "fabrika lane stale --claims"},
+	]),
 );
 
 const seats = leafCommand(

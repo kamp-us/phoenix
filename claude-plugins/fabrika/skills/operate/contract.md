@@ -662,3 +662,441 @@ byte-identical after it.
   given together, or a live build claim on the child says a worker is still on it. Every one of
   those is repaired by changing the flag or the board, never by re-planning the epic.
 - `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane brief`
+
+### Output
+
+The spawn prompt for one task's current leaf state, folded fresh from the ledger, so a driver
+pastes a brief rather than composing one. stdout is the `lane-brief` wire format. It carries:
+
+- which lane, task, state and shell;
+- this driver's lanes root, resolved absolute. The shell passes it back to `lane report` as
+  `--root`, and a relative one would resolve against the shell's own worktree;
+- the fabrika entrypoint resolved for this repo. It is repo-relative in a checkout of fabrika's own
+  repo, so each worktree runs its own copy, and absolute for an installed one no worktree has a
+  `node_modules` for;
+- the resolved issue and PR URLs. They are URLs only: the spawned shell re-reads its own ground;
+- the format's byte-fixed rules.
+
+Hand the bytes to the spawn verbatim. A line appended under them is text the format's own reader
+calls malformed.
+
+On an epic lane a child's state resolves no PR at all and briefs the epic issue, the epic branch and
+the range to judge. The tail task briefs the run's single PR under the same refusals. The tail's
+`build`, the repair round its review's FAIL retries into, briefs that PR together with the assembly
+branch `epic/<lane>` its head sits on, under a rules paragraph naming the lane driver as the one
+shell that moves that branch.
+
+Every brief standing on that assembly branch is also checked against it. The `fabrika:` entrypoint
+is repo-relative in a checkout, so it resolves inside the shell's own worktree, and a branch cut
+before a lane verb landed on the trunk hands that shell a copy of this CLI which cannot execute the
+contract the brief states: the shell does the work, produces its verdict, and cannot record it. So
+the branch's own tree is read for every lane verb the brief tells the shell to run (`lane report`
+today), and a missing one refuses at `59` naming it and the remedy, `lane refresh`. An absolute
+entrypoint is an installed copy the branch does not carry and is not judged.
+
+### Exit status
+
+- `4`, `7`, `13`, `21` — the [shared exits](#the-shared-read-and-record-exits).
+- `11` — the lane, the issue, its PRs, this fabrika's own entrypoint, the assembly branch's tree or,
+  on a child `review` state, this tree's branches could not be read. UNKNOWN. A shallow clone whose
+  graft boundary is the assembly tip or the child's fork point seats here too, since every ancestry
+  answer over it is wrong; the stderr names `git fetch --deepen=25`.
+- `18` — the leaf state routes to no shell: `queued`, `blocked`, `human:*`, a final.
+- `19` — neither the task nor the lane names an issue, or that issue is proven absent.
+- `20` — zero open PRs where the state needs one, the tail's repair round included, or several where
+  one is required.
+- `22`, `25` — a child `review` state's range, on the seats `lane prove` already spends on the same
+  two facts: no local branch in this tree carries the child's commits (`22`), or several do (`25`).
+- `59` — the assembly branch does not carry a lane verb this brief tells the shell to run. Refresh
+  the branch, then brief again.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane dispatch`
+
+### Output
+
+The dispatch contract lives in
+[Codex dispatch](../../../../packages/fabrika-cli/docs/codex-dispatch.md): the inputs, the
+`assemblyRefresh.onDispatch` refresh an epic child gets before its brief, the order of the worktree,
+reconciler and `codex exec` steps, what counts as success, and the retained worktrees and logs.
+
+In short: it creates a dedicated detached git worktree and runs `codex exec` with a fixed skill
+preload envelope and the emitted lane brief unchanged. It preserves Codex model and policy
+configuration. Process exit zero alone is not completion: a new task terminal and fresh artifact
+proof are required. stdout is `{harness, task, event, worktree}`, and worktrees are retained.
+
+### Exit status
+
+- `11` — a missing input, isolation, process or state failure; also a repository identity the
+  refresh gate cannot read.
+- `18` — an unsupported harness or an inactive state.
+- `22` — no unique new terminal.
+- `42` — the pre-dispatch refresh met a conflict. The branch is proven back at its pre-merge head and
+  no worktree is created. Record the park the refusal names (`--cause assembly-conflict`) rather
+  than dispatching over the unrefreshed branch.
+- `39` — the lanes-root resolution ahead of every read, which refuses on either of its two arms:
+  `--root` absent and no repository derivable off the cwd, or a present `--root` that is relative
+  and a cwd that itself holds neither `.fabrika` nor `.git`. `65` is
+  [the lanes root](#the-lanes-root).
+- `lane refresh`, `lane brief` and `lane prove` refusals pass through on their own codes, including
+  `lane brief`'s `59`.
+
+## `lane assembly`
+
+### Output
+
+Places the working tree an epic run assembles in: `epic/<n>` checked out at
+`.claude/worktrees/epic-<n>`, both derived from the epic number and never taken from the caller.
+stdout is the tree's absolute path. The invoking checkout is NEVER switched.
+
+It is idempotent in both directions:
+
+- a worktree already holding the branch is resumed and its path answered with nothing written;
+- a branch that outlived its worktree, the state `--remove` at a terminal leaves behind, is checked
+  out again as it stands, never re-cut off a fresh base;
+- a worktree whose directory is gone but whose record git still carries (`prunable`) is that same
+  state: the registration is cleared and the branch placed again, never answered as a live path.
+
+**Every resume fetches first** and asks one question of the branch it found: does `origin/HEAD`
+already carry its content. A multi-phase epic that shipped an intermediate tail lands in exactly
+that state. The branch holds nothing the trunk lacks and conflicts with everything the trunk took
+since, and until this read the verb could not tell it from an ordinary unlanded resume.
+
+The read is squash-aware because this trunk is. Ancestry is the fast path, and a branch it calls
+unlanded is settled by cumulative patch id: the branch's own net diff against the trunk, matched
+against the patches the trunk took since their merge base, limited to the paths the branch touches
+(200 commits back). A match means it landed as a squash, and a branch that adds nothing to the
+trunk at all counts the same.
+
+A contained branch is re-cut off `origin/HEAD` in one `worktree add --no-track -B`, and the note
+says it re-cut and which of the three proofs opened it. Its seat, if it still has one, is dropped
+first WITHOUT `--force`, so git refusing to drop uncommitted work is what keeps unlanded bytes out
+of a re-cut. Containment is the whole warrant: a branch that is not contained, including one whose
+squash carried a conflict resolution so its patch does not match, resumes exactly as before. No
+board is read: whether the tail PR merged is never asked.
+
+`--remove` is the lane's terminal step. It fetches nothing and never forces: a dirty assembly tree
+is unlanded work, so git's refusal is the answer.
+
+Every mode reads the outcome back off `git worktree list` before answering.
+
+### Exit status
+
+- `4`, `7` — the [shared read exits](#the-shared-read-and-record-exits). On `7`, emit the run's
+  machine first.
+- `8` — the placement or removal ran and did not read back, or a contained branch's seat would not
+  drop. UNKNOWN.
+- `11` — the working trees, the branches, the fetch, `origin/HEAD` or the containment read could not
+  be read: a failed fetch, an `origin/HEAD` naming no commit, a diff or patch read that failed.
+  Nothing was placed or removed, and the containment answer is never resolved either way.
+- `33` — `epic/<n>` is checked out in the main working tree. Switch that tree off it first.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane assembly-pr`
+
+### Output
+
+Derives one piece of the prose an epic run's single assembly PR opens with, and prints it bare on
+stdout so the `gh pr create` fence interpolates a value instead of deriving one. It opens, edits and
+reads back no pull request.
+
+- `--field title` prints `feat(epic): <the epic issue's own title>`. The conventional type is
+  `build/pr-title.ts`'s map, reused rather than re-derived, because release-please classifies the
+  squash subject and that rule lives in exactly one place. This verb only stamps the `(epic)` scope
+  over it.
+- `--field about` prints the `## About this epic` section derived from the epic's `## Pitch`
+  **Problem** paragraph, read through the same section reader `guard pitch-guard check` uses.
+
+That text is never passed through raw:
+
+- a closing keyword is swapped for a word GitHub's documented keyword list does not carry, and the
+  `#<n>` it aimed at is left as written;
+- the paragraph is cut to its opening sentences under a word budget, so a triage-length Problem does
+  not land as the section, with `[…]` marking what was left behind;
+- what is lifted lands as a block quote in the epic's own words. That is the shape `build pr`'s body
+  guard already reads as reproduced rather than asserted, so a Problem naming `type:epic`, a
+  priority or control-plane keeps its sentence intact instead of being reworded into something that
+  only looks safe.
+
+The result is then re-read through `build pr`'s own body predicates, so a section this verb answers
+cannot be one that guard refuses. An epic with no `## Pitch`, or a pitch with no Problem paragraph,
+is an ANSWER and not a refusal: empty stdout with the reason on stderr, so the run still publishes
+its PR with no section rather than being stranded over prose.
+
+### Exit status
+
+- `1` — `--field` is not `title` or `about`, or the target repo could not be resolved.
+- `7` — the epic is proven absent or closed.
+- `11` — the epic could not be read. UNKNOWN, never a derived title.
+- `56` — the issue carries no `type:epic`, so an assembly PR's prose is not its to give.
+- `57` — the derived section still carries a stray closing keyword or a classification claim after
+  neutralisation. Reword the epic's Problem paragraph, or write the section by hand; `--field title`
+  is unaffected.
+
+## `lane assembly-body`
+
+### Output
+
+Guards the epic run's single assembly PR body on its way to `gh pr create`. It reads the body from
+stdin and relays it unchanged on stdout when it closes the epic: the same bytes, plus a trailing
+newline when the body lacked one. It opens, edits and reads back no pull request.
+
+An epic run is one branch and one PR, so that PR is the run's whole landing. A tail body reaching
+the epic through `Part of #<epic>`, or closing only its landed children, merges without closing it.
+The lane then folds to `shipped` and then `complete` over an epic the board still calls open, and an
+operator re-dispatched on it parks on `LANE-TERMINAL` with no door out.
+
+The link reader is `issueRefsOf`, the very one `lane/closure.ts` judges the merged PR with, so this
+guard refuses exactly the bodies that reader would later call partial or leave unreadable, and the
+two cannot disagree about one body. The tail's other closing keywords, one per landed child by
+contract, are not judged. What is required is a closing keyword whose target is the epic itself,
+tested by membership rather than by first match, because a scalar reader would answer off whichever
+child leads.
+
+It reads no board and takes no `--repo`. The number's epic-ness was established one command earlier
+in the same fence by `lane assembly-pr`'s `56`, and a second network read would only add an UNKNOWN
+to a judgement the bytes on stdin fully decide.
+
+### Exit status
+
+- `1` — stdin could not be read. The body is UNKNOWN, never empty.
+- `3` — stdin was read and held nothing.
+- `5` — the body carries a machine-local path. Redact before opening.
+- `6` — the body is a bare `@` path reference. Write the body, not a pointer to it.
+- `58` — no closing keyword aims at the epic; stderr names what the body reaches it by instead.
+  Write `Fixes #<epic>`, or leave the run's PR unopened.
+
+## `lane integrate`
+
+### Output
+
+Merges one reviewed child's branch into the epic run's assembly worktree, `epic/<n>` at the path
+`lane assembly` placed, both derived from the epic number and never taken from the caller. It proves
+the merged tree holds together before the branch keeps it.
+
+The order is the verb:
+
+1. `git merge --no-ff`;
+2. the repo's declared `dependencyReconciler` (for example `pnpm install --frozen-lockfile`), run IN
+   that worktree so the install reads the lockfile the merge just brought;
+3. the repo's declared `codeValidators` over the merged tree.
+
+It reconciles after the merge, never before, since an assembly worktree placed before a child
+existed still holds the pre-merge install. Every refusal below the merge resets the assembly branch
+to `ORIG_HEAD` and reads its head back, so a recorded FAIL names a branch that never carried the bad
+merge. Nothing is ever pushed here: that is `lane push`, and recording the DONE is the driver's.
+
+**A textual collision is not always the end of the run.** Under `assemblyReplay.onCollision`
+(shipped `off`), the child's commits are replayed onto the tip:
+
+- hunks that are a plain keep-both, both sides adding lines where the base had none, are kept both
+  ways;
+- a pick whose every unmerged path is a lockfile named in
+  `assemblyReplay.lockfileRegenerator.lockfiles` and marked `merge=binary` in `.gitattributes` is
+  regenerated by that declared command and staged;
+- the child's own branch is moved onto the replayed range, and that range is merged `--no-ff` like
+  any other landing;
+- a hunk that is not a plain keep-both resets through the captured head, proves the reset, and names
+  `--cause replay-conflict` as the park to record.
+
+With the key off, `42` is byte-identical to what it always was.
+
+On exit `0` the last stdout line is `INTEGRATE-VERDICT: MERGED`, or `INTEGRATE-VERDICT: REPLAYED`
+after a replay. The line above it is the merged head either way. Above that a replay prints its
+machinery event, `{event, child, replay, onto, range, resolved, regenerated, commits, reReview,
+budget}`. Its `range` is the moved range the child owes one review round over, and its `budget`
+reads `unspent`, because a replay is machinery working rather than the child failing.
+
+### Exit status
+
+- `4`, `7` — the [shared read exits](#the-shared-read-and-record-exits). On `7`, emit the run's
+  machine first.
+- `8` — a restore or a head read-back did not land. UNKNOWN, so nothing may be recorded.
+- `11` — the working trees, the branches, the head, `.fabrika.jsonc` or a validator could not be
+  read, or the repo declares no `codeValidators`. UNKNOWN, never green.
+- `22` — no branch by that name. Take it off `lane prove`'s evidence.
+- `33` — `epic/<n>` is checked out in the main working tree.
+- `41` — no working tree holds `epic/<n>`. Place it with `lane assembly`.
+- `42` — the child conflicts and was not replayed: the merge was aborted and nothing was installed.
+  Or the replay hit a hunk that is not a plain keep-both, or a lockfile regenerator that failed,
+  could not start, or wrote beyond the lockfiles, and the branch was reset and proved back.
+- `43` — the merged lockfile does not install, the reconciler could not be run, or it changed a
+  tracked file.
+- `44` — the merged tree failed a code validator: the semantic collision.
+- `45` — the assembly worktree already held modified tracked files before the merge, so nothing was
+  merged, installed or validated. That dirt is the driver's tree and not the child's range; clean the
+  seat and integrate again.
+- `54` — the replay landed and the child's branch would not follow it onto the replayed range,
+  usually because a working tree still stands on that branch. Nothing was merged and the seat is
+  back, so free the branch with `fabrika build retire` or park on `--cause worktree-holds-branch`.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane refresh`
+
+### Output
+
+Merges the trunk into the epic run's assembly worktree, `epic/<n>` at the path `lane assembly`
+placed, both derived from the epic number and never taken from the caller, so the tail's review
+binds to a head the merge queue can take.
+
+Nothing else in this package touches trunk after the first cut. `lane assembly` cuts off
+`origin/HEAD` once, and a resume fetches only to judge whether the branch is already landed, merging
+nothing. So the branch drifts behind trunk with nothing to notice, and `lane push` names "fetch and
+re-merge" as the remedy for its `29` without any verb performing it.
+
+The order is the verb: refuse a dirty seat, `git fetch origin`, resolve `--base` to a commit, answer
+CURRENT when the branch already carries it, else `git merge --no-ff` and re-read HEAD. A clean merge
+is silent and parks nothing. A conflict aborts, resets through `ORIG_HEAD` and PROVES the reset by
+re-reading HEAD, and the refusal names `--cause assembly-conflict` as the park to record. A reset
+that will not take is `8`, never the clean conflict refusal.
+
+Two callers reach the verb automatically, and each is gated by its own `assemblyRefresh` arm. Both
+ship `off`.
+
+- `--on-review`, typed by the driver on the tail's way into review, is gated by `onReview`. Its arm
+  is read from the `.fabrika.jsonc` of the repository that owns the cwd rather than the cwd's own.
+- The pre-dispatch call `lane dispatch` makes itself, before it cuts a child's worktree off the
+  branch, is gated by `onDispatch`. It is never typed, and its arm still reads the cwd's own copy.
+
+A hand call omits `--on-review` and is never gated. Nothing is pushed and no lane log is written:
+publishing the refreshed head is `lane push`'s, and recording the park is the driver's.
+
+On exit `0` the last stdout line is `REFRESH-VERDICT: MERGED`, `REFRESH-VERDICT: CURRENT`, or
+`REFRESH-VERDICT: DECLINED` under a gated automatic call whose arm reads `off`. The line above it is
+the head. A DECLINED prints no head, because nothing was read.
+
+### Exit status
+
+- `4`, `7` — the [shared read exits](#the-shared-read-and-record-exits). On `7`, emit the run's
+  machine first.
+- `8` — the restore or a head read-back did not land, or the merge reported success and the head did
+  not move. UNKNOWN, so nothing may be recorded.
+- `11` — the working trees, the head, the seat's cleanliness or the fetch could not be read.
+  UNKNOWN, never green.
+- `21` — `assemblyRefresh` is malformed in `.fabrika.jsonc`, so whether this repo refreshes its
+  assembly branch is UNKNOWN.
+- `22` — `--base` names no commit after the fetch.
+- `33` — `epic/<n>` is checked out in the main working tree.
+- `41` — no working tree holds `epic/<n>`. Place it with `lane assembly`.
+- `42` — the trunk conflicts with the assembly branch. The merge was aborted and the branch was
+  proven back at its pre-merge head.
+- `45` — the assembly worktree already held modified tracked files, so nothing was fetched or
+  merged. Clean the seat and refresh again.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane push`
+
+### Output
+
+Publishes the assembly branch of one epic run, `epic/<n>`, derived from the epic number and never
+taken from the caller, and INDEPENDENTLY confirms the remote ref moved by reading it back with
+`git ls-remote`.
+
+It is the sanctioned push for the one branch no spawned shell owns. `build push` refuses that
+branch, because the branch carries no build claim's nonce. The whole report is stdout, single-stream,
+so the last stdout line on exit `0` is always `PUSH-VERDICT: MOVED`. No force flag exists: the
+assembly branch only ever grows, one merge per landed child.
+
+### Exit status
+
+- `4`, `7` — the [shared read exits](#the-shared-read-and-record-exits). On `7`, emit the run's
+  machine first.
+- `8` — pushed, but the remote ref could not be re-read. The outcome is UNKNOWN.
+- `11` — the lane, HEAD, the remote ref or containment could not be read. Nothing was pushed.
+- `26` — the tree is not on the assembly branch, or HEAD is detached.
+- `29` — the push would drop commits the remote holds. Fetch and merge, never rewrite;
+  `lane refresh` is the verb that does it.
+- `30` — proven: the remote ref did not move.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane retrigger`
+
+### Output
+
+Schedules a fresh CI run on every OPEN pull request based on an epic run's assembly branch,
+`epic/<n>`, derived from the epic number and never taken from the caller, after `lane push` moved
+that branch.
+
+GitHub recomputes `refs/pull/<n>/merge` when a base moves, but emits no `pull_request` event for a
+base push (the event fires on opened, synchronize and reopened). So nothing schedules a run, and
+every child keeps reporting checks over the tree its base had before the push. A workflow re-run
+cannot serve: it replays the original event's `GITHUB_SHA` and `GITHUB_REF`, which is the stale
+merge commit. Close/reopen is forbidden, because it tears the pull request's preview stage down
+mid-deploy.
+
+So the head is moved instead, through GitHub's own `PUT /pulls/{n}/update-branch`, which merges the
+base into the head branch and is a synchronize. A run is scheduled against a merge ref computed now;
+nothing is closed, nothing is force-pushed and no commit is rewritten.
+
+- It is idempotent by construction. A child whose head already contains the base tip is read,
+  reported `current` and never written to, so a second call right after a first writes nothing.
+- The staleness read is the platform's own comparison against the base as it stands, never the pull
+  request's frozen `base.sha`.
+- Each write carries `expected_head_sha`, so it is refused rather than misaddressed when a sibling
+  moved the head first.
+- Nothing is pushed, no working tree is touched and no lane log is written.
+
+On exit `0` the last stdout line is `RETRIGGER-VERDICT: RETRIGGERED`, `RETRIGGER-VERDICT: CURRENT`
+(children exist and all already carried the base) or `RETRIGGER-VERDICT: NONE` (no open pull request
+is based on the branch). The lines above it are one row per child: `#<pr> current`, or
+`#<pr> <commits behind> behind, <head before> -> <head after>`.
+
+### Exit status
+
+- `8` — an update was accepted and the head did not move inside its 60s window, or a read failed
+  after this sweep had already moved a child's head. A merge may still be in flight, so re-read
+  before writing again.
+- `11` — the pull request list or a comparison could not be read and this sweep had written to no
+  child. UNKNOWN over an untouched sweep, never an empty one.
+- `42` — the assembly branch does not merge into one or more of the head branches, so those children
+  need a repair round before their checks can run at all.
+
+## `lane stale`
+
+### Output
+
+Sweeps every lane on disk and answers which ones nothing is driving. A lane's ledger records state,
+not liveness, so a shell that dies leaves the lane reading active forever. The age here comes off the
+`at` every event line already carries; nothing new is stored.
+
+How long a lane may be silent is its OWN horizon, not one number for the pipeline. Each lane is
+judged against the budget of the work driving it: a build shell's, a review shell's, a ship shell's,
+or the dispatch budget for a task nothing has picked up. Every row reports the `budgetMinutes` it was
+judged against. `--older-than` overrides that for every lane; without it, `olderThanMinutes` in the
+answer is `null`, which says the budgets did the judging.
+
+stdout is `{now, olderThanMinutes, scanned, summary, lanes}`, oldest silence first. Each lane carries
+its folded `stateValue`, its last event's timestamp, its age in minutes, the budget it was judged
+against and one verdict:
+
+- `stale` — non-terminal, unparked and silent past the threshold;
+- `moving`;
+- `parked` — blocked or a `human:*` hold. A park is meant to sit;
+- `terminal`;
+- `unstarted` — a lane with no events at all, so no age to judge;
+- `unreadable` — the lane is there and its record is not readable. It is reported, never dropped.
+
+Both default roots are swept unless `--root` names one. An absent root holds no lanes and is not a
+fault, and zero lanes is an empty answer at exit `0`. Stale lanes exit `0` too: this reports, it
+never resumes. Without `--claims` the whole sweep runs off disk and makes no network call.
+
+**`--claims`** additionally reads the board and pairs each NON-TERMINAL lane with the claim standing
+on its issue. That is the other half a session limit strands: the dead builder's claim marker
+outlives it, and the lane log cannot see that. Each paired row then carries
+`claims: {"state":"held",token,session,author,commentId} | {"state":"unclaimed"} |
+{"state":"unknown",reason}`. A board read that failed is `unknown`, never `unclaimed`. The answer
+carries a top-level `claims` summary, `null` when the board was never asked. Chore lanes drive no
+issue and are not paired.
+
+Nothing here clears a claim. A stranded BUILD claim leaves through `fabrika build adopt` then
+`fabrika build release`. The LANE claim a killed operator seat strands on the same issue, which this
+sweep does not read, leaves through `fabrika lane adopt` then `fabrika lane release`.
+`fabrika build claimants <n>` reads one issue's build claims the same way.
+
+### Exit status
+
+- `1` — `--older-than` is not a non-negative number of minutes.
+- `11` — a root is there and could not be listed. The lane set is UNKNOWN, never a short list.
+- `39`, `65` — [the lanes root](#the-lanes-root).
