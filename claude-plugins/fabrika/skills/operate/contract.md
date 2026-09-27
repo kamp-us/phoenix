@@ -953,12 +953,12 @@ re-reading HEAD, and the refusal names `--cause assembly-conflict` as the park t
 that will not take is `8`, never the clean conflict refusal.
 
 Two callers reach the verb automatically, and each is gated by its own `assemblyRefresh` arm. Both
-ship `off`.
+ship `off`, and both arms are read from the `.fabrika.jsonc` of the repository that owns the cwd,
+never the cwd's own copy.
 
-- `--on-review`, typed by the driver on the tail's way into review, is gated by `onReview`. Its arm
-  is read from the `.fabrika.jsonc` of the repository that owns the cwd rather than the cwd's own.
+- `--on-review`, typed by the driver on the tail's way into review, is gated by `onReview`.
 - The pre-dispatch call `lane dispatch` makes itself, before it cuts a child's worktree off the
-  branch, is gated by `onDispatch`. It is never typed, and its arm still reads the cwd's own copy.
+  branch, is gated by `onDispatch`. It is never typed.
 
 A hand call omits `--on-review` and is never gated. Nothing is pushed and no lane log is written:
 publishing the refreshed head is `lane push`'s, and recording the park is the driver's.
