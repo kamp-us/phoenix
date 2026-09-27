@@ -106,6 +106,12 @@ export interface ConfigLayers {
 	readonly global: string;
 	/** The project module: `<project>/.tuval/tuval.config.ts`. */
 	readonly project: string;
+	/**
+	 * The layer read in the project module's place while that module is absent, merged under the
+	 * global layer so a global row with the same id still wins. Absent means an absent project
+	 * module is an empty layer.
+	 */
+	readonly projectDefault?: TuvalConfig;
 }
 
 export interface LoadedConfig {
@@ -127,6 +133,8 @@ export interface LoadedConfig {
 	readonly keys: ReadonlyArray<BindingSource>;
 	/** The layer modules that existed and were merged, global first. */
 	readonly sources: ReadonlyArray<string>;
+	/** Whether `ConfigLayers.projectDefault` stood in for an absent project module on this load. */
+	readonly projectDefaulted: boolean;
 	/**
 	 * Every file this load read the config from: the layer modules in `sources`, and each file they
 	 * import by path, transitively (`./module-generations.ts`). Packages are not in it.
@@ -175,7 +183,10 @@ const loadOptional = Effect.fn("Tuval.loadOptional")(function* (modulePath: stri
 		: Option.none<TuvalConfig>();
 });
 
-/** Both layers, absent ones empty, merged project-over-global by program id and node id. */
+/**
+ * Both layers, absent ones empty, merged project-over-global by program id and node id. An absent
+ * project module reads as `layers.projectDefault` when one is given, under the global layer.
+ */
 export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* (
 	layers: ConfigLayers,
 ) {
@@ -212,13 +223,19 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 		...(Option.isSome(global) ? [layers.global] : []),
 		...(Option.isSome(project) ? [layers.project] : []),
 	];
+	const fallback = Option.isNone(project)
+		? Option.fromNullishOr(layers.projectDefault)
+		: Option.none();
+	const under = Option.getOrElse(fallback, () => empty);
 	const base = Option.getOrElse(global, () => empty);
 	const over = Option.getOrElse(project, () => empty);
 	// Merged as declared rows rather than as bare rows: the merge is the last place a row and its
 	// layer module are still together, and a project row that replaces a global one by id has to come
 	// out carrying the project module as its origin.
 	const declared = mergeById(
-		declaredIn(base, layers.global),
+		mergeById(declaredIn(under, layers.project), declaredIn(base, layers.global), (program) =>
+			rowId(program.row),
+		),
 		declaredIn(over, layers.project),
 		(program) => rowId(program.row),
 	);
@@ -226,14 +243,21 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 		// Widened back: the loader checked each row's id and nothing else, and that is all a caller
 		// may assume of one.
 		programs: declared.map((program): unknown => program.row),
-		features: {...featuresDefault, ...base.features, ...over.features},
+		features: {...featuresDefault, ...under.features, ...base.features, ...over.features},
 		moduleRenderers: moduleRendererRefs(declared),
-		graph: {nodes: mergeById(base.graph.nodes, over.graph.nodes, (node) => node.id)},
+		graph: {
+			nodes: mergeById(
+				mergeById(under.graph.nodes, base.graph.nodes, (node) => node.id),
+				over.graph.nodes,
+				(node) => node.id,
+			),
+		},
 		keys: [
 			...(Option.isSome(global) ? [bindingSource("global", layers.global, base.keys)] : []),
 			...(Option.isSome(project) ? [bindingSource("project", layers.project, over.keys)] : []),
 		],
 		sources,
+		projectDefaulted: Option.isSome(fallback),
 		files: [...new Set([...sources, ...imported])],
 		modules,
 	} satisfies LoadedConfig;

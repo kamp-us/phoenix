@@ -9,8 +9,9 @@
 // its spells.
 // The shape is `TuvalConfigInput` (`@kampus/tuval-sdk/config`), version 1.
 //
-// The shell is registered here and nowhere else — it is a program row like any other, so dropping
-// its row and its graph node is how you boot without a desk.
+// The shell is a program row like any other. This file registers it, so the built-in default a
+// project with no config module boots on (`src/default-project-config.ts`) is not read here, and
+// dropping the shell's row and its graph node is how this project boots without a desk.
 //
 // No session is planned in `graph`, and that is the point: each row's layer stands a real agent up
 // when a process spawns — Pi's model runtime, Claude's `claude` CLI, agy's `agy` CLI, codex's

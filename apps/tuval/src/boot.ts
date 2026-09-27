@@ -46,6 +46,7 @@ import {
 	type ConfigLoadError,
 	type LoadedConfig,
 	loadLayeredConfig,
+	type TuvalConfig,
 	type TuvalFeatures,
 } from "./config.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
@@ -246,11 +247,19 @@ export interface BootOptions {
 	 * caller that names the real home dir.
 	 */
 	readonly home: string;
+	/**
+	 * The layer read in place of an absent project config module. `src/bin.ts` names
+	 * `defaultProjectConfig`, which is how a project with no config still gets a desk (#9375); a
+	 * caller that names none boots exactly the layer modules that exist.
+	 */
+	readonly projectDefault?: TuvalConfig;
 }
 
 export interface BootReport {
 	/** The config modules that existed and were merged, global first. */
 	readonly sources: ReadonlyArray<string>;
+	/** Whether the project had no config module and booted on `BootOptions.projectDefault` instead. */
+	readonly projectDefaulted: boolean;
 	readonly programCount: number;
 	/** Every registered spell: the kernel's own, plus the ones the config's programs declare. */
 	readonly spellCount: number;
@@ -307,7 +316,11 @@ const configRead = (config: LoadedConfig): ConfigRead => ({
 
 /** `start` from the layered config: the `pnpm dev` path. */
 export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
-	const layers = {global: options.global, project: projectConfig(options.project)};
+	const layers = {
+		global: options.global,
+		project: projectConfig(options.project),
+		projectDefault: options.projectDefault,
+	};
 	const config = yield* loadLayeredConfig(layers);
 	const {programs} = configRead(config);
 	const fs = yield* FileSystem.FileSystem;
@@ -338,6 +351,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	const spells = yield* SpellSet.use((set) => set.read).pipe(Effect.provideContext(started.kernel));
 	const report: BootReport = {
 		sources: config.sources,
+		projectDefaulted: config.projectDefaulted,
 		programCount: programs.length,
 		spellCount: spells.table.rows.length,
 		bindingCount: spells.bindings.bindings.length,
