@@ -252,7 +252,7 @@ Four more fields land on the line, and each is the prover's, never a flag:
   nominator's fallthrough.
 - `diagnosis` rides a DONE out of `build`. It says the prover stood this terminal on a diagnosis
   comment rather than a pull request, which is what the machine's `done:diagnosis` arm carries a
-  finished investigation to its own `diagnosed` terminal on, instead of the `review` it opened no PR
+  finished no-PR build to its own `diagnosed` terminal on, instead of the `review` it opened no PR
   for. It rides at `true` only, and only off `lane prove`'s no-PR arm. All three builder terminals
   report one DONE, so a `SHIPPED-PR` and an epic child's `BUILT-NO-PR` carry no such field and fold
   to `review` exactly as they always did.
