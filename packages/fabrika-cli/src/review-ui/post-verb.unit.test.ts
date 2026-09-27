@@ -216,6 +216,20 @@ describe("galleryTitle", () => {
 			"/pano @ desktop, scheme requested dark, proven dark",
 		);
 	});
+
+	it("names an interacted shot's label after its scheme, so the open menu never heads as the closed one", () => {
+		const interaction = {
+			label: "sil-highlighted",
+			steps: ["hover:#sil"],
+			proven: ["#sil matches :hover"],
+		} as const;
+		expect(galleryTitle({...entry, interaction})).toBe(
+			"/pano @ desktop, interaction sil-highlighted",
+		);
+		expect(galleryTitle({...entry, scheme: {requested: "dark", proven: "dark"}, interaction})).toBe(
+			"/pano @ desktop, scheme requested dark, proven dark, interaction sil-highlighted",
+		);
+	});
 });
 
 describe("runPost", () => {

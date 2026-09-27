@@ -9,7 +9,13 @@
  */
 import {Effect} from "effect";
 import type {HttpClient} from "effect/unstable/http/HttpClient";
-import {type CapturedSurface, CaptureError, type CaptureOptions, captureShots} from "./capture.ts";
+import {
+	type CapturedSurface,
+	CaptureError,
+	type CaptureOptions,
+	captureShots,
+	requireWritten,
+} from "./capture.ts";
 import type {PageError} from "./page-errors.ts";
 import {buildCapturePlan, type Surface, type Viewport} from "./plan.ts";
 import {type UploadOutcome, uploadAsset} from "./upload.ts";
@@ -74,6 +80,7 @@ export const captureAndUpload = (
 		catch: (cause) => new CaptureError({message: "failed to build capture plan", cause}),
 	}).pipe(
 		Effect.flatMap((plan) => captureShots(plan, request.outDir, request.captureOptions ?? {})),
+		Effect.flatMap(requireWritten),
 		Effect.flatMap((captured) =>
 			Effect.forEach(
 				captured,

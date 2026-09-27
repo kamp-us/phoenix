@@ -14,7 +14,13 @@
  */
 import {Effect} from "effect";
 import {assembleCandidateSet, type CandidateSet, type RenderedCandidate} from "./candidate-set.ts";
-import {type CapturedSurface, CaptureError, type CaptureOptions, captureShots} from "./capture.ts";
+import {
+	CaptureError,
+	type CaptureOptions,
+	captureShots,
+	requireWritten,
+	type ShotCapture,
+} from "./capture.ts";
 import {buildCapturePlan, DEFAULT_VIEWPORT, type Shot, type Viewport} from "./plan.ts";
 import {
 	type PrioritySurfaceParams,
@@ -30,7 +36,7 @@ export type CaptureLeg = (
 	shots: readonly Shot[],
 	outDir: string,
 	options: CaptureOptions,
-) => Effect.Effect<readonly CapturedSurface[], CaptureError>;
+) => Effect.Effect<readonly ShotCapture[], CaptureError>;
 
 /**
  * What a store leg returns: the content-address stem the golden pointer records, and the
@@ -108,6 +114,7 @@ export const renderCandidateSet = <E = never, R = never>(
 	}).pipe(
 		Effect.flatMap(({surfaces, plan}) =>
 			capture(plan, request.outDir, request.captureOptions ?? {}).pipe(
+				Effect.flatMap(requireWritten),
 				Effect.flatMap((captured) =>
 					Effect.forEach(
 						captured,

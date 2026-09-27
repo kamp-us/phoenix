@@ -14,8 +14,9 @@
  */
 import {Effect} from "effect";
 import {SESSION_PROBE_PATH} from "../capture/auth.ts";
-import {captureShots} from "../capture/capture.ts";
+import {captureShots, isWritten} from "../capture/capture.ts";
 import {FLAG_PROBE_PATH, isForcing} from "../capture/flag-override.ts";
+import {stepToken} from "../capture/interaction.ts";
 import {isRenderCrash} from "../capture/page-errors.ts";
 import {buildCapturePlan, joinPreviewUrl, parseSurfaceSpec} from "../capture/plan.ts";
 import {validateCaptureBytes} from "../capture/png.ts";
@@ -56,6 +57,7 @@ export const makeCaptureRenderLeg =
 						[parseSurfaceSpec(request.surface)],
 						request.viewport,
 						request.scheme,
+						request.interaction,
 					),
 				catch: (cause) => String(cause),
 			}).pipe(Effect.catch((reason) => Effect.succeed(reason)));
@@ -181,6 +183,31 @@ export const makeCaptureRenderLeg =
 				}
 				scheme = {requested: request.scheme.scheme, proven: proof.scheme};
 			}
+			// Last of the page proofs and after the crash check, for the scheme's reason: a page that threw
+			// is a red render, and the steps ran on the page the locale and scheme proofs answered about.
+			// A refused interaction wrote no file, so there are no bytes past this point to judge.
+			if (!isWritten(shot)) {
+				return {
+					_tag: "Uninteracted",
+					reason: `${shot.interactionProof.step}: ${shot.interactionProof.reason}`,
+				} satisfies SurfaceRender;
+			}
+			let interaction: CaptureEntry["interaction"];
+			if (request.interaction !== null) {
+				const proof = shot.interactionProof;
+				if (proof === undefined) {
+					return {
+						_tag: "Uninteracted",
+						reason: "the capture returned no interaction proof",
+					} satisfies SurfaceRender;
+				}
+				const [first, ...rest] = request.interaction.steps;
+				interaction = {
+					label: request.interaction.label,
+					steps: [stepToken(first), ...rest.map(stepToken)],
+					proven: proof.proven,
+				};
+			}
 			const validity = validateCaptureBytes(shot.pngBytes);
 			if (validity._tag === "Invalid") {
 				return {_tag: "Invalid", detail: validity.reason} satisfies SurfaceRender;
@@ -201,6 +228,7 @@ export const makeCaptureRenderLeg =
 					surface: request.surface,
 					viewport: request.viewport.label,
 					...(scheme === undefined ? {} : {scheme}),
+					...(interaction === undefined ? {} : {interaction}),
 					path: shot.localPath,
 					width: validity.width,
 					height: validity.height,

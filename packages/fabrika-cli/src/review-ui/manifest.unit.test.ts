@@ -104,6 +104,49 @@ describe("the manifest round-trip", () => {
 		}
 	});
 
+	it("round-trips an interacted entry beside a scheme, label, steps and proofs all", () => {
+		const interacted: CaptureManifest = {
+			...manifest,
+			captures: [
+				...manifest.captures,
+				{
+					...(manifest.captures[0] as CaptureEntry),
+					scheme: {requested: "dark", proven: "dark"},
+					interaction: {
+						label: "sil-highlighted",
+						steps: ['click:role=button[name="Aç"]', 'hover:role=menuitem[name="Sil"]'],
+						proven: ['role=menuitem[name="Sil"] matches :hover'],
+					},
+					path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano~sil-highlighted@desktop-dark.png",
+				},
+			],
+		};
+		assert.deepStrictEqual(parseManifest(serializeManifest(interacted)), {
+			_tag: "Manifest",
+			value: interacted,
+		});
+		// The at-rest entries beside it gain no field, so they read exactly as a set without one.
+		assert.notProperty(manifest.captures[0], "interaction");
+	});
+
+	it("refuses an interaction field that is not a label with its steps and proofs, rather than dropping it", () => {
+		for (const interaction of [
+			"sil",
+			{label: "sil", steps: ["hover:a"]},
+			{label: "", steps: ["hover:a"], proven: ["a"]},
+			{label: "sil", steps: [], proven: ["a"]},
+			{label: "sil", steps: ["hover:a"], proven: [1]},
+			null,
+		]) {
+			assert.strictEqual(
+				parseManifest(
+					JSON.stringify({...manifest, captures: [{...manifest.captures[0], interaction}]}),
+				)._tag,
+				"Malformed",
+			);
+		}
+	});
+
 	it("refuses a document it cannot read whole, rather than defaulting a field", () => {
 		assert.strictEqual(parseManifest("{")._tag, "Malformed");
 		assert.strictEqual(parseManifest("[]")._tag, "Malformed");

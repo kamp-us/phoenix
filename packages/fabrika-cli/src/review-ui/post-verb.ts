@@ -246,12 +246,17 @@ const mismatchOf = (
  * of the bytes judged. A set is a surface × viewport cross-product, so the heading names both: two
  * shots of one surface under one heading would read as a duplicate rather than as the two widths
  * they are. A `--scheme` set crosses a scheme too, so its heading names the requested and the
- * proven scheme; a set rendered without one keeps the heading it always had.
+ * proven scheme, and an interacted shot names its label, because an open menu and the closed one
+ * are two shots of one surface; a shot with neither keeps the heading it always had.
  */
 export const galleryTitle = (entry: CaptureEntry): string =>
-	entry.scheme === undefined
-		? `${entry.surface} @ ${entry.viewport}`
-		: `${entry.surface} @ ${entry.viewport}, scheme requested ${entry.scheme.requested}, proven ${entry.scheme.proven}`;
+	[
+		`${entry.surface} @ ${entry.viewport}`,
+		...(entry.scheme === undefined
+			? []
+			: [`scheme requested ${entry.scheme.requested}, proven ${entry.scheme.proven}`]),
+		...(entry.interaction === undefined ? [] : [`interaction ${entry.interaction.label}`]),
+	].join(", ");
 
 const gallery = (hosted: ReadonlyArray<readonly [CaptureEntry, string]>): string =>
 	emitGallery(

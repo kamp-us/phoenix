@@ -84,6 +84,14 @@ const render = leafCommand(
 				"a colour scheme to shoot every --surface at — light or dark, repeatable and crossed with --surface and --viewport; each shot's browser context emulates prefers-color-scheme, and the root attribute .fabrika.jsonc's uiCapture.scheme declares must read back that scheme before the shot is recorded (default: the browser's own scheme, nothing emulated or proved)",
 			),
 		),
+		// `atLeast(0)` is the repeatable form with no floor: omitting it shoots every surface at rest
+		// alone, which is what every earlier invocation asked for.
+		interact: Flag.string("interact").pipe(
+			Flag.atLeast(0),
+			Flag.withDescription(
+				'an interaction state to shoot beside a --surface at rest — <surface>#<label>=<step>;<step>;…, repeatable, where <surface> is one of this run\'s --surface ids, <label> is kebab-case and names the shot, and each step is hover:<locator>, focus:<locator>, click:<locator>, press:<key> or expect:<locator> over a Playwright selector (role=button[name="Sil"] first); the steps run in order after navigation and must end on hover, focus or expect, and every hover proves :hover, every focus :focus-visible, and every expect exactly one visible match, before the shot is recorded',
+			),
+		),
 		app: Flag.string("app").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -106,6 +114,7 @@ const render = leafCommand(
 		flag,
 		locale,
 		scheme,
+		interact,
 		app,
 		authSecretFrom,
 		repo,
@@ -147,6 +156,7 @@ const render = leafCommand(
 				localeDeclaration: capture?.capture.locale ?? null,
 				schemes: scheme,
 				schemeDeclaration: capture?.capture.scheme ?? null,
+				interactions: interact,
 				app: Option.getOrNull(app),
 				surfaceRows: surfaces.surfaces,
 				authSecretFrom: Option.getOrNull(authSecretFrom),
@@ -164,7 +174,7 @@ const render = leafCommand(
 		[
 			"Captures the named surfaces from a PR's preview deployment and prints one JSON capture record.",
 			"  7: PR absent or closed",
-			"  10: an operand off its closed set, or --flag, --locale or --scheme it cannot honor",
+			"  10: an operand off its closed set, or --flag, --locale, --scheme or --interact it cannot honor",
 			"  11: a read, a proof or a capture check failed (UNKNOWN)",
 			"  12: the preview deploys a stale head",
 			"  13: a surface threw during render",
@@ -185,6 +195,11 @@ const render = leafCommand(
 			command:
 				"fabrika review-ui render --pr 4321 --out schemes --surface /lab/atolye/markdown --scheme light --scheme dark",
 			description: "Capture one surface in both colour schemes, each proved off the page",
+		},
+		{
+			command:
+				'fabrika review-ui render --pr 4321 --out hover --surface /lab/atolye/button --interact \'/lab/atolye/button#danger-hovered=click:role=radio[name="Danger"];hover:role=button[name="Kaydet"]\'',
+			description: "Capture a surface at rest and hovered, the hover proved off the page",
 		},
 	]),
 );

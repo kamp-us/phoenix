@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {type CapturedSurface, CaptureError} from "../capture/capture.ts";
+import {type CapturedSurface, CaptureError, type UnwrittenSurface} from "../capture/capture.ts";
 import {NO_FORCED_FLAGS} from "../capture/flag-override.ts";
 import {DESKTOP_VIEWPORT, MOBILE_VIEWPORT} from "../capture/plan.ts";
 import {PAGE_ERROR_CAP} from "./manifest.ts";
@@ -18,6 +18,7 @@ const request = {
 	forcedFlags: NO_FORCED_FLAGS,
 	locale: null,
 	scheme: null,
+	interaction: null,
 };
 
 const failing =
@@ -438,5 +439,99 @@ describe("captureRenderLeg — the scheme proof", () => {
 				}),
 			)._tag,
 		).toBe("Crashed");
+	});
+});
+
+/**
+ * A hover the page never registered paints the surface at rest, a valid PNG under the interacted
+ * name — so the interacted entry exists only when the capture came back proven, and a refused
+ * interaction came back with no bytes at all.
+ */
+describe("captureRenderLeg — the interaction proof", () => {
+	const SIL = {
+		label: "sil-highlighted",
+		steps: [
+			{verb: "click", locator: 'role=button[name="Aç"]'},
+			{verb: "hover", locator: 'role=menuitem[name="Sil"]'},
+		],
+	} as const;
+	const interactRequest = {...request, interaction: SIL};
+	const runInteract = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(interactRequest));
+	const REFUSED = {
+		_tag: "Refused",
+		step: 'hover:role=menuitem[name="Sil"]',
+		reason: 'role=menuitem[name="Sil"] does not match :hover',
+	} as const;
+	const unwritten =
+		(shot: Partial<UnwrittenSurface>): CaptureShots =>
+		() =>
+			Effect.succeed([
+				{
+					surface: "/pano",
+					route: "/pano",
+					state: null,
+					fileName: "pano~sil-highlighted@desktop.png",
+					pageErrors: [],
+					status: 200,
+					interactionProof: REFUSED,
+					...shot,
+				},
+			]);
+
+	it("plans the shot with its interaction and label, and plans neither for a shot at rest", () => {
+		const planned: Array<{readonly interaction: unknown; readonly fileName: string}> = [];
+		const spy: CaptureShots = (plan) => {
+			planned.push(
+				...plan.map((shot) => ({interaction: shot.interaction, fileName: shot.fileName})),
+			);
+			return succeeding({interactionProof: {_tag: "Proven", proven: ["x"]}})([], "", {});
+		};
+		runInteract(spy);
+		run(spy);
+		expect(planned).toEqual([
+			{interaction: SIL, fileName: "pano~sil-highlighted@desktop.png"},
+			{interaction: undefined, fileName: "pano@desktop.png"},
+		]);
+	});
+
+	it("records the label, the steps it ran and what the page proved, and nothing on a shot at rest", () => {
+		const proven = runInteract(
+			succeeding({
+				interactionProof: {_tag: "Proven", proven: ['role=menuitem[name="Sil"] matches :hover']},
+			}),
+		);
+		expect(proven._tag === "Rendered" && proven.entry.interaction).toEqual({
+			label: "sil-highlighted",
+			steps: ['click:role=button[name="Aç"]', 'hover:role=menuitem[name="Sil"]'],
+			proven: ['role=menuitem[name="Sil"] matches :hover'],
+		});
+		const plain = run(succeeding({}));
+		expect(plain._tag === "Rendered" && "interaction" in plain.entry).toBe(false);
+	});
+
+	it("refuses a refused interaction, naming the step that stopped it", () => {
+		expect(runInteract(unwritten({}))).toEqual({
+			_tag: "Uninteracted",
+			reason: `hover:role=menuitem[name="Sil"]: role=menuitem[name="Sil"] does not match :hover`,
+		});
+	});
+
+	it("refuses an absent proof — a capture that says nothing about the interaction proved nothing", () => {
+		expect(runInteract(succeeding({}))).toEqual({
+			_tag: "Uninteracted",
+			reason: "the capture returned no interaction proof",
+		});
+	});
+
+	it("keeps a crash ahead of the interaction proof — a page that threw is a red render", () => {
+		expect(
+			runInteract(unwritten({pageErrors: [{kind: "pageerror", text: "TypeError: x is null"}]}))
+				._tag,
+		).toBe("Crashed");
+	});
+
+	it("keeps an unreachable page ahead of it too — a 404 has no menu to open", () => {
+		expect(runInteract(unwritten({status: 404}))._tag).toBe("Unreachable");
 	});
 });

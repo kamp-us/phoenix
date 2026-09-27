@@ -33,6 +33,13 @@ export interface CaptureScheme {
 	readonly proven: ColorScheme;
 }
 
+/** An interacted shot's record: the label it is filed under, the steps it ran, what the page proved. */
+export interface CaptureInteraction {
+	readonly label: string;
+	readonly steps: readonly [string, ...string[]];
+	readonly proven: readonly [string, ...string[]];
+}
+
 /** One captured surface, as both the stdout object and the manifest record it. */
 export interface CaptureEntry {
 	readonly surface: string;
@@ -48,6 +55,12 @@ export interface CaptureEntry {
 	 * half is read off the page, never echoed from the request.
 	 */
 	readonly scheme?: CaptureScheme;
+	/**
+	 * The interaction an `--interact` shot ran and what the page proved at each proving step —
+	 * present only on such a shot, so an at-rest entry reads exactly as before. The proven half is
+	 * read off the page, never echoed from the operand.
+	 */
+	readonly interaction?: CaptureInteraction;
 	readonly path: string;
 	readonly width: number;
 	readonly height: number;
@@ -114,12 +127,29 @@ const toScheme = (value: unknown): CaptureScheme | null | undefined => {
 	return {requested: value.requested, proven: value.proven};
 };
 
+const toNonEmptyStrings = (value: unknown): readonly [string, ...string[]] | null => {
+	if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return null;
+	const [first, ...rest] = value as string[];
+	return first === undefined ? null : [first, ...rest];
+};
+
+/** `undefined` for an absent field, `null` for a present one that is not an interaction record. */
+const toInteraction = (value: unknown): CaptureInteraction | null | undefined => {
+	if (value === undefined) return undefined;
+	if (!isRecord(value) || typeof value.label !== "string" || value.label.length === 0) return null;
+	const steps = toNonEmptyStrings(value.steps);
+	const proven = toNonEmptyStrings(value.proven);
+	return steps === null || proven === null ? null : {label: value.label, steps, proven};
+};
+
 const toEntry = (value: unknown): CaptureEntry | null => {
 	if (typeof value !== "object" || value === null) return null;
 	const record = value as Record<string, unknown>;
 	const scheme = toScheme(record.scheme);
+	const interaction = toInteraction(record.interaction);
 	if (
 		scheme === null ||
+		interaction === null ||
 		typeof record.surface !== "string" ||
 		typeof record.viewport !== "string" ||
 		typeof record.path !== "string" ||
@@ -134,6 +164,7 @@ const toEntry = (value: unknown): CaptureEntry | null => {
 		surface: record.surface,
 		viewport: record.viewport,
 		...(scheme === undefined ? {} : {scheme}),
+		...(interaction === undefined ? {} : {interaction}),
 		path: record.path,
 		width: record.width,
 		height: record.height,
