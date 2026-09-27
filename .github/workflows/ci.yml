@@ -501,10 +501,10 @@ jobs:
       # decision and falls back to the full run on an empty base, a missing file list,
       # or a path outside every workspace package. This step only relays the diff: a
       # failed `git diff` leaves `CHANGED_FILES_FILE` unset, which the bin reads as an
-      # unknown diff. The event gate keeps checked-out code from running on `push` and
-      # `workflow_dispatch`, which CodeQL reads as default-branch cache poisoning
-      # (`actions/cache-poisoning/poisonable-step`); those events take the full run
-      # from the `changes` output defaults above.
+      # unknown diff. It runs only on `pull_request` and `merge_group`, the two events
+      # the bin can scope, so no checked-out code runs here on `push` or
+      # `workflow_dispatch`; those events take the full run from the `changes` output
+      # defaults above.
       - name: Scope the packages unit tests to the diff
         id: packages-scope
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
