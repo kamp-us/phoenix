@@ -528,6 +528,10 @@ type SweepOutcome =
  * check could never reach. The anchor stays what it was: a claim about the repo's *declared*
  * validators.
  *
+ * Each member is handed this diff's changed paths. A guard whose rule is about what a change touches
+ * (`readme-guard`) narrows to them, so a consumer tree that predates the rule is not red on every
+ * lane; the rest ignore them.
+ *
  * The first red stops the sweep: the builder has a guard to fix, and the sixteen that would have
  * run after it say nothing about that.
  */
@@ -535,6 +539,7 @@ const sweepLocalTreeGuards = (
 	guards: ReadonlyArray<LocalTreeGuard>,
 	root: string,
 	env: Readonly<Record<string, string | undefined>>,
+	changed: ReadonlyArray<string>,
 ): Effect.Effect<
 	SweepOutcome,
 	never,
@@ -546,7 +551,7 @@ const sweepLocalTreeGuards = (
 		const notes: string[] = [];
 		for (const guard of guards) {
 			const label = `guard ${guard.name} ${guard.leaf}`;
-			const outcome = yield* guard.run({root, env});
+			const outcome = yield* guard.run({root, env, changed});
 			if (outcome.code === ANSWER) {
 				ran.push(label);
 				continue;
@@ -918,7 +923,7 @@ export const runCheck = (
 						`${VERB}: ${unvalidated.length} changed file(s) --surface ${surface} does not validate — NOT covered by this verdict: ${unvalidated.join(", ")}.`,
 					];
 
-		const swept = yield* sweepLocalTreeGuards(options.guards, lane.root, options.env);
+		const swept = yield* sweepLocalTreeGuards(options.guards, lane.root, options.env, files);
 		const noted = [...covered, ...swept.notes];
 		if (swept._tag === "Red") {
 			return refuse(VALIDATION_RED, `${VERB}: red — ${swept.label} failed; diagnostics above.`, [

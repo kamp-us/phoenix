@@ -64,13 +64,14 @@ const readmeCheck = leafCommand(
 				root: Option.getOrNull(root),
 				cwd: process.cwd(),
 				env: process.env,
+				scope: {_tag: "WholeTree"},
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Red unless every packages/* member carries a README.md."),
 	Command.withDescription(
-		"Fail the build unless every real packages/* workspace member (a directory carrying a package.json) holds a README.md. Dead-shell directories are ignored. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: no member scanned, or pnpm-workspace.yaml no longer declares packages/* — fail-closed), 11 (a read failed, so the verdict is UNKNOWN), 12 (a member has no README.md). Example: fabrika guard readme-guard check",
+		"Fail the build unless every real packages/* workspace member (a directory carrying a package.json) holds a README.md. Dead-shell directories are ignored. This leaf judges every member; `fabrika build check` runs the same rule over only the members its diff adds or edits, so a tree whose older packages predate the rule is not red on a lane that never touched them. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: no member scanned, or pnpm-workspace.yaml no longer declares packages/* — fail-closed), 11 (a read failed, so the verdict is UNKNOWN), 12 (a member has no README.md). Example: fabrika guard readme-guard check",
 	),
 );
 
@@ -709,7 +710,14 @@ const designInventoryGuard = Command.make("design-inventory").pipe(
  * nowhere else, so adding a guard is where the question gets asked.
  */
 const registry = [
-	localTree(readmeGuard, "check", (o) => runReadmeGuard({root: o.root, cwd: o.root, env: o.env})),
+	localTree(readmeGuard, "check", (o) =>
+		runReadmeGuard({
+			root: o.root,
+			cwd: o.root,
+			env: o.env,
+			scope: {_tag: "Change", paths: o.changed},
+		}),
+	),
 	localTree(skillLint, "check", (o) => runSkillLint({root: o.root, cwd: o.root, env: o.env})),
 	notLocalTree(homingGuard, "reads the live board"),
 	notLocalTree(pitchGuard, "reads the live board and resolves approval at the repository ACL"),
