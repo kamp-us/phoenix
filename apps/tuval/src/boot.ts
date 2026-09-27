@@ -49,7 +49,9 @@ import {
 	type TuvalFeatures,
 } from "./config.ts";
 import {deskLayer} from "./desk-layer.ts";
+import {type CheckpointScoping, scopeCheckpoints} from "./durability/scope-checkpoints.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
+import {ProjectId} from "./project-id.ts";
 import {type ConfigRead, ConfigReloader, type ReloadRefused, type ReloadReport} from "./reload.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
@@ -259,6 +261,8 @@ export interface BootReport {
 	readonly stateDir: string;
 	/** What ADR 0402 rule 7's one-time move lifted out of `<project>/.tuval` on this boot. */
 	readonly adopted: StateAdoption;
+	/** What the one-time move onto project-scoped ids moved on this boot (#9684). */
+	readonly scoped: CheckpointScoping;
 	readonly processCount: number;
 	readonly restoredCount: number;
 }
@@ -302,12 +306,17 @@ const configRead = (config: LoadedConfig): ConfigRead => ({
 	files: config.files,
 });
 
+/** The local ids among `ids` that `project` owns. */
+const ownedBy = (project: ProjectId, ids: ReadonlyArray<string>): ReadonlySet<string> =>
+	new Set(ids.flatMap((id) => project.localOf(id) ?? []));
+
 /** `start` from the layered config: the `pnpm dev` path. */
 export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
+	const project = ProjectId.of(options.project);
 	const layers = {
 		desk: options.desk ?? deskLayer,
 		global: options.global,
-		project: projectConfig(options.project),
+		project: {id: project, module: projectConfig(options.project)},
 	};
 	const config = yield* loadLayeredConfig(layers);
 	const {programs} = configRead(config);
@@ -324,6 +333,17 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		homeStateDir(options.project, options.home),
 	);
 	const adopted = yield* adoptInProjectState(projectDir(options.project), stateDir);
+	// After the adoption, so state an older build left in the project is moved onto scoped ids too.
+	const scoped = yield* scopeCheckpoints(stateDir, fileStores(stateDir), project, {
+		programs: ownedBy(
+			project,
+			programs.map((row) => row.id),
+		),
+		nodes: ownedBy(
+			project,
+			config.graph.nodes.map((node) => node.id),
+		),
+	});
 	const started = yield* start({
 		programs,
 		graph: config.graph,
@@ -344,6 +364,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		bindingErrors: spells.bindings.errors,
 		stateDir,
 		adopted,
+		scoped,
 		processCount: live.length,
 		restoredCount:
 			started.launched.filter((process) => process.restored).length + started.restored.length,

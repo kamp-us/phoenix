@@ -91,6 +91,12 @@ const tuval = Command.make(
 		for (const line of renderAdoption(report.adopted, report.stateDir)) {
 			yield* Console.log(`tuval: ${line}`);
 		}
+		// The one-time move of checkpoints onto project-scoped ids (#9684), said once, on the boot that ran it.
+		if (report.scoped.moved.length > 0) {
+			yield* Console.log(
+				`tuval: moved ${report.scoped.moved.length} checkpoint(s) onto project-scoped ids in ${report.stateDir}`,
+			);
+		}
 		// A binding that did not compile costs its own key and nothing else, so this is a report and
 		// not a refusal: boot goes on with the bindings that did compile.
 		for (const line of renderBindingErrors(report.bindingErrors)) {
