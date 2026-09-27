@@ -492,8 +492,9 @@ fabrika build release $issue_or_pr_number --token <claim-token>
 ```
 
 **Terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed);
-`SUCCESS-NO-PR` (a `type:investigation` answered by a diagnosis posted with `build note` — branch
-removed, findings filed via `/report`; closing the issue is triage's, not yours); `BUILT-NO-PR` (an
+`SUCCESS-NO-PR` (work finished with no diff to ship, such as an investigation's diagnosis, proven
+by the note you posted with `build note` since the lane entered build — branch removed, findings
+filed via `/report`; closing the issue is triage's, not yours); `BUILT-NO-PR` (an
 epic child under the epic rules — your commit landed on the branch you cut from the assembly branch
 and the `build-deviations` marker is posted on the child issue; branch left local, unpushed, for the
 epic driver to fold); `BACKED-OFF` (claim lost with no succession open to it — a sibling of your
@@ -535,7 +536,7 @@ lane has more than one — every epic run. The verb resolves a missing one only 
 and otherwise refuses at exit `13` before it appends anything, so a report that omits it records
 nothing.
 
-`--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a
+`--pr` whenever the terminal names one; `--comment` for the `build note` behind a
 `SUCCESS-NO-PR`; a `BUILT-NO-PR` carries neither, because its evidence is the commits themselves.
 
 **Release your own claim before you end `STOPPED`.** A stop leaves the branch local, but a claim left
@@ -599,8 +600,8 @@ because it is nearby rather than because it is what happened.
 The verb refuses a token outside this vocabulary (exit `32`) rather than
 interpreting it — never respell one to get past it. It also **proves the event before it records**:
 your `SHIPPED-PR` lands only against an open PR the board shows linking the issue, a
-`SUCCESS-NO-PR` only against the diagnosis comment you posted, and a `BUILT-NO-PR` only against a
-local branch in this tree whose commits name the child issue — so a refusal here is the board
+`SUCCESS-NO-PR` only against the `build note` you posted since build, and a `BUILT-NO-PR` only
+against a local branch in this tree whose commits name the child issue — so a refusal here is the board
 disagreeing with your terminal, never a token to change. On any refusal, print the token and name
 the exit code; the operator re-reads and routes. Then print the token as the last line either way;
 a run whose caller named no lane prints the token only and records nothing.

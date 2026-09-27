@@ -30,13 +30,13 @@ export function FirstContributionNudge({nudge, onDismiss}: FirstContributionNudg
 			<p className="kp-first-katki__line" data-testid="first-contribution-copy">
 				{nudge.kind === "add-entry"
 					? t("auth.firstContribution.addEntry", {term: nudge.term})
-					: t("auth.firstContribution.browse", {sozlukNoun: t("auth.brand.sozluk")})}
+					: t("auth.firstContribution.browse")}
 			</p>
 			<div className="kp-first-katki__actions">
 				<Link to={nudge.to} className="kp-first-katki__go" data-testid="first-contribution-go">
 					{nudge.kind === "add-entry"
 						? t("auth.firstContribution.goAddEntry")
-						: t("auth.firstContribution.goBrowse", {sozlukNoun: t("auth.brand.sozluk")})}
+						: t("auth.firstContribution.goBrowse")}
 				</Link>
 				<Button
 					type="button"

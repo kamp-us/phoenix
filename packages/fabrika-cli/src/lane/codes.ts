@@ -133,7 +133,7 @@ export const KEY_MALFORMED = 21;
 
 /**
  * The artifact the event claims is **provably not there**: no open pull request traces to the
- * task's issue and the issue is not one a no-PR outcome is legal on, or — on an epic run's child,
+ * task's issue and no comment was written on it since the task entered build, or — on an epic run's child,
  * which opens no PR — no branch in this tree carries commits naming the child. The event
  * is a self-report nothing corroborates, so the remedy is to route the spawn's outcome as blocked,
  * not to record it.
