@@ -303,6 +303,39 @@ at all.
   and it lands on the line as `integrate`.
 - `39`, `65` — [the lanes root](#the-lanes-root).
 
+## `lane attach-integrate`
+
+### Output
+
+Attaches the `lane integrate` exit and assembly head to an epic child's integrate FAIL that was
+recorded before `lane report` carried them. `build claim --lane` reads an integrate FAIL only off
+that pair, and once the pair-less FAIL folded the task back into `build`, `lane report` refuses the
+pair there at `68`. So a lane in that state has no builder that can take its repair.
+
+This verb appends one `<TASK>.CORRECTED` line naming the FAIL by its `at` and carrying
+`integrate: {exit, head}`. No recorded line is rewritten or dropped, and `build claim` and
+`build resume-child` read the FAIL through the correction exactly as if it had been recorded with
+the pair. The line is judged before the ledger lock and again under it.
+
+A FAIL an earlier attach already paired is not refused: a second run appends a second CORRECTED and
+the later pair wins, which is how a wrong exit or head is fixed.
+
+stdout is `{lane, task, event, corrects, integrate}`.
+
+### Exit status
+
+- `4` — the lane record was read in full and is not the shape, or the log does not replay.
+- `7`, `11`, `21` — the [shared read exits](#the-shared-read-and-record-exits).
+- `8` — the append did not land, so the pair is NOT attached.
+- `13` — the task is not in the machine, or `--task` was omitted on a multi-task lane.
+- `40` — another writer held the ledger lock.
+- `68` — the named line may not take the pair, or the pair is malformed, and the log is unappended.
+  It refuses when the named line is not a FAIL recorded out of `integrate`, when a later DONE on the
+  task already answered it, when `lane report` recorded it with its own pair, when no line or more
+  than one of the task stands at that `at`, or when the exit is not `42`, `43` or `44` or the head is
+  not a commit sha.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
 ## `lane prove`
 
 ### Output
@@ -1100,3 +1133,566 @@ sweep does not read, leaves through `fabrika lane adopt` then `fabrika lane rele
 - `1` — `--older-than` is not a non-negative number of minutes.
 - `11` — a root is there and could not be listed. The lane set is UNKNOWN, never a short list.
 - `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane seats`
+
+### Output
+
+How many seats the lanes root is holding against `laneConcurrencyCap`, read WITHOUT booting
+anything. It is the one lane verb an operator may run before it claims a lane. It creates no lane
+directory, posts no claim marker and appends no log line, so running it when the cap is full costs
+nothing and leaves nothing to release. `lane open` is where a boot is asked for and refused at `51`.
+
+The count is `lane open`'s own, unchanged. A seat is an issue lane under this root whose log folds to
+active AND whose issue carries a live `lane claim` marker, plus every lane no read can account for: a
+record that will not load, a log that will not replay, or a claim the board would not answer for. An
+active lane nobody claims is IDLE and holds nothing; it is reported separately, never counted. An
+archived lane is under a sibling root and is already out of the count, and a chore lane is counted
+by nobody.
+
+stdout is `{answer, root, cap, held, retryAfter, free, claimed, unaccountable, idle}`. `answer` is
+one of:
+
+- `full` — `held` is at or past the cap, so a boot would take `51`. An operator reading this before
+  `lane claim` ends LANE-WAITING instead of spending a claim, no sooner than the `retryAfter`
+  instant: one pass of a driver's own loop past now, since nothing on disk says when another lane
+  will reach a terminal.
+- `free` — a seat is available.
+- `uncapped` — the config declares no cap, so nothing bounds this root and `free` is `null`.
+
+`laneConcurrencyCap` is read from the `.fabrika.jsonc` of the repository that OWNS the cwd, the same
+checkout the lanes root derives from. So a linked worktree is counted against the primary checkout's
+declaration and not its own tracked copy. There is no override flag: raising the number in the
+config is how it changes.
+
+### Exit status
+
+- `11` — the cap could not be read, or the root is there and could not be listed. How full it is is
+  UNKNOWN, never zero and never free.
+- `39`, `65` — [the lanes root](#the-lanes-root). `39` is never a boot.
+
+## `lane migrate`
+
+### Output
+
+Brings each booted lane's `workflow.json` up to the committed template its root selects, but only
+where the swap provably moves nothing. `lane open` places a byte-identical copy at boot and refuses
+to overwrite one afterwards, so a template edit reaches lanes booted after it and no lane already on
+disk. That is safe until a token→event map in code changes with it, at which point every booted lane
+is asked for a cell its frozen machine does not have.
+
+Two things are kept:
+
+- the lane's own `machine.context`, which is per-lane DATA (the task's `maxRetries`, and whatever
+  else a lane declares) and would be erased by a verbatim copy;
+- any lane whose machine was GENERATED rather than booted. An emitted epic document has no committed
+  template to be brought up to, and is reported, never touched.
+
+State is the event log replayed from scratch with no snapshot, so the swap is safe exactly when the
+existing `events.jsonl` folds to the same per-task leaf state through both machines. Anything else
+is a rewritten history, not a migration.
+
+Each lane carries one verdict:
+
+- `current` — already the machine this verb would write, read past formatting;
+- `migrated` — judged safe and written;
+- `stale` — judged safe, `--check` withheld the write;
+- `generated` — not booted from this template;
+- `mismatched` — the machine is not the one this lane's issue calls for, never written;
+- `duplicate` — this lane drives an epic's CHILD, whose parent's lane already owns the work: a
+  second ledger booted before `lane open` refused one. Reported, never written, never migrated;
+- `unsafe` — the log will not replay through one of the two machines, or it folds to a different
+  state. Named, never written;
+- `unreadable`.
+
+stdout is `{check, scanned, summary, lanes}`.
+
+**The shape judgement.** Staleness was the only wrongness this sweep could see, and a coder-template
+lane booted on an epic grafts cleanly and read `current`. So each ISSUE-keyed lane is additionally
+judged against its issue's type and its native sub-issue links, and every judged row carries
+`shape: {"state":"matches"} | {"state":"mismatched",reason} | {"state":"duplicate",parent,reason} |
+{"state":"unknown",reason}`. A board read that failed is `unknown`, never `matches`, and a booted
+child lane is `duplicate`, never `matches`. That read is the verb's only network call, one per
+issue-keyed lane; chore lanes drive no issue and are not judged. A mismatched lane is skipped ahead
+of every migration verdict and the sweep exits `46`. A duplicate lane is skipped the same way and
+moves NO exit code: a stray ledger is a report, and retiring its directory is an operator's act this
+verb never takes. Where unsafe lanes are present too, `37` wins as the more dangerous class.
+
+**Roots.** Both default roots are swept unless `--root` names one. A named root is read as a
+relocated root whose lanes may have booted from either committed template: the lane's own machine
+id picks, never the root's position. An absent root holds no lanes and is not a fault.
+
+**A lane key narrows.** An optional lane key narrows the sweep to that one lane and changes nothing
+else: every other entry under the swept roots is neither read, judged nor written. That is what lets
+a driver holding one lane discharge the write its own lane needs without touching the lanes other
+drivers are mid-drive on. The key is matched as this verb renders it, so a chore root's entry is
+addressed `chore:<name>` and an issue lane by its directory name. Unaddressed, the whole-root sweep
+is exactly what it has always been: the release-time shape, and still the default. `--check`
+composes with a key: judge that lane, write nothing.
+
+### Exit status
+
+- `7` — a lane key was given and no lane under the swept roots carries it. Nothing was judged and
+  nothing was written; a key matching nothing is never a sweep of zero reported as clean.
+- `11` — a template could not be read, or a root is there and could not be listed. The lane set is
+  UNKNOWN, never empty.
+- `37` — at least one lane cannot take the template without moving. Those lanes are named on stderr
+  and none of them was written, and so are the ones that were.
+- `46` — at least one lane runs a machine its issue does not call for. An epic's lane is rebuilt by
+  retiring its directory and re-running `fabrika lane emit <n>`.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane reconcile`
+
+### Output
+
+Sweeps every lane on disk, answers which ones recorded a merge closure the board disagrees with,
+then appends the line that corrects it. The machine sends a merged `Part of #N` back to `queued`
+instead of folding the lane to a terminal, but the routing fact rides the recorded event as a
+`partial` payload. So every lane shipped before that field existed replays through the guard's
+fallthrough and still folds to `complete` over an open, buildable issue.
+
+The log is append-only and no recorded line is ever rewritten. The repair is a `<TASK>.CORRECTED`
+line naming the earlier line's own `at` and carrying the payload it should have had, which the fold
+resolves before any message reaches the machine.
+
+**Nomination is offline.** A lane is nominated by the latest recorded event that reached a
+`merge:partial` cell carrying no answer its reader can trust, located off the compiled machine. So a
+region declaring no partial arm (an epic tail) nominates nothing, and only a nominated lane costs a
+board read. Two lines qualify:
+
+- one that recorded no `partial` at all;
+- one whose `partial: false` names no `landed` evidence. That is the mark of the nominator blind to a
+  merged `Part of #N`, which wrote every `false` before the fix that read closures off the named PR.
+
+It is the evidence that tells the two apart and never the line's timestamp, since a cutoff date would
+hold only while that fix's own merge beat it. The second kind is re-read at most once: the correction
+this sweep appends is what settles the line, never the polarity it lands on.
+
+**Budget.** Budget ONE read per never-confirmed lane, not hundreds per sweep. Whichever way the board
+answers, the answer is appended as a correction: `partial: true` on a merge that left its issue open,
+`partial: false` on one that closed it. So the line carries its own answer and never nominates again,
+and the ship stage now records `false` too. The first pass over a backlog shipped before that field
+existed is still hundreds (228 of one repo's 298 guard-declaring lanes when it was counted, and a run
+has exhausted a rate limit part-way through), but it is paid once. Every pass after it costs only the
+lanes shipped since, and a rate-limited run leaves every lane it did confirm confirmed, so re-running
+resumes rather than restarts. `--check` withholds the append, so it buys nothing for the next sweep
+and pays the same reads twice.
+
+That read is ONE pull request. The line being corrected already names the merge it stands on, and it
+is read directly rather than nominated, because a MERGED `Part of #N` is invisible to both nomination
+reads: the closing edge is built from closing keywords, and the search half is `is:open`. The union
+finds nothing for exactly the case this verb catches. A line naming no PR falls back to the nominator
+at open-or-merged.
+
+Each lane carries one verdict:
+
+- `current` — no recorded event reached the guard without its answer;
+- `misrouted` — the board proves the merge partial, `--check` withheld the append;
+- `corrected` — judged partial and appended, which sends the lane round again;
+- `closes` — the board proves the merge closed the issue, `--check` withheld the append;
+- `confirmed` — judged closing and appended. The lane still folds to complete, and the line now says
+  so, so the next sweep skips it;
+- `unmigrated` — this lane's own machine declares no merge-closure guard and the committed template
+  it booted from does, so nothing here can judge its merge. Run `fabrika lane migrate` and re-run
+  this sweep. An emitted epic machine and an epic tail declare none by design and read `current`;
+- `unknown` — the board did not answer, it answered and named no merged PR linking the issue, or the
+  lane drives no issue. A read that proves no closure is never read as `closes`;
+- `unreadable` — the lane record or its log could not be read, or the log does not replay. A row,
+  since nothing here caused it and nothing here can fix it;
+- `unappended` — this run tried to append and could not.
+
+Every judged row carries `corrects: {task, at, state, pr}` and the from/to stateValue the correction
+moves the lane between, equal on a closing read, which is the row saying it moved no task. A
+misrouted or corrected row also carries the merged `prs` proving the merge partial, and a closes or
+confirmed row the board's own `why` instead. stdout is `{check, scanned, summary, lanes}`.
+
+Both default roots are swept unless `--root` names one, which is read as a relocated root whose lanes
+may have booted from either committed template. An absent root holds no lanes and is not a fault.
+
+### Exit status
+
+- `8` — at least one append this run tried did not land, so whether that lane still needs a
+  correction is UNKNOWN. Those lanes are named on stderr, and so are the ones that were corrected.
+- `11` — a committed template could not be read, or a root is there and could not be listed. The lane
+  set is UNKNOWN, never empty.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane recover`
+
+### Output
+
+Sweeps every lane on disk and records the event its own artifact already proves but its ledger never
+learned. A shell posts its SHA-bound verdict on the artifact and then records the event. Killed
+between the two, it leaves the verdict standing and the ledger silent, and the lane sits non-terminal
+until a driver happens to run `lane prove` by hand: one lane sat in review for 448 minutes carrying
+a proven PASS on its PR.
+
+Each non-terminal lane's active tasks are read off the fold, and a task standing in a leaf that OWES
+a provable event is asked about: PASS out of `review`, PASS out of `review:ui`. Those are the arms of
+`lane prove`'s claim table whose artifact only a FINISHED shell can have produced. Two arms are left
+out, for one reason: a shell that is merely still working satisfies each of them.
+
+- The BLOCKED a reviewer's park claims is negative ("the run reached no verdict"), proven by the
+  absence of a contradiction rather than by an artifact anyone posted. A sweep standing on it would
+  park every lane whose reviewer is still running.
+- The DONE out of `build` or `build:ui` claims OpenPull, which proves on the existence of one open PR
+  linking the issue: a fact about the PR being open, never about the builder being done with it. A
+  lane in a repair round carries exactly that PR for the whole round, so a sweep standing on it would
+  move the lane to review under the live builder.
+
+It introduces NO proof path and NO second way onto a log. The bar is `lane prove`'s read, unchanged,
+and the append is `lane transition`'s whole path: the same machine validation, the same proof gate
+and the same ledger lock. What moves is only who runs them. It records on the literal `proven` and on
+nothing else. `not-required`, `uncontradicted` and every refusal code leave the lane byte-identical
+and land as their own row, so an unreadable board is a row to re-run rather than a lane moved on a
+read nobody made.
+
+**`--spawns` parks rather than finishes.** A lane standing in `build` or `build:ui` whose build claim
+has outlived the builder's own budget, with NO lane branch in this clone and NOTHING on the surface
+that lane's role publishes to, is a lane whose shell is gone and which will never move again. Lane
+7778 held a seat against the concurrency cap for five days because recording its
+`BLOCKED --cause spawn-dead` was a driver's act and its driver was gone.
+
+- The publication surface is the role's and not the leaf's. A single lane and an epic tail publish an
+  open PR whose body links the issue. An epic child publishes onto its own lane branch and opens no
+  PR at all, so on a child the branch read IS that conjunct and no board read is made.
+- That whole conjunction is the predicate, read through the same `../build/dead-claim.ts` budget
+  proof the spawn-dead unpark row reads. Every answer short of it is a `working` row that changed
+  nothing: a claim inside its budget (the live-but-quiet builder), a branch still carrying the dead
+  builder's commits, an open PR, or no claim at all.
+- A read that did not settle, an unreadable board or several open PRs linking the issue, is
+  `unreadable` and never dead. Its reason names the read that did not settle rather than one nobody
+  made.
+- It retracts nothing HERE, and it is not the end of the chain. The park it records is exactly the
+  pair `recipe/parks.ts` keys its spawn-clear clearance on, so `recipe unpark` retracts the claim on
+  the same age proof one verb later with no human between the two. The authorizing ruling is cited by
+  the `@ruling` tag in `packages/fabrika-cli/src/lane/recover-verb.ts`.
+- Its rows are `parked` (appended) and `parkable` (`--check` withheld it). It is OFF unless the flag
+  is passed, because it spends a board read per lane standing in build.
+
+**Budget.** Budget a recoverable lane at TWO board reads: this sweep asks what the proof says, and
+`lane transition` asks again under its own gate before appending, which is that gate declining to
+take this sweep's word for it. Every other judged task costs one. `--check` pays the first read alone
+and appends nothing.
+
+Each row carries one verdict:
+
+- `recovered` — proven and appended. Its `to` is the append's OWN answer, which `lane transition`
+  derives under the ledger lock from a fresh re-read of the log, so a writer that landed after this
+  sweep's unlocked fold is accounted for. Every other row's `to` is the offline preview, which is all
+  a move that never happened has;
+- `recoverable` — proven, `--check` withheld the append, so its from/to is that preview;
+- `unproven` — the proof did not answer `proven`. The row carries its `proof` label and `proofCode`,
+  so a not-required is told from an unreadable board without re-reading anything;
+- `refused` — the artifact proves the event and the append path refused it (this lane's own machine,
+  or its config), so a re-run buys nothing;
+- `contended` — `40`: another writer held this lane's ledger lock for the whole wait budget, so
+  nothing was validated and nothing appended. The same event is still the right one and the sweep
+  says so on stderr, which is why this is not bucketed with `refused`;
+- `current` — the lane is non-terminal and no active task stands in a leaf that owes a provable
+  event;
+- `terminal` — the fold is done, so nothing is owed and no board read is spent;
+- `unreadable` — the lane record or its log could not be read, or the log does not replay. A row,
+  since nothing here caused it and nothing here can fix it;
+- `unappended` — this run tried to append and could not.
+
+stdout is `{check, scanned, summary, lanes}`. Both default roots are swept unless `--root` names one;
+an absent root holds no lanes and is not a fault. Every root is LISTED before any lane is appended
+to, so an unlistable second root refuses a run that has written nothing rather than discarding the
+rows of a first root it already recovered.
+
+### Exit status
+
+- `8` — at least one append this run tried did not land, so whether that lane is still missing its
+  event is UNKNOWN. Those lanes are named on stderr, and so are the ones that were recovered.
+- `11` — a root is there and could not be listed. The lane set is UNKNOWN, never empty, and nothing
+  was appended.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane archive`
+
+### Output
+
+Moves one lane directory from the lanes root to the archived root, so the sweeps stop reporting a
+lane they can never judge. `lane reconcile` reads such a lane `unreadable` and `lane migrate`
+`unsafe` on every run, forever. The fault is an event the machine has no cell for, and neither verb
+may rewrite an append-only log to fix it: sealing writes a line for something that did not happen,
+and widening `frozen` lets a lane at its retry cap ship with no unblock. So the record moves aside
+instead, and nothing in it is touched.
+
+**One gate decides the move.** The log must fail to replay under the same judgement `lane migrate`
+makes: through the lane's own machine or through the committed template, and through the lane's own
+machine alone when that machine was generated by `lane emit` and binds no template. A replaying log
+is refused with the directory where it was, so a genuinely broken lane still shows up on every sweep.
+
+The issue does NOT have to be closed. A bricked ledger whose issue is open had no route out at all:
+repair needs the replay that is broken, `lane settle` needs a board closure, and the closed-issue gate
+refused the archive. So its `laneConcurrencyCap` seat stayed held, and the only remedy left was
+hand-deleting an append-only log. A log no machine can fold is a lane nobody can drive, whatever the
+issue says, which is the whole thing that gate was protecting.
+
+**The claim goes with the lane.** A live `lane-claim` marker on the issue is RETRACTED before the
+move, so the issue does not read as held by a lane that is no longer there. A claim this caller does
+not name refuses at `31` rather than being swept out from under its driver; `--token` names it. A
+dead seat is taken back through succession, `fabrika lane adopt <lane> --session <dead> --reason
+"<why>"` then `fabrika lane release <lane> --token <the token adopt printed>`, which deletes the
+marker, because adopt alone leaves the claim standing and the archive refuses again.
+
+**Order.** The replay judgement runs first, because it is local and free, so a replaying lane costs
+no board read at all. Retraction runs before the move, so a move that then fails leaves an unclaimed
+lane where it was rather than a claim nothing can release.
+
+The archived root is a SIBLING of the lanes root, never a directory under it, which is why no sweep
+needs a skip rule: `reconcile` and `migrate` read the roots they are handed and are never handed this
+one. The record stays readable: `fabrika lane history <lane> --root <archived-root>` and
+`fabrika lane brief` read an archived lane when pointed at it.
+
+stdout is `{answer:"archived", lane, issue, from, to, through, defects, retracted}`. `through` is
+`current` or `candidate`, naming which machine refused the log, and `defects` names why.
+`retracted` lists the marker comment ids the claim retraction deleted: empty where the issue carried
+no claim, and on a chore key, which has no claim thread.
+
+### `--sweep`
+
+`--sweep` takes no lane and keeps the closed-issue gate the single-lane route dropped, because that
+narrowing was ruled for the route an operator takes by hand, and nothing has ruled on a sweep that
+moves a lane whose issue is still open. It walks the lanes root, archives each lane whose issue reads
+closed AND whose log will never replay, and prints one row per lane it examined: archived, or skipped
+with the reason (replays / issue open / unjudgeable / key names no issue / unreadable / the archived
+root already holds it / the move did not land).
+
+- A lane whose move landed and whose destination does not read back is a THIRD outcome,
+  `moved-unverified`, and never a skip. That directory is no longer where it was, so a row calling
+  it skipped would state the one thing now known to be false.
+- A lane whose judgement is UNKNOWN is never archived. A directory name that resolves to no issue
+  number is skipped and named rather than fatal, so one unaddressable key costs no other lane its
+  sweep.
+- It retracts no claim, so a swept lane whose issue still carries a live lane-claim marker leaves
+  that marker standing. The named single-lane route is the one that retracts.
+
+Its stdout is `{answer:"swept", root, present, archivedRoot, examined, archived, lanes}`. It exits
+`0` on every skip, because a skip is a row, not a failure. It exits non-zero only where the lane set
+is UNKNOWN (`11`) or a move that cleared both gates did not land (`8`) or does not read back (`9`).
+The rows reach stderr either way, so a partly-applied sweep is always enumerable.
+
+### Exit status
+
+- `4`, `7`, `21` — the [shared read exits](#the-shared-read-and-record-exits).
+- `8` — the move did not land, or a claim marker would not retract. The lane is NOT archived.
+- `9` — the move reported success and the destination does not read back.
+- `11` — the lane, a committed template, the destination probe or the claim thread could not be
+  read, or a committed template that is this lane's own could not be built into a candidate. UNKNOWN,
+  never a move. A GENERATED machine binds no template and is not that case, so its own fold is the
+  whole judgement.
+- `14` — the archived root already holds a lane by this key; a move onto it would bury a record.
+- `31` — the issue carries a live lane claim this caller did not name. Pass `--token`, or clear a
+  dead seat with `fabrika lane adopt` THEN `fabrika lane release`, since adopt alone leaves the claim
+  standing.
+- `50` — the log replays, so every sweep can judge it and there is nothing to move out of scope.
+- `39`, `65` — [the lanes root](#the-lanes-root); `39` here covers both default roots.
+
+## `lane settle`
+
+### Output
+
+Appends the terminal the board's own closure proves, to a lane whose own flow never reached one. Two
+stranded shapes, one verb:
+
+- a lane parked while its issue closed not planned or duplicate owes no artifact;
+- a lane sitting in build or review while its issue closed completed over a merged PR was
+  hand-shipped past the ledger.
+
+Neither can be ended by the operator's six. DONE claims an open PR that is not there, BLOCKED only
+parks, and UNBLOCKED resumes work that is already over. So the only remedy was deleting the lane
+directory, which erases an append-only history instead of recording an outcome. This appends ONE
+line and moves nothing on disk; `fabrika lane history <lane>` still reads the whole log.
+
+**The board read is the whole entitlement.**
+
+- A `state_reason` of `not_planned` or `duplicate` records `<TASK>.CANCELLED`.
+- `completed` PLUS at least one merged pull request whose body links the issue (closing keyword or
+  `Part of`) records `<TASK>.LANDED`, carrying those pull request numbers as `landed` and the first
+  one's merge commit as `sha`. The pull requests are read only on the completed arm, so a
+  cancellation costs one board read.
+- Everything else appends nothing. An open issue refuses at `49`. A read that failed, a close
+  carrying no `state_reason`, a reason outside the three, or a completed close naming no merged
+  linking PR are all UNKNOWN at `11`: a completed close with nothing that did it is genuinely
+  unread, not a landing.
+
+**`--landed-by <pr>`** supplies exactly that missing link and nothing more, for a closure a human
+closed by hand over a merge whose body cites some other issue. The board must still read that PR
+merged, so an unmerged one refuses at `23` and one this repository does not hold at `22`, both with
+the log unappended, and an unreadable read stays UNKNOWN at `11`. A body-proven landing is judged
+FIRST and wins, so the flag can only ever fill a gap. The line it appends carries
+`assertedBy: "caller"` beside its `landed`/`sha`, which is how this verb's own stdout and
+`lane history` tell an asserted link from a body-proven one; a body-proven line carries no such
+field at all.
+
+Neither event is an operator event. The operator's six are unchanged and `lane transition` refuses
+both, so DONE's proof semantics are untouched. A live authorized lane claim refuses at `31` unless
+`--token` names it, so a lane another session is driving is not ended underneath it; an unreadable
+claim thread is UNKNOWN, never "unclaimed".
+
+The lane then folds to the terminal stateValue `cancelled` or `landed`, its own. It is neither
+`complete`, which would claim this lane's flow finished it, nor `tripped`, which would claim it
+failed. So `lane status` and `lane stale` read it done, and it holds no seat against
+`laneConcurrencyCap`. The offline gate runs first, so a lane already carrying a terminal costs no
+board read at all.
+
+stdout is `{answer:"settled", lane, issue, previous, event, current, taskAffected, outcome}`, plus
+`landed` and `sha` on a landing, and `assertedBy` on an asserted one.
+
+### Exit status
+
+- `4`, `7`, `21` — the [shared read exits](#the-shared-read-and-record-exits).
+- `8` — the append did not land, so the terminal is NOT recorded.
+- `11` — the lane, the board closure, the pull requests, the `--landed-by` pull request or the claim
+  thread could not be read, or the closure proves no terminal. UNKNOWN, never an append.
+- `12` — this lane already carries a terminal, or the task is in a final. There is nothing here to
+  settle.
+- `13` — the task is not in the machine, or `--task` was omitted on a multi-task lane.
+- `19` — the key names no issue, so the closure gate can never be satisfied. The refusal says which
+  of the two: a chore lane, which is not settleable at all, or an issue-kind directory name carrying
+  no leading issue number.
+- `22` — `--landed-by` names no pull request this repository holds.
+- `23` — `--landed-by` names a pull request that has not merged.
+- `31` — the issue carries a live lane claim this caller did not name.
+- `40` — another writer holds the ledger lock; retry.
+- `49` — the issue is open.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane claim`
+
+### Output
+
+Races the earliest AUTHORIZED lane-claim marker on the issue a lane drives: posts this driver's token
+(`lane:<session-id>:<uuid>`), re-reads, and wins or names the winner. Prints
+`{"answer":"won","lane":"…","number":n,"token":"…"}`.
+
+- The namespace is the driver's own, `lane-claim:`/`lane:`, never `build-claim:`/`build:`. So the
+  builder this driver spawns claims the same issue and wins; the two races never see each other.
+- Authorization is the author's repository permission; marker text confers nothing.
+- No admission test runs here. The fence is the spawned builder's.
+- `--token` makes the re-claim idempotent per DRIVER. Handed the token this driver already holds, a
+  lane it already owns answers won with that same marker and writes nothing, so N claims can never
+  leave N markers for a later release to peel off one at a time. A same-session marker under another
+  nonce is a sibling driver and races normally.
+- A `chore:<name>` lane, or any key that is not a board number, has no thread to race on. It answers
+  `{"answer":"unclaimable","lane":"…","why":"…"}` at exit `0` with nothing written.
+- A lane-adopt marker of this DRIVER standing with no claim beside it refuses the `--token` path on
+  `31` and names the release that retracts it, rather than racing a fresh marker past a comment
+  nothing later would name.
+- An adopt older than the marker it would fence is read as adopting some earlier claim. So one stray
+  adopt no longer fences every marker its session posts on the number, and confers no later marker
+  either. The same order holds on both arms, so one succession answers mine to exactly one lane.
+
+### Exit status
+
+- `1` — no session id is set (`FABRIKA_SESSION_ID`, `CLAUDE_CODE_SESSION_ID`,
+  `PI_SUBAGENT_PARENT_SESSION`), or a `--token` that is not a lane-claim token of this session.
+- `8` — the marker write failed. UNKNOWN, never a claim.
+- `9` — the marker landed and does not read back.
+- `11` — the marker set could not be read. UNKNOWN, never "unclaimed"; this run's own marker is
+  retracted first.
+- `21` — the key is not a lane key.
+- `31` — proven lost. A lost race retracts this run's own marker and exits `31`, never `0`,
+  including when the winner is another driver of THIS session, since ownership turns on the whole
+  token and never the session id.
+
+## `lane release`
+
+### Output
+
+Retracts this DRIVER's OWN lane-claim marker, and only its own, so the lane is drivable again. It is
+run at both ends of the loop, the terminal fold and the park. Prints
+`{"answer":"released","lane":"…","number":n}`.
+
+- `--token` says which driver that is. Ownership turns on the whole token, so a sibling driver of one
+  session is a foreign holder here and its marker is never swept.
+- Every marker carrying this driver's token goes, not merely the winning one, so a duplicate a
+  re-claim left behind cannot outlive the release.
+- It ALSO retracts this driver's own lane-adopt marker. With a claim beside it, both comments go,
+  answering `{"answer":"released","lane":"…","number":n,"adopted":"<session>"}`. With NO lane-claim
+  marker standing, the state adopting an already-released claim leaves, that adopt is retracted alone
+  under the same answer.
+- That second case used to be unreachable. Ownership answered "unclaimed" the moment no claim
+  survived, so this verb said "nothing to retract" while `lane claim` went on counting the comment
+  and losing to it, and a hand-deleted comment was the only way out.
+- Only the driver the marker's "by <token>" names reaches it. A sibling driver reads the thread as
+  unclaimed and retracts nothing, exactly as it may not sweep a sibling's claim.
+
+### Exit status
+
+- `1` — no session id is set (`FABRIKA_SESSION_ID`, `CLAUDE_CODE_SESSION_ID` and
+  `PI_SUBAGENT_PARENT_SESSION` consulted), `--token` omitted on a board number, or a `--token` that
+  is not a lane-claim token of this session.
+- `8` — the retraction failed, or a stranded adopt was not retracted. Whether the lane is still held
+  or still reads as adopted is UNKNOWN.
+- `11` — the marker set could not be read.
+- `21` — the key is not a lane key.
+- `31` — proven: held by another driver, or neither a claim nor an adopt of this driver stands.
+
+## `lane adopt`
+
+### Output
+
+Posts the succession marker a stranded operator seat's lane claim needs:
+`lane-adopt: <session> by lane:<this-session>:<uuid> · <ISO> · reason: <text>`. It writes ONE comment
+and posts no claim marker. `fabrika lane release <lane> --token <the token this prints>` then
+resolves that claim as this driver's and retracts both comments, after which
+`fabrika lane claim <lane>` wins normally. Prints
+`{"answer":"adopted","lane":"…","number":n,"session":"<adopted>","token":"…"}`.
+
+- That release reaches this marker EVEN WHEN NO LANE-CLAIM MARKER STANDS, so adopt → release → claim
+  terminates from every state, including the one where the claim was already released.
+- It fences and confers only over a claim marker POSTED AFTER IT, since a succession adopts a claim
+  that already stands.
+- UNLIKE `build adopt`, it ADMITS this run's own session. What dies here is a SEAT, and its successor
+  boots under the same `CLAUDE_CODE_SESSION_ID` with only a fresh nonce; plain release reads that
+  same-session-other-nonce marker as foreign.
+- It proves no seat dead, exactly as the build namespace's succession proves no session dead. The
+  guards are the poster's repository permission, read at release time, and the marker sitting on the
+  issue with its reason for anyone to read. An adopt from an account below write is counted,
+  reported, and never a succession. Deleting the comment reverses it.
+- A `chore:<name>` lane, or any key that is not a board number, was never claimable. It answers
+  `{"answer":"inert","lane":"…","why":"…"}` at exit `0` with nothing written.
+
+### Exit status
+
+- `1` — `CLAUDE_CODE_SESSION_ID` unset, an empty `--session` or `--reason`, a `--session` carrying
+  whitespace or `·`, or a multi-line `--reason`.
+- `8` — the marker write failed. UNKNOWN.
+- `9` — the marker landed and does not read back.
+- `21` — the key is not a lane key.
+
+## `lane scratch`
+
+### Output
+
+The DRIVER's per-lane scratch path, allocated fail-closed:
+`<temp root>/fabrika-lane/<session-id>/<issue>-<lane-claim-nonce>/<slug>`. One absolute path on
+stdout; the directory is created if absent.
+
+Every script, wrapper or helper file a driver writes goes here. The session scratchpad is shared by
+every lane of the session, so a helper written there is rewritten by a sibling driver, and every verb
+run through it lands in that sibling's tree.
+
+- `--token`'s nonce keys the namespace per LANE, so two drivers of one session print different paths.
+  The `fabrika-lane` segment keeps it apart from the builders' `build scratch` namespace.
+- The token must be a live lane claim of this session on this lane's issue, proven off the board and
+  never trusted.
+- A `chore:<name>` lane holds no claim and so has no namespace.
+- The printed path is machine-local and must never reach a posted artifact. Every posting verb's leak
+  scan reds on it.
+
+### Exit status
+
+- `1` — the directory could not be created, no session id is set (`FABRIKA_SESSION_ID`,
+  `CLAUDE_CODE_SESSION_ID` and `PI_SUBAGENT_PARENT_SESSION` consulted), `--token` is not a lane-claim
+  token of this session, or the key is a chore lane.
+- `10` — `--slug` carries a path separator or is not kebab-case.
+- `11` — the lane-claim markers could not be read. UNKNOWN.
+- `21` — the key is not a lane key.
+- `31` — proven: no live lane claim of this token stands on the issue. Another driver holds it, or
+  none does.
