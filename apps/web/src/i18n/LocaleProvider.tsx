@@ -7,6 +7,7 @@
 import {DesignTranslationProvider} from "@kampus/design";
 import * as React from "react";
 import {browserStorage} from "../lib/browserStorage";
+import {type DateFormatter, dateFormatter} from "../lib/datetime";
 import {readStoredLocale, writeStoredLocale} from "../lib/localeStorage";
 import {type Catalog, loadCatalog, trCatalog} from "./catalog";
 import {interpolate, type MessageParams} from "./interpolate";
@@ -101,4 +102,8 @@ export function useTPlural(): TranslatePlural {
 		(count, keys, params) => t(plural(locale, count, keys), {count, ...params}),
 		[locale, t],
 	);
+}
+
+export function useDateFormatter(): DateFormatter {
+	return dateFormatter(React.useContext(LocaleContext).locale);
 }

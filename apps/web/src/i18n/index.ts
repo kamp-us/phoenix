@@ -7,6 +7,7 @@ export {
 	LocaleProvider,
 	type Translate,
 	type TranslatePlural,
+	useDateFormatter,
 	useLocale,
 	useT,
 	useTPlural,

@@ -4,10 +4,11 @@
  * column three other places already derive — and wrong twice over for Turkish: ASCII lowercasing
  * maps `İ` to `i̇` and `I` to `i`, when `İ` is `i`'s capital and `I` is the dotless `ı`'s.
  */
-import {render, screen, within} from "@testing-library/react";
+import {render, screen, waitFor, within} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
-import {describe, expect, it, vi} from "vitest";
+import {afterEach, describe, expect, it, vi} from "vitest";
 import {LocaleProvider} from "../../i18n";
+import {LOCALE_STORAGE_KEY} from "../../lib/localeStorage";
 import {sozlukLetterHref} from "../../lib/sozlukLetterHref";
 import {SozlukTermHeader} from "./SozlukTermHeader";
 
@@ -140,5 +141,33 @@ describe("SozlukTermHeader — the breadcrumb's semantics", () => {
 		const nav = screen.getByRole("navigation", {name: "sayfa yolu"});
 		expect(spokenCrumbs(nav)).toEqual(["sözlük", "webhook"]);
 		expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+	});
+});
+
+// The dates used to come out of `tr-TR`-pinned formatters, so an English reader got
+// `last edited: 3 gün önce` inside English copy (#7659).
+describe("SozlukTermHeader — the dates follow the locale", () => {
+	const DAY = 24 * 3600 * 1000;
+	const dated = () => ({
+		...TERM,
+		firstAt: "2026-09-12T12:00:00.000Z",
+		lastEdit: new Date(Date.now() - 3 * DAY).toISOString(),
+	});
+
+	afterEach(() => {
+		window.localStorage.clear();
+	});
+
+	it("renders Turkish dates at tr", () => {
+		renderHeader(dated());
+		expect(screen.getByText("ilk: 12 Eyl 2026")).toBeTruthy();
+		expect(screen.getByText("son düzenleme: 3 gün önce")).toBeTruthy();
+	});
+
+	it("renders English dates at en", async () => {
+		window.localStorage.setItem(LOCALE_STORAGE_KEY, "en");
+		renderHeader(dated());
+		await waitFor(() => expect(screen.getByText("last edited: 3 days ago")).toBeTruthy());
+		expect(screen.getByText("first: Sep 12, 2026")).toBeTruthy();
 	});
 });

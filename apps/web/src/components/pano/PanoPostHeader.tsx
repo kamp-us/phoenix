@@ -17,8 +17,7 @@ import {
 import {useLiveView, type ViewRef, view} from "react-fate";
 import type {Post} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
-import {useLocale} from "../../i18n";
-import {formatAgoTR} from "../../lib/datetime";
+import {useDateFormatter, useLocale} from "../../i18n";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {tagClass} from "../../lib/panoTags";
 import {actorLabel} from "../moderation/actor-identity";
@@ -73,6 +72,7 @@ export interface PanoPostHeaderProps {
 
 export function PanoPostHeader(props: PanoPostHeaderProps) {
 	const {locale, t} = useLocale();
+	const formatDate = useDateFormatter();
 	const post = useLiveView(PanoPostHeaderView, props.post);
 	const tags = post.tags ?? [];
 	return (
@@ -108,7 +108,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 					{actorLabel(post.authorDisplayName ?? null, post.authorUsername ?? null, post.author)}
 				</span>
 				<span>·</span>
-				<span>{formatAgoTR(toIso(post.createdAt))}</span>
+				<span>{formatDate.ago(toIso(post.createdAt))}</span>
 				<EditedIndicator createdAt={toIso(post.createdAt)} updatedAt={toIso(post.updatedAt)} />
 				<span>·</span>
 				<span>{commentCountLabel(t, locale, post.commentCount)}</span>
