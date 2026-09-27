@@ -111,6 +111,66 @@ when it demonstrates a requirement or use the other examples do not. A caller fa
 help and a skill's routing step earns that overlap through its use; there is no requirement to copy
 every fact into both, or to edit a reference row and source comment for every command change.
 
+#### Leaf help size and shape
+
+A leaf verb's `Command.withDescription` string is a pointer an agent reads on every `--help`, so it
+holds the caller facts and nothing else:
+
+- **One-line summary first.** Line one says what the verb does and what it prints on stdout, as one
+  sentence ending in a full stop.
+- **Flag detail on the flag.** Each flag's meaning, default and constraints go on its own
+  `Flag.withDescription`, and each argument's on `Argument.withDescription`. The renderer prints
+  them in the `FLAGS` and `ARGUMENTS` tables, so the description does not repeat them.
+- **One line per exit.** Each exit code the verb seats a proven outcome on gets one line,
+  `  <code>: <meaning>`, in ascending order. The meaning is a few words; a code with several causes
+  names the class and leaves the causes to the contract. `0` and `1` need no line, because
+  [§3](#3-the-exit-status-is-the-answer-empty-stdout-never-is) fixes them for every verb.
+- **Examples through `Command.withExamples`.** A runnable example is an `Example` entry, never
+  `Example:` prose inside the description.
+- **Derivation in the contract.** How a value is derived, why a check exists and what order
+  mutations run in belong in the verb's contract. Help keeps at most one pointer line to it, as the
+  description's last line.
+
+The whole description is at most **600 characters**, and every line at most 98 characters of text
+after its two-space indent. Both numbers start from the renderer, the way
+[`short-description.ts`](../../../packages/fabrika-cli/src/short-description.ts) derives its row
+budget. `formatHelpDocImpl` in `effect@4.0.0-rc.112`'s `src/unstable/cli/CliOutput.ts` prints the
+block as `  ${doc.description}`, so at the 100-column terminal `short-description.ts` also assumes,
+a line holds 98 characters. The total is one 98-character summary plus twelve lines averaging 40
+characters with their newlines, which is 590, rounded to 600. Twelve lines cover `review-ui render`'s ten exit
+codes, one pointer line and one to spare.
+
+The exit lines carry their own two-space indent, and that choice is also the renderer's. The pinned
+`formatHelpDocImpl` indents only the description's first line: an embedded `\n` passes through
+untouched, so a bare newline starts the next line at column zero, flush with the `DESCRIPTION`
+heading. Writing `\n  ` before each exit line puts it under the summary. Rendered through the pinned
+formatter, a bare `\n` gives the first block and `\n  ` the second:
+
+```text
+DESCRIPTION
+  Summary line.
+3: not found
+11: read failed, UNKNOWN
+```
+
+```text
+DESCRIPTION
+  Summary line.
+  3: not found
+  11: read failed, UNKNOWN
+```
+
+A compliant description for `build eligible`, 302 characters, with its example on
+`Command.withExamples([{command: "fabrika build eligible 4312"}])`:
+
+```text
+Prints {"answer":"eligible","number":n,"parent":n|null} when one issue's dependency gate is open.
+  7: the issue is absent or closed
+  11: a read failed and nothing was proven open (UNKNOWN)
+  16: blocked; every open edge is named on stderr
+  Derivation: the build skill's contract.md, "build eligible"
+```
+
 ## 3. The exit status is the answer; empty stdout never is
 
 The whole taxonomy rests on one separation: a verdict a verb proved must never share a code with a
