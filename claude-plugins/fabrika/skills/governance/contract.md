@@ -953,6 +953,14 @@ composing another is not a mode it has. That is the disjointness guarantee made 
 other direction from `review post`, which refuses a namespace outside its derived set — here the
 namespace is a constant, so it cannot be aimed anywhere else even by a confused caller.
 
+**The range-scoped form.** With `--base` and `--tip` the verdict is scoped to a range instead of a
+head — the epic-child form. The positional then names the child issue, and the requirement is
+re-derived over what `<base>...<tip>` changed in this checkout. The first line is composed through
+the `range-verdict-marker` format that `lane prove` reads, and the answer's fourth field is
+`<base>..<tip>` where the pull-request form carries the sha. The write appends exactly as step 5
+below describes, keyed on the range rather than a head. `--sha` is refused beside a range, and so is
+a lone `--base` or `--tip` (`10`); an issue that is absent, closed or a pull request is `7`.
+
 **What the operation does, in order — each step gates the next.**
 
 1. **Re-resolve the live head.** `--sha` not prefix-matching it is the `12` refusal: a verdict formed

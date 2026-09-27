@@ -337,6 +337,24 @@ readable `### Acceptance criteria` block keeps its marker and stays on `ready-fo
 lands and both `ready-for:` labels are left exactly as they were found, so recording a ruling never
 makes a human-parked issue agent-pickable.
 
+`fabrika decision rule` is the only writer, and it runs in this order: derive the digest over the
+issue body itself, post the marker, read it back, and only then flip the audience, reporting the
+labels from a re-read rather than asserting them. Exactly one flag names the ruling: `--cites <url>`
+when it is already a comment on the issue, or `--authorization <file>` when it was given in
+conversation. That file is posted verbatim as a dated comment first and the marker cites it, the
+same shape as `grill rule`, so a ruling already made costs no comment to type. The answer is
+`{"answer":"ruled","issue":n,"digest":"…","ruling":"…","supersedes":k|null,"by":"…","at":"…","comment":n,"audience":"ready-for:agent"|null,"observed":[…]}`.
+`audience` is null wherever no flip was written — every issue that is not a `type:decision`, and a
+decision whose body has no readable criteria block — and `observed` then lists the labels as they
+were found.
+
+`fabrika decision ruling` is the reader. It answers
+`{"answer":"ruling","issue":n,"state":"current|stale|absent","by":…,"markerDigest":…,"derivedDigest":"…","ruling":…,"at":…,"comment":…,"audience":…,"disregarded":n,"unauthorized":n}`,
+and all three states exit `0`, because a missing ruling is the answer rather than a refusal. The
+state is the newest marker's; `review criteria` is what prints every standing marker folded with the
+body criteria. An off-roster author's marker is counted in `unauthorized` and never stands, and a
+drifted one is counted in `disregarded` rather than dropped.
+
 ### `routed-elsewhere`
 
 This is a gate saying, at one head, that this PR owes it no verdict. `review-ui` writes it, and both
