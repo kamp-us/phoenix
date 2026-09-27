@@ -77,6 +77,33 @@ describe("the manifest round-trip", () => {
 		);
 	});
 
+	it("round-trips a scheme-crossed entry, requested and proven scheme both", () => {
+		const schemed: CaptureManifest = {
+			...manifest,
+			captures: [
+				{
+					...(manifest.captures[0] as CaptureEntry),
+					scheme: {requested: "dark", proven: "dark"},
+					path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano@desktop-dark.png",
+				},
+			],
+		};
+		assert.deepStrictEqual(parseManifest(serializeManifest(schemed)), {
+			_tag: "Manifest",
+			value: schemed,
+		});
+	});
+
+	it("refuses a scheme field that is not a light/dark pair, rather than dropping it", () => {
+		for (const scheme of ["dark", {requested: "dark"}, {requested: "dark", proven: "dim"}, null]) {
+			assert.strictEqual(
+				parseManifest(JSON.stringify({...manifest, captures: [{...manifest.captures[0], scheme}]}))
+					._tag,
+				"Malformed",
+			);
+		}
+	});
+
 	it("refuses a document it cannot read whole, rather than defaulting a field", () => {
 		assert.strictEqual(parseManifest("{")._tag, "Malformed");
 		assert.strictEqual(parseManifest("[]")._tag, "Malformed");

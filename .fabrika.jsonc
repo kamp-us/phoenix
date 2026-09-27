@@ -41,8 +41,8 @@
 	// already on disk keep the old arithmetic until they finish and two rule sets run side by side
 	// until then — accepted in that ruling.
 	//
-	// `parkCause.driverRouted` is `refuse`, which is also its shipped default: the ruling declares
-	// the value rather than flipping it, so this repo cannot drift if the default ever moves.
+	// `parkCause.driverRouted` is `clear`, founder-ruled 2026-09-27 (#9802): a park whose cause routes
+	// to the driver is cleared on the driver's recorded rationale via `recipe unpark`.
 	"assemblyRefresh": {
 		"onReview": "on",
 		"onDispatch": "on"
@@ -55,7 +55,7 @@
 	},
 	"parkCause": {
 		"uncaused": "refuse",
-		"driverRouted": "refuse"
+		"driverRouted": "clear"
 	},
 
 	// Who may declare a campaign or flip its lifecycle state (`fabrika campaign open` / `campaign
@@ -198,9 +198,13 @@
 
 	// How a capture is taken. `apps/web` keeps the reader's locale only in `localStorage`
 	// (`apps/web/src/lib/localeStorage.ts`), so `review-ui render --locale en` seeds this key and
-	// proves the page's `lang` came back `en` (#9893).
+	// proves the page's `lang` came back `en` (#9893). Its theme defaults to `auto`, which follows
+	// `prefers-color-scheme` and publishes the resolved value on `data-theme`
+	// (`apps/web/src/lib/theme.tsx`), so `review-ui render --scheme dark` emulates the preference and
+	// proves that attribute came back `dark` (#8134).
 	"uiCapture": {
-		"locale": { "storageKey": "kampus.locale", "values": ["tr", "en"] }
+		"locale": { "storageKey": "kampus.locale", "values": ["tr", "en"] },
+		"scheme": { "rootAttribute": "data-theme" }
 	},
 
 	// The repo's own commands that machine-read `.github/workflows/**`. `fabrika build check

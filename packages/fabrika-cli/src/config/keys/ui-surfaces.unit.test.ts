@@ -59,7 +59,13 @@ describe("the shipped default", () => {
 	it("defaults the capture settings a repo declares none of", () => {
 		expect(resolve(load({}), uiCaptureKey)).toMatchObject({
 			_tag: "Default",
-			value: {viewport: DEFAULT_VIEWPORT, evidenceStore: null, storageState: null, locale: null},
+			value: {
+				viewport: DEFAULT_VIEWPORT,
+				evidenceStore: null,
+				storageState: null,
+				locale: null,
+				scheme: null,
+			},
 		});
 	});
 });
@@ -204,6 +210,34 @@ describe("a declared uiCapture", () => {
 			"an unknown key inside locale",
 			{locale: {storageKey: "k", values: ["en"], cookie: "x"}},
 			'unknown key "cookie"',
+		],
+	])("refuses %s whole-value, naming the field it rejected", (_label, value, reason) => {
+		expect(capture(value)).toMatchObject({_tag: "Malformed", reason});
+	});
+
+	it("carries a declared scheme attribute through, and leaves it null when absent", () => {
+		const scheme = {rootAttribute: "data-theme"};
+		expect(capture({scheme})).toMatchObject({_tag: "Declared", value: {scheme}});
+		expect(capture({locale: null})).toMatchObject({_tag: "Declared", value: {scheme: null}});
+		expect(capture({scheme: null})).toMatchObject({_tag: "Declared", value: {scheme: null}});
+	});
+
+	it.each([
+		["a non-object scheme", {scheme: "dark"}, `"${UI_CAPTURE}.scheme" is not an object`],
+		[
+			"a scheme with no rootAttribute",
+			{scheme: {}},
+			`"${UI_CAPTURE}.scheme.rootAttribute" is missing or not a lowercase HTML attribute name`,
+		],
+		[
+			"a rootAttribute that is no attribute name",
+			{scheme: {rootAttribute: "data theme"}},
+			`"${UI_CAPTURE}.scheme.rootAttribute" is missing or not a lowercase HTML attribute name`,
+		],
+		[
+			"an unknown key inside scheme",
+			{scheme: {rootAttribute: "data-theme", storageKey: "kampus.theme"}},
+			'unknown key "storageKey"',
 		],
 	])("refuses %s whole-value, naming the field it rejected", (_label, value, reason) => {
 		expect(capture(value)).toMatchObject({_tag: "Malformed", reason});

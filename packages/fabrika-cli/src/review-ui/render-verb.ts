@@ -23,6 +23,13 @@ import {
 } from "../capture/auth.ts";
 import type {CaptureCookie} from "../capture/capture.ts";
 import {
+	COLOR_SCHEMES,
+	type ColorScheme,
+	parseSchemeOperands,
+	type SchemeDeclaration,
+	type SchemeRequest,
+} from "../capture/color-scheme.ts";
+import {
 	FORCED_VALUES,
 	type ForcedFlags,
 	isForcing,
@@ -91,6 +98,8 @@ export interface SurfaceRenderRequest {
 	readonly forcedFlags: ForcedFlags;
 	/** The locale seeded into the capture context and proved against the page's `lang`; `null` ⇒ the app's default. */
 	readonly locale: LocaleSeed | null;
+	/** The colour scheme the context emulates and the page must publish; `null` ⇒ the browser's default. */
+	readonly scheme: SchemeRequest | null;
 }
 
 /**
@@ -108,6 +117,7 @@ export type SurfaceRender =
 	| {readonly _tag: "WrongViewport"; readonly wanted: number; readonly rendered: number}
 	| {readonly _tag: "OverrideInert"; readonly reason: string}
 	| {readonly _tag: "WrongLocale"; readonly wanted: string; readonly reason: string}
+	| {readonly _tag: "WrongScheme"; readonly wanted: ColorScheme; readonly reason: string}
 	| {readonly _tag: "Failed"; readonly reason: string};
 
 export type RenderLeg = (request: SurfaceRenderRequest) => Effect.Effect<SurfaceRender>;
@@ -127,6 +137,13 @@ export interface RenderOptions {
 	 * any `--locale`, because fabrika compiles no app's key in.
 	 */
 	readonly localeDeclaration: LocaleDeclaration | null;
+	/** Raw `--scheme` operands, each `light` or `dark`. Empty ⇒ the browser's default scheme, unproved. */
+	readonly schemes: readonly string[];
+	/**
+	 * The repo's declared `uiCapture.scheme`, the only source of the root attribute a scheme is proved
+	 * against. `null` refuses any `--scheme`, because fabrika compiles no app's attribute in.
+	 */
+	readonly schemeDeclaration: SchemeDeclaration | null;
 	readonly app: string | null;
 	/**
 	 * The repo's declared `uiSurfaces` rows, read off the checkout this verb runs in — what says
@@ -180,11 +197,13 @@ interface PlannedShot {
 	readonly viewport: Viewport;
 	/** The seeded locale, named so a line about an English shot never reads as the default one. */
 	readonly locale: string | null;
+	/** The requested scheme, named for the same reason: a dark shot's line must not read as the default. */
+	readonly scheme: SchemeRequest | null;
 }
 
 /** Every enumeration and every refusal names the shot, and a shot is a surface at a viewport. */
 const shotName = (shot: PlannedShot): string =>
-	`surface "${shot.surface}" at ${shot.viewport.label}${shot.locale === null ? "" : ` in locale ${shot.locale}`}`;
+	`surface "${shot.surface}" at ${shot.viewport.label}${shot.locale === null ? "" : ` in locale ${shot.locale}`}${shot.scheme === null ? "" : ` in scheme ${shot.scheme.scheme}`}`;
 
 const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 	const subject = shotName(shot);
@@ -211,6 +230,8 @@ const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 			return `${VERB}: ${subject} did not render with its forced flags (${render.reason}) — the forced render is UNKNOWN, never the default one.`;
 		case "WrongLocale":
 			return `${VERB}: ${subject} did not render in its seeded locale (${render.reason}) — the seeded locale's render is UNKNOWN, never the default one.`;
+		case "WrongScheme":
+			return `${VERB}: ${subject} did not resolve to the ${render.wanted} scheme (${render.reason}) — the requested scheme's render is UNKNOWN, never the other one.`;
 		case "Failed":
 			return `${VERB}: ${subject} could not be rendered: ${render.reason} — the outcome is UNKNOWN.`;
 	}
@@ -370,6 +391,28 @@ export const runRender = (
 			);
 		}
 		const locale = localeRead._tag === "Seeded" ? localeRead.seed : null;
+		const schemeRead = parseSchemeOperands(options.schemes, options.schemeDeclaration);
+		switch (schemeRead._tag) {
+			case "Unknown":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --scheme "${schemeRead.value}" is not a colour scheme this verb renders — the names are ${COLOR_SCHEMES.join(", ")}.`,
+				);
+			case "Repeated":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --scheme "${schemeRead.value}" was passed twice — the second shot would overwrite the first's file and evidence.`,
+				);
+			case "Undeclared":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --scheme "${schemeRead.value}" cannot be proved (this repo declares no uiCapture.scheme, so there is no root attribute to read the page's scheme from) — an unproved scheme would shoot the default one under the requested name.`,
+				);
+		}
+		// Omitted is the browser's default scheme with no emulation and no proof, which is what every
+		// invocation written before this operand asked for implicitly.
+		const schemes: readonly (SchemeRequest | null)[] =
+			schemeRead._tag === "Requested" ? schemeRead.requests : [null];
 		// The override rides the `phoenix_flag_overrides` cookie, which a deployed stage honors only
 		// for a request whose actor holds platform Admin (`flagship/override-authz.ts`, untouched).
 		// So an anonymous surface cannot carry a forced flag at all — it would render the default
@@ -511,9 +554,12 @@ export const runRender = (
 		const forcedCookies = overrideCookies(announced.url, forcedFlags);
 
 		const setDir = setDirectory(options.tmpRoot, pr, head, options.out);
-		// Surface-major so a mixed-viewport enumeration reads one surface's widths together.
+		// Surface-major so a mixed-viewport enumeration reads one surface's widths together, and each
+		// width's schemes together under it.
 		const shots: readonly PlannedShot[] = options.surfaces.flatMap((surface) =>
-			viewports.map((viewport) => ({surface, viewport, locale: locale?.value ?? null})),
+			viewports.flatMap((viewport) =>
+				schemes.map((scheme) => ({surface, viewport, locale: locale?.value ?? null, scheme})),
+			),
 		);
 		const renders: SurfaceRender[] = [];
 		for (const shot of shots) {
@@ -530,6 +576,7 @@ export const runRender = (
 					cookies: tier === null ? [] : [...cookiesFor(tier), ...forcedCookies],
 					forcedFlags: tier === null ? NO_FORCED_FLAGS : forcedFlags,
 					locale,
+					scheme: shot.scheme,
 				}),
 			);
 		}
@@ -548,14 +595,15 @@ export const runRender = (
 		}
 		// Ahead of the proven-red codes below, and deliberately: the shot is a fine PNG of the wrong
 		// page, so routing it as a red surface would accuse the PR of a defect the render never saw.
-		// The four arms are one class — wrong session, wrong tier, wrong flag state, wrong locale — and
-		// route alike.
+		// The five arms are one class — wrong session, wrong tier, wrong flag state, wrong locale, wrong
+		// scheme — and route alike.
 		const wrongPage = renders.findIndex(
 			(render) =>
 				render._tag === "Unauthenticated" ||
 				render._tag === "WrongTier" ||
 				render._tag === "OverrideInert" ||
-				render._tag === "WrongLocale",
+				render._tag === "WrongLocale" ||
+				render._tag === "WrongScheme",
 		);
 		if (wrongPage !== -1) {
 			return refuse(

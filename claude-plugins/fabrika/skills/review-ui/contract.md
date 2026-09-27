@@ -251,7 +251,7 @@ anchor at all is the proven `16`.
 **Invocation**
 
 ```
-fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--locale <value>] [--auth-secret-from <file>] [--app web] [--repo <owner/name>]
+fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--locale <value>] [--scheme light --scheme dark] [--auth-secret-from <file>] [--app web] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -264,6 +264,7 @@ fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/
 | `--viewport` | string, repeatable | no | `desktop` alone | a viewport to shoot every `--surface` at, over the closed set `desktop` (1280×800) and `mobile` (390×844); crossed with `--surface`, so two of each is four captures. A name outside the set, or one passed twice, is `10` |
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
 | `--locale` | string | no | the app's default locale, nothing seeded | render every shot in this locale — one of the values `.fabrika.jsonc`'s `uiCapture.locale` declares; with no declaration, or a value outside its list, it is `10` before a browser launches |
+| `--scheme` | string, repeatable | no | the browser's own scheme, nothing emulated or proved | a colour scheme to shoot every `--surface` at, over the closed set `light` and `dark`; crossed with `--surface` and `--viewport`, so one surface at one viewport in both schemes is two captures. A name outside the set, a name passed twice, or any `--scheme` while `.fabrika.jsonc` declares no `uiCapture.scheme`, is `10` before a browser launches |
 | `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve. Whichever app is resolved, a `--surface` whose own `uiSurfaces` row belongs to an app this preview did not announce is `11` — omitting the flag routes around no fence |
 | `--auth-secret-from` | string | no | the committed preview key at `infra/preview-auth-key/key.txt`, else the ambient `$BETTER_AUTH_SECRET` | a file holding a signing secret to use instead of the repo's own — rarely needed, since the committed preview key is what every `pr-<n>` worker deploys with and needs no credential; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
 | `--repo` | string | no | resolved | the repository |
@@ -360,6 +361,41 @@ requested name, and no byte check can tell the two apart. A page that threw duri
 `13` — the locale proof is read off the page, so a crash outranks it. Every stderr line of a seeded
 run names the shot `in locale <value>`.
 
+**`--scheme` shoots the surface in a named colour scheme**, so a component whose styling depends on
+the scheme is judged from dark pixels as well as light ones. Before this operand every shot took
+whatever the headless browser resolved to, which is light, and a verdict on a scheme-dependent
+component had to disclose the dark scheme as could-not-render.
+
+The request rides the browser, not the app: each shot's context emulates `prefers-color-scheme` at
+the named value, so an app left on its system-following default renders that scheme and fabrika
+writes no app's storage key. That request is a fact about the browser only — an app with a stored
+choice, or one that pins its scheme, paints its own — so **the shot proves the scheme the page
+resolved to, never the one it asked for**. The page's own answer is read off an attribute on
+`document.documentElement`, and which attribute is the consumer's declaration in `uiCapture.scheme`:
+
+```jsonc
+"uiCapture": {"scheme": {"rootAttribute": "data-theme"}}
+```
+
+`rootAttribute` is a lowercase HTML attribute name whose value is `light` or `dark` once the page has
+resolved its scheme. The schema refuses a malformed declaration, and an absent one (or `null`) makes
+every `--scheme` a `10`, because there is nothing to prove the request against; a run without the
+operand never reads it. A `--scheme` run reads `uiCapture` too, so a declaration that does not decode
+is `11`.
+
+After navigation and before the screenshot, the verb waits (up to 10s) for the attribute to name the
+requested scheme, because an app may publish it from an effect after mount, then reads it back. An
+attribute naming anything else, or one that is absent or cannot be read, is `11` and records no
+capture: an emulated preference the app overrode paints the other scheme cleanly under the requested
+name, and no byte check can tell the two apart. A page that threw during render is still `13` — the
+proof is read off the page, so a crash outranks it.
+
+A scheme-crossed shot carries the scheme in its PNG name (`feed@desktop-dark.png`) and a `scheme`
+object on its manifest entry holding the `requested` scheme and the `proven` one the page published;
+the evidence gallery heads it `<surface> @ <viewport>, scheme requested <s>, proven <s>`, and every
+stderr line names the shot `in scheme <s>`. A run without `--scheme` keeps every name, entry and
+heading it had before.
+
 The refusal on every other token is the same fence v1 stated, kept for the same reason: v1 demanded
 `:focus-visible` captures with no mechanism to prove the state was realized, and a state that
 silently rendered unfocused PASSed its prohibition forever. Parsing a state is not rendering one —
@@ -401,7 +437,7 @@ For each `--surface` at each
 `--viewport`, in the provisioned headless browser sized to that viewport: navigate to
 `<previewUrl><route>`; status ≥ 400 or failed navigation is **unreachable** (`14`); an uncaught
 page exception is **crashed** (`13`); otherwise screenshot full-page to
-`<set>/<route-slug>@<viewport>.png` and validate (exists, non-zero bytes, decodable, non-zero area —
+`<set>/<route-slug>@<viewport>.png` (`@<viewport>-<scheme>.png` for each `--scheme`, after its scheme proof) and validate (exists, non-zero bytes, decodable, non-zero area —
 `15` on any failure), then **read the width back off those bytes** and refuse a shot that is not the
 requested viewport's width (`19`).
 `console.error` output is **recorded per capture in `pageErrors`, never a gate outcome** — the
@@ -425,8 +461,8 @@ re-invocation without it, on the record; never the tool's tolerance.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; `--flag` was passed beside an anonymous surface; or `--locale` was passed with no `uiCapture.locale` declared, or with a value outside its declared list |
-| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; a forced flag evaluated at its default anyway; or a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value |
+| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; `--flag` was passed beside an anonymous surface; `--locale` was passed with no `uiCapture.locale` declared, or with a value outside its declared list; or a `--scheme` names a scheme outside the closed set (`light`, `dark`), is passed twice, or is passed with no `uiCapture.scheme` declared |
+| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale` or `--scheme` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; a forced flag evaluated at its default anyway; a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value; or a scheme-crossed shot's declared root attribute did not read back as its `--scheme` value |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -452,6 +488,10 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: surface "<id>" at <viewport> did not render with its forced flags (<reason>) — the forced render is UNKNOWN, never the default one.` | 11 | refusal |
 | `review-ui render: --locale "<value>" cannot be seeded (<reason>) — an operand nothing seeds would shoot the default locale under the requested name.` | 10 | refusal |
 | `review-ui render: surface "<id>" at <viewport> in locale <value> did not render in its seeded locale (<reason>) — the seeded locale's render is UNKNOWN, never the default one.` | 11 | refusal |
+| `review-ui render: --scheme "<name>" is not a colour scheme this verb renders — the names are light, dark.` | 10 | refusal |
+| `review-ui render: --scheme "<name>" was passed twice — the second shot would overwrite the first's file and evidence.` | 10 | refusal |
+| `review-ui render: --scheme "<name>" cannot be proved (this repo declares no uiCapture.scheme, so there is no root attribute to read the page's scheme from) — an unproved scheme would shoot the default one under the requested name.` | 10 | refusal |
+| `review-ui render: surface "<id>" at <viewport> in scheme <scheme> did not resolve to the <scheme> scheme (<reason>) — the requested scheme's render is UNKNOWN, never the other one.` | 11 | refusal |
 | `review-ui render: --viewport "<name>" is not a viewport this repo renders — the names are desktop, mobile.` | 10 | refusal |
 | `review-ui render: --viewport "<name>" was passed twice — the second shot would overwrite the first's file and evidence.` | 10 | refusal |
 | `review-ui render: surface "<id>" at <viewport> was asked for at <wanted>px and its bytes read back <actual>px wide — the requested viewport's render is UNKNOWN, never another width's.` | 19 | refusal |
@@ -466,7 +506,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: surface "<id>" at <viewport> captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 15 | refusal |
 | `review-ui render: no preview-deploy comment on PR #<n> — nothing to judge without running the PR's code; the run is CANT-SEE.` | 16 | refusal |
 
-**Scope** — exactly the `--surface` × `--viewport` cross product against one PR's announced preview. Zero operands
+**Scope** — exactly the `--surface` × `--viewport` × `--scheme` cross product against one PR's announced preview (no `--scheme` counts as one default-scheme column). Zero operands
 is `1`, so "rendered nothing, found nothing wrong" is unrepresentable — this verb fails closed on
 zero scope like every other. The
 per-surface outcome enumeration goes to stderr on every path, success included.
@@ -491,6 +531,13 @@ $ fabrika review-ui render --pr 4321 --out narrow --surface /feed --viewport des
 review-ui render: surface "/feed" at desktop captured: 1280x2140, 0 page errors
 review-ui render: surface "/feed" at mobile captured: 390x3180, 0 page errors
 {"set":"narrow","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://app-pr-4321.example.workers.dev","captures":[{"surface":"/feed","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/narrow/feed@desktop.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}},{"surface":"/feed","viewport":"mobile","path":"/tmp/fabrika-review-ui/4321-03135b91/narrow/feed@mobile.png","width":390,"height":3180,"sha256":"1f7b…","pageErrors":{"rows":[],"more":0}}]}
+```
+
+```
+$ fabrika review-ui render --pr 4321 --out schemes --surface /feed --scheme light --scheme dark
+review-ui render: surface "/feed" at desktop in scheme light captured: 1280x2140, 0 page errors
+review-ui render: surface "/feed" at desktop in scheme dark captured: 1280x2140, 0 page errors
+{"set":"schemes","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://app-pr-4321.example.workers.dev","captures":[{"surface":"/feed","viewport":"desktop","scheme":{"requested":"light","proven":"light"},"path":"/tmp/fabrika-review-ui/4321-03135b91/schemes/feed@desktop-light.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}},{"surface":"/feed","viewport":"desktop","scheme":{"requested":"dark","proven":"dark"},"path":"/tmp/fabrika-review-ui/4321-03135b91/schemes/feed@desktop-dark.png","width":1280,"height":2140,"sha256":"41bb…","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```

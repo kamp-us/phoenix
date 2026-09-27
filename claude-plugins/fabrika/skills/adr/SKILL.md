@@ -129,12 +129,9 @@ section:
 
 ## 5 — Record the vocabulary impact
 
-An ADR is a primary coining site, and a term coined here drifts silently unless it is routed. Land
-on **exactly one** outcome; the explicit "none" separates *considered it* from *forgot to*:
-
-- **A term is coined or redefined** → name it and route it to `.glossary/TERMS.md`: the row in this
-  PR when the definition is short and unambiguous, otherwise `/glossary`.
-- **Nothing is coined** → add a terminal `## Records` section and write `no vocabulary impact`.
+A terminal `## Records` section is required only when the ADR coins or redefines a term. Name the
+term there and route it to `.glossary/TERMS.md`: the row in this PR when the definition is short and
+unambiguous, otherwise `/glossary`.
 
 ## 6 — Check, then report
 

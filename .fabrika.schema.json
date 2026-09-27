@@ -932,7 +932,7 @@
 		},
 		"uiCapture": {
 			"type": "object",
-			"description": "How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, and the locales a render can be seeded in.",
+			"description": "How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, the locales a render can be seeded in, and where a page publishes its resolved colour scheme.",
 			"properties": {
 				"viewport": {
 					"type": "object",
@@ -995,6 +995,24 @@
 					"required": [
 						"storageKey",
 						"values"
+					],
+					"additionalProperties": false
+				},
+				"scheme": {
+					"type": [
+						"object",
+						"null"
+					],
+					"description": "Where the page publishes the colour scheme it resolved. `review-ui render --scheme light|dark` emulates `prefers-color-scheme` and proves each shot against this root attribute. Null (or absent) refuses `--scheme`.",
+					"properties": {
+						"rootAttribute": {
+							"type": "string",
+							"description": "The attribute on `document.documentElement` whose value is `light` or `dark` once the page has resolved its scheme.",
+							"pattern": "^[a-z][a-z0-9-]*$"
+						}
+					},
+					"required": [
+						"rootAttribute"
 					],
 					"additionalProperties": false
 				}

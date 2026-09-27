@@ -21,7 +21,7 @@ import {buildCapturePlan, joinPreviewUrl, parseSurfaceSpec} from "../capture/pla
 import {validateCaptureBytes} from "../capture/png.ts";
 import {tierOf} from "../capture/states.ts";
 import {capAndCount} from "../evidence.ts";
-import {PAGE_ERROR_CAP, sha256Hex} from "./manifest.ts";
+import {type CaptureEntry, PAGE_ERROR_CAP, sha256Hex} from "./manifest.ts";
 import type {RenderLeg, SurfaceRender} from "./render-verb.ts";
 
 /**
@@ -55,6 +55,7 @@ export const makeCaptureRenderLeg =
 						request.previewUrl,
 						[parseSurfaceSpec(request.surface)],
 						request.viewport,
+						request.scheme,
 					),
 				catch: (cause) => String(cause),
 			}).pipe(Effect.catch((reason) => Effect.succeed(reason)));
@@ -160,6 +161,26 @@ export const makeCaptureRenderLeg =
 					} satisfies SurfaceRender;
 				}
 			}
+			// Read off the page like the locale, and for the same reason after the crash check. The
+			// emulated preference is only the request: an app holding a stored choice paints its own
+			// scheme, a valid PNG under the requested name.
+			let scheme: CaptureEntry["scheme"];
+			if (request.scheme !== null) {
+				const proof = shot.schemeProof;
+				if (proof === undefined || proof._tag !== "Proven") {
+					return {
+						_tag: "WrongScheme",
+						wanted: request.scheme.scheme,
+						reason:
+							proof === undefined
+								? "the capture returned no scheme proof"
+								: proof._tag === "Mismatch"
+									? `the page's ${request.scheme.rootAttribute} read back "${proof.rendered}"`
+									: proof.reason,
+					} satisfies SurfaceRender;
+				}
+				scheme = {requested: request.scheme.scheme, proven: proof.scheme};
+			}
 			const validity = validateCaptureBytes(shot.pngBytes);
 			if (validity._tag === "Invalid") {
 				return {_tag: "Invalid", detail: validity.reason} satisfies SurfaceRender;
@@ -179,6 +200,7 @@ export const makeCaptureRenderLeg =
 				entry: {
 					surface: request.surface,
 					viewport: request.viewport.label,
+					...(scheme === undefined ? {} : {scheme}),
 					path: shot.localPath,
 					width: validity.width,
 					height: validity.height,
