@@ -17,8 +17,7 @@ import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import type {Comment} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
-import {useT} from "../../i18n";
-import {formatAgoTR} from "../../lib/datetime";
+import {useDateFormatter, useT} from "../../i18n";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {actorLabel} from "../moderation/actor-identity";
 import {CommentReactionBar} from "../reaction/CommentReactionBar";
@@ -74,6 +73,7 @@ export interface CommentTreeNodeProps {
 
 export function CommentTreeNode(props: CommentTreeNodeProps) {
 	const t = useT();
+	const formatDate = useDateFormatter();
 	const data = useLiveView(CommentTreeNodeView, props.comment);
 	const fate = useFateClient();
 	const {onReport} = props;
@@ -128,7 +128,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 					sandboxed={data.sandboxed}
 					sandboxedInPlace={data.sandboxedInPlace}
 				/>
-				<span>{formatAgoTR(toIso(data.createdAt))}</span>
+				<span>{formatDate.ago(toIso(data.createdAt))}</span>
 				<EditedIndicator createdAt={toIso(data.createdAt)} updatedAt={toIso(data.updatedAt)} />
 				{!isDeleted ? (
 					<Button
