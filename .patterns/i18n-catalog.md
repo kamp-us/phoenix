@@ -22,7 +22,8 @@ apps/web/src/i18n/
 ├── plural.ts            `plural(locale, n, {one, other})` on `Intl.PluralRules`
 ├── locale.ts            the `Locale` type, the default, the endonym labels
 ├── brandNouns.ts        the five product names that never translate, and the words en must not carry
-└── LocaleProvider.tsx   the React face: `LocaleProvider`, `useLocale`, `useT`, `useTPlural`
+└── LocaleProvider.tsx   the React face: `LocaleProvider`, `useLocale`, `useT`, `useTPlural`,
+                         `useDateFormatter`
 ```
 
 `apps/web/src/lib/localeStorage.ts` persists the choice under `kampus.locale`, mirroring
@@ -121,6 +122,9 @@ Three consequences worth knowing before you write one:
 Formatting a date or a number is the same rule seen from the other side: the module takes the
 `Locale` and formats with it (`createdAtLabel(createdAt, locale)`), so no surface hardcodes
 `tr-TR`.
+A component reads dates through `useDateFormatter()`, whose `date`, `ago` and `editedTooltip` come
+from `lib/datetime.ts`'s `dateFormatter(locale)`: one set of `Intl` instances per locale, built on
+first use and never at import time, so a unit test calls `dateFormatter` with no DOM.
 
 ## The two type checks, and why they are in different files
 

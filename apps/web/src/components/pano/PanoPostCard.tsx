@@ -9,8 +9,7 @@ import {Link} from "react-router";
 import type {Post} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
 import {toIso} from "../../fate/wire";
-import {useLocale} from "../../i18n";
-import {formatAgoTR} from "../../lib/datetime";
+import {useDateFormatter, useLocale} from "../../i18n";
 import {tagClass} from "../../lib/panoTags";
 import {
 	type OverlayState,
@@ -80,6 +79,7 @@ export function PanoPostCard({
 	muteEnabled?: boolean;
 }) {
 	const {locale, t} = useLocale();
+	const formatDate = useDateFormatter();
 	const data = useLiveView(PanoPostCardView, post);
 	const session = useSession();
 	const {isMuted} = useMutedMembers();
@@ -96,7 +96,7 @@ export function PanoPostCard({
 		: {myVote: data.myVote ?? null, isSaved: data.isSaved ?? null};
 	const href = `/pano/${data.slug ?? data.id}`;
 	const siteLabel = data.host ?? (data.url ? null : t("pano.post.text"));
-	const agoLabel = formatAgoTR(toIso(data.createdAt));
+	const agoLabel = formatDate.ago(toIso(data.createdAt));
 	const tags = data.tags ?? [];
 
 	return (

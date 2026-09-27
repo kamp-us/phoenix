@@ -81,6 +81,7 @@ export const makeCaptureRenderLeg =
 							},
 						}
 					: {}),
+				...(request.locale === null ? {} : {locale: request.locale}),
 			}).pipe(Effect.catch((error) => Effect.succeed(error.message)));
 			if (typeof captured === "string") {
 				return captured.startsWith(NAVIGATION_FAILURE_PREFIX)
@@ -140,6 +141,24 @@ export const makeCaptureRenderLeg =
 			const crash = shot.pageErrors.find(isRenderCrash);
 			if (crash !== undefined) {
 				return {_tag: "Crashed", firstError: crash.text} satisfies SurfaceRender;
+			}
+			// After the crash check, unlike the two proofs above: this one is read off the page itself,
+			// and a page that threw before setting its `lang` is a red render, not an unseeded one. A
+			// seed the app never read renders the default locale, a valid PNG under the seeded name.
+			if (request.locale !== null) {
+				const proof = shot.localeProof;
+				if (proof === undefined || proof._tag !== "Seeded") {
+					return {
+						_tag: "WrongLocale",
+						wanted: request.locale.value,
+						reason:
+							proof === undefined
+								? "the capture returned no locale proof"
+								: proof._tag === "Mismatch"
+									? `the page's lang read back "${proof.rendered}"`
+									: proof.reason,
+					} satisfies SurfaceRender;
+				}
 			}
 			const validity = validateCaptureBytes(shot.pngBytes);
 			if (validity._tag === "Invalid") {

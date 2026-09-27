@@ -2451,6 +2451,24 @@ them was opened — nothing ran at all, or everything that ran reads other files
 that green is exactly the one the named-class design exists to refuse. This is why `reads` is
 mandatory and non-empty: an entry that names no file can only buy the false green back.
 
+**A declared config file is the same remedy again, taken by declaration.** A root config file
+such as `lefthook.yml` matches no surface's pattern, and its validator is the repo's own tool, so
+`.fabrika.jsonc`'s `configValidators` declares it in the `workflowValidators` grammar: an argv plus
+the exact repo-relative files it `reads`, never a glob. A file the patterns leave unclaimed and some
+entry reads leaves the unvalidatable class for a `config` class no surface owns. **Every** run whose
+diff touches such a file spawns the entries that read it, whatever `--surface` names, beside the
+local-tree guard sweep, and names each in `ran`. So a diff of config files alone contradicts no
+surface and greens or reds under any token, and a config file no entry reads stays unvalidatable and
+still refuses `22`. `SURFACES` gains no member. A `.fabrika.jsonc` whose `configValidators` cannot be
+read or does not decode is `11` — but only over a diff holding an unclaimed file, the one diff whose
+answer depends on it.
+
+**Non-JS source takes the same key.** A `.java` file under a Gradle tree matches no surface's
+pattern either, and the extension patterns do not widen to take it: `pnpm typecheck` and Biome never
+open it. A repo declares its own build (for example `./gradlew testDebugUnitTest`) under
+`configValidators`, naming each source file the entry claims in `reads` — exact paths, as for config
+files — and a Java-only diff then greens or reds exactly as a config-only one does.
+
 Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`).
 
 **Exit status** (beyond the universal four)
@@ -2458,12 +2476,12 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | Code | Trigger |
 |---|---|
 | `7` | the diff against the branch base is empty — nothing to validate, zero scope |
-| `10` | `--surface` is off-enum, or the diff contains none of the file classes that surface's validators open |
+| `10` | `--surface` is off-enum, or the diff contains none of the file classes that surface's validators open and is not made only of declared config files |
 | `11` | a validator could not be executed, a changed file could not be read for a reason other than absence, or the lane's claim could not be read — the verdict is UNKNOWN, never green |
 | `14` | proven: the checked-out branch is not this lane's (lane-identity rule) |
 | `15` | proven: the lane's claim is held by another session |
 | `18` | proven red — the failing runner and its diagnostics are on stderr |
-| `22` | proven: no changed file falls in any surface's validators — nothing to run, never a green |
+| `22` | proven: no changed file falls in any surface's validators or any declared config validator's `reads` — nothing to run, never a green |
 
 **Errors**
 
@@ -2479,6 +2497,8 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: no workflow validator could be executed — actionlint is not installed here (<reason>) and this repo declares none — so no file was opened and the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: <n> workflow validator(s) ran, but none of them opened any of the <m> changed workflow file(s) (<files>) — actionlint did not run here (<reason>) and no declared validator reads them, so the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: no validator that ran opens <files> — reported in \`unvalidated\`, so this green claims nothing about them.` | 0 | scope note beside a green |
+| `build check: cannot read \`configValidators\` from .fabrika.jsonc (<reason>) — whether any of <files> has a declared validator is UNKNOWN, never green.` | 11 | refusal |
+| `build check: <n> changed file(s) read by \`configValidators\` in .fabrika.jsonc: <files>.` | 0 | scope note |
 | `build check: <n> workflow validator(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: no repo workflow validator is declared — <reason>.` | 0 | scope note |
 | `build check: actionlint did NOT run (<reason>) — <ci.gateWorkflow>'s actionlint job supersedes this verdict on workflow syntax.` | 0 | scope note beside a green |

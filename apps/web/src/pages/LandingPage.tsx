@@ -8,8 +8,7 @@ import {useMe} from "../auth/useMe";
 import {Icon} from "../components/Icon";
 import {Screen} from "../fate/Screen";
 import {toIso} from "../fate/wire";
-import {type CatalogKey, plural, useLocale, useT} from "../i18n";
-import {formatAgoTR} from "../lib/datetime";
+import {type CatalogKey, plural, useDateFormatter, useLocale, useT} from "../i18n";
 import {landingCtaPhase, showJoinCta} from "./landingGating";
 import "./LandingPage.css";
 
@@ -231,6 +230,7 @@ function LandingBody() {
 function LandingPostRow({node, rank}: {node: ViewRef<"Post">; rank: number}) {
 	const p = useView(LandingPostView, node);
 	const countNoun = useCountNoun();
+	const formatDate = useDateFormatter();
 	return (
 		<li className="kp-landing-row">
 			<span className="kp-landing-row__rank">{String(rank).padStart(2, "0")}</span>
@@ -255,7 +255,7 @@ function LandingPostRow({node, rank}: {node: ViewRef<"Post">; rank: number}) {
 					<span className="dot">·</span>
 					<span className="author">@{p.author}</span>
 					<span className="dot">·</span>
-					<span>{formatAgoTR(toIso(p.createdAt))}</span>
+					<span>{formatDate.ago(toIso(p.createdAt))}</span>
 					<span className="dot">·</span>
 					<span>
 						{p.commentCount}{" "}
@@ -274,6 +274,7 @@ function LandingPostRow({node, rank}: {node: ViewRef<"Post">; rank: number}) {
 function LandingTermRow({node}: {node: ViewRef<"Term">}) {
 	const term = useView(LandingTermView, node);
 	const countNoun = useCountNoun();
+	const formatDate = useDateFormatter();
 	return (
 		<li className="kp-landing-row">
 			<span className="kp-landing-row__rank">·</span>
@@ -285,7 +286,7 @@ function LandingTermRow({node}: {node: ViewRef<"Term">}) {
 				<div className="kp-landing-row__meta">
 					{term.lastActivityAt ? (
 						<>
-							<span>{formatAgoTR(toIso(term.lastActivityAt))}</span>
+							<span>{formatDate.ago(toIso(term.lastActivityAt))}</span>
 							<span className="dot">·</span>
 						</>
 					) : null}

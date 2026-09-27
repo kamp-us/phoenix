@@ -18,7 +18,6 @@ import {runChecks} from "./checks-verb.ts";
 import {runCpApproval} from "./cp-approval-verb.ts";
 import {runDisarm} from "./disarm-verb.ts";
 import {runEnqueue} from "./enqueue-verb.ts";
-import {runEvidence} from "./evidence-verb.ts";
 import {runFloorBatch} from "./floor-batch.ts";
 import {floorRunner} from "./floor-check.ts";
 import {runGate} from "./gate-verb.ts";
@@ -253,21 +252,6 @@ const checks = leafCommand(
 	),
 );
 
-const evidence = leafCommand(
-	"evidence",
-	{pr: prArg, sha: shaFlag, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, sha, repo, json}) {
-		yield* emit(
-			yield* runEvidence({pr, sha, repo: Option.getOrNull(repo), json, env: process.env}),
-		);
-	}),
-).pipe(
-	Command.withShortDescription("Read the SHA-bound run-evidence bundle."),
-	Command.withDescription(
-		"Read the SHA-bound run-evidence bundle as five states. First stdout line is `evidence\\t<present|pending|failed|absent|unknown>\\t<sha>`, then `lookup\\trun:<id|->\\tartifact:<id|->\\tstatus:<status|->` — the evidence that makes the claim falsifiable — then the manifest's checks as a status tally, one `check\\t<status>\\t<count>` line per status, count-descending with ties broken on the status; a state that read no manifest carries no such line, and on `failed` the non-passing checks are named on stderr. `failed` is a bundle that binds this head and attests a failing run; `unknown` means the opposite — the answer cannot bind this head. Pending is not absent: a completed run with zero artifacts reads `pending` within 120s of its `completed_at` against the local clock and `absent` outside it. A failed read is not absent either, and the fetched artifact's zip magic number is checked before anything parses it. Exits 7 (PR or --sha proven absent), 11 (the run list, artifact list or artifact content could not be read after retries), 13 (a run or artifact enumeration is provably short). Example: fabrika ship evidence 4321 --sha 03135b91",
-	),
-);
-
 const threads = leafCommand(
 	"threads",
 	{pr: prArg, repo: repoFlag, json: jsonFlag},
@@ -478,7 +462,6 @@ export const shipCommand = Command.make("ship").pipe(
 		floor,
 		floorBatch,
 		checks,
-		evidence,
 		threads,
 		resolve,
 		enqueue,
@@ -491,6 +474,6 @@ export const shipCommand = Command.make("ship").pipe(
 	]),
 	Command.withShortDescription("Drive one pull request down the merge path."),
 	Command.withDescription(
-		"Everything the merge path needs off one pull request — scope, §CP discharge, the verdict conjunction, head CI, run evidence and review threads — plus the writes that arm, land, watch, disarm and record it",
+		"Everything the merge path needs off one pull request — scope, §CP discharge, the verdict conjunction, head CI and review threads — plus the writes that arm, land, watch, disarm and record it",
 	),
 );

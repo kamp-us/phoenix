@@ -1,10 +1,9 @@
 /**
  * The `ci` verb group — the workflow plumbing a repo's release and build paths call.
  *
- * Not guards. These four are the release path and the CI build path: `ci changelog` and
- * `ci pr-body` are what let a release cut at all, `ci annotate` is what puts a failed typecheck on
- * the diff, and `ci evidence` produces the manifest `fabrika ship evidence` binds to a head SHA.
- * A mistake here breaks cutting rather than a check, which is why they are grouped apart from
+ * Not guards. These three are the release path and the CI build path: `ci changelog` and
+ * `ci pr-body` are what let a release cut at all, and `ci annotate` is what puts a failed typecheck
+ * on the diff. A mistake here breaks cutting rather than a check, which is why they are grouped apart from
  * `guard`.
  *
  * Two members of the group are not verbs but bare entry points, each because its job installs no
@@ -26,7 +25,6 @@ import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {passThroughStdin, runAnnotate} from "./annotate-verb.ts";
 import {runChangelog} from "./changelog-verb.ts";
-import {runCiEvidence} from "./evidence-verb.ts";
 import {runPrBody} from "./pr-body-verb.ts";
 
 const rootFlag = Flag.string("root").pipe(
@@ -111,63 +109,10 @@ const annotate = leafCommand(
 	),
 );
 
-const evidence = leafCommand(
-	"evidence",
-	{
-		runSummary: Flag.string("run-summary").pipe(
-			Flag.withDescription("path to crabbox's machine-readable run-summary JSON"),
-		),
-		junit: Flag.string("junit").pipe(
-			Flag.optional,
-			Flag.withDescription("path to the --artifact-glob'd JUnit XML (omitted ⇒ zeroed tests)"),
-		),
-		logs: Flag.string("logs").pipe(
-			Flag.withDefault("crabbox:stdout"),
-			Flag.withDescription("reference (path/URL) to the captured run logs"),
-		),
-		commit: Flag.string("commit").pipe(
-			Flag.optional,
-			Flag.withDescription("head SHA to stamp (omitted ⇒ git rev-parse HEAD)"),
-		),
-		runUrl: Flag.string("run-url").pipe(Flag.optional, Flag.withDescription("the run URL")),
-		environment: Flag.string("environment").pipe(
-			Flag.optional,
-			Flag.withDescription("environment/stage the run executed in"),
-		),
-		output: Flag.string("output").pipe(
-			Flag.optional,
-			Flag.withDescription("write the manifest here instead of stdout"),
-		),
-		extraChecks: Flag.string("extra-checks").pipe(
-			Flag.optional,
-			Flag.withDescription("path to a JSON Check (or Check[]) produced outside crabbox"),
-		),
-	},
-	Effect.fn(function* (flags) {
-		yield* emit(
-			yield* runCiEvidence({
-				runSummary: flags.runSummary,
-				junit: Option.getOrNull(flags.junit),
-				logs: flags.logs,
-				commit: Option.getOrNull(flags.commit),
-				runUrl: Option.getOrNull(flags.runUrl),
-				environment: Option.getOrNull(flags.environment),
-				output: Option.getOrNull(flags.output),
-				extraChecks: Option.getOrNull(flags.extraChecks),
-			}),
-		);
-	}),
-).pipe(
-	Command.withShortDescription("Map a crabbox run to the run-evidence manifest."),
-	Command.withDescription(
-		"Map a crabbox run-summary (and optionally its JUnit and externally-produced checks) to the run-evidence manifest that `fabrika ship evidence` reads back. `commit` is the binding key the gate asserts against, so it is stamped from --commit — on pull_request that is the PR head, never github.sha's synthetic merge commit — or resolved from HEAD, and a manifest is NEVER emitted with a blank or half-formed one. Prints the manifest JSON on stdout, or writes it to --output. Exits 4 (the run-summary, the JUnit or the --extra-checks file parsed and is not the shape), 8 (--output could not be written, so whether it landed is UNKNOWN), 11 (an input could not be read, or HEAD could not be resolved). Example: fabrika ci evidence --run-summary summary.json --commit $HEAD_SHA --output bundle/manifest.json",
-	),
-);
-
 export const ciCommand = Command.make("ci").pipe(
-	Command.withSubcommands([changelog, prBody, annotate, evidence]),
+	Command.withSubcommands([changelog, prBody, annotate]),
 	Command.withShortDescription("The release-path and build-path verbs CI workflows call."),
 	Command.withDescription(
-		"The workflow plumbing: `fabrika ci <verb>`. Unlike `guard`, these do not judge the tree — they are the release path (`changelog`, `pr-body`) and the build path (`annotate`, `evidence`), where a mistake breaks cutting or breaks the evidence a merge gate reads, rather than breaking a check",
+		"The workflow plumbing: `fabrika ci <verb>`. Unlike `guard`, these do not judge the tree — they are the release path (`changelog`, `pr-body`) and the build path (`annotate`), where a mistake breaks cutting or breaks a failed typecheck's annotations, rather than breaking a check",
 	),
 );

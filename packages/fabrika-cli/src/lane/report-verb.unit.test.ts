@@ -405,6 +405,46 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.BLOCKED", cause});
 	});
 
+	// The shipper's ordinary owner-approval wait: its token has one reason, so it lands caused with
+	// nothing typed, on the leaf the §CP recipe row keys on.
+	it("records a shipper's bare AWAITING-CP-APPROVAL under the approval-wait cause", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "AWAITING-CP-APPROVAL", {parkCause: strict});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "awaiting-cp-approval",
+		});
+	});
+
+	it("lets a typed cause override the approval wait on a head still behind its base", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "AWAITING-CP-APPROVAL", {
+			parkCause: strict,
+			cause: "head-behind-base",
+		});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs)).cause).toBe("head-behind-base");
+	});
+
+	// The other `ship` parks fold to the same leaf for other reasons, so none inherits the cause.
+	it.each([
+		"REFUSED",
+		"UNKNOWN",
+		"ROUTED-REVIEW",
+	])("still refuses a shipper's bare %s", async (token) => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, token, {parkCause: strict});
+
+		expect(out.code).toBe(PARK_UNCAUSED);
+		expect(fs.written.size).toBe(0);
+	});
+
 	// The whole containment: a terminal that maps to anything but BLOCKED is untouched by the key.
 	it("leaves a non-park terminal alone", async () => {
 		const fs = laneAt(LOG_AT.build);

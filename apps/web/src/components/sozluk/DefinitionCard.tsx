@@ -22,8 +22,7 @@ import {bodyEditOptimistic} from "../../fate/optimisticEdit";
 import {useDraftSubmit} from "../../fate/useDraftSubmit";
 import {codeOf, toIso} from "../../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../../fate/wireMessages";
-import {type Translate, useT} from "../../i18n";
-import {formatAgoTR} from "../../lib/datetime";
+import {type Translate, useDateFormatter, useT} from "../../i18n";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
 import {dropOptimisticDefinitionEdge} from "../../pages/definitionDeleteOptimistic";
@@ -81,6 +80,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	const session = useSession();
 	const navigate = useNavigate();
 	const t = useT();
+	const formatDate = useDateFormatter();
 	const overrides = React.useMemo(() => definitionOverrides(t), [t]);
 	const [editing, setEditing] = React.useState(false);
 	const [editBody, setEditBody] = React.useState(definition.body);
@@ -318,7 +318,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 						)}
 					</span>
 					<MetaRow.Dot />
-					<span>{formatAgoTR(toIso(definition.createdAt))}</span>
+					<span>{formatDate.ago(toIso(definition.createdAt))}</span>
 					<EditedIndicator
 						createdAt={toIso(definition.createdAt)}
 						updatedAt={toIso(definition.updatedAt)}

@@ -335,6 +335,27 @@ export const PARK_CAUSES = {
 		remedy: "fabrika lane refresh",
 	},
 	/**
+	 * `ship cp-approval` stopped because the control-plane approval the head owes is absent: its
+	 * owners were read and none approved at this head. This is the ordinary wait on a §CP PR, and the
+	 * one cause a shipper's `AWAITING-CP-APPROVAL` carries without being typed
+	 * ({@link TERMINAL_PARK_CAUSES}). A recorder passes `head-behind-base` instead only when the head
+	 * is still behind, because moving the head comes before soliciting the approval.
+	 *
+	 * Named rather than left `null` so the §CP recipe row can key on it: `ship`'s `BLOCKED` folds to
+	 * `human:cp-approval` whatever the block was, so a row keyed on no cause would read an approval
+	 * for a park recorded for some other reason. No remedy: a verb that removed this cause would be
+	 * granting the approval.
+	 *
+	 * Route `founder`: approving a control-plane change is a code owner's act, not machinery.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9180#issuecomment-5752464229
+	 */
+	"awaiting-cp-approval": {
+		meaning: "the PR's control-plane owners were read and none has approved its current head",
+		route: "founder",
+		remedy: null,
+	},
+	/**
 	 * `lane refresh` found a real conflict between the trunk and an epic run's assembly branch. The
 	 * merge was aborted and the branch put back where the refresh found it, so the tail cannot bind
 	 * to a refreshed head until the two sides are reconciled.
@@ -671,6 +692,27 @@ export const machineryCause = (token: string): ParkCause | null =>
 	MACHINERY_CAUSES[token.trim().toUpperCase()] ?? null;
 
 /**
+ * The park terminals whose token already names why the lane parked, so a recorder that passes no
+ * `--cause` still lands a caused `BLOCKED` — the park-side twin of {@link MACHINERY_CAUSES}.
+ *
+ * Only a token with exactly one reason belongs here. `AWAITING-CP-APPROVAL` is `ship cp-approval`'s
+ * `stop`, which says the owners' approval is absent; a `--cause` still overrides it, which is how a
+ * shipper standing on a head behind its base says `head-behind-base` instead. `REFUSED`, `UNKNOWN`
+ * and the routing arms fold to the same leaf for other reasons, so they carry nothing here.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9180#issuecomment-5752464229
+ */
+export const TERMINAL_PARK_CAUSES: Readonly<Record<string, ParkCause>> = {
+	"AWAITING-CP-APPROVAL": "awaiting-cp-approval",
+};
+
+/** The cause a terminal token carries on its own — a lap's or a park's — or `null`. */
+export const tokenCause = (token: string): ParkCause | null => {
+	const key = token.trim().toUpperCase();
+	return MACHINERY_CAUSES[key] ?? TERMINAL_PARK_CAUSES[key] ?? null;
+};
+
+/**
  * The causes a park leaf carries on its own — the second binding that makes a cause structural.
  *
  * {@link MACHINERY_CAUSES} reads a lap's cause off its terminal token; this reads a park's cause off
@@ -701,8 +743,8 @@ export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES)
  *
  * A park carrying **no** cause routes `founder`, and that is fail-closed rather than a default: a
  * park nothing named cannot be attributed to machinery, so nothing here may claim a driver can work
- * it. The two `KNOWN_PARKS` rows keyed by their leaf alone (`human:cp-approval`, `human:queue-stall`)
- * take that arm, and both are already waits on somebody else's act.
+ * it. The one `KNOWN_PARKS` row keyed by its leaf alone (`human:queue-stall`) takes that arm, and it
+ * is already a wait on somebody else's act.
  */
 export const routeForCause = (cause: string | null): ParkRoute =>
 	cause !== null && Object.hasOwn(PARK_CAUSES, cause)
@@ -713,9 +755,9 @@ export const routeForCause = (cause: string | null): ParkRoute =>
  * The verb that removes a cause, read off the one table — the only place a remedy is written down.
  *
  * A park carrying **no** cause has no remedy, on the same fail-closed reasoning the route takes:
- * nothing named what went wrong, so nothing here may name the verb that undoes it. The two
- * `KNOWN_PARKS` rows keyed by their leaf alone take that arm, and both are waits on somebody else's
- * act rather than something a verb removes.
+ * nothing named what went wrong, so nothing here may name the verb that undoes it. The one
+ * `KNOWN_PARKS` row keyed by its leaf alone takes that arm, and it is a wait on somebody else's act
+ * rather than something a verb removes.
  */
 export const remedyForCause = (cause: string | null): string | null =>
 	cause !== null && Object.hasOwn(PARK_CAUSES, cause)
@@ -774,7 +816,7 @@ const isParkCause = (token: string): token is ParkCause => Object.hasOwn(PARK_CA
  * **A machinery lap requires one under every rule.** The whole difference between a lap and a repair
  * round is which machinery spent it, and a lap recorded with none says only that the pipeline failed
  * — which is the reading this axis exists to replace. The recorder never has to type it:
- * {@link machineryCause} reads it off the token.
+ * {@link tokenCause} reads it off the token, as it does for a park terminal that names one.
  */
 export const causeForEvent = (
 	raw: string | null,

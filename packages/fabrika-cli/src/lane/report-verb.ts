@@ -78,7 +78,7 @@ import {
 	conditionalTerminal,
 	eventForToken,
 	floorQueueWait,
-	machineryCause,
+	tokenCause,
 } from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -218,7 +218,7 @@ export const runReport = <R>(
 		const rule = parkCauseRefusal(VERB, options.parkCause);
 		if (rule._tag === "Refused") return rule.outcome;
 		const caused = causeForEvent(
-			options.cause ?? machineryCause(resolved.token),
+			options.cause ?? tokenCause(resolved.token),
 			resolved.event,
 			rule.requireCause,
 		);

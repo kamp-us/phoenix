@@ -20,24 +20,18 @@
  * Neither has a REST route at all. The third is `pullsClosing` in `../io/pulls.ts`.
  */
 
-import {writeFile} from "node:fs/promises";
 import {Effect} from "effect";
-import {execCapture} from "../io/exec.ts";
 import {
 	type Api,
-	ambientToken,
 	attemptOf,
 	authed,
 	authedExistence,
 	pagedEnvelope as envelopeOverHttp,
-	existenceOf,
 	graphqlRead,
 	pagedWithLinkProof as linkProofOverHttp,
-	onTransport,
 	PAGE_CAP,
 	type Rest,
 	refusalText,
-	restBytes,
 	restCall,
 	restRead,
 	restWrite,
@@ -376,24 +370,6 @@ export const listWorkflows = (repo: string): Shell<Attempt<number>> =>
 		read._tag === "Failure" ? read : ok(read.value.length),
 	);
 
-/**
- * Whether one workflow file exists in the repository.
- *
- * The `absent` arm of `ship evidence` rests on this being a **successful** read that found nothing —
- * the foreign-repo degradation is a fact about the repo, and a failed read is not.
- */
-export const workflowExists = (repo: string, file: string): Shell<Existence<string>> =>
-	authedExistence((token) =>
-		Effect.map(
-			restRead(token, "GET", `repos/${repo}/actions/workflows/${file}`),
-			(outcome): Existence<string> =>
-				existenceOf(outcome, (body) => {
-					const path = isRecord(body) ? str(body.path).trim() : "";
-					return path === "" ? fail("GitHub answered 200 but named no workflow") : ok(path);
-				}),
-		),
-	);
-
 /** Total workflow runs recorded at one head, **pre-dedupe** — the `no-runs` second discriminator. */
 export const countWorkflowRuns = (repo: string, sha: string): Shell<Attempt<number>> =>
 	authed((token) =>
@@ -510,88 +486,6 @@ export const listRunsAtHead = (
 			},
 		),
 	);
-
-export interface ArtifactRecord {
-	readonly id: number;
-	readonly name: string;
-	readonly expired: boolean;
-}
-
-export const listRunArtifacts = (
-	repo: string,
-	runId: number,
-): Shell<Attempt<{declared: number; artifacts: ReadonlyArray<ArtifactRecord>}>> =>
-	authed((token) =>
-		Effect.map(
-			envelopeOverHttp(token, `repos/${repo}/actions/runs/${runId}/artifacts`, "artifacts"),
-			(enveloped) => {
-				if (enveloped._tag === "Failure") return enveloped;
-				const artifacts: ArtifactRecord[] = [];
-				for (const value of enveloped.value.entries) {
-					if (!isRecord(value) || typeof value.id !== "number") {
-						return fail("GitHub answered 200 but one entry is not an artifact");
-					}
-					artifacts.push({id: value.id, name: str(value.name), expired: value.expired === true});
-				}
-				return ok({declared: enveloped.value.declared, artifacts});
-			},
-		),
-	);
-
-/** The zip's first two bytes. A 503 body saved with a `.zip` name does not carry them. */
-const isZip = (bytes: Uint8Array): boolean => bytes[0] === 0x50 && bytes[1] === 0x4b;
-
-/**
- * Fetch one artifact into a per-run directory, prove it is a zip, and serve the manifest.
- *
- * The magic-number check makes one failure structural: a 503 body saved with a `.zip` name is not a
- * bundle, and the read that reported "no run-evidence bundle" for a bundle present the whole time is
- * exactly that byte sequence parsed as one. The directory is `mktemp -d` per run — a fixed or
- * PID-derived path lets two racing shippers read each other's bundle.
- *
- * The zip endpoint answers `302` to a signed storage URL, and the redirect is followed by the
- * runtime rather than by this leg: Node's global `fetch` is undici, whose redirect step deletes
- * `authorization` when the location's origin differs from the current one
- * (`undici/lib/web/fetch/index.js`, the fetch spec's CORS non-wildcard header rule). That is the
- * behaviour this endpoint needs — the storage URL carries its own signature in the query string and
- * rejects a bearer credential it did not issue — so the leg neither disables redirects nor re-sends
- * the token.
- */
-export const fetchManifest = (
-	repo: string,
-	artifactId: number,
-	directory: string,
-): Shell<Attempt<string>> =>
-	Effect.gen(function* () {
-		const zip = `${directory}/run-evidence.zip`;
-		const token = yield* ambientToken;
-		if (token._tag === "Failure") return token;
-		const download = yield* onTransport(
-			restBytes(token.value, `repos/${repo}/actions/artifacts/${artifactId}/zip`),
-		);
-		if (download._tag === "Unreachable") return fail(download.reason);
-		if (download.status < 200 || download.status >= 300) {
-			return fail(`GitHub answered HTTP ${download.status}`);
-		}
-		if (!isZip(download.value)) {
-			return fail("the fetched artifact is not a zip — a 503 body saved as .zip is not a bundle");
-		}
-		const written = yield* Effect.tryPromise({
-			try: () => writeFile(zip, download.value),
-			catch: (cause) => `the artifact could not be written: ${String(cause)}`,
-		}).pipe(Effect.match({onFailure: fail, onSuccess: () => ok(undefined)}));
-		if (written._tag === "Failure") return written;
-		const manifest = yield* execCapture("sh", ["-c", `unzip -p '${zip}' manifest.json`]);
-		return manifest.ok ? ok(manifest.stdout) : fail(manifest.reason);
-	});
-
-/** A per-run scratch directory, so two racing shippers never read each other's bundle. */
-export const makeScratchDirectory: Shell<Attempt<string>> = Effect.gen(function* () {
-	const r = yield* execCapture("mktemp", ["-d"]);
-	if (!r.ok) return fail(r.reason);
-	const path = r.stdout.trim();
-	return path === "" ? fail("`mktemp -d` exited 0 but named no directory") : ok(path);
-});
 
 export interface TimelineEvent {
 	readonly event: string;
