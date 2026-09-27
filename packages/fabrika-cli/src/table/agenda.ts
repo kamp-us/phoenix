@@ -99,6 +99,8 @@ export interface CandidateInput {
 	readonly flagged: ReadonlyMap<number, ReadonlyArray<Flag>>;
 	/** The iteration the agenda is prepared for. */
 	readonly target: string;
+	/** Issues the on-call board holds: never proposed at the table. Empty with one board. */
+	readonly onCall: ReadonlySet<number>;
 }
 
 const cell = (row: Row | undefined, field: string): ItemFieldValue["value"] | undefined =>
@@ -170,7 +172,8 @@ export const candidatesOf = (
 		const index = sections.indexOf(section);
 		return index === -1 ? sections.length : index;
 	};
-	const fresh = (issue: number): boolean => open.has(issue) && !answered(rows.get(issue));
+	const fresh = (issue: number): boolean =>
+		open.has(issue) && !answered(rows.get(issue)) && !input.onCall.has(issue);
 
 	const standing: Candidate[] = [...rows.values()]
 		.filter((row) => open.has(row.issue) && onAgenda(row, target))
@@ -618,16 +621,17 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 	return writes;
 };
 
-export const describePrepWrite = (write: PrepWrite): string => {
+/** One line per write, naming the board an add or a delete lands on. */
+export const describePrepWrite = (write: PrepWrite, where = "the table"): string => {
 	switch (write._tag) {
 		case "Add":
-			return `added #${write.issue} to the table`;
+			return `added #${write.issue} to ${where}`;
 		case "Set":
 			return `set #${write.issue} ${write.field} to ${write.shown}`;
 		case "Clear":
 			return `cleared #${write.issue} ${write.field}`;
 		case "Delete":
-			return `took #${write.issue} off the table`;
+			return `took #${write.issue} off ${where}`;
 	}
 };
 

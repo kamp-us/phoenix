@@ -324,3 +324,34 @@ LC_ALL, TZ and TMPDIR, plus `FABRIKA_CHECK_REPO`, `FABRIKA_CHECK_ISSUE`, `FABRIK
 `FABRIKA_CHECK_SHIPPED_AT`. Its output is attached to the check as text, cut at 4000 bytes. A
 command that fails, times out or cannot start is reported on the check, and prep goes on. The
 Outcome field is new, so re-run `fabrika table setup` once after upgrading to add it.
+
+**Split off an on-call board if you want one.** With no `boards` block there is one board: the
+table, with its Customers section. Declare `"boards": {"onCall": {}}` and the work splits in two.
+The table stays the product board. A second project, `<repo name> on-call`, holds continuous work
+such as customer reports, crashes and CI breakage. Nothing there is bet on; it is pulled in the
+order it arrives. `boards.onCall.route` decides which board an issue lands on: an issue whose
+origin, `type:` label or any label matches goes to on-call, and everything else stays on the table.
+By default that is origin `customer` or type `bug`. An issue whose table row reads `bet`, `not now`
+or `check` stays on the table whatever the rule says.
+
+```jsonc
+{
+  "boards": {
+    "onCall": {
+      "route": {"origins": ["customer"], "types": ["bug"], "labels": ["ci-broken"]},
+      "responseTargets": {
+        "byLabel": [{"name": "same day", "hours": 24, "labels": ["p0"]}],
+        "otherwise": {"name": "this week", "hours": 168}
+      },
+      "spendShare": 20
+    }
+  }
+}
+```
+
+Re-run `fabrika table setup` to create the on-call project. It has a Response target field where
+the table has Size, and a Queue view. Prep then adds each routed issue there with its target, and
+never proposes it at the table. An open item past its target is flagged, and so is on-call spend
+over `boards.onCall.spendShare` percent of the week (20 by default). The status update covers both
+boards; the table reads on-call as one section of it, not row by row. Set
+`boards.onCall.project.number` to point setup at a project you already have.

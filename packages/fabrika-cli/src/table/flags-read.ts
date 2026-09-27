@@ -15,7 +15,7 @@ import type {LaneRecord} from "../wire/lane-record.ts";
 import {PRECONDITION_UNKNOWN, SCOPE_MISSING} from "./codes.ts";
 import {type HeadRow, type StageCell, sizeOf} from "./flags.ts";
 import {membersOf} from "./group.ts";
-import {FIELD} from "./shape.ts";
+import {FIELD, productBoard} from "./shape.ts";
 import type {Row, SyncNode} from "./sync.ts";
 import {type Refusal, readRecords, readScope, rowsOf, type TableBoard} from "./sync-verb.ts";
 
@@ -68,7 +68,7 @@ export const readHeads = <R>(
 	issues: ReadonlyArray<number>,
 ): Effect.Effect<Heads | Refusal, never, R> =>
 	Effect.gen(function* () {
-		const located = yield* board.locate(repo, settings);
+		const located = yield* board.locate(repo, productBoard(repo, settings));
 		if (located._tag !== "Ok") return stopOn(verb, located, "cannot find the table");
 		if (located.value._tag === "Refused") return located.value;
 		const {project} = located.value;

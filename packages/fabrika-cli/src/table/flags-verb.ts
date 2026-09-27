@@ -17,11 +17,12 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {parseCampaigns} from "../build/scope-admission.ts";
 import {locateRoadmap} from "../campaign/guards.ts";
 import {appetiteSizesKey} from "../config/keys/appetite-sizes.ts";
+import {type Boards, boardsKey} from "../config/keys/boards.ts";
 import {type TableSettings, tableKey} from "../config/keys/table.ts";
 import {readKey} from "../config/read-key.ts";
 import {exists, readFile} from "../io/fs.ts";
 import {type Attempt, fail, ok} from "../io/git.ts";
-import {getIssue, resolveRepo} from "../io/issues.ts";
+import {getIssue, type ListedIssue, listOpenIssueFacts, resolveRepo} from "../io/issues.ts";
 import {
 	type IterationHistory,
 	type ProjectsAnswer,
@@ -40,11 +41,13 @@ import {
 	flagName,
 	flagsOf,
 	NOT_ASKED,
+	type OnCallRead,
 	recOf,
 	type ShareWeek,
 	weekLanes,
 } from "./flags.ts";
 import {readHeads} from "./flags-read.ts";
+import {onCallItemsOf, readOnCall} from "./on-call-prep.ts";
 import {FIELD} from "./shape.ts";
 import {locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
 
@@ -64,6 +67,10 @@ export interface FlagsBoard<R> extends TableBoard<R> {
 	) => Effect.Effect<Attempt<ReadonlyArray<string>>, never, R>;
 	readonly deciders: (repo: string) => Effect.Effect<Deciders, never, R>;
 	readonly campaigns: (cwd: string) => Effect.Effect<Campaigns, never, R>;
+	/** Every open issue in the repository: which on-call items are still waiting. */
+	readonly openIssues: (
+		repo: string,
+	) => Effect.Effect<Attempt<ReadonlyArray<ListedIssue>>, never, R>;
 }
 
 export interface FlagsOptions<R> {
@@ -75,6 +82,35 @@ export interface FlagsOptions<R> {
 	readonly now: Date;
 	readonly board: FlagsBoard<R>;
 }
+
+type CurrentWeek =
+	| {
+			readonly _tag: "Week";
+			readonly start: string;
+			readonly end: string;
+			/** Which table this is, counting from the first iteration: 1 for the first. */
+			readonly table: number;
+	  }
+	| {readonly _tag: "Unread"; readonly reason: string};
+
+/** The current Week iteration, which the table-wide shares are judged over. */
+const readCurrentWeek = <R>(
+	board: FlagsBoard<R>,
+	projectId: string,
+	now: Date,
+): Effect.Effect<CurrentWeek, never, R> =>
+	Effect.gen(function* () {
+		const unread = (reason: string): CurrentWeek => ({_tag: "Unread", reason});
+		const history = yield* board.week(projectId);
+		if (history._tag !== "Ok")
+			return unread(`cannot read the ${FIELD.week} field: ${history.reason}`);
+		if (history.value === null) return unread(`the project has no ${FIELD.week} iteration field`);
+		const current = currentIteration(history.value.running, now);
+		if (current === null) return unread(`no ${FIELD.week} iteration is current`);
+		const start = `${current.startDate}T00:00:00.000Z`;
+		const end = new Date(Date.parse(start) + current.duration * DAY_MS).toISOString();
+		return {_tag: "Week", start, end, table: history.value.completed.length + 1};
+	});
 
 /** The week the share is judged over, and which of its lanes were fabrika's own work. */
 const readShare = <R>(
@@ -93,14 +129,9 @@ const readShare = <R>(
 				"`table.fabrikaShare.labels` names no label, so no work counts as fabrika's own",
 			);
 		}
-		const history = yield* board.week(projectId);
-		if (history._tag !== "Ok")
-			return unread(`cannot read the ${FIELD.week} field: ${history.reason}`);
-		if (history.value === null) return unread(`the project has no ${FIELD.week} iteration field`);
-		const current = currentIteration(history.value.running, now);
-		if (current === null) return unread(`no ${FIELD.week} iteration is current`);
-		const start = `${current.startDate}T00:00:00.000Z`;
-		const end = new Date(Date.parse(start) + current.duration * DAY_MS).toISOString();
+		const week = yield* readCurrentWeek(board, projectId, now);
+		if (week._tag === "Unread") return week;
+		const {start, end} = week;
 		const fabrika = new Set<number>();
 		for (const issue of weekLanes(records, {start, end}).keys()) {
 			const carried = yield* board.labels(repo, issue);
@@ -109,12 +140,33 @@ const readShare = <R>(
 			}
 			if (carried.value.some((label) => labels.includes(label))) fabrika.add(issue);
 		}
+		return {...week, fabrika};
+	});
+
+/** The on-call board as the whole-table run judges it; `NotAsked` with one board. */
+const readOnCallFlags = <R>(
+	board: FlagsBoard<R>,
+	repo: string,
+	projectId: string,
+	boards: Boards,
+	now: Date,
+): Effect.Effect<OnCallRead, never, R> =>
+	Effect.gen(function* () {
+		const read = yield* readOnCall(board, VERB, repo, boards);
+		if (read._tag === "One") return NOT_ASKED;
+		if (read._tag === "Refused") return {_tag: "Unread", reason: read.reason};
+		const listing = yield* board.openIssues(repo);
+		if (listing._tag === "Failure") {
+			return {_tag: "Unread", reason: `cannot read ${repo}'s open issues: ${listing.reason}`};
+		}
+		const open = new Map(listing.value.map((issue) => [issue.number, issue] as const));
+		const week = yield* readCurrentWeek(board, projectId, now);
 		return {
-			_tag: "Week",
-			start,
-			end,
-			table: history.value.completed.length + 1,
-			fabrika,
+			_tag: "OnCall",
+			settings: read.settings,
+			issues: new Set(read.rows.keys()),
+			open: onCallItemsOf(read.rows, open, [], read.settings, now),
+			week: week._tag === "Week" ? {_tag: "Week", start: week.start, end: week.end} : week,
 		};
 	});
 
@@ -126,7 +178,9 @@ const flagJson = (flag: Flag, settings: TableSettings) => {
 const flagLine = (flag: Flag, settings: TableSettings): string =>
 	"head" in flag
 		? `${VERB}: #${flag.head} ${flagName(flag)}: ${recOf(flag, settings)}`
-		: `${VERB}: ${flagName(flag)}: ${recOf(flag, settings)}`;
+		: flag._tag === "PastTarget"
+			? `${VERB}: #${flag.issue} ${flagName(flag)}: ${recOf(flag, settings)}`
+			: `${VERB}: ${flagName(flag)}: ${recOf(flag, settings)}`;
 
 export const runFlags = <R>(
 	options: FlagsOptions<R>,
@@ -143,6 +197,10 @@ export const runFlags = <R>(
 		const sizes = yield* readKey(options.cwd, appetiteSizesKey);
 		if (sizes._tag === "Refused") {
 			return refuse(CONFIG_MALFORMED, `${VERB}: ${sizes.reason}. Nothing was read from GitHub.`);
+		}
+		const boards = yield* readKey(options.cwd, boardsKey);
+		if (boards._tag === "Refused") {
+			return refuse(CONFIG_MALFORMED, `${VERB}: ${boards.reason}. Nothing was read from GitHub.`);
 		}
 		const resolved = yield* resolveRepo(options.repo, options.env);
 		if (resolved._tag === "Failure") {
@@ -164,6 +222,9 @@ export const runFlags = <R>(
 		const share: ShareWeek = whole
 			? yield* readShare(board, repo, heads.project.id, settings.value, heads.records, now)
 			: NOT_ASKED;
+		const onCall: OnCallRead = whole
+			? yield* readOnCallFlags(board, repo, heads.project.id, boards.value, now)
+			: NOT_ASKED;
 		const report = flagsOf({
 			settings: settings.value,
 			sizes: sizes.value,
@@ -173,6 +234,7 @@ export const runFlags = <R>(
 			deciders,
 			campaigns,
 			share,
+			onCall,
 		});
 
 		const {project} = heads;
@@ -188,7 +250,7 @@ export const runFlags = <R>(
 			})}\n`,
 			[
 				`${VERB}: read ${settings.note}; ${sizes.note}.`,
-				`${VERB}: project #${project.number} "${project.title}" (${project.url}); ${heads.rows.length} row(s) judged${whole ? "" : " — the named issues only, so the campaign and fabrika share checks were not asked"}.`,
+				`${VERB}: project #${project.number} "${project.title}" (${project.url}); ${heads.rows.length} row(s) judged${whole ? "" : " — the named issues only, so the campaign, fabrika share and on-call checks were not asked"}.`,
 				...report.flags.map((flag) => flagLine(flag, settings.value)),
 				...report.unread.map(
 					(one) =>
@@ -232,7 +294,7 @@ const readActiveCampaigns = (
 export const flagsBoard: FlagsBoard<
 	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > = {
-	locate: (repo, settings) => withProjects((token) => locateTable(token, repo, settings, VERB)),
+	locate: (repo, target) => withProjects((token) => locateTable(token, repo, target, VERB)),
 	items: syncBoard.items,
 	node: syncBoard.node,
 	comments: syncBoard.comments,
@@ -252,4 +314,5 @@ export const flagsBoard: FlagsBoard<
 					: {_tag: "Unread", reason: `cannot read the control-plane set: ${roster.reason}`},
 		),
 	campaigns: readActiveCampaigns,
+	openIssues: listOpenIssueFacts,
 };

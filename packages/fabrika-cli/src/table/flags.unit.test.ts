@@ -5,15 +5,19 @@
  */
 import {describe, expect, it} from "vitest";
 import {SHIPPED_APPETITE_SIZES} from "../config/keys/appetite-sizes.ts";
+import {type OnCallBoard, SHIPPED_ON_CALL} from "../config/keys/boards.ts";
 import {SHIPPED_TABLE, type TableSettings} from "../config/keys/table.ts";
 import type {Instant, LaneRecord, Waiting} from "../wire/lane-record.ts";
 import {
 	type Campaigns,
 	type Deciders,
+	type Flag,
 	type FlagInput,
 	flagsOf,
 	type HeadRow,
 	NOT_ASKED,
+	type OnCallItem,
+	type OnCallRead,
 	recOf,
 	type ShareWeek,
 	shareTarget,
@@ -96,8 +100,10 @@ const input = (
 		deciders?: Deciders;
 		campaigns?: Campaigns;
 		share?: ShareWeek;
+		onCall?: OnCallRead;
 	} = {},
 ): FlagInput => ({
+	onCall: over.onCall ?? NOT_ASKED,
 	settings: {...SHIPPED_TABLE, ...over.settings},
 	sizes: SHIPPED_APPETITE_SIZES,
 	now: NOW,
@@ -443,5 +449,77 @@ describe("fabrika's share of the week", () => {
 		expect(
 			flagsOf(input([], records, {share: {_tag: "Unread", reason: "no label"}})).unread,
 		).toEqual([{check: "fabrika-share", issue: null, reason: "no label"}]);
+	});
+});
+
+describe("the on-call board", () => {
+	const hoursAgo = (hours: number): string =>
+		new Date(NOW.getTime() - hours * 3_600_000).toISOString();
+	const board = (
+		open: ReadonlyArray<OnCallItem>,
+		issues: ReadonlyArray<number> = [],
+		over: Partial<OnCallBoard> = {},
+	): OnCallRead => ({
+		_tag: "OnCall",
+		settings: {...SHIPPED_ON_CALL, ...over},
+		issues: new Set(issues),
+		open,
+		week: {_tag: "Week", start: daysAgo(3), end: daysAgo(-4)},
+	});
+	const item = (issue: number, name: string | null, since = hoursAgo(1)): OnCallItem => ({
+		issue,
+		target: name === null ? null : {name, since},
+	});
+
+	it("flags an open item that waited past its response target, and not one within it", () => {
+		const waiting = [item(5, "same day", hoursAgo(30)), item(6, "this week", hoursAgo(30))];
+		const report = flagsOf(input([], {}, {onCall: board(waiting)}));
+
+		expect(report.flags).toEqual([
+			{
+				_tag: "PastTarget",
+				issue: 5,
+				target: "same day",
+				hours: 24,
+				since: hoursAgo(30),
+				waitedHours: 30,
+			},
+		]);
+		expect(recOf(report.flags[0] as Flag, SHIPPED_TABLE)).toContain('past its "same day" target');
+	});
+
+	it("names an item with no target, or one the config no longer names, unread rather than clear", () => {
+		const report = flagsOf(input([], {}, {onCall: board([item(5, null), item(6, "someday")])}));
+
+		expect(report.flags).toEqual([]);
+		expect(report.unread.map((one) => [one.check, one.issue])).toEqual([
+			["past-target", 5],
+			["past-target", 6],
+		]);
+	});
+
+	it("flags on-call spend over its configured share of the week", () => {
+		const records = {10: [record(10, {usd: 30})], 11: [record(11, {usd: 70})]};
+
+		expect(flagsOf(input([], records, {onCall: board([], [10])})).flags).toEqual([
+			{_tag: "OnCallShare", percent: 30, target: 20, onCallUsd: 30, totalUsd: 100},
+		]);
+		const wider = board([], [10], {spendShare: 30});
+		expect(flagsOf(input([], records, {onCall: wider})).flags).toEqual([]);
+	});
+
+	it("names the share unread when a lane of the week went unmeasured", () => {
+		const records = {10: [record(10, {usd: 30})], 11: [record(11, {usd: null})]};
+
+		expect(flagsOf(input([], records, {onCall: board([], [10])})).unread).toEqual([
+			expect.objectContaining({check: "on-call-share"}),
+		]);
+	});
+
+	it("asks nothing with one board", () => {
+		const report = flagsOf(input([], {10: [record(10, {usd: 100})]}));
+
+		expect(report.flags).toEqual([]);
+		expect(report.unread).toEqual([]);
 	});
 });

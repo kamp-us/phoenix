@@ -15,8 +15,9 @@
 
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {type AppetiteSizes, appetiteSizesKey} from "../config/keys/appetite-sizes.ts";
-import {type TableSettings, tableKey} from "../config/keys/table.ts";
+import {appetiteSizesKey} from "../config/keys/appetite-sizes.ts";
+import {boardsKey} from "../config/keys/boards.ts";
+import {tableKey} from "../config/keys/table.ts";
 import {readKey} from "../config/read-key.ts";
 import type {Api} from "../io/gh-api.ts";
 import {resolveRepo} from "../io/issues.ts";
@@ -48,8 +49,9 @@ import {
 	SHAPE_CONFLICT,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {onCallBoard, onCallShape} from "./on-call.ts";
 import {describeDrift, describeStep, type Plan, plan, type Step} from "./reconcile.ts";
-import {defaultTitle, type TableShape, tableShape} from "./shape.ts";
+import {type BoardTarget, productBoard, type TableShape, tableShape} from "./shape.ts";
 
 export interface SetupOptions {
 	readonly repo: string | null;
@@ -97,11 +99,11 @@ const locate = (
 	token: string,
 	repo: string,
 	node: RepositoryNode,
-	settings: TableSettings,
+	target: BoardTarget,
 ): Api<Located> =>
 	Effect.gen(function* () {
-		const owner = settings.project.owner ?? node.owner.login;
-		const wanted = settings.project.number;
+		const owner = target.project.owner ?? node.owner.login;
+		const wanted = target.project.number;
 		if (wanted !== null) {
 			const read = yield* readProjectByNumber(token, owner, wanted);
 			if (read._tag !== "Ok") {
@@ -115,21 +117,21 @@ const locate = (
 					_tag: "Refused",
 					run: refused(
 						NO_TARGET,
-						`${VERB}: \`table.project\` names project ${wanted} under ${owner}, and ${owner} has no such project — fix the number, or remove it to have setup find or create the table. Nothing was written.`,
+						`${VERB}: \`${target.key}\` names project ${wanted} under ${owner}, and ${owner} has no such project — fix the number, or remove it to have setup find or create the table. Nothing was written.`,
 					),
 				};
 			}
 			return {_tag: "Located", origin: "found", project: read.value};
 		}
 
-		const title = defaultTitle(repo);
+		const {title} = target;
 		const titled = (refs: ReadonlyArray<ProjectRef>) =>
 			refs.filter((ref) => ref.title === title && !ref.closed);
 		const ambiguous = (refs: ReadonlyArray<ProjectRef>, where: string): Located => ({
 			_tag: "Refused",
 			run: refused(
 				AMBIGUOUS_PROJECT,
-				`${VERB}: ${refs.length} open projects ${where} are titled "${title}" (${refs.map((ref) => `#${ref.number}`).join(", ")}) — set \`table.project.number\` in .fabrika.jsonc to the one that is the table. Nothing was written.`,
+				`${VERB}: ${refs.length} open projects ${where} are titled "${title}" (${refs.map((ref) => `#${ref.number}`).join(", ")}) — set \`${target.key}.number\` in .fabrika.jsonc to the one that is the table. Nothing was written.`,
 			),
 		});
 		const readExisting = (ref: ProjectRef, origin: Origin): Api<Located> =>
@@ -308,21 +310,19 @@ const reread = (token: string, project: ProjectSnapshot, landed: ReadonlyArray<s
 				} as const),
 	);
 
+/** Bring one board's project to the shape its title gets: find or create it, then add what it lacks. */
 const converge = (
 	token: string,
 	repo: string,
-	settings: TableSettings,
-	sizes: AppetiteSizes,
-	now: Date,
+	node: RepositoryNode,
+	target: BoardTarget,
+	shapeOf: (title: string) => TableShape,
 ): Api<Run> =>
 	Effect.gen(function* () {
-		const node = yield* readRepository(token, repo);
-		if (node._tag !== "Ok") return stop(node, PRECONDITION_UNKNOWN, `cannot read ${repo}`);
-
-		const located = yield* locate(token, repo, node.value, settings);
+		const located = yield* locate(token, repo, node, target);
 		if (located._tag === "Refused") return located.run;
 		const {origin} = located;
-		const shape: TableShape = tableShape(settings, sizes, repo, located.project.title, now);
+		const shape = shapeOf(located.project.title);
 
 		const wrote = locateWrote(origin, located.project, repo);
 		const first = plan(shape, located.project);
@@ -379,6 +379,10 @@ export const runSetup = (
 		if (sizes._tag === "Refused") {
 			return refuse(CONFIG_MALFORMED, `${VERB}: ${sizes.reason}. Nothing was read from GitHub.`);
 		}
+		const boards = yield* readKey(options.cwd, boardsKey);
+		if (boards._tag === "Refused") {
+			return refuse(CONFIG_MALFORMED, `${VERB}: ${boards.reason}. Nothing was read from GitHub.`);
+		}
 
 		const resolved = yield* resolveRepo(options.repo, options.env);
 		if (resolved._tag === "Failure") {
@@ -389,43 +393,90 @@ export const runSetup = (
 		}
 		const repo = resolved.value;
 
-		const run = yield* withProjects<Run>((token) =>
-			Effect.map(converge(token, repo, settings.value, sizes.value, options.now()), (value) => ({
-				_tag: "Ok" as const,
-				value,
-			})),
+		const table = settings.value;
+		const now = options.now();
+		const run = yield* withProjects<Runs>((token) =>
+			Effect.gen(function* () {
+				const node = yield* readRepository(token, repo);
+				if (node._tag !== "Ok") {
+					return ran({
+						product: stop(node, PRECONDITION_UNKNOWN, `cannot read ${repo}`),
+						onCall: null,
+					});
+				}
+				const product = yield* converge(
+					token,
+					repo,
+					node.value,
+					productBoard(repo, table),
+					(title) => tableShape(table, sizes.value, repo, title, now),
+				);
+				if (product._tag === "Refused" || boards.value._tag === "One") {
+					return ran({product, onCall: null});
+				}
+				const {onCall: split} = boards.value;
+				const onCall = yield* converge(token, repo, node.value, onCallBoard(repo, split), (title) =>
+					onCallShape(split, repo, title),
+				);
+				return ran({product, onCall});
+			}),
 		);
 		if (run._tag === "MissingScope") return refuse(SCOPE_MISSING, `${VERB}: ${run.reason}.`);
 		if (run._tag === "Failed") return refuse(PRECONDITION_UNKNOWN, `${VERB}: ${run.reason}.`);
-		const outcome = run.value;
-		if (outcome._tag === "Refused") return refuse(outcome.code, outcome.reason);
+		const {product, onCall} = run.value;
+		if (product._tag === "Refused") return refuse(product.code, product.reason);
+		if (onCall?._tag === "Refused") {
+			return refuse(
+				onCall.code,
+				`${onCall.reason.replace(`${VERB}: `, `${VERB}: the on-call board: `)} The table itself is set up as project #${product.project.number}.`,
+			);
+		}
 
-		const verdict =
-			outcome.origin === "created"
-				? "created"
-				: outcome.changes.length > 0
-					? "reconciled"
-					: "unchanged";
-		const {project} = outcome;
 		const notes = [
 			`${VERB}: read ${settings.note}.`,
 			`${VERB}: read ${sizes.note}.`,
-			`${VERB}: ${outcome.origin} project #${project.number} "${project.title}" (${project.url}) for ${repo}.`,
-			...(outcome.changes.length > 0
-				? outcome.changes.map((change) => `${VERB}: ${change}.`)
-				: [`${VERB}: the project already has the table's shape; nothing was written.`]),
-			...outcome.drift.map((drift) => `${VERB}: drift: ${drift}.`),
-			...outcome.manualSteps.map((step, index) => `${VERB}: manual step ${index + 1}: ${step}`),
+			...(onCall === null ? [] : [`${VERB}: read ${boards.note}.`]),
+			...notesOf(product, repo, "the table"),
+			...(onCall === null ? [] : notesOf(onCall, repo, "the on-call board")),
 		];
+		const {answer: verdict, ...rest} = summaryOf(product);
 		return answer(
 			`${JSON.stringify({
 				answer: verdict,
 				repo,
-				project: {number: project.number, title: project.title, url: project.url},
-				changes: outcome.changes,
-				drift: outcome.drift,
-				manualSteps: outcome.manualSteps,
+				...rest,
+				...(onCall === null ? {} : {onCall: summaryOf(onCall)}),
 			})}\n`,
 			notes,
 		);
 	});
+
+type Done = Extract<Run, {_tag: "Done"}>;
+
+interface Runs {
+	readonly product: Run;
+	/** `null` with no `boards` block, or when the table itself refused. */
+	readonly onCall: Run | null;
+}
+
+const ran = (value: Runs): ProjectsAnswer<Runs> => ({_tag: "Ok", value});
+
+const verdictOf = (done: Done): "created" | "reconciled" | "unchanged" =>
+	done.origin === "created" ? "created" : done.changes.length > 0 ? "reconciled" : "unchanged";
+
+const summaryOf = (done: Done) => ({
+	answer: verdictOf(done),
+	project: {number: done.project.number, title: done.project.title, url: done.project.url},
+	changes: done.changes,
+	drift: done.drift,
+	manualSteps: done.manualSteps,
+});
+
+const notesOf = (done: Done, repo: string, board: string): ReadonlyArray<string> => [
+	`${VERB}: ${done.origin} project #${done.project.number} "${done.project.title}" (${done.project.url}) for ${repo}.`,
+	...(done.changes.length > 0
+		? done.changes.map((change) => `${VERB}: ${change}.`)
+		: [`${VERB}: the project already has ${board}'s shape; nothing was written.`]),
+	...done.drift.map((drift) => `${VERB}: drift: ${drift}.`),
+	...done.manualSteps.map((step, index) => `${VERB}: manual step ${index + 1}: ${step}`),
+];

@@ -81,7 +81,23 @@ const PROJECT: ProjectSnapshot = {
 	views: [],
 };
 
-const fieldById = new Map(PROJECT.fields.map((field) => [field.id, field] as const));
+const ON_CALL: ProjectSnapshot = {
+	id: "PVT_2",
+	number: 4,
+	url: "https://github.com/orgs/acme/projects/4",
+	title: "widgets on-call",
+	shortDescription: null,
+	readme: null,
+	fields: [
+		selectField("F_target", "Response target", ["same day", "this week"]),
+		{_tag: "Plain", id: "F_oc_plain", name: "In plain words", dataType: "TEXT"},
+	],
+	views: [],
+};
+
+const fieldById = new Map(
+	[...PROJECT.fields, ...ON_CALL.fields].map((field) => [field.id, field] as const),
+);
 
 interface IssueSpec {
 	readonly open?: boolean;
@@ -98,8 +114,12 @@ interface IssueSpec {
 
 type Cells = Readonly<Record<string, string | number>>;
 
-const cellValue = (fieldName: string, raw: string | number): ItemFieldValue => {
-	const field = PROJECT.fields.find((one) => one.name === fieldName);
+const cellValue = (
+	fieldName: string,
+	raw: string | number,
+	project: ProjectSnapshot = PROJECT,
+): ItemFieldValue => {
+	const field = project.fields.find((one) => one.name === fieldName);
 	if (field === undefined) throw new Error(`no field ${fieldName}`);
 	const at = {fieldId: field.id, fieldName, creator: OWNER, updatedAt: "2026-09-26T00:00:00.000Z"};
 	if (field._tag === "SingleSelect") {
@@ -241,7 +261,10 @@ const world = (
 	const posts: StatusUpdateInput[] = [];
 	const comments = new Map<number, string[]>();
 	const spawned: ChildRequest[] = [];
-	const itemByid = (itemId: string) => [...items.values()].find((item) => item.itemId === itemId);
+	const onCallItems = new Map<number, {itemId: string; values: ItemFieldValue[]}>();
+	const storeOf = (projectId: string) => (projectId === ON_CALL.id ? onCallItems : items);
+	const itemByid = (itemId: string) =>
+		[...items.values(), ...onCallItems.values()].find((item) => item.itemId === itemId);
 	const nodeOf = (number: number): SyncNode | null => {
 		const spec = issues[number];
 		if (spec === undefined) return null;
@@ -270,27 +293,42 @@ const world = (
 				association: spec.association ?? "MEMBER",
 			}));
 	const board: PrepBoard<never> = {
-		locate: () => Effect.succeed(ok({_tag: "Located", project: PROJECT})),
-		items: () =>
+		locate: (_repo, target) =>
+			Effect.succeed(
+				ok({_tag: "Located", project: target.key.startsWith("boards.") ? ON_CALL : PROJECT}),
+			),
+		items: (projectId) =>
 			Effect.sync(() =>
-				ok([
-					...[...items].map(
-						([number, item]): ProjectItem => ({
-							itemId: item.itemId,
-							contentNumber: number,
-							contentType: "Issue",
-							repository: REPO,
-							values: item.values,
-						}),
-					),
-					{
-						itemId: "PVTI_draft",
-						contentNumber: null,
-						contentType: "DraftIssue",
-						repository: null,
-						values: [cellValue("Stage", "proposed")],
-					},
-				]),
+				projectId === ON_CALL.id
+					? ok(
+							[...onCallItems].map(
+								([number, item]): ProjectItem => ({
+									itemId: item.itemId,
+									contentNumber: number,
+									contentType: "Issue",
+									repository: REPO,
+									values: item.values,
+								}),
+							),
+						)
+					: ok([
+							...[...items].map(
+								([number, item]): ProjectItem => ({
+									itemId: item.itemId,
+									contentNumber: number,
+									contentType: "Issue",
+									repository: REPO,
+									values: item.values,
+								}),
+							),
+							{
+								itemId: "PVTI_draft",
+								contentNumber: null,
+								contentType: "DraftIssue",
+								repository: null,
+								values: [cellValue("Stage", "proposed")],
+							},
+						]),
 			),
 		node: (_repo, number) => {
 			const found = nodeOf(number);
@@ -349,13 +387,16 @@ const world = (
 						(spec.subIssues ?? []).map((issue) => ({issue, epic: Number(epic)})),
 					),
 			}),
-		add: (_projectId, _repo, issue) => {
-			if (!items.has(issue)) items.set(issue, {itemId: `PVTI_${issue}`, values: []});
-			return Effect.succeed(ok(`PVTI_${issue}`));
+		add: (projectId, _repo, issue) => {
+			const store = storeOf(projectId);
+			const itemId = projectId === ON_CALL.id ? `PVTI_oc_${issue}` : `PVTI_${issue}`;
+			if (!store.has(issue)) store.set(issue, {itemId, values: []});
+			return Effect.succeed(ok(itemId));
 		},
 		set: (target, value: FieldValue) => {
 			const item = itemByid(target.itemId);
 			const field = fieldById.get(target.fieldId);
+			const project = target.projectId === ON_CALL.id ? ON_CALL : PROJECT;
 			if (item === undefined || field === undefined) return Effect.succeed(ok(target.itemId));
 			const shown =
 				value._tag === "Option"
@@ -369,7 +410,7 @@ const world = (
 								: value.date;
 			item.values = [
 				...item.values.filter((one) => one.fieldId !== target.fieldId),
-				cellValue(field.name, shown),
+				cellValue(field.name, shown, project),
 			];
 			return Effect.succeed(ok(target.itemId));
 		},
@@ -410,7 +451,7 @@ const world = (
 				return value.date;
 		}
 	};
-	return {board, items, posts, cell, comments, spawned};
+	return {board, items, onCallItems, posts, cell, comments, spawned};
 };
 
 const prep = (
@@ -697,6 +738,98 @@ const configured = (table: unknown) =>
 	fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify({table})}}).layer;
 
 const FABRIKA_LABELLED = configured({fabrikaShare: {labels: ["fabrika"]}});
+
+describe("table prep with a boards block", () => {
+	const SPLIT = fakeFs({
+		files: {"/repo/.fabrika.jsonc": JSON.stringify({boards: {onCall: {}}})},
+	}).layer;
+	const issues: Readonly<Record<number, IssueSpec>> = {
+		...ISSUES,
+		50: {
+			labels: [...TRIAGED, "type:bug", "p0"],
+			title: "Checkout crashes",
+			records: [record(50, 18, "complete")],
+		},
+	};
+	const rows: Readonly<Record<number, Cells>> = {
+		...ROWS,
+		50: {Stage: "in lane", Section: "Outside the bets", Origin: "found mid-lane", "Spent $": 18},
+	};
+	const targetOf = (fake: ReturnType<typeof world>, issue: number): string | null => {
+		const value = fake.onCallItems
+			.get(issue)
+			?.values.find((one) => one.fieldName === "Response target")?.value;
+		return value?._tag === "Option" ? value.name : null;
+	};
+
+	it("puts routed issues on the on-call board in arrival order, each with a response target", async () => {
+		const split = world(issues, rows);
+		const out = await prep(split.board, SPLIT);
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		const answer = JSON.parse(out.stdout);
+		expect([...split.onCallItems.keys()]).toEqual([30, 40, 41, 50]);
+		expect([30, 40, 41, 50].map((issue) => targetOf(split, issue))).toEqual([
+			"same day",
+			"this week",
+			"this week",
+			"same day",
+		]);
+		expect(answer.onCall.items).toEqual([
+			{issue: 30, target: "same day"},
+			{issue: 40, target: "this week"},
+			{issue: 41, target: "this week"},
+			{issue: 50, target: "same day"},
+		]);
+	});
+
+	it("never proposes on-call work at the table", async () => {
+		const answer = JSON.parse((await prep(world(issues, rows).board, SPLIT)).stdout);
+
+		expect((answer.agenda as ReadonlyArray<AgendaOut>).map((row) => row.issue)).toEqual([
+			70, 11, 20, 60,
+		]);
+		expect(answer.triageFirst).toEqual([]);
+	});
+
+	it("covers both boards in one status update, on-call as one section, and flags its spend over its share", async () => {
+		const split = world(issues, rows);
+		const answer = JSON.parse((await prep(split.board, SPLIT)).stdout);
+
+		const body = split.posts[0]?.body ?? "";
+		expect(body).toContain("- Outside the bets: 1 lane (1 driver pick), $12");
+		expect(body).toContain("**On-call** (one section; the table does not review it row by row)");
+		expect(body).toContain("- Open items: 4");
+		expect(body).toContain(
+			"- Spend: 36% of the week's spend ($18 of $50), against a 20% share — over it",
+		);
+		expect(split.posts[0]?.status).toBe("AT_RISK");
+		expect(answer.onCall).toMatchObject({
+			spend: {_tag: "Measured", percent: 36, onCallUsd: 18, totalUsd: 50},
+			share: 20,
+			pastTarget: [],
+		});
+	});
+
+	it("writes nothing to the on-call board on a second run", async () => {
+		const split = world(issues, rows);
+		await prep(split.board, SPLIT);
+		const again = JSON.parse((await prep(split.board, SPLIT)).stdout);
+
+		expect(again.onCall.changes).toEqual([]);
+		expect(again.answer).toBe("unchanged");
+	});
+
+	it("proposes a Customers row and reads no on-call board with no boards block", async () => {
+		const split = world(issues, rows);
+		const answer = JSON.parse((await prep(split.board)).stdout);
+
+		expect(answer.agenda.map((row: AgendaOut) => row.section)).toContain("Customers");
+		expect(answer.onCall).toBeUndefined();
+		expect(split.onCallItems.size).toBe(0);
+		expect(split.posts[0]?.body).not.toContain("On-call");
+	});
+});
 
 describe("table prep's outcome check", () => {
 	it("brings a bet shipped 14 days ago back as a check with its Success line, GitHub signals and fabrika's numbers", async () => {

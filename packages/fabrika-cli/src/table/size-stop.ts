@@ -81,8 +81,7 @@ export const sizeStopOnGitHub =
 	> =>
 		readSizeStop(
 			{
-				locate: (target, settings) =>
-					withProjects((token) => locateTable(token, target, settings, verb)),
+				locate: (target, board) => withProjects((token) => locateTable(token, target, board, verb)),
 				items: syncBoard.items,
 				node: syncBoard.node,
 				comments: syncBoard.comments,

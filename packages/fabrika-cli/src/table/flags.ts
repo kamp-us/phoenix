@@ -20,10 +20,12 @@
  */
 
 import {type AppetiteSizes, SIZES, type Size} from "../config/keys/appetite-sizes.ts";
+import type {OnCallBoard, ResponseTargets} from "../config/keys/boards.ts";
 import type {TableSettings} from "../config/keys/table.ts";
 import type {LaneRecord} from "../wire/lane-record.ts";
 import {BET_STAGE} from "./bets.ts";
 import {type Group, type GroupKind, issuesOf, kindOf} from "./group.ts";
+import {ON_CALL_FIELD, targetsOf} from "./on-call.ts";
 import {tallyOver} from "./sync.ts";
 import {latestPerLane, latestRecord, measuredUsd} from "./tally.ts";
 
@@ -92,6 +94,28 @@ export type ShareWeek =
 	| {readonly _tag: "Unread"; readonly reason: string}
 	| NotAsked;
 
+/** An open on-call item and the Response target it waits against, set at `since`; `null` when unset. */
+export interface OnCallItem {
+	readonly issue: number;
+	readonly target: {readonly name: string; readonly since: string} | null;
+}
+
+/** The on-call board as the flags read it; asked only when a `boards` block splits the work. */
+export type OnCallRead =
+	| {
+			readonly _tag: "OnCall";
+			readonly settings: OnCallBoard;
+			/** Every issue on the on-call board, open or closed: the lanes its share counts. */
+			readonly issues: ReadonlySet<number>;
+			readonly open: ReadonlyArray<OnCallItem>;
+			/** The week the share is judged over. */
+			readonly week:
+				| {readonly _tag: "Week"; readonly start: string; readonly end: string}
+				| {readonly _tag: "Unread"; readonly reason: string};
+	  }
+	| {readonly _tag: "Unread"; readonly reason: string}
+	| NotAsked;
+
 export interface FlagInput {
 	readonly settings: TableSettings;
 	readonly sizes: AppetiteSizes;
@@ -102,6 +126,7 @@ export interface FlagInput {
 	readonly deciders: Deciders;
 	readonly campaigns: Campaigns;
 	readonly share: ShareWeek;
+	readonly onCall: OnCallRead;
 }
 
 /** Where a row flag lands: the head, what kind of row it is, and every issue it stands for. */
@@ -140,11 +165,36 @@ export type Flag =
 			readonly fabrikaUsd: number;
 			readonly totalUsd: number;
 			readonly table: number;
+	  }
+	| PastTarget
+	| {
+			readonly _tag: "OnCallShare";
+			readonly percent: number;
+			readonly target: number;
+			readonly onCallUsd: number;
+			readonly totalUsd: number;
 	  };
+
+/** An open on-call item that has waited longer than its Response target allows. */
+export interface PastTarget {
+	readonly _tag: "PastTarget";
+	readonly issue: number;
+	readonly target: string;
+	readonly hours: number;
+	/** When the target was set: when the item arrived on the on-call board. */
+	readonly since: string;
+	readonly waitedHours: number;
+}
 
 /** A check that could not be answered, and why. */
 export interface Unread {
-	readonly check: "over-size" | "unknown-decider" | "campaigns" | "fabrika-share";
+	readonly check:
+		| "over-size"
+		| "unknown-decider"
+		| "campaigns"
+		| "fabrika-share"
+		| "past-target"
+		| "on-call-share";
 	readonly issue: number | null;
 	readonly reason: string;
 }
@@ -377,7 +427,125 @@ export const flagsOf = (input: FlagInput): FlagReport => {
 	}
 	const share = shareOf(input, unread);
 	if (share !== null) flags.push(share);
+	flags.push(...onCallFlags(input, unread));
 	return {flags, unread};
+};
+
+const HOUR_MS = 3_600_000;
+
+/** One open on-call item against its target: flagged once it has waited longer than the target. */
+export const pastTargetOf = (
+	item: OnCallItem,
+	targets: ResponseTargets,
+	now: Date,
+):
+	| {readonly _tag: "Past"; readonly flag: PastTarget}
+	| {readonly _tag: "Within"}
+	| {readonly _tag: "Unread"; readonly unread: Unread} => {
+	const unread = (reason: string) =>
+		({_tag: "Unread", unread: {check: "past-target", issue: item.issue, reason}}) as const;
+	if (item.target === null) {
+		return unread(
+			`it carries no ${ON_CALL_FIELD.responseTarget} yet — \`fabrika table prep\` sets one`,
+		);
+	}
+	const {name, since} = item.target;
+	const target = targetsOf(targets).find((one) => one.name === name);
+	if (target === undefined) {
+		return unread(`its target "${name}" is not one \`boards.onCall.responseTargets\` names`);
+	}
+	const waited = (now.getTime() - Date.parse(since)) / HOUR_MS;
+	return waited > target.hours
+		? {
+				_tag: "Past",
+				flag: {
+					_tag: "PastTarget",
+					issue: item.issue,
+					target: name,
+					hours: target.hours,
+					since,
+					waitedHours: Math.floor(waited),
+				},
+			}
+		: {_tag: "Within"};
+};
+
+/** What the week's lanes spent on on-call work, against everything they spent. */
+export type OnCallSpend =
+	| {
+			readonly _tag: "Measured";
+			readonly percent: number;
+			readonly onCallUsd: number;
+			readonly totalUsd: number;
+	  }
+	/** Some lane went unmeasured, so no share of the week is known. */
+	| {readonly _tag: "Unmeasured"; readonly lanes: number}
+	/** Nothing was spent that week. */
+	| {readonly _tag: "Nothing"};
+
+export const onCallSpendOf = (
+	records: ReadonlyMap<number, ReadonlyArray<LaneRecord>>,
+	week: {readonly start: string; readonly end: string},
+	onCall: ReadonlySet<number>,
+): OnCallSpend => {
+	let total = 0;
+	let spent = 0;
+	let unmeasured = 0;
+	for (const [issue, lanes] of weekLanes(records, week)) {
+		for (const lane of lanes) {
+			if (lane.spent._tag === "Unmeasured") {
+				unmeasured += 1;
+				continue;
+			}
+			total += lane.spent.usd;
+			if (onCall.has(issue)) spent += lane.spent.usd;
+		}
+	}
+	if (unmeasured > 0) return {_tag: "Unmeasured", lanes: unmeasured};
+	if (total === 0) return {_tag: "Nothing"};
+	return {
+		_tag: "Measured",
+		percent: cents((spent / total) * 100),
+		onCallUsd: cents(spent),
+		totalUsd: cents(total),
+	};
+};
+
+const onCallFlags = (input: FlagInput, unread: Unread[]): ReadonlyArray<Flag> => {
+	const board = input.onCall;
+	if (board._tag === "NotAsked") return [];
+	if (board._tag === "Unread") {
+		unread.push({check: "past-target", issue: null, reason: board.reason});
+		unread.push({check: "on-call-share", issue: null, reason: board.reason});
+		return [];
+	}
+	const flags: Flag[] = [];
+	for (const item of [...board.open].sort((a, b) => a.issue - b.issue)) {
+		const read = pastTargetOf(item, board.settings.responseTargets, input.now);
+		if (read._tag === "Unread") unread.push(read.unread);
+		if (read._tag === "Past") flags.push(read.flag);
+	}
+	if (board.week._tag === "Unread") {
+		unread.push({check: "on-call-share", issue: null, reason: board.week.reason});
+		return flags;
+	}
+	const spend = onCallSpendOf(input.records, board.week, board.issues);
+	if (spend._tag === "Unmeasured") {
+		unread.push({
+			check: "on-call-share",
+			issue: null,
+			reason: `${spend.lanes} lane(s) this week went unmeasured, so no share of the week's spend is known`,
+		});
+	} else if (spend._tag === "Measured" && spend.percent > board.settings.spendShare) {
+		flags.push({
+			_tag: "OnCallShare",
+			percent: spend.percent,
+			target: board.settings.spendShare,
+			onCallUsd: spend.onCallUsd,
+			totalUsd: spend.totalUsd,
+		});
+	}
+	return flags;
 };
 
 const TAG_NAME: Readonly<Record<Flag["_tag"], string>> = {
@@ -387,6 +555,8 @@ const TAG_NAME: Readonly<Record<Flag["_tag"], string>> = {
 	UnknownDecider: "unknown-decider",
 	Campaigns: "campaigns",
 	FabrikaShare: "fabrika-share",
+	PastTarget: "past-target",
+	OnCallShare: "on-call-share",
 };
 
 export const flagName = (flag: Flag): string => TAG_NAME[flag._tag];
@@ -410,6 +580,10 @@ export const recOf = (flag: Flag, settings: TableSettings): string => {
 			return `${flag.active.length} campaigns are active, over the ${flag.cap} the table keeps. Which ones pause?`;
 		case "FabrikaShare":
 			return `fabrika's own work took ${flag.percent}% of this week's spend ($${flag.fabrikaUsd} of $${flag.totalUsd}), over the ${flag.target}% target. Fewer fabrika bets next table?`;
+		case "PastTarget":
+			return `Open on-call for ${flag.waitedHours} hours, past its "${flag.target}" target of ${flag.hours}. Pick it up now, or move it to the table?`;
+		case "OnCallShare":
+			return `On-call took ${flag.percent}% of the week's spend ($${flag.onCallUsd} of $${flag.totalUsd}), over its ${flag.target}% share. Raise the share, or fix what keeps breaking?`;
 	}
 };
 

@@ -15,7 +15,7 @@ import type {BoardIteration, StatusUpdate, StatusUpdateInput} from "../io/projec
 import {asksOf, type LaneRecord} from "../wire/lane-record.ts";
 import {optionOf} from "./agenda.ts";
 import {currentIteration} from "./bets.ts";
-import {type Flag, weekLanes} from "./flags.ts";
+import {type Flag, type OnCallSpend, weekLanes} from "./flags.ts";
 import {FIELD} from "./shape.ts";
 import type {Row} from "./sync.ts";
 
@@ -68,14 +68,19 @@ const numberOf = (row: Row, field: string): number | null => {
 
 const cents = (usd: number): number => Math.round(usd * 100) / 100;
 
-/** The Outside the bets rows whose issue is open and whose lane is running. */
+/**
+ * The Outside the bets rows whose issue is open and whose lane is running. Issues in `onCall` are left
+ * out: their spend is on-call's planned share, not unplanned work.
+ */
 export const outsideOf = (
 	rows: ReadonlyMap<number, Row>,
 	open: ReadonlySet<number>,
+	onCall: ReadonlySet<number> = new Set(),
 ): OutsideTally => {
 	const running = [...rows.values()].filter(
 		(row) =>
 			open.has(row.issue) &&
+			!onCall.has(row.issue) &&
 			optionOf(row, FIELD.section) === OUTSIDE_THE_BETS &&
 			optionOf(row, FIELD.stage) === "in lane",
 	);
@@ -157,14 +162,42 @@ export const postedFor = (updates: ReadonlyArray<StatusUpdate>, iterationId: str
 
 const isoDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 
+/** The on-call board as the table reviews it: one summary, never its rows. */
+export interface OnCallHealth {
+	readonly open: number;
+	readonly pastTarget: number;
+	/** On-call's spend over the same week as the table's numbers. */
+	readonly spend: OnCallSpend;
+	/** The planned share, in percent. */
+	readonly share: number;
+}
+
+const onCallLines = (onCall: OnCallHealth): ReadonlyArray<string> => {
+	const {spend} = onCall;
+	const spent =
+		spend._tag === "Measured"
+			? `${spend.percent}% of the week's spend ($${spend.onCallUsd} of $${spend.totalUsd}), against a ${onCall.share}% share${spend.percent > onCall.share ? " — over it" : ""}`
+			: spend._tag === "Unmeasured"
+				? `not known, ${plural(spend.lanes, "lane")} not measured (share ${onCall.share}%)`
+				: `no lane spent anything last week (share ${onCall.share}%)`;
+	return [
+		"",
+		"**On-call** (one section; the table does not review it row by row)",
+		"",
+		`- Open items: ${onCall.open}${onCall.pastTarget > 0 ? ` (${onCall.pastTarget} past their response target)` : ""}`,
+		`- Spend: ${spent}`,
+	];
+};
+
 /**
- * The status update for `target`: `AT_RISK` while any row flag stands, else `ON_TRACK`, dated over
- * the iteration.
+ * The status update for `target`: `AT_RISK` while any flag stands, else `ON_TRACK`, dated over the
+ * iteration. With an on-call board it covers that board too, as one closing section.
  */
 export const renderHealth = (
 	health: Health,
 	target: BoardIteration,
 	flagged: boolean,
+	onCall: OnCallHealth | null = null,
 ): StatusUpdateInput => {
 	const {outside} = health;
 	const kinds = Object.entries(outside.kinds)
@@ -193,6 +226,7 @@ export const renderHealth = (
 			: `- ${OUTSIDE_THE_BETS}: ${plural(outside.count, "lane")} (${kinds}), ${outsideCost}`,
 		`- Bets continuing: ${health.continuing}${health.flaggedBets > 0 ? ` (and ${health.flaggedBets} flagged onto the agenda)` : ""}`,
 		`- Inbox: ${plural(health.inbox, "open issue")} with no labels`,
+		...(onCall === null ? [] : onCallLines(onCall)),
 		"",
 		healthMarker(target.id),
 	];
