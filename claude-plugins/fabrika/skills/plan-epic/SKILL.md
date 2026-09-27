@@ -226,9 +226,9 @@ child numbers do not exist until step 5. Most shape is chosen while you author t
 so it is staged there already. A choice you first make later — step 6's sequencing of two slices
 that write the same file is the usual one — goes into that section too: add its line and re-stage
 with `ledger draft` before step 7, which writes the section into the epic body with the rest of the
-plan. Then tell the founder in one line at your terminal what shape you chose and that the epic
-records it. Nothing leaves his hands by this: [`check-epic-plan`](../check-epic-plan/SKILL.md) makes
-no child pickable until his `plan approve` covers the whole ledger, shape included.
+plan. Then name each shape choice in step 9's walk, where the founder reads it before he approves.
+Nothing leaves his hands by this: [`check-epic-plan`](../check-epic-plan/SKILL.md) makes no child
+pickable until his `plan approve` covers the whole ledger, shape included.
 
 Read the frontier before you leave this step:
 
@@ -482,6 +482,33 @@ fabrika build release $epic_number --token <claim-token>
 
 If you find something that ought to block a plan, that is a finding about the **floor** — file it
 with `report` and let the gate decide.
+
+<!-- anchor: APPROVAL-IS-ASKED-WITH-A-WALK --> **Then ask for the approval the gate needs, and ask
+with a walk.** `check-epic-plan` proceeds only once `plan approve` covers this ledger, and `plan
+approve` is the founder's verb, run by someone on the control-plane roster. The ask you hand him —
+in your terminal report, and in whatever your driver relays onward — walks him through the plan
+first, **one child per line**, and names `plan approve` last. Read the children off the epic, never
+off your memory of the run:
+
+```bash
+fabrika plan read $epic_number
+```
+
+```text
+Epic #<epic> — <n> children:
+- #<child> <title> — <what it delivers>; requires #<other> (or: no prerequisites)
+- …
+Shape: <each Task-split rationale choice, one line with its reason>
+Grill: #<session> — <each founder ruling, one line>
+If this reads right: fabrika plan approve <epic>
+```
+
+Done when every child `plan read` printed has its own line and the approve line comes after them.
+The walk is the approval request; an approve line with no walk above it asks him to approve a plan
+he has not read, so send the walk every time, including after a re-plan, because a re-plan leaves
+the old approval `stale`. Keep it a read-back: a question the walk raises goes back to step 4's
+session, never into this message. Nothing checks that the walk happened — `plan approve` records
+the approval either way — so this holds because this skill holds it.
 
 ## Terminal vocabulary
 
