@@ -3,7 +3,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {DuplicateProgramId, ProgramNotFound} from "./errors.ts";
 import {type AnyProgram, type Program, ProgramId, provenanceOf} from "./program.ts";
-import {Registry} from "./Registry.ts";
+import {Registry, RegistryRows} from "./Registry.ts";
 
 type State = {readonly count: number};
 type Msg = {readonly type: "tick"};
@@ -83,6 +83,50 @@ describe("Registry", () => {
 			assert.instanceOf(error, ProgramNotFound);
 			assert.strictEqual(error.id, "missing");
 			assert.strictEqual(error.message, 'no program is registered under id "missing"');
+		}),
+	);
+});
+
+describe("Registry.growable", () => {
+	const growing = <A, E>(
+		rows: ReadonlyArray<AnyProgram>,
+		body: (registry: Registry["Service"], writer: RegistryRows["Service"]) => Effect.Effect<A, E>,
+	) =>
+		Effect.gen(function* () {
+			return yield* body(yield* Registry, yield* RegistryRows);
+		}).pipe(Effect.provide(Registry.growable(rows)));
+
+	it.effect("resolves a row added after registration, and stops resolving it once removed", () =>
+		Effect.gen(function* () {
+			const [a, b] = [row("a"), row("b")];
+			const [added, listed, removed] = yield* growing([a], (registry, writer) =>
+				Effect.gen(function* () {
+					yield* writer.add([b]);
+					const added = yield* registry.resolve(ProgramId.make("b"));
+					const listed = yield* registry.list;
+					yield* writer.remove([ProgramId.make("b")]);
+					const removed = yield* Effect.flip(registry.resolve(ProgramId.make("b")));
+					return [added, listed, removed] as const;
+				}),
+			);
+			assert.strictEqual(added, b);
+			assert.deepStrictEqual(listed, [a, b]);
+			assert.instanceOf(removed, ProgramNotFound);
+		}),
+	);
+
+	it.effect("adds every row or none: a duplicate leaves the registry as it was", () =>
+		Effect.gen(function* () {
+			const [a, b, again] = [row("a"), row("b"), row("a", "2.0.0")];
+			const [error, listed] = yield* growing([a], (registry, writer) =>
+				Effect.gen(function* () {
+					const error = yield* Effect.flip(writer.add([b, again]));
+					return [error, yield* registry.list] as const;
+				}),
+			);
+			assert.instanceOf(error, DuplicateProgramId);
+			assert.strictEqual(error.id, "a");
+			assert.deepStrictEqual(listed, [a]);
 		}),
 	);
 });

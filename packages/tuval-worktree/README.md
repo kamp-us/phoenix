@@ -293,6 +293,18 @@ A restart cuts whatever was in flight in half, so `resume` reconciles three thin
 The four env fields (`repo`, `repoName`, `root`, `base`) are re-seeded from the config on every
 restore, because the config is the authority on them and a checkpoint never is.
 
+## Each worktree is a subproject
+
+When the program runs in a desk project, each worktree opens as a subproject of that project once it
+is provisioned (phoenix [#9689](https://github.com/kamp-us/phoenix/issues/9689)). Its tile reads
+`phoenix › feature-x`, it trusts what the parent trusts, a `.tuval` config inside it runs as that
+subproject's own, and closing the parent closes it. This program is its opener, the only program of
+the parent that reaches its processes. `close` and `discard` close the subproject and wait for its
+processes to stop before the removal. The desk does not reopen subprojects on a restart; the
+`resume` above opens again each worktree that was `open` and whose directory is still there, so a
+closed lane stays closed. A worktree program the desk's global graph runs is in no project, so it
+opens no subproject and works as before.
+
 ## Upgrading from the previous name
 
 This package, its program id and its spells were all called something else before; the rename is

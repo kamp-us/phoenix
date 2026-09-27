@@ -20,4 +20,4 @@ export type {
 } from "./graph.ts";
 export {NodeId} from "./graph.ts";
 export {ProcessPorts, unwired} from "./ProcessPorts.ts";
-export {type Delivery, open, type Wiring} from "./wiring.ts";
+export {type Delivery, type Join, type JoinedInPort, open, type Wiring} from "./wiring.ts";

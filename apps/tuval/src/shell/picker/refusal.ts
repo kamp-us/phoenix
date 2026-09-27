@@ -1,6 +1,6 @@
 /**
- * Why the desk did not do what an empty window was asked for — open a program, attach a process, or
- * remove one. Every arm is JSON, because a refusal is shown *in* the window and the window's view
+ * Why the desk did not do what an empty window was asked for — open a program, attach a process,
+ * remove one, or open a project. Every arm is JSON, because a refusal is shown *in* the window and the window's view
  * slot is checkpointed JSON (`../window/host.ts`) — so a refusal rides the transport and survives a
  * restart the same way the rest of the desk does.
  *
@@ -24,7 +24,12 @@ export type PickerRefusal =
 	/** The kernel's `ProcessIsPlanned` (`../../process/errors.ts`) as the window announces it. */
 	| {readonly _tag: "ProcessPlanned"; readonly processId: string}
 	/** The kernel's `ForgetRefused`: the durable write failed, so the process is still in the picker. */
-	| {readonly _tag: "RemoveFailed"; readonly processId: string; readonly reason: string};
+	| {readonly _tag: "RemoveFailed"; readonly processId: string; readonly reason: string}
+	/** A session entry named a project that closed before the choice reached the kernel (#9694). */
+	| {readonly _tag: "ProjectClosed"; readonly programId: string; readonly project: string}
+	/** "Open project…" asked the kernel to open a folder, or to list one, and it did not (#9697). */
+	| {readonly _tag: "ProjectNotOpened"; readonly folder: string; readonly reason: string}
+	| {readonly _tag: "FolderUnreadable"; readonly folder: string; readonly reason: string};
 
 export const unknownProgram = (programId: string): PickerRefusal => ({
 	_tag: "UnknownProgram",
@@ -61,6 +66,24 @@ export const removeFailed = (processId: string, reason: string): PickerRefusal =
 	reason,
 });
 
+export const projectClosed = (programId: string, project: string): PickerRefusal => ({
+	_tag: "ProjectClosed",
+	programId,
+	project,
+});
+
+export const projectNotOpened = (folder: string, reason: string): PickerRefusal => ({
+	_tag: "ProjectNotOpened",
+	folder,
+	reason,
+});
+
+export const folderUnreadable = (folder: string, reason: string): PickerRefusal => ({
+	_tag: "FolderUnreadable",
+	folder,
+	reason,
+});
+
 const strings = (value: Record<string, unknown>, fields: ReadonlyArray<string>): boolean =>
 	fields.every((field) => typeof value[field] === "string");
 
@@ -86,6 +109,11 @@ export const isPickerRefusal = (value: unknown): value is PickerRefusal => {
 			return strings(value, ["processId"]);
 		case "RemoveFailed":
 			return strings(value, ["processId", "reason"]);
+		case "ProjectClosed":
+			return strings(value, ["programId", "project"]);
+		case "ProjectNotOpened":
+		case "FolderUnreadable":
+			return strings(value, ["folder", "reason"]);
 		default:
 			return false;
 	}
@@ -112,5 +140,11 @@ export const refusalMessage = (refusal: PickerRefusal): string => {
 			return `Process "${refusal.processId}" is declared by the config graph, so boot would start it again. Edit the config to remove it.`;
 		case "RemoveFailed":
 			return `Process "${refusal.processId}" was not removed and is still running: ${refusal.reason}`;
+		case "ProjectClosed":
+			return `Program "${refusal.programId}" was not started: the project ${refusal.project} is no longer open.`;
+		case "ProjectNotOpened":
+			return `${refusal.folder} was not opened: ${refusal.reason}`;
+		case "FolderUnreadable":
+			return `Could not show the folders in ${refusal.folder}: ${refusal.reason}`;
 	}
 };

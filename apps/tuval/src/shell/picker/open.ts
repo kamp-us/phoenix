@@ -18,6 +18,7 @@ import {ProcessPorts, unwired} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {WorkingFolder} from "@kampus/tuval-sdk/kernel/process/working-folder";
 import {
 	type AnyProgram,
 	type ProgramId,
@@ -25,10 +26,13 @@ import {
 } from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import type {ViewState, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
-import {Context, Effect} from "effect";
+import {Context, Effect, Option, Result} from "effect";
+import {Projects} from "../../projects/Projects.ts";
 import type {ShellMsg} from "../core/machine.ts";
 import {showsInAWindow} from "./entries.ts";
+import {openFolder} from "./folder.ts";
 import type {PickerIntent, ProgramOpening} from "./intent.ts";
+import type {SessionPlace} from "./place.ts";
 import {
 	type PickerRefusal,
 	processGone,
@@ -64,15 +68,16 @@ export const refuse = (
 ];
 
 /**
- * The binding carries the row's key declaration: a window may only be sent a key its program asked
- * for, and this is the one place both are known at once (#7973).
+ * The binding carries the row's key declaration and its id: a window may only be sent a key its
+ * program asked for (#7973), and routes keys over its program's owner's table (#9687). This is the
+ * one place the window and the row are known at once.
  */
 const bind = (
 	windowId: WindowId,
 	processId: ProcessId,
 	row: AnyProgram,
 ): ReadonlyArray<ShellMsg> => [
-	{type: "window.bind", windowId, processId, takesKeys: takesForwardedKeys(row)},
+	{type: "window.bind", windowId, processId, takesKeys: takesForwardedKeys(row), program: row.id},
 ];
 
 const open = Effect.fn("Tuval.Picker.open")(function* (
@@ -80,6 +85,7 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	programId: ProgramId,
 	options: PickerOptions,
 	opening: ProgramOpening | undefined,
+	place: SessionPlace | undefined,
 ) {
 	const registry = yield* Registry;
 	const processes = yield* Processes;
@@ -88,6 +94,12 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	if (row._tag === "Failure") return refuse(windowId, options.view, unknownProgram(programId));
 	if (!showsInAWindow(row.success))
 		return refuse(windowId, options.view, programHeadless(programId));
+
+	// Optional because a kernel stood up from rows alone has no desk and opens no projects.
+	const desk = yield* Effect.serviceOption(Projects);
+	const openNow = Option.isSome(desk) ? yield* desk.value.list : [];
+	const folder = openFolder(programId, place, openNow);
+	if (Result.isFailure(folder)) return refuse(windowId, options.view, folder.failure);
 
 	// A picker-opened program may require kernel services, and this is where they arrive: this
 	// handler is sealed to the shell process's own spawn set, which is the kernel one `launch`
@@ -117,7 +129,12 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	// row the operator picked out of the session list, and the child has to come up resuming that
 	// session instead of booting a second one beside it (epic #8070, ruling 2). The agent row's
 	// `aiAgent.boot` handler is the only reader (`../../ai-agent/handlers/index.ts`).
-	const services = opening === undefined ? shown : Context.add(shown, SessionOpening, opening);
+	const session = opening === undefined ? shown : Context.add(shown, SessionOpening, opening);
+	// The folder this process runs in when it is not the shell's own (`./folder.ts`, #9694).
+	const services = Option.match(folder.success, {
+		onNone: () => session,
+		onSome: (path) => Context.add(session, WorkingFolder, {path}),
+	});
 	const spawned = yield* Effect.result(
 		processes.spawn(programId, {id, parent: options.shellProcessId, services}),
 	);
@@ -153,5 +170,5 @@ export const runPickerIntent = (
 	options: PickerOptions,
 ): Effect.Effect<ReadonlyArray<ShellMsg>, never, Registry | Processes | ProcessTable> =>
 	intent._tag === "OpenProgram"
-		? open(intent.windowId, intent.programId, options, intent.opening)
+		? open(intent.windowId, intent.programId, options, intent.opening, intent.place)
 		: attach(intent.windowId, intent.processId, options);

@@ -1,12 +1,12 @@
 /**
- * The user config the Pi vertical proof boots: the real shell row and the real `pi-session` row,
- * over Pi's faux provider.
+ * The user config the Pi vertical proof boots: the real `pi-session` row over Pi's faux provider,
+ * beside the shell the desk supplies itself (`../../desk-layer.ts`).
  *
  * It is the founder's `.tuval/tuval.config.ts` with one substitution — the layer — and that
  * substitution is the whole reason this module exists: `PiAiAgent.layer` reaches for the operator's
  * credentials and model catalog, and a proof that must call no model API stands its own host up
  * (`@kampus/tuval-pi/testing/faux`). Everything else is the shipped path: the shell that serves the desk, a `pi-session`
- * row the picker can offer, and a graph that plans the shell alone.
+ * row the picker can offer, and a graph that plans nothing past the desk's shell.
  *
  * **The graph plans no Pi node on purpose.** The proof's first claim is that *choosing `pi-session`
  * in the picker* spawns the process under the shell, so a graph that had already spawned one would
@@ -22,9 +22,6 @@
 import {piSessionProgram} from "@kampus/tuval-pi";
 import {fauxAssistantMessage, fauxPiLayer} from "@kampus/tuval-pi/testing/faux";
 import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
-import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {wiredShellEffects} from "../../shell/host/index.ts";
-import {shellGraphNode, shellNode, shellProgram} from "../../shell/program.ts";
 import {PROJECT_ROOT_VAR, REPLY_1, REPLY_2, REPLY_3, REPLY_4} from "./names.ts";
 
 /**
@@ -52,9 +49,5 @@ const root = projectRoot();
 
 export default {
 	version: 1,
-	programs: [
-		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
-		piSessionProgram({cwd: root, layer: fauxPiLayer({root, replies})}),
-	],
-	graph: {nodes: [shellGraphNode]},
+	programs: [piSessionProgram({cwd: root, layer: fauxPiLayer({root, replies})})],
 } satisfies TuvalConfigInput;

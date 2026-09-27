@@ -1,0 +1,36 @@
+/*
+ * The trust question's body. The panel, backdrop, title, description and footer are
+ * `@kampus/design`'s `Dialog`; what is left here is the folder path and the two notes under it, each
+ * painted from role tokens only (`design-system-manifest.md`, Pillar 2).
+ */
+
+.tuval-trust-body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+}
+
+/* The path is what the person is deciding about, so it is shown whole: it wraps anywhere rather
+   than truncating, because a hidden tail could hide which folder this is. */
+.tuval-trust-folder {
+	display: block;
+	padding: var(--s-2) var(--s-3);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	background: var(--surface-sunken);
+	color: var(--text-primary);
+	font: var(--t-mono);
+	overflow-wrap: anywhere;
+}
+
+.tuval-trust-note {
+	margin: 0;
+	color: var(--text-secondary);
+	font: var(--t-body-sm);
+}
+
+.tuval-trust-waiting {
+	margin: 0;
+	color: var(--text-muted);
+	font: var(--t-meta);
+}

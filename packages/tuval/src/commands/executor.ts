@@ -168,7 +168,9 @@ const make = Effect.fn("Tuval.SpellExecutor.make")(function* () {
 		const attempt = Effect.gen(function* () {
 			const row = yield* lookup(call.path);
 			const args = yield* decodeArgs(row, call);
-			const scope = yield* resolveScope(call, client);
+			const caller = yield* resolveScope(call, client);
+			const scope: Scope =
+				row.source.kind === "program" ? {...caller, program: row.source.programId} : caller;
 			const value = yield* runSpell(row, args, scope);
 			return succeeded(call, yield* encodeResult(row, value));
 		});

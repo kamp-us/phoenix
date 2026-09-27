@@ -11,6 +11,7 @@ import {Processes} from "../process/Processes.ts";
 import {ProcessTable} from "../process/ProcessTable.ts";
 import {type ProcessHandle, ProcessId} from "../process/process.ts";
 import {ProcessSelf} from "../process/self.ts";
+import {WorkingFolder} from "../process/working-folder.ts";
 import {type AnyProgram, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {ArgUnfilled, programArgs} from "./args.ts";
@@ -125,6 +126,12 @@ describe("authoring.defineProgram", () => {
 			version: "0.0.0",
 			digest: "authored:counter",
 		});
+	});
+
+	it("carries a declared SDK range onto the row, and leaves the field off when none is declared", () => {
+		const ranged = defineProgram({id: "ranged", sdk: "^0.4", init: () => 0, update: {}});
+		expect(ranged.sdk).toBe("^0.4");
+		expect("sdk" in counter).toBe(false);
 	});
 
 	it("fills the row's `handlers` itself, so no authored program carries one", () => {
@@ -298,6 +305,47 @@ describe("authoring.defineProgram", () => {
 				{cwd: "/worktrees/reviewer", resume: null},
 			]);
 		}),
+	);
+
+	it.effect(
+		"starts a child in this process's folder, unless the spawn hands it another (#9694)",
+		() =>
+			Effect.gen(function* () {
+				const child = ProcessId.make("process-child");
+				const folders: Array<string | undefined> = [];
+				const spells = SpawnedProcesses.of({
+					spawn: () =>
+						Effect.gen(function* () {
+							const folder = yield* Effect.serviceOption(WorkingFolder);
+							folders.push(Option.getOrUndefined(folder)?.path);
+							return child;
+						}),
+					send: () => Effect.die("this test sends nothing"),
+					adopt: () => Effect.die("this test adopts nothing"),
+					ask: () => Effect.die("this test asks nothing"),
+					answer: () => Effect.die("this test answers nothing"),
+					read: () => Effect.succeed(Option.none()),
+				});
+				const self = ProcessId.make("process-self");
+				const inProject = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+					Effect.scoped(
+						effect.pipe(
+							Effect.provideService(SpawnedProcesses, spells),
+							Effect.provideService(WorkingFolder, {path: "/projects/phoenix"}),
+							Effect.provideServiceEffect(
+								ProcessSelf,
+								Effect.map(Effect.scope, (scope) => ({id: self, scope, state: () => undefined})),
+							),
+						),
+					);
+
+				yield* inProject(runEffect(counter, spawn({programId: "reviewer", out: {}})));
+				yield* inProject(
+					runEffect(counter, spawn({programId: "reviewer", out: {}}, {cwd: "/worktrees/reviewer"})),
+				);
+
+				assert.deepStrictEqual(folders, ["/projects/phoenix", "/worktrees/reviewer"]);
+			}),
 	);
 
 	// `stopped` is no longer this handler's answer (#9227). The child's own end is the single producer

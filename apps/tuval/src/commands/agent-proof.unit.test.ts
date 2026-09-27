@@ -79,8 +79,10 @@ import {
 } from "@kampus/tuval-sdk/kernel/protocol/registry-description";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
-import {Context, Deferred, Effect, Layer, Schema} from "effect";
+import {Context, Deferred, Effect, Layer, Ref, Result, Schema} from "effect";
 import {coreSpells} from "../boot.ts";
+import {OpenProjects} from "../projects/open-projects.ts";
+import {Projects} from "../projects/Projects.ts";
 
 const workspace = WorkspaceId.make("ws-1");
 const agentWindow = WindowId.make("w-agent");
@@ -186,7 +188,60 @@ const world: Readonly<Record<string, unknown>> = {
 	"process.send.payload": "hi",
 	"process.read.port": "echoed",
 	"echo.repeat.word": "ha",
+	"project.open.folder": "/work/agent-proof",
+	"project.close.folder": "/work/agent-proof",
+	"project.browse.folder": "/work",
 };
+
+/**
+ * The desk's open projects, held in memory: this proof calls every spell and opens no config, so a
+ * project opens with nothing to start and closes with nothing to stop.
+ */
+const scriptedProjects = Layer.effect(
+	Projects,
+	Effect.map(Ref.make(OpenProjects.none), (open) =>
+		Projects.of({
+			open: (folder) =>
+				Effect.flatMap(Ref.get(open), (current) => {
+					const result = current.open(folder);
+					if (Result.isFailure(result)) return Effect.fail(result.failure);
+					return Effect.as(Ref.set(open, result.success.projects), {
+						project: result.success.project,
+						state: {
+							stateDir: "/nowhere",
+							adopted: {moved: [], kept: [], unowned: []},
+							scoped: {moved: []},
+						},
+						programCount: 0,
+						refused: [],
+						launched: [],
+						restored: [],
+					});
+				}),
+			close: (folder, by) =>
+				Effect.flatMap(Ref.get(open), (current) => {
+					const result = current.close(folder, by);
+					if (Result.isFailure(result)) return Effect.fail(result.failure);
+					return Effect.as(Ref.set(open, result.success.projects), {
+						project: result.success.project,
+					});
+				}),
+			list: Effect.map(Ref.get(open), (current) => current.projects),
+			recent: Effect.map(Ref.get(open), (current) => current.recentProjects),
+			browse: (folder) =>
+				Effect.succeed({
+					folder: folder ?? "/nowhere",
+					name: "nowhere",
+					key: "-nowhere",
+					parent: null,
+					open: false,
+					folders: [],
+				}),
+			changes: Projects.none.changes,
+			renderers: Projects.none.renderers,
+		}),
+	),
+);
 
 /**
  * One argument, from the parameter's own schema first and the desk second: an enum takes its first
@@ -362,7 +417,7 @@ const agentProgram = (done: Deferred.Deferred<Run>): AnyProgram =>
 
 /** The layer set boot builds, over an in-memory state dir and the two rows this proof registers. */
 const app = (rows: ReadonlyArray<AnyProgram>) =>
-	Layer.mergeAll(SpawnedProcesses.layer({readTimeout: "1 second"})).pipe(
+	Layer.mergeAll(SpawnedProcesses.layer({readTimeout: "1 second"}), scriptedProjects).pipe(
 		Layer.provideMerge(SpellExecutor.layer),
 		Layer.provideMerge(
 			Layer.mergeAll(

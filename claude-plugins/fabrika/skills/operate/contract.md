@@ -359,9 +359,10 @@ Four events carry a claim, and which artifact answers them is the task's shape.
 
 **On a single-issue lane and on an epic run's tail:**
 
-- A DONE out of `build` or `build:ui` claims an open PR whose body links the task's issue. For an
-  investigation it claims instead the diagnosis comment a no-PR builder posted since the task
-  entered build, which is the one arm that answers a `diagnosis` field beside the proof. `lane
+- A DONE out of `build` or `build:ui` claims an open PR whose body links the task's issue. When
+  no PR links it, it claims instead a comment a no-PR builder posted on the issue since the task
+  entered build, whatever the issue's type, which is the one arm that answers a `diagnosis` field
+  beside the proof. `lane
   report` relays that field onto the recorded line, where the machine's `done:diagnosis` arm reads
   it.
 - A PASS out of `review` claims a current-head verdict in every namespace that PR's diff derives,

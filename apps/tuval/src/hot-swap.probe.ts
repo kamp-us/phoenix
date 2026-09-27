@@ -12,8 +12,10 @@ import {join} from "node:path";
 import {NodeFileSystem} from "@effect/platform-node";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {type ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {localId} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 import {Effect, Option} from "effect";
 import {type Booted, boot} from "./boot.ts";
+import {ProjectId} from "./project-id.ts";
 
 const [project, home] = process.argv.slice(2);
 if (project === undefined || home === undefined) {
@@ -129,8 +131,13 @@ writeFileSync(tallyFile, tallySource({step: 1, by: "v1", version: "1.0.0"}));
 writeFileSync(echoFile, echoSource("restore-v1"));
 writeFileSync(shoutFile, shoutSource("!"));
 
+// The config is the project's layer, so its nodes run under the project's scope (#9684); what is
+// printed is each process's local id, because the question here is what a reload did to it.
+const scope = ProjectId.of(project);
+const locals = (ids: ReadonlyArray<string>) => ids.map(localId);
+
 const handleOf = (booted: Booted, id: string) =>
-	Processes.use((processes) => processes.handle(ProcessId.make(id))).pipe(
+	Processes.use((processes) => processes.handle(ProcessId.make(scope.scope(id)))).pipe(
 		Effect.flatMap((handle) =>
 			Option.match(handle, {
 				onNone: () => Effect.die(`no live process "${id}"`),
@@ -144,9 +151,9 @@ const reloaded = (booted: Booted) =>
 	booted.reload.pipe(
 		Effect.match({
 			onSuccess: (report) => ({
-				switched: report.switched,
-				restoreRefused: report.restoreRefused,
-				pending: report.pending,
+				switched: locals(report.switched),
+				restoreRefused: locals(report.restoreRefused),
+				pending: locals(report.pending),
 			}),
 			onFailure: (refused) => ({refused: refused.message}),
 		}),
@@ -163,7 +170,10 @@ const probe = Effect.gen(function* () {
 
 	writeFileSync(tallyFile, tallySource({step: 10, by: "v2", version: "1.0.0"}));
 	const edited = yield* reloaded(booted);
-	const afterEdit = {tally: tally.getState(), handle: (yield* handleOf(booted, "tally")).id};
+	const afterEdit = {
+		tally: tally.getState(),
+		handle: localId((yield* handleOf(booted, "tally")).id),
+	};
 	yield* tally.dispatch({type: "bump"});
 	const bumped = tally.getState();
 

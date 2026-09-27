@@ -17,10 +17,29 @@ import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {normalize} from "@kampus/tuval-ui/keys";
 import {Result} from "effect";
-import {flatten, type PickerEntries, type PickerEntry} from "./entries.ts";
-import {type PickerFilter, visibleEntries} from "./filter.ts";
+import {clamp, groupJump} from "./cursor.ts";
+import {
+	flatten,
+	groupKeyOf,
+	OPEN_PROJECT_ENTRY,
+	type PickerEntries,
+	type PickerRow,
+} from "./entries.ts";
+import {matchesFilter, type PickerFilter, visibleEntries} from "./filter.ts";
 import {attachProcess, intentOf, type PickerIntent} from "./intent.ts";
+import {asOpenProjectStep, type OpenProjectStep, RECENT_STEP} from "./open-project-step.ts";
 import {isPickerRefusal, type PickerRefusal} from "./refusal.ts";
+
+/**
+ * A project "Open project…" just opened, or found already open (#9697): the program list lands its
+ * highlight on that project's sessions and says which it was. A type alias for the same reason
+ * `PickerView` is one.
+ */
+export type PickerLanding = {
+	readonly key: string;
+	readonly label: string;
+	readonly how: "opened" | "already-open";
+};
 
 /**
  * The window's view slot while it shows the picker. A type alias rather than an interface because
@@ -39,6 +58,10 @@ export type PickerView = {
 	readonly previous: string | null;
 	/** `null` until `/` opens it; a string once open, and every mount opens with none (#8450). */
 	readonly filter: PickerFilter;
+	/** The "Open project…" step this window is on, or `null` on the program list (#9697). */
+	readonly step: OpenProjectStep | null;
+	/** Until the cursor is placed, the project the program list lands on. */
+	readonly landing: PickerLanding | null;
 };
 
 /**
@@ -50,6 +73,8 @@ export const mountPicker = (previous: string | null = null): PickerView => ({
 	refusal: null,
 	previous,
 	filter: null,
+	step: null,
+	landing: null,
 });
 
 export const withRefusal = (view: PickerView, refusal: PickerRefusal): PickerView => ({
@@ -67,6 +92,7 @@ export const withFilter = (view: PickerView, filter: string): PickerView => ({
 	filter,
 	cursor: null,
 	refusal: null,
+	landing: null,
 });
 
 /**
@@ -89,13 +115,20 @@ export const asPickerView = (slot: unknown): PickerView => {
 		refusal: isPickerRefusal(refusal) ? refusal : null,
 		previous: typeof previous === "string" ? previous : null,
 		filter: typeof filter === "string" ? filter : null,
+		step: asOpenProjectStep(record.step),
+		landing: asLanding(record.landing),
 	};
 };
 
-const clamp = (cursor: number, length: number): number => {
-	if (length === 0) return 0;
-	if (!Number.isInteger(cursor) || cursor < 0) return 0;
-	return cursor > length - 1 ? length - 1 : cursor;
+const asLanding = (value: unknown): PickerLanding | null => {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+	const record: Record<string, unknown> = {...value};
+	const {key, label, how} = record;
+	return typeof key === "string" &&
+		typeof label === "string" &&
+		(how === "opened" || how === "already-open")
+		? {key, label, how}
+		: null;
 };
 
 /**
@@ -107,14 +140,43 @@ export const visibleFor = (entries: PickerEntries, view: PickerView): PickerEntr
 	visibleEntries(entries, view.filter);
 
 /**
- * Where the highlight actually sits. An unplaced cursor lands on the row of the process this window
- * was showing, so `<c-b> w` mounts the picker pointing at where Escape would take the operator
- * back; a `previous` no row offers — the process exited while the picker was up — falls back to the
- * first row rather than to nothing.
+ * The rows the program list offers under this view, in the order the cursor indexes: the entries
+ * the filter leaves, then "Open project…" on a desk that can open projects and while the filter
+ * leaves it (#9697). It is always last, which is how Escape out of its steps finds it again.
  */
-export const cursorOf = (entries: PickerEntries, view: PickerView): number => {
+export const rowsFor = (
+	entries: PickerEntries,
+	view: PickerView,
+	features: PickerKeyFeatures = noPickerKeyFeatures,
+): ReadonlyArray<PickerRow> => {
 	const rows = flatten(visibleFor(entries, view));
+	return features.openProject && matchesFilter(OPEN_PROJECT_ENTRY.label, view.filter)
+		? [...rows, OPEN_PROJECT_ENTRY]
+		: rows;
+};
+
+/**
+ * Where the highlight actually sits. An unplaced cursor lands on the first session of the project
+ * "Open project…" just landed on (#9697), else on the row of the process this window was showing,
+ * so `<c-b> w` mounts the picker pointing at where Escape would take the operator back. A landing or
+ * a `previous` no row offers — the project has no sessions yet, the process exited while the picker
+ * was up — falls back to the first row rather than to nothing.
+ */
+export const cursorOf = (
+	entries: PickerEntries,
+	view: PickerView,
+	features: PickerKeyFeatures = noPickerKeyFeatures,
+): number => {
+	const rows = rowsFor(entries, view, features);
 	if (view.cursor !== null) return clamp(view.cursor, rows.length);
+	const landing = view.landing;
+	if (landing !== null) {
+		const at = rows.findIndex(
+			(row) =>
+				row._tag === "Program" && row.place?._tag === "Project" && row.place.key === landing.key,
+		);
+		if (at !== -1) return at;
+	}
 	if (view.previous === null) return 0;
 	const at = rows.findIndex(
 		(row) => row._tag === "Process" && String(row.processId) === view.previous,
@@ -123,8 +185,11 @@ export const cursorOf = (entries: PickerEntries, view: PickerView): number => {
 };
 
 /** The row the cursor names, or `null` when there is nothing to name. */
-export const highlighted = (entries: PickerEntries, view: PickerView): PickerEntry | null =>
-	flatten(visibleFor(entries, view))[cursorOf(entries, view)] ?? null;
+export const highlighted = (
+	entries: PickerEntries,
+	view: PickerView,
+	features: PickerKeyFeatures = noPickerKeyFeatures,
+): PickerRow | null => rowsFor(entries, view, features)[cursorOf(entries, view, features)] ?? null;
 
 /**
  * What one key did. `Moved` and `Cleared` carry the view to store, and so does `Filtering` — a
@@ -134,6 +199,11 @@ export const highlighted = (entries: PickerEntries, view: PickerView): PickerEnt
  */
 export type PickerKeyAnswer =
 	| {readonly _tag: "Moved"; readonly view: PickerView}
+	/**
+	 * "Open project…" chosen: the view moved onto its first step (#9697). A separate arm from `Moved`
+	 * because the surface starts reading the step's rows off the kernel when it sees it.
+	 */
+	| {readonly _tag: "Stepped"; readonly view: PickerView}
 	| {readonly _tag: "Cleared"; readonly view: PickerView}
 	| {readonly _tag: "Filtering"; readonly view: PickerView}
 	| {readonly _tag: "Chose"; readonly intent: PickerIntent}
@@ -156,6 +226,8 @@ const ignored: PickerKeyAnswer = {_tag: "Ignored"};
 
 const DOWN = ["<arrowdown>", "j", "<c-n>", "<tab>"];
 const UP = ["<arrowup>", "k", "<c-p>", "<s-tab>"];
+const NEXT_GROUP = ["<pagedown>"];
+const PREVIOUS_GROUP = ["<pageup>"];
 const FIRST = ["<home>", "g"];
 const LAST = ["<end>", "G"];
 const CHOOSE = ["<enter>", "<space>"];
@@ -174,13 +246,18 @@ const FILTER = ["/"];
  */
 const REMOVE = ["d"];
 
-/** The flags a picker key can be gated on — the picker's own read of `../../features.ts`. */
+/**
+ * What a picker's keys can reach on this desk: the flags it is gated on — the picker's own read of
+ * `../../features.ts` — and whether the desk can open projects from here, which a page answers by
+ * having a kernel to ask (#9697).
+ */
 export interface PickerKeyFeatures {
 	readonly processRemove: boolean;
+	readonly openProject: boolean;
 }
 
 /** Every flag off: what a caller that has resolved none is entitled to, and `pickerKey`'s default. */
-export const noPickerKeyFeatures: PickerKeyFeatures = {processRemove: false};
+export const noPickerKeyFeatures: PickerKeyFeatures = {processRemove: false, openProject: false};
 
 /** The keys these flags leave standing, empty for every flag that is off. */
 const removeKeysFor = (features: PickerKeyFeatures): ReadonlyArray<string> =>
@@ -193,8 +270,24 @@ const removeKeysFor = (features: PickerKeyFeatures): ReadonlyArray<string> =>
  */
 const movedTo = (view: PickerView, at: number, next: number, length: number): PickerKeyAnswer =>
 	length === 0 || next === at
-		? {_tag: "Moved", view: {...view, cursor: at}}
-		: {_tag: "Moved", view: {...view, cursor: next, refusal: null}};
+		? {_tag: "Moved", view: {...view, cursor: at, landing: null}}
+		: {_tag: "Moved", view: {...view, cursor: next, refusal: null, landing: null}};
+
+/** What choosing `row` does: an entry's intent, or "Open project…"'s first step. */
+const chosen = (windowId: WindowId, view: PickerView, row: PickerRow): PickerKeyAnswer =>
+	row._tag === "OpenProject"
+		? {
+				_tag: "Stepped",
+				view: {
+					...view,
+					step: RECENT_STEP,
+					cursor: null,
+					filter: null,
+					refusal: null,
+					landing: null,
+				},
+			}
+		: {_tag: "Chose", intent: intentOf(windowId, row)};
 
 /**
  * One key against the picker. `<arrow*>` are the ARIA listbox keys and `j`/`k`/`<c-n>`/`<c-p>` the
@@ -228,18 +321,22 @@ export const pickerKey = (
 	const spelled = normalize(key);
 	if (Result.isFailure(spelled)) return ignored;
 	const pressed = spelled.success;
-	const rows = flatten(visibleFor(entries, view));
-	const at = cursorOf(entries, view);
+	const rows = rowsFor(entries, view, features);
+	const at = cursorOf(entries, view, features);
 
 	const moveTo = (next: number): PickerKeyAnswer => movedTo(view, at, next, rows.length);
 
 	if (DOWN.includes(pressed)) return moveTo(clamp(at + 1, rows.length));
 	if (UP.includes(pressed)) return moveTo(clamp(at - 1, rows.length));
+	if (NEXT_GROUP.includes(pressed) || PREVIOUS_GROUP.includes(pressed)) {
+		const direction = NEXT_GROUP.includes(pressed) ? "next" : "previous";
+		return moveTo(groupJump(rows.map(groupKeyOf), at, direction));
+	}
 	if (FIRST.includes(pressed)) return moveTo(0);
 	if (LAST.includes(pressed)) return moveTo(clamp(rows.length - 1, rows.length));
 	if (FILTER.includes(pressed)) {
 		return view.filter === null
-			? {_tag: "Filtering", view: {...view, filter: "", refusal: null}}
+			? {_tag: "Filtering", view: {...view, filter: "", refusal: null, landing: null}}
 			: ignored;
 	}
 	if (DISMISS.includes(pressed)) {
@@ -250,7 +347,8 @@ export const pickerKey = (
 			// The cursor is written down as the filtered list left it, then the filter is dropped: the
 			// row the operator was looking at keeps the highlight instead of the widened list's Nth.
 			const row = rows[at];
-			const widened = row === undefined ? -1 : flatten(entries).indexOf(row);
+			const widened =
+				row === undefined ? -1 : rowsFor(entries, {...view, filter: null}, features).indexOf(row);
 			return {
 				_tag: "Filtering",
 				view: {...view, cursor: widened === -1 ? 0 : widened, filter: null},
@@ -262,7 +360,7 @@ export const pickerKey = (
 	}
 	if (CHOOSE.includes(pressed)) {
 		const entry = rows[at];
-		return entry === undefined ? ignored : {_tag: "Chose", intent: intentOf(windowId, entry)};
+		return entry === undefined ? ignored : chosen(windowId, view, entry);
 	}
 	if (removeKeysFor(features).includes(pressed)) {
 		// A program row names no process, so there is nothing to forget: the key is ignored rather
@@ -300,11 +398,12 @@ export const pickerPointer = (
 	view: PickerView,
 	index: number,
 	gesture: PickerPointer,
+	features: PickerKeyFeatures = noPickerKeyFeatures,
 ): PickerKeyAnswer => {
-	const rows = flatten(visibleFor(entries, view));
+	const rows = rowsFor(entries, view, features);
 	const entry = rows[index];
 	if (entry === undefined) return ignored;
 	return gesture === "click"
-		? {_tag: "Chose", intent: intentOf(windowId, entry)}
-		: movedTo(view, cursorOf(entries, view), index, rows.length);
+		? chosen(windowId, view, entry)
+		: movedTo(view, cursorOf(entries, view, features), index, rows.length);
 };

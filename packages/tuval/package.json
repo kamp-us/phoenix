@@ -56,13 +56,15 @@
 	},
 	"dependencies": {
 		"@demlik/tea": "catalog:",
-		"effect": "catalog:"
+		"effect": "catalog:",
+		"semver": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/platform-node": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
 		"@types/node": "catalog:",
+		"@types/semver": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
 	},

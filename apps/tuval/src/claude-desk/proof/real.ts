@@ -1,6 +1,7 @@
 /**
- * The config module the **real-CLI** variant boots: the real shell, the real `claude-session` row
- * on `ClaudeAiAgent.layer`, and the real `pi-session` row beside it.
+ * The config module the **real-CLI** variant boots: the real `claude-session` row on
+ * `ClaudeAiAgent.layer` and the real `pi-session` row beside it, under the shell the desk supplies
+ * itself (`../../desk-layer.ts`).
  *
  * Nothing is substituted here. The Claude row spawns the `claude` CLI on the operator's own login
  * and the Pi row reaches their credentials and model catalog, so this module **spends real money
@@ -24,9 +25,6 @@ import {claudeSession} from "@kampus/tuval-claude";
 import {piSessionProgram} from "@kampus/tuval-pi";
 import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 import {ClientId, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
-import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {wiredShellEffects} from "../../shell/host/index.ts";
-import {shellGraphNode, shellNode, shellProgram} from "../../shell/program.ts";
 import {PROJECT_ROOT_VAR} from "./names.ts";
 
 const projectRoot = (): string => {
@@ -40,7 +38,6 @@ const root = projectRoot();
 export default {
 	version: 1,
 	programs: [
-		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
 		claudeSession({
 			cwd: root,
 			scope: {
@@ -56,5 +53,4 @@ export default {
 			},
 		}),
 	],
-	graph: {nodes: [shellGraphNode]},
 } satisfies TuvalConfigInput;

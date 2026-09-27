@@ -878,7 +878,10 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 		expect(out.code).toBe(PROOF_ABSENT);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("whose body links #5747");
-		expect(out.stderr.join("\n")).toContain("type:investigation");
+		expect(out.stderr.join("\n")).toContain(
+			"a comment on #5747 written since the task entered build",
+		);
+		expect(out.stderr.join("\n")).not.toContain("type:investigation");
 	});
 
 	it("refuses a build:ui DONE with no open PR and no diagnosis, rather than answering not-required", async () => {
@@ -1325,11 +1328,11 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 		expect(seams.log).toEqual([]);
 	});
 
-	it("proves a no-PR builder outcome from the investigation label and its diagnosis", async () => {
+	it("proves a no-PR builder outcome from a comment written since build, whatever the issue's type", async () => {
 		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated()],
-			[ISSUE, issue(["type:investigation"])],
+			[ISSUE, issue(["type:bug"])],
 			[
 				ISSUE_COMMENTS,
 				comments({id: 900, body: "the loader races the fold", createdAt: "2026-08-16T04:00:00Z"}),
@@ -1352,7 +1355,7 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated()],
-			[ISSUE, issue(["type:investigation"])],
+			[ISSUE, issue(["type:bug"])],
 			[ISSUE_COMMENTS, comments({id: 900, body: "triaged", createdAt: "2026-08-16T00:30:00Z"})],
 		]);
 

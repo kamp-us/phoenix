@@ -55,8 +55,11 @@ import {resumeMessages} from "./restore/checkpoint.ts";
 import type {TuvalAiAgent} from "./service/index.ts";
 
 export interface AiAgentProgramConfig {
-	/** The working directory a fresh session starts in. */
-	readonly cwd: string;
+	/**
+	 * The folder every fresh session of this row starts in. Absent makes the row one that takes its
+	 * folder at start (`Program.folderAtStart`, #9694): the picker offers it once per open project.
+	 */
+	readonly cwd?: string;
 	readonly itemLimit?: number;
 	readonly byteLimit?: number;
 	readonly policy?: AiAgentRetryPolicy;
@@ -80,6 +83,8 @@ export interface AiAgentProgramOptions<RIn = never> {
 	/** Merged over the row's own identity, for a caller that ships this program in its package. */
 	readonly identity?: Partial<DefinitionIdentity>;
 	readonly capabilities?: ReadonlyArray<CapabilityRequest>;
+	/** The SDK versions this row supports (`Program.sdk`); absent means the desk's own major. */
+	readonly sdk?: string;
 }
 
 /**
@@ -143,7 +148,7 @@ export const aiAgentProgram = <RIn = never>(
 		// What the title calls this program, which is what every other surface calls it
 		// (`programLabel` in `../registry/program.ts` reads the same two values in the same order).
 		program: options.identity?.program ?? options.id,
-		cwd: options.config.cwd,
+		...(options.config.cwd === undefined ? {} : {cwd: options.config.cwd}),
 		...(options.config.itemLimit === undefined ? {} : {itemLimit: options.config.itemLimit}),
 		...(options.config.byteLimit === undefined ? {} : {byteLimit: options.config.byteLimit}),
 		...(options.config.policy === undefined ? {} : {policy: options.config.policy}),
@@ -153,7 +158,7 @@ export const aiAgentProgram = <RIn = never>(
 		id: ProgramId.make(options.id),
 		aiAgent: {layer: options.layer},
 		core: aiAgentSessionMachine({
-			cwd: options.config.cwd,
+			...(options.config.cwd === undefined ? {} : {cwd: options.config.cwd}),
 			...(options.config.itemLimit === undefined ? {} : {itemLimit: options.config.itemLimit}),
 			...(options.config.byteLimit === undefined ? {} : {byteLimit: options.config.byteLimit}),
 		}),
@@ -184,16 +189,18 @@ export const aiAgentProgram = <RIn = never>(
 		handlers,
 		subs,
 		resume: resumeMessages,
-		restorable: (raw) => readCheckpoint(raw, options.config.cwd) !== null,
+		restorable: (raw) => readCheckpoint(raw, options.config.cwd ?? "") !== null,
 		// One gate over both things that move per frame: a partial item, and a running subagent's
 		// slot (`core/state.ts`). Without it every delta rewrites the transcript, and a stop mid-turn
 		// saves the half-written reply as the reply (#8160).
 		checkpointWorthy,
 		capabilities: options.capabilities ?? [],
+		...(options.config.cwd === undefined ? {folderAtStart: true as const} : {}),
 		...(options.renderer === undefined ? {} : {renderer: options.renderer}),
 		// Defaulted, never spread away: an ai-agent row with no inspector paints an empty desk panel
 		// and nothing in the types or the suite objects, which is how #9214 shipped (#9218).
 		inspector: options.inspector ?? AI_AGENT_INSPECTOR_REF,
+		...(options.sdk === undefined ? {} : {sdk: options.sdk}),
 		identity: {
 			package: "@kampus/tuval",
 			program: options.id,

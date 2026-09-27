@@ -3,12 +3,8 @@
  * `FirstContributionOnramp` / `FirstContributionNudge` asks — the screens a reader meets on the
  * way in (#7528).
  *
- * `auth.brand.*` are the brand nouns these screens name (ADR 0347): keys rather than literals so
- * no copy sits outside the catalog, with the same value in both locales.
- *
- * A brand noun Turkish suffixes (`divanda`, `panoda`, `çaylaksın`) is written out here and appears
- * as a `{…Noun}` placeholder on the English side, which is what keeps the per-key whole-word count
- * equal across locales — the invariant `brandNouns.unit.test.ts` grades.
+ * `auth.brand.*` are the nouns these screens name on their own (ADR 0414): keys rather than
+ * literals so no copy sits outside the catalog.
  */
 export const auth = {
 	"auth.brand.pano": "pano",

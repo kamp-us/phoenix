@@ -28,6 +28,9 @@ import {
 import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Deferred, Effect, Option, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
+import {ProjectLabels} from "../../projects/labels.ts";
+import type {RecommendAnswer, RecommendPrompt} from "../../projects/recommend-prompt.ts";
+import type {TrustAnswer, TrustPrompt} from "../../projects/trust-prompt.ts";
 import type {TableRow} from "../../table/row.ts";
 import {
 	type AttachRefused,
@@ -44,8 +47,10 @@ import {
 	frameKind,
 	fromWirePrefixTable,
 	fromWireRow,
+	recommendAnswerFrame,
 	type ServerFrame,
 	spellCallFrame,
+	trustAnswerFrame,
 	type WireProgram,
 } from "./wire.ts";
 
@@ -105,6 +110,25 @@ export interface PageAttachment {
 	 * emitted before the kernel has sent one, so a surface that has been told nothing shows nothing.
 	 */
 	readonly keys: Stream.Stream<PrefixTable>;
+	/**
+	 * Which open project each scoped program id is under, and the label a tile or window of it
+	 * carries (#9692). Starts as `ProjectLabels.none` and is replaced whole on every `projects` frame.
+	 */
+	readonly projects: Stream.Stream<ProjectLabels>;
+	/**
+	 * The "Trust this folder?" questions an open is waiting on, oldest first (#9693). Starts empty and
+	 * is replaced whole on every `trust-prompts` frame, so an answered question leaves on its own.
+	 */
+	readonly trustPrompts: Stream.Stream<ReadonlyArray<TrustPrompt>>;
+	/** The person's answer to one waiting question. Sent, not awaited, like a `dispatch`. */
+	readonly answerTrust: (question: string, answer: TrustAnswer) => Effect.Effect<void>;
+	/**
+	 * The recommended packages trusted projects are waiting on, oldest first (#9695), replaced whole
+	 * on every `recommend-prompts` frame.
+	 */
+	readonly recommendPrompts: Stream.Stream<ReadonlyArray<RecommendPrompt>>;
+	/** The person's answer to one waiting package. Sent, not awaited. */
+	readonly answerRecommend: (question: string, answer: RecommendAnswer) => Effect.Effect<void>;
 	readonly attachProcess: <S = unknown, M extends Message = Message>(
 		processId: ProcessId,
 	) => Effect.Effect<AttachedProcess<S, M>, AttachRefused | Socket.SocketError>;
@@ -148,6 +172,9 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 	const programsRef = yield* SubscriptionRef.make<ReadonlyArray<WireProgram>>([]);
 	const keysRef = yield* SubscriptionRef.make<PrefixTable | null>(null);
 	const spellsRef = yield* SubscriptionRef.make<RegistryDescription | null>(null);
+	const projectsRef = yield* SubscriptionRef.make(ProjectLabels.none);
+	const trustRef = yield* SubscriptionRef.make<ReadonlyArray<TrustPrompt>>([]);
+	const recommendRef = yield* SubscriptionRef.make<ReadonlyArray<RecommendPrompt>>([]);
 	const views = new Map<ProcessId, SubscriptionRef.SubscriptionRef<ProcessView<unknown>>>();
 	const pendingAttach = new Map<ProcessId, Deferred.Deferred<void, AttachRefused>>();
 	const pendingDispatch = new Map<number, Deferred.Deferred<DispatchResult>>();
@@ -182,6 +209,12 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 				return SubscriptionRef.set(programsRef, frame.programs);
 			case "tuval/transport/keys/v1":
 				return SubscriptionRef.set(keysRef, fromWirePrefixTable(frame.table));
+			case "tuval/transport/projects/v1":
+				return SubscriptionRef.set(projectsRef, ProjectLabels.of(frame.projects));
+			case "tuval/transport/trust-prompts/v1":
+				return SubscriptionRef.set(trustRef, frame.prompts);
+			case "tuval/transport/recommend-prompts/v1":
+				return SubscriptionRef.set(recommendRef, frame.prompts);
 			case "tuval/transport/process-state/v1":
 				return Effect.gen(function* () {
 					const ref = yield* viewRef(frame.processId);
@@ -305,6 +338,12 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 	const detach = (processId: ProcessId) =>
 		Effect.ignore(write(encodeFrame({kind: DETACH_KIND, processId})));
 
+	const answerTrust = (question: string, answer: TrustAnswer) =>
+		Effect.ignore(write(encodeFrame(trustAnswerFrame(question, answer))));
+
+	const answerRecommend = (question: string, answer: RecommendAnswer) =>
+		Effect.ignore(write(encodeFrame(recommendAnswerFrame(question, answer))));
+
 	const readShell = <S = unknown>() =>
 		Stream.unwrap(
 			Effect.gen(function* () {
@@ -338,6 +377,11 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 			SubscriptionRef.changes(keysRef),
 			(table): table is PrefixTable => table !== null,
 		),
+		projects: SubscriptionRef.changes(projectsRef),
+		trustPrompts: SubscriptionRef.changes(trustRef),
+		answerTrust,
+		recommendPrompts: SubscriptionRef.changes(recommendRef),
+		answerRecommend,
 		attachProcess,
 		call,
 		detach,

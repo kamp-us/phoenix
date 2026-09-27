@@ -21,8 +21,47 @@ body {
 	justify-content: center;
 }
 
+/* `./trust.tsx` and `./recommend.tsx`: the log line and the button that asks again, stacked in the
+   desk's seat. */
+.proof-trust {
+	gap: var(--s-3);
+}
+
 .proof-desk-note {
 	margin: 0;
 	color: var(--text-muted);
 	font: var(--t-meta);
+}
+
+/*
+ * `./windows.tsx`: one workspace's windows side by side, as the desk tiles them. `.tuval-surface` is
+ * a flex column (`../../ui/tokens.css`), so the row is re-declared here, and it wraps back to a
+ * column at a narrow viewport.
+ */
+.proof-workspace {
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-items: stretch;
+	justify-content: stretch;
+	gap: var(--s-2);
+	padding: var(--s-3);
+	box-sizing: border-box;
+}
+
+.proof-pane {
+	display: flex;
+	flex: 1 1 18rem;
+	min-inline-size: 0;
+	min-block-size: 12rem;
+}
+
+.proof-pane > * {
+	flex: 1 1 auto;
+	min-inline-size: 0;
+}
+
+.proof-window-line {
+	margin: 0;
+	color: var(--text-secondary);
+	font: var(--t-body);
 }

@@ -229,6 +229,7 @@ export const shellProgram = (options: ShellOptions) => {
 	const timeoutMs = checkedTimeout(options.timeoutMs);
 	return {
 		id,
+		sdk: "0.x",
 		/**
 		 * The two ports `jobShape` names, over the payload schemas the AI-agent interface publishes —
 		 * the *interface* module, which pulls in no agent. Declaring them from there rather than

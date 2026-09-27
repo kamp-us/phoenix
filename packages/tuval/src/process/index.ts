@@ -24,3 +24,14 @@ export {
 	TITLE_PORT,
 	titlePort,
 } from "./self-report.ts";
+export {
+	CrossingRefused,
+	closeSubproject,
+	guardReach,
+	guardSpawn,
+	openSubproject,
+	ProcessBoundary,
+	SubprojectRefused,
+	Subprojects,
+} from "./subprojects.ts";
+export {ProcessFolders, WorkingFolder} from "./working-folder.ts";

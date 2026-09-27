@@ -14,16 +14,17 @@
  * title (`./ProcessBoardOverlay.tsx`, #8867).
  */
 
-import {Card, EmptyState, MetaRow} from "@kampus/design";
+import {Card, EmptyState, MetaRow, Tag} from "@kampus/design";
 import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent} from "react";
 import {useEffect, useMemo, useRef, useState} from "react";
+import {ProjectLabels} from "../../projects/labels.ts";
 import type {TableRow} from "../../table/row.ts";
 import {enteredSince, type Tile, tileIds, tilesOf} from "./tiles.ts";
 import "./board.css";
 
 /** What a process says about itself before it has said anything: its program id, and that alone. */
-const tileHeading = (tile: Tile): string => tile.title ?? tile.programId;
+const tileHeading = (tile: Tile): string => tile.title ?? tile.program;
 
 const portsLabel = (ports: number): string => (ports === 1 ? "1 port" : `${ports} ports`);
 
@@ -60,13 +61,24 @@ function TileRow({
 						if (event.key === "Enter" || event.key === " ") event.stopPropagation();
 					}}
 				>
-					<span className="tuval-board-tile-heading">{tileHeading(tile)}</span>
+					{/* The project rides the heading's line, beside it and never inside the meta row, where
+					    it pushed the row's last item onto a line of its own. The hidden word is what a
+					    screen reader hears in place of the chip's shape. */}
+					<span className="tuval-board-tile-head">
+						<span className="tuval-board-tile-heading">{tileHeading(tile)}</span>
+						{tile.project === null ? null : (
+							<Tag kind="meta" className="tuval-project-label">
+								<span className="kp-visually-hidden">project </span>
+								<span data-field="project">{tile.project}</span>
+							</Tag>
+						)}
+					</span>
 					<MetaRow as="span" className="tuval-board-tile-meta">
 						{/* The program id is the heading when the process publishes no title, and printing it
 						    twice would spend the tile's one strong line on a repeat. */}
 						{tile.title === null ? null : (
 							<>
-								<span data-field="program">{tile.programId}</span>
+								<span data-field="program">{tile.program}</span>
 								<MetaRow.Dot />
 							</>
 						)}
@@ -103,10 +115,17 @@ export interface ProcessBoardProps {
 	 * animating a zero-length animation: what the mark drives is the one animation on this surface.
 	 */
 	readonly reducedMotion: boolean;
+	/** Which open project each program id is under; absent is a desk with none open. */
+	readonly projects?: ProjectLabels;
 }
 
-export function ProcessBoard({rows, onOpen, reducedMotion}: ProcessBoardProps): ReactElement {
-	const tiles = useMemo(() => tilesOf(rows), [rows]);
+export function ProcessBoard({
+	rows,
+	onOpen,
+	reducedMotion,
+	projects = ProjectLabels.none,
+}: ProcessBoardProps): ReactElement {
+	const tiles = useMemo(() => tilesOf(rows, projects), [rows, projects]);
 	const ids = useMemo(() => tileIds(tiles), [tiles]);
 	/** The board drawn before this one; `null` until the first has been drawn (`./tiles.ts`). */
 	const drawn = useRef<ReadonlySet<ProcessId> | null>(null);

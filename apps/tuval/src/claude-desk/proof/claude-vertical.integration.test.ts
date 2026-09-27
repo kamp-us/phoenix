@@ -249,6 +249,7 @@ const pickerPress = (
 		case "Moved":
 		case "Cleared":
 		case "Filtering":
+		case "Stepped":
 			return {type: "window.setView", windowId: windowId as never, view: answer.view};
 		case "Chose":
 			return answer.intent._tag === "OpenProgram"

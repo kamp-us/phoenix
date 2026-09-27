@@ -180,6 +180,12 @@ The desk app's
 is the worked wiring — `desk.pr -> pr-review.pr` and `pr-review.verdict -> sink.verdict`, every end
 authored, no plain registry row standing in for one.
 
+Which ends a route may name depends on the layer that declares it. A project's graph names its own
+rows and the global ones, and a bare id finds the project's row first; its nodes run as
+`<project>/<id>`. A route into another project, or from the global graph into any project, is refused
+at load with both ends named
+([ADR 0419](../.decisions/0419-one-desk-opens-many-projects.md)).
+
 ## One gap to know before you wire one
 
 It bites at the seam where a shaped arg meets the registry, and its workaround looks like a mistake

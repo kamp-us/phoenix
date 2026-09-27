@@ -422,7 +422,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | `ship:queued` | the PR is in the merge queue and nothing is wrong — re-read the queue yourself, below. Never a park, and never a shell |
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
-| a task's own final — `landed`, `shipped`, `diagnosed` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final. `diagnosed` is where an investigation ends — the builder's `SUCCESS-NO-PR`, proven off its diagnosis comment — and it is a finish, never a park: it needs no review, opens no PR, and owes you nothing |
+| a task's own final — `landed`, `shipped`, `diagnosed` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final. `diagnosed` is where a no-PR build ends, an investigation being one case — the builder's `SUCCESS-NO-PR`, proven off the comment posted since the task entered build — and it is a finish, never a park: it needs no review, opens no PR, and owes you nothing |
 | `human:budget-spent` | park — step 4. The task spent its whole repair budget on content FAILs. It is an error final carrying a door, so it trips the phase where it sits; its cause is `repair-budget-spent`, which routes to **you** unless the repo's `parkCause.repairBudgetSpent` says `founder`, and its door needs a cleared round behind it — `lane clear`, then the `UNBLOCKED` |
 | `frozen` | park — step 4, and **which** park depends on when the lane was emitted — read the lane's own `workflow.json` to tell: a lane carrying `human:budget-spent` is post-rename, and on it `frozen` is only where an emitted epic child boots, on a board close that was never a landing, so its door leads back to itself and that child is re-emitted rather than resumed. On a lane emitted before the rename — most of the ones on disk — `frozen` is the spent-budget fallthrough instead, and it takes the `human:budget-spent` route above: a granted round, then the `UNBLOCKED`. It is an error final either way, so it trips the phase where it sits and the fold says so |
 | `human:epic-review` | park — step 4. Only a lane emitted before the rename reaches it: it is the epic tail's spent review budget, the same shape as `human:budget-spent` above, so it takes the same route — its door needs a cleared round behind it, `lane clear`, then the `UNBLOCKED` |
@@ -1274,23 +1274,23 @@ and the `PASS` after it is the read that binds.
 | `0` `proven` | the artifact is there | record the event |
 | `0` `not-required` | the leaf walks this event and it claims no artifact | record the event |
 | `0` `not-walkable` | the machine walks no such event out of this leaf | record **nothing** — record the event the leaf does walk |
-| `22` | the artifact is provably absent — no open PR links the task's issue and no legal no-PR outcome is proven either (the issue is not a `type:investigation`, or it is one but no diagnosis was posted since the task entered `build`); on an epic child, no branch in this tree carries commits naming it | the report is unproven — record `BLOCKED`, never the `DONE` |
+| `22` | the artifact is provably absent — no open PR links the task's issue and no no-PR outcome is proven either (no comment was posted on the issue since the task entered `build`); on an epic child, no branch in this tree carries commits naming it | the report is unproven — record `BLOCKED`, never the `DONE` |
 | `23` | a derived namespace has no verdict that still binds — no current-head one on a PR, or, on an epic child, none whose content digest matches what the range carries now | record **nothing**; re-read this pass |
 | `24` | a still-binding `FAIL` under a claimed `PASS`, or under a reviewer's claimed park; or, under a claimed review rewind, an open PR still linking the issue or the issue closed | record the event the artifact supports (`FAIL`); on a rewind, record nothing — brief the reviewer on the PR that links, or run `lane settle` over the closed issue |
 | `25` | several candidates — open PRs linking the issue, or lane branches carrying an epic child's commits that no one of them contains, so a repair round's superseding branch is not one of these | park — step 4, naming the ambiguity |
 | `11` | a lane, board or tree read failed | the proof is UNKNOWN — end `STOPPED` naming the code |
 
 A builder's `SUCCESS-NO-PR` is a proven `DONE`, not an unproven one: the verb takes the no-PR arm
-only for a `type:investigation`, and proves it from the diagnosis comment posted since the task
-entered `build` — the artifact the builder's terminal names, read off the issue rather than off
+whatever the issue's type, and proves it from the comment posted since the task entered `build` —
+the artifact the builder's terminal names, read off the issue rather than off
 the report. An epic child's `BUILT-NO-PR` is the other proven `DONE` without a PR, and its artifact
 is the range's own commits — a child opens no PR to prove one against.
 
-**That proof is also what routes the fold, and only the investigation's is.** All three builder
+**That proof is also what routes the fold, and only the no-PR one is.** All three builder
 terminals map to one `DONE`, so the machine reads the prover's answer rather than the token: a
 `DONE` proven off the diagnosis comment carries `diagnosis: true` onto its recorded line and takes
 the `done:diagnosis` arm straight to `diagnosed`, a final. It never enters `review`, and you never
-park it — the review it used to reach needs an open PR an investigation never opens, so `lane brief`
+park it — the review it used to reach needs an open PR a no-PR build never opens, so `lane brief`
 refused at `20` and the only move left was a `BLOCKED` over a lane that had finished correctly.
 A `SHIPPED-PR` and an epic child's `BUILT-NO-PR` carry no such field and fold to `review` exactly as
 they always did.
