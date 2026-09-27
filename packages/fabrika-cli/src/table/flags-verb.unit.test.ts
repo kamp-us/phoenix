@@ -63,7 +63,7 @@ const optionValue = (
 const table = (
 	issues: Readonly<Record<number, IssueSpec>>,
 	rows: ReadonlyArray<RowSpec>,
-	over: {located?: Located; campaigns?: Campaigns} = {},
+	over: {located?: Located; campaigns?: Campaigns; scopeMissing?: boolean} = {},
 ) => {
 	const ok = <A>(value: A): ProjectsAnswer<A> => ({_tag: "Ok", value});
 	const nodeOf = (number: number): SyncNode | null => {
@@ -81,7 +81,12 @@ const table = (
 		};
 	};
 	const board: FlagsBoard<never> = {
-		locate: () => Effect.succeed(ok(over.located ?? {_tag: "Located", project: PROJECT})),
+		locate: () =>
+			Effect.succeed(
+				over.scopeMissing === true
+					? {_tag: "MissingScope" as const, reason: "the token lacks the `project` scope"}
+					: ok(over.located ?? {_tag: "Located", project: PROJECT}),
+			),
 		items: () =>
 			Effect.succeed(
 				ok(
@@ -286,5 +291,20 @@ describe("the size stop", () => {
 
 		expect(await stop(none.board, 10)).toMatchObject({_tag: "Clear"});
 		expect(await stop(ambiguous.board, 10)).toEqual({_tag: "Unknown", reason: "two tables"});
+	});
+
+	it("is Unchecked, never Clear, on a token without the project scope and no table block", async () => {
+		const {board} = table({}, [], {scopeMissing: true});
+
+		expect(await stop(board, 10, unconfigured)).toEqual({
+			_tag: "Unchecked",
+			reason: "fabrika lane brief: the token lacks the `project` scope",
+		});
+	});
+
+	it("is UNKNOWN on a token without the project scope once a table block is declared", async () => {
+		const {board} = table({}, [], {scopeMissing: true});
+
+		expect(await stop(board, 10)).toMatchObject({_tag: "Unknown"});
 	});
 });

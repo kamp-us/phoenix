@@ -97,6 +97,7 @@ export interface BriefOptions extends LaneRef {
 /**
  * The refusal a lane at its size stop owes instead of a brief, `null` when it may go on. A table
  * that could not be read is UNKNOWN, never a pass: the stop is the one guardrail behind the flags.
+ * `Unchecked` is the one pass without a read, and it says so on stderr.
  */
 const sizeStopRefusal = (
 	stop: SizeStop,
@@ -107,6 +108,11 @@ const sizeStopRefusal = (
 	switch (stop._tag) {
 		case "Clear":
 			notes.push(`${VERB}: size stop: ${stop.note}.`);
+			return null;
+		case "Unchecked":
+			notes.push(
+				`${VERB}: size stop NOT checked: ${stop.reason} — .fabrika.jsonc declares no \`table\` block, so nothing says a table exists and the lane goes on. Grant the scope (\`gh auth refresh -h github.com -s project\`) to check it, or declare \`table.project.number\` to make an unreadable table UNKNOWN (11).`,
+			);
 			return null;
 		case "Unknown":
 			return refuse(

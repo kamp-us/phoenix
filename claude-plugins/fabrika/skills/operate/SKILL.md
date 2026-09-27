@@ -519,7 +519,10 @@ node <fabrika> lane transition $lane_key BLOCKED --task <name> --cause size-stop
 
 That cause routes to the founder: whether to extend, re-shape or drop the work is the table's call,
 so never clear it yourself. Anything short of the stop is a flag (`table flags`), and the lane keeps
-going. A repo with no table project is never stopped; a table that will not read is `11`.
+going. A repo with no table project is never stopped; a table that will not read is `11`. One pass
+is not a read: a token without the `project` scope, in a repo whose `.fabrika.jsonc` has no `table`
+block, briefs anyway with `size stop NOT checked` on stderr, because nothing says a table exists.
+Declaring `table.project.number` turns that pass into `11`.
 
 **On a single-issue lane, one `20` is not a park: a `review` or `review:ui` brief with zero PRs,
 because the PR was re-pointed.** When a PR under review is edited to serve another issue, no

@@ -7,7 +7,10 @@
  * `stopped` in `table flags`.
  *
  * **No table is no stop.** A repository that never set a table up has no sizes to spend past, so it
- * is `Clear`. A table that could not be read is `Unknown`, never clear.
+ * is `Clear`. A table that could not be read is `Unknown`, never clear — with one named exception,
+ * `Unchecked`: a token without the `project` scope in a repository whose `.fabrika.jsonc` declares no
+ * `table` block. Nothing then says a table exists, and refusing would stop every lane of every repo
+ * that never adopted one, so the lane goes on and the brief says the stop was never checked.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  */
@@ -27,6 +30,7 @@ import {locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
 
 export type SizeStop =
 	| {readonly _tag: "Clear"; readonly note: string}
+	| {readonly _tag: "Unchecked"; readonly reason: string}
 	| {readonly _tag: "Stopped"; readonly flag: OverSize; readonly rec: string}
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
@@ -51,10 +55,7 @@ export const readSizeStop = <R>(
 				return {_tag: "Clear", note: `no table project, so #${issue} has no size to stop at`};
 			}
 			if (heads.code === SCOPE_MISSING && config._tag === "Default") {
-				return {
-					_tag: "Clear",
-					note: `no table read — ${heads.reason.replace(/\.$/, "")}, if this repository keeps one`,
-				};
+				return {_tag: "Unchecked", reason: heads.reason.replace(/\.$/, "")};
 			}
 			return {_tag: "Unknown", reason: heads.reason};
 		}

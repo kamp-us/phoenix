@@ -659,6 +659,18 @@ describe("lane brief at the size stop", () => {
 		expect(out.stderr.join("\n")).toContain("size stop: #5751 stands on no row");
 	});
 
+	it("briefs on a stop it never checked, and says on stderr that it did not", async () => {
+		const out = await briefWith({
+			_tag: "Unchecked",
+			reason: "fabrika lane brief: the token lacks the `project` scope",
+		}).outcome;
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({_tag: "Found", value: {shell: "builder"}});
+		expect(out.stderr.join("\n")).toContain("size stop NOT checked");
+		expect(out.stderr.join("\n")).not.toContain("size stop: ");
+	});
+
 	it("refuses when the table could not be read — UNKNOWN, never a brief", async () => {
 		const out = await briefWith({_tag: "Unknown", reason: "the project read failed"}).outcome;
 

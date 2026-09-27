@@ -279,3 +279,6 @@ fabrika's own work taking more than its share of the week's spend. That share co
 carrying a label you name in `table.fabrikaShare.labels`, so it stays unread until you name one.
 The one stop: a lane whose row has spent `table.stopMultiple` times its size (2 by default) gets no
 next shell. `lane brief` refuses at exit 71 and the driver parks the lane with cause `size-stop`.
+The stop needs the `project` scope on the driver's token. Without it, a repo whose `.fabrika.jsonc`
+has no `table` block is not stopped: `lane brief` goes on and prints `size stop NOT checked`. Once
+you declare `table.project.number`, a missing scope refuses the brief at 11 instead.
