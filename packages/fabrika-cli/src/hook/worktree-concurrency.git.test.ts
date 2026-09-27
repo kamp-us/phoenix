@@ -1,15 +1,20 @@
 /**
- * `hook worktree-create`'s **whole** provisioning sequence, `git worktree add` included, against
- * real git in a throwaway clone.
+ * `hook worktree-create`'s git sequence, `git worktree add` included, against real git in a
+ * throwaway clone.
  *
  * `worktree-base.git.test.ts` beside this file judges the base resolution and deliberately keeps the
  * add out of its loop, because the add carries faults the base-resolution fix never covered. This
  * file is those faults: the two administrative-state arms {@link concurrencyArm} names, and the
  * recovery that clears them.
  *
+ * **The fan here takes no creation lock, on purpose.** The hook's own spawns now serialize their
+ * fetch and add (`worktree-create-lock.git.test.ts` runs them as real processes), but the arms still
+ * fire from an add the lock does not reach — a dead add's leftover, or a `git worktree add` run
+ * outside the hook. An unlocked fan is that sibling, so it is the case the recovery still exists for.
+ *
  * **What this file exercises is the derivation, not the Effect wrapper** — the same split
  * `worktree-base.git.test.ts` documents. The loop in {@link provision} is the shape
- * `withConcurrencyRecovery` folds over a spawner in `worktree-create-verb.ts`, and its decisions —
+ * `withConcurrencyRecovery` folds over a spawner in `worktree-owner.ts`, and its decisions —
  * which diagnostics are recoverable, whether to prune, how many attempts and how long to wait — are
  * imported from the module under test rather than restated, so a change to any of them moves this
  * file too.

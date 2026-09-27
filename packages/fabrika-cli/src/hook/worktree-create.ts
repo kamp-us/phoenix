@@ -3,9 +3,9 @@
  *
  * `WorktreeCreate` is a **provider** hook: the harness hands it a slug and expects the worktree to
  * exist and its path on stdout when the hook exits 0 (`../../../../claude-plugins/fabrika/docs/hook-surface.md`).
- * So the verb beside this file runs two git commands, and everything it has to get *right* before it
- * runs them — where the tree goes, what the child's `PATH` must carry — is decided here, where a
- * unit test can drive it.
+ * `worktree-owner.ts` runs the git commands, and everything it has to get *right* before it runs
+ * them — where the tree goes, what each command's arguments are, what the child's `PATH` must carry
+ * — is decided here, where a unit test can drive it.
  *
  * Two facts this module encodes are captured, not assumed: the payload carries `cwd` and `name` and
  * **no** `worktree_path` or `base_ref`, and the path is therefore *constructed* rather than read.
@@ -111,6 +111,56 @@ export const dropBaseRefArgs = (baseRef: string): ReadonlyArray<string> => [
 	baseRef,
 ];
 
+/** The clone's common git dir, absolute — the one directory every worktree of the clone shares. */
+export const commonDirArgs: ReadonlyArray<string> = [
+	"rev-parse",
+	"--path-format=absolute",
+	"--git-common-dir",
+];
+
+/**
+ * The add, with the repo's git hooks switched off for this one command.
+ *
+ * A plain `git worktree add` fires `post-checkout`, and in this repo that is the ~10s dependency
+ * install. Run inside the creation lock, it would hold every sibling spawn behind one install, so the
+ * add runs hookless and {@link installArgs} fires the same hook afterwards, outside the lock.
+ * `core.hooksPath=/dev/null` names a directory that holds no hook, and `-c` scopes that to this
+ * command only.
+ *
+ * `--detach`: a linked worktree cannot check out a local branch the primary already holds, and every
+ * lane re-branches at its own preflight anyway, so this base HEAD is throwaway.
+ */
+export const addWorktreeArgs = (worktreePath: string, commit: string): ReadonlyArray<string> => [
+	"-c",
+	"core.hooksPath=/dev/null",
+	"worktree",
+	"add",
+	"--detach",
+	worktreePath,
+	commit,
+];
+
+/**
+ * The dependency install, fired as the repo's own `post-checkout` hook with the arguments
+ * `git worktree add` would have passed it: the null oid as the previous HEAD, the new HEAD, and `1`
+ * for a branch checkout.
+ *
+ * The hook is run rather than its body restated, so what installs deps stays the repo's
+ * `post-checkout`, the one install a human's plain `git worktree add` or `git checkout` also runs.
+ * `--ignore-missing` makes a repo with no such hook answer 0 here, and the virtual-store check after
+ * it is what refuses a tree that got no deps.
+ */
+export const installArgs = (commit: string): ReadonlyArray<string> => [
+	"hook",
+	"run",
+	"--ignore-missing",
+	"post-checkout",
+	"--",
+	"0".repeat(commit.length),
+	commit,
+	"1",
+];
+
 /**
  * The two ways one spawn's `git worktree add` breaks a **sibling** spawn's git command against the
  * same clone. Both are named by the administrative file the losing command choked on.
@@ -142,6 +192,13 @@ export const dropBaseRefArgs = (baseRef: string): ReadonlyArray<string> => [
  * So the recovery is {@link pruneWorktreesArgs} *and* a bounded re-attempt, never a re-attempt
  * alone: prune clears the dead sibling's leftover on both gits measured, where a bare re-attempt
  * clears it on only one of them, and the backoff waits out the live one.
+ *
+ * **The creation lock narrows both arms and removes neither.** It serializes this hook's own fetches
+ * and adds, so a spawn of this hook can no longer be the live sibling another one trips on. It does
+ * not reach a `git worktree add` that runs outside the hook — the harness's internal path, a human, a
+ * `review-head materialize` — and it cannot clear a leftover a dead add already wrote. Both arms stay
+ * named, and the recovery stays.
+ * @ruling https://github.com/kamp-us/phoenix/issues/7057
  */
 export type ConcurrencyArm = "PlaceholderHead" | "IncompleteAdminDir";
 
@@ -216,10 +273,9 @@ export const reapArgs = (entry: string): ReadonlyArray<string> => [
 ];
 
 /**
- * Attempts and delays for that recovery. Bounded, and **no lock is taken**: `git worktree add` fires
- * the `post-checkout` dependency install, so serialising it would serialise every parallel spawn
- * behind one ~10s install. A loser prunes and waits out the live window instead of taking a turn at
- * a lock.
+ * Attempts and delays for that recovery. Bounded, and it runs **inside** the creation lock: the lock
+ * holds only the fetch and the add, never the ~10s install, so a recovery's few seconds of backoff
+ * are the most it can add to a sibling's wait.
  */
 export const RECOVERY_ATTEMPTS = 5;
 
@@ -330,11 +386,11 @@ export const planAtPrimary = (request: WorktreeRequest, listing: string | null):
 /**
  * The standard toolchain locations, prepended to whatever `PATH` the hook inherited.
  *
- * This is the whole reason provisioning works at all. `git worktree add` fires the repo's
- * `post-checkout` dependency install, and that hook **clean-SKIPs at exit 0** when it finds no
- * corepack, no pinned pnpm and no npm on `PATH` — which is precisely the harness's PATH-stripped
- * `git worktree add` exec env. A skip there is silent, so the tree is created, adopted, and useless.
- * Prepending the OS-standard bin dirs is what lets the install run.
+ * This is the whole reason provisioning works at all. The repo's `post-checkout` dependency install
+ * **clean-SKIPs at exit 0** when it finds no corepack, no pinned pnpm and no npm on `PATH` — which is
+ * precisely the harness's PATH-stripped `git worktree add` exec env. A skip there is silent, so the
+ * tree is created, adopted, and useless. Prepending the OS-standard bin dirs is what lets the install
+ * run when {@link installArgs} fires it.
  *
  * OS/standard dirs only, never a per-machine volta/fnm shim, which would bind a tree's provisioning
  * to one operator's setup. The inherited `PATH` is kept **last** rather than dropped, so a machine
@@ -397,7 +453,7 @@ const nonInteractiveSsh = (inherited: string | undefined): string => {
 };
 
 /**
- * The environment the two git children run under.
+ * The environment the git children run under.
  *
  * Nothing is inherited implicitly (`execRecord` sets `extendEnv: false`), so what is not here does
  * not reach the children. Two jobs are served: the install's store and locale, and the fetch's

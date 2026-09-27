@@ -252,10 +252,12 @@ turn and a lane that dies on its first verb.
 The provider is `fabrika hook worktree-create`, declared on `WorktreeCreate` in this repo's own
 [`.claude/settings.json`](../.claude/settings.json) with a 600s timeout (ADR
 [0337](../.decisions/0337-worktree-provisioning-rehomed-onto-repo-settings.md), restoring ADR
-[0178](../.decisions/0178-worktreecreate-hook-provisioning.md)'s mechanism). It runs `git worktree
-add` itself under a `PATH` that resolves the toolchain, which is what lets lefthook's
-`post-checkout` `bootstrap-deps` run the real, version-pinned install (ADR
-[0109](../.decisions/0109-worktree-deps-provision-not-share.md)) instead of clean-SKIPping. It
+[0178](../.decisions/0178-worktreecreate-hook-provisioning.md)'s mechanism). It takes a repo-level
+lock around its base fetch and a hookless `git worktree add`, releases it, then fires lefthook's
+`post-checkout` `bootstrap-deps` itself under a `PATH` that resolves the toolchain. So the real,
+version-pinned install (ADR [0109](../.decisions/0109-worktree-deps-provision-not-share.md)) runs
+instead of clean-SKIPping, and parallel spawns install at the same time (ADR
+[0420](../.decisions/0420-worktree-creation-locks-installs-outside.md)). It
 refuses unless `node_modules/.pnpm` actually landed, so a dep-less tree is never handed to an agent
 — and because a refusal blocks creation, you either get a usable tree or no tree at all. That work
 happens **out-of-band, before your first turn**, so it costs your metered run nothing
@@ -323,8 +325,12 @@ exists at every instant the entry does, and prune only drops an entry whose dire
 Neither the harness's internal path nor a hand-run `git worktree add` recovers from this — only
 `fabrika hook worktree-create` does it for you, by pruning and re-attempting, bounded.
 
-Do **not** reach for a lock. Serialising `git worktree add` serialises every parallel spawn behind
-one ~10s `bootstrap-deps` install, which is the whole reason the hook owns creation.
+The hook's own spawns no longer race each other here: its creation lock serializes their fetch and
+add. The lock holds nothing else, because a lock around the ~10s `bootstrap-deps` install would
+queue every parallel spawn behind it, so the hook adds with hooks off and installs after releasing
+the lock (ADR [0420](../.decisions/0420-worktree-creation-locks-installs-outside.md)). The
+prune-and-retry recovery stays for the adds the lock does not reach: a dead add's leftover, or a
+`git worktree add` run outside the hook.
 
 ## Sanctioned bulk-cleanup of accumulated worktrees
 
