@@ -661,7 +661,12 @@ With `--cp`, the code namespace additionally resolves the §CP advisory carrier 
 `Reviewed-head:` + all-`[PASS]` rows — an advisory carrying any `[FAIL]` row is an invalid
 emission, reported on stderr and treated as `fail`); the same `--cp` value must
 reach every resolution in one run — v1 passed it to the gate and not the fold, and a
-discharged FAIL stayed in force forever. The native-review fold is inside this verb:
+discharged FAIL stayed in force forever. Without `--cp` an advisory never resolves a namespace, but
+an authorized one bound to `--sha` in a required namespace is named on stderr, newest per
+namespace: the printed row then describes whichever older comment the other carriers left
+(`stale`, `fail`, `pass` or `absent`), not the current verdict, and the notice says passing `--cp`
+is what resolves it. No state or carrier token changes, and an unreadable ACL on such an advisory
+is a notice, never `11`. The native-review fold is inside this verb:
 a decisive native review (APPROVED / CHANGES_REQUESTED) whose `commit_id` prefix-matches
 `--sha` folds into the code namespace newest-wins by write time — never FAIL-precedence,
 which wedges the repair loop.
@@ -723,6 +728,8 @@ answer this contract bans.
 | `ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.` | 13 | refusal |
 | `ship gate: #<n>'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.` | 0 | notice |
 | `ship gate: #<n> carries a §CP advisory with a [FAIL] row — an invalid emission; treated as fail, report it.` | 0 | notice |
+| `ship gate: <namespace>: the §CP advisory verdict in comment <id> binds this head, but without --cp no advisory resolves a namespace — this row reads <state> off the other carriers, not that verdict; passing --cp, once ship cp-approval discharges, is what resolves it.` | 0 | notice |
+| `ship gate: <namespace>: cannot read the ACL for <author> (<reason>), so the §CP advisory in comment <id> is not reported.` | 0 | notice |
 | `ship gate: review-ui: the verdict in comment <id> does not count — its evidence does not open (<reason>; …).` | 0 | notice |
 
 **Scope** — one PR's changed-file list (paginated to exhaustion, and the floor is derived from that
