@@ -2007,8 +2007,8 @@ Every run ends as exactly one of — each naming what was recorded and what the 
 **`LANE-TERMINAL`** (the machine folded to a final state with no door out — `shipped`, `complete`,
 `diagnosed`, `board:cancelled`, `board:landed`, a chore's `swept`, or a `tripped` whose error task
 has no door; no event recorded on top of a final fold; `lane record`'s answer named — on an issue
-lane the record `posted` or `unchanged`, or the `5` or UNKNOWN code that kept it off; on a chore lane
-the `lane history` bytes handed to the caller) ·
+lane the record `posted` or `unchanged`, or the `4`, `5`, `9` or UNKNOWN code that kept it off; on a
+chore lane the `lane history` bytes handed to the caller) ·
 **`LANE-PARKED`** (the fold reads `blocked`, `human:*` or `frozen` — either it already did and no
 event was owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
 posted on the driven issue, and on a `tripped` fold the lane record beside it) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns

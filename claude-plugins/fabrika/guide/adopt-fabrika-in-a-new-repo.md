@@ -221,10 +221,9 @@ Then file something with `/fabrika:report`, triage it with `/fabrika:triage`, an
 ## 11. Set up the betting table
 
 The table is a GitHub project where your control-plane owners decide what fabrika bets on each week.
-It is optional. The steps below set it up and keep it running; what each verb reads, writes, prints
-and exits on is its `--help` (`fabrika table setup --help`, and the same for `sync`, `flags` and
-`prep`), written in
-[`packages/fabrika-cli/src/table/command.ts`](../../../packages/fabrika-cli/src/table/command.ts).
+It is optional. The steps below set it up and keep it running. What each verb reads and writes is
+in [`table-contract.md`](../docs/table-contract.md); its `--help` (`fabrika table setup --help`, and
+the same for `sync`, `flags` and `prep`) carries only the answer it prints and its exit codes.
 
 ### 11.1 Give the token the `project` scope
 
@@ -327,7 +326,8 @@ evidence posted as a comment on the issue. Answer on the row's Outcome field: `w
 `can't tell`. Prep never changes that answer and never asks again.
 
 To attach your own numbers to that evidence, declare commands under `table.evidenceSources`.
-`fabrika table prep --help` lists what each command gets and how its output is cut.
+What each command gets and how its output is cut is the "table prep" section of
+[`table-contract.md`](../docs/table-contract.md#table-prep).
 
 ```jsonc
 {

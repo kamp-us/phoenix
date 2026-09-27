@@ -29,7 +29,9 @@ sets only the cadence, marks the table adopted, and adoption decides what a fail
 | `pitch-guard` | a `bet` row approves a pitch | approves nothing through the table | the same |
 
 A missing `project` scope is one more failed read here, not the `20` this group's own verbs exit on.
-A repository with no table project at all is never stopped by `lane brief`.
+A repository that declares no `table.project.number` and has no table project is never stopped by
+`lane brief`. A declared `table.project.number` that names no project is a failed read with a
+`table` block declared, so `lane brief` refuses at `11`.
 
 ## table setup
 
