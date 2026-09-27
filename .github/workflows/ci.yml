@@ -47,6 +47,9 @@ jobs:
       e2e: ${{ steps.filter.outputs.e2e }}
       packages: ${{ steps.filter.outputs.packages }}
       workflows: ${{ steps.filter.outputs.workflows }}
+      # The diff basis the `mergebase` step pins, for `packages-tests`' `vitest --changed` (#10023).
+      # Empty on `push` and `workflow_dispatch`, and on any fallback, which runs the full suite.
+      merge_base: ${{ steps.mergebase.outputs.sha }}
       # Worker-relevance of the diff (issue #1014): `false` ONLY when the WHOLE PR
       # diff — including its `pnpm-lock.yaml` delta — is provably confined to packages
       # the worker never imports, so the slow real-D1 `integration`/`e2e` tiers can
@@ -622,7 +625,11 @@ jobs:
     if: needs.changes.outputs.packages_required == 'true'
     runs-on: ubuntu-latest
     steps:
+      # Full history: `vitest --changed <base>` runs `git diff <base>...HEAD`, so the base commit
+      # has to be in the clone.
       - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4.1.0
 
@@ -633,7 +640,28 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm --filter './packages/**' --filter @kampus/infra run test
+      # On a PR or a queue batch, each package runs only the tests whose import graph reaches a
+      # changed file, plus its whole suite when a changed file matches its `forceRerunTriggers`
+      # (#10023). `push` to main and `workflow_dispatch` run everything, and so does any run
+      # with no pinned base, or whose diff moves the lockfile or workspace manifest — a dependency
+      # change sits in `node_modules`, which vitest's import graph never follows.
+      # `@kampus/fabrika-pi` runs `node --test`, which has no `--changed`, so it always runs whole.
+      - name: Run package unit tests
+        env:
+          BASE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.changes.outputs.merge_base || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ]; then
+            echo "::notice::no pinned diff base — running every package's full suite"
+            exec pnpm --filter './packages/**' --filter @kampus/infra run test
+          fi
+          if ! git diff --quiet "$BASE...HEAD" -- pnpm-lock.yaml pnpm-workspace.yaml; then
+            echo "::notice::the diff moves pnpm-lock.yaml or pnpm-workspace.yaml — running every package's full suite"
+            exec pnpm --filter './packages/**' --filter @kampus/infra run test
+          fi
+          echo "::notice::running only the tests the diff since $BASE reaches (vitest --changed)"
+          pnpm --filter './packages/**' --filter '!@kampus/fabrika-pi' --filter @kampus/infra run test --changed "$BASE"
+          pnpm --filter @kampus/fabrika-pi run test
 
       # The Tuval SDK as an outside author installs it (#9654): packs `@kampus/tuval-sdk`,
       # installs the tarball with npm into a temp directory outside the checkout, type-checks
