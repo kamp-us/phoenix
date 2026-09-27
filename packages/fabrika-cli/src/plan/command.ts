@@ -60,8 +60,16 @@ const read = leafCommand(
 ).pipe(
 	Command.withShortDescription("The epic, its children and its parsed ledger."),
 	Command.withDescription(
-		'Fetch the epic and its native sub-issue children, parse the ledger, and print it as one object: {"answer":"read","epic":n,"children":[…],"epicStories":[…],"cycleDoc":"present|absent|unknown","topology":{…},"digest":"…"}. Fetch and registered parses only — no judgment. Each child carries the three-state assignee slot (assigneesObserved false and assignees null when the payload carried no assignees key), the acceptance-criteria token uncollapsed, and its **Stories:**/**Containment:** fields. Exits 4 (a ledger section or field line appears twice, the ## Dependencies block is unparseable, or a non-empty ### User stories list is not contiguous from 1), 7 (the epic is proven absent or closed, or it has zero sub-issue children), 10 (the issue is not a type:epic), 11 (the epic, the sub-issue list or a child could not be read). Example: fabrika plan read 9420',
+		[
+			'Prints the epic, its children and its parsed ledger as {"answer":"read",…} JSON.',
+			"  4: the ledger grammar refused",
+			"  7: the epic is absent or closed, or has no children",
+			"  10: not a type:epic",
+			"  11: a read failed (UNKNOWN)",
+			'  Derivation: the check-epic-plan skill\'s contract.md, "plan read"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika plan read 9420"}]),
 );
 
 const check = leafCommand(
@@ -75,8 +83,17 @@ const check = leafCommand(
 ).pipe(
 	Command.withShortDescription("The deterministic floor over the fifteen hard defect types."),
 	Command.withDescription(
-		'The deterministic floor over the fifteen hard defect types — the whole pass/fail decision. BOTH arms exit 0 and the discriminator is the "answer" state word (clean | defective); a defective floor is this verb\'s answer, never its refusal, and the guard against acting on one lives at `plan flip`\'s own re-gate. "skipped" names a class that could not be derived (today only MISSING_CONTAINMENT, and only when the cycle-doc probe failed) — it never makes the floor clean by omission. Exits 4 (the ledger grammar refused), 7 (zero scope), 10 (the issue is not a type:epic), 11 (a read the floor depends on failed — a child, a referenced issue, a dependent\'s blocked_by list, the epic\'s own blocked_by list or one of its blockers, or the control-plane roster — UNKNOWN, never "not approved" and never "no edge"), 25 (the plan is not approved as it now stands: no standing marker, or one binding a digest the plan has moved off — refused BEFORE the floor is derived, so an unapproved AND defective plan refuses on this). Example: fabrika plan check 9420',
+		[
+			'Derives the floor over the fifteen defect types and prints {"answer":"clean|defective",…}.',
+			"  4: the ledger grammar refused",
+			"  7: zero scope",
+			"  10: not a type:epic",
+			"  11: a read the floor needs failed (UNKNOWN)",
+			"  25: the plan is not approved as it now stands",
+			'  Derivation: the check-epic-plan skill\'s contract.md, "plan check"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika plan check 9420"}]),
 );
 
 const flip = leafCommand(
@@ -97,8 +114,25 @@ const flip = leafCommand(
 ).pipe(
 	Command.withShortDescription("Flip every planned child to triaged, re-gating first."),
 	Command.withDescription(
-		'Flip every status:planned child to status:triaged, re-gating first, and report the OBSERVED results as a tally over every child — flipped | already | unchanged | not-planned, read back from GitHub, never asserted from intent. status:triaged is added before status:planned is removed, always, so a child caught mid-write still carries a status: label. Zero planned children is an answer with terminal "nothing-to-flip", not a refusal. Exits 4 (the grammar refused during the re-gate), 7 (zero children), 8 (a write was attempted and no re-read could prove its outcome), 10 (not a type:epic, or --digest is not 12 lowercase hex), 11 (a read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking, since ownership turns on the whole token and never the session id), 20 (the re-gate derived hard defects), 21 (the plan moved since the check), 22 (at least one child is unchanged — the refs are on stderr), 23 (a label the flip must write is absent from the repo taxonomy — refused, never created), 25 (the plan is not approved as it now stands — the re-gate covers the human decision too). Example: fabrika plan flip 9420 --digest 4d90e1bb27ac --token build:s-9f2e:c1a4d6f8-…',
+		[
+			'Re-gates, flips every planned child to status:triaged, and prints {"answer":"flipped",…}.',
+			"  4: the ledger grammar refused",
+			"  7: zero children",
+			"  8: a write is unproven (UNKNOWN)",
+			"  10: not a type:epic, or --digest is malformed",
+			"  11: a read failed; nothing was written",
+			"  15: this lane does not hold the epic's claim",
+			"  20: the re-gate found hard defects",
+			"  21: the plan moved since the check",
+			"  22: a child is unchanged; refs on stderr",
+			"  23: a label to write is absent from the taxonomy",
+			"  25: the plan is not approved as it now stands",
+			'  Derivation: the check-epic-plan skill\'s contract.md, "plan flip"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika plan flip 9420 --digest 4d90e1bb27ac --token build:s-9f2e:c1a4d6f8-…"},
+	]),
 );
 
 const verdict = leafCommand(
@@ -132,8 +166,29 @@ const verdict = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the plan gate's verdict, bound to the scope digest."),
 	Command.withDescription(
-		'Post the gate\'s verdict comment, bound to the scope digest, and read it back. Prints {"answer":"posted","epic":n,"polarity":"PASS","digest":"…","skipped":[],"comment":id,"caveats":k}. The polarity is DERIVED by re-running the floor — a caller never supplies it. Optional stdin carries advisory caveats, one per line, "caveat: <kind> #<ref> — <text>", over the closed set ac-not-checkable | brief-fidelity | slice-too-broad | dependency-implied-not-declared; an empty stdin is an ordinary answer. Exits 4 (the grammar refused), 5/6 (the authored caveats carry a machine-local path, or are a bare @ path reference), 7 (zero children), 8 (posted and unprovable — UNKNOWN), 9 (posted but the read-back does not match), 10 (--digest malformed, not a type:epic, --polarity disagrees with the derived floor, an off-set caveat kind, or a caveat naming a ref outside the scanned set), 11 (a read failed — nothing was posted), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking, since ownership turns on the whole token and never the session id), 21 (the plan moved since the check), 25 (the plan is not approved as it now stands — nothing is posted, not even a FAIL). Example: fabrika plan verdict 9420 --digest 4d90e1bb27ac --token build:s-9f2e:c1a4d6f8-… < caveats.md',
+		[
+			'Posts the plan gate\'s verdict bound to the scope digest and prints {"answer":"posted",…}.',
+			'  Stdin, optional: "caveat: <kind> #<ref> — <text>" lines.',
+			"  4: the ledger grammar refused",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: zero children",
+			"  8: posted and unprovable (UNKNOWN)",
+			"  9: posted; the read-back does not match",
+			"  10: a value off its vocabulary",
+			"  11: a read failed; nothing was posted",
+			"  15: this lane does not hold the epic's claim",
+			"  21: the plan moved since the check",
+			"  25: the plan is not approved as it stands",
+			'  Derivation: the check-epic-plan skill\'s contract.md, "plan verdict"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika plan verdict 9420 --digest 4d90e1bb27ac --token build:s-9f2e:c1a4d6f8-… < caveats.md",
+		},
+	]),
 );
 
 const approve = leafCommand(
@@ -153,8 +208,19 @@ const approve = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record a control-plane approval of the epic's plan."),
 	Command.withDescription(
-		'Post the approval marker on the epic, bound to the scope digest this verb derives itself, and read it back. Prints {"answer":"approved","epic":n,"digest":"…","by":"…","at":"…","comment":id}. There is no --digest flag: the scope this approval binds is always the one this verb derives. The control-plane roster is resolved at write time from .github/CODEOWNERS on the default branch, through the same modules `ship cp-approval` uses. Exits 4 (the ledger grammar refused), 7 (the epic is proven absent or closed, or it has zero children), 8 (posted and unprovable — UNKNOWN), 9 (posted but the read-back does not match), 10 (the issue is not a type:epic), 11 (a read failed — including the roster read, which is never "not approved" and never "approved"; nothing was posted), 24 (the invoking account is not on the roster, or the roster names nobody). Example: fabrika plan approve 9420',
+		[
+			'Posts an approval bound to the scope digest it derives and prints {"answer":"approved",…}.',
+			"  4: the ledger grammar refused",
+			"  7: the epic is absent or closed, or has no children",
+			"  8: posted and unprovable (UNKNOWN)",
+			"  9: posted; the read-back does not match",
+			"  10: not a type:epic",
+			"  11: a read failed; nothing was posted",
+			"  24: the account is not on the control-plane roster",
+			'  Derivation: the check-epic-plan skill\'s contract.md, "Verb inventory"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika plan approve 9420"}]),
 );
 
 const approval = leafCommand(
@@ -173,8 +239,16 @@ const approval = leafCommand(
 ).pipe(
 	Command.withShortDescription("Report the epic's approval state — current, stale or absent."),
 	Command.withDescription(
-		'Report whether the epic\'s plan carries a current approval. Prints {"answer":"approval","epic":n,"state":"current|stale|absent","by":"…","markerDigest":"…","derivedDigest":"…","at":"…","comment":id,"disregarded":k,"unauthorized":k}. A REPORTING surface, never the enforcement: an absent approval is this verb\'s answer at exit 0, while `plan check` / `plan flip` / `plan verdict` each re-derive the approval themselves and refuse on 25. The control-plane roster is resolved at READ time too, so a marker from an account outside it is not an approval however fresh its digest, and is counted in "unauthorized". Both digests are printed so a stale answer shows what moved. A marker that reaches for the format and drifts is counted in "disregarded" rather than folded into "absent". Exits 4 (the ledger grammar refused), 7 (the epic is proven absent or closed, or it has zero children), 10 (the issue is not a type:epic), 11 (the epic, a child, the roster or the comment list could not be read — the state is UNKNOWN, not absent). Example: fabrika plan approval 9420',
+		[
+			'Prints the epic\'s approval state as {"answer":"approval","state":"current|stale|absent",…}.',
+			"  4: the ledger grammar refused",
+			"  7: the epic is absent or closed, or has no children",
+			"  10: not a type:epic",
+			"  11: a read failed; the state is UNKNOWN, not absent",
+			'  Derivation: the check-epic-plan skill\'s contract.md, "Verb inventory"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika plan approval 9420"}]),
 );
 
 const restage = leafCommand(
@@ -188,8 +262,21 @@ const restage = leafCommand(
 		"Reconcile a minted epic's Dependencies region against its children.",
 	),
 	Command.withDescription(
-		'Reconcile an already-planned epic\'s machine-owned "## Dependencies" region against the observed state of its native sub-issue links, so a post-mint child close no longer needs a hand edit to the epic body. One rule: a ref the links prove closed for any reason other than `completed` is dropped, because `lane emit` boots exactly those in `frozen` and trips the phase at startup; a `completed` close is KEPT, since its region boots `landed` and the children planned behind it still need the sequencing. A phase line that loses every member disappears, and so does a `requires:` line whose subject was dropped or whose needs all were. A ref the link list does not name — a cross-epic prerequisite, a ledger-local C<int> — is left exactly as written, because it is not observed here; `lane emit`\'s own Foreign arm is what reports it. Nothing outside the region is touched, and it is idempotent by REFS rather than by bytes: a region naming only live issues prints {"answer":"unchanged","epic":n,"dropped":[],"kept":[…],"written":false} and issues no PATCH, so a re-run neither reformats the block nor moves the body digest a standing approval binds. A write prints {"answer":"restaged","epic":n,"dropped":[…],"kept":[…],"written":true,"verified":true} after the whole body reads back as composed. Exits 4 (the ## Dependencies block is unparseable — nothing written), 7 (the epic is proven absent or closed, it has zero sub-issue children, or its body carries no ## Dependencies region at all — plan it first), 8 (the PATCH was issued and could not be confirmed — the body is UNKNOWN), 9 (the body was written and does not read back as composed, or the composed region does not parse back to the edges it was composed from), 10 (the issue is not a type:epic), 11 (the epic or its sub-issue list could not be read — nothing written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 26 (the body carries more than one "## Dependencies" heading, or its only one sits inside the preserved brief envelope — the region has no single meaning and nothing was written), 27 (every issue the topology names closed without landing, so restaging would leave no phase — re-plan the epic instead). Example: fabrika plan restage 9420 --token build:s-9f2e:c1a4d6f8-…',
+		[
+			'Drops refs closed unlanded from Dependencies and prints {"answer":"restaged|unchanged",…}.',
+			"  4: the Dependencies block is unparseable",
+			"  7: the epic is absent or closed, has no children, or no region",
+			"  8: the PATCH is unconfirmed (UNKNOWN)",
+			"  9: written; it does not read back as composed",
+			"  10: not a type:epic",
+			"  11: a read failed; nothing was written",
+			"  15: this lane does not hold the epic's claim",
+			"  26: the Dependencies region has no single meaning",
+			"  27: every named issue closed unlanded; re-plan",
+			'  Derivation: the check-epic-plan skill\'s contract.md, "plan restage"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika plan restage 9420 --token build:s-9f2e:c1a4d6f8-…"}]),
 );
 
 export const planCommand = Command.make("plan").pipe(
