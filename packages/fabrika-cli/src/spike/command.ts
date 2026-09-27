@@ -194,7 +194,7 @@ const capture = leafCommand(
 			"  4: the manifest or log does not parse",
 			"  5: a machine-local path leaked",
 			"  6: a bare @ reference",
-			"  7: the spike is absent, or closed with nothing to replace",
+			"  7: the spike is absent, or closed with nothing to supersede",
 			"  8: the post or the close is unproven",
 			"  9: the read-back differs",
 			"  10: an off-grammar --nonce",
