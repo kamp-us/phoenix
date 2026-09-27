@@ -59,6 +59,12 @@ describe("problemParagraph", () => {
 		expect(problemParagraph(body)).toBe("The counters flood the log.");
 	});
 
+	it("stops at the optional Success line too", () => {
+		const body =
+			"## Pitch\n\n**Problem:** The counters flood the log.\n**Success:** the log stays under a page\n";
+		expect(problemParagraph(body)).toBe("The counters flood the log.");
+	});
+
 	it("is null when the body carries no `## Pitch` section", () => {
 		expect(problemParagraph("## Summary\n\n**Problem.** Outside a pitch.\n")).toBeNull();
 	});

@@ -213,6 +213,7 @@ const pitchCheck = leafCommand(
 			yield* runPitchGuard({
 				issue: Option.getOrNull(issue),
 				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);
@@ -220,7 +221,7 @@ const pitchCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red unless every pickable bet carries a founder-approved pitch."),
 	Command.withDescription(
-		"Every lane-entering issue — a `status:triaged` `type:epic`, or a `status:triaged` `type:feature` with no parent — must carry a five-field `## Pitch` section (Problem / Arc / Appetite / Rabbit-holes / No-gos) and a founder `pitch-approved: appetite <N> cycles` comment naming the same <N> the body declares. Approval is resolved at the GitHub ACL, write+ only and fail-closed, and an agent-provenance-stamped marker never counts. `--issue N` scopes the scan to the issue triage just stamped, which is the intake seam the requirement binds at; a bare run sweeps the whole open lane-entering backlog. This guard binds at INTAKE only — it is never wired to red a pull request. Prints the one-line all-clear on stdout; a red puts the per-issue remedy on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: the backlog sweep found no lane-entering issue at all — fail-closed), 11 (the board, the label set, an issue or its comments could not be read, so the verdict is UNKNOWN), 12 (a pickable bet carries no founder-approved pitch). Example: fabrika guard pitch-guard check --issue 4312",
+		"Every lane-entering issue — a `status:triaged` `type:epic`, or a `status:triaged` `type:feature` with no parent — must carry a five-field `## Pitch` section (Problem / Arc / Appetite / Rabbit-holes / No-gos) and a founder `pitch-approved: appetite <S|M|L>` comment naming the same size the body declares. `**Appetite:**` is a size, `S`, `M` or `L`, whose dollar amount per epic child `.fabrika.jsonc` `appetiteSizes` sets (shipped S = $15, M = $35, L = $40); a legacy `<N> cycles` appetite still reads, approved by `pitch-approved: appetite <N> cycles`. An optional `**Success:**` line names the one sentence the two-week check judges; a pitch without it is still well-formed. A body appetite that differs from the approved one needs re-approval. Approval is resolved at the GitHub ACL, write+ only and fail-closed, and an agent-provenance-stamped marker never counts. `--issue N` scopes the scan to the issue triage just stamped, which is the intake seam the requirement binds at; a bare run sweeps the whole open lane-entering backlog. This guard binds at INTAKE only — it is never wired to red a pull request. Prints the one-line all-clear on stdout; a red puts the per-issue remedy on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: the backlog sweep found no lane-entering issue at all — fail-closed), 11 (the board, the label set, an issue or its comments could not be read, or `.fabrika.jsonc` refused, so the verdict is UNKNOWN), 12 (a pickable bet carries no founder-approved pitch). Example: fabrika guard pitch-guard check --issue 4312",
 	),
 );
 

@@ -5,17 +5,21 @@
  * takes on the guard exit taxonomy. No IO — the board read is crossed in `./pitch-verb.ts`.
  */
 import {describe, expect, it} from "vitest";
+import {SHIPPED_APPETITE_SIZES} from "../config/keys/appetite-sizes.ts";
 import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 import {type LabelUniverse, PRESENT} from "./label-universe.ts";
 import {
+	type Appetite,
 	type Candidate,
 	type Comment,
+	describeAppetite,
 	disposition,
 	isAgentStamped,
 	isLaneEntering,
 	judge,
 	LANE_ENTERING_TYPES,
 	PITCH_FIELDS,
+	parseAppetite,
 	parseAppetiteCycles,
 	pitchSection,
 	readField,
@@ -45,6 +49,13 @@ const approval = (body: string, authorized = true): Comment => ({
 });
 
 const APPROVED = approval("pitch-approved: appetite 2 cycles · 2026-08-18T00:00:00Z");
+
+const SIZED_PITCH = GOOD_PITCH.replace("2 cycles", "M");
+const SIZE_APPROVED = approval("pitch-approved: appetite M · 2026-09-26T00:00:00Z");
+
+const cycles = (n: number): Appetite => ({_tag: "cycles", cycles: n});
+const size = (letter: "S" | "M" | "L"): Appetite => ({_tag: "size", size: letter});
+const SIZES = SHIPPED_APPETITE_SIZES;
 
 const candidate = (over: Partial<Candidate> = {}): Candidate => ({
 	number: 4312,
@@ -147,7 +158,7 @@ describe("parseAppetiteCycles", () => {
 
 describe("readPitch", () => {
 	it("reads a complete pitch and carries its declared appetite", () => {
-		expect(readPitch(GOOD_PITCH)).toEqual({_tag: "present", appetiteCycles: 2});
+		expect(readPitch(GOOD_PITCH)).toEqual({_tag: "present", appetite: cycles(2), success: null});
 	});
 
 	it("reports absent for a body with no section, and names every missing field", () => {
@@ -173,7 +184,7 @@ describe("readPitch", () => {
 		const read = readPitch(GOOD_PITCH.replace("2 cycles", "about a month"));
 		expect(read).toMatchObject({_tag: "malformed"});
 		if (read._tag !== "malformed") throw new Error("expected malformed");
-		expect(read.missing).toContain("Appetite (not a whole number of cycles)");
+		expect(read.missing).toContain("Appetite (not a size S / M / L, nor a whole number of cycles)");
 	});
 });
 
@@ -191,35 +202,37 @@ describe("isAgentStamped", () => {
 
 describe("resolveApproval", () => {
 	it("approves a write+ marker whose appetite matches the body's", () => {
-		expect(resolveApproval([APPROVED], 2)).toEqual({_tag: "approved", cycles: 2});
+		expect(resolveApproval([APPROVED], cycles(2))).toEqual({_tag: "approved", appetite: cycles(2)});
 	});
 
 	it("reports none when no comment carries the marker at all", () => {
-		expect(resolveApproval([approval("looks good to me")], 2)).toEqual({_tag: "none"});
+		expect(resolveApproval([approval("looks good to me")], cycles(2))).toEqual({_tag: "none"});
 	});
 
 	it("refuses a marker from below write+ — an unverifiable approval never counts", () => {
-		expect(resolveApproval([approval("pitch-approved: appetite 2 cycles", false)], 2)).toEqual({
+		expect(
+			resolveApproval([approval("pitch-approved: appetite 2 cycles", false)], cycles(2)),
+		).toEqual({
 			_tag: "unauthorized",
 		});
 	});
 
 	it("refuses an agent-stamped marker — approval is a founder seat", () => {
 		const stamped = approval("pitch-approved: appetite 2 cycles\n\nFiled by an agent.");
-		expect(resolveApproval([stamped], 2)).toEqual({_tag: "agent-authored"});
+		expect(resolveApproval([stamped], cycles(2))).toEqual({_tag: "agent-authored"});
 	});
 
 	it("refuses a marker naming no appetite — approval must bind the number it approved", () => {
-		expect(resolveApproval([approval("pitch-approved: go for it")], 2)).toEqual({
+		expect(resolveApproval([approval("pitch-approved: go for it")], cycles(2))).toEqual({
 			_tag: "malformed-marker",
 		});
 	});
 
 	it("reports a mismatch with both numbers, so the report can name the re-approval needed", () => {
-		expect(resolveApproval([approval("pitch-approved: appetite 6 cycles")], 2)).toEqual({
+		expect(resolveApproval([approval("pitch-approved: appetite 6 cycles")], cycles(2))).toEqual({
 			_tag: "appetite-mismatch",
-			approved: 6,
-			declared: 2,
+			approved: cycles(6),
+			declared: cycles(2),
 		});
 	});
 
@@ -228,13 +241,16 @@ describe("resolveApproval", () => {
 			approval("pitch-approved: appetite 9 cycles", false),
 			approval("pitch-approved: appetite 2 cycles"),
 		];
-		expect(resolveApproval(comments, 2)).toEqual({_tag: "approved", cycles: 2});
+		expect(resolveApproval(comments, cycles(2))).toEqual({
+			_tag: "approved",
+			appetite: cycles(2),
+		});
 	});
 });
 
 describe("disposition", () => {
 	it("passes a complete, approved, lane-entering bet", () => {
-		expect(disposition(candidate())).toEqual({_tag: "pitched", cycles: 2});
+		expect(disposition(candidate())).toEqual({_tag: "pitched", appetite: cycles(2)});
 	});
 
 	it("holds a sub-issue out of scope — it inherits its epic's pitch", () => {
@@ -299,15 +315,15 @@ describe("judge", () => {
 
 describe("renderReport", () => {
 	it("states what a clean sweep covered rather than a bare all-clear", () => {
-		expect(renderReport(judge([candidate()], BACKLOG))).toContain("scanned 1 lane-entering");
+		expect(renderReport(judge([candidate()], BACKLOG), SIZES)).toContain("scanned 1 lane-entering");
 	});
 
 	it("names the fail-closed reason on an empty backlog sweep", () => {
-		expect(renderReport(judge([], BACKLOG))).toContain("fail-closed");
+		expect(renderReport(judge([], BACKLOG), SIZES)).toContain("fail-closed");
 	});
 
 	it("names every offender and prints the draft/approve remedy once", () => {
-		const report = renderReport(judge([candidate({comments: []})], BACKLOG));
+		const report = renderReport(judge([candidate({comments: []})], BACKLOG), SIZES);
 		expect(report).toContain("#4312 product search");
 		expect(report).toContain("the FOUNDER approves it");
 		expect(report).toContain(".glossary/TERMS.md");
@@ -316,18 +332,103 @@ describe("renderReport", () => {
 
 describe("toGuardVerdict", () => {
 	it("seats each verdict on the guard exit taxonomy", () => {
-		expect(verdictCode(toGuardVerdict(judge([candidate()], BACKLOG)))).toBe(0);
-		expect(verdictCode(toGuardVerdict(judge([], BACKLOG)))).toBe(ZERO_SCOPE);
-		expect(verdictCode(toGuardVerdict(judge([], issueScope(9, ABSENT))))).toBe(
+		expect(verdictCode(toGuardVerdict(judge([candidate()], BACKLOG), SIZES))).toBe(0);
+		expect(verdictCode(toGuardVerdict(judge([], BACKLOG), SIZES))).toBe(ZERO_SCOPE);
+		expect(verdictCode(toGuardVerdict(judge([], issueScope(9, ABSENT)), SIZES))).toBe(
 			PRECONDITION_UNKNOWN,
 		);
-		expect(verdictCode(toGuardVerdict(judge([candidate({comments: []})], BACKLOG)))).toBe(
+		expect(verdictCode(toGuardVerdict(judge([candidate({comments: []})], BACKLOG), SIZES))).toBe(
 			VIOLATION,
 		);
 	});
 
 	it("counts an issue-scoped pass as a scan of one, never of zero", () => {
-		const verdict = toGuardVerdict(judge([], issueScope(9)));
+		const verdict = toGuardVerdict(judge([], issueScope(9)), SIZES);
 		expect(verdict).toMatchObject({_tag: "Clean", scanned: 1});
+	});
+});
+
+describe("appetite as a size — S / M / L, with N cycles kept as the legacy read", () => {
+	it("reads an upper-case size letter, with or without a trailing note", () => {
+		expect(parseAppetite("M")).toEqual(size("M"));
+		expect(parseAppetite("L ($40 per child)")).toEqual(size("L"));
+		expect(parseAppetite("2 cycles")).toEqual(cycles(2));
+	});
+
+	it("refuses a lower-case letter, a spelled-out size and an unknown letter", () => {
+		expect(parseAppetite("m")).toBeNull();
+		expect(parseAppetite("Medium")).toBeNull();
+		expect(parseAppetite("XL")).toBeNull();
+		expect(parseAppetite("S-ish")).toBeNull();
+	});
+
+	it("describes each arm the way a pitch writes it", () => {
+		expect(describeAppetite(size("S"))).toBe("S");
+		expect(describeAppetite(cycles(3))).toBe("3 cycles");
+	});
+
+	it("passes a pitch declaring M against a `pitch-approved: appetite M` comment", () => {
+		const sized = candidate({body: SIZED_PITCH, comments: [SIZE_APPROVED]});
+		expect(readPitch(SIZED_PITCH)).toEqual({_tag: "present", appetite: size("M"), success: null});
+		expect(disposition(sized)).toEqual({_tag: "pitched", appetite: size("M")});
+		expect(judge([sized], BACKLOG)).toMatchObject({pass: true, pitched: 1});
+	});
+
+	it("still passes a legacy `2 cycles` pitch against its `appetite 2 cycles` approval", () => {
+		expect(disposition(candidate())).toEqual({_tag: "pitched", appetite: cycles(2)});
+	});
+
+	it("refuses a size approval that disagrees with the body's size, asking for re-approval", () => {
+		const drifted = candidate({
+			body: SIZED_PITCH.replace("**Appetite:** M", "**Appetite:** L"),
+			comments: [SIZE_APPROVED],
+		});
+		expect(resolveApproval(drifted.comments, size("L"))).toEqual({
+			_tag: "appetite-mismatch",
+			approved: size("M"),
+			declared: size("L"),
+		});
+		expect(disposition(drifted)).toEqual({
+			_tag: "unpitched",
+			detail: "its approval names appetite M but the body declares L — re-approval needed",
+		});
+	});
+
+	it("refuses a cycles approval over a size body, and a size approval over a cycles body", () => {
+		expect(disposition(candidate({body: SIZED_PITCH, comments: [APPROVED]}))).toMatchObject({
+			detail: expect.stringContaining("2 cycles but the body declares M"),
+		});
+		expect(disposition(candidate({comments: [SIZE_APPROVED]}))).toMatchObject({
+			detail: expect.stringContaining("appetite M but the body declares 2 cycles"),
+		});
+	});
+
+	it("reads a lower-case size in the approval as naming no appetite", () => {
+		expect(
+			resolveApproval([approval("pitch-approved: appetite m · 2026-09-26")], size("M")),
+		).toEqual({_tag: "malformed-marker"});
+	});
+});
+
+describe("the optional Success line", () => {
+	it("carries the sentence the two-week check judges when the pitch names one", () => {
+		const body = `${SIZED_PITCH}\n**Success:** half of new yazars find last week's entry in one search`;
+		expect(readPitch(body)).toEqual({
+			_tag: "present",
+			appetite: size("M"),
+			success: "half of new yazars find last week's entry in one search",
+		});
+	});
+
+	it("leaves a pitch without it well-formed", () => {
+		expect(readPitch(SIZED_PITCH)).toMatchObject({_tag: "present", success: null});
+	});
+});
+
+describe("the remedy names each size's dollar amount", () => {
+	it("prints the sizes it was handed, per epic child", () => {
+		const report = renderReport(judge([candidate({comments: []})], BACKLOG), {S: 10, M: 20, L: 30});
+		expect(report).toContain("S = $10, M = $20, L = $30 per epic child");
+		expect(report).toContain("pitch-approved: appetite <S|M|L>");
 	});
 });

@@ -156,7 +156,11 @@ Campaign→arc concurrency (a campaign draining alongside the active arc via the
 
 Update the diagram by hand after editing any table — its generator retired with the v1 verb package (#6100), and no guard reds on drift between the block and the tables (#3870 was never built).
 
+## fabrika
+
+fabrika is the software factory that builds kamp.us, and it is a product of its own. Its named customer is **binclusive**, which runs fabrika on its own repositories. fabrika work is pitched like any other bet: a `## Pitch` with a size (`S`, `M` or `L`) and a Success line, approved the same way (founder ruling R23.1 on [#9821](https://github.com/kamp-us/phoenix/issues/9821)). fabrika also has a target share of weekly spend, 40% for the first four tables and 30% after. The table shows that share and flags it when it runs over; nothing refuses a lane because of it.
+
 ## Standing lanes
 
-Not everything is an arc. **Pipeline & reliability hardening** is continuous, milestone-less work carried on the `axis:pipeline-hardening` label — the factory maintaining itself. It runs always, in the platform lane, and is never a product arc.
+Not everything is an arc. **Pipeline & reliability hardening** is continuous, milestone-less work carried on the `axis:pipeline-hardening` label — the factory maintaining itself. The label is how that work is homed, not a way around pitching: hardening is fabrika work, and a hardening bet is pitched like any other (see [fabrika](#fabrika)).
 

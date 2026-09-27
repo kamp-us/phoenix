@@ -11,8 +11,11 @@
  * The whole decision lives in `./pitch.ts`; this file resolves the repo, reads, and emits.
  */
 
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {CONFIG_PATH} from "../config/document.ts";
+import {appetiteSizesKey} from "../config/keys/appetite-sizes.ts";
+import {readKey} from "../config/read-key.ts";
 import {
 	getIssue,
 	type IssueRecord,
@@ -40,6 +43,8 @@ export interface PitchGuardOptions {
 	/** One issue to scope the scan to, or `null` for the whole open lane-entering backlog. */
 	readonly issue: number | null;
 	readonly repo: string | null;
+	/** Where `.fabrika.jsonc` is looked up, for the dollar amount each size names. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -189,10 +194,23 @@ const issueScan = (
 
 export const runPitchGuard = (
 	options: PitchGuardOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		if (options.issue !== null && !(Number.isInteger(options.issue) && options.issue > 0)) {
 			return refuse(FAILED, `${VERB}: ${options.issue} is not an issue number.`);
+		}
+		const sizes = yield* readKey(options.cwd, appetiteSizesKey);
+		if (sizes._tag === "Refused") {
+			return emitVerdict(
+				unknown(
+					`${VERB}: ${CONFIG_PATH} is refused — ${sizes.reason.replace(/\.$/, "")}, so what each pitch size is worth is unread and the verdict is UNKNOWN, never clean.`,
+				),
+				options.env,
+			);
 		}
 		const target = yield* resolveRepo(options.repo, options.env);
 		if (target._tag === "Failure") {
@@ -207,7 +225,9 @@ export const runPitchGuard = (
 			? backlogScan(target.value)
 			: issueScan(target.value, options.issue);
 		return emitVerdict(
-			scan._tag === "Refused" ? scan.verdict : toGuardVerdict(judge(scan.candidates, scan.scope)),
+			scan._tag === "Refused"
+				? scan.verdict
+				: toGuardVerdict(judge(scan.candidates, scan.scope), sizes.value),
 			options.env,
 		);
 	});
