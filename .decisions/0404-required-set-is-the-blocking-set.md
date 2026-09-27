@@ -156,3 +156,11 @@ so this record's relief applies only once that repository declares its required 
 named there — `fabrika ship checks`, `fabrika heal-ci diagnose`, `fabrika heal-ci logs` and
 `fabrika review ci` — because the two zero-signal states are part of the one answer those verbs
 share, not a per-verb detail.
+
+## Amendments
+
+- **#9841 — the run-evidence bundle is retired (2026-09-26).** [ADR 0410](0410-ship-checks-is-ship-ci-trust.md)
+  retired the run-evidence bundle and superseded ADR 0054, so the bundle's standing as the SHA-bound
+  authority, which this record's Context leaves untouched, has ended. What replaced the bundle is
+  `fabrika ship checks` over the `ci-required` required context. Only this record's run-evidence
+  text is superseded; the rest stands, including the 2026-09-21 amendment above.
