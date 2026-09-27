@@ -4,18 +4,22 @@ import * as report from "../exit-codes.ts";
 import * as codes from "./codes.ts";
 import {
 	BARE_AT_PATH,
+	CHUNK_MISCOUNTED,
 	CLAIM_NOT_HELD,
 	CLAIMED_ELSEWHERE,
 	CRITERIA_REQUIRED,
 	DELIBERATE_GAP,
+	DUPLICATE_VERDICT,
 	EMPTY_STDIN,
 	HUMAN_FILED,
 	LEAKED_PATH,
+	MALFORMED_AUDIT,
 	MALFORMED_CRITERIA,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	PULL_REQUEST_TARGET,
 	READBACK_MISMATCH,
+	SET_MISMATCH,
 	TRIAGE_EXIT_TABLE,
 	UNCONFIRMED,
 	UNREPAIRABLE,
@@ -133,7 +137,8 @@ describe("TRIAGE_EXIT_TABLE", () => {
 
 	it("carries every allocated code exactly once", () => {
 		expect(codes).toEqual([
-			0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 126, 127,
+			0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 126,
+			127,
 		]);
 	});
 
@@ -154,5 +159,15 @@ describe("TRIAGE_EXIT_TABLE", () => {
 		expect(meaningOf(CLAIM_NOT_HELD)).toContain("holds no live claim");
 		expect(meaningOf(UNWIRED_ORDERING)).toContain("blocked_by");
 		expect(meaningOf(PULL_REQUEST_TARGET)).toContain("pull request");
+		expect(meaningOf(MALFORMED_AUDIT)).toContain("verdict row");
+		expect(meaningOf(CHUNK_MISCOUNTED)).toContain("declared");
+		expect(meaningOf(DUPLICATE_VERDICT)).toContain("more than one verdict row");
+		expect(meaningOf(SET_MISMATCH)).toContain("audited input set");
+	});
+
+	it("seats the four audit refusals on distinct codes, clear of every earlier seat", () => {
+		const audit = [MALFORMED_AUDIT, CHUNK_MISCOUNTED, DUPLICATE_VERDICT, SET_MISMATCH];
+		expect(audit).toEqual([22, 23, 24, 25]);
+		expect(new Set(audit).size).toBe(4);
 	});
 });

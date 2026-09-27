@@ -58,6 +58,35 @@ export const toRows = (
 			title: issue.title,
 		}));
 
+/**
+ * The refusal a label-scoped list owes before it reads, or `null` when the label exists.
+ *
+ * It runs BEFORE the list read, because it is what makes the list's scope non-zero; an unreadable
+ * label set refuses as UNKNOWN rather than resolving to "the label is missing".
+ */
+export const labelPrecondition = Effect.fn("labelPrecondition")(function* (
+	verb: string,
+	noun: string,
+	repo: string,
+	label: string,
+) {
+	const labels = yield* listLabels(repo);
+	if (labels._tag === "Failure") {
+		return refuse(
+			PRECONDITION_UNKNOWN,
+			`${verb}: cannot read the label set of ${repo}: ${labels.reason} — whether the ${label} ${noun} exists is UNKNOWN, and so is the outcome.`,
+		);
+	}
+	if (!labels.value.includes(label)) {
+		return refuse(
+			ZERO_SCOPE,
+			`${verb}: label ${label} does not exist in ${repo} — refusing to report an empty ${noun} over zero scope.`,
+			[scannedLine(verb, repo, labels.value.length, "label", `none of them is ${label}`)],
+		);
+	}
+	return null;
+});
+
 export const runQueue = Effect.fn("runQueue")(function* (options: QueueOptions) {
 	const {label, limit, json} = options;
 
@@ -72,23 +101,8 @@ export const runQueue = Effect.fn("runQueue")(function* (options: QueueOptions) 
 	}
 	const repo = repoAttempt.value;
 
-	// The label precondition runs BEFORE the queue read, because it is what makes the queue's scope
-	// non-zero. Reading it here also means an unreadable label set refuses as UNKNOWN rather than
-	// resolving to "the label is missing".
-	const labels = yield* listLabels(repo);
-	if (labels._tag === "Failure") {
-		return refuse(
-			PRECONDITION_UNKNOWN,
-			`triage queue: cannot read the label set of ${repo}: ${labels.reason} — whether the ${label} queue exists is UNKNOWN, and so is the outcome.`,
-		);
-	}
-	if (!labels.value.includes(label)) {
-		return refuse(
-			ZERO_SCOPE,
-			`triage queue: label ${label} does not exist in ${repo} — refusing to report an empty queue over zero scope.`,
-			[scannedLine("triage queue", repo, labels.value.length, "label", `none of them is ${label}`)],
-		);
-	}
+	const absent = yield* labelPrecondition("triage queue", "queue", repo, label);
+	if (absent !== null) return absent;
 
 	const queue = yield* openQueueIssues(repo, label);
 	if (queue._tag === "Failure") {
