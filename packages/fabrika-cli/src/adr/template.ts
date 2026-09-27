@@ -3,9 +3,10 @@
  *
  * The contract holds the template's single home; this is that text with the five frontmatter
  * substitutions applied. The `<…>` prompts in the body stay — they are the author's slots, and the
- * skill's judgment is what fills them. Two terminal sections are deliberately NOT scaffolded
- * (`## Records`, `## Amendments`): an empty one invites filler, so the skill adds them when it has
- * content for them.
+ * skill's judgment is what fills them. `## Records` is required only when the ADR coins or
+ * redefines a term; `## Amendments` carries dated forward notes. Neither is scaffolded empty.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/6922#issuecomment-5519905316
  */
 
 export interface ScaffoldInput {
