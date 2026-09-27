@@ -194,6 +194,13 @@
 		}
 	],
 
+	// How a capture is taken. `apps/web` keeps the reader's locale only in `localStorage`
+	// (`apps/web/src/lib/localeStorage.ts`), so `review-ui render --locale en` seeds this key and
+	// proves the page's `lang` came back `en` (#9893).
+	"uiCapture": {
+		"locale": { "storageKey": "kampus.locale", "values": ["tr", "en"] }
+	},
+
 	// The repo's own commands that machine-read `.github/workflows/**`. `fabrika build check
 	// --surface workflows` runs each one over a workflows-touching diff, on top of `actionlint` when
 	// the tree has one (#5991), and `reads` names the exact workflow files that command opens — the

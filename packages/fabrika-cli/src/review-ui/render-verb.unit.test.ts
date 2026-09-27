@@ -1,6 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {signSessionToken} from "../capture/auth.ts";
+import type {LocaleDeclaration} from "../capture/locale-seed.ts";
 import type {UiSurface} from "../config/keys/ui-surfaces.ts";
 import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {
@@ -98,6 +99,8 @@ const options = {
 	surfaces: ["/pano"],
 	viewports: [] as readonly string[],
 	flags: [] as readonly string[],
+	locale: null as string | null,
+	localeDeclaration: null as LocaleDeclaration | null,
 	app: null,
 	surfaceRows: ROWS,
 	authSecretFrom: null as string | null,
@@ -458,6 +461,83 @@ describe("runRender", () => {
 		expect(outcome.stdout).toBe("");
 		expect(written.size).toBe(0);
 		expect(outcome.stderr.at(-1)).toMatch(/did not render with its forced flags/);
+	});
+
+	// The locale operand's own refusals, decided before any read or browser launch, on the same `10`
+	// a malformed --flag takes: both would shoot the default page under the requested name.
+	const LOCALES: LocaleDeclaration = {storageKey: "app.locale", values: ["tr", "en"]};
+
+	it("refuses --locale when the repo declares no locale, before anything is read", async () => {
+		const legCalls: string[] = [];
+		const {outcome} = await run([], {
+			locale: "en",
+			render: (request) => {
+				legCalls.push(request.surface);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain('--locale "en" cannot be seeded');
+		expect(outcome.stderr.join("\n")).toContain("declares no uiCapture.locale");
+		expect(legCalls).toEqual([]);
+	});
+
+	it("refuses a --locale value outside the declared list on 10, naming the list", async () => {
+		const {outcome} = await run([], {locale: "de", localeDeclaration: LOCALES});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain("the declared locales are tr, en");
+	});
+
+	it("seeds the declared key in every shot, anonymous and tier-naming alike", async () => {
+		const seen: unknown[] = [];
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			viewports: ["desktop", "mobile"],
+			locale: "en",
+			localeDeclaration: LOCALES,
+			render: (request) => {
+				seen.push(request.locale);
+				return Effect.succeed(
+					rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
+				);
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual(Array(4).fill({storageKey: "app.locale", value: "en"}));
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano" at desktop in locale en captured: 1280x2140, 0 page error(s)',
+		);
+	});
+
+	it("seeds nothing without --locale, even when the repo declares one", async () => {
+		const seen: unknown[] = [];
+		const {outcome} = await run(happy(), {
+			localeDeclaration: LOCALES,
+			render: (request) => {
+				seen.push(request.locale);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([null]);
+	});
+
+	it("refuses a shot whose lang did not come back as the seeded locale on 11, recording nothing", async () => {
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			locale: "en",
+			localeDeclaration: LOCALES,
+			render: legOf({
+				"/pano": {_tag: "WrongLocale", wanted: "en", reason: `the page's lang read back "tr"`},
+				"/b": {_tag: "Crashed", firstError: "TypeError: x is null"},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toBe(
+			`review-ui render: surface "/pano" at desktop in locale en did not render in its seeded locale (the page's lang read back "tr") — the seeded locale's render is UNKNOWN, never the default one.`,
+		);
 	});
 
 	it("refuses a closed PR on 7 — a closed PR is provably not reviewable scope", async () => {
