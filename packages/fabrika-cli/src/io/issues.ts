@@ -895,6 +895,32 @@ export interface QueueIssue {
 	readonly title: string;
 }
 
+/**
+ * The queue rows among `entries` that `keep` admits, pull requests filtered out.
+ *
+ * `keep` sees the raw entry only after it proved to be an issue row, so a malformed entry fails the
+ * whole read whether or not it would have been kept.
+ */
+const queueRows = (
+	entries: ReadonlyArray<unknown>,
+	keep: (entry: Record<string, unknown>) => Attempt<boolean>,
+): Attempt<ReadonlyArray<QueueIssue>> => {
+	const rows: QueueIssue[] = [];
+	for (const entry of withoutPullRequests(entries)) {
+		if (!isRecord(entry) || typeof entry.number !== "number" || typeof entry.title !== "string") {
+			return fail(NOT_ISSUES);
+		}
+		const createdAt = entry.created_at;
+		if (typeof createdAt !== "string" || Number.isNaN(Date.parse(createdAt))) {
+			return fail("GitHub answered 200 but a queue row carries no filing time");
+		}
+		const kept = keep(entry);
+		if (kept._tag === "Failure") return kept;
+		if (kept.value) rows.push({number: entry.number, createdAt, title: entry.title});
+	}
+	return ok(rows);
+};
+
 /** Open issues carrying `label` with their filing time, paged, pull requests filtered out. */
 export const openQueueIssues = (
 	repo: string,
@@ -902,24 +928,28 @@ export const openQueueIssues = (
 ): Shell<Attempt<ReadonlyArray<QueueIssue>>> =>
 	withToken((token) =>
 		Effect.map(provenList(token, openWithLabel(repo, label)), (read) =>
-			then(read, (entries) => {
-				const rows: QueueIssue[] = [];
-				for (const entry of withoutPullRequests(entries)) {
-					if (
-						!isRecord(entry) ||
-						typeof entry.number !== "number" ||
-						typeof entry.title !== "string"
-					) {
-						return fail(NOT_ISSUES);
-					}
-					const createdAt = entry.created_at;
-					if (typeof createdAt !== "string" || Number.isNaN(Date.parse(createdAt))) {
-						return fail("GitHub answered 200 but a queue row carries no filing time");
-					}
-					rows.push({number: entry.number, createdAt, title: entry.title});
-				}
-				return ok(rows);
-			}),
+			then(read, (entries) => queueRows(entries, () => ok(true))),
+		),
+	);
+
+/**
+ * Open issues carrying **no label at all**, with their filing time, paged, pull requests filtered out.
+ *
+ * The REST list has no "unlabeled" filter, so this pages every open issue and keeps the bare ones.
+ * The search index's `no:label` would answer in one page, but it lags a fresh filing, and this read
+ * decides whether an intake sweep is finished. A row whose `labels` field is not a list fails the
+ * read: reading it as bare would put a labelled issue in the queue.
+ */
+export const openUnlabeledIssues = (repo: string): Shell<Attempt<ReadonlyArray<QueueIssue>>> =>
+	withToken((token) =>
+		Effect.map(provenList(token, `repos/${repo}/issues?state=open`), (read) =>
+			then(read, (entries) =>
+				queueRows(entries, (entry) =>
+					Array.isArray(entry.labels)
+						? ok(entry.labels.length === 0)
+						: fail("GitHub answered 200 but an open issue carries no label list"),
+				),
+			),
 		),
 	);
 

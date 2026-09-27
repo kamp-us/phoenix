@@ -22,6 +22,8 @@
  * Pre-marker bodies are recognised by `./enrich-legacy.ts`, which is one-time migration code.
  */
 
+import {type EnrichText, renderPlainSummary} from "./plain-summary.ts";
+
 /** Which authored region the verb last wrote: a rewrite (default mode) or a pitch (`--epic`). */
 export type EnrichMode = "rewrite" | "wrap";
 
@@ -139,12 +141,12 @@ const EPIC_HEADER = "## Epic — awaiting plan";
  * composed body's leading bytes, template headings and separators included, so a section the
  * envelope demoted is visible; and it stops above the marker, so the preserved original — foreign
  * bytes this verb redacts rather than judges — stays out of reach. `composeBody` below is the law
- * that the two are the same bytes.
+ * that the two are the same bytes. The plain-language summary leads in both modes.
  */
-export const authoredRegion = (mode: EnrichMode, text: string): string =>
+export const authoredRegion = (mode: EnrichMode, text: EnrichText): string =>
 	mode === "rewrite"
-		? `${text.trim()}\n\n---\n\n`
-		: `## Pitch\n\n${text.trim()}\n\n${EPIC_HEADER}\n\n\`plan-epic\` appends its plan and dependency topology below.\n\n`;
+		? `${renderPlainSummary(text.summary)}\n\n${text.body}\n\n---\n\n`
+		: `${renderPlainSummary(text.summary)}\n\n## Pitch\n\n${text.body}\n\n${EPIC_HEADER}\n\n\`plan-epic\` appends its plan and dependency topology below.\n\n`;
 
 /** The preserved block a **first** enrichment builds around the redacted original. */
 export const wrapOriginal = (mode: EnrichMode, original: string): string =>
@@ -160,7 +162,7 @@ export const wrapOriginal = (mode: EnrichMode, original: string): string =>
 export const composeBody = (options: {
 	readonly mode: EnrichMode;
 	readonly issue: number;
-	readonly authored: string;
+	readonly authored: EnrichText;
 	readonly preserved: string;
 }): string =>
 	`${authoredRegion(options.mode, options.authored)}${renderMarker(options.issue, options.mode)}\n${options.preserved}`;

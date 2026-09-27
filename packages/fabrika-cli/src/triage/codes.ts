@@ -200,6 +200,15 @@ export const UNWIRED_ORDERING = 20;
  * would tell a caller "no such issue" about a number that exists and is on their screen.
  */
 export const PULL_REQUEST_TARGET = 21;
+/**
+ * Refused: the text `triage enrich` was sent carries no plain-language summary section, an empty
+ * one, or more than one.
+ *
+ * Its own seat rather than {@link EMPTY_STDIN}'s: that code says stdin held nothing, and here stdin
+ * held a body that lacks the one section the envelope places first. The fix is to add that section,
+ * not to re-pipe.
+ */
+export const PLAIN_SUMMARY_REQUIRED = 22;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -284,6 +293,11 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		code: PULL_REQUEST_TARGET,
 		meaning:
 			"refused: a --blocked-by target is a pull request — a blocking PR is named in the graph by the issue its merge closes",
+	},
+	{
+		code: PLAIN_SUMMARY_REQUIRED,
+		meaning:
+			"refused: the enrich text carries no plain-language summary section, an empty one, or more than one",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

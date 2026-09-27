@@ -1,6 +1,6 @@
 ---
 name: triage
-description: "Turn one raw `status:needs-triage` issue into a single actionable unit a builder can pick up cold. Trigger on \"/triage\", \"triage the queue\", \"triage issue #N\", \"process needs-triage\", \"classify these issues\", and whenever someone asks to make the backlog actionable or pickable."
+description: "Turn one raw issue, labelled `status:needs-triage` or carrying no labels at all, into a single actionable unit a builder can pick up cold. Trigger on \"/triage\", \"triage the queue\", \"triage issue #N\", \"process needs-triage\", \"classify these issues\", and whenever someone asks to make the backlog actionable or pickable."
 arguments: [issue_number]
 argument-hint: "[issue-number] — the raw issue to triage"
 ---
@@ -198,9 +198,20 @@ fabrika triage homes
 
 ```bash
 fabrika triage enrich $issue_number --token <claim-token> <<'EOF'
+## In plain words
+
+…
+
 …
 EOF
 ```
+
+**Every enrichment opens with a plain-language summary**, because the person deciding the issue reads
+it first and may read nothing else. Send it on stdin as one `## In plain words` section: one
+paragraph of 2-3 everyday sentences saying what is wrong, who it hurts and what we would do. Keep it
+honest, not salesy, and make it say what the body below it says; a summary that promises more than
+the body is a wrong summary. The verb places it at the very top — above the rewrite, and above an
+epic's `## Pitch` — and refuses a stdin with no summary, or an empty one, on `22`.
 
 For an epic, `fabrika triage enrich $issue_number --epic` takes the pitch's five fields on that same
 stdin — Problem / Arc / Appetite / Rabbit-holes / No-gos, plus an optional Success line — and heads
@@ -406,6 +417,8 @@ Done when the issue has left the queue by exactly one route.
 fabrika triage queue
 ```
 
+The queue holds every open `status:needs-triage` issue and every open issue carrying no label at
+all, oldest first; a bare issue is triaged exactly like a labelled one.
 **Only `empty` ends a sweep** — a proven-empty queue and a failed read are different answers, and
 which is which is the verb's section
 (`fabrika wire doc-section --heading "triage queue" < <skill-base>/contract.md`; the codes it shares

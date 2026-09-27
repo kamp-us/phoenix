@@ -10,6 +10,7 @@ import {
 	wrapOriginal,
 } from "./enrich.ts";
 import {legacyPreserved} from "./enrich-legacy.ts";
+import type {EnrichText} from "./plain-summary.ts";
 
 const ISSUE = 4312;
 const OTHER = 4290;
@@ -18,19 +19,30 @@ const ORIGINAL = "## Summary\n\nThe editor loses focus after a save.";
 const REWRITE = "## What to build\n\nKeep focus on the editor across a save.";
 const PITCH =
 	"**Problem:** yazars lose their place\n**Arc:** fabrika campaign\n**Appetite:** 2 cycles\n**Rabbit-holes:** none\n**No-gos:** no rewrite";
+const SUMMARY =
+	"The editor drops focus after a save, so writers lose their place. We would keep focus put.";
+const LEAD = `## In plain words\n\n${SUMMARY}\n\n`;
+
+/** What the verb hands the envelope once it has lifted the summary out of stdin. */
+const plain = (body: string): EnrichText => ({summary: SUMMARY, body});
 
 /** A first enrichment in default mode, exactly as the verb composes it. */
 const enrichedDefault = (issue = ISSUE): string =>
 	composeBody({
 		mode: "rewrite",
 		issue,
-		authored: REWRITE,
+		authored: plain(REWRITE),
 		preserved: wrapOriginal("rewrite", ORIGINAL),
 	});
 
 /** A first enrichment in `--epic` mode. */
 const enrichedEpic = (issue = ISSUE): string =>
-	composeBody({mode: "wrap", issue, authored: PITCH, preserved: wrapOriginal("wrap", ORIGINAL)});
+	composeBody({
+		mode: "wrap",
+		issue,
+		authored: plain(PITCH),
+		preserved: wrapOriginal("wrap", ORIGINAL),
+	});
 
 /**
  * The RETIRED `--epic` shape detector, reproduced here as the control.
@@ -61,13 +73,13 @@ const markerLines = (body: string): ReadonlyArray<string> =>
 describe("the composed envelope", () => {
 	it("writes the marker on its own line, directly above the preserved block", () => {
 		expect(enrichedDefault()).toBe(
-			`${REWRITE}\n\n---\n\n<!-- fabrika:enriched issue=4312 mode=rewrite -->\n<details>\n${SUMMARY_LINE.rewrite}\n\n${ORIGINAL}\n\n</details>\n`,
+			`${LEAD}${REWRITE}\n\n---\n\n<!-- fabrika:enriched issue=4312 mode=rewrite -->\n<details>\n${SUMMARY_LINE.rewrite}\n\n${ORIGINAL}\n\n</details>\n`,
 		);
 	});
 
-	it("heads the pitch under the two headings pitch-guard anchors on, in --epic mode", () => {
+	it("heads the pitch under the two headings pitch-guard anchors on, in --epic mode, below the summary", () => {
 		expect(enrichedEpic()).toBe(
-			`## Pitch\n\n${PITCH}\n\n## Epic — awaiting plan\n\n\`plan-epic\` appends its plan and dependency topology below.\n\n<!-- fabrika:enriched issue=4312 mode=wrap -->\n<details>\n${SUMMARY_LINE.wrap}\n\n${ORIGINAL}\n\n</details>\n`,
+			`${LEAD}## Pitch\n\n${PITCH}\n\n## Epic — awaiting plan\n\n\`plan-epic\` appends its plan and dependency topology below.\n\n<!-- fabrika:enriched issue=4312 mode=wrap -->\n<details>\n${SUMMARY_LINE.wrap}\n\n${ORIGINAL}\n\n</details>\n`,
 		);
 	});
 
@@ -77,8 +89,8 @@ describe("the composed envelope", () => {
 	 * post — which is the defect 0288 §1 exists to refuse — and no test of the verb would show it.
 	 */
 	it("leads the composed body with exactly the authored region, in both modes", () => {
-		expect(enrichedDefault().startsWith(authoredRegion("rewrite", REWRITE))).toBe(true);
-		expect(enrichedEpic().startsWith(authoredRegion("wrap", PITCH))).toBe(true);
+		expect(enrichedDefault().startsWith(authoredRegion("rewrite", plain(REWRITE)))).toBe(true);
+		expect(enrichedEpic().startsWith(authoredRegion("wrap", plain(PITCH)))).toBe(true);
 	});
 
 	it("binds the issue number and the mode into the marker", () => {
@@ -134,7 +146,12 @@ describe("detect — the marker is the whole rule, and it is mode-independent (#
 
 	it("preserves the block AND every byte below it, so a plan is never deleted", () => {
 		const tail = `<details>\n${SUMMARY_LINE.wrap}\n\n${ORIGINAL}\n\n</details>\n\n## Plan (plan-epic)\n\nPhase 1: #4400\n\n## Dependencies\n\n#4400 requires: none\n`;
-		const planned = composeBody({mode: "wrap", issue: ISSUE, authored: PITCH, preserved: tail});
+		const planned = composeBody({
+			mode: "wrap",
+			issue: ISSUE,
+			authored: plain(PITCH),
+			preserved: tail,
+		});
 		const detection = detect(planned, ISSUE, legacyPreserved);
 		expect(detection).toMatchObject({_tag: "Enriched"});
 		if (detection._tag !== "Enriched") throw new Error("unreachable");
@@ -153,7 +170,9 @@ describe("the marker binds the issue number — a paste reads as FRESH", () => {
 	});
 
 	it("reads a pasted --epic envelope as fresh even though its shape is a perfect match", () => {
-		const pasted = enrichedEpic(OTHER);
+		// The v1 shape opened on `## Pitch`; the summary the envelope now leads with is cut off so the
+		// paste still matches it.
+		const pasted = enrichedEpic(OTHER).slice(LEAD.length);
 		// The shape detector the ruling retired would have accepted this and overwritten the reporter's
 		// text above it. The binding is what refuses it.
 		expect(retiredEpicAnchors(pasted)).toBe(true);
@@ -173,7 +192,12 @@ describe("the marker binds the issue number — a paste reads as FRESH", () => {
 
 	it("splits on the FIRST marker, so a marker buried in preserved content is never the boundary", () => {
 		const buried = wrapOriginal("rewrite", `${renderMarker(OTHER, "wrap")}\n${ORIGINAL}`);
-		const body = composeBody({mode: "rewrite", issue: ISSUE, authored: REWRITE, preserved: buried});
+		const body = composeBody({
+			mode: "rewrite",
+			issue: ISSUE,
+			authored: plain(REWRITE),
+			preserved: buried,
+		});
 		const detection = detect(body, ISSUE, legacyPreserved);
 		expect(detection).toMatchObject({_tag: "Enriched", markedMode: "rewrite"});
 		if (detection._tag !== "Enriched") throw new Error("unreachable");
@@ -209,7 +233,7 @@ describe("legacy migration — recognise once, stamp in passing, never wrap twic
 		const migrated = composeBody({
 			mode: "rewrite",
 			issue: ISSUE,
-			authored: REWRITE,
+			authored: plain(REWRITE),
 			preserved: detection.preserved,
 		});
 		expect(summaryLines(migrated)).toEqual([SUMMARY_LINE.rewrite]);
@@ -263,12 +287,17 @@ describe("the composed body is readable — the appendix is never the contract (
 		const first = composeBody({
 			mode: "rewrite",
 			issue: ISSUE,
-			authored: REWRITE,
+			authored: plain(REWRITE),
 			preserved: wrapOriginal("rewrite", original),
 		});
 		const detection = detect(first, ISSUE, legacyPreserved);
 		if (detection._tag !== "Enriched") throw new Error("unreachable");
-		return composeBody({mode: "rewrite", issue: ISSUE, authored, preserved: detection.preserved});
+		return composeBody({
+			mode: "rewrite",
+			issue: ISSUE,
+			authored: plain(authored),
+			preserved: detection.preserved,
+		});
 	};
 
 	const texts = (source: string): ReadonlyArray<string> => {
@@ -297,7 +326,7 @@ describe("the composed body is readable — the appendix is never the contract (
 				composeBody({
 					mode: "rewrite",
 					issue: ISSUE,
-					authored: REWRITE_WITH_CRITERIA,
+					authored: plain(REWRITE_WITH_CRITERIA),
 					preserved: detection.preserved,
 				}),
 			),
@@ -305,7 +334,7 @@ describe("the composed body is readable — the appendix is never the contract (
 	});
 
 	it("reads the authored region alone exactly as before — the producer guard is unchanged", () => {
-		expect(read(authoredRegion("rewrite", REWRITE_WITH_CRITERIA))._tag).toBe("Found");
+		expect(read(authoredRegion("rewrite", plain(REWRITE_WITH_CRITERIA)))._tag).toBe("Found");
 	});
 });
 
@@ -317,7 +346,7 @@ describe("idempotency — a second pass converges, in either mode", () => {
 		const second = composeBody({
 			mode: "rewrite",
 			issue: ISSUE,
-			authored: REWRITE,
+			authored: plain(REWRITE),
 			preserved: detection.preserved,
 		});
 		expect(second).toBe(first);
@@ -332,7 +361,7 @@ describe("idempotency — a second pass converges, in either mode", () => {
 			body = composeBody({
 				mode: "wrap",
 				issue: ISSUE,
-				authored: PITCH,
+				authored: plain(PITCH),
 				preserved: detection.preserved,
 			});
 		}
@@ -347,7 +376,7 @@ describe("idempotency — a second pass converges, in either mode", () => {
 		const converted = composeBody({
 			mode: "wrap",
 			issue: ISSUE,
-			authored: PITCH,
+			authored: plain(PITCH),
 			preserved: detection.preserved,
 		});
 		// One envelope, and it is still the DEFAULT-mode one: the preserved original was never re-wrapped.
