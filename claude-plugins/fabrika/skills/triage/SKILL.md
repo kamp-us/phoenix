@@ -1,6 +1,6 @@
 ---
 name: triage
-description: "Turn one raw `status:needs-triage` issue into a single actionable unit a builder can pick up cold. Trigger on \"/triage\", \"triage the queue\", \"triage issue #N\", \"process needs-triage\", \"classify these issues\", and whenever someone asks to make the backlog actionable or pickable."
+description: "Turn one raw issue, labelled `status:needs-triage` or carrying no labels at all, into a single actionable unit a builder can pick up cold. Trigger on \"/triage\", \"triage the queue\", \"triage issue #N\", \"process needs-triage\", \"classify these issues\", and whenever someone asks to make the backlog actionable or pickable."
 arguments: [issue_number]
 argument-hint: "[issue-number] — the raw issue to triage"
 ---

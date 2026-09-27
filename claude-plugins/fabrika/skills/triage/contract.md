@@ -281,7 +281,7 @@ fabrika triage queue [--label <name>] [--limit <n>] [--repo <owner/name>] [--jso
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--label` | string | no | `status:needs-triage` | the intake-queue label whose open issues form the queue |
+| `--label` | string | no | `status:needs-triage` | the intake-queue label; the queue is its open issues plus every open issue carrying no label at all |
 | `--limit` | integer | no | `100` | the maximum number of rows to print; must be ≥ 1 |
 | `--repo` | string | no | resolved (see Shared conventions) | the repository to read |
 | `--json` | boolean | no | `false` | emit the full result object instead of the line grammar |
@@ -1353,8 +1353,9 @@ tests position nowhere, in either mode, for exactly that reason; a re-enrich rep
 the header from fresh stdin and preserves the wrap — and everything under it — unchanged, exactly as
 the default mode replaces a rewrite.
 
-**Stdin carries the five field lines, not the section heading.** The verb writes `## Pitch` itself,
-so the heading always matches the guard's anchor rather than a caller's typing; a caller who sends
+**Stdin carries the `## In plain words` section and the five field lines, not the `## Pitch`
+heading.** The summary section is the one heading `--epic` stdin does send. The verb writes
+`## Pitch` itself, so the heading always matches the guard's anchor rather than a caller's typing; a caller who sends
 the heading too gets two of them, and the guard reads the empty section between them as a pitch
 missing all five fields — loud at the seam, never a silent pass. The five lines and the optional
 sixth, stated here rather than deferred to another skill's prose:

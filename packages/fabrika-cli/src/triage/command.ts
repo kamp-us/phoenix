@@ -326,7 +326,7 @@ const queue = leafCommand(
 		label: Flag.string("label").pipe(
 			Flag.withDefault(DEFAULT_QUEUE_LABEL),
 			Flag.withDescription(
-				`the intake-queue label whose open issues form the queue (default: ${DEFAULT_QUEUE_LABEL})`,
+				`the intake-queue label; the queue is its open issues plus every open issue with no labels (default: ${DEFAULT_QUEUE_LABEL})`,
 			),
 		),
 		limit: Flag.integer("limit").pipe(
