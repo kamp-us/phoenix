@@ -29,6 +29,7 @@ import {OFF_VOCABULARY} from "./codes.ts";
 import {runCommit} from "./commit-verb.ts";
 import {runDeviations} from "./deviations-verb.ts";
 import {runEligible} from "./eligible-verb.ts";
+import {runFloor} from "./floor-verb.ts";
 import {runIssue} from "./issue-verb.ts";
 import {runNote} from "./note-verb.ts";
 import {runPick} from "./pick-verb.ts";
@@ -308,6 +309,19 @@ const claimsStale = leafCommand(
 	Command.withShortDescription("Which build claims have stood on the board unmoved."),
 	Command.withDescription(
 		'Sweep the board for build claim markers that have stood past a horizon, so a lane stranded by a session that never came back is discovered instead of being found by whoever next loses a claim on exit 15. "fabrika build claimants <n>" answers one number a caller already suspects; this asks which numbers to suspect. It WRITES NOTHING and EXPIRES NOTHING: no marker is edited, deleted or retracted, and a row is never a finding that a session is dead — age is the only signal on the board and age alone proves nothing, so the ban on TTLs, leases, steals and eviction-by-inference is untouched. A stranded claim still leaves through "fabrika build adopt <n> --session <its session id> --reason <why>" then "fabrika build release <n> --token <the token adopt prints>", which the answer names. Candidates come off the search index — the open board is hundreds of issues and reading every thread would be hundreds of calls thrown away — and every candidate is then read through the same fold "build claimants" and "lane stale --claims" resolve against, so the three cannot state different facts about one marker. An index lags by minutes while a reported marker has stood for the whole horizon, whose default is a day, so the lag cannot hide a row. Prints {"answer":"stranded"|"none","now","scanned":{"candidates","markers","olderThanMinutes"},"stranded":[{"issue","title","commentId","author","createdAt","ageMinutes","token","session","holder","adopted"}]}, oldest silence first: holder says whether this is the marker ownership resolves against (a lane that raced writes more than one, and release sweeps the whole stack), and adopted says an authorized adopt marker already names that session. Only AUTHORIZED markers are rows — an unauthorized one never wins a race, so it strands nothing. Exits 1 (--older-than-minutes is not a non-negative whole number of minutes), 11 (the index, a thread, an author\'s permission or a marker\'s posted instant could not be read — the stranded set is UNKNOWN, never a short list). Examples: fabrika build claims stale · fabrika build claims stale --older-than-minutes 240',
+	),
+);
+
+const floor = leafCommand(
+	"floor",
+	{repo: repoFlag},
+	Effect.fn(function* ({repo}) {
+		yield* emit(yield* runFloor({repo: Option.getOrNull(repo), env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription("Who holds the primary checkout's uncommitted changes."),
+	Command.withDescription(
+		'Read the primary checkout\'s uncommitted paths — the same git status --porcelain a worktree-isolated spawn refuses on, with the harness\'s own .pi/subagents state excluded — and pair each path with the lane branches (build/<issue>-<slug>-<nonce>, build/pr-<pr>-<nonce>) that could own it. Two facts name a candidate: the primary checkout has that branch checked out, or the branch\'s own commits (on no trunk and no epic/* assembly branch) touch the path. Each candidate carries its number\'s claim, read through the fold "build claimants" uses: standing (the holder carries this branch\'s nonce — a live lane), another-lane (another lane holds the number), or unclaimed (no authorized marker — a released lane\'s leftover). A path neither fact reaches names NO owner; the verb never infers one. It WRITES NOTHING on any path — no claim marker, branch, stash, commit or worktree change — and every git call runs with --no-optional-locks, so even the status read leaves the index alone. Prints {"answer":"free","primary","head","paths":[]} for a clean primary checkout, else {"answer":"held","primary","head","paths":[{"path","status","origin","owners":[{"branch","number","kind":"issue"|"pr","evidence":["checked-out"|"touches-path"],"claim":"standing"|"another-lane"|"unclaimed","holder"}]}]}, owners strongest first: evidence, then claim. Exits 1 (no target repo resolves when a claim must be read), 11 (the worktrees, the status, the trunk, the lane branches or any candidate\'s claim markers could not be read — who holds the floor is UNKNOWN, never a guessed name). Example: fabrika build floor',
 	),
 );
 
@@ -886,6 +900,7 @@ export const buildCommand = Command.make("build").pipe(
 		confirm,
 		claimants,
 		claims,
+		floor,
 		release,
 		adopt,
 		retire,
