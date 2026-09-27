@@ -825,7 +825,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 	 * `boot`'s first open: the project at `folder`, already read and prepared. Known gap: its config
 	 * was imported before any page existed to ask from, so it skips the trust prompt, and `--project`
 	 * defaults to the working directory, so nobody has to name it. Ruling #9668 R2.1 exempts only the
-	 * home config; moving this open onto the trust gate is #9884.
+	 * home config; moving this open onto the trust gate is #9977.
 	 */
 	const openFirst = (folder: string, loaded: LoadedProjectConfig, state: ProjectState) =>
 		Effect.gen(function* () {

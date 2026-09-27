@@ -167,7 +167,7 @@ global row.**
   Programs stay in the desk process (#9663); isolating outside code is not part of this record.
 - Known gap: the folder the desk boots with (`--project`, or the folder `tuval open` starts a new
   desk with) is imported without the trust question. That breaks rule 5, and
-  [#9884](https://github.com/kamp-us/phoenix/issues/9884) tracks closing it.
+  [#9977](https://github.com/kamp-us/phoenix/issues/9977) tracks closing it.
 
 ## Records
 

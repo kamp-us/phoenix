@@ -190,7 +190,7 @@ leaves subprojects out, so after a restart one comes back only when its opener c
 Known gap: the `--project` folder, which defaults to the working directory, is imported at boot
 without the question, so running `tuval` inside a freshly cloned repo runs that repo's config
 unasked. So is the folder `tuval open <folder>` starts a new desk with. Ruling #9668 R2.1 exempts
-only the home config; #9884 tracks moving the boot folder onto the trust prompt.
+only the home config; #9977 tracks moving the boot folder onto the trust prompt.
 
 Nothing Tuval saves goes into the project. The process manifest, the checkpoints and the Pi session
 files live under `~/.tuval/projects/<key>`, where the key is that checkout's absolute path written
@@ -990,7 +990,7 @@ An author outside phoenix writes a program in their own folder and runs it on th
 4. `tuval open .` opens the folder as a project: in the running desk, or in a new desk when none is
    running.
 5. Answer "Trust this folder?" with yes. A folder is asked once; the answer is kept per path. A
-   folder that starts a new desk is not asked yet; #9884 tracks that gap.
+   folder that starts a new desk is not asked yet; #9977 tracks that gap.
 6. Edit the program. Saving the config, or any file it imports by path, reloads it in the running
    desk (see "Spells"), and the process switches to the edited code while keeping the state it had.
    One limit holds today: only the folder a desk booted with is watched, so a project opened into a
