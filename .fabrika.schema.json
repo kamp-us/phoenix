@@ -322,6 +322,29 @@
 			"description": "How many CLAIMED issue lanes may stand open at once — an active lane no driver claims is idle and counts for nothing. `lane open` and `lane emit` refuse past it, with no override. Write null (or leave it out) for no cap.",
 			"minimum": 1
 		},
+		"leakNames": {
+			"type": "object",
+			"description": "Names the report group's writing verbs keep out of public bodies, beside the structural leak shapes. Absent (or both lists empty) means only the structural shapes refuse.",
+			"properties": {
+				"privateRepos": {
+					"type": "array",
+					"description": "`owner/repo` slugs of private repositories. The bare name may appear; a github.com link to the repo or an `owner/repo#N` reference refuses.",
+					"items": {
+						"type": "string",
+						"pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\/(?!\\.\\.?$)[A-Za-z0-9._-]+$"
+					}
+				},
+				"identifiers": {
+					"type": "array",
+					"description": "Other names — a handle, a person's name — whose every occurrence refuses, matched case-insensitively.",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					}
+				}
+			},
+			"additionalProperties": false
+		},
 		"machineryLaps": {
 			"type": "object",
 			"description": "Whether an emitted epic machine carries the machinery event class, whose laps are counted apart from the repair budget.",

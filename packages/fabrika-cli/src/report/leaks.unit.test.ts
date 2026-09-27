@@ -98,6 +98,79 @@ describe("scanBody", () => {
 	});
 });
 
+describe("scanBody's email shape", () => {
+	it("refuses an address and masks it whole, domain included", () => {
+		const scan = scanBody("mail first.last+tag@mail.company.io, then retry");
+		expect(scan.leaks).toEqual([{line: 1, class: "email", text: "first.last+tag@mail.company.io"}]);
+		expect(scan.redacted).toBe("mail <redacted email>, then retry");
+	});
+
+	it.each([
+		["a role trailer", "Co-Authored-By: Bot <noreply@anthropic.com>"],
+		["an SSH remote", "origin git@github.com:o/r.git (fetch)"],
+		["a reserved test domain", "owner@example.test and a@b.invalid and docs@example.com"],
+		["a versioned patch file", "patches/alchemy@2.0.0-beta.59.patch"],
+		["a screenshot filename", "catalog@desktop.png"],
+		["an @mention", "@usirin said so"],
+		["a scoped package", "@effect/platform@4.0.0"],
+	])("passes %s", (_name, body) => {
+		expect(scanBody(body)).toEqual({leaks: [], redacted: body});
+	});
+
+	it("masks a path whole before the address inside it is read", () => {
+		const scan = scanBody("/Users/someone/mail/a@b.io.txt");
+		expect(scan.leaks.map((l) => l.class)).toEqual(["absolute home root"]);
+	});
+});
+
+describe("scanBody with declared leakNames", () => {
+	const names = {privateRepos: ["acme/secret"], identifiers: ["Jane Roe"]};
+
+	it("passes the bare slug — naming the repo is allowed", () => {
+		const body = "the acme/secret repo has the same bug; see acme/secret-tools#4 too";
+		expect(scanBody(body, names)).toEqual({leaks: [], redacted: body});
+	});
+
+	it("refuses a link to the repo, with or without a scheme, and masks it whole", () => {
+		const scan = scanBody(
+			"see https://github.com/acme/secret/blob/main/a.ts, github.com/Acme/Secret.git and (https://www.github.com/acme/secret).",
+			names,
+		);
+		expect(scan.leaks.map((l) => l.class)).toEqual([
+			"private repo link",
+			"private repo link",
+			"private repo link",
+		]);
+		expect(scan.redacted).toBe(
+			"see <redacted private repo link>, <redacted private repo link> and (<redacted private repo link>).",
+		);
+	});
+
+	it("refuses an issue reference and keeps the name while dropping the number", () => {
+		const scan = scanBody("tracked in acme/secret#482.", names);
+		expect(scan.leaks).toEqual([
+			{line: 1, class: "private repo reference", text: "acme/secret#482"},
+		]);
+		expect(scan.redacted).toBe("tracked in acme/secret#<redacted>.");
+	});
+
+	it("does not read a longer repo name as the declared one", () => {
+		const body = "github.com/acme/secret-tools and acme/secrets#3 and xacme/secret#3";
+		expect(scanBody(body, names).leaks).toEqual([]);
+	});
+
+	it("refuses every occurrence of a declared identifier, case-insensitively", () => {
+		const scan = scanBody("Jane Roe asked; JANE ROE agreed", names);
+		expect(scan.leaks.map((l) => l.class)).toEqual(["named identifier", "named identifier"]);
+		expect(scan.redacted).toBe("<redacted> asked; <redacted> agreed");
+	});
+
+	it("treats a declared name as literal text, not a pattern", () => {
+		const scan = scanBody("a.b and axb", {privateRepos: [], identifiers: ["a.b"]});
+		expect(scan.redacted).toBe("<redacted> and axb");
+	});
+});
+
 describe("isBareAtReference", () => {
 	it("catches the composed body having never arrived (#3086)", () => {
 		expect(isBareAtReference("@/tmp/body.md")).toBe(true);
