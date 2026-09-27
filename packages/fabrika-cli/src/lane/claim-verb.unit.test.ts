@@ -423,6 +423,8 @@ describe("a driver's claim and the builder it spawns", () => {
 					uuid: OTHER_UUID,
 					token: null,
 					at: "2026-08-17T00:10:00Z",
+					lane: null,
+					laneRoot: null,
 					purpose: "build",
 					override: null,
 					overrideLane: null,

@@ -589,7 +589,9 @@ its head back before answering, and a conflict is aborted the same way — so th
 names a branch that never carried the bad merge, and an exit `8` means that restore did not take and
 nothing may be recorded against the tree at all. The repair builder is
 then the machine's own route out of `build`, and `lane brief` hands it both ranges: the child's
-issue, and the assembly branch, which by now carries every sibling that landed before it. Nothing
+issue, and the assembly branch, which by now carries every sibling that landed before it. Its claim
+takes that round through `build resume-child <child> --lane <lane> --lane-root <root>`, reading
+the `FAIL` line §3 records, so record it with its exit and head or no builder can take it. Nothing
 reaches `landed` except back through `review`, because the resolution changes the content the
 child's range verdict bound — that ordering is in the machine's graph, not in this paragraph.
 
@@ -1333,10 +1335,10 @@ different next moves, and the verdict line is what tells them apart:
 | --- | --- | --- |
 | `0` | the merged tree holds — the last stdout line is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head | `DONE` |
 | `0` | the child collided and was replayed onto the tip — `INTEGRATE-VERDICT: REPLAYED`, the merged head above it, the machinery event above that | `WIP` — the child re-enters `review` over the event's `range`, and the arm spends a wait rather than a retry |
-| `42` | the child conflicts and no replay was attempted — the repo declares `assemblyReplay.onCollision: "off"` | `FAIL` |
+| `42` | the child conflicts and no replay was attempted — the repo declares `assemblyReplay.onCollision: "off"` | `FAIL --integrate-exit 42 --assembly-head <sha>` |
 | `42` | a replay ran and hit a hunk that is not a plain keep-both — the branch was reset and proved back | `REPLAY-COLLIDED` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause replay-conflict` |
-| `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL` |
-| `44` | the merged tree failed a code validator | `FAIL` |
+| `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL --integrate-exit 43 --assembly-head <sha>` |
+| `44` | the merged tree failed a code validator | `FAIL --integrate-exit 44 --assembly-head <sha>` |
 | `54` | the replay landed and the child's branch would not follow it — nothing was merged, and a working tree standing on that branch is the usual reason | `SEAT-DIRTY` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause worktree-holds-branch` |
 | `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` | the lane record, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
 
@@ -1346,6 +1348,18 @@ line to read twice: a replay that hit a hunk it may not resolve is the machinery
 child, and a `FAIL` there charges the child's repair budget for it — the exact thing the corpus
 forbids, in the one table a driver routes off. That is what `REPLAY-COLLIDED` and `SEAT-DIRTY`
 record instead, and neither is ever recorded beside the `FAIL` it replaces.
+
+**Each of those three `FAIL`s names its exit and the assembly head on the line.** `<sha>` is the head
+the refusal says it put the seat back to (`is back at <sha>` on a `42`, `reset <path> back to <sha>`
+on a `43` or `44`). An integrate `FAIL` writes no verdict on the child, and the child's range
+verdicts are all `PASS`, so this line is the only record a repair builder's claim can read. `lane
+report` refuses a `FAIL` out of `integrate` without the pair, and the pair on any other line, at exit
+`68` with the log unappended.
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token FAIL --integrate-exit 44 --assembly-head <sha>
+```
+
 A `41` (no tree holds `epic/<n>`, placed
 with `lane assembly`), a `33` (the main checkout is standing on that branch), a `22` (a `--child`
 branch that is not this repo's, so not the one `lane prove` printed) or a `45` (the assembly seat
