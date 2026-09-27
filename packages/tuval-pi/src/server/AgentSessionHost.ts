@@ -18,6 +18,7 @@ import {
 	DefaultResourceLoader,
 	type ModelRuntime,
 	type ResourceLoader,
+	type SessionHeader,
 	SessionManager,
 	SettingsManager,
 	type ToolDefinition,
@@ -216,6 +217,22 @@ const call = <A>(
  * case, for the reason the Pi agent layer's own `readBranch` reads that way: `SessionManager.open`
  * does its own synchronous reads with no seam to substitute.
  */
+/**
+ * The folder a stored session resumes in: the one its file's header records, because a session's
+ * folder is set at start and never changes (#9694). Read from the header and never from
+ * `SessionManager.getCwd()`, which fills a missing header folder with the kernel process's own
+ * cwd. Only a header written before Pi recorded a folder has none; that falls back to the host's
+ * project root, and with no root there is no folder to resume in.
+ */
+export const resumeFolder = (
+	header: Pick<SessionHeader, "cwd"> | null,
+	projectRoot: string | undefined,
+): string | undefined => {
+	const recorded: unknown = header?.cwd;
+	if (typeof recorded === "string" && recorded !== "") return recorded;
+	return projectRoot === "" ? undefined : projectRoot;
+};
+
 const sessionFile = (dir: string, sessionId: string): string | undefined => {
 	const name = readdirSync(dir).find((entry) => entry.endsWith(`_${sessionId}.jsonl`));
 	return name === undefined ? undefined : join(dir, name);
@@ -381,15 +398,12 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 					catch: (error) => retaining(error, unfound("Pi could not reopen the stored session")),
 				});
 				if (file === undefined) return yield* unfound("Pi could not find the stored session file");
-				// A session resumes in the folder it started in, which its file's header records: a
-				// session's folder never changes (#9694). Only a header written before Pi recorded one
-				// is empty, and that falls back to the host's project root.
 				const manager = yield* Effect.try({
 					try: () => SessionManager.open(file, options.sessionDir),
 					catch: (error) => retaining(error, unfound("Pi could not reopen the stored session")),
 				});
-				const cwd = manager.getCwd() || options.projectRoot;
-				if (cwd === undefined || cwd === "") {
+				const cwd = resumeFolder(manager.getHeader(), options.projectRoot);
+				if (cwd === undefined) {
 					return yield* unfound(
 						`session ${sessionId} records no folder and this host holds no project root, so it cannot be re-opened`,
 					);

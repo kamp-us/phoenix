@@ -50,6 +50,7 @@ import type {HandlerFailed} from "../../process/errors.ts";
 import {asked, deliver, type ReplyTo} from "../../process/inbox.ts";
 import {Processes} from "../../process/Processes.ts";
 import {type ProcessHandle, ProcessId} from "../../process/process.ts";
+import {ProcessFolders, WorkingFolder} from "../../process/working-folder.ts";
 import {type AnyProgram, type InPort, ProgramId} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {type AnySpell, defineSpell} from "../spell.ts";
@@ -654,14 +655,22 @@ const spawnSpell = defineSpell({
 	params: Schema.Struct({program: ProgramId}),
 	result: Schema.Struct({process: ProcessId}),
 	// The parent is the caller's own process, which the kernel resolved into the scope — never an
-	// id the caller named (#7617 R2.2). A call from outside any process spawns a root.
+	// id the caller named (#7617 R2.2). A call from outside any process spawns a root. The child
+	// starts in its parent's folder: this runs under the kernel's context, whose folder is the home
+	// one, so the parent's is read off the process table (#9694).
 	execute: (args, scope) =>
-		Effect.map(
-			Effect.flatMap(SpawnedProcesses, (spawned) =>
-				spawned.spawn(args.program, Option.fromNullishOr(scope.process)),
-			),
-			(process) => ({process}),
-		),
+		Effect.gen(function* () {
+			const spawned = yield* SpawnedProcesses;
+			const parent = Option.fromNullishOr(scope.process);
+			const folder = Option.isNone(parent)
+				? Option.none()
+				: yield* ProcessFolders.use((folders) => folders.folderOf(parent.value));
+			const start = spawned.spawn(args.program, parent);
+			const process = yield* Option.isNone(folder)
+				? start
+				: Effect.provideService(start, WorkingFolder, folder.value);
+			return {process};
+		}),
 	capabilities: [{family: "process-control"}],
 });
 

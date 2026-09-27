@@ -11,7 +11,8 @@
  * Absent is legal: a kernel stood up from rows alone, as tests do, runs with no folder at all.
  */
 
-import {Context} from "effect";
+import {Context, type Effect, type Option} from "effect";
+import type {ProcessId} from "./process.ts";
 
 export class WorkingFolder extends Context.Service<
 	WorkingFolder,
@@ -20,3 +21,19 @@ export class WorkingFolder extends Context.Service<
 		readonly path: string;
 	}
 >()("tuval/WorkingFolder") {}
+
+/**
+ * The folder a live process's spawn set carries, read by id. A spawner running inside a process
+ * inherits that process's folder through its own context and needs none of this. A spell runs
+ * under the kernel's context, whose folder is the home one, so the `process spawn` spell reads its
+ * caller's folder here to start the child where the caller runs (#9694, #9898).
+ *
+ * `Processes.layer` builds this over the same map it spawns into, the way it builds `ProcessTable`.
+ * None is a process that is not live, or one spawned with no folder in its set.
+ */
+export class ProcessFolders extends Context.Service<
+	ProcessFolders,
+	{
+		readonly folderOf: (id: ProcessId) => Effect.Effect<Option.Option<WorkingFolder["Service"]>>;
+	}
+>()("tuval/ProcessFolders") {}

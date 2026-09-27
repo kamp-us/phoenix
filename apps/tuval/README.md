@@ -102,8 +102,8 @@ render. `/effort-offered.html` also opens the actual effort menu without selecti
 This proves the layer-to-component state and paint, **not** the real CLI, login, kernel transport
 or model execution; the in-memory host records UI dispatches without executing them.
 
-`pnpm dev` runs `node src/bin.ts --config global/tuval.config.ts`, an Effect CLI (`effect/unstable/cli`) over the pure `boot`.
-Node strips the TypeScript itself, so the kernel has no build step. Boot loads your config layers
+`pnpm dev` runs `node src/bin.ts --config global/tuval.config.ts`, an Effect CLI
+(`effect/unstable/cli`) over the pure `boot`. Node strips the TypeScript itself, so the kernel has no build step. Boot loads your config layers
 (see "Your config"), registers their programs, launches the processes the graph plans, restores any
 other checkpointed process from this project's state dir, prints the process table, binds the page
 socket, serves the desk, and stays up until Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints
@@ -217,12 +217,16 @@ node's scoped id, and a parent link follows its parent. A `scoped-ids.json` in t
 records that it ran, so it runs once.
 This repo's `apps/tuval/.tuval/tuval.config.ts` is the project layer `pnpm dev` runs against, and
 `apps/tuval/global/tuval.config.ts` is the global layer it passes as `--config` in place of your
-`~/.tuval/tuval.config.ts`. The four harness rows (Pi, Claude, agy, codex) live in that global
-layer and name no folder: the picker offers each one once per open project ("Claude · phoenix"),
-or once for home with nothing open, and a session runs in the folder of the entry you picked and
-keeps it (#9694). A project's own programs run in its folder, and anything they start runs there
-too unless they name another. The checkpoints do not land beside it — they land under the home dir, which is why no repository needs
-an ignore rule for Tuval state.
+`~/.tuval/tuval.config.ts`. The checkpoints do not land beside either layer. They land under the
+home dir, which is why no repository needs an ignore rule for Tuval state.
+
+The four harness rows (Pi, Claude, agy, codex) live in the global layer and name no folder. The
+picker offers each one once per open project ("Claude · phoenix"), or once for home with nothing
+open. A session runs in the folder of the entry you picked and keeps it (#9694).
+
+A project's own programs run in its folder. A process a program starts runs in that program's
+folder unless the program names another, whether the program spawns it itself or an agent session
+spawns it through its kernel tools.
 
 A config module default-exports one versioned object, `TuvalConfigInput` from `@kampus/tuval-sdk/config`:
 `version: 1`, `programs`, an optional `graph`, and an optional `keys` (see "Spells"). A row is a
