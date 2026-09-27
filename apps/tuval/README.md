@@ -111,9 +111,10 @@ Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints every process and exits 
 plans no process exits right after the report.
 
 ```
-tuval [flags]
-  --config file          Global config module (default: ~/.tuval/tuval.config.ts)
+tuval [flags]            Start a desk, or bring the running one forward
+tuval open <folder>      Add a folder as a project to the running desk, or start a desk with it
   --project directory    Project dir whose .tuval/ holds the project config (default: cwd)
+  --config file          Global config module for a new desk (default: ~/.tuval/tuval.config.ts)
   --no-page              Boot the kernel and the socket, but serve no page
   --page-port integer    Port for the page (default: a free one)
   --help, --version
@@ -121,6 +122,18 @@ tuval [flags]
 
 `node src/bin.ts --config <module>` swaps the global layer, which is how the tests exercise the
 refusals; `--project <dir>` opens another project first. A path named by either flag must exist.
+
+`tuval` starts one desk per home, like `code` (#9696). A desk that serves a page writes
+`~/.tuval/desk.json`, naming its process and its page's address, and removes it when it stops. A
+second `tuval` reads that record and asks the page for its launch URL, the same request the page
+itself makes, so the token never reaches the disk. If the desk answers, `tuval` opens its page in
+your browser and starts nothing. The flags above only shape a new desk, and it says so when they go
+unused. `tuval open <folder>` asks the running desk to open the folder through the `project open`
+spell, trust prompt and all. It brings the page forward first, because the open waits on that
+question, then prints the desk's answer; a refusal exits 1. With no desk running, `tuval open
+<folder>` starts one with that folder as its first project. A record whose process is gone, or
+whose page does not answer, is from a desk that crashed. `tuval` says so, removes it, and starts a
+new desk. A `--no-page` desk writes no record, since a caller reaches a desk through its page.
 
 One running desk holds several projects (#9685). The `--project` folder is the first one it opens,
 and the `project open` spell opens another into the running desk with no restart: its config
@@ -149,7 +162,7 @@ rest still open. Subprojects are not reopened here; the program that opened one 
 
 Known gap: the `--project` folder, which defaults to the working directory, is imported at boot
 without the question, so running `tuval` inside a freshly cloned repo runs that repo's config
-unasked. Ruling #9668 R2.1 exempts only the home config; #9884 tracks moving the boot folder onto
+unasked. So is the folder `tuval open <folder>` starts a new desk with. Ruling #9668 R2.1 exempts only the home config; #9884 tracks moving the boot folder onto
 the trust prompt.
 
 Nothing Tuval saves goes into the project. The process manifest, the checkpoints and the Pi session
