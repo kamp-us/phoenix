@@ -50,6 +50,14 @@ staged, and continued; every other collision refuses exactly as before.**
 - The post-merge `reconcile` step in `lane integrate` is unchanged. It still runs the frozen
   install and still refuses on exit 43 when that install rewrites a tracked file. The regenerated
   lockfile is already committed, so a correct regeneration leaves that install nothing to rewrite.
+- **`assemblyReplay` now names a command fabrika spawns, so it moves into
+  [ADR 0398](0398-machine-local-config-layer.md) rule 5's permanently ineligible spawn-command
+  class.** 0398 filed `assemblyReplay` under the weaker "ineligible by default" bar because none of
+  its fields ran anything. `lockfileRegenerator.command` is an argv fabrika runs in the assembly
+  worktree mid-integrate, beside `codeValidators`, `workflowValidators` and `dependencyReconciler`.
+  Eligibility is declared per key group, so `assemblyReplay` is barred whole from the machine-local
+  config layer, the way `parkCause` is, and no later record may admit it locally. This amends 0398's
+  classification of that one key. Nothing else in 0398 changes.
 
 **Banned.**
 
@@ -66,4 +74,8 @@ declares nothing keeps today's refusal byte for byte.
 
 ## Records
 
-no vocabulary impact
+- Issue: https://github.com/kamp-us/phoenix/issues/9867
+- Ruling: https://github.com/kamp-us/phoenix/issues/9867#issuecomment-5851529523
+- Amends in part: ADR [0398](0398-machine-local-config-layer.md) rule 5, moving `assemblyReplay`
+  from the "ineligible by default" bar to the permanently ineligible spawn-command class.
+- no vocabulary impact
