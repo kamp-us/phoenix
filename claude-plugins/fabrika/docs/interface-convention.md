@@ -33,7 +33,8 @@ subcommands and exit codes inline.
     wraps nor truncates it, so it must fit one terminal line beside the padded name column; the
     budget and the checks are `packages/fabrika-cli/src/short-description.ts`, asserted for every
     registered leaf by `short-description.unit.test.ts`.
-  - the **long** description (`Command.withDescription`) is the verb-level contract below.
+  - the **long** description (`Command.withDescription`) is the caller-facing block below, shaped
+    by [leaf help size and shape](#leaf-help-size-and-shape); derivation stays in the contract.
 
   Reusing the long form as the list row is the defect this split fixes: a group whose verbs each
   contributed a thousand-character unwrapped row emitted a list no reader could parse.
@@ -41,9 +42,11 @@ subcommands and exit codes inline.
   and the renderer falls back to `description` when it is absent, so nothing is truncated and the
   contract below is untouched.
 - `--help` states, for the verb: what it answers, its output **shape** (rule 2), its exit codes
-  (rule 3), and at least one example (rule 5). This is the **long** description's job — the "one
-  line" rule above governs the list row, not this block, and the two stop contradicting each other
-  once they are separate strings.
+  (rule 3), and at least one example (rule 5). The long description carries the first three; the
+  example goes through `Command.withExamples`, never as prose inside the description, as
+  [leaf help size and shape](#leaf-help-size-and-shape) requires. The "one sentence" rule above
+  governs the list row, not this block, and the two stop contradicting each other once they are
+  separate strings.
 - The index of verbs is **derived from the registry**, never hand-maintained: it reads name +
   description off the same `Command` objects the router dispatches on, so a new verb appears
   automatically and a verb shipped without a description is mechanically detectable. A parallel
@@ -136,9 +139,10 @@ after its two-space indent. Both numbers start from the renderer, the way
 [`short-description.ts`](../../../packages/fabrika-cli/src/short-description.ts) derives its row
 budget. `formatHelpDocImpl` in `effect@4.0.0-rc.112`'s `src/unstable/cli/CliOutput.ts` prints the
 block as `  ${doc.description}`, so at the 100-column terminal `short-description.ts` also assumes,
-a line holds 98 characters. The total is one 98-character summary plus twelve lines averaging 40
-characters with their newlines, which is 590, rounded to 600. Twelve lines cover `review-ui render`'s ten exit
-codes, one pointer line and one to spare.
+a line holds 98 characters. The total is one 98-character summary plus twelve lines averaging 41
+characters with their newlines: 98 + 12 × 41 = 590, rounded up to 600. Twelve lines are sized
+off `review-ui render`, which seats nine exit codes past `0` and `1` (7, 10 to 16, and 19):
+nine exit lines, one pointer line and two to spare.
 
 The exit lines carry their own two-space indent, and that choice is also the renderer's. The pinned
 `formatHelpDocImpl` indents only the description's first line: an embedded `\n` passes through
