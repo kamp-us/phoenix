@@ -1,9 +1,7 @@
 import type {AccountKey} from "../tr/account";
 
-// Brand nouns (`sözlük`, `pano`, `sustur`, `bildir`, `yazar`, `çaylak`, `kefil`) read identically
-// in both catalogs, and where the Turkish carries only a suffixed form — `divandaki`, `yazarsın`,
-// `çaylakların` — the English avoids the bare noun so the per-key counts still match
-// (`brandNouns.unit.test.ts`).
+// The product names `sözlük` and `pano` read identically in both catalogs (ADR 0414); divan reads
+// "Council", and the other Turkish words are translated (`brandNouns.unit.test.ts`).
 export const account = {
 	"notFound.title": "not found",
 	"notFound.message": "the page you are looking for is not here. want to look at something else?",
@@ -30,24 +28,24 @@ export const account = {
 	"bildirim.target.definition": "go to definition",
 	"bildirim.target.user": "go to profile",
 	"bildirim.target.fallback": "go to content",
-	"bildirim.kind.divanVote.one": "your content up for review got a vote",
-	"bildirim.kind.divanVote.other": "your content up for review got {count} votes",
-	"bildirim.kind.kefil": "a yazar became your kefil",
-	"bildirim.kind.terfi": "congratulations, you are one of the yazars now!",
+	"bildirim.kind.divanVote.one": "your content in the Council got a vote",
+	"bildirim.kind.divanVote.other": "your content in the Council got {count} votes",
+	"bildirim.kind.kefil": "an author vouched for you",
+	"bildirim.kind.terfi": "congratulations, you are an author now!",
 	"bildirim.kind.reply.one": "your post got a reply",
 	"bildirim.kind.reply.other": "your post got {count} replies",
 	"bildirim.kind.vote.one": "your content got {count} new vote",
 	"bildirim.kind.vote.other": "your content got {count} new votes",
 	"bildirim.kind.reportFiled.one": "a new item was reported",
 	"bildirim.kind.reportFiled.other": "{count} new items were reported",
-	"bildirim.kind.caylakPending": "a new çaylak is waiting to be reviewed",
+	"bildirim.kind.caylakPending": "a newcomer is waiting for review in the Council",
 	"bildirim.kind.backlogRelease.zero": "your posts are public from now on",
 	"bildirim.kind.backlogRelease.one": "{count} of your posts is public now",
 	"bildirim.kind.backlogRelease.other": "{count} of your posts are public now",
 	"bildirim.kind.unknown": "{kind} ×{count}",
 
-	"mute.action": "sustur",
-	"mute.action.label": "sustur {member}",
+	"mute.action": "mute",
+	"mute.action.label": "mute {member}",
 	"mute.unmute": "undo",
 	"mute.unmute.label": "unmute {member}",
 	"mute.member.fallback": "a member",
@@ -78,36 +76,36 @@ export const account = {
 	"membrane.emailNotice.cta": "update your email",
 	"membrane.emailNotice.dismiss": "dismiss",
 
-	"caylakVisibility.toggle.label": "show çaylak contributions in place",
+	"caylakVisibility.toggle.label": "show newcomer contributions in place",
 	"caylakVisibility.toggle.hint":
-		"when on, what the newcomers write is mixed into your feed, marked so it is clear it is çaylak work. when off, no çaylak contribution appears in your feed.",
+		"when on, what the newcomers write is mixed into your feed, marked so it is clear it is newcomer work. when off, no newcomer contribution appears in your feed.",
 	"caylakVisibility.toggle.error": "the setting could not be saved, try again.",
-	"caylakVisibility.page.title": "çaylak visibility",
+	"caylakVisibility.page.title": "newcomer visibility",
 	"caylakVisibility.page.lede":
 		"by default, what the newcomers write does not appear in your feed. here you can choose to see it in place.",
 	"caylakVisibility.page.loading": "loading…",
 	"caylakVisibility.page.unavailable":
 		"your setting could not be loaded, refresh the page and try again.",
 	"caylakVisibility.page.caylakNote":
-		"this setting is for yazars only. you are still in çaylaklık, so there is nothing to switch here. once you are a yazar you can choose to see çaylak contributions in your feed.",
+		"this setting is for authors only. you are still a newcomer, so there is nothing to switch here. once you are an author you can choose to see newcomer contributions in your feed.",
 
 	"profile.actor.fallback": "user",
 	"profile.page.loading": "loading…",
 	"profile.page.error": "the profile could not be loaded: {code}",
 	"profile.header.statsError": "stats could not be loaded",
 	"profile.header.statsLoading": "loading stats…",
-	"profile.standing.yazar": "yazar",
-	"profile.standing.caylak": "çaylak",
+	"profile.standing.yazar": "author",
+	"profile.standing.caylak": "newcomer",
 	"profile.stat.definitions": "definitions",
 	"profile.stat.posts": "posts",
 	"profile.stat.comments": "comments",
 
-	"profile.caylakStatus.heading": "the road to yazarlık",
+	"profile.caylakStatus.heading": "the road to authorship",
 	"profile.caylakStatus.vouch.yes": "yes",
 	"profile.caylakStatus.vouch.no": "no",
-	"profile.caylakStatus.vouchNeeded.message": "a yazar must become your kefil",
+	"profile.caylakStatus.vouchNeeded.message": "an author must vouch for you",
 	"profile.caylakStatus.vouchNeeded.hint": "or a moderator can promote you directly",
-	"profile.caylakStatus.term.kefil": "kefil",
+	"profile.caylakStatus.term.kefil": "vouched",
 	"profile.caylakStatus.term.inReview": "in review",
 
 	"profile.contribution.kind.definition": "definition",
@@ -125,10 +123,10 @@ export const account = {
 	"profile.contributions.error": "contributions could not be loaded: {code}",
 	"profile.contributions.seeAll": "see all",
 
-	"profile.promotion.sectionLabel": "yazarlık actions",
-	"profile.promotion.action": "promote to yazarlık",
-	"profile.promotion.outcome.promoted": "the user is now a yazar.",
-	"profile.promotion.outcome.alreadyYazar": "the user is already a yazar.",
+	"profile.promotion.sectionLabel": "authorship actions",
+	"profile.promotion.action": "promote to author",
+	"profile.promotion.outcome.promoted": "the user is now an author.",
+	"profile.promotion.outcome.alreadyYazar": "the user is already an author.",
 	"profile.promotion.outcome.denied": "you are not allowed to do that.",
 	"profile.promotion.outcome.error": "the action failed.",
 
@@ -157,7 +155,7 @@ export const account = {
 	"profile.density.compact": "compact",
 	"profile.density.normal": "normal",
 	"profile.density.spacious": "spacious",
-	"profile.field.caylakContributions": "çaylak contributions",
+	"profile.field.caylakContributions": "newcomer contributions",
 	"profile.caylakContributions.description":
 		"you choose whether what the newcomers write appears in your feed.",
 	"profile.caylakContributions.action": "configure",
@@ -184,14 +182,14 @@ export const account = {
 
 	"ui.dialog.close": "close",
 	"ui.toast.close": "dismiss notification",
-	"ui.caylakBadge": "çaylak contribution",
+	"ui.caylakBadge": "newcomer contribution",
 	"ui.caylakBadge.stage": ", in the preparation stage",
 	"ui.reviewBadge": "in review",
 	"ui.edited": "edited",
 	"ui.share.label": "share",
 	"ui.share.copied": "copied",
 	"ui.share.error": "could not copy",
-	"ui.report.action": "bildir",
+	"ui.report.action": "report",
 	"ui.report.reported": "reported",
 	"ui.report.already": "already reported",
 	"ui.draftRestore.label": "saved draft",

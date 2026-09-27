@@ -19,7 +19,7 @@
  *      pass against the fabricated shape too, which is the litmus the pattern doc sets.
  */
 import {spawnSync} from "node:child_process";
-import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -277,16 +277,27 @@ describe("the WorktreeCreate provider, run against the captured envelope", {
 	 * most dangerous for. Rule 5's literal grammar cannot express a flag, so the declared command
 	 * can never carry it — which is what keeps the flag a test affordance rather than a live one.
 	 */
+	/**
+	 * The captured `cwd` names a repository on the capturing machine, and the verb now resolves its
+	 * toplevel with git, so that one field is pointed at a repository that exists here. Every other
+	 * field is the capture's own.
+	 */
 	it("constructs the path the harness would adopt, from the captured envelope's own fields", () => {
-		const run = runDeclared(
-			declared.command,
-			readGoldenFixture(import.meta.url, "__fixtures__/worktree-create.payload.golden.json"),
-			["--dry-run"],
-		);
-		expect(run.code).toBe(0);
-		expect(run.stdout).toBe(
-			"/private/tmp/fabrika-worktree-capture/repo/.claude/worktrees/capture-probe\n",
-		);
+		const dir = realpathSync(mkdtempSync(join(tmpdir(), "worktree-create-capture-")));
+		try {
+			spawnSync("git", ["init", "--quiet", dir], {encoding: "utf8"});
+			const payload = loadGoldenPayload(
+				import.meta.url,
+				"__fixtures__/worktree-create.payload.golden.json",
+			);
+			const run = runDeclared(declared.command, JSON.stringify({...payload, cwd: dir}), [
+				"--dry-run",
+			]);
+			expect(run.code).toBe(0);
+			expect(run.stdout).toBe(`${dir}/.claude/worktrees/capture-probe\n`);
+		} finally {
+			rmSync(dir, {recursive: true, force: true});
+		}
 	});
 
 	it("refuses an envelope for an event it does not judge, rather than provisioning from it", () => {

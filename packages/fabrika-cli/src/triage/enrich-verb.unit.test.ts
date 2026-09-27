@@ -437,20 +437,20 @@ describe("runEnrich — refusals", () => {
 		return outcome;
 	};
 
-	it("refuses a rewrite with no plain-language summary on 22, naming the section", async () => {
+	it("refuses a rewrite with no plain-language summary on 26, naming the section", async () => {
 		const outcome = await refusesWithoutWriting("## What to build\n\nKeep focus.");
 		expect(outcome.code).toBe(PLAIN_SUMMARY_REQUIRED);
 		expect(outcome.stderr.at(-1)).toContain('"## In plain words"');
 		expect(outcome.stderr.at(-1)).toContain("2-3");
 	});
 
-	it("refuses an --epic pitch with no plain-language summary on 22", async () => {
+	it("refuses an --epic pitch with no plain-language summary on 26", async () => {
 		const outcome = await refusesWithoutWriting(PITCH, true);
 		expect(outcome.code).toBe(PLAIN_SUMMARY_REQUIRED);
 		expect(outcome.stderr.at(-1)).toContain('"## In plain words"');
 	});
 
-	it("refuses an EMPTY plain-language summary on 22, naming the section", async () => {
+	it("refuses an EMPTY plain-language summary on 26, naming the section", async () => {
 		const outcome = await refusesWithoutWriting("## In plain words\n\n## What to build\n\nx");
 		expect(outcome.code).toBe(PLAIN_SUMMARY_REQUIRED);
 		expect(outcome.stderr.at(-1)).toContain('"## In plain words" section');

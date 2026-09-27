@@ -99,13 +99,13 @@ compacting the range — a gap is cheaper than a collision.
 | `1` | usage error, unresolvable repo, or a failed stdin read | ✓ | ✓ | ✓ |
 | `3` | stdin was read and held nothing | ✓ | ✓ | ✓ |
 | `4` | a required section is missing, out of order, or empty | ✓ | — | — |
-| `5` | the body carries a machine-local path and `--redact` was not given | ✓ | ✓ | ✓ |
+| `5` | the body carries a leak — a machine-local path, an email address, or a name `leakNames` declares — and `--redact` was not given | ✓ | ✓ | ✓ |
 | `6` | the body is a bare `@` path reference — **not** redactable | ✓ | ✓ | ✓ |
 | `7` | the write target does not exist (`--label` in the repo / `--issue`) | ✓ | ✓ | ✓ |
 | `8` | the write itself failed — the outcome is **UNKNOWN** | ✓ | ✓ | ✓ |
 | `9` | the write landed but the read-back does not match | ✓ | ✓ | ✓ |
 | `10` | the title or `--label` carries a type or priority classification | ✓ | — | — |
-| `11` | a precondition read failed, so nothing was written | ✓ | ✓ | ✓ |
+| `11` | a precondition read failed — including a `leakNames` that will not decode — so nothing was written | ✓ | ✓ | ✓ |
 
 **`5` and `6` are separate because their fixes are opposite.** The obvious caller loop on a
 path refusal is *re-run with `--redact`*; on a body that **is** a path, `--redact` is a no-op and
@@ -144,9 +144,12 @@ adds no `--body-file` and is not an exception to the rule above.
 
 ### The body-surface leak predicate
 
-Shared by `report file` and `report note`. A machine-local path in a body posted to a public issue
-is a leak. Three generic shapes, and **no name list** — every shape is structural, so a new
-operator, a renamed tool directory or a different machine needs no edit:
+Shared by `report file`, `report note` and `report amend`. A machine-local path, an email address,
+or a name the repo keeps private, in a body posted to a public issue, is a leak. **Four structural
+shapes, and names only from the adopter's own config.** The structural shapes need no edit for a new
+operator, a renamed tool directory or a different machine. The only names the predicate refuses are
+the ones the repo declares under `leakNames` in `.fabrika.jsonc` ([below](#configured-names)); the
+shipped default declares none, so no repo, person or number is refused by default.
 
 1. **Home-relative** — a path beginning with the home marker `~` followed by a separator. An issue
    body has no legitimate use for one: the `## Pointers` section is repo-relative by contract. Two
@@ -159,8 +162,17 @@ operator, a renamed tool directory or a different machine needs no edit:
 3. **Temp and scratch roots** — `/tmp/<…>`, `/private/tmp/<…>`, `/private/var/<…>`,
    `/var/folders/<…>`. No carve-out: a public issue body has no legitimate bare temp path.
 
-All three are redactable and refuse on **exit 5**. `--redact` replaces each match with
-`<class-root>/<redacted>`, so the body still reads as evidence that a path of *that* kind was there.
+4. **Email** — an address: a local part, `@`, and a dotted domain ending in an alphabetic label.
+   Carve-outs, each a shape rather than a person: a role local part (`noreply`, `no-reply`, `git`),
+   which is what a commit trailer and an SSH remote carry; a domain RFC 2606 or RFC 6761 reserves
+   (`example.com`, `.net`, `.org`, and the `.test`, `.example`, `.invalid`, `.localhost` names); and
+   a final label that is a common file extension (`name@1.2.3.patch`, `shot@desktop.png`). Any other
+   address refuses, including a forge's per-user noreply address, because its local part names the
+   account.
+
+All four are redactable and refuse on **exit 5**. `--redact` replaces a path with
+`<class-root>/<redacted>`, so the body still reads as evidence that a path of *that* kind was there,
+and an address with `<redacted email>` — whole, because the domain alone can name an employer.
 
 **The matched span is the whole path run, and the mask keeps the class root — never a single
 collapsed marker.** Which root a path came from is itself the evidence, so the roots do not fold
@@ -179,6 +191,27 @@ together:
 **The leaf filename does not survive**, and that is deliberate rather than an oversight: a filename
 can itself identify a person or a machine, and a reader who needs it can ask the reporter. Longer
 matches are replaced before shorter ones so an overlapping pair cannot corrupt each other.
+
+<a id="configured-names"></a>**Configured names.** A repo declares the names it keeps out of
+public bodies under `leakNames`, with two lists, both empty by default:
+
+```jsonc
+"leakNames": {
+  "privateRepos": ["<owner>/<repo>"], // the name may appear; a link or a #N reference refuses
+  "identifiers": ["<handle>"]          // every occurrence refuses, case-insensitively
+}
+```
+
+| Declared | Passes | Refuses (class) | Redacts to |
+|---|---|---|---|
+| a `privateRepos` slug | the bare `<owner>/<repo>` | a `github.com/<owner>/<repo>` link, with or without a scheme, and its whole path (`private repo link`) | `<redacted private repo link>` |
+| | | an `<owner>/<repo>#<n>` reference (`private repo reference`) | `<owner>/<repo>#<redacted>` |
+| an `identifiers` entry | — | any occurrence (`named identifier`) | `<redacted>` |
+
+A slug matches its own name only — a longer repo name that starts with it is a different repo. An
+identifier is literal text, never a pattern. A `leakNames` that will not decode refuses the write on
+**exit 11**, never falls back to the empty default, because a typo'd list silently dropped is a
+fence the operator believes is standing.
 
 Every redaction is reported on stderr with its line number and class; the verb never rewrites a body
 silently.
@@ -385,7 +418,7 @@ The six authored sections arrive on **stdin** as markdown.
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--title` | string | yes | — | the issue title: a short, specific, type-neutral summary of the observation |
-| `--redact` | boolean | no | `false` | mask each machine-local path in the body down to its class marker and file the masked body, instead of refusing |
+| `--redact` | boolean | no | `false` | mask each leak in the body — a path down to its class marker, an email or a configured name whole — and file the masked body, instead of refusing |
 | `--label` | string | no | `status:needs-triage` | the single intake-queue label the new issue carries |
 | `--repo` | string | no | resolved (see Shared conventions) | the repository to file into |
 | `--json` | boolean | no | `false` | emit the full filing record instead of the line grammar |
@@ -476,7 +509,8 @@ class masked, `{}` when none; each hit's own
 | `report file: section "<heading>" is missing.` | 4 | refusal |
 | `report file: section "<heading>" is empty.` | 4 | refusal |
 | `report file: sections are out of order — "<heading>" follows "<heading>".` | 4 | refusal |
-| `report file: the body carries <n> machine-local path(s) — refusing to post them to a public issue.` (then one indented `line <n>, <class>` per hit) | 5 | refusal |
+| `report file: the body carries <n> leak(s) — refusing to post them to a public issue.` (then one indented `line <n>, <class>` per hit) | 5 | refusal |
+| `report file: cannot read \`leakNames\`: <reason> — which names this repo keeps private is UNKNOWN, so nothing was filed.` | 11 | refusal |
 | `report file: the body is a bare "@" path reference — the composed body never arrived. Send it on stdin; --redact does not apply.` | 6 | refusal |
 | `report file: <repo> has no "<label>" label — the issue would be filed outside the intake queue. Create the label, then re-run.` | 7 | refusal |
 | `report file: could not create the issue in <repo>: <reason> — the filing is UNKNOWN. Re-run `report dedup` before re-filing; the create may have landed.` | 8 | refusal |
@@ -486,7 +520,7 @@ class masked, `{}` when none; each hit's own
 | `report file: --title is empty — refusing to file an untitled report.` | 1 | usage error |
 
 **Scope** — a judging verb on three questions, all fail-closed: *does this body carry a
-machine-local path*, *does the intake label exist in the target repo*, and *does the title or label
+leak*, *does the intake label exist in the target repo*, and *does the title or label
 classify*. The leak scan's scope is the whole composed body including the footer, scanned after
 composition so nothing the verb itself appends can escape it. The label and vocabulary checks scope
 to the target repo's label set, read fresh. Zero scope is unreachable rather than tolerated: an
@@ -548,7 +582,7 @@ $ echo $?
 
 ```
 $ fabrika report file --title "PR body shipped a literal body-file reference" < incident.md
-report file: the body carries 1 machine-local path(s) — refusing to post them to a public issue.
+report file: the body carries 1 leak(s) — refusing to post them to a public issue.
   line 12, temp root
 $ echo $?
 5
@@ -556,7 +590,7 @@ $ echo $?
 
 ```
 $ fabrika report file --title "PR body shipped a literal body-file reference" --redact < incident.md
-report file: redacted 1 machine-local path — line 12, temp root
+report file: redacted a leak — line 12, temp root
 9415	https://github.com/<owner>/<repo>/issues/9415
 ```
 
@@ -644,7 +678,7 @@ The note arrives on **stdin** as markdown.
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--issue` | integer | yes | — | the issue number to add the note to |
-| `--redact` | boolean | no | `false` | mask each machine-local path in the note down to its class marker and post the masked note, instead of refusing |
+| `--redact` | boolean | no | `false` | mask each leak in the note — a path down to its class marker, an email or a configured name whole — and post the masked note, instead of refusing |
 | `--repo` | string | no | resolved (see Shared conventions) | the repository the issue lives in |
 | `--json` | boolean | no | `false` | emit the full note record instead of the line grammar |
 | stdin | markdown | yes | — | the note body |
@@ -667,7 +701,8 @@ structurally unreachable here and are left unused rather than reassigned.
 |---|---|---|
 | `report note: stdin was read and held 0 bytes — refusing to post an empty note.` | 3 | refusal |
 | `report note: could not read stdin: <reason> — the note is UNKNOWN, never empty.` | 1 | refusal |
-| `report note: the note carries <n> machine-local path(s) — refusing to post them to a public issue.` (then one indented `line <n>, <class>` per hit) | 5 | refusal |
+| `report note: the note carries <n> leak(s) — refusing to post them to a public issue.` (then one indented `line <n>, <class>` per hit) | 5 | refusal |
+| `report note: cannot read \`leakNames\`: <reason> — which names this repo keeps private is UNKNOWN, so nothing was posted.` | 11 | refusal |
 | `report note: the note is a bare "@" path reference — the composed note never arrived. Send it on stdin; --redact does not apply.` | 6 | refusal |
 | `report note: <repo> has no issue #<n>.` | 7 | refusal |
 | `report note: could not post the comment on #<n>: <reason> — the note is UNKNOWN. Re-read the issue before re-posting; the comment may have landed.` | 8 | refusal |
@@ -677,8 +712,7 @@ A **closed** issue is not a refusal — a note on a closed issue is sometimes ex
 verb says so on stderr (`report note: #<n> is closed.`) so the caller is never surprised by where
 the note landed.
 
-**Scope** — a judging verb on one question, fail-closed: *does this note carry a machine-local
-path*. Its scope is the whole note as read from stdin. Zero scope is unreachable: an empty stdin is
+**Scope** — a judging verb on one question, fail-closed: *does this note carry a leak*. Its scope is the whole note as read from stdin. Zero scope is unreachable: an empty stdin is
 exit 3 before the scan runs, so the guard can never report clean over nothing. The scope line on
 stderr names the byte count read and the target issue.
 
@@ -827,7 +861,7 @@ The amendment arrives on **stdin** as markdown.
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--issue` | integer | yes | — | the issue number whose body the amendment is appended to |
-| `--redact` | boolean | no | `false` | mask each machine-local path in the amendment down to its class marker and append the masked section, instead of refusing |
+| `--redact` | boolean | no | `false` | mask each leak in the amendment — a path down to its class marker, an email or a configured name whole — and append the masked section, instead of refusing |
 | `--repo` | string | no | resolved (see Shared conventions) | the repository the issue lives in |
 | `--json` | boolean | no | `false` | emit the full amend record instead of the line grammar |
 | stdin | markdown | yes | — | the amendment section, without its heading |
@@ -874,7 +908,8 @@ unused rather than reassigned.
 |---|---|---|
 | `report amend: stdin was read and held 0 bytes — refusing to append an empty amendment.` | 3 | refusal |
 | `report amend: could not read stdin: <reason> — the amendment is UNKNOWN, never empty.` | 1 | refusal |
-| `report amend: the amendment carries <n> machine-local path(s) — refusing to append them to a public issue.` (then one indented `line <n>, <class>` per hit) | 5 | refusal |
+| `report amend: the amendment carries <n> leak(s) — refusing to append them to a public issue.` (then one indented `line <n>, <class>` per hit) | 5 | refusal |
+| `report amend: cannot read \`leakNames\`: <reason> — which names this repo keeps private is UNKNOWN, so nothing was appended.` | 11 | refusal |
 | `report amend: the amendment is a bare "@" path reference — the composed section never arrived. Send it on stdin; --redact does not apply.` | 6 | refusal |
 | `report amend: <repo> has no issue #<n>.` | 7 | refusal |
 | `report amend: #<n> in <repo> is a pull request, not an issue — a PR body is written by \`build pr-body\`.` | 7 | refusal |

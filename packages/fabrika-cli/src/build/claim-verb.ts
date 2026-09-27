@@ -70,7 +70,9 @@ import {
 	type IssueRecord,
 	listComments,
 } from "../io/issues.ts";
+import {getPullRequest} from "../io/pulls.ts";
 import type {IntegrateFailure} from "../lane/integrate-failure.ts";
+import {type GateResult, ownershipGate} from "../ownership/gate.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {issueRefsOf} from "../review/classes.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -91,11 +93,13 @@ import {
 	BLOCKED,
 	CLAIM_NOT_MINE,
 	OFF_VOCABULARY,
+	PR_NOT_OURS,
 	PRECONDITION_UNKNOWN,
 	PRIOR_BUILD_MISMATCH,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 	WRONG_LANE,
+	ZERO_SCOPE,
 } from "./codes.ts";
 import {readDischargedGate} from "./discharge.ts";
 import {currentBranch, detachHead} from "./git.ts";
@@ -368,6 +372,45 @@ const readPriorBuild = (
 		};
 	});
 
+/**
+ * Whether the pipeline owns the PR a claim names: its author is one of ours, or a trusted grant
+ * hands it over. The PR record is read here because the issue record a claim holds carries no
+ * base ref, and the config that decides ownership is read at the base.
+ */
+const pullOwnership = (
+	repo: string,
+	number: number,
+): Effect.Effect<GateResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const found = yield* getPullRequest(repo, number);
+		if (found._tag === "Absent") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					ZERO_SCOPE,
+					`${CLAIM}: PR #${number} is proven absent — nothing was written.`,
+				),
+			};
+		}
+		if (found._tag === "Unknown") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${CLAIM}: cannot read PR #${number}: ${found.reason} — whose PR it is is UNKNOWN, never ours; nothing was written.`,
+				),
+			};
+		}
+		return yield* ownershipGate(
+			CLAIM,
+			repo,
+			{number, author: found.value.authorLogin, baseRef: found.value.baseRef},
+			listComments(repo, number),
+			{notOurs: PR_NOT_OURS, unknown: PRECONDITION_UNKNOWN},
+			"nothing was written.",
+		);
+	});
+
 const preflight = (
 	verb: string,
 	options: Pick<ClaimOptions, "number" | "repo" | "env">,
@@ -526,6 +569,16 @@ export const runClaim = (
 					}.`,
 				],
 			};
+		}
+
+		// A PR belongs to its author. Repair pushes onto that author's branch, so a claim over a PR
+		// the pipeline does not own refuses here, before any marker, whatever the served issue says.
+		if (ready.issue.isPullRequest) {
+			const owned = yield* pullOwnership(repo, number);
+			if (owned._tag === "Refused") {
+				return {...owned.outcome, stderr: [...lines, ...owned.outcome.stderr]};
+			}
+			lines.push(owned.line);
 		}
 
 		// The blockedness gate, ordered AFTER the pure axes because they answer without IO: a number

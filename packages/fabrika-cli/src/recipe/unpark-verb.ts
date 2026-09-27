@@ -48,7 +48,7 @@ import type {PullScope} from "../io/pulls.ts";
 import {nominatePulls, nominationScope} from "../lane/nominate.ts";
 import {tracePulls} from "../lane/prove.ts";
 import {runProve} from "../lane/prove-verb.ts";
-import {routeForCause} from "../lane/report.ts";
+import {routeUnder} from "../lane/report.ts";
 import {BUILD_CLAIM_BUDGET_MINUTES} from "../lane/shell-budget.ts";
 import {runStatus} from "../lane/status-verb.ts";
 import {runTransition} from "../lane/transition-verb.ts";
@@ -176,7 +176,7 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 		// bytes — and so a rationale that is only whitespace refuses as the absent one it is rather
 		// than travelling to `lane transition`'s own refusal a step later.
 		const rationale = options.rationale?.trim() === "" ? null : (options.rationale?.trim() ?? null);
-		const routed = routeOfPark(parked, options.parkCause.value.driverRouted === "clear");
+		const routed = routeOfPark(parked, options.parkCause.value);
 		if (routed._tag === "Human") {
 			return refuse(
 				PARK_NOVEL,
@@ -261,8 +261,9 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
  * in its place. `Human` is everything else, and is the refusal this verb always had.
  *
  * A `Driver` arm always names its cause, and that is the route table's own rule rather than a
- * coincidence of the rows: {@link routeForCause} answers `founder` for a park that named none, so a
- * cause-less park never reaches this arm.
+ * coincidence of the rows: {@link routeUnder} answers `founder` for a park that named none, so a
+ * cause-less park never reaches this arm. It also reads the repo's `repairBudgetSpent`, so a spent
+ * budget a repo declared `founder` is `Human` here and says which setting made it so.
  */
 type Routing =
 	| {readonly _tag: "Recipe"; readonly recipe: ParkRecipe}
@@ -271,12 +272,19 @@ type Routing =
 
 const routeOfPark = (
 	parked: Extract<ParkClass, {readonly _tag: "Known" | "Novel"}>,
-	driverClears: boolean,
+	parkCause: ParkCauseSurface,
 ): Routing => {
 	if (parked._tag === "Known") return {_tag: "Recipe", recipe: parked.recipe};
 	const cause = parked.cause;
-	return driverClears && cause !== null && routeForCause(cause) === "driver"
-		? {_tag: "Driver", cause}
+	const route = routeUnder(cause, parkCause);
+	if (cause !== null && route === "driver" && parkCause.driverRouted === "clear") {
+		return {_tag: "Driver", cause};
+	}
+	return cause === "repair-budget-spent" && route === "founder"
+		? {
+				_tag: "Human",
+				reason: `this repo's \`${PARK_CAUSE}.repairBudgetSpent\` is "founder", so a spent repair budget is a human's call`,
+			}
 		: {_tag: "Human", reason: parked.reason};
 };
 

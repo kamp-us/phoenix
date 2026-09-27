@@ -29,13 +29,13 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {authorKeyNotices} from "../config/deprecated-authors.ts";
-import {capClearAuthorsKey} from "../config/keys/cap-clear-authors.ts";
+import {capClearAuthorsKey, type GrantAuthor} from "../config/keys/cap-clear-authors.ts";
 import {loadConfig} from "../config/load.ts";
 import type {CommentRecord} from "../io/issues.ts";
 import {permissionFor} from "../io/pulls.ts";
 import {CONFIG_PATH} from "../repo-config.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
-import {readFileAtRef} from "../ship/github.ts";
+import {listTeamMembers, readFileAtRef} from "../ship/github.ts";
 import {controlPlaneRoster} from "../ship/roster.ts";
 import {read as readClearance} from "../wire/cap-clearance.ts";
 
@@ -81,7 +81,7 @@ export type Membership =
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
 /**
- * The control-plane set as a predicate — who may clear a round.
+ * The control-plane set as a predicate — who may clear a round or grant a takeover.
  *
  * Read through `../ship/roster.ts`, the one roster read, so the set that may clear a round and the
  * set that may rule a decision cannot drift into two. A roster that names nobody is `Unusable` —
@@ -106,6 +106,42 @@ export const controlPlaneMembership = (
 			_tag: "Set" as const,
 			holds: (login: string) => logins.has(login.trim().toLowerCase()),
 			ref: roster.ref,
+		};
+	});
+
+export type Expanded =
+	| {readonly _tag: "Logins"; readonly holds: (login: string) => boolean}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+/**
+ * An author set as a predicate, with every team expanded once.
+ *
+ * A **404 team** is proven to hold nobody, while a failed read is `Unknown` — the split every
+ * author-set reader rests on.
+ */
+export const expandAuthors = (
+	authors: ReadonlyArray<GrantAuthor>,
+): Effect.Effect<Expanded, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const logins = new Set<string>();
+		for (const author of authors) {
+			if (author._tag === "User") {
+				logins.add(author.login.toLowerCase());
+				continue;
+			}
+			const members = yield* listTeamMembers(author.org, author.team);
+			if (members._tag === "Unknown") {
+				return {
+					_tag: "Unknown" as const,
+					reason: `@${author.org}/${author.team}'s membership: ${members.reason}`,
+				};
+			}
+			if (members._tag === "Absent") continue;
+			for (const member of members.value) logins.add(member.toLowerCase());
+		}
+		return {
+			_tag: "Logins" as const,
+			holds: (login: string) => logins.has(login.trim().toLowerCase()),
 		};
 	});
 

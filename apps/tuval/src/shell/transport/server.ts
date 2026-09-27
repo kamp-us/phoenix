@@ -419,6 +419,8 @@ export const session = Effect.fn("Tuval.transport.session")(function* (
 				yield* Effect.sync(() => void pages.add(send));
 			}),
 		);
+		// Forked after the table snapshot, never beside it: the page reads its first spell catalog as
+		// the end of that snapshot, and a shell missing from the table by then as no shell (#9375).
 		yield* Effect.forkIn(
 			Stream.runForEach(descriptions, (registry) =>
 				send({kind: "tuval/transport/spell-registry/v1", registry}),

@@ -53,6 +53,7 @@ arrives owing a migration nobody planned.
 | `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
 | `grill-ruling` | [`packages/fabrika-cli/src/wire/grill-ruling.ts`](../../../packages/fabrika-cli/src/wire/grill-ruling.ts) | `grilling` | `grilling` |
 | `cap-clearance` | [`packages/fabrika-cli/src/wire/cap-clearance.ts`](../../../packages/fabrika-cli/src/wire/cap-clearance.ts) | `build` | `build`, `operate` |
+| `takeover-grant` | [`packages/fabrika-cli/src/wire/takeover-grant.ts`](../../../packages/fabrika-cli/src/wire/takeover-grant.ts) | `build` | `build`, `ship`, `heal-ci` |
 | `grill-answer` | [`packages/fabrika-cli/src/wire/grill-answer.ts`](../../../packages/fabrika-cli/src/wire/grill-answer.ts) | `grilling` | `grilling` |
 | `grill-supersede` | [`packages/fabrika-cli/src/wire/grill-supersede.ts`](../../../packages/fabrika-cli/src/wire/grill-supersede.ts) | `grilling` | `grilling` |
 | `handoff-pack` | [`packages/fabrika-cli/src/wire/handoff-pack.ts`](../../../packages/fabrika-cli/src/wire/handoff-pack.ts) | `handoff` | `handoff` |
@@ -218,6 +219,18 @@ was used. Naming the round is also what spends it exactly once: the grant covers
 and the next FAIL round leaves it behind. Like the ruling marker, it is not authority on its own —
 the reader settles that against the repo's control-plane set (`.github/CODEOWNERS`) and a dated authorization
 comment beside it.
+
+### `takeover-grant`
+
+This is the grant that hands a pull request another author opened to the pipeline. A pull request
+belongs to its author: `build` will not repair it, `ship` will not land it and `heal-ci` routes it to
+its author, unless its author is one of the repo's own accounts (`ownAccounts`, or the running
+account alone when that set is empty) or this marker stands on it. The marker names the pull request
+it hands over, so a grant read on any other thread grants nothing, and the lines under it quote the
+dated authorization it rests on. Like the clearance marker it is not authority on its own: the
+reader counts it only when its author is in the repo's control-plane set (the owners
+`.github/CODEOWNERS` names on the default branch), holds `write+`, and is not the pull request's own
+author.
 
 ### `grill-answer`
 

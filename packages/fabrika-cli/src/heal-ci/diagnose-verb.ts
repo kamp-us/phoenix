@@ -32,6 +32,7 @@ import {type Producer, producerFor, resolveCi} from "../config/ci-producer.ts";
 import type {Resolution} from "../config/key-group.ts";
 import type {CiSurface} from "../config/keys/ci.ts";
 import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
+import {ok} from "../io/git.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {
 	commitExists,
@@ -40,6 +41,8 @@ import {
 	type PullRecord,
 	permissionFor,
 } from "../io/pulls.ts";
+import {prOwnershipLine} from "../ownership/pr-ownership.ts";
+import {readPrOwnership} from "../ownership/read.ts";
 import {authorityNote, readBlockingSet, reportedLine, unreadableCause} from "../review/blocking.ts";
 import {partitionWithUi, shipNamespacesOf, touchesGovernanceRoot} from "../review/classes.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
@@ -68,7 +71,7 @@ import {read as readRoute} from "../wire/routed-elsewhere.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {commitPushedAt, readBaseConflict} from "./github.ts";
-import {type LaneToken, laneFor} from "./lane.ts";
+import {buildBound, type LaneToken, laneFor, type Standing} from "./lane.ts";
 import {type Link, linkOf, renderLink} from "./link.ts";
 import {type CiToken, classifyStall, type StallToken, strandAgeMinutes} from "./stall.ts";
 import {compare} from "./surface.ts";
@@ -150,6 +153,11 @@ export interface Diagnosis {
 		readonly claimedAt: string | null;
 		readonly lastActivityAt: string | null;
 	};
+	/**
+	 * Who opened the PR, and whether the pipeline owns it. The standing is read only for a class whose
+	 * work can reach `build` (`./lane.ts`'s `buildBound`), and is `unread` otherwise.
+	 */
+	readonly author: {readonly login: string; readonly standing: Standing};
 	readonly gates: {readonly state: string; readonly pass: number; readonly required: number};
 	readonly ci: {readonly rollup: CiToken; readonly contexts: number};
 	readonly queue: string;
@@ -534,6 +542,32 @@ export const diagnoseOne = (
 			dwellMinutes: params.dwellMinutes,
 			driftCommits: params.driftCommits,
 		});
+		// Read only where the work can reach `build` — this arrow, or §3's `logic` route over a red: a PR
+		// belongs to its author, so that route needs proof the pipeline owns it. An unreadable standing
+		// is not a refusal — the class is still proven — but it never reaches `build`.
+		let standing: Standing = "unread";
+		if (buildBound(verdict.token, owner)) {
+			const read = yield* readPrOwnership(
+				repo,
+				{number: pr, author: pull.authorLogin, baseRef: pull.baseRef},
+				Effect.succeed(ok(commented.value)),
+			);
+			if (read._tag === "Unknown") {
+				standing = "unknown";
+				notices.push(
+					`${VERB}: cannot read whose PR #${pr} is: ${read.reason} — its work goes to its author, never build.`,
+				);
+			} else {
+				standing =
+					read.ownership._tag === "Own"
+						? "ours"
+						: read.ownership._tag === "Granted"
+							? "granted"
+							: "foreign";
+				notices.push(prOwnershipLine(VERB, pr, read.ownership));
+			}
+		}
+
 		if (verdict.staleReason !== null) {
 			notices.push(
 				`${VERB}: claim-stale fired on ${verdict.staleReason} — last activity ${lastActivityAt ?? NULL_TOKEN}, behind base ${drift.value}.`,
@@ -545,10 +579,11 @@ export const diagnoseOne = (
 			diagnosis: {
 				pr,
 				token: verdict.token,
-				lane: laneFor(verdict.token, {ownerLogin: owner, authorLogin: pull.authorLogin}),
+				lane: laneFor(verdict.token, {ownerLogin: owner, authorLogin: pull.authorLogin, standing}),
 				head: bound,
 				ageMinutes: strandAgeMinutes(pushedAt.value, lastActivityAt, params.now),
 				owner: {login: owner, claimedAt, lastActivityAt},
+				author: {login: pull.authorLogin, standing},
 				gates: {
 					state:
 						required.length === 0
@@ -580,6 +615,7 @@ export const renderDiagnosis = (found: Diagnosis, json: boolean): VerbOutcome =>
 					head: found.head,
 					ageMinutes: found.ageMinutes,
 					owner: found.owner,
+					author: found.author,
 					gates: {state: found.gates.state, pass: found.gates.pass, required: found.gates.required},
 					ci: {rollup: found.ci.rollup, contexts: found.ci.contexts},
 					queue: found.queue,
@@ -593,6 +629,7 @@ export const renderDiagnosis = (found: Diagnosis, json: boolean): VerbOutcome =>
 				[
 					`stall\t${found.token}\t${found.head}\t${found.ageMinutes}`,
 					`owner\t${nullable(found.owner.login)}\t${nullable(found.owner.claimedAt)}\t${nullable(found.owner.lastActivityAt)}`,
+					`author\t${found.author.login === "" ? NULL_TOKEN : found.author.login}\t${found.author.standing}`,
 					`gates\t${found.gates.state}\t${found.gates.pass}/${found.gates.required}`,
 					`ci\t${found.ci.rollup}\t${found.ci.contexts}`,
 					`queue\t${found.queue}`,

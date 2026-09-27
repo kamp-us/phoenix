@@ -24,6 +24,7 @@ import {Cause, Console, Effect, Exit, Option, Runtime} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {boot, defaultGlobalConfig} from "./boot.ts";
 import {watchConfig} from "./config-watch.ts";
+import {defaultProjectConfig} from "./default-project-config.ts";
 import {servePage} from "./page/dev-server.ts";
 import {displayHost} from "./page/loopback.ts";
 import {serveDesk} from "./shell/host/index.ts";
@@ -75,6 +76,7 @@ const tuval = Command.make(
 			// The one boot that means the operator's own home dir. Every other call site names a
 			// scratch one, which is why `BootOptions.home` is required rather than defaulted here.
 			home: homedir(),
+			projectDefault: defaultProjectConfig,
 		}).pipe(
 			Effect.catch((error) =>
 				Console.error(`tuval: refusing to boot — ${error.message}`).pipe(
@@ -82,7 +84,11 @@ const tuval = Command.make(
 				),
 			),
 		);
-		const from = report.sources.length === 0 ? "no config module" : report.sources.join(" + ");
+		const layers = [
+			...report.sources,
+			...(report.projectDefaulted ? ["the built-in project default"] : []),
+		];
+		const from = layers.length === 0 ? "no config module" : layers.join(" + ");
 		yield* Console.log(
 			`tuval: booted — ${report.programCount} program(s), ${report.spellCount} spell(s) registered from ${from}; ${report.processCount} process(es) live, ${report.restoredCount} restored from ${report.stateDir}`,
 		);

@@ -235,6 +235,14 @@ read definitely says not mergeable. GitHub happily arms a conflicted PR and park
 neither an unknown read nor a proven conflict is green. No refusal here is a stall and nothing was
 armed — on `11` say mergeability is unknown.
 
+<!-- anchor: PR-BELONGS-TO-ITS-AUTHOR --> **A PR belongs to its author, and both landing verbs check
+that first.** `enqueue` and `merge` refuse on `22` when the PR was opened by an account outside the
+repo's own accounts (`ownAccounts`, or the running account alone when that set is empty) and no
+valid takeover grant stands on it. Nothing was armed or merged. End **refused — not ours**: the PR
+is its author's to land, and routing it to repair would push onto their branch. Handing it to the
+pipeline is `fabrika build takeover`, run by an account the repo trusts to grant — never by you on
+your own reading, and never to get past this refusal.
+
 **An `11` on mergeability is now a minute of re-reading, not six seconds of it, so read it as a
 fact.** GitHub computes `mergeable` in a background job the first read starts, and the verb re-reads
 on a backoff across `--mergeability-seconds` (default 60) before calling it UNKNOWN — so a

@@ -231,7 +231,9 @@ An unreleased claim is a lock nobody can reclaim, which a human then clears by h
   `fabrika build release $epic_number --token <claim-token>` before you end: this refusal lands ahead
   of everything, and an epic waiting on a founder must not also be waiting on a lock nobody can
   reclaim. The epic goes back to the founder — a re-plan is `plan-epic`'s, and a fresh approval is
-  his.
+  his. Ask for it the way `plan-epic` does, with the one-child-per-line walk of
+  [its step 9](../plan-epic/SKILL.md#9--hand-to-the-gate) ahead of the approve line, and relay no
+  approve line without that walk.
 - `PLAN-MOVED` — `21`: the plan changed between the check and a writing verb. Nothing was written
   and no verdict is posted; re-check from step 2.
 - `FLIP-PARTIAL` — `22`: the floor was clean and something did not move — some children, or the

@@ -200,3 +200,14 @@ export const DISCLOSURE_INCOMPLETE = 35;
  * state: the idempotent re-run cannot be the recovery when the re-run is what hides the wrong base.
  */
 export const BASE_MISMATCH = 36;
+/**
+ * Proven: the pull request a claim names was opened by an author outside the repo's own accounts,
+ * and no valid takeover grant stands on it — it is its author's to finish.
+ *
+ * A *proven* refusal about the PR — its author, the base-ref config, the running account and every
+ * grant marker were read in full — so it never borrows {@link PRECONDITION_UNKNOWN}. Its own seat
+ * rather than {@link AUDIENCE_NOT_AGENT}'s: `21` is about the served issue's label, and this is about
+ * who owns the branch. The remedy is not an override: an account the repo trusts to grant runs
+ * `build takeover`, or the PR is left to its author.
+ */
+export const PR_NOT_OURS = 37;
