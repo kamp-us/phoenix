@@ -149,6 +149,8 @@ export interface ProjectLayer {
 	readonly id: ProjectId;
 	/** The project module: `<project>/.tuval/tuval.config.ts`. */
 	readonly module: string;
+	/** The project a subproject is nested under, which its connections may not reach (#9689). */
+	readonly parent?: ProjectId;
 }
 
 /**
@@ -360,7 +362,7 @@ const projectCheck =
 	(config) =>
 		Result.flatMap(projectStatesNoFlags(config), (stated) =>
 			Result.flatMap(ReservedDeskKeys.of(desk.table).refuseIn(stated.keys), () =>
-				projectLayer(project.id, stated),
+				projectLayer(project.id, stated, project.parent),
 			),
 		);
 

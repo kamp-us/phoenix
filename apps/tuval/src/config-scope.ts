@@ -65,11 +65,13 @@ export const globalLayer = (config: TuvalConfig): Result.Result<TuvalConfig, str
 
 /**
  * The project layer as it runs: every row and node under `project`'s scope, and every connection
- * resolved against the project first and the global layer second.
+ * resolved against the project first and the global layer second. A subproject's `parent` is named
+ * so its refusal says which boundary it hit: a subproject's config cannot connect up (#9689).
  */
 export const projectLayer = (
 	project: ProjectId,
 	config: TuvalConfig,
+	parent?: ProjectId,
 ): Result.Result<TuvalConfig, string> => {
 	const rows = new Set(config.programs.map(rowId));
 	const nodes = new Set<string>(config.graph.nodes.map((node) => node.id));
@@ -77,6 +79,11 @@ export const projectLayer = (
 		const {scope} = scopedIdParts(id);
 		if (scope === undefined) return Result.succeed(own.has(id) ? project.scope(id) : id);
 		if (scope === project.key) return Result.succeed(id);
+		if (scope === parent?.key) {
+			return Result.fail(
+				`subproject node "${project.scope(from.id)}" connects to "${id}", its parent ${parent.name}'s; a subproject's config cannot connect up to its parent`,
+			);
+		}
 		return Result.fail(
 			`project node "${project.scope(from.id)}" connects to "${id}", another project's; a project connects only to its own programs and global ones`,
 		);

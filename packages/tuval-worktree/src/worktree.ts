@@ -64,8 +64,10 @@ import {
 	type AnyProgram,
 	type ArgRefs,
 	type AuthoredEvent,
+	closeSubproject,
 	defineProgram,
 	type HostHandlers,
+	openSubproject,
 	Program,
 	port,
 	programArgs,
@@ -74,6 +76,7 @@ import {
 	type SpawnEffect,
 	type Spawned,
 	type Stopped,
+	type SubprojectRefused,
 	send,
 	spawn,
 	stop,
@@ -460,6 +463,8 @@ export interface Reconcile {
 		readonly name: string;
 		readonly path: string;
 	}>;
+	/** The open worktrees' directories: each opens again as a subproject if the disk still has it. */
+	readonly subprojects: ReadonlyArray<string>;
 }
 
 /** `defineProgram`'s fifth type argument, and the key set the spread handlers answer. */
@@ -475,10 +480,23 @@ export const teardownEffect = (plan: TeardownPlan): Teardown => ({
 	plan,
 });
 
-export const reconcileEffect = (records: Reconcile["records"]): Reconcile => ({
+export const reconcileEffect = (
+	records: Reconcile["records"],
+	subprojects: Reconcile["subprojects"] = [],
+): Reconcile => ({
 	type: "worktree.reconcile",
 	records,
+	subprojects,
 });
+
+/**
+ * Each worktree is a subproject of the project this program runs in (#9689, ruling #9668 R4.3):
+ * opened once it is provisioned, closed once it is put back, and opened again on a restore, so a
+ * closed lane stays closed and a live one comes back with this program. A program the desk's own
+ * graph runs is in no project, and then there is nothing to open under; the worktree is the same.
+ */
+const asSubproject = (request: Effect.Effect<void, SubprojectRefused>) =>
+	Effect.catch(request, (refused) => Effect.logDebug(refused.message));
 
 /**
  * The where-you-are preface. Built here rather than in the config because every word of it is a
@@ -528,8 +546,11 @@ export const worktreeHandlers = (
 	return {
 		"worktree.provision": (effect) =>
 			onMachine(
+				Effect.tap(provision(effect.plan), (outcome) =>
+					outcome.ok ? asSubproject(openSubproject(effect.plan.path)) : Effect.void,
+				),
+			).pipe(
 				Effect.map(
-					provision(effect.plan),
 					(outcome): ReadonlyArray<WorktreeEvent> => [
 						outcome.ok
 							? {
@@ -547,10 +568,12 @@ export const worktreeHandlers = (
 				),
 			),
 
+		// The subproject closes first, and the close answers only once its processes have stopped, so
+		// none is left running in a directory the removal takes away.
 		"worktree.teardown": (effect) =>
 			onMachine(
 				Effect.map(
-					teardown(effect.plan),
+					Effect.andThen(asSubproject(closeSubproject(effect.plan.path)), teardown(effect.plan)),
 					(outcome): ReadonlyArray<WorktreeEvent> => [
 						outcome.ok
 							? {type: "closed", name: effect.plan.name}
@@ -567,7 +590,16 @@ export const worktreeHandlers = (
 		"worktree.reconcile": (effect) =>
 			onMachine(
 				Effect.map(
-					reconcile(effect.records),
+					Effect.tap(reconcile(effect.records), (missing) => {
+						const gone = new Set(
+							effect.records.filter((one) => missing.includes(one.name)).map((one) => one.path),
+						);
+						return Effect.forEach(
+							effect.subprojects.filter((path) => !gone.has(path)),
+							(path) => asSubproject(openSubproject(path)),
+							{concurrency: 1, discard: true},
+						);
+					}),
 					(missing): ReadonlyArray<WorktreeEvent> => [{type: "reconciled", missing}],
 				),
 			),
@@ -1010,6 +1042,7 @@ export const authoredWorktree = (settled: Settled) => {
 								name: record.name,
 								path: record.path,
 							})),
+							worktrees.filter((record) => record.status === "open").map((record) => record.path),
 						),
 					],
 				];

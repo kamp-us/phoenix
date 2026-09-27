@@ -160,6 +160,20 @@ Nothing is asked on the way: a folder that was deleted, or whose config is no lo
 skipped with a `tuval: did not reopen the project <folder>: …` line, nothing from it runs, and the
 rest still open. Subprojects are not reopened here; the program that opened one restores it.
 
+A program can open a subproject: a folder nested under the project it runs in (#9689). Its handler
+calls `openSubproject(folder)` from `@kampus/tuval-sdk/authoring`, and that program becomes the
+subproject's opener. A subproject asks no trust question, because its parent is open and so already
+trusted. It keeps its own config, state directory and rows, and its tiles read under its parent's
+label (`phoenix › lane-9650`). Closing the parent closes its subprojects first and stops their
+processes. Only the opener crosses the boundary: a subproject's config cannot connect up to its
+parent, and at runtime a send, ask, stop, read or spawn from the parent's other programs into the
+subproject, or from the subproject up to its parent, is refused with an error naming both ends. That
+holds for a program's own effects and for the `process send`, `process read` and `process spawn`
+spells it calls. `closeSubproject(folder)` answers once the subproject has closed and its processes
+have stopped. The saved list
+leaves subprojects out, so after a restart one comes back only when its opener calls
+`openSubproject` again. `@kampus/tuval-worktree` opens each lane this way.
+
 Known gap: the `--project` folder, which defaults to the working directory, is imported at boot
 without the question, so running `tuval` inside a freshly cloned repo runs that repo's config
 unasked. So is the folder `tuval open <folder>` starts a new desk with. Ruling #9668 R2.1 exempts only the home config; #9884 tracks moving the boot folder onto

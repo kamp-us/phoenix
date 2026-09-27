@@ -28,6 +28,7 @@ import {PlannedProcesses} from "@kampus/tuval-sdk/kernel/process/PlannedProcesse
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import type {ProcessHandle} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProcessBoundary} from "@kampus/tuval-sdk/kernel/process/subprojects";
 import {WorkingFolder} from "@kampus/tuval-sdk/kernel/process/working-folder";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
@@ -308,11 +309,15 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	// layer inside the merge above would be asking for itself.
 	const listing = Context.add(built, AiAgentSessionList, aiAgentSessionListKernel(built));
 	const transcripts = Context.add(listing, AiAgentTranscripts, aiAgentTranscriptsKernel(listing));
-	const services = Context.add(
+	const withProjects = Context.add(
 		Context.add(transcripts, Projects, desk?.service ?? Projects.none),
 		TrustPrompts,
 		prompts,
 	);
+	// Every process's spawn set carries the kernel, so the subproject boundary is asked from all of
+	// them (#9689); a kernel with no desk has no subprojects and no boundary.
+	const services =
+		desk === undefined ? withProjects : Context.add(withProjects, ProcessBoundary, desk.boundary);
 	// The desk's own processes run in the home folder, and so does whatever they start without
 	// naming another; a project's processes run in its folder instead (#9694).
 	const kernel =

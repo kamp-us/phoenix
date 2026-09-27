@@ -55,6 +55,7 @@ import type {
 import {isAsked, NO_REPLY, type ReplyTo} from "../process/inbox.ts";
 import {Processes} from "../process/Processes.ts";
 import {ProcessSelf} from "../process/self.ts";
+import {type CrossingRefused, guardReach, guardSpawn} from "../process/subprojects.ts";
 import {WorkingFolder} from "../process/working-folder.ts";
 import type {
 	AnyProgram,
@@ -460,6 +461,8 @@ const spawnHandler = (cmd: SpawnEffect) =>
 		// only ever asked for a real id and both cases take this one line (#8762). The `spawned`
 		// event carries the same resolved id, so the author's `update` reads what actually started.
 		const program = yield* resolveSpawnTarget(cmd.program);
+		// A subproject's rows are behind its boundary, which only its opener crosses (#9689).
+		yield* guardSpawn(ProgramId.make(program));
 		// The parent is stamped here, off the process this interpretation is running for, and is
 		// never something the `spawn` effect carries (#8757). `on` rides along as that same
 		// process's routing table, so a named child port arrives as this process's own event.
@@ -478,6 +481,8 @@ const spawnHandler = (cmd: SpawnEffect) =>
 const sendHandler = (cmd: SendEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* SpawnedProcesses;
+		// Asked about only for a cell's send: a command runs as no process, so there is no `from` (#9689).
+		yield* guardReach(cmd.to.process);
 		yield* processes.send(cmd.to.process, cmd.to.port, cmd.payload);
 		return NO_EVENTS;
 	});
@@ -492,6 +497,7 @@ const askHandler = (cmd: AskEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* SpawnedProcesses;
 		const self = yield* ProcessSelf;
+		yield* guardReach(cmd.to.process);
 		yield* processes.ask(self.id, cmd.to.process, cmd.to.port, cmd.payload, cmd.reply);
 		return NO_EVENTS;
 	});
@@ -528,6 +534,7 @@ const replyHandler = (cmd: ReplyEffect) =>
 const stopHandler = (cmd: StopEffect) =>
 	Effect.gen(function* () {
 		const processes = yield* Processes;
+		yield* guardReach(cmd.process);
 		yield* processes.remove(cmd.process);
 		return NO_EVENTS;
 	});
@@ -548,7 +555,8 @@ export type EffectFailure =
 	| StoreFailed
 	| ProcessNotFound
 	| ProcessIsPlanned
-	| ForgetRefused;
+	| ForgetRefused
+	| CrossingRefused;
 
 export type EffectServices = ProcessPorts | ProcessSelf | SpawnedProcesses | Processes;
 

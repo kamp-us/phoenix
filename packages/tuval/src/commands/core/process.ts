@@ -50,6 +50,7 @@ import type {HandlerFailed} from "../../process/errors.ts";
 import {asked, deliver, type ReplyTo} from "../../process/inbox.ts";
 import {Processes} from "../../process/Processes.ts";
 import {type ProcessHandle, ProcessId} from "../../process/process.ts";
+import {type CrossingRefused, ProcessBoundary} from "../../process/subprojects.ts";
 import {ProcessFolders, WorkingFolder} from "../../process/working-folder.ts";
 import {type AnyProgram, type InPort, ProgramId} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
@@ -649,6 +650,22 @@ export class SpawnedProcesses extends Context.Service<
 		Layer.effect(SpawnedProcesses, make(options));
 }
 
+/**
+ * Asks the subproject boundary about a spell called from inside a process, as that process's own
+ * effects are asked (#9689). A call from outside any process, or a kernel with no boundary, is asked
+ * nothing.
+ */
+const acrossBoundary = (
+	from: ProcessId | undefined,
+	ask: (
+		boundary: ProcessBoundary["Service"],
+		from: ProcessId,
+	) => Effect.Effect<void, CrossingRefused>,
+) =>
+	Effect.flatMap(Effect.serviceOption(ProcessBoundary), (boundary) =>
+		from !== undefined && Option.isSome(boundary) ? ask(boundary.value, from) : Effect.void,
+	);
+
 const spawnSpell = defineSpell({
 	path: ["process", "spawn"],
 	describe: "Spawn a process of the named program as a child of the calling process.",
@@ -660,6 +677,7 @@ const spawnSpell = defineSpell({
 	// one, so the parent's is read off the process table (#9694).
 	execute: (args, scope) =>
 		Effect.gen(function* () {
+			yield* acrossBoundary(scope.process, (boundary, from) => boundary.spawn(from, args.program));
 			const spawned = yield* SpawnedProcesses;
 			const parent = Option.fromNullishOr(scope.process);
 			const folder = Option.isNone(parent)
@@ -679,10 +697,12 @@ const sendSpell = defineSpell({
 	describe: "Write one payload to a named in-port of a process.",
 	params: Schema.Struct({process: ProcessId, port: Schema.String, payload: Schema.Unknown}),
 	result: Schema.Struct({delivered: Schema.Boolean, evicted: Schema.Number}),
-	execute: (args) =>
-		Effect.flatMap(SpawnedProcesses, (spawned) =>
-			spawned.send(args.process, args.port, args.payload),
-		),
+	execute: (args, scope) =>
+		Effect.gen(function* () {
+			yield* acrossBoundary(scope.process, (boundary, from) => boundary.reach(from, args.process));
+			const spawned = yield* SpawnedProcesses;
+			return yield* spawned.send(args.process, args.port, args.payload);
+		}),
 	capabilities: [{family: "process"}],
 });
 
@@ -697,9 +717,12 @@ const readSpell = defineSpell({
 	describe: "Read the current value of a named out-port of a process, or none.",
 	params: Schema.Struct({process: ProcessId, port: Schema.String}),
 	result: ReadResult,
-	execute: (args) =>
+	execute: (args, scope) =>
 		Effect.map(
-			Effect.flatMap(SpawnedProcesses, (spawned) => spawned.read(args.process, args.port)),
+			Effect.andThen(
+				acrossBoundary(scope.process, (boundary, from) => boundary.reach(from, args.process)),
+				Effect.flatMap(SpawnedProcesses, (spawned) => spawned.read(args.process, args.port)),
+			),
 			(held) =>
 				Option.isSome(held)
 					? ({empty: false, value: held.value} as const)
