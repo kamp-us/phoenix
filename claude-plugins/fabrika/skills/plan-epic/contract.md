@@ -1897,7 +1897,7 @@ an Errors row; every judging verb states its scope and its zero-scope behavior; 
 a v1 script, another skill's prose, or the authoring session — every cross-reference is to a
 **landed sibling fabrika contract or a shipped module by path**.
 
-The three hand-checks the presence tests cannot perform:
+The four hand-checks the presence tests cannot perform:
 
 1. **Every reachable outcome has a code or a state word.** Walked per verb, including the modes v1
    had no name for: a stale base (`20`), an epic body that moved (`21`), a plan region that cannot
@@ -1922,7 +1922,8 @@ The three hand-checks the presence tests cannot perform:
    `type:epic` check (`10`), `assertGround` (`11`), the imported `requireClaim` (`15`) and the
    same `7` trigger, with documented widenings of `7` — `topology`'s empty run manifest,
    `edges`' epic that declares no topology, `retopology`'s epic with no block or no live
-   children, `supersede`'s absent or closed child, and `adopt`'s absent or closed adoptee — stated
+   children, `supersede`'s absent or closed child, `defer`'s absent or already-closed child, and
+   `adopt`'s absent or closed adoptee — stated
    in their own tables. `open` states the other divergence — it alone proves freshness (`20`) —
    with its reason: the ground is established once and inherited. `13` is seated by no verb here;
    `--require-clean` is `build tree`'s flag at the skill's step 1.

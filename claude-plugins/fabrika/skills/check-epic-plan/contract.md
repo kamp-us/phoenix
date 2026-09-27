@@ -144,7 +144,8 @@ plan, the other to read it again.
 
 **Considered and not derived: a `plan defects --explain` verb.** A defect's *remedy* is the
 planner's judgment, and a verb that authored one would be minting advice the floor cannot check.
-The defect types are self-describing and `plan check --help` prints the table.
+The defect types are self-describing, and [The floor — fifteen defect types](#the-floor--fifteen-defect-types)
+lists every one with its trigger.
 
 ## The ledger grammar this gate reads
 
