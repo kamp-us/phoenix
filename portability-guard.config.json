@@ -69,12 +69,12 @@
 			"paths": ["packages/fabrika-cli/src/lane"]
 		},
 		"plugin-ship": {
-			"ceiling": 9,
-			"why": "The quoted stderr half is paid down: #8306 swept the ship verbs' own strings and mirrored every rewritten literal into this contract's Errors tables and worked examples, so 23 of the 32 are gone. What is left is a value rather than a sentence: 6 are the synthetic PR numbers a worked example echoes back and 2 are the placeholder owner/repo pull-request URLs those examples print, both cleared by #8350, the fixture-URL ticket; the ninth quotes `ship checks: <repo> has zero workflows … (ADR 0092)`, a literal of a string that lives in packages/fabrika-cli/src/config/ci-producer.ts and moves only when #8307, the wire sweep, moves it.",
+			"ceiling": 8,
+			"why": "The quoted stderr half is paid down: #8306 swept the ship verbs' own strings and mirrored every rewritten literal into this contract's Errors tables and worked examples, so 23 of the 32 are gone, and #6582 re-mirrored the no-producer refusal from packages/fabrika-cli/src/config/ci-producer.ts, which carried the last quoted reference. What is left is a value rather than a sentence: 6 are the synthetic PR numbers a worked example echoes back and 2 are the placeholder owner/repo pull-request URLs those examples print, both cleared by #8350, the fixture-URL ticket.",
 			"paths": ["claude-plugins/fabrika/skills/ship"]
 		},
 		"plugin-review": {
-			"ceiling": 17,
+			"ceiling": 16,
 			"why": "Verbatim pins of stderr lines the shipped `review` verbs print. The reference sits inside the quoted string, so it is a copy of behaviour that lives in packages/fabrika-cli/src/review/ — the source #8305 owns. It shrinks when that child rewrites the strings; changing the pin first would make the contract quote a line no verb prints.",
 			"paths": ["claude-plugins/fabrika/skills/review/contract.md"]
 		},

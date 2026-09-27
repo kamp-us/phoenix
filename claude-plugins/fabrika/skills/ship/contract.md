@@ -1214,7 +1214,8 @@ is on the informational name list.
 **Zero workflows is `no-producer`, and it no longer collapses into `pending`.** A repo with
 no CI and a repo whose CI has not reported yet are different facts, and printing the second over the
 first tells an operator to wait for a run nothing will ever start. Workflow *existence* is the whole
-test — nothing inspects what a workflow does. That case refuses on `7` unless the
+test — nothing inspects what a workflow does — and only a repo-authored `.github/workflows/*` path
+counts: the platform-provided `dynamic/<provider>/<name>` entries do not. That case refuses on `7` unless the
 repo declares `ci.noProducer: "degrade"` in `.fabrika.jsonc`, which prints the `no-producer` rollup
 at exit `0` with the fact on stderr. With `--wait`, progress goes to stderr and
 the final stdout adds `settle\t<settled|budget-exhausted|head-moved>` before the first line's
@@ -1250,7 +1251,7 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
+| `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero repo-authored `.github/workflows/*` workflows** (platform-provided `dynamic/*` entries do not count) under the shipped `ci.noProducer: "refuse"` |
 | `11` | the check-run read, the workflow read, the base branch's required-set read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
 | `13` | entries received < declared `total_count` — never read as "no red checks"; **or the base branch's ruleset walk never reached a terminal page** — the declared required set is provably short, so which checks block is UNKNOWN |
 | `20` | every check at the head passed and **no workflow the repo authors inspected it** — every repo-authored run here carries another commit or ran against another ref, so `green` is UNKNOWN, never merged |
@@ -1261,9 +1262,9 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 |---|---|---|
 | `ship checks: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship checks: no commit <sha> on PR #<n>.` | 7 | refusal |
-| `ship checks: <repo> has zero workflows — no CI producer, so no head can be evidenced (ADR 0092). A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.` | 7 | refusal |
+| `ship checks: <repo> has zero repo-authored workflows (platform-provided \`dynamic/*\` entries do not count) — no CI producer, so no head can be evidenced. A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.` | 7 | refusal |
 | `ship checks: cannot read \`ci\` from the repo config (<reason>) — whether <repo> produces CI is UNKNOWN, never green.` | 11 | refusal |
-| `ship checks: <repo> declares \`ci.noProducer: degrade\` and has zero workflows — no producer, so there is nothing to roll up.` | 0 | notice |
+| `ship checks: <repo> declares \`ci.noProducer: degrade\` and has zero repo-authored workflows — no producer, so there is nothing to roll up.` | 0 | notice |
 | `ship checks: cannot enumerate <what> at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `ship checks: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration.` | 13 | refusal |
 | `ship checks: the live head is <live>, you are enumerating <sha> — the head moved.` | 0 | notice |
@@ -1281,11 +1282,14 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 
 **Scope** — the check runs and workflow inventory at one commit, paginated,
-count-verified. Zero *declared* check runs with zero workflows is `green`-ineligible and
-`no-runs`-ineligible too — it is the repo that produces no CI at all, and what it costs is
-`ci.noProducer`'s answer. Under the shipped `refuse` it is exit `7`: a head whose checks will
+count-verified. Zero *declared* check runs with zero repo-authored `.github/workflows/*`
+workflows is `green`-ineligible and `no-runs`-ineligible too — it is the repo that produces no CI
+of its own, and what it costs is `ci.noProducer`'s answer. The platform-provided
+`dynamic/<provider>/<name>` entries (default CodeQL setup, Dependabot, the Copilot reviewer) do not
+make a producer. Under the shipped `refuse` it is exit `7`: a head whose checks will
 never report is not a head to wait on. Where the repo declared `degrade` it is rollup
-`no-producer` at exit 0, printed with `facts	workflows:0	runs:0`. Neither arm greens, and
+`no-producer` at exit 0, printed with `facts	workflows:<n>	runs:<n>`, where `workflows` counts
+the whole active inventory — `dynamic/*` entries included — so it can be non-zero here. Neither arm greens, and
 neither prints `pending` — that collapse is what made this state read as *wait longer* forever.
 
 **Examples**

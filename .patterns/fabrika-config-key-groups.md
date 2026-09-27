@@ -155,7 +155,8 @@ label write, with the containment check never run (#6292).
 
 ## A key whose sub-keys answer one question is one module, not several
 
-`ci` holds two: `noProducer` (what a repo with zero Actions workflows gets — `refuse | degrade`,
+`ci` holds two: `noProducer` (what a repo with zero repo-authored `.github/workflows/*` workflows
+gets — the platform's `dynamic/*` entries do not count — `refuse | degrade`,
 shipped `refuse`) and `gateWorkflow` (the filename fabrika names when it points at the gate that
 supersedes an in-tree prediction). They are one key group because they are one question — *what may
 fabrika assume about this repo's CI?* — and splitting them would put two registry lines and two
