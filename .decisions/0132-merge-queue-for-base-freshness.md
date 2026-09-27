@@ -115,3 +115,11 @@ Reinforcing §"The async-merge shift": after a *successful* enqueue under the me
 ### On which checks can gate the queue (deploy-dependent e2e)
 
 One consequence for §"CI-under-batch": a **deploy-dependent** check cannot gate the queue, because a `merge_group` batch ref gets **no deploy**, so a deploy-gated e2e check has nothing to run against on the `merge_group` event (surfaced by [#1826](https://github.com/kamp-us/phoenix/issues/1826)). Only checks that run without a per-ref deploy may be added to the branch-protection-required set that gates the queue.
+
+## Amendments
+
+- **#9841 — the run-evidence bundle is retired (2026-09-26).** [ADR 0410](0410-ship-checks-is-ship-ci-trust.md)
+  retired the run-evidence bundle and deleted `run-evidence.yml`, so its `merge_group:` trigger and
+  the run-evidence-bundle guard this record calls preserved are gone. What replaced the bundle is
+  `fabrika ship checks` over the `ci-required` required context. Only this record's run-evidence
+  text is superseded; the rest stands, including `ci.yml`'s `merge_group:` trigger.
