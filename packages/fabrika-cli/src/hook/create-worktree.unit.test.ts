@@ -21,7 +21,7 @@ import {
 	WORKTREE_ADD_FAILED,
 } from "./codes.ts";
 import {type LockHost, lockDirFor, stampOf} from "./creation-lock.ts";
-import {planWorktree, type WorktreePlan} from "./worktree-create.ts";
+import {planAtPrimary, type WorktreePlan} from "./worktree-create.ts";
 import {createWorktree} from "./worktree-owner.ts";
 
 const HEAD = "a".repeat(40);
@@ -85,7 +85,7 @@ const ground = (): Ground => {
 	const repo = join(root, "repo");
 	const commonDir = join(repo, ".git");
 	mkdirSync(commonDir, {recursive: true});
-	const planned = planWorktree({cwd: repo, name: "agent-7f2"});
+	const planned = planAtPrimary({cwd: repo, name: "agent-7f2"}, `worktree ${repo}\0\0`);
 	if (planned._tag !== "Plan") throw new Error(planned.reason);
 	return {plan: planned.plan, commonDir, lockDir: lockDirFor(commonDir)};
 };

@@ -1,5 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import {type LeakNames, NO_LEAK_NAMES} from "../config/keys/leak-names.ts";
+import type {Read} from "../config/read-key.ts";
 import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
@@ -12,6 +14,8 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {runNote} from "./note-verb.ts";
+
+const noNames: Read<LeakNames> = {_tag: "Value", value: NO_LEAK_NAMES, note: "test"};
 
 const ISSUE = /^GET .*\/repos\/o\/r\/issues\/4312$/;
 const POST = /^POST .*\/repos\/o\/r\/issues\/4312\/comments$/;
@@ -47,6 +51,7 @@ const posted: HttpReply = {
 const options = {
 	issue: 4312,
 	redact: false,
+	leakNames: noNames,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
@@ -163,7 +168,7 @@ describe("runNote", () => {
 			},
 		);
 		expect(out.code).toBe(0);
-		expect(out.stderr.join("\n")).toContain("redacted a machine-local path");
+		expect(out.stderr.join("\n")).toContain("redacted a leak");
 	});
 
 	/** `--json` carries one count per leak class; the per-hit lines stay on stderr. */

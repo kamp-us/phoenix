@@ -29,7 +29,7 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import type {CommentRecord} from "../io/issues.ts";
+import type {CommentRecord, Existence} from "../io/issues.ts";
 import {permissionFor} from "../io/pulls.ts";
 import {CONFIG_PATH, type GrantAuthor, readCapClearAuthors} from "../repo-config.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
@@ -83,22 +83,51 @@ export const membershipAt = (
 	repo: string,
 	baseRef: string,
 ): Effect.Effect<Membership, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.flatMap(readFileAtRef(repo, CONFIG_PATH, baseRef), (file) =>
+		membershipIn(repo, baseRef, file),
+	);
+
+/**
+ * {@link membershipAt} over config bytes the caller already read at `baseRef`, so a reader that
+ * needs two keys off one file pays one read and cannot see two different files.
+ */
+export const membershipIn = (
+	repo: string,
+	baseRef: string,
+	file: Existence<string>,
+): Effect.Effect<Membership, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const file = yield* readFileAtRef(repo, CONFIG_PATH, baseRef);
 		if (file._tag === "Unknown") {
 			return {_tag: "Unknown" as const, reason: `${CONFIG_PATH} at ${baseRef}: ${file.reason}`};
 		}
 		if (file._tag === "Absent") {
 			return {
 				_tag: "Unusable" as const,
-				reason: `${repo} carries no ${CONFIG_PATH} at ${baseRef} — nobody is configured to clear a round`,
+				reason: `${repo} carries no ${CONFIG_PATH} at ${baseRef} — nobody is configured to grant`,
 			};
 		}
 		const declared = readCapClearAuthors(file.value);
 		if (declared._tag === "Unusable") return {_tag: "Unusable" as const, reason: declared.reason};
+		const expanded = yield* expandAuthors(declared.authors);
+		return expanded._tag === "Unknown" ? expanded : {_tag: "Set" as const, holds: expanded.holds};
+	});
 
+export type Expanded =
+	| {readonly _tag: "Logins"; readonly holds: (login: string) => boolean}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+/**
+ * An author set as a predicate, with every team expanded once.
+ *
+ * A **404 team** is proven to hold nobody, while a failed read is `Unknown` — the split every
+ * author-set reader rests on.
+ */
+export const expandAuthors = (
+	authors: ReadonlyArray<GrantAuthor>,
+): Effect.Effect<Expanded, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
 		const logins = new Set<string>();
-		for (const author of declared.authors as ReadonlyArray<GrantAuthor>) {
+		for (const author of authors) {
 			if (author._tag === "User") {
 				logins.add(author.login.toLowerCase());
 				continue;
@@ -114,7 +143,7 @@ export const membershipAt = (
 			for (const member of members.value) logins.add(member.toLowerCase());
 		}
 		return {
-			_tag: "Set" as const,
+			_tag: "Logins" as const,
 			holds: (login: string) => logins.has(login.trim().toLowerCase()),
 		};
 	});
