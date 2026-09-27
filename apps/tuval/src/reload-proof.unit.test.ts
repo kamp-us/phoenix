@@ -28,6 +28,7 @@ import {afterEach} from "vitest";
 import {type Booted, boot, coreSpells, projectDir} from "./boot.ts";
 import type {DeclaredConfig} from "./config-fixtures/reloadable.ts";
 import {scratchHome} from "./scratch-home.ts";
+import {shellSpells} from "./shell/commands/spells.ts";
 import {shellNode} from "./shell/program.ts";
 
 /** The scratch home every boot in this file runs under. */
@@ -149,6 +150,9 @@ const help = (booted: Booted) =>
 		);
 	}).pipe(Effect.provideContext(booted.kernel));
 
+/** Registered on every boot, whatever the config declares: the kernel's and the desk shell's. */
+const deskSpells = coreSpells.length + shellSpells.length;
+
 const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Scope.Scope>) =>
 	effect.pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
 
@@ -157,7 +161,7 @@ describe("a config reload", () => {
 		run(
 			Effect.gen(function* () {
 				const {booted, declaration} = yield* bootReloadable();
-				assert.strictEqual(booted.report.spellCount, coreSpells.length + 2);
+				assert.strictEqual(booted.report.spellCount, deskSpells + 2);
 				assert.deepStrictEqual(booted.report.bindingErrors, []);
 				assert.strictEqual(booted.report.bindingCount, 2);
 				assert.includeMembers(yield* spellPaths(booted), ["alpha.say", "beta.greet"]);
@@ -170,7 +174,7 @@ describe("a config reload", () => {
 				declare(declaration, second);
 				const report = yield* booted.reload;
 
-				assert.strictEqual(report.spellCount, coreSpells.length + 2);
+				assert.strictEqual(report.spellCount, deskSpells + 2);
 				const paths = yield* spellPaths(booted);
 				assert.includeMembers(paths, ["alpha.sey", "beta.greet"]);
 				assert.notInclude(paths, "alpha.say", "the renamed spell is still registered");

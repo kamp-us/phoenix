@@ -52,7 +52,7 @@ export class NoShellProcess extends Schema.TaggedError<NoShellProcess>()(
 	{},
 ) {
 	override get message(): string {
-		return "the kernel is running no shell process, so there is no desk to attach to. A project with no .tuval/tuval.config.ts boots the built-in shell; a project config module replaces it, and has to register a shell row and plan its graph node itself. Fix the config and start Tuval again.";
+		return "the kernel is running no shell process, so there is no desk to attach to. The desk supplies its own shell below every config, with or without a .tuval/tuval.config.ts, so this kernel booted without the desk layer. Start Tuval again with `tuval`.";
 	}
 }
 

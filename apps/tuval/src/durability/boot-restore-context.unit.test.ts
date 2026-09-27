@@ -32,6 +32,7 @@ import {afterEach} from "vitest";
 import {boot, coreSpells, projectDir} from "../boot.ts";
 import {bridgeProbeId} from "../config-fixtures/kernel-restore.ts";
 import {scratchHome} from "../scratch-home.ts";
+import {shellSpells} from "../shell/commands/spells.ts";
 
 /** The scratch home every boot in this file runs under. */
 const home = scratchHome("boot-restore-context");
@@ -95,24 +96,27 @@ describe("the kernel context boot hands restore", () => {
 			const project = freshProject();
 
 			const first = yield* firstBoot(project);
-			// Nothing was planned and nothing was checkpointed, so neither spawner brought anything
-			// back — the row below is the only thing the second boot can restore.
-			assert.strictEqual(first.report.processCount, 0);
+			// Nothing was checkpointed, so neither spawner brought anything back; the one live process
+			// is the desk's own shell, the only node planned.
+			assert.strictEqual(first.report.processCount, 1);
 			assert.strictEqual(first.report.restoredCount, 0);
 			assert.deepStrictEqual(first.state, {marks: 2, spells: 0});
 
 			const second = yield* secondBoot(project, first.id);
 
-			// One process back, and `restore` is what brought it: the graph plans no node, so the
-			// launcher had nothing to spawn at all.
-			assert.strictEqual(second.report.processCount, 1);
-			assert.strictEqual(second.report.restoredCount, 1);
+			// The probe back beside the desk's shell, and `restore` is what brought the probe: the
+			// graph plans the shell's node alone, so the launcher had nothing else to spawn.
+			assert.strictEqual(second.report.processCount, 2);
+			assert.strictEqual(second.report.restoredCount, 2);
 			// A boot registering no core spell would make the `spells` row below read 0 either way,
 			// which is the reading that would pass with the bridge never resolved.
 			assert.isAbove(coreSpells.length, 0);
 			// `marks` is the checkpointed state coming back; `spells` is the resume's handler having
 			// resolved `SpellBridge` out of the context `boot.ts` restored under.
-			assert.deepStrictEqual(second.state, {marks: 2, spells: coreSpells.length});
+			assert.deepStrictEqual(second.state, {
+				marks: 2,
+				spells: coreSpells.length + shellSpells.length,
+			});
 		}),
 	);
 });

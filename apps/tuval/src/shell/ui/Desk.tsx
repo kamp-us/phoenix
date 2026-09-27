@@ -50,7 +50,7 @@ import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
 import {layoutSignature} from "../layout/index.ts";
 import type {PickerEntries} from "../picker/browser.ts";
-import {noEntries} from "../picker/browser.ts";
+import {noEntries, projectOpenerOver} from "../picker/browser.ts";
 import type {PageAttachment} from "../transport/browser.ts";
 import {CommandLine} from "./CommandLine.tsx";
 import {commandSnapshot} from "./command-snapshot.ts";
@@ -156,6 +156,9 @@ export function Desk({
 	windowTitles = false,
 	processRemove = false,
 }: DeskProps): ReactElement {
+	// The picker's "Open project…" asks over the same socket the palette does (#9697), so a desk with
+	// no kernel behind it offers no row it could not carry out.
+	const opener = useMemo(() => (call === undefined ? null : projectOpenerOver(call)), [call]);
 	const commands = useMemo(
 		() => commandIndexFor({processBoard: board, processRemove}),
 		[board, processRemove],
@@ -353,6 +356,7 @@ export function Desk({
 			dispatch={dispatch}
 			reducedMotion={reducedMotion}
 			processRemove={processRemove}
+			opener={opener}
 		/>
 	);
 

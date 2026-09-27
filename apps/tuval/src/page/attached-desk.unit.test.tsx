@@ -16,6 +16,9 @@ import {act, fireEvent, render, screen} from "@testing-library/react";
 import {Effect, Option, Schema, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {counterId} from "../demo/counter.ts";
+import {ProjectLabels} from "../projects/labels.ts";
+import type {RecommendAnswer, RecommendPrompt} from "../projects/recommend-prompt.ts";
+import type {TrustAnswer, TrustPrompt} from "../projects/trust-prompt.ts";
 import {readCommandLine} from "../shell/commands/index.ts";
 import {applyMsg, type ShellCmd, type ShellMsg, type ShellState} from "../shell/core/index.ts";
 import {openProcessMsg} from "../shell/core/machine.ts";
@@ -122,12 +125,24 @@ interface Scripted {
 	readonly shell: AttachedProcess<unknown, ShellMsg>;
 	readonly attaches: ReadonlyArray<ProcessId>;
 	readonly sent: ReadonlyArray<ShellMsg>;
+	/** Every trust answer the page sent, in order. */
+	readonly trustAnswers: ReadonlyArray<{readonly question: string; readonly answer: TrustAnswer}>;
+	/** Every recommended-package answer the page sent, in order. */
+	readonly recommendAnswers: ReadonlyArray<{
+		readonly question: string;
+		readonly answer: RecommendAnswer;
+	}>;
 }
 
 const scripted = Effect.fn("test.scripted")(function* (options?: {
 	readonly state?: ShellState;
 	readonly rows?: ReadonlyArray<TableRow>;
 	readonly programs?: ReadonlyArray<WireProgram>;
+	readonly projects?: ProjectLabels;
+	/** The "Trust this folder?" questions the kernel says are waiting. */
+	readonly trustPrompts?: ReadonlyArray<TrustPrompt>;
+	/** The recommended packages the kernel says are waiting. */
+	readonly recommendPrompts?: ReadonlyArray<RecommendPrompt>;
 	/** `null` scripts a kernel that has not sent its grammar yet — the desk must not render. */
 	readonly keys?: PrefixTable | null;
 	/** When this socket ends. The default never does, which is what every claim but the drop wants. */
@@ -144,6 +159,8 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	const counter = yield* SubscriptionRef.make<ProcessView<unknown>>(live({count: 7}));
 	const attaches: Array<ProcessId> = [];
 	const sent: Array<ShellMsg> = [];
+	const trustAnswers: Array<{readonly question: string; readonly answer: TrustAnswer}> = [];
+	const recommendAnswers: Array<{readonly question: string; readonly answer: RecommendAnswer}> = [];
 
 	const process = (stream: Stream.Stream<ProcessView<unknown>>): AttachedProcess => ({
 		processId: counterProcess,
@@ -155,6 +172,13 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 		spells: Stream.empty,
 		rows: Stream.succeed(options?.rows ?? [counterRow]),
 		programs: Stream.succeed(options?.programs ?? catalog),
+		projects: Stream.succeed(options?.projects ?? ProjectLabels.none),
+		trustPrompts: Stream.succeed(options?.trustPrompts ?? []),
+		answerTrust: (question, answer) =>
+			Effect.sync(() => void trustAnswers.push({question, answer})),
+		recommendPrompts: Stream.succeed(options?.recommendPrompts ?? []),
+		answerRecommend: (question, answer) =>
+			Effect.sync(() => void recommendAnswers.push({question, answer})),
 		call: () => Effect.never,
 		keys:
 			options?.keys === null ? Stream.never : Stream.succeed(options?.keys ?? defaultPrefixTable),
@@ -183,8 +207,55 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 				return {_tag: "Delivered" as const, view: {revision, state: held}};
 			}),
 	};
-	return {page, shell, attaches, sent} satisfies Scripted;
+	return {page, shell, attaches, sent, trustAnswers, recommendAnswers} satisfies Scripted;
 });
+
+/**
+ * One workspace mixing windows from two open projects and a global program (#9692, ruling #9668
+ * R1.1): the two projects' counters share a declared id, so only the scope tells them apart.
+ */
+const phoenix = ProgramId.make(`-code-phoenix/${counterId}`);
+const demlik = ProgramId.make(`-code-demlik/${counterId}`);
+const mixedProjects = ProjectLabels.of([
+	{key: "-code-phoenix", label: "phoenix"},
+	{key: "-code-demlik", label: "demlik"},
+]);
+const mixedRow = (id: string, programId: ProgramId): TableRow => ({
+	...counterRow,
+	id: ProcessId.make(id),
+	programId,
+});
+const mixedRows = [
+	mixedRow("p-phoenix", phoenix),
+	mixedRow("p-demlik", demlik),
+	mixedRow("p-global", counterId),
+];
+const mixedCatalog: ReadonlyArray<WireProgram> = [phoenix, demlik, counterId].map((programId) => ({
+	programId,
+	label: "Counter",
+	renderer: {kind: "host-native", ref: "tuval/demo/counter"},
+}));
+const mixedDesk = (boardOpen = false): ShellState => ({
+	...twoWindowDesk(),
+	workspaces: {
+		"workspace-0": {
+			id: "workspace-0",
+			layout: createTree(
+				createStack("stack-root", "horizontal", [
+					createWindow("window-1", ProcessId.make("p-phoenix")),
+					createWindow("window-2", ProcessId.make("p-demlik")),
+					createWindow("window-3", ProcessId.make("p-global")),
+				]),
+			),
+			focused: "window-1",
+		},
+	},
+	desk: {inspectorOpen: false, boardOpen},
+	nextId: 4,
+});
+
+const projectOf = (node: Element): string | null =>
+	node.querySelector('[data-field="project"]')?.textContent ?? null;
 
 class TestIo extends Schema.TaggedError<TestIo>()("TestIo", {cause: Schema.Defect()}) {}
 
@@ -617,6 +688,75 @@ describe("the process board flag", () => {
 		}),
 	);
 
+	it.effect(
+		"labels each window by its own project in one workspace, and a global one not at all",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* scripted({
+					state: mixedDesk(),
+					rows: mixedRows,
+					programs: mixedCatalog,
+					projects: mixedProjects,
+				});
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={renderers}
+						reducedMotion={true}
+						refusal={null}
+						windowTitles={true}
+					/>,
+				);
+				yield* settle;
+
+				const windows = screen.getAllByRole("region", {name: /^Window /});
+				assert.deepStrictEqual(windows.map(projectOf), ["phoenix", "demlik", null]);
+				// The title names the program by its declared id, since the label already says which project.
+				const titles = windows.map(
+					(node) => node.querySelector(".tuval-window-title")?.textContent,
+				);
+				assert.deepStrictEqual(titles, [
+					"▸counterproject phoenix(focused)",
+					" counterproject demlik",
+					" counter",
+				]);
+			}),
+	);
+
+	it.effect(
+		"labels each tile on the board by its project, and a global program's tile not at all",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* scripted({
+					state: mixedDesk(true),
+					rows: mixedRows,
+					programs: mixedCatalog,
+					projects: mixedProjects,
+				});
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={renderers}
+						reducedMotion={true}
+						board={true}
+						refusal={null}
+					/>,
+				);
+				yield* settle;
+
+				const dialog = screen.getByRole("dialog", {name: "Processes"});
+				const tile = (id: string) => dialog.querySelector(`[data-process="${id}"]`) as Element;
+				assert.strictEqual(projectOf(tile("p-phoenix")), "phoenix");
+				assert.strictEqual(projectOf(tile("p-demlik")), "demlik");
+				assert.isNull(projectOf(tile("p-global")));
+				// The label is part of the tile's accessible name, with the word that says what it is.
+				const open = tile("p-phoenix").querySelector("button") as HTMLElement;
+				assert.include(open.textContent ?? "", "project phoenix");
+			}),
+	);
+
 	it.effect("pulls the board up as a named dialog when the shell says it is open", () =>
 		Effect.gen(function* () {
 			const app = yield* scripted({state: boardOpenDesk()});
@@ -707,6 +847,107 @@ describe("the process board flag", () => {
 				app.sent.filter((msg) => msg.type !== "keys.press"),
 				[{type: "desk.board.close"}],
 			);
+		}),
+	);
+});
+
+describe("the trust question", () => {
+	const waiting: TrustPrompt = {question: "q-1", folder: "/code/demlik", name: "demlik"};
+
+	it.effect("asks the oldest waiting folder, and sends the person's yes back to the kernel", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted({
+				trustPrompts: [waiting, {question: "q-2", folder: "/code/tea", name: "tea"}],
+			});
+			render(
+				<AttachedDesk
+					page={app.page}
+					shell={app.shell}
+					renderers={renderers}
+					reducedMotion={true}
+					refusal={null}
+				/>,
+			);
+			yield* settle;
+
+			const dialog = screen.getByRole("alertdialog", {name: "Trust this folder?"});
+			assert.include(dialog.textContent, "/code/demlik");
+			assert.include(dialog.textContent, "1 more folder is waiting to be asked about.");
+			fireEvent.click(screen.getByRole("button", {name: "Trust folder"}));
+			yield* settle;
+
+			assert.deepStrictEqual(app.trustAnswers, [{question: "q-1", answer: "trust"}]);
+			// The next folder waiting is asked at once, before the kernel's next frame lands.
+			assert.include(screen.getByRole("alertdialog").textContent, "/code/tea");
+		}),
+	);
+
+	it.effect("asks nothing while no open is waiting", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted();
+			render(
+				<AttachedDesk
+					page={app.page}
+					shell={app.shell}
+					renderers={renderers}
+					reducedMotion={true}
+					refusal={null}
+				/>,
+			);
+			yield* settle;
+			assert.isNull(screen.queryByRole("alertdialog"));
+		}),
+	);
+});
+
+describe("the recommended-package question (#9695)", () => {
+	const worktree: RecommendPrompt = {
+		question: "r-1",
+		folder: "/code/demlik",
+		name: "demlik",
+		package: "@kampus/tuval-worktree",
+	};
+
+	const mounted = (app: Scripted) =>
+		render(
+			<AttachedDesk
+				page={app.page}
+				shell={app.shell}
+				renderers={renderers}
+				reducedMotion={true}
+				refusal={null}
+			/>,
+		);
+
+	it.effect("sends a no back to the kernel, and the question leaves the page", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted({recommendPrompts: [worktree]});
+			mounted(app);
+			yield* settle;
+
+			screen.getByRole("alertdialog", {name: "Install @kampus/tuval-worktree?"});
+			fireEvent.click(screen.getByRole("button", {name: "Don't install"}));
+			yield* settle;
+
+			assert.deepStrictEqual(app.recommendAnswers, [{question: "r-1", answer: "decline"}]);
+			assert.isNull(screen.queryByRole("alertdialog"));
+		}),
+	);
+
+	it.effect("waits behind a folder still being asked about for trust", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted({
+				trustPrompts: [{question: "q-1", folder: "/code/tea", name: "tea"}],
+				recommendPrompts: [worktree],
+			});
+			mounted(app);
+			yield* settle;
+
+			assert.lengthOf(screen.getAllByRole("alertdialog"), 1);
+			screen.getByRole("alertdialog", {name: "Trust this folder?"});
+			fireEvent.click(screen.getByRole("button", {name: "Don't trust"}));
+			yield* settle;
+			screen.getByRole("alertdialog", {name: "Install @kampus/tuval-worktree?"});
 		}),
 	);
 });

@@ -28,6 +28,7 @@ import {toTableRow} from "../../table/row.ts";
 import {applyMsg, initialState, type ShellMsg} from "../core/machine.ts";
 import {activeWorkspace, type ShellState} from "../core/state.ts";
 import {wiredShellEffects} from "../host/effects.ts";
+import {scriptedSpellServices} from "../host/fixtures.ts";
 import {type PickerEntries, processEntries, programEntries} from "../picker/entries.ts";
 import {programRow, shellProcessId} from "../picker/fixtures.ts";
 import {asPickerView, pickerKey} from "../picker/view.ts";
@@ -77,7 +78,7 @@ const pressRemove = Effect.fn("processRemove.pressRemove")(function* (
 	const window = focusedWindow(state);
 	// The cursor sits on the first process row: the programs come first in the flattened list.
 	const view = {...asPickerView(state.views[window]), cursor: entries.programs.length};
-	const answer = pickerKey(window, entries, view, "d", {processRemove: true});
+	const answer = pickerKey(window, entries, view, "d", {processRemove: true, openProject: false});
 	if (answer._tag !== "Removing") {
 		return yield* Effect.die(new Error(`test setup: "d" answered ${answer._tag}`));
 	}
@@ -91,7 +92,9 @@ const pressRemove = Effect.fn("processRemove.pressRemove")(function* (
 	if (removal === undefined || removal.type !== "removeProcess") {
 		return yield* Effect.die(new Error("test setup: the reducer asked for no removal"));
 	}
-	const back = yield* wiredShellEffects({shellProcessId}).removeProcess(removal);
+	const back = yield* wiredShellEffects({shellProcessId})
+		.removeProcess(removal)
+		.pipe(Effect.provide(scriptedSpellServices()));
 	return {
 		asked: answer.processId,
 		state: back.reduce((carried, sent) => applyMsg(defaultPrefixTable, carried, sent)[0], next),

@@ -54,8 +54,11 @@ import {
 } from "./state.ts";
 
 export interface AiAgentSessionOptions extends WindowLimits {
-	/** The working directory a fresh session starts in. */
-	readonly cwd: string;
+	/**
+	 * The folder the row fixes for every fresh session, or absent for a row whose sessions take
+	 * their folder at start (#9694). Until `start` names the real one, a fresh state holds `""`.
+	 */
+	readonly cwd?: string;
 }
 
 export type AiAgentSessionMachine = Machine<
@@ -189,8 +192,8 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 		 */
 		init: (loaded) =>
 			loaded === null
-				? [initialState(options.cwd), [{type: "aiAgent.boot", cwd: options.cwd}]]
-				: [loadCheckpoint(loaded, options.cwd), noCmds],
+				? [initialState(options.cwd ?? ""), [{type: "aiAgent.boot", cwd: options.cwd ?? null}]]
+				: [loadCheckpoint(loaded, options.cwd ?? ""), noCmds],
 		update: {
 			start: (state, msg) =>
 				busy(state)

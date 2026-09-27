@@ -130,10 +130,9 @@ export interface PiAiAgentOptions {
 	 */
 	readonly sessionDir?: string;
 	/**
-	 * The project root that booted the kernel: where a `start({cwd, resume})` after a restart looks
-	 * for the saved session's JSONL, since the server it is dialling has never held that session.
-	 * Absent means this layer resumes nothing across a restart and a saved id answers
-	 * `session-not-found`.
+	 * The folder a session resumed after a restart runs in when its saved file records none, which
+	 * only a file written before Pi recorded one does; every other session resumes in the folder it
+	 * started in (#9694). Also where the session store is derived from when `sessionDir` is absent.
 	 */
 	readonly projectRoot?: string;
 	/**

@@ -11,7 +11,7 @@
  * errors and the scripted stand-in and nothing that touches the process table: the kernel-side
  * layer lives in `./kernel.ts`, which only `boot.ts` imports (#7910).
  *
- * A desk is a process, so it can be absent — a config that drops the shell row boots without one —
+ * A desk is a process, so it can be absent — a `start` handed rows without the shell row runs without one —
  * or stopped mid-call. `dispatch` therefore fails typed rather than dying, and the executor turns
  * that failure into a `SpellReplyError`: asking a desk-less kernel to close a window is answered
  * with a refusal a caller can read, never a defect.

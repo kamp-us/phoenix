@@ -17,5 +17,5 @@ export type {
 	RendererRef,
 } from "./program.ts";
 export {ProgramId, provenanceOf} from "./program.ts";
-export {Registry} from "./Registry.ts";
+export {Registry, RegistryRows} from "./Registry.ts";
 export {type DepKeyedSub, desiredSub, desiredSubs, type Sub, subIdOf} from "./sub.ts";

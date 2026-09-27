@@ -78,6 +78,7 @@ describe("shell core boundary", () => {
 			| "startRepeatTimer"
 			| "cancelRepeatTimer"
 			| "runCommand"
+			| "runBinding"
 			| "openProgram"
 			| "attachProcess"
 			| "removeProcess"
@@ -110,6 +111,7 @@ describe("shell core boundary", () => {
 		expectTypeOf<KernelCmd["type"]>().toEqualTypeOf<
 			| "forwardKey"
 			| "runCommand"
+			| "runBinding"
 			| "openProgram"
 			| "attachProcess"
 			| "removeProcess"

@@ -14,7 +14,10 @@ import {defineProgram} from "@kampus/tuval-sdk/kernel/authoring/define-program";
 import {send} from "@kampus/tuval-sdk/kernel/authoring/effect";
 import {port} from "@kampus/tuval-sdk/kernel/authoring/port";
 import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {WindowIndex} from "@kampus/tuval-sdk/kernel/commands/scope";
 import {ClientId, type Scope, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
 import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
 import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
 import {compile} from "@kampus/tuval-sdk/kernel/ports/compile";
@@ -22,6 +25,12 @@ import {type Graph, NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
 import {open} from "@kampus/tuval-sdk/kernel/ports/wiring";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	type SpellReply,
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {type AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Effect, Layer, Option, Schema} from "effect";
@@ -166,5 +175,82 @@ describe("that bare port name reaches a process the graph launched (#9230)", () 
 			}
 			assert.deepStrictEqual(state().seen, [9230]);
 		}).pipe(Effect.scoped, Effect.provide(kernel([reviewer]))),
+	);
+});
+
+/**
+ * The scoped half (#9684). A project runs its copy of a row as `<project>/<id>` beside a global row
+ * keeping `<id>`, and both copies carry the one compiled closure, which knows only `<id>`. So the
+ * process a bare `send` lands on is read off the row the call's path reached: the real executor
+ * names it, and neither copy's lookup may reach the other's process or be made ambiguous by it.
+ */
+const projectReviewerId = ProgramId.make(`-work-alpha/${reviewerId}`);
+const projectReviewer: AnyProgram = {...reviewer, id: projectReviewerId};
+
+const scopedKernel = Layer.mergeAll(
+	SpellExecutor.layer.pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				Layer.orDie(SpellSet.layer({core: [], programs: [reviewer, projectReviewer], keys: []})),
+				WindowIndex.scripted({}),
+			),
+		),
+	),
+	kernel([reviewer, projectReviewer]),
+);
+
+const execute = (program: ProgramId, pr: number) =>
+	Effect.flatMap(SpellExecutor, (executor) =>
+		executor.execute(
+			new SpellCall({
+				type: "spell.call",
+				version: PROTOCOL_VERSION,
+				id: CallId.make(`review-${program}-${pr}`),
+				path: [program, "review"],
+				args: pr,
+			}),
+			{id: ClientId.make("tuval/test"), workspace: WorkspaceId.make("tuval/test")},
+		),
+	);
+
+const spawnOf = (program: ProgramId) =>
+	SpawnedProcesses.use((processes) => processes.spawn(program, Option.none()));
+
+const refusedTag = (reply: SpellReply) => (reply.ok ? undefined : reply.error.tag);
+
+describe("that bare port name stays inside its row's scope (#9684)", () => {
+	it.live(
+		"lands each copy's send on its own process when a global and a project copy both run",
+		() =>
+			Effect.gen(function* () {
+				const global = yield* spawnOf(reviewerId);
+				const project = yield* spawnOf(projectReviewerId);
+				assert.isTrue((yield* execute(reviewerId, 1)).ok);
+				assert.isTrue((yield* execute(projectReviewerId, 2)).ok);
+				assert.deepStrictEqual((yield* settle(global)).seen, [1]);
+				assert.deepStrictEqual((yield* settle(project)).seen, [2]);
+			}).pipe(Effect.provide(scopedKernel)),
+	);
+
+	it.live("refuses a global copy's send when only the project's copy runs", () =>
+		Effect.gen(function* () {
+			const project = yield* spawnOf(projectReviewerId);
+			assert.strictEqual(
+				refusedTag(yield* execute(reviewerId, 3)),
+				"tuval/authoring/NoLiveProcess",
+			);
+			assert.deepStrictEqual((yield* stateOf(project)).seen, []);
+		}).pipe(Effect.provide(scopedKernel)),
+	);
+
+	it.live("refuses a project copy's send when only the global copy runs", () =>
+		Effect.gen(function* () {
+			const global = yield* spawnOf(reviewerId);
+			assert.strictEqual(
+				refusedTag(yield* execute(projectReviewerId, 4)),
+				"tuval/authoring/NoLiveProcess",
+			);
+			assert.deepStrictEqual((yield* stateOf(global)).seen, []);
+		}).pipe(Effect.provide(scopedKernel)),
 	);
 });

@@ -5,10 +5,11 @@
  * restore rule are `aiAgentProgram`'s (founder ruling, 2026-09-02), so this file is an id, a cwd
  * and a layer — and the Claude row will be the same three things.
  *
- * The cwd is the project root that booted the kernel (founder ruling, 2026-09-02), which is why a
- * config module reads it off its own location with `projectRootOf` rather than being handed one:
- * the loader imports a config module with no arguments (`apps/tuval/src/config.ts`), and the module knows
- * where it sits. A per-open `--cwd` override is a later follow-up, not this row.
+ * The cwd is optional. A row that names one opens every session there; a config module that wants
+ * its own project root reads it off its own location with `projectRootOf`, because the loader
+ * imports a config module with no arguments (`apps/tuval/src/config.ts`). A row that names none
+ * takes each session's folder when the session starts: the project a picker entry names, or the
+ * folder its spawner runs in (#9694).
  *
  * The program id and the renderer reference are both `./renderer-ref.ts`'s, imported rather than
  * retyped: that leaf holds no React and no transport, so naming the window here costs this row
@@ -47,8 +48,8 @@ export const projectRootOf = (configModuleUrl: string | URL): string =>
 	dirname(dirname(fileURLToPath(configModuleUrl)));
 
 interface PiSessionBase {
-	/** The project root that booted the kernel: the cwd a fresh session opens in. */
-	readonly cwd: string;
+	/** A folder every fresh session opens in. Absent, a session takes its folder at start (#9694). */
+	readonly cwd?: string;
 	/** Pi options for the layer this row builds. Ignored when `layer` is supplied. */
 	readonly pi?: Omit<PiAiAgentOptions, "projectRoot">;
 }
@@ -88,11 +89,13 @@ export const piSessionProgram = (
 		id: PI_SESSION_PROGRAM,
 		layer:
 			options.layer ??
-			PiAiAgent.layer({...options.pi, projectRoot: options.cwd}).pipe(
-				Layer.provide(KernelBridge.live(options.scope)),
-			),
-		config: {cwd: options.cwd},
+			PiAiAgent.layer({
+				...options.pi,
+				...(options.cwd === undefined ? {} : {projectRoot: options.cwd}),
+			}).pipe(Layer.provide(KernelBridge.live(options.scope))),
+		config: options.cwd === undefined ? {} : {cwd: options.cwd},
 		renderer: PI_CHAT_WINDOW_REF,
+		sdk: "0.x",
 		capabilities: [
 			{
 				family: "process-control",

@@ -8,9 +8,16 @@
 
 export {
 	flatten,
+	groupKeyOf,
 	noEntries,
+	type OfferedProgram,
+	OPEN_PROJECT_ENTRY,
+	type OpenProjectEntry,
+	offerEntries,
+	offeredOf,
 	type PickerEntries,
 	type PickerEntry,
+	type PickerRow,
 	type ProcessEntry,
 	type ProgramEntry,
 	processEntries,
@@ -28,6 +35,7 @@ export {
 	type PickerOption,
 	type PickerTheme,
 	pickerFrame,
+	pickerTheme,
 } from "./frame.ts";
 export {
 	ATTACH_COMMAND,
@@ -41,11 +49,44 @@ export {
 	pickerCommands,
 } from "./intent.ts";
 export {
+	browsing,
+	LOADING,
+	landedOn,
+	type Opening,
+	type OpenProjectAnswer,
+	type OpenProjectFrameOptions,
+	type OpenProjectRow,
+	openProjectFrame,
+	openProjectKey,
+	openProjectPointer,
+	recentFrom,
+	type StepData,
+	stepKey,
+	stepRows,
+	visibleStepRows,
+} from "./open-project.ts";
+export {
+	asOpenProjectStep,
+	browseStep,
+	LAST_ROW,
+	type OpenProjectStep,
+	RECENT_STEP,
+} from "./open-project-step.ts";
+export {HOME_PLACE, placeName, type SessionPlace} from "./place.ts";
+export {
+	type ProjectOpener,
+	ProjectOpenerFailure,
+	projectOpenerOver,
+} from "./project-opener.ts";
+export {
+	folderUnreadable,
 	isPickerRefusal,
 	type PickerRefusal,
 	processGone,
 	processPlanned,
 	programHeadless,
+	projectClosed,
+	projectNotOpened,
 	refusalMessage,
 	removeFailed,
 	spawnFailed,
@@ -60,10 +101,12 @@ export {
 	noPickerKeyFeatures,
 	type PickerKeyAnswer,
 	type PickerKeyFeatures,
+	type PickerLanding,
 	type PickerPointer,
 	type PickerView,
 	pickerKey,
 	pickerPointer,
+	rowsFor,
 	visibleFor,
 	withFilter,
 	withRefusal,

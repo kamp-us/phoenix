@@ -72,4 +72,21 @@ describe("AuthoredModules", () => {
 		expect(restoreEdited.sourceBehind([initText])).not.toBe(behind);
 		expect(otherEdited.sourceBehind([initText])).toBe(behind);
 	});
+
+	it("holds two loads' modules as one, the later load's source winning", () => {
+		const desk = modules({"/p/program.ts": program, "/p/shout.ts": shout});
+		const project = new AuthoredModules(new Map([["/q/other.ts", other]]), new Map());
+		const both = desk.union(project);
+
+		expect(both.closure(both.definingFiles(initText))).toEqual(["/p/program.ts", "/p/shout.ts"]);
+		expect(both.definingFiles("(): number => 1")).toEqual(["/q/other.ts"]);
+		expect(AuthoredModules.none.union(desk)).toBe(desk);
+		expect(desk.union(AuthoredModules.none)).toBe(desk);
+
+		const edited = shout.replace("toUpperCase", "toLowerCase");
+		const reread = both.union(new AuthoredModules(new Map([["/p/shout.ts", edited]]), new Map()));
+		expect(reread.sourceBehind([initText])).toBe(
+			modules({"/p/program.ts": program, "/p/shout.ts": edited}).sourceBehind([initText]),
+		);
+	});
 });

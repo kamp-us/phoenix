@@ -27,6 +27,7 @@ import {
 	type ProcessRow,
 } from "@kampus/tuval-sdk/kernel/process/process";
 import {noSelfReport} from "@kampus/tuval-sdk/kernel/process/self-report";
+import {WorkingFolder} from "@kampus/tuval-sdk/kernel/process/working-folder";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
@@ -49,6 +50,7 @@ export const programRow = (
 		readonly label?: string;
 		readonly renderer?: boolean;
 		readonly takesKeys?: boolean;
+		readonly folderAtStart?: boolean;
 	},
 ): AnyProgram =>
 	({
@@ -59,6 +61,7 @@ export const programRow = (
 		capabilities: [],
 		...(options?.label === undefined ? {} : {label: options.label}),
 		...(options?.takesKeys === true ? {takesKeys: true} : {}),
+		...(options?.folderAtStart === true ? {folderAtStart: true} : {}),
 		...(options?.renderer === false
 			? {}
 			: {renderer: {kind: "host-native" as const, ref: `tuval/${id}`}}),
@@ -87,6 +90,11 @@ export interface SpawnCall {
 	 * the child makes parented by nobody, and nothing on this side of the spawn shows it (#8758).
 	 */
 	readonly window: CallWindowId | undefined;
+	/**
+	 * The folder the spawn handed the child, read back out of the same context, or `undefined` when
+	 * it handed none and the child inherits its spawner's (#9694).
+	 */
+	readonly folder: string | undefined;
 }
 
 export interface PickerHarness {
@@ -157,12 +165,17 @@ export const pickerHarness = (
 					spawnOptions === undefined
 						? Option.none()
 						: Context.getOption(spawnOptions.services, CallingWindow);
+				const folder =
+					spawnOptions === undefined
+						? Option.none()
+						: Context.getOption(spawnOptions.services, WorkingFolder);
 				calls.push({
 					programId,
 					parent: spawnOptions?.parent,
 					spawned: id,
 					session: Option.getOrUndefined(opening),
 					window: Option.getOrUndefined(Option.map(shown, (held) => held.window)),
+					folder: Option.getOrUndefined(Option.map(folder, (held) => held.path)),
 				});
 				const handle: ProcessHandle = {
 					id,
