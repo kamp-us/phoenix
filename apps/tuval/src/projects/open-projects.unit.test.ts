@@ -57,7 +57,7 @@ describe("projectLabels", () => {
 
 	it("drops the parent again once the clashing project closes", () => {
 		const both = opened(opened(OpenProjects.none, "/a/phoenix"), "/b/phoenix");
-		const closed = both.close("/b/phoenix");
+		const closed = both.close("/b/phoenix", undefined);
 		if (Result.isFailure(closed)) throw closed.failure;
 		assert.deepStrictEqual(
 			projectLabels(closed.success.projects.projects).map(({label}) => label),
@@ -85,7 +85,7 @@ describe("OpenProjects", () => {
 
 	it("closes one project and keeps the others in the order they opened", () => {
 		const projects = opened(opened(opened(OpenProjects.none, "/work/a"), "/work/b"), "/work/c");
-		const closing = projects.close("/work/b");
+		const closing = projects.close("/work/b", undefined);
 		assert.isTrue(Result.isSuccess(closing));
 		if (Result.isFailure(closing)) return;
 		assert.strictEqual(closing.success.project.folder, "/work/b");
@@ -94,7 +94,7 @@ describe("OpenProjects", () => {
 	});
 
 	it("refuses to close a folder that is not open", () => {
-		const closing = opened(OpenProjects.none, "/work/a").close("/work/z");
+		const closing = opened(OpenProjects.none, "/work/a").close("/work/z", undefined);
 		assert.isTrue(Result.isFailure(closing));
 		if (Result.isSuccess(closing)) return;
 		assert.instanceOf(closing.failure, ProjectNotOpen);
@@ -110,7 +110,7 @@ describe("OpenProjects", () => {
 			recommends: [],
 			recent: ["/work/b", "/work/a"],
 		});
-		const closing = projects.close("/work/a");
+		const closing = projects.close("/work/a", undefined);
 		if (Result.isFailure(closing)) throw closing.failure;
 		assert.deepStrictEqual(closing.success.projects.record, {
 			version: 1,
@@ -123,7 +123,7 @@ describe("OpenProjects", () => {
 
 	it("keeps a trusted folder trusted across a close and a reopen, and records it", () => {
 		const trusted = opened(OpenProjects.none, "/work/a").trust("/work/a").trust("/work/b");
-		const closing = trusted.close("/work/a");
+		const closing = trusted.close("/work/a", undefined);
 		if (Result.isFailure(closing)) throw closing.failure;
 		const reopened = opened(closing.success.projects, "/work/a");
 		assert.isTrue(reopened.trusted.trusts("/work/a"));
@@ -183,7 +183,7 @@ describe("OpenProjects", () => {
 			"tuval-cron",
 			"decline",
 		);
-		const closing = answered.close("/work/demlik");
+		const closing = answered.close("/work/demlik", undefined);
 		if (Result.isFailure(closing)) throw closing.failure;
 		const {record} = closing.success.projects;
 		assert.deepStrictEqual(record.recommends, [
@@ -204,7 +204,7 @@ describe("OpenProjects", () => {
 			}),
 			"/work/z",
 		);
-		const closing = restored.trust("/work/q").close("/work/z");
+		const closing = restored.trust("/work/q").close("/work/z", undefined);
 		if (Result.isFailure(closing)) throw closing.failure;
 		assert.deepStrictEqual(closing.success.projects.pending, ["/work/a"]);
 	});
@@ -257,7 +257,7 @@ describe("the saved open-projects list", () => {
 describe("recent projects", () => {
 	it("lists the folders opened most recently first, a closed one still listed and not open", () => {
 		const projects = opened(opened(opened(OpenProjects.none, "/work/a"), "/work/b"), "/work/c");
-		const closing = projects.close("/work/b");
+		const closing = projects.close("/work/b", undefined);
 		if (Result.isFailure(closing)) throw closing.failure;
 		assert.deepStrictEqual(
 			closing.success.projects.recentProjects.map(({folder, open}) => ({folder, open})),
@@ -271,7 +271,7 @@ describe("recent projects", () => {
 
 	it("moves a reopened folder to the front, under any spelling, and lists it once", () => {
 		const projects = opened(opened(OpenProjects.none, "/work/a"), "/work/b");
-		const closing = projects.close("/work/a");
+		const closing = projects.close("/work/a", undefined);
 		if (Result.isFailure(closing)) throw closing.failure;
 		const reopened = opened(closing.success.projects, "/work/a/");
 		assert.deepStrictEqual(reopened.recent, ["/work/a", "/work/b"]);

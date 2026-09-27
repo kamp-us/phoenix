@@ -7,7 +7,13 @@ import {assert, describe, it} from "@effect/vitest";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Result} from "effect";
 import {SubprojectBoundary} from "./boundary.ts";
-import {type OpenProject, OpenProjects, ProjectNotOpen, projectLabels} from "./open-projects.ts";
+import {
+	type OpenProject,
+	OpenProjects,
+	ProjectNotOpen,
+	projectLabels,
+	SubprojectNotYours,
+} from "./open-projects.ts";
 
 const opener = ProcessId.make("phoenix-key/worktree");
 const other = ProcessId.make("phoenix-key/bystander");
@@ -67,7 +73,7 @@ describe("OpenProjects with subprojects", () => {
 	});
 
 	it("closes a project with every subproject under it, the deepest first", () => {
-		const closing = desk().close("/code/phoenix");
+		const closing = desk().close("/code/phoenix", undefined);
 		if (Result.isFailure(closing)) throw closing.failure;
 		assert.deepStrictEqual(folders(closing.success.closed), [
 			"/lanes/deep",
@@ -77,8 +83,8 @@ describe("OpenProjects with subprojects", () => {
 		assert.deepStrictEqual(folders(closing.success.projects.projects), ["/code/demlik"]);
 	});
 
-	it("closes a subproject alone and leaves its parent open", () => {
-		const closing = desk().close("/lanes/deep");
+	it("closes a subproject alone for its opener and leaves its parent open", () => {
+		const closing = desk().close("/lanes/deep", ProcessId.make("lane-key/inner"));
 		if (Result.isFailure(closing)) throw closing.failure;
 		assert.deepStrictEqual(folders(closing.success.closed), ["/lanes/deep"]);
 		assert.deepStrictEqual(folders(closing.success.projects.projects), [
@@ -86,6 +92,15 @@ describe("OpenProjects with subprojects", () => {
 			"/code/demlik",
 			"/lanes/lane-1",
 		]);
+	});
+
+	it("refuses to close a subproject for anyone but its opener", () => {
+		for (const by of [other, opener, undefined]) {
+			const closing = desk().close("/lanes/deep", by);
+			assert.isTrue(Result.isFailure(closing));
+			if (Result.isSuccess(closing)) return;
+			assert.instanceOf(closing.failure, SubprojectNotYours);
+		}
 	});
 
 	it("leaves every subproject out of the saved list, so a restart reopens none", () => {

@@ -58,7 +58,7 @@ declared the shell row, so scoping project rows would have turned the desk itsel
 row. Child [#9683](https://github.com/kamp-us/phoenix/issues/9683) moved the shell into a layer the
 desk supplies, which also delivers ADR 0402's zero-file project (#9375).
 
-This record amends three live records in part, and each keeps the rest of what it decides:
+This record amends four live records in part, and each keeps the rest of what it decides:
 
 - ADR [0402](0402-tuval-state-lives-under-home.md) rule 2 says a project config "layers over the
   home-dir config", its Records coin a Tuval project as "a directory Tuval opens as a desk", and
@@ -74,6 +74,11 @@ This record amends three live records in part, and each keeps the rest of what i
   its own module's `features` block. That still holds for the global config. A project config may
   not state `features` at all, so a project row names the flags it needs on `needsFeatures` and is
   refused when the global config leaves one off.
+- ADR [0407](0407-apps-are-never-imported.md) rule 4 says the SDK's runtime dependencies "are
+  `effect` and `@demlik/tea`". Under this record the SDK also depends on `semver`, because the desk
+  checks each program's declared SDK range (R2.2) in npm's own range grammar, and `semver` is the
+  library that reads it. It is the catalog's `semver`, the version the workspace already resolves
+  for `sharp`. The rest of rule 4 stands: no React, no `@kampus/design`, no harness vendor SDK.
 
 ## Decision
 

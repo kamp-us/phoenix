@@ -106,12 +106,13 @@ arrive at spawn (#7958).
 
 `pi-session` is the second instance, over `Features` — the global config's feature flags as a kernel
 service (`src/feature-flags.ts`; a project config may not state flags, ADR
-[0419](../.decisions/0419-one-desk-opens-many-projects.md)). Same forcing constraint: `loadLayeredConfig` merges the layers *after*
-every config module has been evaluated, so a row built inside one is a closure that cannot read the
-merge. Before the flags rode this seam, `PiAiAgent`'s host read `featuresDefault` directly and a
-config layer stating a flag moved the browser and nothing on the node side (#8595). Any node-side
-flag reads it through `Features`; `featuresDefault` is what a caller with no config layers to merge
-gets, which is every `start` caller but `boot`.
+[0419](../.decisions/0419-one-desk-opens-many-projects.md)). Same forcing constraint:
+`loadLayeredConfig` reads the global config's flags *after* every config module has been evaluated,
+so a row built inside one is a closure that cannot read them. Before the flags rode this seam,
+`PiAiAgent`'s host read `featuresDefault` directly and a config layer stating a flag moved the
+browser and nothing on the node side (#8595). Any node-side flag reads it through `Features`;
+`featuresDefault` is what a caller with no global config to read gets, which is every `start`
+caller but `boot`.
 
 ## Which Cmds the kernel runs, and which the surface does
 
@@ -295,8 +296,10 @@ program-blind: a process's state still crosses as `unknown`.
   `PickerView.tsx` writes into them by turns: a live region rewritten with the string it already
   holds is not a change and is read out by nothing, so two queries that leave the same count would
   otherwise announce once. `role="alert"` stays the refusal's alone.
-- **The kernel pushes the catalog; the page never asks.** A spell call is the only page-to-kernel
-  message (#7617 R1.3), so the catalog goes out as the socket opens and again on
+- **The kernel pushes the catalog; the page never asks.** A spell call is the only round trip a
+  page starts (#7617 R1.3); the `trust-answer` and `recommend-answer` frames are sent and never
+  awaited, and are never spells, so no agent can answer for the person
+  (`src/shell/transport/wire.ts`). So the catalog goes out as the socket opens and again on
   `TransportServer.publishRegistry`, which re-reads the registry and writes to every attached page.
   The desk's registry grows and shrinks as projects open and close (`Registry.growable`, #9685), so
   `src/bin.ts` publishes on every open and close. `Booted.reload` writes only the spell registry

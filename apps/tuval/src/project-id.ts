@@ -40,11 +40,30 @@ export class ProjectId {
 		return this.localOf(id) !== undefined;
 	}
 
+	/** Whether `process` runs in this project (`processScope`). */
+	ownsProcess(process: ScopedProcess): boolean {
+		return processScope(process) === this.key;
+	}
+
 	/** The local ids among `ids` that this project owns. */
 	ownedLocals(ids: Iterable<string>): ReadonlySet<string> {
 		return new Set([...ids].flatMap((id) => this.localOf(id) ?? []));
 	}
 }
+
+/** A running or checkpointed process, as far as project ownership reads it. */
+export interface ScopedProcess {
+	readonly id: string;
+	readonly programId: string;
+}
+
+/**
+ * The key of the project a process runs in, or `undefined` for the desk's and global processes. A
+ * project node may run a global program, so its program id is bare and only its own id carries the
+ * project's scope (`../config-scope.ts`); the program's scope is read first and the process's second.
+ */
+export const processScope = (process: ScopedProcess): string | undefined =>
+	scopedIdParts(process.programId).scope ?? scopedIdParts(process.id).scope;
 
 /**
  * A project's Tuval dir: its optional config module and nothing else. No state is written here and

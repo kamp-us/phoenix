@@ -460,7 +460,9 @@ spells as one list.
   ([`apps/tuval/src/projects/spells.ts`](../apps/tuval/src/projects/spells.ts)) are the desk's, not
   the SDK's: they call the kernel's `Projects` service, which opens a folder into the running desk
   and closes it again (#9685). They name the folder by its absolute path, because the kernel has no
-  working directory a relative one could be read against.
+  working directory a relative one could be read against. `project close` passes the calling
+  process from the spell's scope, so a subproject closes only for the program that opened it,
+  the same rule `closeSubproject` keeps (#9689).
 
 ### The bridge
 

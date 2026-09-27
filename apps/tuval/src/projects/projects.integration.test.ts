@@ -666,3 +666,67 @@ describe("a desk restart", () => {
 		TIMEOUT,
 	);
 });
+
+describe("a project node running a global program", () => {
+	it.live(
+		"stops with its project's close, checkpoints into the project's state, and the reopen succeeds",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("projects-global-node");
+				const first = projectWith("planned-counter");
+				const second = projectWith("runs-global-log");
+				const watch = ProjectId.of(second).scope("watch");
+				const {kernel, report} = yield* boot({global: fixture("log-global"), project: first, home});
+
+				assert.isTrue((yield* openAnswering(kernel, second, "trust")).ok);
+				assert.includeMembers([...(yield* liveIds(kernel))], ["log", watch]);
+				assert.include(manifestIds(homeStateDir(second, home)), watch);
+				assert.notInclude(manifestIds(report.stateDir), watch);
+
+				const closed = yield* spell(kernel, ["project", "close"], {folder: second});
+				assert.isTrue(closed.ok, JSON.stringify(closed));
+				const after = yield* liveIds(kernel);
+				assert.notInclude(after, watch);
+				assert.include(after, "log");
+
+				const reopened = yield* spell(kernel, ["project", "open"], {folder: second});
+				assert.isTrue(reopened.ok, JSON.stringify(reopened));
+				assert.lengthOf(
+					(yield* liveIds(kernel)).filter((id) => id === watch),
+					1,
+				);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+});
+
+describe("a project reopened on restart", () => {
+	it.live(
+		"reports each row it refuses by name, beside the boot project's",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("projects-restart-refused");
+				const first = projectWith("planned-counter");
+				const kept = projectWith("sdk-out-of-range-counter");
+				yield* saveOpenProjects(
+					home,
+					OpenProjects.restoring({
+						version: 1,
+						projects: [{folder: kept}],
+						trusted: [kept],
+						recommends: [],
+						recent: [],
+					}),
+				);
+
+				const {kernel, report} = yield* boot({global: fixture("log-global"), project: first, home});
+				assert.deepStrictEqual(report.reopened, [kept]);
+				const messages = report.refused.map((each) => each.message);
+				const refusal = messages.find((message) => message.includes("future-counter"));
+				assert.isDefined(refusal, JSON.stringify(messages));
+				assert.include(refusal, ProjectId.of(kept).key);
+				assert.include(yield* liveIds(kernel), ProjectId.of(kept).scope("main"));
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+});

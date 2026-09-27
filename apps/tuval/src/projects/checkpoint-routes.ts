@@ -1,8 +1,9 @@
 /**
  * The desk's one `Checkpoints`, sending each process to its project's store (#9685). A process runs
- * a project's row when its program id carries that project's scope (`../project-id.ts`), and its
- * checkpoint lands in that project's state directory. Every other process — the desk's, a global
- * program's, and one whose project has no route — checkpoints into the desk's store.
+ * in a project when its program id or its own id carries that project's scope (`processScope`), and
+ * its checkpoint lands in that project's state directory. Every other process — the desk's, a global
+ * program's outside any project node, and one whose project has no route — checkpoints into the
+ * desk's store.
  *
  * Two routes may share one store: the boot project's state directory is the desk's, and one
  * directory has one manifest, so it has to have one writer.
@@ -10,8 +11,8 @@
 
 import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
 import type {ManifestEntry} from "@kampus/tuval-sdk/kernel/durability/snapshot";
-import {scopedIdParts} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 import {Effect} from "effect";
+import {processScope, type ScopedProcess} from "../project-id.ts";
 
 type Store = Checkpoints["Service"];
 
@@ -24,15 +25,15 @@ export interface CheckpointRoutes {
 
 export const checkpointRoutes = (desk: Store): CheckpointRoutes => {
 	const routes = new Map<string, Store>();
-	const storeOf = (programId: string): Store => {
-		const {scope} = scopedIdParts(programId);
+	const storeOf = (process: ScopedProcess): Store => {
+		const scope = processScope(process);
 		return (scope === undefined ? undefined : routes.get(scope)) ?? desk;
 	};
 	/** Each store once, the desk's first. */
 	const stores = (): ReadonlyArray<Store> => [...new Set([desk, ...routes.values()])];
 	return {
 		checkpoints: Checkpoints.of({
-			open: (target) => Effect.suspend(() => storeOf(target.programId).open(target)),
+			open: (target) => Effect.suspend(() => storeOf(target).open(target)),
 			list: Effect.suspend(() =>
 				Effect.map(
 					// Serial so the list keeps the desk's entries first, then each project's in route order.

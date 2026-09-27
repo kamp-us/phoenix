@@ -32,7 +32,6 @@ import {ProcessBoundary} from "@kampus/tuval-sdk/kernel/process/subprojects";
 import {WorkingFolder} from "@kampus/tuval-sdk/kernel/process/working-folder";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
-import {scopedIdParts} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {homeTuvalDir, type StateAdoption, StateDir} from "@kampus/tuval-sdk/kernel/state-dir";
 import type {PrefixTable} from "@kampus/tuval-ui/keys";
@@ -52,7 +51,7 @@ import {deskLayer} from "./desk-layer.ts";
 import type {CheckpointScoping} from "./durability/scope-checkpoints.ts";
 import {LiveKeyBindings} from "./keys/live.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
-import {ProjectId, projectConfig} from "./project-id.ts";
+import {ProjectId, processScope, projectConfig, type ScopedProcess} from "./project-id.ts";
 import {checkpointRoutes, ownedView} from "./projects/checkpoint-routes.ts";
 import type {ProjectNotReopened} from "./projects/open-projects.ts";
 import {
@@ -205,9 +204,8 @@ export interface Started {
 	readonly reopened: ProjectsReopened;
 }
 
-/** A manifest entry the desk's own restore brings back: one no project's row owns. */
-const deskOwned = (entry: {readonly programId: string}): boolean =>
-	scopedIdParts(entry.programId).scope === undefined;
+/** A manifest entry the desk's own restore brings back: one that runs in no project. */
+const deskOwned = (entry: ScopedProcess): boolean => processScope(entry) === undefined;
 
 /**
  * The app from rows and a graph, built into the caller's Scope. The graph is compiled over the
@@ -404,7 +402,10 @@ export interface BootReport {
 	readonly bindingCount: number;
 	/** One per key binding that did not compile; the binding is dropped and the rest still run. */
 	readonly bindingErrors: ReadonlyArray<BindingError>;
-	/** One per row refused for its SDK range (#9686) or a flag left off (#9687); the rest still run. */
+	/**
+	 * One per row refused for its SDK range (#9686) or a flag left off (#9687), in the global layer,
+	 * the first project or a reopened one; the rest still run.
+	 */
 	readonly refused: ReadonlyArray<RowRefused>;
 	/** The folders the saved list had open that this boot reopened beside the first (#9688). */
 	readonly reopened: ReadonlyArray<string>;
@@ -533,7 +534,8 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		spellCount: spells.table.rows.length,
 		bindingCount: spells.bindings.bindings.length,
 		bindingErrors: spells.bindings.errors,
-		refused: config.refused,
+		// The first project's refusals are already in `config.refused`; a reopened project's are its own.
+		refused: [...config.refused, ...started.reopened.opened.flatMap((opened) => opened.refused)],
 		reopened: started.reopened.opened.map((opened) => opened.project.folder),
 		skipped: started.reopened.skipped,
 		stateDir: state.stateDir,

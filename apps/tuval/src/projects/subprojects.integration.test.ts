@@ -11,10 +11,14 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {ClientId, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {Context, Effect, Option, Schedule, Schema, Stream} from "effect";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {Context, Effect, Layer, Logger, Option, Schedule, Schema, Stream} from "effect";
 import {boot, type Kernel, projectConfig, projectDir} from "../boot.ts";
 import type {OpenerState} from "../config-fixtures/subproject-opener.ts";
 import {ProjectId} from "../project-id.ts";
@@ -192,6 +196,93 @@ describe("a subproject a program opens", () => {
 				assert.deepStrictEqual(open, [parent, kept]);
 				assert.includeMembers([...(yield* liveIds(kernel))], [ProjectId.of(kept).scope("main")]);
 			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+});
+
+const client = {id: ClientId.make("test"), workspace: WorkspaceId.make("ws-1")};
+
+/** A spell called from outside any process, the way a page or the `tuval` command calls one. */
+const spell = (
+	kernel: Context.Context<Kernel>,
+	path: readonly [string, ...string[]],
+	args: unknown,
+) =>
+	Effect.gen(function* () {
+		const executor = yield* SpellExecutor;
+		return yield* executor.execute(
+			new SpellCall({
+				type: "spell.call",
+				version: PROTOCOL_VERSION,
+				id: CallId.make(`${path.join(".")}-${Math.random()}`),
+				path,
+				args,
+			}),
+			client,
+		);
+	}).pipe(Effect.provideContext(kernel));
+
+describe("closing a subproject", () => {
+	it.live(
+		"is refused through the project close spell for anyone but its opener",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("subproject-close-spell");
+				const parent = projectWith("subproject-parent");
+				const sub = projectWith("subproject-child");
+				const p = ProjectId.of(parent);
+				const {kernel} = yield* boot({global: fixture("does-not-exist"), project: parent, home});
+				yield* dispatch(kernel, p.scope("opener"), {type: "open", folder: sub});
+				yield* eventually("the subproject opens", openFolders(kernel), (open) =>
+					open.includes(sub),
+				);
+
+				const refused = yield* spell(kernel, ["project", "close"], {folder: sub});
+				assert.isFalse(refused.ok, JSON.stringify(refused));
+				assert.include(JSON.stringify(refused), "only the program that opened it closes it");
+				assert.include(yield* openFolders(kernel), sub);
+
+				yield* dispatch(kernel, p.scope("opener"), {type: "close", folder: sub});
+				assert.notInclude(yield* openFolders(kernel), sub);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+});
+
+describe("a subproject's refused rows", () => {
+	it.live(
+		"are reported by name, and the rest of the subproject runs",
+		() => {
+			const logs: Array<unknown> = [];
+			return Effect.gen(function* () {
+				const home = scratchHome("subproject-refused");
+				const parent = projectWith("subproject-parent");
+				const sub = projectWith("sdk-out-of-range-counter");
+				const p = ProjectId.of(parent);
+				const s = ProjectId.of(sub);
+				const {kernel} = yield* boot({global: fixture("does-not-exist"), project: parent, home});
+				yield* dispatch(kernel, p.scope("opener"), {type: "open", folder: sub});
+				yield* eventually("the subproject's processes run", liveIds(kernel), (ids) =>
+					ids.includes(s.scope("main")),
+				);
+				const said = logs.flat().filter((line): line is string => typeof line === "string");
+				const refusal = said.find((line) => line.includes(s.scope("future-counter")));
+				assert.isDefined(refusal, JSON.stringify(said));
+				assert.include(refusal, sub);
+			}).pipe(
+				Effect.scoped,
+				Effect.provide(
+					Layer.mergeAll(
+						NodeFileSystem.layer,
+						Logger.layer([
+							Logger.make(({message}) => {
+								logs.push(message);
+							}),
+						]),
+					),
+				),
+			);
+		},
 		TIMEOUT,
 	);
 });

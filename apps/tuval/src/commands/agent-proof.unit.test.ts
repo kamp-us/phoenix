@@ -218,9 +218,9 @@ const scriptedProjects = Layer.effect(
 						restored: [],
 					});
 				}),
-			close: (folder) =>
+			close: (folder, by) =>
 				Effect.flatMap(Ref.get(open), (current) => {
-					const result = current.close(folder);
+					const result = current.close(folder, by);
 					if (Result.isFailure(result)) return Effect.fail(result.failure);
 					return Effect.as(Ref.set(open, result.success.projects), {
 						project: result.success.project,

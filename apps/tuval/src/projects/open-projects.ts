@@ -61,6 +61,16 @@ export class ProjectNotOpen extends Schema.TaggedError<ProjectNotOpen>()("tuval/
 	}
 }
 
+/** A subproject closed by someone other than the program that opened it (#9689). */
+export class SubprojectNotYours extends Schema.TaggedError<SubprojectNotYours>()(
+	"tuval/SubprojectNotYours",
+	{folder: Schema.String},
+) {
+	override get message(): string {
+		return `the project ${this.folder} is a subproject; only the program that opened it closes it`;
+	}
+}
+
 /** A folder the saved list had open that this restart did not reopen, and why. */
 export class ProjectNotReopened extends Schema.TaggedError<ProjectNotReopened>()(
 	"tuval/ProjectNotReopened",
@@ -281,19 +291,27 @@ export class OpenProjects {
 	}
 
 	/**
-	 * The open project at `folder` closed, with every subproject nested under it. `closed` is all of
-	 * them, each subproject before the project it is nested under, so `project` comes last.
+	 * The open project at `folder` closed by `by`, with every subproject nested under it. `by` is the
+	 * calling process, or `undefined` for a caller outside any process; a subproject closes only for
+	 * its opener. `closed` is all of them, each subproject before the project it is nested under, so
+	 * `project` comes last.
 	 */
-	close(folder: string): Result.Result<
+	close(
+		folder: string,
+		by: ProcessId | undefined,
+	): Result.Result<
 		{
 			readonly projects: OpenProjects;
 			readonly project: OpenProject;
 			readonly closed: ReadonlyArray<OpenProject>;
 		},
-		ProjectNotOpen
+		ProjectNotOpen | SubprojectNotYours
 	> {
 		const project = this.find(folder);
 		if (project === undefined) return Result.fail(new ProjectNotOpen({folder: resolve(folder)}));
+		if (project.under !== undefined && project.under.opener !== by) {
+			return Result.fail(new SubprojectNotYours({folder: project.folder}));
+		}
 		const closed = [...this.nestedUnder(project), project];
 		return Result.succeed({
 			projects: this.with({projects: this.projects.filter((open) => !closed.includes(open))}),

@@ -55,7 +55,7 @@ import {
 import {WorkingFolder} from "@kampus/tuval-sdk/kernel/process/working-folder";
 import type {AnyProgram, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
-import {localId, scopedIdParts} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
+import {localId} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {
 	adoptInProjectState,
@@ -103,6 +103,7 @@ import {
 	projectLabels,
 	type RecentProject,
 	readOpenProjects,
+	type SubprojectNotYours,
 	saveOpenProjects,
 } from "./open-projects.ts";
 import type {RecommendPrompts} from "./RecommendPrompts.ts";
@@ -168,9 +169,14 @@ export class Projects extends Context.Service<
 			ProjectOpened,
 			ProjectAlreadyOpen | ProjectOpenRefused | FolderNotTrusted | NoProjectsHere
 		>;
+		/**
+		 * Close the project at `folder` for `by`, the calling process, or for a caller outside any
+		 * process when it is `undefined`. A subproject closes only for the program that opened it.
+		 */
 		readonly close: (
 			folder: string,
-		) => Effect.Effect<ProjectClosed, ProjectNotOpen | NoProjectsHere>;
+			by?: ProcessId,
+		) => Effect.Effect<ProjectClosed, ProjectNotOpen | SubprojectNotYours | NoProjectsHere>;
 		readonly list: Effect.Effect<ReadonlyArray<OpenProject>>;
 		/** The folders opened most recently, newest first, each saying whether it is open now. */
 		readonly recent: Effect.Effect<ReadonlyArray<RecentProject>>;
@@ -306,13 +312,13 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 					Context.get(built, Checkpoints),
 				);
 
-	/** The processes running one of the project's rows, stopped and left in their checkpoints. */
+	/** The processes running in the project, stopped and left in their checkpoints. */
 	const stopOwned = (id: ProjectId, kernel: Context.Context<ProjectsKernel>) =>
 		Effect.gen(function* () {
 			const processes = Context.get(kernel, Processes);
 			for (const row of yield* Context.get(kernel, ProcessTable).list) {
 				// A child the stop of its parent already took is gone by the time its turn comes.
-				if (id.owns(row.programId)) yield* Effect.ignore(processes.stop(row.id));
+				if (id.ownsProcess(row)) yield* Effect.ignore(processes.stop(row.id));
 			}
 		});
 
@@ -400,7 +406,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 			const restored = yield* restore(inFolder).pipe(
 				Effect.provideService(
 					Checkpoints,
-					ownedView(store, (entry) => id.owns(entry.programId)),
+					ownedView(store, (entry) => id.ownsProcess(entry)),
 				),
 				Effect.provideContext(kernel),
 			);
@@ -578,8 +584,8 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		return yield* openAdmitted(folder);
 	});
 
-	const closeFolder = Effect.fn("Tuval.Projects.close")(function* (folder: string) {
-		const closing = (yield* SubscriptionRef.get(openRef)).close(folder);
+	const closeFolder = Effect.fn("Tuval.Projects.close")(function* (folder: string, by?: ProcessId) {
+		const closing = (yield* SubscriptionRef.get(openRef)).close(folder, by);
 		if (Result.isFailure(closing)) return yield* closing.failure;
 		const {project, projects, closed} = closing.success;
 		// Each subproject before the project it is nested under, so a parent's processes outlive
@@ -700,7 +706,20 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		return Subprojects.of({
 			open: (opener, input) =>
 				Effect.flatMap(absolute(input), (folder) =>
-					later(folder, openSubAdmitted(parent, folder, opener)),
+					later(
+						folder,
+						// A refused row costs that row and nothing else, and is said the way a boot says it.
+						Effect.tap(openSubAdmitted(parent, folder, opener), (opened) =>
+							Effect.forEach(
+								opened.refused,
+								(refusal) =>
+									Effect.logWarning(
+										`tuval: the subproject ${folder} under ${parent.folder} — ${refusal.message}`,
+									),
+								{concurrency: 1, discard: true},
+							),
+						),
+					),
 				),
 			close: (opener, input) =>
 				Effect.gen(function* () {
@@ -712,13 +731,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 							reason: `it is not an open subproject of ${parent.folder}`,
 						});
 					}
-					if (open.under.opener !== opener) {
-						return yield* new SubprojectRefused({
-							folder,
-							reason: "only the program that opened it closes it",
-						});
-					}
-					yield* closeFolder(folder).pipe(
+					yield* closeFolder(folder, opener).pipe(
 						Effect.mapError((cause) => new SubprojectRefused({folder, reason: reasonOf(cause)})),
 					);
 				}),
@@ -731,12 +744,9 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		projects: ReadonlyArray<OpenProject>,
 		id: ProcessId,
 	): OpenProject | undefined => {
-		const byScope = (scoped: string) => {
-			const {scope} = scopedIdParts(scoped);
-			return scope === undefined ? undefined : projects.find((open) => open.id.key === scope);
-		};
 		for (let at = rows.get(id); at !== undefined; ) {
-			const owner = byScope(at.programId) ?? byScope(at.id);
+			const row = at;
+			const owner = projects.find((open) => open.id.ownsProcess(row));
 			if (owner !== undefined) return owner;
 			at = Option.isSome(at.parentId) ? rows.get(at.parentId.value) : undefined;
 		}

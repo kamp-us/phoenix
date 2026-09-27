@@ -53,12 +53,14 @@ const openSpell = defineSpell({
 
 const closeSpell = defineSpell({
 	path: ["project", "close"],
-	describe: "Close an open project: stop its programs and drop its connections.",
+	describe:
+		"Close an open project: stop its programs and drop its connections. A subproject closes only for the program that opened it.",
 	params: Schema.Struct({folder: Folder}),
 	result: ProjectRow,
-	execute: (args) =>
+	// The caller is the process the kernel resolved into the scope, never one the caller named.
+	execute: (args, scope) =>
 		Effect.map(
-			Effect.flatMap(Projects, (projects) => projects.close(args.folder)),
+			Effect.flatMap(Projects, (projects) => projects.close(args.folder, scope.process)),
 			({project}) => ({folder: project.folder, name: project.id.name}),
 		),
 	capabilities: [{family: "process-control"}],

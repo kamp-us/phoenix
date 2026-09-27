@@ -137,15 +137,17 @@ question, then prints the desk's answer; a refusal exits 1. With no desk running
 whose page does not answer, is from a desk that crashed. `tuval` says so, removes it, and starts a
 new desk. A `--no-page` desk writes no record, since a caller reaches a desk through its page.
 
-One running desk holds several projects (#9685); [ADR 0419](../../.decisions/0419-one-desk-opens-many-projects.md)
-records the whole project model. The `--project` folder is the first one it opens,
-and the `project open` spell opens another into the running desk with no restart: its config
-layer is read, its rows join the registry, its graph starts, its checkpointed processes come back
-from its own state directory, and a `kind: "module"` renderer it declares is served to the page (an
-attached page loads it on its next load). `project close` stops that project's processes, leaving
-their checkpoints, drops the connections its config declared and removes its rows, and every other
-project keeps running. Both name the folder by its absolute path. `project list` answers which are
-open, and `~/.tuval/open-projects.json` keeps that list, one record per folder.
+One running desk holds several projects (#9685).
+[ADR 0419](../../.decisions/0419-one-desk-opens-many-projects.md) records the whole project model.
+The `--project` folder is the first one it opens, and the `project open` spell opens another into
+the running desk with no restart: its config layer is read, its rows join the registry, its graph
+starts, its checkpointed processes come back from its own state directory, and a `kind: "module"`
+renderer it declares is served to the page (an attached page loads it on its next load).
+`project close` stops every process running in that project, leaving their checkpoints, drops the
+connections its config declared and removes its rows, and every other project keeps running. A
+subproject closes only for the program that opened it, so `project close` refuses one for any other
+caller. Both name the folder by its absolute path. `project list` answers which are open, and
+`~/.tuval/open-projects.json` keeps that list, one record per folder.
 
 The first time `project open` meets a folder with a `.tuval/tuval.config.ts`, the desk asks
 "Trust this folder?" before it imports that config, because importing it runs its code (#9693, the
@@ -187,8 +189,8 @@ leaves subprojects out, so after a restart one comes back only when its opener c
 
 Known gap: the `--project` folder, which defaults to the working directory, is imported at boot
 without the question, so running `tuval` inside a freshly cloned repo runs that repo's config
-unasked. So is the folder `tuval open <folder>` starts a new desk with. Ruling #9668 R2.1 exempts only the home config; #9884 tracks moving the boot folder onto
-the trust prompt.
+unasked. So is the folder `tuval open <folder>` starts a new desk with. Ruling #9668 R2.1 exempts
+only the home config; #9884 tracks moving the boot folder onto the trust prompt.
 
 Nothing Tuval saves goes into the project. The process manifest, the checkpoints and the Pi session
 files live under `~/.tuval/projects/<key>`, where the key is that checkout's absolute path written
@@ -246,17 +248,17 @@ file may be absent — an absent layer is empty, and a boot with neither, or a f
 at all, runs the desk's shell and nothing else. No layer replaces another's row (ruling #9668 R4.1,
 #9684). A global row keeps its bare id; a project row and a project graph node run as
 `<project>/<id>`, where `<project>` is the folder's state key (ADR 0402), so a project row with a
-global row's id loads beside it and a node's process id never collides with another project's. A bare
-id in the project's `graph` — a node's `program`, its `parent`, a route's target — names the
+global row's id loads beside it and a node's process id never collides with another project's. A
+bare id in the project's `graph` — a node's `program`, its `parent`, a route's target — names the
 project's own row or node when there is one and the global one otherwise. A project graph naming
 another project's id is refused at load with both ends named, and so is a global graph naming any
 project's: the global layer reaches a project only through a connection the project declares. `/` is
-reserved for that scope, so a declared id carrying one is refused. On the command line a project
-row goes by its scoped id. A project row's spells sit under its scoped id too, and a call that
-addresses one by the bare id it was declared under still reaches it, as long as no row holds that
-bare address and only one project declares the id; that is how a window's `session.list` call
-reaches a project's session list. A file layer that declares the shell's row or node id is refused at load,
-naming the file and saying the desk supplies it.
+reserved for that scope, so a declared id carrying one is refused. On the command line a project row
+goes by its scoped id. A project row's spells sit under its scoped id too, and a call that addresses
+one by the bare id it was declared under still reaches it, as long as no row holds that bare address
+and only one project declares the id; that is how a window's `session.list` call reaches a project's
+session list. A file layer that declares the shell's row or node id is refused at load, naming the
+file and saying the desk supplies it.
 
 The first boot on a build with project scoping moves the checkpoints an older build saved onto the
 scoped ids: a process of a project row runs that row's scoped id, a planned node's process takes the
@@ -748,8 +750,8 @@ that no longer resolves, a spawn that failed, an unreadable command line — eac
 written to the view slot through `window.setView`, so the picker stays mounted and announces it.
 Nothing here throws and nothing here fails an Effect.
 
-**Open project… ends the list** on a page that can ask the kernel (#9697). Choosing it moves the same
-listbox onto two steps: the recent projects, newest first, from the `recent` list the saved
+**Open project… ends the list** on a page that can ask the kernel (#9697). Choosing it moves the
+same listbox onto two steps: the recent projects, newest first, from the `recent` list the saved
 open-projects record keeps, then "Browse for a folder…", a folder browser that starts at the home
 folder. Enter or → goes into a folder, ← goes up, Enter on "Open <folder>" opens it, and Escape goes
 back one step. An open is the `project open` spell, the request `tuval open` sends, so a first open
@@ -805,8 +807,8 @@ Its proof binds a real loopback socket, so it runs as this app's `integration` t
 
 `src/shell/program.ts` is the whole of the shell's claim on the kernel: one registry row, one graph
 node. The desk is a `Program` exactly as the demo counter is, with no special path through the
-kernel. The one thing that differs is who registers it: the desk layer (`src/desk-layer.ts`) supplies
-the row and node below every config file (#9683), and no config may declare them.
+kernel. The one thing that differs is who registers it: the desk layer (`src/desk-layer.ts`)
+supplies the row and node below every config file (#9683), and no config may declare them.
 
 ```ts
 shellProgram({effects}); // id "shell", core from src/shell/core/, no ports
@@ -958,20 +960,20 @@ The app is `@kampus-apps/tuval` in the workspace and packs as `@kampus/tuval`, w
 (#9690). `publishConfig.directory` points `pnpm pack` at `dist/`, and `prepack` runs `pnpm build`
 (`src/publish/build.bin.ts`), which writes three things there: the page built from `index.html`, the
 bin bundled from `src/bin.ts` under `server/`, and a `package.json` composed by
-`src/publish/manifest.ts`. The workspace packages the desk runs on are bundled in, since none of them
-is published. `@kampus/tuval-sdk` is not: it is a regular dependency, so the desk and every program
-load one copy, and the build fails if either bundle read a file of the SDK.
+`src/publish/manifest.ts`. The workspace packages the desk runs on are bundled in, since none of
+them is published. `@kampus/tuval-sdk` is not: it is a regular dependency, so the desk and every
+program load one copy, and the build fails if either bundle read a file of the SDK.
 
 The page is still served by Vite at run time, because a program's window is a module only a running
 page server can resolve. So the built page leaves React, Effect and the SDK as imports for that
 server to resolve once, for the page and the windows alike.
 
 Publishing stays a manual step: the app keeps `private: true`, so `pnpm -r publish` skips it, and a
-`pnpm publish` run in this directory publishes `dist/`. `pnpm proof:outside` (`src/publish/outside.bin.ts`,
-run in CI) packs both packages, installs them with npm in a temp folder outside the checkout, runs
-`tuval open .` over a program written there against a scratch home, trusts a second folder through
-the desk's own question, edits the program and sees the running process switch, and fails if the desk
-resolved a file inside the checkout or loaded a second SDK.
+`pnpm publish` run in this directory publishes `dist/`. `pnpm proof:outside`
+(`src/publish/outside.bin.ts`, run in CI) packs both packages, installs them with npm in a temp
+folder outside the checkout, runs `tuval open .` over a program written there against a scratch
+home, trusts a second folder through the desk's own question, edits the program and sees the running
+process switch, and fails if the desk resolved a file inside the checkout or loaded a second SDK.
 
 ## The author loop
 
@@ -990,7 +992,10 @@ An author outside phoenix writes a program in their own folder and runs it on th
 5. Answer "Trust this folder?" with yes. A folder is asked once; the answer is kept per path. A
    folder that starts a new desk is not asked yet; #9884 tracks that gap.
 6. Edit the program. Saving the config, or any file it imports by path, reloads it in the running
-   desk (see "Spells"), and the process keeps the state it had.
+   desk (see "Spells"), and the process keeps the state it had. Two limits hold today. A reload
+   does not yet switch a program written with the authoring API, so its process keeps the old code
+   until the desk restarts (#9950, folded into #9690). And only the folder a desk booted with is
+   watched, so a project opened into a desk that was already running does not reload (#9869).
 
 `pnpm proof:outside` runs these steps from packed tarballs in CI (see "The packed desk").
 
