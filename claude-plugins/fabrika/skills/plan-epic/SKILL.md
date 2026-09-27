@@ -37,9 +37,10 @@ Source grounds *what is true of the code*; authority arrives only through an ACL
 
 **Capability set:** a repo-scoped token, a claim on the epic, and direct reads inside **the
 epic's tree**. Its write surface is: creating child issues, linking them as sub-issues, the
-labels / milestone / assignee those children are born with, linking an already-filed issue as a child
-and appending one dated amendment to its body that carries only the `**Stories:**` /
-`**Containment:**` lines it lacks (`ledger adopt` — never a rewrite, never a label), one PATCH of the epic body, and — on a
+labels / milestone / assignee those children are born with, linking an already-filed issue as a child,
+appending one dated amendment to its body that carries only the `**Stories:**` /
+`**Containment:**` lines it lacks, and moving it from `status:triaged` to `status:planned`
+(`ledger adopt` — never a rewrite), one PATCH of the epic body, and — on a
 re-plan only — **commenting on, unlinking and closing** a child it supersedes. Through the `grill`
 verbs it also opens or resumes one grilling session issue on the epic and comments its rounds and
 fact answers onto it. Through `build note`
@@ -325,20 +326,32 @@ existing issue as a child, or a `candidates` row that is plainly this slice, is 
 fabrika ledger adopt $epic_number --child 5 --stories 2 --token <claim-token>
 ```
 
-Done when it answers `adopted` with `linked: true`. The issue keeps its title, labels, report and
-criteria. What you may add is only the plan's field lines it lacks. Pass `--stories` when it
-declares none, and `--containment` when the gate would ask for one; the verb appends them under a
-dated amendment and never rewrites a byte above it. The authority behind that, and what it leaves to
-a separate ruling, is in [`contract.md`'s `ledger adopt`](contract.md#ledger-adopt).
+Done when it answers `adopted` with `linked: true`. The issue keeps its title, report and criteria.
+What you may add is only the plan's field lines it lacks. Pass `--stories` when it declares none,
+and `--containment` when the gate would ask for one; the verb appends them under a dated amendment
+and never rewrites a byte above it. It also moves the issue from `status:triaged` to
+`status:planned` before it links it, so an adopted child is unpickable until the gate flips it,
+exactly like a minted one. The authority behind that, and what it leaves to a separate ruling, is in
+[`contract.md`'s `ledger adopt`](contract.md#ledger-adopt).
 
-**Adopt before you mint anything**, so a refusal leaves no half-minted set. A `4`, `7` or `10` naming the
-issue says why it cannot join as it stands: no criteria, a field it already declares differently,
-closed, untriaged, or a child of another epic. That is a fact about the issue, not the epic, and adoption
-does not fix it: the repair is a body edit by a human or triage. End `STOPPED` naming the issue and
-the refusal line, and do not mint a duplicate to get past it. `8`, `23` and `26`
-are recovered by running the same command again, because every leg re-reads live state and repeats
-only what is missing. If the re-run refuses with one of them again, stop there: that is
-`WRITE-UNPROVEN`, naming the issue. `9` is `WRITE-UNPROVEN` at once.
+**Adopt before you mint anything**, so a refusal leaves no half-minted set. Read the refusal line
+before routing it, because the same codes carry two kinds of fact:
+
+- **Your own input.** A `4` that asks you to pass `--stories` or `--containment`, or a `10` on a
+  `--stories` or `--containment` value, `--child` naming the epic, or `--child` naming a pull request.
+  Fix the flag and run it again.
+- **A fact about the issue.** Each has an owner that is not you, so end `STOPPED` naming the issue,
+  the refusal line and that owner, and do not mint a duplicate to get past it. A `4` on the body (no
+  criteria, a field line declared twice, non-conforming, or with a different value) is a body edit by
+  a human or triage. A `10` on its labels (untriaged, a missing label, a status other than
+  `status:triaged` or `status:planned`, or held with nobody assigned) is triage's. A `10` saying it is
+  a sub-issue of another epic is that epic's plan's call. A `7` saying it is closed is the brief
+  author's: whether closed work belongs in this plan is not yours to decide. A `10` naming
+  `status:planned` as absent from the taxonomy is a repository fact, as it is for `ledger child`.
+
+`8`, `23` and `26` are recovered by running the same command again, because every leg re-reads
+live state and repeats only what is missing. If the re-run refuses with one of them again, stop
+there: that is `WRITE-UNPROVEN`, naming the issue. `9` is `WRITE-UNPROVEN` at once.
 
 On a `re-plan`, a child the new plan drops is retired rather than left dangling:
 
@@ -468,8 +481,7 @@ and every row below that seats one says so.
 
 - `PLANNED` — **success.** Plan and topology written and byte-verified, children minted and linked,
   and every edge the topology requires proven on the `blocked_by` graph. A ledger exists; it is not
-  gated and no minted child is pickable. An adopted child keeps its triage labels, so it may already
-  be pickable.
+  gated and no child is pickable.
 - `RE-PLANNED` — **success.** As above, naming the children superseded this run.
 - `TOPOLOGY-REFUSED` — `24`, and **its disposition turns on which verb seated it.** From `ledger
   topology` nothing reached the epic body and the repair is re-declaring, not re-minting: a back-off,
@@ -559,7 +571,8 @@ outside fabrika.
 position** — a whole-line `<!-- fabrika:enriched … -->` match, so the plan may sit below the brief
 envelope.
 
-<!-- anchor: PLANNER-NEVER-FLIPS --> **This skill writes no `status:triaged`.** Minted children are born
-`status:planned` and stay there until the gate flips them. A planner that flipped its own children
-would make them pickable over a ledger nothing had checked. An adopted child was not born here: it
-keeps the triage labels it already had, so it may be pickable before the gate runs.
+<!-- anchor: PLANNER-NEVER-FLIPS --> **This skill writes no `status:triaged`.** Children are born
+`status:planned` and stay there until the gate flips them. An adopted child was not born here, so
+`ledger adopt` moves it off `status:triaged` onto `status:planned` before it links it, and it waits
+for the same flip. A planner that flipped its own children would make them pickable over a ledger
+nothing had checked.

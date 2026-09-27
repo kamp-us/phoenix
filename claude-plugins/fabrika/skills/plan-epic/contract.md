@@ -143,7 +143,7 @@ as the sibling contracts do):
 | `ledger open` | prove the ground fresh, allocate the run, read what already exists, rank duplicate candidates | fetch + freshness proof + a registered ranker — no judgment; *whether a candidate really is this work* stays in the skill |
 | `ledger draft` | validate and stage the model-authored plan block | a total grammar check over a closed section set; *whether the plan is any good* is irreducibly the skill's |
 | `ledger child` | mint one child with every birth attribute in one create, link it, re-read it, record it | a guarded write with a read-back; *what the child should contain* is the skill's, taken as input |
-| `ledger adopt` | bring an already-filed issue into the plan as a child: validate it with the gate's readers, append only the field lines it owes, record it, link it | the gate's readers plus an append-only write with a two-halved read-back; *whether the issue really is this plan's work*, and its story ids, are the skill's, taken as input |
+| `ledger adopt` | bring an already-filed issue into the plan as a child: validate it with the gate's readers, append only the field lines it owes, park it on `status:planned`, record it, link it | the gate's readers plus an append-only write with a two-halved read-back; *whether the issue really is this plan's work*, and its story ids, are the skill's, taken as input |
 | `ledger topology` | validate the declared edges against the recorded children, prove every out-of-epic prerequisite, and render the block | a total function from edges to a verdict over one boundary read per external ref — cycles, non-child subjects, a prerequisite naming the epic itself, orphans and an absent external target are all decidable; *which slices may run in parallel* is the skill's |
 | `ledger write` | splice the staged plan and topology into the epic body, byte-verified | anchor resolution + a guarded PATCH with a round-trip diff — no judgment |
 | `ledger edges` | write the epic's written `## Dependencies` block into the native `blocked_by` graph, reconciling rather than replacing | a total derivation from the block to the pairs it owes, plus a guarded write with a read-back — no judgment; *what the topology should be* was decided at `ledger topology` |
@@ -933,12 +933,13 @@ fabrika ledger adopt 3 --child 5 [--stories 2] [--containment "flag (default-off
 
 ```
 {"answer":"adopted","epic":3,"child":5,"linked":true,"link":"written","amended":true,
- "fields":["**Stories:** 2"],"stories":[2],"containment":null}
+ "park":"written","fields":["**Stories:** 2"],"stories":[2],"containment":null}
 ```
 
 `link` is `written` when this call linked the issue and `already` when the parent endpoint already
-named this epic. `amended` says whether an amendment was appended, and `fields` lists exactly the
-lines it carried.
+named this epic. `park` is `written` when this call moved the issue off `status:triaged` and
+`already` when it no longer carried it. `amended` says whether an amendment was appended, and
+`fields` lists exactly the lines it carried.
 
 ### Authority: what adoption may write, and what it may not
 
@@ -952,15 +953,22 @@ this authority is cited from the verb's source, in
 
 - **What adoption may write.** On the adopted issue, one dated amendment
   (`---`, `## Amendment — <UTC date>`, one line naming the epic, then the field lines) carrying only
-  the `**Stories:**` and `**Containment:**` lines the body does not already declare. On the plan,
-  the manifest line and the native sub-issue link, as `ledger child` does. That is the whole write
-  surface.
+  the `**Stories:**` and `**Containment:**` lines the body does not already declare, and one status
+  move: add `status:planned`, then remove `status:triaged`. On the plan, the manifest line and the
+  native sub-issue link, as `ledger child` does. That is the whole write surface.
+- **Why the status moves.** A plan's child is unpickable until the gate has checked the plan and the
+  founder has approved it. A minted child gets that by being born `status:planned`. An adopted
+  child was triaged before this plan existed, so it may be pickable. Adoption parks it on
+  `status:planned` before it links it, and `plan flip` restores `status:triaged` on a clean floor,
+  exactly as it does for a minted child. So an issue on any other status is refused: the flip could
+  only restore `status:triaged`, and the status it had would be lost.
 - **What the planner must supply.** `--stories` whenever the body has no `**Stories:**` line, and
   `--containment` whenever the gate would ask for a containment value the body lacks. The values are
   flags, not free text, so the amendment holds nothing a validator did not read.
 - **What it never writes.** Nothing above the amendment changes: title, the report, its
   investigation notes, and its acceptance criteria all survive byte for byte, proven on a re-read
-  of both halves. Adoption writes no label, milestone or assignee, so the issue keeps its triage.
+  of both halves. Adoption writes no milestone or assignee, and no label except the status move
+  above, so the issue keeps its type, priority, audience and home.
 - **What needs a separate ruling or another owner.** Changing a field the body already declares,
   repairing a non-conforming or duplicated field line, and authoring missing acceptance criteria
   are all rewrites or a re-scope. Adoption refuses each (`4`) and names the gap. The repair is a
@@ -969,7 +977,7 @@ this authority is cited from the verb's source, in
 
 ### Order of operations
 
-Every judgment runs before the first write, so a refusal before step 5 writes nothing.
+Every judgment runs before the first write, so a refusal before step 6 writes nothing.
 
 1. **Validate the flags.** `--child` names the epic itself, or `--stories` does not conform: `10`,
    before any read.
@@ -981,22 +989,33 @@ Every judgment runs before the first write, so a refusal before step 5 writes no
    ([`ledger/adoption.ts`](../../../../packages/fabrika-cli/src/ledger/adoption.ts)). A
    `type:epic`, `status:needs-triage`, a missing `type:`/`status:`/priority label, or
    `ready-for:human` with nobody assigned is `10`. Those are the gate's own `MISSING_LABEL`,
-   `NEEDS_TRIAGE_LABEL` and `HELD_CHILD_UNASSIGNED` predicates, imported. Criteria that read absent
+   `NEEDS_TRIAGE_LABEL` and `HELD_CHILD_UNASSIGNED` predicates, imported. A status other than
+   `status:triaged` or `status:planned` is `10` too. Criteria that read absent
    or malformed, a field line declared twice or non-conforming, a declared value that differs from
    the flag, a declared containment off the vocabulary, or a required field with no flag is `4`. An
    issue this step admits cannot fail the floor on these fields.
-5. **Amend, only if a field is owed.** Leak-scan the section (`5`), PATCH the composed body, then
+5. **Check the taxonomy, only if a park is owed.** When the issue carries `status:triaged` and not
+   yet `status:planned`, read the repository's labels. `POST .../labels` creates an unknown label
+   rather than rejecting it, so an absent `status:planned` is `10`, and a failed read is `11`.
+6. **Amend, only if a field is owed.** Leak-scan the section (`5`), PATCH the composed body, then
    re-read it and prove that the amendment is present **and** that the prior body survived. `8` on
    an unprovable PATCH, `9` on a body missing either half.
-6. **Record** the child in `children.jsonl`, with `linked` set to what the parent endpoint showed.
+7. **Park, only if the issue still carries `status:triaged`.** Add `status:planned` if it is
+   absent, then remove `status:triaged`. Add before remove, as `plan flip` does, so an issue caught
+   between the two still carries a `status:` label. Re-read the issue and prove it carries
+   `status:planned` and not `status:triaged`. `8` when it does not.
+8. **Record** the child in `children.jsonl`, with `linked` set to what the parent endpoint showed.
    An existing line for this number is **replaced**, never appended beside. `26` on failure.
-7. **Link** on the issue's database `id`, unless the parent endpoint already named this epic.
+9. **Link** on the issue's database `id`, unless the parent endpoint already named this epic.
    Then re-list the epic's sub-issues to prove it and rewrite the manifest line `linked: true`.
    `23` on an unproven link.
 
+The park comes before the link, so the issue is never a linked child while it is still pickable.
+
 **Every leg is idempotent against live state, so a re-run is the recovery.** The amendment is
-composed only from lines the body does not already declare. The manifest line is replaced rather
-than appended. The link is skipped when the parent already names this epic. So after `8`, `23` or
+composed only from lines the body does not already declare. The park is skipped when the issue no
+longer carries `status:triaged`. The manifest line is replaced rather than appended. The link is
+skipped when the parent already names this epic. So after `8`, `23` or
 `26`, run the same command again: it re-reads the issue and repeats only what is missing, and a
 landed amendment is never doubled. `9` is the exception, because the body is in a state nobody
 composed, and it needs a human eye.
@@ -1008,9 +1027,9 @@ composed, and it needs a human eye.
 | `4` | the issue's acceptance criteria read absent or malformed; a `**Stories:**` or `**Containment:**` line declared twice, or non-conforming; a declared value that differs from the flag; a declared containment off the vocabulary for an asked type; or a required field is undeclared and its flag was not passed |
 | `5` | the amendment carries a machine-local path |
 | `7` | the epic, or the issue, is proven absent or closed |
-| `8` | the amendment PATCH was attempted and could not be proven — UNKNOWN; re-run |
+| `8` | the amendment PATCH, or the park on `status:planned`, was attempted and could not be proven — UNKNOWN; re-run |
 | `9` | amended, and the body does not read back as the prior body plus the amendment |
-| `10` | not a `type:epic`; `--child` is the epic, a pull request, a `type:epic`, `status:needs-triage`, missing a `type:`/`status:`/priority label, held with nobody assigned, or a sub-issue of another epic; `--stories` or `--containment` off its vocabulary |
+| `10` | not a `type:epic`; `status:planned` absent from the repository's labels; `--child` is the epic, a pull request, a `type:epic`, `status:needs-triage`, on a status other than `status:triaged` or `status:planned`, missing a `type:`/`status:`/priority label, held with nobody assigned, or a sub-issue of another epic; `--stories` or `--containment` off its vocabulary |
 | `11` | a precondition read failed — **nothing was written** |
 | `15` | this lane does not hold the epic's claim |
 | `23` | the issue is recorded `linked:false` and its sub-issue link could not be proven; re-run |
@@ -1027,19 +1046,22 @@ composed, and it needs a human eye.
 | `ledger adopt: the amendment carries a machine-local path (<masked>).` | 5 | refusal |
 | `ledger adopt: issue #<c> is proven absent or closed.` | 7 | refusal |
 | `ledger adopt: the amendment to #<c> was attempted and could not be proven: <reason> — UNKNOWN; re-run the same \`ledger adopt\` — it re-reads the issue and repeats only what is missing.` | 8 | refusal |
+| `ledger adopt: the park of #<c> on status:planned was attempted and could not be proven — UNKNOWN; #<c> is not linked; re-run the same \`ledger adopt\` — it re-reads the issue and repeats only what is missing.` | 8 | refusal |
 | `ledger adopt: amended #<c> and its body does not read back as the prior body plus the amendment — it needs a human eye.` | 9 | refusal |
 | `ledger adopt: --child names the epic itself.` | 10 | refusal |
 | `ledger adopt: --stories "<v>" does not conform — bare integers or "none".` | 10 | refusal |
 | `ledger adopt: #<c> is a pull request — only an issue can be a child.` | 10 | refusal |
 | `ledger adopt: #<c> is already a sub-issue of #<p> — an issue has one parent, and moving it out of another plan is that plan's decision.` | 10 | refusal |
 | `ledger adopt: #<c> cannot be adopted: it still carries status:needs-triage — an untriaged issue is not a plannable child.` | 10 | refusal |
+| `ledger adopt: #<c> cannot be adopted: it carries <status> — adoption parks a status:triaged issue on status:planned until the gate flips it back, and that flip would lose <status>.` | 10 | refusal |
+| `ledger adopt: label "status:planned" is absent from <repo>'s taxonomy — refusing to create it.` | 10 | refusal |
 | `ledger adopt: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
 | `ledger adopt: this lane does not hold #<n>'s claim.` | 15 | refusal |
 | `ledger adopt: #<c> is recorded in the run manifest as linked:false and its sub-issue link could not be proven; re-run the same \`ledger adopt\` — it re-reads the issue and repeats only what is missing.` | 23 | refusal |
 | `ledger adopt: could not write the run manifest: <reason> — #<c> is not linked; re-run the same \`ledger adopt\` — it re-reads the issue and repeats only what is missing.` | 26 | refusal |
 
-**Scope** — one issue, its parent, and the epic's sub-issue list read; at most one PATCH and one
-link written. The stderr `scannedLine` names how many field lines were owed. Zero scope is `7`:
+**Scope** — one issue, its parent, and the epic's sub-issue list read, plus the repository's labels
+when a park is owed; at most one PATCH, one label added, one label removed and one link written. The stderr `scannedLine` names how many field lines were owed. Zero scope is `7`:
 the epic, or the one issue named by `--child`, proven absent or closed. There is no partial scope,
 because the verb adopts exactly that one issue or refuses.
 
@@ -1047,12 +1069,12 @@ because the verb adopts exactly that one issue or refuses.
 
 ```
 $ fabrika ledger adopt 3 --child 5 --stories 2 --token <claim-token>
-{"answer":"adopted","epic":3,"child":5,"linked":true,"link":"written","amended":true,"fields":["**Stories:** 2"],"stories":[2],"containment":null}
+{"answer":"adopted","epic":3,"child":5,"linked":true,"link":"written","amended":true,"park":"written","fields":["**Stories:** 2"],"stories":[2],"containment":null}
 ```
 
 ```
 $ fabrika ledger adopt 3 --child 5 --stories 2 --token <claim-token>
-{"answer":"adopted","epic":3,"child":5,"linked":true,"link":"already","amended":false,"fields":[],"stories":[2],"containment":null}
+{"answer":"adopted","epic":3,"child":5,"linked":true,"link":"already","amended":false,"park":"already","fields":[],"stories":[2],"containment":null}
 ```
 
 ```

@@ -14,7 +14,7 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {bodyDigest} from "./digest.ts";
-import {CLAIMED, DIR, env, epic, TOKEN} from "./fixtures.test-support.ts";
+import {CLAIMED, DEFAULT_LABELS, DIR, env, epic, labelSet, TOKEN} from "./fixtures.test-support.ts";
 import {manifestPath, parseManifest, renderRunRecord, runJsonPath} from "./run.ts";
 
 const CHILD = 8195;
@@ -27,6 +27,9 @@ const PARENT = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/8195\/pare
 const PATCH = /^PATCH https:\/\/api\.github\.com\/repos\/o\/r\/issues\/8195$/;
 const LINK = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues$/;
 const SUBS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues\?/;
+const TAXONOMY = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/labels\?/;
+const ADD_LABEL = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/issues\/8195\/labels$/;
+const REMOVE_LABEL = /^DELETE https:\/\/api\.github\.com\/repos\/o\/r\/issues\/8195\/labels\//;
 
 /** A report filed and triaged long before any plan: its own criteria, and no plan field lines. */
 const REPORT = [
@@ -40,6 +43,8 @@ const REPORT = [
 ].join("\n");
 
 const LABELS = ["type:bug", "p1", "status:triaged", "ready-for:agent"];
+/** The same issue once adoption has parked it where a minted child is born. */
+const PARKED = ["type:bug", "p1", "status:planned", "ready-for:agent"];
 
 const adoptee = (body: string, labels: ReadonlyArray<string> = LABELS, extra = {}) =>
 	served({
@@ -76,13 +81,21 @@ const GROUND: ReadonlyArray<Scripted> = [
 
 const LINKED = served([{number: CHILD, id: CHILD_ID, state: "open", state_reason: null}]);
 
-/** A report with no field lines, adopted with `--stories 2`: amend, record, link, prove. */
+/** The label writes that move a triaged adoptee onto `status:planned`, add before remove. */
+const PARK: ReadonlyArray<Scripted> = [
+	[TAXONOMY, labelSet(...DEFAULT_LABELS)],
+	[ADD_LABEL, served([])],
+	[REMOVE_LABEL, served([])],
+];
+
+/** A triaged report with no field lines, adopted with `--stories 2`: amend, park, record, link, prove. */
 const AMEND = (): ReadonlyArray<Scripted> => [
 	...GROUND,
 	[once(ADOPTEE), adoptee(REPORT)],
-	[ADOPTEE, adoptee(amended(["**Stories:** 2"]))],
+	[ADOPTEE, adoptee(amended(["**Stories:** 2"]), PARKED)],
 	[PARENT, NOT_FOUND],
 	[PATCH, served({})],
+	...PARK,
 	[LINK, served({})],
 	[SUBS, LINKED],
 ];
@@ -133,8 +146,10 @@ describe("runAdopt", () => {
 		const body = `**Stories:** 2\n\n${REPORT}`;
 		const result = await run({}, [
 			...GROUND,
-			[ADOPTEE, adoptee(body)],
+			[once(ADOPTEE), adoptee(body)],
+			[ADOPTEE, adoptee(body, PARKED)],
 			[PARENT, NOT_FOUND],
+			...PARK,
 			[LINK, served({})],
 			[SUBS, LINKED],
 		]);
@@ -146,6 +161,7 @@ describe("runAdopt", () => {
 			linked: true,
 			link: "written",
 			amended: false,
+			park: "written",
 			fields: [],
 			stories: [2],
 			containment: null,
@@ -167,14 +183,75 @@ describe("runAdopt", () => {
 		]);
 	});
 
-	it("links on the issue's id, never mints, and never writes a label", async () => {
+	it("links on the issue's id, never mints, and parks it on status:planned before it links", async () => {
 		const result = await run();
 		const at = result.requests.findIndex((line) => LINK.test(line));
 		expect(JSON.parse(result.bodies[at] ?? "{}")).toEqual({sub_issue_id: CHILD_ID});
+		const added = result.requests.findIndex((line) => ADD_LABEL.test(line));
+		expect(JSON.parse(result.bodies[added] ?? "{}")).toEqual({labels: ["status:planned"]});
 		expect(writes(result.requests)).toEqual([
 			"PATCH https://api.github.com/repos/o/r/issues/8195",
+			"POST https://api.github.com/repos/o/r/issues/8195/labels",
+			"DELETE https://api.github.com/repos/o/r/issues/8195/labels/status%3Atriaged",
 			"POST https://api.github.com/repos/o/r/issues/4300/sub_issues",
 		]);
+	});
+
+	it("finishes a park caught mid-write by removing status:triaged only", async () => {
+		const body = `**Stories:** 2\n\n${REPORT}`;
+		const result = await run({}, [
+			...GROUND,
+			[once(ADOPTEE), adoptee(body, [...PARKED, "status:triaged"])],
+			[ADOPTEE, adoptee(body, PARKED)],
+			[PARENT, NOT_FOUND],
+			[REMOVE_LABEL, served([])],
+			[LINK, served({})],
+			[SUBS, LINKED],
+		]);
+		expect(result.outcome.code).toBe(0);
+		expect(writes(result.requests)).toEqual([
+			"DELETE https://api.github.com/repos/o/r/issues/8195/labels/status%3Atriaged",
+			"POST https://api.github.com/repos/o/r/issues/4300/sub_issues",
+		]);
+	});
+
+	it("reports an unprovable park as UNKNOWN and never links a pickable issue", async () => {
+		const body = `**Stories:** 2\n\n${REPORT}`;
+		const result = await run({}, [
+			...GROUND,
+			[ADOPTEE, adoptee(body)],
+			[PARENT, NOT_FOUND],
+			[TAXONOMY, labelSet(...DEFAULT_LABELS)],
+			[ADD_LABEL, served([])],
+			[REMOVE_LABEL, GATEWAY],
+		]);
+		expect(result.outcome.code).toBe(WRITE_UNKNOWN);
+		expect(result.outcome.stderr.join("\n")).toContain("re-run the same `ledger adopt`");
+		expect(result.requests.some((line) => LINK.test(line))).toBe(false);
+		expect(result.wroteManifest).toBe(false);
+	});
+
+	it("refuses to mint status:planned when the repo's taxonomy lacks it, before any write", async () => {
+		const result = await run({}, [
+			...GROUND,
+			[ADOPTEE, adoptee(REPORT)],
+			[PARENT, NOT_FOUND],
+			[TAXONOMY, labelSet("type:bug", "p1", "status:triaged", "ready-for:agent")],
+		]);
+		expect(result.outcome.code).toBe(OFF_VOCABULARY);
+		expect(result.outcome.stderr.at(-1)).toContain('label "status:planned" is absent');
+		expect(writes(result.requests)).toEqual([]);
+	});
+
+	it("refuses an issue on a status the plan flip could not restore", async () => {
+		const result = await run({}, [
+			...GROUND,
+			[ADOPTEE, adoptee(REPORT, ["type:bug", "p1", "status:needs-info", "ready-for:agent"])],
+			[PARENT, NOT_FOUND],
+		]);
+		expect(result.outcome.code).toBe(OFF_VOCABULARY);
+		expect(result.outcome.stderr.at(-1)).toContain("it carries status:needs-info");
+		expect(writes(result.requests)).toEqual([]);
 	});
 
 	it("appends only the owed field line under a dated amendment, keeping the report byte for byte", async () => {
@@ -239,9 +316,13 @@ describe("runAdopt", () => {
 			[
 				...GROUND,
 				[once(ADOPTEE), adoptee(REPORT, feature)],
-				[ADOPTEE, adoptee(amended(fields), feature)],
+				[
+					ADOPTEE,
+					adoptee(amended(fields), ["type:feature", "p1", "status:planned", "ready-for:agent"]),
+				],
 				[PARENT, NOT_FOUND],
 				[PATCH, served({})],
+				...PARK,
 				[LINK, served({})],
 				[SUBS, LINKED],
 			],
@@ -258,7 +339,7 @@ describe("runAdopt", () => {
 			{},
 			[
 				...GROUND,
-				[ADOPTEE, adoptee(amended(["**Stories:** 2"]))],
+				[ADOPTEE, adoptee(amended(["**Stories:** 2"]), PARKED)],
 				[PARENT, served({number: 4300})],
 				[SUBS, LINKED],
 			],
@@ -268,7 +349,11 @@ describe("runAdopt", () => {
 			},
 		);
 		expect(again.outcome.code).toBe(0);
-		expect(JSON.parse(again.outcome.stdout)).toMatchObject({link: "already", amended: false});
+		expect(JSON.parse(again.outcome.stdout)).toMatchObject({
+			link: "already",
+			amended: false,
+			park: "already",
+		});
 		expect(writes(again.requests)).toEqual([]);
 		expect(again.manifest).toEqual(first.manifest);
 	});
@@ -306,11 +391,12 @@ describe("runAdopt", () => {
 			...GROUND,
 			[ADOPTEE, adoptee(REPORT)],
 			[PARENT, NOT_FOUND],
+			...PARK,
 			[PATCH, GATEWAY],
 		]);
 		expect(result.outcome.code).toBe(WRITE_UNKNOWN);
 		expect(result.outcome.stderr.at(-1)).toContain("re-run the same `ledger adopt`");
-		expect(result.requests.some((line) => LINK.test(line))).toBe(false);
+		expect(result.requests.some((line) => LINK.test(line) || ADD_LABEL.test(line))).toBe(false);
 		expect(result.wroteManifest).toBe(false);
 	});
 
@@ -321,18 +407,20 @@ describe("runAdopt", () => {
 			[ADOPTEE, adoptee("**Stories:** 2\n")],
 			[PARENT, NOT_FOUND],
 			[PATCH, served({})],
+			...PARK,
 		]);
 		expect(result.outcome.code).toBe(READBACK_MISMATCH);
-		expect(result.requests.some((line) => LINK.test(line))).toBe(false);
+		expect(result.requests.some((line) => LINK.test(line) || ADD_LABEL.test(line))).toBe(false);
 	});
 
 	it("records linked:false on an unproven link, and a re-run finishes it", async () => {
 		const failed = await run({}, [
 			...GROUND,
 			[once(ADOPTEE), adoptee(REPORT)],
-			[ADOPTEE, adoptee(amended(["**Stories:** 2"]))],
+			[ADOPTEE, adoptee(amended(["**Stories:** 2"]), PARKED)],
 			[PARENT, NOT_FOUND],
 			[PATCH, served({})],
+			...PARK,
 			[LINK, GATEWAY],
 		]);
 		expect(failed.outcome.code).toBe(LINK_UNPROVEN);
@@ -342,7 +430,7 @@ describe("runAdopt", () => {
 			{},
 			[
 				...GROUND,
-				[ADOPTEE, adoptee(amended(["**Stories:** 2"]))],
+				[ADOPTEE, adoptee(amended(["**Stories:** 2"]), PARKED)],
 				[PARENT, NOT_FOUND],
 				[LINK, served({})],
 				[SUBS, LINKED],

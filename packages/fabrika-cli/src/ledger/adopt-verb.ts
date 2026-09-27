@@ -4,14 +4,15 @@
  *
  * Every judgment runs before the first write, so a refusal writes nothing. The writes then run in
  * the order a re-run can finish: the amendment first (an unlinked, unrecorded issue is still just
- * the report it was), the manifest record second, the link third. **Each leg is idempotent against
- * the live state rather than against a memory of the last attempt** — the amendment is composed
- * only from field lines the body does not already declare, the manifest line is replaced rather
- * than appended, and the link is skipped when the parent endpoint already names this epic — so a
- * refusal after any leg is recovered by running the same command again.
+ * the report it was), the park on `status:planned` second, the manifest record third, the link
+ * last — so the issue is never a linked child while it is still pickable. **Each leg is idempotent
+ * against the live state rather than against a memory of the last attempt** — the amendment is
+ * composed only from field lines the body does not already declare, the park is skipped when the
+ * issue no longer carries `status:triaged`, the manifest line is replaced rather than appended, and
+ * the link is skipped when the parent endpoint already names this epic — so a refusal after any leg
+ * is recovered by running the same command again.
  *
- * It writes no label, milestone, assignee or title: the issue keeps the classification its triage
- * gave it.
+ * The park is its only label write. It writes no milestone, assignee or title, and no other label.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/8556#issuecomment-5625029977
  */
@@ -28,6 +29,8 @@ import {
 } from "../config/keys/containment-vocabulary.ts";
 import {resolve} from "../config/load.ts";
 import {loadRepoConfig} from "../config/working-root.ts";
+import {addLabels, listLabels, removeLabel} from "../io/issues.ts";
+import {PLANNED, TRIAGED} from "../labels.ts";
 import {listSubIssues} from "../plan/github.ts";
 import {compose} from "../report/amend.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -167,6 +170,25 @@ export const runAdopt = (
 			scannedLine(VERB, 1, "adopted issue", `${judged.fields.length} field line(s) owed`),
 		];
 
+		const addPlanned = judged.park === "owed" && !adoptee.labels.includes(PLANNED);
+		if (addPlanned) {
+			const taxonomy = yield* listLabels(repo);
+			if (taxonomy._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					MESSAGES.unreadable(`${repo}'s label taxonomy`, taxonomy.reason),
+					diagnostics,
+				);
+			}
+			if (!taxonomy.value.includes(PLANNED)) {
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: label "${PLANNED}" is absent from ${repo}'s taxonomy — refusing to create it.`,
+					diagnostics,
+				);
+			}
+		}
+
 		if (judged.fields.length > 0) {
 			const section = amendmentSection(epic.number, judged.fields);
 			const leaked = maskedLeakRefusal(VERB, "amendment", section);
@@ -192,6 +214,26 @@ export const runAdopt = (
 					READBACK_MISMATCH,
 					`${VERB}: amended #${child} and its body does not read back as the prior body plus the amendment — it needs a human eye.`,
 					diagnostics,
+				);
+			}
+		}
+
+		if (judged.park === "owed") {
+			const added = addPlanned ? yield* addLabels(repo, child, [PLANNED]) : null;
+			const removed = yield* removeLabel(repo, child, TRIAGED);
+			const parked = yield* readAdoptee(options.env, repo, child);
+			if (
+				parked._tag !== "Present" ||
+				!parked.value.labels.includes(PLANNED) ||
+				parked.value.labels.includes(TRIAGED)
+			) {
+				const failures = [added, removed].flatMap((write) =>
+					write?._tag === "Failure" ? [`${VERB}: ${write.reason}.`] : [],
+				);
+				return refuse(
+					WRITE_UNKNOWN,
+					`${VERB}: the park of #${child} on ${PLANNED} was attempted and could not be proven — UNKNOWN; #${child} is not linked; ${RERUN}.`,
+					[...diagnostics, ...failures],
 				);
 			}
 		}
@@ -257,6 +299,7 @@ export const runAdopt = (
 				linked: true,
 				link: alreadyLinked ? "already" : "written",
 				amended: judged.fields.length > 0,
+				park: judged.park === "owed" ? "written" : "already",
 				fields: judged.fields,
 				stories: judged.stories,
 				containment: judged.containment,

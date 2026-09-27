@@ -10,6 +10,12 @@
  * append's shape. The readers are the gate's, imported, so an issue this module admits cannot fail
  * the floor on these fields.
  *
+ * **An adopted child is parked exactly where a minted one is born.** A triaged issue is pickable, and
+ * a plan's child must not be pickable before the gate has checked the plan, so adoption moves it from
+ * `status:triaged` to `status:planned` and `plan flip` brings it back on a clean floor. Any other
+ * status is refused: the flip only ever restores `status:triaged`, so parking an issue that sat
+ * anywhere else would lose where it sat.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/8556#issuecomment-5625029977
  */
 
@@ -18,6 +24,7 @@ import {
 	containmentGap,
 	readContainment,
 } from "../config/keys/containment-vocabulary.ts";
+import {PLANNED, TRIAGED} from "../labels.ts";
 import {HELD_LABEL, missingLabelKinds, NEEDS_TRIAGE_LABEL} from "../plan/defects.ts";
 import {CONTAINMENT_FIELD, fieldLines, readChildStories, STORIES_FIELD} from "../plan/ledger.ts";
 import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
@@ -52,6 +59,12 @@ export interface AdoptionInput {
 	readonly containment: string | null;
 }
 
+/**
+ * Whether the adoptee still has to leave `status:triaged` for `status:planned`. An issue caught
+ * mid-park carrying both is still `owed`, because it is still pickable.
+ */
+export type Park = "owed" | "already";
+
 export type Adoption =
 	| {
 			readonly _tag: "Refused";
@@ -64,6 +77,7 @@ export type Adoption =
 			readonly fields: ReadonlyArray<string>;
 			readonly stories: ReadonlyArray<number>;
 			readonly containment: string | null;
+			readonly park: Park;
 	  };
 
 const refused = (code: typeof BAD_SECTIONS | typeof OFF_VOCABULARY, reason: string): Adoption => ({
@@ -93,6 +107,15 @@ export const judgeAdoption = (input: AdoptionInput): Adoption => {
 			`it is missing a ${missing.join(", ")} label — adoption never writes labels, so triage it first.`,
 		);
 	}
+	const statuses = input.labels.filter((label) => label.startsWith("status:"));
+	const stranger = statuses.find((label) => label !== TRIAGED && label !== PLANNED);
+	if (stranger !== undefined) {
+		return refused(
+			OFF_VOCABULARY,
+			`it carries ${stranger} — adoption parks a ${TRIAGED} issue on ${PLANNED} until the gate flips it back, and that flip would lose ${stranger}.`,
+		);
+	}
+	const park: Park = statuses.includes(TRIAGED) ? "owed" : "already";
 	if (input.labels.includes(HELD_LABEL) && input.assignees.length === 0) {
 		return refused(
 			OFF_VOCABULARY,
@@ -148,7 +171,7 @@ export const judgeAdoption = (input: AdoptionInput): Adoption => {
 	}
 
 	if (input.cycleDoc !== "present") {
-		return {_tag: "Adoptable", fields, stories, containment: null};
+		return {_tag: "Adoptable", fields, stories, containment: null, park};
 	}
 
 	const declaredContainment = fieldLines(input.body, CONTAINMENT_FIELD)[0];
@@ -170,13 +193,13 @@ export const judgeAdoption = (input: AdoptionInput): Adoption => {
 				`it is a ${gap.type} whose **Containment:** "${declaredContainment}" is off ${input.vocabulary.values.join(" or ")} — ${NEVER_REWRITES}.`,
 			);
 		}
-		return {_tag: "Adoptable", fields, stories, containment: keyword};
+		return {_tag: "Adoptable", fields, stories, containment: keyword, park};
 	}
 
 	if (input.containment === null) {
 		const gap = containmentGap(input.vocabulary, input.labels, null);
 		return gap === null
-			? {_tag: "Adoptable", fields, stories, containment: null}
+			? {_tag: "Adoptable", fields, stories, containment: null, park}
 			: refused(
 					BAD_SECTIONS,
 					`it is a ${gap.type} with no **Containment:** line and the cycle doc is present — pass --containment ${input.vocabulary.values.join(" or ")}.`,
@@ -190,7 +213,7 @@ export const judgeAdoption = (input: AdoptionInput): Adoption => {
 		);
 	}
 	fields.push(`**${CONTAINMENT_FIELD}:** ${input.containment.trim()}`);
-	return {_tag: "Adoptable", fields, stories, containment: keyword};
+	return {_tag: "Adoptable", fields, stories, containment: keyword, park};
 };
 
 /** The amendment's section: one line naming the plan, then the owed field lines, consecutive. */

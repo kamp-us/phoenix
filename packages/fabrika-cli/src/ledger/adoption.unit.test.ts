@@ -23,7 +23,16 @@ describe("judgeAdoption", () => {
 			fields: ["**Stories:** 1"],
 			stories: [1],
 			containment: null,
+			park: "owed",
 		});
+	});
+
+	it.each([
+		["a triaged issue", ["type:bug", "p1", "status:triaged"], "owed"],
+		["an issue caught mid-park", ["type:bug", "p1", "status:planned", "status:triaged"], "owed"],
+		["an issue already on status:planned", ["type:bug", "p1", "status:planned"], "already"],
+	])("owes a park off status:triaged for %s", (_, labels, park) => {
+		expect(judgeAdoption(input({labels}))).toMatchObject({_tag: "Adoptable", park});
 	});
 
 	it("owes nothing when the body already declares the same stories, in any order", () => {
@@ -51,6 +60,7 @@ describe("judgeAdoption", () => {
 		["a type:epic", ["type:epic", "p1", "status:triaged"]],
 		["an untriaged issue", ["type:bug", "p1", "status:needs-triage"]],
 		["an issue missing a priority", ["type:bug", "status:triaged"]],
+		["an issue on a status the flip cannot restore", ["type:bug", "p1", "status:needs-info"]],
 		["a held issue with nobody assigned", ["type:bug", "p1", "status:triaged", "ready-for:human"]],
 	])("refuses %s on 10", (_, labels) => {
 		expect(judgeAdoption(input({labels}))).toMatchObject({_tag: "Refused", code: OFF_VOCABULARY});
