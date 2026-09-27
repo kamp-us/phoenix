@@ -280,7 +280,7 @@ describe("runCi", () => {
 				[PULL, served(pull())],
 				[RUNS, runs(0, [])],
 			],
-			[[WORKFLOWS, served(workflows("active", "active"))]],
+			[[WORKFLOWS, served(workflows({path: ".github/workflows/ci.yml"}))]],
 		);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
@@ -581,7 +581,30 @@ describe("the no-producer split", () => {
 		const out = await run(empty, [[WORKFLOWS, served(workflows())]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toContain("zero workflows — no CI producer");
+		expect(out.stderr.at(-1)).toContain("zero repo-authored workflows");
+	});
+
+	/** The synthetic entries the platform lists for default CodeQL and Dependabot — no CI of the repo's own. */
+	const platformOnly = workflows(
+		{path: "dynamic/github-code-scanning/codeql"},
+		{path: "dynamic/dependabot/dependabot-updates"},
+	);
+
+	it("refuses an all-`dynamic/*` inventory on 7 by default — platform entries are no producer", async () => {
+		const out = await run(empty, [[WORKFLOWS, served(platformOnly)]]);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.at(-1)).toContain("zero repo-authored workflows");
+	});
+
+	it("rolls up no-producer over an all-`dynamic/*` inventory when the repo declares degrade", async () => {
+		const out = await run(
+			empty,
+			[[WORKFLOWS, served(platformOnly)]],
+			{},
+			{[CONFIG]: '{"ci": {"noProducer": "degrade"}}'},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe([`ci\t${HEAD}\tno-producer`, "run\t0", ""].join("\n"));
 	});
 
 	it("rolls up no-producer, never green, when the repo declares degrade", async () => {

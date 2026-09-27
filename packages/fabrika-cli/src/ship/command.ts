@@ -284,7 +284,7 @@ const checks = leafCommand(
 	Command.withShortDescription("Roll up the head CI, latest run per context."),
 	Command.withDescription(
 		"Prints one PR's head CI rollup, latest run per context, then its tally by class." +
-			"\n  7: the PR or --sha is absent, or the repo has no workflow and does not degrade" +
+			"\n  7: the PR or --sha is absent, or the repo has no repo-authored workflow and does not degrade" +
 			"\n  11: a check-run, workflow, required-set or config read failed; CI is UNKNOWN" +
 			"\n  13: a run count or the base's ruleset walk is provably incomplete" +
 			"\n  20: every check passed but no workflow this repo authors inspected this head" +

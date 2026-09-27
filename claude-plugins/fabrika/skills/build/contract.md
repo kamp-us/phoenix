@@ -2923,11 +2923,15 @@ The guards, in order, all before any write:
    honest); exactly one closing-keyword line, targeting `<number>` and matching `--partial`
    (`Fixes #<n>` without `--partial`, `Part of #<n>` with it); no second closing keyword aimed
    at any other issue, since a stray one auto-closes a ticket the PR does not fix.
-4. **no forbidden classification** (`10`), by a closed pattern set, checked outside code fences
-   and block quotes: `/(not[ -])?control[ -]plane/i` (the control-plane assertion class), a
+4. **no forbidden classification** (`10`), by a closed pattern set, checked outside code fences,
+   block quotes and inline-code spans: `/(not[ -])?control[ -]plane/i` (the control-plane assertion class), a
    `type:<word>` label assertion, and a standalone `p[0-3]` priority assertion. The merge gate
    and triage own those verdicts. The pattern set is closed on purpose: two implementers must
-   ship the same guard, and a "any spelling" instruction is two guards.
+   ship the same guard, and a "any spelling" instruction is two guards. An inline-code span is
+   reproduced text, so a backticked module path or team handle that contains `control-plane` passes,
+   and a backticked `type:` label or `p0` token passes the same way: the exclusion covers
+   all three patterns. The same exclusion reaches step 3, so a closing keyword inside backticks is
+   not read as one.
 5. **claim confirmed** (`15`/`11`), **target issue open** (`7`).
 
 The PR title is **derived, not the issue title verbatim**

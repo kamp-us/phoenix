@@ -180,7 +180,7 @@
 			"properties": {
 				"noProducer": {
 					"type": "string",
-					"description": "What a repo with zero Actions workflows gets: `refuse` (a rollup over no producer is vacuous) or `degrade`.",
+					"description": "What a repo with zero repo-authored `.github/workflows/*` workflows gets — platform-provided `dynamic/*` entries do not count: `refuse` (a rollup over no producer is vacuous) or `degrade`.",
 					"enum": [
 						"refuse",
 						"degrade"

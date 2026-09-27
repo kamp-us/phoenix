@@ -272,7 +272,7 @@ const ci = leafCommand(
 		[
 			"Prints `ci\\t<sha>\\t<rollup>`, then run and check tallies for a head's blocking check runs.",
 			"  Rollup: green, red, pending or no-producer; never green on an ambiguous run",
-			"  7: PR or --sha absent, zero check runs declared, or zero workflows",
+			"  7: PR or --sha absent, zero check runs declared, or zero repo-authored workflows",
 			"  11: a CI, workflow, required-set or config read failed (UNKNOWN)",
 			"  13: fewer runs than declared, or the ruleset walk did not finish",
 			"  16: no workflow this repo authors inspected the head",

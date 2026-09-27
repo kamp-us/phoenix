@@ -118,34 +118,62 @@ describe("mainAlarm — who the alarm wakes, and under which label", () => {
 });
 
 describe("producerFor", () => {
-	const at = (workflows: number, config: unknown) =>
+	const CI_YML = ".github/workflows/ci.yml";
+	/** The synthetic entries GitHub lists for a repo with default CodeQL, Dependabot and Copilot on. */
+	const PLATFORM = [
+		"dynamic/copilot-pull-request-reviewer/copilot-pull-request-reviewer",
+		"dynamic/agents/copilot-pull-request-reviewer",
+		"dynamic/github-code-scanning/codeql",
+		"dynamic/dependabot/dependabot-updates",
+	];
+	const at = (workflows: ReadonlyArray<string>, config: unknown) =>
 		producerFor("verb", "o/r", workflows, declared(config));
 
-	it("is Present on any workflow at all — existence is the whole test", () => {
-		expect(at(1, {})._tag).toBe("Present");
-		expect(at(1, {noProducer: "degrade"})._tag).toBe("Present");
+	it("is Present on any repo-authored workflow — existence is the whole test", () => {
+		expect(at([CI_YML], {})._tag).toBe("Present");
+		expect(at([CI_YML], {noProducer: "degrade"})._tag).toBe("Present");
+	});
+
+	it("is Present on a mixed inventory, whatever platform entries sit beside the repo's own", () => {
+		expect(at([...PLATFORM, CI_YML], {})._tag).toBe("Present");
+		expect(at([...PLATFORM, CI_YML], {noProducer: "degrade"})._tag).toBe("Present");
 	});
 
 	it("refuses zero workflows under the shipped default", () => {
-		const answer = at(0, {});
+		const answer = at([], {});
 		expect(answer._tag).toBe("Refused");
 		if (answer._tag !== "Refused") return;
-		expect(answer.reason).toContain("zero workflows — no CI producer");
+		expect(answer.reason).toContain("zero repo-authored workflows");
+		expect(answer.reason).toContain("no CI producer");
+	});
+
+	it("refuses an all-dynamic inventory under the shipped default — platform entries are no producer", () => {
+		const answer = at(PLATFORM, {});
+		expect(answer._tag).toBe("Refused");
+		if (answer._tag !== "Refused") return;
+		expect(answer.reason).toContain("`dynamic/*` entries do not count");
 	});
 
 	it("reports the fact, never a green, under degrade", () => {
-		const answer = at(0, {noProducer: "degrade"});
+		const answer = at([], {noProducer: "degrade"});
 		expect(answer._tag).toBe("OptedOut");
 		if (answer._tag !== "OptedOut") return;
 		expect(answer.note).not.toContain("green");
 	});
 
+	it("opts an all-dynamic inventory out under degrade — the route such a repo declares is reachable", () => {
+		const answer = at(PLATFORM, {noProducer: "degrade"});
+		expect(answer._tag).toBe("OptedOut");
+		if (answer._tag !== "OptedOut") return;
+		expect(answer.note).toContain("zero repo-authored workflows");
+	});
+
 	it("is Unknown on a config that never decoded — never the shipped default", () => {
-		expect(at(0, {noProducer: "ignore"})._tag).toBe("Unknown");
+		expect(at([], {noProducer: "ignore"})._tag).toBe("Unknown");
 	});
 
 	it("is Unknown on a config nobody could read", () => {
 		const unreadable = resolve(loadConfig({_tag: "Unreadable", reason: "EACCES"}), ciKey);
-		expect(producerFor("verb", "o/r", 0, unreadable)._tag).toBe("Unknown");
+		expect(producerFor("verb", "o/r", [], unreadable)._tag).toBe("Unknown");
 	});
 });

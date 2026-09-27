@@ -81,7 +81,7 @@ const empty = {runs: [], ranAtHead: [], superseded: new Set<number>()};
 
 /** An inventory of N workflows, path-addressed the way the platform answers. */
 const inventory = (count: number): ReadonlyArray<string> =>
-	Array.from({length: count}, (_, index) => `.github/w${index}.yml`);
+	Array.from({length: count}, (_, index) => `.github/workflows/w${index}.yml`);
 
 /**
  * One sample's check rows, with the suites a newer run replaced.
@@ -460,7 +460,10 @@ describe("runChecks", () => {
 	it("reports no-runs with its two discriminators rather than an empty answer", async () => {
 		const out = await run(found, [
 			[RUNS, served(checkRuns(0, []))],
-			[WORKFLOWS, served(workflows("active", "active"))],
+			[
+				WORKFLOWS,
+				served(workflows({path: ".github/workflows/ci.yml"}, {path: ".github/workflows/e2e.yml"})),
+			],
 			[RUN_COUNT, served(runsTotal(0))],
 		]);
 		expect(out.stdout).toBe(
@@ -711,7 +714,37 @@ describe("the no-producer split", () => {
 		const out = await run(found, noWorkflows);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toContain("zero workflows — no CI producer");
+		expect(out.stderr.at(-1)).toContain("zero repo-authored workflows");
+	});
+
+	/** The synthetic entries the platform lists for default CodeQL and Dependabot — no CI of the repo's own. */
+	const platformOnly: ReadonlyArray<Scripted> = [
+		[RUNS, served(checkRuns(0, []))],
+		[
+			WORKFLOWS,
+			served(
+				workflows(
+					{path: "dynamic/github-code-scanning/codeql"},
+					{path: "dynamic/dependabot/dependabot-updates"},
+				),
+			),
+		],
+		[RUN_COUNT, served(runsTotal(3))],
+	];
+
+	it("refuses an all-`dynamic/*` inventory on 7 by default — platform entries are no producer", async () => {
+		const out = await run(found, platformOnly);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("zero repo-authored workflows");
+	});
+
+	it("prints no-producer over an all-`dynamic/*` inventory when the repo declares degrade", async () => {
+		const out = await run(found, platformOnly, {}, {[CONFIG]: '{"ci": {"noProducer": "degrade"}}'});
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(
+			[`checks\t${HEAD}\tno-producer`, "run\t0", "facts\tworkflows:2\truns:3", ""].join("\n"),
+		);
 	});
 
 	it("prints no-producer, never pending and never green, when the repo declares degrade", async () => {
