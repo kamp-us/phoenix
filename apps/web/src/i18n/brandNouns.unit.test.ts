@@ -1,31 +1,33 @@
 /**
- * The brand-noun invariant (ADR 0347): a brand noun is never translated, so wherever one appears
- * in a message it appears the same number of times in the other locale's message for that key.
+ * The language rule (ADR 0414, amending ADR 0347): a product name is never translated, so wherever
+ * one appears in a message it appears the same number of times in the other locale's message for
+ * that key; every other Turkish word ADR 0414 names is translated, so none reaches an `en` message.
  *
- * Whole-word, never substring: Turkish is agglutinative, so `bildirimler` contains `bildir` and a
- * substring check would call every suffixed word a brand noun.
+ * The product-name count is whole-word, never substring: Turkish is agglutinative, so `panoda`
+ * contains `pano` and a substring check would call every suffixed word a product name.
  */
 import {describe, expect, it} from "vitest";
-import {BRAND_NOUNS} from "./brandNouns";
+import {BRAND_NOUNS, TRANSLATED_IN_ENGLISH} from "./brandNouns";
 import {en} from "./en";
 import {tr} from "./tr";
 
 const WORDS = /\p{L}+/gu;
+const PLACEHOLDER = /\{\w+\}/g;
 
 // Widened by annotation, not asserted: both catalogs carry the same literal keys, and this is
 // what lets the walk below index them by a plain string.
 const trMessages: Readonly<Record<string, string>> = tr;
 const enMessages: Readonly<Record<string, string>> = en;
 
-function wordCount(message: string, noun: string): number {
-	let count = 0;
-	for (const [word] of message.matchAll(WORDS)) {
-		if (word.toLocaleLowerCase("tr") === noun) count += 1;
-	}
-	return count;
+function words(message: string): string[] {
+	return Array.from(message.matchAll(WORDS), ([word]) => word.toLocaleLowerCase("tr"));
 }
 
-describe("brand nouns read identically in every locale", () => {
+function wordCount(message: string, noun: string): number {
+	return words(message).filter((word) => word === noun).length;
+}
+
+describe("product names read identically in every locale", () => {
 	it("declares a non-empty noun list over a non-empty catalog", () => {
 		expect(BRAND_NOUNS.length).toBeGreaterThan(0);
 		expect(Object.keys(trMessages).length).toBeGreaterThan(0);
@@ -49,6 +51,20 @@ describe("brand nouns read identically in every locale", () => {
 				if (trCount !== enCount) {
 					violations.push(`${key}: "${noun}" appears ${trCount}× in tr but ${enCount}× in en`);
 				}
+			}
+		}
+		expect(violations).toEqual([]);
+	});
+});
+
+describe("the translated Turkish words never reach the English catalog", () => {
+	it("finds no translated word, whole or suffixed, in any en message", () => {
+		const violations: string[] = [];
+		for (const [key, message] of Object.entries(enMessages)) {
+			// A placeholder's name (`{divanNoun}`) is technical, not copy.
+			for (const word of words(message.replace(PLACEHOLDER, " "))) {
+				const stem = TRANSLATED_IN_ENGLISH.find((turkish) => word.startsWith(turkish));
+				if (stem !== undefined) violations.push(`${key}: "${word}" (${stem})`);
 			}
 		}
 		expect(violations).toEqual([]);

@@ -3,7 +3,7 @@ import type {PanoKey} from "../tr/pano";
 // Lowercase like the Turkish side, matching the layout surface: pano's voice is lowercase, and a
 // locale swap changes the language, never the typographic voice. The two capitalised groups are
 // the ones the Turkish side capitalises too — the vote/collapse aria-labels and the create
-// dialog's fields. `pano` is a brand noun (ADR 0347), so it reads identically in both catalogs.
+// dialog's fields. `pano` is a product name (ADR 0414), so it reads identically in both catalogs.
 export const pano = {
 	"pano.action.edit": "edit",
 	"pano.action.delete": "delete",
