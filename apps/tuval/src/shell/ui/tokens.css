@@ -109,6 +109,23 @@
 	color: var(--text-muted);
 }
 
+/*
+ * A project's label on a tile or a window (#9692) is `@kampus/design`'s `Tag`, and this paired class
+ * carries its one divergence: `Tag` never wraps, and a label that climbed parents to stay distinct
+ * (`kamp-us/phoenix`) must break inside a narrow window rather than push past its edge.
+ */
+.tuval-project-label {
+	max-inline-size: 100%;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+/* In a title row the chip sits inside the row's own line box, so a labelled window's title row is
+   exactly as tall as an unlabelled one's and the borders of windows side by side line up. */
+.tuval-window-title .tuval-project-label {
+	padding-block: 0;
+}
+
 .tuval-window-body {
 	flex: 1 1 auto;
 	min-block-size: 0;

@@ -5,6 +5,7 @@ import {featuresDefault} from "@kampus/tuval-sdk/kernel/features";
 import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
+import {AuthoredModules} from "./authored-modules.ts";
 import {
 	ConfigLoadError,
 	DeclaredFeatures,
@@ -364,6 +365,7 @@ describe("loadLayeredConfig", () => {
 					sources: [fixture("global-layer"), fixture("project-layer")],
 					refused: [],
 					files: [fixture("global-layer"), fixture("project-layer")],
+					modules: AuthoredModules.none,
 				});
 			}),
 	);
@@ -397,6 +399,7 @@ describe("loadLayeredConfig", () => {
 				sources: [fixture("with-graph")],
 				refused: [],
 				files: [fixture("with-graph")],
+				modules: AuthoredModules.none,
 			});
 			assert.deepStrictEqual(yield* layered(fixture("two-rows"), missing), {
 				programs: [{id: "a"}, {id: "b"}],
@@ -416,6 +419,7 @@ describe("loadLayeredConfig", () => {
 				sources: [fixture("two-rows")],
 				refused: [],
 				files: [fixture("two-rows")],
+				modules: AuthoredModules.none,
 			});
 			assert.deepStrictEqual(yield* layered(missing, missing), {
 				programs: [],
@@ -435,6 +439,7 @@ describe("loadLayeredConfig", () => {
 				sources: [],
 				refused: [],
 				files: [],
+				modules: AuthoredModules.none,
 			});
 		}),
 	);

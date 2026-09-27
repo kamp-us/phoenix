@@ -37,8 +37,9 @@ import {
 	moduleRendererRefs,
 } from "@kampus/tuval-sdk/kernel/shell/window/renderer";
 import {Effect, FileSystem, Option, Result, Schema, SchemaIssue} from "effect";
+import type {AuthoredModules} from "./authored-modules.ts";
 import {globalLayer, projectLayer, reservedSeparator} from "./config-scope.ts";
-import {generationUrl, nextGeneration, takeGenerationFiles} from "./module-generations.ts";
+import {generationUrl, nextGeneration, takeGeneration} from "./module-generations.ts";
 import type {ProjectId} from "./project-id.ts";
 import {admitBySdk, nothingRemoved, type SdkAdmission, type SdkRemoved} from "./sdk-admission.ts";
 
@@ -167,6 +168,8 @@ export interface LoadedProject {
 export interface LoadedProjectConfig extends LoadedProject {
 	/** Every file this read loaded the layer from (`LoadedConfig.files`). */
 	readonly files: ReadonlyArray<string>;
+	/** The source this read compiled each of `files` from (`LoadedConfig.modules`). */
+	readonly modules: AuthoredModules;
 }
 
 export interface LoadedConfig {
@@ -200,6 +203,8 @@ export interface LoadedConfig {
 	 * import by path, transitively (`./module-generations.ts`). Packages are not in it.
 	 */
 	readonly files: ReadonlyArray<string>;
+	/** The source this load compiled each of `files` from, and what each imports by path. */
+	readonly modules: AuthoredModules;
 }
 
 /**
@@ -368,7 +373,7 @@ const recorded = <A>(
 	read.pipe(
 		Effect.catch((error) =>
 			Effect.gen(function* () {
-				const imported = takeGenerationFiles(load);
+				const imported = takeGeneration(load).files;
 				const before = yield* readBefore(error);
 				return yield* new ConfigLoadError({
 					module: error.module,
@@ -378,8 +383,11 @@ const recorded = <A>(
 			}),
 		),
 		// A defect or an interrupt still drops the record; the refusal above already took it.
-		Effect.onError(() => Effect.sync(() => takeGenerationFiles(load))),
-		Effect.map((value) => ({value, imported: takeGenerationFiles(load)})),
+		Effect.onError(() => Effect.sync(() => takeGeneration(load))),
+		Effect.map((value) => {
+			const {files: imported, modules} = takeGeneration(load);
+			return {value, imported, modules};
+		}),
 	);
 
 /**
@@ -391,7 +399,11 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 	layers: ConfigLayers,
 ) {
 	const load = nextGeneration();
-	const {value: read, imported} = yield* recorded(
+	const {
+		value: read,
+		imported,
+		modules,
+	} = yield* recorded(
 		load,
 		Effect.gen(function* () {
 			const global = yield* loadOptional(
@@ -432,6 +444,7 @@ export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* 
 		sources,
 		refused: parts.flatMap((part) => part.refused),
 		files: [...new Set([...sources, ...imported])],
+		modules,
 	} satisfies LoadedConfig;
 });
 
@@ -447,7 +460,7 @@ export const loadProjectConfig = Effect.fn("Tuval.loadProjectConfig")(function* 
 	global: SdkRemoved,
 ) {
 	const load = nextGeneration();
-	const {value, imported} = yield* recorded(
+	const {value, imported, modules} = yield* recorded(
 		load,
 		loadProjectLayer(desk, project, load, global),
 		() => Effect.succeed([]),
@@ -455,5 +468,6 @@ export const loadProjectConfig = Effect.fn("Tuval.loadProjectConfig")(function* 
 	return {
 		...value,
 		files: [...new Set([...value.config.sources, ...imported])],
+		modules,
 	} satisfies LoadedProjectConfig;
 });

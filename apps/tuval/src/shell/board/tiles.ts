@@ -7,15 +7,24 @@
  * what lets a demo counter and a Claude session sit on one board as equals (#8715 R8.1). A program
  * that declares neither port still gets a whole tile; `title` and `status` are then `null` and the
  * tile is its program id, its state and its port count.
+ *
+ * The one thing it reads beside the rows is which open project a program id is under
+ * (`../../projects/labels.ts`), so a project's tile carries that project's label and a global
+ * program's carries none (#9692).
  */
 
 import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Option} from "effect";
+import {ProjectLabels} from "../../projects/labels.ts";
 import type {TableRow} from "../../table/row.ts";
 
 export interface Tile {
 	readonly processId: ProcessId;
 	readonly programId: string;
+	/** The program as a person reads it: without its project's scope when a label says which project. */
+	readonly program: string;
+	/** The label of the open project the program is under, or `null` for a global program. */
+	readonly project: string | null;
 	readonly lifecycle: "running" | "stopping";
 	/** The newest `title@1` line, or `null` for a process that has published none. */
 	readonly title: string | null;
@@ -26,9 +35,11 @@ export interface Tile {
 	readonly children: readonly Tile[];
 }
 
-const tileOf = (row: TableRow, children: readonly Tile[]): Tile => ({
+const tileOf = (row: TableRow, projects: ProjectLabels, children: readonly Tile[]): Tile => ({
 	processId: row.id,
 	programId: row.programId,
+	program: projects.programName(row.programId),
+	project: projects.labelOf(row.programId),
 	lifecycle: row.stateSummary.lifecycle,
 	title: Option.getOrNull(row.title),
 	status: Option.getOrNull(row.status),
@@ -45,7 +56,10 @@ const tileOf = (row: TableRow, children: readonly Tile[]): Tile => ({
  * that loops from recursing forever — the kernel builds none, and a surface that hangs on a
  * malformed table is worse than one that draws it flat.
  */
-export const tilesOf = (rows: Iterable<TableRow>): readonly Tile[] => {
+export const tilesOf = (
+	rows: Iterable<TableRow>,
+	projects: ProjectLabels = ProjectLabels.none,
+): readonly Tile[] => {
 	const all = [...rows];
 	const present = new Set(all.map((row) => row.id));
 	const childrenOf = new Map<ProcessId, TableRow[]>();
@@ -63,10 +77,11 @@ export const tilesOf = (rows: Iterable<TableRow>): readonly Tile[] => {
 	const drawn = new Set<ProcessId>();
 	const build = (row: TableRow, seen: ReadonlySet<ProcessId>): Tile => {
 		drawn.add(row.id);
-		if (seen.has(row.id)) return tileOf(row, []);
+		if (seen.has(row.id)) return tileOf(row, projects, []);
 		const next = new Set(seen).add(row.id);
 		return tileOf(
 			row,
+			projects,
 			(childrenOf.get(row.id) ?? []).map((child) => build(child, next)),
 		);
 	};

@@ -34,6 +34,7 @@ import type {
 import {Effect, Fiber, Option, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {ProjectLabels} from "../projects/labels.ts";
 import {ProcessBoardOverlay} from "../shell/board/index.ts";
 import type {ShellMsg, ShellState} from "../shell/core/index.ts";
 import {openProcessMsg} from "../shell/core/machine.ts";
@@ -177,6 +178,7 @@ export function AttachedDesk({
 	const spells = useSpellRegistry(page);
 	const [rows, setRows] = useState<ReadonlyMap<ProcessId, TableRow>>(new Map());
 	const [catalog, setCatalog] = useState<ReadonlyMap<ProgramId, WireProgram>>(new Map());
+	const [projects, setProjects] = useState<ProjectLabels>(ProjectLabels.none);
 	const [attached, setAttached] = useState<ReadonlyMap<string, AttachedProcess>>(new Map());
 	/** The shell process's own revision — what the newest-wins compare below and the snapshot read. */
 	const [revision, setRevision] = useState(0);
@@ -276,6 +278,13 @@ export function AttachedDesk({
 	}, [page]);
 
 	useEffect(() => {
+		const fiber = Effect.runFork(
+			Stream.runForEach(page.projects, (next) => Effect.sync(() => setProjects(next))),
+		);
+		return () => void Effect.runFork(Fiber.interrupt(fiber));
+	}, [page]);
+
+	useEffect(() => {
 		if (desk === null) return;
 		for (const processId of shownProcesses(desk)) {
 			if (asked.current.has(processId)) continue;
@@ -333,14 +342,20 @@ export function AttachedDesk({
 			// program that published it. The flag off is `null`, which is the desk that names its
 			// windows by uuid.
 			const name = windowTitles
-				? {title: Option.getOrNull(row.title), programId: row.programId}
+				? {title: Option.getOrNull(row.title), program: projects.programName(row.programId)}
 				: null;
+			const project = projects.labelOf(row.programId);
 			const program = catalog.get(row.programId);
 			if (program === undefined) {
 				// Not "declares no renderer": a miss is also what an empty catalog looks like, and both
 				// `rows` and `programs` replay their initial value, so a page can render once before the
 				// registry frame lands. The honest sentence names this page's own catalog, not the kernel's.
-				return noRenderer(id, `no catalog entry on this page for program ${row.programId}`, name);
+				return noRenderer(
+					id,
+					`no catalog entry on this page for program ${row.programId}`,
+					name,
+					project,
+				);
 			}
 			const resolved = resolveRenderer(program.renderer);
 			if (resolved._tag === "RendererUnresolved" && resolved.reason === "module-load-failed") {
@@ -348,6 +363,7 @@ export function AttachedDesk({
 					id,
 					`this page could not load a renderer module: ${resolved.detail}`,
 					name,
+					project,
 				);
 			}
 			if (resolved._tag !== "Resolved") {
@@ -355,6 +371,7 @@ export function AttachedDesk({
 					id,
 					`this page answers to no renderer named ${program.renderer.ref}`,
 					name,
+					project,
 				);
 			}
 			return boundMount(
@@ -369,9 +386,10 @@ export function AttachedDesk({
 				},
 				resolved.renderer.render,
 				name,
+				project,
 			);
 		},
-		[rows, attached, catalog, resolveRenderer, views, dispatch, windowTitles],
+		[rows, attached, catalog, resolveRenderer, views, dispatch, windowTitles, projects],
 	);
 
 	const entries = useMemo(() => entriesFrom(rows, catalog), [rows, catalog]);
@@ -449,6 +467,7 @@ export function AttachedDesk({
 					rows={boardRows}
 					onOpen={openProcess}
 					reducedMotion={reducedMotion}
+					projects={projects}
 				/>
 			) : null}
 		</>

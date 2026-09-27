@@ -283,8 +283,8 @@ bridge today — a rule the bridge re-reads per call, so the reload below moves 
 Boot joins the set, the executor, the bridge and `SpawnedProcesses` to the kernel's layers
 (`start` in [`boot.ts`](../apps/tuval/src/boot.ts)), reports the spell count beside the program
 count, and prints one line per key binding that did not compile. `Booted.reload` reads the config
-layers again and calls `SpellSet.reload`; it replaces the spells and the bindings and nothing else,
-so processes already running keep running under the rows they were spawned from. The two proofs are
+layers again and calls `SpellSet.reload`; it replaces the spells and the bindings, and what it does
+to processes already running is `reload.ts`'s ([`tuval-program-row-effects.md`](tuval-program-row-effects.md)). The two proofs are
 [`src/reload-proof.unit.test.ts`](../apps/tuval/src/reload-proof.unit.test.ts) (the swap, with a
 reader watching across it) and
 [`src/commands/agent-proof.unit.test.ts`](../apps/tuval/src/commands/agent-proof.unit.test.ts),

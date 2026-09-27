@@ -21,7 +21,7 @@ const byId = (processId: ProcessId): string => `process ${processId}`;
  * line of spaces — has named nothing, and a blank title row is worse than the program's own id.
  */
 const named = (name: ProcessName): string =>
-	name.title !== null && name.title.trim() !== "" ? name.title : name.programId;
+	name.title !== null && name.title.trim() !== "" ? name.title : name.program;
 
 export const windowTitle = (mount: WindowMount): string => {
 	switch (mount._tag) {

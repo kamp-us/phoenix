@@ -76,13 +76,14 @@ const kernel = Effect.gen(function* () {
 	);
 	const processes = Context.get(context, Processes);
 	const handle = yield* processes.spawn(program.id, {id: processId, services: Context.empty()});
-	const pages: Parameters<typeof session>[5] = new Set();
+	const pages: Parameters<typeof session>[6] = new Set();
 	const lock = yield* Semaphore.make(1);
 	const run = (socket: Socket.Socket) =>
 		session(
 			socket,
 			processes.handle,
 			Effect.succeed(() => Effect.die("unexpected spell")),
+			Stream.never,
 			Stream.never,
 			defaultPrefixTable,
 			pages,
