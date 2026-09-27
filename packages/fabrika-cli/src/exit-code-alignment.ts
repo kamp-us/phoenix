@@ -320,8 +320,8 @@ export const RECIPE_SEATS: SharedSeats = {
  *
  * The group writes files and reads stdin, so unlike `guard` it claims the base's write-shaped
  * seats too. `MALFORMED_DOCUMENT` is `review-ui`'s widening of `BAD_SECTIONS` under the same name:
- * an entries JSON, a crabbox run-summary or an `--extra-checks` file that parsed and then violated
- * its schema is the same fact about a whole derived document.
+ * an entries JSON that parsed and then violated its schema is the same fact about a whole derived
+ * document.
  */
 export const CI_SEATS: SharedSeats = {
 	EMPTY_STDIN: "EMPTY_STDIN",

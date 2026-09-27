@@ -1,12 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {
-	type BundleGraph,
-	CHECK_NAME,
-	DEFAULT_ALLOWLIST,
-	DEFAULT_FORBIDDEN,
-	detectNodeCore,
-	toCheck,
-} from "./detect.ts";
+import {type BundleGraph, DEFAULT_ALLOWLIST, DEFAULT_FORBIDDEN, detectNodeCore} from "./detect.ts";
 
 const config = {forbidden: DEFAULT_FORBIDDEN, allowlist: DEFAULT_ALLOWLIST};
 
@@ -82,17 +75,5 @@ describe("detectNodeCore", () => {
 		expect(detectNodeCore(g, extended).status).toBe("fail");
 		// same graph passes under the default set (node:vm not forbidden by default)
 		expect(detectNodeCore(g, config).status).toBe("pass");
-	});
-});
-
-describe("toCheck", () => {
-	it("maps a pass to exitCode 0 under the run-evidence check name", () => {
-		const c = toCheck(detectNodeCore(knownGood, config));
-		expect(c).toEqual({name: CHECK_NAME, status: "pass", exitCode: 0});
-	});
-
-	it("maps a fail to exitCode 1", () => {
-		const g: BundleGraph = {moduleIds: [], externalImports: ["node:inspector"]};
-		expect(toCheck(detectNodeCore(g, config)).exitCode).toBe(1);
 	});
 });

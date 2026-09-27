@@ -310,13 +310,7 @@ jobs:
       # dispatch-on-failure stance (an unreadable check-run probe dispatches rather than skips).
       # `ci.yml` carries TWO required checks — `ci-required` and `validate skill frontmatter`
       # — from the same run, so probing the first covers both; one dispatch, one entry.
-      #
-      # `run-evidence.yml` is in the map though it gates nothing (#6759). It is the evidence
-      # producer `ship` reads at step 5, and a parked producer publishes no artifact, so `ship`
-      # refuses the release cut while every dashboard reads green — the same stale-green this
-      # step exists to end, arriving one gate later. A parked run reports no check run at all,
-      # which is exactly what makes the probe below dispatch rather than skip.
-      - name: Kick each standing Release PR's checks and evidence producer at its current head
+      - name: Kick each standing Release PR's checks at its current head
         if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -350,7 +344,7 @@ jobs:
             # which no indented step body can give it. It stays a single list read by both the
             # trigger assertion and the dispatch, so a check can never be asserted in one place
             # and dispatched from another.
-            for entry in "ci.yml=ci-required" "leak-guard.yml=scan changed files for leaks" "run-evidence.yml=produce run-evidence bundle"; do
+            for entry in "ci.yml=ci-required" "leak-guard.yml=scan changed files for leaks"; do
               file="${entry%%=*}"
               check="${entry#*=}"
 

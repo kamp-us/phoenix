@@ -104,8 +104,7 @@ sibling contracts carry.)
 The gated questions and their owners, named so the boundary is checkable: token discipline (the
 repo's token guard, armed through branch protection rather than the CI aggregator), inventory
 freshness plus the descriptive/normative firewall (its inventory guard), the a11y floor (its a11y
-job), run-evidence presence (the evidence producer plus the ship gate's reader), §CP membership
-(CODEOWNERS at merge). This group computes none of them.
+job), §CP membership (CODEOWNERS at merge). This group computes none of them.
 
 ## Shared conventions
 
