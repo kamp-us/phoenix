@@ -136,8 +136,13 @@ VS Code workspace trust model). The open waits on the answer, and every attached
 question as a dialog. No, or Escape, means nothing from that folder runs; yes opens it and is
 remembered per folder path in `open-projects.json`, so the next open does not ask. Only a desk page
 can answer: the answer rides a transport frame of its own, never a spell an agent could call. A
-folder with no config has nothing to run and is never asked about, and neither are the home config,
-the desk's own layer, or the `--project` folder the operator named on the command line.
+folder with no config has nothing to run and is never asked about, and neither are the home config
+or the desk's own layer.
+
+Known gap: the `--project` folder, which defaults to the working directory, is imported at boot
+without the question, so running `tuval` inside a freshly cloned repo runs that repo's config
+unasked. Ruling #9668 R2.1 exempts only the home config; #9884 tracks moving the boot folder onto
+the trust prompt.
 
 Nothing Tuval saves goes into the project. The process manifest, the checkpoints and the Pi session
 files live under `~/.tuval/projects/<key>`, where the key is that checkout's absolute path written
