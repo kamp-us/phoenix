@@ -77,6 +77,24 @@ describe("the classification guard reads prose only", () => {
 		expect(classificationIn(proseOf("> the reviewer said type:bug\n\nplain prose\n"))).toBeNull();
 	});
 
+	it("passes a mention inside an inline-code span, for every pattern in the set (#6207)", () => {
+		expect(
+			classificationIn(proseOf("edits `tools/control-plane-paths/` and `@acme/control-plane`\n")),
+		).toBeNull();
+		expect(classificationIn(proseOf("the ``type:bug`` label and the `p0` token\n"))).toBeNull();
+	});
+
+	it("keeps the prose around a span, so an assertion beside one still reds", () => {
+		expect(
+			classificationIn(proseOf("touches `control-plane-paths/`; this is not control-plane\n")),
+		).toBe("control-plane");
+	});
+
+	it("leaves an unmatched backtick literal rather than swallowing the line", () => {
+		expect(proseOf("a stray ` then not control-plane")).toBe("a stray ` then not control-plane");
+		expect(proseOf("``a`b`` stays one span")).toBe(" stays one span");
+	});
+
 	it("passes an ordinary body", () => {
 		expect(classificationIn("Editor focus now survives a save.")).toBeNull();
 	});
