@@ -91,6 +91,7 @@ import {
 	SHIP_STATES,
 	traceDiagnosis,
 	tracePulls,
+	traceUnlinked,
 	type VerdictFact,
 } from "./prove.ts";
 import {type ChildRange, DEEPEN_REMEDY, locateRange} from "./range.ts";
@@ -371,6 +372,43 @@ const prove = (
 			]);
 		}
 		const repo = resolved.repo;
+
+		// Asked before the namespace reads: the rewind judges links, never verdicts.
+		if (claim._tag === "Unlinked") {
+			const found = yield* getIssue(repo, issue);
+			if (found._tag === "Unknown") return unreadable(`issue #${issue}`, found.reason);
+			if (found._tag === "Absent") {
+				return seat(
+					{_tag: "Absent", what: `#${issue} is not there, so there is no work to rewind`},
+					[],
+				);
+			}
+			const state = found.value.state;
+			if (state !== "open" && state !== "closed") {
+				return unreadable(`issue #${issue}`, `GitHub reported its state as "${state}"`);
+			}
+			const unlinked = yield* traceOpenPull(repo, issue);
+			if (unlinked._tag === "Refused") return unlinked.outcome;
+			const scanned = [
+				`${VERB}: read #${issue} as ${state}, and looked for an open PR in ${repo} whose body links it (any closing keyword, or Part of, anywhere in the body); ${unlinked.scanned} candidate(s) read.`,
+			];
+			const proof = traceUnlinked(issue, state, unlinked.trace);
+			if (proof._tag !== "Proven") return seat(proof, scanned);
+			return answer(
+				JSON.stringify(
+					{
+						proof: "proven",
+						event,
+						task: taskId,
+						issue,
+						evidence: {kind: "no-linking-pull", scanned: unlinked.scanned},
+					},
+					null,
+					2,
+				),
+				[...scanned, `${VERB}: ${proof.note}.`],
+			);
+		}
 
 		// Only the verdict arms need it: the two arms above prove commits and states, and neither asks
 		// what namespace a diff derives.

@@ -9,6 +9,7 @@ import {
 	once,
 	type Scripted,
 } from "../fakes.test-support.ts";
+import {runAttachIntegrate} from "../lane/attach-integrate-verb.ts";
 import {emitMachine} from "../lane/emit.ts";
 import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {FAILED} from "../verb.ts";
@@ -2290,6 +2291,62 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 			);
 			expect(resumed.code).toBe(PRIOR_BUILD_MISMATCH);
 			expect(resumed.stderr.at(-1)).toContain("drop --resume");
+		});
+
+		it("admits --resume once a driver attached the pair to a FAIL recorded without it", async () => {
+			const stamped = (event: string, minute: number) =>
+				`${JSON.stringify({task: TASK, event: `${TASK.toUpperCase()}.${event}`, at: `2026-09-20T18:0${minute}:00.000Z`})}\n`;
+			const wedged = [
+				stamped("WIP", 0),
+				stamped("DONE", 1),
+				stamped("PASS", 2),
+				stamped("FAIL", 3),
+			];
+			const before = await run(
+				runClaim,
+				[[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY],
+				{...LEDGER, resume: true},
+				ledgerFs(wedged),
+			);
+			expect(before.code).toBe(PRIOR_BUILD_MISMATCH);
+
+			const driver = ledgerFs(wedged);
+			const attached = await Effect.runPromise(
+				Effect.provide(
+					runAttachIntegrate({
+						root: LANES,
+						lane: EPIC,
+						task: TASK,
+						at: "2026-09-20T18:03:00.000Z",
+						integrateExit: 43,
+						assemblyHead: HEAD,
+						now: () => new Date("2026-09-27T03:00:00.000Z"),
+					}),
+					driver.layer,
+				),
+			);
+			expect(attached.code).toBe(0);
+			const log = driver.written.get(`${LANES}/${EPIC}/events.jsonl`) ?? "";
+
+			// `WINS` spends its `once` on the first test that runs it, so this claim scripts its own.
+			const wins: ReadonlyArray<Scripted> = [
+				[ISSUE, CLAIMABLE],
+				unclaimed(),
+				[once(COMMENTS), comments({id: 8801, body: rangeVerdict("PASS")})],
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), WRITES],
+			];
+			const out = await run(runClaim, wins, {...LEDGER, resume: true}, ledgerFs([log]));
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({
+				answer: "won",
+				integrate: {exit: 43, head: HEAD},
+			});
+			expect(out.stderr.join("\n")).toContain(
+				`lane integrate exit 43 against assembly head ${HEAD}`,
+			);
 		});
 
 		it("refuses --resume on a stale integrate FAIL a later DONE answered", async () => {

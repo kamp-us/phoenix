@@ -1193,7 +1193,9 @@ doors above shut on the repair the machine routed to. The record is the ledger l
 writes for that `FAIL`, which must carry `--integrate-exit` and `--assembly-head` and lands them as
 `integrate: {exit, head}` (`packages/fabrika-cli/src/lane/integrate-failure.ts`). With
 `--lane <lane> --lane-root <root>` the claim loads that lane and reads the child's task,
-`issue_<n>`: the newest line carrying `integrate` stands until the task records a `DONE`. A standing
+`issue_<n>`: the newest line carrying `integrate` stands until the task records a `DONE`. A `FAIL`
+recorded before the pair existed carries it through a `CORRECTED` line that `lane attach-integrate`
+appends, and the claim reads the log with every correction resolved, so the two read the same. A standing
 integrate `FAIL` counts as a repair round beside a standing `FAIL` verdict — a fresh claim refuses on
 `31` naming the exit and head and pointing at `build resume-child <n> --lane <lane> --lane-root
 <root>`, and `--resume` admits, printing `"integrate":{"exit":42|43|44,"head":"<sha>"}` in its

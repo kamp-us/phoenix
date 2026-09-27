@@ -91,7 +91,9 @@ export const findMisroute = (lane: CompiledLane, entries: ReadonlyArray<LogEntry
 	const log = resolved.entries;
 	const corrected = new Set(
 		entries.flatMap((entry) =>
-			bareEvent(entry.event) === CORRECTED_EVENT && entry.corrects !== undefined
+			bareEvent(entry.event) === CORRECTED_EVENT &&
+			entry.corrects !== undefined &&
+			entry.partial !== undefined
 				? [correctsKey(entry.task, entry.corrects)]
 				: [],
 		),

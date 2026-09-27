@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {parseLog} from "./fold.ts";
+import {applyCorrections, parseLog} from "./fold.ts";
 import {
 	integrateEvidenceRefusal,
 	readIntegrateEvidence,
@@ -95,5 +95,41 @@ describe("parseLog — the integrate field", () => {
 		expect(parseLog(text(line("DONE", {integrate: {exit: 44, head: HEAD}})))._tag).toBe(
 			"Malformed",
 		);
+	});
+});
+
+describe("a CORRECTED line attaching the pair to a FAIL recorded without it", () => {
+	const text = (...records: ReadonlyArray<unknown>) =>
+		records.map((record) => JSON.stringify(record)).join("\n");
+	const FAILED_AT = "2026-09-20T18:03:00.000Z";
+	const pairless = {...line("FAIL"), at: FAILED_AT};
+	const attach = (extra: Record<string, unknown> = {}) => ({
+		...line("CORRECTED", {corrects: FAILED_AT, integrate: {exit: 43, head: HEAD}, ...extra}),
+		at: "2026-09-27T03:00:00.000Z",
+	});
+
+	it("parses, and resolves into the FAIL it names", () => {
+		const parsed = parseLog(text(line("PASS"), pairless, attach()));
+		if (parsed._tag !== "Parsed") throw new Error(parsed.defects.join("; "));
+		const resolved = applyCorrections(parsed.entries);
+		expect(resolved).toMatchObject({
+			_tag: "Corrected",
+			entries: [{event: "ISSUE_5828.PASS"}, {at: FAILED_AT, integrate: {exit: 43, head: HEAD}}],
+		});
+		if (resolved._tag !== "Corrected") return;
+		expect(standingIntegrateFailure(resolved.entries, TASK)).toEqual({exit: 43, head: HEAD});
+	});
+
+	it("refuses a correction carrying both payloads, or neither", () => {
+		expect(parseLog(text(pairless, attach({partial: true})))._tag).toBe("Malformed");
+		expect(
+			parseLog(text(pairless, {...line("CORRECTED", {corrects: FAILED_AT}), at: "x"}))._tag,
+		).toBe("Malformed");
+	});
+
+	it("will not resolve the pair onto an event that is not a FAIL", () => {
+		const parsed = parseLog(text({...line("PASS"), at: FAILED_AT}, attach()));
+		if (parsed._tag !== "Parsed") throw new Error(parsed.defects.join("; "));
+		expect(applyCorrections(parsed.entries)._tag).toBe("Undecidable");
 	});
 });
