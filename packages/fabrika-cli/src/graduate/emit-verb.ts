@@ -59,6 +59,7 @@ import {scanEmissions} from "./read-verb.ts";
 import {deriveTrail, requireSource} from "./source.ts";
 import {
 	checkSections,
+	inlineDecisionText,
 	readDecisionsSection,
 	renderFooter,
 	SPEC_SECTIONS,
@@ -230,7 +231,7 @@ export const runEmit = <R = never>(
 			const drifted =
 				onTrail.provenance !== claimed.provenance
 					? "provenance"
-					: onTrail.text !== claimed.text
+					: inlineDecisionText(onTrail.text) !== claimed.text
 						? "text"
 						: null;
 			if (drifted !== null) {
