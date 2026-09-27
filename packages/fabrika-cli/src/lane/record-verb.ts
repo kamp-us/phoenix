@@ -15,6 +15,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {findLeaks} from "../guard/leak.ts";
 import type {Attempt} from "../io/git.ts";
 import {createComment, getComment, listCommentsReconciled, resolveRepo} from "../io/issues.ts";
+import {isRecord, parseJson} from "../io/json.ts";
 import {scanBody} from "../report/leaks.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -66,7 +67,40 @@ export interface RecordOptions<R> extends LaneRef {
 	readonly issue: KeyIssue;
 	readonly spent: Spent;
 	readonly board: RecordBoard<R>;
+	/**
+	 * `table sync` for the issue, run once its record stands — posted now or already there. Its
+	 * refusal never undoes the record: the answer names the exit, and a re-run retries the sync.
+	 */
+	readonly syncTable?: (
+		issue: number,
+	) => Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path>;
 }
+
+/** What the table sync after a record answered, for the record's own answer. */
+const followTable = <R>(
+	options: RecordOptions<R>,
+	issue: number,
+): Effect.Effect<
+	{readonly table: Record<string, unknown> | null; readonly notes: ReadonlyArray<string>},
+	never,
+	R | FileSystem.FileSystem | Path.Path
+> =>
+	Effect.gen(function* () {
+		if (options.syncTable === undefined) return {table: null, notes: []};
+		const synced = yield* options.syncTable(issue);
+		if (synced.code !== 0) {
+			return {
+				table: {code: synced.code},
+				notes: [
+					...synced.stderr,
+					`${VERB}: the record stands, and the table did not sync (exit ${synced.code}) — re-run \`fabrika table sync ${issue}\` once the cause above is fixed.`,
+				],
+			};
+		}
+		const parsed = parseJson(synced.stdout);
+		const verdict = isRecord(parsed) ? (parsed.answer ?? null) : null;
+		return {table: {code: 0, answer: verdict}, notes: synced.stderr};
+	});
 
 const summary = (record: LaneRecord): Record<string, unknown> => ({
 	outcome: record.outcome,
@@ -150,6 +184,7 @@ export const runRecord = <R>(
 		for (const comment of listed.value) {
 			const standing = read(comment.body);
 			if (standing._tag === "Found" && sameTerminal(standing.value, record)) {
+				const followed = yield* followTable(options, issue);
 				return answer(
 					JSON.stringify({
 						answer: "unchanged",
@@ -157,9 +192,11 @@ export const runRecord = <R>(
 						issue,
 						commentId: comment.id,
 						...summary(record),
+						...(followed.table === null ? {} : {table: followed.table}),
 					}),
 					[
 						`${VERB}: #${issue} already carries the record of this terminal (comment ${comment.id}) — nothing was written.`,
+						...followed.notes,
 					],
 				);
 			}
@@ -188,6 +225,7 @@ export const runRecord = <R>(
 				notes,
 			);
 		}
+		const followed = yield* followTable(options, issue);
 		return answer(
 			JSON.stringify({
 				answer: "posted",
@@ -196,10 +234,12 @@ export const runRecord = <R>(
 				commentId: posted.value.id,
 				url: posted.value.url,
 				...summary(record),
+				...(followed.table === null ? {} : {table: followed.table}),
 			}),
 			[
 				...notes,
 				`${VERB}: posted the ${record.outcome} record to #${issue} (comment ${posted.value.id}).`,
+				...followed.notes,
 			],
 		);
 	});

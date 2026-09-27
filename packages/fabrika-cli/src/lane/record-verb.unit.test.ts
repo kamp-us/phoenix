@@ -3,6 +3,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {fail, ok} from "../io/git.ts";
+import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read} from "../wire/lane-record.ts";
 import {
 	APPEND_UNKNOWN,
@@ -89,6 +90,60 @@ const record = (fs: ReturnType<typeof fakeFs>, board: RecordBoard<never>, issue 
 			fs.layer,
 		),
 	);
+
+describe("lane record, then the table", () => {
+	const recordThenSync = (
+		board: RecordBoard<never>,
+		syncTable: (issue: number) => Effect.Effect<VerbOutcome>,
+	) =>
+		Effect.runPromise(
+			Effect.provide(
+				runRecord({
+					root: ROOT,
+					lane: LANE,
+					issue: {_tag: "Issue", number: 42},
+					spent: LEDGER_SPEND,
+					board,
+					syncTable,
+				}),
+				laneFs(shipped()).layer,
+			),
+		);
+
+	it("syncs the lane's issue once its record stands, posted now or already there", async () => {
+		const synced: number[] = [];
+		const {board} = thread();
+		const syncTable = (issue: number) =>
+			Effect.sync(() => {
+				synced.push(issue);
+				return answer(JSON.stringify({answer: synced.length === 1 ? "synced" : "unchanged"}));
+			});
+
+		const first = await recordThenSync(board, syncTable);
+		const second = await recordThenSync(board, syncTable);
+
+		expect(synced).toEqual([42, 42]);
+		expect(JSON.parse(first.stdout).table).toEqual({code: 0, answer: "synced"});
+		expect(JSON.parse(second.stdout)).toMatchObject({
+			answer: "unchanged",
+			table: {code: 0, answer: "unchanged"},
+		});
+	});
+
+	it("keeps the record when the sync refuses, and names the re-run", async () => {
+		const {board, posted} = thread();
+
+		const outcome = await recordThenSync(board, () =>
+			Effect.succeed(refuse(20, "table sync: the GitHub token lacks the `project` scope")),
+		);
+
+		expect(outcome.code).toBe(0);
+		expect(posted).toHaveLength(1);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({answer: "posted", table: {code: 20}});
+		expect(outcome.stderr.join("\n")).toContain("`project` scope");
+		expect(outcome.stderr.join("\n")).toContain("fabrika table sync 42");
+	});
+});
 
 describe("lane record", () => {
 	it("posts one record for a terminal lane, and a re-run for the same terminal writes nothing", async () => {

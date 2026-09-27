@@ -19,6 +19,7 @@ import {
 	deleteComment,
 	getCommentRecord,
 	getIssue,
+	issueNodeId,
 	issueTimeline,
 	listComments,
 	listCommentsReconciled,
@@ -110,6 +111,30 @@ describe("the credential is an argument to every request, never something a requ
 		delete process.env.GITHUB_TOKEN;
 		const result = await against(getIssue("o/r", 7), scripted([]));
 		expect(result._tag).toBe("Unknown");
+	});
+});
+
+describe("issueNodeId reads the content id a Projects add takes, over REST", () => {
+	it("answers an issue's node id", async () => {
+		const http = scripted([[/issues\/7$/, {status: 200, body: issue({node_id: "I_kwDO7"})}]]);
+		expect(await against(issueNodeId("o/r", 7), http)).toEqual({
+			_tag: "Present",
+			value: "I_kwDO7",
+		});
+	});
+
+	it("answers Absent for a pull request, which is never a table row", async () => {
+		const http = scripted([
+			[/issues\/7$/, {status: 200, body: issue({node_id: "PR_kwDO7", pull_request: {url: "u"}})}],
+		]);
+		expect(await against(issueNodeId("o/r", 7), http)).toEqual({_tag: "Absent"});
+	});
+
+	it("answers Absent on a 404 and Unknown on a body with no node id", async () => {
+		const missing = scripted([[/issues\/7$/, {status: 404, body: {message: "Not Found"}}]]);
+		const bare = scripted([[/issues\/7$/, {status: 200, body: issue({})}]]);
+		expect(await against(issueNodeId("o/r", 7), missing)).toEqual({_tag: "Absent"});
+		expect((await against(issueNodeId("o/r", 7), bare))._tag).toBe("Unknown");
 	});
 });
 

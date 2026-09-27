@@ -11,9 +11,11 @@ import {describe, expect, it} from "vitest";
 import {fakeHttp, type HttpReply} from "../fakes.test-support.ts";
 import {
 	addItem,
+	clearFieldValue,
 	createField,
 	PROJECT_SCOPE_FIX,
 	postStatusUpdate,
+	readItems,
 	readItemValues,
 	readProjectByNumber,
 	readRepository,
@@ -421,5 +423,95 @@ describe("reading an item's values", () => {
 
 		expect(result._tag).toBe("Failed");
 		expect(result._tag === "Failed" && result.reason).toContain(malformed.__typename);
+	});
+});
+
+describe("the table's sync reads", () => {
+	it("reads every item with what it stands for, drafts and pull requests included", async () => {
+		const {result} = await runWith(
+			[
+				reply({
+					data: {
+						node: {
+							items: {
+								pageInfo: {hasNextPage: false, endCursor: null},
+								nodes: [
+									{
+										id: "PVTI_issue",
+										content: {
+											__typename: "Issue",
+											number: 7665,
+											repository: {nameWithOwner: "acme/widgets"},
+										},
+										fieldValues: {
+											pageInfo: {hasNextPage: false},
+											nodes: [
+												{__typename: "ProjectV2ItemFieldRepositoryValue"},
+												{
+													__typename: "ProjectV2ItemFieldSingleSelectValue",
+													name: "bet",
+													optionId: "o_bet",
+													creator: {login: "octo-owner"},
+													updatedAt: "2026-09-27T04:38:33Z",
+													field: {id: "F_stage", name: "Stage"},
+												},
+											],
+										},
+									},
+									{
+										id: "PVTI_draft",
+										content: {__typename: "DraftIssue"},
+										fieldValues: {pageInfo: {hasNextPage: false}, nodes: []},
+									},
+								],
+							},
+						},
+					},
+				}),
+			],
+			() => readItems(TOKEN, "PVT_example"),
+		);
+
+		expect(result).toEqual({
+			_tag: "Ok",
+			value: [
+				{
+					itemId: "PVTI_issue",
+					contentNumber: 7665,
+					contentType: "Issue",
+					repository: "acme/widgets",
+					values: [
+						{
+							fieldId: "F_stage",
+							fieldName: "Stage",
+							value: {_tag: "Option", optionId: "o_bet", name: "bet"},
+							creator: "octo-owner",
+							updatedAt: "2026-09-27T04:38:33Z",
+						},
+					],
+				},
+				{
+					itemId: "PVTI_draft",
+					contentNumber: null,
+					contentType: "DraftIssue",
+					repository: null,
+					values: [],
+				},
+			],
+		});
+	});
+
+	it("clears one value", async () => {
+		const {result, http} = await runWith(
+			[reply({data: {clearProjectV2ItemFieldValue: {projectV2Item: {id: "PVTI_1"}}}})],
+			() => clearFieldValue(TOKEN, {projectId: "PVT_1", itemId: "PVTI_1", fieldId: "F_section"}),
+		);
+
+		expect(result).toEqual({_tag: "Ok", value: "PVTI_1"});
+		expect(JSON.parse(http.bodies[0] ?? "{}").variables.input).toEqual({
+			projectId: "PVT_1",
+			itemId: "PVTI_1",
+			fieldId: "F_section",
+		});
 	});
 });
