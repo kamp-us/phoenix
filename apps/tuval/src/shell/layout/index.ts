@@ -17,6 +17,7 @@ export {
 	SIZE_TOLERANCE,
 	type StackId,
 	type StackNode,
+	type WindowBinding,
 	type WindowId,
 	type WindowNode,
 } from "./node.ts";

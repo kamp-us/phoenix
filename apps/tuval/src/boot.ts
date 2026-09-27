@@ -32,7 +32,6 @@ import {WorkingFolder} from "@kampus/tuval-sdk/kernel/process/working-folder";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {scopedIdParts} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
-import type {SdkRefused} from "@kampus/tuval-sdk/kernel/registry/sdk-range";
 import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {homeTuvalDir, type StateAdoption, StateDir} from "@kampus/tuval-sdk/kernel/state-dir";
 import type {PrefixTable} from "@kampus/tuval-ui/keys";
@@ -50,21 +49,24 @@ import {
 import {ConfigGeneration} from "./config-generation.ts";
 import {deskLayer} from "./desk-layer.ts";
 import type {CheckpointScoping} from "./durability/scope-checkpoints.ts";
+import {LiveKeyBindings} from "./keys/live.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
 import {ProjectId, projectConfig} from "./project-id.ts";
 import {checkpointRoutes, ownedView} from "./projects/checkpoint-routes.ts";
+import type {ProjectNotReopened} from "./projects/open-projects.ts";
 import {
 	makeProjects,
 	type ProjectOpened,
 	type ProjectState,
 	Projects,
 	type ProjectsKernel,
+	type ProjectsReopened,
 	prepareProjectState,
 } from "./projects/Projects.ts";
 import {projectSpells} from "./projects/spells.ts";
 import {makeTrustPrompts, TrustPrompts} from "./projects/TrustPrompts.ts";
 import {ConfigReloader, type ReloadRefused, type ReloadReport} from "./reload.ts";
-import type {SdkRemoved} from "./sdk-admission.ts";
+import type {RowRefused, SdkRemoved} from "./sdk-admission.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
 import {shellId, shellPrefixTable, withShellFeatures} from "./shell/program.ts";
@@ -179,6 +181,12 @@ export interface StartOptions {
 	 * Absent for a caller handed rows and no config.
 	 */
 	readonly modules?: AuthoredModules;
+	/**
+	 * Where the shell rows among `programs` read each focus owner's key bindings (#9687). `start`
+	 * compiles the generation into it and every reload and project open or close replaces it. Absent
+	 * for a caller whose shell routes no config bindings — every caller but `boot`.
+	 */
+	readonly keyBindings?: LiveKeyBindings;
 }
 
 export interface Started {
@@ -189,6 +197,8 @@ export interface Started {
 	readonly restored: ReadonlyArray<ProcessHandle>;
 	/** The first project, opened once the desk's own processes were up. */
 	readonly first?: ProjectOpened;
+	/** What the saved list had open, reopened after the first project, and what was skipped. */
+	readonly reopened: ProjectsReopened;
 }
 
 /** A manifest entry the desk's own restore brings back: one no project's row owns. */
@@ -215,6 +225,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	reread,
 	projects,
 	modules = AuthoredModules.none,
+	keyBindings,
 }: StartOptions) {
 	const registry = yield* Layer.build(Registry.growable(programs));
 	const compiled = yield* compile(graph).pipe(Effect.provideContext(registry));
@@ -242,10 +253,19 @@ export const start = Effect.fn("Tuval.start")(function* ({
 			Layer.mergeAll(Layer.succeedContext(spells), shellWindowIndexKernel(shellId)),
 		),
 	);
+	const initial = ConfigGeneration.of(
+		{programs, keys: keys ?? [], sources: []},
+		{files: [], modules},
+	);
+	if (keyBindings !== undefined) {
+		const registered = yield* SpellSet.use((set) => set.read).pipe(Effect.provideContext(spells));
+		yield* keyBindings.install(initial.ownerKeys, registered.table);
+	}
 	const reloader = ConfigReloader.fromConfig({
 		core: coreSpells,
-		initial: ConfigGeneration.of({programs, keys: keys ?? [], sources: []}, {files: [], modules}),
+		initial,
 		...(reread === undefined ? {} : {read: reread}),
+		...(keyBindings === undefined ? {} : {keyBindings}),
 	}).pipe(Layer.provide(Layer.succeedContext(spells)));
 	const built = yield* Layer.build(
 		Layer.mergeAll(
@@ -330,11 +350,14 @@ export const start = Effect.fn("Tuval.start")(function* ({
 		desk === undefined || projects?.first === undefined
 			? undefined
 			: yield* desk.openFirst(projects.first.folder, projects.first.loaded, projects.first.state);
+	// The boot project counts as one of the open ones: the saved list's others open beside it.
+	const reopened = desk === undefined ? {opened: [], skipped: []} : yield* desk.reopen();
 	return {
 		kernel,
 		launched,
 		restored,
 		...(first === undefined ? {} : {first}),
+		reopened,
 	} satisfies Started;
 });
 
@@ -366,8 +389,12 @@ export interface BootReport {
 	readonly bindingCount: number;
 	/** One per key binding that did not compile; the binding is dropped and the rest still run. */
 	readonly bindingErrors: ReadonlyArray<BindingError>;
-	/** One per row refused for its SDK range; the row is not loaded and the rest still run (#9686). */
-	readonly refused: ReadonlyArray<SdkRefused>;
+	/** One per row refused for its SDK range (#9686) or a flag left off (#9687); the rest still run. */
+	readonly refused: ReadonlyArray<RowRefused>;
+	/** The folders the saved list had open that this boot reopened beside the first (#9688). */
+	readonly reopened: ReadonlyArray<string>;
+	/** One per saved open folder this boot skipped, naming it and why; the rest still opened. */
+	readonly skipped: ReadonlyArray<ProjectNotReopened>;
 	/** The home-dir directory this desk's state lives in, keyed by the project's absolute path. */
 	readonly stateDir: string;
 	/** What ADR 0402 rule 7's one-time move lifted out of `<project>/.tuval` on this boot. */
@@ -413,9 +440,9 @@ export interface Booted {
  * module is evaluated before the merge exists (#8595), so this is the only place that holds both the
  * rows and what the layers said about them (#8867).
  */
-const generationOf = (config: LoadedConfig): ConfigGeneration => {
+const generationOf = (config: LoadedConfig, keyBindings: LiveKeyBindings): ConfigGeneration => {
 	const rows = (programs: ReadonlyArray<unknown>) =>
-		withShellFeatures(programs as ReadonlyArray<AnyProgram>, config.features);
+		withShellFeatures(programs as ReadonlyArray<AnyProgram>, config.features, keyBindings);
 	return config.projects.reduce(
 		(generation, project) =>
 			generation.withProject(
@@ -441,9 +468,10 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	const firstLayer: ProjectLayer = {id: ProjectId.of(folder), module: projectConfig(folder)};
 	const config = yield* loadLayeredConfig({desk, global: options.global, projects: [firstLayer]});
 	const fs = yield* FileSystem.FileSystem;
+	const keyBindings = new LiveKeyBindings();
 	const reread = (projects: ReadonlyArray<ProjectLayer>) =>
 		loadLayeredConfig({desk, global: options.global, projects}).pipe(
-			Effect.map(generationOf),
+			Effect.map((reread) => generationOf(reread, keyBindings)),
 			Effect.provideService(FileSystem.FileSystem, fs),
 		);
 	const [read] = config.projects;
@@ -455,6 +483,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	const deskRows = withShellFeatures(
 		config.desk.programs as ReadonlyArray<AnyProgram>,
 		config.features,
+		keyBindings,
 	);
 	const started = yield* start({
 		programs: deskRows,
@@ -472,6 +501,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 			fs,
 		},
 		modules: config.modules,
+		keyBindings,
 	});
 	const live = yield* ProcessTable.use((table) => table.list).pipe(
 		Effect.provideContext(started.kernel),
@@ -489,15 +519,18 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		bindingCount: spells.bindings.bindings.length,
 		bindingErrors: spells.bindings.errors,
 		refused: config.refused,
+		reopened: started.reopened.opened.map((opened) => opened.project.folder),
+		skipped: started.reopened.skipped,
 		stateDir: state.stateDir,
 		adopted: state.adopted,
 		scoped: state.scoped,
 		processCount: live.length,
 		restoredCount:
 			restoredBy(started.launched, started.restored) +
-			(started.first === undefined
-				? 0
-				: restoredBy(started.first.launched, started.first.restored)),
+			[...(started.first === undefined ? [] : [started.first]), ...started.reopened.opened].reduce(
+				(count, opened) => count + restoredBy(opened.launched, opened.restored),
+				0,
+			),
 	};
 
 	return {

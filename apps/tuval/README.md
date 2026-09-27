@@ -140,6 +140,13 @@ can answer: the answer rides a transport frame of its own, never a spell an agen
 folder with no config has nothing to run and is never asked about, and neither are the home config
 or the desk's own layer.
 
+A desk restart reopens the projects that were open, the way VS Code restores its windows (#9688).
+The `--project` folder opens first, and the others in the saved list open beside it, each with its
+processes restored from its own state directory. A project closed before the restart stays closed.
+Nothing is asked on the way: a folder that was deleted, or whose config is no longer trusted, is
+skipped with a `tuval: did not reopen the project <folder>: …` line, nothing from it runs, and the
+rest still open. Subprojects are not reopened here; the program that opened one restores it.
+
 Known gap: the `--project` folder, which defaults to the working directory, is imported at boot
 without the question, so running `tuval` inside a freshly cloned repo runs that repo's config
 unasked. Ruling #9668 R2.1 exempts only the home config; #9884 tracks moving the boot folder onto

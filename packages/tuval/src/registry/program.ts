@@ -8,6 +8,7 @@ import type {Cmd, Machine, Sub} from "@demlik/tea";
 import {type Effect, type Option, Schema, type Stream} from "effect";
 // Type-only, so the commands slice's runtime dependency on this file stays one-directional.
 import type {AnySpell} from "../commands/spell.ts";
+import type {TuvalFeatures} from "../features.ts";
 
 // Type-only brand: a plain string at runtime, a distinct type to the checker (`.patterns/effect-schema-validation.md`).
 export const ProgramId = Schema.String.pipe(Schema.brand("tuval/ProgramId"));
@@ -318,6 +319,12 @@ export interface Program<
 	 * (`./sdk-range.ts`, #9686).
 	 */
 	readonly sdk?: string;
+	/**
+	 * The feature flags this program needs on. Flags are global only (#9687, ruling #9668 R4.2): a
+	 * desk refuses a row that needs a flag the global config leaves off, and names the row and the
+	 * flag. Absent means the program runs under any flags.
+	 */
+	readonly needsFeatures?: ReadonlyArray<keyof TuvalFeatures>;
 	readonly identity: DefinitionIdentity;
 	readonly placement: Placement;
 }

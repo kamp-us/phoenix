@@ -1,5 +1,7 @@
-// This project's Tuval config. This file is yours: boot loads it over your global
-// ~/.tuval/tuval.config.ts, registers every program row in `programs`, and launches `graph`. A row
+// This project's Tuval config. This file is yours: boot loads it beside your global
+// ~/.tuval/tuval.config.ts, registers every program row in `programs`, and launches `graph`. Each
+// row and graph node here runs as `<project>/<id>`, so it never replaces a global row of the same
+// id, and a bare id in `graph` names this file's row or node first and a global one second. A row
 // is a `Program` (the SDK's src/registry/program.ts); the four in the box today are the demo counter
 // and log (#7517), the AI-agent session list (#8102) and the module-window demo (#8946). The desk
 // supplies its own shell row below every config (#9683), so this file never declares one.

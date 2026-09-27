@@ -68,15 +68,16 @@ export const refuse = (
 ];
 
 /**
- * The binding carries the row's key declaration: a window may only be sent a key its program asked
- * for, and this is the one place both are known at once (#7973).
+ * The binding carries the row's key declaration and its id: a window may only be sent a key its
+ * program asked for (#7973), and routes keys over its program's owner's table (#9687). This is the
+ * one place the window and the row are known at once.
  */
 const bind = (
 	windowId: WindowId,
 	processId: ProcessId,
 	row: AnyProgram,
 ): ReadonlyArray<ShellMsg> => [
-	{type: "window.bind", windowId, processId, takesKeys: takesForwardedKeys(row)},
+	{type: "window.bind", windowId, processId, takesKeys: takesForwardedKeys(row), program: row.id},
 ];
 
 const open = Effect.fn("Tuval.Picker.open")(function* (

@@ -20,4 +20,5 @@ export const reboundDesk: DeskLayer = {
 	origin: fileURLToPath(import.meta.url),
 	programs: [shellProgram({table: reboundTable, effects: unwiredShellEffects})],
 	graph: {nodes: [shellGraphNode]},
+	table: reboundTable,
 };

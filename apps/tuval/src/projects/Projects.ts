@@ -15,6 +15,11 @@
  * runs its code, so an open that needs trust waits on the person's answer first, and a no imports
  * nothing (#9693, ruling #9668 R2.1). The wait holds no lock, so a question left unanswered never
  * stops another project opening or closing.
+ *
+ * A desk restarting reopens the projects its saved list had open (#9688, ruling #9668 R5.1). Nobody
+ * is asked anything on the way: a folder that is gone, or that holds a config no longer trusted, is
+ * skipped with a notice naming it, and the others still open. Subprojects are not reopened here;
+ * the program that opened one restores it (#9673 R2).
  */
 
 import {resolve} from "node:path";
@@ -34,7 +39,6 @@ import type {ProcessHandle} from "@kampus/tuval-sdk/kernel/process/process";
 import {WorkingFolder} from "@kampus/tuval-sdk/kernel/process/working-folder";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
-import type {SdkRefused} from "@kampus/tuval-sdk/kernel/registry/sdk-range";
 import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {
 	adoptInProjectState,
@@ -66,14 +70,15 @@ import {type CheckpointScoping, scopeCheckpoints} from "../durability/scope-chec
 import {type LaunchedProcess, launch} from "../launch/launch.ts";
 import {type ProjectId, projectConfig, projectDir} from "../project-id.ts";
 import type {ConfigReloader} from "../reload.ts";
-import type {SdkRemoved} from "../sdk-admission.ts";
+import type {RowRefused, SdkRemoved} from "../sdk-admission.ts";
 import {withShellFeatures} from "../shell/program.ts";
 import {type CheckpointRoutes, ownedView} from "./checkpoint-routes.ts";
 import {
 	type OpenProject,
 	OpenProjects,
-	type ProjectAlreadyOpen,
+	ProjectAlreadyOpen,
 	type ProjectNotOpen,
+	ProjectNotReopened,
 	readOpenProjects,
 	saveOpenProjects,
 } from "./open-projects.ts";
@@ -111,12 +116,18 @@ export interface ProjectOpened {
 	readonly project: OpenProject;
 	readonly state: ProjectState;
 	readonly programCount: number;
-	/** The project's rows refused for their SDK range, which the rest of the project runs without. */
-	readonly refused: ReadonlyArray<SdkRefused>;
+	/** The project's rows refused for their SDK range or a flag left off; the rest of it runs. */
+	readonly refused: ReadonlyArray<RowRefused>;
 	/** The project's graph, in node order. */
 	readonly launched: ReadonlyArray<LaunchedProcess>;
 	/** The project's checkpointed processes its graph did not plan, spawned back. */
 	readonly restored: ReadonlyArray<ProcessHandle>;
+}
+
+/** What a restart reopened from the saved list, and what it skipped with a notice. */
+export interface ProjectsReopened {
+	readonly opened: ReadonlyArray<ProjectOpened>;
+	readonly skipped: ReadonlyArray<ProjectNotReopened>;
 }
 
 export interface ProjectClosed {
@@ -232,8 +243,8 @@ const allRenderers = (renderers: Renderers): ReadonlyArray<ModuleRendererRef> =>
 export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: ProjectsOptions) {
 	const {home, desk, routes, rows, reloader, prompts, fs} = options;
 	const lock = yield* Semaphore.make(1);
-	// Only the trust of the saved list is carried: which folders were open is a later slice's to
-	// reopen. A list that cannot be read costs the remembered trust, and the folders are asked again.
+	// A list that cannot be read costs the remembered trust and the reopen: the folders are asked
+	// about again, and opened again by hand.
 	const saved = yield* readOpenProjects(home).pipe(
 		Effect.provideService(FileSystem.FileSystem, fs),
 		Effect.catch((error) =>
@@ -391,11 +402,8 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 			save,
 		).pipe(lock.withPermits(1));
 
-	/**
-	 * Ask about `folder` when it holds a config nobody has trusted. Unlocked, because the person may
-	 * take as long as they like; trust only ever grows, so an answer cannot go stale while it waits.
-	 */
-	const admit = Effect.fn("Tuval.Projects.admit")(function* (folder: string) {
+	/** What opening `folder` needs before its config is imported, or why it cannot open at all. */
+	const gateOf = Effect.fn("Tuval.Projects.gateOf")(function* (folder: string) {
 		const current = yield* SubscriptionRef.get(openRef);
 		const opening = current.open(folder);
 		if (Result.isFailure(opening)) return yield* opening.failure;
@@ -410,7 +418,15 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		const hasConfig = yield* fs
 			.exists(projectConfig(folder))
 			.pipe(Effect.orElseSucceed(() => true));
-		if (current.trusted.gate(folder, hasConfig) !== "ask") return;
+		return current.trusted.gate(folder, hasConfig);
+	});
+
+	/**
+	 * Ask about `folder` when it holds a config nobody has trusted. Unlocked, because the person may
+	 * take as long as they like; trust only ever grows, so an answer cannot go stale while it waits.
+	 */
+	const admit = Effect.fn("Tuval.Projects.admit")(function* (folder: string) {
+		if ((yield* gateOf(folder)) !== "ask") return;
 		if ((yield* prompts.ask(folder)) === "refuse") return yield* new FolderNotTrusted({folder});
 		yield* recordTrust(folder);
 	});
@@ -432,7 +448,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		}
 		const layer = {id: project.id, module: projectConfig(folder)};
 		const prepared = Effect.gen(function* () {
-			const loaded = yield* loadProjectConfig(desk, layer, options.deskRemoved);
+			const loaded = yield* loadProjectConfig(desk, layer, options.deskRemoved, options.features);
 			const state = yield* prepareProjectState(folder, home, loaded);
 			return {loaded, state};
 		}).pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.mapError(refuse));
@@ -458,6 +474,47 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		return {project} satisfies ProjectClosed;
 	}, lock.withPermits(1));
 
+	/** Take `folder` off the list a restart still has to reopen, in the saved list too. */
+	const settle = (folder: string) =>
+		Effect.flatMap(
+			SubscriptionRef.updateAndGet(openRef, (current) => current.skip(folder)),
+			save,
+		).pipe(lock.withPermits(1));
+
+	const notReopened = (folder: string, cause: unknown): ProjectNotReopened => {
+		if (cause instanceof FolderNotTrusted) {
+			return new ProjectNotReopened({folder, reason: "it is not trusted, so nothing from it ran"});
+		}
+		if (cause instanceof ProjectOpenRefused)
+			return new ProjectNotReopened({folder, reason: cause.reason});
+		return new ProjectNotReopened({folder, reason: reasonOf(cause)});
+	};
+
+	/**
+	 * Reopen what the saved list had open and this desk has not opened yet, one folder at a time and
+	 * in saved order, asking nobody: an untrusted config is skipped rather than asked about.
+	 */
+	const reopen = Effect.fn("Tuval.Projects.reopen")(function* () {
+		const opened: Array<ProjectOpened> = [];
+		const skipped: Array<ProjectNotReopened> = [];
+		for (const folder of (yield* SubscriptionRef.get(openRef)).pending) {
+			const tried = yield* Effect.gen(function* () {
+				if ((yield* gateOf(folder)) === "ask") return yield* new FolderNotTrusted({folder});
+				return yield* openAdmitted(folder);
+			}).pipe(Effect.result);
+			if (Result.isSuccess(tried)) {
+				opened.push(tried.success);
+				continue;
+			}
+			// Opened by hand while the restart was on its way to it: open, so nothing to say.
+			if (!(tried.failure instanceof ProjectAlreadyOpen)) {
+				skipped.push(notReopened(folder, tried.failure));
+			}
+			yield* settle(folder);
+		}
+		return {opened, skipped} satisfies ProjectsReopened;
+	});
+
 	const service = Projects.of({
 		open: openFolder,
 		close: closeFolder,
@@ -478,5 +535,5 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 			return yield* commitOpen(project, loaded, state);
 		}).pipe(lock.withPermits(1));
 
-	return {service, openFirst};
+	return {service, openFirst, reopen};
 });

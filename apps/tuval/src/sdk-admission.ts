@@ -8,15 +8,23 @@
  * A project node reaches a global row or node by its bare id (`./config-scope.ts`), so what the
  * global layer's refusals removed is handed to each project layer, and the project's connections to
  * it go the same way its own do.
+ *
+ * A row needing a feature flag the desk runs with off is refused the same way, and its graph goes
+ * with it (`./flag-admission.ts`, #9687).
  */
 
 import type {TuvalConfig} from "@kampus/tuval-sdk/config";
+import type {TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
 import {admitSdk, type SdkRefused} from "@kampus/tuval-sdk/kernel/registry/sdk-range";
 import sdkPackage from "@kampus/tuval-sdk/package.json" with {type: "json"};
 import {Result} from "effect";
+import {admitFlags, type ProgramNeedsFlag} from "./flag-admission.ts";
 
 /** The version of the one SDK this desk runs and hands every program. */
 export const DESK_SDK_VERSION: string = sdkPackage.version;
+
+/** Why one row of a layer was refused while the rest of it runs. */
+export type RowRefused = SdkRefused | ProgramNeedsFlag;
 
 /** What a layer's refusals took out: the refused rows' ids and the graph nodes that went with them. */
 export interface SdkRemoved {
@@ -29,7 +37,7 @@ export const nothingRemoved: SdkRemoved = {programs: new Set(), nodes: new Set()
 /** A layer as it runs once its out-of-range rows are refused, beside why each one was. */
 export interface SdkAdmission {
 	readonly config: TuvalConfig;
-	readonly refused: ReadonlyArray<SdkRefused>;
+	readonly refused: ReadonlyArray<RowRefused>;
 	/** This layer's own removals, which a layer connecting to it by bare id is admitted against. */
 	readonly removed: SdkRemoved;
 }
@@ -39,11 +47,14 @@ export interface SdkAdmissionOptions {
 	readonly sdk?: string;
 	/** What the layer this one connects to removed; nothing by default. */
 	readonly upstream?: SdkRemoved;
+	/** The flags the desk runs under, which a row's `needsFeatures` is checked against. */
+	readonly features: TuvalFeatures;
 }
 
 interface DeclaredRow {
 	readonly id: string;
 	readonly sdk?: unknown;
+	readonly needsFeatures?: unknown;
 }
 
 /** Every node of this layer that runs a removed program or sits under a removed node. */
@@ -66,15 +77,20 @@ const droppedNodes = (
 	return dropped;
 };
 
-/** `config` with every row whose SDK range excludes the desk's refused, and its graph taken with it. */
-export const admitBySdk = (
+/**
+ * `config` with every row refused whose SDK range excludes the desk's or that needs a flag the desk
+ * runs with off, and its graph taken with it.
+ */
+export const admitRows = (
 	config: TuvalConfig,
-	{sdk = DESK_SDK_VERSION, upstream = nothingRemoved}: SdkAdmissionOptions = {},
+	{sdk = DESK_SDK_VERSION, upstream = nothingRemoved, features}: SdkAdmissionOptions,
 ): SdkAdmission => {
-	const refused: Array<SdkRefused> = [];
+	const refused: Array<RowRefused> = [];
 	const programs = config.programs.filter((row) => {
-		const {id, sdk: declared} = row as DeclaredRow;
-		const admitted = admitSdk(id, declared, sdk);
+		const {id, sdk: declared, needsFeatures} = row as DeclaredRow;
+		const admitted = Result.flatMap(admitSdk(id, declared, sdk), () =>
+			admitFlags(id, needsFeatures, features),
+		);
 		if (Result.isFailure(admitted)) refused.push(admitted.failure);
 		return Result.isSuccess(admitted);
 	});

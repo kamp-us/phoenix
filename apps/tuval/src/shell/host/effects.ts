@@ -1,5 +1,5 @@
 /**
- * The shell's Cmds, run against the kernel. `unwiredShellEffects` (`../program.ts`) drops all nine;
+ * The shell's Cmds, run against the kernel. `unwiredShellEffects` (`../program.ts`) drops all ten;
  * this is the set that does the work, and it is what `.tuval/tuval.config.ts` registers the shell
  * row with.
  *
@@ -8,21 +8,32 @@
  * kernel context beside its `ProcessPorts` (`../../launch/launch.ts`), which is the one seam a
  * program row's requirements can be satisfied through.
  *
- * Three of the nine stay inert here, and each for a stated reason rather than a shrug. The two
+ * Three of the ten stay inert here, and each for a stated reason rather than a shrug. The two
  * prefix-timer Cmds belong to whoever is showing the desk: a kernel handler returns its follow-ups
  * and cannot dispatch one a second later, and the snapshot already carries the armed window's
  * length, so the surface runs the countdown off state alone (`../ui/Desk.tsx`). `openCommandLine` is
  * the same shape — the line is a page's own element, not a process.
  */
 
+import {randomUUID} from "node:crypto";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {SpellRegistry} from "@kampus/tuval-sdk/kernel/commands/registry";
+import {
+	ClientId,
+	WindowId as SpellWindowId,
+	WorkspaceId,
+} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import type {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
-import {Effect, Option} from "effect";
+import {Effect, Option, Schema} from "effect";
 import {ConfigReloader, describeSwaps} from "../../reload.ts";
+import type {ShellCmd} from "../core/index.ts";
 import {attachProcess, openProgram, runPickerIntent, runProcessRemoval} from "../picker/index.ts";
 import type {ShellEffects} from "../program.ts";
 
@@ -36,7 +47,13 @@ export interface WiredShellOptions {
 }
 
 /** What the handlers need from the kernel. Declared once so the row's `R` and this list agree. */
-export type ShellHostServices = Registry | Processes | ProcessTable | ConfigReloader;
+export type ShellHostServices =
+	| Registry
+	| Processes
+	| ProcessTable
+	| ConfigReloader
+	| SpellRegistry
+	| SpellExecutor;
 
 /**
  * A key belongs to the focused window's process, so it is delivered as that program's own `key` Msg
@@ -60,6 +77,51 @@ const forwardKey = (processId: string, key: string) =>
 			);
 	});
 
+/**
+ * A fired key binding runs its spell through the executor, the way a typed command line does. The
+ * binding's args were decoded against the spell's params when it compiled, and the executor decodes
+ * a call's args itself, so they are encoded back first.
+ *
+ * Forked, never awaited: this handler runs inside the shell's own dispatch, and a shell spell
+ * dispatches back into the shell, which would wait on the dispatch that is waiting on it. A refusal
+ * is logged rather than failed, for the reason `forwardKey`'s drops are.
+ */
+const runBinding = (cmd: Extract<ShellCmd, {type: "runBinding"}>) =>
+	Effect.gen(function* () {
+		const registry = yield* SpellRegistry;
+		const executor = yield* SpellExecutor;
+		const {binding} = cmd;
+		const run = Effect.gen(function* () {
+			const row = yield* registry.lookup(binding.path);
+			const args = yield* Schema.encodeUnknownEffect(row.spell.params)(
+				binding.args,
+			) as Effect.Effect<unknown, Schema.SchemaError>;
+			const reply = yield* executor.execute(
+				new SpellCall({
+					type: "spell.call",
+					version: PROTOCOL_VERSION,
+					id: CallId.make(randomUUID()),
+					path: binding.path,
+					args,
+					...(cmd.windowId === null ? {} : {window: SpellWindowId.make(cmd.windowId)}),
+				}),
+				{id: KEY_CLIENT, workspace: WorkspaceId.make(cmd.workspace)},
+			);
+			if (!reply.ok) {
+				yield* Effect.logWarning(`shell: key "${binding.key}" refused — ${reply.error.message}`);
+			}
+		}).pipe(
+			Effect.catch((error) =>
+				Effect.logWarning(`shell: key "${binding.key}" did not run — ${String(error)}`),
+			),
+		);
+		yield* Effect.forkDetach(run);
+		return [];
+	});
+
+/** The client a key binding's spell call runs as. */
+const KEY_CLIENT = ClientId.make("tuval/keys");
+
 export const wiredShellEffects = ({
 	shellProcessId,
 }: WiredShellOptions): ShellEffects<never, ShellHostServices> => ({
@@ -72,6 +134,7 @@ export const wiredShellEffects = ({
 			Effect.logDebug(`shell: runCommand "${cmd.name}" names no command row — dropped`),
 			[],
 		),
+	runBinding,
 	// A refused reload leaves the desk on the generation it was running, so it is a warning and not
 	// a failure: the shell's error channel is `never`, and a config with a typo is not worth a desk.
 	reloadConfig: () =>

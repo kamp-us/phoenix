@@ -28,6 +28,7 @@ import {toTableRow} from "../../table/row.ts";
 import {applyMsg, initialState, type ShellMsg} from "../core/machine.ts";
 import {activeWorkspace, type ShellState} from "../core/state.ts";
 import {wiredShellEffects} from "../host/effects.ts";
+import {scriptedSpellServices} from "../host/fixtures.ts";
 import {type PickerEntries, processEntries, programEntries} from "../picker/entries.ts";
 import {programRow, shellProcessId} from "../picker/fixtures.ts";
 import {asPickerView, pickerKey} from "../picker/view.ts";
@@ -91,7 +92,9 @@ const pressRemove = Effect.fn("processRemove.pressRemove")(function* (
 	if (removal === undefined || removal.type !== "removeProcess") {
 		return yield* Effect.die(new Error("test setup: the reducer asked for no removal"));
 	}
-	const back = yield* wiredShellEffects({shellProcessId}).removeProcess(removal);
+	const back = yield* wiredShellEffects({shellProcessId})
+		.removeProcess(removal)
+		.pipe(Effect.provide(scriptedSpellServices()));
 	return {
 		asked: answer.processId,
 		state: back.reduce((carried, sent) => applyMsg(defaultPrefixTable, carried, sent)[0], next),

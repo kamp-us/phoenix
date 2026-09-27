@@ -4,7 +4,8 @@ import {assert, describe, it} from "@effect/vitest";
 import {featuresDefault} from "@kampus/tuval-sdk/kernel/features";
 import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
-import {Effect} from "effect";
+import {applyKeysConfig, defaultPrefixTable} from "@kampus/tuval-ui/keys";
+import {Effect, Result} from "effect";
 import {AuthoredModules} from "./authored-modules.ts";
 import {
 	ConfigLoadError,
@@ -16,7 +17,7 @@ import {
 } from "./config.ts";
 import {fixtureDesk, noDesk} from "./config-fixtures/desk-layers.ts";
 import {ProjectId} from "./project-id.ts";
-import {DESK_SDK_VERSION} from "./sdk-admission.ts";
+import {DESK_SDK_VERSION, nothingRemoved} from "./sdk-admission.ts";
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
@@ -130,9 +131,7 @@ describe("the feature flags", () => {
 		}),
 	);
 
-	// A flag at a time, not a block at a time: a project layer that names one flag must not put every
-	// flag the global layer turned on back to its default.
-	it.effect("merge project over global one flag at a time", () =>
+	it.effect("resolve the global layer's flags over the defaults", () =>
 		Effect.gen(function* () {
 			const merged = yield* layered(fixture("features-on"), fixture("two-rows"));
 			assert.deepStrictEqual(merged.features, {
@@ -151,32 +150,10 @@ describe("the feature flags", () => {
 	// The direction that costs something: `subagentList` defaults on, so an operator turning it off
 	// is a layer stating `false` over a `true` default, and a merge folding the layers the other way
 	// round would silently ignore them.
-	it.effect("let a layer that states a flag off win over the on default", () =>
+	it.effect("let a global layer that states a flag off win over the on default", () =>
 		Effect.gen(function* () {
 			const global = yield* layered(fixture("features-off"), fixture("two-rows"));
 			assert.deepStrictEqual(global.features, {
-				subagentList: false,
-				piSubagents: true,
-				piKernelTools: false,
-				kernelChildren: false,
-				windowTitles: false,
-				processBoard: false,
-				prReviewExample: false,
-				processRemove: false,
-			});
-			const project = yield* layered(fixture("two-rows"), fixture("features-off"));
-			assert.deepStrictEqual(project.features, {
-				subagentList: false,
-				piSubagents: true,
-				piKernelTools: false,
-				kernelChildren: false,
-				windowTitles: false,
-				processBoard: false,
-				prReviewExample: false,
-				processRemove: false,
-			});
-			const overGlobalOn = yield* layered(fixture("features-on"), fixture("features-off"));
-			assert.deepStrictEqual(overGlobalOn.features, {
 				subagentList: false,
 				piSubagents: true,
 				piKernelTools: false,
@@ -198,14 +175,10 @@ describe("the feature flags", () => {
 		}),
 	);
 
-	it.effect("let a layer turn piSubagents off against its on default", () =>
+	it.effect("let the global layer turn piSubagents off against its on default", () =>
 		Effect.gen(function* () {
 			const global = yield* layered(fixture("pi-subagents-off"), fixture("two-rows"));
 			assert.deepStrictEqual(global.features, {...featuresDefault, piSubagents: false});
-			const project = yield* layered(fixture("two-rows"), fixture("pi-subagents-off"));
-			assert.deepStrictEqual(project.features, {...featuresDefault, piSubagents: false});
-			const overGlobalOn = yield* layered(fixture("pi-subagents-on"), fixture("pi-subagents-off"));
-			assert.deepStrictEqual(overGlobalOn.features, {...featuresDefault, piSubagents: false});
 		}),
 	);
 
@@ -216,17 +189,10 @@ describe("the feature flags", () => {
 		}),
 	);
 
-	it.effect("let a layer turn piKernelTools on against its off default", () =>
+	it.effect("let the global layer turn piKernelTools on against its off default", () =>
 		Effect.gen(function* () {
 			const global = yield* layered(fixture("pi-kernel-tools-on"), fixture("two-rows"));
 			assert.deepStrictEqual(global.features, {...featuresDefault, piKernelTools: true});
-			const project = yield* layered(fixture("two-rows"), fixture("pi-kernel-tools-on"));
-			assert.deepStrictEqual(project.features, {...featuresDefault, piKernelTools: true});
-			const overGlobalOn = yield* layered(
-				fixture("pi-kernel-tools-on"),
-				fixture("pi-kernel-tools-off"),
-			);
-			assert.deepStrictEqual(overGlobalOn.features, {...featuresDefault, piKernelTools: false});
 		}),
 	);
 
@@ -309,6 +275,7 @@ describe("loadLayeredConfig and the SDK range (#9686)", () => {
 				noDesk,
 				{id: alpha, module: fixture("names-refused-global")},
 				running.desk.removed,
+				running.features,
 			);
 			assert.deepStrictEqual(opened.config.refused, []);
 			assert.deepStrictEqual(
@@ -661,5 +628,98 @@ describe("project-scoped ids (#9684)", () => {
 				);
 			}
 		}),
+	);
+});
+
+/** Flags and the desk's reserved keys are global only (#9687, ruling #9668 R4.2). */
+describe("loadLayeredConfig and what is global only (#9687)", () => {
+	const refusedLoad = (global: string, project: string, desk = noDesk) =>
+		Effect.map(Effect.flip(layered(global, project, desk)), (error) => {
+			assert.instanceOf(error, ConfigLoadError);
+			return error;
+		});
+
+	it.effect("refuses a project layer's features block, naming the module and its flags", () =>
+		Effect.gen(function* () {
+			const error = yield* refusedLoad(fixture("two-rows"), fixture("features-off"));
+			assert.strictEqual(error.module, fixture("features-off"));
+			assert.strictEqual(
+				error.reason,
+				"states feature flags (subagentList); flags are global only, so state them in the global .tuval/tuval.config.ts",
+			);
+		}),
+	);
+
+	it.effect("refuses a project binding for a reserved desk key, naming the key and the file", () =>
+		Effect.gen(function* () {
+			const error = yield* refusedLoad(fixture("two-rows"), fixture("binds-reserved-key"));
+			assert.strictEqual(
+				error.message,
+				`config module ${fixture("binds-reserved-key")}: binds "<C-b>x", the desk's reserved key for the window:close chord; a project cannot rebind a reserved desk key`,
+			);
+		}),
+	);
+
+	it.effect("leaves the global layer free to bind a reserved key", () =>
+		Effect.gen(function* () {
+			const config = yield* layered(fixture("binds-reserved-key"), fixture("does-not-exist"));
+			assert.deepStrictEqual(config.sources, [fixture("binds-reserved-key")]);
+		}),
+	);
+
+	it.effect(
+		"reads the reserved keys off the desk's own grammar, so a rebound prefix moves them",
+		() =>
+			Effect.gen(function* () {
+				const table = Result.getOrThrow(applyKeysConfig(defaultPrefixTable, {prefix: "<c-a>"}));
+				const rebound = {...noDesk, table};
+				const config = yield* layered(fixture("two-rows"), fixture("binds-reserved-key"), rebound);
+				assert.deepStrictEqual(config.sources, [
+					fixture("two-rows"),
+					fixture("binds-reserved-key"),
+				]);
+			}),
+	);
+
+	it.effect("refuses a project row needing a flag the global layer leaves off, naming both", () =>
+		Effect.gen(function* () {
+			const config = yield* layered(fixture("does-not-exist"), fixture("needs-board-flag"));
+			assert.deepStrictEqual(
+				config.refused.map((refusal) => refusal.message),
+				[
+					`program "${alpha.scope("board-only")}" needs feature flag "processBoard", which the global config leaves off; it was not loaded`,
+				],
+			);
+			assert.deepStrictEqual(config.programs, [{id: alpha.scope("plain")}]);
+			assert.deepStrictEqual(config.graph.nodes, []);
+		}),
+	);
+
+	it.effect("admits the same row once the global layer turns the flag on", () =>
+		Effect.gen(function* () {
+			const config = yield* layered(fixture("board-on"), fixture("needs-board-flag"));
+			assert.deepStrictEqual(config.refused, []);
+			assert.strictEqual(config.features.processBoard, true);
+			assert.deepStrictEqual(
+				config.programs.map((row) => (row as {readonly id: string}).id),
+				[alpha.scope("board-only"), alpha.scope("plain")],
+			);
+		}),
+	);
+
+	it.effect("checks a project opening into a running desk against the flags that desk runs", () =>
+		Effect.gen(function* () {
+			const layer = {id: alpha, module: fixture("needs-board-flag")};
+			const off = yield* loadProjectConfig(noDesk, layer, nothingRemoved, featuresDefault);
+			assert.deepStrictEqual(
+				off.config.refused.map((refusal) => refusal.program),
+				[alpha.scope("board-only")],
+			);
+			const on = yield* loadProjectConfig(noDesk, layer, nothingRemoved, {
+				...featuresDefault,
+				processBoard: true,
+			});
+			assert.deepStrictEqual(on.config.refused, []);
+		}).pipe(Effect.provide(NodeFileSystem.layer)),
 	);
 });

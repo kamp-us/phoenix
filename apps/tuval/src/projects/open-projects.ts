@@ -7,6 +7,10 @@
  *
  * Two spellings of one folder are one project: the identity is the ADR 0402 path key, the name the
  * project's rows and state directory are already keyed by (`../project-id.ts`).
+ *
+ * A desk restarting over the list reopens what was open (#9688, ruling #9668 R5.1). Until it has
+ * tried a folder, that folder stays in the list as pending, so a desk that dies mid-restart still
+ * has it to reopen next time.
  */
 
 import {join, resolve, sep} from "node:path";
@@ -39,6 +43,16 @@ export class ProjectNotOpen extends Schema.TaggedError<ProjectNotOpen>()("tuval/
 	}
 }
 
+/** A folder the saved list had open that this restart did not reopen, and why. */
+export class ProjectNotReopened extends Schema.TaggedError<ProjectNotReopened>()(
+	"tuval/ProjectNotReopened",
+	{folder: Schema.String, reason: Schema.String},
+) {
+	override get message(): string {
+		return `did not reopen the project ${this.folder}: ${this.reason}`;
+	}
+}
+
 /** One folder's record in the saved list. */
 export const OpenProjectRecord = Schema.Struct({folder: Schema.String});
 
@@ -50,35 +64,66 @@ export const OpenProjectsRecord = Schema.Struct({
 });
 export type OpenProjectsRecord = typeof OpenProjectsRecord.Type;
 
-/** The desk's open projects, in the order they opened, and the folders trusted so far. */
+const keyOf = (folder: string): string => ProjectId.of(resolve(folder)).key;
+
+/**
+ * The desk's open projects, in the order they opened, the folders trusted so far, and the folders a
+ * restart has still to reopen. A folder is never both open and pending: opening it or skipping it
+ * takes it off the pending list.
+ */
 export class OpenProjects {
-	static readonly none = new OpenProjects([], TrustedFolders.none);
+	static readonly none = new OpenProjects([], TrustedFolders.none, []);
 
 	readonly projects: ReadonlyArray<OpenProject>;
 	readonly trusted: TrustedFolders;
+	/** The saved list's open folders this desk has not yet reopened or skipped, in saved order. */
+	readonly pending: ReadonlyArray<string>;
 
-	private constructor(projects: ReadonlyArray<OpenProject>, trusted: TrustedFolders) {
+	private constructor(
+		projects: ReadonlyArray<OpenProject>,
+		trusted: TrustedFolders,
+		pending: ReadonlyArray<string>,
+	) {
 		this.projects = projects;
 		this.trusted = trusted;
+		this.pending = pending;
 	}
 
 	/**
-	 * A desk starting over a saved list: every folder it trusted is still trusted, and nothing is
-	 * open yet. Reopening what was open is a later slice's (#9668 R5.1).
+	 * A desk starting over a saved list: every folder it trusted is still trusted, nothing is open
+	 * yet, and every folder that was open is pending, a folder listed twice counted once.
 	 */
 	static restoring(record: OpenProjectsRecord | null): OpenProjects {
-		return new OpenProjects([], TrustedFolders.of(record?.trusted ?? []));
+		const pending = new Map<string, string>();
+		for (const {folder} of record?.projects ?? []) {
+			const key = keyOf(folder);
+			if (!pending.has(key)) pending.set(key, resolve(folder));
+		}
+		return new OpenProjects([], TrustedFolders.of(record?.trusted ?? []), [...pending.values()]);
 	}
 
 	/** The same projects, with `folder` trusted from now on. */
 	trust(folder: string): OpenProjects {
 		const trusted = this.trusted.trust(folder);
-		return trusted === this.trusted ? this : new OpenProjects(this.projects, trusted);
+		return trusted === this.trusted ? this : new OpenProjects(this.projects, trusted, this.pending);
+	}
+
+	/** The same projects, with `folder` no longer waiting to be reopened. */
+	skip(folder: string): OpenProjects {
+		const pending = this.withoutPending(folder);
+		return pending === this.pending ? this : new OpenProjects(this.projects, this.trusted, pending);
+	}
+
+	private withoutPending(folder: string): ReadonlyArray<string> {
+		const key = keyOf(folder);
+		return this.pending.some((waiting) => keyOf(waiting) === key)
+			? this.pending.filter((waiting) => keyOf(waiting) !== key)
+			: this.pending;
 	}
 
 	/** The open project at `folder`, under any spelling of it. */
 	find(folder: string): OpenProject | undefined {
-		const {key} = ProjectId.of(resolve(folder));
+		const key = keyOf(folder);
 		return this.projects.find((project) => project.id.key === key);
 	}
 
@@ -94,7 +139,11 @@ export class OpenProjects {
 		}
 		const project: OpenProject = {folder: absolute, id: ProjectId.of(absolute)};
 		return Result.succeed({
-			projects: new OpenProjects([...this.projects, project], this.trusted),
+			projects: new OpenProjects(
+				[...this.projects, project],
+				this.trusted,
+				this.withoutPending(absolute),
+			),
 			project,
 		});
 	}
@@ -111,15 +160,19 @@ export class OpenProjects {
 			projects: new OpenProjects(
 				this.projects.filter((open) => open !== project),
 				this.trusted,
+				this.pending,
 			),
 			project,
 		});
 	}
 
+	/** The open folders, then the pending ones: both are what a restart reopens. */
 	get record(): OpenProjectsRecord {
 		return {
 			version: 1,
-			projects: this.projects.map(({folder}) => ({folder})),
+			projects: [...this.projects.map(({folder}) => folder), ...this.pending].map((folder) => ({
+				folder,
+			})),
 			trusted: this.trusted.folders,
 		};
 	}

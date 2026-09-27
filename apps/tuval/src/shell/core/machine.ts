@@ -20,6 +20,7 @@
  */
 
 import {defineMachine} from "@demlik/tea";
+import type {Binding} from "@kampus/tuval-sdk/kernel/commands/bindings/compile";
 import type {ViewState} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {
 	closeBoard,
@@ -29,8 +30,16 @@ import {
 	toggleInspector,
 } from "@kampus/tuval-ui/desk";
 import type {CommandName, Key, PrefixState, PrefixTable, RouteAnswer} from "@kampus/tuval-ui/keys";
-import {idle, route} from "@kampus/tuval-ui/keys";
+import {idle, route, stringify} from "@kampus/tuval-ui/keys";
 import {Duration} from "effect";
+import {
+	boardFocus,
+	type Focus,
+	KeyScopes,
+	noOwnerBindings,
+	type OwnerBindings,
+	windowFocus,
+} from "../../keys/scopes.ts";
 import {type CommandIndex, shellCommandIndex} from "../commands/table.ts";
 import {
 	createStack,
@@ -46,6 +55,7 @@ import {
 	setProcess,
 	split,
 	unzoom,
+	type WindowBinding,
 	type WindowId,
 	zoom,
 } from "../layout/index.ts";
@@ -62,6 +72,7 @@ import {
 	mint,
 	type PrefixSnapshot,
 	processOf,
+	programOf,
 	type ShellState,
 	type Workspace,
 	type WorkspaceId,
@@ -90,6 +101,17 @@ export type KernelCmd =
 			readonly key: string;
 	  }
 	| {readonly type: "runCommand"; readonly name: CommandName}
+	/**
+	 * A config key binding fired under the focus that owns it (#9687): run its spell. The reducer
+	 * cannot reach the spell executor, so it names the binding, the workspace, and the window it was
+	 * pressed in — `null` on the board, where no window is the subject — and stops there.
+	 */
+	| {
+			readonly type: "runBinding";
+			readonly binding: Binding;
+			readonly workspace: WorkspaceId;
+			readonly windowId: WindowId | null;
+	  }
 	| {
 			readonly type: "openProgram";
 			readonly windowId: WindowId;
@@ -135,8 +157,8 @@ export type PageCmd =
  * What the core asks its host to do, as the two halves that answer it. The absence is still the
  * point: `removeProcess` is asked for by name and by nothing else, so closing a window cannot end
  * the process it was showing — a window is a view onto a process, and the last view closing says
- * nothing about the process's lifetime (`window:close` keeps its detach-only behaviour, #9447). A
- * tenth arm joins `KernelCmd` or `PageCmd`; there is nowhere else to put one.
+ * nothing about the process's lifetime (`window:close` keeps its detach-only behaviour, #9447). An
+ * eleventh arm joins `KernelCmd` or `PageCmd`; there is nowhere else to put one.
  */
 export type ShellCmd = KernelCmd | PageCmd;
 
@@ -163,6 +185,8 @@ export type ShellMsg =
 			 * (`../picker/open.ts`); absent means the shell forwards this window no keys (#7973).
 			 */
 			readonly takesKeys?: boolean;
+			/** The bound program's id, which picks the key table the window routes over (#9687). */
+			readonly program?: string;
 	  }
 	| {readonly type: "window.unbind"; readonly windowId?: WindowId}
 	| {
@@ -340,7 +364,7 @@ const bindWindow = (
 	state: ShellState,
 	windowId: WindowId | undefined,
 	processId: string | null,
-	takesKeys = false,
+	binding: WindowBinding = {},
 ): Step => {
 	const workspace = activeWorkspace(state);
 	if (workspace === undefined) return [state, NO_CMDS];
@@ -350,7 +374,7 @@ const bindWindow = (
 		{
 			...withActive(state, {
 				...workspace,
-				layout: setProcess(workspace.layout, target, processId, takesKeys),
+				layout: setProcess(workspace.layout, target, processId, binding),
 			}),
 			views: withoutViews(state.views, [target]),
 		},
@@ -587,10 +611,47 @@ const attachHome = (
 	return [next, activeWorkspace(next)?.focused ?? target];
 };
 
+/**
+ * Where the core reads the key bindings each focus owner holds (#9687). Configuration like `table`,
+ * but a live one: a project opening or closing and a config reload each replace what it answers,
+ * and the shell process running under the old row reads the new bindings at its next key rather than
+ * being respawned for them. Read once per key, so one press routes over one generation.
+ */
+export interface KeyBindingsSource {
+	readonly current: () => OwnerBindings;
+}
+
+/** No owner binds anything: the desk routes its own grammar and nothing else. */
+export const noKeyBindings: KeyBindingsSource = {current: () => noOwnerBindings};
+
+/**
+ * The scopes over `table`, rebuilt only when the source answers a new generation. `table` is the
+ * one grammar the core routes, so the scopes are built here rather than handed in beside it.
+ */
+const scopesOver = (table: PrefixTable, source: KeyBindingsSource): (() => KeyScopes) => {
+	let built: {readonly bindings: OwnerBindings; readonly scopes: KeyScopes} | undefined;
+	return () => {
+		const bindings = source.current();
+		if (built?.bindings !== bindings) {
+			built = {bindings, scopes: KeyScopes.of({desk: table, ...bindings})};
+		}
+		return built.scopes;
+	};
+};
+
+/** What has focus: the board while it is up, or else the active workspace's focused window. */
+const focusOf = (state: ShellState): Focus => {
+	if (state.desk.boardOpen) return boardFocus;
+	const workspace = activeWorkspace(state);
+	return windowFocus(workspace === undefined ? null : programOf(workspace, workspace.focused));
+};
+
 export const cellsFor = (
 	table: PrefixTable,
 	commands: CommandIndex = shellCommandIndex,
+	keys: KeyBindingsSource = noKeyBindings,
 ): ShellCells => {
+	const scopes = scopesOver(table, keys);
 	const apply = (state: ShellState, msg: ShellMsg): Step => runCell(cells, state, msg);
 
 	/**
@@ -622,13 +683,35 @@ export const cellsFor = (
 	};
 
 	const pressKey = (state: ShellState, msg: Extract<ShellMsg, {type: "keys.press"}>): Step => {
-		const answer = route(table, toRouter(state.prefix), msg.key);
+		const focus = focusOf(state);
+		const scope = scopes().tableFor(focus);
+		const before = toRouter(state.prefix);
+		const answer = route(scope.table, before, msg.key);
 		const prefix = fromRouter(answer.next);
 		const timer = timerCmds(state.prefix, prefix);
 		// The answer is written into state rather than only spent as Cmds, because Cmds are the
 		// kernel's and no Cmd crosses the transport: this field is how the page learns what the one
 		// router decided about the key it sent (#8274, `../ui/Desk.tsx`).
 		const routed: ShellState = {...state, prefix, lastPress: recorded(msg, answer)};
+
+		// A binding the focus's owner holds takes the key before the window or a shell row would. The
+		// page is told `Consumed`: it has nothing to do for a key the kernel runs a spell for.
+		const bound =
+			answer._tag === "ToWindow"
+				? scope.bindingAt(answer.key)
+				: answer._tag === "Command" && before._tag === "Armed"
+					? scope.chordAt([...before.pending, stringify(msg.key)])
+					: undefined;
+		if (bound !== undefined) {
+			const windowId = focus._tag === "Board" ? null : (activeWorkspace(state)?.focused ?? null);
+			return [
+				{...routed, lastPress: {pressId: msg.pressId ?? "", outcome: {_tag: "Consumed"}}},
+				[
+					...timer,
+					{type: "runBinding", binding: bound, workspace: state.activeWorkspace, windowId},
+				],
+			];
+		}
 
 		if (answer._tag === "ToWindow") {
 			const [next, cmds] = toFocusedWindow(routed, answer.key);
@@ -651,7 +734,11 @@ export const cellsFor = (
 		"window.close": closeWindow,
 		"window.focus": (state, msg) => focusWindow(state, msg.windowId),
 		"window.focusDirection": (state, msg) => focusDirection(state, msg.direction),
-		"window.bind": (state, msg) => bindWindow(state, msg.windowId, msg.processId, msg.takesKeys),
+		"window.bind": (state, msg) =>
+			bindWindow(state, msg.windowId, msg.processId, {
+				...(msg.takesKeys === undefined ? {} : {takesKeys: msg.takesKeys}),
+				...(msg.program === undefined ? {} : {program: msg.program}),
+			}),
 		"window.unbind": (state, msg) => unbindWindow(state, msg.windowId),
 		"window.forwardKey": (state, msg) => toFocusedWindow(state, msg.key),
 		"window.setView": setView,
@@ -742,8 +829,12 @@ const runCell = (cells: ShellCells, state: ShellState, msg: ShellMsg): Step =>
  * Run one Msg through the cells without a runtime — what the tests drive, and the shape the shell
  * program (#7558) folds when it replays a checkpoint.
  */
-export const applyMsg = (table: PrefixTable, state: ShellState, msg: ShellMsg): Step =>
-	runCell(cellsFor(table), state, msg);
+export const applyMsg = (
+	table: PrefixTable,
+	state: ShellState,
+	msg: ShellMsg,
+	{commands, keys}: Omit<ShellCoreOptions, "table"> = {},
+): Step => runCell(cellsFor(table, commands, keys), state, msg);
 
 export interface ShellCoreOptions {
 	/** The grammar `keys.press` routes against — configuration, never state (it holds `Duration`s). */
@@ -754,11 +845,16 @@ export interface ShellCoreOptions {
 	 * hold would answer `runCommand` for a key the desk was told it had.
 	 */
 	readonly commands?: CommandIndex;
+	/**
+	 * Each focus owner's key bindings over `table`. Absent means none: the desk routes its own
+	 * grammar and nothing else.
+	 */
+	readonly keys?: KeyBindingsSource;
 }
 
 /** The shell's core machine. One `defineMachine`; the registry row that carries it lands with #7558. */
-export const shellCore = ({table, commands}: ShellCoreOptions) =>
+export const shellCore = ({table, commands, keys}: ShellCoreOptions) =>
 	defineMachine<ShellState, ShellMsg, ShellCmd, never, unknown>({
 		init: (loaded) => [loaded ?? initialState(), []],
-		update: cellsFor(table, commands),
+		update: cellsFor(table, commands, keys),
 	});
