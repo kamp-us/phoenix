@@ -81,6 +81,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build adopt` | record that a dead session's claim passes to the lane this marker names, which may then release it or carry on | a marker write with a read-back; *whether the session is really gone* is the driver's judgment |
 | `build claimants` | who holds the claim on one issue, asked by a caller holding no token | the same ownership fold `confirm` runs, reported instead of tested against a caller; *what to do about a stranded claim* stays with the driver |
 | `build claims stale` | which claim markers stand on the board past a horizon, asked by a caller holding no token | the same ownership fold, run over an index-narrowed candidate set and filtered on the marker's own posted instant; *whether a session is gone* stays with the driver |
+| `build floor` | the primary checkout's uncommitted paths, each paired with the lane branches that could own it and their claim state | two git-derivable facts (checked out, own commits touch the path) plus the `claimants` fold; *whom to ask* stays with the driver |
 | `build issue` | the claimed issue's body + parsed acceptance criteria, through the content gate | fetch + parse via the wire module; *judging* the criteria stays in the skill |
 | `build branch` | cut (or resume) the lane's nonce branch off a freshly fetched base | fetch, derive, create — the nonce is a function of the claim token |
 | `build resume-child` | open an epic child's standing-`FAIL` repair lane: claim, confirm, clean tree, resume the branch, prove the armed lane — in that order | a fixed sequence of five verbs whose order is derivable from what each one needs; every refusal is the composed verb's own, and *fixing the FAIL* stays in the skill |
@@ -1579,6 +1580,110 @@ $ echo $?
   three readers cannot answer three different winners for one issue.
 - A read that failed is UNKNOWN on `11`. A short list of stranded claims says an issue is free when
   nobody looked at it, which is worse than no list at all.
+
+---
+
+## `build floor`
+
+**Who holds the primary checkout's floor, as an answer instead of a conversation.** A
+worktree-isolated spawn refuses while the primary checkout holds any uncommitted change, and the
+refusal names no writer; the harness that raises it is not developed here, so the read has to be
+one this repo owns. This reads the same
+dirty set and pairs each path with the lane branches that could own it.
+
+**Invocation**
+
+```
+fabrika build floor [--repo <owner/name>]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--repo` | string | no | `$CLAUDE_PIPELINE_REPO`, else `$GITHUB_REPOSITORY`, else the `origin` remote | the target owner/name the candidates' claims are read from |
+
+**Derivation**
+
+1. The primary checkout is the first record `git worktree list --porcelain` prints, whichever
+   worktree asks.
+2. Its dirty set is `git status --porcelain=v1 -z` there, with `.pi/subagents` excluded — the one
+   exclusion the harness gate makes.
+3. A lane branch is any local `refs/heads/build/*` the lane grammar parses. Its **own commits** are
+   the ones reachable from its tip, on neither the trunk (`origin/HEAD`) nor an `epic/*` assembly
+   branch, **that no other lane branch carries**. A commit several branches carry cannot be pinned
+   on one of them, and on a clone holding branches cut from history the trunk no longer carries,
+   that shared history is thousands of commits.
+4. A branch is a candidate for a path on two facts: `checked-out` (the primary checkout has it
+   checked out — a candidate for every path) and `touches-path` (one of its own commits touches the
+   path, the rename source, or — for an untracked directory git collapsed — a file under it).
+5. Each candidate's number (the issue, or the PR on a `build/pr-*` branch) is read through the fold
+   `build claimants` uses: `standing` when the authorized holder carries the branch's nonce,
+   `another-lane` when it carries a different one, `unclaimed` when no authorized marker stands.
+6. Owners are sorted strongest first: evidence weight (`checked-out` over `touches-path`, both
+   together highest), then `standing` over `another-lane` over `unclaimed`, then branch name.
+
+A path neither fact reaches carries an empty `owners` list. **No owner is ever inferred** — not the
+checked-out lane's issue guessed from a filename, not the nearest branch.
+
+**It writes nothing, on any path.** No claim marker, branch, stash, commit or worktree change, and
+every git call against the primary checkout runs with `--no-optional-locks`: a plain `git status`
+refreshes the index it reads, which is a write into the checkout being reported on. The board is
+read through `GET`s only.
+
+**Output** — machine, one JSON object:
+
+```
+{"answer": "free" | "held", "primary": "<path>", "head": "<branch>" | null,
+ "paths": [{"path": "…", "status": "<XY>", "origin": "<rename source>" | null,
+            "owners": [{"branch": "…", "number": 4312, "kind": "issue" | "pr",
+                        "evidence": ["checked-out" | "touches-path", …],
+                        "claim": "standing" | "another-lane" | "unclaimed",
+                        "holder": "<token>" | null}]}]}
+```
+
+`"free"` has an empty `paths`. `head` is `null` when the primary checkout's HEAD is detached.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `11` | the worktree list, the primary checkout's status, the trunk, the lane branches or their commits, or any candidate's claim markers could not be read — who holds the floor is UNKNOWN, never a guessed name |
+
+`1` also covers a target repo that does not resolve, reached only when a candidate's claim must be
+read. No other code is reachable: this verb holds no claim, writes nothing and starts nothing.
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `build floor: cannot resolve a target repo — set CLAUDE_PIPELINE_REPO, or run inside a checkout whose origin remote resolves.` | 1 | usage error |
+| `build floor: cannot read <what>: <reason> — who holds the floor is UNKNOWN, never a guessed name.` | 11 | refusal |
+| `build floor: the primary checkout at <path> holds no uncommitted change — the floor is free.` | 0 | note |
+| `build floor: the primary checkout at <path> holds <n> uncommitted path(s); read <m> candidate lane(s)' claims.` | 0 | note |
+| `build floor: <path> — strongest candidate <branch> (#<n>, <evidence>, claim <state>)[, <k> more].` | 0 | note |
+| `build floor: <path> — no claim and no lane branch reaches it; no owner is named.` | 0 | note |
+| `build floor: <k> path(s) have no candidate — a dead session's residue and a live sibling's work read the same here; ask, never clean.` | 0 | note |
+
+**Scope** — the primary checkout's status, this clone's local lane branches and their own commits,
+and the claim markers on the candidates' numbers. A clean checkout is a proven answer (`"free"` on
+`0`); a dirty one with no candidate is a proven answer too, with every `owners` empty.
+
+**Examples**
+
+```
+$ fabrika build floor
+build floor: the primary checkout at /repo holds no uncommitted change — the floor is free.
+{"answer":"free","primary":"/repo","head":"main","paths":[]}
+```
+
+A dirty checkout with one lane-owned path and one path nothing reaches (stdout only; the stderr
+lines are the notes in the table above):
+
+```
+$ fabrika build floor 2>/dev/null
+{"answer":"held","primary":"/repo","head":"main","paths":[{"path":"src/editor.ts","status":" M","origin":null,"owners":[{"branch":"build/4312-editor-focus-loss-c1a4d6f8","number":4312,"kind":"issue","evidence":["touches-path"],"claim":"standing","holder":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d"}]},{"path":"notes/scratch.md","status":"??","origin":null,"owners":[]}]}
+```
 
 ---
 
