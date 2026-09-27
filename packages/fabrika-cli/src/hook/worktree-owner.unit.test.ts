@@ -12,11 +12,7 @@ import {describe, expect, it} from "vitest";
 import {fakeShell} from "../fakes.test-support.ts";
 import type {ChildOutcome} from "../io/exec.ts";
 import {RECOVERY_ATTEMPTS} from "./worktree-create.ts";
-import {
-	describeOutcome,
-	GIT_TIMEOUT_SECONDS,
-	withConcurrencyRecovery,
-} from "./worktree-create-verb.ts";
+import {describeOutcome, GIT_TIMEOUT_SECONDS, withConcurrencyRecovery} from "./worktree-owner.ts";
 
 const PLACEHOLDER_HEAD = "fatal: bad object worktrees/agent-7f2/HEAD\n";
 const INCOMPLETE_ADMIN_DIR = "fatal: failed to read .git/worktrees/agent-7f2/commondir\n";
