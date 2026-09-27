@@ -30,10 +30,10 @@ beforeEach(() => {
 });
 
 describe("the account surfaces render English once the locale is en", () => {
-	it("swaps the profile header, the shared badges and the 404, and holds the brand nouns", async () => {
+	it("swaps the profile header, the shared badges and the 404, and holds the product names", async () => {
 		mountInEnglish(
 			<>
-				<ProfileHeader displayName="Elif" handle="elif" stats={null} statsError />
+				<ProfileHeader displayName="Elif" handle="elif" stats={{status: "error"}} />
 				<ReviewBadge />
 				<CaylakBadge />
 				<DraftRestoreBanner onRestore={() => {}} onDismiss={() => {}} />
@@ -47,7 +47,7 @@ describe("the account surfaces render English once the locale is en", () => {
 		);
 		expect(screen.getByTestId("incelemede-badge").textContent).toBe("in review");
 		expect(screen.getByTestId("caylak-badge").textContent).toBe(
-			"çaylak contribution, in the preparation stage",
+			"newcomer contribution, in the preparation stage",
 		);
 		expect(screen.getByTestId("draft-restore-accept").textContent).toBe("restore the draft");
 		expect(screen.getByTestId("email-delivery-notice-cta").textContent).toBe("update your email");

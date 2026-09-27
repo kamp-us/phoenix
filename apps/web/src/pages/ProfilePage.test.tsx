@@ -112,6 +112,41 @@ describe("ProfilePage readUsername precedence (#2188 — the me-hop removal)", (
 	});
 });
 
+// The menu links here as "ayarlar", so the first thing the page shows has to be a setting —
+// the contribution list sits below every section (#9273).
+describe("ProfilePage settings-before-contributions order (#9273)", () => {
+	beforeEach(() => {
+		sessionUsername = "session-uname";
+		meUsername = "session-uname";
+	});
+
+	it("renders every settings section above the contribution signal", () => {
+		renderProfile();
+
+		const contributions = screen.getByTestId("contrib-username");
+		const headings = ["hesap", "görünüm", "oturum", "tehlikeli alan"].map((name) =>
+			screen.getByRole("heading", {name}),
+		);
+
+		for (const heading of headings) {
+			expect(heading.compareDocumentPosition(contributions)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+		}
+	});
+
+	it("keeps the appearance, session and danger sections in their existing relative order", () => {
+		renderProfile();
+
+		const [appearance, session, danger] = ["görünüm", "oturum", "tehlikeli alan"].map((name) =>
+			screen.getByRole("heading", {name}),
+		);
+
+		expect(appearance?.compareDocumentPosition(session as Node)).toBe(
+			Node.DOCUMENT_POSITION_FOLLOWING,
+		);
+		expect(session?.compareDocumentPosition(danger as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+	});
+});
+
 describe("ProfilePage appearance controls", () => {
 	it("uses the shared Manti outline ToggleGroup without the retired page override", () => {
 		sessionUsername = "session-uname";

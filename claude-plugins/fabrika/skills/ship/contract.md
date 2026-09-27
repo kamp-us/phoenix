@@ -43,7 +43,6 @@ Named because a spec that leaves the substrate open makes the implementer guess.
 | `ship floor` | whether the governance floor binds on this diff and is discharged at this head — `n/a` / `satisfied` / a refusal CI reds on | asking `ship gate` for the one `governance` namespace and seating the answer on an exit code is mechanical; nothing about the verdict itself is decided here |
 | `ship floor-batch` | the same required context on a merge queue's batched `merge_group` head, concluded success — the batch ref has no pull request to resolve a floor over | publishing a named row is mechanical; the verb decides nothing, and what the floor means was settled at each PR's own head |
 | `ship checks` | the head CI rollup — green/red/pending with the running/wedged split and the zero-checkset facts; `--wait` adds the bounded settle poll | latest-per-context dedupe, status vocabulary, and a budgeted poll are mechanical; the wedge remedy is a human's |
-| `ship evidence` | the SHA-bound run-evidence bundle read as five states: present / pending / failed / absent / unknown | the lookup chain and the positive-evidence rules for each state are mechanical; none of it is judgment |
 | `ship threads` | every unresolved review thread, fully paginated, with per-thread class facts | pagination, count proof, and author-type classification are mechanical; nit-vs-substantive is THE retained judgment and never enters this verb |
 | `ship resolve` | the sanctioned thread-resolution write: rationale reply, resolve mutation, read-back — refusing any thread not positively bot-classed | the protocol and the bot-only structural anchor are mechanical; deciding a bot thread is a nit is the skill's |
 | `ship enqueue` | arm the queue's auto-merge at a pinned head, method-flag-free by construction, and prove the arm landed | the arm, its error discrimination, and the entry read are mechanical; whether the PR should ship was settled by the gates |
@@ -107,7 +106,7 @@ inline, the same tracked debt the sibling contracts carry.)
 ### Nothing here recomputes an enforced answer
 
 Every question this group answers is ungated today: verdict-conjunction state, §CP approval
-discharge, head-CI rollup shape, run-evidence presence, thread resolution state, queue terminal
+discharge, head-CI rollup shape, thread resolution state, queue terminal
 classification, intent lifecycle, dark-ship detection. The enforced ones are listed above with
 the workflow or ruleset surface that owns each, and this spec computes no second verdict on any
 of them.
@@ -152,7 +151,7 @@ Stated once rather than repeated per block.
 - **Every list read paginates, reports its scanned count on stderr, and carries a completeness
   proof** — changed files, check runs, reviews, comments, threads, timeline events. **Which proof
   depends on what the platform declares, and a verb never prints a denominator it cannot derive**:
-  - **A declared count, where one exists.** Changed files, check runs, workflow runs, artifacts,
+  - **A declared count, where one exists.** Changed files, check runs, workflow runs,
     issue comments and review threads all arrive with a total the platform states, so received
     short of declared is the `13` refusal, never a narrower answer — a timeline read that answered
     over 30 of N, and v1's silent 100-thread cap, are one defect wearing two symptoms.
@@ -214,12 +213,13 @@ authority.
 | `10` | a supplied classification value is off the closed vocabulary — an unknown `--require` namespace, a bad `--site` | `gate`, `disarm` |
 | `11` | a **precondition read failed** — nothing was proven and (for a write) nothing was written | all |
 | `12` | refused: the live head moved past the inspected `--sha` — a mutation formed over a tree that is no longer the PR | `enqueue`, `merge`, `nudge` |
-| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page. A changed-file list short of the pull-request record's own `changed_files` is **not** that proof: no verb in this group refuses on it any more — `scope`, `cp-approval`, `gate`, `floor` and `release` report it and derive from the list they read. A list at GitHub's own 3000-file ceiling **is** that proof, because the Link header ends there as a complete read ends | `scope`, `cp-approval`, `gate`, `floor`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile` |
+| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page. A changed-file list short of the pull-request record's own `changed_files` is **not** that proof: no verb in this group refuses on it any more — `scope`, `cp-approval`, `gate`, `floor` and `release` report it and derive from the list they read. A list at GitHub's own 3000-file ceiling **is** that proof, because the Link header ends there as a complete read ends | `scope`, `cp-approval`, `gate`, `floor`, `checks`, `threads`, `nudge`, `release`, `reconcile` |
 | `14`, `15` | *(deliberate gaps — `review`'s ACL and append-only seats; no verb here performs either)* | — |
 | `16` | refused: the target is **proven not in the state this write acts on** — nothing was mutated | `resolve`, `enqueue`, `merge`, `nudge` |
 | `17` | refused: the nudge's close landed and the reopen is **unconfirmed — the PR may be left closed**; a human re-opens before anything else happens | `nudge` |
 | `18` | refused: the diff touches a governance root and its `governance` verdict is **not** a head-bound PASS — `absent`, `stale` or `fail`. The one red that means *a human owes this PR a verdict*, kept off `16` so a CI job can tell it from "the floor could not be resolved" | `floor` |
 | `19` | refused: the repository permits **no merge method at all** — squash, merge-commit and rebase are all disabled, so nothing can land directly. Its own seat rather than a fold into `16`, because the two route opposite ways: `16` sends the run to `ship enqueue`, `19` ends it at a human with repository-settings access | `merge` |
+| `22` | refused: the PR was opened by an author outside the repo's own accounts and **no valid takeover grant** stands on it — it is its author's to land, and nothing was armed or merged | `enqueue`, `merge` |
 | `23` | refused: a label this run would POST is absent from the repository's taxonomy — `plan flip`'s seat, imported, because both verbs prove one fact over one board's labels | `release` |
 | `33` | refused: the verb is standing in the repository's **main working tree** — the driver's own checkout, not a worktree of the shipper's own. `lane push`'s seat, imported, because both prove one fact off one read (`standingInLinkedWorktree`, git's `--git-dir`/`--git-common-dir` pair) and `lane` already documents it as *the branch is in the wrong tree* | `scope` |
 | `127` | the verb never ran (unresolved binary) | all |
@@ -236,7 +236,7 @@ about the repository, an unreachable GitHub is not a fact about anything) and no
 would fuse an unreachable GitHub with a bad flag). This group leans on the distinction harder
 than its siblings because v1's worst incidents are exactly its collapse: a failed §CP read
 reported as "awaiting approval", a failed file read reported as "no §CP, no classes", a 503 body
-reported as "no run-evidence bundle".
+reported as "no artifact published".
 
 **`16` and `17` are this group's own proven refusals.** `16` is the write-side state guard: a
 nudge dispatched at a head that has runs, a resolve aimed at a thread that is not
@@ -619,7 +619,7 @@ fabrika ship gate 4321 --sha 03135b91 --require review-code [--require review-do
 
 **Output** — machine channel. First line: `gate\t<satisfied|blocked>\t<sha>`. Then one line
 per required namespace, in the order required:
-`ns\t<namespace>\t<pass|fail|absent|stale|routed>\t<marker|advisory|review-fold|routed-elsewhere|->`
+`ns\t<namespace>\t<pass|fail|absent|stale|routed|unopened>\t<marker|advisory|review-fold|routed-elsewhere|->`
 — the fourth field names which carrier produced the in-force verdict (`-` on `absent`).
 `satisfied` iff every required namespace reads `pass` or `routed`.
 
@@ -681,6 +681,17 @@ moved — named a namespace nothing legal could fill, and a prose-only PR under 
 was permanently unshippable. A record aimed at any other namespace is read and ignored; that
 namespace stays `absent`. `ship floor` is unaffected — it asks for `governance` and requires `pass`.
 
+**`unopened` is the sixth state: a `review-ui` verdict counts only while its evidence opens.**
+`review-ui post` never withdraws a verdict it has posted, so a verdict whose captures stopped
+opening after the post stays on the PR. The gate therefore re-reads the in-force `review-ui`
+verdict (marker or advisory carrier, `pass` or `fail`) before it counts it: the comment's rendered
+HTML, each capture in the gallery above the supersede fence fetched anonymously through its signed
+link, and held to the sha256 the gallery records beside it. A capture that does not answer `200`
+with those bytes, or a gallery with no digest line, makes the namespace `unopened` — it does not
+count, it blocks as `absent` does, and a stderr notice names each reason. A rendered read that
+never reached GitHub is `11`, never `unopened`. The contract of the re-check lives with
+[`review-ui post`](../review-ui/contract.md#review-ui-post).
+
 **`--cp` is caller-asserted, deliberately** — the one input in this verb the caller vouches
 for, an exception to the group's re-derive habit and stated as such. Gate is a read: a wrongly
 passed `--cp` changes which *carrier* can satisfy the code namespace, never whether the §CP
@@ -694,7 +705,7 @@ answer this contract bans.
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — a conjunction over an empty diff proves nothing |
 | `10` | a `--require` value is not a known gateable namespace |
-| `11` | the changed-file list, comments, reviews, or ACL could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
+| `11` | the changed-file list, comments, reviews, ACL, or the in-force `review-ui` verdict's rendered comment could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
 | `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
@@ -712,11 +723,14 @@ answer this contract bans.
 | `ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.` | 13 | refusal |
 | `ship gate: #<n>'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.` | 0 | notice |
 | `ship gate: #<n> carries a §CP advisory with a [FAIL] row — an invalid emission; treated as fail, report it.` | 0 | notice |
+| `ship gate: review-ui: the verdict in comment <id> does not count — its evidence does not open (<reason>; …).` | 0 | notice |
 
 **Scope** — one PR's changed-file list (paginated to exhaustion, and the floor is derived from that
 list rather than from the pull-request record's `changed_files`; a list at GitHub's 3000-file
 ceiling refuses at `13`, because exhaustion cannot tell that case from a complete read), its verdict comments (paginated,
-count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved. The verdict-marker and advisory grammars are the registered wire
+count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved, plus, for
+an in-force `review-ui` verdict, that comment's rendered HTML (`GET issues/comments/<id>`) and one
+anonymous fetch of each capture its gallery links. The verdict-marker and advisory grammars are the registered wire
 formats (`packages/fabrika-cli/src/wire/verdict-marker.ts`, `src/review/advisory.ts`) —
 imported, never re-parsed; a hand-rolled marker regex is the drift the registry ended.
 
@@ -1138,13 +1152,15 @@ with ties broken on the class:
 step 4 routes off the rollup and nothing reads a run by name, so the rows collapse to counts. The
 gating axis stays inside the key because status alone would leave the rollup underivable from the
 answer — a `red` head and a head whose only `failure` is an informational run would tally
-identically. The two runs the skill's terminals read by name are still **named**, on the notes
-channel, where the skill already reads them: the wedged run, and — wherever a gating run has failed,
-which is `red` and also the `wedged` head that carries a failure too — the failing gating runs,
-`ship checks: failing gating checks: <name>, … — route these to heal-ci.`, name-sorted. Informational
-failures are excluded from that line for the same reason the gating axis exists: they do not make
-the head red, and naming them there would send the operator to `heal-ci` over a check that gates
-nothing.
+identically. **The axis keeps its two words and changed its authority:** `gating` is a context the
+base branch declares required, `informational` is every other, and the base branch answers it rather
+than a name list in this package (`src/review/blocking.ts`). The two runs the skill's terminals read
+by name are still **named**, on the notes channel, where the skill already reads them: the wedged
+run, and — wherever a gating run has failed, which is `red` and also the `wedged` head that carries a
+failure too — the failing gating runs, `ship checks: failing gating checks: <name>, … — route these
+to heal-ci.`, name-sorted. Informational failures are excluded from that line for the same reason the
+gating axis exists: they do not make the head red, and naming them there would send the operator to
+`heal-ci` over a check that gates nothing.
 Last line: `facts\tworkflows:<n>\truns:<n>` — `workflows` counts the repository's **active**
 workflows (the inventory's `state == "active"` rows, nothing more: no trigger matching, no YAML
 parser); `runs` counts the total workflow runs recorded at this
@@ -1158,15 +1174,42 @@ rollup would be `green`, the head's workflow runs are read against the active in
 `src/review/gate-coverage.ts` — the same module `review ci` refuses on, so the two gates cannot
 drift a second copy of the rule. A workflow the repo checks in is addressed by its file path
 (`.github/workflows/…`); one the platform provides on the repo's behalf is addressed
-`dynamic/<provider>/<name>`, and that prefix is the whole discriminator: no expected job names, and
-never `review ci`'s informational *name* denylist, which answers a different question. A head where
-the repo declares at least one workflow of its own and **none** of them produced a run refuses on
+`dynamic/<provider>/<name>`, and that prefix is one of two discriminators: no expected job names, and
+never `review ci`'s informational *name* denylist, which answers a different question. The second is
+the run's own provenance — a run counts only where it carries this commit and its event is one
+GitHub runs against the head. `pull_request_target` is the one that is not: it carries the pull
+request's head and checks out the base, so `.github/workflows/pr-cleanup.yml` is repo-authored, sits
+at the head, and inspected none of it. No other event is filtered, so `ci.yml`'s trusted
+`workflow_dispatch` release path counts as any `pull_request` run does. The `--sha` operand is
+resolved to its full object name first, because the Actions run list filters `head_sha` as an exact
+string and an abbreviation there returns no runs at all; an operand that resolves to no full commit
+is `11`, never the `20`. A head where the repo declares at least one workflow of its own and **none**
+of them inspected it refuses on
 `20` — `ship` is the merge authority, so "no gate inspected these bytes" must not read as "every
 gate passed". Otherwise the coverage is stated on the notes channel: `ship checks: <k> of <m>
-workflow(s) <repo> authors produced a run at <sha>.`, or, for a repo that authors no workflow at
+workflow(s) <repo> authors inspected <head>.`, or, for a repo that authors no workflow at
 all, `ship checks: <repo> authors no workflow of its own — …`. The floor sits on `green` alone: a
 `red` head already routes to `heal-ci` by name, and a `pending` head is one this group waits on
 rather than lands.
+
+**Only a context the base branch declares required may make this head red.** The declared set —
+branch protection unioned with the rulesets whose ref condition matches the base — is read once per
+invocation, before the first sample: it is a property of the branch this PR targets rather than of
+the head, so a `--wait` poll never re-reads it. A failing check outside that set tallies as
+`informational`, is named on the notes channel as `ship checks: failing outside the required set:
+<name>, … — reported, never blocking.`, and does not red the head. A base branch that declares
+**nothing** falls back to the informational-name denylist, so every non-informational check gates
+there — an undeclared branch is one nobody has said what gates, not one that gates nothing. A
+declared set that cannot be read at this token's permission is `11` naming that read as the cause:
+this group is the merge authority, and no green here may be served over an authority nobody could
+name. Which definition answered is stated on the notes channel on every run.
+
+**A head that produced runs and no *blocking* run is `pending`, never `green`.** The rollup over an
+empty set is green by construction — every run it was given concluded passing, there having been
+none — and narrowing to the declared set opens that case wherever the required contexts have not
+posted yet. What is missing there is a report, so the answer is `pending` with the reason on the
+notes channel. The same rule covers the fallback definition's version of it, a head whose every run
+is on the informational name list.
 
 **Zero workflows is `no-producer`, and it no longer collapses into `pending`.** A repo with
 no CI and a repo whose CI has not reported yet are different facts, and printing the second over the
@@ -1189,9 +1232,10 @@ declared run concluded `success`/`neutral`/`skipped`; unrecognized conclusion �
 today; extend it, never fork it), plus this group's two additions on top: the
 running-vs-wedged split (`queued` with a null `started_at` past the dwell → the whole answer
 is `wedged`, with the stranded checks named — diagnosis only; the cancel-and-rerun lever is
-an operator's) and the informational carve-out (a fixed, single-sourced list of
-non-gating deploy/cleanup contexts, maintained in the module, not duplicated;
-v1 hardcoded it in two scripts' jq and they drifted). The read is REST check-runs
+an operator's) and the blocking-set narrowing (the base branch's declared required contexts, read
+through `src/review/blocking.ts`, which the other three head-reading verbs call too; the
+deploy/cleanup name denylist it falls back to is single-sourced in `src/review/rollup.ts`, never
+duplicated — v1 hardcoded it in two scripts' jq and they drifted). The read is REST check-runs
 latest-per-context — the GraphQL rollup lags ~15 minutes behind reality and refused green
 PRs for it; the aggregate `.conclusion` is never bound (red-wins-over-pending masks
 an unfinished gating check).
@@ -1207,9 +1251,9 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | Code | Trigger |
 |---|---|
 | `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
-| `11` | the check-run read, the workflow read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
-| `13` | entries received < declared `total_count` — never read as "no red checks" |
-| `20` | every check at the head passed and **no workflow the repo authors produced a run there** — no gate inspected these bytes, so `green` is UNKNOWN, never merged |
+| `11` | the check-run read, the workflow read, the base branch's required-set read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
+| `13` | entries received < declared `total_count` — never read as "no red checks"; **or the base branch's ruleset walk never reached a terminal page** — the declared required set is provably short, so which checks block is UNKNOWN |
+| `20` | every check at the head passed and **no workflow the repo authors inspected it** — every repo-authored run here carries another commit or ran against another ref, so `green` is UNKNOWN, never merged |
 
 **Errors**
 
@@ -1223,9 +1267,18 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: cannot enumerate <what> at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `ship checks: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration.` | 13 | refusal |
 | `ship checks: the live head is <live>, you are enumerating <sha> — the head moved.` | 0 | notice |
-| `ship checks: none of the <m> workflow(s) <repo> authors produced a run at <sha> — the <k> check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.` | 20 | refusal |
-| `ship checks: <k> of <m> workflow(s) <repo> authors produced a run at <sha>.` | 0 | notice |
+| `ship checks: none of the <m> workflow(s) <repo> authors inspected <head> — the <k> check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.` | 20 | refusal |
+| `ship checks: cannot judge gate coverage at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
+| `ship checks: <k> of <m> workflow(s) <repo> authors inspected <head>.` | 0 | notice |
 | `ship checks: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
+| `ship checks: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
+| `ship checks: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `ship checks: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
+| `ship checks: no run at this head answers any context <base> declares required — pending, never green: the required checks have not reported.` | 0 | notice |
+| `ship checks: every run at this head is informational — pending, never green: nothing here gates.` | 0 | notice |
+| `ship checks: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `ship checks: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `ship checks: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 
 **Scope** — the check runs and workflow inventory at one commit, paginated,
 count-verified. Zero *declared* check runs with zero workflows is `green`-ineligible and
@@ -1261,8 +1314,8 @@ facts	workflows:0	runs:0
 ```
 
 ```
-$ fabrika ship checks 4324 --sha 5b1c0d72   # every check passed; only CodeQL's own workflow ran
-ship checks: none of the 12 workflow(s) acme/repo authors produced a run at 5b1c0d72 — the 2 check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.
+$ fabrika ship checks 4324 --sha 5b1c0d72   # every check passed; only the base-context cleanup ran
+ship checks: none of the 12 workflow(s) acme/repo authors inspected 5b1c0d7240e8c1a97be3f5d206c8a1394ef70b25 — the 2 check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.
 $ echo $?
 20
 ```
@@ -1289,149 +1342,6 @@ unchanged.)
 - v1's settle-wait sourced its sibling script and could exit from its preamble with half its
   contract unprinted; a single verb with `--wait` has no preamble seam.
 - **Deployed-service smokes stay out of the gating set**; merge gates are hermetic (ruled).
-
----
-
-## `ship evidence`
-
-**Invocation**
-
-```
-fabrika ship evidence 4321 --sha 03135b91 [--repo <owner/name>] [--json]
-```
-
-**Inputs**
-
-| Flag | Type | Required | Default | Description |
-|---|---|---|---|---|
-| *(positional)* | integer | yes | — | the pull-request number |
-| `--sha` | string | yes | — | the head the bundle must be bound to |
-| `--repo` | string | no | resolved | the repository |
-| `--json` | boolean | no | `false` | emit the result object |
-
-**Output** — machine channel. First line:
-`evidence\t<present|pending|failed|absent|unknown>\t<sha>`. Then the evidence tuple, always:
-`lookup\trun:<id|->\tartifact:<id|->\tstatus:<status|->` — every claim carries the lookup
-evidence that makes it falsifiable from the report. On `present`, the manifest's checks as a
-**status tally**, one line per status, count-descending with ties broken on the status:
-`check\t<status-string>\t<count>` — and the same lines on `failed`, which is a bundle that was read,
-so its check counts are what make the answer falsifiable. `checks` is an evidence-array: step 5
-routes off the five states alone and no reader reads a check by name, so the rows collapse to
-counts. On `failed` the
-non-passing checks are still **named**, on the notes channel.
-
-With `--json`: `{"outcome":…,"sha":…,"run":…,"artifact":…,"checks":{"<status-string>":<count>…}}` —
-the same tally the `check` lines carry, so the two channels cannot desync.
-
-**The five states carry positive-evidence rules, verbatim from the ruled law** (the fifth,
-`failed`, ruled alongside them)**:**
-
-- `present` — the artifact fetched, unzipped (magic-number-checked: a 503 body saved as
-  `.zip` is not a bundle), schema-version understood, `manifest.commit` exactly
-  `--sha`, and every `checks[]` entry passing. The producer is the `run-evidence` workflow
-  (`.github/workflows/run-evidence.yml`) publishing an actions artifact named
-  `run-evidence`; the manifest's required keys are `schemaVersion` (numeric, `1`), `commit`,
-  and `checks[]` of `{name, status}`. `checks[]` entries carry a string `status`
-  field, **not** a boolean `pass` — the wire shape is the producer's, and prose that says
-  "boolean" ships a parser that reads everything falsy. Passing is the producer's own
-  word, `pass`, and nothing else: `crabbox-manifest`'s `deriveChecks` writes `pass`/`fail` and the
-  producer workflow appends its `bundle-node-core-free` entry in the same words. GitHub's
-  check-conclusion vocabulary (`success`/`neutral`/`skipped`) belongs to `ship checks`, which
-  reads check runs; against a bundle it matches nothing, so every passing check counted as
-  failing and no bundle could attest a passing run. An unrecognized `status` reads as
-  failing, never as passing — the same fail-closed posture the check-run rollup takes —
-  and accepting both vocabularies at once is not the fix, because it re-opens the same silent
-  disagreement.
-- `pending` — a producer run for this head exists and has not completed, **or** it completed
-  **within the freshness window** and lists no `run-evidence` artifact. **Pending is not absent** —
-  reporting it absent invents a CI gap.
-- `absent` — positive evidence only: no producer workflow exists in the repo (the
-  foreign-repo degradation, confirmed by a successful workflow-inventory read, never by a
-  failed one), or no producer run exists at this head at all, or a run completed **outside the
-  freshness window** and lists no `run-evidence` artifact, or the artifact is expired.
-- `failed` — the artifact fetched and parsed, `manifest.commit` is exactly `--sha`, and at
-  least one `checks[]` entry did not pass. The bundle is about **this** tree and it attests a
-  failing run; the failing check names go to stderr. This is deliberately **not** `unknown`:
-  widening `unknown` to cover it would make one word mean both "cannot bind this head" and
-  "binds this head definitively", which is the opposite of the case it would be admitting.
-- `unknown` — the lookup chain completed but the answer cannot bind this head: schema
-  version unrecognized, or `manifest.commit` ≠ `--sha` (a bundle about some other tree is
-  not evidence about this one). A *failed* read is not `unknown` — it is `11`.
-
-**The freshness window is 120 seconds, and the clock it reads is named.** "A completed
-producer run listing zero artifacts" is two different facts wearing one shape — a producer that
-published nothing, and a producer whose upload has not surfaced in the artifact listing yet — and
-without a window they collapse onto the wrong side of the pending-is-not-absent law. So: compare
-the run's own `completed_at` against **the local clock at read time**; within 120s the missing
-artifact is listing lag and the answer is `pending`, outside it the run published nothing and the
-answer is `absent`. A run reporting no `completed_at` at all has nothing to compare, so it cannot
-be shown fresh and reads `absent`. Which side a run fell on, with both operands, goes to stderr.
-
-Transient-vs-absent is decided during the fetch (retry with backoff on 5xx, stderr captured,
-never discarded — a swallowed 503 stderr is how a present bundle once read as absent), and a transient that
-survives the retries is `11`, never `absent`.
-
-**Exit status**
-
-| Code | Trigger |
-|---|---|
-| `7` | the PR or the `--sha` commit is proven absent |
-| `11` | the run list, artifact list, or artifact content could not be read after retries — whether a bundle exists is UNKNOWN, never `absent` |
-| `13` | a run or artifact enumeration is provably short of its declared count — a short list must not read as "no run for this head" |
-
-**Errors**
-
-| Message (stderr) | Code | Kind |
-|---|---|---|
-| `ship evidence: PR #<n> not found in <repo>.` | 7 | refusal |
-| `ship evidence: no commit <sha> on PR #<n>.` | 7 | refusal |
-| `ship evidence: cannot read <what> for <sha>: <reason> — whether a bundle exists is UNKNOWN, never "absent".` | 11 | refusal |
-| `ship evidence: received <k> of <m> declared <runs|artifacts> — refusing the partial enumeration.` | 13 | refusal |
-
-**Scope** — the producer workflow inventory, the head-SHA-bound run list (exact `head_sha`
-match only), one artifact, one manifest. All fetch intermediates live under a per-run
-`mktemp -d` — a fixed or PID-derived path lets two racing shippers read each other's bundle.
-
-**Examples**
-
-```
-$ fabrika ship evidence 4321 --sha 03135b91
-evidence	present	03135b91
-lookup	run:9182736450	artifact:2211334455	status:completed
-check	pass	2
-```
-
-```
-$ fabrika ship evidence 4322 --sha 9fe12ab0
-evidence	pending	9fe12ab0
-lookup	run:9182736999	artifact:-	status:in_progress
-```
-
-```
-$ fabrika ship evidence 4323 --sha 7c31a0de
-evidence	failed	7c31a0de
-lookup	run:9182737111	artifact:2211334999	status:completed
-check	fail	1
-check	pass	1
-```
-
-The names the collapse drops from stdout ride the notes channel, which is what keeps the tally
-honest: `ship evidence: the bundle binds 7c31a0de and 1 of its checks did not pass (unit) — it
-attests a run, not a passing one.`
-
-**Grounding**
-
-- **The state split and the pending-is-not-absent law.** The freshness window is what keeps the
-  second honest, by giving the listing lag a window instead of a coin flip.
-- **Retries, captured stderr, the zip magic check.** A 503 body was once reported as "no
-  bundle" for a bundle present the whole time.
-- **`checks[]` `status` is a string on the wire**; the contract says so, so the parser
-  cannot be written against invented prose.
-- **Which vocabulary that string is written in**: the producer's `pass`/`fail`, not GitHub's
-  conclusions, and unrecognized reads as failing.
-- **The thin-skill rule**: the skill never hand-rolls this fetch; this verb is the only
-  reader.
-- **The bundle contract and the foreign-repo degradation** this transcribes are ruled elsewhere.
 
 ---
 
@@ -1711,16 +1621,28 @@ the verb reads the PR back: `auto_merge: null` **post-enqueue is expected** (the
 consumes the intent) and is never read as a jam — the jam discriminator is the arm's error
 response, quoted verbatim on `8`.
 
+**A pull request belongs to its author.** After the live head is proven and before any read
+that leads to the write, the verb reads whose PR this is — the same gate, on the same clauses, as
+[`build claim`'s ownership gate](../build/contract.md#build-claim-build-confirm-build-release-build-adopt).
+The PR may be landed when its author is in `.fabrika.jsonc`'s `ownAccounts` at the base ref (the
+running, authenticated account alone when that key is absent, empty or unusable), or when a valid
+[`takeover-grant`](../../docs/wire-formats.md#takeover-grant) marker stands on it — posted by an
+account in the grant-author set (`capClearAuthors`), holding `write+`, who is not the PR's own
+author. Anything else refuses on `22` and writes nothing; a read the answer depends on that cannot
+complete is `11`. A PR whose author is ours costs the config read and, with no set declared, the
+running account; the comments and a granter's permission are read only for a PR that is not.
+
 **Exit status**
 
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404), closed, or already merged (an idempotent success belongs to `ship scope`'s answer, not to an arm) |
 | `8` | the arm request, or its confirming post-arm read-back, failed — the error quoted; whether an intent is parked is UNKNOWN, so the caller runs `ship disarm --site refuse` before stopping |
-| `11` | the live head could not be read, the mergeability could not be read, or the mergeability was still indefinite at the end of the poll window — nothing was armed |
+| `11` | the live head could not be read, whose PR it is could not be read, the mergeability could not be read, or the mergeability was still indefinite at the end of the poll window — nothing was armed |
 | `12` | the live head moved past `--sha` — every verdict upstream bound a tree that is gone; re-enter at step 1 |
 | `16` | the PR is **provably not mergeable** for a reason other than a conflicted base — a definite `mergeable: false` read; nothing was armed and no enqueue round was spent |
 | `21` | the base moved under the branch and the merge **conflicts** — a definite `mergeable_state: dirty`; nothing was armed. Report it as `BASE-CONFLICTED`, which spends a machinery lap instead of a repair round; the re-review is still owed |
+| `22` | the PR is not ours and no valid takeover grant stands on it — nothing was armed. It is its author's to land; `fabrika build takeover` is how a trusted account hands it over |
 
 **Errors**
 
@@ -1733,6 +1655,9 @@ response, quoted verbatim on `8`.
 | `ship enqueue: #<n>'s mergeable_state is still indefinite after <k> polls over <s>s — mergeability is UNKNOWN, never green; nothing was armed.` | 11 | refusal |
 | `ship enqueue: #<n> is not mergeable (mergeable_state: <state>) — a definite read; nothing was armed.` | 16 | refusal |
 | `ship enqueue: #<n>'s base moved under it and the merge conflicts (mergeable_state: dirty) — a definite read; nothing was armed. The re-review is owed: the moved base moves the merge-base blob every verdict's content digest covers, so route to repair against a rebased head.` | 21 | refusal |
+| `ship enqueue: PR #<n> is <author>'s to finish — nothing was armed. To hand it to the pipeline, an account the repo trusts to grant runs "fabrika build takeover <n> --authorization <file>".` | 22 | refusal |
+| `ship enqueue: cannot read whose PR #<n> is: <reason> — ownership is UNKNOWN, never ours; nothing was armed.` | 11 | refusal |
+| `ship enqueue: PR #<n> was opened by <author>, one of ours under <basis>.` (or `…, and <login> handed it over in comment <id>.`) | 0 | notice |
 | `ship enqueue: mergeable_state is <state> (mergeable: true) — a definite read; arming.` | 0 | notice |
 | `ship enqueue: the confirming timeline read never reached a terminal page — the entry is unproven, so this answers settling.` | 0 | notice |
 | `ship enqueue: the live head is <live>, gates ran at <sha> — refusing to arm a tree nobody verified.` | 12 | refusal |
@@ -1844,6 +1769,17 @@ merge call's own response is the writer's claim about its own write, and a `merg
 commit behind it is a claim with no evidence. An unreadable read-back is `8` and never a success,
 because whether the PR landed is exactly what is UNKNOWN there.
 
+**A pull request belongs to its author.** After the live head is proven and before any read
+that leads to the write, the verb reads whose PR this is — the same gate, on the same clauses, as
+[`build claim`'s ownership gate](../build/contract.md#build-claim-build-confirm-build-release-build-adopt).
+The PR may be landed when its author is in `.fabrika.jsonc`'s `ownAccounts` at the base ref (the
+running, authenticated account alone when that key is absent, empty or unusable), or when a valid
+[`takeover-grant`](../../docs/wire-formats.md#takeover-grant) marker stands on it — posted by an
+account in the grant-author set (`capClearAuthors`), holding `write+`, who is not the PR's own
+author. Anything else refuses on `22` and writes nothing; a read the answer depends on that cannot
+complete is `11`. A PR whose author is ours costs the config read and, with no set declared, the
+running account; the comments and a granter's permission are read only for a PR that is not.
+
 **Exit status**
 
 | Code | Trigger |
@@ -1851,10 +1787,11 @@ because whether the PR landed is exactly what is UNKNOWN there.
 | `7` | the PR is proven absent (404), closed, or already merged (an idempotent success belongs to `ship scope`'s answer, not to a landing) |
 | `8` | the merge request, or its confirming read-back, failed — whether the PR landed is UNKNOWN; re-read the PR before stopping |
 | `9` | the merge was sent and the read-back does not show it merged at a commit — the landing is not proven |
-| `11` | the live head, the landing path or the mergeability could not be read, or the mergeability was still indefinite at the end of the poll window — nothing was merged |
+| `11` | the live head, whose PR it is, the landing path or the mergeability could not be read, or the mergeability was still indefinite at the end of the poll window — nothing was merged |
 | `12` | the live head moved past `--sha` — every verdict upstream bound a tree that is gone; re-enter at step 1 |
 | `16` | proven: a merge queue governs the base (run `ship enqueue`), or the PR is definitely not mergeable — nothing was merged |
 | `19` | the repository permits no merge method at all — a human enables one in the repository settings |
+| `22` | the PR is not ours and no valid takeover grant stands on it — nothing was merged. It is its author's to land |
 
 **Errors**
 
@@ -1862,6 +1799,8 @@ because whether the PR landed is exactly what is UNKNOWN there.
 |---|---|---|
 | `ship merge: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship merge: PR #<n> is <closed\|merged> — nothing to merge.` | 7 | refusal |
+| `ship merge: PR #<n> is <author>'s to finish — nothing was merged. To hand it to the pipeline, an account the repo trusts to grant runs "fabrika build takeover <n> --authorization <file>".` | 22 | refusal |
+| `ship merge: cannot read whose PR #<n> is: <reason> — ownership is UNKNOWN, never ours; nothing was merged.` | 11 | refusal |
 | `ship merge: <base> is not queue-governed and <repo> permits <method> — landing directly.` | 0 | notice |
 | `ship merge: mergeable_state is <state> (mergeable: true) — a definite read; merging.` | 0 | notice |
 | `ship merge: cannot read #<n>'s live head: <reason> — nothing was merged.` | 11 | refusal |
@@ -1876,7 +1815,8 @@ because whether the PR landed is exactly what is UNKNOWN there.
 | `ship merge: the merge was sent and the confirming read-back failed: <reason> — whether #<n> landed is UNKNOWN; re-read the PR before stopping.` | 8 | refusal |
 | `ship merge: the merge was sent and the read-back shows merged: <bool> at merge commit <sha\|-> — the landing is not proven.` | 9 | refusal |
 
-**Scope** — one PR's live head, its base branch's active rules, the repository's permitted merge
+**Scope** — one PR's live head, whose PR it is (the config at its base ref, the running account
+and, for a PR not ours, its comments and a granter's permission), its base branch's active rules, the repository's permitted merge
 methods, the PR's mergeability (re-read until definite or refused), one merge request, one
 read-back of `merged` plus the merge commit.
 
@@ -2357,6 +2297,9 @@ which is which lives in the repository's own history, not in the plugin's text.
 | 6 — the 120s freshness window and its clock | delegated |
 | 7 — the roster when CODEOWNERS names more than one team | **maintainer-direct** |
 | 8 — the pre-arm mergeability precondition | delegated |
+
+Clauses 5 and 6 ruled the SHA-bound bundle reader this group once carried. That verb retired when
+`ship checks` became the whole of ship's CI trust, and both clauses retired with it.
 
 A clause this spec leaves genuinely open is marked **Open** at its own site instead; two are, both
 under `ship disarm` and `ship note`.

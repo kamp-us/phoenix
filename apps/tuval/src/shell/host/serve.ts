@@ -12,16 +12,20 @@
  */
 
 import {randomUUID} from "node:crypto";
-import {Context, Effect} from "effect";
-import {SpellExecutor} from "../../commands/executor.ts";
-import {SpellRegistry} from "../../commands/registry.ts";
-import type {Client} from "../../commands/scope.ts";
-import {ClientId, WorkspaceId} from "../../commands/spell.ts";
-import {Processes} from "../../process/Processes.ts";
-import {ProcessTable} from "../../process/ProcessTable.ts";
-import type {Registry} from "../../registry/Registry.ts";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {SpellRegistry} from "@kampus/tuval-sdk/kernel/commands/registry";
+import type {Client} from "@kampus/tuval-sdk/kernel/commands/scope";
+import {ClientId, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import type {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import type {PrefixTable} from "@kampus/tuval-ui/keys";
+import {Context, Effect, Stream} from "effect";
+import {projectLabels} from "../../projects/open-projects.ts";
+import {Projects} from "../../projects/Projects.ts";
+import {RecommendPrompts} from "../../projects/RecommendPrompts.ts";
+import {TrustPrompts} from "../../projects/TrustPrompts.ts";
 import type {ProcessTablePort} from "../../table/ProcessTablePort.ts";
-import type {PrefixTable} from "../keys/index.ts";
 import {shellId, shellStateOf} from "../program.ts";
 import {mintLaunchToken} from "../transport/handshake.ts";
 import {type SpellChannel, serve, type TransportServer} from "../transport/server.ts";
@@ -29,7 +33,15 @@ import {type SpellChannel, serve, type TransportServer} from "../transport/serve
 export interface ServeDeskOptions {
 	/** The kernel `start`/`boot` built. Every service the socket reads comes from here. */
 	readonly kernel: Context.Context<
-		Registry | Processes | ProcessTable | ProcessTablePort | SpellExecutor | SpellRegistry
+		| Registry
+		| Processes
+		| ProcessTable
+		| ProcessTablePort
+		| SpellExecutor
+		| SpellRegistry
+		| Projects
+		| TrustPrompts
+		| RecommendPrompts
 	>;
 	/** `0` binds an ephemeral port — what a test wants; the bin names a real one. */
 	readonly port: number;
@@ -84,6 +96,9 @@ export const serveDesk = Effect.fn("Tuval.shell.serveDesk")(function* (options: 
 		handles: processes.handle,
 		spells: spellChannel(options.kernel),
 		descriptions: Context.get(options.kernel, SpellRegistry).changes,
+		projects: Stream.map(Context.get(options.kernel, Projects).changes, projectLabels),
+		trust: Context.get(options.kernel, TrustPrompts),
+		recommend: Context.get(options.kernel, RecommendPrompts),
 		table: options.table,
 	}).pipe(Effect.provideContext(options.kernel), Effect.orDie);
 });

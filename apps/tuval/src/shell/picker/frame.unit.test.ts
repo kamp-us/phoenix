@@ -50,6 +50,8 @@ describe("picker frame", () => {
 			refusal: null,
 			previous: null,
 			filter: null,
+			step: null,
+			landing: null,
 		});
 		const options = frame.groups.flatMap((group) => group.options);
 		expect(frame.activeDescendant).toBe("picker-window-1-option-2");
@@ -126,6 +128,7 @@ describe("picker frame", () => {
 	it("publishes the keys it answers to, so the surface never invents its own help", () => {
 		expect(pickerFrame(window, entries, mountPicker()).keyHelp.map((row) => row.action)).toEqual([
 			"Move between rows",
+			"Jump to the previous or next group",
 			"Jump to the first or last row",
 			"Filter the rows by typing",
 			"Open or attach the highlighted row",

@@ -1,9 +1,8 @@
 import type {MecmuaKey} from "../tr/mecmua";
 
 // Lowercase like the Turkish side — the locale swap changes the language, never the voice.
-// `mecmua`, `yazar` and `çaylak` are brand nouns (ADR 0347), so they read identically here;
-// where the Turkish carries only a suffixed form (`çaylakların`, `yazarsın`) the English uses a
-// non-brand word too, so `brandNouns.unit.test.ts` sees the same count on both sides.
+// `mecmua` is a product name (ADR 0414), so it reads identically here, and the other Turkish words
+// are translated — `brandNouns.unit.test.ts` is what holds that.
 export const mecmua = {
 	"mecmua.loading": "loading…",
 	"mecmua.cta.newPost": "new post",
@@ -28,7 +27,7 @@ export const mecmua = {
 	"mecmua.feed.lede": "the latest from the authors you follow.",
 	"mecmua.feed.error": "the feed could not be loaded: {code}",
 	"mecmua.feed.empty.title": "nothing in your feed yet",
-	"mecmua.feed.empty.description": "follow a yazar or two and their posts will show up here.",
+	"mecmua.feed.empty.description": "follow an author or two and their posts will show up here.",
 
 	"mecmua.drafts.title": "my posts",
 	"mecmua.drafts.lede": "your drafts and the posts you have published.",
@@ -57,8 +56,8 @@ export const mecmua = {
 	"mecmua.editor.error.publish": "the post could not be published",
 
 	"mecmua.gate.signedIn":
-		"you need to be a yazar to publish — posts by çaylaks are not published yet.",
-	"mecmua.gate.signedOut": "sign in and become a yazar to publish.",
+		"you need to be an author to publish — posts by newcomers are not published yet.",
+	"mecmua.gate.signedOut": "sign in and become an author to publish.",
 
 	"mecmua.post.notFound.title": "post not found",
 	"mecmua.post.notFound.message":

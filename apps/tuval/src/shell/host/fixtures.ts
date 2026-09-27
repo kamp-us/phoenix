@@ -8,11 +8,20 @@
  * the real channel is minted in `./serve.ts`.
  */
 
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {
+	buildRegistry,
+	describeSpell,
+	SpellRegistry,
+} from "@kampus/tuval-sdk/kernel/commands/registry";
+import {type Client, WindowIndex} from "@kampus/tuval-sdk/kernel/commands/scope";
+import {
+	type AnySpell,
+	ClientId,
+	defineSpell,
+	WorkspaceId,
+} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {Context, Effect, Layer, Schema, Stream} from "effect";
-import {SpellExecutor} from "../../commands/executor.ts";
-import {buildRegistry, describeSpell, SpellRegistry} from "../../commands/registry.ts";
-import {type Client, WindowIndex} from "../../commands/scope.ts";
-import {ClientId, defineSpell, WorkspaceId} from "../../commands/spell.ts";
 import type {SpellChannel} from "../transport/server.ts";
 
 export const echoSpell = defineSpell({
@@ -37,6 +46,17 @@ const scriptedClient: Client = {
 	id: ClientId.make("page"),
 	workspace: WorkspaceId.make("ws-1"),
 };
+
+/**
+ * The executor over a registry holding `spells`, and nothing else: what the wired handlers' key
+ * binding arm reaches for, for a test that runs another arm and never fires a binding.
+ */
+export const scriptedSpellServices = (spells: ReadonlyArray<AnySpell> = []) =>
+	SpellExecutor.layer.pipe(
+		Layer.provideMerge(SpellRegistry.scripted(spells)),
+		Layer.provideMerge(WindowIndex.scripted({})),
+		Layer.orDie,
+	);
 
 /** The channel, over the real executor: a call a test makes travels the kernel's own path. */
 export const scriptedSpellChannel = Effect.fn("Tuval.shell.scriptedSpellChannel")(function* () {

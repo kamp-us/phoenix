@@ -1,9 +1,9 @@
 import type {SozlukKey} from "../tr/sozluk";
 
 // Lowercase like the Turkish side — the surface's voice is lowercase, and a locale swap changes
-// the language, never the typographic voice. `sözlük` and `pano` are brand nouns (ADR 0347), so
-// they read identically here; `brandNouns.unit.test.ts` is what holds that. `tanım` is not a brand
-// noun and reads as `entry`, sözlük's own unit of writing.
+// the language, never the typographic voice. `sözlük` and `pano` are product names (ADR 0414), so
+// they read identically here; `brandNouns.unit.test.ts` is what holds that. `tanım` is not a
+// product name and reads as `entry`, sözlük's own unit of writing.
 export const sozluk = {
 	"sozluk.entryCount.one": "{count} entry",
 	"sozluk.entryCount.other": "{count} entries",
@@ -105,4 +105,21 @@ export const sozluk = {
 	"search.postCount.other": "{count} posts",
 	"search.noTerms": "no terms found.",
 	"search.noPosts": "no posts found.",
+
+	"search.palette.title": "search kamp.us",
+	"search.palette.placeholder": "search for something…",
+	"search.palette.empty": "nothing matched.",
+	"search.palette.destinations.group": "shortcuts",
+	"search.palette.destination.sozluk": "sözlük",
+	"search.palette.destination.pano": "pano",
+	"search.palette.destination.profile": "your profile",
+	"search.palette.recent.group": "recent searches",
+	"search.palette.recent.description": "search again",
+	"search.palette.scope.sozluk": "sözlük entry",
+	"search.palette.scope.pano": "pano topic",
+	"search.palette.scopeHint": "tip",
+	"search.palette.allResults": 'all results for "{query}"',
+	"search.palette.legend.move": "move",
+	"search.palette.legend.open": "open",
+	"search.palette.legend.close": "close",
 } satisfies Record<SozlukKey, string>;

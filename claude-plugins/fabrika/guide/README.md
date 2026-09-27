@@ -21,7 +21,7 @@ These pages are written for a person. Each holds one Diátaxis mode.
 - **[`../docs/`](../docs/README.md)** — the agent-facing convention and contract docs.
 - **the host repo's decision records** — the why, and the history including superseded approaches.
 - **[`packages/fabrika-cli/docs/verb-reference.md`](../../../packages/fabrika-cli/docs/verb-reference.md)**
-  — the verb reference: what each command does and its exit codes.
+  — group overviews and routes to help and implementation contracts.
 - **[`../skills/`](../skills/)** — one `SKILL.md` per skill: the contracts agents execute.
 
 - [Use Fabrika in Codex](codex.md): install the shared plugin and dispatch isolated lane stages.

@@ -104,8 +104,7 @@ sibling contracts carry.)
 The gated questions and their owners, named so the boundary is checkable: token discipline (the
 repo's token guard, armed through branch protection rather than the CI aggregator), inventory
 freshness plus the descriptive/normative firewall (its inventory guard), the a11y floor (its a11y
-job), run-evidence presence (the evidence producer plus the ship gate's reader), §CP membership
-(CODEOWNERS at merge). This group computes none of them.
+job), §CP membership (CODEOWNERS at merge). This group computes none of them.
 
 ## Shared conventions
 
@@ -164,7 +163,7 @@ sibling's numerals is not a goal the doctrine sets.
 | `7` | zero scope: the target is **proven** absent (404), or the PR is closed — a deliberate, declared widening of the base seat (existence-only) to closed-target, because a closed PR is provably not reviewable scope, matching the sibling `review` group's use |
 | `8` | a write was attempted and its outcome could not be proven — UNKNOWN |
 | `9` | the write landed but the read-back does not match |
-| `10` | a semantic refusal on a value or body: a supplied value off its closed vocabulary (a bad `--polarity`, `--carrier advisory` with FAIL, a non-kebab `--out`, a `:state` outside the realized set), or a `note` body whose first line parses as a verdict carrier |
+| `10` | a semantic refusal on a value or body: a supplied value off its closed vocabulary (a bad `--polarity`, `--carrier advisory` with FAIL, a non-kebab `--out`, a `:state` outside the realized set), a single-valued operand passed twice (a repeated `--evidence` on `post`), or a `note` body whose first line parses as a verdict carrier |
 | `11` | a required read or execution failed — no outcome is proven: the PR, its head, the preview probe, the harness, a capture's validity, or (at post time) the upload target's state. The same deliberate widening the `ui` group states: an execution that never became answerable leaves the run UNKNOWN exactly as a failed read does |
 | `12` | refused, proven: the artifact is not the PR's current tree — the live head moved past `--sha` at post time, or the preview's deployed head is not the live head at render time |
 | `13` | proven: at least one surface threw an uncaught page error during render — the render is red |
@@ -202,16 +201,16 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
 - Chrome output never enters `review-ui post --evidence`: evidence comes from `review-ui render`
   capture sets only, so the attach path has one validated producer.
 - **A tier-naming surface needs the preview worker's signing secret plus that tier's own session
-  token**, all unset by default. The secret is the one the *preview worker deployed with*, so the
-  cookie signature verifies, and it is named rather than assumed: `--auth-secret-from <file>` reads
-  it from an export of the **ci-credentials** stack's alchemy state, which is its one readable copy.
-  That value is repo-wide rather than per-stage — `infra/ci-credentials/github.ts` mints one and
-  pushes it as a write-only Actions secret handed to the deploy of every stage of an app whose
-  worker binds it — so there is no
-  preview-stage copy to export, and the app stack's deployed `secret_text` binding does not read
-  back. Without the
-  flag the ambient `$BETTER_AUTH_SECRET` stands in, and **a value that is empty or carries the
-  `insecure_` placeholder an example env file ships is refused on `11` rather than signed with**.
+  token.** The tokens are unset by default; the secret is not, since it resolves off the checkout.
+  The secret is the one the *preview worker deployed with*, so the
+  cookie signature verifies, and it needs no credential: every `pr-<n>` preview deploys with the key
+  committed at `infra/preview-auth-key/key.txt`, deliberately public, which the verb resolves off
+  the checkout it runs in with no flag and no environment variable. Production keeps a
+  separate founder-held secret, and the production worker refuses a preview-prefixed key at boot.
+  `--auth-secret-from <file>` overrides the committed key, and in a checkout carrying no committed
+  key the ambient `$BETTER_AUTH_SECRET` stands in. Whatever the source, **a value that is empty or
+  carries the `insecure_` placeholder an example env file ships is refused on `11` rather than
+  signed with**.
   A placeholder-signed cookie is perfectly well-formed and the worker answers it as a visitor, which
   at the shot is indistinguishable from a preview nobody seeded — two gate rounds were spent
   splitting exactly that by hand. The
@@ -252,7 +251,7 @@ anchor at all is the proven `16`.
 **Invocation**
 
 ```
-fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--auth-secret-from <file>] [--app web] [--repo <owner/name>]
+fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--locale <value>] [--auth-secret-from <file>] [--app web] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -264,8 +263,9 @@ fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/
 | `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/feed`), or a route plus a realized tier state (`/feed:auth`, `/feed:auth-caylak`); zero operands is `1` — no tool guesses surfaces from a diff |
 | `--viewport` | string, repeatable | no | `desktop` alone | a viewport to shoot every `--surface` at, over the closed set `desktop` (1280×800) and `mobile` (390×844); crossed with `--surface`, so two of each is four captures. A name outside the set, or one passed twice, is `10` |
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
+| `--locale` | string | no | the app's default locale, nothing seeded | render every shot in this locale — one of the values `.fabrika.jsonc`'s `uiCapture.locale` declares; with no declaration, or a value outside its list, it is `10` before a browser launches |
 | `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve. Whichever app is resolved, a `--surface` whose own `uiSurfaces` row belongs to an app this preview did not announce is `11` — omitting the flag routes around no fence |
-| `--auth-secret-from` | string | no | the ambient `$BETTER_AUTH_SECRET` | a file holding the `BETTER_AUTH_SECRET` the preview worker deploys with — one repo-wide value, exported from the ci-credentials stack's alchemy state, its one readable copy; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
+| `--auth-secret-from` | string | no | the committed preview key at `infra/preview-auth-key/key.txt`, else the ambient `$BETTER_AUTH_SECRET` | a file holding a signing secret to use instead of the repo's own — rarely needed, since the committed preview key is what every `pr-<n>` worker deploys with and needs no credential; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
 | `--repo` | string | no | resolved | the repository |
 
 A `:state` suffix is admitted **only for a state something here actually puts on screen**, and
@@ -330,6 +330,36 @@ cookie answers `!forced` for every key, which is `11` naming the inert keys. A k
 unevaluated, or a probe that cannot be read, is `11` too and is never folded into "the override was
 dropped" — that would be a fact about the override read off a probe nobody could read.
 
+**`--locale` shoots the surface in a locale other than the app's default**, so a PR whose visible
+change is only in another language is judged from its pixels. Where an app keeps the reader's locale
+only in `localStorage`, no URL or header can pick it, and before this operand every such state was
+disclosed as could-not-render. fabrika compiles in no app's key: the consumer declares it in
+`uiCapture.locale`, beside `storageState`:
+
+```jsonc
+"uiCapture": {"locale": {"storageKey": "kampus.locale", "values": ["tr", "en"]}}
+```
+
+`storageKey` is the non-empty `localStorage` key the app reads; `values` is the closed, non-empty
+list of distinct locale tags it accepts, each the `lang` the page carries when it renders in that
+locale. The schema refuses a malformed declaration, and an absent one (or `null`) leaves every
+render unchanged. The operand is read against that list before any network read or browser launch:
+`--locale` with no declaration, or with a value off the list, is `10`, the same class as a
+malformed `--flag`. A `--locale` run reads `uiCapture` too, so a declaration that does not decode is
+`11`; a run without the operand never reads it.
+
+The seed is a context init script, so the key is written in every document of each shot's context
+before any page script runs, and the app's first read already sees it. It applies to every surface,
+anonymous or tier-naming alike. Seeding a key is not the same as the app rendering in that locale, so
+— like the session and the override — the shot proves it. After navigation and before the
+screenshot, the verb waits (up to 10s) for `document.documentElement.lang` to name the requested
+value, because an app may set `lang` only once an asynchronously loaded catalog lands, then reads it
+back. A page whose `lang` names anything else, or one whose `lang` cannot be read, is `11` and
+records no capture: a seed the app never read paints the default-locale page cleanly under the
+requested name, and no byte check can tell the two apart. A page that threw during render is still
+`13` — the locale proof is read off the page, so a crash outranks it. Every stderr line of a seeded
+run names the shot `in locale <value>`.
+
 The refusal on every other token is the same fence v1 stated, kept for the same reason: v1 demanded
 `:focus-visible` captures with no mechanism to prove the state was realized, and a state that
 silently rendered unfocused PASSed its prohibition forever. Parsing a state is not rendering one —
@@ -360,11 +390,13 @@ naming every such surface. One origin is resolved for the run, so shooting a for
 returns that app's not-found page: a clean PNG the outcome typing would record as `captured`. A
 surface no declared row claims is shot as before — which app serves it is a question the list does
 not answer either way. **Resolve the tier signing
-secret** — the file `--auth-secret-from` names, else the ambient variable — and refuse on `11`
-before a browser launches when it cannot be read, is empty, or carries the `insecure_` placeholder.
-The refusal names the source it read and the route out, and the route differs by source: with no
-flag it is to pass one, and with a flag it is to re-export the repo-wide value from the
-ci-credentials stack's alchemy state, since the named file does not hold the deployed one.
+secret** — the file `--auth-secret-from` names when one is passed, else the committed preview key at
+`infra/preview-auth-key/key.txt` in the checkout this verb runs in, else the ambient variable — and
+refuse on `11` before a browser launches when it cannot be read, is empty, or carries the `insecure_`
+placeholder. The refusal names the source it read and the route out, and the route differs by source:
+with no flag it is to run from a checkout that carries that committed key, which needs no flag, no
+credential and no environment variable; with a flag it is to drop the flag, since the named file does
+not hold the value this preview verifies against and the committed key resolves on its own.
 For each `--surface` at each
 `--viewport`, in the provisioned headless browser sized to that viewport: navigate to
 `<previewUrl><route>`; status ≥ 400 or failed navigation is **unreachable** (`14`); an uncaught
@@ -393,8 +425,8 @@ re-invocation without it, on the record; never the tool's tolerance.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
-| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, or while `--auth-secret-from` names a file that could not be read; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
+| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; `--flag` was passed beside an anonymous surface; or `--locale` was passed with no `uiCapture.locale` declared, or with a value outside its declared list |
+| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; a forced flag evaluated at its default anyway; or a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -412,12 +444,14 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
 | `review-ui render: a tier-naming surface was requested but <the source> carries the insecure_ placeholder prefix — a cookie signed with it is one the preview worker answers as a visitor — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
 | `review-ui render: a tier-naming surface was requested but <the source> is empty — there is no key to sign the tier cookie with — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
-| `review-ui render: cannot read the exported repo-wide session-signing secret at <path>: <reason> — the named tier's render is UNKNOWN.` | 11 | refusal |
+| `review-ui render: cannot read the session-signing secret at <path>: <reason> — the named tier's render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> named tier <wanted> and rendered as <rendered> — the named tier's render is UNKNOWN, never another tier's.` | 11 | refusal |
 | `review-ui render: --flag "<token>" is not a <key>=<on\|off> pair (<reason>) — an operand nothing can force would shoot the default state under the forced name.` | 10 | refusal |
 | `review-ui render: --flag was passed with the anonymous surface "<id>" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak) on every surface.` | 10 | refusal |
 | `review-ui render: surface "<id>" at <viewport> did not render with its forced flags (<reason>) — the forced render is UNKNOWN, never the default one.` | 11 | refusal |
+| `review-ui render: --locale "<value>" cannot be seeded (<reason>) — an operand nothing seeds would shoot the default locale under the requested name.` | 10 | refusal |
+| `review-ui render: surface "<id>" at <viewport> in locale <value> did not render in its seeded locale (<reason>) — the seeded locale's render is UNKNOWN, never the default one.` | 11 | refusal |
 | `review-ui render: --viewport "<name>" is not a viewport this repo renders — the names are desktop, mobile.` | 10 | refusal |
 | `review-ui render: --viewport "<name>" was passed twice — the second shot would overwrite the first's file and evidence.` | 10 | refusal |
 | `review-ui render: surface "<id>" at <viewport> was asked for at <wanted>px and its bytes read back <actual>px wide — the requested viewport's render is UNKNOWN, never another width's.` | 19 | refusal |
@@ -538,7 +572,7 @@ poster reads success.
 | `--polarity` | enum | yes | — | `PASS` or `FAIL` — a third token is not a polarity |
 | `--sha` | string | yes | — | the head the reviewer actually inspected (7–40 lowercase hex) |
 | `--clause` | string | yes | — | the human clause; blank is not a clause |
-| `--evidence` | string | yes | — | the `review-ui render` capture-set name whose verified upload is this verdict's evidence |
+| `--evidence` | string | yes | — | the `review-ui render` capture-set name whose verified upload is this verdict's evidence — exactly one per post; passing it twice is the `10` refusal, before anything is read, uploaded or posted |
 | `--carrier` | enum | no | `marker` | `marker` (first-line SHA-bound marker) or `advisory` (§CP: advisory first line, `Reviewed-head: @ <sha>` body line). `advisory` is a PASS path only |
 | `--supersede` | boolean | no | `false` | acknowledge that this verdict retires a standing one of the **opposite** polarity at this head; without it that post is the `18` refusal |
 | `--repo` | string | no | resolved | the repository |
@@ -564,7 +598,10 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 3. **Re-validate every capture against its manifest sha** (`15` on mismatch or invalidity).
 4. **Upload every capture and verify each upload individually, before anything posts** — the
    two-tier store exactly as `ui evidence` specifies it (store tier when the repo declares one;
-   the GitHub user-attachment tier otherwise, each upload probed back). The tier choice reads the
+   the GitHub user-attachment tier otherwise, each upload read back). A fresh user-attachment URL
+   reads `404` at its own address until posted content embeds it, so the attachment tier reads
+   each upload back through GitHub's markdown renderer instead: the signed link the renderer gives
+   the asset must answer `200` to an anonymous fetch and serve the capture's exact bytes. The tier choice reads the
    `uiCapture` key of `.fabrika.jsonc` at the repo root the delivery layer resolves — the reviewer's own
    checked-out tree, never the PR head, which this skill never checks out. Any failure is `17`,
    aggregated, **nothing posted**. This inverts v1's posture at the seam where a crashed capture
@@ -575,7 +612,10 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
    `--polarity`, `--sha`, `--clause`), or with `--carrier advisory` the fixed advisory line plus
    the `Reviewed-head: @ <sha>` body line; `advisory` with FAIL is a `10` refusal (a §CP FAIL
    posts the ordinary FAIL marker). Below it, the stdin body, then the evidence gallery — per
-   surface, the verified hosted URL.
+   surface, the verified hosted URL, and on the line after it
+   `<!-- fabrika:evidence sha256=<hex> -->`, the digest of the judged capture. The digest renders
+   as nothing; it is what lets a gate hold the hosted capture to the judged bytes later
+   (`packages/fabrika-cli/src/review-ui/evidence-gallery.ts`).
 6. **Leak-scan the assembled comment** (`5` / `6` — the imported predicates; a finding that must
    cite a leak cites it by class root or repo-relative form).
 7. **Append into one comment for this namespace under this carrier** (the disjoint marker/advisory
@@ -591,6 +631,27 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 8. **Read it back, unconditionally, from live PR state** — the format's `read` (or the advisory
    anchors), then the whole comment through `normalizeForReadback` (`9` on mismatch). A
    read-back that trusts a carried variable re-ships the false-PASS class.
+9. **Re-read the posted comment's evidence** — the comment's rendered HTML, each embedded
+   capture's signed link fetched anonymously and held to its judged bytes. A capture that does not
+   open is `9`, stated as posted: the verdict landed, so the verb never reports success over
+   evidence nobody can see and names the comment to inspect. **The verb never withdraws or
+   replaces that verdict** — deleting it loses the record, and restoring a prior body would put an
+   older verdict back on the first line. It leaves the verdict as written (on a re-post, the prior
+   verdict stays below the fence exactly as step 7 put it) and creates one plain comment beside it:
+   `This review-ui verdict does not count: <verdict url>`, the reasons, and the re-post remedy. That
+   note is the PR's record that a verdict was attempted and why it does not count; its first line is
+   no verdict carrier. If the note fails to land, the exit is still `9` and stderr says so.
+
+**What the gates count.** A posted `review-ui` verdict counts only while its evidence opens.
+`ship gate` and `lane prove` re-read the in-force `review-ui` verdict before they count it — the
+same step-9 read-back, held to the gallery's recorded sha256 because a gate has no local bytes —
+and a verdict whose capture does not open, or whose gallery records no digest, does not count: the
+gate rows it `unopened` and blocks, `lane prove` rows it `unopened` and proves no `PASS` over it. A
+re-check that cannot read the comment is UNKNOWN (`ship gate` `11`, `lane prove` row `unknown`),
+never a count. Only the gallery above the supersede fence is read, so a superseded verdict's
+evidence never decides the one in force. This is the ruled direction — the readers re-check, the
+verb never withdraws — and the `@ruling` tag in
+`packages/fabrika-cli/src/review-ui/standing-evidence.ts` cites the ruling comment.
 
 **Exit status** (beyond the universal four)
 
@@ -602,8 +663,8 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `6` | the body is a bare `@` path reference — the body never arrived |
 | `7` | the PR is proven absent (404) or closed |
 | `8` | the create/edit failed — UNKNOWN whether a comment landed |
-| `9` | the comment landed but the read-back does not yield this marker |
-| `10` | a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`; a `--carrier` off its enum |
+| `9` | the comment landed but the read-back does not yield this marker, or an embedded capture in the posted comment does not open as its judged bytes |
+| `10` | a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`; a `--carrier` off its enum; `--evidence` passed more than once — a post carries one capture set, so the refusal names every set passed and lands before stdin, the manifest or any upload is touched |
 | `11` | a precondition read failed — the PR, the live head, the evidence set's files, or the upload target's state; nothing was uploaded or posted |
 | `12` | refused: the live head moved past `--sha`, or the evidence set was rendered at a different head — the verdict or its pixels would bind a tree that is not the PR |
 | `15` | proven: a capture in the evidence set is invalid or fails its manifest sha |
@@ -620,6 +681,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: PR #<n> is closed — a verdict on a closed PR gates nothing.` | 7 | refusal |
 | `review-ui post: --polarity must be PASS or FAIL — got "<v>".` | 10 | refusal |
 | `review-ui post: --carrier advisory is a PASS path only — post the FAIL marker instead.` | 10 | refusal |
+| `review-ui post: --evidence was passed <k> times ("<set>", "<set>", …) — a post carries one capture set, and every set past the first would drop out of the gallery while the verdict still cites its shots. Render every judged surface into one set and pass it once; nothing was read, uploaded or posted.` | 10 | refusal |
 | `review-ui post: cannot read <what> for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
 | `review-ui post: evidence set "<set>" has no readable manifest.json (<absent|parse reason>) — a set without its manifest is not a set; re-run review-ui render.` | 4 | refusal |
 | `review-ui post: .fabrika.jsonc declares a `uiCapture` that does not satisfy its schema: <first violation> — the tier choice is unmakeable.` | 4 | refusal |
@@ -630,6 +692,9 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: the assembled comment carries a machine-local path at line <k> (<class>) — cite it repo-relative or by class root.` | 5 | refusal |
 | `review-ui post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; run \`fabrika review verdicts <n>\` before retrying.` | 8 | refusal |
 | `review-ui post: posted, but the read-back does not yield this marker (<wire reason>) — inspect comment <id>.` | 9 | refusal |
+| `review-ui post: POSTED, BUT ITS EVIDENCE DOES NOT OPEN — <k> of <m> embedded captures fail the read-back (<first reason>); the verdict in comment <id> stays on the PR and does not count — ship gate and lane prove re-check its evidence and will not count it while it does not open. Re-render and post again.` | 9 | refusal |
+| `review-ui post: noted on the PR why this verdict does not count: <note url>` | 9 | notice |
+| `review-ui post: the note saying this verdict does not count did not land (<reason>) — the gates re-check its evidence either way.` | 9 | notice |
 | `review-ui post: a standing <PASS\|FAIL> for review-ui at <sha> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 18 | refusal |
 
 **Scope** — one PR (its live head, its comments), one evidence set (its manifest and every

@@ -34,7 +34,7 @@ import {
 
 const VERB = "guard codeowners-cp check";
 
-const CODEOWNERS = ".github/CODEOWNERS";
+export const CODEOWNERS = ".github/CODEOWNERS";
 
 export interface CodeownersCpGuardOptions {
 	/** An explicit repo root, or `null` to walk up from `cwd` for one. */

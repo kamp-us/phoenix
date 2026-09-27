@@ -1,7 +1,7 @@
 ---
 id: 0378
 title: A spent repair budget parks to its driver, and the driver's own grant is a recorded clearance
-status: amended-in-part by [0393](0393-lane-clear-grants-both-repair-budgets.md)
+status: amended-in-part by [0393](0393-lane-clear-grants-both-repair-budgets.md), [0421](0421-spent-budget-route-is-repo-declared.md)
 date: 2026-09-10
 tags: [fabrika, lane, pipeline, state-machine]
 ---

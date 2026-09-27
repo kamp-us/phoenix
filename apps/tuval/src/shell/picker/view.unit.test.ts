@@ -79,7 +79,7 @@ describe("picker keyboard", () => {
 		const refused = withRefusal(mountPicker(), unknownProgram("nope"));
 		expect(pickerKey(window, entries, refused, "<escape>")).toEqual({
 			_tag: "Cleared",
-			view: {cursor: 0, refusal: null, previous: null, filter: null},
+			view: {cursor: 0, refusal: null, previous: null, filter: null, step: null, landing: null},
 		});
 		expect(pickerKey(window, entries, mountPicker(), "<escape>")).toEqual({_tag: "Ignored"});
 	});
@@ -96,7 +96,7 @@ describe("picker keyboard", () => {
 		const cleared = pickerKey(window, entries, refused, "<escape>");
 		expect(cleared).toEqual({
 			_tag: "Cleared",
-			view: {cursor: 2, refusal: null, previous: "p-1", filter: null},
+			view: {cursor: 2, refusal: null, previous: "p-1", filter: null, step: null, landing: null},
 		});
 		if (cleared._tag !== "Cleared") throw new Error("test setup: Escape cleared nothing");
 		expect(pickerKey(window, entries, cleared.view, "<escape>")).toEqual({
@@ -121,6 +121,8 @@ describe("picker keyboard", () => {
 			refusal: null,
 			previous: "p-1",
 			filter: null,
+			step: null,
+			landing: null,
 		});
 	});
 
@@ -128,7 +130,7 @@ describe("picker keyboard", () => {
 		const refused = withRefusal(mountPicker(), unknownProgram("nope"));
 		expect(pickerKey(window, entries, refused, "j")).toEqual({
 			_tag: "Moved",
-			view: {cursor: 1, refusal: null, previous: null, filter: null},
+			view: {cursor: 1, refusal: null, previous: null, filter: null, step: null, landing: null},
 		});
 	});
 
@@ -143,16 +145,23 @@ describe("picker keyboard", () => {
 		expect(pickerKey(window, noEntries, mountPicker(), "<enter>")).toEqual({_tag: "Ignored"});
 		expect(pickerKey(window, noEntries, mountPicker(), "j")).toEqual({
 			_tag: "Moved",
-			view: {cursor: 0, refusal: null, previous: null, filter: null},
+			view: {cursor: 0, refusal: null, previous: null, filter: null, step: null, landing: null},
 		});
 	});
 
 	it("a cursor left past the end of a shrunken list reads as the last row", () => {
-		const stale = {cursor: 9, refusal: null, previous: null, filter: null};
+		const stale = {
+			cursor: 9,
+			refusal: null,
+			previous: null,
+			filter: null,
+			step: null,
+			landing: null,
+		};
 		expect(highlighted(entries, stale)).toEqual(entries.processes[0]);
 		expect(pickerKey(window, entries, stale, "<arrowup>")).toEqual({
 			_tag: "Moved",
-			view: {cursor: 1, refusal: null, previous: null, filter: null},
+			view: {cursor: 1, refusal: null, previous: null, filter: null, step: null, landing: null},
 		});
 	});
 });
@@ -161,7 +170,7 @@ describe("picker pointer", () => {
 	it("a pointer landing on a row moves the same cursor an arrow key moves", () => {
 		expect(pickerPointer(window, entries, mountPicker(), 2, "hover")).toEqual({
 			_tag: "Moved",
-			view: {cursor: 2, refusal: null, previous: null, filter: null},
+			view: {cursor: 2, refusal: null, previous: null, filter: null, step: null, landing: null},
 		});
 		expect(pickerPointer(window, entries, mountPicker(), 2, "hover")).toEqual(
 			pickerKey(window, entries, press(mountPicker(), "j"), "j"),
@@ -193,13 +202,20 @@ describe("picker pointer", () => {
 		const refused = withRefusal(mountPicker(), unknownProgram("nope"));
 		expect(pickerPointer(window, entries, refused, 1, "hover")).toEqual({
 			_tag: "Moved",
-			view: {cursor: 1, refusal: null, previous: null, filter: null},
+			view: {cursor: 1, refusal: null, previous: null, filter: null, step: null, landing: null},
 		});
 		// Landing on the row already under the cursor is not moving on from anything — the answer
 		// `movedTo` gives a keyboard press that cannot move either.
 		expect(pickerPointer(window, entries, refused, 0, "hover")).toEqual({
 			_tag: "Moved",
-			view: {cursor: 0, refusal: unknownProgram("nope"), previous: null, filter: null},
+			view: {
+				cursor: 0,
+				refusal: unknownProgram("nope"),
+				previous: null,
+				filter: null,
+				step: null,
+				landing: null,
+			},
 		});
 	});
 
@@ -221,7 +237,7 @@ describe("picker filter", () => {
 	it("`/` opens the filter, and it is no longer a key the picker ignores", () => {
 		expect(pickerKey(window, entries, mountPicker(), "/")).toEqual({
 			_tag: "Filtering",
-			view: {cursor: null, refusal: null, previous: null, filter: ""},
+			view: {cursor: null, refusal: null, previous: null, filter: "", step: null, landing: null},
 		});
 	});
 
@@ -248,7 +264,7 @@ describe("picker filter", () => {
 		expect(pickerKey(window, entries, filtered("counter"), "<escape>")).toEqual({
 			_tag: "Filtering",
 			// Row 0 of the "counter" match set is the flattened list's row 0 again, widened.
-			view: {cursor: 0, refusal: null, previous: null, filter: null},
+			view: {cursor: 0, refusal: null, previous: null, filter: null, step: null, landing: null},
 		});
 		// Only a picker with no filter left goes back to the process it was showing.
 		expect(pickerKey(window, entries, mountPicker("p-1"), "<escape>")._tag).toBe("Chose");
@@ -260,14 +276,67 @@ describe("picker filter", () => {
 			refusal: null,
 			previous: null,
 			filter: "co",
+			step: null,
+			landing: null,
 		});
 	});
 
 	it("reads a filter back out of the slot, and anything that is not a string as none", () => {
-		expect(asPickerView({cursor: 1, refusal: null, previous: null, filter: "pi"}).filter).toBe(
-			"pi",
-		);
+		expect(
+			asPickerView({
+				cursor: 1,
+				refusal: null,
+				previous: null,
+				filter: "pi",
+				step: null,
+				landing: null,
+			}).filter,
+		).toBe("pi");
 		expect(asPickerView({cursor: 1, refusal: null, previous: null, filter: 7}).filter).toBeNull();
 		expect(asPickerView({cursor: 1}).filter).toBeNull();
+	});
+});
+
+/**
+ * The `d` key (#9447). It is the one key a feature flag decides, so every claim here is made twice —
+ * once with the flag on and once with it off — because "the key does nothing" and "the key does not
+ * exist" are the same thing to an operator and two different things to this module.
+ */
+describe("the remove key", () => {
+	const on = {processRemove: true, openProject: false};
+	const off = {processRemove: false, openProject: false};
+
+	it("answers with the highlighted process, so the row and the removal cannot disagree", () => {
+		const atProcess = press(mountPicker(), "<end>");
+		expect(highlighted(entries, atProcess)).toEqual(entries.processes[0]);
+		expect(pickerKey(window, entries, atProcess, "d", on)).toEqual({
+			_tag: "Removing",
+			processId: "p-1",
+		});
+	});
+
+	it("ignores a program row, which names no process to forget", () => {
+		expect(highlighted(entries, mountPicker())?._tag).toBe("Program");
+		expect(pickerKey(window, entries, mountPicker(), "d", on)).toEqual({_tag: "Ignored"});
+	});
+
+	it("ignores an empty list, where there is no row under the cursor at all", () => {
+		expect(pickerKey(window, noEntries, mountPicker(), "d", on)).toEqual({_tag: "Ignored"});
+	});
+
+	it("is not a key at all with the flag off, which is also the default", () => {
+		const atProcess = press(mountPicker(), "<end>");
+		expect(pickerKey(window, entries, atProcess, "d", off)).toEqual({_tag: "Ignored"});
+		expect(pickerKey(window, entries, atProcess, "d")).toEqual({_tag: "Ignored"});
+	});
+
+	it("takes no key away: the flag moves `d` and nothing else", () => {
+		const keys = ["j", "k", "g", "G", "<enter>", "<escape>", "/"];
+		for (const key of keys) {
+			const view = mountPicker("p-1");
+			expect(`${key}: ${pickerKey(window, entries, view, key, on)._tag}`).toBe(
+				`${key}: ${pickerKey(window, entries, view, key, off)._tag}`,
+			);
+		}
 	});
 });

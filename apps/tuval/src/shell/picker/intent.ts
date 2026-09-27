@@ -9,11 +9,12 @@
  * its table and owns the command line itself, which is why no line reader lives here.
  */
 
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
-import {CommandName} from "../keys/table.ts";
-import type {WindowId} from "../window/host.ts";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {CommandName} from "@kampus/tuval-ui/keys";
 import type {PickerEntry} from "./entries.ts";
+import type {SessionPlace} from "./place.ts";
 
 /**
  * The session a spawn is for, when it is for one. Exactly `{cwd, resume}` and never a third field:
@@ -21,9 +22,9 @@ import type {PickerEntry} from "./entries.ts";
  * system, so this rides one narrow slot the spawner turns into a `SessionOpening` service
  * (`../../ai-agent/opening.ts`) and nothing else reads.
  */
-export interface OpenSession {
+export interface ProgramOpening {
 	readonly cwd: string;
-	readonly resume: string;
+	readonly resume: string | null;
 }
 
 export type PickerIntent =
@@ -31,20 +32,24 @@ export type PickerIntent =
 			readonly _tag: "OpenProgram";
 			readonly windowId: WindowId;
 			readonly programId: ProgramId;
-			/** Absent is the ordinary open: the spawned program starts whatever it starts fresh. */
-			readonly session?: OpenSession;
+			/** Absent leaves the program to choose its own opening; present fixes its cwd and optional resume. */
+			readonly opening?: ProgramOpening;
+			/** The folder a row that takes its folder at start opens in (`./place.ts`, #9694). */
+			readonly place?: SessionPlace;
 	  }
 	| {readonly _tag: "AttachProcess"; readonly windowId: WindowId; readonly processId: ProcessId};
 
 export const openProgram = (
 	windowId: WindowId,
 	programId: ProgramId,
-	session?: OpenSession,
+	opening?: ProgramOpening,
+	place?: SessionPlace,
 ): PickerIntent => ({
 	_tag: "OpenProgram",
 	windowId,
 	programId,
-	...(session === undefined ? {} : {session}),
+	...(opening === undefined ? {} : {opening}),
+	...(place === undefined ? {} : {place}),
 });
 
 export const attachProcess = (windowId: WindowId, processId: ProcessId): PickerIntent => ({
@@ -56,7 +61,7 @@ export const attachProcess = (windowId: WindowId, processId: ProcessId): PickerI
 /** The intent a highlighted row commits to. The two entry kinds are the two intents, one to one. */
 export const intentOf = (windowId: WindowId, entry: PickerEntry): PickerIntent =>
 	entry._tag === "Program"
-		? openProgram(windowId, entry.programId)
+		? openProgram(windowId, entry.programId, undefined, entry.place)
 		: attachProcess(windowId, entry.processId);
 
 export const OPEN_COMMAND: CommandName = CommandName.make("window:open");

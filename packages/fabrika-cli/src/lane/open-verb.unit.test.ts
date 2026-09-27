@@ -3,6 +3,7 @@ import {Effect, type FileSystem, type Path} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import type {VerbOutcome} from "../verb.ts";
+import type {BoardRecord, BoardRecorder, BoardSeat, BoardSeatReader} from "./board-seat.ts";
 import {
 	APPEND_UNKNOWN,
 	CLASS_UNRECOGNISED,
@@ -16,6 +17,7 @@ import {emitMachine} from "./emit.ts";
 import type {ExpectationRead} from "./expectation.ts";
 import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
 import {runOpen} from "./open-verb.ts";
+import {runPrint} from "./print-verb.ts";
 import type {PriorLane} from "./prior-lane.ts";
 import {runStatus} from "./status-verb.ts";
 import {DEFAULT_CHORES_ROOT} from "./store.ts";
@@ -63,6 +65,9 @@ const OPTIONS = {
 	issue: 42,
 	expectation: childless,
 	priorLane: undriven,
+	fromBoard: false,
+	boardSeat: null,
+	record: null,
 	cap: UNCAPPED,
 	claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
 };
@@ -126,6 +131,9 @@ describe("lane open", () => {
 			issue: null,
 			expectation: null,
 			priorLane: null,
+			fromBoard: false,
+			boardSeat: null,
+			record: null,
 			cap: UNCAPPED,
 			claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
 		};
@@ -343,6 +351,171 @@ describe("lane open", () => {
 		expect(said).toContain("#7991");
 		expect(said).toContain("build clear 7991");
 		expect(said).toContain("Nothing was written.");
+	});
+
+	it("names --from-board in that refusal, beside the two grants", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(
+			fs,
+			runOpen({...OPTIONS, priorLane: drove({_tag: "Prior", pulls: [7991]})}),
+		);
+
+		expect(out.stderr.join("\n")).toContain("fabrika lane open 42 --from-board");
+	});
+
+	describe("--from-board", () => {
+		const drivenBy = (...pulls: ReadonlyArray<number>) => drove({_tag: "Prior", pulls: [...pulls]});
+		const seats =
+			(seat: BoardSeat): BoardSeatReader<never> =>
+			() =>
+				Effect.succeed(seat);
+		const verified = seats({
+			_tag: "Seatable",
+			pr: 7991,
+			head: "77aa05b",
+			note: "every derived namespace has answered on #7991",
+		});
+		/** Every posted body, so a refusal that wrote one on the board is a visible failure. */
+		const recorder =
+			(
+				posted: string[],
+				outcome: BoardRecord = {_tag: "Recorded", url: "https://example.invalid/c/1"},
+			): BoardRecorder<never> =>
+			(_issue, body) => {
+				posted.push(body);
+				return Effect.succeed(outcome);
+			};
+
+		it("seats the lane the board verifies, with its repair budget declared spent", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+			const posted: string[] = [];
+			const out = await run(
+				fs,
+				runOpen({
+					...OPTIONS,
+					priorLane: drivenBy(7991),
+					fromBoard: true,
+					boardSeat: verified,
+					record: recorder(posted),
+				}),
+			);
+			const printed = await run(fs, runPrint({root: ROOT, lane: "42"}));
+
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({
+				answer: "opened",
+				fromBoard: {pr: 7991, head: "77aa05b", maxRetries: 0},
+			});
+			expect(JSON.parse(printed.stdout)).toMatchObject({tasks: {issue: {maxRetries: 0}}});
+			expect(posted).toHaveLength(1);
+			expect(posted[0]).toContain("#7991");
+		});
+
+		it("records the adoption on the board before anything lands on disk", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+			const posted: string[] = [];
+			const out = await run(
+				fs,
+				runOpen({
+					...OPTIONS,
+					priorLane: drivenBy(7991),
+					fromBoard: true,
+					boardSeat: verified,
+					record: recorder(posted, {_tag: "Unrecorded", reason: "the API answered 502"}),
+				}),
+			);
+
+			expect(out.code).toBe(LANE_UNREADABLE);
+			expect(fs.written.size).toBe(0);
+			expect(out.stderr.join("\n")).toContain("nothing was booted");
+		});
+
+		it("refuses at 63 when the board does not prove the work — the flag reads, it does not assert", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+			const posted: string[] = [];
+			const out = await run(
+				fs,
+				runOpen({
+					...OPTIONS,
+					priorLane: drivenBy(7991),
+					fromBoard: true,
+					boardSeat: seats({_tag: "Unproven", why: "#7991 holds a FAIL that still binds"}),
+					record: recorder(posted),
+				}),
+			);
+
+			expect(out.code).toBe(PRIOR_LANE);
+			expect(fs.written.size).toBe(0);
+			expect(posted).toHaveLength(0);
+			expect(out.stderr.join("\n")).toContain("#7991 holds a FAIL that still binds");
+		});
+
+		it("refuses an unreadable seat as UNKNOWN, never as a verified one", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+			const posted: string[] = [];
+			const out = await run(
+				fs,
+				runOpen({
+					...OPTIONS,
+					priorLane: drivenBy(7991),
+					fromBoard: true,
+					boardSeat: seats({_tag: "Unknown", reason: "the API answered 502"}),
+					record: recorder(posted),
+				}),
+			);
+
+			expect(out.code).toBe(LANE_UNREADABLE);
+			expect(fs.written.size).toBe(0);
+			expect(posted).toHaveLength(0);
+		});
+
+		it("names the record it stranded when the placement write does not land", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}, unwritable: [WORKFLOW]});
+			const posted: string[] = [];
+			const out = await run(
+				fs,
+				runOpen({
+					...OPTIONS,
+					priorLane: drivenBy(7991),
+					fromBoard: true,
+					boardSeat: verified,
+					record: recorder(posted),
+				}),
+			);
+			const stderr = out.stderr.join("\n");
+
+			expect(out.code).toBe(APPEND_UNKNOWN);
+			expect(posted).toHaveLength(1);
+			expect(stderr).toContain("the lane is NOT booted");
+			expect(stderr).toContain("https://example.invalid/c/1");
+			expect(stderr).toContain("re-running posts a second record beside it");
+		});
+
+		it("leaves an ordinary placement refusal naming no record, because it stranded none", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}, unwritable: [WORKFLOW]});
+			const out = await run(fs, runOpen(OPTIONS));
+
+			expect(out.code).toBe(APPEND_UNKNOWN);
+			expect(out.stderr.join("\n")).not.toContain("adoption record");
+		});
+
+		it("changes nothing about a boot the prior-lane read never refused", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+			const posted: string[] = [];
+			const out = await run(
+				fs,
+				runOpen({
+					...OPTIONS,
+					fromBoard: true,
+					boardSeat: verified,
+					record: recorder(posted),
+				}),
+			);
+
+			expect(out.code).toBe(0);
+			expect(fs.written.get(WORKFLOW)).toBe(coderTemplateText());
+			expect(posted).toHaveLength(0);
+		});
 	});
 
 	it("boots a lane retired for the wrong template — the sanctioned retire, which opened no PR", async () => {

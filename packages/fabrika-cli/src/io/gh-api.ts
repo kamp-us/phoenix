@@ -282,22 +282,6 @@ export const restRead = (token: string, method: "GET" | "POST", path: string): A
 	restCall(token, {method, path});
 
 /**
- * A read whose answer is bytes — the run-evidence artifact zip, and nothing else today.
- *
- * It is separate from {@link restCall} rather than a flag on it because {@link Rest} carries a
- * parsed body and a decoded `text`, and a zip decoded as UTF-8 is corrupt rather than merely
- * unparsed. The caller still reads `status` before the bytes: a 503 body saved as `.zip` is not a
- * bundle.
- */
-export const restBytes = (token: string, path: string, accept?: string): Api<Served<Uint8Array>> =>
-	served(
-		HttpClientRequest.get(endpoint(path)).pipe(
-			HttpClientRequest.setHeaders(headersFor(token, accept)),
-		),
-		(response) => Effect.map(response.arrayBuffer, (buffer) => new Uint8Array(buffer)),
-	);
-
-/**
  * Run `use` under the ambient credential and the ambient transport, or hand back the refusal that
  * says there is no credential.
  *

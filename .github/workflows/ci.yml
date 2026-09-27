@@ -138,7 +138,7 @@ jobs:
       # the opposite stance of check/integration/packages/workflows above (which DO
       # OR in `merge_group` to run the full gate on the batch, because they need no
       # deploy). e2e alone awaits a live preview URL + D1 id from deploy.yml, and
-      # deploy.yml has NO `merge_group` trigger (only `push: [main]` + `pull_request`),
+      # deploy.yml has NO `merge_group` trigger,
       # so a batch can't produce a preview — e2e would await one forever, time out,
       # and red `ci-required`, ejecting the whole batch (ADR 0132; run 28645439324).
       # e2e already gated every PR in the `pull_request` context (where deploy.yml
@@ -158,7 +158,7 @@ jobs:
       # CHANGELOGs, the release manifest — matches no `e2e:` path, so that run still skips on
       # the filter, which is the same legitimate not-applicable PASS a `pull_request` run of
       # it gets. A dispatched run whose diff DOES hit the `e2e:` paths runs the job and,
-      # since deploy.yml has no dispatch trigger, finds no preview to test: the await step
+      # since deploy.yml dispatches target prod, finds no preview to test: the await step
       # fails and `ci-required` goes red. Red is the correct answer there — a dispatch may
       # not launder a missing e2e run into a pass.
       e2e_required: >-
@@ -244,7 +244,7 @@ jobs:
       # getChangedFilesFromApi(...)`, else "Github token is not available - changes will be
       # detected using git diff"). That live API read is the sole flake surface in this job:
       # a transient GitHub-API-HTML blip served an error page where JSON was expected
-      # (`invalid character '<'`), hard-failing this step → `produce run-evidence bundle` →
+      # (`invalid character '<'`), hard-failing this step →
       # the `ci-required` aggregate went RED on a defect-free docs-only PR (#3244). Setting
       # `token: ''` forces the git-diff path, removing the API read entirely so the transient
       # CANNOT occur — a stronger fix than retrying a read we don't need to make. The
@@ -284,7 +284,9 @@ jobs:
             # Paths the full e2e suite (#525) actually exercises: the SPA and its
             # build inputs (src, vite config, the served index.html shell), the
             # worker that serves it, the alchemy stack/D1 the preview deploys, the
-            # specs + playwright config, and the seed tool. A docs/skills-only PR
+            # specs + playwright config, the seed tool, and the design package the
+            # SPA renders (a design-only PR routes into review:ui, which needs the
+            # preview — #9720). A docs/skills-only PR
             # touches none of these, so `e2e` stays false → the e2e job skips
             # (→ green, non-blocking). Includes both workflows so a CI/deploy edit
             # keeps the gate self-covering.
@@ -312,6 +314,7 @@ jobs:
               - 'apps/**/playwright.config.cjs'
               - 'apps/**/package.json'
               - 'packages/preview-seed/**'
+              - 'packages/design/**'
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy.yml'
@@ -584,7 +587,15 @@ jobs:
       # `@kampus/web`'s `test:integration` (real remote D1) cannot. Scoped to the one app for
       # exactly that reason: `--filter './apps/**' test:integration` would drag web's D1 suite
       # into a job with no Cloudflare token.
-      - run: pnpm --filter @kampus/tuval test:integration
+      - run: pnpm --filter @kampus-apps/tuval test:integration
+
+      # The packed desk as an outside author installs it (#9690): packs `@kampus/tuval-sdk` and
+      # `@kampus/tuval`, installs both with npm into a folder outside the checkout, runs
+      # `tuval open .` over a program written there against a scratch home, trusts a second folder
+      # through the desk's own question, edits the program and sees the running desk show the edit,
+      # and reds if the desk resolved a file inside the checkout or loaded a second SDK.
+      - name: Prove an outside author runs and hot-reloads a program on the packed Tuval desk
+        run: pnpm --filter @kampus-apps/tuval run proof:outside
 
   # The `packages/**` vitest suites (#760). Every workspace tooling/guard package
   # ships a `test` script (fabrika-cli — the single home for the consolidated guard/tooling
@@ -623,6 +634,55 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm --filter './packages/**' --filter @kampus/infra run test
+
+      # The Tuval SDK as an outside author installs it (#9654): packs `@kampus/tuval-sdk`,
+      # installs the tarball with npm into a temp directory outside the checkout, type-checks
+      # and tests `packages/tuval/example` there, and reds if either phase resolved a file
+      # inside the checkout.
+      - name: Prove an outside program builds and tests against the packed Tuval SDK
+        run: pnpm --filter @kampus/tuval-sdk run proof:outside
+
+  # No package outside `apps/` depends on or imports an `@kampus-apps/*` app (#9660). It runs on
+  # every event with no path filter, because a rename or a new package anywhere can break the
+  # rule, and `ci-required` requires it with a constant `'true'`. The bin has zero runtime
+  # dependencies, so the job needs no `pnpm install`.
+  app-boundary:
+    name: app boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+
+      - name: Check no package outside apps/ depends on or imports an app
+        run: node packages/app-boundary-guard/src/bin.ts
+
+  # The worker-bundle node-core assertion (ADR 0118, #1836): build the `apps/web` worker with the
+  # same bundler the deploy uses (rolldown + the cloudflare plugin, resolved through alchemy) and
+  # red when the emitted bundle reaches a forbidden Node-only module. No deploy and no Cloudflare
+  # account. It runs on every event with no path filter, as it did inside the retired run-evidence
+  # producer: a lockfile bump or a new import anywhere the worker reaches can pull a module in,
+  # and no path filter here names that set. `ci-required` requires it with a constant `'true'`.
+  bundle-assert:
+    name: worker bundle excludes node-core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Assert the worker bundle reaches no forbidden node-core module
+        working-directory: apps/web
+        run: node scripts/bundle-assert/main.ts
 
   skills:
     # The check name is a required status check on `main`, so it keeps its historical name
@@ -924,6 +984,10 @@ jobs:
             const interval = 15000;
             // Match the web app's block in the sticky comment, capturing the URL
             // and the hidden d1 token deploy.yml emits for web only.
+            // The workers.dev host shape stays deliberate (#9507): a `pr-<n>` stage binds
+            // no custom domain, so alchemy prints `domains: []` and the preview comment
+            // carries a workers.dev host. Widening this to any https URL would let a
+            // custom-domain line — which only prod produces — satisfy a preview poll.
             const webRe = /<!-- preview-deploy:web -->\n[^\n]*?(https:\/\/[A-Za-z0-9.-]+\.workers\.dev)[^\n]*?<!-- d1:([0-9a-f-]+) -->/;
             // Optional, independent of the required URL+D1 match: the forced preview-flag
             // key set deploy.yml emits (issue #2951). Absent when no `preview-flag:<key>`
@@ -1111,7 +1175,7 @@ jobs:
   # (which gates all `packages/**` suites, #760).
   ci-required:
     name: ci-required
-    needs: [changes, check, unit, packages-tests, actionlint, integration, e2e]
+    needs: [changes, check, unit, packages-tests, actionlint, integration, e2e, app-boundary, bundle-assert]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -1130,7 +1194,7 @@ jobs:
           # run-ness cannot drift. `check` and `unit` are two jobs behind one `check_required`
           # output, which is why they carry two keys reading the one source. A declared job whose
           # keys are absent reds rather than reading as not-required.
-          CI_REQUIRED_JOBS: check unit packages-tests actionlint integration e2e
+          CI_REQUIRED_JOBS: check unit packages-tests actionlint integration e2e app-boundary bundle-assert
           CHANGES_RESULT: ${{ needs.changes.result }}
           CHECK_REQUIRED: ${{ needs.changes.outputs.check_required }}
           UNIT_REQUIRED: ${{ needs.changes.outputs.check_required }}
@@ -1138,10 +1202,15 @@ jobs:
           ACTIONLINT_REQUIRED: ${{ needs.changes.outputs.workflows_required }}
           INTEGRATION_REQUIRED: ${{ needs.changes.outputs.integration_required }}
           E2E_REQUIRED: ${{ needs.changes.outputs.e2e_required }}
+          # Unconditional: neither job has an `if:`, so each should run on every event.
+          APP_BOUNDARY_REQUIRED: 'true'
+          BUNDLE_ASSERT_REQUIRED: 'true'
           CHECK_RESULT: ${{ needs.check.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           PACKAGES_TESTS_RESULT: ${{ needs.packages-tests.result }}
           ACTIONLINT_RESULT: ${{ needs.actionlint.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
+          APP_BOUNDARY_RESULT: ${{ needs.app-boundary.result }}
+          BUNDLE_ASSERT_RESULT: ${{ needs.bundle-assert.result }}
         run: node packages/fabrika-cli/src/ci/required-bin.ts

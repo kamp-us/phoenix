@@ -58,8 +58,9 @@ Which sources it reads and how the cap is applied are the verb's section
 only one of them is about your observation:
 
 - **`candidates`** — open each and judge it yourself. Shared vocabulary is not a shared observation.
-  The list is capped, and the verb says on stderr when it truncated.
-- **`none`** — both sources were read and nothing open matched. A real answer.
+  The list is capped, and the verb says on stderr when it truncated. Read a closed candidate
+  before treating it as resolved work; a recurring failure may need a new issue.
+- **`none`** — the live queue and indexed corpus yielded no lexical match within the reported scope.
 - **`indeterminate`** — your query carried too few distinctive keywords to discriminate, so nothing
   useful was compared. This is a non-check, not a clean one. Re-query with the specific terms.
 
@@ -86,8 +87,8 @@ EOF
 ```
 
 **When the verb refuses, fix the input and run it again.** A refusal names one thing — an empty
-section, a machine-local path in the body, a body that never reached stdin, a title that classifies
-— and each is a thing to correct. **A refusal is never a signal to post some other way.** Retrying a
+section, a leak in the body (a machine-local path, an email address, a name the repo declares
+private), a body that never reached stdin, a title that classifies — and each is a thing to correct. **A refusal is never a signal to post some other way.** Retrying a
 blocked command through a form that passes the body as a *file path* posts the path text instead of
 the file's contents, which is how a machine-local path reaches a public artifact while the poster
 reads success — the rule and its reasoning are one section
@@ -96,9 +97,9 @@ Which exit carries which refusal is
 `--heading "The shared exit taxonomy for the writing verbs"`, and what counts as a leak is
 `--heading "The body-surface leak predicate"`.
 
-Use `--redact` when a machine-local path is genuinely part of the evidence — reporting a leak
-incident is the case it exists for. It masks each path down to its class and says so; it never
-silently rewrites what you wrote.
+Use `--redact` when a leak is genuinely part of the evidence — reporting a leak incident is the
+case it exists for. It masks every leak class, a path down to its class root and an email or a
+configured name whole, and says what it masked; it never silently rewrites what you wrote.
 
 **A refusal from the harness rather than from the verb has one other answer: stage the body, never
 trim it to fit.** The fence above puts the whole body inside one command string, and a

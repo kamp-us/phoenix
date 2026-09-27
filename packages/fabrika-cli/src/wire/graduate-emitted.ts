@@ -122,7 +122,6 @@ export const read = (artifact: string): GraduateEmittedRead => {
 export const emit = (marker: GraduateEmitted): string =>
 	`${KEY}: #${marker.source} → #${marker.emitted} @ ${marker.digest} · covers ${marker.covers.join(COVERS_SEPARATOR)} · ${marker.at}\n`;
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderMarker = (marker: GraduateEmitted): NonEmptyReadonlyArray<string> => [
 	`source\t${marker.source}`,
 	`emitted\t${marker.emitted}`,

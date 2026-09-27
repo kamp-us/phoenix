@@ -1,18 +1,7 @@
 /**
- * `decision ruling` — report whether a decision issue carries a current founder ruling.
- *
- * **A reporting surface, never an enforcement.** It exits `0` on `absent` exactly as it does on
- * `current`, because a missing ruling is this verb's *answer*. What keeps an unruled decision out of
- * a build lane is `build claim`'s own type axis, which admits a decision only on a `--cites` naming a
- * ruling comment — that fence re-reads the board rather than trusting this report.
- *
- * **What `current` is safe to be read as.** A marker whose author the control-plane roster resolves
- * *at this read* — the author gate lives here, in the read, not only in `decision rule`'s write,
- * because bytes carrying the right digest can reach the issue from any account that can comment on
- * it.
- *
- * Both digests are printed, the marker's and the freshly derived one, so a `stale` answer shows what
- * moved rather than asserting that something did.
+ * `decision ruling` reports the ruling resolved by `./ruling.ts`, which checks the author
+ * against the live roster on every read. See `decision ruling --help` for reported states.
+ * `build claim` enforces admission from its own fresh read.
  */
 
 import {Effect} from "effect";
@@ -24,7 +13,7 @@ import {READY_FOR_AGENT, READY_FOR_HUMAN} from "../triage/audience.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {bodyDigest} from "./digest.ts";
-import {requireDecision, scanRulings, stateOf} from "./ruling.ts";
+import {requireRulable, scanRulings, stateOf} from "./ruling.ts";
 
 const VERB = "decision ruling";
 
@@ -45,7 +34,7 @@ export const runRuling = (
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
 
-		const target = yield* requireDecision(VERB, repo, options.number);
+		const target = yield* requireRulable(VERB, repo, options.number);
 		if (target._tag === "Refused") return target.outcome;
 
 		const roster = yield* controlPlaneRoster(repo);

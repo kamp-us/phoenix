@@ -38,10 +38,13 @@ export function UserProfileHeader(props: UserProfileHeaderProps) {
 				handle={handle}
 				image={profile.image}
 				stats={{
-					definitionCount: profile.definitionCount,
-					postCount: profile.postCount,
-					commentCount: profile.commentCount,
-					totalKarma: profile.totalKarma,
+					status: "ready",
+					stats: {
+						definitionCount: profile.definitionCount,
+						postCount: profile.postCount,
+						commentCount: profile.commentCount,
+						totalKarma: profile.totalKarma,
+					},
 				}}
 				showKarma
 			/>

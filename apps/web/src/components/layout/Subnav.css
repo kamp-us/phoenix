@@ -169,3 +169,27 @@
 .kp-subnav__crumb-clear:hover {
 	color: var(--text-primary);
 }
+
+/* Phone reflow (≤640px) — the crumb, the meta and the CTA do not fit beside the tabs at
+   390px, and `.kp-subnav`'s fixed one-row box pushed them past the viewport edge. `:has()`
+   scopes the wrapping box to a Subnav that is showing a crumb, so an unfiltered bar keeps
+   its one row. The crumb claims a whole row, so the meta and CTA wrap together to the
+   trailing edge as they sit on desktop. DOM order is kept, so focus order matches the paint. */
+@media (max-width: 640px) {
+	.kp-subnav:has(.kp-subnav__crumb) {
+		height: auto;
+		min-height: var(--subnav-h);
+		flex-wrap: wrap;
+		row-gap: var(--s-1);
+		padding-bottom: var(--s-2);
+	}
+	.kp-subnav:has(.kp-subnav__crumb) .kp-subnav__leading {
+		flex: 1 1 100%;
+		min-width: 0;
+	}
+	.kp-subnav__crumb {
+		flex-wrap: wrap;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+}

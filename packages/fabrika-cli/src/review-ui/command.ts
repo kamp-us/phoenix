@@ -8,25 +8,22 @@
  *
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form
  * silently opts out of the excess-operand guard.
- *
- * No `--json` anywhere: each verb's answer is one JSON object, so there is no second output shape
- * to opt into.
  */
 import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {uiSurfacesOr} from "../config/paths.ts";
+import {uiCaptureOr, uiSurfacesOr} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {refuse} from "../verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runNote} from "./note-verb.ts";
-import {runPost} from "./post-verb.ts";
+import {runPostFlags} from "./post-verb.ts";
 import {captureRenderLeg} from "./render-leg.ts";
 import {runRender} from "./render-verb.ts";
 import {runRoute} from "./route-verb.ts";
-import {githubAttachmentUploadLeg} from "./upload-leg.ts";
+import {githubAttachmentUploadLeg, githubPostedEvidenceCheck} from "./upload-leg.ts";
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,
@@ -73,6 +70,12 @@ const render = leafCommand(
 				"force one flag for this run — <key>=on|off, repeatable; rides the preview's phoenix_flag_overrides cookie, which is honored only for an authorized platform-admin actor, so every --surface must name a tier state and each forced key is proved against the preview's own evaluation before the shot is recorded",
 			),
 		),
+		locale: Flag.string("locale").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"render every shot in this locale — one of the values .fabrika.jsonc's uiCapture.locale declares; the declared localStorage key is seeded in each shot's browser context before it navigates, and the page's document.documentElement.lang is read back and must name the value before the shot is recorded (default: the app's own default locale, nothing seeded)",
+			),
+		),
 		app: Flag.string("app").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -82,12 +85,12 @@ const render = leafCommand(
 		authSecretFrom: Flag.string("auth-secret-from").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"a file holding the BETTER_AUTH_SECRET the preview worker deploys with — the value it verifies the tier cookie against, which is one repo-wide value rather than a per-stage one: infra/ci-credentials/github.ts mints it into the ci-credentials stack's alchemy state, its one readable copy, behind $ALCHEMY_PASSWORD (the app stack's deployed secret_text binding does not read back and the Actions secret is write-only, so there is no preview-stage copy to export); omitted, the ambient $BETTER_AUTH_SECRET stands in and is refused on 11 when it is empty or carries the insecure_ placeholder an example env file ships",
+				"a file holding a session-signing secret to use instead of the repo's own — rarely needed, because omitted this verb resolves the committed preview key at infra/preview-auth-key/key.txt, which is what every pr-<n> preview worker deploys with and is public on purpose, so a seat needs no flag, no credential and no environment variable; in a checkout carrying no such file the ambient $BETTER_AUTH_SECRET stands in, and any resolved value is refused on 11 when it is empty or carries the insecure_ placeholder an example env file ships",
 			),
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({pr, out, surface, viewport, flag, app, authSecretFrom, repo}) {
+	Effect.fn(function* ({pr, out, surface, viewport, flag, locale, app, authSecretFrom, repo}) {
 		// The reviewer's own checked-out tree, never the PR head — the same read `route` takes, and
 		// for the same reason: the declaration is the repo's, not the branch's.
 		const surfaces = yield* uiSurfacesOr(
@@ -99,6 +102,20 @@ const render = leafCommand(
 			yield* emit(refuse(PRECONDITION_UNKNOWN, surfaces.message));
 			return;
 		}
+		// Read only when asked for, so a run seeding no locale is untouched by the capture settings.
+		const requestedLocale = Option.getOrNull(locale);
+		const capture =
+			requestedLocale === null
+				? null
+				: yield* uiCaptureOr(
+						"review-ui render",
+						process.cwd(),
+						"the storage key --locale seeds is UNKNOWN; nothing was rendered.",
+					);
+		if (capture?._tag === "Refused") {
+			yield* emit(refuse(PRECONDITION_UNKNOWN, capture.message));
+			return;
+		}
 		yield* emit(
 			yield* runRender({
 				pr,
@@ -106,9 +123,12 @@ const render = leafCommand(
 				surfaces: surface,
 				viewports: viewport,
 				flags: flag,
+				locale: requestedLocale,
+				localeDeclaration: capture?.capture.locale ?? null,
 				app: Option.getOrNull(app),
 				surfaceRows: surfaces.surfaces,
 				authSecretFrom: Option.getOrNull(authSecretFrom),
+				cwd: process.cwd(),
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				tmpRoot: tmpdir(),
@@ -119,7 +139,7 @@ const render = leafCommand(
 ).pipe(
 	Command.withShortDescription("Capture the named surfaces from a PR's preview deployment."),
 	Command.withDescription(
-		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface per viewport, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per shot (surface, viewport, path, dimensions, sha256, page errors); every shot's outcome is enumerated on stderr. --viewport is crossed with --surface, so two of each is four captures whose file names carry the viewport label. A tier-naming surface signs its cookie with the BETTER_AUTH_SECRET the preview worker deploys with — one repo-wide value, read from the file --auth-secret-from names (exported from the ci-credentials stack's alchemy state, its one readable copy) or, absent that flag, from the ambient variable — which is refused rather than signed with when it is empty or carries the insecure_ placeholder. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, a --surface names a :state nothing renders — the realized set is auth, auth-caylak, a --viewport names a viewport outside the closed set desktop, mobile or is passed twice, a --flag operand is not a <key>=<on|off> pair, or --flag was passed with an anonymous surface), 11 (a read failed, the declared uiSurfaces are unreadable, the preview comment is malformed or names several apps, a --surface is served by an app this preview does not announce, a capture's validity is undeterminable, a tier-naming surface was requested with that tier's session token unset, with the resolved signing secret empty or carrying the insecure_ placeholder, or with --auth-secret-from naming a file that could not be read, a tier-naming surface's session proof did not come back signed in or came back at another tier, or a forced flag evaluated at its default anyway), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route), 19 (a capture's PNG width read back from its own bytes is not the requested viewport's width). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano --viewport desktop --viewport mobile",
+		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface per viewport, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per shot (surface, viewport, path, dimensions, sha256, page errors); every shot's outcome is enumerated on stderr. --viewport is crossed with --surface, so two of each is four captures whose file names carry the viewport label. A tier-naming surface signs its cookie with the key the preview worker deploys with: the committed preview key at infra/preview-auth-key/key.txt, resolved from this checkout with no flag and no credential, overridden by --auth-secret-from when one is passed and falling back to the ambient $BETTER_AUTH_SECRET in a checkout carrying no committed key — and refused rather than signed with when the resolved value is empty or carries the insecure_ placeholder. --locale seeds the localStorage key .fabrika.jsonc's uiCapture.locale declares into every shot's context before navigation and proves each shot against the page's document.documentElement.lang. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, a --surface names a :state nothing renders — the realized set is auth, auth-caylak, a --viewport names a viewport outside the closed set desktop, mobile or is passed twice, a --flag operand is not a <key>=<on|off> pair, --flag was passed with an anonymous surface, or --locale was passed with no uiCapture.locale declared or with a value outside its declared list), 11 (a read failed, the declared uiSurfaces are unreadable, --locale was passed and the declared uiCapture is unreadable, the preview comment is malformed or names several apps, a --surface is served by an app this preview does not announce, a capture's validity is undeterminable, a tier-naming surface was requested with that tier's session token unset, with the resolved signing secret empty or carrying the insecure_ placeholder, or with --auth-secret-from naming a file that could not be read, a tier-naming surface's session proof did not come back signed in or came back at another tier, a forced flag evaluated at its default anyway, or a seeded shot's page lang did not read back as the --locale value), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route), 19 (a capture's PNG width read back from its own bytes is not the requested viewport's width). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano --viewport desktop --viewport mobile",
 	),
 );
 
@@ -136,9 +156,11 @@ const post = leafCommand(
 		clause: Flag.string("clause").pipe(
 			Flag.withDescription("the human clause the marker ends with; blank is not a clause"),
 		),
+		// Repeatable only so the verb sees a repeat and refuses it — one capture set per post.
 		evidence: Flag.string("evidence").pipe(
+			Flag.atLeast(1),
 			Flag.withDescription(
-				"the review-ui render capture-set name whose verified upload is this verdict's evidence",
+				"the review-ui render capture-set name whose verified upload is this verdict's evidence — exactly one; passing it twice is refused on 10",
 			),
 		),
 		carrier: Flag.string("carrier").pipe(
@@ -157,7 +179,7 @@ const post = leafCommand(
 	},
 	Effect.fn(function* ({pr, polarity, sha, clause, evidence, carrier, supersede, repo}) {
 		yield* emit(
-			yield* runPost({
+			yield* runPostFlags({
 				pr,
 				polarity,
 				sha,
@@ -174,13 +196,14 @@ const post = leafCommand(
 				// PR out, so the tier choice is read where the verb is running.
 				cwd: process.cwd(),
 				upload: githubAttachmentUploadLeg(process.env),
+				confirm: githubPostedEvidenceCheck(process.env),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Post the review-ui verdict on stdin as one comment."),
 	Command.withDescription(
-		'Post the review-ui verdict on STDIN as ONE comment for this namespace — re-resolve the live head, read the evidence set through its manifest, re-validate every capture, verify-upload every capture BEFORE anything posts, compose the first line through the `verdict-marker` wire format, leak-scan, APPEND into this head\'s own comment, and read it back from live state. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one. There is no --namespace: this group emits review-ui and nothing else. Prints one JSON object whose `upsert` field is `created` or `superseded`. Exits 3 (empty stdin), 4 (the evidence set has no readable manifest.json, or the declared `uiCapture` violates its schema), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (bad --polarity or --carrier, or advisory with FAIL), 11 (a precondition read failed — nothing uploaded or posted), 12 (the live head moved past --sha, or the set was rendered at another head), 15 (a capture fails its manifest sha), 17 (an evidence upload or its verification failed — nothing was posted), 18 (a standing verdict of the OPPOSITE polarity at this head would be retired and --supersede was not passed — nothing posted). Example: fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged < verdict.md',
+		"Post the review-ui verdict on STDIN as ONE comment for this namespace — re-resolve the live head, read the evidence set through its manifest, re-validate every capture, verify-upload every capture BEFORE anything posts, compose the first line through the `verdict-marker` wire format, leak-scan, APPEND into this head's own comment, and read it back from live state. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one. There is no --namespace: this group emits review-ui and nothing else. Prints one JSON object whose `upsert` field is `created` or `superseded`. Exits 3 (empty stdin), 4 (the evidence set has no readable manifest.json, or the declared `uiCapture` violates its schema), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker, or an embedded capture in the posted comment does not open as the judged bytes — POSTED, so inspect the comment; on the evidence case the verdict stays and a plain note beside it says why it does not count, and ship gate and lane prove re-check the gallery's evidence against the sha256 each capture records, so they will not count it while it does not open), 10 (bad --polarity or --carrier, advisory with FAIL, or --evidence passed more than once — one capture set per post, refused before anything is read, uploaded or posted), 11 (a precondition read failed — nothing uploaded or posted), 12 (the live head moved past --sha, or the set was rendered at another head), 15 (a capture fails its manifest sha), 17 (an evidence upload or its read-back failed — the hosted asset, rendered through the GitHub markdown renderer, must serve HTTP 200 with the exact capture bytes — nothing was posted), 18 (a standing verdict of the OPPOSITE polarity at this head would be retired and --supersede was not passed — nothing posted). Example: fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause \"changes-requested\" --evidence judged < verdict.md",
 	),
 );
 

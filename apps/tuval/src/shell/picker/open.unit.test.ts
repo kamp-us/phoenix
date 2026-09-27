@@ -5,8 +5,8 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
-import type {AnyProgram} from "../../registry/program.ts";
 import {readCommandLine} from "../commands/line.ts";
 import type {ShellMsg} from "../core/machine.ts";
 import {shellId, shellProgram, unwiredShellEffects} from "../program.ts";
@@ -73,7 +73,13 @@ describe("choosing a program", () => {
 			const answer = yield* run(openProgram(window, programId("counter")));
 			assert.deepStrictEqual(answer.spawns, [{programId: "counter", parent: shellProcessId}]);
 			assert.deepStrictEqual(answer.msgs, [
-				{type: "window.bind", windowId: window, processId: "process-1", takesKeys: false},
+				{
+					type: "window.bind",
+					windowId: window,
+					processId: "process-1",
+					takesKeys: false,
+					program: "counter",
+				},
 			]);
 		}),
 	);
@@ -148,7 +154,13 @@ describe("attaching to a running process", () => {
 			});
 			assert.deepStrictEqual(answer.spawns, []);
 			assert.deepStrictEqual(answer.msgs, [
-				{type: "window.bind", windowId: window, processId: "p-1", takesKeys: false},
+				{
+					type: "window.bind",
+					windowId: window,
+					processId: "p-1",
+					takesKeys: false,
+					program: "counter",
+				},
 			]);
 		}),
 	);

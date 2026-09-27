@@ -46,13 +46,12 @@ Every `pull_request`-triggered workflow in `.github/workflows/`, classified by g
 [#6098](https://github.com/kamp-us/phoenix/issues/6098) — fabrika's own unit suite already
 enforces the property it gated.)
 
-**Deliberately left `pull_request`-only** (5):
+**Deliberately left `pull_request`-only** (4):
 
 | Workflow | Why |
 |---|---|
 | `gitleaks` | Scans the files `git diff base...HEAD` reports as added or edited, read at HEAD (ADR 0338). A `main` run has no such diff and falls back to the whole tree, reding on the triaged #2325 baseline every time. |
 | `leak-guard` | Scans `git diff base...HEAD`, the change under review. A `main` run would re-scan history instead. |
-| `run-evidence` | Not a gate — a per-PR-head evidence producer whose consumers key on the PR head SHA. |
 | `unresolved-threads-guard` | Reads a PR's review threads; a `push` carries no PR number. |
 | `roadmap-guard` | Repo-wide, but its `milestone` event and weekly schedule already cover post-merge drift. |
 

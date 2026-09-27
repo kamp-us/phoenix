@@ -1,9 +1,6 @@
 /**
  * `glossary lookup` — whether a term is already declared, and what overlaps it.
  *
- * **All three states are answers on exit 0.** `absent` means *proven absent against a register that
- * was read* — never what a failed read prints, which is `11`.
- *
  * `declared` beats `collision` beats `absent`, and TERMS is searched before LANGUAGE, so a term
  * declared in both is reported once as `declared` in TERMS. That duplication is a defect
  * `glossary check` reports as `cross-register`; reporting it twice here would make one term

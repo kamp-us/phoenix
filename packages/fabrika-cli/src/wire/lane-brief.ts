@@ -244,7 +244,10 @@ ends on \`BUILT-NO-PR\`, whose branch disposition is exactly that: left local an
 lane to fold.
 A child re-entering \`build\` after a \`FAIL\` is a repair, not a second build: \`build claim\` refuses
 the fresh claim naming that FAIL, and the route it points at takes over the branch the prior lane
-built on rather than cutting another.
+built on rather than cutting another. A \`FAIL\` out of \`integrate\` writes no verdict on the child, so
+pass this brief's \`lane\` and \`root\` to \`build claim\` and \`build resume-child\` as
+\`--lane <lane> --lane-root <root>\`: the claim reads that \`FAIL\`, its exit and the assembly head off
+the lane's ledger, and without them it reads the child as finished.
 A child's build discloses its deviations — the section a PR body would carry — as a
 \`build-deviations\` marker comment on the child issue, posted through
 \`node <fabrika> build deviations <child> --token <claim-token>\` with the
@@ -687,7 +690,6 @@ export const read = (artifact: string): LaneBriefRead => {
 	};
 };
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderBrief = (brief: LaneBrief): NonEmptyReadonlyArray<string> => [
 	`lane\t${brief.lane}`,
 	`root\t${brief.root}`,

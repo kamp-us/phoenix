@@ -458,7 +458,7 @@ slice of epic [#7496](https://github.com/kamp-us/phoenix/issues/7496) under `app
   schemas, host handlers, a capability request list, an optional renderer reference, and the
   #7467 identity / capability / placement records as inert data. A program is *exactly* one row;
   there is no second species and no view-only exemption. Source:
-  [`apps/tuval/src/registry/program.ts`](../apps/tuval/src/registry/program.ts).
+  [`packages/tuval/src/registry/program.ts`](../packages/tuval/src/registry/program.ts).
 - **process** — one running instance of a program: a stable id, a parent, ports, a lifecycle.
   Always say **"OS process"** for the operating-system kind; a bare "process" in Tuval prose is
   this one.
@@ -468,6 +468,31 @@ slice of epic [#7496](https://github.com/kamp-us/phoenix/issues/7496) under `app
 "Widget" and "actor" are **retired** for Tuval's own surfaces — an older doc that says either
 means program (definition) or process (running instance). "Grain" (Orleans' virtual actor) is
 noted as a future-feeling alternative and is not adopted.
+
+### Tuval: stop, forget, remove
+
+What ends a process, and what ends it for good. The direction was ruled by the founder on 2026-09-07
+(epic [#8332](https://github.com/kamp-us/phoenix/issues/8332)) — removing a desk process durably
+forgets it and its descendants, so they stay gone after a restart — and first used in code by
+[`packages/tuval/src/durability/Checkpoints.ts`](../packages/tuval/src/durability/Checkpoints.ts) and
+[`packages/tuval/src/process/Processes.ts`](../packages/tuval/src/process/Processes.ts) (#9446). Prose that
+uses them interchangeably re-opens the question the ruling closed.
+
+- **stop** — end a *running* process: close its Effect Scope, which drains it, disposes its Subs and
+  takes its descendants with it. The durable store is untouched, so a stopped process's manifest row
+  and snapshot survive and `restore` brings it back at the next boot. That is the right answer for a
+  shutdown and the wrong one for a removal.
+- **forget** — drop a process and its whole subtree from the *durable* store: the checkpoint manifest
+  rows and the `processes/<id>.json` snapshots. Nothing about the running process; a forget of a live
+  one is ordinary, and is what makes the removal below refusable.
+- **remove** — the desk-facing verb, as it already is on `workspace.remove`, and it means
+  **forget-then-stop, in that order**. A removal whose forget fails is refused whole: the process
+  keeps running and keeps its manifest row, because a process gone from the table and still in the
+  manifest is the half-forgotten state the distinction exists to make unwritable.
+
+A **graph-declared** process — one the config's `graph` plans and boot recreates at its own id —
+refuses removal, because forgetting it would be undone by the next boot rather than by anything the
+operator did.
 
 ### Tuval: stack, orientation, size, zoom
 
@@ -518,13 +543,13 @@ shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
 
 - **spell** — one addressable command in Tuval's spell registry: a path, a one-sentence description,
   an Effect Schema for its parameters and one for its result, an Effect `execute`, and an inert
-  capability list. Source: [`apps/tuval/src/commands/spell.ts`](../apps/tuval/src/commands/spell.ts).
+  capability list. Source: [`packages/tuval/src/commands/spell.ts`](../packages/tuval/src/commands/spell.ts).
 - **registry** — ambiguous on its own in Tuval prose, so always qualify it. The **spell registry**
   is the one table of every callable spell, keyed by path, built from the core spell list plus each
   program row's `spells` and replaced whole on a config reload
-  ([`apps/tuval/src/commands/registry.ts`](../apps/tuval/src/commands/registry.ts)). The **program
+  ([`packages/tuval/src/commands/registry.ts`](../packages/tuval/src/commands/registry.ts)). The **program
   registry** is the separate kernel table of program rows
-  ([`apps/tuval/src/registry/Registry.ts`](../apps/tuval/src/registry/Registry.ts)); it never reads
+  ([`packages/tuval/src/registry/Registry.ts`](../packages/tuval/src/registry/Registry.ts)); it never reads
   a row's spells.
 - **palette (the Tuval palette)** — Tuval's desk-level command overlay at the top center of the app,
   fixed width and never anchored to a window, where a person types a spell and picks from ranked
@@ -538,10 +563,10 @@ shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
   on the wire. Not Effect's `Scope`, the resource-lifetime handle Tuval prose also uses (every
   process runs in its own Effect Scope forked from its parent's); a bare "scope" in Tuval spell
   prose is this record. Source:
-  [`apps/tuval/src/commands/scope.ts`](../apps/tuval/src/commands/scope.ts).
+  [`packages/tuval/src/commands/scope.ts`](../packages/tuval/src/commands/scope.ts).
 - **the Tuval protocol** — the one versioned page-to-kernel wire: four Effect Schema messages
   (`SpellCall`, `SpellReply`, `Snapshot`, `Patch`), one union per direction, JSON text only. Source:
-  [`apps/tuval/src/protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts).
+  [`packages/tuval/src/protocol/messages.ts`](../packages/tuval/src/protocol/messages.ts).
 
 ### Tuval: partial (a transcript item)
 
@@ -555,14 +580,14 @@ shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
   and the thinking row, since a turn's reasoning streams before its answer does
   ([#8288](https://github.com/kamp-us/phoenix/issues/8288)) — and every predicate that reads the
   marker reads it through `in`, so a third costs no arm. Source:
-  [`apps/tuval/src/ai-agent/ports/transcript-item.ts`](../apps/tuval/src/ai-agent/ports/transcript-item.ts).
+  [`packages/tuval/src/ai-agent/ports/transcript-item.ts`](../packages/tuval/src/ai-agent/ports/transcript-item.ts).
 
 ### Tuval: thinking row, compaction marker, session row
 
 Three of the six rows a Tuval chat window renders, minted by epic
 [#8142](https://github.com/kamp-us/phoenix/issues/8142) phase 1. English technical terms, per §3,
 and model-blind: none of them names a backend, a model or a session id. Source:
-[`apps/tuval/src/ai-agent/ports/transcript-item.ts`](../apps/tuval/src/ai-agent/ports/transcript-item.ts).
+[`packages/tuval/src/ai-agent/ports/transcript-item.ts`](../packages/tuval/src/ai-agent/ports/transcript-item.ts).
 
 - **thinking row** — the agent's reasoning for one turn, as content. Not `ports/thinking.ts`, which
   is the effort-level *control*; a bare "thinking" in Tuval transcript prose is this row, and the
@@ -579,7 +604,8 @@ and model-blind: none of them names a backend, a model or a session id. Source:
 ## 3. Product / brand nouns (Turkish surface)
 
 The naming convention is **Turkish for product / brand, English for technical**:
-product and brand names stay Turkish and are never translated; everything technical is
+product and brand names are Turkish (English copy keeps only the five product names below
+untranslated); everything technical is
 English — URL routes/paths, code identifiers, D1 table/column names, file names. The
 canonical example is that the route is `/search?q=`, not `/ara`.
 
@@ -587,8 +613,12 @@ canonical example is that the route is `/search?q=`, not `/ara`.
 (ADR [0347](../.decisions/0347-web-copy-behind-i18n-catalog.md)). The reader picks a
 **locale**; **Turkish is the default**, so a reader who picks nothing reads what the site
 always read. Both locales are served from one typed **catalog** per locale under
-`apps/web/src/i18n/`, and **the brand nouns in the table below are not translated in
-either one** — the English interface still says sözlük, pano, mecmua, yazar, çaylak.
+`apps/web/src/i18n/`. **Only five product names stay Turkish in English copy: sözlük,
+pano, kampus, mecmua and depo** (ADR
+[0414](../.decisions/0414-five-product-names-stay-turkish.md), amending 0347). In English,
+**divan** is **Council** and **künye** is **Standing**, capitalised as feature names; every
+other Turkish word in the table below is translated normally (yazar is "author", çaylak
+"newcomer", kefil "vouch", bildir "report", sustur "mute", engelle "block").
 Tuval, Fabrika and Demlik are English-only: only the product name is Turkish, and none of
 them coins a Turkish term.
 
@@ -619,9 +649,8 @@ language* (the name a concept carries in [`TERMS.md`](./TERMS.md)) and *UI copy 
   copy changes nothing on the glossary axis: a term is not re-decided because the page
   it appears on can now render in English.
 
-The `bildir` row below already models this split: the brand lexeme surfaces in the
-user-facing copy (`bildir` / `bildirildi`, in both locales — it is a brand noun) while its
-technical surface (`features/report`, the `Report` service, `content_report`) stays
+The `bildir` row below already models this split: the Turkish lexeme surfaces in the
+Turkish copy (`bildir` / `bildirildi`; English reads "report") while its technical surface (`features/report`, the `Report` service, `content_report`) stays
 English. The funnel is the mirror case — a technical concept whose *canonical term* is
 English (`funnel / conversion funnel`) whatever locale the surface it powers renders in.
 Collapsing the two axes ("the concept shows on a Turkish screen, so its glossary term must
@@ -640,20 +669,20 @@ This is the general rule for every showcase surface — Turkish-naming the compo
 the atölye-storyboard inversion the founder ruled a standing don't. Exhibit sample content
 is not a user surface, so it is exempt from the catalog and stays as authored.
 
-The Turkish product/brand nouns this repo uses:
+The Turkish product/brand nouns this repo uses, and what English copy calls each:
 
-| Noun | What it names |
-|---|---|
-| **sözlük** | the dictionary product (terms + definitions) |
-| **pano** | the link/discussion board product (posts + comments) |
-| **kampus** | the umbrella product / community |
-| **bildir** | the report / notify surface — the brand lexeme surfaces in the **user-facing copy** (the `ReportButton` labels `bildir` / `bildirildi` / `zaten bildirildi`); the technical surface (`features/report` dir, `Report` service, `content_report` table) is English per this convention |
-| **künye** | the per-user identity DO (karma, invite-only access, privileges) |
-| **depo** | the internal asset store/CDN (was imge) |
-| **divan** | the proving-ground reviewer surface — the gated `/divan` destination where yazar + moderatör review a çaylak's sandboxed work ("work goes before the divan") |
-| **mecmua** | the serious long-form blogging / publishing product (a third surface beside **sözlük** + **pano**, epic #2429) — a **yazar** authors and publishes a long-form post (başlık + markdown body) that anyone may read; a **çaylak** cannot publish (authorship is earned). v1 is a surface on the existing `apps/web` worker, not its own app. Turkish for "magazine / journal / anthology" |
-| **sustur** | mute — the **one-directional, silent, notification-suppressing** member-mute lever (epic #2571; v1 semantics fixed by ADR [0188](../.decisions/0188-mute-v1-semantics.md)). Muting a member both read-masks their content *and* suppresses the **bildirim** their interactions would generate to the muter; the muted member is never notified. Distinct from **engelle** (block) — mute is one-directional and lighter. Turkish for "silence / mute" |
-| **engelle** | block — the heavier, **mutual** interaction-prevention lever (preventing replies/mentions/mutual visibility, symmetry TBD). **Deferred from mute v1** and scoped to its own later decision/epic (ADR [0188](../.decisions/0188-mute-v1-semantics.md)); named here to keep it distinct from the lighter one-directional **sustur** (mute). Turkish for "block / obstruct" |
+| Noun | English copy | What it names |
+|---|---|---|
+| **sözlük** | sözlük (stays) | the dictionary product (terms + definitions) |
+| **pano** | pano (stays) | the link/discussion board product (posts + comments) |
+| **kampus** | kampus (stays) | the umbrella product / community |
+| **bildir** | report | the report / notify surface — the Turkish lexeme surfaces in the **Turkish copy** (the `ReportButton` labels `bildir` / `bildirildi` / `zaten bildirildi`); the technical surface (`features/report` dir, `Report` service, `content_report` table) is English per this convention |
+| **künye** | **Standing** | the per-user identity DO (karma, invite-only access, privileges) |
+| **depo** | depo (stays) | the internal asset store/CDN (was imge) |
+| **divan** | **Council** | the proving-ground reviewer surface — the gated `/divan` destination where yazar + moderatör review a çaylak's sandboxed work ("work goes before the divan") |
+| **mecmua** | mecmua (stays) | the serious long-form blogging / publishing product (a third surface beside **sözlük** + **pano**, epic #2429) — a **yazar** authors and publishes a long-form post (başlık + markdown body) that anyone may read; a **çaylak** cannot publish (authorship is earned). v1 is a surface on the existing `apps/web` worker, not its own app. Turkish for "magazine / journal / anthology" |
+| **sustur** | mute | mute — the **one-directional, silent, notification-suppressing** member-mute lever (epic #2571; v1 semantics fixed by ADR [0188](../.decisions/0188-mute-v1-semantics.md)). Muting a member both read-masks their content *and* suppresses the **bildirim** their interactions would generate to the muter; the muted member is never notified. Distinct from **engelle** (block) — mute is one-directional and lighter. Turkish for "silence / mute" |
+| **engelle** | block | block — the heavier, **mutual** interaction-prevention lever (preventing replies/mentions/mutual visibility, symmetry TBD). **Deferred from mute v1** and scoped to its own later decision/epic (ADR [0188](../.decisions/0188-mute-v1-semantics.md)); named here to keep it distinct from the lighter one-directional **sustur** (mute). Turkish for "block / obstruct" |
 
 > This is the brand-noun seed. The full domain-noun glossary (the entities and their
 > precise definitions) lives in its own `.glossary/TERMS.md`; this table fixes only the

@@ -13,7 +13,7 @@ governs these verbs; where this spec and that doc disagree, the doc wins and thi
 **`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** — fabrika reimplements
 what it needs rather than shelling out to its predecessor, so no clause here can break when a tool
 this package does not own changes. v1's `doctor`
-skill and `doctor.sh`, and the `run-evidence`, `epic-ledger` and `decisions-index` tools, were read
+skill and `doctor.sh`, its CI-bundle reader, and the `epic-ledger` and `decisions-index` tools, were read
 for their semantics and their scars — each Grounding section names what the v1 counterpart gets
 wrong and what this spec does instead — but no clause defers to one and none is invoked.
 
@@ -157,9 +157,8 @@ vocabulary in this group. Four consequences bind every verb below:
    (measured).
 2. **A state word names the reading it is not.** The `<detail>` beside `absent` carries "proven
    absent, not unread"; beside `unknown` it carries the raw failed read, reproduced verbatim before
-   clamping, so the failure stays attributable — the shape
-   `packages/pipeline-cli/src/tools/run-evidence/run-evidence.ts` prints, and the shape v1's
-   `doctor.sh` prints when it tells the reader what not to conclude.
+   clamping, so the failure stays attributable — the shape v1's CI-bundle reader printed, and the
+   shape v1's `doctor.sh` prints when it tells the reader what not to conclude.
 3. **Per-field state cannot be an exit code.** A composite readout has five independent outcomes and
    one exit status; because a non-zero exit cannot carry a payload, the exit status answers only
    *"did I produce a readout at all"* and each field carries its own state inside it.

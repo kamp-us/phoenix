@@ -13,6 +13,7 @@ import {
 	traceDiagnosis,
 	tracePulls,
 	traceRange,
+	traceUnlinked,
 } from "./prove.ts";
 
 const SINGLE = {_tag: "Single"} as const;
@@ -67,6 +68,24 @@ describe("claimOf", () => {
 	it("defers nothing out of `review` when the event does not route into `review:ui`", () => {
 		expect(claimOf("PASS", "review", SINGLE, "ship")).toEqual({_tag: "HeadVerdicts", defers: []});
 		expect(claimOf("PASS", "review", TAIL, null)).toEqual({_tag: "HeadVerdicts", defers: []});
+	});
+
+	// Spelled out rather than read off `BUILD_STATES`, so dropping a cell from that set reds here: a
+	// `DONE` out of `build:ui` recorded on the ui-builder's word alone is the gap this pins shut.
+	describe.each(["build", "build:ui"])("a DONE out of the %s leaf", (leaf) => {
+		it("claims the open PR on a single lane and on an epic tail", () => {
+			expect(claimOf("DONE", leaf, SINGLE)).toEqual({_tag: "OpenPull"});
+			expect(claimOf("DONE", leaf, TAIL)).toEqual({_tag: "OpenPull"});
+		});
+
+		it("claims the child's range on an epic child", () => {
+			expect(claimOf("DONE", leaf, CHILD)).toEqual({_tag: "RangeCommits", epic: 5800});
+		});
+	});
+
+	it("names every build leaf in the answer for an event that claims nothing", () => {
+		const claim = claimOf("DONE", "queued", SINGLE);
+		expect(claim._tag === "None" && claim.why).toContain('DONE out of "build" / "build:ui"');
 	});
 
 	it("claims the same two artifacts for an epic tail — the tail is the one PR", () => {
@@ -127,6 +146,12 @@ describe("claimOf", () => {
 		});
 		expect(claimOf("BLOCKED", "review", TAIL, "blocked")).toEqual({_tag: "ParkUncontradicted"});
 		expect(claimOf("BLOCKED", "review", CHILD, "blocked")._tag).toBe("None");
+	});
+
+	it("claims the rewind out of either review cell, and none for a child", () => {
+		expect(claimOf("WIP", "review", SINGLE, "queued")).toEqual({_tag: "Unlinked"});
+		expect(claimOf("WIP", "review:ui", SINGLE, "queued")).toEqual({_tag: "Unlinked"});
+		expect(claimOf("WIP", "review", CHILD, "queued")._tag).toBe("None");
 	});
 
 	it("claims nothing for the events no read can falsify, in either shape", () => {
@@ -445,6 +470,32 @@ describe("tracePulls", () => {
 	});
 });
 
+describe("traceUnlinked", () => {
+	const REPOINTED = {_tag: "None", why: "read #9905 — no candidate's body links #7057"} as const;
+
+	it("proves the rewind when the issue is open and no candidate links it", () => {
+		expect(traceUnlinked(7057, "open", REPOINTED)).toMatchObject({_tag: "Proven"});
+	});
+
+	it("is contradicted by a closed issue, which is finished work for lane settle", () => {
+		expect(traceUnlinked(7057, "closed", REPOINTED)).toMatchObject({
+			_tag: "Contradicted",
+			what: expect.stringContaining("lane settle"),
+		});
+	});
+
+	it("is contradicted by one linking PR, and by several", () => {
+		expect(traceUnlinked(7057, "open", {_tag: "One", pr: 9905})).toMatchObject({
+			_tag: "Contradicted",
+			what: expect.stringContaining("#9905 still links #7057"),
+		});
+		expect(traceUnlinked(7057, "open", {_tag: "Many", prs: [9905, 9906]})).toMatchObject({
+			_tag: "Contradicted",
+			what: expect.stringContaining("#9905, #9906 still link #7057"),
+		});
+	});
+});
+
 describe("traceClosure", () => {
 	const merged = (linkKind: "fixes" | "part-of") => ({
 		number: 7328,
@@ -520,25 +571,33 @@ describe("traceClosure", () => {
 
 describe("traceDiagnosis", () => {
 	const comment = {id: 900, createdAt: "2026-08-16T02:00:00Z"};
-	const labels = ["type:investigation", "status:triaged"];
 
-	it("proves a no-PR outcome from the label and a comment written since the task entered build", () => {
-		expect(traceDiagnosis(4312, labels, [comment], "2026-08-16T01:00:00Z")).toEqual({
+	it("proves a no-PR outcome from a comment written since the task entered build", () => {
+		expect(traceDiagnosis(4312, [comment], "2026-08-16T01:00:00Z")).toEqual({
 			_tag: "Posted",
 			commentId: 900,
 		});
 	});
 
-	it("refuses when the issue is not one a no-PR outcome is legal on", () => {
-		const traced = traceDiagnosis(4312, ["type:feature"], [comment], null);
-		expect(traced._tag).toBe("Absent");
-		expect(traced._tag === "Absent" && traced.why).toContain("type:investigation");
+	it("proves it with no build entry on record, off the newest comment", () => {
+		expect(
+			traceDiagnosis(4312, [{id: 800, createdAt: "2026-08-15T00:00:00Z"}, comment], null),
+		).toEqual({
+			_tag: "Posted",
+			commentId: 900,
+		});
 	});
 
-	it("refuses on a comment that predates the build — a triage note is not a diagnosis", () => {
-		const traced = traceDiagnosis(4312, labels, [comment], "2026-08-16T03:00:00Z");
+	it("refuses with no comment at all", () => {
+		const traced = traceDiagnosis(4312, [], "2026-08-16T01:00:00Z");
 		expect(traced._tag).toBe("Absent");
-		expect(traced._tag === "Absent" && traced.why).toContain("no diagnosis");
+		expect(traced._tag === "Absent" && traced.why).toContain("no note");
+	});
+
+	it("refuses on a comment that predates the build — a triage note is not the build's note", () => {
+		const traced = traceDiagnosis(4312, [comment], "2026-08-16T03:00:00Z");
+		expect(traced._tag).toBe("Absent");
+		expect(traced._tag === "Absent" && traced.why).toContain("no note");
 	});
 });
 

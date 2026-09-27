@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {
+	criterionIndex,
 	emit,
 	markedIssue,
 	parseFields,
@@ -14,10 +15,11 @@ import {markerTime} from "./grill-marker.ts";
 const URL = "https://github.com/o/r/issues/8#issuecomment-3512345";
 const MARKER = `decision-ruled: #8 @ 4d90e1bb27ac · ruling:${URL} · 2026-08-20T05:11:02Z\n`;
 
-const ruling = () => ({
+const ruling = (supersedes: number | null = null) => ({
 	issue: markedIssue(8) ?? (0 as never),
 	digest: scopeDigest("4d90e1bb27ac") ?? ("" as never),
 	ruling: rulingUrl(URL) ?? ("" as never),
+	supersedes: supersedes === null ? null : (criterionIndex(supersedes) ?? (0 as never)),
 	at: markerTime("2026-08-20T05:11:02Z") ?? ("" as never),
 });
 
@@ -56,6 +58,31 @@ describe("emit", () => {
 	it("round-trips through read", () => {
 		expect(emit(ruling())).toBe(MARKER);
 		expect(read(emit(ruling()))).toMatchObject({_tag: "Found", value: {ruling: URL}});
+	});
+
+	it("round-trips the superseded criterion a ruling names", () => {
+		expect(emit(ruling(3))).toBe(
+			`decision-ruled: #8 @ 4d90e1bb27ac · ruling:${URL} · supersedes:3 · 2026-08-20T05:11:02Z\n`,
+		);
+		expect(read(emit(ruling(3)))).toMatchObject({_tag: "Found", value: {supersedes: 3}});
+	});
+});
+
+/**
+ * The field joined the tail after markers were already on the board, so the two shapes are one
+ * format: a marker carrying no `supersedes:` is not a drifted one, and reading it as such would
+ * un-rule every decision ruled before the widening.
+ */
+describe("the optional superseded-criterion field", () => {
+	it("reads a marker that names none as superseding nothing", () => {
+		expect(read(MARKER)).toMatchObject({_tag: "Found", value: {supersedes: null}});
+	});
+
+	it("reds a position that is not a 1-based criterion row", () => {
+		for (const token of ["zero", "0", "-1", "3.5"]) {
+			const drifted = `decision-ruled: #8 @ 4d90e1bb27ac · ruling:${URL} · supersedes:${token} · 2026-08-20T05:11:02Z\n`;
+			expect(read(drifted)._tag, token).toBe("Malformed");
+		}
 	});
 });
 

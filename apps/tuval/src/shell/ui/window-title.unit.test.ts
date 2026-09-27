@@ -1,8 +1,8 @@
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {empty, processGone} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {describe, expect, it} from "vitest";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
-import {empty, processGone} from "../window/host.ts";
-import {WindowId} from "../window/index.ts";
 import {boundMount, noRenderer, type ProcessName, type WindowMount} from "./mount.ts";
 import {windowTitle} from "./window-title.ts";
 
@@ -26,26 +26,26 @@ const claude = ProgramId.make("claude-session");
 
 describe("windowTitle", () => {
 	it("shows the line the process published, as it published it", () => {
-		expect(windowTitle(bound({title: "claude · fable · phoenix", programId: claude}))).toBe(
+		expect(windowTitle(bound({title: "claude · fable · phoenix", program: claude}))).toBe(
 			"claude · fable · phoenix",
 		);
 	});
 
 	it("moves with the line, because it is a function of the mount and holds nothing", () => {
-		const first = windowTitle(bound({title: "reading the epic", programId: claude}));
+		const first = windowTitle(bound({title: "reading the epic", program: claude}));
 		expect(first).toBe("reading the epic");
-		expect(windowTitle(bound({title: "writing the title child", programId: claude}))).toBe(
+		expect(windowTitle(bound({title: "writing the title child", program: claude}))).toBe(
 			"writing the title child",
 		);
 	});
 
 	it("names a process that published no title by its program, never by its id", () => {
-		expect(windowTitle(bound({title: null, programId: claude}))).toBe("claude-session");
+		expect(windowTitle(bound({title: null, program: claude}))).toBe("claude-session");
 	});
 
 	it("treats a blank line as no title, so the row is never empty", () => {
-		expect(windowTitle(bound({title: "   ", programId: claude}))).toBe("claude-session");
-		expect(windowTitle(bound({title: "", programId: claude}))).toBe("claude-session");
+		expect(windowTitle(bound({title: "   ", program: claude}))).toBe("claude-session");
+		expect(windowTitle(bound({title: "", program: claude}))).toBe("claude-session");
 	});
 
 	it("keeps the pre-flag title on a window the desk does not name", () => {
@@ -58,7 +58,7 @@ describe("windowTitle", () => {
 	it("names a running process whose renderer is missing the same way a bound one is named", () => {
 		expect(
 			windowTitle(
-				noRenderer(pid, "its program declares no renderer", {title: "counting", programId: claude}),
+				noRenderer(pid, "its program declares no renderer", {title: "counting", program: claude}),
 			),
 		).toBe("counting");
 	});

@@ -6,8 +6,7 @@ import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Contribution} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
-import {plural, useLocale} from "../../i18n";
-import {formatAgoTR} from "../../lib/datetime";
+import {plural, useDateFormatter, useLocale} from "../../i18n";
 import {renderMarkdownInline} from "../../lib/markdown";
 import "./ContributionRow.css";
 
@@ -40,6 +39,7 @@ export interface ContributionRowProps {
 
 export function ContributionRow({node, isOwn = false, sandboxBadge = false}: ContributionRowProps) {
 	const {t, locale} = useLocale();
+	const formatDate = useDateFormatter();
 	const c = useView(ContributionView, node);
 	const score = t(
 		plural(locale, c.score, {
@@ -73,7 +73,7 @@ export function ContributionRow({node, isOwn = false, sandboxBadge = false}: Con
 						{c.termTitle}
 					</Link>
 					<span className="kp-user-profile__row-score">{score}</span>
-					<span className="kp-user-profile__row-date">{formatAgoTR(toIso(c.createdAt))}</span>
+					<span className="kp-user-profile__row-date">{formatDate.ago(toIso(c.createdAt))}</span>
 				</div>
 				<p className="kp-user-profile__row-body">{renderMarkdownInline(c.bodyExcerpt ?? "")}</p>
 			</li>
@@ -92,7 +92,7 @@ export function ContributionRow({node, isOwn = false, sandboxBadge = false}: Con
 						{c.title}
 					</Link>
 					<span className="kp-user-profile__row-score">{score}</span>
-					<span className="kp-user-profile__row-date">{formatAgoTR(toIso(c.createdAt))}</span>
+					<span className="kp-user-profile__row-date">{formatDate.ago(toIso(c.createdAt))}</span>
 				</div>
 				{c.bodyExcerpt ? (
 					<p className="kp-user-profile__row-body">{renderMarkdownInline(c.bodyExcerpt)}</p>
@@ -116,7 +116,7 @@ export function ContributionRow({node, isOwn = false, sandboxBadge = false}: Con
 						{c.postTitle}
 					</Link>
 					<span className="kp-user-profile__row-score">{score}</span>
-					<span className="kp-user-profile__row-date">{formatAgoTR(toIso(c.createdAt))}</span>
+					<span className="kp-user-profile__row-date">{formatDate.ago(toIso(c.createdAt))}</span>
 				</div>
 				<p className="kp-user-profile__row-body">{renderMarkdownInline(c.bodyExcerpt ?? "")}</p>
 			</li>

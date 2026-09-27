@@ -25,6 +25,55 @@ export const LINKED_WORKTREE: Scripted = [
 	{ok: true, stdout: "/repo/.git/worktrees/ship-4321\n/repo/.git\n", reason: ""},
 ];
 
+/**
+ * The two reads behind the blocking authority (`../review/blocking.ts`), and the payloads they
+ * answer with.
+ *
+ * Here rather than in one group's own file because all four verbs that read a head's checks read
+ * this pair too, and a second literal for one platform response is how two tests come to disagree
+ * about what the platform returns.
+ */
+const API = "https:\\/\\/api\\.github\\.com";
+
+export const RULES = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/rules\\/branches\\/main\\?`);
+export const PROTECTION = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/branches\\/main\\/protection$`);
+
+/** A terminal page: 200 with no `rel="next"`, which is what the exhaustion proof reads. */
+const served = (body: unknown, status = 200): HttpReply => ({status, body: JSON.stringify(body)});
+
+/** A `rules/branches/<branch>` page: only `required_status_checks` rules carry contexts. */
+export const rules = (...contexts: ReadonlyArray<string>): HttpReply =>
+	served(
+		contexts.length === 0
+			? []
+			: [
+					{
+						type: "required_status_checks",
+						parameters: {
+							required_status_checks: contexts.map((context) => ({context})),
+						},
+					},
+				],
+	);
+
+export const protection = (...contexts: ReadonlyArray<string>): HttpReply =>
+	served({required_status_checks: {contexts}});
+
+/** A served refusal — the status is the fact, and the message is what GitHub prints beside it. */
+export const httpError = (status: number, message = "refused"): HttpReply => ({
+	status,
+	body: JSON.stringify({message}),
+});
+
+/**
+ * A base branch that declares nothing required, scripted **last** so a case about the required set
+ * puts its own rows first and wins the first-match lookup. Under it the denylist definition answers.
+ */
+export const UNDECLARED: ReadonlyArray<Scripted> = [
+	[RULES, rules()],
+	[PROTECTION, protection()],
+];
+
 export const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 export const OTHER_HEAD = "9fe12ab04f5a6b7c8d9e0f1a2b3c4d5e6f708192";
 
@@ -148,24 +197,30 @@ export const workflows = (
 		}),
 	);
 
+/** One Actions run as a fixture declares it — `null` on a provenance field omits it entirely. */
+export interface RunRow {
+	readonly id: number;
+	readonly workflowId?: number;
+	readonly checkSuiteId?: number | null;
+	readonly status?: string;
+	readonly conclusion?: string | null;
+	/** Which workflow produced the run — one of the gate-coverage read's three inputs. */
+	readonly path?: string;
+	/** What created the run, and which commit it carries — the other two. */
+	readonly event?: string | null;
+	readonly headSha?: string | null;
+}
+
 /**
  * The Actions run list at one head: the declared total, and the rows a caller cares to enumerate.
  *
  * The total and the rows are separate arguments because they answer separate questions — the
  * `no-runs` discriminator reads only the first, supersession only the second.
+ *
+ * A row defaults to the provenance that covers a gate — a `pull_request` run at {@link HEAD} — so a
+ * coverage case states the turn it makes, and `null` omits the field rather than emptying it.
  */
-export const runsTotal = (
-	total: number,
-	rows: ReadonlyArray<{
-		id: number;
-		workflowId?: number;
-		checkSuiteId?: number | null;
-		status?: string;
-		conclusion?: string | null;
-		/** Which workflow produced the run — the gate-coverage read's only input. */
-		path?: string;
-	}> = [],
-): ExecResult =>
+export const runsTotal = (total: number, rows: ReadonlyArray<RunRow> = []): ExecResult =>
 	okOut(
 		JSON.stringify({
 			total_count: total,
@@ -178,6 +233,8 @@ export const runsTotal = (
 				status: row.status ?? "completed",
 				conclusion: row.conclusion === undefined ? "success" : row.conclusion,
 				completed_at: "2026-08-08T00:00:00Z",
+				...(row.event === null ? {} : {event: row.event ?? "pull_request"}),
+				...(row.headSha === null ? {} : {head_sha: row.headSha ?? HEAD}),
 			})),
 		}),
 	);
@@ -307,3 +364,109 @@ export const ENV = {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} a
 	string,
 	string | undefined
 >;
+
+/** The config at the fixture PR's base ref, where `ownAccounts` and the grant-author set are read. */
+export const CONFIG_AT_BASE = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
+/** The running account — who counts as ours when no `ownAccounts` is declared. */
+export const RUNNING_ACCOUNT = /^GET \S+\/user$/;
+
+/**
+ * The ownership reads a landing verb makes before its first write, answered so the fixture PR is
+ * ours: no config at the base, and the running account is the fixture PR's own author.
+ */
+export const OURS: ReadonlyArray<Scripted> = [
+	[CONFIG_AT_BASE, {status: 404, body: '{"message":"Not Found"}'}],
+	[RUNNING_ACCOUNT, {status: 200, body: JSON.stringify({login: "usirin"})}],
+	[/^GET \S+\/repos\/o\/r\/issues\/4321\/comments/, {status: 200, body: "[]"}],
+];
+
+/** One ownership case both landing verbs are pinned against: who opened the PR, and what stands. */
+export interface OwnershipCase {
+	readonly name: string;
+	readonly author: string;
+	/** The ownership reads this case answers, scripted ahead of {@link OURS} so they win. */
+	readonly reads: ReadonlyArray<Scripted>;
+	readonly drivable: boolean;
+}
+
+const configAtBase = (value: Record<string, unknown>): Scripted => [
+	CONFIG_AT_BASE,
+	{status: 200, body: JSON.stringify(value)},
+];
+const grantComments = (author: string): Scripted => [
+	/^GET \S+\/repos\/o\/r\/issues\/4321\/comments/,
+	{
+		status: 200,
+		body: JSON.stringify([
+			{
+				id: 77,
+				user: {login: author},
+				created_at: "2026-09-26T07:16:03Z",
+				updated_at: "2026-09-26T07:16:03Z",
+				body: `takeover-granted: #${4321} · 2026-09-26T07:16:03Z\n\nTake over the fixture PR. — 2026-09-26\n`,
+			},
+		]),
+	},
+];
+const writes = (login: string): Scripted => [
+	new RegExp(`^GET \\S+/repos/o/r/collaborators/${login}/permission`),
+	{status: 200, body: JSON.stringify({permission: "write"})},
+];
+const GRANTORS = configAtBase({capClearAuthors: ["@founder", "@ada"]});
+
+export const OWNERSHIP_CASES: ReadonlyArray<OwnershipCase> = [
+	{
+		name: "the running account's own PR, no ownAccounts declared",
+		author: "usirin",
+		reads: [],
+		drivable: true,
+	},
+	{
+		name: "the running account's own PR, ownAccounts empty",
+		author: "usirin",
+		reads: [configAtBase({ownAccounts: []})],
+		drivable: true,
+	},
+	{
+		name: "another author's PR, no ownAccounts declared and no grant",
+		author: "ada",
+		reads: [],
+		drivable: false,
+	},
+	{
+		name: "another author's PR, ownAccounts empty and no grant",
+		author: "ada",
+		reads: [configAtBase({ownAccounts: []})],
+		drivable: false,
+	},
+	{
+		name: "a PR a configured own account opened",
+		author: "agent-bot",
+		reads: [configAtBase({ownAccounts: ["@agent-bot"]})],
+		drivable: true,
+	},
+	{
+		name: "the running account's PR when ownAccounts names someone else",
+		author: "usirin",
+		reads: [configAtBase({ownAccounts: ["@agent-bot"]})],
+		drivable: false,
+	},
+	{
+		name: "another author's PR a trusted account handed over",
+		author: "ada",
+		reads: [GRANTORS, grantComments("founder"), writes("founder")],
+		drivable: true,
+	},
+	{
+		name: "another author's PR carrying a grant its own author wrote",
+		author: "ada",
+		reads: [GRANTORS, grantComments("ada"), writes("ada")],
+		drivable: false,
+	},
+	{
+		name: "another author's PR carrying a grant from an outsider",
+		author: "ada",
+		reads: [GRANTORS, grantComments("mallory"), writes("mallory")],
+		drivable: false,
+	},
+];

@@ -15,12 +15,13 @@
  * second focus mechanism racing this one.
  */
 
+import {Tag} from "@kampus/design";
+import type {ViewState, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {ReactElement} from "react";
 import type {ShellMsg} from "../core/index.ts";
-import {asPickerView, type PickerEntries} from "../picker/browser.ts";
-import type {ViewState, WindowId} from "../window/index.ts";
+import {asPickerView, type PickerEntries, type ProjectOpener} from "../picker/browser.ts";
 import {ErrorBoundary} from "./ErrorBoundary.tsx";
-import type {WindowMount} from "./mount.ts";
+import {mountProject, type WindowMount} from "./mount.ts";
 import {PickerView} from "./PickerView.tsx";
 import {windowTitle} from "./window-title.ts";
 
@@ -32,6 +33,10 @@ export interface WindowViewProps {
 	readonly entries: PickerEntries;
 	readonly dispatch: (msg: ShellMsg) => void;
 	readonly reducedMotion: boolean;
+	/** The operator's `processRemove` flag, for the picker an empty window mounts (`./PickerView.tsx`). */
+	readonly processRemove?: boolean;
+	/** How this desk opens a project, for the picker's "Open project…" (`./PickerView.tsx`). */
+	readonly opener?: ProjectOpener | null;
 }
 
 /**
@@ -56,7 +61,10 @@ export function WindowView({
 	entries,
 	dispatch,
 	reducedMotion,
+	processRemove = false,
+	opener = null,
 }: WindowViewProps): ReactElement {
+	const project = mountProject(mount);
 	return (
 		<section
 			className="tuval-window"
@@ -71,6 +79,14 @@ export function WindowView({
 			<header className="tuval-window-title">
 				<span aria-hidden="true">{focused ? "▸" : " "}</span>
 				<span>{windowTitle(mount)}</span>
+				{/* After the title and never folded into it: the title is the process's own line, and the
+				    project is the desk's fact about where that process came from. */}
+				{project === null ? null : (
+					<Tag kind="meta" className="tuval-project-label">
+						<span className="kp-visually-hidden">project </span>
+						<span data-field="project">{project}</span>
+					</Tag>
+				)}
 				{focused ? <span>(focused)</span> : null}
 			</header>
 			<div className="tuval-window-body">
@@ -95,6 +111,8 @@ export function WindowView({
 						dispatch={dispatch}
 						reducedMotion={reducedMotion}
 						focused={focused}
+						processRemove={processRemove}
+						opener={opener}
 					/>
 				) : (
 					<div className="tuval-placeholder" role="status">

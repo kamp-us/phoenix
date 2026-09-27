@@ -14,9 +14,7 @@
  * nothing; the refusal names it. `--declare-unreachable` does not silence the fact — the proven half
  * records `reachable` and the counts verbatim, so the successor reads a **stated** loss.
  *
- * **A pack is one comment or it is nothing**, which is why there is no partial-application table: a
- * post that fails is `8` with nothing on the issue, and a post that lands and reads back differently
- * is `9`, naming the comment id so a human can inspect it.
+ * A pack is posted as one comment. See `handoff take --help` for write and read-back refusals.
  */
 
 import {Effect} from "effect";

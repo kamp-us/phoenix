@@ -8,17 +8,9 @@
  * agreeing by construction. What this verb owns is the **subject acquisition**: `adr sweep` can only
  * read a local draft, and a review-time or digest-time subject lives in a commit.
  *
- * All three outcomes exit 0 and all three are answers — and none of them is a clearance. A record that
- * disagrees with the subject about what a *label means* shares no distinctive vocabulary and never
- * appears here at all, which is why `no-overlap` carries that sentence in `reason` verbatim.
- *
- * On the PR path the subject's file set is {@link readLocalFileSet}'s local three-dot read, shared
- * with `governance scope`, `governance guards` and the two `ship` verbs. GitHub's `changed_files` is
- * reported beside it and no longer refuses: that count is computed against a base cached at the PR's
- * last push, so a verb that stops on the disagreement strands the round with nothing to clear it.
- * What still refuses is what git alone establishes — an unreadable range is UNKNOWN and an empty one
- * is zero-scope.
- *
+ * Lexical overlap cannot find a disagreement that shares no distinctive vocabulary, so this scan
+ * cannot grant clearance. See ./command.ts help for its result states.
+ * The local three-dot file set is authoritative; GitHub caches its count at the last push.
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, Result} from "effect";

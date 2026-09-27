@@ -41,7 +41,7 @@ caller could forget to distinguish from a real one — the in-code half of the f
 ## See also
 
 - [Pattern library index](./index.md)
-- [verb-output-pin-surfaces.md](./verb-output-pin-surfaces.md) — the surfaces a verb's printed output
-  shape is copied into
+- [Command documentation owners](./verb-output-pin-surfaces.md) maps caller help, implementation
+  contracts and skill routing to their homes.
 - [`packages/fabrika-cli/docs/packaging.md`](../packages/fabrika-cli/docs/packaging.md) — how the
   package is published and which copy of the binary runs

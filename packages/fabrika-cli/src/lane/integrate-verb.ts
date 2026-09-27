@@ -23,11 +23,8 @@
  * puts that branch back too, so a replay this verb did not keep leaves the graded range where its
  * reviewer left it — see {@link restore}.
  *
- * On exit 0 the last stdout line is `INTEGRATE-VERDICT: MERGED` or, after a replay,
- * `INTEGRATE-VERDICT: REPLAYED` — the line above it the merged head either way, and above that, on a
- * replay, the machinery event carrying the moved range. Publishing that head is `lane push`'s and
- * recording the `DONE` is the driver's: this verb neither pushes nor writes the lane's log, so its
- * answer is a fact about a tree and nothing else.
+ * Publishing the merged head is `lane push`'s job; the driver records `DONE`. This verb neither
+ * pushes nor writes the lane log. See ./command.ts help for its report format.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -222,6 +219,8 @@ interface ReplayEvent {
 	readonly onto: string;
 	readonly range: MovedRange;
 	readonly resolved: ReadonlyArray<string>;
+	/** Lockfiles the repo's regenerator rebuilt; the re-review grades them with the rest of the range. */
+	readonly regenerated: ReadonlyArray<string>;
 	readonly commits: number;
 	readonly reReview: "required";
 	readonly budget: "unspent";
@@ -306,7 +305,13 @@ const land = (
 			};
 		}
 
-		const replayed = yield* replayChild({path, branch, child, tip: head});
+		const replayed = yield* replayChild({
+			path,
+			branch,
+			child,
+			tip: head,
+			regenerator: gate.value.lockfileRegenerator,
+		});
 		if (replayed._tag === "Unreadable") {
 			return {
 				_tag: "Refused" as const,
@@ -345,11 +350,26 @@ const land = (
 				),
 			};
 		}
+		if (replayed._tag === "NotRegenerated") {
+			return {
+				_tag: "Refused" as const,
+				outcome: yield* restore(
+					path,
+					head,
+					head,
+					refuse(
+						MERGE_CONFLICT,
+						`${VERB}: ${child} replayed onto ${head} and ${replayed.reason} — so the replay was abandoned. Park the lane on \`--cause ${REPLAY_PARK_CAUSE}\`.`,
+						replayed.paths,
+					),
+				),
+			};
+		}
 
 		return {
 			_tag: "Landed" as const,
 			notes: [
-				`${VERB}: ${child} conflicted with ${branch} and was replayed onto ${head} as ${replayed.replayBranch} — ${replayed.commits} commit(s), ${replayed.resolved.length} path(s) kept both ways — then merged into ${branch} at ${path}.`,
+				`${VERB}: ${child} conflicted with ${branch} and was replayed onto ${head} as ${replayed.replayBranch} — ${replayed.commits} commit(s), ${replayed.resolved.length} path(s) kept both ways, ${replayed.regenerated.length} lockfile(s) regenerated — then merged into ${branch} at ${path}.`,
 				`${VERB}: ${child} was moved onto the replayed range, so it names the commits ${branch} carries and the child's next integrate is up to date.`,
 			],
 			// `git cherry-pick` writes no `ORIG_HEAD`, so the replay path resets through the sha this run
@@ -362,6 +382,7 @@ const land = (
 				onto: head,
 				range: replayed.range,
 				resolved: replayed.resolved,
+				regenerated: replayed.regenerated,
 				commits: replayed.commits,
 				reReview: "required",
 				budget: "unspent",

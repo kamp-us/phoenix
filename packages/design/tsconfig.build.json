@@ -1,0 +1,17 @@
+{
+	// The emit lens for the published tarball. `tsconfig.json` cannot be extended here: it sets
+	// `composite`, `noEmit` and `allowImportingTsExtensions`, none of which an emit may carry.
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"rootDir": "src",
+		"outDir": "dist",
+		"noEmit": false,
+		"declaration": true,
+		"exactOptionalPropertyTypes": false,
+		"jsx": "react-jsx",
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"types": ["node", "vite/client"]
+	},
+	"include": ["src"],
+	"exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test-budget.ts"]
+}

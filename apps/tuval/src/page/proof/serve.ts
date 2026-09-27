@@ -1,7 +1,7 @@
 /**
  * The harness the browser proof drives: `pnpm proof:page-reconnect` from `apps/tuval`.
  *
- * It boots the Pi vertical on the faux provider and chats it twice (`../../pi/proof/vertical.ts`),
+ * It boots the Pi vertical on the faux provider and chats it twice (`../../pi-desk/proof/vertical.ts`),
  * serves the kernel's transport, puts `./relay.ts` in front of that transport, and serves the real
  * page onto the relay. So the page a browser loads is `../main.tsx` over a real socket, and the one
  * thing the proof can do that a founder cannot is take the wire away and give it back.
@@ -25,12 +25,12 @@
 
 import {createServer} from "node:http";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {Console, Deferred, Effect, Exit, Queue} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {PROMPT_1} from "../../pi/proof/names.ts";
-import {appRoot, bootChattedVertical} from "../../pi/proof/vertical.ts";
+import {PROMPT_1} from "../../pi-desk/proof/names.ts";
+import {appRoot, bootChattedVertical} from "../../pi-desk/proof/vertical.ts";
 import {serveDesk} from "../../shell/host/index.ts";
-import {defaultPrefixTable} from "../../shell/keys/index.ts";
 import type {TransportServer} from "../../shell/transport/server.ts";
 import {servePage} from "../dev-server.ts";
 import {CONTROL_PORTS, NO_RECOVERY_PATH} from "./names.ts";

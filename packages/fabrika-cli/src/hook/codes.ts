@@ -1,11 +1,7 @@
 /**
  * The one exit table every `hook` verb allocates from.
  *
- * `0`, `1`, `126` and `127` are reserved by the interface convention (`../verb.ts`). The three seats
- * below keep apart the three ways a harness envelope fails to arrive, which is the whole reason a
- * hook verb needs its own table: "stdin held nothing", "stdin held bytes that are not an envelope"
- * and "fd 0 could not be read" are three different claims, and collapsing any two of them lets a
- * hook report a proven negative over evidence it never saw — a verdict nothing was scanned for.
+ * `hook codes` exposes {@link HOOK_EXIT_TABLE}; each verb's `--help` states what triggers its codes.
  *
  * **`2` is allocated by nothing, here or in any other group, and this is the group that makes it a
  * hard rule.** On `PreToolUse` exit `2` is the harness's one blocking code (`./harness-exit.ts`), so
@@ -62,7 +58,9 @@ export const WRONG_EVENT = 14;
 
 /**
  * A readable `WorktreeCreate` envelope arrived and no worktree can be planned from it — an absent or
- * relative `cwd`, an absent `name`, or a `name` that is not a plain slug.
+ * relative `cwd`, an absent `name`, a `name` that is not a plain slug, a `cwd` that
+ * `git rev-parse --show-toplevel` resolves to no repository toplevel, or a clone whose primary
+ * working tree `git worktree list` cannot establish.
  *
  * Apart from {@link MALFORMED_ENVELOPE} because the envelope is well-formed: every field
  * `../hook/envelope.ts` requires is present, and it is the *per-event* half this verb needs that is
@@ -106,12 +104,19 @@ export const GROUND_UNKNOWN = 19;
 
 /**
  * The plugin source directory was read and its primary worktree is in no state to be advanced — it
- * is off its default branch, on a detached HEAD, carrying uncommitted work, or diverged.
+ * is off its default branch, on a detached HEAD, diverged, or carrying uncommitted work that the
+ * incoming commits also change.
+ *
+ * Uncommitted work **outside** the incoming commits' paths is not one of those states and does not
+ * reach this code: `git merge --ff-only` takes that move and leaves the work alone, so refusing it
+ * left a checkout carrying one standing local-only edit behind forever.
  *
  * A **proven** outcome, and deliberately not {@link GROUND_UNKNOWN}: the ground was read fine and
  * says the move would not be safe. Nothing was moved, and the reason is on stderr, which is the
  * whole point of the seat — a plugin source that stops advancing is exactly the silent state
  * `hook plugin-sync` exists to make loud, so it may never be reported as a clean pass.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9459#issuecomment-5745160952
  */
 export const SYNC_REFUSED = 20;
 
@@ -132,6 +137,24 @@ export const REMOTE_UNREADABLE = 21;
  * not collapse into {@link SYNC_REFUSED}, whose remedy is a human deciding where that checkout sits.
  */
 export const FAST_FORWARD_FAILED = 22;
+
+/**
+ * The CLI's version could not be compared with the plugin's declared minimum — no plugin root was
+ * given, or the floor file or a version in it could not be read. **UNKNOWN**, never a pass: the
+ * comparison was not made, so nothing shows the CLI is new enough.
+ */
+export const FLOOR_UNKNOWN = 23;
+
+/**
+ * The repo-level lock around the base fetch and `git worktree add` could not be taken — a live holder
+ * kept it past the wait budget, or the lock could not be created in the clone's common git dir.
+ * Nothing was fetched or added.
+ *
+ * Its own seat because the remedy is neither of its neighbours': the base and the add were never
+ * tried, so this is not {@link BASE_FETCH_FAILED} or {@link WORKTREE_ADD_FAILED}, and a re-run once
+ * the named holder finishes is the whole fix.
+ */
+export const CREATION_LOCK_UNAVAILABLE = 24;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -169,6 +192,14 @@ export const HOOK_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{
 		code: FAST_FORWARD_FAILED,
 		meaning: "the planned fast-forward failed — the tree changed under it",
+	},
+	{
+		code: FLOOR_UNKNOWN,
+		meaning: "the CLI could not be compared with the plugin's minimum version — UNKNOWN",
+	},
+	{
+		code: CREATION_LOCK_UNAVAILABLE,
+		meaning: "the repo-level worktree creation lock could not be taken — nothing was created",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

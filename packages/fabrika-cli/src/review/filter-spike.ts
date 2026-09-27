@@ -1,0 +1,436 @@
+/**
+ * Review filtering omits content only. Required reviews always use every changed path.
+ * @ruling https://github.com/kamp-us/phoenix/issues/9547
+ */
+import {classOf, partitionWithUi, type ShipPartition, shipNamespacesOf} from "./classes.ts";
+import {headerPaths} from "./diff.ts";
+
+/** One exclusion pattern, with where it came from — a default, a config key, or the caller's `--exclude`. */
+export interface ExclusionPattern {
+	readonly pattern: string;
+	readonly source: "default" | "config" | "caller";
+}
+
+/**
+ * The default exclusion set: the lockfile, snapshot directories, and the generated-schema and
+ * build-output shapes this repo's `.gitignore` `# Generated` block already names.
+ */
+export const DEFAULT_EXCLUSIONS: ReadonlyArray<ExclusionPattern> = [
+	{pattern: "pnpm-lock.yaml", source: "default"},
+	{pattern: "**/__snapshots__/**", source: "default"},
+	{pattern: "**/__generated__/**", source: "default"},
+	{pattern: "**/schema.graphql.generated", source: "default"},
+	{pattern: "**/__mutation__/**", source: "default"},
+];
+
+/** Omitted placement disables filtering; requested filtering preserves required reviews. */
+export type FilterPlacement = "after";
+
+export const isFilterPlacement = (value: string): value is FilterPlacement => value === "after";
+
+/**
+ * One guard probe: a path the named guard actually reads, composed from that guard's own exported
+ * constants in `guard-trees.ts`. A pattern matching any probe is refused.
+ */
+export interface GuardProbe {
+	readonly guard: string;
+	readonly path: string;
+	/** The guard source file the probe was composed from — what the sync golden test re-reads. */
+	readonly source: string;
+}
+
+const escapeRegex = (segment: string): string => segment.replace(/[.?+^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The pattern to a full-match regex. Slash-separated: `*` is anything but a slash inside one
+ * segment; a double-star segment spans any number of directories including none — a leading
+ * double-star prefix lets the next segment match at the root as well as at any depth, and a
+ * trailing double-star (or a trailing slash) matches everything under the prefix; anything else is
+ * literal.
+ */
+export const patternToMatcher = (pattern: string): RegExp => {
+	const trimmed = pattern.replace(/\/+$/, "");
+	const under = trimmed !== pattern;
+	const parts = trimmed.split("/").filter((part) => part !== "");
+	let source = "^";
+	let needSlash = false;
+	for (const [index, part] of parts.entries()) {
+		const last = index === parts.length - 1;
+		if (part === "**") {
+			if (last) {
+				source += `${needSlash ? "/" : ""}.*`;
+				needSlash = false;
+			} else {
+				source += `${needSlash ? "/" : ""}(?:[^/]+/)*`;
+				needSlash = false;
+			}
+			continue;
+		}
+		const segment = part.includes("*")
+			? escapeRegex(part).replace(/\*/g, "[^/]*")
+			: escapeRegex(part);
+		source += `${needSlash ? "/" : ""}${segment}`;
+		needSlash = true;
+	}
+	if (under) source += "(?:/.*)?";
+	return new RegExp(`${source}$`);
+};
+
+export const matchPath = (pattern: string, path: string): boolean =>
+	patternToMatcher(pattern).test(path);
+
+/** `--exclude` arrives as a comma-separated list; blanks are dropped, never treated as a pattern. */
+export const parseExcludeList = (csv: string): ReadonlyArray<ExclusionPattern> =>
+	csv
+		.split(",")
+		.map((entry) => entry.trim())
+		.filter((entry) => entry !== "")
+		.map((pattern) => ({pattern, source: "caller" as const}));
+
+/**
+ * The defaults the effective set dropped: every default whose pattern string no entry of the set
+ * carries. A default removed and re-added by the same pattern string is back in the set — the
+ * re-addition is the later, more specific declaration — so it does not appear here; the
+ * enumeration must never name a default the filter still applies.
+ */
+export const unexcludedDefaults = (
+	patterns: ReadonlyArray<ExclusionPattern>,
+): ReadonlyArray<string> =>
+	DEFAULT_EXCLUSIONS.map(({pattern}) => pattern).filter(
+		(pattern) => !patterns.some((entry) => entry.pattern === pattern),
+	);
+
+/** The assembled exclusion set: the patterns a run filters over, and the defaults it dropped. */
+export interface EffectiveExclusions {
+	readonly patterns: ReadonlyArray<ExclusionPattern>;
+	/** The removed defaults nothing re-added — enumerated, so a removal is never silent. */
+	readonly unexcluded: ReadonlyArray<string>;
+}
+
+/**
+ * The effective exclusion set: `(DEFAULT_EXCLUSIONS − removals) + config additions + CLI`, with one
+ * entry per pattern string and a deterministic order — defaults in declaration order, then config
+ * additions in declaration order, then the CLI's.
+ *
+ * A later declaration equal in string to an earlier entry is a duplicate, not an override; a
+ * duplicate that re-adds a removed default is exactly what lifts that default out of
+ * `unexcluded`. The refusal union of every filtering consumer runs over this set, so a config
+ * addition is refused on a guard-probe match exactly as a default or a CLI flag is.
+ */
+export const effectiveExclusions = (
+	configAdditions: ReadonlyArray<string>,
+	configRemovals: ReadonlyArray<string>,
+	cliExclude: string | null,
+): EffectiveExclusions => {
+	const removed = new Set(configRemovals);
+	const patterns: ExclusionPattern[] = [];
+	const add = (pattern: string, source: ExclusionPattern["source"]): void => {
+		if (patterns.some((entry) => entry.pattern === pattern)) return;
+		patterns.push({pattern, source});
+	};
+	for (const {pattern} of DEFAULT_EXCLUSIONS) {
+		if (!removed.has(pattern)) add(pattern, "default");
+	}
+	for (const pattern of configAdditions) add(pattern, "config");
+	if (cliExclude !== null) {
+		for (const {pattern} of parseExcludeList(cliExclude)) add(pattern, "caller");
+	}
+	return {patterns, unexcluded: unexcludedDefaults(patterns)};
+};
+
+/**
+ * A pattern the filter refuses on, from one of two origins: at the pattern level, a match against
+ * a guard probe or a forced alignment onto a governed root; at run time, a path the filter
+ * actually excluded lying under a governed root. `guard` names the guard behind the refusal — the
+ * probing guard, or the governed-roots guard when the refusal is an alignment or a backstop row.
+ * A user pattern is corrected, a default matching a probe is a spike bug and refuses all the same.
+ */
+export interface FilterRefusal {
+	readonly pattern: string;
+	readonly guard: string;
+	readonly probe: string;
+	/**
+	 * Set when the refusal is an actually-excluded governed path (the runtime backstop) rather
+	 * than a pattern-level probe match; equals `probe` in that case.
+	 */
+	readonly excludedPath?: string;
+}
+
+/**
+ * The governed root behind its probe path: a directory root probes as `<root>probe.md`, a bare
+ * file root probes as itself — the same composition `guard-trees.ts`'s `governedRootProbes` makes.
+ */
+const governedRootOf = (probePath: string): string =>
+	probePath.endsWith("/probe.md") ? probePath.slice(0, -"probe.md".length) : probePath;
+
+/**
+ * The pattern's segments, normalized exactly as `patternToMatcher` normalizes them: trailing
+ * slashes trimmed, split on a slash, empty parts dropped.
+ */
+const patternSegments = (pattern: string): ReadonlyArray<string> =>
+	pattern
+		.replace(/\/+$/, "")
+		.split("/")
+		.filter((part) => part !== "");
+
+/** The governed root's segments — the same normalization, trailing-slash or bare alike. */
+const rootSegments = (root: string): ReadonlyArray<string> =>
+	root.endsWith("/")
+		? root
+				.slice(0, -1)
+				.split("/")
+				.filter((part) => part !== "")
+		: root.split("/").filter((part) => part !== "");
+
+/**
+ * Whether the pattern FORCIBLY pins the root: every one of the root's segments is consumed in
+ * order by pattern segments that are pure literals — a double-star segment passes through
+ * consuming zero root segments, a wildcard-carrying segment never consumes one. Once the root's
+ * segments are exhausted the pattern may end or continue however it likes: a pinning pattern can
+ * only match paths under the root, so any continuation still pins it.
+ */
+const pinsRoot = (pattern: ReadonlyArray<string>, root: ReadonlyArray<string>): boolean => {
+	const walk = (patternIndex: number, rootIndex: number): boolean => {
+		if (rootIndex === root.length) return true;
+		const segment = pattern[patternIndex];
+		if (segment === undefined) return false;
+		if (segment === "**") return walk(patternIndex + 1, rootIndex);
+		if (segment.includes("*")) return false;
+		if (segment !== root[rootIndex]) return false;
+		return walk(patternIndex + 1, rootIndex + 1);
+	};
+	return walk(0, 0);
+};
+
+/**
+ * The refusal union, two pattern-level arms. The runtime backstop in `previewOf` closes the rest
+ * of the contract over the actual diff.
+ *
+ * **Probe match** — the pattern matches a probe path a governed root or guard actually reads.
+ * Probe-granular, not pattern-algebraic, because a universe-wide suffix surface (leak-guard's
+ * `*.md`) would otherwise intersect every directory exclusion and refuse the defaults.
+ *
+ * **Forced literal alignment** — the probe arm is match-granular, so a pattern that pins a
+ * governed tree by name would slip past it while still carving that tree out of the review's
+ * content. The check is segment-wise because the old prefix-string run missed a pattern pinning
+ * the root from behind a leading double-star segment (a leading double-star segment then the
+ * root's own name matches the tree yet carries no literal prefix), and it is alignment-only
+ * because a full hypothetical-intersection check would refuse every generic deep glob — the
+ * shipped defaults included, since a file of the right name could exist under any governed
+ * directory. So this arm refuses only what the pattern forces; everything less specific is closed
+ * at run time by the governed-excluded backstop, which is complete over the actual diff and
+ * refuses the moment the filter actually excludes governed content — there the contract closes.
+ */
+export const refusalFor = (
+	patterns: ReadonlyArray<ExclusionPattern>,
+	probes: ReadonlyArray<GuardProbe>,
+): ReadonlyArray<FilterRefusal> => {
+	const refusals: FilterRefusal[] = [];
+	for (const {pattern} of patterns) {
+		const probe = probes.find((candidate) => matchPath(pattern, candidate.path));
+		if (probe !== undefined) {
+			refusals.push({pattern, guard: probe.guard, probe: probe.path});
+			continue;
+		}
+		const segments = patternSegments(pattern);
+		const target = probes.find(
+			(candidate) =>
+				candidate.guard === "governedRoots" &&
+				pinsRoot(segments, rootSegments(governedRootOf(candidate.path))),
+		);
+		if (target !== undefined) {
+			refusals.push({pattern, guard: target.guard, probe: target.path});
+		}
+	}
+	return refusals;
+};
+
+/**
+ * One path the filter actually excluded that lies under a governed root, with the pattern that
+ * excluded it — a runtime-backstop row.
+ */
+export interface GovernedExclusion {
+	readonly pattern: string;
+	readonly path: string;
+}
+
+/**
+ * The runtime backstop: which paths an exclusion pass actually carved out of governed content,
+ * and by which pattern. For each excluded path under a governed root — a trailing-slash root
+ * matches by prefix, a bare file root matches itself — the FIRST pattern in the set that matches
+ * it wins, in set order. A path under no governed root emits nothing. `previewOf` refuses on a
+ * non-empty result, which is what closes the refusal contract over the actual diff: the
+ * pattern-level arms refuse only what a pattern forces, and anything less specific that still
+ * carves governed content is caught here, on the paths that were really excluded.
+ */
+export const governedExcluded = (
+	excluded: ReadonlyArray<string>,
+	patterns: ReadonlyArray<ExclusionPattern>,
+	probes: ReadonlyArray<GuardProbe>,
+): ReadonlyArray<GovernedExclusion> => {
+	const roots = probes
+		.filter((probe) => probe.guard === "governedRoots")
+		.map((probe) => governedRootOf(probe.path));
+	const rows: GovernedExclusion[] = [];
+	for (const path of excluded) {
+		const underRoot = roots.some((root) =>
+			root.endsWith("/") ? path.startsWith(root) : path === root,
+		);
+		if (!underRoot) continue;
+		const hit = patterns.find(({pattern}) => matchPath(pattern, path));
+		if (hit !== undefined) rows.push({pattern: hit.pattern, path});
+	}
+	return rows;
+};
+
+/** The split one placement applies: the kept paths and the excluded ones, input order preserved. */
+export interface PathSplit {
+	readonly kept: ReadonlyArray<string>;
+	readonly excluded: ReadonlyArray<string>;
+}
+
+export const applyPlacement = (
+	files: ReadonlyArray<string>,
+	patterns: ReadonlyArray<ExclusionPattern>,
+): PathSplit => {
+	const kept: string[] = [];
+	const excluded: string[] = [];
+	for (const file of files) {
+		(patterns.some(({pattern}) => matchPath(pattern, file)) ? excluded : kept).push(file);
+	}
+	return {kept, excluded};
+};
+
+/** One `diff --git` section, kept whole so a filtered diff stays a well-formed unified diff. */
+export interface DiffSection {
+	readonly path: string;
+	readonly text: string;
+}
+
+/**
+ * The diff's per-file sections, kept whole so a filtered diff stays a well-formed unified diff.
+ *
+ * Headers parse through `./diff.ts`'s `headerPaths` — the SAME grammar the completeness proof
+ * counts with, quoted C-style forms included (`core.quotePath` escapes a non-ASCII or
+ * special-character path as `"a/na\303\257ve.md"`, and the two sides quote independently). One
+ * header grammar is what keeps this section split and the proof's file count from ever disagreeing
+ * about how many files a diff carries: the section paths are the counted paths, decoded.
+ */
+export const diffSections = (diff: string): ReadonlyArray<DiffSection> => {
+	const sections: DiffSection[] = [];
+	// CRLF-tolerant: diffs checked out with autocrlf (or authored on Windows) carry \r that would
+	// otherwise glue itself onto every parsed header and path.
+	const lines = diff.split("\n").map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
+	let current: string[] | null = null;
+	let path: string | null = null;
+	const flush = (): void => {
+		if (current !== null && path !== null) {
+			sections.push({path, text: current.join("\n")});
+		}
+	};
+	for (const line of lines) {
+		const paths = headerPaths(line);
+		if (paths !== null) {
+			flush();
+			current = [line];
+			path = paths.after === "" ? paths.before : paths.after;
+		} else if (current !== null) {
+			current.push(line);
+		}
+	}
+	flush();
+	return sections;
+};
+
+/**
+ * The filtered diff: the machine-readable exclusion header, then the kept sections whole. The
+ * header is what tells a deliberate exclusion apart from a truncation — the diff verbs' own
+ * completeness proof runs on the UNFILTERED bytes and stays untouched by this module.
+ *
+ * `unexcluded` names the removed defaults the set carried, appended sorted after the excluded
+ * paths so a config removal is stated in the same header a caller already reads. Empty is the
+ * shipped shape: no removal, no lines, bytes identical to a run without the config keys.
+ */
+export const filterDiff = (
+	diff: string,
+	excluded: ReadonlyArray<string>,
+	placement: FilterPlacement,
+	unexcluded: ReadonlyArray<string> = [],
+): string => {
+	const excludedSet = new Set(excluded);
+	const served = diffSections(diff).filter((section) => !excludedSet.has(section.path));
+	const header = [
+		`x-fabrika-filter: placement=${placement} excluded=${excluded.length} served=${served.length}`,
+		...[...excluded].sort().map((path) => `x-fabrika-excluded-path: ${path}`),
+		...(unexcluded.length > 0
+			? [...unexcluded].sort().map((path) => `x-fabrika-unexcluded-path: ${path}`)
+			: []),
+	];
+	return [...header, "", ...served.map((section) => section.text)].join("\n");
+};
+
+export interface PreviewResult {
+	readonly placement: FilterPlacement;
+	/** The paths that survive the filter — the ones a reviewer would read. */
+	readonly matched_paths: ReadonlyArray<string>;
+	readonly excluded: ReadonlyArray<string>;
+	/** The removed defaults the set still lacks — carried so every emission enumerates the same list. */
+	readonly unexcluded: ReadonlyArray<string>;
+	readonly active_classes: ShipPartition["classes"];
+	readonly namespaces: ReadonlyArray<string>;
+	readonly filtered_diff: string;
+	readonly filtered_diff_bytes: number;
+	readonly filtered_diff_lines: number;
+}
+
+export type Preview =
+	| {_tag: "Refused"; refusals: ReadonlyArray<FilterRefusal>}
+	| {_tag: "Preview"; result: PreviewResult};
+
+/** Derive required reviews from all paths, then filter content after proving exclusions safe. */
+export const previewOf = (
+	diff: string,
+	placement: FilterPlacement,
+	patterns: ReadonlyArray<ExclusionPattern>,
+	probes: ReadonlyArray<GuardProbe>,
+	roots: ReadonlyArray<string>,
+	uiPrefixes: ReadonlyArray<string>,
+): Preview => {
+	const refusals = refusalFor(patterns, probes);
+	if (refusals.length > 0) return {_tag: "Refused", refusals};
+	const unexcluded = unexcludedDefaults(patterns);
+	const sections = diffSections(diff);
+	const paths = sections.map((section) => section.path);
+	const split = applyPlacement(paths, patterns);
+	const governed = governedExcluded(split.excluded, patterns, probes);
+	if (governed.length > 0) {
+		return {
+			_tag: "Refused",
+			refusals: governed.map((row) => ({
+				pattern: row.pattern,
+				guard: "governedRoots",
+				probe: row.path,
+				excludedPath: row.path,
+			})),
+		};
+	}
+	const partitioned = partitionWithUi(paths, roots, uiPrefixes);
+	const filtered = filterDiff(diff, split.excluded, placement, unexcluded);
+	return {
+		_tag: "Preview",
+		result: {
+			placement,
+			matched_paths: split.kept,
+			excluded: split.excluded,
+			unexcluded,
+			active_classes: partitioned.classes,
+			namespaces: shipNamespacesOf(partitioned),
+			filtered_diff: filtered,
+			filtered_diff_bytes: Buffer.byteLength(filtered, "utf8"),
+			filtered_diff_lines: filtered.split("\n").length,
+		},
+	};
+};
+
+/** The one class a path belongs to — re-exported so the CLI test asserts through the same map. */
+export const classOfClass = classOf;

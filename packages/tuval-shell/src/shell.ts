@@ -2,7 +2,7 @@
  * `shell` — a *job* program that takes a prompt and runs it as a shell command.
  *
  * It fits `@kampus/tuval-cron`'s `jobShape` exactly — `prompt` in, `result` out, both over the
- * payloads `@kampus/tuval/ai-agent/ports` publishes — and answers with output instead of with an
+ * payloads `@kampus/tuval-sdk/ai-agent/ports` publishes — and answers with output instead of with an
  * AI's turn. That is the whole point of it: the AI-agent port pair is an *interface*, not a claim
  * about what is behind it, so a scheduler written against that interface schedules `git fetch` with
  * no line of it changed and no agent anywhere in the picture.
@@ -32,8 +32,8 @@
  * `rm -rf build && make install` is not something to replay because a desk was restarted. `resume`
  * writes the cut run down as interrupted and clears the request, so the tile says what happened.
  *
- * Everything it imports comes through Tuval's published doors — `@kampus/tuval/authoring` and
- * `@kampus/tuval/ai-agent/ports` (#8943). Nothing reaches the kernel.
+ * Everything it imports comes through Tuval's published doors — `@kampus/tuval-sdk/authoring` and
+ * `@kampus/tuval-sdk/ai-agent/ports` (#8943). Nothing reaches the kernel.
  */
 
 import {
@@ -44,7 +44,7 @@ import {
 	type TranscriptItem,
 	type TurnResult,
 	TurnResultSchema,
-} from "@kampus/tuval/ai-agent/ports";
+} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type Answer,
 	type AnyProgram,
@@ -53,7 +53,7 @@ import {
 	defineProgram,
 	emit,
 	port,
-} from "@kampus/tuval/authoring";
+} from "@kampus/tuval-sdk/authoring";
 import type {Context} from "effect";
 import type {Finished} from "./run.ts";
 import {
@@ -229,6 +229,7 @@ export const shellProgram = (options: ShellOptions) => {
 	const timeoutMs = checkedTimeout(options.timeoutMs);
 	return {
 		id,
+		sdk: "0.x",
 		/**
 		 * The two ports `jobShape` names, over the payload schemas the AI-agent interface publishes —
 		 * the *interface* module, which pulls in no agent. Declaring them from there rather than
@@ -354,14 +355,7 @@ export const shell = (
 	const authored = shellProgram(options);
 	// `Run` is named only in a cell's *answer*, which is not a place inference reaches, so the whole
 	// argument list is stated once (#9294).
-	const row = defineProgram<
-		ShellState,
-		ShellPorts,
-		ShellUpdate,
-		Record<string, never>,
-		unknown,
-		Run
-	>({
+	const row = defineProgram<ShellState, ShellPorts, ShellUpdate, Record<string, never>, Run>({
 		...authored,
 		label: `${authored.id} (${basename(options.cwd)})`,
 	});

@@ -337,7 +337,7 @@ describe("the browser half reaches no kernel", () => {
 
 	it("reaches only the window, the state it draws and the leaf under that", () => {
 		// `./notify.ts` and `./deliver.ts` are the two that must never appear: the first imports
-		// `@kampus/tuval/authoring`, which reaches `node:crypto` through the kernel, and the second
+		// `@kampus/tuval-sdk/authoring`, which reaches `node:crypto` through the kernel, and the second
 		// sits under it. This list is the whole reachable set, so a new edge fails here by addition.
 		// `./renderer-ref.ts` is not in it either, and should not be: the specifier is the *kernel*
 		// half's to put on the row, and the browser half is what it names.
@@ -352,15 +352,17 @@ describe("the browser half reaches no kernel", () => {
 		const runtime = walk()
 			.bare.filter((entry) => !entry.typeOnly)
 			.map((entry) => entry.spec);
-		// `@kampus/tuval/window` is the browser-safe door, whose own import closure reaches no `node:`
-		// builtin. `@kampus/tuval/authoring` is the one that would be a bug, and it is not in this set.
-		expect([...new Set(runtime)].sort()).toEqual(["@kampus/tuval/window", "effect", "react"]);
+		// `@kampus/tuval-sdk/window` is the browser-safe door, whose own import closure reaches no `node:`
+		// builtin. `@kampus/tuval-sdk/authoring` is the one that would be a bug, and it is not in this set.
+		expect([...new Set(runtime)].sort()).toEqual(["@kampus/tuval-sdk/window", "effect", "react"]);
 	});
 
 	it("takes its one turn type type-only, so the emit imports no port module", () => {
 		// `verbatimModuleSyntax` emits nothing for an `import type`, so the built `state.js` a browser
-		// loads has no import of `@kampus/tuval/ai-agent/ports` at all.
-		const ports = walk().bare.filter((entry) => entry.spec.startsWith("@kampus/tuval/ai-agent"));
+		// loads has no import of `@kampus/tuval-sdk/ai-agent/ports` at all.
+		const ports = walk().bare.filter((entry) =>
+			entry.spec.startsWith("@kampus/tuval-sdk/ai-agent"),
+		);
 		expect(ports.length).toBeGreaterThan(0);
 		expect(ports.every((entry) => entry.typeOnly)).toBe(true);
 	});

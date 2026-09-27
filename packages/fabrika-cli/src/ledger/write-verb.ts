@@ -9,9 +9,7 @@
  * The comparison after the PATCH is over the **whole** normalized body, not a re-extraction of the
  * region: v1 truncated an epic body to end-of-file whenever a `## Dependencies` heading appeared inside
  * the preserved brief, and its round-trip check could not see it because both sides ran the same
- * first-occurrence extractor. v1 also never checked the PATCH's exit status, so a rejected
- * write, a failed read and a genuine race all printed "a racer clobbered it" — `8`, `9`, `21` and `22`
- * are those four states separated. This verb attempts once and says so.
+ * first-occurrence extractor. This verb attempts once; `ledger write --help` describes its results.
  */
 
 import {Effect, type FileSystem} from "effect";

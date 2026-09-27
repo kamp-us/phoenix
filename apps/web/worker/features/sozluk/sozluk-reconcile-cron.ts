@@ -11,6 +11,14 @@
  * "refresh failed" flag to target, and adding one would put a write back on the swallow
  * path #2012 keeps clean. `persistTermSummary` is a convergent fold, so re-running it on a
  * fresh term rewrites the identical row — idempotent, with no failure bookkeeping.
+ *
+ * That idempotence is a property of the fold's INPUTS, and it was false for one column until
+ * #9540: `last_activity_at` was written from this pass's clock, so every sweep re-dated every
+ * term and the public `recent` order collapsed to slug order between sweeps. Every date the
+ * fold writes now comes from the term's own content, or — for a term with no live definitions
+ * — from the row's own stored `first_at`. The clock this cron passes therefore reaches no
+ * `term_record` date at all, because the sweep visits only rows that already exist; it
+ * survives as `sozluk_stats.updated_at`.
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";

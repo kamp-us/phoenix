@@ -400,7 +400,6 @@ export const readFrontier = (
 		};
 	});
 
-/** The four answers a frontier may carry. All four are answers, and all four exit `0`. */
 export type FrontierToken = "awaiting-founder" | "lanes-pending" | "clear" | "empty";
 
 export const frontierToken = (tickets: ReadonlyArray<Ticket>): FrontierToken => {

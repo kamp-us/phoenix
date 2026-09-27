@@ -205,7 +205,7 @@ const carriedDown = (
 		.sort((a, b) => a - b);
 };
 
-const missingLabelKinds = (labels: ReadonlyArray<string>): ReadonlyArray<string> => {
+export const missingLabelKinds = (labels: ReadonlyArray<string>): ReadonlyArray<string> => {
 	const missing: string[] = [];
 	if (!labels.some((label) => label.startsWith("type:"))) missing.push("type:");
 	if (!labels.some((label) => label.startsWith("status:"))) missing.push("status:");

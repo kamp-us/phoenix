@@ -5,10 +5,7 @@
  * members behind it, hand the manifests to the pure rule in `./publish-isolation.ts`, seat the
  * answer on the group's exit taxonomy.
  *
- * **v1's single non-zero exit splits into three seats here.** A missing publish.yml, a prefix that
- * maps to no member, and a zero-prefix workflow are all broken scope (`7`); an unreadable
- * or unparseable manifest is UNKNOWN (`11`); only a real linked private dep is the violation (`12`).
- * All three stay red, so the gate's strictness is unchanged.
+ * See `guard publish-isolation-guard check --help` for results and exit codes.
  */
 
 import {Effect, type FileSystem, Path} from "effect";
@@ -19,10 +16,11 @@ import type {VerbOutcome} from "../verb.ts";
 import {atFile} from "./annotate.ts";
 import {scanWorkspaceMembers} from "./members.ts";
 import {
+	driftLine,
 	judge,
 	manifestRuntimeDeps,
 	type PublishedManifest,
-	parsePublishedTagPrefixes,
+	parsePublishArms,
 	renderReport,
 	resolvePublished,
 	violationLine,
@@ -40,7 +38,7 @@ import {
 const VERB = "guard publish-isolation-guard check";
 
 /** The release pipeline that defines which packages publish — the guard's scope source. */
-const PUBLISH_WORKFLOW = ".github/workflows/publish.yml";
+export const PUBLISH_WORKFLOW = ".github/workflows/publish.yml";
 
 const MANIFEST = "package.json";
 
@@ -99,7 +97,7 @@ const judgeRoot = (
 				`${VERB}: ${root}/${PUBLISH_WORKFLOW} does not exist — the published set is derived from it, so the guard has no scope at all, fail-closed. Is the repo root correct?`,
 			);
 		}
-		const prefixes = parsePublishedTagPrefixes(yield* readFile(workflow));
+		const arms = parsePublishArms(yield* readFile(workflow));
 		const {members, unparseable} = yield* readMembers(root);
 		if (unparseable.length > 0) {
 			return unknown(
@@ -108,10 +106,10 @@ const judgeRoot = (
 					.join("\n")}`,
 			);
 		}
-		const {published, unmatchedPrefixes} = resolvePublished(prefixes, members);
-		if (unmatchedPrefixes.length > 0) {
+		const {published, drift} = resolvePublished(arms, members);
+		if (drift.length > 0) {
 			return zeroScope(
-				`${VERB}: publish.yml release-tag prefix(es) [${unmatchedPrefixes.join(", ")}] map to no workspace member — the guard's scope assumption is broken, fail-closed. The tag grammar and the package's unscoped name have drifted; re-sync publish.yml's \`<name>-v<version>\` grammar with the package name.`,
+				`${VERB}: ${drift.length} publish.yml resolve arm(s) do not name exactly one published workspace member, so the published set is unknown, fail-closed:\n${drift.map(driftLine).join("\n")}`,
 			);
 		}
 		const verdict = judge(published);

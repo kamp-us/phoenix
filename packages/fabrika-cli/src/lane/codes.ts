@@ -1,20 +1,12 @@
 /**
- * The one exit table every `lane` verb allocates from, so a code means one thing across the group.
- *
- * The five shared seats are **imported from the base, never re-typed** — the discipline
- * `../exit-code-alignment.ts` checks. The lane verbs read a local lane directory and append to its
- * log, so the base's facts they can establish are exactly these: the target is not there, the
- * target was read but is not the shape, the write did not land, a marker landed and does not read
- * back, the read that would have proven any of that failed. `12`+ is this group's own band.
- *
- * **A fold that could not be made never resolves to a plausible state.** An absent lane, an
- * unreadable one, and a lane whose bytes parse but contradict the machine stay distinct codes,
- * because they take opposite remedies: open the lane, fix the tree, fix the record.
+ * Exit allocations for lane. See ./command.ts help for caller semantics.
+ * Shared meanings stay imported so their values cannot drift.
  */
 
 import {
 	BAD_SECTIONS as SHARED_BAD_SECTIONS,
 	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	CLASSIFIED as SHARED_CLASSIFIED,
 	EMPTY_STDIN as SHARED_EMPTY_STDIN,
 	LEAKED_PATH as SHARED_LEAKED_PATH,
 	NO_TARGET as SHARED_NO_TARGET,
@@ -55,10 +47,6 @@ export const LANE_ABSENT = SHARED_NO_TARGET;
  */
 export const MALFORMED_RECORD = SHARED_BAD_SECTIONS;
 
-/**
- * The append did not land, or `lane claim`'s marker write did not. The caller refuses; it never
- * reports the event as recorded, nor the claim as held.
- */
 export const APPEND_UNKNOWN = SHARED_WRITE_UNKNOWN;
 
 /**
@@ -73,6 +61,13 @@ export const MARKER_READBACK = SHARED_READBACK_MISMATCH;
  * failed read can be neither.
  */
 export const LANE_UNREADABLE = SHARED_PRECONDITION_UNKNOWN;
+
+/**
+ * `lane scratch`'s `--slug` is not a kebab-case leaf — it carries a path separator, or leaves the
+ * vocabulary a directory leaf may spell. The base's closed-vocabulary seat, the code `build scratch`
+ * spends on the same refusal, so one slug rule answers one way in both namespaces.
+ */
+export const SLUG_OFF_VOCABULARY = SHARED_CLASSIFIED;
 
 /**
  * The event is refused and the log is left unappended: the machine holds no cell for it in the
@@ -103,10 +98,8 @@ export const LANE_EXISTS = 14;
  */
 export const TOPOLOGY_ABSENT = 15;
 
-/** The topology references an issue that is not a child of the epic, and the ref is named. */
 export const TOPOLOGY_FOREIGN = 16;
 
-/** The topology's dependency graph holds a cycle, and the ref path is named. */
 export const TOPOLOGY_CYCLE = 17;
 
 /**
@@ -140,7 +133,7 @@ export const KEY_MALFORMED = 21;
 
 /**
  * The artifact the event claims is **provably not there**: no open pull request traces to the
- * task's issue and the issue is not one a no-PR outcome is legal on, or — on an epic run's child,
+ * task's issue and no comment was written on it since the task entered build, or — on an epic run's child,
  * which opens no PR — no branch in this tree carries commits naming the child. The event
  * is a self-report nothing corroborates, so the remedy is to route the spawn's outcome as blocked,
  * not to record it.
@@ -668,3 +661,18 @@ export const GRANT_UNAUTHORIZED = 66;
  * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
  */
 export const ROUTE_UNDERIVED = 67;
+
+/**
+ * `lane report`'s integrate evidence is missing, malformed, or on the wrong line — refused with the
+ * log unappended. `lane attach-integrate` refuses on the same code when the line it names may not
+ * take the pair: not an integrate FAIL, already answered by a later DONE, or recorded by `lane report`
+ * with its own pair.
+ *
+ * A `FAIL` out of an epic child's `integrate` cell writes no verdict on the child, so the exit and
+ * assembly head on its ledger line are the only record a repair builder's `build claim` can key on.
+ * A line without them sends the child to a repair round no builder can take, and the same fields on
+ * any other line would name a repair that was never owed.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9761
+ */
+export const INTEGRATE_EVIDENCE = 68;

@@ -28,10 +28,8 @@
  * (`step1-candidate-pool.sh:12-13`); a bucket whose paginated output stops mid-page is the same fact
  * and lands on the same code. An unreadable campaigns table refuses the whole pool too — an
  * unfiltered pool on a failed read is the fail-open shape the fence exists to remove. An empty pool
- * is still a fact and prints on exit 0 with the scanned counts and a histogram of the exclusion
- * reasons beside it, which is what makes it auditable rather than merely plausible. The reasons
- * collapse to counts rather than rows because `excluded` is an evidence array — no skill reads its
- * rows by name, and the reason vocabulary is what the contract defends.
+ * is still a fact. No skill consumes individual excluded issues, so the evidence is bounded through
+ * ../evidence.ts. See ./command.ts help for the pool answer.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";

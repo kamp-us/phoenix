@@ -38,7 +38,7 @@ const CHECK_VERB = "guard design-inventory check";
 const GENERATE_VERB = "guard design-inventory generate";
 
 /** The primitives directory the inventory is extracted from. */
-const COMPONENTS_DIR = "packages/design/src";
+export const COMPONENTS_DIR = "packages/design/src";
 
 export interface DesignInventoryOptions {
 	/** An explicit repo root, or `null` to walk up from `cwd` for one. */

@@ -3,6 +3,7 @@ import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import {
 	BASE_CONFLICTED,
+	PR_NOT_OURS,
 	PRECONDITION_UNKNOWN,
 	PROVEN_NOT_IN_STATE,
 	STALE_HEAD,
@@ -10,7 +11,15 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {runEnqueue} from "./enqueue-verb.ts";
-import {ENV, HEAD, OTHER_HEAD, type PullShape, pull} from "./fixtures.test-support.ts";
+import {
+	ENV,
+	HEAD,
+	OTHER_HEAD,
+	OURS,
+	OWNERSHIP_CASES,
+	type PullShape,
+	pull,
+} from "./fixtures.test-support.ts";
 import {ADDED} from "./queue.ts";
 
 /**
@@ -71,7 +80,7 @@ const options = {
 };
 
 const both = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
-	const seams = fakeSeams(script);
+	const seams = fakeSeams([...script, ...OURS]);
 	return {
 		seams,
 		outcome: Effect.runPromise(Effect.provide(runEnqueue({...options, ...overrides}), seams.layer)),
@@ -219,5 +228,25 @@ describe("runEnqueue", () => {
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("the confirming read-back failed");
+	});
+});
+
+describe("runEnqueue — a PR is its author's until the pipeline owns it", () => {
+	it.each(OWNERSHIP_CASES)("$name", async ({author, reads, drivable}) => {
+		const scripted = both([
+			...reads,
+			livePull({author}),
+			[MERGEABILITY, mergeability({author})],
+			[GRAPHQL, ARMED],
+			[TIMELINE, timeline()],
+		]);
+		const out = await scripted.outcome;
+		const armed = scripted.seams.requests.some((line) => GRAPHQL.test(line));
+		expect({code: out.code, armed}).toEqual(
+			drivable ? {code: 0, armed: true} : {code: PR_NOT_OURS, armed: false},
+		);
+		expect(out.stderr.join("\n").includes(`is ${author}'s to finish — nothing was armed.`)).toBe(
+			!drivable,
+		);
 	});
 });

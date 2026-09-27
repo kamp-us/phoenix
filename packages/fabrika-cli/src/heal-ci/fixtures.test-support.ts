@@ -8,6 +8,7 @@
 import type {HttpReply} from "../fakes.test-support.ts";
 import {okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {HEAD} from "../ship/fixtures.test-support.ts";
 
 const API = "https:\\/\\/api\\.github\\.com";
 
@@ -16,9 +17,15 @@ export {
 	comments,
 	ENV,
 	HEAD,
+	httpError,
 	OTHER_HEAD,
+	PROTECTION,
+	protection,
 	pull,
+	RULES,
+	rules,
 	runsTotal,
+	UNDECLARED,
 	workflows,
 } from "../ship/fixtures.test-support.ts";
 
@@ -44,8 +51,6 @@ export const HEAD_CHECK_RUNS = new RegExp(
 );
 export const OPEN_PULLS = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/pulls\\?state=open`);
 export const RATE_LIMIT = new RegExp(`^GET ${API}\\/rate_limit$`);
-export const RULES = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/rules\\/branches\\/main\\?`);
-export const PROTECTION = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/branches\\/main\\/protection$`);
 export const COMMIT_DATE = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/commits\\/[0-9a-f]+$`);
 
 export const files = (...names: ReadonlyArray<string>): ExecResult =>
@@ -56,24 +61,6 @@ const served = (body: unknown, status = 200): HttpReply => ({
 	status,
 	body: JSON.stringify(body),
 });
-
-/** A `rules/branches/<branch>` page: only `required_status_checks` rules carry contexts. */
-export const rules = (...contexts: ReadonlyArray<string>): HttpReply =>
-	served(
-		contexts.length === 0
-			? []
-			: [
-					{
-						type: "required_status_checks",
-						parameters: {
-							required_status_checks: contexts.map((context) => ({context})),
-						},
-					},
-				],
-	);
-
-export const protection = (...contexts: ReadonlyArray<string>): HttpReply =>
-	served({required_status_checks: {contexts}});
 
 export const jobs = (
 	declared: number,
@@ -110,12 +97,6 @@ export const commitDate = (at: string): HttpReply => served({commit: {committer:
 /** GitHub's own answer to a rerun POST: 201, no body. */
 export const accepted: HttpReply = {status: 201, body: ""};
 
-/** A served refusal — the status is the fact, and the message is what GitHub prints beside it. */
-export const httpError = (status: number, message = "refused"): HttpReply => ({
-	status,
-	body: JSON.stringify({message}),
-});
-
 export const runsAtHead = (
 	declared: number,
 	rows: ReadonlyArray<{
@@ -136,6 +117,11 @@ export const runsAtHead = (
 				status: row.status ?? "completed",
 				conclusion: row.conclusion === undefined ? "failure" : row.conclusion,
 				completed_at: "2026-08-08T00:00:00Z",
+				// The run parser requires provenance, because gate coverage is decided from it. Nothing
+				// in this group judges coverage, so the rows carry the shape the platform sends and no
+				// case here turns it.
+				event: "pull_request",
+				head_sha: HEAD,
 			})),
 		}),
 	);

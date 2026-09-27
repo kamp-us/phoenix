@@ -1,7 +1,7 @@
 ---
 id: 0061
 title: ship-it gates on the gating-check set, not the full rollup; preview deploys are informational (denylist of known-informational checks, fail-safe to blocking; consistent-by-construction with the run-evidence bundle)
-status: accepted
+status: amended-in-part by [0404](0404-required-set-is-the-blocking-set.md)
 date: 2026-06-15
 tags: [pipeline, skills, ship-it, heal-ci, ci, agents]
 ---
@@ -77,3 +77,12 @@ an additive constraint, not the sole authority.
   deliberate, reviewable act; the list must never contain a CI-suite / run-evidence check.
 
 > Amendment 2026-08-19: the ship-it skill retired with the v1 plugin (ADR 0303); the gate now lives in fabrika — `fabrika ship checks` (packages/fabrika-cli/src/ship/checks-verb.ts) with the known-informational denylist as `isInformational` in packages/fabrika-cli/src/review/rollup.ts, also consumed by `fabrika heal-ci`.
+
+## Amendments
+
+- **#9841 — the run-evidence bundle is retired (2026-09-26).** [ADR 0410](0410-ship-checks-is-ship-ci-trust.md)
+  retired the run-evidence bundle, so the Step 3.5 bundle read this record names as the SHA-bound
+  authority, and the run-evidence suite it counts in the gating set, no longer exist. What replaced
+  the bundle is `fabrika ship checks` over the `ci-required` required context. Only this record's
+  run-evidence text is superseded; the rest stands as amended in part by
+  [ADR 0404](0404-required-set-is-the-blocking-set.md).

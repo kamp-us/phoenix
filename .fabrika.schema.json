@@ -42,6 +42,36 @@
 						"off",
 						"on"
 					]
+				},
+				"lockfileRegenerator": {
+					"type": [
+						"object",
+						"null"
+					],
+					"description": "The repo's write-mode command that regenerates a lockfile from the merged manifests. When every unmerged path of a replayed pick is one of `lockfiles` and `.gitattributes` marks it `merge=binary`, the replay runs `command` in the assembly worktree, stages the regenerated lockfile(s), and continues the pick. Absent or null, that collision parks like any other.",
+					"properties": {
+						"command": {
+							"type": "array",
+							"description": "The argv to spawn — e.g. [\"pnpm\", \"install\", \"--lockfile-only\"].",
+							"items": {
+								"type": "string"
+							},
+							"minItems": 1
+						},
+						"lockfiles": {
+							"type": "array",
+							"description": "The repo-relative lockfile paths the command regenerates — e.g. [\"pnpm-lock.yaml\"].",
+							"items": {
+								"type": "string"
+							},
+							"minItems": 1
+						}
+					},
+					"required": [
+						"command",
+						"lockfiles"
+					],
+					"additionalProperties": false
 				}
 			},
 			"additionalProperties": false
@@ -138,7 +168,7 @@
 		},
 		"capClearAuthors": {
 			"type": "array",
-			"description": "Who may clear one extra repair round on a PR (`fabrika build clear`). Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may grant.",
+			"description": "Who may grant lane authority over a PR: clear one extra repair round on it (`fabrika build clear`), or hand a PR another author opened to the pipeline (`fabrika build takeover`). Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may grant.",
 			"items": {
 				"type": "string",
 				"pattern": "^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)$|^@([^/\\s]+)\\/([^/\\s]+)$"
@@ -161,6 +191,28 @@
 					"description": "The CI gate's workflow filename, as `gh api actions/workflows/<file>` names it — a bare filename, not a path.",
 					"minLength": 1,
 					"pattern": "^[^/]+$"
+				},
+				"mainAlarm": {
+					"type": "object",
+					"description": "The main-went-red alarm: who it wakes, and the label its tracking issue carries.",
+					"properties": {
+						"mention": {
+							"type": "array",
+							"description": "The handles the alarm mentions — e.g. [\"@someone\"]. Empty mentions nobody and still files.",
+							"items": {
+								"type": "string",
+								"minLength": 1,
+								"pattern": "^\\S+$"
+							}
+						},
+						"label": {
+							"type": "string",
+							"description": "The label the alarm issue carries, which is also how the standing one is found again.",
+							"minLength": 1,
+							"pattern": "^[^,]+$"
+						}
+					},
+					"additionalProperties": false
 				}
 			},
 			"additionalProperties": false
@@ -182,6 +234,38 @@
 				},
 				"required": [
 					"command"
+				],
+				"additionalProperties": false
+			}
+		},
+		"configValidators": {
+			"type": "array",
+			"description": "The repo's own commands that machine-read a file no `build check` surface opens — a root config file such as lefthook.yml, or non-JS source such as a .java file — every `build check` run whose diff touches a file an entry reads spawns that entry, whatever `--surface` names. Empty (or absent) leaves such files unvalidatable.",
+			"items": {
+				"type": "object",
+				"properties": {
+					"command": {
+						"type": "array",
+						"description": "The argv to spawn — e.g. [\"pnpm\", \"exec\", \"lefthook\", \"validate\"].",
+						"items": {
+							"type": "string"
+						},
+						"minItems": 1
+					},
+					"reads": {
+						"type": "array",
+						"description": "The exact repo-relative files this command opens, never a glob — what makes a passing run checkable per file.",
+						"items": {
+							"type": "string",
+							"minLength": 1,
+							"pattern": "^[^*?\\[\\]{}]+$"
+						},
+						"minItems": 1
+					}
+				},
+				"required": [
+					"command",
+					"reads"
 				],
 				"additionalProperties": false
 			}
@@ -270,6 +354,29 @@
 			"description": "How many CLAIMED issue lanes may stand open at once — an active lane no driver claims is idle and counts for nothing. `lane open` and `lane emit` refuse past it, with no override. Write null (or leave it out) for no cap.",
 			"minimum": 1
 		},
+		"leakNames": {
+			"type": "object",
+			"description": "Names the report group's writing verbs keep out of public bodies, beside the structural leak shapes. Absent (or both lists empty) means only the structural shapes refuse.",
+			"properties": {
+				"privateRepos": {
+					"type": "array",
+					"description": "`owner/repo` slugs of private repositories. The bare name may appear; a github.com link to the repo or an `owner/repo#N` reference refuses.",
+					"items": {
+						"type": "string",
+						"pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\/(?!\\.\\.?$)[A-Za-z0-9._-]+$"
+					}
+				},
+				"identifiers": {
+					"type": "array",
+					"description": "Other names — a handle, a person's name — whose every occurrence refuses, matched case-insensitively.",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					}
+				}
+			},
+			"additionalProperties": false
+		},
 		"machineryLaps": {
 			"type": "object",
 			"description": "Whether an emitted epic machine carries the machinery event class, whose laps are counted apart from the repair budget.",
@@ -285,9 +392,17 @@
 			},
 			"additionalProperties": false
 		},
+		"ownAccounts": {
+			"type": "array",
+			"description": "The accounts this repo's own agents and drivers run as. A pull request opened by one of them is repaired (`fabrika build`) and shipped (`fabrika ship`) with no grant; any other author's pull request needs a takeover grant (`fabrika build takeover`) first. Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means only the running, authenticated account counts.",
+			"items": {
+				"type": "string",
+				"pattern": "^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)$|^@([^/\\s]+)\\/([^/\\s]+)$"
+			}
+		},
 		"parkCause": {
 			"type": "object",
-			"description": "What this repo does with a lane park that names no cause, and with one whose cause routes to the driver.",
+			"description": "What this repo does with a lane park that names no cause, with one whose cause routes to the driver, and with a spent repair budget.",
 			"properties": {
 				"uncaused": {
 					"type": "string",
@@ -303,6 +418,14 @@
 					"enum": [
 						"refuse",
 						"clear"
+					]
+				},
+				"repairBudgetSpent": {
+					"type": "string",
+					"description": "Whose park a spent repair budget (`repair-budget-spent`) is: `driver` (the driver grants the next round itself with `lane clear`; the pull-request half still needs its account in `capClearAuthors`) or `founder` (the task parks on a human like any founder-routed park).",
+					"enum": [
+						"driver",
+						"founder"
 					]
 				}
 			},
@@ -322,6 +445,52 @@
 				}
 			},
 			"additionalProperties": false
+		},
+		"reviewFilterExclusions": {
+			"type": "array",
+			"description": "The glob patterns added to the review diff filter's exclusion set, on top of the shipped defaults. Empty (or absent) changes nothing.",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"reviewFilterUnexclude": {
+			"type": "array",
+			"description": "The shipped default exclusion patterns removed from the review diff filter's exclusion set. Each entry must equal a shipped default's pattern exactly; every removal that nothing re-adds is enumerated in the verbs' output. Empty (or absent) changes nothing.",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"reviewSubsystems": {
+			"type": "array",
+			"description": "The path-glob-to-constraint rows `review scope` layers onto the class rubrics, one row per subsystem. Additive constraints, never a partition: a path matching several patterns counts under each. Empty (or absent) changes nothing.",
+			"items": {
+				"type": "object",
+				"description": "One subsystem: the files its glob matches carry its constraint on top of the class rubric.",
+				"properties": {
+					"pattern": {
+						"type": "string",
+						"description": "The slash-separated glob the subsystem's files match — `*` within one segment, `**` spanning directories.",
+						"minLength": 1
+					},
+					"subsystem": {
+						"type": "string",
+						"description": "The subsystem's name, unique across the list.",
+						"minLength": 1
+					},
+					"constraint": {
+						"type": "string",
+						"description": "The constraint text a reviewer applies on top of the class rubric, printed verbatim in the scope output.",
+						"minLength": 1
+					}
+				},
+				"required": [
+					"pattern",
+					"subsystem",
+					"constraint"
+				]
+			}
 		},
 		"roadmapFile": {
 			"type": "string",
@@ -432,7 +601,7 @@
 		},
 		"uiCapture": {
 			"type": "object",
-			"description": "How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, and the storage state to browse as.",
+			"description": "How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, and the locales a render can be seeded in.",
 			"properties": {
 				"viewport": {
 					"type": "object",
@@ -468,6 +637,35 @@
 					"description": "A repo-relative Playwright storage-state file to browse as. It is a credential — gitignore it, never inline the cookies.",
 					"minLength": 1,
 					"pattern": "^(?!/).+"
+				},
+				"locale": {
+					"type": [
+						"object",
+						"null"
+					],
+					"description": "The localStorage key the app reads its locale from and the closed set of values it accepts. `review-ui render --locale` seeds one of them before navigation and proves it against the page's `lang`. Null (or absent) renders at the app's default locale only.",
+					"properties": {
+						"storageKey": {
+							"type": "string",
+							"description": "The localStorage key the app reads its locale from.",
+							"minLength": 1
+						},
+						"values": {
+							"type": "array",
+							"description": "The accepted locale values, each the `lang` the page reads back when it renders in it.",
+							"items": {
+								"type": "string",
+								"pattern": "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
+							},
+							"minItems": 1,
+							"uniqueItems": true
+						}
+					},
+					"required": [
+						"storageKey",
+						"values"
+					],
+					"additionalProperties": false
 				}
 			},
 			"required": [],

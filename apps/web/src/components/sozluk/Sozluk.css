@@ -128,6 +128,30 @@
 	border-bottom: 0;
 }
 
+/* Phone reflow (≤640px, the repo's container convention) — 29 fixed letter cells do not fit one
+   row at 390px, so the strip wraps to three while `.kp-subnav`'s fixed `--subnav-h` box does not
+   grow: rows two and three painted over the page's first line, and the CTA was pushed past the
+   viewport edge. `:has()` scopes the relaxed box to a Subnav that actually hosts the strip, so
+   every other `SubnavShell` consumer keeps the fixed one-row bar the shell's law gives it. */
+@media (max-width: 640px) {
+	.kp-subnav:has(.kp-sozluk-alphabet) {
+		height: auto;
+		min-height: var(--subnav-h);
+		flex-wrap: wrap;
+		padding-block: var(--s-2);
+		row-gap: var(--s-2);
+	}
+	/* The strip claims the whole first row so the CTA wraps below it at full label width
+	   instead of competing for the same row and clipping. */
+	.kp-subnav:has(.kp-sozluk-alphabet) .kp-subnav__filters {
+		height: auto;
+		flex: 1 1 100%;
+	}
+	.kp-subnav__filters .kp-sozluk-alphabet {
+		height: auto;
+	}
+}
+
 /* Definition card */
 .kp-definition {
 	padding: var(--def-y) var(--s-4);

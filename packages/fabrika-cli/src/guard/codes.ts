@@ -6,18 +6,7 @@
  * states in full: an aligning group imports the base's constant, so a drift is unrepresentable
  * rather than merely detectable.
  *
- * A guard speaks three refusals and they are deliberately three numbers, not one:
- *
- * - `7` {@link ZERO_SCOPE} — the scan resolved to nothing, so a green would be vacuous.
- * - `11` {@link PRECONDITION_UNKNOWN} — a read failed, so the verdict is UNKNOWN, not "clean".
- * - `12` {@link VIOLATION} — the scan ran over real scope and found the thing the guard forbids.
- *
- * CI treats all three as red, which is why the v1 guards could collapse them onto `1`.
- * A human or an agent reproducing the red cannot: "your change broke the rule" and "I could not
- * read the tree" have opposite remedies, and `1` is also what a bad flag and a failed module load
- * return (`../verb.ts`), so a proven violation seated there is unreadable as proof.
- *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
+ * Each guard's `--help` describes its refusal conditions; the constants below name shared meanings.
  */
 
 import {

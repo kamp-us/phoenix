@@ -42,17 +42,25 @@ test.describe("Topbar (signed out)", () => {
 		await expect(html).toHaveAttribute("data-theme", "light");
 	});
 
-	test("search box focuses + has ⌘K hint + submitting does not error", async ({page}) => {
+	test("search trigger has the ⌘K hint and opens the palette by click and by shortcut", async ({
+		page,
+	}) => {
 		const errors: string[] = [];
 		page.on("pageerror", (err) => errors.push(err.message));
 
-		const search = page.locator(".kp-topbar__search input[name='q']");
-		await search.focus();
-		await expect(search).toBeFocused();
-		await expect(page.locator(".kp-topbar__search kbd")).toContainText("⌘K");
+		const trigger = page.locator("#topbar-search");
+		await expect(trigger.locator("kbd")).toContainText("⌘K");
 
-		await search.fill("hello");
-		await search.press("Enter");
+		const palette = page.getByRole("dialog");
+		const field = palette.getByRole("combobox");
+		await trigger.click();
+		await expect(field).toBeFocused();
+		await field.fill("hello");
+		await field.press("Escape");
+		await expect(palette).toBeHidden();
+
+		await page.keyboard.press("ControlOrMeta+k");
+		await expect(field).toBeFocused();
 		await expect(page.locator(".kp-topbar")).toBeVisible();
 		expect(errors).toHaveLength(0);
 	});

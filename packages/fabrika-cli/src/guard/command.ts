@@ -64,13 +64,14 @@ const readmeCheck = leafCommand(
 				root: Option.getOrNull(root),
 				cwd: process.cwd(),
 				env: process.env,
+				scope: {_tag: "WholeTree"},
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Red unless every packages/* member carries a README.md."),
 	Command.withDescription(
-		"Fail the build unless every real packages/* workspace member (a directory carrying a package.json) holds a README.md. Dead-shell directories are ignored. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: no member scanned, or pnpm-workspace.yaml no longer declares packages/* — fail-closed), 11 (a read failed, so the verdict is UNKNOWN), 12 (a member has no README.md). Example: fabrika guard readme-guard check",
+		"Fail the build unless every real packages/* workspace member (a directory carrying a package.json) holds a README.md. Dead-shell directories are ignored. This leaf judges every member; `fabrika build check` runs the same rule over only the members its diff adds or edits, so a tree whose older packages predate the rule is not red on a lane that never touched them. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: no member scanned, or pnpm-workspace.yaml no longer declares packages/* — fail-closed), 11 (a read failed, so the verdict is UNKNOWN), 12 (a member has no README.md). Example: fabrika guard readme-guard check",
 	),
 );
 
@@ -439,7 +440,7 @@ const publishIsolationCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a published package linking a private or workspace dep."),
 	Command.withDescription(
-		"Every package the release pipeline ships must be installable from a clean registry state: no `workspace:*` specifier and no `@kampus/*` dependency that is not itself published. The published set is DERIVED from `publish.yml`'s release-tag grammar rather than hand-kept, so it cannot drift from what actually publishes. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on the offending manifest under Actions. Exits 7 (zero scope: no published package derived, or a tag prefix maps to no member — fail-closed), 11 (a manifest could not be read or does not parse, so the verdict is UNKNOWN), 12 (a published package links a private or workspace dep). Example: fabrika guard publish-isolation-guard check",
+		"Every package the release pipeline ships must be installable from a clean registry state: a `workspace:` link or `@kampus/*` dependency (direct or `npm:`-aliased) passes only when its target is itself published, and a path-form `workspace:../…`, `link:`, `file:` or `portal:` dependency always reds. The published set is DERIVED from `publish.yml`'s resolve arms, keyed on the directory each arm publishes rather than hand-kept, so it cannot drift from what actually publishes. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on the offending manifest under Actions. Exits 7 (zero scope: no published package derived, or an arm names no single member — no `PKG_DIR`, no member there, a package name that does not match the tag prefix, or a name another member shares — fail-closed), 11 (a manifest could not be read or does not parse, so the verdict is UNKNOWN), 12 (a published package links a private or workspace dep). Example: fabrika guard publish-isolation-guard check",
 	),
 );
 
@@ -709,7 +710,14 @@ const designInventoryGuard = Command.make("design-inventory").pipe(
  * nowhere else, so adding a guard is where the question gets asked.
  */
 const registry = [
-	localTree(readmeGuard, "check", (o) => runReadmeGuard({root: o.root, cwd: o.root, env: o.env})),
+	localTree(readmeGuard, "check", (o) =>
+		runReadmeGuard({
+			root: o.root,
+			cwd: o.root,
+			env: o.env,
+			scope: {_tag: "Change", paths: o.changed},
+		}),
+	),
 	localTree(skillLint, "check", (o) => runSkillLint({root: o.root, cwd: o.root, env: o.env})),
 	notLocalTree(homingGuard, "reads the live board"),
 	notLocalTree(pitchGuard, "reads the live board and resolves approval at the repository ACL"),

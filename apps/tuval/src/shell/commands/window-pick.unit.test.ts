@@ -6,12 +6,14 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {Effect} from "effect";
-import {ProcessId} from "../../process/process.ts";
 import {applyMsg, initialState, type ShellMsg} from "../core/machine.ts";
 import {activeWorkspace, keyTargetOf, type ShellState} from "../core/state.ts";
 import {wiredShellEffects} from "../host/effects.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
+import {scriptedSpellServices} from "../host/fixtures.ts";
 import {findWindow, windows} from "../layout/index.ts";
 import {type PickerEntries, readEntries} from "../picker/entries.ts";
 import {pickerHarness, programRow, shellProcessId} from "../picker/fixtures.ts";
@@ -26,7 +28,6 @@ import {
 	type PickerView,
 	pickerKey,
 } from "../picker/view.ts";
-import {WindowId} from "../window/index.ts";
 import {commandFor} from "./table.ts";
 
 const counter = programRow("counter", {label: "Counter"});
@@ -53,7 +54,7 @@ const dispatch = (state: ShellState, msg: ShellMsg) =>
 				out = (yield* effects.attachProcess(cmd)).reduce(apply, out);
 		}
 		return out;
-	});
+	}).pipe(Effect.provide(scriptedSpellServices()));
 
 const workspaceOf = (state: ShellState) => {
 	const workspace = activeWorkspace(state);
@@ -84,6 +85,7 @@ const press = (state: ShellState, entries: PickerEntries, windowId: WindowId, ke
 			case "Moved":
 			case "Cleared":
 			case "Filtering":
+			case "Stepped":
 				return apply(state, {type: "window.setView", windowId, view: answer.view});
 			case "Chose":
 				return yield* dispatch(
@@ -91,6 +93,10 @@ const press = (state: ShellState, entries: PickerEntries, windowId: WindowId, ke
 					answer.intent._tag === "OpenProgram"
 						? {type: "window.open", windowId, programId: answer.intent.programId}
 						: {type: "window.attach", windowId, processId: answer.intent.processId},
+				);
+			case "Removing":
+				return yield* Effect.die(
+					new Error(`test setup: "${key}" asked to remove ${answer.processId}`),
 				);
 			case "Ignored":
 				return yield* Effect.die(new Error(`test setup: the picker ignored "${key}"`));
@@ -277,6 +283,8 @@ describe("window:pick returns a filled window to the picker", () => {
 			refusal: null,
 			previous: null,
 			filter: null,
+			step: null,
+			landing: null,
 		});
 	});
 });

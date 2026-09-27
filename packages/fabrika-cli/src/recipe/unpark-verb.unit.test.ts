@@ -15,6 +15,7 @@ import type {ExecResult} from "../io/exec.ts";
 import {parkCauseRead} from "../lane/fixtures.test-support.ts";
 import {foldLog, type LogEntry, parseLog} from "../lane/fold.ts";
 import {compileText} from "../lane/machine.ts";
+import {evidenced, evidenceOpens} from "../review-ui/evidence.test-support.ts";
 import {
 	CODEOWNERS,
 	checkRuns,
@@ -25,6 +26,7 @@ import {
 	OTHER_HEAD,
 	pull,
 	runsTotal,
+	UNDECLARED,
 	workflows,
 } from "../ship/fixtures.test-support.ts";
 import {ADDED} from "../ship/queue.ts";
@@ -55,6 +57,7 @@ import {
 	nominatedPulls,
 	PARKED_AT_CP,
 	PARKED_AT_CP_ON,
+	PARKED_AT_CP_UNCAUSED,
 	PARKED_AT_QUEUE_STALL,
 	PARKED_BLOCKED,
 	PARKED_ON_CAMPAIGN,
@@ -205,7 +208,10 @@ const run = (
 			}),
 			// The nominator's body-search half is tailed, so a test scripting its own wins the lookup.
 			// Empty by default: the union then answers off the closing edge, as these tests always did.
-			Layer.merge(fs.layer, fakeSeams([...script, ...http, NO_NOMINATIONS]).layer),
+			// `UNDECLARED` is tailed too: this group calls `runChecks` in process, so the blocking
+			// authority's two reads happen here, and an unscripted one refuses at `11` before a case
+			// reaches the park arm it is about.
+			Layer.merge(fs.layer, fakeSeams([...script, ...http, NO_NOMINATIONS, ...UNDECLARED]).layer),
 		),
 	);
 
@@ -382,13 +388,24 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 		expect(fs.written.size).toBe(0);
 	});
 
-	// The two rows share the `human:cp-approval` leaf and are told apart by the cause alone, so a park
-	// carrying neither cause must still reach the §CP discharge it always did.
-	it("leaves the null-cause §CP row unshadowed — a causeless park still reads the approval", async () => {
+	// The two rows share the `human:cp-approval` leaf and are told apart by the cause alone, so the
+	// approval wait must still reach the §CP discharge it always did.
+	it("leaves the approval-wait §CP row unshadowed — it still reads the approval", async () => {
 		const out = await run(lane(PARKED_AT_CP), DISCHARGED);
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).clearance).toBe("cp-approval");
+	});
+
+	// A `ship` park that named no cause is not an approval wait, so it reads no approval and clears
+	// nothing, even where one would discharge.
+	it("is Novel for the same leaf carrying no cause, and reads no approval", async () => {
+		const fs = lane(PARKED_AT_CP_UNCAUSED);
+
+		const out = await run(fs, DISCHARGED);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(fs.written.size).toBe(0);
 	});
 
 	it("is Novel for the same leaf carrying a cause no row on it names", async () => {
@@ -513,12 +530,13 @@ describe("recipe unpark — a routed-UI park clears once the review it routed to
 					comments(
 						{id: 1, body: marker("review-code", "PASS", HEAD)},
 						{id: 2, body: marker("review-doc", "PASS", HEAD)},
-						{id: 3, body: marker("review-ui", "PASS", HEAD)},
+						{id: 3, body: evidenced(marker("review-ui", "PASS", HEAD))},
 					),
 				),
 			],
 			[REVIEWS, reviewPage()],
 			[ACL, permission("write")],
+			...evidenceOpens("o/r", 3),
 		]);
 
 		expect(out.code).toBe(PARK_HOLDS);
@@ -871,6 +889,212 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 				[LANE_COMMENTS, httpError(500)],
 			],
 		);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+/** A build claim marker by `owner`, posted a day before the stranded-claim cases' clock. */
+const claimMarker = (token: string): HttpReply => ({
+	status: 200,
+	body: JSON.stringify([
+		{
+			id: 1,
+			user: {login: "owner"},
+			created_at: "2026-08-29T00:00:00Z",
+			body: `build-claim: ${token} · 2026-08-29T00:00:00.000Z`,
+		},
+	]),
+});
+
+/** A day past {@link claimMarker} — far beyond any shell budget, so only a refusal to retract holds. */
+/** The open PR a repair lane's claim sits on. */
+const REPAIR = 4321;
+
+const A_DAY_LATER = "2026-08-30T00:00:00.000Z";
+
+const STRANDED = "build:driver-session:9f2cab41-1111-4222-8333-444455556666";
+const PERMISSION = /collaborators\/\S+\/permission/;
+const DELETE = /^DELETE /;
+
+/** The repair lane's shape: one open PR closing the lane issue, so its thread is a claim subject. */
+const REPAIR_PR: ReadonlyArray<Scripted> = [
+	[CLOSERS, reply(closingPulls(REPAIR))],
+	[PULL, reply(pull({body: `Fixes #${LANE}\n`}))],
+];
+
+/** A lane no PR links yet — the fresh build's shape, where the issue is the only claim subject. */
+const NO_PR: ReadonlyArray<Scripted> = [[CLOSERS, reply(closingPulls())]];
+
+/** Run a claim-reading park at `now`, recording every request the seams saw. */
+const runClaimRead = async (
+	fs: ReturnType<typeof fakeFs>,
+	script: ReadonlyArray<Scripted>,
+	now: string = A_DAY_LATER,
+) => {
+	const seams = fakeSeams([
+		...script,
+		[DELETE, {status: 204, body: ""}],
+		NO_NOMINATIONS,
+		...UNDECLARED,
+	]);
+	const out = await Effect.runPromise(
+		Effect.provide(
+			runUnpark({
+				root: LANES_ROOT,
+				lane: LANE,
+				task: null,
+				repo: null,
+				cwd: CWD,
+				env: ENV,
+				now,
+				parkCause: parkCauseRead(),
+				rationale: null,
+			}),
+			Layer.merge(fs.layer, seams.layer),
+		),
+	);
+	return {out, requests: seams.requests};
+};
+
+describe("recipe unpark — a tree-hijacked park reads claims and trees, and never ends a claim", () => {
+	it("clears once no claim stands and no tree holds the lane branch", async () => {
+		const fs = lane(parkedBlockedOn("tree-hijacked"));
+
+		const {out} = await runClaimRead(fs, [
+			...NO_PR,
+			[BRANCHES, branchList("main")],
+			[LANE_COMMENTS, {status: 200, body: "[]"}],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "tree-released",
+			mechanism: `tree-released:#${LANE} unclaimed, no lane branch`,
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	// The fence on age retraction: spawn-clear would retract this claim on its age; this one holds.
+	it("is PARK_HOLDS on a claim a day past the budget, and retracts nothing", async () => {
+		const fs = lane(parkedBlockedOn("tree-hijacked"));
+
+		const {out, requests} = await runClaimRead(fs, [
+			...NO_PR,
+			[LANE_COMMENTS, claimMarker(STRANDED)],
+			[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/held by build:driver-session:9f2cab41/);
+		expect(requests.filter((line) => DELETE.test(line))).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("holds on a repair claim standing on the lane's PR while the issue reads unclaimed", async () => {
+		const fs = lane(parkedBlockedOn("tree-hijacked"));
+
+		const {out, requests} = await runClaimRead(fs, [
+			...REPAIR_PR,
+			[LANE_COMMENTS, {status: 200, body: "[]"}],
+			[PR_COMMENTS, claimMarker(STRANDED)],
+			[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toContain(`#${REPAIR} is held by ${STRANDED}`);
+		expect(requests.filter((line) => DELETE.test(line))).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("recipe unpark — a claim-stranded park clears only when every claim subject reads unclaimed", () => {
+	const PARKED_ON_CLAIM = parkedBlockedOn("claim-stranded");
+
+	it("clears when the issue reads unclaimed and no PR links it", async () => {
+		const fs = lane(PARKED_ON_CLAIM);
+
+		const {out} = await runClaimRead(fs, [...NO_PR, [LANE_COMMENTS, {status: 200, body: "[]"}]]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "claim-released",
+			mechanism: `claim-released:#${LANE} unclaimed`,
+			current: "build",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("clears on a repair lane only once the PR's thread reads unclaimed too", async () => {
+		const fs = lane(PARKED_ON_CLAIM);
+
+		const {out} = await runClaimRead(fs, [
+			...REPAIR_PR,
+			[LANE_COMMENTS, {status: 200, body: "[]"}],
+			[PR_COMMENTS, {status: 200, body: "[]"}],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).mechanism).toBe(`claim-released:#${LANE},#${REPAIR} unclaimed`);
+	});
+
+	// The repair lane's stranded claim sits on the PR (`build claim <repair-pr> --issue <served>`), so
+	// the issue reading unclaimed proves nothing about it.
+	it("holds at 13 on a claim standing on the lane's PR while the issue reads unclaimed", async () => {
+		const fs = lane(PARKED_ON_CLAIM);
+
+		const {out, requests} = await runClaimRead(fs, [
+			...REPAIR_PR,
+			[LANE_COMMENTS, {status: 200, body: "[]"}],
+			[PR_COMMENTS, claimMarker(STRANDED)],
+			[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		const held = out.stderr.join("\n");
+		expect(held).toContain(`#${REPAIR} is held by ${STRANDED}`);
+		expect(held).toMatch(/Nothing was retracted/);
+		expect(requests.filter((line) => DELETE.test(line))).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// A same-session claimant may be live, so however old the marker is, it holds and nothing is deleted.
+	it("is PARK_HOLDS while a claim marker stands on the issue, and retracts nothing even past the budget", async () => {
+		const fs = lane(PARKED_ON_CLAIM);
+
+		const {out, requests} = await runClaimRead(fs, [
+			...NO_PR,
+			[LANE_COMMENTS, claimMarker(STRANDED)],
+			[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		const held = out.stderr.join("\n");
+		expect(held).toMatch(/held by build:driver-session:9f2cab41/);
+		expect(held).toMatch(/Nothing was retracted/);
+		expect(requests.filter((line) => DELETE.test(line))).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is UNKNOWN when the claimant read fails — never a cleared park", async () => {
+		const fs = lane(PARKED_ON_CLAIM);
+
+		const {out} = await runClaimRead(fs, [...NO_PR, [LANE_COMMENTS, httpError(500)]]);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is UNKNOWN when the PRs linking the issue cannot be read — never a cleared park", async () => {
+		const fs = lane(PARKED_ON_CLAIM);
+
+		const {out} = await runClaimRead(fs, [
+			[CLOSERS, httpError(500)],
+			[LANE_COMMENTS, {status: 200, body: "[]"}],
+		]);
 
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(fs.written.size).toBe(0);
@@ -1330,6 +1554,37 @@ describe("recipe unpark — a driver-routed park clears on the driver's own rati
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({clearance: "branch-free", current: "build"});
+	});
+
+	// The spent-budget route is the repo's to declare. Under the shipped `driver` it stays the
+	// driver's park; a repo that declared `founder` gets a founder-routed park however the driver
+	// clears the others.
+	it("routes a spent repair budget to the driver under the shipped repairBudgetSpent", async () => {
+		const fs = lane(parkedBlockedOn("repair-budget-spent"));
+
+		const out = await run(fs, [], DISCHARGED_HTTP, null, CLEARS);
+
+		expect(out.code).toBe(RATIONALE_ABSENT);
+		expect(out.stderr.join("\n")).toMatch(/"repair-budget-spent" routes to the driver/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses a spent repair budget at PARK_NOVEL where the repo declared it the founder's", async () => {
+		const fs = lane(parkedBlockedOn("repair-budget-spent"));
+
+		const out = await run(
+			fs,
+			[],
+			DISCHARGED_HTTP,
+			null,
+			parkCauseRead("record", "clear", "founder"),
+			WHY,
+		);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(out.stderr.join("\n")).toMatch(/`parkCause\.repairBudgetSpent` is "founder"/);
+		expect(out.stderr.join("\n")).toMatch(/route this to a human/);
+		expect(fs.written.size).toBe(0);
 	});
 
 	it("is PRECONDITION_UNKNOWN on a parkCause nobody could read — never the shipped arm", async () => {

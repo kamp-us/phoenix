@@ -4,8 +4,8 @@
  * with its reason, and a placement this transport does not serve is answered per attach.
  */
 
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {Schema} from "effect";
-import {ProcessId} from "../../process/process.ts";
 
 /**
  * The server serves node-placed processes only. A browser-placed process is a later slice, and it

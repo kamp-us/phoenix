@@ -34,6 +34,13 @@ describe("exhibit registry — headless enumeration", () => {
 		);
 	});
 
+	it("registers the product search palette with its history-state knob", () => {
+		const palette = getExhibit("search-palette");
+		expect(palette?.title).toBe("Search Palette");
+		expect(palette?.component).toBeTruthy();
+		expect(Object.keys(palette?.knobs ?? {})).toContain("history");
+	});
+
 	it("resolves by id and returns undefined for an unknown slug", () => {
 		expect(getExhibit("button")?.id).toBe("button");
 		expect(getExhibit("does-not-exist")).toBeUndefined();

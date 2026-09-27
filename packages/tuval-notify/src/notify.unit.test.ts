@@ -21,7 +21,8 @@
  * The day #9292 lands, the last `describe` is where the change shows up first.
  */
 
-import {type TurnResult, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {BRIEF_PORT} from "@kampus/tuval-cron";
+import {type TurnResult, TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AuthoredProgram,
 	emit,
@@ -29,8 +30,7 @@ import {
 	send,
 	TITLE_PORT,
 	testProgram,
-} from "@kampus/tuval/authoring";
-import {BRIEF_PORT} from "@kampus/tuval-cron";
+} from "@kampus/tuval-sdk/authoring";
 import {Effect, type Layer, Schema} from "effect";
 import {describe, expect, it} from "vitest";
 import config, {BLOCKED_ROUTE, desk, morningBrief, phone} from "../.tuval/tuval.config.ts";
@@ -117,8 +117,8 @@ type Authored = ReturnType<typeof program>;
 /**
  * The authored record, at the shape `testProgram` takes.
  *
- * `defineProgram` grew a sixth type argument in #9295 — `X`, the author's own effect — and
- * `testProgram` still stops at five, so a record whose cells answer `Answer<State, Deliver>` does
+ * `defineProgram` takes `X` — the author's own effect — as its fifth type argument (#9295), and
+ * `testProgram` stops at four, so a record whose cells answer `Answer<State, Deliver>` does
  * not fit its parameter. The cells are the same functions and the runner calls them the same way;
  * the cast is over that one type argument and nothing else, and this is the only place in the suite
  * that writes it. Filed upstream as kamp-us/phoenix
@@ -205,7 +205,7 @@ describe("what may arrive on `message`", () => {
 
 	/**
 	 * The composition claim at the schema level, and it is now an identity rather than a fit: the
-	 * port is declared over the *same object* `@kampus/tuval/ai-agent/ports` ships and cron's `brief`
+	 * port is declared over the *same object* `@kampus/tuval-sdk/ai-agent/ports` ships and cron's `brief`
 	 * out-port is declared over. Nothing structural is being relied on — no open struct dropping
 	 * excess keys — because #9292's route rule is exact schema equality, and only the identical
 	 * schema satisfies it.

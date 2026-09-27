@@ -7,10 +7,10 @@
 
 import {readFileSync} from "node:fs";
 import {defineMachine} from "@demlik/tea";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
+import {defineSpell} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Schema} from "effect";
-import {defineSpell} from "../commands/spell.ts";
-import type {TuvalConfigInput} from "../config.ts";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 
 /** One generation of the fixture: what the JSON file holds. */
 export interface DeclaredConfig {
@@ -32,13 +32,12 @@ const spellNamed = (name: string) =>
 		capabilities: [],
 	});
 
-const program = (row: DeclaredConfig["programs"][number]): AnyProgram =>
+export const declaredProgram = (row: DeclaredConfig["programs"][number]): AnyProgram =>
 	({
 		id: ProgramId.make(row.id),
 		core: defineMachine<State, Msg, Notify, never, unknown>({
 			init: (loaded) => [loaded ?? {seen: 0}, []],
 			update: {tick: (state) => [{seen: state.seen + 1}, []]},
-			interpret: {notify: () => Promise.resolve()},
 		}),
 		ports: {},
 		handlers: {notify: () => Effect.succeed([] as ReadonlyArray<Msg>)},
@@ -59,6 +58,6 @@ const declared = JSON.parse(
 
 export default {
 	version: 1,
-	programs: declared.programs.map(program),
+	programs: declared.programs.map(declaredProgram),
 	keys: declared.keys,
 } satisfies TuvalConfigInput;

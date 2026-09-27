@@ -126,8 +126,8 @@ its stdout instead ([#4487](https://github.com/kamp-us/phoenix/issues/4487)).
 - `skills/review-code/scripts/classify-control-plane.sh` — a **machine** answer channel of
   `KEY=value` lines, which is why every failure path prints the flags as a §CP sentinel before
   exiting non-zero rather than leaving stdout empty. Its `%q`-quoted flags are the positive-token
-  rule applied literally: the ordinary not-§CP answer is `''`, not an absence. Its siblings
-  `materialize-head.sh` and `run-evidence-read.sh` are the same shape — each once returned a path to
+  rule applied literally: the ordinary not-§CP answer is `''`, not an absence. Its sibling
+  `materialize-head.sh` is the same shape — it once returned a path to
   a §SP handle for the caller to source, and ADR 0232 moved the answer onto stdout while the handle
   stayed behind purely for the *later scripts of the same skill* to re-source in-process (#4574).
 - `skills/review-design/scripts/classify-control-plane.sh` and

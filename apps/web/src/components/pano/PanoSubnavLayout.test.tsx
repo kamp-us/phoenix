@@ -1,7 +1,7 @@
 /** pano's persistent Subnav zone, composed through SubnavShell. See ADR 0182. */
-import {fireEvent, render, screen} from "@testing-library/react";
+import {fireEvent, render, screen, within} from "@testing-library/react";
 import {useEffect} from "react";
-import {Link, MemoryRouter, Route, Routes} from "react-router";
+import {Link, MemoryRouter, Route, Routes, useLocation, useNavigate} from "react-router";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {PanoSubnavLayout, useSetPanoSubnavContent} from "./PanoSubnavLayout";
 
@@ -22,6 +22,7 @@ function PublishingLeaf({
 	testid?: string;
 }) {
 	const setContent = useSetPanoSubnavContent();
+	const navigate = useNavigate();
 	useEffect(() => {
 		setContent?.({
 			filters: [
@@ -31,10 +32,18 @@ function PublishingLeaf({
 			activeFilter: "hot",
 			onFilterChange: () => {},
 			meta,
-			...(host ? {crumb: {label: `site / ${host}`, onClear: () => {}}} : {}),
+			...(host
+				? {
+						crumb: {
+							trail: [{key: "site", label: "site"}],
+							current: {key: "host", label: host},
+							onClear: () => navigate("/pano"),
+						},
+					}
+				: {}),
 		});
 		return () => setContent?.(null);
-	}, [setContent, meta, host]);
+	}, [setContent, navigate, meta, host]);
 	return (
 		<div data-testid={testid}>
 			<Link to="/pano/x">detay</Link>
@@ -42,12 +51,18 @@ function PublishingLeaf({
 	);
 }
 
-function renderZone(leaf = <PublishingLeaf />) {
+function LocationProbe() {
+	return <output data-testid="location">{useLocation().pathname}</output>;
+}
+
+function renderZone(leaf = <PublishingLeaf />, entry = "/pano") {
 	return render(
-		<MemoryRouter initialEntries={["/pano"]}>
+		<MemoryRouter initialEntries={[entry]}>
+			<LocationProbe />
 			<Routes>
 				<Route element={<PanoSubnavLayout />}>
 					<Route path="/pano" element={leaf} />
+					<Route path="/pano/site/:host" element={leaf} />
 					<Route path="/pano/x" element={<div data-testid="pano-detail">detay</div>} />
 				</Route>
 			</Routes>
@@ -82,7 +97,9 @@ describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#29
 		expect(filtersRow?.contains(screen.getByRole("button", {name: "sıcak"}))).toBe(true);
 		expect(filtersRow?.contains(screen.getByRole("button", {name: "yeni"}))).toBe(true);
 		expect(
-			bar?.querySelector(".kp-subnav__leading")?.contains(screen.getByText("site / foo.com")),
+			bar
+				?.querySelector(".kp-subnav__leading")
+				?.contains(screen.getByRole("navigation", {name: "sayfa yolu"})),
 		).toBe(true);
 		expect(
 			bar
@@ -121,7 +138,54 @@ describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#29
 		const {container} = renderZone(<PublishingLeaf host="foo.com" />);
 		expect(container.querySelector(".kp-subnav__crumb")).toBeTruthy();
 		expect(container.querySelector(".kp-pano-crumb")).toBeNull();
-		expect(screen.getByText("site / foo.com")).toBeTruthy();
+		expect(screen.getByRole("navigation", {name: "sayfa yolu"}).textContent).toBe("site / foo.com");
 		expect(screen.getByRole("button", {name: "× filtreyi kaldır"})).toBeTruthy();
+	});
+});
+
+/** Each crumb's text with its `aria-hidden` parts removed: what assistive tech reads per item. */
+function spokenCrumbs(nav: HTMLElement): string[] {
+	return within(nav)
+		.getAllByRole("listitem")
+		.map((item) => {
+			const copy = item.cloneNode(true) as HTMLElement;
+			for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+			return copy.textContent ?? "";
+		});
+}
+
+describe("PanoSubnavLayout — the zoned site-filter crumb is a WAI-ARIA breadcrumb (#9705)", () => {
+	function renderSiteCrumb() {
+		renderZone(<PublishingLeaf host="example.com" />, "/pano/site/example.com");
+		return screen.getByRole("navigation", {name: "sayfa yolu"});
+	}
+
+	it("renders inside a named nav landmark as an ordered list", () => {
+		const nav = renderSiteCrumb();
+		expect(within(nav).getByRole("list").tagName).toBe("OL");
+		expect(spokenCrumbs(nav)).toEqual(["site", "example.com"]);
+	});
+
+	it("hides the separators from assistive tech", () => {
+		const nav = renderSiteCrumb();
+		const seps = nav.querySelectorAll(".kp-breadcrumbs__sep");
+		expect(seps).toHaveLength(1);
+		for (const sep of seps) expect(sep.getAttribute("aria-hidden")).toBe("true");
+	});
+
+	it("marks the host crumb, and only it, as the current page", () => {
+		const nav = renderSiteCrumb();
+		const current = nav.querySelectorAll("[aria-current]");
+		expect(current).toHaveLength(1);
+		expect(current[0]?.getAttribute("aria-current")).toBe("page");
+		expect(within(nav).getAllByRole("listitem").at(-1)).toBe(current[0]);
+	});
+
+	it("keeps the clear control outside the list, and clearing navigates to /pano", () => {
+		const nav = renderSiteCrumb();
+		const clear = screen.getByRole("button", {name: "× filtreyi kaldır"});
+		expect(nav.contains(clear)).toBe(false);
+		fireEvent.click(clear);
+		expect(screen.getByTestId("location").textContent).toBe("/pano");
 	});
 });

@@ -68,7 +68,8 @@ of it** — a summary of a contract is not the contract. A hand-filed issue skip
 fabrika report dedup --query "definition editor loses focus after save" --exclude $issue_number
 ```
 
-Read `candidates` yourself — shared vocabulary is not a shared observation; `indeterminate` is a
+Read `candidates` yourself — shared vocabulary is not a shared observation. A closed match needs
+a behavior check before it can count as already fixed; `indeterminate` is a
 non-check, so re-query. `--exclude` is this group's extension to the `report` verb, and its grammar
 is the section that adds it:
 `fabrika wire doc-section --heading "report dedup — the --exclude extension" < <skill-base>/contract.md`. A duplicate routes by who filed it (step 8).
@@ -376,18 +377,18 @@ EOF
 
 **The value bar.** An issue can be correct, well-written, and still worth nothing. This is the bar
 the founder's own backlog sweeps run on, and it kills an agent-filed issue when any one of five
-clauses holds:
+clauses holds (each clause's token is what an audit's KILL row names):
 
-- **process ceremony** — the deliverable is a record nobody then acts on, a decision written down for
+- **process ceremony** (`process-ceremony`) — the deliverable is a record nobody then acts on, a decision written down for
   its own sake;
-- **self-generated churn** — refactor or build work we filed against our own output with no behaviour
+- **self-generated churn** (`self-generated-churn`) — refactor or build work we filed against our own output with no behaviour
   change: restated vocabulary, a duplicated list tidied, a docblock or sample-transcript nit, a doc
   sentence that omits one clause of a check that already works;
-- **hardening with no incident** — *has this ever failed in production?* This clause is a factual
+- **hardening with no incident** (`hardening-with-no-incident`) — *has this ever failed in production?* This clause is a factual
   test, not a taste call, and a "no" kills it. A missing unit test for a refusal that already works
   is this clause; so is nice-to-have telemetry or cost reporting for a cost nobody is paying;
-- **superseded** — something already landed, or already ruled, makes it moot;
-- **duplicate of its parent** — the parent's scope already covers it.
+- **superseded** (`superseded`) — something already landed, or already ruled, makes it moot;
+- **duplicate of its parent** (`duplicate-of-parent`) — the parent's scope already covers it.
 
 Those examples are verdicts, not hypotheticals: one sweep killed twelve of thirty-five triaged
 `p2`s, and every one of them landed in a clause above. The bar reaches agent-filed work only
@@ -408,3 +409,41 @@ which is which is the verb's section
 (`fabrika wire doc-section --heading "triage queue" < <skill-base>/contract.md`; the codes it shares
 with every verb above are `--heading "The shared exit taxonomy"`). Then
 report one line per issue: outcome, type, priority, home, audience, **repo-relative paths only**.
+
+## Auditing already-triaged work
+
+An audit judges issues that are already triaged against the value bar, and it is **read-only until a
+human approves the kills**. The caller names the label the audit covers; there is no default.
+
+```bash
+fabrika triage audit-set --label <label> --json > <scratch>/set.json
+```
+
+That is the whole open set under the label, never truncated, and it refuses on `7` rather than
+printing an empty set when the label does not exist. Keep the audit's files in your session's
+scratch directory; their paths are machine-local and never go into an issue.
+
+**Readers never write.** Fan out one read-only reader per issue. A reader reads the issue and the
+code it names and returns exactly one verdict row, with one line of evidence:
+
+- `KILL` — it fits a value-bar clause, and the row names that clause's token;
+- `DECIDE` — keeping or killing it is a choice only a human can make;
+- `KEEP` — it clears the bar.
+
+A reader never claims, labels, comments or closes. Collect the rows into chunks, each carrying the
+number of rows it holds as `declared`, and merge them:
+
+```bash
+fabrika triage audit-merge --input <scratch>/set.json --chunk <scratch>/a.json --chunk <scratch>/b.json
+```
+
+The row and chunk shapes are that verb's help. The merge refuses, printing nothing, when a chunk's
+rows differ from its `declared` count (`23`), when one issue has two rows (`24`), or when the merged
+issues are not the input set (`25`). **Never rebuild a missing row by hand**: send that issue back to
+a reader. A rebuilt row is a verdict no reader gave.
+
+**The KILL batch waits for human approval.** Show the merged KILL rows with their clauses and
+evidence, and close nothing until a human approves the batch. Then close each approved issue one at
+a time through the normal route in step 8: claim it, run `triage provenance`, and use `triage kill`
+for an agent filing and `triage park` for a human filing, which is never killed. `DECIDE` rows go to
+the human as questions, and `KEEP` rows are left alone.

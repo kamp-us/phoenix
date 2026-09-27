@@ -32,9 +32,12 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {listComments} from "../io/issues.ts";
+import {ownershipGate} from "../ownership/gate.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	BASE_CONFLICTED,
+	PR_NOT_OURS,
 	PRECONDITION_UNKNOWN,
 	PROVEN_NOT_IN_STATE,
 	STALE_HEAD,
@@ -86,7 +89,18 @@ export const runEnqueue = (
 			);
 		}
 
-		const diagnostics: string[] = [];
+		// A PR belongs to its author: arming the queue on one the pipeline does not own lands someone
+		// else's work for them, so the ownership gate sits before the first read that leads to a write.
+		const owned = yield* ownershipGate(
+			VERB,
+			repo,
+			{number: pr, author: target.pull.authorLogin, baseRef: target.pull.baseRef},
+			listComments(repo, pr),
+			{notOurs: PR_NOT_OURS, unknown: PRECONDITION_UNKNOWN},
+			"nothing was armed.",
+		);
+		if (owned._tag === "Refused") return owned.outcome;
+		const diagnostics: string[] = [owned.line];
 		const mergeability = yield* readDefiniteMergeability(repo, pr, options.mergeabilitySeconds);
 		if (mergeability._tag === "Unreadable") {
 			return refuse(

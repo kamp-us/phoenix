@@ -6,16 +6,7 @@
  * deterministically testable as its answers: a test asserts the exit code and the bytes on each
  * channel without spawning a process.
  *
- * The reserved codes are the interface convention's, not a per-verb choice:
- *
- * | Code  | Reserved for                                          |
- * |-------|-------------------------------------------------------|
- * | `0`   | the answer was produced on stdout                     |
- * | `1`   | usage error, or the verb failed to run                |
- * | `2`   | **never allocated** — the harness's block code        |
- * | `126` | no implementation could be resolved                   |
- * | `127` | the verb never ran at all (unresolved binary)         |
- * | `3`+  | the verb's own proven outcomes                        |
+ * Reserved codes belong to `claude-plugins/fabrika/docs/interface-convention.md`.
  *
  * A verdict a verb PROVED must never share an exit code with a failure to invoke: `1` is what the
  * Effect CLI returns for a bad flag and what a failed module load returns, so a proven refusal

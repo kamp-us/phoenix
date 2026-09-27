@@ -9,6 +9,11 @@
 						"type": "command",
 						"command": "fabrika hook check",
 						"timeout": 10
+					},
+					{
+						"type": "command",
+						"command": "fabrika hook cli-floor",
+						"timeout": 10
 					}
 				]
 			},

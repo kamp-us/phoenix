@@ -1,12 +1,12 @@
 /** The `:` prompt: shell rows dispatch locally; registered commands call the attached kernel. */
 
+import {buildSpellIndex} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import {CallId, type WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import type {Snapshot} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
 import {Effect, Fiber} from "effect";
 import type {FormEvent, KeyboardEvent, ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {buildSpellIndex} from "../../commands/parse/spell-index.ts";
-import {CallId, type WindowId} from "../../protocol/ids.ts";
-import type {Snapshot} from "../../protocol/messages.ts";
-import type {RegistryDescription} from "../../protocol/registry-description.ts";
 import type {CommandIndex} from "../commands/index.ts";
 import {readCommandLine, refusalMessage} from "../commands/index.ts";
 import type {ShellMsg} from "../core/index.ts";

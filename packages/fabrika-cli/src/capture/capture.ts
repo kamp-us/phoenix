@@ -12,7 +12,7 @@
  */
 import {mkdir, writeFile} from "node:fs/promises";
 import {join} from "node:path";
-import {type BrowserContext, chromium} from "@playwright/test";
+import {type BrowserContext, chromium, type Page} from "@playwright/test";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {readSessionProof, type SessionProof} from "./auth.ts";
@@ -22,6 +22,7 @@ import {
 	type OverrideProof,
 	readOverrideProof,
 } from "./flag-override.ts";
+import {type LocaleProof, type LocaleSeed, readLocaleProof} from "./locale-seed.ts";
 import {type PageError, toPageError} from "./page-errors.ts";
 import type {Shot} from "./plan.ts";
 
@@ -57,6 +58,11 @@ export interface CapturedSurface {
 	 * name.
 	 */
 	readonly overrideProof?: OverrideProof;
+	/**
+	 * Whether the page rendered in the seeded locale, present only when the caller seeded one. A
+	 * seed the app never read paints the default-locale page, a valid PNG under the requested name.
+	 */
+	readonly localeProof?: LocaleProof;
 }
 
 /** A Playwright launch/navigation/screenshot/write failure — surfaced, never swallowed. */
@@ -102,6 +108,14 @@ export interface CaptureOptions {
 	 * is taken and `overrideProof` stays absent.
 	 */
 	readonly flagProbe?: {readonly url: string; readonly flags: ForcedFlags};
+	/**
+	 * A `localStorage` entry written in every document of each shot's context before any page
+	 * script runs, then proved against the page's `document.documentElement.lang` before the shot.
+	 * Absent ⇒ nothing is seeded and `localeProof` stays absent.
+	 */
+	readonly locale?: LocaleSeed;
+	/** How long the locale proof waits for `lang` to name the seeded value (default 10s). */
+	readonly localeSettleMs?: number;
 }
 
 /**
@@ -148,6 +162,36 @@ const proveOverride = (
 		);
 
 /**
+ * The page-side scripts, as source text: this package compiles without the DOM lib, so a function
+ * body naming `document` or `localStorage` would not typecheck. Every operand is embedded through
+ * `JSON.stringify`, so a key or value is always a string literal in the page, never code.
+ */
+const seedScript = (seed: LocaleSeed): string =>
+	`try { localStorage.setItem(${JSON.stringify(seed.storageKey)}, ${JSON.stringify(seed.value)}); } catch {}`;
+const langIs = (value: string): string =>
+	`document.documentElement.lang === ${JSON.stringify(value)}`;
+const READ_LANG = "document.documentElement.lang";
+
+/**
+ * Wait for the page's `lang` to name the seeded locale, then read it back. An app may set `lang`
+ * only after an asynchronously loaded catalog lands, so first paint is not the answer; a wait that
+ * times out is not a failure here, because the read after it is what decides. Total on the same
+ * terms as {@link proveSession}: an evaluation that throws is a fact about the probe.
+ */
+const proveLocale = async (page: Page, value: string, settleMs: number): Promise<LocaleProof> => {
+	await page.waitForFunction(langIs(value), undefined, {timeout: settleMs}).catch(() => undefined);
+	return page
+		.evaluate<unknown>(READ_LANG)
+		.then((lang) => readLocaleProof(value, lang))
+		.catch(
+			(cause): LocaleProof => ({
+				_tag: "Unreadable",
+				reason: `lang read failed: ${String(cause)}`,
+			}),
+		);
+};
+
+/**
  * Launch one chromium instance, shoot every plan entry serially (each in its own
  * page at the entry's viewport), write each PNG under `outDir`, and close the
  * browser on every exit path (`acquireUseRelease`). A failure on any single shot
@@ -160,6 +204,7 @@ export const captureShots = (
 ): Effect.Effect<readonly CapturedSurface[], CaptureError> => {
 	const navigationTimeoutMs = options.navigationTimeoutMs ?? 30_000;
 	const fullPage = options.fullPage ?? true;
+	const localeSettleMs = options.localeSettleMs ?? 10_000;
 	return Effect.acquireUseRelease(
 		Effect.tryPromise({
 			try: async () => {
@@ -196,6 +241,13 @@ export const captureShots = (
 								options.flagProbe === undefined
 									? undefined
 									: await proveOverride(context, options.flagProbe);
+							// An init script rather than a write after load, so the app's first read of the
+							// key already sees the seed. The script guards its own write, because an
+							// opaque-origin document (the initial about:blank) throws on `localStorage` access.
+							const locale = options.locale;
+							if (locale !== undefined) {
+								await context.addInitScript({content: seedScript(locale)});
+							}
 							const page = await context.newPage();
 							// Listen across the WHOLE navigation window (attached before goto), so a
 							// runtime error thrown during mount/init is caught even when the frame
@@ -213,6 +265,11 @@ export const captureShots = (
 									waitUntil: "networkidle",
 									timeout: navigationTimeoutMs,
 								});
+								// Before the screenshot, so the pixels are of the page the proof answered about.
+								const localeProof =
+									locale === undefined
+										? undefined
+										: await proveLocale(page, locale.value, localeSettleMs);
 								// A clip crops to the changed region; Playwright rejects clip + fullPage
 								// together, so a clipped shot is never full-page.
 								const buffer = await page.screenshot(
@@ -233,6 +290,7 @@ export const captureShots = (
 									...(response === null ? {} : {status: response.status()}),
 									...(sessionProof === undefined ? {} : {sessionProof}),
 									...(overrideProof === undefined ? {} : {overrideProof}),
+									...(localeProof === undefined ? {} : {localeProof}),
 								};
 							} finally {
 								await context.close();

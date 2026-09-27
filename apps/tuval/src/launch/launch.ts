@@ -17,17 +17,18 @@
  * end goes through (#9227).
  */
 
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {dispatchResume} from "@kampus/tuval-sdk/kernel/durability/resume";
+import type {CompiledGraph, CompiledNode} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import type {Wiring} from "@kampus/tuval-sdk/kernel/ports/wiring";
+import {PlannedProcesses} from "@kampus/tuval-sdk/kernel/process/PlannedProcesses";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {type ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Option, type Queue} from "effect";
-import {SpawnedProcesses} from "../commands/core/process.ts";
-import {Checkpoints} from "../durability/Checkpoints.ts";
-import {dispatchResume} from "../durability/resume.ts";
-import type {CompiledGraph, CompiledNode} from "../ports/graph.ts";
-import {ProcessPorts} from "../ports/ProcessPorts.ts";
-import type {Wiring} from "../ports/wiring.ts";
-import {Processes} from "../process/Processes.ts";
-import {type ProcessHandle, ProcessId} from "../process/process.ts";
-import type {AnyProgram} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
 import {NoReceiver} from "./errors.ts";
 
 export interface LaunchedProcess {
@@ -63,6 +64,7 @@ export const launch = Effect.fn("Tuval.launch")(function* (
 	const processes = yield* Processes;
 	const spawned = yield* SpawnedProcesses;
 	const checkpoints = yield* Checkpoints;
+	const plannedProcesses = yield* PlannedProcesses;
 
 	const rows = new Map<CompiledNode["id"], AnyProgram>();
 	const planned: Planned[] = [];
@@ -76,6 +78,12 @@ export const launch = Effect.fn("Tuval.launch")(function* (
 		rows.set(node.id, row);
 		planned.push({node, row});
 	}
+
+	// Recorded before the first spawn, and off the compiled graph rather than off anything that
+	// survives the boot: this is the only moment the planned node ids are known, and `Processes.remove`
+	// refuses a graph-declared process by reading them back (#9446). A node whose spawn then fails is
+	// still planned — boot would try it again — so the record is not conditional on the launch.
+	yield* plannedProcesses.declare(planned.map(({node}) => ProcessId.make(node.id)));
 
 	const checkpointed = new Set((yield* checkpoints.list).map((entry) => entry.id));
 	const launched: LaunchedProcess[] = [];

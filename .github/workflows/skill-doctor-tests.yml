@@ -1,0 +1,94 @@
+name: skill-doctor-tests
+
+# Landing child #8048 (epic #8035). Two separate test targets; the job fails if
+# EITHER fails. No skips, no failure allowlists, no continue-on-error, no output
+# parsing.
+#
+# Target 1 — upstream baseline. Both UNCHANGED upstream suites run in an isolated
+# temporary tree: the byte-exact vendored files plus upstream's ORIGINAL SKILL.md,
+# downloaded from the pinned commit and hash-verified before use. The shipped
+# fabrika SKILL.md is never part of this tree, so upstream's packaging assertions
+# run against the artifact they were written for. Green here proves the vendored
+# code matches its own packaging — nothing about fabrika's integration.
+#
+# Target 2 — fabrika conformance. `test_fabrika_conformance.py` (fabrika-authored,
+# see PROVENANCE.md) checks the SHIPPED SKILL.md and contract.md for this child's
+# contracts: session scoping, the scoring contract, failed-conversation-only edit
+# gating, section addressability, documented collector/discovery limitations, and
+# §4 plain-literal commands. Doc-level only; it proves the documentation exists
+# where the skill reads it, not runtime behavior.
+#
+# interpreter: R1.1 on #8035 — zero other Python in the repo, so this job owns its
+# setup. PYTHONUTF8=1 throughout; the native Windows encoding exposure is #8050's.
+on:
+  pull_request:
+    paths:
+      - "claude-plugins/fabrika/skills/skill-doctor/**"
+      - ".github/workflows/skill-doctor-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "claude-plugins/fabrika/skills/skill-doctor/**"
+      - ".github/workflows/skill-doctor-tests.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  skill-doctor:
+    name: upstream baseline + fabrika conformance (python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: "target 1 — upstream baseline (vendored files + upstream SKILL.md @ b811c243)"
+        env:
+          PYTHONUTF8: "1"
+          UPSTREAM_SKILL_MD_SHA: "9fd7d77d3b3944cbda2b09137001c25af08f598d"
+        run: |
+          set -euo pipefail
+          BASELINE="$RUNNER_TEMP/skill-doctor-upstream-baseline"
+          mkdir -p "$BASELINE/scripts" "$BASELINE/references" "$BASELINE/assets"
+          # Exactly the five upstream scripts — the fabrika conformance test must
+          # never enter the baseline tree, so the copy names them instead of *.py.
+          for f in collect_sessions.py render_report.py test_collect_sessions.py test_render_report.py warp_decoder.py; do
+            cp "claude-plugins/fabrika/skills/skill-doctor/scripts/$f" "$BASELINE/scripts/$f"
+          done
+          cp claude-plugins/fabrika/skills/skill-doctor/references/*.md "$BASELINE/references/"
+          cp claude-plugins/fabrika/skills/skill-doctor/assets/* "$BASELINE/assets/"
+          if [ -e "$BASELINE/scripts/test_fabrika_conformance.py" ]; then
+            echo "isolation failure: fabrika conformance test leaked into the baseline tree" >&2
+            exit 1
+          fi
+          if ! curl -fsSL "https://raw.githubusercontent.com/warpdotdev/common-skills/b811c24365ae505bfc9646458957b886e29110b5/.agents/skills/skill-doctor/SKILL.md" \
+            -o "$BASELINE/SKILL.md"; then
+            echo "provenance failure: could not download upstream SKILL.md at the pinned commit" >&2
+            exit 1
+          fi
+          got="$(git hash-object "$BASELINE/SKILL.md")"
+          echo "upstream SKILL.md blob: $got"
+          if [ "$got" != "$UPSTREAM_SKILL_MD_SHA" ]; then
+            echo "provenance failure: downloaded SKILL.md blob does not match the pinned blob" >&2
+            exit 1
+          fi
+          cd "$BASELINE/scripts"
+          python test_collect_sessions.py
+          python test_render_report.py
+
+      - name: "target 2 — fabrika conformance (shipped SKILL.md + contract.md)"
+        working-directory: claude-plugins/fabrika/skills/skill-doctor/scripts
+        env:
+          PYTHONUTF8: "1"
+        run: python test_fabrika_conformance.py

@@ -3,18 +3,35 @@
  *
  * `WorktreeCreate` is a **provider** hook: the harness hands it a slug and expects the worktree to
  * exist and its path on stdout when the hook exits 0 (`../../../../claude-plugins/fabrika/docs/hook-surface.md`).
- * So the verb beside this file runs two git commands, and everything it has to get *right* before it
- * runs them — where the tree goes, what the child's `PATH` must carry — is decided here, where a
- * unit test can drive it.
+ * `worktree-owner.ts` runs the git commands, and everything it has to get *right* before it runs
+ * them — where the tree goes, what each command's arguments are, what the child's `PATH` must carry
+ * — is decided here, where a unit test can drive it.
  *
  * Two facts this module encodes are captured, not assumed: the payload carries `cwd` and `name` and
  * **no** `worktree_path` or `base_ref`, and the path is therefore *constructed* rather than read.
  * `__fixtures__/worktree-create.payload.golden.json` is the capture.
+ *
+ * `cwd` is the session's working directory, which is not always the repository root and not always
+ * the primary checkout. So it makes a {@link WorktreeRequest} and never a plan: {@link locateToplevel}
+ * proves it stands in a working tree, and only {@link planAtPrimary}, handed that clone's worktree
+ * listing, composes a {@link WorktreePlan}.
  */
+
+/** A payload that passed every check needing no subprocess — where the session is, not the repo. */
+export interface WorktreeRequest {
+	/** The session's working directory, absolute. Possibly a subdirectory of the repository. */
+	readonly cwd: string;
+	/** The harness's suggested slug, verbatim. */
+	readonly name: string;
+}
+
+export type RequestRead =
+	| {readonly _tag: "Request"; readonly request: WorktreeRequest}
+	| {readonly _tag: "Unplannable"; readonly reason: string};
 
 /** Where a hook-provisioned worktree goes, and the repo the git commands run in. */
 export interface WorktreePlan {
-	/** The repository root the payload named. Every git command runs here, not in `process.cwd()`. */
+	/** The primary working tree of the request's clone. Every git command runs here, not in `process.cwd()`. */
 	readonly repoRoot: string;
 	/** The harness's suggested slug, verbatim. */
 	readonly name: string;
@@ -94,6 +111,56 @@ export const dropBaseRefArgs = (baseRef: string): ReadonlyArray<string> => [
 	baseRef,
 ];
 
+/** The clone's common git dir, absolute — the one directory every worktree of the clone shares. */
+export const commonDirArgs: ReadonlyArray<string> = [
+	"rev-parse",
+	"--path-format=absolute",
+	"--git-common-dir",
+];
+
+/**
+ * The add, with the repo's git hooks switched off for this one command.
+ *
+ * A plain `git worktree add` fires `post-checkout`, and in this repo that is the ~10s dependency
+ * install. Run inside the creation lock, it would hold every sibling spawn behind one install, so the
+ * add runs hookless and {@link installArgs} fires the same hook afterwards, outside the lock.
+ * `core.hooksPath=/dev/null` names a directory that holds no hook, and `-c` scopes that to this
+ * command only.
+ *
+ * `--detach`: a linked worktree cannot check out a local branch the primary already holds, and every
+ * lane re-branches at its own preflight anyway, so this base HEAD is throwaway.
+ */
+export const addWorktreeArgs = (worktreePath: string, commit: string): ReadonlyArray<string> => [
+	"-c",
+	"core.hooksPath=/dev/null",
+	"worktree",
+	"add",
+	"--detach",
+	worktreePath,
+	commit,
+];
+
+/**
+ * The dependency install, fired as the repo's own `post-checkout` hook with the arguments
+ * `git worktree add` would have passed it: the null oid as the previous HEAD, the new HEAD, and `1`
+ * for a branch checkout.
+ *
+ * The hook is run rather than its body restated, so what installs deps stays the repo's
+ * `post-checkout`, the one install a human's plain `git worktree add` or `git checkout` also runs.
+ * `--ignore-missing` makes a repo with no such hook answer 0 here, and the virtual-store check after
+ * it is what refuses a tree that got no deps.
+ */
+export const installArgs = (commit: string): ReadonlyArray<string> => [
+	"hook",
+	"run",
+	"--ignore-missing",
+	"post-checkout",
+	"--",
+	"0".repeat(commit.length),
+	commit,
+	"1",
+];
+
 /**
  * The two ways one spawn's `git worktree add` breaks a **sibling** spawn's git command against the
  * same clone. Both are named by the administrative file the losing command choked on.
@@ -125,6 +192,13 @@ export const dropBaseRefArgs = (baseRef: string): ReadonlyArray<string> => [
  * So the recovery is {@link pruneWorktreesArgs} *and* a bounded re-attempt, never a re-attempt
  * alone: prune clears the dead sibling's leftover on both gits measured, where a bare re-attempt
  * clears it on only one of them, and the backoff waits out the live one.
+ *
+ * **The creation lock narrows both arms and removes neither.** It serializes this hook's own fetches
+ * and adds, so a spawn of this hook can no longer be the live sibling another one trips on. It does
+ * not reach a `git worktree add` that runs outside the hook — the harness's internal path, a human, a
+ * `review-head materialize` — and it cannot clear a leftover a dead add already wrote. Both arms stay
+ * named, and the recovery stays.
+ * @ruling https://github.com/kamp-us/phoenix/issues/7057
  */
 export type ConcurrencyArm = "PlaceholderHead" | "IncompleteAdminDir";
 
@@ -165,11 +239,9 @@ export const pruneWorktreesArgs: ReadonlyArray<string> = ["worktree", "prune"];
 /**
  * How the sweep re-enters this CLI, and how much of the spawn it may spend.
  *
- * **Whatever creates a worktree reaps first.** Why the bound belongs at provisioning, and which
- * alternatives that ruling refused, is the decision record linked from `build reap`'s entry in
- * `docs/verb-reference.md` — not restated here. What is local: it runs *before* the fetch and the
- * add, because the failure it exists to prevent is a full volume refusing the add, and freeing the
- * disk after that refusal is a spawn too late.
+ * Reap before the fetch and add: a full volume can refuse the add, so freeing disk after that
+ * refusal is a spawn too late.
+ * @ruling https://github.com/kamp-us/phoenix/issues/7990
  *
  * It is a **child process** rather than a call into `runReap`, for the one thing a child gives that
  * a call does not: `cwd`. This package's git seam runs every command in the process's own cwd, and a
@@ -201,10 +273,9 @@ export const reapArgs = (entry: string): ReadonlyArray<string> => [
 ];
 
 /**
- * Attempts and delays for that recovery. Bounded, and **no lock is taken**: `git worktree add` fires
- * the `post-checkout` dependency install, so serialising it would serialise every parallel spawn
- * behind one ~10s install. A loser prunes and waits out the live window instead of taking a turn at
- * a lock.
+ * Attempts and delays for that recovery. Bounded, and it runs **inside** the creation lock: the lock
+ * holds only the fetch and the add, never the ~10s install, so a recovery's few seconds of backoff
+ * are the most it can add to a sibling's wait.
  */
 export const RECOVERY_ATTEMPTS = 5;
 
@@ -224,19 +295,19 @@ const COMMIT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 export const isCommitId = (candidate: string): boolean => COMMIT_ID.test(candidate);
 
 /**
- * Turn a captured `WorktreeCreate` payload into the plan, or say why there is none.
+ * Turn a captured `WorktreeCreate` payload into a request, or say why there is none.
  *
  * Every arm is fail-closed on purpose: the verb's caller is the harness, a refusal there blocks the
  * spawn, and a spawn that never happens is strictly better than one landing in a tree this hook
- * could not fully build.
+ * could not fully build. Nothing here runs a subprocess, so each refusal lands before any git does.
  */
-export const planWorktree = (payload: Record<string, unknown>): PlanRead => {
-	const repoRoot = typeof payload.cwd === "string" ? payload.cwd.trim() : "";
+export const readWorktreeRequest = (payload: Record<string, unknown>): RequestRead => {
+	const cwd = typeof payload.cwd === "string" ? payload.cwd.trim() : "";
 	const name = typeof payload.name === "string" ? payload.name.trim() : "";
 
-	if (repoRoot === "") return {_tag: "Unplannable", reason: "the payload carries no `cwd`"};
-	if (!repoRoot.startsWith("/")) {
-		return {_tag: "Unplannable", reason: `\`cwd\` is not an absolute path: ${repoRoot}`};
+	if (cwd === "") return {_tag: "Unplannable", reason: "the payload carries no `cwd`"};
+	if (!cwd.startsWith("/")) {
+		return {_tag: "Unplannable", reason: `\`cwd\` is not an absolute path: ${cwd}`};
 	}
 	if (name === "") return {_tag: "Unplannable", reason: "the payload carries no `name`"};
 	if (!SAFE_NAME.test(name)) {
@@ -246,17 +317,80 @@ export const planWorktree = (payload: Record<string, unknown>): PlanRead => {
 		};
 	}
 
-	return {_tag: "Plan", plan: {repoRoot, name, worktreePath: worktreePathFor(repoRoot, name)}};
+	return {_tag: "Request", request: {cwd, name}};
+};
+
+/** Run in the request's `cwd`; its stdout is the only directory {@link locateToplevel} accepts. */
+export const showToplevelArgs: ReadonlyArray<string> = ["rev-parse", "--show-toplevel"];
+
+/** Run in the located toplevel; its stdout is the only listing {@link planAtPrimary} accepts. */
+export const listWorktreesArgs: ReadonlyArray<string> = ["worktree", "list", "--porcelain", "-z"];
+
+export type ToplevelRead =
+	| {readonly _tag: "Toplevel"; readonly toplevel: string}
+	| {readonly _tag: "Unplannable"; readonly reason: string};
+
+/**
+ * The working tree `cwd` stands in, or a refusal naming the `cwd` that resolved to none.
+ *
+ * `toplevel` is `null` when the resolution itself failed; anything but one absolute path counts the
+ * same. There is no fallback to `cwd`: a tree under a subdirectory lands where the root-anchored
+ * ignore rules and the single worktree base do not reach.
+ */
+export const locateToplevel = (request: WorktreeRequest, toplevel: string | null): ToplevelRead => {
+	const path = toplevel?.trim() ?? "";
+	return path.startsWith("/") && !path.includes("\n")
+		? {_tag: "Toplevel", toplevel: path}
+		: {_tag: "Unplannable", reason: `\`cwd\` resolves to no repository toplevel: ${request.cwd}`};
+};
+
+/**
+ * The clone's primary working tree, read off `git worktree list --porcelain -z`, or `null`.
+ *
+ * git lists the main worktree first, so the first record is the primary checkout whichever tree the
+ * command ran in. A toplevel is not that answer: inside a linked tree `--show-toplevel` names the
+ * linked tree, and a child planned beneath it is deleted with it. A first record marked `bare` has
+ * no working tree to hold `.claude/worktrees/`, so it yields `null` like an unreadable listing.
+ */
+export const primaryWorktree = (listing: string | null): string | null => {
+	if (listing === null) return null;
+	const end = listing.indexOf("\0\0");
+	const first = (end === -1 ? listing : listing.slice(0, end)).split("\0");
+	const [head, ...attributes] = first;
+	if (head === undefined || !head.startsWith("worktree ") || attributes.includes("bare")) {
+		return null;
+	}
+	const path = head.slice("worktree ".length);
+	return path.startsWith("/") ? path : null;
+};
+
+/**
+ * The plan rooted at the clone's primary working tree, or a refusal naming the `cwd` whose clone
+ * named none. Every `cwd` of one clone — its primary root, a subdirectory, a linked tree — plans the
+ * same base.
+ */
+export const planAtPrimary = (request: WorktreeRequest, listing: string | null): PlanRead => {
+	const repoRoot = primaryWorktree(listing);
+	if (repoRoot === null) {
+		return {
+			_tag: "Unplannable",
+			reason: `\`cwd\` belongs to a clone whose primary working tree cannot be established: ${request.cwd}`,
+		};
+	}
+	return {
+		_tag: "Plan",
+		plan: {repoRoot, name: request.name, worktreePath: worktreePathFor(repoRoot, request.name)},
+	};
 };
 
 /**
  * The standard toolchain locations, prepended to whatever `PATH` the hook inherited.
  *
- * This is the whole reason provisioning works at all. `git worktree add` fires the repo's
- * `post-checkout` dependency install, and that hook **clean-SKIPs at exit 0** when it finds no
- * corepack, no pinned pnpm and no npm on `PATH` — which is precisely the harness's PATH-stripped
- * `git worktree add` exec env. A skip there is silent, so the tree is created, adopted, and useless.
- * Prepending the OS-standard bin dirs is what lets the install run.
+ * This is the whole reason provisioning works at all. The repo's `post-checkout` dependency install
+ * **clean-SKIPs at exit 0** when it finds no corepack, no pinned pnpm and no npm on `PATH` — which is
+ * precisely the harness's PATH-stripped `git worktree add` exec env. A skip there is silent, so the
+ * tree is created, adopted, and useless. Prepending the OS-standard bin dirs is what lets the install
+ * run when {@link installArgs} fires it.
  *
  * OS/standard dirs only, never a per-machine volta/fnm shim, which would bind a tree's provisioning
  * to one operator's setup. The inherited `PATH` is kept **last** rather than dropped, so a machine
@@ -319,7 +453,7 @@ const nonInteractiveSsh = (inherited: string | undefined): string => {
 };
 
 /**
- * The environment the two git children run under.
+ * The environment the git children run under.
  *
  * Nothing is inherited implicitly (`execRecord` sets `extendEnv: false`), so what is not here does
  * not reach the children. Two jobs are served: the install's store and locale, and the fetch's

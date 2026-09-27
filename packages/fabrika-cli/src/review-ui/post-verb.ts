@@ -1,10 +1,11 @@
 /**
  * `review-ui post` — the single sanctioned `review-ui` verdict emit.
  *
- * Eight steps, each gating the next: re-resolve the live head, read the evidence set through its
+ * Nine steps, each gating the next: re-resolve the live head, read the evidence set through its
  * manifest, re-validate every capture against that manifest, **verify-upload every capture before
  * anything posts**, compose through the wire format, leak-scan the assembled comment, upsert one
- * comment for this namespace under this carrier, and read it back from live PR state.
+ * comment for this namespace under this carrier, read it back from live PR state, and **re-check
+ * that every capture the posted comment embeds opens as the bytes that were judged**.
  *
  * Step 4 is this verb's reason to exist. The capture package's upload leg is `never`-typed by
  * contract — every transport failure degrades to `{hostedUrl: null, uploadError}` and no consumer
@@ -21,6 +22,13 @@
  * no comment-body history and a PATCH over a verdict is that verdict gone — a standing FAIL
  * became a PASS with nothing left showing a gate had ever blocked. A post that would retire
  * a standing verdict of the opposite polarity at the same head is `18` until `--supersede` says so.
+ *
+ * Step 9 **never withdraws** what step 7 wrote. When the posted evidence does not open, the verdict
+ * stays, a plain note beside it says why it does not count, and the verb exits `9`. Not counting it
+ * is the readers' job: `ship gate` and `lane prove` re-check the gallery's evidence before they
+ * count a `review-ui` verdict (`./standing-evidence.ts`).
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9725#issuecomment-5800916149
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -57,6 +65,7 @@ import {
 	UPLOAD_FAILED,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {emit as emitGallery} from "./evidence-gallery.ts";
 import {
 	type CaptureEntry,
 	manifestPath,
@@ -92,8 +101,35 @@ export interface UploadRequest {
 	readonly bytes: Uint8Array;
 }
 
+/** One capture as posted evidence: the hosted URL the gallery embeds, and the bytes it must serve. */
+export interface HostedEvidence {
+	readonly url: string;
+	readonly bytes: Uint8Array;
+}
+
+/** Whether every embedded capture of a posted comment opens as its judged bytes. */
+export type EvidenceCheckResult =
+	| {readonly _tag: "Resolved"}
+	| {readonly _tag: "Unresolved"; readonly reasons: readonly [string, ...string[]]};
+
 /**
- * The evidence-upload seam: upload one capture and **probe it back**, individually.
+ * The after-post seam: re-read the posted comment as a reader renders it and hold every embedded
+ * capture to its bytes. The before-post read-back cannot see what the comment itself will serve, so
+ * a verdict whose evidence stopped resolving between the two is caught here rather than reported
+ * as posted.
+ */
+export type EvidenceCheck = (request: {
+	readonly repo: string;
+	readonly commentId: number;
+	readonly evidence: ReadonlyArray<HostedEvidence>;
+}) => Effect.Effect<
+	EvidenceCheckResult,
+	never,
+	HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
+>;
+
+/**
+ * The evidence-upload seam: upload one capture and **read it back**, individually.
  *
  * Injected so the refusal path is testable without the network, and so the two tiers the contract
  * names (a repo-declared store, else the GitHub user-attachment tier) are a wiring choice rather
@@ -126,6 +162,7 @@ export interface PostOptions {
 	 */
 	readonly cwd: string;
 	readonly upload: UploadLeg;
+	readonly confirm: EvidenceCheck;
 	/** The explicit acknowledgement that this verdict retires a standing one of the other polarity. */
 	readonly supersede: boolean;
 	/** The wall clock the superseded heading is dated from — a port so a test can pin the day. */
@@ -205,21 +242,35 @@ const mismatchOf = (
 };
 
 /**
- * The evidence gallery: per shot, the **verified** hosted URL — never a local path. A set is a
- * surface × viewport cross-product, so the heading names both: two shots of one surface
- * under one heading would read as a duplicate rather than as the two widths they are.
+ * The evidence gallery: per shot, the **verified** hosted URL — never a local path — and the digest
+ * of the bytes judged. A set is a surface × viewport cross-product, so the heading names both: two
+ * shots of one surface under one heading would read as a duplicate rather than as the two widths
+ * they are.
  */
 const gallery = (hosted: ReadonlyArray<readonly [CaptureEntry, string]>): string =>
+	emitGallery(
+		hosted.map(([entry, url]) => ({
+			title: `${entry.surface} @ ${entry.viewport}`,
+			url,
+			sha256: entry.sha256,
+		})),
+	);
+
+/**
+ * The plain note step 9 leaves beside a verdict whose evidence does not open. It is the PR's record
+ * that the verdict was attempted and why no gate counts it; its first line is no verdict carrier.
+ */
+export const unopenedNote = (verdictUrl: string, reasons: readonly [string, ...string[]]): string =>
 	[
-		"## Evidence",
+		`This review-ui verdict does not count: ${verdictUrl}`,
 		"",
-		...hosted.flatMap(([entry, url]) => {
-			const shot = `${entry.surface} @ ${entry.viewport}`;
-			return [`### ${shot}`, "", `![${shot}](${url})`, ""];
-		}),
-	]
-		.join("\n")
-		.replace(/\n+$/, "");
+		"Its evidence did not open when `review-ui post` read the posted comment back:",
+		"",
+		...reasons.map((reason) => `- ${reason}`),
+		"",
+		"`fabrika ship gate` and `fabrika lane prove` re-check a review-ui verdict's evidence before they count it, so neither counts this one while its evidence does not open. Re-render and post the verdict again.",
+		"",
+	].join("\n");
 
 /**
  * Which evidence tier this repo declares, read whole (`4` on a value that does not satisfy its
@@ -394,6 +445,7 @@ export const runPost = (
 			);
 		}
 		const hosted: Array<readonly [CaptureEntry, string]> = [];
+		const evidence: HostedEvidence[] = [];
 		const failures: string[] = [];
 		for (const [entry, bytes] of bytesByEntry) {
 			const outcome = yield* options.upload({
@@ -401,8 +453,10 @@ export const runPost = (
 				fileName: `${entry.surface.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "root"}.png`,
 				bytes,
 			});
-			if (outcome._tag === "Hosted") hosted.push([entry, outcome.url]);
-			else failures.push(`${entry.surface}: ${outcome.reason}`);
+			if (outcome._tag === "Hosted") {
+				hosted.push([entry, outcome.url]);
+				evidence.push({url: outcome.url, bytes});
+			} else failures.push(`${entry.surface}: ${outcome.reason}`);
 		}
 		if (failures.length > 0) {
 			return refuse(
@@ -503,6 +557,24 @@ export const runPost = (
 			);
 		}
 
+		// Step 9 — the verdict is only posted if a reader can open its evidence, so it is re-read the
+		// way a reader's browser renders it rather than trusted from the step-4 read-back.
+		const opened = yield* options.confirm({repo, commentId: landed.id, evidence});
+		if (opened._tag === "Unresolved") {
+			const noted = yield* createComment(repo, pr, unopenedNote(landed.url, opened.reasons));
+			return refuse(
+				READBACK_MISMATCH,
+				`${VERB}: POSTED, BUT ITS EVIDENCE DOES NOT OPEN — ${opened.reasons.length} of ${evidence.length} embedded captures fail the read-back (${opened.reasons[0]}); the verdict in comment ${landed.id} stays on the PR and does not count — ship gate and lane prove re-check its evidence and will not count it while it does not open. Re-render and post again.`,
+				[
+					...diagnostics,
+					...opened.reasons.map((reason) => `${VERB}: evidence does not open — ${reason}`),
+					noted._tag === "Failure"
+						? `${VERB}: the note saying this verdict does not count did not land (${noted.reason}) — the gates re-check its evidence either way.`
+						: `${VERB}: noted on the PR why this verdict does not count: ${noted.value.url}`,
+				],
+			);
+		}
+
 		return answer(
 			JSON.stringify({
 				answer: "posted",
@@ -517,3 +589,37 @@ export const runPost = (
 			diagnostics,
 		);
 	});
+
+/** {@link PostOptions} as the command line hands it: every `--evidence` value, in the order passed. */
+export interface PostFlags extends Omit<PostOptions, "evidence"> {
+	readonly evidence: ReadonlyArray<string>;
+}
+
+/**
+ * The adapter's entry: admit exactly one capture set, then {@link runPost}.
+ *
+ * The flag is repeatable only so a repeat is visible here. A plain string flag keeps one value and
+ * drops the rest without a word, which posted a gallery missing a set whose shots the verdict table
+ * still cited. The refusal lands before stdin, the manifest or any upload is touched.
+ */
+export const runPostFlags = (flags: PostFlags): ReturnType<typeof runPost> => {
+	const [set, ...rest] = flags.evidence;
+	if (set === undefined) {
+		return Effect.succeed(
+			refuse(
+				OFF_VOCABULARY,
+				`${VERB}: no --evidence set was named — a verdict needs its evidence.`,
+			),
+		);
+	}
+	if (rest.length > 0) {
+		const named = flags.evidence.map((name) => `"${name}"`).join(", ");
+		return Effect.succeed(
+			refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --evidence was passed ${flags.evidence.length} times (${named}) — a post carries one capture set, and every set past the first would drop out of the gallery while the verdict still cites its shots. Render every judged surface into one set and pass it once; nothing was read, uploaded or posted.`,
+			),
+		);
+	}
+	return runPost({...flags, evidence: set});
+};

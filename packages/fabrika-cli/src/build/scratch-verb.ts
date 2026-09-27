@@ -1,9 +1,9 @@
 /**
  * `build scratch` — the per-lane scratch path, allocated fail-closed.
  *
- * `<temp root>/fabrika-build/<session-id>/<issue>-<claim-nonce>/<slug>`. The fixed `fabrika-build`
- * segment namespaces the allocator against everything else in the temp root; **the claim nonce is what
- * v1's allocator lacked**. v1 keyed on the session id alone, so two lanes — or two roles — of one
+ * See ./command.ts help for the allocated path. The fixed `fabrika-build` segment prevents
+ * collisions in the temp root. v1 lacked the claim nonce and keyed on the session alone, so two
+ * lanes or roles of one
  * session shared a namespace and clobbered each other's fixed-name files, and its own stamp could not
  * separate two pid-less runs (`scratchpad.ts:26-29`). Keying on the confirmed claim makes the
  * namespace per-lane by construction rather than by convention — on the nonce of the token the CALLER

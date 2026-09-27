@@ -139,20 +139,17 @@ suppressed for `:auth` by the product rule, so an `:auth` shot of it comes back 
 
 The values that make a tier state work come from somewhere specific. The signing secret is the
 **preview worker's**, not your local one, because it is the worker that verifies the cookie's
-signature — and you name where it came from rather than trusting your environment:
-`--auth-secret-from <file>` reads the `BETTER_AUTH_SECRET` the preview worker deploys with out of an
-export of the **ci-credentials** stack's alchemy state, its one readable copy. That value is
-repo-wide, not per-stage: `infra/ci-credentials/github.ts` mints one of it and pushes it as a
-write-only Actions secret handed to the deploy of every stage of an app whose worker binds it, so
-there is no preview-stage copy, the app
-stack holds only a `secret_text` binding that does not read back, and the export is taken from the
-ci-credentials state behind `$ALCHEMY_PASSWORD`. Without the flag the verb falls back to the
-ambient `$BETTER_AUTH_SECRET` and **refuses on `11` when that is empty or carries the `insecure_`
-placeholder** an example env file ships, naming the source it read. That refusal is the whole
-point: a placeholder-signed cookie is well-formed, the worker answers it as a visitor, and at the
-shot that is indistinguishable from a preview nobody seeded — which parked two gates and cost a
-founder read to split. If you hold no export of that value and your ambient value is the
-placeholder, you have not been handed the secret, and `review-ui note` is the honest route.
+signature — and **you need no credential to hold it**. Every `pr-<n>` preview deploys with the key
+committed at `infra/preview-auth-key/key.txt`, which is public on purpose, so the verb resolves it
+off the checkout you are standing in with no flag and no environment variable. Production keeps a
+separate founder-held secret that no agent gets a copy of, and a preview-prefixed key is refused by
+the production worker at boot, so the two can never be confused.
+`--auth-secret-from <file>` still overrides, and in a checkout that carries no committed key the
+ambient `$BETTER_AUTH_SECRET` stands in. Whatever the source, the verb **refuses on `11` when the
+resolved value is empty or carries the `insecure_` placeholder** an example env file ships, naming
+the source it read. That refusal is the whole point: a placeholder-signed cookie is well-formed, the
+worker answers it as a visitor, and at the shot that is indistinguishable from a preview nobody
+seeded — which parked two gates and cost a founder read to split.
 Each tier's session token is what an operator passed to
 `node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1>` —
 `PREVIEW_TEST_SESSION_TOKEN` for yazar, `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for çaylak — which is
@@ -205,7 +202,7 @@ while four of the PR's own compositions never painted.
 `:auth` reaches what is behind login, and `--flag <key>=<on|off>` forces a dark-shipped flag on:
 
 ```bash
-fabrika review-ui render --pr $pr_number --out forced --surface /welcome:auth --flag welcome-banner=on --auth-secret-from <file>
+fabrika review-ui render --pr $pr_number --out forced --surface /welcome:auth --flag welcome-banner=on
 ```
 
 Both fences hold, so neither can quietly hand you the default pixels. A forced run must name
@@ -300,15 +297,17 @@ piece UNKNOWN. The marker format, the evidence-upload proof and every exit are t
 
 <!-- anchor: CAPABILITIES --> This skill opens no PR, mutates no branch, runs no PR code locally;
 it holds a shell, a repo-scoped token, a headless browser pointed at the repo's preview
-deployment, and **uses** three writes — the verdict comment (with its verified evidence), the
-can't-see/escalation comment, and the routed-elsewhere record. No push, no merge, no label. Every run ends as exactly one of:
+deployment, and **uses** five writes — the verdict comment (with its verified evidence), the
+plain "does not count" note `review-ui post` leaves when that evidence fails its after-post check
+(exit `9`), the can't-see/escalation comment, the routed-elsewhere record, and one append to the driver's lane
+ledger through `lane report` at the `--root` your brief carries, a path outside this checkout. No push, no merge, no label. Every run ends as exactly one of:
 **verdict PASS** · **verdict FAIL** · **CANT-SEE** (no preview, stale preview unrepairable, or
 nothing renderable — no verdict posted, blocker named on the PR; cause `no-preview-render`) ·
 **ESCALATED** (a verdict was
 formed but provably could not land — the evidence upload or the write path failed after exactly
 one re-run; the state named on the PR through `review-ui note` where that write still lands, and
 in the session report when even the note cannot — the empty namespace fail-closes either way;
-never a hand-posted marker) · **BLOCKED-NO-MANIFEST** (no
+never a hand-posted marker; cause `write-unlanded`) · **BLOCKED-NO-MANIFEST** (no
 design law — routed to front-door, nothing posted; cause `no-design-manifest`) ·
 **ROUTED-ELSEWHERE** (no rendered delta —
 `review`'s lane; the `routed-elsewhere` record posted, or nothing posted when the diff raised no
@@ -317,8 +316,26 @@ judgment formed but
 not landed never reports as one. Cross-lane signals are closed-vocabulary — kind + action +
 branded ref, no free prose; receivers re-fetch from the PR.
 
-**Three of those six land no verdict, and each names its cause when you record it.** They fold to
-one park, so a report that names none is a park the sweep cannot tell apart from the other two — and
+**Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
+step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, one token
+per terminal above (`PASS`, `FAIL`, `CANT-SEE`, `ESCALATED`, `BLOCKED-NO-MANIFEST`,
+`ROUTED-ELSEWHERE`), mapped to a lane event in its code, with the PR as the event's evidence. Every
+one of the six has an entry in that map. `<fabrika>` is that same section's `fabrika:` entrypoint,
+the one path this repo's verbs actually run from:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr <pr-url>
+```
+
+`--task` names which task of the lane your verdict addresses, and it is not optional wherever a lane
+has more than one — every epic run. The verb resolves a missing one only on a single-task lane and
+otherwise refuses at exit `13` before it appends anything, so a report that omits it records
+nothing. On any refusal, print the token and name the exit code; the operator re-reads and routes.
+Then print the token as the last line either way; a run whose caller named no lane prints the token
+only and records nothing.
+
+**Four of those six land no verdict, and each names its cause when you record it.** They fold to
+one park, so a report that names none is a park the sweep cannot tell apart from the other three — and
 `recipe unpark` keys its table on the cause, which is why a bare one always costs a human. Ride the
 cause on the same line:
 
@@ -327,8 +344,11 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token CANT-SEE -
 ```
 
 `BLOCKED-NO-MANIFEST` reports `--cause no-design-manifest`, `ROUTED-ELSEWHERE` reports
-`--cause no-rendered-delta`. Two of the three still route to a human, and the cause is what makes
-that route a gap somebody can write a row for rather than an anonymous dead end.
+`--cause no-rendered-delta`, and `ESCALATED` reports `--cause write-unlanded`. Under
+`parkCause.uncaused: "refuse"` a park that names no cause is refused at exit `52`, so an `ESCALATED`
+without one is not recorded at all. Three of the four always park; `ROUTED-ELSEWHERE`
+parks only when it cannot advance (below). Each park routes to the driver by its cause, never to a human: the cause is what
+lets the driver read the failure, or a recipe row clear it, rather than an anonymous dead end.
 
 **`ROUTED-ELSEWHERE` is the one that may not park at all, and that is the verb's call rather than
 yours.** Your route is a *completed* review of a diff that renders nothing, and `lane prove` has
@@ -339,9 +359,7 @@ absent, stale, unauthorized or unreadable route, a review still outstanding, a s
 report the terminal and the cause exactly as above either way, and read the answer's `current` for
 where the lane went — do not pre-judge which arm you are on, and never record a `review-ui` `PASS`
 to get there. Nothing about this changes what you post: the record stays a route with no polarity.
-`ESCALATED` carries no cause:
-its spelling is shared with the builder and reviewer shells, so a cause for it is a cross-shell
-change and not this gate's to make. The vocabulary is closed and lives in code
+The vocabulary is closed and lives in code
 ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));
 a token outside it is refused with the log unappended, so there is none to compose and none to
 guess.

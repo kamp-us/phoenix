@@ -16,22 +16,32 @@
  * instead of a blank tab (#8004).
  */
 
-import {Effect, Fiber, Option, Stream} from "effect";
-import type {ReactElement} from "react";
-import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import type {ProcessId} from "../process/process.ts";
-import type {ProgramId} from "../registry/program.ts";
-import {ProcessBoardOverlay} from "../shell/board/index.ts";
-import type {ShellMsg, ShellState} from "../shell/core/index.ts";
-import {openProcessMsg} from "../shell/core/machine.ts";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {RendererTable} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {
+	empty,
+	processGone,
+	resolverFromTable,
+	type ViewState,
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {
 	AnyInspectorRenderer,
 	AnyStatusRenderer,
 	DeclaredRenderers,
 	SnapshotProcess,
-} from "../shell/desk/index.ts";
+} from "@kampus/tuval-ui/desk";
+import {Effect, Fiber, Option, Stream} from "effect";
+import type {ReactElement} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {ProjectLabels} from "../projects/labels.ts";
+import type {RecommendAnswer, RecommendPrompt} from "../projects/recommend-prompt.ts";
+import type {TrustAnswer, TrustPrompt} from "../projects/trust-prompt.ts";
+import {ProcessBoardOverlay} from "../shell/board/index.ts";
+import type {ShellMsg, ShellState} from "../shell/core/index.ts";
+import {openProcessMsg} from "../shell/core/machine.ts";
 import {windows} from "../shell/layout/index.ts";
-import type {PickerEntries} from "../shell/picker/browser.ts";
+import {offerEntries, type PickerEntries} from "../shell/picker/browser.ts";
 import type {AttachedProcess, PageAttachment, WireProgram} from "../shell/transport/browser.ts";
 import type {
 	AttachEvent,
@@ -42,10 +52,10 @@ import type {
 	MountResolver,
 } from "../shell/ui/index.ts";
 import {boundMount, Desk, noRenderer, replyOf, useDeskAttachment} from "../shell/ui/index.ts";
-import type {RendererTable} from "../shell/window/index.ts";
-import {empty, processGone, resolverFromTable, type ViewState} from "../shell/window/index.ts";
 import type {TableRow} from "../table/row.ts";
+import {RecommendDialog} from "./RecommendDialog.tsx";
 import {useSpellRegistry} from "./spell-registry.ts";
+import {TrustFolderDialog} from "./TrustFolderDialog.tsx";
 
 export interface AttachedDeskProps {
 	readonly page: PageAttachment;
@@ -80,6 +90,12 @@ export interface AttachedDeskProps {
 	 * this component at either setting without a bundler in the way.
 	 */
 	readonly windowTitles?: boolean;
+	/**
+	 * The operator's `processRemove` flag (`../features.ts`, #9447), handed down the same way and for
+	 * the same reason as `windowTitles`. Off — the default — and this desk carries neither the
+	 * `process:remove <id>` row nor the picker's `d` key.
+	 */
+	readonly processRemove?: boolean;
 }
 
 /**
@@ -129,17 +145,22 @@ const shownProcesses = (state: ShellState): ReadonlySet<string> => {
 /**
  * What the picker can offer this page: the kernel's windowed programs as they arrived on the
  * registry frame, and the processes already running. The headless test is not repeated here — a row
- * that cannot fill a window never crosses the wire (`../shell/transport/server.ts`).
+ * that cannot fill a window never crosses the wire (`../shell/transport/server.ts`). A session row
+ * is offered once per open project the projects frame names (#9694).
  */
 const entriesFrom = (
 	rows: ReadonlyMap<ProcessId, TableRow>,
 	catalog: ReadonlyMap<ProgramId, WireProgram>,
+	projects: ProjectLabels,
 ): PickerEntries => ({
-	programs: [...catalog.values()].map((program) => ({
-		_tag: "Program" as const,
-		programId: program.programId,
-		label: program.label,
-	})),
+	programs: offerEntries(
+		[...catalog.values()].map((program) => ({
+			programId: program.programId,
+			label: program.label,
+			folderAtStart: program.folderAtStart === true,
+		})),
+		projects.all,
+	),
 	processes: [...rows.values()].map((row) => ({
 		_tag: "Process" as const,
 		processId: row.id,
@@ -161,10 +182,14 @@ export function AttachedDesk({
 	board = false,
 	refusal,
 	windowTitles = false,
+	processRemove = false,
 }: AttachedDeskProps): ReactElement {
 	const spells = useSpellRegistry(page);
 	const [rows, setRows] = useState<ReadonlyMap<ProcessId, TableRow>>(new Map());
 	const [catalog, setCatalog] = useState<ReadonlyMap<ProgramId, WireProgram>>(new Map());
+	const [projects, setProjects] = useState<ProjectLabels>(ProjectLabels.none);
+	const [trustPrompts, setTrustPrompts] = useState<ReadonlyArray<TrustPrompt>>([]);
+	const [recommendPrompts, setRecommendPrompts] = useState<ReadonlyArray<RecommendPrompt>>([]);
 	const [attached, setAttached] = useState<ReadonlyMap<string, AttachedProcess>>(new Map());
 	/** The shell process's own revision — what the newest-wins compare below and the snapshot read. */
 	const [revision, setRevision] = useState(0);
@@ -264,6 +289,44 @@ export function AttachedDesk({
 	}, [page]);
 
 	useEffect(() => {
+		const fiber = Effect.runFork(
+			Stream.runForEach(page.projects, (next) => Effect.sync(() => setProjects(next))),
+		);
+		return () => void Effect.runFork(Fiber.interrupt(fiber));
+	}, [page]);
+
+	useEffect(() => {
+		const fiber = Effect.runFork(
+			Stream.runForEach(page.trustPrompts, (next) => Effect.sync(() => setTrustPrompts(next))),
+		);
+		return () => void Effect.runFork(Fiber.interrupt(fiber));
+	}, [page]);
+	const answerTrust = useCallback(
+		(question: string, answer: TrustAnswer) => {
+			// The question leaves this page at once; the kernel's next `trust-prompts` frame confirms it.
+			setTrustPrompts((current) => current.filter((prompt) => prompt.question !== question));
+			Effect.runFork(page.answerTrust(question, answer));
+		},
+		[page],
+	);
+
+	useEffect(() => {
+		const fiber = Effect.runFork(
+			Stream.runForEach(page.recommendPrompts, (next) =>
+				Effect.sync(() => setRecommendPrompts(next)),
+			),
+		);
+		return () => void Effect.runFork(Fiber.interrupt(fiber));
+	}, [page]);
+	const answerRecommend = useCallback(
+		(question: string, answer: RecommendAnswer) => {
+			setRecommendPrompts((current) => current.filter((prompt) => prompt.question !== question));
+			Effect.runFork(page.answerRecommend(question, answer));
+		},
+		[page],
+	);
+
+	useEffect(() => {
 		if (desk === null) return;
 		for (const processId of shownProcesses(desk)) {
 			if (asked.current.has(processId)) continue;
@@ -321,14 +384,20 @@ export function AttachedDesk({
 			// program that published it. The flag off is `null`, which is the desk that names its
 			// windows by uuid.
 			const name = windowTitles
-				? {title: Option.getOrNull(row.title), programId: row.programId}
+				? {title: Option.getOrNull(row.title), program: projects.programName(row.programId)}
 				: null;
+			const project = projects.labelOf(row.programId);
 			const program = catalog.get(row.programId);
 			if (program === undefined) {
 				// Not "declares no renderer": a miss is also what an empty catalog looks like, and both
 				// `rows` and `programs` replay their initial value, so a page can render once before the
 				// registry frame lands. The honest sentence names this page's own catalog, not the kernel's.
-				return noRenderer(id, `no catalog entry on this page for program ${row.programId}`, name);
+				return noRenderer(
+					id,
+					`no catalog entry on this page for program ${row.programId}`,
+					name,
+					project,
+				);
 			}
 			const resolved = resolveRenderer(program.renderer);
 			if (resolved._tag === "RendererUnresolved" && resolved.reason === "module-load-failed") {
@@ -336,6 +405,7 @@ export function AttachedDesk({
 					id,
 					`this page could not load a renderer module: ${resolved.detail}`,
 					name,
+					project,
 				);
 			}
 			if (resolved._tag !== "Resolved") {
@@ -343,6 +413,7 @@ export function AttachedDesk({
 					id,
 					`this page answers to no renderer named ${program.renderer.ref}`,
 					name,
+					project,
 				);
 			}
 			return boundMount(
@@ -357,12 +428,13 @@ export function AttachedDesk({
 				},
 				resolved.renderer.render,
 				name,
+				project,
 			);
 		},
-		[rows, attached, catalog, resolveRenderer, views, dispatch, windowTitles],
+		[rows, attached, catalog, resolveRenderer, views, dispatch, windowTitles, projects],
 	);
 
-	const entries = useMemo(() => entriesFrom(rows, catalog), [rows, catalog]);
+	const entries = useMemo(() => entriesFrom(rows, catalog, projects), [rows, catalog, projects]);
 
 	// The board's own two operands. The rows are re-listed rather than handed the map's iterator: an
 	// iterator is a fresh object on every render, and the board memoizes its tile model on this value.
@@ -418,6 +490,7 @@ export function AttachedDesk({
 			commandsConnected={attachment.status === "attached" && refusal === null}
 			board={board}
 			windowTitles={windowTitles}
+			processRemove={processRemove}
 		/>
 	);
 
@@ -436,7 +509,14 @@ export function AttachedDesk({
 					rows={boardRows}
 					onOpen={openProcess}
 					reducedMotion={reducedMotion}
+					projects={projects}
 				/>
+			) : null}
+			{/* After the board, so a question asked while the board is open is the dialog on top. */}
+			<TrustFolderDialog prompts={trustPrompts} onAnswer={answerTrust} />
+			{/* One desk question at a time: a folder waiting on trust is asked before any package. */}
+			{trustPrompts.length === 0 ? (
+				<RecommendDialog prompts={recommendPrompts} onAnswer={answerRecommend} />
 			) : null}
 		</>
 	);

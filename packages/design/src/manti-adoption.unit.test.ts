@@ -25,11 +25,18 @@ function withoutComments(source: string): string {
 
 const files = sourceRoots.flatMap((sourceRoot) => productionTsxFiles(sourceRoot));
 
-function offendersMatching(pattern: RegExp): string[] {
+function offendersMatching(pattern: RegExp, exempt: ReadonlySet<string> = new Set()): string[] {
 	return files
 		.filter((path) => pattern.test(withoutComments(readFileSync(path, "utf8"))))
-		.map((path) => relative(repoRoot, path));
+		.map((path) => relative(repoRoot, path))
+		.filter((path) => !exempt.has(path));
 }
+
+// Reconstructing a Manti part is the one shape the native-control rule cannot cover: the dialog's
+// close trigger has to carry `data-part="close-trigger"`, and Manti's Button merges its own
+// `data-part="root"` last, which overwrites it — measured in Chromium, where the button then lands
+// in the flow instead of the dialog's corner. One file, named, and it stays one.
+const partReconstruction: ReadonlySet<string> = new Set(["packages/design/src/Dialog.tsx"]);
 
 describe("Manti UI adoption guard", () => {
 	// Without this, a directory rename or a changed `import.meta.dirname` base makes
@@ -40,7 +47,13 @@ describe("Manti UI adoption guard", () => {
 	});
 
 	it("does not render raw interactive form controls in production TSX", () => {
-		expect(offendersMatching(nativeControlPattern)).toEqual([]);
+		expect(offendersMatching(nativeControlPattern, partReconstruction)).toEqual([]);
+	});
+
+	// An exemption that stops matching is an exemption nobody would notice going stale.
+	it("keeps every exempt file an actual offender", () => {
+		const raw = offendersMatching(nativeControlPattern);
+		expect([...partReconstruction].filter((path) => !raw.includes(path))).toEqual([]);
 	});
 
 	it("routes visible alert regions through the Manti Alert primitive", () => {

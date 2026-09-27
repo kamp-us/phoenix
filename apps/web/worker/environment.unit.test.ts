@@ -7,6 +7,7 @@ import {
 	ENVIRONMENTS,
 	environmentForStage,
 	isEnvironment,
+	isPreviewStage,
 	isProduction,
 	isProductionDeploy,
 	parseDeployEnvironment,
@@ -109,5 +110,28 @@ describe("environmentForStage (the single owner of the prod→production map)", 
 		// Only `prod` is production, so the audit force-on rule can never reach a prod deploy.
 		expect(environmentForStage(AUDIT_STAGE)).not.toBe("production");
 		expect(environmentForStage("pr-1")).not.toBe("production");
+	});
+});
+
+describe("isPreviewStage (which stages the deploy hands the public preview key, ADR 0406)", () => {
+	it("admits exactly the `pr-<n>` shape CI mints", () => {
+		expect(isPreviewStage("pr-1")).toBe(true);
+		expect(isPreviewStage("pr-9533")).toBe(true);
+	});
+
+	it("refuses prod, audit and every hand-named stage", () => {
+		expect(isPreviewStage("prod")).toBe(false);
+		expect(isPreviewStage(AUDIT_STAGE)).toBe(false);
+		expect(isPreviewStage("dev_umut")).toBe(false);
+		expect(isPreviewStage("it-abc123")).toBe(false);
+	});
+
+	it("refuses a stage that merely looks like a preview", () => {
+		// The map below reads all four of these as `preview`, which is why the key choice reads this
+		// predicate instead: a near-miss must land on the founder-held secret, never the public key.
+		for (const stage of ["pr-", "pr-1-prod", "xpr-1", "PR-1"]) {
+			expect(isPreviewStage(stage)).toBe(false);
+			expect(environmentForStage(stage)).toBe("preview");
+		}
 	});
 });

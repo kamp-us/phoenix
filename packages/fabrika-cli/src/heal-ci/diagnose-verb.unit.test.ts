@@ -132,6 +132,7 @@ describe("runDiagnose answers", () => {
 			[
 				`stall\tungated\t${HEAD}\t35`,
 				"owner\t-\t-\t2026-08-08T00:25:00Z",
+				"author\tusirin\tunread",
 				"gates\tblocked\t0/1",
 				"ci\tgreen\t0",
 				"queue\tnone",
@@ -251,6 +252,100 @@ describe("runDiagnose answers", () => {
 		expect(out.stderr.join("\n")).toContain("conflicts with main");
 	});
 
+	/**
+	 * A conflicted PR is the class whose arrow names `build`, and a PR belongs to its author — so this
+	 * is the one class that reads whose PR it is before it names a lane.
+	 */
+	describe("whose conflicted PR it is", () => {
+		const CONFIG_AT_BASE = /^GET .*\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
+		const RUNNING_ACCOUNT = /^GET .*\/user$/;
+		const conflicted = (author: string) =>
+			reply(pull({mergeable: false, mergeableState: "dirty", updatedAt: PUSHED, author}));
+		const authorLine = (stdout: string) =>
+			stdout.split("\n").find((line) => line.startsWith("author\t"));
+
+		it("reads the running account's own PR as ours, so its arrow stays build", async () => {
+			const out = await run(
+				script([
+					[PULL, conflicted("usirin")],
+					[CONFIG_AT_BASE, {status: 404, body: '{"message":"Not Found"}'}],
+					[RUNNING_ACCOUNT, {status: 200, body: JSON.stringify({login: "usirin"})}],
+					[RULES, rules("ci-required", "code-scanning/codeql")],
+				]),
+			);
+			expect(out.code).toBe(0);
+			expect(authorLine(out.stdout)).toBe("author\tusirin\tours");
+		});
+
+		it("reads another author's ungranted PR as foreign — its author's, never build's", async () => {
+			const out = await run(
+				script([
+					[PULL, conflicted("ada")],
+					[CONFIG_AT_BASE, {status: 404, body: '{"message":"Not Found"}'}],
+					[RUNNING_ACCOUNT, {status: 200, body: JSON.stringify({login: "usirin"})}],
+					[RULES, rules("ci-required", "code-scanning/codeql")],
+				]),
+			);
+			expect(out.code).toBe(0);
+			expect(authorLine(out.stdout)).toBe("author\tada\tforeign");
+		});
+
+		it("still classifies when the standing cannot be read, and never calls it ours", async () => {
+			const out = await run(
+				script([
+					[PULL, conflicted("usirin")],
+					[CONFIG_AT_BASE, {status: 404, body: '{"message":"Not Found"}'}],
+					[
+						RUNNING_ACCOUNT,
+						{status: 403, body: '{"message":"Resource not accessible by integration"}'},
+					],
+					[RULES, rules("ci-required", "code-scanning/codeql")],
+				]),
+			);
+			expect(out.code).toBe(0);
+			expect(authorLine(out.stdout)).toBe("author\tusirin\tunknown");
+			expect(out.stderr.join("\n")).toContain("its work goes to its author, never build");
+		});
+	});
+
+	/**
+	 * A red's arrow is `nobody`, but SKILL.md §3's `logic` route sends it to `build` once the log is
+	 * read — on a PR the pipeline owns. So a red reads its standing too, or that route could never fire.
+	 */
+	describe("whose red PR it is", () => {
+		const CONFIG_AT_BASE = /^GET .*\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
+		const RUNNING_ACCOUNT = /^GET .*\/user$/;
+		const failing = reply(
+			checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "failure"}]),
+		);
+		const red = (author: string, runningAccount: HttpReply) =>
+			run(
+				script([
+					[PULL, reply(pull({updatedAt: PUSHED, author}))],
+					[CHECK_RUNS, failing],
+					[CONFIG_AT_BASE, {status: 404, body: '{"message":"Not Found"}'}],
+					[RUNNING_ACCOUNT, runningAccount],
+				]),
+			);
+		const asUsirin: HttpReply = {status: 200, body: JSON.stringify({login: "usirin"})};
+
+		it("reads the running account's own red PR as ours, so §3's logic route can name build", async () => {
+			const out = await red("usirin", asUsirin);
+			expect(out.code).toBe(0);
+			const lines = out.stdout.split("\n");
+			expect(lines[0]).toBe(`stall\tred\t${HEAD}\t35`);
+			expect(lines).toContain("author\tusirin\tours");
+		});
+
+		it("reads another author's ungranted red PR as foreign", async () => {
+			const out = await red("ada", asUsirin);
+			expect(out.code).toBe(0);
+			const lines = out.stdout.split("\n");
+			expect(lines[0]).toBe(`stall\tred\t${HEAD}\t35`);
+			expect(lines).toContain("author\tada\tforeign");
+		});
+	});
+
 	it("skips the conflict arm on an indefinite mergeability, leaving the class it had", async () => {
 		const out = await run(
 			script([
@@ -262,7 +357,10 @@ describe("runDiagnose answers", () => {
 		expect(out.stderr.join("\n")).toContain("INDEFINITE");
 	});
 
-	it("skips the surface arm on an unprobeable protection surface rather than passing it", async () => {
+	// The protection surface used to skip one arm and let the rest classify. It is now the blocking
+	// authority for the `red` arm and the wedge too, so an unreadable one leaves nothing to classify:
+	// the class stops on the read failure, which is the cause a lane waits or parks on.
+	it("refuses on an unprobeable required set rather than answering a colour over it", async () => {
 		const out = await run(
 			script([
 				[
@@ -272,8 +370,67 @@ describe("runDiagnose answers", () => {
 				[RULES, httpError(403, "Must have admin rights")],
 			]),
 		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
+		expect(out.stderr.at(-1)).toContain("which checks block is UNKNOWN, never none.");
+	});
+
+	// The live cost this definition was ruled over: a pull request answered `red` on a static-analysis
+	// context its base branch does not require, and a merge-eligible PR was routed to a repair lane
+	// with nothing to fix.
+	it("does not answer red for a failing run the base branch declares nothing about", async () => {
+		const out = await run(
+			script([
+				[
+					CHECK_RUNS,
+					reply(
+						checkRuns(2, [
+							{name: "ci-required", status: "completed", conclusion: "success"},
+							{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+						]),
+					),
+				],
+			]),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).not.toContain("\tred\t");
+		expect(out.stderr.join("\n")).toContain(
+			"failing outside the required set: Analyze (python) — reported, never blocking.",
+		);
+	});
+
+	it("still answers red when the failing run is one the base branch declares required", async () => {
+		const out = await run(
+			script([
+				[
+					CHECK_RUNS,
+					reply(
+						checkRuns(2, [
+							{name: "ci-required", status: "completed", conclusion: "failure"},
+							{name: "Analyze (python)", status: "completed", conclusion: "success"},
+						]),
+					),
+				],
+			]),
+		);
 		expect(out.stdout.split("\n")[0]).toBe(`stall\tred\t${HEAD}\t35`);
-		expect(out.stderr.join("\n")).toContain("UNPROBEABLE");
+	});
+
+	// A repository whose base branch declares contexts today is not a licence to read an undeclared
+	// branch as one that gates nothing: the denylist definition still answers there.
+	it("falls back to the denylist on a base branch that declares nothing required", async () => {
+		const out = await run(
+			script([
+				[
+					CHECK_RUNS,
+					reply(checkRuns(1, [{name: "unit tests", status: "completed", conclusion: "failure"}])),
+				],
+				[RULES, rules()],
+			]),
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`stall\tred\t${HEAD}\t35`);
+		expect(out.stderr.join("\n")).toContain("declares no required status checks");
 	});
 
 	it("declares arm 7's unimplemented half on stderr rather than letting the class read whole", async () => {

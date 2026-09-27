@@ -1,19 +1,34 @@
 /** @vitest-environment jsdom */
-import {act, cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
-import {Effect} from "effect";
-import {Socket} from "effect/unstable/socket";
-import {afterEach, expect, it, vi} from "vitest";
-import {descriptions, snapshot} from "../../commands/parse/fixtures.ts";
+
+import {descriptions, snapshot} from "@kampus/tuval-sdk/kernel/commands/parse/fixtures";
 import {
 	PROTOCOL_VERSION,
 	type SpellCall,
 	type SpellReply,
 	SpellReplyError,
 	SpellReplyOk,
-} from "../../protocol/messages.ts";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {act, cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {Effect} from "effect";
+import {Socket} from "effect/unstable/socket";
+import {afterEach, expect, it, vi} from "vitest";
 import {CommandLine} from "./CommandLine.tsx";
 
 afterEach(cleanup);
+
+it("opens a fresh agent session in the directory typed by the operator", () => {
+	const dispatch = vi.fn();
+	const close = vi.fn();
+	render(<CommandLine dispatch={dispatch} onClose={close} />);
+	fireEvent.change(screen.getByRole("textbox"), {target: {value: 'open pi "/work/my project"'}});
+	fireEvent.submit(screen.getByRole("form"));
+	expect(dispatch).toHaveBeenCalledWith({
+		type: "window.open",
+		programId: "pi",
+		session: {cwd: "/work/my project", resume: null},
+	});
+	expect(close).toHaveBeenCalledOnce();
+});
 
 it("shows a connection failure instead of a success", async () => {
 	render(

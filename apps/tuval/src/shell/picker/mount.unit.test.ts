@@ -6,9 +6,9 @@
  */
 
 import {assert, describe, expect, it} from "@effect/vitest";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
 import {Effect, Stream} from "effect";
-import {ProcessId} from "../../process/process.ts";
-import {testProcess} from "../window/fixtures.ts";
 import {readEntries} from "./entries.ts";
 import {pickerHarness, programRow, shellProcessId, windowId} from "./fixtures.ts";
 import {pickerFrame} from "./frame.ts";
@@ -55,12 +55,21 @@ describe("a mount reads the world fresh", () => {
 	);
 
 	it("a fresh mount starts unplaced with no refusal, whatever the last one ended on", () => {
-		expect(mountPicker()).toEqual({cursor: null, refusal: null, previous: null, filter: null});
+		expect(mountPicker()).toEqual({
+			cursor: null,
+			refusal: null,
+			previous: null,
+			filter: null,
+			step: null,
+			landing: null,
+		});
 		expect(mountPicker("p-1")).toEqual({
 			cursor: null,
 			refusal: null,
 			previous: "p-1",
 			filter: null,
+			step: null,
+			landing: null,
 		});
 		expect(mountPicker()).not.toBe(mountPicker());
 	});
@@ -96,7 +105,13 @@ describe("attaching gives one process a second window", () => {
 			);
 
 			assert.deepStrictEqual(answer.bind, [
-				{type: "window.bind", windowId: "window-2", processId: "p-1", takesKeys: false},
+				{
+					type: "window.bind",
+					windowId: "window-2",
+					processId: "p-1",
+					takesKeys: false,
+					program: "counter",
+				},
 			]);
 			assert.deepStrictEqual(
 				answer.seen.map((head) =>

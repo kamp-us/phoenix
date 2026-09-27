@@ -21,7 +21,12 @@
  * rather than as a config that will not boot.
  */
 
-import {PromptPayloadSchema, type TurnResult, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
+import {
+	PromptPayloadSchema,
+	type TurnResult,
+	TurnResultSchema,
+} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AnyProgram,
 	emit,
@@ -35,8 +40,7 @@ import {
 	stop,
 	TITLE_PORT,
 	testProgram,
-} from "@kampus/tuval/authoring";
-import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval/sessions";
+} from "@kampus/tuval-sdk/authoring";
 import {describe, expect, it} from "vitest";
 import config, {eveningSummary, standup} from "../.tuval/tuval.config.ts";
 import {BRIEF_PORT, cron, cronProgram, jobShape} from "./cron.ts";
@@ -459,7 +463,7 @@ describe("cron's job shape against a real session row", () => {
 
 /**
  * The consumer path, end to end and from outside: the fixture `.tuval/tuval.config.ts` beside this
- * package builds its row through `@kampus/tuval-cron`'s own entry and `@kampus/tuval/sessions`,
+ * package builds its row through `@kampus/tuval-cron`'s own entry and `@kampus/tuval-claude`,
  * exactly as a user's config does. Nothing here boots a desk or spends a token — a row is a record.
  */
 describe("a user's `.tuval/tuval.config.ts`", () => {
@@ -578,10 +582,10 @@ describe("more than one cron in a config", () => {
 
 describe("cron's window", () => {
 	it("names a module renderer on the row, which is the only kind a page can load", () => {
-		// `defineProgram` compiles an authored `window` into a `host-native` reference whose renderer
-		// is seated in a map inside the kernel process — unreachable from the browser tab that has to
-		// mount it (kamp-us/phoenix #8811, open). A `kind: "module"` reference is the route that
-		// crosses: the page resolves the specifier itself at boot (ADR 0359).
+		// A `kind: "module"` reference is the only kind that crosses: the page resolves the specifier
+		// itself at boot (ADR 0359). A window declared inline on the authored record would be seated
+		// in a map inside the kernel process, unreachable from the browser tab that has to mount it —
+		// so that key no longer exists (phoenix #8811, #8946).
 		const row = cron({...options, job: session()});
 		expect(row.renderer).toEqual({
 			kind: "module",

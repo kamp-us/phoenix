@@ -14,17 +14,25 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Fiber, type FileSystem, Schema, type Scope} from "effect";
+import type {Binding} from "@kampus/tuval-sdk/kernel/commands/bindings/index";
+import {HelpRows} from "@kampus/tuval-sdk/kernel/commands/core/help";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {ClientId, renderPath, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {Effect, Fiber, type FileSystem, Option, Schedule, Schema, type Scope} from "effect";
 import {afterEach} from "vitest";
 import {type Booted, boot, coreSpells, projectDir} from "./boot.ts";
-import type {Binding} from "./commands/bindings/index.ts";
-import {HelpRows} from "./commands/core/help.ts";
-import {SpellExecutor} from "./commands/executor.ts";
-import {ClientId, renderPath, WorkspaceId} from "./commands/spell.ts";
-import {SpellSet} from "./commands/spell-set.ts";
 import type {DeclaredConfig} from "./config-fixtures/reloadable.ts";
-import {CallId} from "./protocol/ids.ts";
-import {PROTOCOL_VERSION, SpellCall} from "./protocol/messages.ts";
+import {scratchHome} from "./scratch-home.ts";
+import {shellSpells} from "./shell/commands/spells.ts";
+import {shellNode} from "./shell/program.ts";
+
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("reload-proof");
 
 const reloadable = fileURLToPath(new URL("./config-fixtures/reloadable.ts", import.meta.url));
 
@@ -75,7 +83,7 @@ const bootReloadable = Effect.fnUntraced(function* () {
 	const declaration = join(freshDir("tuval-declared-"), "config.json");
 	declare(declaration, first);
 	process.env.TUVAL_RELOAD_FIXTURE = declaration;
-	const booted = yield* boot({global: reloadable, project});
+	const booted = yield* boot({global: reloadable, project, home});
 	return {booted, declaration};
 });
 
@@ -142,6 +150,9 @@ const help = (booted: Booted) =>
 		);
 	}).pipe(Effect.provideContext(booted.kernel));
 
+/** Registered on every boot, whatever the config declares: the kernel's and the desk shell's. */
+const deskSpells = coreSpells.length + shellSpells.length;
+
 const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Scope.Scope>) =>
 	effect.pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
 
@@ -150,7 +161,7 @@ describe("a config reload", () => {
 		run(
 			Effect.gen(function* () {
 				const {booted, declaration} = yield* bootReloadable();
-				assert.strictEqual(booted.report.spellCount, coreSpells.length + 2);
+				assert.strictEqual(booted.report.spellCount, deskSpells + 2);
 				assert.deepStrictEqual(booted.report.bindingErrors, []);
 				assert.strictEqual(booted.report.bindingCount, 2);
 				assert.includeMembers(yield* spellPaths(booted), ["alpha.say", "beta.greet"]);
@@ -163,7 +174,7 @@ describe("a config reload", () => {
 				declare(declaration, second);
 				const report = yield* booted.reload;
 
-				assert.strictEqual(report.spellCount, coreSpells.length + 2);
+				assert.strictEqual(report.spellCount, deskSpells + 2);
 				const paths = yield* spellPaths(booted);
 				assert.includeMembers(paths, ["alpha.sey", "beta.greet"]);
 				assert.notInclude(paths, "alpha.say", "the renamed spell is still registered");
@@ -294,6 +305,48 @@ describe("a config reload", () => {
 					["beta.greet"],
 					"the reader never saw the reloaded bindings",
 				);
+			}),
+		),
+	);
+});
+
+const reloadableDesk = fileURLToPath(
+	new URL("./config-fixtures/reloadable-desk.ts", import.meta.url),
+);
+
+describe("the config:reload command", () => {
+	it.live("reloads the config the desk is running, from inside the shell (#9667)", () =>
+		run(
+			Effect.gen(function* () {
+				const project = freshDir("tuval-reload-desk-");
+				mkdirSync(projectDir(project));
+				const declaration = join(freshDir("tuval-declared-"), "config.json");
+				declare(declaration, first);
+				process.env.TUVAL_RELOAD_FIXTURE = declaration;
+				const booted = yield* boot({global: reloadableDesk, project, home});
+				assert.include(yield* spellPaths(booted), "alpha.say");
+
+				declare(declaration, second);
+				const shell = yield* Processes.use((processes) =>
+					processes.handle(ProcessId.make(shellNode)),
+				).pipe(Effect.provideContext(booted.kernel));
+				assert.isTrue(Option.isSome(shell), "the desk's shell is not running");
+				if (Option.isNone(shell)) return;
+				yield* shell.value.dispatch({type: "config.reload"});
+
+				// The handler runs on the shell's own fiber, so the swap is waited for, not assumed.
+				const paths = yield* spellPaths(booted).pipe(
+					Effect.repeat({
+						until: (read) => read.includes("alpha.sey"),
+						schedule: Schedule.spaced("10 millis"),
+					}),
+					Effect.timeoutOrElse({
+						duration: "2 seconds",
+						orElse: () => spellPaths(booted),
+					}),
+				);
+				assert.include(paths, "alpha.sey", "config.reload never reached the reloader");
+				assert.notInclude(paths, "alpha.say", "the reload left the old spell registered");
 			}),
 		),
 	);

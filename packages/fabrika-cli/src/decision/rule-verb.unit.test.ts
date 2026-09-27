@@ -50,10 +50,13 @@ const quoting = (text: string = AUTHORIZATION): RulingSource => ({
 	authorization: Effect.succeed({_tag: "Text", text}),
 });
 
-const run = (script: Script, ruling: RulingSource = citing()) => {
+const run = (script: Script, ruling: RulingSource = citing(), supersedes: number | null = null) => {
 	const seams = fakeSeams(script);
 	return Effect.runPromise(
-		Effect.provide(runRule({number: ISSUE, ruling, repo: null, env, now: NOW}), seams.layer),
+		Effect.provide(
+			runRule({number: ISSUE, ruling, supersedes, repo: null, env, now: NOW}),
+			seams.layer,
+		),
 	).then((outcome) => ({outcome, calls: seams.requests, bodies: seams.bodies}));
 };
 
@@ -124,6 +127,7 @@ describe("runRule", () => {
 			issue: ISSUE,
 			digest: bodyDigest(BODY),
 			ruling: RULING_URL,
+			supersedes: null,
 			by: RULER,
 			at: "2026-08-20T05:11:02Z",
 			comment: MARKER_COMMENT,
@@ -191,13 +195,86 @@ describe("runRule", () => {
 		expect(empty.calls.some((line) => POST.test(line))).toBe(false);
 	});
 
-	it("refuses an issue that is not a type:decision, before any read of authority", async () => {
-		const {outcome, calls} = await run([
-			[ISSUE_READ, issueRead(["type:feature", "ready-for:human"])],
+	/**
+	 * The only mechanical statement of contradiction there is: a verb cannot read the ruling's prose
+	 * and judge which criterion it overturns, so the human recording it says, and the marker carries
+	 * it into the set `review criteria` prints.
+	 */
+	it("carries the superseded criterion the caller named into the marker", async () => {
+		const posted = await run(upToMarker(), citing(), 1);
+		expect(postedBody(posted)).toContain("· supersedes:1 ·");
+	});
+
+	it("refuses a --supersedes naming no row of the block, before any write", async () => {
+		const {outcome, calls} = await run(upToMarker(), citing(), 4);
+		expect(outcome.code).toBe(1);
+		expect(outcome.stderr.at(-1)).toContain("is not a row of #4300's block, which has 1");
+		expect(calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	/**
+	 * A founder ruling lands on whatever issue the work is on, and recorded as prose it reaches no
+	 * gate. The type fence used to refuse the recording here, which left the ruling unenforceable
+	 * everywhere it mattered most.
+	 */
+	it("records a ruling on an issue that is not a type:decision", async () => {
+		const body = await marker();
+		const {outcome} = await run([
+			[once(ISSUE_READ), issueRead(["type:bug", "ready-for:agent"])],
+			[COMMENTS, RULING_ONLY],
 			...acl,
+			[LABELS, taxonomy],
+			[POST, POSTED],
+			[GET_MARKER, {status: 200, body: JSON.stringify({body})}],
+			[ISSUE_READ, issueRead(["type:bug", "ready-for:agent"])],
 		]);
-		expect(outcome.code).toBe(7);
-		expect(calls.some((line) => VIEWER.test(line))).toBe(false);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({answer: "ruled", issue: ISSUE});
+	});
+
+	/**
+	 * The case the widened subject put at risk: `audienceWrites` is unconditional in both
+	 * directions, so a flip that widened with the recording would strip a human park off a bug and
+	 * hand it to `build claim` as pickable. Fixturing the issue as already `ready-for:agent` would
+	 * pass for the wrong reason — `add` is false whenever that label is merely present.
+	 */
+	it("leaves a type:bug's ready-for:human park exactly as it found it", async () => {
+		const parked = ["type:bug", "ready-for:human"];
+		const body = await marker();
+		const {outcome, calls} = await run([
+			[once(ISSUE_READ), issueRead(parked)],
+			[COMMENTS, RULING_ONLY],
+			...acl,
+			[LABELS, taxonomy],
+			[POST, POSTED],
+			[GET_MARKER, {status: 200, body: JSON.stringify({body})}],
+		]);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			answer: "ruled",
+			audience: null,
+			observed: parked,
+		});
+		expect(wroteLabels(calls)).toBe(false);
+		// No taxonomy read either: that read exists to guard the POST this run never makes.
+		expect(calls.some((line) => LABELS.test(line))).toBe(false);
+	});
+
+	/**
+	 * The criteria guard sits on the flip, so off the decision path there is nothing for it to
+	 * guard: the founder's judgement is recorded whatever the bug's body looks like.
+	 */
+	it("records a ruling on a bug whose body carries no acceptance-criteria block", async () => {
+		const body = await marker(BODY_NO_CRITERIA);
+		const {outcome, calls} = await run([
+			[once(ISSUE_READ), issueRead(["type:bug", "ready-for:human"], BODY_NO_CRITERIA)],
+			[COMMENTS, RULING_ONLY],
+			...acl,
+			[POST, POSTED],
+			[GET_MARKER, {status: 200, body: JSON.stringify({body})}],
+		]);
+		expect(outcome.code).toBe(0);
+		expect(wroteLabels(calls)).toBe(false);
 	});
 
 	it("refuses a --cites naming another repository or another issue, before any read", async () => {

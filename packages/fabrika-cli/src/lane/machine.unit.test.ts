@@ -310,6 +310,7 @@ describe("the compiler — structural recognition", () => {
 			"BLOCKED",
 			MACHINERY_EVENT,
 			"FAIL",
+			"WIP",
 			CLEARED_EVENT,
 			CANCELLED_EVENT,
 			LANDED_EVENT,
@@ -805,9 +806,9 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park", () =>
 	});
 
 	// A spent wait carries no park cause — `report.ts` refuses one on any non-BLOCKED event — so it
-	// keys `parks.ts` on its leaf alone. Landing it in `human:cp-approval` would key the `cause: null`
-	// §CP row and clear it by reading an approval nobody was waiting on; its own leaf is what seats it
-	// on the queue-moved recipe instead.
+	// keys `parks.ts` on its leaf alone. Landing it in `human:cp-approval` would seat it on no row at
+	// all, since the §CP row keys on the approval wait's cause; its own leaf is what seats it on the
+	// queue-moved recipe instead.
 	it("escalates to a park the recipe table seats on its own row, never the §CP one", () => {
 		const stalled = [...toShip, ...Array.from({length: WAIT_BUDGET + 2}, () => "WIP")];
 		const leaf = defined(leaves(compiled(coderWorkflow()), "issue", stalled).at(-1));
@@ -815,10 +816,7 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park", () =>
 
 		expect(isPark(leaf)).toBe(true);
 		expect(seated).toMatchObject({_tag: "Known", recipe: {clearance: "queue-moved"}});
-		expect(classifyPark("human:cp-approval", null)).toMatchObject({
-			_tag: "Known",
-			recipe: {clearance: "cp-approval"},
-		});
+		expect(classifyPark("human:cp-approval", null)).toMatchObject({_tag: "Novel"});
 	});
 
 	it("clears the stall back into the wait cell only on a resume that grants the waits", () => {
@@ -943,7 +941,7 @@ describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", (
 
 	// No `KNOWN_PARKS` row exists for this cause and none is owed yet: clearing it needs a verb that
 	// merges the base into the head, and `build` ships none. Novel-naming-the-cause is the answer.
-	it("reads as a novel park that names its cause, never as the causeless §CP row", () => {
+	it("reads as a novel park that names its cause, never as the approval-wait §CP row", () => {
 		const classified = classifyPark("human:cp-approval", "head-behind-base");
 
 		expect(classified._tag).toBe("Novel");

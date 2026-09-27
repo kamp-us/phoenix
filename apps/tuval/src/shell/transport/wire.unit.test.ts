@@ -4,19 +4,19 @@
  * never guessed at.
  */
 
-import {Duration, Option} from "effect";
-import {assert, describe, expect, it} from "vitest";
-import type {ProcessId} from "../../process/process.ts";
-import {CallId} from "../../protocol/ids.ts";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import {
 	PROTOCOL_VERSION,
 	SpellCall,
 	SpellReplyError,
 	SpellReplyOk,
-} from "../../protocol/messages.ts";
-import type {ProgramId} from "../../registry/program.ts";
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import type {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
+import {Duration, Option} from "effect";
+import {assert, describe, expect, it} from "vitest";
 import type {TableRow} from "../../table/row.ts";
-import {defaultPrefixTable} from "../keys/table.ts";
 import {
 	ATTACH_KIND,
 	ATTACH_REFUSED_KIND,
@@ -32,12 +32,16 @@ import {
 	fromWireRow,
 	KEYS_KIND,
 	PROCESS_STATE_KIND,
+	RECOMMEND_ANSWER_KIND,
+	RECOMMEND_PROMPTS_KIND,
 	REGISTRY_KIND,
 	type ServerFrame,
 	SPELL_CALL_KIND,
 	SPELL_REPLY_KIND,
 	spellReplyFrame,
 	TABLE_KIND,
+	TRUST_ANSWER_KIND,
+	TRUST_PROMPTS_KIND,
 	tableFrame,
 	toWirePrefixTable,
 	toWireRow,
@@ -70,6 +74,10 @@ const clientFrames: ReadonlyArray<ClientFrame> = [
 	{kind: DETACH_KIND, processId: processId("counter")},
 	{kind: DISPATCH_KIND, seq: 0, processId: processId("counter"), msg: {type: "tick"}},
 	{kind: SPELL_CALL_KIND, call},
+	{kind: TRUST_ANSWER_KIND, question: "q-1", answer: "trust"},
+	{kind: TRUST_ANSWER_KIND, question: "q-2", answer: "refuse"},
+	{kind: RECOMMEND_ANSWER_KIND, question: "r-1", answer: "install"},
+	{kind: RECOMMEND_ANSWER_KIND, question: "r-2", answer: "decline"},
 ];
 
 const serverFrames: ReadonlyArray<ServerFrame> = [
@@ -105,6 +113,22 @@ const serverFrames: ReadonlyArray<ServerFrame> = [
 	{kind: REGISTRY_KIND, programs: []},
 	{kind: KEYS_KIND, table: toWirePrefixTable(defaultPrefixTable)},
 	{
+		kind: TRUST_PROMPTS_KIND,
+		prompts: [{question: "q-1", folder: "/code/kamp-us/demlik", name: "demlik"}],
+	},
+	{kind: TRUST_PROMPTS_KIND, prompts: []},
+	{
+		kind: RECOMMEND_PROMPTS_KIND,
+		prompts: [
+			{
+				question: "r-1",
+				folder: "/code/kamp-us/demlik",
+				name: "demlik",
+				package: "@kampus/tuval-worktree",
+			},
+		],
+	},
+	{
 		kind: SPELL_REPLY_KIND,
 		reply: new SpellReplyOk({
 			type: "spell.reply",
@@ -127,6 +151,39 @@ const serverFrames: ReadonlyArray<ServerFrame> = [
 ];
 
 describe("the transport wire", () => {
+	it("refuses a recommend answer outside install and decline, and a prompt with no package", () => {
+		expect([
+			decodeClientFrame(
+				JSON.stringify({kind: RECOMMEND_ANSWER_KIND, question: "r-1", answer: "later"}),
+			),
+			decodeServerFrame(
+				JSON.stringify({
+					kind: RECOMMEND_PROMPTS_KIND,
+					prompts: [{question: "r-1", folder: "/code/demlik", name: "demlik"}],
+				}),
+			),
+		]).toEqual([
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+		]);
+	});
+
+	it("refuses a trust answer that is neither yes nor no, and a prompt with no folder", () => {
+		expect([
+			decodeClientFrame(
+				JSON.stringify({kind: TRUST_ANSWER_KIND, question: "q-1", answer: "maybe"}),
+			),
+			decodeClientFrame(JSON.stringify({kind: TRUST_ANSWER_KIND, answer: "trust"})),
+			decodeServerFrame(
+				JSON.stringify({kind: TRUST_PROMPTS_KIND, prompts: [{question: "q-1", name: "demlik"}]}),
+			),
+		]).toEqual([
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+		]);
+	});
+
 	it("every client frame round trips", () => {
 		const decoded = clientFrames.map((frame) => decodeClientFrame(encodeFrame(frame)));
 		expect(decoded).toEqual(clientFrames.map((frame) => ({_tag: "Frame", frame})));
@@ -207,7 +264,7 @@ describe("the transport wire", () => {
 
 	it("a reply whose result is absent round trips: JSON cannot carry a Void spell's `undefined`", () => {
 		// What `succeeded` builds for every authored spell, whose `result` is `Schema.Void`
-		// (`../../authoring/commands.ts`): `result: undefined`, which `JSON.stringify` drops. The key
+		// (the SDK's `authoring/commands.ts`): `result: undefined`, which `JSON.stringify` drops. The key
 		// comes back absent, and the page reads absent as "completed, returned nothing" (#9365).
 		const frame = spellReplyFrame(
 			new SpellReplyOk({

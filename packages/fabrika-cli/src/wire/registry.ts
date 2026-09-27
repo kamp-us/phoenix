@@ -38,7 +38,16 @@ import * as mapTicket from "./map-ticket.ts";
 import * as planApproval from "./plan-approval.ts";
 import * as rangeVerdictMarker from "./range-verdict-marker.ts";
 import * as routedElsewhere from "./routed-elsewhere.ts";
+import * as takeoverGrant from "./takeover-grant.ts";
 import * as verdictMarker from "./verdict-marker.ts";
+
+/**
+ * The ruling comment every `decision-ruling` fixture cites, written once.
+ *
+ * One literal rather than ten: the fixtures below all name the same placeholder comment, and the
+ * portability guard counts each spelling of it as its own reference into one repository's issues.
+ */
+const RULING_COMMENT_URL = "https://github.com/o/r/issues/8#issuecomment-3512345";
 
 export const registeredFormats: ReadonlyArray<WireFormat> = [
 	{
@@ -652,6 +661,47 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 		brands: brandWitnesses<capClearance.CapClearance>({at: true}),
 	},
 	{
+		key: "takeover-grant",
+		purpose:
+			"the grant that hands a pull request another author opened to the pipeline, carried as a marker comment over its dated authorization and read by `build`, `ship` and `heal-ci` before they drive that PR",
+		module: "packages/fabrika-cli/src/wire/takeover-grant.ts",
+		producers: ["build"],
+		consumers: ["build", "ship", "heal-ci"],
+		emit: takeoverGrant.emitFromFields,
+		read: takeoverGrant.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "pr: 7\nat: 2026-09-26T07:16:03Z\n",
+				values: ["7", "2026-09-26T07:16:03Z"],
+			},
+			found: [
+				{
+					shape:
+						"the marker over the dated authorization it rests on, as `build takeover` posts it",
+					artifact:
+						"takeover-granted: #7 · 2026-09-26T07:16:03Z\n\nTake over #7, the author is away. — 2026-09-26\n",
+					values: ["7", "2026-09-26T07:16:03Z"],
+				},
+			],
+			absent: "Re-ran the gate at the new head and it is green now.\n",
+			malformed: [
+				{
+					drift: "the pull request is not a #<n> reference",
+					artifact: "takeover-granted: 7 · 2026-09-26T07:16:03Z\n",
+				},
+				{
+					drift: "the marker names no pull request, so the grant hands over nothing",
+					artifact: "takeover-granted: 2026-09-26T07:16:03Z\n",
+				},
+				{
+					drift: "the timestamp is not an ISO-8601 UTC instant",
+					artifact: "takeover-granted: #7 · this morning\n",
+				},
+			],
+		},
+		brands: brandWitnesses<takeoverGrant.TakeoverGrant>({at: true}),
+	},
+	{
 		key: "grill-answer",
 		purpose:
 			"the first line of the comment recording the agent's own established answer to a grilling fact question — never a ruling, and never read as one",
@@ -1021,42 +1071,40 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 	{
 		key: "decision-ruling",
 		purpose:
-			"a control-plane human's ruling on one type:decision issue, carried as a marker comment on it, bound to a digest of the issue body that was ruled on and naming the comment the ruling is written in",
+			"a control-plane human's ruling on one issue, carried as a marker comment on it, bound to a digest of the issue body that was ruled on, naming the comment the ruling is written in and optionally the body acceptance criterion it replaces",
 		module: "packages/fabrika-cli/src/wire/decision-ruling.ts",
 		producers: ["adr"],
-		consumers: ["build", "triage"],
+		consumers: ["build", "triage", "review"],
 		emit: decisionRuling.emitFromFields,
 		read: decisionRuling.readToLines,
 		fixtures: {
 			roundTrip: {
-				fields:
-					"issue: 8\ndigest: 4d90e1bb27ac\nruling: https://github.com/o/r/issues/8#issuecomment-3512345\nat: 2026-08-20T05:11:02Z\n",
-				values: [
-					"8",
-					"4d90e1bb27ac",
-					"https://github.com/o/r/issues/8#issuecomment-3512345",
-					"2026-08-20T05:11:02Z",
-				],
+				fields: `issue: 8\ndigest: 4d90e1bb27ac\nruling: ${RULING_COMMENT_URL}\nat: 2026-08-20T05:11:02Z\n`,
+				values: ["8", "4d90e1bb27ac", RULING_COMMENT_URL, "2026-08-20T05:11:02Z"],
 			},
 			found: [
 				{
 					shape: "the marker over the ruling it records, as `decision rule` posts it",
-					artifact:
-						"decision-ruled: #8 @ 4d90e1bb27ac · ruling:https://github.com/o/r/issues/8#issuecomment-3512345 · 2026-08-20T05:11:02Z\n\nRuled. Build it as the citation reads.\n",
-					values: [
-						"8",
-						"4d90e1bb27ac",
-						"https://github.com/o/r/issues/8#issuecomment-3512345",
-						"2026-08-20T05:11:02Z",
-					],
+					artifact: `decision-ruled: #8 @ 4d90e1bb27ac · ruling:${RULING_COMMENT_URL} · 2026-08-20T05:11:02Z\n\nRuled. Build it as the citation reads.\n`,
+					values: ["8", "4d90e1bb27ac", RULING_COMMENT_URL, "2026-08-20T05:11:02Z"],
+				},
+				{
+					shape:
+						"a ruling that names the body criterion it replaces, as `decision rule --supersedes` posts it",
+					artifact: `decision-ruled: #8 @ 4d90e1bb27ac · ruling:${RULING_COMMENT_URL} · supersedes:3 · 2026-08-20T05:11:02Z\n`,
+					values: ["8", "4d90e1bb27ac", RULING_COMMENT_URL, "3", "2026-08-20T05:11:02Z"],
 				},
 			],
 			absent: "Re-scoped the second fork — this needs another read before it is ruled.\n",
 			malformed: [
 				{
+					drift:
+						"the superseded position is not a 1-based criterion row, so it replaces nothing the block has",
+					artifact: `decision-ruled: #8 @ 4d90e1bb27ac · ruling:${RULING_COMMENT_URL} · supersedes:zero · 2026-08-20T05:11:02Z\n`,
+				},
+				{
 					drift: "the digest is not 12 lowercase hex, so it binds no body",
-					artifact:
-						"decision-ruled: #8 @ 4D90E1BB · ruling:https://github.com/o/r/issues/8#issuecomment-3512345 · 2026-08-20T05:11:02Z\n",
+					artifact: `decision-ruled: #8 @ 4D90E1BB · ruling:${RULING_COMMENT_URL} · 2026-08-20T05:11:02Z\n`,
 				},
 				{
 					drift: "the marker names no ruling, so a builder has nothing to read the choice from",
@@ -1064,13 +1112,11 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				},
 				{
 					drift: "the ruling is recorded on another issue, so it rules nothing here",
-					artifact:
-						"decision-ruled: #8 @ 4d90e1bb27ac · ruling:https://github.com/o/r/issues/9#issuecomment-3512345 · 2026-08-20T05:11:02Z\n",
+					artifact: `decision-ruled: #8 @ 4d90e1bb27ac · ruling:${RULING_COMMENT_URL.replace("issues/8", "issues/9")} · 2026-08-20T05:11:02Z\n`,
 				},
 				{
 					drift: "the timestamp is not an ISO-8601 UTC instant",
-					artifact:
-						"decision-ruled: #8 @ 4d90e1bb27ac · ruling:https://github.com/o/r/issues/8#issuecomment-3512345 · last Thursday\n",
+					artifact: `decision-ruled: #8 @ 4d90e1bb27ac · ruling:${RULING_COMMENT_URL} · last Thursday\n`,
 				},
 			],
 		},

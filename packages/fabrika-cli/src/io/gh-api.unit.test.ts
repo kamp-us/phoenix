@@ -18,7 +18,6 @@ import {
 	type Rest,
 	refusalText,
 	resolveToken,
-	restBytes,
 	restCall,
 	restRead,
 	restWrite,
@@ -406,40 +405,10 @@ describe("the credential reaches the transport", () => {
 		expect(http.headers[0]?.authorization).toBe(`token ${TOKEN}`);
 	});
 
-	it("attaches `authorization` on the bytes leg", async () => {
-		const http = fakeHttp([[/artifacts\/5\/zip$/, {status: 200, body: "PK", headers: {}}]]);
-		await Effect.runPromise(
-			Effect.provide(restBytes(TOKEN, "repos/o/r/actions/artifacts/5/zip"), http.layer),
-		);
-		expect(http.headers[0]?.authorization).toBe(`token ${TOKEN}`);
-	});
-
 	it("attaches `authorization` on the GraphQL leg", async () => {
 		const http = fakeHttp([[/graphql$/, served(200, {data: {}})]]);
 		await Effect.runPromise(Effect.provide(graphqlRead(TOKEN, "query{x}", {}), http.layer));
 		expect(http.headers[0]?.authorization).toBe(`token ${TOKEN}`);
-	});
-});
-
-describe("restBytes — the raw-bytes read", () => {
-	it("hands back the bytes undecoded, beside the status", async () => {
-		const http = fakeHttp([[/artifacts\/5\/zip$/, {status: 200, body: "PK", headers: {}}]]);
-		const result = await Effect.runPromise(
-			Effect.provide(restBytes(TOKEN, "repos/o/r/actions/artifacts/5/zip"), http.layer),
-		);
-		expect(http.calls).toEqual(["GET https://api.github.com/repos/o/r/actions/artifacts/5/zip"]);
-		expect(result._tag).toBe("Response");
-		expect(result._tag === "Response" && Array.from(result.value.slice(0, 2))).toEqual([
-			0x50, 0x4b,
-		]);
-	});
-
-	it("answers Unreachable rather than a status when GitHub was never reached", async () => {
-		const http = fakeHttp([], undefined, [/artifacts\/5\/zip$/]);
-		const result = await Effect.runPromise(
-			Effect.provide(restBytes(TOKEN, "repos/o/r/actions/artifacts/5/zip"), http.layer),
-		);
-		expect(result._tag).toBe("Unreachable");
 	});
 });
 

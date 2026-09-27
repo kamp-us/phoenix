@@ -96,6 +96,7 @@ export const account = {
 	"profile.page.loading": "yükleniyor…",
 	"profile.page.error": "profil yüklenemedi: {code}",
 	"profile.header.statsError": "istatistikler yüklenemedi",
+	"profile.header.statsLoading": "istatistikler yükleniyor…",
 	"profile.standing.yazar": "yazar",
 	"profile.standing.caylak": "çaylak",
 	"profile.stat.definitions": "tanım",
@@ -182,6 +183,8 @@ export const account = {
 	"profile.delete.pending": "kaldırılıyor…",
 	"profile.delete.error": "hesap kaldırılamadı, tekrar dene.",
 
+	"ui.dialog.close": "kapat",
+	"ui.toast.close": "bildirimi kapat",
 	"ui.caylakBadge": "çaylak katkısı",
 	"ui.caylakBadge.stage": ", hazırlık aşamasında",
 	"ui.reviewBadge": "incelemede",

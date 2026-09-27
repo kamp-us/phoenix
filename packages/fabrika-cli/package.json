@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/fabrika-cli",
-	"version": "0.6.0",
+	"version": "0.7.1",
 	"description": "@kampus/fabrika-cli — the deterministic verb package fabrika skills call; `fabrika <group> <verb> …` (epic #4650)",
 	"license": "MIT",
 	"repository": {
@@ -59,6 +59,7 @@
 	"dependencies": {
 		"@demlik/tea": "catalog:",
 		"@effect/platform-node": "catalog:",
+		"@effect/platform-node-shared": "catalog:",
 		"@playwright/test": "catalog:",
 		"effect": "catalog:",
 		"fast-xml-parser": "catalog:",

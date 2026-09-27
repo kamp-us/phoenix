@@ -1,12 +1,12 @@
 {
 	"compilerOptions": {
 		"target": "ES2022",
-		// ES2023 + DOM, and `exactOptionalPropertyTypes` off, because `@kampus/tuval` is consumed as
+		// ES2023 + DOM, and `exactOptionalPropertyTypes` off, because `@kampus/tuval-sdk` is consumed as
 		// **raw TypeScript**: its `exports` map points at `src/*.ts` and it ships no `.d.ts`, so its
 		// whole reachable source tree enters this program and is checked under *these* options.
 		// `skipLibCheck` covers declaration files and does nothing for source. These three lines are
 		// therefore not this package's taste — they are `apps/tuval/tsconfig.json`'s, restated. They
-		// come back to this package's own preference the day `@kampus/tuval` publishes declarations.
+		// come back to this package's own preference the day `@kampus/tuval-sdk` publishes declarations.
 		"lib": ["ES2023", "DOM", "DOM.Iterable"],
 		"exactOptionalPropertyTypes": false,
 		"module": "ES2022",

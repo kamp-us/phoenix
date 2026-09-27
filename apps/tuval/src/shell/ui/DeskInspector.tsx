@@ -2,7 +2,7 @@
  * The desk inspector: one region beside the tiling area, filled by the focused window's program.
  *
  * It is mounted or not mounted — never a collapsed shell with its own disclosure — because the
- * open/closed flag is desk state the kernel holds (`../desk/state.ts`) and `desk:inspector-toggle`
+ * open/closed flag is desk state the kernel holds (`packages/tuval-ui/src/shell/desk/state.ts`) and `desk:inspector-toggle`
  * is the one thing that writes it. A `Collapsible` here would be a second authority over the same
  * bit, and its trigger would still be on screen with the region closed.
  *
@@ -13,9 +13,9 @@
  */
 
 import {Card, EmptyState} from "@kampus/design";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {DeskEmptyReason, InspectorRegion} from "@kampus/tuval-ui/desk";
 import type {ReactElement, ReactNode} from "react";
-import type {ProcessId} from "../../process/process.ts";
-import type {DeskEmptyReason, InspectorRegion} from "../desk/index.ts";
 import "./desk.css";
 import {ErrorBoundary} from "./ErrorBoundary.tsx";
 

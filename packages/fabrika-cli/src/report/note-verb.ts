@@ -6,13 +6,12 @@
  * hand-rolled posting call — which is the exact call that has shipped a literal path as a body and
  * a comment whose landed text nobody read back, both of them comment posts rather than issue
  * creates.
- *
- * A note is free prose: no section template applies and no footer is appended. Stated in code as
- * well as in the contract because the sibling verb does both.
  */
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {LEAK_NAMES, type LeakNames} from "../config/keys/leak-names.ts";
+import type {Read} from "../config/read-key.ts";
 import {createComment, getComment, getIssue, resolveRepo} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -31,6 +30,8 @@ import {isBareAtReference, redactionTally, renderLeaks, scanBody} from "./leaks.
 export interface NoteOptions {
 	readonly issue: number;
 	readonly redact: boolean;
+	/** The `leakNames` this checkout declares, read by the adapter; a refused read posts nothing. */
+	readonly leakNames: Read<LeakNames>;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -81,11 +82,17 @@ export const runNote = (
 			);
 		}
 
-		const scan = scanBody(note);
+		if (options.leakNames._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`report note: cannot read \`${LEAK_NAMES}\`: ${options.leakNames.reason} — which names this repo keeps private is UNKNOWN, so nothing was posted.`,
+			);
+		}
+		const scan = scanBody(note, options.leakNames.value);
 		if (scan.leaks.length > 0 && !options.redact) {
 			return refuse(
 				LEAKED_PATH,
-				`report note: the note carries ${scan.leaks.length} machine-local path(s) — refusing to post them to a public issue.`,
+				`report note: the note carries ${scan.leaks.length} leak(s) — refusing to post them to a public issue.`,
 				renderLeaks(scan.leaks),
 			);
 		}
@@ -93,7 +100,7 @@ export const runNote = (
 		const redacted = options.redact ? scan.leaks : [];
 		const redactions = redactionTally(redacted);
 		const redactionNotes = redacted.map(
-			(leak) => `report note: redacted a machine-local path — line ${leak.line}, ${leak.class}`,
+			(leak) => `report note: redacted a leak — line ${leak.line}, ${leak.class}`,
 		);
 
 		const target = yield* getIssue(repo, issue);

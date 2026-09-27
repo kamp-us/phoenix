@@ -220,3 +220,11 @@ edits are human-merged — the boundary protects its own owner-list.
   to the ruleset itself.
 
 > Amendment 2026-08-19: the illustrative `CODEOWNERS` block above is v1-era — the `/skills/ship-it/`, `/skills/review-code/`, `/skills/review-doc/`, `/skills/review-plan/` and `/skills/gh-issue-intake-formats.md` rows no longer exist; the v1 `kampus-pipeline` plugin and its §CP clauses were retired by ADR [0303](0303-retire-kampus-pipeline-plugin.md). The decision itself still binds — read the live `.github/CODEOWNERS` (now `@kamp-us/control-plane`, per ADR 0135) as the authority on the §CP owner set, never this list.
+
+## Amendments
+
+- **#9841 — the run-evidence bundle is retired (2026-09-26).** [ADR 0410](0410-ship-checks-is-ship-ci-trust.md)
+  retired the run-evidence bundle, so `produce run-evidence bundle` is no longer a context §1 can
+  require, and a missing bundle blocks nothing. What replaced the bundle is `fabrika ship checks`
+  over the `ci-required` required context. Only this record's run-evidence text is superseded; the
+  rest stands.

@@ -1,6 +1,6 @@
 # Codex as a Tuval agent
 
-`apps/tuval/src/codex/` implements `TuvalAiAgent`. `codexSession` uses the same
+`packages/tuval-codex/src/` (`@kampus/tuval-codex`) implements `TuvalAiAgent`. `codexSession` uses the same
 `aiAgentProgram`, core, ports, history paging rules, chat window, inspector and session
 list as the Pi and Claude programs. It adds no second UI or agent interface.
 

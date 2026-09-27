@@ -20,17 +20,17 @@
  * teeth (`.patterns/unconditional-test-assertions.md`).
  */
 
-import {Result} from "effect";
-import {describe, expect, it} from "vitest";
-import {applyMsg, type ShellCmd, type ShellState} from "../core/index.ts";
-import type {Binding, Key, PrefixTable} from "../keys/index.ts";
+import type {Binding, Key, PrefixTable} from "@kampus/tuval-ui/keys";
 import {
 	applyKeysConfig,
 	defaultPrefixTable,
 	normalizeSequence,
 	parse,
 	stringify,
-} from "../keys/index.ts";
+} from "@kampus/tuval-ui/keys";
+import {Result} from "effect";
+import {describe, expect, it} from "vitest";
+import {applyMsg, type ShellCmd, type ShellState} from "../core/index.ts";
 import {threeWindowDesk} from "./fixtures.ts";
 import {COMMAND_LINE_COMMAND, routerPrefix, shellOwnsKey} from "./frame.ts";
 import {replyIn} from "./press.ts";

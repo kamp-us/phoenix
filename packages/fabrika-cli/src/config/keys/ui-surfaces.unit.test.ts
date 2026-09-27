@@ -59,7 +59,7 @@ describe("the shipped default", () => {
 	it("defaults the capture settings a repo declares none of", () => {
 		expect(resolve(load({}), uiCaptureKey)).toMatchObject({
 			_tag: "Default",
-			value: {viewport: DEFAULT_VIEWPORT, evidenceStore: null, storageState: null},
+			value: {viewport: DEFAULT_VIEWPORT, evidenceStore: null, storageState: null, locale: null},
 		});
 	});
 });
@@ -156,6 +156,57 @@ describe("a declared uiCapture", () => {
 			layer: "tracked",
 			value: {viewport: {width: 390, height: 844}, evidenceStore: "https://depo/x"},
 		});
+	});
+
+	it("carries a declared locale through, and leaves it null when absent", () => {
+		const locale = {storageKey: "app.locale", values: ["tr", "en", "pt-BR"]};
+		expect(capture({locale})).toMatchObject({_tag: "Declared", value: {locale}});
+		expect(capture({storageState: ".fabrika/s.json"})).toMatchObject({
+			_tag: "Declared",
+			value: {locale: null},
+		});
+		expect(capture({locale: null})).toMatchObject({_tag: "Declared", value: {locale: null}});
+	});
+
+	it.each([
+		["a non-object locale", {locale: "en"}, `"${UI_CAPTURE}.locale" is not an object`],
+		[
+			"a locale with no storageKey",
+			{locale: {values: ["en"]}},
+			`"${UI_CAPTURE}.locale.storageKey" is missing or not a non-empty string`,
+		],
+		[
+			"a blank storageKey",
+			{locale: {storageKey: "  ", values: ["en"]}},
+			`"${UI_CAPTURE}.locale.storageKey" is missing or not a non-empty string`,
+		],
+		[
+			"a locale with no values",
+			{locale: {storageKey: "k"}},
+			`"${UI_CAPTURE}.locale.values" is missing or not a non-empty list of distinct locale tags`,
+		],
+		[
+			"an empty values list",
+			{locale: {storageKey: "k", values: []}},
+			`"${UI_CAPTURE}.locale.values" is missing or not a non-empty list of distinct locale tags`,
+		],
+		[
+			"a repeated value",
+			{locale: {storageKey: "k", values: ["en", "en"]}},
+			`"${UI_CAPTURE}.locale.values" is missing or not a non-empty list of distinct locale tags`,
+		],
+		[
+			"a value that is no locale tag",
+			{locale: {storageKey: "k", values: ["en us"]}},
+			`"${UI_CAPTURE}.locale.values" is missing or not a non-empty list of distinct locale tags`,
+		],
+		[
+			"an unknown key inside locale",
+			{locale: {storageKey: "k", values: ["en"], cookie: "x"}},
+			'unknown key "cookie"',
+		],
+	])("refuses %s whole-value, naming the field it rejected", (_label, value, reason) => {
+		expect(capture(value)).toMatchObject({_tag: "Malformed", reason});
 	});
 
 	it("reads an explicit null evidenceStore as no store", () => {

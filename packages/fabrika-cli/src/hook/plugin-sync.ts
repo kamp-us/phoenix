@@ -32,12 +32,19 @@ export interface WorktreeFacts {
 	readonly branch: string | null;
 	/** The branch `origin/HEAD` points at — what "current" is measured against. */
 	readonly defaultBranch: string;
-	/** Whether the primary worktree carries any uncommitted change, tracked or not. */
-	readonly dirty: boolean;
+	/**
+	 * Every path the primary worktree carries uncommitted, tracked or not, one entry per file.
+	 *
+	 * There is no separate yes/no dirtiness fact: two facts about one tree can disagree, and the arm
+	 * that reads them only ever wanted the paths.
+	 */
+	readonly dirtyPaths: ReadonlyArray<string>;
 	/** The commit the primary worktree is at. */
 	readonly head: string;
 	/** The commit `origin/<defaultBranch>` is at, as of the fetch this plan is read after. */
 	readonly remoteHead: string;
+	/** Every path the commits between {@link head} and {@link remoteHead} change. */
+	readonly incomingPaths: ReadonlyArray<string>;
 	/** Whether {@link head} is an ancestor of {@link remoteHead} — the fast-forward test itself. */
 	readonly fastForwardable: boolean;
 }
@@ -65,9 +72,10 @@ export type SyncPlan =
  *
  * The detached and off-default arms come first because on either of them the remaining facts answer
  * a question nobody asked — `fastForwardable` against `origin/HEAD` says nothing about a worktree
- * deliberately parked on a lane branch. The dirty arm comes before the ancestry arm for the blunter
- * reason: `git merge --ff-only` over a dirty tree can still overwrite an untracked file the
- * incoming commit adds, so cleanliness is a precondition of the move and not a preference.
+ * deliberately parked on a lane branch. The clobber arm comes before the ancestry arm because the
+ * move it guards is the one the ancestry arm would authorise.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9459#issuecomment-5745160952
  */
 export const plan = (facts: WorktreeFacts): SyncPlan => {
 	if (facts.branch === null) {
@@ -85,10 +93,11 @@ export const plan = (facts: WorktreeFacts): SyncPlan => {
 	if (facts.head === facts.remoteHead) {
 		return {_tag: "Current", branch: facts.branch, commit: facts.head};
 	}
-	if (facts.dirty) {
+	const clobbered = clobberedPaths(facts);
+	if (clobbered.length > 0) {
 		return {
 			_tag: "Refused",
-			reason: `the plugin source's primary worktree carries uncommitted changes, so ${facts.branch} cannot be fast-forwarded to origin/${facts.defaultBranch}`,
+			reason: `the plugin source's primary worktree carries uncommitted changes the incoming commits also change (${quotePaths(clobbered)}), so ${facts.branch} cannot be fast-forwarded to origin/${facts.defaultBranch}`,
 		};
 	}
 	if (!facts.fastForwardable) {
@@ -98,6 +107,62 @@ export const plan = (facts: WorktreeFacts): SyncPlan => {
 		};
 	}
 	return {_tag: "FastForward", branch: facts.branch, from: facts.head, to: facts.remoteHead};
+};
+
+/**
+ * The uncommitted paths the incoming commits also change — the set a fast-forward would write over.
+ *
+ * This is the whole narrowing: `git merge --ff-only` refuses on exactly this overlap and takes the
+ * move otherwise, so a dirty path the incoming commits never touch is not a reason to leave the
+ * plugin source behind. An untracked file sits in {@link WorktreeFacts.dirtyPaths} like any other,
+ * so a path an incoming commit would create over one lands here and is refused — that clobber is
+ * what the blanket refusal used to buy.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9459#issuecomment-5745160952
+ */
+export const clobberedPaths = (facts: WorktreeFacts): ReadonlyArray<string> => {
+	const incoming = new Set(facts.incomingPaths);
+	return [...new Set(facts.dirtyPaths.filter((path) => incoming.has(path)))].sort();
+};
+
+/** How many overlapping paths a refusal names before it counts the rest. */
+const QUOTED_PATHS = 3;
+
+const quotePaths = (paths: ReadonlyArray<string>): string => {
+	const rest = paths.length - QUOTED_PATHS;
+	const shown = paths.slice(0, QUOTED_PATHS).join(", ");
+	return rest > 0 ? `${shown} and ${rest} more` : shown;
+};
+
+/** The entries of a NUL-separated git list, with the trailing terminator's empty tail dropped. */
+const nulFields = (out: string): ReadonlyArray<string> =>
+	out.split("\0").filter((field) => field !== "");
+
+/** Every path a `git diff --name-only -z` answer names. */
+export const changedPathsIn = (diff: string): ReadonlyArray<string> => nulFields(diff);
+
+/**
+ * Every path a `git status --porcelain -z --untracked-files=all` answer names.
+ *
+ * `-z` rather than the quoted default because a path holding a space or a non-ASCII byte comes back
+ * quoted and escaped otherwise, and a path that does not survive the read compares against nothing.
+ * A rename's record carries its origin path as the following field, and both ends count: the
+ * incoming commits can collide with either.
+ */
+export const dirtyPathsIn = (status: string): ReadonlyArray<string> => {
+	const fields = nulFields(status);
+	const paths: string[] = [];
+	for (let at = 0; at < fields.length; at += 1) {
+		const field = fields[at] ?? "";
+		if (field.length < 4) continue;
+		paths.push(field.slice(3));
+		const origin = fields[at + 1];
+		if ((field[0] === "R" || field[0] === "C") && origin !== undefined) {
+			paths.push(origin);
+			at += 1;
+		}
+	}
+	return paths;
 };
 
 /** A commit id at the width every fabrika diagnostic quotes one. */

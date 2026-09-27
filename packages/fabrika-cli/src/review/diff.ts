@@ -94,7 +94,9 @@ const unquoteCStyle = (body: string): string => {
 };
 
 /** The `a/` and `b/` paths off a `diff --git` header, whichever of the two forms each side took. */
-const headerPaths = (line: string): {readonly before: string; readonly after: string} | null => {
+export const headerPaths = (
+	line: string,
+): {readonly before: string; readonly after: string} | null => {
 	const header = FILE_HEADER.exec(line);
 	if (header === null) return null;
 	const [, quotedBefore, bareBefore, quotedAfter, bareAfter] = header;

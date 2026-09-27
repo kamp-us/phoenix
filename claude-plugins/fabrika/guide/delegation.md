@@ -119,7 +119,7 @@ broken: the global runs and the warning names the gap. So a consumer repo does n
 `fabrika-cli` in its own `package.json` for delegation's sake; the only copy that refuses outright is
 one invoked from a different repository.
 
-Verb-by-verb behaviour and exit codes live in
-[`packages/fabrika-cli/docs/verb-reference.md`](../../../packages/fabrika-cli/docs/verb-reference.md);
-the delegation-outcome table and the environment variables are in
+Each verb's `--help` owns its behavior and exit meanings.
+[The group reference](../../../packages/fabrika-cli/docs/verb-reference.md) routes you to that help
+and the implementation contracts. The delegation-outcome table and environment variables are in
 [`packages/fabrika-cli/docs/packaging.md`](../../../packages/fabrika-cli/docs/packaging.md).

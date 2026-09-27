@@ -17,9 +17,12 @@
  * --git-common-dir`, which every linked worktree of a clone answers with the one shared directory.
  *
  * **It takes fast-forwards and nothing else.** Every other state — a parked branch, a detached HEAD,
- * uncommitted work, a diverged branch — is refused with its reason on stderr, because where a
- * human's checkout sits is a human's call. The refusal is the loud half of the guarantee: a plugin
- * source that has stopped advancing is precisely the state that used to pass unnoticed.
+ * uncommitted work the incoming commits would write over, a diverged branch — is refused with its
+ * reason on stderr, because where a human's checkout sits is a human's call. The refusal is the
+ * loud half of the guarantee: a plugin source that has stopped advancing is precisely the state
+ * that used to pass unnoticed. Uncommitted work **outside** the incoming commits' paths is not one
+ * of those states: `git merge --ff-only` takes that move and leaves the work alone, and refusing it
+ * left a checkout carrying one standing local-only edit behind forever.
  *
  * **The second link is reported, never driven.** Re-copying the advanced directory into the plugin
  * cache is the harness's own `autoUpdate` pass. This verb reads the harness's install records and
@@ -30,6 +33,7 @@
  * directory it declares, so an adopting repo needs only to declare the hook.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9031#issuecomment-5625309469
+ * @ruling https://github.com/kamp-us/phoenix/issues/9459#issuecomment-5745160952
  */
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -48,7 +52,9 @@ import {
 } from "./codes.ts";
 import {classifyEnvelope, type EnvelopeRead} from "./envelope.ts";
 import {
+	changedPathsIn,
 	directoryMarketplacesAt,
+	dirtyPathsIn,
 	type InstallReport,
 	installsFrom,
 	plan,
@@ -108,6 +114,16 @@ const text = (bytes: Uint8Array): string => new TextDecoder().decode(bytes).trim
 const stdoutOf = (outcome: ChildOutcome): string =>
 	outcome._tag === "Ran" ? text(outcome.stdout) : "";
 
+/**
+ * Stdout as git wrote it, for the two `-z` lists whose own bytes are significant.
+ *
+ * {@link stdoutOf} trims, and a porcelain status record's first field is `XY ` — for an unstaged
+ * change that leading column is a space, so trimming the first record shifts every path in the
+ * answer by one character.
+ */
+const rawStdoutOf = (outcome: ChildOutcome): string =>
+	outcome._tag === "Ran" ? new TextDecoder().decode(outcome.stdout) : "";
+
 const why = (outcome: ChildOutcome): string => {
 	if (outcome._tag === "Unstartable") return `could not run git — ${outcome.reason}`;
 	if (outcome.timedOut) return `git did not finish within ${GIT_TIMEOUT_SECONDS}s`;
@@ -150,7 +166,14 @@ const defaultBranchOf = (
 		}),
 	);
 
-/** Read every fact the plan needs, after the fetch that makes the remote half current. */
+/**
+ * Read every fact the plan needs, after the fetch that makes the remote half current.
+ *
+ * `--untracked-files=all` is load-bearing on the status read: git's default collapses a wholly
+ * untracked directory to the single entry `dir/`, and a directory entry compares equal to none of
+ * the file paths the incoming commits name, so the clobber the arm exists to catch would read as no
+ * overlap. Asking for every untracked file names them at the width the comparison is made at.
+ */
 const readFacts = (
 	root: string,
 	defaultBranch: string,
@@ -161,10 +184,12 @@ const readFacts = (
 		const head = yield* git(["rev-parse", "HEAD"], root, env);
 		const remote = yield* git(["rev-parse", `refs/remotes/origin/${defaultBranch}`], root, env);
 		if (!ran(head) || !ran(remote)) return null;
-		const status = yield* git(["status", "--porcelain"], root, env);
+		const status = yield* git(["status", "--porcelain", "-z", "--untracked-files=all"], root, env);
 		if (!ran(status)) return null;
 		const headCommit = stdoutOf(head);
 		const remoteCommit = stdoutOf(remote);
+		const incoming = yield* git(["diff", "--name-only", "-z", headCommit, remoteCommit], root, env);
+		if (!ran(incoming)) return null;
 		const ancestor = yield* git(
 			["merge-base", "--is-ancestor", headCommit, remoteCommit],
 			root,
@@ -173,9 +198,10 @@ const readFacts = (
 		return {
 			branch: ran(onBranch) ? stdoutOf(onBranch) : null,
 			defaultBranch,
-			dirty: stdoutOf(status) !== "",
+			dirtyPaths: dirtyPathsIn(rawStdoutOf(status)),
 			head: headCommit,
 			remoteHead: remoteCommit,
+			incomingPaths: changedPathsIn(rawStdoutOf(incoming)),
 			fastForwardable: ran(ancestor),
 		};
 	});
@@ -275,6 +301,30 @@ const token = (outcome: Exclude<SyncPlan, {_tag: "Refused"}>, dryRun: boolean): 
 	return `${dryRun ? "would-advance" : "advanced"}\t${outcome.branch}\t${short(outcome.to)}`;
 };
 
+/**
+ * A refusal whose **reason is stderr's first line**, with its context after — this verb's order, not
+ * the CLI's.
+ *
+ * A failed `SessionStart` hook surfaces one line in the session, and `refuse` writes its `extra`
+ * lines ahead of the reason, so every refusal here read as `judging the plugin source at <root>` and
+ * named no cause. The reason for the refusal that cost a replay to recover sat eighth, behind the
+ * scope line and six install-binding lines.
+ *
+ * `refuse` still constructs the outcome, so the code and the empty stdout stay its invariants and
+ * the CLI-wide extras-before-reason order is untouched everywhere else. Only the context this verb
+ * adds moves, and it moves to the back.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9460
+ */
+const refuseLeadingWithReason = (
+	code: number,
+	reason: string,
+	context: ReadonlyArray<string> = [],
+): VerbOutcome => {
+	const outcome = refuse(code, reason);
+	return {...outcome, stderr: [...outcome.stderr, ...context]};
+};
+
 export const runPluginSync = ({
 	stdin,
 	dryRun,
@@ -283,18 +333,26 @@ export const runPluginSync = ({
 	Effect.gen(function* () {
 		const read = readEnvelope(yield* stdin);
 		if (read._tag === "Empty") {
-			return refuse(EMPTY_STDIN, `${VERB}: stdin was read and held no ${EVENT} envelope`);
+			return refuseLeadingWithReason(
+				EMPTY_STDIN,
+				`${VERB}: stdin was read and held no ${EVENT} envelope`,
+			);
 		}
 		if (read._tag === "Unknown") {
-			return refuse(ENVELOPE_UNKNOWN, `${VERB}: envelope UNKNOWN — ${read.reason}`);
+			return refuseLeadingWithReason(
+				ENVELOPE_UNKNOWN,
+				`${VERB}: envelope UNKNOWN — ${read.reason}`,
+			);
 		}
 		if (read._tag === "Malformed") {
-			return refuse(MALFORMED_ENVELOPE, `${VERB}: not a hook envelope — ${read.reason}`, [
-				`${VERB}: ${read.evidence}`,
-			]);
+			return refuseLeadingWithReason(
+				MALFORMED_ENVELOPE,
+				`${VERB}: not a hook envelope — ${read.reason}`,
+				[`${VERB}: ${read.evidence}`],
+			);
 		}
 		if (read.envelope.event !== EVENT) {
-			return refuse(
+			return refuseLeadingWithReason(
 				WRONG_EVENT,
 				`${VERB}: judges ${EVENT} and the envelope is ${read.envelope.event} — the declaration is wired to the wrong event`,
 			);
@@ -303,7 +361,7 @@ export const runPluginSync = ({
 		const child = childEnv(env);
 		const root = yield* primaryWorktree(read.envelope.cwd, child);
 		if (root === null) {
-			return refuse(
+			return refuseLeadingWithReason(
 				GROUND_UNKNOWN,
 				`${VERB}: the envelope's cwd (${read.envelope.cwd}) names no clone whose primary worktree this verb can read`,
 			);
@@ -313,7 +371,7 @@ export const runPluginSync = ({
 		const defaultBranch = yield* defaultBranchOf(root, child);
 		const fetched = yield* git(["fetch", "--quiet", "origin", defaultBranch], root, child);
 		if (!ran(fetched)) {
-			return refuse(
+			return refuseLeadingWithReason(
 				REMOTE_UNREADABLE,
 				`${VERB}: could not fetch origin/${defaultBranch} — whether this checkout is current is UNKNOWN: ${why(fetched)}`,
 				[scope],
@@ -322,7 +380,7 @@ export const runPluginSync = ({
 
 		const facts = yield* readFacts(root, defaultBranch, child);
 		if (facts === null) {
-			return refuse(
+			return refuseLeadingWithReason(
 				GROUND_UNKNOWN,
 				`${VERB}: fetched origin/${defaultBranch} and could not read this checkout's own state`,
 				[scope],
@@ -331,7 +389,7 @@ export const runPluginSync = ({
 
 		const decided = plan(facts);
 		if (decided._tag === "Refused") {
-			return refuse(SYNC_REFUSED, planLine(decided, dryRun), [
+			return refuseLeadingWithReason(SYNC_REFUSED, planLine(decided, dryRun), [
 				scope,
 				...installLines(yield* installReport(env, root, facts.head), facts.head),
 			]);
@@ -344,7 +402,7 @@ export const runPluginSync = ({
 				child,
 			);
 			if (!ran(merged)) {
-				return refuse(
+				return refuseLeadingWithReason(
 					FAST_FORWARD_FAILED,
 					`${VERB}: ${decided.branch} passed every precondition and the fast-forward failed — the checkout changed under the read: ${why(merged)}`,
 					[scope],

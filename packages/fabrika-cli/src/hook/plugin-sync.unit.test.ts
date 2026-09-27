@@ -1,6 +1,8 @@
 import {describe, expect, it} from "vitest";
 import {
+	changedPathsIn,
 	directoryMarketplacesAt,
+	dirtyPathsIn,
 	installsFrom,
 	plan,
 	reportInstalls,
@@ -10,9 +12,10 @@ import {
 const facts = (over: Partial<WorktreeFacts> = {}): WorktreeFacts => ({
 	branch: "main",
 	defaultBranch: "main",
-	dirty: false,
+	dirtyPaths: [],
 	head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	remoteHead: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	incomingPaths: ["skills/build/SKILL.md"],
 	fastForwardable: true,
 	...over,
 });
@@ -34,7 +37,10 @@ describe("the plugin-source sync plan", () => {
 
 	it("reads a current source over a dirty tree — a clean read needs no clean tree", () => {
 		const already = plan(
-			facts({dirty: true, remoteHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}),
+			facts({
+				dirtyPaths: ["skills/build/SKILL.md"],
+				remoteHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			}),
 		);
 		expect(already._tag).toBe("Current");
 	});
@@ -42,12 +48,43 @@ describe("the plugin-source sync plan", () => {
 	it.each([
 		["a parked branch", facts({branch: "release/next"}), "is on release/next"],
 		["a detached HEAD", facts({branch: null}), "detached HEAD"],
-		["uncommitted work", facts({dirty: true}), "uncommitted changes"],
+		[
+			"uncommitted work the incoming commits also change",
+			facts({dirtyPaths: [".fabrika.jsonc", "skills/build/SKILL.md"]}),
+			"uncommitted changes the incoming commits also change (skills/build/SKILL.md)",
+		],
 		["a diverged branch", facts({fastForwardable: false}), "has diverged"],
 	])("refuses %s, and names the reason rather than moving anything", (_label, given, quoted) => {
 		const decided = plan(given);
 		expect(decided._tag).toBe("Refused");
 		expect(decided._tag === "Refused" && decided.reason).toContain(quoted);
+	});
+
+	/**
+	 * The narrowing itself: `git merge --ff-only` takes this move and leaves the edit alone, so the
+	 * refusal that used to fire here left a checkout carrying one standing local-only file behind at
+	 * every session start.
+	 */
+	it("advances over dirt the incoming commits never touch", () => {
+		expect(plan(facts({dirtyPaths: [".fabrika.jsonc"]}))._tag).toBe("FastForward");
+	});
+
+	it("refuses an untracked file an incoming commit would create — that one is a clobber", () => {
+		const decided = plan(
+			facts({
+				dirtyPaths: ["skills/build/references/code.md"],
+				incomingPaths: ["skills/build/references/code.md"],
+			}),
+		);
+		expect(decided._tag === "Refused" && decided.reason).toContain(
+			"skills/build/references/code.md",
+		);
+	});
+
+	it("counts the overlap it does not quote, rather than naming three paths and stopping", () => {
+		const overlapping = ["a.md", "b.md", "c.md", "d.md"];
+		const decided = plan(facts({dirtyPaths: overlapping, incomingPaths: overlapping}));
+		expect(decided._tag === "Refused" && decided.reason).toContain("(a.md, b.md, c.md and 1 more)");
 	});
 
 	/**
@@ -58,6 +95,33 @@ describe("the plugin-source sync plan", () => {
 	it("names the branch, not the ancestry, when both would refuse", () => {
 		const decided = plan(facts({branch: "release/next", fastForwardable: false}));
 		expect(decided._tag === "Refused" && decided.reason).toContain("is on release/next");
+	});
+});
+
+describe("reading the paths the two git lists name", () => {
+	it("takes every NUL-separated entry a name-only diff holds", () => {
+		expect(changedPathsIn("one.md\0two with space.md\0")).toEqual(["one.md", "two with space.md"]);
+	});
+
+	it("reads nothing out of an empty answer, so an empty range overlaps with nothing", () => {
+		expect(changedPathsIn("")).toEqual([]);
+		expect(dirtyPathsIn("")).toEqual([]);
+	});
+
+	it("strips the two status letters and the space, keeping the path whole", () => {
+		expect(dirtyPathsIn(" M .fabrika.jsonc\0?? notes/new file.md\0")).toEqual([
+			".fabrika.jsonc",
+			"notes/new file.md",
+		]);
+	});
+
+	/** Both ends of a rename count: the incoming commits can collide with either one. */
+	it("takes a rename's origin path from the field that follows it", () => {
+		expect(dirtyPathsIn("R  after.md\0before.md\0 M other.md\0")).toEqual([
+			"after.md",
+			"before.md",
+			"other.md",
+		]);
 	});
 });
 

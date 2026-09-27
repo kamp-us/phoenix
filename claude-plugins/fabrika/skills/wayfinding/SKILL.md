@@ -54,6 +54,21 @@ issue-shape marker — not a pipeline state, not pickable, and not a shipping na
 recorded here can block a merge. Frontier tickets carry no `status:triaged`, so they never enter the
 execution picker's candidate pool.
 
+<!-- anchor: STATUS-BETWEEN-WRITES --> **Post a status update after each writing step, before you
+start the next.** The founder follows the map as it grows, and he can only catch a wrong kind or a
+wrong edge before more writes land on top of it. So when a step's writes exit `0`, tell him what
+happened and what you need from him — or that you need nothing yet — in plain words, a few lines,
+full issue URLs. Like the reply above, it leaves through you, not through a verb. Each update
+carries:
+
+- after `map open`: the map's number and URL, and the destination in one line.
+- after `map ticket`: every ticket's URL, its kind, and what it blocks. Name each `decision` ticket
+  as his, so he sees which tickets wait on him long before `AWAITING-FOUNDER`.
+- after `map lane`: which ticket was laned.
+- after `map finding` or `map record`: the one-line outcome.
+- after `map fork`: which tickets went to `grilling` or `prototyping`, and what he owes.
+- after `map descope`: the direction rejected, in one line.
+
 ## 1 — Open the map only if the destination is fog
 
 The question that decides whether this skill runs at all: **can you state the open question
@@ -105,8 +120,8 @@ fog* — is ruled and seated at intake; this step expects that answer rather tha
 destination it refuses belongs in intake, and the `wayfinder:backlog` parking is applied there by
 triage — no verb here writes that label.
 
-**Done when** you hold a map number and a digest from exit `0`, or you routed the destination
-elsewhere and stopped.
+**Done when** you hold a map number and a digest from exit `0` and posted its
+`STATUS-BETWEEN-WRITES` update, or you routed the destination elsewhere and stopped.
 
 ## 2 — Read the map before you write to it
 
@@ -158,8 +173,8 @@ eligibility whoever wrote it, so a destination stays unpickable until its fronti
 side effect: the native dependency graph is the one carrier of blockedness, and a map edge is a
 real edge on it like any other.
 
-**Done when** every open question you named is a ticket, and `map read` shows the frontier you
-intended.
+**Done when** every open question you named is a ticket, `map read` shows the frontier you
+intended, and the frontier's `STATUS-BETWEEN-WRITES` update is posted.
 
 ## 4 — Burn the answerable frontier down in parallel
 
@@ -206,12 +221,18 @@ above, and an agent's self-report has been false while destroying what it claime
 branded reference the lane re-fetches for itself, never free prose carrying your expectations. A
 lane told what you hope it finds is a lane that finds it.
 
-**Done when** every answerable ticket has a lane outcome, and each unanswerable one is a decision
-you are about to route.
+**Done when** every answerable ticket has a lane outcome, each lane and each outcome had its
+`STATUS-BETWEEN-WRITES` update, and each unanswerable one is a decision you are about to route.
 
 ## 5 — Route what a lane cannot answer
 
 Two kinds of question leave this skill, and `map fork` records where each went.
+
+<!-- anchor: WAIT-FOR-GO --> **Wait for his go before a decision goes to grilling.** Before any
+`grill open`, stop: list every decision ticket that is ready, with its URL and question, and wait
+until the founder says go. The wait is a pause in this conversation, not a state on the board — it
+writes nothing and blocks no merge, so `NO-SECOND-GATE` reads as before. A run that ends while
+waiting ends on `AWAITING-FOUNDER`, since `map read` reports an `open` decision ticket that way.
 
 **A decision is the founder's.** The model fires the **`grilling`** Skill — the quintet's shared
 primitive, which owns question rounds, recommended answers, and the four-clause attestation a ruling
@@ -258,7 +279,7 @@ seam working — never route around it by picking an option to unblock the map. 
 outstanding tickets are spikes is not blocked on him; that is work in flight.
 
 **Done when** every routed ticket names its `grilling` session or its `prototyping` spike on the
-map, or the run ends naming what he owes.
+map and the routing's `STATUS-BETWEEN-WRITES` update is posted, or the run ends naming what he owes.
 
 ## 6 — Summarize a cleared ticket back to the map
 
@@ -275,7 +296,8 @@ confirms that question reads `ruled` in the `grilling` session before recording 
 for an empirical question, naming the closed spike whose captured decision this is. You relay what
 the sibling established; you never restate it in your own voice.
 
-**Done when** exit `0` reports the move landed, or nothing moved at all.
+**Done when** exit `0` reports the move landed and its `STATUS-BETWEEN-WRITES` update is posted,
+or nothing moved at all.
 
 ## 7 — Record what was decided against
 
@@ -292,7 +314,8 @@ It is the map-level twin of the plugin-layer `.out-of-scope/` scope law: that on
 records what fabrika-the-corpus rejected, this one what **this destination** rejected. The test for
 which — if removing the map would make the rejection unreadable, it is a map entry.
 
-**Done when** the rejection and its reasoning are on the map.
+**Done when** the rejection and its reasoning are on the map and its `STATUS-BETWEEN-WRITES` update
+is posted.
 
 ## Where this ends
 

@@ -12,7 +12,8 @@ import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {commitExists} from "../io/pulls.ts";
-import {isInformational, statusOf} from "../review/rollup.ts";
+import {authorityNote, readBlockingSet, reportedLine, unreadableCause} from "../review/blocking.ts";
+import {isFailing, statusOf} from "../review/rollup.ts";
 import {latestPerContext, listRunsAtHead, listShipCheckRuns} from "../ship/github.ts";
 import {
 	badNumber,
@@ -117,10 +118,28 @@ export const runLogs = (
 				notices,
 			);
 		}
-		// The informational carve-out is applied before anything is fetched, so a preview-deploy failure
-		// never enters this lane.
-		const failing = latestPerContext(enumerated.value.runs)
-			.filter((run) => !isInformational(run.name))
+		// The blocking authority is read before anything is fetched, so a failure the base branch does
+		// not require never enters this lane — it leaves named on the notices channel instead.
+		const authority = yield* readBlockingSet(repo, target.pull.baseRef);
+		if (authority._tag !== "Set") {
+			return refuse(
+				authority._tag === "Incomplete" ? INCOMPLETE_SCAN : PRECONDITION_UNKNOWN,
+				unreadableCause(VERB, target.pull.baseRef, authority),
+				notices,
+			);
+		}
+		const latest = latestPerContext(enumerated.value.runs);
+		notices.push(authorityNote(VERB, target.pull.baseRef, authority.set));
+		notices.push(
+			...reportedLine(
+				VERB,
+				latest
+					.filter((run) => !authority.set.blocks(run.name) && isFailing(run))
+					.map((run) => run.name),
+			),
+		);
+		const failing = latest
+			.filter((run) => authority.set.blocks(run.name))
 			.filter((run) => run.status === "completed" && statusOf(run) !== "success")
 			.filter((run) => statusOf(run) !== "neutral" && statusOf(run) !== "skipped");
 

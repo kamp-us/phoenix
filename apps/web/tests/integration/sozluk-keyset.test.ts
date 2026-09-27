@@ -11,8 +11,8 @@
  * `definition.vote`), so `score` (vote-derived) and `slug` (caller-chosen) are
  * the deterministically-controllable keyset columns here; the tie-breaks asserted
  * across boundaries are exactly the ones that seam can realize without a direct
- * INSERT. The `recent` keyset's lead column (`last_activity_at`) is server-stamped
- * (`floor(now/1000)`), never settable through the public seam — so the recent
+ * INSERT. The `recent` keyset's lead column (`last_activity_at`) is server-derived from
+ * the term's live definition content (#9540), never settable through the public seam — so the recent
  * vertical CONSTRUCTS its activity order by stamping each row's `last_activity_at`
  * to a fixed whole-second epoch directly (`h.setLastActivityAt`, a controlled D1
  * write), giving the 2/3 pair an identical injected second the engine can only order

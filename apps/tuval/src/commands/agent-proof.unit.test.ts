@@ -18,44 +18,31 @@
 import {randomUUID} from "node:crypto";
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Deferred, Effect, Layer, Schema} from "effect";
-import {isAiAgentSessionState} from "../ai-agent/core/index.ts";
-import {aiAgentPortNames} from "../ai-agent/handlers/index.ts";
-import type {TranscriptPayload} from "../ai-agent/ports/index.ts";
-import {aiAgentProgram} from "../ai-agent/program.ts";
-import type {AgentScript, ScriptedAnswer, ScriptedPlan} from "../ai-agent/service/index.ts";
-import {ScriptedAiAgent} from "../ai-agent/service/index.ts";
-import {coreSpells} from "../boot.ts";
-import {Checkpoints} from "../durability/Checkpoints.ts";
-import {memoryStores} from "../durability/stores.ts";
-import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
-import {ProcessPorts} from "../ports/ProcessPorts.ts";
-import {Processes} from "../process/Processes.ts";
-import {ProcessId} from "../process/process.ts";
+import type {TranscriptPayload} from "@kampus/tuval-sdk/ai-agent/ports";
+import {isAiAgentSessionState} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
+import {aiAgentProgram} from "@kampus/tuval-sdk/kernel/ai-agent/program";
+import type {
+	AgentScript,
+	ScriptedAnswer,
+	ScriptedPlan,
+} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import {ScriptedAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {
-	decodeKernelMessage,
-	decodePageMessage,
-	encodeKernelMessage,
-	encodePageMessage,
-} from "../protocol/codec.ts";
-import {CallId} from "../protocol/ids.ts";
+	everyRegistered,
+	SpellBridge,
+	type SpellBridgeApi,
+} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
+import {HelpRows} from "@kampus/tuval-sdk/kernel/commands/core/help";
+import {SpawnedProcesses} from "@kampus/tuval-sdk/kernel/commands/core/process";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {type ParamSpec, readParams} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import {SpellRegistry, type SpellRow} from "@kampus/tuval-sdk/kernel/commands/registry";
 import {
-	isSpellReply,
-	PROTOCOL_VERSION,
-	SpellCall,
-	type SpellFailure,
-	type SpellReply,
-} from "../protocol/messages.ts";
-import {RegistryDescription, type SpellDescription} from "../protocol/registry-description.ts";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
-import {Registry} from "../registry/Registry.ts";
-import {everyRegistered, SpellBridge, type SpellBridgeApi} from "./bridge/index.ts";
-import {HelpRows} from "./core/help.ts";
-import {SpawnedProcesses} from "./core/process.ts";
-import {SpellExecutor} from "./executor.ts";
-import {type ParamSpec, readParams} from "./parse/spell-index.ts";
-import {SpellRegistry, type SpellRow} from "./registry.ts";
-import {type Client, WindowIndex, type WindowPlacement} from "./scope.ts";
+	type Client,
+	WindowIndex,
+	type WindowPlacement,
+} from "@kampus/tuval-sdk/kernel/commands/scope";
 import {
 	ClientId,
 	defineSpell,
@@ -64,8 +51,38 @@ import {
 	type Scope as SpellScope,
 	WindowId,
 	WorkspaceId,
-} from "./spell.ts";
-import {SpellSet} from "./spell-set.ts";
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {SpellSet} from "@kampus/tuval-sdk/kernel/commands/spell-set";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import type {PayloadRejected, PortNotWired} from "@kampus/tuval-sdk/kernel/ports/errors";
+import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {
+	decodeKernelMessage,
+	decodePageMessage,
+	encodeKernelMessage,
+	encodePageMessage,
+} from "@kampus/tuval-sdk/kernel/protocol/codec";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {
+	isSpellReply,
+	PROTOCOL_VERSION,
+	SpellCall,
+	type SpellFailure,
+	type SpellReply,
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {
+	RegistryDescription,
+	type SpellDescription,
+} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import {Context, Deferred, Effect, Layer, Ref, Result, Schema} from "effect";
+import {coreSpells} from "../boot.ts";
+import {OpenProjects} from "../projects/open-projects.ts";
+import {Projects} from "../projects/Projects.ts";
 
 const workspace = WorkspaceId.make("ws-1");
 const agentWindow = WindowId.make("w-agent");
@@ -113,7 +130,6 @@ const echoProgram = (): AnyProgram =>
 					[{type: "say", word: msg.word.toUpperCase()}],
 				],
 			},
-			interpret: {say: () => Promise.resolve()},
 		}),
 		ports: {
 			words: {
@@ -172,7 +188,60 @@ const world: Readonly<Record<string, unknown>> = {
 	"process.send.payload": "hi",
 	"process.read.port": "echoed",
 	"echo.repeat.word": "ha",
+	"project.open.folder": "/work/agent-proof",
+	"project.close.folder": "/work/agent-proof",
+	"project.browse.folder": "/work",
 };
+
+/**
+ * The desk's open projects, held in memory: this proof calls every spell and opens no config, so a
+ * project opens with nothing to start and closes with nothing to stop.
+ */
+const scriptedProjects = Layer.effect(
+	Projects,
+	Effect.map(Ref.make(OpenProjects.none), (open) =>
+		Projects.of({
+			open: (folder) =>
+				Effect.flatMap(Ref.get(open), (current) => {
+					const result = current.open(folder);
+					if (Result.isFailure(result)) return Effect.fail(result.failure);
+					return Effect.as(Ref.set(open, result.success.projects), {
+						project: result.success.project,
+						state: {
+							stateDir: "/nowhere",
+							adopted: {moved: [], kept: [], unowned: []},
+							scoped: {moved: []},
+						},
+						programCount: 0,
+						refused: [],
+						launched: [],
+						restored: [],
+					});
+				}),
+			close: (folder, by) =>
+				Effect.flatMap(Ref.get(open), (current) => {
+					const result = current.close(folder, by);
+					if (Result.isFailure(result)) return Effect.fail(result.failure);
+					return Effect.as(Ref.set(open, result.success.projects), {
+						project: result.success.project,
+					});
+				}),
+			list: Effect.map(Ref.get(open), (current) => current.projects),
+			recent: Effect.map(Ref.get(open), (current) => current.recentProjects),
+			browse: (folder) =>
+				Effect.succeed({
+					folder: folder ?? "/nowhere",
+					name: "nowhere",
+					key: "-nowhere",
+					parent: null,
+					open: false,
+					folders: [],
+				}),
+			changes: Projects.none.changes,
+			renderers: Projects.none.renderers,
+		}),
+	),
+);
 
 /**
  * One argument, from the parameter's own schema first and the desk second: an enum takes its first
@@ -327,7 +396,6 @@ const agentProgram = (done: Deferred.Deferred<Run>): AnyProgram =>
 				begin: (state) => [state, [{type: "drive"}]],
 				finished: (state) => [state, []],
 			},
-			interpret: {drive: () => Promise.resolve()},
 		}),
 		ports: {},
 		handlers: {
@@ -349,7 +417,7 @@ const agentProgram = (done: Deferred.Deferred<Run>): AnyProgram =>
 
 /** The layer set boot builds, over an in-memory state dir and the two rows this proof registers. */
 const app = (rows: ReadonlyArray<AnyProgram>) =>
-	Layer.mergeAll(SpawnedProcesses.layer({readTimeout: "1 second"})).pipe(
+	Layer.mergeAll(SpawnedProcesses.layer({readTimeout: "1 second"}), scriptedProjects).pipe(
 		Layer.provideMerge(SpellExecutor.layer),
 		Layer.provideMerge(
 			Layer.mergeAll(

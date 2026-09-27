@@ -4,10 +4,7 @@
  * The verb is the IO boundary and nothing else: read ci.yml, hand its text to the pure rule in
  * `./change-detect.ts`, seat the answer on the group's exit taxonomy.
  *
- * **v1's one non-zero exit splits into three seats here.** It collapsed "the step is in API mode",
- * "I could not find the step" and "I could not read ci.yml" onto `1`, which is all CI needs and
- * all a human cannot use: the regression is `12`, an unlocatable step is `7` (fail-closed) and an
- * unreadable file is `11`. All three stay red, so the gate's strictness is unchanged.
+ * See `guard change-detect-guard check --help` for results and exit codes.
  */
 
 import {Effect, type FileSystem, Path} from "effect";

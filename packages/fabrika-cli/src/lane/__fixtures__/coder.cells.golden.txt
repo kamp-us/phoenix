@@ -82,6 +82,10 @@ review	FAIL	-	0/3	-> build	1/3	0/16
 review	FAIL	-	3/3	-> human:budget-spent	3/3	16/16
 review	FAIL	ui	0/3	-> build	1/3	0/16
 review	FAIL	ui	3/3	-> human:budget-spent	3/3	16/16
+review	WIP	-	0/3	-> queued	0/3	0/16
+review	WIP	-	3/3	-> queued	3/3	16/16
+review	WIP	ui	0/3	-> queued	0/3	0/16
+review	WIP	ui	3/3	-> queued	3/3	16/16
 review	CLEARED	-	0/3	-> review	0/3	0/16
 review	CLEARED	-	3/3	-> review	3/3	16/16
 review	CLEARED	ui	0/3	-> review	0/3	0/16
@@ -110,6 +114,10 @@ review:ui	FAIL	-	0/3	-> build:ui	1/3	0/16
 review:ui	FAIL	-	3/3	-> human:budget-spent	3/3	16/16
 review:ui	FAIL	ui	0/3	-> build:ui	1/3	0/16
 review:ui	FAIL	ui	3/3	-> human:budget-spent	3/3	16/16
+review:ui	WIP	-	0/3	-> queued	0/3	0/16
+review:ui	WIP	-	3/3	-> queued	3/3	16/16
+review:ui	WIP	ui	0/3	-> queued	0/3	0/16
+review:ui	WIP	ui	3/3	-> queued	3/3	16/16
 review:ui	CLEARED	-	0/3	-> review:ui	0/3	0/16
 review:ui	CLEARED	-	3/3	-> review:ui	3/3	16/16
 review:ui	CLEARED	ui	0/3	-> review:ui	0/3	0/16

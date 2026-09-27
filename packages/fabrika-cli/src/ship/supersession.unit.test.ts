@@ -14,6 +14,8 @@ const workflowRun = (shape: {
 	conclusion: shape.conclusion ?? null,
 	completedAt: null,
 	path: ".github/workflows/ci.yml",
+	event: "pull_request",
+	headSha: "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c",
 	workflowId: shape.workflowId,
 	checkSuiteId: shape.suite === undefined ? shape.id : shape.suite,
 });

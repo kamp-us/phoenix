@@ -36,11 +36,13 @@ test.describe("ProfilePage (/profile)", () => {
 		// list), so the count is stable for a fresh signup with no contributions yet.
 		const headings = page.locator(".kp-profile__section h3");
 		await expect(headings).toHaveCount(5);
-		await expect(headings.nth(0)).toHaveText("katkıların");
-		await expect(headings.nth(1)).toHaveText("hesap");
-		await expect(headings.nth(2)).toHaveText("görünüm");
-		await expect(headings.nth(3)).toHaveText("oturum");
-		await expect(headings.nth(4)).toContainText("tehlikeli");
+		// #9273: the settings sections come first, `katkıların` last — /profile is the
+		// page the menu labels `ayarlar`, so the first thing it shows is a setting.
+		await expect(headings.nth(0)).toHaveText("hesap");
+		await expect(headings.nth(1)).toHaveText("görünüm");
+		await expect(headings.nth(2)).toHaveText("oturum");
+		await expect(headings.nth(3)).toContainText("tehlikeli");
+		await expect(headings.nth(4)).toHaveText("katkıların");
 	});
 
 	// #75 interim: the change-email flow needs email-verification infra the worker

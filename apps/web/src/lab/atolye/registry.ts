@@ -21,6 +21,7 @@ import {menuExhibit} from "./exhibits/Menu.exhibit";
 import {metaRowExhibit} from "./exhibits/MetaRow.exhibit";
 import {reportButtonExhibit} from "./exhibits/ReportButton.exhibit";
 import {reviewBadgeExhibit} from "./exhibits/ReviewBadge.exhibit";
+import {searchPaletteExhibit} from "./exhibits/SearchPalette.exhibit";
 import {switchExhibit} from "./exhibits/Switch.exhibit";
 import {tabsExhibit} from "./exhibits/Tabs.exhibit";
 import {toastExhibit} from "./exhibits/Toast.exhibit";
@@ -31,6 +32,7 @@ const exhibits: readonly AnyExhibit[] = [
 	// The composer leads the catalog — atölye's first feature-level exhibit (#3095), ahead of
 	// the UI primitives it is built from.
 	composerExhibit,
+	searchPaletteExhibit,
 	commandPaletteExhibit,
 	agentChatInputExhibit,
 	agentChatInputPartsExhibit,

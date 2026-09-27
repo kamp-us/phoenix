@@ -19,18 +19,18 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {Cause, Context, Effect, Layer} from "effect";
-import {Checkpoints} from "../../durability/Checkpoints.ts";
-import {memoryStores} from "../../durability/stores.ts";
-import {NodeId} from "../../ports/graph.ts";
-import {ProcessPorts} from "../../ports/ProcessPorts.ts";
-import {Processes} from "../../process/Processes.ts";
-import type {ProcessTable} from "../../process/ProcessTable.ts";
-import {ProcessId} from "../../process/process.ts";
-import {type AnyProgram, type Program, ProgramId} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
-import {wiredShellEffects} from "../host/effects.ts";
-import {WindowId} from "../window/host.ts";
+import {ConfigReloader} from "../../reload.ts";
+import {type ShellHostServices, wiredShellEffects} from "../host/effects.ts";
 import {openProgram} from "./intent.ts";
 import {runPickerIntent} from "./open.ts";
 
@@ -63,7 +63,6 @@ const leakyProgram = (opened: Opened): AnyProgram =>
 		core: defineMachine<{readonly keys: number}, ChildMsg, ChildCmd, never, unknown>({
 			init: (loaded) => [loaded ?? {keys: 0}, []],
 			update: {key: (state) => [{keys: state.keys + 1}, [{type: "emit"}]]},
-			interpret: {emit: () => Promise.resolve()},
 		}),
 		ports: {},
 		takesKeys: true,
@@ -112,7 +111,6 @@ const driverProgram = (opened: Opened): AnyProgram =>
 				open: (state) => [{steps: state.steps + 1}, [{type: "open"}]],
 				forward: (state) => [{steps: state.steps + 1}, [{type: "forward"}]],
 			},
-			interpret: {open: () => Promise.resolve(), forward: () => Promise.resolve()},
 		}),
 		ports: {},
 		handlers: {
@@ -147,7 +145,7 @@ const driverProgram = (opened: Opened): AnyProgram =>
 		never,
 		unknown,
 		never,
-		Registry | Processes | ProcessTable
+		ShellHostServices
 	>;
 
 const run = Effect.fnUntraced(function* () {
@@ -179,6 +177,7 @@ const run = Effect.fnUntraced(function* () {
 					Layer.mergeAll(
 						Registry.layer([driverProgram(opened), leakyProgram(opened)]),
 						Checkpoints.layer(memoryStores()),
+						ConfigReloader.none,
 					),
 				),
 			),

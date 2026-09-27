@@ -4,9 +4,9 @@
  * boots the same rows with a probe for `write` and no timer.
  */
 
+import {type Graph, NodeId} from "@kampus/tuval-sdk/kernel/ports/graph";
+import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {Effect} from "effect";
-import {type Graph, NodeId} from "../ports/graph.ts";
-import type {AnyProgram} from "../registry/program.ts";
 import {counterId, counterProgram} from "./counter.ts";
 import {logId, logProgram} from "./log.ts";
 

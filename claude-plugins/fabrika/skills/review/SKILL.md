@@ -93,6 +93,21 @@ terminal either, so carry them into the verdict you reach at the end rather than
 The sixth column is `standing` or `superseded`: only a `standing` row is a verdict in force, and a
 `superseded` one is a round already answered, printed so the record shows it.
 
+**The graded set is the body criteria PLUS every standing ruling on the issue, and `criteria` is the
+one verb that returns it.** A founder ruling arrives as a comment, and a gate that read only the body
+graded a spec the founder had already moved. Each row names its source in the
+first column — `body` or `ruling` — and a `ruling` row carries the founder's own words plus the
+comment URL they were written in. Grade those rows exactly as you grade a body row. Where the two
+contradict, **the newest ruling is the spec**; a body row the ruling replaced prints `superseded` and
+is reported rather than graded, so it never silently vanishes. A marker from an account off the
+control-plane roster is not a ruling and is counted on stderr, never dropped, and so is a drifted
+one — read those counts.
+
+**A verdict older than the newest standing ruling is not current, and `lane prove` says so.** It
+binds a head and it may still bind that head's content, and it graded a contract that has since
+moved — so a `PASS` cannot ride it past a ruling it never read. That is not a finding about the
+reviewer who wrote it; it is a round the ruling reopened.
+
 **An epic tail has one fallback, and it is bounded by when the epic was planned.** `plan-epic` writes
 an `### Acceptance criteria` block onto the epic body beside the ledger, so `criteria <epic>` and
 `append-criterion <epic>` serve a tail exactly as they serve any other issue. An epic planned before
@@ -105,7 +120,7 @@ criteria.
 **A marked criterion is graded on the evidence it names, never on the diff alone.** A criterion may
 carry the outside-diff evidence marker — a trailing `[evidence: <source>]` naming where its proof
 lives, because the diff's bytes cannot settle it either way: a desk verified by hand, a checkpoint
-written before the fix, a runtime observation. `criteria` prints that source as a third column and
+written before the fix, a runtime observation. `criteria` prints that source as the row's last column and
 counts the marked rows on stderr, so you never have to recognise one in prose. For each marked row,
 go and read what the source names — the PR body's hand-verification section, the artifact, the
 comment — and grade on that. **Then name it in the verdict body**: say which criterion rested on
@@ -189,6 +204,31 @@ applied over differs by class — the diff's slice in the code and doc classes, 
 in the skill class, under `A-TOUCHED-SKILL-FILE-IS-READ-WHOLE` further down. Editorial craft on
 any prose surface: apply [`writing-for-agents`](../writing-for-agents/SKILL.md) verbatim, reading it
 inline as a reference, and state its outcome in that class's namespace.
+
+**When filtering is requested**, pass the same `--filter-placement=after` and `--exclude`
+options to `scope` and `diff` at the bound head. Omitting placement keeps both reads unfiltered.
+Read the complete served diff and the exclusion list. The namespace checklist still comes from
+all changed paths. Check that every omitted path is justified by the effective exclusions and
+that the remaining evidence settles each claimed acceptance criterion and applicable rubric.
+For a criterion or rubric needing omitted content, read the unfiltered diff at the same SHA.
+Describe exactly which content and evidence you read in the verdict.
+
+**An all-excluded diff still owes review.** Its header reports zero served sections beside explicit
+excluded paths, after the raw completeness proof. Check those exclusions, the issue criteria,
+subsystem constraints and relevant validation evidence. Read raw content when needed to settle a
+claim. Emit each required verdict only when that evidence supports it; zero served sections alone
+never justify PASS. An empty or incomplete raw read remains a refusal, not this deliberate case.
+
+<!-- anchor: SUBSYSTEM-ROWS-ARE-ADDITIVE --> **The `subsystem` rows `scope` printed are additive
+constraints on the class rubric, never a replacement for it.** A repo may declare
+`reviewSubsystems` in `.fabrika.jsonc` — path globs whose matched files each carry a constraint
+text. `scope` prints one `subsystem` row per subsystem with matches, and the `subsystem-note` line
+under it carries that text verbatim. Its sorted `subsystem-path` rows name the matched files;
+use those paths to associate constraints with each class. Grade every class exactly as its rubric says, then read each
+`subsystem-note` whose `subsystem` row covers files in your class and apply its constraint **on
+top**: the rows can add findings a rubric alone would not ask about, and they never relax, replace,
+or skip a rubric line. A path may match several subsystems, so one file can carry more than one
+constraint; a class whose files match none is graded by its rubric alone.
 
 **A diff touching fabrika's own two trees owes the portability check, in the doc class and the skill
 class alike.** When any changed file sits under `claude-plugins/fabrika/` or
@@ -279,11 +319,13 @@ fabrika review ci $pr_number --sha 03135b91 --wait --budget-seconds 480
 ```
 
 **Its `green` now carries gate coverage, and the absence of coverage is its own answer.** A head
-where the checks all passed but no workflow this repo authors ever ran is refused on `16`, never
-reported as `green` or `pending` — the enumeration was complete and not one gate inspected the
+where the checks all passed but no workflow this repo authors ever inspected is refused on `16`,
+never reported as `green` or `pending` — the enumeration was complete and not one gate inspected the
 bytes, which reads as safety while carrying none. The ordinary way in is a branch gone
 conflicted: GitHub stops making `pull_request` runs while a platform-provided check keeps
-reporting on its own trigger. Treat that `16` as a blocked read, not a verdict — the head needs
+reporting on its own trigger, and so does the repo's own `pull_request_target` cleanup workflow,
+which carries the head having checked out the base. A repo-authored workflow path is not the test;
+the run's head and event are. Treat that `16` as a blocked read, not a verdict — the head needs
 runs before anything can be judged on it, so end the class on `UNKNOWN — the artifact could not
 be read`, naming the `16`, rather than grading around it.
 
@@ -435,7 +477,8 @@ undisclosed that this gate could see"* — never "no deviations exist".
   **A FAIL is not a licence to skip it.** "The repair moves the head, so this verdict is stale on
   arrival" is the deadlock the every-round rule exists to rule out: the third refusal guarding
   `operate`'s `FAIL` row — which owns that rule, this is only a pointer to it — records no FAIL
-  until every derived namespace holds a binding verdict, so a declined governance round strands the
+  until every namespace that floor asks for holds a binding verdict, governance always among them,
+  so a declined governance round strands the
   lane with the
   repair undispatchable. Fire it, and expect to fire it again at each repair head — the extra run
   is the accepted cost. Neither namespace discharges the other. You never emit governance's
@@ -620,10 +663,24 @@ outright, so every class you leave off it is cleared, which is what makes `--cla
 text-only head retire a stale `ui` rather than sit beside it. `lane prove` refuses that at exit `67` with nothing appended, and the remedy on
 the refusal is this line with the head's rows on it.
 
-Two guards are yours before you record, one per polarity. Record a `FAIL` **only when every derived
-namespace holds a verdict that still binds at the head** — a `FAIL` beside an in-flight namespace is
+Two guards are yours before you record, one per polarity. Record a `FAIL` **only when every namespace
+on your emission checklist — §1's derived set minus every `routed` row — holds a verdict that still
+binds at the head** — a `FAIL` beside an in-flight namespace is
 an incomplete read the lane must not act on yet, so print the terminal without recording and leave
-the record to the operator's re-read. And record an `UNKNOWN`, a `STALE` or an `UNBINDABLE` **only
+the record to the operator's re-read. **A `routed` row is subtracted here on the same grounds it is
+subtracted from a `PASS`**: out of the plain `review` cell a routed namespace is the next cell's,
+which is what the decision record *The review bar splits across the two review cells, and the lane's
+own machine decides where* rules for the `PASS` arm and *The reviewer's FAIL floor subtracts a routed
+namespace, as the PASS arm does* carries to this one, and the merge gate re-derives it regardless.
+Nothing mechanical asks for it here either — `lane prove` answers `not-required` for a `FAIL` out of
+`review`, because that event claims no artifact at all. **And nothing can fill that row at a failing
+head**, by either of the two routes there are: on a PR that renders nothing `review-ui route` is the
+sanctioned resolution and it refuses at exit `20` while `review-code` stands `FAIL`; on a PR that
+does render `review-ui post` is the emit path and it is permitted — it reads no text verdict at all —
+but the `review` cell's only arm into `review:ui` is the `PASS`, so a `FAIL` routes into repair and
+the gate that owes the row is never dispatched. Requiring it would leave the lane waiting on a
+verdict that is not coming. And
+record an `UNKNOWN`, a `STALE` or an `UNBINDABLE` **only
 when no derived namespace holds a still-binding `FAIL`**: those three park the lane on a human, a
 `FAIL` routes it into a repair round under the retry budget, and a park recorded over a FAIL
 converts the second into the first with nothing downstream able to tell — which is why a park out

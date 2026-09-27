@@ -1,7 +1,7 @@
 ---
 id: 0346
 title: A Sub fiber's failure is the machine's Msg or the process's death, never a host retry
-status: accepted
+status: amended-in-part by [0408](0408-tuval-subs-map-own-failures.md)
 date: 2026-09-03
 tags: [tuval, demlik, effect-host, supervision, identity]
 ---

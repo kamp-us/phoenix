@@ -5,8 +5,13 @@
  */
 
 import {defineMachine} from "@demlik/tea";
+import {
+	type AnyProgram,
+	type Program,
+	ProgramId,
+	type RendererRef,
+} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect, Predicate} from "effect";
-import {type AnyProgram, type Program, ProgramId, type RendererRef} from "../registry/program.ts";
 import {COUNT_KIND, isCount} from "./count.ts";
 
 export type LogState = {
@@ -62,8 +67,6 @@ export const logProgram = ({write}: LogOptions): AnyProgram =>
 					[{type: "print", line: `key ${msg.key}`}],
 				],
 			},
-			// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576).
-			interpret: {print: () => Promise.resolve()},
 		}),
 		ports: {
 			ticks: {

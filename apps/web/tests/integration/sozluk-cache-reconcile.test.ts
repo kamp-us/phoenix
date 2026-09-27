@@ -41,7 +41,10 @@ const LETTER_STAMP = Date.now().toString(36);
 const LETTER_TERMS: ReadonlyArray<readonly [slug: string, title: string, letter: string]> = [
 	[`onbellek-${LETTER_STAMP}`, "önbellek", "ö"],
 	[`isik-${LETTER_STAMP}`, "ışık", "ı"],
-	[`webhook-${LETTER_STAMP}`, "webhook", ""],
+	// `w` is an indexed letter as of #9425, so `webhook` files under it rather than nowhere.
+	[`webhook-${LETTER_STAMP}`, "webhook", "w"],
+	// A digit still names no letter — `""` is the column's encoding of that.
+	[`3d-baski-${LETTER_STAMP}`, "3D baskı", ""],
 ];
 
 // reconcileCaches touches only `run`/`batch` (persistTermSummary + recomputeSozlukStats), never
@@ -151,8 +154,8 @@ describe("term_record.first_letter backfill (#9331) — one reconcile pass corre
 		const s = await realSozluk();
 
 		// The pre-fix state, written the way the pre-fix code wrote it: `first_letter` is the
-		// slug's head, and the slug is the ASCII fold. `önbellek` files under `o`, `ışık` under
-		// `i`, `webhook` under `w` — a letter the alphabet does not index at all.
+		// slug's head, and the slug is the ASCII fold. `önbellek` files under `o` and `ışık`
+		// under `i` — neither is the letter the headword belongs to.
 		for (const [slug] of LETTER_TERMS) {
 			const rows = await h.execD1("UPDATE term_record SET first_letter = ? WHERE slug = ?", [
 				slug.charAt(0),

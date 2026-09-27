@@ -32,15 +32,11 @@ export const eventLog = (...events: ReadonlyArray<string>): string =>
 		)
 		.join("");
 
-/** queued → build → review → ship → human:cp-approval, the park the §CP recipe clears. */
-export const PARKED_AT_CP = eventLog("WIP", "DONE", "PASS", "BLOCKED");
-
 /**
- * The same leaf, reached with a cause on the parking line — the red-CI park.
+ * queued → build → review → ship → human:cp-approval, with a `cause` on the parking line.
  *
- * `ship`'s BLOCKED folds to `human:cp-approval` whatever the block was, so this fixture and
- * {@link PARKED_AT_CP} differ only in that `cause` field, which is the whole reason the recipe table
- * keys on it.
+ * `ship`'s BLOCKED folds to `human:cp-approval` whatever the block was, so the parks on that leaf
+ * differ only in that `cause` field, which is the whole reason the recipe table keys on it.
  */
 export const PARKED_AT_CP_ON = (cause: string): string =>
 	eventLog("WIP", "DONE", "PASS") +
@@ -50,6 +46,12 @@ export const PARKED_AT_CP_ON = (cause: string): string =>
 		at: "2026-08-16T00:03:00.000Z",
 		cause,
 	})}\n`;
+
+/** The owner-approval wait — the line a shipper's bare `AWAITING-CP-APPROVAL` records. */
+export const PARKED_AT_CP = PARKED_AT_CP_ON("awaiting-cp-approval");
+
+/** The same leaf reached by a `ship` park naming no cause, which is not an approval wait. */
+export const PARKED_AT_CP_UNCAUSED = eventLog("WIP", "DONE", "PASS", "BLOCKED");
 
 /** The red-CI park: BLOCKED out of `ship` because `ship checks` read the head red. */
 export const PARKED_ON_CI_RED = PARKED_AT_CP_ON("head-ci-red");

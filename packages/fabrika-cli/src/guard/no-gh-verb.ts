@@ -26,7 +26,7 @@ import {
 const VERB = "guard no-gh check";
 
 /** The scanned tree: this package's own source, which is what the port made binary-free. */
-const SOURCE = "packages/fabrika-cli/src";
+export const SOURCE = "packages/fabrika-cli/src";
 
 const isSource = (name: string): boolean => name.endsWith(".ts");
 

@@ -13,10 +13,10 @@
  * a restored desk keeps minting where it left off.
  */
 
+import {isViewState, type ViewState} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {type DeskState, isDeskState} from "@kampus/tuval-ui/desk";
 import {Predicate} from "effect";
-import {type DeskState, isDeskState} from "../desk/state.ts";
 import {isLayoutTree, type LayoutTree, type WindowId, windows} from "../layout/index.ts";
-import {isViewState, type ViewState} from "../window/host.ts";
 
 /** A workspace id. The shell mints it; nothing outside this module generates one. */
 export type WorkspaceId = string;
@@ -184,6 +184,17 @@ export const processOf = (workspace: Workspace, windowId: WindowId): string | nu
 export const keyTargetOf = (workspace: Workspace, windowId: WindowId): string | null => {
 	for (const window of windows(workspace.layout.root)) {
 		if (window.id === windowId) return window.takesKeys === true ? window.processId : null;
+	}
+	return null;
+};
+
+/**
+ * The program bound to a window, or `null` for an empty window, a window the tree does not hold,
+ * and one bound before windows recorded their program (#9687).
+ */
+export const programOf = (workspace: Workspace, windowId: WindowId): string | null => {
+	for (const window of windows(workspace.layout.root)) {
+		if (window.id === windowId) return window.program ?? null;
 	}
 	return null;
 };

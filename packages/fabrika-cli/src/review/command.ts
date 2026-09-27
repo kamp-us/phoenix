@@ -16,12 +16,16 @@ import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
+import {refuse} from "../verb.ts";
 import {runAppendCriterion} from "./append-criterion-verb.ts";
 import {runCi} from "./ci-verb.ts";
+import {OFF_VOCABULARY} from "./codes.ts";
 import {runCriteria} from "./criteria-verb.ts";
 import {runDeviations} from "./deviations-verb.ts";
 import {runDiff} from "./diff-verb.ts";
+import type {FilterPlacement} from "./filter-spike.ts";
 import {runPost} from "./post-verb.ts";
+import {runPreview} from "./preview-verb.ts";
 import {runScope} from "./scope-verb.ts";
 import {runScratch} from "./scratch-verb.ts";
 import {runSeat} from "./seat-verb.ts";
@@ -49,6 +53,32 @@ const prArg = Argument.integer("pr").pipe(
 	Argument.withDescription("the pull-request number to read"),
 );
 
+const filterPlacementFlag = Flag.string("filter-placement").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"review diff filtering: use `after` to omit content while retaining every required review; omitted, no filtering runs",
+	),
+);
+
+const excludeFlag = Flag.string("exclude").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"review diff filtering: comma-separated extra exclusion globs beyond the defaults; refused at 21 when one intersects a governed root",
+	),
+);
+
+/** Omitted filtering and the supported placement are distinct inputs. */
+const placementOf = (
+	verb: string,
+	value: string | null,
+): FilterPlacement | null | ReturnType<typeof refuse> =>
+	value === null || value === "after"
+		? value
+		: refuse(
+				OFF_VOCABULARY,
+				`review ${verb}: --filter-placement must be \`after\`, got "${value}"`,
+			);
+
 /**
  * The read verbs' `--sha`: the head the caller scoped, asserted so the answer's provenance is the
  * caller's claim and not whatever the endpoint happened to serve. Omitted, the verb binds to the
@@ -64,14 +94,28 @@ const boundShaFlag = Flag.string("sha").pipe(
 
 const scope = leafCommand(
 	"scope",
-	{pr: prArg, sha: boundShaFlag, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, sha, repo, json}) {
+	{
+		pr: prArg,
+		sha: boundShaFlag,
+		repo: repoFlag,
+		json: jsonFlag,
+		filterPlacement: filterPlacementFlag,
+		exclude: excludeFlag,
+	},
+	Effect.fn(function* ({pr, sha, repo, json, filterPlacement, exclude}) {
+		const placement = placementOf("scope", Option.getOrNull(filterPlacement));
+		if (placement && typeof placement === "object") {
+			yield* emit(placement);
+			return;
+		}
 		yield* emit(
 			yield* runScope({
 				pr,
 				sha: Option.getOrNull(sha),
 				repo: Option.getOrNull(repo),
 				json,
+				filterPlacement: placement,
+				exclude: Option.getOrNull(exclude),
 				cwd: process.cwd(),
 				env: process.env,
 			}),
@@ -86,13 +130,27 @@ const scope = leafCommand(
 
 const diff = leafCommand(
 	"diff",
-	{pr: prArg, sha: boundShaFlag, repo: repoFlag},
-	Effect.fn(function* ({pr, sha, repo}) {
+	{
+		pr: prArg,
+		sha: boundShaFlag,
+		repo: repoFlag,
+		filterPlacement: filterPlacementFlag,
+		exclude: excludeFlag,
+	},
+	Effect.fn(function* ({pr, sha, repo, filterPlacement, exclude}) {
+		const placement = placementOf("diff", Option.getOrNull(filterPlacement));
+		if (placement && typeof placement === "object") {
+			yield* emit(placement);
+			return;
+		}
 		yield* emit(
 			yield* runDiff({
 				pr,
 				sha: Option.getOrNull(sha),
 				repo: Option.getOrNull(repo),
+				filterPlacement: placement,
+				exclude: Option.getOrNull(exclude),
+				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);
@@ -117,9 +175,11 @@ const criteria = leafCommand(
 		yield* emit(yield* runCriteria({issue, repo: Option.getOrNull(repo), json, env: process.env}));
 	}),
 ).pipe(
-	Command.withShortDescription("Read an issue's acceptance-criteria block."),
+	Command.withShortDescription(
+		"Read the graded set: an issue's criteria plus its standing rulings.",
+	),
 	Command.withDescription(
-		"Read an issue's acceptance-criteria block through the registered `acceptance-criteria` wire format — no second parser. First stdout line is `criteria\\t<count>`, then one `<checked|open>\\t<text>` line per criterion, with a third `\\t<evidence source>` column on a criterion carrying the outside-diff evidence marker `[evidence: <source>]` and none on one that does not; the marked rows are also counted and quoted on stderr. A closed issue is read anyway, with a notice on stderr. Exits 7 (issue absent, or the block is proven absent or malformed — the two are distinguished on stderr, never invented around), 11 (the issue could not be read — whether a block exists is UNKNOWN). Example: fabrika review criteria 4287",
+		"Read the set a review grades — the issue's acceptance-criteria block through the registered `acceptance-criteria` wire format, plus every standing ruling on that issue through the registered `decision-ruling` one. No second parser on either side. First stdout line is `criteria\\t<count>` (the body rows), then `rulings\\t<count>`, then one `<body|ruling>\\t<open|checked|superseded>\\t<text>` line per row — body rows in block order, ruling rows after them oldest first — with a fourth column carrying a body row's outside-diff evidence source or a ruling row's comment URL. A ruling row's text is the founder's own words at that comment, collapsed to one line. A ruling recorded with `decision rule --supersedes <k>` marks body row k `superseded`: it is reported and not graded, never dropped. A conforming marker from an account off the control-plane roster is not a ruling and is counted, not dropped; so is a drifted one. The marked-evidence rows are also counted and quoted on stderr. A closed issue is read anyway, with a notice on stderr. Exits 7 (issue absent, or the block is proven absent or malformed — the two are distinguished on stderr, never invented around), 11 (the issue could not be read — whether a block exists is UNKNOWN; or the roster or the comments could not be read — the graded set is UNKNOWN, never the body alone). Example: fabrika review criteria 4287",
 	),
 );
 
@@ -170,7 +230,7 @@ const ci = leafCommand(
 		"Roll up a head's check runs, fail-closed; --wait waits out a pending.",
 	),
 	Command.withDescription(
-		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `run\\t<count>` and one `check\\t<status>\\t<count>` line per status present — a status tally, with the failing and still-running runs named on stderr. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. A rollup that is not red then asks which gates ran: with at least one run from a workflow this repo authors, the covered-of-declared count is on stderr (and `gates` under `--json`); with none it refuses on 16; a repo that authors no workflow of its own has no gate to have missed and says so on stderr at exit 0. `--wait` turns a `pending` read into a bounded in-verb wait — the verb owns the loop, never the caller (claude-plugins/fabrika/docs/skill-conventions.md §14) — and prepends `settle\\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>` to the answer (`settle` under `--json`, null without `--wait`). It polls ONLY a `pending`; every refusal and the `no-producer` answer return on the first read. `budget-exhausted` still prints `pending` — the wait ran out and CI did not conclude; `head-moved` says the PR left the head this answer binds; `governance-owed` says the only unfinished check is `governance floor at head` with its `governance-floor` run already completed, so the verdict the caller itself owes is what is missing — it returns at once, while a floor whose run is still in flight is waited on unchanged; `governance-stale` is the same floor on a `red` rollup, where it is the only FAILING check and its published verdict is `stale` — the caller re-posts and re-reads, and a floor that is `unresolved` or a real `fail`, or any other failing check beside it, stays a plain `red`. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows), 11 (the enumeration, the workflow inventory, the workflow runs at the head, or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared), 16 (the enumeration is complete, but no workflow this repo authors produced a run at the head — neither green nor pending). Example: fabrika review ci 4321 --sha 03135b91',
+		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. The rollup is over the blocking set alone: the required set the base branch declares — branch protection unioned with the rulesets matching the base — is the blocking authority, so a red outside it is named on stderr as reported-never-blocking and never makes this verb call the head red, while a base branch declaring nothing falls back to the informational-name denylist. First stdout line is `ci\\t<sha>\\t<rollup>`, then `run\\t<count>` and one `check\\t<status>\\t<count>` line per status present — the tally covers the whole enumeration and the rollup only the blocking set, with the blocking failing and still-running runs named on stderr. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. A rollup that is not red then asks which gates inspected these bytes: a run counts only where its workflow is one this repo authors, it carries the resolved head, and its event opened that head — so a base-context `pull_request_target` run gates nothing while an exact-head `workflow_dispatch` one does. `--sha` is resolved to its full object name first, because the Actions run list filters `head_sha` as an exact string, so an abbreviated operand and its full form judge the same. With at least one such run the covered-of-declared count is on stderr (and `gates` under `--json`); with none it refuses on 16; a repo that authors no workflow of its own has no gate to have missed and says so on stderr at exit 0. `--wait` turns a `pending` read into a bounded in-verb wait — the verb owns the loop, never the caller (claude-plugins/fabrika/docs/skill-conventions.md §14) — and prepends `settle\\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>` to the answer (`settle` under `--json`, null without `--wait`). It polls ONLY a `pending`; every refusal and the `no-producer` answer return on the first read. `budget-exhausted` still prints `pending` — the wait ran out and CI did not conclude; `head-moved` says the PR left the head this answer binds; `governance-owed` says the only unfinished check is `governance floor at head` with its `governance-floor` run already completed, so the verdict the caller itself owes is what is missing — it returns at once, while a floor whose run is still in flight is waited on unchanged; `governance-stale` is the same floor on a `red` rollup, where it is the only FAILING check and its published verdict is `stale` — the caller re-posts and re-reads, and a floor that is `unresolved` or a real `fail`, or any other failing check beside it, stays a plain `red`. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows), 11 (the enumeration, the workflow inventory, the workflow runs at the head, the required-set read on the base branch, or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared, or the ruleset walk on the base branch never reached a terminal page), 16 (the enumeration is complete, but no workflow this repo authors inspected the head — neither green nor pending; an operand resolving to no full commit is 11 instead). Example: fabrika review ci 4321 --sha 03135b91',
 	),
 );
 
@@ -426,6 +486,82 @@ const seat = leafCommand(
 	),
 );
 
+const preview = leafCommand(
+	"preview",
+	{
+		diffFile: Flag.string("diff-file").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"a unified diff on local disk to extract paths from (no PR, no network, no LLM)",
+			),
+		),
+		pr: Argument.integer("pr").pipe(
+			Argument.optional,
+			Argument.withDescription("the pull-request number to read instead of --diff-file"),
+		),
+		sha: boundShaFlag,
+		repo: repoFlag,
+		base: Flag.string("base").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"a range's base revision — reads the range's diff from its merge base, beside --tip",
+			),
+		),
+		tip: Flag.string("tip").pipe(
+			Flag.optional,
+			Flag.withDescription("the range's tip revision; --base and --tip come together"),
+		),
+		filterPlacement: filterPlacementFlag,
+		exclude: excludeFlag,
+		emitDiff: Flag.boolean("emit-diff").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"print the filtered diff (header + kept sections) instead of the preview rows",
+			),
+		),
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({
+		diffFile,
+		pr,
+		sha,
+		repo,
+		base,
+		tip,
+		filterPlacement,
+		exclude,
+		emitDiff,
+		json,
+	}) {
+		const placement = placementOf("preview", Option.getOrNull(filterPlacement));
+		if (placement && typeof placement === "object") {
+			yield* emit(placement);
+			return;
+		}
+		yield* emit(
+			yield* runPreview({
+				diffFile: Option.getOrNull(diffFile),
+				pr: Option.getOrNull(pr),
+				sha: Option.getOrNull(sha),
+				repo: Option.getOrNull(repo),
+				base: Option.getOrNull(base),
+				tip: Option.getOrNull(tip),
+				filterPlacement: placement,
+				exclude: Option.getOrNull(exclude),
+				emitDiff,
+				json,
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Filtered path extraction for review diffs — no LLM, no write."),
+	Command.withDescription(
+		"Read one subject's diff and return its filtered path extraction: the matched paths, the excluded paths, the active class partition and the namespaces it derives, at the requested --filter-placement. Subjects are mutually exclusive: --diff-file reads a local unified diff (no PR, no network); a pull-request number binds a head (optional --sha/--repo) and reads the PR's three-dot diff out of the object database exactly as review diff does; --base/--tip reads a range from its own merge base. `after` derives required text, UI and governance reviews over the full read and enumerates excluded paths beside those unchanged requirements, including all-excluded content. Filtering is optional for scope and diff; preview requires `after`. The defaults exclude pnpm-lock.yaml, **/__snapshots__/** and the generated-schema/build-output shapes; --exclude adds globs, and any pattern intersecting a governed root refuses at 21. PR and range subjects prove diff completeness first — a served-file count short of the range's own path census refuses at 13, so a deliberate exclusion can never masquerade as a truncation; `--diff-file` reads the bytes exactly as given, with no range to prove a census against (its exclusions are still enumerated). --emit-diff prints the filtered diff with its `x-fabrika-filter` / `x-fabrika-excluded-path` header instead of the rows. No LLM invocation, no network write. Exits 10 (missing or off-vocabulary --filter-placement, --emit-diff with --json, no subject named, or two subjects at once), 7 (PR absent, closed, or zero changed files), 11 (a read the answer turns on failed — the diff file, .fabrika.jsonc, the PR read, or a git read), 12 (--sha is not the PR's head), 13 (a provably short diff), 21 (an exclusion pattern intersects governedRoots). Example: fabrika review preview --diff-file pr.diff --filter-placement=after --json",
+	),
+);
+
 export const reviewCommand = Command.make("review").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -435,6 +571,7 @@ export const reviewCommand = Command.make("review").pipe(
 		ci,
 		verdicts,
 		deviations,
+		preview,
 		post,
 		appendCriterion,
 		scratch,

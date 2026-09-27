@@ -12,6 +12,7 @@
  */
 import {acceptsOf, applyCell, foldMsgs, msgKeysOf, NoCellError} from "@demlik/tea";
 import {type Deferral, deferredTasks, resolveDeferrals} from "./deferral.ts";
+import {type IntegrateFailure, isIntegrateFailure} from "./integrate-failure.ts";
 import {
 	AMENDED_EVENT,
 	BOARD_TERMINALS,
@@ -72,9 +73,10 @@ import {ROUTED_MACHINERY_CAUSES} from "./report.ts";
  * task set replaced which.
  *
  * `corrects` is the fifth and rides one line only, a {@link CORRECTED_EVENT}: the `at` of the
- * earlier entry of this same task whose `partial` payload this line supersedes. It is the
- * one field naming another line, and it is how a routing fact recorded before the field existed is
- * repaired without any recorded line changing — see {@link applyCorrections}.
+ * earlier entry of this same task whose `partial` or `integrate` payload this line supersedes — one
+ * of the two, never both. It is the one field naming another line, and it is how a fact recorded
+ * before its field existed is repaired without any recorded line changing — see
+ * {@link applyCorrections}.
  */
 export interface LogEntry {
 	readonly task: string;
@@ -155,6 +157,12 @@ export interface LogEntry {
 	 * [`settle.ts`](settle.ts)'s.
 	 */
 	readonly assertedBy?: string;
+	/**
+	 * The `lane integrate` exit and assembly head an epic child's integrate `FAIL` stands on —
+	 * evidence on that one line, read back by `build claim` as the repair round it opens
+	 * ([`integrate-failure.ts`](integrate-failure.ts)).
+	 */
+	readonly integrate?: IntegrateFailure;
 }
 
 /**
@@ -221,6 +229,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			outcome?: unknown;
 			sha?: unknown;
 			assertedBy?: unknown;
+			integrate?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -338,9 +347,13 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} carries a non-string \`corrects\` field`);
 			continue;
 		}
-		if (corrected && (typeof record.corrects !== "string" || typeof record.partial !== "boolean")) {
+		if (
+			corrected &&
+			(typeof record.corrects !== "string" ||
+				(record.partial === undefined) === (record.integrate === undefined))
+		) {
 			defects.push(
-				`line ${index + 1} is a ${CORRECTED_EVENT} event that does not carry both a \`corrects\` timestamp and a \`partial\``,
+				`line ${index + 1} is a ${CORRECTED_EVENT} event that does not carry a \`corrects\` timestamp and exactly one of \`partial\` or \`integrate\``,
 			);
 			continue;
 		}
@@ -436,6 +449,18 @@ export const parseLog = (text: string): ParseLogResult => {
 			);
 			continue;
 		}
+		if (record.integrate !== undefined && !isIntegrateFailure(record.integrate)) {
+			defects.push(
+				`line ${index + 1} carries an \`integrate\` field that is not {exit: 42|43|44, head: <sha>}`,
+			);
+			continue;
+		}
+		if (record.integrate !== undefined && bareEvent(record.event) !== "FAIL" && !corrected) {
+			defects.push(
+				`line ${index + 1} carries \`integrate\` on a "${bareEvent(record.event)}" event — only an integrate FAIL names the exit and head it failed on, or a ${CORRECTED_EVENT} attaches them to one`,
+			);
+			continue;
+		}
 		if (!corrected && record.corrects !== undefined) {
 			defects.push(
 				`line ${index + 1} carries \`corrects\` on a "${bareEvent(record.event)}" event — only a ${CORRECTED_EVENT} supersedes another line`,
@@ -466,6 +491,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.outcome === undefined ? {} : {outcome: record.outcome as string}),
 			...(record.sha === undefined ? {} : {sha: record.sha as string}),
 			...(record.assertedBy === undefined ? {} : {assertedBy: record.assertedBy as string}),
+			...(record.integrate === undefined ? {} : {integrate: record.integrate as IntegrateFailure}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
@@ -477,8 +503,9 @@ export type CorrectionResult =
 
 /**
  * Resolve every {@link CORRECTED_EVENT} line against the entry it names, producing the log the fold
- * replays: corrections removed, and each corrected entry carrying the `partial` its correction
- * states.
+ * replays: corrections removed, and each corrected entry carrying the `partial` or `integrate` its
+ * correction states. An `integrate` correction names a `FAIL` or nothing: the pair on any other
+ * event names a repair that was never owed.
  *
  * The log is append-only, so a routing fact recorded wrong can only be superseded, never edited —
  * and the supersession has to be resolvable offline, from the log alone, since the fold is total
@@ -504,6 +531,16 @@ export const applyCorrections = (entries: ReadonlyArray<LogEntry>): CorrectionRe
 			defects.push(
 				`the ${CORRECTED_EVENT} at ${correction.at} names ${targets.length === 0 ? "no" : `${targets.length}`} event of task "${correction.task}" recorded at ${correction.corrects}`,
 			);
+			continue;
+		}
+		if (correction.integrate !== undefined) {
+			if (bareEvent(only.entry.event) !== "FAIL") {
+				defects.push(
+					`the ${CORRECTED_EVENT} at ${correction.at} attaches \`integrate\` to a "${bareEvent(only.entry.event)}" event of task "${correction.task}" — only a FAIL carries it`,
+				);
+				continue;
+			}
+			patched[only.index] = {...only.entry, integrate: correction.integrate};
 			continue;
 		}
 		patched[only.index] = {...only.entry, partial: correction.partial === true};
@@ -939,7 +976,7 @@ export const applyEvent = (
 		}
 		return refuseEvent(
 			event === CORRECTED_EVENT
-				? `"${event}" is not an operator event — a correction supersedes an already-recorded line's routing payload and is appended by \`lane reconcile\`, never transitioned`
+				? `"${event}" is not an operator event — a correction supersedes an already-recorded line's payload and is appended by \`lane reconcile\` or \`lane attach-integrate\`, never transitioned`
 				: `"${event}" is outside the operator's event set (${OPERATOR_EVENTS.join("/")})`,
 		);
 	}

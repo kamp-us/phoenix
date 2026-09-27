@@ -45,18 +45,18 @@ describe("AuthPage in English", () => {
 		expect(screen.getByRole("button", {name: "continue"})).toBeTruthy();
 	});
 
-	it("renders the sign-up form in English and keeps the brand nouns Turkish", async () => {
+	it("renders the sign-up form in English and names divan the Council", async () => {
 		mount(<AuthPage />);
 		await waitFor(() => expect(screen.getByRole("button", {name: "sign up"})).toBeTruthy());
 		fireEvent.click(screen.getByRole("button", {name: "sign up"}));
 
 		expect(screen.getByLabelText("display name")).toBeTruthy();
 		expect(screen.getByRole("button", {name: "create account"})).toBeTruthy();
-		// Brand nouns read the same in either interface (ADR 0347), and `divan` arrives through
-		// the interpolated placeholder rather than being spelled into the English message.
-		const rite = screen.getByText(/reviewed as a çaylak/);
-		expect(rite.textContent).toContain("in the divan");
-		expect(rite.textContent).toContain("a yazar vouches for you");
+		// divan reads "Council" in the English interface (ADR 0414), arriving through the
+		// interpolated placeholder rather than being spelled into the English message.
+		const rite = screen.getByText(/reviewed as a newcomer/);
+		expect(rite.textContent).toContain("in the Council");
+		expect(rite.textContent).toContain("an author vouches for you");
 	});
 
 	it("speaks English in the hand-rolled field validation, which is all a noValidate form has", async () => {

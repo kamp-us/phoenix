@@ -12,12 +12,8 @@
  * it). Storing bytes is therefore an injected `StoreLeg` here — the shape, never the
  * store.
  *
- * The seam the design gate codes against: `captureAndUpload(request)` →
- * `Effect<CaptureRecord[], CaptureError, HttpClient>`, each record
- * `{surface, route, state, localPath, hostedUrl, uploadError}` (the `capture`
- * bin emits this per-surface JSON). `hostedUrls` projects the hosted URLs;
- * `resolvePreviewUrl` resolves the preview base from the sticky preview-deploy
- * comment, keyed off the per-app `<!-- preview-deploy:<app> -->` anchor.
+ * `captureAndUpload` and its request/result types live in `./orchestrate.ts`.
+ * `resolvePreviewUrl` reads the sticky preview-deploy comment by its per-app anchor.
  */
 
 // The blessing surface: render the operator gallery comment from a candidate set, parse

@@ -12,8 +12,7 @@ import {Link} from "react-router";
 import {Icon} from "../components/Icon";
 import {MECMUA_PUBLIC_READ} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
-import {useT} from "../i18n";
-import {formatDateTR} from "../lib/datetime";
+import {useDateFormatter, useT} from "../i18n";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MecmuaIndexPage.css";
 
@@ -87,6 +86,7 @@ function MecmuaIndex() {
 
 function MecmuaIndexBody({state}: {state: FetchState}) {
 	const t = useT();
+	const formatDate = useDateFormatter();
 
 	if (state.kind === "loading") {
 		return <p className="kp-mecmua-index__status">{t("mecmua.loading")}</p>;
@@ -124,7 +124,7 @@ function MecmuaIndexBody({state}: {state: FetchState}) {
 						<span className="kp-mecmua-index__item-title">{post.title}</span>
 						{post.publishedAt ? (
 							<MetaRow as="div" className="kp-mecmua-index__meta">
-								<time dateTime={post.publishedAt}>{formatDateTR(post.publishedAt)}</time>
+								<time dateTime={post.publishedAt}>{formatDate.date(post.publishedAt)}</time>
 							</MetaRow>
 						) : null}
 					</Link>

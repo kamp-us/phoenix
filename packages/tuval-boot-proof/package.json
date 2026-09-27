@@ -17,11 +17,11 @@
 	"devDependencies": {
 		"@demlik/tea": "catalog:",
 		"@effect/tsgo": "catalog:",
-		"@kampus/tuval": "workspace:*",
+		"@kampus/tuval-sdk": "workspace:*",
 		"@kampus/tuval-cron": "workspace:*",
 		"@kampus/tuval-notify": "workspace:*",
 		"@kampus/tuval-shell": "workspace:*",
-		"@kampus/tuval-workspace": "workspace:*",
+		"@kampus/tuval-worktree": "workspace:*",
 		"@types/node": "catalog:",
 		"effect": "catalog:",
 		"typescript": "catalog:"

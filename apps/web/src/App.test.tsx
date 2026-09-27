@@ -549,9 +549,11 @@ describe("Two-tier fate provider — /pano public first paint (#2285)", () => {
 	});
 });
 
-// /profile's eager tier paints a SKELETON (the identity-scoped read can't show anon data) and,
-// unlike /pano's, mounts NO FateClient — so there is nothing above the gate to re-key (#2188).
-describe("Two-tier fate provider — /profile eager Katkıların skeleton (#2188)", () => {
+// #9273 moved the contribution block below every settings section on /profile, so a pre-session
+// skeleton at the top of <Main> would settle nowhere near where the block lands. /profile now
+// paints no eager tier at all. ADR 0167's public client is untouched: this skeleton never mounted
+// one (#2188), so dropping it decouples nothing from the session gate.
+describe("/profile paints no eager Katkıların skeleton (#9273)", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
 		sessionState = {data: null, isPending: true};
@@ -560,27 +562,23 @@ describe("Two-tier fate provider — /profile eager Katkıların skeleton (#2188
 		vi.clearAllMocks();
 	});
 
-	it("paints the Katkıların skeleton on /profile while the session isPending — before the authed gate commits", () => {
+	it("paints no Katkıların skeleton above the gate on /profile while the session isPending", () => {
 		renderApp("/profile");
 
-		expect(screen.getByTestId("signal-loading")).toBeTruthy();
+		expect(screen.queryByTestId("signal-loading")).toBeNull();
 		expect(fateMounts).toHaveLength(0);
 	});
 
-	it("#438: the eager /profile skeleton mounts NO FateClient — nothing to re-key anon→id", () => {
-		renderApp("/profile");
-		expect(fateMounts).toHaveLength(0);
-		expect(screen.getByTestId("signal-loading")).toBeTruthy();
-	});
-
-	it("scoped: a non-profile route paints NO eager Katkıların skeleton", () => {
+	it("scoped: a non-profile route paints no Katkıların skeleton either", () => {
 		renderApp("/sozluk");
 		expect(screen.queryByTestId("signal-loading")).toBeNull();
 		expect(fateMounts).toHaveLength(0);
 	});
 });
 
-// The search box lives in the fate-free shell, so these render without settling the session (#2199).
+// The search trigger lives in the fate-free shell, so these render without settling the session
+// (#2199). It echoes the results page's query as its label — since ADR 0186 the typing itself
+// happens in the ⌘K palette, which mounts below the session gate.
 describe("Topbar search echo (#2199)", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
@@ -590,19 +588,19 @@ describe("Topbar search echo (#2199)", () => {
 		vi.clearAllMocks();
 	});
 
-	it("echoes the URL q in the header search input on /search", () => {
+	it("echoes the URL q on the header search trigger on /search", () => {
 		renderApp("/search?q=elma");
-		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("elma");
+		expect(screen.getByRole("button", {name: "Ara"}).textContent).toContain("elma");
 	});
 
 	it("reads q live — a different query renders a different echoed value (no stale/double source)", () => {
 		renderApp("/search?q=armut");
-		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("armut");
+		expect(screen.getByRole("button", {name: "Ara"}).textContent).toContain("armut");
 	});
 
-	it("leaves the header input empty off the results page (unchanged behavior)", () => {
+	it("falls back to the placeholder copy off the results page (no query to echo)", () => {
 		renderApp("/pano");
-		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("");
+		expect(screen.getByRole("button", {name: "Ara"}).textContent).toContain("ara…");
 	});
 });
 

@@ -8,6 +8,7 @@ import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
 import {
 	CAUSE_UNRECOGNISED,
 	EVENT_REFUSED,
+	INTEGRATE_EVIDENCE,
 	LANE_ABSENT,
 	LANE_UNREADABLE,
 	PARK_UNCAUSED,
@@ -18,6 +19,7 @@ import {
 	TOKEN_UNRECOGNISED,
 	WAIT_TOO_SOON,
 } from "./codes.ts";
+import {emitMachine} from "./emit.ts";
 import {
 	coderTemplateText,
 	fakeProver,
@@ -57,6 +59,9 @@ const run = (
 		parkCause?: Read<ParkCauseSurface>;
 		classes?: ReadonlyArray<string>;
 		prover?: ReturnType<typeof fakeProver> | ReturnType<typeof fakeProverByEvent>;
+		lane?: string;
+		integrateExit?: number | null;
+		assemblyHead?: string | null;
 	} = {},
 ) =>
 	Effect.runPromise(
@@ -64,12 +69,14 @@ const run = (
 			runReport(
 				{
 					root: ROOT,
-					lane: "42",
+					lane: extra.lane ?? "42",
 					token,
 					task: extra.task ?? null,
 					pr: extra.pr ?? null,
 					comment: extra.comment ?? null,
 					cause: extra.cause ?? null,
+					integrateExit: extra.integrateExit ?? null,
+					assemblyHead: extra.assemblyHead ?? null,
 					parkCause: extra.parkCause ?? parkCauseRead(),
 					classes: extra.classes ?? [],
 					repo: "o/r",
@@ -387,6 +394,57 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 		expect(JSON.parse(appendedLine(fs)).cause).toBe("worktree-holds-branch");
 	});
 
+	// The two mechanical parks — a builder's hijacked tree, a driver-proved stranded claim: each lands
+	// caused under the strict key, where the same STOPPED with no cause is the refusal at 52 above.
+	it.each(["tree-hijacked", "claim-stranded"])("records a STOPPED that names %s", async (cause) => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "STOPPED", {parkCause: strict, cause});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.BLOCKED", cause});
+	});
+
+	// The shipper's ordinary owner-approval wait: its token has one reason, so it lands caused with
+	// nothing typed, on the leaf the §CP recipe row keys on.
+	it("records a shipper's bare AWAITING-CP-APPROVAL under the approval-wait cause", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "AWAITING-CP-APPROVAL", {parkCause: strict});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "awaiting-cp-approval",
+		});
+	});
+
+	it("lets a typed cause override the approval wait on a head still behind its base", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "AWAITING-CP-APPROVAL", {
+			parkCause: strict,
+			cause: "head-behind-base",
+		});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs)).cause).toBe("head-behind-base");
+	});
+
+	// The other `ship` parks fold to the same leaf for other reasons, so none inherits the cause.
+	it.each([
+		"REFUSED",
+		"UNKNOWN",
+		"ROUTED-REVIEW",
+	])("still refuses a shipper's bare %s", async (token) => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, token, {parkCause: strict});
+
+		expect(out.code).toBe(PARK_UNCAUSED);
+		expect(fs.written.size).toBe(0);
+	});
+
 	// The whole containment: a terminal that maps to anything but BLOCKED is untouched by the key.
 	it("leaves a non-park terminal alone", async () => {
 		const fs = laneAt(LOG_AT.build);
@@ -394,6 +452,53 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 		const out = await run(fs, "BUILT-NO-PR", {parkCause: strict});
 
 		expect(out.code).toBe(0);
+	});
+
+	// A rendered verdict that provably could not land ends `ESCALATED`, and `requireCause` binds it
+	// like any other park: the cause names the unlanded write rather than exempting the token.
+	it("records a ui-reviewer ESCALATED that names the unlanded write", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+
+		const out = await run(fs, "ESCALATED", {parkCause: strict, cause: "write-unlanded"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "write-unlanded",
+		});
+	});
+
+	it("still refuses a ui-reviewer ESCALATED that names no cause", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+
+		const out = await run(fs, "ESCALATED", {parkCause: strict});
+
+		expect(out.code).toBe(PARK_UNCAUSED);
+		expect(out.stderr.join(" ")).toContain("write-unlanded");
+		expect(fs.written.size).toBe(0);
+	});
+
+	// The builder's repair-cap `ESCALATED` is the same park: it lands only once it names the budget.
+	it("records a builder ESCALATED that names the spent repair budget", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "ESCALATED", {parkCause: strict, cause: "repair-budget-spent"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "repair-budget-spent",
+		});
+	});
+
+	it("still refuses a builder ESCALATED that names no cause", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "ESCALATED", {parkCause: strict});
+
+		expect(out.code).toBe(PARK_UNCAUSED);
+		expect(out.stderr.join(" ")).toContain("repair-budget-spent");
+		expect(fs.written.size).toBe(0);
 	});
 
 	it("refuses UNKNOWN on a config nobody could read, rather than recording the bare park", async () => {
@@ -870,5 +975,102 @@ describe("lane report — a satisfied UI route advances the task it used to stra
 		});
 		// No advance was even tried: `review` is not this row's leaf, so the token is flat there.
 		expect(prover.asked.map((asked) => asked.event)).toEqual(["BLOCKED"]);
+	});
+});
+
+/**
+ * An integrate `FAIL` writes no verdict on the child, so the ledger line is the only record a repair
+ * builder's claim can read it off — and it reads nothing unless the line names the exit and head.
+ */
+describe("lane report — an integrate FAIL carries the exit and head it failed on", () => {
+	const EPIC = "900";
+	const CHILD = 5828;
+	const TASK = `issue_${CHILD}`;
+	const EPIC_LOG = `${ROOT}/${EPIC}/events.jsonl`;
+	const HEAD = "9f2c1ab4d5e6f708192a3b4c5d6e7f8091a2b3c4";
+
+	/** An emitted epic lane whose one child has folded to the leaf the events walk it into. */
+	const epicAt = (events: ReadonlyArray<string>) => {
+		const emitted = emitMachine(Number(EPIC), `## Dependencies\n\n- phase 1: #${CHILD}\n`, [
+			{number: CHILD, state: "open", stateReason: null, classes: []},
+		]);
+		if (emitted._tag !== "Emitted")
+			throw new Error(`the epic fixture did not emit: ${emitted._tag}`);
+		return fakeFs({
+			files: {
+				[`${ROOT}/${EPIC}/workflow.json`]: emitted.text,
+				[EPIC_LOG]: events
+					.map(
+						(event) =>
+							`${JSON.stringify({task: TASK, event: `${TASK.toUpperCase()}.${event}`, at: "2026-09-26T00:00:00.000Z"})}\n`,
+					)
+					.join(""),
+			},
+		});
+	};
+	const AT_INTEGRATE = ["WIP", "DONE", "PASS"];
+	const appendedTo = (fs: ReturnType<typeof fakeFs>): unknown =>
+		JSON.parse(fs.written.get(EPIC_LOG)?.trim().split("\n").at(-1) ?? "{}");
+
+	it("records the exit and assembly head on the FAIL line", async () => {
+		const fs = epicAt(AT_INTEGRATE);
+
+		const out = await run(fs, "FAIL", {
+			lane: EPIC,
+			task: TASK,
+			integrateExit: 44,
+			assemblyHead: HEAD,
+		});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({integrate: {exit: 44, head: HEAD}});
+		expect(appendedTo(fs)).toMatchObject({
+			event: `${TASK.toUpperCase()}.FAIL`,
+			integrate: {exit: 44, head: HEAD},
+		});
+	});
+
+	it("refuses a FAIL out of integrate that names neither, log unappended", async () => {
+		const fs = epicAt(AT_INTEGRATE);
+
+		const out = await run(fs, "FAIL", {lane: EPIC, task: TASK});
+
+		expect(out.code).toBe(INTEGRATE_EVIDENCE);
+		expect(out.stderr.at(-1)).toContain("--integrate-exit");
+		expect(laneWrites(fs.written)).toEqual([]);
+	});
+
+	it("refuses the evidence on any other line — a review FAIL owes none", async () => {
+		const fs = epicAt(["WIP", "DONE"]);
+
+		const out = await run(fs, "FAIL", {
+			lane: EPIC,
+			task: TASK,
+			integrateExit: 43,
+			assemblyHead: HEAD,
+		});
+
+		expect(out.code).toBe(INTEGRATE_EVIDENCE);
+		expect(out.stderr.at(-1)).toContain('out of "review"');
+		expect(laneWrites(fs.written)).toEqual([]);
+	});
+
+	it("refuses half the record, and an exit integrate never fails on", async () => {
+		const half = await run(epicAt(AT_INTEGRATE), "FAIL", {
+			lane: EPIC,
+			task: TASK,
+			integrateExit: 44,
+		});
+		const offCode = await run(epicAt(AT_INTEGRATE), "FAIL", {
+			lane: EPIC,
+			task: TASK,
+			integrateExit: 45,
+			assemblyHead: HEAD,
+		});
+
+		expect(half.code).toBe(INTEGRATE_EVIDENCE);
+		expect(half.stderr.at(-1)).toContain("pass both or neither");
+		expect(offCode.code).toBe(INTEGRATE_EVIDENCE);
+		expect(offCode.stderr.at(-1)).toContain("42, 43, 44");
 	});
 });

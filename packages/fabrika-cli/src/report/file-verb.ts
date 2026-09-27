@@ -11,6 +11,8 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {LEAK_NAMES, type LeakNames} from "../config/keys/leak-names.ts";
+import type {Read} from "../config/read-key.ts";
 import {
 	createIssue,
 	currentBranch,
@@ -50,6 +52,8 @@ export interface FileOptions {
 	readonly title: string;
 	readonly label: string;
 	readonly redact: boolean;
+	/** The `leakNames` this checkout declares, read by the adapter; a refused read posts nothing. */
+	readonly leakNames: Read<LeakNames>;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -156,11 +160,17 @@ export const runFile = (
 		});
 		// Scanned after composition, so nothing the verb itself appends can escape the predicate.
 		const composed = composeBody(sections, footer);
-		const scan = scanBody(composed);
+		if (options.leakNames._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`report file: cannot read \`${LEAK_NAMES}\`: ${options.leakNames.reason} — which names this repo keeps private is UNKNOWN, so nothing was filed.`,
+			);
+		}
+		const scan = scanBody(composed, options.leakNames.value);
 		if (scan.leaks.length > 0 && !options.redact) {
 			return refuse(
 				LEAKED_PATH,
-				`report file: the body carries ${scan.leaks.length} machine-local path(s) — refusing to post them to a public issue.`,
+				`report file: the body carries ${scan.leaks.length} leak(s) — refusing to post them to a public issue.`,
 				renderLeaks(scan.leaks),
 			);
 		}
@@ -168,7 +178,7 @@ export const runFile = (
 		const redacted = options.redact ? scan.leaks : [];
 		const redactions = redactionTally(redacted);
 		const redactionNotes = redacted.map(
-			(leak) => `report file: redacted a machine-local path — line ${leak.line}, ${leak.class}`,
+			(leak) => `report file: redacted a leak — line ${leak.line}, ${leak.class}`,
 		);
 
 		const labels = yield* listLabels(repo);

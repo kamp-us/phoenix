@@ -1,0 +1,22 @@
+diff --git a/src/feature.ts b/src/feature.ts
+index 1111111..2222222 100644
+--- a/src/feature.ts
++++ b/src/feature.ts
+@@ -1,3 +1,4 @@
+ export const feature = () => 1;
++export const featureExtra = () => 2;
+ export const kept = true;
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 3333333..4444444 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -1,2 +1,3 @@
+ lockfileVersion: '9.0'
++  effect:
++    resolution: '../../packages/effect'
+diff --git a/src/__snapshots__/feature.snap b/src/__snapshots__/feature.snap
+index 5555555..6666666 100644
+--- a/src/__snapshots__/feature.snap
++++ b/src/__snapshots__/feature.snap
+@@ -1 +1,2 @@
++exports[`feature renders`] = `<div/>`;

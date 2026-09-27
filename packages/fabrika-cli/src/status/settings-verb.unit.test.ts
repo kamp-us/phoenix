@@ -6,6 +6,7 @@ import {describe, expect, it} from "vitest";
 import type {ConfigSource} from "../config/document.ts";
 import {CAP_CLEAR_AUTHORS} from "../config/keys/cap-clear-authors.ts";
 import {GOVERNED_ROOTS, SHIPPED_GOVERNED_ROOTS} from "../config/keys/governed-roots.ts";
+import {PARK_CAUSE} from "../config/keys/park-cause.ts";
 import {SURFACE_DISPOSITIONS, SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
 import type {ConfigLayers} from "../config/load.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -58,6 +59,27 @@ describe("settingRows", () => {
 		expect(roots.provenance).toBe("declared");
 		expect(roots.provenance === "declared" && roots.value).toEqual(["docs/adr/", ".fabrika.jsonc"]);
 		expect(rows.filter((one) => one.provenance === "default").length).toBe(rows.length - 1);
+	});
+
+	// A driver reads whose park a spent repair budget is here, without opening the config file.
+	it("prints parkCause's resolved spent-budget route, shipped and declared", () => {
+		const shipped = rowFor(settingRows(tracked({_tag: "Absent"})), PARK_CAUSE);
+		expect(shipped.provenance === "default" && shipped.value).toMatchObject({
+			repairBudgetSpent: "driver",
+		});
+
+		const declared = rowFor(
+			settingRows(
+				tracked({_tag: "Text", text: `{"${PARK_CAUSE}": {"repairBudgetSpent": "founder"}}`}),
+			),
+			PARK_CAUSE,
+		);
+		expect(declared.provenance === "declared" && declared.value).toMatchObject({
+			repairBudgetSpent: "founder",
+		});
+		expect(
+			run({_tag: "Text", text: `{"${PARK_CAUSE}": {"repairBudgetSpent": "founder"}}`}).stdout,
+		).toContain('"repairBudgetSpent":"founder"');
 	});
 
 	it("renders every key unknown when the file exists and could not be read", () => {

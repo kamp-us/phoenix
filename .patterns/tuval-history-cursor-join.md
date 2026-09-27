@@ -1,7 +1,7 @@
 # Joining a live tail's ids to a stored history's, for the page cursor
 
 A Tuval AI-agent window pages by sending **a live row's own id back as the `before` cursor**
-(`oldestLoadedId` → `olderPageRequest` in `apps/tuval/src/shell/chat/rows.ts`). A backend whose live
+(`oldestLoadedId` → `olderPageRequest` in `packages/tuval-ui/src/shell/chat/rows.ts`). A backend whose live
 stream and whose stored history are keyed differently therefore hands the page planner a cursor its
 history does not contain, and `planTranscriptPage` correctly answers `cursor-not-found` — every page
 on a real desk, for as long as the gap stands. Pi shipped it
@@ -17,12 +17,12 @@ one: the window keeps sending the live id it has, and `before: null` is not a fi
 
 **1. Mint the map where the items are minted.** One pass produces the stored rows and the
 `live id → stored id` map together, because the map's entries are facts about the same lines:
-`pageCursorAliases` beside `pageItems` in `apps/tuval/src/pi/ai-agent/entries.ts`, `toHistoryItems`
-returning `{items, cursorAliases}` in `apps/tuval/src/claude/history/items.ts`, and
-`transcriptProjection` in `apps/tuval/src/agy/ai-agent/transcript.ts`.
+`pageCursorAliases` beside `pageItems` in `packages/tuval-pi/src/ai-agent/entries.ts`, `toHistoryItems`
+returning `{items, cursorAliases}` in `packages/tuval-claude/src/history/items.ts`, and
+`transcriptProjection` in `packages/tuval-agy/src/ai-agent/transcript.ts`.
 
 **2. Compose the page in one function the call sites cannot step around.** `cursorAliases` and
-`cursorBoundary` are `PageOptions` fields (`apps/tuval/src/ai-agent/history/page.ts`), and a call site
+`cursorBoundary` are `PageOptions` fields (`packages/tuval/src/ai-agent/history/page.ts`), and a call site
 that forgets one reds nothing — which is exactly how #8204's fix was lost and #8900's bug shipped. So
 the planner call lives next to the projection, and `page` and `sessionTranscript` both reach the page
 only through it: `planPageOverEntries` for Pi, `planPageOverTranscript` for agy. `cursorBoundary:
@@ -30,7 +30,7 @@ only through it: `planPageOverEntries` for Pi, `planPageOverTranscript` for agy.
 tool row in a batch is the common one.
 
 **3. Stamp the reverse direction on the row.** `TranscriptItem.alias`
-(`apps/tuval/src/ai-agent/ports/transcript-item.ts`) carries the live id of the same row, and it is
+(`packages/tuval/src/ai-agent/ports/transcript-item.ts`) carries the live id of the same row, and it is
 what stops a prepended page doubling a turn the tail already holds: `unheld` in
 `shell/chat/rows.ts` joins on `id` **and** `alias`. A map entry that names a row other than its own
 is a cursor-resolution hint and must not be stamped back — stamping it would make the stitch drop a
@@ -64,8 +64,8 @@ answer two different questions:
 
 Neither module's own test can see the mismatch, and hand-numbered ids pass while the real thing fails
 — the whole of #8204. So the case builds the live tail through the live mapper and the page through
-the shipped composition: `apps/tuval/src/pi/ai-agent/paging-from-live.unit.test.ts` and
-`apps/tuval/src/agy/ai-agent/paging-from-live.unit.test.ts`. For a backend whose wire carries no
+the shipped composition: `packages/tuval-pi/src/ai-agent/paging-from-live.unit.test.ts` and
+`packages/tuval-agy/src/ai-agent/paging-from-live.unit.test.ts`. For a backend whose wire carries no
 schema, the fixture is a **paired capture** — the stream and the log of one real conversation, which
 is the only thing that can say what the numbering actually is
-(`apps/tuval/src/agy/ai-agent/fixtures/live-join-*`).
+(`packages/tuval-agy/src/ai-agent/fixtures/live-join-*`).

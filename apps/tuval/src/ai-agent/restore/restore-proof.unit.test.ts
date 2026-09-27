@@ -17,17 +17,14 @@
 import {mkdirSync, mkdtempSync, realpathSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert} from "@effect/vitest";
-import {Effect, type FileSystem, Option, type Scope} from "effect";
-import {afterAll, beforeAll, describe, expect, it} from "vitest";
-import {type Booted, boot, projectDir} from "../../boot.ts";
-import {Processes} from "../../process/Processes.ts";
-import {type ProcessHandle, ProcessId} from "../../process/process.ts";
-import {type AiAgentSessionState, isAiAgentSessionState} from "../core/index.ts";
-import {aiAgentPortNames} from "../handlers/index.ts";
-import type {PermissionPayload, TranscriptPayload} from "../ports/index.ts";
+import type {PermissionPayload, TranscriptPayload} from "@kampus/tuval-sdk/ai-agent/ports";
+import {
+	type AiAgentSessionState,
+	isAiAgentSessionState,
+} from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
+import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
 import {
 	AGENT_NODE,
 	afterTheCut,
@@ -36,9 +33,19 @@ import {
 	CWD,
 	SESSION,
 	WINDOW_NODE,
-} from "./fixtures/agent-desk.ts";
+} from "@kampus/tuval-sdk/kernel/ai-agent/restore/fixtures/agent-desk";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import {type ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {Effect, type FileSystem, Option, type Scope} from "effect";
+import {afterAll, beforeAll, describe, expect, it} from "vitest";
+import {type Booted, boot, projectDir} from "../../boot.ts";
+import {scratchHome} from "../../scratch-home.ts";
+import {sdkModule} from "../../sdk-source.testing.ts";
 
-const configModule = fileURLToPath(new URL("./fixtures/agent-desk.ts", import.meta.url));
+/** The scratch home every boot in this file runs under. */
+const home = scratchHome("restore-proof");
+
+const configModule = sdkModule("ai-agent/restore/fixtures/agent-desk.ts");
 
 const tempDirs: string[] = [];
 
@@ -158,12 +165,12 @@ interface SecondRun {
 }
 
 /**
- * Boot, run two turns, stop in the middle of a third. Closing the scope is the stop: the host
- * drains, closes its Subs and flushes the last save (`../../host/actor.ts`).
+ * Boot, run two turns, stop in the middle of a third. Closing the scope is the stop: tea's run
+ * drains, closes its Subs and flushes the last save (the SDK's `process/Processes.ts`).
  */
 const runToTheCut = (project: string): Effect.Effect<FirstRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
-		const booted = yield* boot({global: configModule, project});
+		const booted = yield* boot({global: configModule, project, home});
 		const {agent, window} = yield* handlesOf(booted);
 		yield* until("the session to open", () => sessionOf(agent).sessionId !== null);
 
@@ -214,7 +221,7 @@ const runFromTheCheckpoint = (
 	beforeResume: number,
 ): Effect.Effect<SecondRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
-		const booted = yield* boot({global: configModule, project});
+		const booted = yield* boot({global: configModule, project, home});
 		const {agent, window} = yield* handlesOf(booted);
 		const restored = sessionOf(agent);
 
@@ -277,12 +284,12 @@ beforeAll(async () => {
 }, 60_000);
 
 describe("the whole app, stopped mid-reply and booted back over its checkpoints", () => {
-	it("brings both processes back from the state directory, nothing fresh-booted", () => {
+	it("brings every process back from the state directory, nothing fresh-booted", () => {
 		expect(outcome.first.restoredCount).toBe(0);
 		expect(
 			outcome.second.restoredCount,
-			"the second boot did not bring the agent and the window back from their checkpoints",
-		).toBe(2);
+			"the second boot did not bring the agent, the window and the desk's shell back from their checkpoints",
+		).toBe(3);
 		expect(outcome.second.restored.sessionId).toBe(SESSION);
 		expect(outcome.second.restored.cwd).toBe(CWD);
 	});
