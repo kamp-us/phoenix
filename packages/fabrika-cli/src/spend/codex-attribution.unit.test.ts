@@ -17,6 +17,18 @@ it.each([
 	).toBe(issue);
 });
 it.each([
+	"node packages/fabrika-cli/src/bin.ts build claim 8950",
+	"node packages/fabrika-cli/src/bin.ts review criteria --repo fixture/repo 8950",
+	"git status --short\nnode packages/fabrika-cli/src/bin.ts review criteria 8950",
+	"git status --short && node 'packages/fabrika-cli/src/bin.ts' review criteria --json --repo='fixture/repo' 8950",
+	"node packages/fabrika-cli/src/bin.ts build claim --repo fixture/repo --issue=8950 9000",
+])("associates the whole shell command %s with issue 8950", (command) => {
+	expect(codexAttribution({hook_event_name: "PreToolUse", tool_input: {command}})).toEqual({
+		kind: "issue",
+		issue: 8950,
+	});
+});
+it.each([
 	"echo 'fabrika build claim 8950'",
 	"echo 'hello\nfabrika build claim 8950'",
 	"# fabrika build claim 8950\ngit status",
