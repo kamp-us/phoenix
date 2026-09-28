@@ -813,6 +813,20 @@ const configured = (table: unknown) =>
 
 const FABRIKA_LABELLED = configured({fabrikaShare: {labels: ["fabrika"]}});
 
+describe("table prep with no fabrika-share label", () => {
+	it("calls a quiet week on track and names no fabrika-share check it could not make", async () => {
+		const {board, posts} = world({1: {labels: ["type:bug"]}}, {});
+
+		const out = await prep(board, configured({fabrikaShare: {labels: []}}));
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		expect(posts).toHaveLength(1);
+		expect(posts[0]?.status).toBe("ON_TRACK");
+		expect(posts[0]?.body).not.toContain("Could not check");
+		expect(posts[0]?.body).not.toContain("fabrika-share");
+	});
+});
+
 describe("table prep with a boards block", () => {
 	const SPLIT = fakeFs({
 		files: {"/repo/.fabrika.jsonc": JSON.stringify({boards: {onCall: {}}})},

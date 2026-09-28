@@ -263,9 +263,7 @@ describe("table flags on the whole table", () => {
 		const answer = JSON.parse(out.stdout);
 
 		expect(answer.flags.map((flag: {flag: string}) => flag.flag)).toEqual(["unknown-decider"]);
-		expect(answer.unread).toEqual([
-			expect.objectContaining({check: "fabrika-share", reason: expect.stringContaining("labels")}),
-		]);
+		expect(answer.unread).toEqual([]);
 	});
 
 	it("refuses with the table's own no-target code when there is no table project", async () => {
@@ -317,7 +315,66 @@ describe("table flags with a boards block", () => {
 		const answer = JSON.parse((await flags(world().board, [], unconfigured)).stdout);
 
 		expect(answer.flags).toEqual([]);
-		expect(answer.unread.map((one: {check: string}) => one.check)).toEqual(["fabrika-share"]);
+		expect(answer.unread).toEqual([]);
+	});
+});
+
+describe("table flags' fabrika-share check", () => {
+	const world = (labelled: IssueSpec) =>
+		table({10: labelled, 20: {records: [record(20, 5)]}}, [
+			{number: 10, stage: "in lane", tableDay: "2026-09-21"},
+			{number: 20, stage: "in lane", tableDay: "2026-09-21"},
+		]);
+	const shareChecks = (answer: {
+		flags: ReadonlyArray<{flag: string}>;
+		unread: ReadonlyArray<{check: string}>;
+	}) => ({
+		flags: answer.flags.filter((one) => one.flag === "fabrika-share"),
+		unread: answer.unread.filter((one) => one.check === "fabrika-share"),
+	});
+	const NO_LABELS = fakeFs({
+		files: {"/repo/.fabrika.jsonc": JSON.stringify({table: {fabrikaShare: {labels: []}}})},
+	}).layer;
+
+	it("is off with no label: no flag and nothing unread, however the week's spend fell", async () => {
+		const {board} = world({records: [record(10, 95)], labels: ["pipeline"]});
+		const labelled = JSON.parse((await flags(board)).stdout);
+		expect(shareChecks(labelled).flags).toEqual([expect.objectContaining({percent: 95})]);
+
+		for (const config of [NO_LABELS, unconfigured]) {
+			const answer = JSON.parse((await flags(board, [], config)).stdout);
+			expect(shareChecks(answer)).toEqual({flags: [], unread: []});
+		}
+	});
+
+	it("still names the check unread with a label when a lane of the week went unmeasured", async () => {
+		const unmeasured = {
+			...record(10, 0),
+			spent: {_tag: "Unmeasured", reason: "no rate card"},
+		} satisfies LaneRecord;
+		const {board} = world({records: [unmeasured], labels: ["pipeline"]});
+
+		const answer = JSON.parse((await flags(board)).stdout);
+
+		expect(shareChecks(answer)).toEqual({
+			flags: [],
+			unread: [expect.objectContaining({reason: expect.stringContaining("unmeasured")})],
+		});
+	});
+
+	it("still names the check unread with a label when a lane's issue labels would not read", async () => {
+		const {board} = world({records: [record(10, 5)], labels: ["pipeline"]});
+		const unreadable: FlagsBoard<never> = {
+			...board,
+			labels: () => Effect.succeed({_tag: "Failure", reason: "HTTP 502"}),
+		};
+
+		const answer = JSON.parse((await flags(unreadable)).stdout);
+
+		expect(shareChecks(answer)).toEqual({
+			flags: [],
+			unread: [expect.objectContaining({reason: "cannot read #10's labels: HTTP 502"})],
+		});
 	});
 });
 

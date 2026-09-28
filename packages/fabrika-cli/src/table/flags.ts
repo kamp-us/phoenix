@@ -64,7 +64,10 @@ export const limitOf = (row: Pick<HeadRow, "group" | "size" | "children">, sizes
 		? null
 		: sizes[row.size] * (row.group._tag === "Epic" ? Math.max(1, row.children) : 1);
 
-/** A check the caller did not ask for: a narrowed run asks no table-wide question. */
+/**
+ * A check nobody asked for: a narrowed run asks no table-wide question, and the config turns the
+ * fabrika-share check off with no `table.fabrikaShare.labels`. It is neither passed nor unread.
+ */
 export interface NotAsked {
 	readonly _tag: "NotAsked";
 }

@@ -188,7 +188,8 @@ set `.github/CODEOWNERS` names. The bet stands as set.
   spend in the 7 days ending at the next table day than `table.fabrikaShare.percent` for the first
   `forTables` tables, then `thenPercent`. Which table that is counts the distinct Table day dates on
   the board before it, plus one: a count needs no config and survives the migration, whose rows
-  carry their old weeks' dates.
+  carry their old weeks' dates. An empty `table.fabrikaShare.labels`, the shipped default, turns
+  this check off: it raises no flag and is never named under `unread`.
 
 **The on-call board.** With a `boards.onCall` block the whole-table run also reads the on-call
 board:
@@ -199,9 +200,9 @@ board:
 - `on-call-share` — lanes on issues on the on-call board took more of the spend in the same 7 days
   than `boards.onCall.spendShare` percent.
 
-A check it could not answer — a lane unmeasured, a set or roadmap that would not read, no label
-declared, an on-call board that would not read, an item with no target or one
-the config no longer names — is named under `unread`, never passed.
+A check it could not answer — a lane unmeasured, a set, roadmap or label that would not read, an
+on-call board that would not read, an item with no target or one the config no longer names — is
+named under `unread`, never passed. A check the config turns off is neither.
 
 stdout is `{"answer":"flagged"|"clear","repo":"…","project":{"number":n,"title":"…","url":"…"},"scope":"table"|"issues","rows":[n…],"flags":[{"flag":"over-size"|"asks"|"stuck"|"unknown-decider"|"campaigns"|"fabrika-share"|"past-target"|"on-call-share",…,"rec":"…"}],"unread":[{"check":"…","issue":n|null,"reason":"…"}]}`;
 row flags carry `head`, `group` (`epic`|`chain`|`null`) and `covers`.
@@ -275,7 +276,9 @@ lanes that needed a founder over the 7 days before the table day; the Outside th
 un-bet lanes, their origins and cost); the bets continuing; and the Inbox count (open issues with no
 labels). It reads `AT_RISK` while a row flag stands or any flag check could not be read — each such
 check is named under "Could not check", and an on-call past-target count it could not read is said
-in words, never as a number — else `ON_TRACK`. The update names its table day in a
+in words, never as a number — else `ON_TRACK`. Prep asks neither table-wide check, `campaigns` nor
+`fabrika-share`, so neither is named there, and an empty `table.fabrikaShare.labels` turns the
+share check off everywhere. The update names its table day in a
 `<!-- fabrika:table-health table-day=YYYY-MM-DD -->` marker; once one stands for that day, a re-run
 adds no row, carries nothing and posts nothing, and only takes closed `proposed` rows off. A row
 already dated that day is left as it reads, so a re-run writes no Table day.
