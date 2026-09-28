@@ -17,6 +17,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {parseManifest} from "./manifest.ts";
+import {type CaptureShots, makeCaptureRenderLeg} from "./render-leg.ts";
 import {type RenderLeg, runRender, type SurfaceRender} from "./render-verb.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
@@ -104,6 +105,7 @@ const options = {
 	localeDeclaration: null as LocaleDeclaration | null,
 	schemes: [] as readonly string[],
 	schemeDeclaration: null as SchemeDeclaration | null,
+	interactions: [] as readonly string[],
 	app: null,
 	surfaceRows: ROWS,
 	authSecretFrom: null as string | null,
@@ -986,5 +988,196 @@ describe("runRender", () => {
 			render: legOf({"/pano": {_tag: "Failed", reason: "the browser provision is broken"}}),
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+	});
+});
+
+/**
+ * The interaction operand: every refusal is decided before anything is read or launched, every
+ * interacted shot rides beside its surface's at-rest one, and a state the page never reached is
+ * UNKNOWN with no manifest written.
+ */
+describe("runRender — the interaction operand", () => {
+	const MENU = '/pano#sil-highlighted=click:role=button[name="Aç"];hover:role=menuitem[name="Sil"]';
+
+	it.each([
+		["an unknown step verb", "/pano#x=tap:#b", "names no step verb"],
+		["an empty locator", "/pano#x=hover:", 'step "hover:" names no locator'],
+		["an empty label", "/pano#=hover:#b", "its label is empty"],
+		["steps ending on a click", "/pano#x=hover:#a;click:#b", 'end on "click:#b"'],
+		["steps ending on a key press", "/pano#x=press:Escape", 'end on "press:Escape"'],
+	])("refuses %s on 10 before anything is read", async (_what, operand, reason) => {
+		const {outcome} = await run([], {interactions: [operand]});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toContain(`--interact "${operand}" is not <surface>#<label>=`);
+		expect(outcome.stderr.at(-1)).toContain(reason);
+	});
+
+	it("refuses an operand on a surface the run did not ask for on 10", async () => {
+		const {outcome} = await run([], {interactions: ["/sozluk#x=hover:#b"]});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toBe(
+			'review-ui render: --interact "/sozluk#x=hover:#b" names surface "/sozluk", which no --surface asked for — an interaction runs on a surface of this run.',
+		);
+	});
+
+	it("refuses two operands that would write the same PNG on 10", async () => {
+		const {outcome} = await run([], {
+			interactions: ["/pano#x=hover:#a", "/pano#x=focus:#b"],
+		});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toBe(
+			'review-ui render: --interact "/pano#x=focus:#b" would write the same PNG as --interact "/pano#x=hover:#a" — the second shot would overwrite the first\'s file and evidence.',
+		);
+	});
+
+	it("shoots each interaction beside its surface at rest, in order, and names its label on stderr", async () => {
+		const seen: Array<string | null> = [];
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			interactions: [MENU, "/pano#focused=focus:#q"],
+			render: (request) => {
+				seen.push(`${request.surface} ${request.interaction?.label ?? "rest"}`);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual(["/pano rest", "/pano sil-highlighted", "/pano focused", "/b rest"]);
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano" at desktop with interaction sil-highlighted captured: 1280x2140, 0 page error(s)',
+		);
+	});
+
+	it("refuses a state the page never reached on 11, naming the label and writing no manifest", async () => {
+		const {outcome, written} = await run(happy(), {
+			interactions: [MENU],
+			render: (request) =>
+				Effect.succeed(
+					request.interaction === null
+						? rendered(request.surface, request.outDir)
+						: ({
+								_tag: "Uninteracted",
+								reason: `hover:role=menuitem[name="Sil"]: no element matched role=menuitem[name="Sil"] within 5000ms`,
+							} satisfies SurfaceRender),
+				),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toBe(
+			`review-ui render: surface "/pano" at desktop with interaction sil-highlighted did not reach its interaction state (hover:role=menuitem[name="Sil"]: no element matched role=menuitem[name="Sil"] within 5000ms) — the interacted render is UNKNOWN, never the at-rest one; no capture was written.`,
+		);
+	});
+
+	it("keeps a crashed shot on 13 — the crash outranks the interaction inside the shot", async () => {
+		const {outcome} = await run(happy(), {
+			interactions: [MENU],
+			render: (request) =>
+				Effect.succeed(
+					request.interaction === null
+						? rendered(request.surface, request.outDir)
+						: ({_tag: "Crashed", firstError: "TypeError: x is null"} satisfies SurfaceRender),
+				),
+		});
+		expect(outcome.code).toBe(RENDER_CRASHED);
+		expect(outcome.stderr.at(-1)).toContain("with interaction sil-highlighted threw during render");
+	});
+
+	it("keeps every name, entry and line of a run with no interaction as it was", async () => {
+		const seen: unknown[] = [];
+		const {outcome} = await run(happy(), {
+			render: (request) => {
+				seen.push(request.interaction);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([null]);
+		const manifest = parseManifest(outcome.stdout);
+		expect(
+			manifest._tag === "Manifest" && "interaction" in (manifest.value.captures[0] ?? {}),
+		).toBe(false);
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano" at desktop captured: 1280x2140, 0 page error(s)',
+		);
+	});
+
+	/**
+	 * Through the real leg, so the file name is the plan's own and not the fake's: a signed-in,
+	 * flag-forced, seeded-locale, dark, mobile shot of an open menu.
+	 */
+	it("composes with :auth, --flag, --locale, --scheme and --viewport — one pinned name and entry", async () => {
+		const pngHeader = (width: number): Uint8Array => {
+			const bytes = new Uint8Array(24);
+			bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+			bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+			new DataView(bytes.buffer).setUint32(16, width);
+			new DataView(bytes.buffer).setUint32(20, 2140);
+			return bytes;
+		};
+		const capture: CaptureShots = (plan, outDir) =>
+			Effect.succeed(
+				plan.map((shot) => ({
+					surface: shot.surface.surface,
+					route: shot.surface.route,
+					state: shot.surface.state,
+					fileName: shot.fileName,
+					localPath: `${outDir}/${shot.fileName}`,
+					pngBytes: pngHeader(shot.viewport.width),
+					pageErrors: [],
+					status: 200,
+					sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar"},
+					overrideProof: {_tag: "Forced"},
+					localeProof: {_tag: "Seeded"},
+					...(shot.scheme === undefined
+						? {}
+						: {schemeProof: {_tag: "Proven", scheme: shot.scheme.scheme}}),
+					...(shot.interaction === undefined
+						? {}
+						: {
+								interactionProof: {
+									_tag: "Proven",
+									proven: ['role=menuitem[name="Sil"] matches :hover'],
+								},
+							}),
+				})),
+			);
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano:auth"],
+			viewports: ["mobile"],
+			flags: ["welcome-banner=on"],
+			locale: "en",
+			localeDeclaration: {storageKey: "app.locale", values: ["tr", "en"]},
+			schemes: ["dark"],
+			schemeDeclaration: {rootAttribute: "data-theme"},
+			interactions: [
+				'/pano:auth#sil-highlighted=click:role=button[name="Aç"];hover:role=menuitem[name="Sil"]',
+			],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: makeCaptureRenderLeg(capture),
+		});
+		expect(outcome.code).toBe(0);
+		const manifest = parseManifest(outcome.stdout);
+		expect(manifest._tag === "Manifest" && manifest.value.captures[1]).toEqual({
+			surface: "/pano:auth",
+			viewport: "mobile",
+			scheme: {requested: "dark", proven: "dark"},
+			interaction: {
+				label: "sil-highlighted",
+				steps: ['click:role=button[name="Aç"]', 'hover:role=menuitem[name="Sil"]'],
+				proven: ['role=menuitem[name="Sil"] matches :hover'],
+			},
+			path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano-auth~sil-highlighted@mobile-dark.png",
+			width: 390,
+			height: 2140,
+			sha256: expect.any(String),
+			pageErrors: {rows: [], more: 0},
+		});
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano:auth" at mobile in locale en in scheme dark with interaction sil-highlighted captured: 390x2140, 0 page error(s)',
+		);
 	});
 });

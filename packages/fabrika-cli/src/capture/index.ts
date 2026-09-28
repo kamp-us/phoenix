@@ -46,8 +46,14 @@ export type {
 	RenderedCandidate,
 } from "./candidate-set.ts";
 export {assembleCandidateSet, parseCandidateSet, serializeCandidateSet} from "./candidate-set.ts";
-export type {CaptureCookie, CapturedSurface, CaptureOptions} from "./capture.ts";
-export {CaptureError, captureShots} from "./capture.ts";
+export type {
+	CaptureCookie,
+	CapturedSurface,
+	CaptureOptions,
+	ShotCapture,
+	UnwrittenSurface,
+} from "./capture.ts";
+export {CaptureError, captureShots, isWritten, requireWritten} from "./capture.ts";
 export type {ColorScheme, SchemeProof, SchemeRequest} from "./color-scheme.ts";
 export {COLOR_SCHEMES} from "./color-scheme.ts";
 // The golden-baseline seam: the current-golden pointer in git, the bytes in
@@ -64,6 +70,13 @@ export {
 	isSha256Hex,
 	resolveGoldenEntry,
 } from "./golden-pointer.ts";
+export type {
+	Interaction,
+	InteractionOperand,
+	InteractionProof,
+	InteractionStep,
+} from "./interaction.ts";
+export {parseInteractionOperands, STEP_VERBS} from "./interaction.ts";
 export type {CaptureAndUploadRequest, CaptureRecord} from "./orchestrate.ts";
 export {captureAndUpload, hostedUrls, mergeRecord} from "./orchestrate.ts";
 export type {PageError, SurfacePageErrors} from "./page-errors.ts";

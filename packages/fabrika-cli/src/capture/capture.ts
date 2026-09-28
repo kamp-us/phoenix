@@ -23,20 +23,30 @@ import {
 	type OverrideProof,
 	readOverrideProof,
 } from "./flag-override.ts";
+import {
+	foldInteractionProof,
+	type Interaction,
+	type InteractionProof,
+	type InteractionProven,
+	type InteractionRefused,
+	type InteractionStep,
+	PSEUDO_CLASS,
+	readMatchCount,
+	readPseudoProof,
+	readVisibleProof,
+	type StepProof,
+} from "./interaction.ts";
 import {type LocaleProof, type LocaleSeed, readLocaleProof} from "./locale-seed.ts";
 import {type PageError, toPageError} from "./page-errors.ts";
 import type {Shot} from "./plan.ts";
 
-/** The captured bytes + on-disk path for one surface. */
-export interface CapturedSurface {
+/** What one shot read off its page, whether or not it went on to write a PNG. */
+export interface ShotReads {
 	readonly surface: string;
 	readonly route: string;
 	readonly state: string | null;
-	/** Absolute/relative path to the PNG on disk — the artifact the gate judges. */
-	readonly localPath: string;
 	/** The filesystem-safe PNG name (basename of `localPath`) — also the upload attachment name. */
 	readonly fileName: string;
-	readonly pngBytes: Uint8Array;
 	/** Runtime errors thrown into the page during this render — the crash signal. */
 	readonly pageErrors: readonly PageError[];
 	/**
@@ -72,6 +82,32 @@ export interface CapturedSurface {
 	readonly schemeProof?: SchemeProof;
 }
 
+/** The captured bytes + on-disk path for one surface. */
+export interface CapturedSurface extends ShotReads {
+	/** Absolute/relative path to the PNG on disk — the artifact the gate judges. */
+	readonly localPath: string;
+	readonly pngBytes: Uint8Array;
+	/**
+	 * What the shot's interaction proved, present only when the shot ran one. Pixels cannot answer
+	 * it: a hover the page never registered paints the at-rest surface, a valid PNG under the
+	 * interacted name.
+	 */
+	readonly interactionProof?: InteractionProven;
+}
+
+/**
+ * A shot whose interaction stopped short of its proof. No screenshot was taken and no file was
+ * written: the page past a failed step is not the state the label names.
+ */
+export interface UnwrittenSurface extends ShotReads {
+	readonly interactionProof: InteractionRefused;
+}
+
+export type ShotCapture = CapturedSurface | UnwrittenSurface;
+
+export const isWritten = (capture: ShotCapture): capture is CapturedSurface =>
+	capture.interactionProof?._tag !== "Refused";
+
 /** A Playwright launch/navigation/screenshot/write failure — surfaced, never swallowed. */
 export class CaptureError extends Schema.TaggedError<CaptureError>()(
 	"@kampus/fabrika-cli/capture/CaptureError",
@@ -80,6 +116,23 @@ export class CaptureError extends Schema.TaggedError<CaptureError>()(
 		cause: Schema.optional(Schema.Unknown),
 	},
 ) {}
+
+/**
+ * The captures of a plan, read as written ones by a caller whose plans never carry an interaction.
+ * An unwritten one there is a plan this caller did not build, so it fails rather than being dropped.
+ */
+export const requireWritten = (
+	captures: readonly ShotCapture[],
+): Effect.Effect<readonly CapturedSurface[], CaptureError> => {
+	const unwritten = captures.find((capture): capture is UnwrittenSurface => !isWritten(capture));
+	return unwritten === undefined
+		? Effect.succeed(captures.filter(isWritten))
+		: Effect.fail(
+				new CaptureError({
+					message: `${unwritten.surface} wrote no capture: ${unwritten.interactionProof.reason}`,
+				}),
+			);
+};
 
 /** A cookie to seed into the capture browser context before navigation. */
 export interface CaptureCookie {
@@ -125,6 +178,8 @@ export interface CaptureOptions {
 	readonly localeSettleMs?: number;
 	/** How long the scheme proof waits for the root attribute to name the requested scheme (default 10s). */
 	readonly schemeSettleMs?: number;
+	/** How long one interaction step waits for its element and its action before it refuses (default 5s). */
+	readonly interactionStepMs?: number;
 }
 
 /**
@@ -231,6 +286,83 @@ const proveScheme = async (
 		);
 };
 
+/** Playwright's errors carry a call log after the first line; the first line is the answer. */
+const firstLine = (cause: unknown): string => String(cause).split("\n")[0] ?? "";
+
+/** The one element-side call a proof makes, typed structurally: this package has no DOM lib. */
+interface Matchable {
+	matches(selector: string): boolean;
+}
+
+/**
+ * Run one step and read back what it claims. A locator step first waits for its element and
+ * refuses unless exactly one matches, so no step acts on whichever of several the browser picked.
+ */
+const runStep = async (page: Page, step: InteractionStep, stepMs: number): Promise<StepProof> => {
+	if (step.verb === "press") {
+		await page.keyboard.press(step.key);
+		return {_tag: "Acted"};
+	}
+	const locator = page.locator(step.locator);
+	const attached = await locator
+		.first()
+		.waitFor({state: "attached", timeout: stepMs})
+		.then(() => true)
+		.catch(() => false);
+	if (!attached) {
+		return {_tag: "Refused", reason: `no element matched ${step.locator} within ${stepMs}ms`};
+	}
+	const counted = readMatchCount(step, await locator.count());
+	if (counted !== null) return counted;
+	const matches = (pseudo: string): Promise<unknown> =>
+		locator.evaluate((el: Matchable, selector: string) => el.matches(selector), pseudo, {
+			timeout: stepMs,
+		});
+	switch (step.verb) {
+		case "click":
+			await locator.click({timeout: stepMs});
+			return {_tag: "Acted"};
+		case "hover":
+			await locator.hover({timeout: stepMs});
+			return readPseudoProof(
+				{verb: "hover", locator: step.locator},
+				await matches(PSEUDO_CLASS.hover),
+			);
+		case "focus":
+			await locator.focus({timeout: stepMs});
+			return readPseudoProof(
+				{verb: "focus", locator: step.locator},
+				await matches(PSEUDO_CLASS.focus),
+			);
+		case "expect":
+			// An element may be attached before it is shown — a menu mid-animation — so visibility is
+			// waited for, and the read after the wait decides.
+			await locator.waitFor({state: "visible", timeout: stepMs}).catch(() => undefined);
+			return readVisibleProof(step, await locator.isVisible());
+	}
+};
+
+/**
+ * Run an interaction's steps in order, stopping at the first refusal. Total on the terms
+ * {@link proveSession} is: a step that throws or times out is a fact about the step, and letting it
+ * throw would classify the surface `Unreachable`.
+ */
+const proveInteraction = async (
+	page: Page,
+	interaction: Interaction,
+	stepMs: number,
+): Promise<InteractionProof> => {
+	const answers: Array<{readonly step: InteractionStep; readonly proof: StepProof}> = [];
+	for (const step of interaction.steps) {
+		const proof = await runStep(page, step, stepMs).catch(
+			(cause): StepProof => ({_tag: "Refused", reason: firstLine(cause)}),
+		);
+		answers.push({step, proof});
+		if (proof._tag === "Refused") break;
+	}
+	return foldInteractionProof(answers);
+};
+
 /**
  * Launch one chromium instance, shoot every plan entry serially (each in its own
  * page at the entry's viewport), write each PNG under `outDir`, and close the
@@ -241,11 +373,12 @@ export const captureShots = (
 	shots: readonly Shot[],
 	outDir: string,
 	options: CaptureOptions = {},
-): Effect.Effect<readonly CapturedSurface[], CaptureError> => {
+): Effect.Effect<readonly ShotCapture[], CaptureError> => {
 	const navigationTimeoutMs = options.navigationTimeoutMs ?? 30_000;
 	const fullPage = options.fullPage ?? true;
 	const localeSettleMs = options.localeSettleMs ?? 10_000;
 	const schemeSettleMs = options.schemeSettleMs ?? 10_000;
+	const interactionStepMs = options.interactionStepMs ?? 5_000;
 	return Effect.acquireUseRelease(
 		Effect.tryPromise({
 			try: async () => {
@@ -259,7 +392,7 @@ export const captureShots = (
 				shots,
 				(shot) =>
 					Effect.tryPromise({
-						try: async (): Promise<CapturedSurface> => {
+						try: async (): Promise<ShotCapture> => {
 							// A context per shot (not `browser.newPage`) so a shot's `deviceScaleFactor`
 							// (the downscale lever) and the run's `cookies` (the dev-override cookie)
 							// can be seeded before navigation — both are context-level in Playwright.
@@ -317,28 +450,42 @@ export const captureShots = (
 									shot.scheme === undefined
 										? undefined
 										: await proveScheme(page, shot.scheme, schemeSettleMs);
-								// A clip crops to the changed region; Playwright rejects clip + fullPage
-								// together, so a clipped shot is never full-page.
-								const buffer = await page.screenshot(
-									shot.clip === undefined
-										? {type: "png", fullPage}
-										: {type: "png", clip: shot.clip},
-								);
-								const localPath = join(outDir, shot.fileName);
-								await writeFile(localPath, buffer);
-								return {
+								// After the locale and scheme proofs, so the steps act on the page those answered about.
+								const interactionProof =
+									shot.interaction === undefined
+										? undefined
+										: await proveInteraction(page, shot.interaction, interactionStepMs);
+								const reads: ShotReads = {
 									surface: shot.surface.surface,
 									route: shot.surface.route,
 									state: shot.surface.state,
-									localPath,
 									fileName: shot.fileName,
-									pngBytes: new Uint8Array(buffer),
 									pageErrors,
 									...(response === null ? {} : {status: response.status()}),
 									...(sessionProof === undefined ? {} : {sessionProof}),
 									...(overrideProof === undefined ? {} : {overrideProof}),
 									...(localeProof === undefined ? {} : {localeProof}),
 									...(schemeProof === undefined ? {} : {schemeProof}),
+								};
+								if (interactionProof?._tag === "Refused") {
+									return {...reads, interactionProof};
+								}
+								// A clip crops to the changed region; Playwright rejects clip + fullPage
+								// together, so a clipped shot is never full-page. An interaction has just
+								// started the transitions its state paints with, so its shot fast-forwards them
+								// to their end rather than freezing a frame halfway to the state it names.
+								const buffer = await page.screenshot({
+									type: "png",
+									...(shot.clip === undefined ? {fullPage} : {clip: shot.clip}),
+									...(interactionProof === undefined ? {} : {animations: "disabled" as const}),
+								});
+								const localPath = join(outDir, shot.fileName);
+								await writeFile(localPath, buffer);
+								return {
+									...reads,
+									localPath,
+									pngBytes: new Uint8Array(buffer),
+									...(interactionProof === undefined ? {} : {interactionProof}),
 								};
 							} finally {
 								await context.close();

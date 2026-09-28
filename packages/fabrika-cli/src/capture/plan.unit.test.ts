@@ -102,6 +102,24 @@ describe("surfaceFileName", () => {
 		);
 	});
 
+	it("names an interaction's label only when one ran, apart from the route and the scheme", () => {
+		const menu: Surface = {surface: "/lab/menu:auth", route: "/lab/menu", state: "auth"};
+		assert.strictEqual(surfaceFileName(menu, DESKTOP_VIEWPORT), "lab-menu-auth@desktop.png");
+		assert.strictEqual(
+			surfaceFileName(menu, DESKTOP_VIEWPORT, null, "sil-highlighted"),
+			"lab-menu-auth~sil-highlighted@desktop.png",
+		);
+		assert.strictEqual(
+			surfaceFileName(menu, MOBILE_VIEWPORT, "dark", "dark"),
+			"lab-menu-auth~dark@mobile-dark.png",
+		);
+		// A route cannot forge the label's separator: the stem never carries `~`.
+		assert.strictEqual(
+			surfaceFileName({surface: "/a~b", route: "/a~b", state: null}, DESKTOP_VIEWPORT),
+			"a-b@desktop.png",
+		);
+	});
+
 	it("maps the root route to a non-empty name", () => {
 		assert.strictEqual(
 			surfaceFileName({surface: "/", route: "/", state: null}, DESKTOP_VIEWPORT),
@@ -152,6 +170,22 @@ describe("buildCapturePlan", () => {
 		assert.strictEqual(empty?.url, "https://pr-9.preview.example.com/catalog");
 		assert.strictEqual(empty?.surface.state, "empty");
 		assert.strictEqual(empty?.fileName, "catalog-empty@desktop.png");
+	});
+
+	it("carries an interaction onto the shot and its name, and none when none was asked for", () => {
+		const hovered = {label: "hovered", steps: [{verb: "hover", locator: "#b"}]} as const;
+		const [shot] = buildCapturePlan(
+			"https://x.dev",
+			[surfaces[0] as Surface],
+			MOBILE_VIEWPORT,
+			null,
+			hovered,
+		);
+		assert.deepStrictEqual(shot?.interaction, hovered);
+		assert.strictEqual(shot?.fileName, "catalog~hovered@mobile.png");
+		const [plain] = buildCapturePlan("https://x.dev", [surfaces[0] as Surface]);
+		assert.isFalse(plain !== undefined && "interaction" in plain);
+		assert.strictEqual(plain?.fileName, "catalog@desktop.png");
 	});
 
 	it("captures at the mobile viewport when asked", () => {

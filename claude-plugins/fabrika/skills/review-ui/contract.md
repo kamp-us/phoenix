@@ -251,7 +251,7 @@ anchor at all is the proven `16`.
 **Invocation**
 
 ```
-fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--locale <value>] [--scheme light --scheme dark] [--auth-secret-from <file>] [--app web] [--repo <owner/name>]
+fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--locale <value>] [--scheme light --scheme dark] [--interact '<surface>#<label>=<step>;<step>;…'] [--auth-secret-from <file>] [--app web] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -265,6 +265,7 @@ fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
 | `--locale` | string | no | the app's default locale, nothing seeded | render every shot in this locale — one of the values `.fabrika.jsonc`'s `uiCapture.locale` declares; with no declaration, or a value outside its list, it is `10` before a browser launches |
 | `--scheme` | string, repeatable | no | the browser's own scheme, nothing emulated or proved | a colour scheme to shoot every `--surface` at, over the closed set `light` and `dark`; crossed with `--surface` and `--viewport`, so one surface at one viewport in both schemes is two captures. A name outside the set, a name passed twice, or any `--scheme` while `.fabrika.jsonc` declares no `uiCapture.scheme`, is `10` before a browser launches |
+| `--interact` | string, repeatable | no | every surface at rest alone | an interaction state to shoot beside a `--surface`'s at-rest shot: `<surface>#<label>=<step>;<step>;…`, where `<surface>` is one of this run's `--surface` ids exactly, `<label>` is kebab-case (`[a-z0-9-]`, at most 64 characters) and names the shot, and each step is `hover:<locator>`, `focus:<locator>`, `click:<locator>`, `press:<key>` or `expect:<locator>`. Crossed with `--viewport` and `--scheme` like its surface. A malformed operand, an operand on a surface the run did not ask for, two operands whose shots would share a PNG name, or steps ending on `click` or `press`, is `10` before a browser launches |
 | `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve. Whichever app is resolved, a `--surface` whose own `uiSurfaces` row belongs to an app this preview did not announce is `11` — omitting the flag routes around no fence |
 | `--auth-secret-from` | string | no | the committed preview key at `infra/preview-auth-key/key.txt`, else the ambient `$BETTER_AUTH_SECRET` | a file holding a signing secret to use instead of the repo's own — rarely needed, since the committed preview key is what every `pr-<n>` worker deploys with and needs no credential; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
 | `--repo` | string | no | resolved | the repository |
@@ -396,12 +397,67 @@ the evidence gallery heads it `<surface> @ <viewport>, scheme requested <s>, pro
 stderr line names the shot `in scheme <s>`. A run without `--scheme` keeps every name, entry and
 heading it had before.
 
+**`--interact` shoots the surface in an interaction state** — hovered, focused, a menu opened, a
+toast raised — so a change that paints only after someone touches the page is judged from its own
+pixels. Before this operand every shot was the page at rest, and a PR whose change lived in `:hover`
+or behind a click parked CANT-SEE. An interaction is its own operand and not a `:state` token:
+`:state` names the identity a page loads as, and an interaction is a thing done to the page after it
+loads, so it composes with every `:state`, `--flag`, `--locale`, `--scheme` and `--viewport` rather
+than replacing any.
+
+The operand is `<surface>#<label>=<step>;<step>;…`. The surface is read up to the first `#` and the
+label up to the first `=` after it, so a locator may carry either character; a step cannot carry
+`;`. The steps run in order on the shot's page after navigation and after the locale and scheme
+proofs:
+
+| Step | Does | Proves |
+|---|---|---|
+| `hover:<locator>` | moves the pointer over the element | the element matches `:hover` |
+| `focus:<locator>` | focuses the element | the element matches `:focus-visible` |
+| `click:<locator>` | clicks the element | nothing — it only acts |
+| `press:<key>` | presses a key on the page (a Playwright key name: `Tab`, `Escape`, `Enter`) | nothing — it only acts |
+| `expect:<locator>` | waits for the element to show | exactly one visible element matches |
+
+`<locator>` is a Playwright selector, role and accessible name first (`role=menuitem[name="Sil"]`).
+A role selector admits only Playwright's own attributes (`name`, `checked`, `pressed`, `expanded`,
+`selected`, `level`, `disabled`, `include-hidden`), so an expectation about any other attribute is
+written as CSS: `expect:[role=menuitem][data-highlighted]:has-text("Sil")`. Every locator step first
+waits (up to 5s) for its element and refuses unless **exactly one** element matches, so no step acts
+on whichever of several the browser happened to pick.
+
+The steps must end on a proving step — `hover`, `focus` or `expect` — and an operand ending on
+`click` or `press` is `10`: the shot would record whatever the page drew next with nothing checked
+about it. Every proving step is checked where it runs, not only the last: a hover the page never
+registered paints the surface at rest cleanly under the interacted name, and no byte check can tell
+the two apart. A locator matching zero or several elements, a proof that does not hold, or a step
+that times out stops the steps there, and the shot is `11` with **no capture written** — no
+screenshot is taken, because the page past a failed step is not the state the label names. A page
+that threw during render is still `13`: the crash outranks the interaction, as it does the scheme.
+The shot of a proven interaction fast-forwards the CSS transitions its steps started, so the pixels
+are the settled state and never a frame halfway to it.
+
+A PR whose menu item paints only while the menu is open and the item highlighted reads:
+
+```
+--surface /lab/atolye/menu --interact '/lab/atolye/menu#sil-highlighted=click:role=button[name="Menü"];hover:role=menuitem[name="Sil"];expect:[role=menuitem][data-highlighted]:has-text("Sil")'
+```
+
+Each operand adds shots beside its surface's at-rest ones and replaces none, so one surface with two
+interactions at one viewport is three captures. An interacted shot carries its label in its PNG name
+after a `~` (`menu~sil-highlighted@desktop.png`, `menu~sil-highlighted@desktop-dark.png`), a
+character a route's name never carries, and an `interaction` object on its manifest entry holding the
+`label`, the `steps` it ran and what the page `proven` at each proving step, read off the page and
+never echoed from the operand. The evidence gallery heads it `<surface> @ <viewport>[, scheme …],
+interaction <label>`, and every stderr line names the shot `with interaction <label>`. A run without
+`--interact` keeps every name, entry and heading it had before.
+
 The refusal on every other token is the same fence v1 stated, kept for the same reason: v1 demanded
 `:focus-visible` captures with no mechanism to prove the state was realized, and a state that
 silently rendered unfocused PASSed its prohibition forever. Parsing a state is not rendering one —
 a token with no mechanism shoots the default pixels under a variant's name, which is coverage
-claimed and not held. The sibling `ui` group renders in-tree with no preview and no session, so it
-still refuses every `:state`.
+claimed and not held. A focused shot is asked for through `--interact`'s `focus` step instead, which
+carries exactly the `:focus-visible` proof v1 lacked. The sibling `ui` group renders in-tree with no
+preview and no session, so it still refuses every `:state`.
 
 **Output** — machine. One JSON object on full success only:
 
@@ -437,7 +493,7 @@ For each `--surface` at each
 `--viewport`, in the provisioned headless browser sized to that viewport: navigate to
 `<previewUrl><route>`; status ≥ 400 or failed navigation is **unreachable** (`14`); an uncaught
 page exception is **crashed** (`13`); otherwise screenshot full-page to
-`<set>/<route-slug>@<viewport>.png` (`@<viewport>-<scheme>.png` for each `--scheme`, after its scheme proof) and validate (exists, non-zero bytes, decodable, non-zero area —
+`<set>/<route-slug>@<viewport>.png` (`@<viewport>-<scheme>.png` for each `--scheme`, after its scheme proof; `<route-slug>~<label>@…` for each `--interact` on the surface, after its steps and their proofs) and validate (exists, non-zero bytes, decodable, non-zero area —
 `15` on any failure), then **read the width back off those bytes** and refuse a shot that is not the
 requested viewport's width (`19`).
 `console.error` output is **recorded per capture in `pageErrors`, never a gate outcome** — the
@@ -461,8 +517,8 @@ re-invocation without it, on the record; never the tool's tolerance.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; `--flag` was passed beside an anonymous surface; `--locale` was passed with no `uiCapture.locale` declared, or with a value outside its declared list; or a `--scheme` names a scheme outside the closed set (`light`, `dark`), is passed twice, or is passed with no `uiCapture.scheme` declared |
-| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale` or `--scheme` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; a forced flag evaluated at its default anyway; a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value; or a scheme-crossed shot's declared root attribute did not read back as its `--scheme` value |
+| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; `--flag` was passed beside an anonymous surface; `--locale` was passed with no `uiCapture.locale` declared, or with a value outside its declared list; a `--scheme` names a scheme outside the closed set (`light`, `dark`), is passed twice, or is passed with no `uiCapture.scheme` declared; or an `--interact` operand names an unknown step verb, an empty locator, key or label, a non-kebab label or no steps, names a surface no `--surface` asked for, would write the same PNG as another `--interact`, or ends on `click` or `press` |
+| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale` or `--scheme` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; a forced flag evaluated at its default anyway; a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value; a scheme-crossed shot's declared root attribute did not read back as its `--scheme` value; or an interacted shot's step found zero or several elements, timed out, or its `:hover`, `:focus-visible` or visible-match proof did not hold — no capture is written for it |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -492,6 +548,10 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: --scheme "<name>" was passed twice — the second shot would overwrite the first's file and evidence.` | 10 | refusal |
 | `review-ui render: --scheme "<name>" cannot be proved (this repo declares no uiCapture.scheme, so there is no root attribute to read the page's scheme from) — an unproved scheme would shoot the default one under the requested name.` | 10 | refusal |
 | `review-ui render: surface "<id>" at <viewport> in scheme <scheme> did not resolve to the <scheme> scheme (<reason>) — the requested scheme's render is UNKNOWN, never the other one.` | 11 | refusal |
+| `review-ui render: --interact "<operand>" is not <surface>#<label>=<step>;… over the steps hover, focus, expect, click, press (<reason>) — an operand nothing can run or prove would shoot the at-rest surface under the interacted name.` | 10 | refusal |
+| `review-ui render: --interact "<operand>" names surface "<id>", which no --surface asked for — an interaction runs on a surface of this run.` | 10 | refusal |
+| `review-ui render: --interact "<operand>" would write the same PNG as --interact "<other>" — the second shot would overwrite the first's file and evidence.` | 10 | refusal |
+| `review-ui render: surface "<id>" at <viewport> with interaction <label> did not reach its interaction state (<step>: <reason>) — the interacted render is UNKNOWN, never the at-rest one; no capture was written.` | 11 | refusal |
 | `review-ui render: --viewport "<name>" is not a viewport this repo renders — the names are desktop, mobile.` | 10 | refusal |
 | `review-ui render: --viewport "<name>" was passed twice — the second shot would overwrite the first's file and evidence.` | 10 | refusal |
 | `review-ui render: surface "<id>" at <viewport> was asked for at <wanted>px and its bytes read back <actual>px wide — the requested viewport's render is UNKNOWN, never another width's.` | 19 | refusal |
@@ -506,7 +566,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: surface "<id>" at <viewport> captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 15 | refusal |
 | `review-ui render: no preview-deploy comment on PR #<n> — nothing to judge without running the PR's code; the run is CANT-SEE.` | 16 | refusal |
 
-**Scope** — exactly the `--surface` × `--viewport` × `--scheme` cross product against one PR's announced preview (no `--scheme` counts as one default-scheme column). Zero operands
+**Scope** — exactly the `--surface` × `--viewport` × `--scheme` cross product against one PR's announced preview (no `--scheme` counts as one default-scheme column), each surface's cell shot at rest and once per `--interact` on it. Zero operands
 is `1`, so "rendered nothing, found nothing wrong" is unrepresentable — this verb fails closed on
 zero scope like every other. The
 per-surface outcome enumeration goes to stderr on every path, success included.
@@ -538,6 +598,13 @@ $ fabrika review-ui render --pr 4321 --out schemes --surface /feed --scheme ligh
 review-ui render: surface "/feed" at desktop in scheme light captured: 1280x2140, 0 page errors
 review-ui render: surface "/feed" at desktop in scheme dark captured: 1280x2140, 0 page errors
 {"set":"schemes","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://app-pr-4321.example.workers.dev","captures":[{"surface":"/feed","viewport":"desktop","scheme":{"requested":"light","proven":"light"},"path":"/tmp/fabrika-review-ui/4321-03135b91/schemes/feed@desktop-light.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}},{"surface":"/feed","viewport":"desktop","scheme":{"requested":"dark","proven":"dark"},"path":"/tmp/fabrika-review-ui/4321-03135b91/schemes/feed@desktop-dark.png","width":1280,"height":2140,"sha256":"41bb…","pageErrors":{"rows":[],"more":0}}]}
+```
+
+```
+$ fabrika review-ui render --pr 4321 --out hovered --surface /lab/atolye/button --interact '/lab/atolye/button#danger-hovered=click:role=radio[name="Danger"];hover:role=button[name="Kaydet"]'
+review-ui render: surface "/lab/atolye/button" at desktop captured: 1280x800, 0 page error(s)
+review-ui render: surface "/lab/atolye/button" at desktop with interaction danger-hovered captured: 1280x800, 0 page error(s)
+{"set":"hovered","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://app-pr-4321.example.workers.dev","captures":[{"surface":"/lab/atolye/button","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/hovered/lab-atolye-button@desktop.png","width":1280,"height":800,"sha256":"feda…","pageErrors":{"rows":[],"more":0}},{"surface":"/lab/atolye/button","viewport":"desktop","interaction":{"label":"danger-hovered","steps":["click:role=radio[name=\"Danger\"]","hover:role=button[name=\"Kaydet\"]"],"proven":["role=button[name=\"Kaydet\"] matches :hover"]},"path":"/tmp/fabrika-review-ui/4321-03135b91/hovered/lab-atolye-button~danger-hovered@desktop.png","width":1280,"height":800,"sha256":"ad52…","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```

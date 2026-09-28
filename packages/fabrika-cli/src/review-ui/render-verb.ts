@@ -38,11 +38,23 @@ import {
 	parseFlagOperands,
 } from "../capture/flag-override.ts";
 import {
+	type Interaction,
+	type InteractionOperand,
+	parseInteractionOperands,
+	STEP_VERBS,
+} from "../capture/interaction.ts";
+import {
 	type LocaleDeclaration,
 	type LocaleSeed,
 	parseLocaleOperand,
 } from "../capture/locale-seed.ts";
-import {DEFAULT_VIEWPORT, VIEWPORT_NAMES, type Viewport, viewportOf} from "../capture/plan.ts";
+import {
+	DEFAULT_VIEWPORT,
+	surfaceFileName,
+	VIEWPORT_NAMES,
+	type Viewport,
+	viewportOf,
+} from "../capture/plan.ts";
 import {
 	type CaptureTier,
 	isRealizedState,
@@ -100,6 +112,8 @@ export interface SurfaceRenderRequest {
 	readonly locale: LocaleSeed | null;
 	/** The colour scheme the context emulates and the page must publish; `null` ⇒ the browser's default. */
 	readonly scheme: SchemeRequest | null;
+	/** The steps run after navigation, each proved before the shot; `null` ⇒ the surface at rest. */
+	readonly interaction: Interaction | null;
 }
 
 /**
@@ -118,6 +132,7 @@ export type SurfaceRender =
 	| {readonly _tag: "OverrideInert"; readonly reason: string}
 	| {readonly _tag: "WrongLocale"; readonly wanted: string; readonly reason: string}
 	| {readonly _tag: "WrongScheme"; readonly wanted: ColorScheme; readonly reason: string}
+	| {readonly _tag: "Uninteracted"; readonly reason: string}
 	| {readonly _tag: "Failed"; readonly reason: string};
 
 export type RenderLeg = (request: SurfaceRenderRequest) => Effect.Effect<SurfaceRender>;
@@ -144,6 +159,11 @@ export interface RenderOptions {
 	 * against. `null` refuses any `--scheme`, because fabrika compiles no app's attribute in.
 	 */
 	readonly schemeDeclaration: SchemeDeclaration | null;
+	/**
+	 * Raw `--interact` operands, each `<surface>#<label>=<step>;…` on one of {@link surfaces}. Empty ⇒
+	 * every surface at rest alone.
+	 */
+	readonly interactions: readonly string[];
 	readonly app: string | null;
 	/**
 	 * The repo's declared `uiSurfaces` rows, read off the checkout this verb runs in — what says
@@ -199,11 +219,13 @@ interface PlannedShot {
 	readonly locale: string | null;
 	/** The requested scheme, named for the same reason: a dark shot's line must not read as the default. */
 	readonly scheme: SchemeRequest | null;
+	/** The interaction, named so a line about an open menu never reads as the closed one. */
+	readonly interaction: Interaction | null;
 }
 
 /** Every enumeration and every refusal names the shot, and a shot is a surface at a viewport. */
 const shotName = (shot: PlannedShot): string =>
-	`surface "${shot.surface}" at ${shot.viewport.label}${shot.locale === null ? "" : ` in locale ${shot.locale}`}${shot.scheme === null ? "" : ` in scheme ${shot.scheme.scheme}`}`;
+	`surface "${shot.surface}" at ${shot.viewport.label}${shot.locale === null ? "" : ` in locale ${shot.locale}`}${shot.scheme === null ? "" : ` in scheme ${shot.scheme.scheme}`}${shot.interaction === null ? "" : ` with interaction ${shot.interaction.label}`}`;
 
 const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 	const subject = shotName(shot);
@@ -232,6 +254,8 @@ const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 			return `${VERB}: ${subject} did not render in its seeded locale (${render.reason}) — the seeded locale's render is UNKNOWN, never the default one.`;
 		case "WrongScheme":
 			return `${VERB}: ${subject} did not resolve to the ${render.wanted} scheme (${render.reason}) — the requested scheme's render is UNKNOWN, never the other one.`;
+		case "Uninteracted":
+			return `${VERB}: ${subject} did not reach its interaction state (${render.reason}) — the interacted render is UNKNOWN, never the at-rest one; no capture was written.`;
 		case "Failed":
 			return `${VERB}: ${subject} could not be rendered: ${render.reason} — the outcome is UNKNOWN.`;
 	}
@@ -413,6 +437,44 @@ export const runRender = (
 		// invocation written before this operand asked for implicitly.
 		const schemes: readonly (SchemeRequest | null)[] =
 			schemeRead._tag === "Requested" ? schemeRead.requests : [null];
+		// A collision is judged on the file name the shots would carry. Every operand is crossed with the
+		// same viewports and schemes, so the name at one of them decides for all.
+		const interactionRead = parseInteractionOperands(
+			options.interactions,
+			options.surfaces,
+			(operand) =>
+				surfaceFileName(
+					{
+						surface: operand.surface,
+						route: routeOf(operand.surface),
+						state: stateOf(operand.surface),
+					},
+					DEFAULT_VIEWPORT,
+					null,
+					operand.interaction.label,
+				),
+		);
+		switch (interactionRead._tag) {
+			case "Malformed":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --interact "${interactionRead.value}" is not <surface>#<label>=<step>;… over the steps ${STEP_VERBS.join(", ")} (${interactionRead.reason}) — an operand nothing can run or prove would shoot the at-rest surface under the interacted name.`,
+				);
+			case "UnknownSurface":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --interact "${interactionRead.value}" names surface "${interactionRead.surface}", which no --surface asked for — an interaction runs on a surface of this run.`,
+				);
+			case "Collision":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --interact "${interactionRead.value}" would write the same PNG as --interact "${interactionRead.other}" — the second shot would overwrite the first's file and evidence.`,
+				);
+		}
+		const interactionsOf = (surface: string): readonly InteractionOperand[] =>
+			interactionRead._tag === "Requested"
+				? interactionRead.operands.filter((operand) => operand.surface === surface)
+				: [];
 		// The override rides the `phoenix_flag_overrides` cookie, which a deployed stage honors only
 		// for a request whose actor holds platform Admin (`flagship/override-authz.ts`, untouched).
 		// So an anonymous surface cannot carry a forced flag at all — it would render the default
@@ -554,11 +616,21 @@ export const runRender = (
 		const forcedCookies = overrideCookies(announced.url, forcedFlags);
 
 		const setDir = setDirectory(options.tmpRoot, pr, head, options.out);
-		// Surface-major so a mixed-viewport enumeration reads one surface's widths together, and each
-		// width's schemes together under it.
+		// Surface-major so a mixed-viewport enumeration reads one surface's widths together, each
+		// width's schemes together under it, and each scheme's at-rest shot ahead of its interactions.
 		const shots: readonly PlannedShot[] = options.surfaces.flatMap((surface) =>
 			viewports.flatMap((viewport) =>
-				schemes.map((scheme) => ({surface, viewport, locale: locale?.value ?? null, scheme})),
+				schemes.flatMap((scheme) =>
+					[null, ...interactionsOf(surface).map((operand) => operand.interaction)].map(
+						(interaction) => ({
+							surface,
+							viewport,
+							locale: locale?.value ?? null,
+							scheme,
+							interaction,
+						}),
+					),
+				),
 			),
 		);
 		const renders: SurfaceRender[] = [];
@@ -577,6 +649,7 @@ export const runRender = (
 					forcedFlags: tier === null ? NO_FORCED_FLAGS : forcedFlags,
 					locale,
 					scheme: shot.scheme,
+					interaction: shot.interaction,
 				}),
 			);
 		}
@@ -595,15 +668,16 @@ export const runRender = (
 		}
 		// Ahead of the proven-red codes below, and deliberately: the shot is a fine PNG of the wrong
 		// page, so routing it as a red surface would accuse the PR of a defect the render never saw.
-		// The five arms are one class — wrong session, wrong tier, wrong flag state, wrong locale, wrong
-		// scheme — and route alike.
+		// The six arms are one class — wrong session, wrong tier, wrong flag state, wrong locale, wrong
+		// scheme, an interaction state never reached — and route alike.
 		const wrongPage = renders.findIndex(
 			(render) =>
 				render._tag === "Unauthenticated" ||
 				render._tag === "WrongTier" ||
 				render._tag === "OverrideInert" ||
 				render._tag === "WrongLocale" ||
-				render._tag === "WrongScheme",
+				render._tag === "WrongScheme" ||
+				render._tag === "Uninteracted",
 		);
 		if (wrongPage !== -1) {
 			return refuse(
