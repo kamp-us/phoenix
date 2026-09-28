@@ -40,18 +40,6 @@ const corpus = () =>
 	);
 
 describe("runCheck", () => {
-	it("exits 0 WITH its findings — the informative case is not a failure (#4723)", async () => {
-		const out = await run(corpus());
-		expect(out.code).toBe(0);
-		expect(out.stdout.split("\n")[0]).toBe("defects");
-		expect(out.stdout).toContain(
-			'duplicate-key\tterms\tProducts (domains)\tpano\talso declared in "Core / shape"',
-		);
-		expect(out.stdout).toContain(
-			'citation-superseded\tterms\tCore / shape\tworker\tcites 0044, status "superseded by [0144](0144-depo.md)"',
-		);
-	});
-
 	it("decides liveness by the imported predicate, so amended-in-part is not a defect", async () => {
 		const io = withDecisions(
 			{

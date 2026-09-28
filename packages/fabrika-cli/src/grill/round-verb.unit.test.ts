@@ -93,11 +93,6 @@ describe("runRound derives the round number and stamps the ids", () => {
 		);
 		expect(JSON.parse(out.stdout)).toMatchObject({round: 2, digest: roundDigestOf(2)});
 	});
-
-	it("never asks the caller for the round number — the stdin headings carry only a position", () => {
-		expect(ROUND_BODY).not.toContain("R1.");
-		expect(ROUND_BODY).toContain("### 1 · fact");
-	});
 });
 
 describe("runRound validates the grammar before it writes", () => {

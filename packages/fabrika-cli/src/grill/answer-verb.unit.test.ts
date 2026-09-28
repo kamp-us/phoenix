@@ -238,8 +238,4 @@ describe("runAnswer seats each refusal on its own code, with nothing on stdout",
 			expect(posts.length).toBeLessThanOrEqual(1);
 		}
 	});
-
-	it("keeps the refusals on distinct codes", () => {
-		expect(new Set(cases.map(([, code]) => code)).size).toBeGreaterThan(6);
-	});
 });

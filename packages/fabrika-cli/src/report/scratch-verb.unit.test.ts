@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {SLUG_MALFORMED} from "./codes.ts";
-import {allocationDir, runScratch} from "./scratch-verb.ts";
+import {runScratch} from "./scratch-verb.ts";
 
 const ALLOCATION = "a1b2c3d4-0000-4000-8000-000000000000";
 
@@ -52,13 +52,14 @@ describe("runScratch", () => {
 	});
 
 	it("refuses on the universal 1 when the directory cannot be created", async () => {
-		const dir = allocationDir("/scratch-root", ALLOCATION);
-		const out = await run({}, fakeFs({unwritable: [dir]}));
+		const out = await run({}, fakeFs({unwritable: [`/scratch-root/fabrika-report/${ALLOCATION}`]}));
 		expect(out.code).toBe(FAILED);
 		expect(out.stderr.join("\n")).toContain("cannot create");
 	});
 
-	it("derives the directory through the exported formula, trailing slash or not", () => {
-		expect(allocationDir("/scratch-root/", "x")).toBe("/scratch-root/fabrika-report/x");
+	it("prints the same path when the temp root carries a trailing slash", async () => {
+		expect((await run({tmpRoot: "/scratch-root/"})).stdout).toBe(
+			`/scratch-root/fabrika-report/${ALLOCATION}/body\n`,
+		);
 	});
 });

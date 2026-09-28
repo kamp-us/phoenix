@@ -167,6 +167,39 @@ describe("runDescope", () => {
 		expect(patch).toContain("a per-topic weight multiplier");
 	});
 
+	it("folds a multi-paragraph reason to one line, so the body it writes still parses", async () => {
+		const reason = [
+			"**It makes authority unreadable.**",
+			"",
+			"1. every moderation action would need a topic lookup",
+			"2. the decay clock is per account",
+		].join("\n");
+		const folded = reason.replace(/\s*\n\s*/g, " ");
+		const descoped = spliceSection(
+			parsed(MAP_BODY),
+			"Out of scope",
+			renderOutOfScope({direction: DIRECTION, reason: folded, recordedAt: "2026-08-10"}),
+		);
+		const seams = fakeSeams([
+			[PATCH_MAP, served("{}")],
+			[
+				once(MAP_ISSUE),
+				served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+			],
+			[MAP_ISSUE, served(issueJson({number: MAP, body: descoped, labels: ["wayfinding:map"]}))],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDescope(options),
+				Layer.merge(seams.layer, fakeFs({files: {[REASON]: `${reason}\n`}}).layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		const patch = seams.bodies[seams.requests.findIndex((line) => line.startsWith("PATCH"))] ?? "";
+		expect(patch).toContain(folded);
+		expect(patch).not.toContain("1. every moderation action would need a topic lookup\\n");
+	});
+
 	it("retires the named ticket off the frontier and closes it", async () => {
 		const retired = spliceSection(parsed(appended), "Frontier", "");
 		const seams = fakeSeams([

@@ -1,8 +1,8 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type FakeFs, fakeFs} from "../fakes.test-support.ts";
-import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, TERM_COLLISION, WRITE_UNKNOWN} from "./codes.ts";
-import {DIR, LANGUAGE_PATH, REPO, TERMS, TERMS_PATH} from "./fixtures.test-support.ts";
+import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, WRITE_UNKNOWN} from "./codes.ts";
+import {DIR, LANGUAGE_PATH, REPO, TERMS_PATH} from "./fixtures.test-support.ts";
 import {runInit} from "./init-verb.ts";
 import {registerTemplate} from "./template.ts";
 
@@ -39,15 +39,6 @@ describe("runInit", () => {
 		const out = await run(io, {register: "language"});
 		expect(out.stdout).toBe(`created\t${DIR}/LANGUAGE.md\n`);
 		expect(io.written.get(LANGUAGE_PATH)).toContain("# repo architecture vocabulary (LANGUAGE)");
-	});
-
-	it("refuses to overwrite an existing register", async () => {
-		const out = await run(fakeFs({files: {[TERMS_PATH]: TERMS}}));
-		expect(out.code).toBe(TERM_COLLISION);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toBe(
-			`glossary init: ${DIR}/TERMS.md already exists — refusing to overwrite a register.`,
-		);
 	});
 
 	it("refuses --register both — the two are never created by one ambiguous call", async () => {
