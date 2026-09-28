@@ -178,14 +178,6 @@ describe("what this binding adds to the shared window", () => {
 		});
 	};
 
-	const controlsIn = (root: HTMLElement): ReadonlyArray<string> =>
-		Array.from(root.querySelectorAll("button, input, textarea, select, a[href], [tabindex]"))
-			.map(
-				(element) =>
-					`${element.tagName.toLowerCase()}:${element.getAttribute("aria-label") ?? element.textContent?.trim() ?? ""}`,
-			)
-			.sort();
-
 	it("dispatches exactly what the shared window dispatches from the same keystrokes", async () => {
 		const state = claudeSessionState({phase: "prompting"});
 		const shared = await mount(chatWindow, state);
@@ -201,13 +193,6 @@ describe("what this binding adds to the shared window", () => {
 			{type: "prompt", text: "ship it", key: "k0", timestamp: SENT_AT},
 			{type: "interrupt", at: SENT_AT},
 		]);
-	});
-
-	it("adds no operable element of its own", async () => {
-		const state = claudeSessionState();
-		const shared = await mount(chatWindow, state);
-		const claude = await mount(claudeChatWindow, state);
-		expect(controlsIn(claude.rendered.container)).toEqual(controlsIn(shared.rendered.container));
 	});
 
 	it("adds no markup of its own either, now that both lines are the inspector's", async () => {

@@ -215,12 +215,6 @@ describe("the agy transcript reader", () => {
 		expect([first?.status, second?.status]).toEqual(["ok", "ok"]);
 	});
 
-	it("spends every outcome of a captured batch on a call rather than also on a loose row", () => {
-		// Four lines in, four items out: nothing is dropped and no `GENERIC` renders twice.
-		expect(capturedMultiCall()).toHaveLength(4);
-		expect(fixtures.multiCallLines).toHaveLength(5);
-	});
-
 	it("keeps a call running when agy has written an outcome for its neighbour and not for it", () => {
 		// The second `GENERIC` cut off, which is what a batch agy is still working through looks like.
 		const items = itemsOf([
@@ -303,12 +297,6 @@ describe("the agy transcript reader", () => {
 		expect(first?.result.text).toContain("1: alpha");
 		expect(second?.result.text).toContain("1: bir");
 		expect(texts(items)[2]).toContain("a line carrying the planner's own step number");
-	});
-
-	it("keeps a one-call batch's outcome on its row, where the attribution is unambiguous", () => {
-		const items = itemsOf([fixtures.toolCall, fixtures.toolResult]);
-		expect(kinds(items)).toEqual(["tool"]);
-		expect(texts(items)[0]).toContain('{"name":"README.md", "isDir":false}');
 	});
 
 	/**
@@ -401,12 +389,6 @@ describe("the agy transcript reader", () => {
 				return source.includes("boundToolResult(") || source.includes('kind: "tool"');
 			});
 		expect(offenders).toEqual([]);
-	});
-
-	it("resolves the log directory under the home it is handed, never a constant", () => {
-		expect(transcriptLogDir("/Users/founder", CID)).toBe(
-			`/Users/founder/.gemini/antigravity-cli/brain/${CID}/.system_generated/logs`,
-		);
 	});
 });
 

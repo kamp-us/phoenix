@@ -165,13 +165,11 @@ describe("the config schema", () => {
 	});
 
 	it("fixes the mode list to default, acceptEdits, plan and auto", () => {
-		assert.deepStrictEqual(
-			claudeSessionSettings({}).modes,
-			CLAUDE_MODES.map((m) => Mode.make(m)),
-		);
+		const fixed = ["default", "acceptEdits", "plan", "auto"].map((m) => Mode.make(m));
+		assert.deepStrictEqual(claudeSessionSettings({}).modes, fixed);
 		assert.deepStrictEqual(
 			claudeSessionSettings({modes: ["plan"]} as ClaudeSessionConfigInput).modes,
-			CLAUDE_MODES.map((m) => Mode.make(m)),
+			fixed,
 			"a config named its own mode list and the row took it",
 		);
 	});

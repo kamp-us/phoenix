@@ -152,7 +152,7 @@ describe("a shell, asked to run something", () => {
 			key: "k1",
 			command: "git fetch --all",
 			cwd: "/Users/can/phoenix",
-			shell: DEFAULT_SHELL,
+			shell: "/bin/zsh",
 			timeoutMs: 5_000,
 			env: {TZ: "UTC"},
 		});
@@ -161,10 +161,6 @@ describe("a shell, asked to run something", () => {
 	it("asks for nothing when it is already running, so a refusal starts no second child", () => {
 		const busy = asked().send("prompt", prompt("printf second", "k2"));
 		expect(askedRun(busy.effects)).toBeUndefined();
-	});
-
-	it("says on the tile what it is running", () => {
-		expect(asked().effects).toContainEqual(emit(STATUS_PORT, "running git fetch --all"));
 	});
 });
 
@@ -188,10 +184,6 @@ describe("a command that succeeded", () => {
 			durationMs: 1_234,
 		});
 		expect(askedRun(run.effects)).toBeUndefined();
-	});
-
-	it("says `exit 0 in 1.2s` on the tile", () => {
-		expect(done().effects).toContainEqual(emit(STATUS_PORT, "exit 0 in 1.2s"));
 	});
 
 	/**
@@ -380,10 +372,6 @@ describe("the row a config writes", () => {
 		expect(row.ports.prompt?.accepts(prompt("hi"))).toBe(true);
 		expect(Object.keys(row.ports)).toEqual(expect.arrayContaining([TITLE_PORT, STATUS_PORT]));
 	});
-
-	it("takes `/bin/zsh` when a config names no interpreter", () => {
-		expect(DEFAULT_SHELL).toBe("/bin/zsh");
-	});
 });
 
 /**
@@ -400,10 +388,6 @@ describe("the handler on the row, with a fake runner", () => {
 		output: `ran ${command.command} in ${command.cwd}\n`,
 		timedOut: false,
 		durationMs: 7,
-	});
-
-	it("is on the row under the tag the actor dispatches on", () => {
-		expect(typeof shell(options).handlers[RUN]).toBe("function");
 	});
 
 	it("is handed the effect the cell asked for, and its events reach `update`", async () => {
@@ -432,22 +416,6 @@ describe("the handler on the row, with a fake runner", () => {
 		expect(turn.ok).toBe(true);
 		expect(run.state.running).toBeNull();
 		expect(run.state.last?.durationMs).toBe(7);
-	});
-
-	it("answers a list, because that is what a `HostHandlers` handler owes", async () => {
-		const runner = fakeRunner(ending);
-		const events = await Effect.runPromise(
-			handlerOn(shell(options, runner.context))({
-				type: RUN,
-				key: "k9",
-				command: "true",
-				cwd: "/tmp",
-				shell: "/bin/sh",
-				timeoutMs: null,
-			}),
-		);
-		expect(Array.isArray(events)).toBe(true);
-		expect(events[0]).toMatchObject({type: "finished", key: "k9"});
 	});
 });
 

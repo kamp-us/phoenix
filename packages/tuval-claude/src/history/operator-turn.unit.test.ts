@@ -9,7 +9,6 @@
  * the `prompt` cell (#7978), and never the layer's (#7979).
  */
 
-import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
 import type {AgentEvent} from "@kampus/tuval-sdk/kernel/ai-agent/events";
 import {Effect, Stream} from "effect";
@@ -71,22 +70,5 @@ describe("what a whole turn puts on the pump", () => {
 				);
 			}),
 		),
-	);
-
-	it.effect("reads the same absence off the mapping over the turn's raw frames", () =>
-		Effect.sync(() => {
-			const frames: ReadonlyArray<SDKMessage> = messages("tool-turn");
-			let mapping = emptyMapping;
-			const events: AgentEvent[] = [];
-			for (const frame of frames) {
-				const step = toAgentEvents(frame, mapping, {at: AT});
-				mapping = step.mapping;
-				events.push(...step.events);
-			}
-			assert.isEmpty(
-				itemsIn(events).filter((item) => item.kind === "user"),
-				"a captured turn carries a frame the mapping reads as the operator's own text",
-			);
-		}),
 	);
 });

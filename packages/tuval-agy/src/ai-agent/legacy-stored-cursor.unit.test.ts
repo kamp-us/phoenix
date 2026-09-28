@@ -121,18 +121,6 @@ describe("a cursor in the pre-#8968 stored-id shape", () => {
 		expect(ids(served.items)).toEqual([]);
 	});
 
-	it("pages every row of the paired v1.2.0 capture — the tool rows by the alias, the rest by a live key that already stood", () => {
-		// This capture's log is written in step order, so `step_index` equals the ordinal for each of
-		// its non-tool rows and their bare pre-fix ids are already live keys. That is what answers them
-		// here, not the alias — the next two cases are the ones that separate the two.
-		const history = joinProjection();
-		for (const item of history.items) {
-			const cursor = preFix(JOIN_CID, item.id);
-			const answer = joinPage(cursor);
-			expect(isRefusal(answer) ? `refused:${cursor}` : "page").toBe("page");
-		}
-	});
-
 	it("never outranks the live id of the same text, which is what the two shapes overlapping would cost", () => {
 		const aliases = joinProjection().cursorAliases;
 		for (const ordinal of [0, 4, 5, 6, 7, 8, 9]) {

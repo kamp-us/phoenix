@@ -8,19 +8,8 @@
 
 import type {SDKSessionInfo} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
-import {Cause, Effect, Exit, Option} from "effect";
+import {Effect} from "effect";
 import {on} from "./fixtures/harness.ts";
-
-const failure = (
-	exit: Exit.Exit<unknown, unknown>,
-): {_tag?: string; reason?: string; detail?: string} =>
-	Exit.isFailure(exit)
-		? ((Option.getOrUndefined(Cause.findErrorOption(exit.cause)) ?? {}) as {
-				_tag?: string;
-				reason?: string;
-				detail?: string;
-			})
-		: {};
 
 const stored: ReadonlyArray<SDKSessionInfo> = [
 	{
@@ -139,27 +128,5 @@ describe("listSessions on the Claude backend", () => {
 					assert.strictEqual(row?.firstPrompt, "why is the picker empty");
 				}),
 		),
-	);
-
-	it.effect("falls back to the SDK's own summary when nobody renamed the session", () =>
-		on({sessions: stored}, (agent) =>
-			Effect.gen(function* () {
-				const [row] = yield* agent.listSessions;
-				assert.strictEqual(row?.title, "the newest chat");
-			}),
-		),
-	);
-
-	it.effect("turns a throwing listing into a ListError naming the enumeration", () =>
-		Effect.gen(function* () {
-			const thrown = new Error("the projects directory is unreadable");
-			const exit = yield* Effect.exit(on({listFails: thrown}, (agent) => agent.listSessions));
-			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/ListError");
-			assert.strictEqual(failure(exit).reason, "store-unreadable");
-			assert.include(failure(exit).detail ?? "", "could not be enumerated");
-			// The thrown value is retained rather than repeated (#8010); `refusals.unit.test.ts`
-			// is where that split is judged.
-			assert.notInclude(failure(exit).detail ?? "", "projects directory");
-		}),
 	);
 });

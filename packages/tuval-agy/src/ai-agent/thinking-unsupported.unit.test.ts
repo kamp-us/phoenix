@@ -5,11 +5,10 @@
  * suffix already in `--model` and refused outright for a model carrying none. Two facts follow from
  * that and are asserted separately: the thinking catalog the layer publishes is the resolved-empty
  * offer on the open and on a respawn alike, and every `ThinkingLevel` is refused with an empty
- * `available` while the running child is left alone — which is the half the integration tier cannot
- * state as cheaply, because it has to be read as a launch count across a call that spawns nothing.
+ * `available` while the running child is left alone.
  *
- * Limits of the proof: the spawner is a stub, so no real `agy` judges the argv. The scripted binary
- * beside this file (`agy-ai-agent.integration.test.ts`) drives the same path over real spawns.
+ * The spawner is a stub, and that costs this proof nothing: a refused level launches no child and
+ * composes no argv, so a real spawn would have nothing to judge. This file is the refusal's only owner.
  */
 
 import {assert, describe, it} from "@effect/vitest";

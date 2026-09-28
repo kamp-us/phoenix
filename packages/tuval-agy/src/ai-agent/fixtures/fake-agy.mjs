@@ -137,6 +137,16 @@ const saveState = () => {
 	if (statePath !== undefined) writeFileSync(statePath, JSON.stringify(state));
 };
 
+/**
+ * Count a finished turn and persist it before its usage-bearing `DONE` is written. A respawn tears the
+ * child down with SIGTERM, which has no handler here, as soon as the layer has read that usage; a
+ * save that followed the write could be killed first, and the next child would restart at step 0.
+ */
+const settleTurn = () => {
+	state = {...state, turns: state.turns + 1, input: state.input + 7, output: state.output + 3};
+	saveState();
+};
+
 const cumulative = () => ({
 	input_tokens: state.input,
 	output_tokens: state.output,
@@ -237,6 +247,7 @@ const runTurn = async (content) => {
 		});
 	}
 	await sleep(20);
+	settleTurn();
 	write({
 		event: "step_update",
 		step_update: {
@@ -254,8 +265,6 @@ const runTurn = async (content) => {
 			},
 		},
 	});
-	state = {...state, turns: state.turns + 1, input: state.input + 7, output: state.output + 3};
-	saveState();
 	write({
 		event: "result",
 		result: {
@@ -283,6 +292,7 @@ const runToolTurn = async () => {
 	await runCall(index + 1, CAPTURED_CALLS[0]);
 	await runCall(index + 2, CAPTURED_CALLS[1]);
 	const reply = "one.txt: 4 lines, two.txt: 6 lines";
+	settleTurn();
 	write({
 		event: "step_update",
 		step_update: {
@@ -300,8 +310,6 @@ const runToolTurn = async () => {
 			},
 		},
 	});
-	state = {...state, turns: state.turns + 1, input: state.input + 7, output: state.output + 3};
-	saveState();
 	write({
 		event: "result",
 		result: {

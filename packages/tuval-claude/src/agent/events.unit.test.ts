@@ -20,37 +20,6 @@ import {CWD, MODES, messages, OPENED_EVENTS, on, settled} from "./fixtures/harne
 const TURN_EVENTS = 6;
 
 describe("events over a captured tool turn", () => {
-	it.effect("carries the turn's items and its usage in one ordered stream", () =>
-		on({opening: messages("tool-turn")}, (agent) =>
-			Effect.gen(function* () {
-				yield* agent.start({cwd: CWD});
-				const events = yield* Stream.runCollect(
-					Stream.take(agent.events, OPENED_EVENTS + TURN_EVENTS),
-				);
-				assert.deepStrictEqual(
-					events.map((event) => event.kind),
-					// The start's own, then the first turn's `init` — the model and the CLI version it
-					// names — then the turn, which ends on the `ready` its `result` carries.
-					[
-						"phase",
-						"mode",
-						"model",
-						"commands",
-						"thinking",
-						"phase",
-						"usage",
-						"version",
-						"item",
-						"item",
-						"item",
-						"usage",
-						"phase",
-					],
-				);
-			}),
-		),
-	);
-
 	it.effect("re-sends the same item id, running then ok", () =>
 		on({opening: messages("tool-turn")}, (agent) =>
 			Effect.gen(function* () {

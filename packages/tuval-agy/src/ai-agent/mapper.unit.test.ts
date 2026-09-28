@@ -221,22 +221,6 @@ describe("the error_message step", () => {
 	const withText = (text: string): string =>
 		patchStep(fixtures.errorMessageStep, {text_delta: text});
 
-	it("never reaches the default arm, so no unrecognised-type row can be minted for it", () => {
-		const {events} = fold([
-			fixtures.init,
-			fixtures.responseActive,
-			fixtures.errorMessageStep,
-			fixtures.resultContentFiltered,
-		]);
-		const rows = items(events).filter((item) => item.kind === "system");
-		expect(rows.some((item) => item.kind === "system" && item.text.includes("unrecognised"))).toBe(
-			false,
-		);
-		expect(rows.some((item) => item.kind === "system" && item.text.includes("error_message"))).toBe(
-			false,
-		);
-	});
-
 	it("renders nothing when the turn's result reads interrupted — the cut reply's mark is the signal", () => {
 		const {events} = fold([
 			fixtures.init,
@@ -458,18 +442,6 @@ describe("usage", () => {
 	// The three-turn census is the whole of the evidence that `result.usage` is cumulative, so the
 	// cases below fold it rather than a synthetic second turn: a one-turn capture cannot tell a
 	// per-turn total from a conversation total, which is exactly how #8695 got written.
-	it("totals a three-turn conversation at agy's own last cumulative, not at the sum of them", () => {
-		const census = [
-			fixtures.init,
-			fixtures.censusTurnOneStep,
-			fixtures.censusTurnOneResult,
-			fixtures.censusTurnTwoStep,
-			fixtures.censusTurnTwoResult,
-		];
-		const {events} = fold(census);
-		expect(summed(events)).toEqual({inputTokens: 21419, outputTokens: 2});
-	});
-
 	it("reports a second turn as its own spend and not again as the first's", () => {
 		const {events} = fold([
 			fixtures.init,

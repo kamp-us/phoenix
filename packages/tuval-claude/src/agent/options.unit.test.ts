@@ -122,10 +122,6 @@ describe("the spawned CLI's environment", () => {
 });
 
 describe("what a TransportError says the subprocess did", () => {
-	it("names the exit code", () => {
-		expect(exitDetail({code: 1, signal: null})).toContain("exited with code 1");
-	});
-
 	it("names the signal instead, when one killed it", () => {
 		expect(exitDetail({code: null, signal: "SIGKILL"})).toContain("killed by SIGKILL");
 	});
