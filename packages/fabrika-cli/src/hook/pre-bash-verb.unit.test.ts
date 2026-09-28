@@ -126,10 +126,12 @@ describe("the states in which nothing was judged", () => {
 	it("refuses an event it does not judge, and a payload carrying no command", async () => {
 		const wrongEvent = await run(
 			JSON.stringify({
-				hook_event_name: "SessionStart",
+				hook_event_name: "PostToolUse",
 				session_id: "s",
 				transcript_path: "/t",
 				cwd: WORKTREE,
+				tool_name: "Bash",
+				tool_input: {command: `cd ${PRIMARY} && ls`},
 			}),
 		);
 		const noCommand = await run(
@@ -144,6 +146,7 @@ describe("the states in which nothing was judged", () => {
 		);
 
 		expect(wrongEvent.code).toBe(WRONG_EVENT);
+		expect(wrongEvent.stderr.join("\n")).toContain("PostToolUse");
 		expect(noCommand.code).toBe(WRONG_EVENT);
 		expect(noCommand.stderr.join("\n")).toContain("tool_input.command");
 	});

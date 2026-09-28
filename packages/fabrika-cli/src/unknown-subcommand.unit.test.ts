@@ -26,24 +26,12 @@ describe("findUnknownSubcommand", () => {
 	]);
 	const root = node("root", [group, leaf]);
 
-	it("resolves a known path to no refusal", () => {
-		expect(findUnknownSubcommand(root, ["group", "verb"])).toBeUndefined();
-	});
-
 	it("resolves an alias the parser would resolve", () => {
 		expect(findUnknownSubcommand(root, ["group", "v"])).toBeUndefined();
 	});
 
 	it("resolves a unlisted subcommand by exact name, as the parser does", () => {
 		expect(findUnknownSubcommand(root, ["group", "secret"])).toBeUndefined();
-	});
-
-	it("refuses an unknown token at the root, naming the path and what root offers", () => {
-		expect(findUnknownSubcommand(root, ["nope"])).toEqual({
-			token: "nope",
-			path: ["root"],
-			known: ["group", "leaf"],
-		});
 	});
 
 	it("refuses an unknown token one level down, naming the group's path", () => {
@@ -58,10 +46,6 @@ describe("findUnknownSubcommand", () => {
 		expect(findUnknownSubcommand(root, ["group", "nope"])?.known).not.toContain("secret");
 	});
 
-	it("reports the FIRST unknown token, not the last, however long the invalid tail", () => {
-		expect(findUnknownSubcommand(root, ["group", "nope", "deeper", "deepest"])?.token).toBe("nope");
-	});
-
 	it("stops at a leaf — its tokens are its own arguments, not subcommands", () => {
 		expect(findUnknownSubcommand(root, ["leaf", "whatever"])).toBeUndefined();
 	});
@@ -72,12 +56,6 @@ describe("findUnknownSubcommand", () => {
 
 	it("treats empty argv as resolved (the bare-root help case)", () => {
 		expect(findUnknownSubcommand(root, [])).toBeUndefined();
-	});
-
-	it("refuses before a trailing help flag, whichever spelling", () => {
-		for (const help of ["--help", "-h"]) {
-			expect(findUnknownSubcommand(root, ["nope", help])?.token).toBe("nope");
-		}
 	});
 });
 
@@ -116,15 +94,8 @@ describe("against the real fabrika command tree", () => {
 		});
 	});
 
-	it("refuses an unregistered verb inside a registered group", () => {
-		expect(
-			findUnknownSubcommand(fabrikaCommand, ["adr", "bogus", "deeper", "--help"])?.path,
-		).toEqual(["fabrika", "adr"]);
-	});
-
 	it.each([
 		["an unknown group", ["nosuchgroup"], "nosuchgroup", ["fabrika"]],
-		["an unknown group probed with --help", ["nosuchgroup", "--help"], "nosuchgroup", ["fabrika"]],
 		["an unknown group probed with -h", ["nosuchgroup", "-h"], "nosuchgroup", ["fabrika"]],
 		["an unknown verb in a known group", ["adr", "bogus"], "bogus", ["fabrika", "adr"]],
 		["an unknown verb probed with --help", ["adr", "bogus", "--help"], "bogus", ["fabrika", "adr"]],

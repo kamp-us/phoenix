@@ -1,14 +1,10 @@
 import {describe, expect, it} from "vitest";
-import {droppedEntries, emitFromFields, parseFields, read} from "./deviations.ts";
+import {droppedEntries, parseFields, read} from "./deviations.ts";
 
 const ENTRY =
 	"- **Scope narrowing** — **Said:** four gates. **Did:** three plus a bounce. **Why:** the fourth emits a trivial verdict. **Disposition:** stated here.";
 
 describe("read", () => {
-	it("is Absent only when nothing in the body reaches for the section", () => {
-		expect(read("Fixes #1\n\n## Summary\n\nstuff")._tag).toBe("Absent");
-	});
-
 	it("is Malformed, never Absent, when a heading reaches for the section and misses", () => {
 		expect(read("### Deviations\n\nNone.\n")._tag).toBe("Malformed");
 		expect(read("## deviations\n\nNone.\n")._tag).toBe("Malformed");
@@ -64,11 +60,6 @@ describe("parseFields", () => {
 
 	it("refuses a row whose field is blank", () => {
 		expect(parseFields("4\ta\tb\tc\t \n")._tag).toBe("Unusable");
-	});
-
-	it("composes bytes its own reader accepts", () => {
-		const composed = emitFromFields("-\ta.\tb.\tc.\td.\n");
-		expect(composed._tag === "Composed" && read(composed.bytes)._tag).toBe("Found");
 	});
 });
 

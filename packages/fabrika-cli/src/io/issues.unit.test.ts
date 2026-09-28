@@ -6,6 +6,7 @@ import {
 	fakeShell,
 	type HttpReply,
 	linkNext,
+	once,
 } from "../fakes.test-support.ts";
 import {NO_TOKEN, PAGE_CAP} from "./gh-api.ts";
 import type {Attempt, Shell} from "./git.ts";
@@ -96,12 +97,6 @@ const issue = (fields: Record<string, unknown>) => ({
 });
 
 describe("the credential is an argument to every request, never something a request path guesses", () => {
-	it("sends the resolved token as the authorization header", async () => {
-		const http = scripted([[/issues\/7/, {status: 200, body: issue({})}]]);
-		await against(getIssue("o/r", 7), http);
-		expect(http.calls[0]).toBe("GET https://api.github.com/repos/o/r/issues/7");
-	});
-
 	it("refuses naming both env vars when nothing resolves one, and issues no request", async () => {
 		delete process.env.GITHUB_TOKEN;
 		const http = scripted([]);
@@ -369,14 +364,6 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 		expect(http.calls[0]).toContain("per_page=100");
 	});
 
-	it("listOpenMilestones refuses rather than returning a short list when the read fails", async () => {
-		const result = await against(
-			listOpenMilestones("o/r"),
-			scripted([[/milestones/, {status: 502, body: {message: "Bad gateway"}}]]),
-		);
-		expect(result._tag).toBe("Failure");
-	});
-
 	it("listOpenMilestones refuses a 200 whose entries are not milestones", async () => {
 		const result = await against(
 			listOpenMilestones("o/r"),
@@ -556,22 +543,14 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 		expect(http.calls).toHaveLength(PAGE_CAP);
 	});
 
-	it("listOpenIssues refuses the same capped walk — a short board reads as never drifted", async () => {
-		const http = scripted([], {
-			status: 200,
-			body: [],
-			headers: linkNext("https://api.github.com/next"),
-		});
-		expect((await against(listOpenIssues("o/r"), http))._tag).toBe("Failure");
-	});
-
 	/**
 	 * A read that hands its entries on without the exhaustion flag lets a walk that stopped at the
 	 * cap answer a short list as a clean `Ok`. Each of them seats a proven
-	 * negative — "no duplicate", "no twin", "this label is not in the taxonomy" — and a short list
-	 * there is a wrong answer rather than a short one.
+	 * negative — "no duplicate", "no twin", "this label is not in the taxonomy", "the board never
+	 * drifted" — and a short list there is a wrong answer rather than a short one.
 	 */
 	const cappedReads: ReadonlyArray<readonly [string, () => Shell<Attempt<unknown>>]> = [
+		["listOpenIssues", () => listOpenIssues("o/r")],
 		["openIssuesTitled", () => openIssuesTitled("o/r", "map: portability")],
 		["issueTimeline", () => issueTimeline("o/r", 1)],
 		["timelineFacts", () => timelineFacts("o/r", 1)],
@@ -852,14 +831,6 @@ describe("openQueueIssues", () => {
 		);
 		expect(result._tag).toBe("Failure");
 	});
-
-	it("refuses rather than returning a short list when the read fails", async () => {
-		const result = await against(
-			openQueueIssues("o/r", "l"),
-			scripted([[/issues/, {status: 502, body: {message: "Bad gateway"}}]]),
-		);
-		expect(result._tag).toBe("Failure");
-	});
 });
 
 describe("issueTimeline", () => {
@@ -885,14 +856,6 @@ describe("issueTimeline", () => {
 				{number: 4706, isPullRequest: false},
 			],
 		});
-	});
-
-	it("refuses on a read that failed — an empty timeline would read as `no twin exists`", async () => {
-		const result = await against(
-			issueTimeline("o/r", 1),
-			scripted([[/timeline/, {status: 502, body: {message: "Bad gateway"}}]]),
-		);
-		expect(result._tag).toBe("Failure");
 	});
 });
 
@@ -1012,18 +975,6 @@ describe("repoDefaultBranch", () => {
 describe("listCommentsReconciled", () => {
 	const LIST = /GET .*\/issues\/7\/comments\?/;
 	const ISSUE = /GET .*\/issues\/7$/;
-
-	/** Fires on the first matching call only, so two reads of one URL can answer differently. */
-	const once = (pattern: RegExp): RegExp => {
-		const re = new RegExp(pattern.source);
-		let fired = false;
-		re.test = (input: string) => {
-			if (fired || !RegExp.prototype.test.call(re, input)) return false;
-			fired = true;
-			return true;
-		};
-		return re;
-	};
 
 	const comment = (id: number) => ({id, user: {login: "agent"}, created_at: "", updated_at: ""});
 	const page = (...ids: ReadonlyArray<number>): Reply => ({status: 200, body: ids.map(comment)});

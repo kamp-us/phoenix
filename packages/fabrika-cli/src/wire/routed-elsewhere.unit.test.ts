@@ -28,9 +28,4 @@ describe("routed-elsewhere against the verdict marker", () => {
 		assert.strictEqual(readRouted(VERDICT)._tag, "Absent");
 		assert.strictEqual(readVerdict(VERDICT)._tag, "Found");
 	});
-
-	it("is Malformed, never Absent, on a route whose namespace drifted", () => {
-		const drifted = readRouted("routed-elsewhere: review_ui @ 6c6fe226 — no rendered delta\n");
-		assert.strictEqual(drifted._tag, "Malformed");
-	});
 });

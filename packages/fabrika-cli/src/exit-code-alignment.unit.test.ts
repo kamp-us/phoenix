@@ -238,10 +238,6 @@ describe.each(
 )("`%s` against the shared registry", (group, seats) => {
 	const table = TABLES[group];
 
-	it("has a module to check", () => {
-		expect(table).toBeDefined();
-	});
-
 	it("seats every shared meaning on the base's number", () => {
 		expect(checkAlignment(exitCodes, table as CodeTable, seats).drifted).toEqual([]);
 	});

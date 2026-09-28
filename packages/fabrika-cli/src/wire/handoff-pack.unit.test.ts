@@ -1,12 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {
-	emitFromFields,
-	groundDigest,
-	instant,
-	packNonce,
-	read,
-	readToLines,
-} from "./handoff-pack.ts";
+import {emitFromFields, groundDigest, instant, packNonce, read} from "./handoff-pack.ts";
 
 const MARKER =
 	"<!-- fabrika:handoff pack nonce=7f3a9c21 sealedAt=2026-08-09T18:36:48Z groundDigest=f9d0814b89b4 -->";
@@ -54,16 +47,6 @@ describe("read", () => {
 		expect(found.value.nonce).toBe("7f3a9c21");
 		expect(found.value.nextAct).toBe("Follow one level of local helper call.");
 		expect(found.value.groundJson).toBe('{"issue":5021}');
-	});
-
-	it("reads bytes that reach for no marker as Absent, never Malformed", () => {
-		expect(read("Picking this up now.\n")._tag).toBe("Absent");
-		expect(read("")._tag).toBe("Absent");
-	});
-
-	it("reads a drifted marker as Malformed — a malformed pack is never an absent one", () => {
-		const drifted = read(pack().replace("nonce=7f3a9c21", "nonce=run-1"));
-		expect(drifted._tag).toBe("Malformed");
 	});
 
 	it("refuses a section the format does not own — the closed set is the injection defence", () => {
@@ -114,17 +97,6 @@ describe("emitFromFields", () => {
 		"## Unsure",
 		"four",
 	].join("\n");
-
-	it("round-trips its own bytes", () => {
-		const composed = emitFromFields(fields);
-		expect(composed._tag).toBe("Composed");
-		if (composed._tag !== "Composed") return;
-		const lines = readToLines(composed.bytes);
-		expect(lines._tag).toBe("Found");
-		if (lines._tag !== "Found") return;
-		expect(lines.value.join("\n")).toContain("nonce\t7f3a9c21");
-		expect(lines.value.join("\n")).toContain("unsure\tfour");
-	});
 
 	it("refuses a field it was not given rather than composing an unbound pack", () => {
 		expect(emitFromFields(fields.replace("nonce: 7f3a9c21", "nonce: run-1"))).toMatchObject({

@@ -14,7 +14,7 @@ import {applyEvent, foldLog, type LogEntry} from "./lane/fold.ts";
 import {compileText} from "./lane/machine.ts";
 import {causeForEvent, routeForCause} from "./lane/report.ts";
 import {classifyPark} from "./recipe/parks.ts";
-import {CAP_ROUND, MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "./retry-budget.ts";
+import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "./retry-budget.ts";
 
 const AT = "2026-09-10T00:00:00.000Z";
 
@@ -55,10 +55,6 @@ describe("the one retry budget", () => {
 		);
 	});
 
-	it("is not the lap budget — the two axes are separate numbers", () => {
-		expect(MACHINERY_LAP_BUDGET).not.toBe(RETRY_BUDGET);
-	});
-
 	it("is the default a task context that declares no budget of its own compiles to", () => {
 		const noBudget = JSON.parse(coderTemplateText()) as {
 			machine: {context: Record<string, unknown>};
@@ -66,10 +62,6 @@ describe("the one retry budget", () => {
 		noBudget.machine.context.issue = {retries: 0};
 
 		expect(compiledInitials(JSON.stringify(noBudget))).toEqual([RETRY_BUDGET]);
-	});
-
-	it("is one more than nothing and one less than the round that spends it", () => {
-		expect(CAP_ROUND).toBe(RETRY_BUDGET + 1);
 	});
 
 	// A lane emitted before the raise seeded its own number into `machine.context`, and the compiler

@@ -1,16 +1,16 @@
 /**
- * The end-to-end half: the **exit status and the exact stdout bytes** a shell caller reads.
+ * The end-to-end half: the **exact stdout bytes** a shell caller reads from `wire read`, through the
+ * adapter that binds its argv.
  *
- * Only a subprocess proves those, and each `it` costs one cold node+TS load of `bin.ts` — so spawn
- * count is this file's cost (`.patterns/subprocess-test-budget.md`). Two spawns: one answer and one
- * refusal, which is the pair that cannot be established in-process. Everything else about these
- * verbs is covered in-process by `./verbs.unit.test.ts`.
+ * Only a subprocess proves that binding, and each `it` costs one cold node+TS load of `bin.ts` — so
+ * spawn count is this file's cost (`.patterns/subprocess-test-budget.md`). One spawn: a refusal's
+ * exit status reaching the caller is `../emit.cli.test.ts`'s, over the drain every adapter shares.
+ * Everything else about these verbs is covered in-process by `./verbs.unit.test.ts`.
  */
 import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
-import {ABSENT} from "./codes.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
 
@@ -46,15 +46,5 @@ describe("fabrika wire, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () =
 		expect(run.stdout).toBe(
 			"found\tacceptance-criteria\t2\nopen\tthe read is total\nchecked\tthe registry is the seam\n",
 		);
-	});
-
-	it("refuses a body with no block on the absent code, with NOTHING on stdout", () => {
-		const run = fabrika(
-			["wire", "read", "--format", "acceptance-criteria"],
-			"### What to build\n\nStand up the group.\n",
-		);
-		expect(run.code).toBe(ABSENT);
-		expect(run.stdout).toBe("");
-		expect(run.stderr).toContain("absent");
 	});
 });

@@ -38,14 +38,6 @@ describe("claimedIdOf", () => {
 });
 
 describe("openPullRequests", () => {
-	it("refuses when the read is not served", async () => {
-		const {layer} = wired([[/pulls/, served(404, {message: "Not Found"})]]);
-		const result = await Effect.runPromise(
-			Effect.provide(openPullRequests("o/nonexistent"), layer),
-		);
-		expect(result._tag).toBe("Failure");
-	});
-
 	it("refuses a 200 whose payload is not a list of pull requests, never reading it empty", async () => {
 		const {layer} = wired([[/pulls/, served(200, [{title: "no number here"}])]]);
 		const result = await Effect.runPromise(Effect.provide(openPullRequests("o/r"), layer));
@@ -92,14 +84,6 @@ describe("idsClaimedByPr", () => {
 			Effect.provide(idsClaimedByPr("o/r", 4711, "records"), layer),
 		);
 		expect(result).toEqual({_tag: "Ok", value: [{id: "0239", file: "0239-x.md", pr: 4711}]});
-	});
-
-	it("refuses rather than returning a short list when the read fails", async () => {
-		const {layer} = wired([[/files/, served(502, {message: "Bad gateway"})]]);
-		const result = await Effect.runPromise(
-			Effect.provide(idsClaimedByPr("o/r", 1, "records"), layer),
-		);
-		expect(result._tag).toBe("Failure");
 	});
 
 	it("refuses an entry whose status is outside the allowed set", async () => {

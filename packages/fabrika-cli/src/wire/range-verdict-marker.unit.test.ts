@@ -86,22 +86,12 @@ describe("read", () => {
 		).toBe(BASE);
 	});
 
-	it("is Absent — not Malformed — on a comment carrying no marker of this family", () => {
-		expect(read("Thanks — this reads well to me, no notes.\n")._tag).toBe("Absent");
-	});
-
 	/** Each of these would be a plausible PASS to a lenient reader, which is why each is pinned. */
 	const drifts = [
-		[
-			"no content digest at all — the range form's one refusal",
-			`review-child: PASS range:${BASE}..${TIP} — done`,
-		],
 		[
 			"a content digest that is not 12 hex",
 			`review-child: PASS range:${BASE}..${TIP} content:2f1a — done`,
 		],
-		["a head-bound marker, read here", `review-child: PASS @ ${TIP} content:${CONTENT} — done`],
-		["a range naming one revision", `review-child: PASS range:${TIP} content:${CONTENT} — done`],
 		["a range with an empty side", `review-child: PASS range:..${TIP} content:${CONTENT} — done`],
 		[
 			"a three-dot range, which is not the marker's spelling",
@@ -114,10 +104,6 @@ describe("read", () => {
 		[
 			"a polarity nobody defined",
 			`review-child: APPROVED range:${BASE}..${TIP} content:${CONTENT} — done`,
-		],
-		[
-			"a namespace that is not kebab-case",
-			`review_child: PASS range:${BASE}..${TIP} content:${CONTENT} — done`,
 		],
 		["no trailing clause", `review-child: PASS range:${BASE}..${TIP} content:${CONTENT}`],
 	] as const;

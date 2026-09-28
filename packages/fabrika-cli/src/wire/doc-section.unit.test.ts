@@ -32,20 +32,13 @@ const DOC = [
 ].join("\n");
 
 describe("extractSection", () => {
-	it("prints the section body, deeper subheadings included", () => {
+	it("prints the section body, a deeper subheading included and the equal-depth one ending it", () => {
 		const result = extractSection(DOC, "build claim");
 		expect(result).toEqual({
 			_tag: "Found",
 			body: "`won` prints your token.\n\n### exit codes\n\n20 means out of focus.",
 			heading: {level: 2, line: 5},
 		});
-	});
-
-	it("ends the section at an equal-depth heading, not at a deeper one", () => {
-		const result = extractSection(DOC, "build claim");
-		if (result._tag !== "Found") throw new Error(result._tag);
-		expect(result.body).toContain("### exit codes");
-		expect(result.body).not.toContain("build confirm");
 	});
 
 	it("ends a shallower-heading section the same way", () => {

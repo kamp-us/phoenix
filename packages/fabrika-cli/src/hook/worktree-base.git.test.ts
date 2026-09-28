@@ -65,7 +65,7 @@ const resolveBase = async (clone: string, name: string, nonce: string): Promise<
 afterAll(removeClones);
 
 describe("resolving the base under parallel spawns", () => {
-	it("gives every one of N concurrent spawns the same fetched tip, with no lost base", async () => {
+	it("gives every one of N concurrent spawns the same fetched tip, and leaves no per-spawn ref behind", async () => {
 		const {clone, tip} = openClone();
 		expect(isCommitId(tip)).toBe(true);
 
@@ -81,18 +81,14 @@ describe("resolving the base under parallel spawns", () => {
 		expect(resolved).toHaveLength(SPAWNS * ROUNDS);
 		// Asserted as a set so a failure prints the losing spawn's own diagnostics, not `16 !== 320`.
 		expect(new Set(resolved)).toEqual(new Set([tip]));
-	}, 120_000);
-
-	it("leaves no per-spawn ref behind, so a clone does not accumulate one ref per spawn ever made", async () => {
-		const {clone, tip} = openClone();
-		expect(await resolveBase(clone, "agent-solo", "abcdef012345")).toBe(tip);
+		// A clone must not accumulate one ref per spawn ever made.
 		const refs = execFileSync("git", ["for-each-ref", "--format=%(refname)", "refs/fabrika/"], {
 			cwd: clone,
 			env: GIT_ENV,
 			encoding: "utf8",
 		});
 		expect(refs.trim()).toBe("");
-	});
+	}, 120_000);
 });
 
 describe("the per-spawn base ref", () => {

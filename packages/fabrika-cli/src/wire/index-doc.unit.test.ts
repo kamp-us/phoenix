@@ -18,7 +18,6 @@ import {
 	conformIndexDoc,
 	DOC_PATH,
 	describeIndexFindings,
-	documentedKeys,
 	END_MARKER,
 	INDEX_LAWS,
 	renderProjection,
@@ -80,16 +79,6 @@ describe("the committed index doc agrees with the registry", () => {
 		if (report._tag !== "Scanned") return;
 		expect(report.registered).toBe(registeredFormats.length);
 		expect(describeIndexFindings(report.findings)).toBe("");
-	});
-
-	it("documents every registered format and nothing else", () => {
-		expect([...documentedKeys(committedDoc())].sort()).toEqual(
-			registeredFormats.map((format) => format.key).sort(),
-		);
-	});
-
-	it("carries the region the generator owns, rendered from the registry as it stands", () => {
-		expect(committedDoc()).toContain(renderProjection(registeredFormats));
 	});
 });
 

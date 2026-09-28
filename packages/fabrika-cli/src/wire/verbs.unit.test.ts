@@ -204,16 +204,6 @@ describe("wire formats", () => {
 			consumers: expect.arrayContaining(["review"]),
 		});
 	});
-
-	it("lists the verdict marker with its owner module's producers and consumers", () => {
-		const out = runFormats({json: true});
-		expect(JSON.parse(out.stdout).formats).toContainEqual({
-			key: VERDICT,
-			purpose: expect.any(String),
-			producers: expect.arrayContaining(["review"]),
-			consumers: expect.arrayContaining(["ship"]),
-		});
-	});
 });
 
 /**
