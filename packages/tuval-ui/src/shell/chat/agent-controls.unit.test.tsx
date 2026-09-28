@@ -257,6 +257,7 @@ describe("permission cards", () => {
 			await Effect.runPromise(process.commit(pending({})));
 		});
 		await waitFor(() => expect(screen.queryByRole("region", {name: "Run a command"})).toBeNull());
+		expect(document.querySelector(".tuval-chat-permissions")).toBeNull();
 	});
 });
 
