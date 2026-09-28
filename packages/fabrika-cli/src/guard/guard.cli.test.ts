@@ -3,16 +3,10 @@
  *
  * Only a subprocess proves those, and each `it` costs one cold node+TS load of `bin.ts` — so spawn
  * count is this file's cost (`.patterns/subprocess-test-budget.md`). Each `it` is about a fact no
- * in-process test can establish: that the nested `guard <name> check` path is reachable by its
- * registration alone, that a violation really does cross the process boundary as a distinct
- * non-zero code, and that zero scope reds rather than passing. One spawn per registered
- * guard covers the registration; the taxonomy is proven once, on readme-guard.
- *
- * The four BOARD guards reach GitHub, so their registration spawn resolves the leaf and stops
- * there. Running one for real would put the network in a unit suite and make the verdict a fact
- * about the live board — registration is the only thing a spawn adds over their verb tests, and it
- * is exactly what resolving the leaf proves: an unregistered path exits on the unknown-subcommand
- * refusal instead.
+ * in-process test can establish: that a violation really does cross the process boundary as a
+ * distinct non-zero code, and that zero scope reds rather than passing. The taxonomy is proven
+ * once, on readme-guard. Which guard leaves are registered, and under which names, is not a spawn's
+ * to prove: `run.ts` runs the same `fabrikaCommand` that `unknown-subcommand.unit.test.ts` walks.
  */
 import {execFileSync} from "node:child_process";
 import {mkdirSync, mkdtempSync, writeFileSync} from "node:fs";
@@ -104,34 +98,10 @@ describe("fabrika guard, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () 
 		expect(run.stderr).toContain("gh pr edit");
 	});
 
-	it.each([
-		["homing-guard", "standing-lane"],
-		["pitch-guard", "lane-entering"],
-		["roadmap-guard", "milestone"],
-		["unresolved-threads-guard", "review-code"],
-	])("reaches %s's check leaf by its registration alone", (guard, marker) => {
-		const run = fabrika(["guard", guard, "check", "--help"]);
+	it("renders a nested guard leaf's help through the bin", () => {
+		const run = fabrika(["guard", "design-inventory", "generate", "--help"]);
 		expect(run.code).toBe(0);
-		expect(run.stdout).toContain(marker);
-	});
-
-	// The CI-shape and canon/design batch. Two of these leaves are NOT named `check`, which
-	// is the whole reason to spawn them: a leaf mis-registered under the wrong name is invisible to
-	// every in-process test and shows up only as an unknown-subcommand refusal in CI.
-	it.each([
-		["path-filter-guard", "check"],
-		["change-detect-guard", "check"],
-		["codeowners-cp", "check"],
-		["decisions-index", "validate"],
-		["design-token-guard", "check"],
-		["design-inventory", "check"],
-		["design-inventory", "generate"],
-		["i18n-guard", "check"],
-		["no-gh", "check"],
-	])("reaches %s's %s leaf by its registration alone", (guard, leaf) => {
-		const run = fabrika(["guard", guard, leaf, "--help"]);
-		expect(run.code).toBe(0);
-		expect(run.stdout).toContain(`EXAMPLES\n  fabrika guard ${guard} ${leaf}\n`);
+		expect(run.stdout).toContain("EXAMPLES\n  fabrika guard design-inventory generate\n");
 	});
 
 	it("reds a duplicate ADR id through the real decisions-index leaf", () => {

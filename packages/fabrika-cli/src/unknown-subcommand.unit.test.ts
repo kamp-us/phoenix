@@ -121,6 +121,69 @@ describe("against the real fabrika command tree", () => {
 			findUnknownSubcommand(fabrikaCommand, ["adr", "bogus", "deeper", "--help"])?.path,
 		).toEqual(["fabrika", "adr"]);
 	});
+
+	it.each([
+		["an unknown group", ["nosuchgroup"], "nosuchgroup", ["fabrika"]],
+		["an unknown group probed with --help", ["nosuchgroup", "--help"], "nosuchgroup", ["fabrika"]],
+		["an unknown group probed with -h", ["nosuchgroup", "-h"], "nosuchgroup", ["fabrika"]],
+		["an unknown verb in a known group", ["adr", "bogus"], "bogus", ["fabrika", "adr"]],
+		["an unknown verb probed with --help", ["adr", "bogus", "--help"], "bogus", ["fabrika", "adr"]],
+		[
+			"a multi-token invalid tail probed with --help",
+			["adr", "bogus", "deeper", "--help"],
+			"bogus",
+			["fabrika", "adr"],
+		],
+	])("refuses %s at its first invalid token", (_label, argv, token, path) => {
+		const unknown = findUnknownSubcommand(fabrikaCommand, argv);
+		expect(unknown?.token).toBe(token);
+		expect(unknown?.path).toEqual(path);
+	});
+
+	it.each([
+		["the root index", ["--help"]],
+		["a group's verbs", ["adr", "--help"]],
+		["a verb's flags", ["adr", "next", "--help"]],
+		["a verb's flags behind another flag", ["adr", "next", "--dir", ".decisions", "--help"]],
+	])("leaves the discovery path for %s unrefused", (_label, argv) => {
+		expect(findUnknownSubcommand(fabrikaCommand, argv)).toBeUndefined();
+	});
+});
+
+/**
+ * A guard leaf registered under the wrong name reaches CI only as an unknown-subcommand refusal.
+ * `findUnknownSubcommand` alone would pass a path whose guard were itself a leaf, so the walk also
+ * requires the named leaf to exist and carry no subcommands.
+ */
+describe("each guard leaf is registered under its name", () => {
+	const nodeAt = (path: ReadonlyArray<string>): CommandNode | undefined =>
+		path.reduce<CommandNode | undefined>(
+			(current, name) =>
+				current?.subcommands
+					.flatMap((group) => group.commands)
+					.find((child) => child.name === name),
+			fabrikaCommand,
+		);
+
+	it.each([
+		["homing-guard", "check"],
+		["pitch-guard", "check"],
+		["roadmap-guard", "check"],
+		["unresolved-threads-guard", "check"],
+		["path-filter-guard", "check"],
+		["change-detect-guard", "check"],
+		["codeowners-cp", "check"],
+		["decisions-index", "validate"],
+		["design-token-guard", "check"],
+		["design-inventory", "check"],
+		["design-inventory", "generate"],
+		["i18n-guard", "check"],
+		["no-gh", "check"],
+	])("resolves `fabrika guard %s %s` to a leaf", (guard, leaf) => {
+		expect(findUnknownSubcommand(fabrikaCommand, ["guard", guard, leaf, "--help"])).toBeUndefined();
+		const node = nodeAt(["guard", guard, leaf]);
+		expect(node?.subcommands.flatMap((group) => group.commands)).toEqual([]);
+	});
 });
 
 /**
