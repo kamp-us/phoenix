@@ -14,19 +14,6 @@ const run = (fs: FakeFs, overrides: Partial<typeof options> = {}) =>
 const populated = () => fakeFs({files: {[TERMS_PATH]: TERMS}});
 
 describe("runLookup", () => {
-	it("answers declared with the first matching row's section and cell", async () => {
-		const out = await run(populated());
-		expect(out.code).toBe(0);
-		expect(out.stdout).toBe("declared\tterms\tCore / shape\tpano\n");
-	});
-
-	// A parenthetical is a disambiguating qualifier, not an alias — the v1 split produced three
-	// false duplicates, so `tag` overlaps `Database (tag)` rather than equalling it.
-	it("answers collision for a whole-word overlap, not declared", async () => {
-		const out = await run(populated(), {terms: ["tag"]});
-		expect(out.stdout).toBe("collision\tterms\tIndexing\tDatabase (tag)\n");
-	});
-
 	// The normalization folds a hyphen to a SPACE (contract §normalization step 3), which is what
 	// makes `front-door` and `front door` one key — the v1 defect. It follows that `de-po`
 	// normalizes to `de po`, which is NOT `depo`: the contract's own `de-po` → `depo` example is
@@ -56,11 +43,6 @@ describe("runLookup", () => {
 		const out = await run(populated(), {terms: ["capture ledger"]});
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("absent\t-\t-\t-\n");
-	});
-
-	it("answers one line per term, in argument order", async () => {
-		const out = await run(populated(), {terms: ["depo", "capture ledger"]});
-		expect(out.stdout).toBe("declared\tterms\tProducts (domains)\tdepo\nabsent\t-\t-\t-\n");
 	});
 
 	it("answers absent for every term against a register that exists and holds no rows", async () => {

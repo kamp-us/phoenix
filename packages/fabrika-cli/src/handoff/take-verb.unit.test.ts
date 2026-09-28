@@ -70,6 +70,7 @@ describe("runTake", () => {
 		const out = await run([], {stdin: text("")});
 		expect(out.code).toBe(EMPTY_STDIN);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("handoff take: stdin was read and held nothing");
 	});
 
 	it("exits 1, never 3, when the stdin read itself failed", async () => {

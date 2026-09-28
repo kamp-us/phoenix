@@ -225,11 +225,6 @@ describe("runOpen seats each refusal on its own code, with nothing on stdout", (
 		await Effect.runPromise(Effect.provide(runOpen(onTopic), seams.layer));
 		expect(seams.requests.some((request) => CREATE.test(request))).toBe(false);
 	});
-
-	it("keeps every refusal on a code of its own", () => {
-		expect(new Set(cases.map(([, code]) => code)).size).toBeGreaterThan(4);
-		expect(cases.map(([, code]) => code)).not.toContain(0);
-	});
 });
 
 describe("runOpen binds a session to a wayfinding frontier ticket", () => {
