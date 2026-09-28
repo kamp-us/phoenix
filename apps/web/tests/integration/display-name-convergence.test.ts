@@ -13,7 +13,7 @@
  * rows (the byline is read off the exact definition id the seed returned), so it holds
  * under concurrent files sharing the one D1.
  */
-import {beforeAll, describe, expect, it} from "vitest";
+import {describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
@@ -69,10 +69,6 @@ const definitionLanded = async (cookie: string, termSlug: string, body: string) 
 	const hit = conn.items.find((e) => e.node.body === body);
 	return hit ? {ok: true as const, data: {id: hit.node.id}, id: "landed"} : undefined;
 };
-
-beforeAll(() => {
-	expect(typeof h.url()).toBe("string");
-});
 
 describe("user.setDisplayName — a rename reaches the stamped author byline (#2154)", () => {
 	it("byline reflects the NEW display name after a görünen-ad change", async () => {

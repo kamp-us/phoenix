@@ -5,7 +5,7 @@
  *
  * Runs on the run-scoped SHARED stage (ADR 0104), `NS`-prefixed so its rows can't collide.
  */
-import {beforeAll, describe, expect, it} from "vitest";
+import {describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
@@ -53,10 +53,6 @@ async function meViaApiKey(key: string): Promise<{ok: boolean; id?: string; code
 	const r = parsed.results[0]!;
 	return r.ok ? {ok: true, id: r.data.id} : {ok: false, code: r.error.code};
 }
-
-beforeAll(() => {
-	expect(typeof h.url()).toBe("string");
-});
 
 describe("pasaport apiKey — durable agent credentials", () => {
 	it("a session mints a key that authenticates a later request as the same user", async () => {

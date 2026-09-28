@@ -1,4 +1,6 @@
+import * as Duration from "effect/Duration";
 import {describe, expect, it} from "vitest";
+import {SHELL_BOOT_READ_TIMEOUT} from "../../../worker/features/flagship/shell-boot-route.ts";
 import {
 	classifyEdgeBootAttempt,
 	EDGE_BOOT_RETRY_DELAY_MS,
@@ -70,10 +72,9 @@ describe("formatEdgeBootFailure — every attempt survives into the thrown messa
 });
 
 describe("EDGE_BOOT_RETRY_DELAY_MS — the retry outlives the bound it retries", () => {
-	it("exceeds the 1s never-hang read timeout, so a retry is a new sample", () => {
-		// `SHELL_BOOT_READ_TIMEOUT` is `Duration.seconds(1)` in
-		// `worker/features/flagship/shell-boot-route.ts`. A delay at or under it would leave the
-		// retry inside the window that degraded the previous read.
-		expect(EDGE_BOOT_RETRY_DELAY_MS).toBeGreaterThan(1_000);
+	it("exceeds the never-hang read timeout, so a retry is a new sample", () => {
+		// A delay at or under the worker's own read bound would leave the retry inside the window
+		// that degraded the previous read.
+		expect(EDGE_BOOT_RETRY_DELAY_MS).toBeGreaterThan(Duration.toMillis(SHELL_BOOT_READ_TIMEOUT));
 	});
 });

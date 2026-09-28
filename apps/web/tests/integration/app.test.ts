@@ -55,17 +55,7 @@ describe("RSS feed — /rss.xml over the deployed worker", () => {
 	});
 });
 
-describe("server-side flag evaluation — /api/flags/* over the deployed worker (#510)", () => {
-	it("GET /api/flags/probe reads a flag through Flags and takes the safe-off branch", async () => {
-		// No flag is declared, so the dark-ship read returns the default (`false`) and the safe/off
-		// branch is taken.
-		const res = await h.req("/api/flags/probe");
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as {flag: string; enabled: boolean; branch: string};
-		expect(body.enabled).toBe(false);
-		expect(body.branch).toBe("off");
-	});
-
+describe("server-side flag evaluation — /api/flags/evaluate over the deployed worker (#510)", () => {
 	it("POST /api/flags/evaluate returns server-evaluated values per requested key", async () => {
 		// Undeclared flags resolve to each call's OWN default — the safe-default contract.
 		const res = await h.json("/api/flags/evaluate", {

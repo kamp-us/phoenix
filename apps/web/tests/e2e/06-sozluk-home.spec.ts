@@ -30,18 +30,7 @@ test.describe("SozlukHome (/sozluk)", () => {
 
 	// There is no typed-query filter test: that search folded into the global ⌘K `ara`
 	// (#2995, covered by 24-search.spec.ts). The letter itself is a page of its own now
-	// (#9267) — 33-sozluk-letter walks it; this only proves the home hands off to it.
-
-	test("clicking an alphabet letter leaves the home for that letter's page", async ({page}) => {
-		const firstLetter = page.locator('.kp-sozluk-alphabet__letter[href*="/sozluk/harf/"]').first();
-		const letter = (await firstLetter.textContent())?.trim() ?? "";
-		await firstLetter.click();
-		await expect(page).toHaveURL(new RegExp(`/sozluk/harf/${encodeURIComponent(letter)}$`));
-		const activeLetter = page.locator(".kp-sozluk-alphabet__letter.is-active");
-		await expect(activeLetter).toHaveAttribute("aria-current", "page");
-		await expect(activeLetter).toHaveText(letter);
-		await expect(page.locator(".kp-sozluk-home__title")).toHaveCount(0);
-	});
+	// (#9267), and 33-sozluk-letter proves the home's alphabet strip hands off to it.
 });
 
 /**

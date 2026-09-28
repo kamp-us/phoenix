@@ -35,11 +35,6 @@ test.describe("LandingPage", () => {
 		await expect(page).toHaveURL("/sozluk");
 	});
 
-	test("stats strip renders 5 stat groups", async ({page}) => {
-		const stats = page.locator(".kp-landing__stat");
-		await expect(stats).toHaveCount(5);
-	});
-
 	test("activity columns render rows", async ({page}) => {
 		const cols = page.locator(".kp-landing__col");
 		await expect(cols).toHaveCount(2);

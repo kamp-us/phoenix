@@ -10,7 +10,7 @@
 import type {Layer} from "effect/Layer";
 import {fateRoute} from "../features/fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
-import {flagsEvaluateRoute, flagsProbeRoute} from "../features/flagship/route.ts";
+import {flagsEvaluateRoute} from "../features/flagship/route.ts";
 import {flagsDevApplyRoute, flagsDevPageRoute} from "../features/flagship/route-dev.ts";
 import {shellBootRoute} from "../features/flagship/shell-boot-route.ts";
 import {mecmuaIndexRoute} from "../features/mecmua/index-route.ts";
@@ -47,7 +47,6 @@ export const rawWorkerRoutes: readonly [WorkerRoute, ...WorkerRoute[]] = [
 	// Dark behind `MECMUA_PUBLIC_READ` (404 until flipped).
 	{path: "/fate/mecmua/index", glob: "/fate/*", route: mecmuaIndexRoute},
 	{path: "/api/auth/*", glob: "/api/*", route: authRoute},
-	{path: "/api/flags/probe", glob: "/api/*", route: flagsProbeRoute},
 	{path: "/api/flags/evaluate", glob: "/api/*", route: flagsEvaluateRoute},
 	// Both verbs fail-closed to 404 outside `development` (`route-dev.ts`).
 	{path: "/api/flags/dev", glob: "/api/*", route: flagsDevPageRoute},

@@ -5,7 +5,7 @@
  * reacts, so a reader watching an item sees the count move (AC2/AC4).
  *
  * Runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027) — shared-safe like the
- * `definition.add → appendNode` case in `fate-live-scoped.test.ts`. The reaction publish
+ * `definition.add → appendNode` case in `fate-live-owner-fence.test.ts`. The reaction publish
  * is an ENTITY `update` frame keyed by the definition's id (`live.definition.update`,
  * `sozluk/live.ts`): a per-entity topic (`Definition:<id>`), not a global connection. An
  * `NS`-unique seeded definition makes that entity topic unique to this file, so a
@@ -86,7 +86,7 @@ describe("live views — /fate/live (reaction-count reconcile)", () => {
 		// carry `results: [{ok: false}]` when the connection DO rejects the register
 		// (e.g. its held-stream queue isn't bound yet), which would silently drop the
 		// publish and time out the read below. Registering the row is the precondition
-		// for delivery, so gate on it, mirroring `fate-live-scoped`'s proven flow.
+		// for delivery, so gate on it.
 		const subResult = (await sub.json()) as {results: Array<{id: string; ok: boolean}>};
 		expect(subResult.results[0]?.ok).toBe(true);
 

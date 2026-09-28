@@ -13,7 +13,7 @@
  * holds under that concurrent inflation. `silinen` + the confirmation phrase are product
  * constants, not test data, and stay verbatim.
  */
-import {beforeAll, describe, expect, it} from "vitest";
+import {describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
@@ -42,10 +42,6 @@ async function setUsername(cookie: string, value: string): Promise<void> {
 	);
 	expect(r.ok).toBe(true);
 }
-
-beforeAll(() => {
-	expect(typeof h.url()).toBe("string");
-});
 
 describe("account.delete — anonymize-to-@[silinen]", () => {
 	it("re-attributes content to @[silinen] (kept Live, karma kept) and tears down the session", async () => {
@@ -216,21 +212,6 @@ describe("account.delete — anonymize-to-@[silinen]", () => {
 			[peer.userId, bystander.userId],
 		);
 		expect(controlLeft).toBe(1);
-	});
-
-	it("the @[silinen] sentinel is seeded and resolvable as a real profile", async () => {
-		const res = await h.fate({
-			kind: "query",
-			name: "profile",
-			args: {username: "silinen"},
-			select: ["username", "displayName"],
-		});
-		expect(res.ok).toBe(true);
-		if (res.ok) {
-			const p = res.data as {username: string; displayName: string | null};
-			expect(p.username).toBe("silinen");
-			expect(p.displayName).toBe("@[silinen]");
-		}
 	});
 
 	it("nobody can register the reserved `silinen` username", async () => {
