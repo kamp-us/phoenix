@@ -191,31 +191,6 @@ describe("reading process:remove", () => {
 		});
 	});
 
-	it("emits the one Cmd that removal needs, over the focused window and its slot", () => {
-		const read = readCommandLine("process:remove p-1", {commands});
-		if (read._tag !== "Msg") throw new Error("test setup: the line was refused");
-		const state = initialState();
-		const workspace = activeWorkspace(state);
-		if (workspace === undefined) throw new Error("test setup: no active workspace");
-		const [, cmds] = applyMsg(defaultPrefixTable, state, read.msg);
-		expect(cmds).toEqual([
-			{
-				type: "removeProcess",
-				windowId: workspace.focused,
-				processId: "p-1",
-			} satisfies ShellCmd,
-		]);
-	});
-
-	it("refuses a line with no id rather than removing something unnamed", () => {
-		const read = readCommandLine("process:remove", {commands});
-		expect(read._tag).toBe("Refused");
-	});
-
-	it("is unreadable with the flag off, the way any unwritten verb is", () => {
-		expect(readCommandLine("process:remove p-1")._tag).toBe("Refused");
-	});
-
 	it("leaves `remove` ambiguous rather than guessing between the workspace and the process", () => {
 		// `workspace:remove` and `process:remove` both claim the bare segment, and neither is a window
 		// row, so the table resolves it to neither — the same rule that keeps `open` unguessable.

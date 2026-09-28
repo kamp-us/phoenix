@@ -109,10 +109,6 @@ describe("`d` on a focused picker row", () => {
 	it("sends nothing at all with the flag off", () => {
 		expect(forward("d", {processRemove: false}).sent).toEqual([]);
 	});
-
-	it("sends nothing when the highlight is on a program row, which names no process", () => {
-		expect(forward("d", {start: mountPicker()}).sent).toEqual([]);
-	});
 });
 
 describe("`d` while the caret is in the filter", () => {

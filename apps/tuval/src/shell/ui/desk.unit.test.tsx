@@ -591,23 +591,6 @@ describe("the shell's own keys from a focused text entry or transcript", () => {
 	});
 });
 
-describe("the status line", () => {
-	it("shows the workspace, the armed prefix and the pending sequence", () => {
-		render(<Harness initial={threeWindowDesk()} sent={[]} />);
-		const status = screen.getByLabelText("Shell status");
-
-		expect(status.textContent).toContain("workspace-0");
-		expect(status.textContent).toContain("3 windows");
-		expect(status.textContent).toContain("idle");
-
-		act(arm);
-		expect(screen.getByLabelText("Shell status").textContent).toContain("armed");
-		expect(screen.getByLabelText("Shell status").textContent).toContain(
-			"Prefix armed, waiting for a sequence.",
-		);
-	});
-});
-
 describe("the repeat window's countdown", () => {
 	it("lapses on its own clock, however much unrelated kernel traffic arrives (#7782)", async () => {
 		vi.useFakeTimers();

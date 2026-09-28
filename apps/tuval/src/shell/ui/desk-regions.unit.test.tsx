@@ -133,11 +133,6 @@ const region = (): HTMLElement | null => screen.queryByRole("region", {name: "De
 const group = (name: string): HTMLElement => screen.getByRole("group", {name});
 
 describe("the desk inspector region", () => {
-	it("is not rendered at all while the desk holds it closed", () => {
-		render(<Harness initial={threeWindowDesk()} />);
-		expect(region()).toBeNull();
-	});
-
 	it("opens and closes on desk.inspector.toggle", () => {
 		let dispatch: (msg: ShellMsg) => void = () => undefined;
 		render(<Harness initial={threeWindowDesk()} onReady={(next) => (dispatch = next)} />);
@@ -264,6 +259,7 @@ describe("the composed status bar", () => {
 	it("keeps the announcements the line carried before it was composed", () => {
 		render(<Harness initial={threeWindowDesk()} />);
 		const bar = screen.getByRole("region", {name: "Shell status"});
+		expect(bar.textContent).toContain("3 windows");
 		expect(bar.textContent).toContain("idle");
 		expect(bar.textContent).toContain("Prefix idle.");
 		expect(within(bar).getByText(defaultPrefixTable.prefix).tagName).toBe("KBD");

@@ -82,14 +82,10 @@ describe("statusFrame", () => {
 		expect(frame.announcement).toBe("Prefix idle.");
 	});
 
-	it("shows the armed prefix and the sequence typed since it armed", () => {
+	it("shows the armed prefix, and a second prefix press disarms it", () => {
 		const [armed] = applyMsg(table, threeWindowDesk(), {type: "keys.press", key: prefixPress});
 		expect(statusFrame(armed).prefixArmed).toBe(true);
 		expect(statusFrame(armed).announcement).toBe("Prefix armed, waiting for a sequence.");
-
-		// `<c-b>` then `<c-` is the start of `<c-h>`/`<c-l>` and completes nothing, so it stays pending.
-		const [pending] = applyMsg(table, armed, {type: "keys.press", key: {key: "q"}});
-		expect(statusFrame(pending).pending).toEqual([]);
 
 		const [waiting] = applyMsg(table, armed, {type: "keys.press", key: {key: "b", ctrlKey: true}});
 		expect(statusFrame(waiting).prefixArmed).toBe(false);

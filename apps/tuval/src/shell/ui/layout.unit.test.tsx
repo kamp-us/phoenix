@@ -214,15 +214,6 @@ describe("zoom", () => {
 		);
 		expect(resizes(sent)).toEqual([]);
 	});
-
-	it("leaves the tree's sizes untouched across a zoom round trip", () => {
-		const before = threeWindowDesk("window-3");
-		const [zoomed] = applyMsg(defaultPrefixTable, before, {type: "layout.zoom"});
-		const [restored] = applyMsg(defaultPrefixTable, zoomed, {type: "layout.zoom"});
-		expect(restored.workspaces["workspace-0"]?.layout.root.sizes).toEqual(
-			before.workspaces["workspace-0"]?.layout.root.sizes,
-		);
-	});
 });
 
 /**

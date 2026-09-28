@@ -22,11 +22,8 @@ const dangling = (table: typeof defaultPrefixTable): ReadonlyArray<string> =>
 	boundNames(table).filter((name) => commandFor(name) === undefined);
 
 describe("the default prefix table against the command table", () => {
-	it("binds at least one key, so an empty table cannot pass this file vacuously", () => {
+	it("names a row for every binding, over a table that binds at least one key", () => {
 		expect(defaultPrefixTable.bindings.length).toBeGreaterThan(0);
-	});
-
-	it("names a row for every binding", () => {
 		expect(dangling(defaultPrefixTable)).toEqual([]);
 	});
 

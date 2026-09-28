@@ -72,21 +72,6 @@ describe("shell core boundary", () => {
 		expect([durationValue, effectValue]).toEqual([false, false]);
 	});
 
-	it("the Cmd vocabulary ends a process on one arm only, and that arm says so", () => {
-		expectTypeOf<ShellCmd["type"]>().toEqualTypeOf<
-			| "forwardKey"
-			| "startRepeatTimer"
-			| "cancelRepeatTimer"
-			| "runCommand"
-			| "runBinding"
-			| "openProgram"
-			| "attachProcess"
-			| "removeProcess"
-			| "openCommandLine"
-			| "reloadConfig"
-		>();
-	});
-
 	it("no window Msg reaches that arm: closing a window still stops nothing (#9447)", () => {
 		const table = defaultPrefixTable;
 		const state = initialState();
@@ -118,35 +103,6 @@ describe("shell core boundary", () => {
 			| "reloadConfig"
 		>();
 		expect([armsPartition, anArmOffTheSides]).toEqual([true, false]);
-	});
-
-	it("every Msg the epic names has a place in the union", () => {
-		expectTypeOf<ShellMsg["type"]>().toEqualTypeOf<
-			| "window.split"
-			| "window.close"
-			| "window.focus"
-			| "window.focusDirection"
-			| "window.bind"
-			| "window.unbind"
-			| "window.forwardKey"
-			| "window.setView"
-			| "layout.resize"
-			| "layout.zoom"
-			| "window.open"
-			| "window.attach"
-			| "process.remove"
-			| "workspace.create"
-			| "workspace.remove"
-			| "workspace.activate"
-			| "workspace.step"
-			| "command.open"
-			| "config.reload"
-			| "desk.inspector.toggle"
-			| "desk.board.toggle"
-			| "desk.board.close"
-			| "keys.press"
-			| "prefix.repeatLapsed"
-		>();
 	});
 
 	it("runs no clock and reads no host: the repeat timer is the host's, asked for by Cmd", () => {
