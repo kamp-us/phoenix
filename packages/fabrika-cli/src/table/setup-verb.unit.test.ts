@@ -257,8 +257,17 @@ describe("table setup is idempotent", () => {
 		expect(github.projects).toHaveLength(1);
 		const stage = github.projects[0]?.fields.filter((field) => field.name === "Stage");
 		expect(stage).toHaveLength(1);
-		expect(stage?.[0]?.options?.map((option) => option.name)).toEqual(["proposed", "notes"]);
-		expect(answered.drift[0]).toContain('"bet"');
+		expect(stage?.[0]?.options?.map((option) => [option.id, option.name])).toEqual([
+			["o1", "proposed"],
+			["o2", "notes"],
+			...["bet", "not now", "in lane", "shipped", "check"].map((name) => [
+				expect.any(String),
+				name,
+			]),
+		]);
+		expect(answered.changes).toContain(
+			'field Stage: added the option(s) "bet", "not now", "in lane", "shipped", "check"; filled the blank description(s) of "proposed"',
+		);
 	});
 
 	it("reuses an open project under the owner that carries the title but is not linked, and links it", async () => {
@@ -433,7 +442,6 @@ describe("table setup with a boards block", () => {
 			"repo",
 			"project",
 			"changes",
-			"drift",
 			"legacy",
 			"manualSteps",
 		]);
@@ -519,7 +527,7 @@ describe("table setup reads the size dollars from appetiteSizes", () => {
 		expect(readme).toContain("- **L**: an epic, about $90 per child.");
 	});
 
-	it("reports each Size option whose description no longer shows a changed appetiteSizes, rewriting none", async () => {
+	it("keeps each Size option's written description when appetiteSizes changes, reporting no drift", async () => {
 		const github = fakeProjects({repo: REPO});
 		expect((await setupOn(github)).code).toBe(0);
 
@@ -534,14 +542,9 @@ describe("table setup reads the size dollars from appetiteSizes", () => {
 		expect(github.projects[0]?.readme ?? "").toContain("- **S**: about $20.");
 		const answered = JSON.parse(outcome.stdout);
 		expect(answered.answer).toBe("reconciled");
-		expect(answered.drift).toHaveLength(1);
-		const [drift] = answered.drift;
-		expect(drift).toContain('option "S" as "About $15." where the table says "About $20."');
-		expect(drift).toContain('option "M" as "About $35." where the table says "About $50."');
-		expect(drift).toContain(
-			'option "L" as "About $40 per epic child." where the table says "About $90 per epic child."',
-		);
-		expect(outcome.stderr.join("\n")).toContain(`drift: ${drift}`);
+		expect(answered).not.toHaveProperty("drift");
+		expect(outcome.stderr.join("\n")).not.toContain("drift");
+		expect(mutations(github)).not.toContain("TableUpdateField");
 	});
 
 	it("refuses a malformed appetiteSizes before reading GitHub", async () => {
@@ -560,5 +563,140 @@ describe("table setup reads the size dollars from appetiteSizes", () => {
 		expect(outcome.code).toBe(CONFIG_MALFORMED);
 		expect(outcome.stderr.join("\n")).toContain("`table.sizes`");
 		expect(github.operations).toEqual([]);
+	});
+});
+
+describe("table setup on a hand-built board whose Origin lacks an option", () => {
+	/** A board built by hand: Origin has `founder idea` and no `hand-start`, most descriptions blank. */
+	const handBuilt = () => {
+		const project = blankProject({number: 20, title: "widgets table"});
+		project.fields.push({
+			id: "own_origin",
+			name: "Origin",
+			dataType: "SINGLE_SELECT",
+			options: [
+				{id: "o_bet", name: "bet", color: "BLUE", description: ""},
+				{id: "o_founder", name: "founder idea", color: "PINK", description: ""},
+				{id: "o_customer", name: "customer", color: "GREEN", description: "Wrote it ourselves."},
+				{id: "o_driver", name: "driver pick", color: "YELLOW", description: ""},
+				{id: "o_mid", name: "found mid-lane", color: "ORANGE", description: ""},
+				{id: "o_experiment", name: "experiment", color: "PURPLE", description: ""},
+			],
+		});
+		project.items.push(
+			{
+				id: "row_1",
+				contentId: "I_1",
+				number: 1,
+				values: {own_origin: {singleSelectOptionId: "o_founder"}},
+			},
+			{
+				id: "row_2",
+				contentId: "I_2",
+				number: 2,
+				values: {own_origin: {singleSelectOptionId: "o_bet"}},
+			},
+		);
+		return project;
+	};
+
+	const optionWrites = (github: ReturnType<typeof fakeProjects>) =>
+		github.operations.flatMap((operation, index) =>
+			operation === "TableUpdateField" ? [github.variables[index]?.input] : [],
+		);
+
+	it("sends every existing option back with its own id, name, color and description, then the new one", async () => {
+		const {outcome, github} = await run({projects: [handBuilt()]});
+
+		expect(outcome.code, outcome.stderr.join("\n")).toBe(0);
+		expect(optionWrites(github)).toContainEqual({
+			fieldId: "own_origin",
+			singleSelectOptions: [
+				{id: "o_bet", name: "bet", color: "BLUE", description: "Picked at a table."},
+				{id: "o_founder", name: "founder idea", color: "PINK", description: ""},
+				{id: "o_customer", name: "customer", color: "GREEN", description: "Wrote it ourselves."},
+				{
+					id: "o_driver",
+					name: "driver pick",
+					color: "YELLOW",
+					description: "The driving agent picked it without a bet.",
+				},
+				{
+					id: "o_mid",
+					name: "found mid-lane",
+					color: "ORANGE",
+					description: "Found while doing other work.",
+				},
+				{id: "o_experiment", name: "experiment", color: "PURPLE", description: "A try-it-and-see."},
+				{name: "hand-start", color: "GRAY", description: "A person started it by hand."},
+			],
+		});
+	});
+
+	it("keeps every row's Origin, and the option the table does not name keeps its id", async () => {
+		const {github} = await run({projects: [handBuilt()]});
+
+		const project = github.projects[0];
+		expect(project?.items.map((item) => item.values.own_origin)).toEqual([
+			{singleSelectOptionId: "o_founder"},
+			{singleSelectOptionId: "o_bet"},
+		]);
+		const origin = project?.fields.find((field) => field.name === "Origin");
+		expect(origin?.options?.find((option) => option.name === "founder idea")).toEqual({
+			id: "o_founder",
+			name: "founder idea",
+			color: "PINK",
+			description: "",
+		});
+	});
+
+	it("reports the added option and the filled descriptions, and a second run answers unchanged", async () => {
+		const {outcome, github} = await run({projects: [handBuilt()]});
+
+		const answered = JSON.parse(outcome.stdout);
+		expect(answered.changes).toContain(
+			'field Origin: added the option(s) "hand-start"; filled the blank description(s) of "bet", "driver pick", "found mid-lane", "experiment"',
+		);
+		expect(outcome.stderr.join("\n")).not.toContain("by hand in the field");
+
+		const writes = mutations(github).length;
+		const again = await setupOn(github);
+		expect(JSON.parse(again.stdout)).toMatchObject({answer: "unchanged", changes: []});
+		expect(mutations(github).length).toBe(writes);
+	});
+});
+
+describe("table setup on an on-call board a person described in their own words", () => {
+	const split = fakeFs({
+		files: {
+			"/repo/.fabrika.jsonc": JSON.stringify({
+				boards: {
+					onCall: {
+						responseTargets: {
+							byLabel: [{name: "4h", hours: 4, labels: ["p0"]}],
+							otherwise: {name: "3 days", hours: 72},
+						},
+					},
+				},
+			}),
+		},
+	}).layer;
+
+	it("keeps a wording-only difference as written and writes nothing for it", async () => {
+		const github = fakeProjects({repo: REPO});
+		expect((await setupOn(github, split)).code).toBe(0);
+		const target = github.projects[1]?.fields.find((field) => field.name === "Response target");
+		const fourHours = target?.options?.find((option) => option.name === "4h");
+		if (fourHours === undefined) throw new Error("no 4h option");
+		fourHours.description = "Someone looks within 4 hours";
+		const writes = mutations(github).length;
+
+		const again = await setupOn(github, split);
+
+		expect(again.code).toBe(0);
+		expect(JSON.parse(again.stdout).onCall).toMatchObject({answer: "unchanged", changes: []});
+		expect(again.stderr.join("\n")).not.toContain("Someone looks");
+		expect(mutations(github).length).toBe(writes);
+		expect(fourHours.description).toBe("Someone looks within 4 hours");
 	});
 });
