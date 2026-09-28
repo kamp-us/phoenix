@@ -443,12 +443,15 @@
 }
 
 /* status / categorical — same in every accent, but one value per scheme: status
-   colours are painted as text, so each must clear 4.5:1 on its own scheme's surfaces. */
+   colours are painted as text, so each must clear 4.5:1 on its own scheme's surfaces.
+   --danger-fg is the label on a solid --danger fill, paired with the fill rather than
+   the accent so it clears 4.5:1 under every accent (danger-fill-contrast.unit.test.ts). */
 :root,
 [data-theme="dark"] {
 	--success: oklch(0.72 0.1 145);
 	--warning: oklch(0.78 0.11 80);
 	--danger: oklch(0.68 0.16 25);
+	--danger-fg: oklch(0.2 0.04 25);
 
 	--tag-discuss-bg: oklch(0.3 0.06 260);
 	--tag-discuss-fg: oklch(0.85 0.1 260);
@@ -476,6 +479,7 @@
 	--success: oklch(0.52 0.12 145);
 	--warning: oklch(0.52 0.11 70);
 	--danger: oklch(0.54 0.18 25);
+	--danger-fg: oklch(1 0 0);
 
 	--tag-discuss-bg: oklch(0.95 0.04 260);
 	--tag-discuss-fg: oklch(0.36 0.1 260);

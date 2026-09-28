@@ -84,7 +84,7 @@
 }
 .kp-btn:where([data-variant="danger"]):hover:not(:disabled) {
 	background: var(--danger);
-	color: var(--accent-fg);
+	color: var(--danger-fg);
 }
 
 .kp-btn:where([data-variant="link"]) {
