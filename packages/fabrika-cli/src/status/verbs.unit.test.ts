@@ -556,10 +556,13 @@ describe("status bootstrap", () => {
 		expect(MARKER_COLOR).toBe("1D76DB");
 	});
 
-	it("keeps the markers a surface of their own — no taxonomy label is a marker", () => {
+	it("keeps the markers a surface of their own — no taxonomy label is a marker, every one is fabrika's", () => {
 		const taxonomy = new Set(TAXONOMY.map((label) => label.name));
 		for (const label of ISSUE_SHAPE_MARKERS) expect(taxonomy.has(label.name)).toBe(false);
 		expect(TAXONOMY.every((label) => label.color === null)).toBe(true);
+		expect(new Set(TAXONOMY.map((label) => label.description))).toEqual(
+			new Set(["created by fabrika status bootstrap label-taxonomy"]),
+		);
 	});
 });
 
