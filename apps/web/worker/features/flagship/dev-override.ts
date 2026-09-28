@@ -22,10 +22,7 @@ export const emptyOverrides: FlagOverrides = {};
  * so an override key absent from this list still works. Boolean-only, so the typed
  * variant/percentage demo flags are out.
  */
-export const DEV_OVERRIDABLE_FLAGS: readonly string[] = [
-	DEMO_TARGETING_FLAG_KEY,
-	"phoenix-flags-probe",
-];
+export const DEV_OVERRIDABLE_FLAGS: readonly string[] = [DEMO_TARGETING_FLAG_KEY];
 
 export type OverrideState = "on" | "off" | "clear";
 
