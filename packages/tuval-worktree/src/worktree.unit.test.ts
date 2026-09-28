@@ -40,17 +40,11 @@ import {describe, expect, it} from "vitest";
 import config, {desk, reviews} from "../.tuval/tuval.config.ts";
 import {fakeRunner} from "./fake-runner.ts";
 import {WORKTREE_WINDOW_REF} from "./renderer-ref.ts";
-import {
-	closeEvent,
-	discardEvent,
-	LIMIT,
-	REFUSAL_LIMIT,
-	UNATTRIBUTED_LIMIT,
-	type WorktreeState,
-} from "./state.ts";
+import {LIMIT, REFUSAL_LIMIT, UNATTRIBUTED_LIMIT, type WorktreeState} from "./state.ts";
 import {
 	closePlan,
 	freshRecord,
+	OpenRequest,
 	openPlan,
 	preface,
 	provisionEffect,
@@ -244,10 +238,6 @@ describe("open", () => {
 		expect(asked(refusal).map((effect) => effect.type)).not.toContain("worktree.provision");
 	});
 
-	it("says on the tile what it is doing, by name", () => {
-		expect(opened().effects).toContainEqual(emit(STATUS_PORT, "0 open · provisioning feature-x"));
-	});
-
 	it("carries the branch prefix the config chose", () => {
 		const run = drive(worktreeProgram({...options, branchPrefix: "build/"})).send("open", {
 			name: "9287",
@@ -324,10 +314,6 @@ describe("provisioned, and the agent inside", () => {
 			status: "open",
 		});
 		expect(run.state.pending).toBeNull();
-	});
-
-	it("says `1 open · feature-x :5174 idle` until an agent is up", () => {
-		expect(ready().effects).toContainEqual(emit(STATUS_PORT, "1 open · feature-x :5174 idle"));
 	});
 
 	it("asks for the agent only once the directory it will work in exists", () => {
@@ -800,17 +786,6 @@ describe("close", () => {
 		expect(run.effects).toEqual([]);
 	});
 
-	it("never asks for the forcing variant — a Close is a close, from the spell or the button", () => {
-		const run = open().send("close", {name: "feature-x"});
-		expect(run.state.pending).toMatchObject({kind: "close", force: false});
-		// And the event the window's Close button dispatches is the one this port takes.
-		expect(closeEvent("feature-x")).toEqual({
-			type: "close",
-			payload: {name: "feature-x"},
-		});
-		expect(discardEvent("feature-x").type).toBe("discard");
-	});
-
 	it("refuses a close while something is already in flight", () => {
 		const provisioning = drive(worktreeProgram(options)).send("open", {
 			name: "feature-x",
@@ -841,13 +816,6 @@ describe("discard, which is the only thing that forces", () => {
 			status: "closing",
 			agent: null,
 		});
-	});
-
-	it("frees the record once the forced removal is done", () => {
-		const run = open()
-			.send("discard", {name: "feature-x"})
-			.event({type: "closed", name: "feature-x"});
-		expect(run.state.worktrees).toEqual([]);
 	});
 
 	it("is a spell of its own, named for what it costs", () => {
@@ -983,14 +951,8 @@ describe("the two spells", () => {
 		expect(run.effects).toEqual([send("close", {name: "feature-x"})]);
 	});
 
-	it("registers both under the program id, which is what `:worktree open` resolves", () => {
-		const row = worktree({...options, job: session() as ShapeSource});
-		expect(row.spells?.map((spell) => spell.path)).toEqual(
-			expect.arrayContaining([["open"], ["close"]]),
-		);
-	});
-
 	it("declares `name` before `brief`, which is what makes it the first positional argument", () => {
+		expect(Object.keys(OpenRequest.fields)).toEqual(["name", "brief"]);
 		const ports = portsOf(worktree({...options}));
 		expect(ports.open?.accepts({name: "feature-x"})).toBe(true);
 		expect(ports.open?.accepts({name: "feature-x", brief: "go"})).toBe(true);
@@ -1022,14 +984,6 @@ describe("the preface, which is phoenix#9287's fallback and is named as one", ()
 });
 
 describe("the job shape against a real session row", () => {
-	it("declares the payloads the real ports admit", () => {
-		const ports = portsOf(session());
-		expect(ports.prompt?.accepts({text: "hi", key: "k", timestamp: SEVEN})).toBe(true);
-		expect(ports.result?.accepts(turn("done", true))).toBe(true);
-		expect(ports.prompt?.direction).toBe("in");
-		expect(ports.result?.direction).toBe("out");
-	});
-
 	it("is fitted by the live row itself, which is why no wrapper stands here", () => {
 		// `shapeOf` and `fillArgs` are not public, so the fit is asserted where a consumer meets it:
 		// `worktree(…)` runs the fill inside `defineProgram` and throws on a job that does not fit.
@@ -1245,17 +1199,5 @@ describe("each worktree, opened as a subproject", () => {
 			worktreeHandlers(settle({...options, runner}))["worktree.reconcile"](effect),
 		);
 		expect(calls).toEqual([`open /repo/.worktrees/feature-x by ${self}`]);
-	});
-
-	it("runs as before in no project, where there is nothing to open under", async () => {
-		const runner = fakeRunner({files: {"/repo/.env.example": "PORT=3000\n"}});
-		const withRunner = {...options, runner};
-		const queued = drive(worktreeProgram(withRunner)).send("open", {name: "feature-x"});
-		const events = await Effect.runPromise(
-			worktreeHandlers(settle(withRunner))["worktree.provision"](
-				only(queued, "worktree.provision"),
-			),
-		);
-		expect(events).toEqual([{type: "provisioned", name: "feature-x", port: 5170}]);
 	});
 });

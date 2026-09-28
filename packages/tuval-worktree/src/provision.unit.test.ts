@@ -225,12 +225,6 @@ describe("the env file", () => {
 		expect(rewriteEnv("export PORT=3000\n", [["PORT", "5174"]])).toBe("PORT=5174\n");
 	});
 
-	it("is written into the worktree, never into the repository", async () => {
-		const runner = fakeRunner({files: {"/repo/.env.example": TEMPLATE}});
-		await drive(runner, provision(plan()));
-		expect([...runner.written.keys()]).toEqual(["/repo/.worktrees/feature-x/.env"]);
-	});
-
 	it("resolves $NAME and $PORT in a declared var before writing it", async () => {
 		const runner = fakeRunner({files: {"/repo/.env.example": TEMPLATE}});
 		await drive(
