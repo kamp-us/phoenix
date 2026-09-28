@@ -2,7 +2,7 @@
 id: 0431
 title: fabrika-cli reads a wave of table issues through batched GraphQL, the fifth carve from its REST default
 status: accepted
-date: 2026-09-28
+date: 2026-09-27
 tags: [fabrika-cli, github, graphql, betting-table, rate-limit]
 ---
 
@@ -62,8 +62,17 @@ REST.**
 ## Consequences
 
 - 0315's list grows from four to five, and 0418's "names four" constraint now reads "names five".
-  The rest of both stands: the credential order, REST as the default, issue search on REST, and the
-  Projects (v2) carve.
+- Three standing sentences are amended in part, and each now reads with this carve as its one
+  exception:
+  - 0315, "Issue and pull-request reads stay REST", and 0418, "Issue and pull-request reads stay
+    REST, and issue search stays REST, exactly as 0315 rules": issue and pull-request reads stay
+    REST except the batched issue read this record carves. Issue search stays REST unchanged.
+  - 0315's 2026-08-21 amendment, "a GraphQL read is a carve wherever REST publishes no equivalent
+    edge": that stays the general ground for a carve. This record adds cost as a second ground for
+    this one carve only. It does not open cost as a ground any other reader can cite; a second
+    cost-grounded reader is a new decision, as the binding constraint above says.
+- What stands of both records unchanged: 0315's credential order, REST as the default, issue search
+  on REST, the review-thread, auto-merge and closing-link carves, and 0418's Projects (v2) carve.
 - A whole-table read spends one REST call a row for the comment list, plus a GraphQL request per 50
   issues for the graph and another per 50 for the counts, drawn from GraphQL's separate budget.
 - A GraphQL outage now refuses a table read that REST alone might have finished. That is the same
