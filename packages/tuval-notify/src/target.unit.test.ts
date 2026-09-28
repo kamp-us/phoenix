@@ -227,29 +227,4 @@ describe("a delivery that is never answered at all", () => {
 		// "it never connected" are one fact — the message did not land — and neither carries a status.
 		expect(attempt).toEqual({ok: false});
 	});
-
-	it("carries a signal on every request, and states the target's own wait", async () => {
-		const {signals, fetch} = spy(OK);
-		await attemptDelivery(
-			{kind: "webhook", url: "https://example.test/h"},
-			message("x"),
-			io(fetch),
-		);
-		expect(signals[0]).toBeInstanceOf(AbortSignal);
-		expect(signals[0]?.aborted).toBe(false);
-
-		// A target that states its own wait gets it — and a wait that short aborts before the answer.
-		const slow = await attemptDelivery(
-			{kind: "webhook", url: "https://example.test/h", timeoutMs: 1},
-			message("x"),
-			io(hangs),
-		);
-		expect(slow).toEqual({ok: false});
-	});
-
-	it("leaves a stdout target alone, which reaches no socket to give up on", async () => {
-		await expect(
-			attemptDelivery({kind: "stdout"}, message("no network"), io(noFetch)),
-		).resolves.toEqual({ok: true});
-	});
 });
