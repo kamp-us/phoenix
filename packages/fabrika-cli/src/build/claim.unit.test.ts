@@ -137,6 +137,20 @@ describe("resolveOwnership — the adopt fence (#7010)", () => {
 	});
 
 	/**
+	 * The adopt names ONE lane by its whole token, so succession never re-widens ownership to a
+	 * session: a sibling lane of the heir's session, and a third session under the heir's very
+	 * nonce, both read the dead session's marker as another lane's.
+	 */
+	it.each([
+		["a sibling lane of the heir's session", laneCaller("s-heir", SIBLING_NONCE)],
+		["a third session on the heir's nonce", laneCaller("s-3rd", HEIR_NONCE)],
+	])("confers the claim on the named lane only — %s reads Foreign", async (_who, caller) => {
+		const {ownership} = await run(resolveOwnership("o/r", 4312, caller), SUCCEEDED);
+		expect(ownership._tag).toBe("Foreign");
+		expect(ownership._tag === "Foreign" && ownership.marker.token).toBe(GONE_TOKEN);
+	});
+
+	/**
 	 * One authorized adopt that PREDATES the winning marker, so it adopted some earlier claim of the
 	 * gone session and speaks about neither lane's standing on marker 9101. Both readings of the
 	 * ordering rule are asserted against this one thread: read it on the fence alone and the gone
@@ -198,6 +212,30 @@ describe("resolveOwnership — the adopt fence (#7010)", () => {
 		);
 		expect(ownership._tag).toBe("Mine");
 		expect(unauthorizedAdopts.length).toBe(1);
+	});
+
+	it("confers nothing on the heir an unauthorized adoption names — content is not authority", async () => {
+		const {ownership, unauthorizedAdopts} = await run(
+			resolveOwnership("o/r", 4312, laneCaller("s-heir", HEIR_NONCE, HEIR_TOKEN)),
+			[
+				[
+					COMMENTS,
+					comments(
+						{id: 9101, body: marker("s-gone", GONE_UUID)},
+						{
+							id: 9102,
+							body: adoptMarker("s-gone", "s-heir", HEIR_UUID),
+							author: "ghost",
+						},
+					),
+				],
+				[PERM, WRITE],
+				[/GET .*\/repos\/o\/r\/collaborators\/ghost\/permission/, served({permission: "read"})],
+			],
+		);
+		expect(ownership._tag).toBe("Foreign");
+		expect(ownership._tag === "Foreign" && ownership.marker.token).toBe(GONE_TOKEN);
+		expect(unauthorizedAdopts.map((adopt) => adopt.commentId)).toEqual([9102]);
 	});
 });
 
