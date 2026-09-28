@@ -9,7 +9,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeShell, unconfigured} from "../fakes.test-support.ts";
 import type {ChildOutcome, ChildRequest} from "../io/exec.ts";
-import {absent, type ListedIssue, present, type TimelineFacts} from "../io/issues.ts";
+import {absent, type ListedIssue, present, type TimelineFacts, unknown} from "../io/issues.ts";
 import type {
 	FieldValue,
 	ItemFieldValue,
@@ -21,8 +21,10 @@ import type {
 } from "../io/projects.ts";
 import {emit, type Instant, type LaneRecord} from "../wire/lane-record.ts";
 import {checkMarker} from "./check.ts";
+import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {type PrepBoard, runPrep} from "./prep-verb.ts";
 import {ORIGINS, OUTCOMES, STAGES} from "./shape.ts";
+import {spy} from "./spy.test-support.ts";
 import type {SyncNode} from "./sync.ts";
 
 const REPO = "acme/widgets";
@@ -449,10 +451,11 @@ const prep = (
 	config = unconfigured,
 	env: Readonly<Record<string, string>> = {},
 	now: Date = NOW,
+	dryRun = false,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
-			runPrep({repo: REPO, cwd: "/repo", env, now, board}),
+			runPrep({repo: REPO, cwd: "/repo", env, now, board, dryRun}),
 			Layer.mergeAll(config, fakeShell([]).layer),
 		),
 	);
@@ -547,11 +550,38 @@ describe("table prep with no .fabrika.jsonc", () => {
 		expect(cell(70, "Stage")).toBe("bet");
 		expect(cell(70, "Size")).toBe("S");
 		expect(cell(70, "Section")).toBe("Tails");
-		expect(String(cell(70, "Rec"))).toContain("Over its S size ($20 of $15)");
 		expect(cell(71, "Stage")).toBe("bet");
 		expect(cell(71, "Table day")).toBe(NEXT);
-		expect(cell(71, "Rec")).toBeNull();
 		expect(cell(71, "Section")).toBe("New bets");
+	});
+
+	it("writes a flagged bet's Rec into an empty cell", async () => {
+		const {Rec: _, ...unwritten} = ROWS[70] ?? {};
+		const {board, cell} = world(ISSUES, {...ROWS, 70: unwritten});
+		const answer = JSON.parse((await prep(board)).stdout);
+
+		expect(String(cell(70, "Rec"))).toContain("Over its S size ($20 of $15)");
+		expect(answer.recsKept.map((one: {issue: number}) => one.issue)).not.toContain(70);
+	});
+
+	it("never clears or replaces a Rec a row already holds, and names each one it left", async () => {
+		const {board, cell} = world(ISSUES, {
+			...ROWS,
+			71: {...ROWS[71], Rec: "needs your ruling: both fixes conflict"},
+		});
+		const out = await prep(board);
+		const answer = JSON.parse(out.stdout);
+
+		expect(cell(70, "Rec")).toBe("yes.");
+		expect(cell(71, "Rec")).toBe("needs your ruling: both fixes conflict");
+		expect(answer.agenda.find((row: AgendaOut) => row.issue === 70)?.rec).toBe("yes.");
+		expect(answer.recsKept).toEqual([
+			{issue: 70, rec: "yes.", wanted: expect.stringContaining("Over its S size ($20 of $15)")},
+			{issue: 71, rec: "needs your ruling: both fixes conflict", wanted: null},
+		]);
+		expect(out.stderr).toContain(
+			`table prep: left #71's Rec as it reads: "needs your ruling: both fixes conflict".`,
+		);
 	});
 
 	it("adds only open issues, never a draft, and takes a closed proposed row off the table", async () => {
@@ -715,6 +745,26 @@ describe("table prep with no .fabrika.jsonc", () => {
 		expect(out.stderr.join("\n")).toContain("the date field Table day");
 		expect(posts).toHaveLength(0);
 	});
+
+	it("refuses and writes nothing when a candidate's group member cannot be read", async () => {
+		const {board, posts, items} = world();
+		const reads: number[] = [];
+		const out = await prep({
+			...board,
+			node: (repo, number) => {
+				reads.push(number);
+				return number === 31
+					? Effect.succeed(unknown<SyncNode>("gh timed out"))
+					: board.node(repo, number);
+			},
+		});
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain("cannot read #31: gh timed out");
+		expect(reads.filter((number) => number === 31)).toHaveLength(2);
+		expect(posts).toHaveLength(0);
+		expect([...items.keys()].sort((a, b) => a - b)).toEqual([70, 71, 80, 90]);
+	});
 });
 
 const daysBefore = (days: number): string =>
@@ -791,6 +841,20 @@ const configured = (table: unknown) =>
 	fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify({table})}}).layer;
 
 const FABRIKA_LABELLED = configured({fabrikaShare: {labels: ["fabrika"]}});
+
+describe("table prep with no fabrika-share label", () => {
+	it("calls a quiet week on track and names no fabrika-share check it could not make", async () => {
+		const {board, posts} = world({1: {labels: ["type:bug"]}}, {});
+
+		const out = await prep(board, configured({fabrikaShare: {labels: []}}));
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		expect(posts).toHaveLength(1);
+		expect(posts[0]?.status).toBe("ON_TRACK");
+		expect(posts[0]?.body).not.toContain("Could not check");
+		expect(posts[0]?.body).not.toContain("fabrika-share");
+	});
+});
 
 describe("table prep with a boards block", () => {
 	const SPLIT = fakeFs({
@@ -1065,5 +1129,69 @@ describe("table prep's outcome check", () => {
 		expect(cell(50, "Stage")).toBe("check");
 		expect(comments.get(50)).toHaveLength(1);
 		expect(JSON.parse(out.stdout).checks).toMatchObject([{issue: 50, comment: "standing"}]);
+	});
+});
+
+describe("table prep --dry-run", () => {
+	const WRITES = ["add", "set", "clear", "remove", "comment", "post"];
+
+	it("sends no write and runs every read a live run makes", async () => {
+		const live = spy(world(SHIPPED_ISSUES, shippedRows(SHIPPED_AT)).board);
+		expect((await prep(live.board)).code).toBe(0);
+		const table = world(SHIPPED_ISSUES, shippedRows(SHIPPED_AT));
+		const dry = spy(table.board);
+		const before = JSON.stringify([...table.items]);
+
+		const out = await prep(dry.board, unconfigured, {}, NOW, true);
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		expect(dry.calls.filter((call) => WRITES.includes(call))).toEqual([]);
+		expect(dry.calls).toEqual(live.calls.filter((call) => !WRITES.includes(call)));
+		expect(JSON.stringify([...table.items])).toBe(before);
+		expect(table.posts).toEqual([]);
+		expect(table.comments.size).toBe(0);
+	});
+
+	it("prints every planned write of every phase under answer dry-run", async () => {
+		const {board} = world(SHIPPED_ISSUES, shippedRows(SHIPPED_AT));
+		const out = await prep(board, unconfigured, {}, NOW, true);
+		const answer = JSON.parse(out.stdout);
+
+		expect(answer.answer).toBe("dry-run");
+		expect(answer.changes).toEqual([]);
+		expect(answer.health.posted).toBe(false);
+		expect(answer.checks).toMatchObject([{issue: 50, comment: "planned"}]);
+		const planned = answer.planned as ReadonlyArray<Record<string, unknown>>;
+		expect(planned).toContainEqual({_tag: "Add", project: 3, issue: 11});
+		expect(planned).toContainEqual({
+			_tag: "Set",
+			project: 3,
+			issue: 11,
+			field: "Section",
+			value: "Tails",
+		});
+		expect(planned).toContainEqual({
+			_tag: "Set",
+			project: 3,
+			issue: 11,
+			field: "Table day",
+			value: NEXT,
+		});
+		expect(planned).toContainEqual({_tag: "Delete", project: 3, issue: 80});
+		expect(planned).toContainEqual({
+			_tag: "Set",
+			project: 3,
+			issue: 50,
+			field: "Stage",
+			value: "check",
+		});
+		const comment = planned.find((write) => write._tag === "Comment");
+		expect(comment).toMatchObject({issue: 50});
+		expect(String(comment?.body)).toContain(checkMarker(50));
+		const post = planned.find((write) => write._tag === "Post");
+		expect(post).toMatchObject({project: 3});
+		expect(String(post?.body)).toContain(NEXT);
+		expect(out.stderr).toContain("table prep: would take #80 off project #3.");
+		expect(out.stderr).toContain("table prep: --dry-run: nothing was written.");
 	});
 });

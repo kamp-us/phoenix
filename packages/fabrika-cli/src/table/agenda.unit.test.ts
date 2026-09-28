@@ -18,6 +18,7 @@ import {
 	type PrepInput,
 	pickRec,
 	planPrep,
+	prepPlan,
 	sizeOfGroup,
 } from "./agenda.ts";
 import type {Group} from "./group.ts";
@@ -225,33 +226,34 @@ describe("closedProposals", () => {
 	});
 });
 
+const select = (name: string, options: ReadonlyArray<string>) => ({
+	id: `F_${name}`,
+	options: new Map(options.map((option) => [option, `${name}:${option}`] as const)),
+});
+const FIELDS = {
+	stage: select("Stage", ["proposed", "check"]),
+	section: select("Section", SHIPPED_TABLE.sections),
+	size: select("Size", ["S", "M", "L"]),
+	rec: "F_rec",
+	plainWords: "F_plain",
+	tableDay: "F_day",
+};
+const input = (over: Partial<PrepInput>): PrepInput => ({
+	fields: FIELDS,
+	target: NEXT,
+	rows: new Map(),
+	open: new Set(),
+	agenda: [],
+	rollover: [],
+	removals: [],
+	checks: [],
+	onCall: new Set(),
+	...over,
+});
+const cells = {size: "S" as const, rec: "yes.", plainWords: "Issue 1"};
+
 describe("planPrep with an on-call board", () => {
-	const select = (name: string, options: ReadonlyArray<string>) => ({
-		id: `F_${name}`,
-		options: new Map(options.map((option) => [option, `${name}:${option}`] as const)),
-	});
-	const FIELDS = {
-		stage: select("Stage", ["proposed", "check"]),
-		section: select("Section", SHIPPED_TABLE.sections),
-		size: select("Size", ["S", "M", "L"]),
-		rec: "F_rec",
-		plainWords: "F_plain",
-		tableDay: "F_day",
-	};
-	const plan = (over: Partial<PrepInput>) =>
-		planPrep({
-			fields: FIELDS,
-			target: NEXT,
-			rows: new Map(),
-			open: new Set(),
-			agenda: [],
-			rollover: [],
-			removals: [],
-			checks: [],
-			onCall: new Set(),
-			...over,
-		});
-	const cells = {size: "S" as const, rec: "yes.", plainWords: "Issue 1"};
+	const plan = (over: Partial<PrepInput>) => planPrep(input(over));
 
 	it("takes a routed issue's table row off, so it is on the on-call board only", () => {
 		const writes = plan({
@@ -286,5 +288,99 @@ describe("planPrep with an on-call board", () => {
 		});
 
 		expect(writes.some((write) => write._tag === "Delete")).toBe(false);
+	});
+});
+
+describe("prepPlan writes Rec only into an empty cell", () => {
+	const withRec = (row: Row, text: string): Row => ({
+		...row,
+		values: [
+			...row.values,
+			{
+				fieldId: "F_rec",
+				fieldName: "Rec",
+				value: {_tag: "Text", text},
+				creator: "owner",
+				updatedAt: "2026-09-20T00:00:00.000Z",
+			},
+		],
+	});
+	const recWrites = (plan: ReturnType<typeof prepPlan>) =>
+		plan.writes.filter(
+			(write) => write._tag !== "Add" && write._tag !== "Delete" && write.field === "Rec",
+		);
+
+	it("leaves a carried bet's Rec a person wrote, and names it", () => {
+		const plan = prepPlan(
+			input({
+				rows: new Map([[5, withRec(stageRow(5, "bet"), "needs your ruling: both fixes conflict")]]),
+				open: new Set([5]),
+				rollover: [5],
+			}),
+		);
+
+		expect(recWrites(plan)).toEqual([]);
+		expect(plan.kept).toEqual([
+			{issue: 5, rec: "needs your ruling: both fixes conflict", wanted: null},
+		]);
+	});
+
+	it("never replaces an agenda row's different Rec, and names it beside prep's text", () => {
+		const plan = prepPlan(
+			input({
+				rows: new Map([[1, withRec(stageRow(1, "proposed"), "no: wait for the audit.")]]),
+				open: new Set([1]),
+				agenda: [{issue: 1, section: "Tails", group: single(1), flaggedBet: false, cells}],
+			}),
+		);
+
+		expect(recWrites(plan)).toEqual([]);
+		expect(plan.kept).toEqual([{issue: 1, rec: "no: wait for the audit.", wanted: "yes."}]);
+	});
+
+	it("never replaces a check row's different Rec", () => {
+		const plan = prepPlan(
+			input({
+				rows: new Map([[6, withRec(stageRow(6, "shipped"), "it worked.")]]),
+				open: new Set([6]),
+				checks: [{issue: 6, section: "Tails", rec: "check it.", plainWords: "Issue 6"}],
+			}),
+		);
+
+		expect(recWrites(plan)).toEqual([]);
+		expect(plan.kept.map((one) => one.issue)).toEqual([6]);
+	});
+
+	it("writes prep's text into an empty Rec, and names nothing", () => {
+		const plan = prepPlan(
+			input({
+				rows: new Map([
+					[1, stageRow(1, "proposed")],
+					[6, stageRow(6, "shipped")],
+				]),
+				open: new Set([1, 6]),
+				agenda: [{issue: 1, section: "Tails", group: single(1), flaggedBet: false, cells}],
+				checks: [{issue: 6, section: "Tails", rec: "check it.", plainWords: "Issue 6"}],
+			}),
+		);
+
+		expect(recWrites(plan)).toMatchObject([
+			{_tag: "Set", issue: 1, value: {_tag: "Text", text: "yes."}},
+			{_tag: "Set", issue: 6, value: {_tag: "Text", text: "check it."}},
+		]);
+		expect(plan.kept).toEqual([]);
+	});
+
+	it("names no row whose Rec already reads as prep's text", () => {
+		const plan = prepPlan(
+			input({
+				rows: new Map([[1, withRec(stageRow(1, "proposed"), "yes.")]]),
+				open: new Set([1]),
+				agenda: [{issue: 1, section: "Tails", group: single(1), flaggedBet: false, cells}],
+			}),
+		);
+
+		expect(recWrites(plan)).toEqual([]);
+		expect(plan.kept).toEqual([]);
 	});
 });

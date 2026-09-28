@@ -14,8 +14,11 @@
  * closed: a second run adds no row, carries no bet and posts nothing. It still takes a `proposed`
  * row whose issue closed off the table, since that row must not reach the table.
  *
+ * `--dry-run` runs this same path over a board that records its writes (`dry-run.ts`).
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  * @ruling https://github.com/kamp-us/phoenix/issues/9989
+ * @ruling https://github.com/kamp-us/phoenix/issues/10086
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -63,8 +66,10 @@ import {
 	optionOf,
 	PROPOSED,
 	type PrepFields,
+	type PrepInput,
 	type PrepWrite,
 	planPrep,
+	prepPlan,
 	type Selection,
 	type TriageFirst,
 	textOf,
@@ -80,6 +85,7 @@ import {
 	SCOPE_MISSING,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {describePlanned, dryRunPrep} from "./dry-run.ts";
 import {
 	type Deciders,
 	type Flag,
@@ -112,8 +118,10 @@ import {FIELD} from "./shape.ts";
 import type {Row, SyncNode} from "./sync.ts";
 import {
 	GRAPH_CAP,
+	githubWave,
 	locateTable,
 	type Refusal,
+	readNodes,
 	rowsOf,
 	type SyncBoard,
 	syncBoard,
@@ -124,7 +132,7 @@ const VERB = "table prep";
 
 /** Every board act the verb takes, passed in so the verb stays provable offline. */
 export interface PrepBoard<R>
-	extends Pick<FlagsBoard<R>, "locate" | "items" | "node" | "comments" | "deciders">,
+	extends Pick<FlagsBoard<R>, "locate" | "items" | "node" | "comments" | "wave" | "deciders">,
 		Pick<SyncBoard<R>, "add" | "set" | "clear">,
 		CheckBoard<R> {
 	/** Post a comment on the issue: a check's evidence. */
@@ -158,6 +166,8 @@ export interface PrepOptions<R> {
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly now: Date;
 	readonly board: PrepBoard<R>;
+	/** Run over a board that records every write and sends none, and print the plan. */
+	readonly dryRun: boolean;
 }
 
 const refused = (code: number, reason: string): Refusal => ({_tag: "Refused", code, reason});
@@ -225,6 +235,34 @@ const vanished = (issue: number): SyncNode => ({
 	blockedBy: [],
 	blocking: [],
 });
+
+/**
+ * Read what the heads' groups lack into `graph`, a few at a time, before {@link groupFor} walks the
+ * heads in order. An unreadable issue is left out rather than refused on, so `groupFor` re-reads it
+ * and refuses where the in-order walk reaches it; a wave that would pass {@link GRAPH_CAP} is left
+ * to `groupFor` to refuse.
+ */
+const prefetchGroups = <R>(
+	board: PrepBoard<R>,
+	repo: string,
+	graph: Map<number, SyncNode>,
+	heads: ReadonlyArray<number>,
+): Effect.Effect<void, never, R> =>
+	Effect.gen(function* () {
+		const unread = new Set<number>();
+		for (;;) {
+			const lacking = heads.flatMap((head) => {
+				const membership = groupOf(head, graph);
+				return membership._tag === "Derived" ? [] : membership.missing;
+			});
+			const wanted = [...new Set(lacking)].filter((n) => !graph.has(n) && !unread.has(n));
+			if (wanted.length === 0 || graph.size + wanted.length > GRAPH_CAP) return;
+			for (const [issue, read] of yield* readNodes(board, repo, wanted)) {
+				if (read._tag === "Unknown") unread.add(issue);
+				else graph.set(issue, read._tag === "Present" ? read.value : vanished(issue));
+			}
+		}
+	});
 
 /** The group `head` stands for, reading whatever the graph still lacks into `graph`. */
 const groupFor = <R>(
@@ -411,7 +449,9 @@ export const runPrep = <R>(
 			);
 		}
 		const repo = resolved.value;
-		const {board, now} = options;
+		const {now} = options;
+		const dry = options.dryRun ? dryRunPrep(options.board, now.toISOString()) : null;
+		const board = dry?.board ?? options.board;
 		const table = settings.value;
 
 		const heads = yield* readHeads(board, VERB, repo, table, []);
@@ -527,6 +567,12 @@ export const runPrep = <R>(
 			});
 			triageFirst = sorted.triageFirst;
 			const graph = new Map(heads.graph);
+			yield* prefetchGroups(
+				board,
+				repo,
+				graph,
+				sorted.candidates.map((candidate) => candidate.issue),
+			);
 			for (const candidate of sorted.candidates) {
 				const group = yield* groupFor(board, repo, graph, candidate.issue);
 				if (group._tag === "Refused") return refuse(group.code, group.reason);
@@ -583,18 +629,20 @@ export const runPrep = <R>(
 			commented.push(check.evidence.issue);
 		}
 
+		const planInput = (rows: ReadonlyMap<number, Row>): PrepInput => ({
+			fields: fields.fields,
+			target,
+			rows,
+			open: openSet,
+			agenda,
+			rollover,
+			removals,
+			checks: checks.map((check) => check.row),
+			onCall: routedSet,
+		});
+		const {kept} = prepPlan(planInput(heads.table));
 		const converged = yield* converge(board, project, repo, heads.table, (rows) =>
-			planPrep({
-				fields: fields.fields,
-				target,
-				rows,
-				open: openSet,
-				agenda,
-				rollover,
-				removals,
-				checks: checks.map((check) => check.row),
-				onCall: routedSet,
-			}),
+			planPrep(planInput(rows)),
 		);
 		if (converged._tag === "Refused") return refuse(converged.code, converged.reason);
 		const {changes} = converged;
@@ -676,11 +724,15 @@ export const runPrep = <R>(
 					kind: kindOf(row.group),
 					members: membersOf(row.group),
 					size: row.cells?.size ?? optionOf(heads.table.get(row.issue), FIELD.size),
-					rec: row.cells?.rec ?? textOf(heads.table.get(row.issue), FIELD.rec),
+					rec: textOf(heads.table.get(row.issue), FIELD.rec) ?? row.cells?.rec ?? null,
 					plainWords: row.cells?.plainWords ?? textOf(heads.table.get(row.issue), FIELD.plainWords),
 				}));
 		const wrote = changes.length > 0 || onCallChanges.length > 0 || commented.length > 0 || posted;
+		const planned = dry?.planned() ?? null;
 		const notes = [
+			...(planned === null
+				? []
+				: [`${VERB}: --dry-run: every write below is planned and none was sent.`]),
 			`${VERB}: read ${settings.note}; ${sizes.note}${split === null ? "" : `; ${boards.note}`}.`,
 			`${VERB}: project #${project.number} "${project.title}" (${project.url}); preparing the ${table.day} ${target} table (${FIELD.tableDay}, read in ${table.timeZone}).`,
 			...(prepped
@@ -701,7 +753,11 @@ export const runPrep = <R>(
 					]),
 			...checks.map(
 				(check) =>
-					`${VERB}: #${check.evidence.issue} is back as a check, shipped ${check.evidence.shippedAt.slice(0, 10)}; its evidence ${check.comment === null ? "already stands" : "was posted"} on the issue.`,
+					`${VERB}: #${check.evidence.issue} is back as a check, shipped ${check.evidence.shippedAt.slice(0, 10)}; its evidence ${check.comment === null ? "already stands" : planned === null ? "was posted" : "would post"} on the issue.`,
+			),
+			...kept.map(
+				(one) =>
+					`${VERB}: left #${one.issue}'s Rec as it reads: "${one.rec}"${one.wanted === null ? "" : ` (prep's text would be "${one.wanted}")`}.`,
 			),
 			...checks.flatMap((check) =>
 				check.evidence.sources.flatMap((source) =>
@@ -737,14 +793,21 @@ export const runPrep = <R>(
 								`${VERB}: ${flagName(flag)}${flag._tag === "PastTarget" ? ` on #${flag.issue}` : ""}: ${recOf(flag, table)}`,
 						),
 					]),
-			...changes.map((change) => `${VERB}: ${change}.`),
-			...onCallChanges.map((change) => `${VERB}: ${change}.`),
-			...(posted ? [`${VERB}: posted the status update for the ${target} table.`] : []),
-			...(wrote ? [] : [`${VERB}: nothing was written.`]),
+			...(planned === null
+				? [
+						...changes.map((change) => `${VERB}: ${change}.`),
+						...onCallChanges.map((change) => `${VERB}: ${change}.`),
+						...(posted ? [`${VERB}: posted the status update for the ${target} table.`] : []),
+						...(wrote ? [] : [`${VERB}: nothing was written.`]),
+					]
+				: [
+						...planned.map((write) => `${VERB}: would ${describePlanned(write)}.`),
+						`${VERB}: --dry-run: nothing was written.`,
+					]),
 		];
 		return answer(
 			`${JSON.stringify({
-				answer: wrote ? "prepped" : "unchanged",
+				answer: planned !== null ? "dry-run" : wrote ? "prepped" : "unchanged",
 				repo,
 				project: {number: project.number, title: project.title, url: project.url},
 				tableDay: target,
@@ -758,12 +821,14 @@ export const runPrep = <R>(
 				checks: checks.map((check) => ({
 					...check.evidence,
 					rec: check.row.rec,
-					comment: check.comment === null ? "standing" : "posted",
+					comment: check.comment === null ? "standing" : planned === null ? "posted" : "planned",
 				})),
 				triageFirst,
 				outside,
-				health: {posted, alreadyPosted: prepped, ...health},
-				changes,
+				health: {posted: posted && planned === null, alreadyPosted: prepped, ...health},
+				recsKept: kept,
+				changes: planned === null ? changes : [],
+				...(planned === null ? {} : {planned}),
 				...(split === null || onCallHealth === null
 					? {}
 					: {
@@ -782,7 +847,7 @@ export const runPrep = <R>(
 								),
 								spend: onCallHealth.spend,
 								share: onCallHealth.share,
-								changes: onCallChanges,
+								changes: planned === null ? onCallChanges : [],
 							},
 						}),
 			})}\n`,
@@ -815,6 +880,7 @@ export const prepBoard: PrepBoard<
 	items: syncBoard.items,
 	node: syncBoard.node,
 	comments: syncBoard.comments,
+	wave: githubWave,
 	deciders: flagsBoard.deciders,
 	add: syncBoard.add,
 	set: syncBoard.set,

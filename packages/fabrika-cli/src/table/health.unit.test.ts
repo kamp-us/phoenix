@@ -2,6 +2,9 @@
  * The status update prep renders for a table, and the marker that keys it on the table day.
  */
 import {describe, expect, it} from "vitest";
+import {SHIPPED_APPETITE_SIZES} from "../config/keys/appetite-sizes.ts";
+import {SHIPPED_TABLE} from "../config/keys/table.ts";
+import {flagsOf, NOT_ASKED, type ShareWeek} from "./flags.ts";
 import {flagCount, type Health, healthMarker, postedFor, renderHealth} from "./health.ts";
 import {parseTableDay, type TableDay} from "./table-day.ts";
 
@@ -60,6 +63,31 @@ describe("renderHealth", () => {
 
 		expect(update.status).toBe("AT_RISK");
 		expect(update.body).toContain("- Could not check: over-size on #10");
+	});
+
+	it("is on track with the fabrika-share check off, and at risk when a labelled share went unread", () => {
+		const report = (share: ShareWeek) =>
+			flagsOf({
+				settings: SHIPPED_TABLE,
+				sizes: SHIPPED_APPETITE_SIZES,
+				now: new Date("2026-09-27T12:00:00.000Z"),
+				rows: [],
+				records: new Map(),
+				deciders: {_tag: "Roster", logins: new Set()},
+				campaigns: {_tag: "Read", active: []},
+				share,
+				onCall: NOT_ASKED,
+			});
+		const updateOf = (share: ShareWeek) =>
+			renderHealth({...quiet, unread: report(share).unread}, TABLE, false);
+
+		const off = updateOf(NOT_ASKED);
+		expect(off.status).toBe("ON_TRACK");
+		expect(off.body).not.toContain("fabrika-share");
+
+		const unread = updateOf({_tag: "Unread", reason: "cannot read #10's labels: HTTP 502"});
+		expect(unread.status).toBe("AT_RISK");
+		expect(unread.body).toContain("- Could not check: fabrika-share");
 	});
 
 	it("says a past-target count it could not read in words, never as a number", () => {

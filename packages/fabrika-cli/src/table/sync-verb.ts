@@ -15,7 +15,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/9856
  */
 
-import {Effect, type FileSystem, type Path} from "effect";
+import {Clock, Effect, type FileSystem, type Path, Semaphore} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type TableSettings, tableKey} from "../config/keys/table.ts";
 import {readKey} from "../config/read-key.ts";
@@ -23,11 +23,18 @@ import {blockedBy, blocking, subIssues} from "../io/edges.ts";
 import type {Api} from "../io/gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
 import {
+	type IssueNode,
+	readCommentCounts,
+	readIssueNodes,
+	reconcileComments,
+} from "../io/issue-batch.ts";
+import {
 	absent,
 	type Existence,
 	getIssue,
+	type IssueRecord,
 	issueNodeId,
-	listCommentsReconciled,
+	listComments,
 	present,
 	resolveRepo,
 	unknown,
@@ -61,6 +68,7 @@ import {
 	SCOPE_MISSING,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {describePlanned, dryRunSync} from "./dry-run.ts";
 import {kindOf, membersOf} from "./group.ts";
 import {type BoardTarget, productBoard} from "./shape.ts";
 import {
@@ -81,11 +89,53 @@ const VERB = "table sync";
 /** How many issues one run may read into its graph before it stops rather than walk on. */
 export const GRAPH_CAP = 2000;
 
+/**
+ * How many GitHub reads the shipped table readers keep in flight at once, summed over every issue a
+ * run is reading. GitHub asks REST clients to avoid concurrent requests because of its secondary
+ * rate limits
+ * ([best practices](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api#avoid-concurrent-requests)),
+ * so the cap stays small. {@link readEach} reads at most this many issues at once, and the shipped
+ * board's issue reads — the batched node and count requests, each REST fallback node read, each
+ * comment list and each merged-PR read — hold one permit of {@link githubReads} apiece, so a
+ * fallback's three edge lists spend this one budget rather than multiplying it. The project reads
+ * (`locate`, `items`) and the writes (`add`, `set`, `clear`) take no permit: a run makes them one
+ * at a time, never beside another read.
+ */
+export const READ_FAN_OUT = 8;
+
+/** The one permit pool, {@link READ_FAN_OUT} wide, the shipped board's issue reads draw from. */
+const githubReads = Semaphore.makeUnsafe(READ_FAN_OUT);
+
+/** `read` holding one {@link githubReads} permit; a read made of several calls makes them in turn. */
+const budgeted = <A, R>(read: Effect.Effect<A, never, R>): Effect.Effect<A, never, R> =>
+	githubReads.withPermits(1)(read);
+
+/** Run `read` over every key, at most {@link READ_FAN_OUT} at once, answering in the keys' order. */
+export const readEach = <K, A, R>(
+	keys: ReadonlyArray<K>,
+	read: (key: K) => Effect.Effect<A, never, R>,
+): Effect.Effect<ReadonlyArray<readonly [K, A]>, never, R> =>
+	Effect.forEach(keys, (key) => Effect.map(read(key), (value) => [key, value] as const), {
+		concurrency: READ_FAN_OUT,
+	});
+
 export type Located =
 	| {readonly _tag: "Located"; readonly project: ProjectSnapshot}
 	| {readonly _tag: "Refused"; readonly code: number; readonly reason: string};
 
 type Target = {readonly projectId: string; readonly itemId: string; readonly fieldId: string};
+
+/** A board's reads over a whole wave of issues, answering every issue it was asked for. */
+export interface WaveReads<R> {
+	readonly nodes: (
+		repo: string,
+		issues: ReadonlyArray<number>,
+	) => Effect.Effect<ReadonlyMap<number, Existence<SyncNode>>, never, R>;
+	readonly comments: (
+		repo: string,
+		issues: ReadonlyArray<number>,
+	) => Effect.Effect<ReadonlyMap<number, Attempt<ReadonlyArray<string>>>, never, R>;
+}
 
 /** Every board act the verb takes, passed in so the verb stays provable offline. */
 export interface SyncBoard<R> {
@@ -104,6 +154,12 @@ export interface SyncBoard<R> {
 		issue: number,
 	) => Effect.Effect<Attempt<ReadonlyArray<string>>, never, R>;
 	readonly merged: (repo: string, pr: number) => Effect.Effect<Attempt<boolean>, never, R>;
+	/**
+	 * Many issues read per request. A board carrying it answers each wave of the graph and the
+	 * records here; one without it has every issue read through `node` and `comments`,
+	 * {@link READ_FAN_OUT} at a time.
+	 */
+	readonly wave?: WaveReads<R>;
 	/** Add the issue as a real issue item — the only add there is, so no draft can be made. */
 	readonly add: (
 		projectId: string,
@@ -124,6 +180,8 @@ export interface SyncOptions<R> {
 	/** The issues to sync; empty syncs every issue already on the table. */
 	readonly issues: ReadonlyArray<number>;
 	readonly board: SyncBoard<R>;
+	/** Run over a board that records every write and sends none, and print the plan. */
+	readonly dryRun: boolean;
 }
 
 export type Refusal = {readonly _tag: "Refused"; readonly code: number; readonly reason: string};
@@ -177,7 +235,47 @@ const touched = (world: Pick<World, "scope">): ReadonlyArray<number> =>
 	);
 
 /** The board reads every table reader shares: the project, its rows, the graph and the records. */
-export type TableBoard<R> = Pick<SyncBoard<R>, "locate" | "items" | "node" | "comments">;
+export type TableBoard<R> = Pick<SyncBoard<R>, "locate" | "items" | "node" | "comments" | "wave">;
+
+/** Answer `issues` off a wave read in their own order; an issue it left unanswered is `onMissing`. */
+const inOrder = <A>(
+	issues: ReadonlyArray<number>,
+	answers: ReadonlyMap<number, A>,
+	onMissing: (issue: number) => A,
+): ReadonlyArray<readonly [number, A]> =>
+	issues.map((issue) => [issue, answers.get(issue) ?? onMissing(issue)] as const);
+
+/** Every issue's graph node, off the board's wave read when it has one. */
+export const readNodes = <R>(
+	board: Pick<TableBoard<R>, "node" | "wave">,
+	repo: string,
+	issues: ReadonlyArray<number>,
+): Effect.Effect<ReadonlyArray<readonly [number, Existence<SyncNode>]>, never, R> => {
+	const {wave} = board;
+	if (wave === undefined || issues.length === 0) {
+		return readEach(issues, (issue) => board.node(repo, issue));
+	}
+	return Effect.map(wave.nodes(repo, issues), (answers) =>
+		inOrder(issues, answers, (issue) =>
+			unknown<SyncNode>(`the batched read left #${issue} unread`),
+		),
+	);
+};
+
+/** Every issue's comment bodies, off the board's wave read when it has one. */
+const readCommentWave = <R>(
+	board: Pick<TableBoard<R>, "comments" | "wave">,
+	repo: string,
+	issues: ReadonlyArray<number>,
+): Effect.Effect<ReadonlyArray<readonly [number, Attempt<ReadonlyArray<string>>]>, never, R> => {
+	const {wave} = board;
+	if (wave === undefined || issues.length === 0) {
+		return readEach(issues, (issue) => board.comments(repo, issue));
+	}
+	return Effect.map(wave.comments(repo, issues), (answers) =>
+		inOrder(issues, answers, (issue) => fail(`the batched read left #${issue}'s comments unread`)),
+	);
+};
 
 /** The rows a run touches and the graph that decides their groups. */
 export interface Scoped {
@@ -202,14 +300,14 @@ export const readScope = <R>(
 		let scoped: Scope = scope(seeds, rows, graph);
 		let wanted: ReadonlyArray<number> = scoped._tag === "Incomplete" ? scoped.missing : [];
 		while (wanted.length > 0) {
-			for (const issue of wanted) {
-				if (graph.size >= GRAPH_CAP) {
-					return refused(
-						PRECONDITION_UNKNOWN,
-						`${verb}: the groups this run touches reach past ${GRAPH_CAP} issues — name fewer issues at a time. Nothing was written.`,
-					);
-				}
-				const read = yield* board.node(repo, issue);
+			if (graph.size + wanted.length > GRAPH_CAP) {
+				return refused(
+					PRECONDITION_UNKNOWN,
+					`${verb}: the groups this run touches reach past ${GRAPH_CAP} issues — name fewer issues at a time. Nothing was written.`,
+				);
+			}
+			const reads = yield* readNodes(board, repo, wanted);
+			for (const [issue, read] of reads) {
 				if (read._tag === "Unknown") {
 					return refused(
 						PRECONDITION_UNKNOWN,
@@ -255,9 +353,11 @@ export const readRecords = <R>(
 ): Effect.Effect<Records | Refusal, never, R> =>
 	Effect.gen(function* () {
 		const records = new Map<number, ReadonlyArray<LaneRecord>>();
-		for (const issue of touched(scoped)) {
-			if (scoped.graph.get(issue)?.open !== true && !rows.has(issue)) continue;
-			const comments = yield* board.comments(repo, issue);
+		const standing = touched(scoped).filter(
+			(issue) => scoped.graph.get(issue)?.open === true || rows.has(issue),
+		);
+		const reads = yield* readCommentWave(board, repo, standing);
+		for (const [issue, comments] of reads) {
 			if (comments._tag === "Failure") {
 				return refused(
 					PRECONDITION_UNKNOWN,
@@ -296,8 +396,11 @@ const readWorld = <R>(
 
 		const merged = new Set<number>();
 		const prs = new Set([...records.values()].flat().flatMap((record) => record.prs));
-		for (const pr of [...prs].sort((a, b) => a - b)) {
-			const state = yield* board.merged(repo, pr);
+		const reads = yield* readEach(
+			[...prs].sort((a, b) => a - b),
+			(pr) => board.merged(repo, pr),
+		);
+		for (const [pr, state] of reads) {
 			if (state._tag === "Failure") {
 				return refused(
 					PRECONDITION_UNKNOWN,
@@ -464,10 +567,15 @@ export const runSync = <R>(
 			);
 		}
 		const repo = resolved.value;
-		const run = yield* converge(options.board, repo, settings.value, options.issues);
+		const dry = options.dryRun
+			? dryRunSync(options.board, new Date(yield* Clock.currentTimeMillis).toISOString())
+			: null;
+		const run = yield* converge(dry?.board ?? options.board, repo, settings.value, options.issues);
 		if (run._tag === "Refused") return refuse(run.code, run.reason);
 
-		const {project, world, changes, skipped} = run;
+		const {project, world, skipped} = run;
+		const planned = dry?.planned() ?? null;
+		const changes = planned === null ? run.changes : [];
 		const groups = world.scope.heads
 			.filter((group) => group._tag !== "Single")
 			.map((group) => ({head: group.head, kind: kindOf(group), members: membersOf(group)}));
@@ -479,19 +587,25 @@ export const runSync = <R>(
 					`${VERB}: #${group.head} is a ${group.kind} row over ${group.members.length === 0 ? "no open member" : group.members.map((n) => `#${n}`).join(", ")}.`,
 			),
 			...skipped.map((skip) => `${VERB}: skipped #${skip.issue}: ${skip.reason}.`),
-			...(changes.length > 0
-				? changes.map((change) => `${VERB}: ${change}.`)
-				: [`${VERB}: every touched row already reads in step; nothing was written.`]),
+			...(planned !== null
+				? [
+						...planned.map((write) => `${VERB}: would ${describePlanned(write)}.`),
+						`${VERB}: --dry-run: nothing was written.`,
+					]
+				: changes.length > 0
+					? changes.map((change) => `${VERB}: ${change}.`)
+					: [`${VERB}: every touched row already reads in step; nothing was written.`]),
 		];
 		return answer(
 			`${JSON.stringify({
-				answer: changes.length > 0 ? "synced" : "unchanged",
+				answer: planned !== null ? "dry-run" : changes.length > 0 ? "synced" : "unchanged",
 				repo,
 				project: {number: project.number, title: project.title, url: project.url},
 				issues: touched(world),
 				groups,
 				changes,
 				skipped,
+				...(planned === null ? {} : {planned}),
 			})}\n`,
 			notes,
 		);
@@ -549,18 +663,42 @@ export const locateTable = (
 		return read._tag === "Ok" ? found({_tag: "Located", project: read.value}) : read;
 	});
 
-/** The shipped board: GitHub, under the ambient token. */
-export const syncBoard: SyncBoard<ChildProcessSpawner.ChildProcessSpawner> = {
-	locate: (repo, target) => withProjects((token) => locateTable(token, repo, target, VERB)),
-	items: (projectId) => withProjects((token) => readItems(token, projectId)),
-	node: (repo, issue) =>
+/** One of an issue's edge lists: its sub-issues, what blocks it, or what it blocks. */
+type EdgeRead<R> = (
+	repo: string,
+	issue: number,
+) => Effect.Effect<Existence<ReadonlyArray<number>>, never, R>;
+
+/** The GitHub reads one graph node is made of: the issue, then its three edge lists. */
+export interface NodeReads<R> {
+	readonly issue: (
+		repo: string,
+		issue: number,
+	) => Effect.Effect<Existence<Pick<IssueRecord, "isPullRequest" | "state" | "parent">>, never, R>;
+	readonly subIssues: EdgeRead<R>;
+	readonly blockedBy: EdgeRead<R>;
+	readonly blocking: EdgeRead<R>;
+}
+
+/**
+ * Read one issue's graph node: the issue, then its three edge lists side by side. Each read holds
+ * one {@link githubReads} permit, so the edge lists count against {@link READ_FAN_OUT}.
+ */
+export const readNode =
+	<R>(reads: NodeReads<R>) =>
+	(repo: string, issue: number): Effect.Effect<Existence<SyncNode>, never, R> =>
 		Effect.gen(function* () {
-			const found = yield* getIssue(repo, issue);
+			const found = yield* budgeted(reads.issue(repo, issue));
 			if (found._tag !== "Present") return found;
 			if (found.value.isPullRequest) return absent<SyncNode>();
+			const lists = yield* Effect.all(
+				[reads.subIssues, reads.blockedBy, reads.blocking].map((list) =>
+					budgeted(list(repo, issue)),
+				),
+				{concurrency: "unbounded"},
+			);
 			const edges: Array<ReadonlyArray<number>> = [];
-			for (const list of [subIssues, blockedBy, blocking]) {
-				const read = yield* list(repo, issue);
+			for (const read of lists) {
 				if (read._tag === "Unknown") return read;
 				if (read._tag === "Absent") return unknown<SyncNode>(`#${issue}'s edges vanished mid-read`);
 				edges.push(read.value);
@@ -574,13 +712,87 @@ export const syncBoard: SyncBoard<ChildProcessSpawner.ChildProcessSpawner> = {
 				blockedBy: blockers,
 				blocking: blocked,
 			});
+		});
+
+/** One issue's node over REST: four calls, spent only on an issue a batched read left unproven. */
+const restNode = readNode({issue: getIssue, subIssues, blockedBy, blocking});
+
+const syncNodeOf = ({comments: _, ...node}: IssueNode): SyncNode => node;
+
+/**
+ * The shipped wave reads: every node in batched GraphQL requests, with an issue a request could not
+ * prove whole re-read over REST; every comment list over REST, reconciled against counts read in
+ * one batched request after the lists.
+ */
+export const githubWave: WaveReads<ChildProcessSpawner.ChildProcessSpawner> = {
+	nodes: (repo, issues) =>
+		Effect.gen(function* () {
+			const batched = yield* budgeted(readIssueNodes(repo, issues));
+			const out = new Map<number, Existence<SyncNode>>();
+			const singly: number[] = [];
+			for (const [issue, read] of batched) {
+				if (read._tag === "Unproven") singly.push(issue);
+				else out.set(issue, read._tag === "Present" ? present(syncNodeOf(read.value)) : read);
+			}
+			for (const [issue, read] of yield* readEach(singly, (n) => restNode(repo, n))) {
+				out.set(issue, read);
+			}
+			return out;
 		}),
-	comments: (repo, issue): Shell<Attempt<ReadonlyArray<string>>> =>
-		Effect.map(listCommentsReconciled(repo, issue), (scan) =>
-			scan._tag === "Failure" ? scan : ok(scan.value.comments.map((comment) => comment.body)),
+	comments: (repo, issues) =>
+		Effect.map(
+			reconcileComments(repo, issues, {
+				lists: (wanted) => readEach(wanted, (issue) => budgeted(listComments(repo, issue))),
+				counts: (wanted) => commentCounts(repo, wanted),
+			}),
+			(scans) =>
+				new Map(
+					[...scans].map(([issue, scan]) => [
+						issue,
+						scan._tag === "Failure" ? scan : ok(scan.value.comments.map((comment) => comment.body)),
+					]),
+				),
 		),
+};
+
+/** Every declared comment count in batched requests, an unproven one re-read over REST. */
+const commentCounts = (
+	repo: string,
+	issues: ReadonlyArray<number>,
+): Shell<ReadonlyMap<number, Existence<number>>> =>
+	Effect.gen(function* () {
+		const batched = yield* budgeted(readCommentCounts(repo, issues));
+		const out = new Map<number, Existence<number>>();
+		const singly: number[] = [];
+		for (const [issue, read] of batched) {
+			if (read._tag === "Unproven") singly.push(issue);
+			else out.set(issue, read);
+		}
+		for (const [issue, read] of yield* readEach(singly, (n) => budgeted(getIssue(repo, n)))) {
+			out.set(issue, read._tag === "Present" ? present(read.value.comments) : read);
+		}
+		return out;
+	});
+
+/** One issue's answer off a wave of one. */
+const single = <A>(answers: ReadonlyMap<number, A>, issue: number, onMissing: () => A): A =>
+	answers.get(issue) ?? onMissing();
+
+/** The shipped board: GitHub, under the ambient token. */
+export const syncBoard: SyncBoard<ChildProcessSpawner.ChildProcessSpawner> = {
+	locate: (repo, target) => withProjects((token) => locateTable(token, repo, target, VERB)),
+	items: (projectId) => withProjects((token) => readItems(token, projectId)),
+	node: (repo, issue) =>
+		Effect.map(githubWave.nodes(repo, [issue]), (answers) =>
+			single(answers, issue, () => unknown<SyncNode>(`the batched read left #${issue} unread`)),
+		),
+	comments: (repo, issue): Shell<Attempt<ReadonlyArray<string>>> =>
+		Effect.map(githubWave.comments(repo, [issue]), (answers) =>
+			single(answers, issue, () => fail(`the batched read left #${issue}'s comments unread`)),
+		),
+	wave: githubWave,
 	merged: (repo, pr) =>
-		Effect.map(getPullRequest(repo, pr), (found): Attempt<boolean> => {
+		Effect.map(budgeted(getPullRequest(repo, pr)), (found): Attempt<boolean> => {
 			if (found._tag === "Unknown") return fail(found.reason);
 			return ok(found._tag === "Present" && found.value.merged);
 		}),

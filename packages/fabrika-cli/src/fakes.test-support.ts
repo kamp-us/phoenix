@@ -695,6 +695,36 @@ export const fakeHttp = (
 	return {layer, calls, bodies, headers};
 };
 
+/**
+ * {@link fakeHttp} answering each request from what it carried rather than off a fixed script — for
+ * a batched read, whose reply depends on which issues the request asked for.
+ */
+export const fakeHttpBy = (answer: (line: string, body: string) => HttpReply): FakeHttp => {
+	const calls: string[] = [];
+	const bodies: string[] = [];
+	const headers: Array<Readonly<Record<string, string>>> = [];
+	const layer = Layer.succeed(HttpClient.HttpClient)(
+		HttpClient.make((request, url) =>
+			Effect.sync(() => {
+				const line = `${request.method} ${url.toString()}`;
+				const body = requestBody(request.body);
+				calls.push(line);
+				bodies.push(body);
+				headers.push(request.headers);
+				const reply = answer(line, body);
+				return HttpClientResponse.fromWeb(
+					request,
+					new Response(NULL_BODY_STATUSES.has(reply.status) ? null : reply.body, {
+						status: reply.status,
+						headers: {...reply.headers},
+					}),
+				);
+			}),
+		),
+	);
+	return {layer, calls, bodies, headers};
+};
+
 /** A served page of a bare-array read, with the `Link` header that says another page follows. */
 export const linkNext = (url: string): Record<string, string> => ({link: `<${url}>; rel="next"`});
 

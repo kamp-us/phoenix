@@ -461,15 +461,16 @@ describe("fabrika's share of the week", () => {
 		expect(flagsOf(input([], older, {share: week(1, [10])})).flags).toEqual([]);
 	});
 
-	it("names the check unread when a lane of the week went unmeasured, or no label is declared", () => {
+	it("names the check unread when a lane of the week went unmeasured, or a label would not read", () => {
 		const unmeasured = {...records, 12: [record(12, {usd: null})]};
 
 		expect(flagsOf(input([], unmeasured, {share: week(1, [10])})).unread).toEqual([
 			expect.objectContaining({check: "fabrika-share"}),
 		]);
 		expect(
-			flagsOf(input([], records, {share: {_tag: "Unread", reason: "no label"}})).unread,
-		).toEqual([{check: "fabrika-share", issue: null, reason: "no label"}]);
+			flagsOf(input([], records, {share: {_tag: "Unread", reason: "cannot read #10's labels"}}))
+				.unread,
+		).toEqual([{check: "fabrika-share", issue: null, reason: "cannot read #10's labels"}]);
 	});
 });
 

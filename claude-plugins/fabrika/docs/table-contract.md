@@ -70,10 +70,18 @@ with each field. A user's path takes the login; the numeric user id answers 404.
 stands keeps the grouping it has: setup aligns its layout, filter and visible fields and never
 regroups, recreates or deletes it.
 
-It never deletes or renames anything and never rewrites an existing field's options. It reports as
-drift instead an option a field lacks, or one whose description differs from the table's, so a
-changed `appetiteSizes` rewrites the README and names each stale Size option for a person to edit.
-Idempotent: a project already in shape answers `unchanged` with nothing written.
+**Options on a field that already stands.** Setup adds the options the table names and a
+single-select field lacks, and fills each blank description of the table's options with the table's
+text. A description a person wrote stays as written, even where it differs from the table's, so a
+changed `appetiteSizes` rewrites the README and leaves a written Size description alone. Neither is
+reported as something for a person to fix: nothing is left to add by hand. GitHub replaces a field's
+whole option list on update, and an option sent without its id loses every row's value on it, so
+setup sends every option the field holds back with its own id, name, color and description, then
+the new ones.
+
+It never deletes, renames or recolors anything, and keeps an option the table does not name, such as
+a `founder idea` on Origin. Idempotent: a project already in shape answers `unchanged` with nothing
+written.
 
 **The legacy Week field.** A table set up before Table day has a `Week` iteration field. Setup
 leaves it exactly as it is and names it under `legacy`; the table no longer reads or writes it.
@@ -85,7 +93,7 @@ open project titled `<repo name> on-call` (or `boards.onCall.project`), with a R
 field, a Queue view (`is:open`) and a README. With no `boards` block it touches one project and its
 answer carries no `onCall` key.
 
-stdout is `{"answer":"created"|"reconciled"|"unchanged","repo":"…","project":{"number":n,"title":"…","url":"…"},"changes":[…],"drift":[…],"legacy":[…],"manualSteps":[…],"onCall":{"answer":…,"project":{…},"changes":[…],"drift":[…],"legacy":[],"manualSteps":[]}}`,
+stdout is `{"answer":"created"|"reconciled"|"unchanged","repo":"…","project":{"number":n,"title":"…","url":"…"},"changes":[…],"legacy":[…],"manualSteps":[…],"onCall":{"answer":…,"project":{…},"changes":[…],"legacy":[],"manualSteps":[]}}`,
 with `onCall` only under a `boards` block. stderr repeats the two manual steps, which the README's
 by-hand section also lists: on an Agenda or Lanes view that stood before setup, set its grouping by
 hand (Group by Section, Column by Stage); and turn on the "Auto-add to project" workflow with filter
@@ -132,7 +140,16 @@ issue.
 Idempotent: a second run answers `unchanged` with nothing written. `lane record` runs it for the
 lane's issue after posting.
 
-stdout is `{"answer":"synced"|"unchanged","repo":"…","project":{"number":n,"title":"…","url":"…"},"issues":[n…],"groups":[{"head":n,"kind":"epic"|"chain","members":[n…]}],"changes":[…],"skipped":[{"issue":n,"reason":"…"}]}`.
+**Dry run.** `--dry-run` makes every read a live run makes and sends no write. Each write is
+recorded and folded into what the later reads answer, so an issue added in the run reads back as a
+row under a stand-in item id and its cells still plan. The answer is `dry-run` with `changes` empty
+and a `planned` list of every write in the order a live run would send it:
+`{"_tag":"Add","project":n,"issue":n}`, `{"_tag":"Set","project":n,"issue":n,"field":"…","value":"…"|n}`
+or `{"_tag":"Clear","project":n,"issue":n,"field":"…"}`. The exit is `0` once the plan is built; a
+read that fails keeps its code.
+
+stdout is `{"answer":"synced"|"unchanged"|"dry-run","repo":"…","project":{"number":n,"title":"…","url":"…"},"issues":[n…],"groups":[{"head":n,"kind":"epic"|"chain","members":[n…]}],"changes":[…],"skipped":[{"issue":n,"reason":"…"}]}`,
+plus `planned` under `--dry-run`.
 
 ### Exit status
 
@@ -180,7 +197,8 @@ set `.github/CODEOWNERS` names. The bet stands as set.
   spend in the 7 days ending at the next table day than `table.fabrikaShare.percent` for the first
   `forTables` tables, then `thenPercent`. Which table that is counts the distinct Table day dates on
   the board before it, plus one: a count needs no config and survives the migration, whose rows
-  carry their old weeks' dates.
+  carry their old weeks' dates. An empty `table.fabrikaShare.labels`, the shipped default, turns
+  this check off: it raises no flag and is never named under `unread`.
 
 **The on-call board.** With a `boards.onCall` block the whole-table run also reads the on-call
 board:
@@ -191,9 +209,9 @@ board:
 - `on-call-share` — lanes on issues on the on-call board took more of the spend in the same 7 days
   than `boards.onCall.spendShare` percent.
 
-A check it could not answer — a lane unmeasured, a set or roadmap that would not read, no label
-declared, an on-call board that would not read, an item with no target or one
-the config no longer names — is named under `unread`, never passed.
+A check it could not answer — a lane unmeasured, a set, roadmap or label that would not read, an
+on-call board that would not read, an item with no target or one the config no longer names — is
+named under `unread`, never passed. A check the config turns off is neither.
 
 stdout is `{"answer":"flagged"|"clear","repo":"…","project":{"number":n,"title":"…","url":"…"},"scope":"table"|"issues","rows":[n…],"flags":[{"flag":"over-size"|"asks"|"stuck"|"unknown-decider"|"campaigns"|"fabrika-share"|"past-target"|"on-call-share",…,"rec":"…"}],"unread":[{"check":"…","issue":n|null,"reason":"…"}]}`;
 row flags carry `head`, `group` (`epic`|`chain`|`null`) and `covers`.
@@ -223,30 +241,40 @@ a real, open issue, never a draft:
 
 A row already `bet`, `not now`, `in lane`, `shipped` or `check` is never proposed again, except a
 flagged running bet, which moves to Tails with its Stage and Size untouched. Each proposed row gets
-Stage `proposed`, its Section, the table's Table day, a Size (only when unset: an epic is L, otherwise the
-smallest size covering its issues' pitch sizes, an unpitched issue counting as S), a Rec and an In
-plain words line — the issue's `## In plain words` summary, else its title.
+Stage `proposed`, its Section, the table's Table day, a Size (only when unset: an epic is L,
+otherwise the smallest size covering its issues' pitch sizes, an unpitched issue counting as S), a
+Rec (only into an empty cell; see **Rec**) and an In plain words line — the issue's
+`## In plain words` summary, else its title.
 
 A candidate with open `blocked_by` issues is one chain row over them (followed transitively), and an
 epic one row over its open sub-issues. The row counts once toward the cap, its Size and Rec cover
 every issue in it, its members are added as rows with no Section so they show only in the Group
-members view, and a chosen row a later chain covers moves inside it. A row where any issue carries
-`ready-for:human` gets the Rec "needs your pick" with the options the issue lists (under an Options
-heading, or as "Option A: …" lines), never "yes".
+members view, and a chosen row a later chain covers moves inside it. For a row where any issue
+carries `ready-for:human`, the Rec prep writes into an empty cell is "needs your pick" with the
+options the issue lists (under an Options heading, or as "Option A: …" lines), never "yes"; a Rec
+the row already holds stays as it reads (see **Rec**).
 
 An untriaged Customers report (`status:needs-triage` or no label) is never proposed: it is listed
 under `triageFirst` for the driver to triage and proposed on the next run, and one on
 `status:needs-info` is listed there marked waiting on filer.
 
-**Rollover.** Every other open `bet` row is dated the next table with its Rec cleared, so it continues
-without an agenda row. A `proposed` row whose issue has closed is taken off the project.
+**Rollover.** Every other open `bet` row is dated the next table, so it continues without an agenda
+row, and its Rec is left as it reads. A `proposed` row whose issue has closed is taken off the
+project.
+
+**Rec.** Prep writes Rec only into an empty cell. The board cannot say whose text a Rec holds, so
+prep never clears a non-empty Rec and never replaces one, on an agenda, rollover or check row alike.
+Each row whose Rec it left and that differs from what prep would write is listed under `recsKept`
+with the text it holds and prep's own (`null` on a carried bet) and named on stderr. A Rec prep
+wrote for an earlier table stays too, until a person clears it.
 
 **Checks.** A bet — a row whose Origin reads `bet` — whose Stage has read `shipped` for
 `table.checkDelayDays` days (14 by default, timed from the Stage value's last change) moves to Stage
-`check` under the first agenda section, dated the next table, with a Rec asking "did it work?" and an In plain
-words line, whatever its issue's state, and outside the agenda cap. A shipped row whose Origin is
-anything else, such as an Outside the bets row sync moved to `shipped`, keeps its Stage and Section
-and gets no comment. Its evidence is posted once as a comment on the issue:
+`check` under the first agenda section, dated the next table, with a Rec asking "did it work?" (into
+an empty Rec) and an In plain words line, whatever its issue's state, and outside the agenda cap. A
+shipped row whose Origin is anything else, such as an Outside the bets row sync moved to `shipped`,
+keeps its Stage and Section and gets no comment. Its evidence is posted once as a comment on the
+issue:
 
 - the pitch's `**Success:**` line, or a note that it has none;
 - the GitHub signals since it shipped: issues filed since that mention a pull request its lane
@@ -267,7 +295,9 @@ lanes that needed a founder over the 7 days before the table day; the Outside th
 un-bet lanes, their origins and cost); the bets continuing; and the Inbox count (open issues with no
 labels). It reads `AT_RISK` while a row flag stands or any flag check could not be read — each such
 check is named under "Could not check", and an on-call past-target count it could not read is said
-in words, never as a number — else `ON_TRACK`. The update names its table day in a
+in words, never as a number — else `ON_TRACK`. Prep asks neither table-wide check, `campaigns` nor
+`fabrika-share`, so neither is named there, and an empty `table.fabrikaShare.labels` turns the
+share check off everywhere. The update names its table day in a
 `<!-- fabrika:table-health table-day=YYYY-MM-DD -->` marker; once one stands for that day, a re-run
 adds no row, carries nothing and posts nothing, and only takes closed `proposed` rows off. A row
 already dated that day is left as it reads, so a re-run writes no Table day.
@@ -289,8 +319,17 @@ which is the next table's, with a Section and a Rec, open or closed so a check s
 matches only iteration fields, so a date needs the range. Run `table setup` once to align the filter
 of an Agenda view that stood before.
 
-stdout is `{"answer":"prepped"|"unchanged","repo":"…","project":{…},"tableDay":"YYYY-MM-DD","agenda":[{"issue":n,"section":"…","kind":"epic"|"chain"|null,"members":[n…],"size":"…","rec":"…","plainWords":"…"}],"overflow":[n…],"rollover":{"continuing":[n…],"flagged":[n…]},"removed":[n…],"checks":[{"issue":n,"shippedAt":"…","success":"…"|null,"signals":{"prs":[n…],"mentions":[…],"reverts":[…],"reopened":[n…],"followUps":[n…]},"fabrika":{…}|null,"sources":[…],"rec":"…","comment":"posted"|"standing"}],"triageFirst":[{"issue":n,"waitingOnFiler":bool}],"outside":{"count":n,"kinds":{…},"spentUsd":n,"unmeasured":n},"health":{"posted":bool,"alreadyPosted":bool,…},"changes":[…],"onCall":{"project":{…},"items":[{"issue":n,"target":"…"|null}],"pastTarget":[n…],"spend":{"_tag":"Measured","percent":n,"onCallUsd":n,"totalUsd":n}|{"_tag":"Unmeasured","lanes":n}|{"_tag":"Nothing"},"share":n,"changes":[…]}}`,
-with `onCall` only under a `boards` block.
+**Dry run.** `--dry-run` runs every phase over a board that records its writes, the same way
+[`table sync --dry-run`](#table-sync) does, so the cells of a row added in the run, the checks and
+the status update all plan. The answer is `dry-run`; `changes` are empty, `health.posted` is false,
+a check's `comment` reads `planned`, and `planned` lists every write: sync's three kinds plus
+`{"_tag":"Delete","project":n,"issue":n}`, `{"_tag":"Comment","issue":n,"body":"…"}` and
+`{"_tag":"Post","project":n,"status":"…","body":"…"}`. The exit is `0` once the plan is built; a read
+that fails keeps its code.
+
+stdout is `{"answer":"prepped"|"unchanged"|"dry-run","repo":"…","project":{…},"tableDay":"YYYY-MM-DD","agenda":[{"issue":n,"section":"…","kind":"epic"|"chain"|null,"members":[n…],"size":"…","rec":"…","plainWords":"…"}],"overflow":[n…],"rollover":{"continuing":[n…],"flagged":[n…]},"removed":[n…],"checks":[{"issue":n,"shippedAt":"…","success":"…"|null,"signals":{"prs":[n…],"mentions":[…],"reverts":[…],"reopened":[n…],"followUps":[n…]},"fabrika":{…}|null,"sources":[…],"rec":"…","comment":"posted"|"standing"|"planned"}],"triageFirst":[{"issue":n,"waitingOnFiler":bool}],"outside":{"count":n,"kinds":{…},"spentUsd":n,"unmeasured":n},"health":{"posted":bool,"alreadyPosted":bool,…},"recsKept":[{"issue":n,"rec":"…","wanted":"…"|null}],"changes":[…],"onCall":{"project":{…},"items":[{"issue":n,"target":"…"|null}],"pastTarget":[n…],"spend":{"_tag":"Measured","percent":n,"onCallUsd":n,"totalUsd":n}|{"_tag":"Unmeasured","lanes":n}|{"_tag":"Nothing"},"share":n,"changes":[…]}}`,
+with `onCall` only under a `boards` block and `planned` only under `--dry-run`. An agenda row's
+`rec` is the Rec the row holds after prep, a kept one included.
 
 ### Exit status
 

@@ -439,6 +439,35 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 				project.fields.push(field);
 				return {data: {createProjectV2Field: {projectV2Field: {id: field.id}}}};
 			}
+			case "TableUpdateField": {
+				const project = projects.find((one) =>
+					one.fields.some((field) => field.id === input.fieldId),
+				);
+				const field = project?.fields.find((one) => one.id === input.fieldId);
+				if (project === undefined || field === undefined)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no field"}]};
+				if (Array.isArray(input.singleSelectOptions)) {
+					// GitHub replaces the whole list: an option sent without its id is minted anew, and
+					// every item value naming an id the new list lacks is cleared.
+					field.options = input.singleSelectOptions.map((raw) => {
+						const option = isRecord(raw) ? raw : {};
+						return {
+							id: typeof option.id === "string" ? option.id : mint("opt"),
+							name: String(option.name),
+							color: String(option.color),
+							description: String(option.description),
+						};
+					});
+					const ids = new Set(field.options.map((option) => option.id));
+					for (const item of project.items) {
+						const value = item.values[field.id];
+						if (isRecord(value) && !ids.has(String(value.singleSelectOptionId))) {
+							delete item.values[field.id];
+						}
+					}
+				}
+				return {data: {updateProjectV2Field: {projectV2Field: {id: field.id}}}};
+			}
 			case "TableUpdateView": {
 				const view = projects
 					.flatMap((project) => project.views)

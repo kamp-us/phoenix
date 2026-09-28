@@ -284,9 +284,8 @@ the block also makes table reads fail closed. Every key and its default is in
 - To point setup at a project you already have, set `table.project.number`, and
   `table.project.owner` if it lives under another account.
 - Set the size dollars in `appetiteSizes`, the key pitch-guard reads, not in the `table` block. If you
-  change them after the Size field exists, re-run setup: it rewrites the README and prints a
-  `drift:` line for each Size option whose description still shows the old amount. Edit those
-  descriptions by hand in the field's settings.
+  change them after the Size field exists, re-run setup: it rewrites the README, fills each blank
+  Size description with the new amount, and keeps a description someone already wrote as it is.
 
 ### 11.5 Boot bets with `--origin bet`
 

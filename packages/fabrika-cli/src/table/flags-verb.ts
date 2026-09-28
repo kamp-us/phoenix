@@ -49,7 +49,7 @@ import {
 import {readHeads} from "./flags-read.ts";
 import {onCallItemsOf, readOnCall} from "./on-call-prep.ts";
 import type {Row} from "./sync.ts";
-import {locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
+import {githubWave, locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
 import {
 	nextTableDay,
 	parseTableDay,
@@ -110,7 +110,12 @@ export const shareWindow = (
 	return {...weekBefore(day, settings.timeZone), table: tableNumber(dated, day)};
 };
 
-/** The week the share is judged over, and which of its lanes were fabrika's own work. */
+/**
+ * The week the share is judged over, and which of its lanes were fabrika's own work. With no
+ * `table.fabrikaShare.labels` the check is off, not unread, so it is `NotAsked`.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10085
+ */
 const readShare = <R>(
 	board: FlagsBoard<R>,
 	repo: string,
@@ -122,11 +127,7 @@ const readShare = <R>(
 	Effect.gen(function* () {
 		const unread = (reason: string): ShareWeek => ({_tag: "Unread", reason});
 		const labels = settings.fabrikaShare.labels;
-		if (labels.length === 0) {
-			return unread(
-				"`table.fabrikaShare.labels` names no label, so no work counts as fabrika's own",
-			);
-		}
+		if (labels.length === 0) return NOT_ASKED;
 		const week = shareWindow(settings, rows, now);
 		const {start, end} = week;
 		const fabrika = new Set<number>();
@@ -296,6 +297,7 @@ export const flagsBoard: FlagsBoard<
 	items: syncBoard.items,
 	node: syncBoard.node,
 	comments: syncBoard.comments,
+	wave: githubWave,
 	labels: (repo, issue) =>
 		Effect.map(getIssue(repo, issue), (found) =>
 			found._tag === "Present"

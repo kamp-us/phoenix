@@ -27,8 +27,10 @@ import {
 	readWeekField,
 	scopeWithheld,
 	setFieldValue,
+	updateFieldOptions,
 	updateView,
 } from "./projects.ts";
+import {blankProject, fakeProjects} from "./projects-fake.test-support.ts";
 
 const GRAPHQL = /^POST https:\/\/api\.github\.com\/graphql$/;
 const TOKEN = "ghp_scripted";
@@ -268,6 +270,61 @@ describe("writing to a project", () => {
 			name: "Table day",
 			dataType: "DATE",
 		});
+	});
+
+	it("rewrites a field's options with every kept option's id, name, color and description, then the added ones", async () => {
+		const {result, http} = await runWith(
+			[reply({data: {updateProjectV2Field: {projectV2Field: {id: "F_origin"}}}})],
+			() =>
+				updateFieldOptions(TOKEN, "F_origin", {
+					kept: [
+						{id: "o_founder", name: "founder idea", color: "PINK", description: ""},
+						{id: "o_bet", name: "bet", color: "BLUE", description: "Picked at a table."},
+					],
+					added: [{name: "hand-start", color: "GRAY", description: "A person started it by hand."}],
+				}),
+		);
+
+		expect(result).toEqual({_tag: "Ok", value: "F_origin"});
+		const body = JSON.parse(http.bodies[0] ?? "{}");
+		expect(body.query).toContain("updateProjectV2Field(input: $input)");
+		expect(body.variables.input).toEqual({
+			fieldId: "F_origin",
+			singleSelectOptions: [
+				{id: "o_founder", name: "founder idea", color: "PINK", description: ""},
+				{id: "o_bet", name: "bet", color: "BLUE", description: "Picked at a table."},
+				{name: "hand-start", color: "GRAY", description: "A person started it by hand."},
+			],
+		});
+	});
+
+	it("keeps a row's value only for an option sent back with its id, as GitHub's whole-list replace does", async () => {
+		const project = blankProject({number: 20, title: "widgets table"});
+		project.fields.push({
+			id: "F_origin",
+			name: "Origin",
+			dataType: "SINGLE_SELECT",
+			options: [{id: "o_founder", name: "founder idea", color: "PINK", description: ""}],
+		});
+		project.items.push({
+			id: "row_1",
+			contentId: "I_1",
+			number: 1,
+			values: {F_origin: {singleSelectOptionId: "o_founder"}},
+		});
+		const founder = {name: "founder idea", color: "PINK", description: ""} as const;
+		const rewrite = async (list: Parameters<typeof updateFieldOptions>[2]) => {
+			const github = fakeProjects({projects: [project]});
+			await Effect.runPromise(
+				Effect.provide(updateFieldOptions(TOKEN, "F_origin", list), github.layer),
+			);
+			return github.projects[0]?.items[0]?.values.F_origin;
+		};
+
+		expect(await rewrite({kept: [{id: "o_founder", ...founder}], added: []})).toEqual({
+			singleSelectOptionId: "o_founder",
+		});
+		expect(await rewrite({kept: [], added: [founder]})).toBeUndefined();
 	});
 
 	it("creates a view over REST under the owner's login, grouped as it is made", async () => {

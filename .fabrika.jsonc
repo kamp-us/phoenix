@@ -255,15 +255,17 @@
 
 	// The weekly betting table (epic #9850). Phoenix adopts the board it built by hand for the
 	// grilling on #9821 instead of letting `table setup` create "phoenix table": that board already
-	// holds the rows. The table meets Saturdays, on stream, so `table prep` targets the Week that
-	// holds the next Saturday.
+	// holds the rows. The table meets Saturdays, on stream, so `table prep` targets the rows whose
+	// Table day is the next Saturday. The founder reads the board in Pacific time, so "today" is
+	// read there.
 	"table": {
 		"day": "saturday",
+		"timeZone": "America/Los_Angeles",
 		"project": { "owner": "kamp-us", "number": 20 }
 	},
 
 	// The on-call board (#9914), adopted from the example built for R27.1. Its Response target
-	// options are the three the board already carries, so setup reports their descriptions as drift
+	// options are the three the board already carries, so setup keeps their descriptions as written
 	// instead of wanting a second set of options. `p0` answers in 4 hours, `p1` within a day, the
 	// rest within 3 days.
 	"boards": {

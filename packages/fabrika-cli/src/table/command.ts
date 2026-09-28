@@ -63,6 +63,13 @@ const repoFlag = Flag.string("repo").pipe(
 	),
 );
 
+const dryRunFlag = Flag.boolean("dry-run").pipe(
+	Flag.withDefault(false),
+	Flag.withDescription(
+		'read everything, send no write, and print every write it would send under answer "dry-run"',
+	),
+);
+
 const sync = leafCommand(
 	"sync",
 	{
@@ -71,8 +78,9 @@ const sync = leafCommand(
 			Argument.atLeast(0),
 		),
 		repo: repoFlag,
+		dryRun: dryRunFlag,
 	},
-	Effect.fn(function* ({issues, repo}) {
+	Effect.fn(function* ({issues, repo, dryRun}) {
 		yield* emit(
 			yield* runSync({
 				repo: Option.getOrNull(repo),
@@ -80,6 +88,7 @@ const sync = leafCommand(
 				env: process.env,
 				issues,
 				board: syncBoard,
+				dryRun,
 			}),
 		);
 	}),
@@ -99,7 +108,10 @@ const sync = leafCommand(
 			"  24: a lane record does not read",
 		]),
 	),
-	Command.withExamples([{command: "fabrika table sync 9856"}]),
+	Command.withExamples([
+		{command: "fabrika table sync 9856"},
+		{command: "fabrika table sync --dry-run"},
+	]),
 );
 
 const flags = leafCommand(
@@ -143,8 +155,8 @@ const flags = leafCommand(
 
 const prep = leafCommand(
 	"prep",
-	{repo: repoFlag},
-	Effect.fn(function* ({repo}) {
+	{repo: repoFlag, dryRun: dryRunFlag},
+	Effect.fn(function* ({repo, dryRun}) {
 		yield* emit(
 			yield* runPrep({
 				repo: Option.getOrNull(repo),
@@ -152,6 +164,7 @@ const prep = leafCommand(
 				env: process.env,
 				now: new Date(),
 				board: prepBoard,
+				dryRun,
 			}),
 		);
 	}),
@@ -173,7 +186,10 @@ const prep = leafCommand(
 			"  24: a lane record does not read",
 		]),
 	),
-	Command.withExamples([{command: "fabrika table prep"}]),
+	Command.withExamples([
+		{command: "fabrika table prep --dry-run"},
+		{command: "fabrika table prep"},
+	]),
 );
 
 const migrateWeek = leafCommand(

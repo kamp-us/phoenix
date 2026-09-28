@@ -500,6 +500,20 @@ export interface CheckRow {
 	readonly plainWords: string;
 }
 
+/** A row whose non-empty Rec prep left as it reads, beside the text prep would have written. */
+export interface KeptRec {
+	readonly issue: number;
+	readonly rec: string;
+	/** Prep's own text for the row; `null` on a carried bet, which prep gives no Rec. */
+	readonly wanted: string | null;
+}
+
+export interface PrepPlan {
+	readonly writes: ReadonlyArray<PrepWrite>;
+	/** Every row whose standing Rec differs from prep's and stays, in issue order. */
+	readonly kept: ReadonlyArray<KeptRec>;
+}
+
 /**
  * Every write that puts the agenda, the rollover and the removals in step with the rows. An issue
  * that is not a row yet plans an `Add` and nothing else; its cells follow once it has an item id.
@@ -507,8 +521,13 @@ export interface CheckRow {
  * **An issue is on one board.** An issue in `onCall` is never added and its row is taken off, so
  * the table and the on-call board never both hold it. A bet carried over or a row coming back as a
  * check is a person's answer and stays.
+ *
+ * **Prep writes Rec only into an empty cell.** The board cannot say whose text a Rec holds, so a
+ * non-empty one is never cleared or replaced; it is named in `kept` instead.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10086
  */
-export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
+export const prepPlan = (input: PrepInput): PrepPlan => {
 	const {fields, rows, target} = input;
 	const answered = new Set([...input.rollover, ...input.checks.map((check) => check.issue)]);
 	const leaving = (issue: number): boolean => input.onCall.has(issue) && !answered.has(issue);
@@ -530,6 +549,17 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 	const dateOn = (row: Row) => {
 		if (tableDayOf(row) !== target) {
 			setOn(row, FIELD.tableDay, fields.tableDay, {_tag: "Date", date: target}, target);
+		}
+	};
+	const kept = new Map<number, KeptRec>();
+	const recOn = (row: Row, wanted: string | null) => {
+		const standing = textOf(row, FIELD.rec);
+		if (standing === null) {
+			if (wanted !== null) {
+				setOn(row, FIELD.rec, fields.rec, {_tag: "Text", text: wanted}, `"${wanted}"`);
+			}
+		} else if (standing !== wanted) {
+			kept.set(row.issue, {issue: row.issue, rec: standing, wanted});
 		}
 	};
 
@@ -556,9 +586,7 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 			if (!entry.flaggedBet && optionOf(row, FIELD.size) === null) {
 				setOn(row, FIELD.size, fields.size.id, option(fields.size, cells.size), cells.size);
 			}
-			if (textOf(row, FIELD.rec) !== cells.rec) {
-				setOn(row, FIELD.rec, fields.rec, {_tag: "Text", text: cells.rec}, `"${cells.rec}"`);
-			}
+			recOn(row, cells.rec);
 			if (textOf(row, FIELD.plainWords) !== cells.plainWords) {
 				setOn(
 					row,
@@ -583,7 +611,7 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 		const row = rows.get(issue);
 		if (row === undefined) continue;
 		dateOn(row);
-		if (textOf(row, FIELD.rec) !== null) clear(row, FIELD.rec, fields.rec);
+		recOn(row, null);
 	}
 
 	for (const check of input.checks) {
@@ -602,9 +630,7 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 			);
 		}
 		dateOn(row);
-		if (textOf(row, FIELD.rec) !== check.rec) {
-			setOn(row, FIELD.rec, fields.rec, {_tag: "Text", text: check.rec}, `"${check.rec}"`);
-		}
+		recOn(row, check.rec);
 		if (textOf(row, FIELD.plainWords) !== check.plainWords) {
 			setOn(
 				row,
@@ -621,8 +647,11 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 		const row = rows.get(issue);
 		if (row !== undefined) writes.push({_tag: "Delete", issue, itemId: row.itemId});
 	}
-	return writes;
+	return {writes, kept: [...kept.values()].sort((a, b) => a.issue - b.issue)};
 };
+
+/** The writes of {@link prepPlan}, for a caller that only applies them. */
+export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => prepPlan(input).writes;
 
 /** One line per write, naming the board an add or a delete lands on. */
 export const describePrepWrite = (write: PrepWrite, where = "the table"): string => {

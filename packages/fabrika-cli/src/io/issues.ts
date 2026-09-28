@@ -746,6 +746,15 @@ const positiveEnv = (name: string, fallback: number): number => {
 	return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
+/** How many list reads a comment reconciliation makes, and the first re-read's wait. */
+export const commentScanBounds = (): {readonly attempts: number; readonly delayMs: number} => ({
+	attempts: Math.max(
+		1,
+		Math.trunc(positiveEnv("FABRIKA_COMMENT_SCAN_ATTEMPTS", DEFAULT_SCAN_ATTEMPTS)),
+	),
+	delayMs: positiveEnv("FABRIKA_COMMENT_SCAN_DELAY_MS", DEFAULT_SCAN_DELAY_MS),
+});
+
 /**
  * Every comment on `issue`, reconciled against the count the issue declares for itself.
  *
@@ -781,11 +790,7 @@ const positiveEnv = (name: string, fallback: number): number => {
  */
 export const listCommentsReconciled = (repo: string, issue: number): Shell<Attempt<CommentScan>> =>
 	Effect.gen(function* () {
-		const attempts = Math.max(
-			1,
-			Math.trunc(positiveEnv("FABRIKA_COMMENT_SCAN_ATTEMPTS", DEFAULT_SCAN_ATTEMPTS)),
-		);
-		const delayMs = positiveEnv("FABRIKA_COMMENT_SCAN_DELAY_MS", DEFAULT_SCAN_DELAY_MS);
+		const {attempts, delayMs} = commentScanBounds();
 		let short = "";
 		for (let attempt = 1; attempt <= attempts; attempt++) {
 			const listed = yield* listComments(repo, issue);
