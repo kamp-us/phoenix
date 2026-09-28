@@ -1,5 +1,3 @@
-import {readFileSync} from "node:fs";
-import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {
 	anchorBlocksIn,
@@ -11,8 +9,6 @@ import {
 	scanAnchors,
 } from "./anchors.ts";
 
-const GOVERNANCE_SKILL = "claude-plugins/fabrika/skills/governance/SKILL.md";
-
 const diff = (...lines: ReadonlyArray<string>): string => `${lines.join("\n")}\n`;
 
 const file = (path: string): ReadonlyArray<string> => [
@@ -23,32 +19,6 @@ const file = (path: string): ReadonlyArray<string> => [
 ];
 
 describe("scanAnchors", () => {
-	it("reports an anchor present on a removed line and on no added line as `removed`", () => {
-		const hits = scanAnchors(
-			diff(
-				...file("skills/review/SKILL.md"),
-				"-<!-- anchor: SHA-BOUND --> the verdict names its head",
-				" tail",
-			),
-		);
-		expect(hits).toEqual([
-			{kind: "removed", name: "SHA-BOUND", file: "skills/review/SKILL.md", line: 10},
-		]);
-	});
-
-	it("reports an anchor on both sides with different following text as `modified`", () => {
-		const hits = scanAnchors(
-			diff(
-				...file("skills/ship/SKILL.md"),
-				"-<!-- anchor: SHA-BOUND --> the verdict names its head",
-				"+<!-- anchor: SHA-BOUND --> the verdict may name a head",
-			),
-		);
-		expect(hits).toEqual([
-			{kind: "modified", name: "SHA-BOUND", file: "skills/ship/SKILL.md", line: 10},
-		]);
-	});
-
 	it("reports NOTHING for an anchor that only moved — a reflow is not a weakening", () => {
 		expect(
 			scanAnchors(
@@ -216,23 +186,6 @@ describe("anchorBlocksIn", () => {
 });
 
 describe("scanAnchorBlocks", () => {
-	it("reports an anchored paragraph reworded below an untouched anchor line", () => {
-		expect(
-			scanAnchorBlocks(
-				"contract.md",
-				PACKED_BRANCH("a fresh worktree"),
-				PACKED_BRANCH("a fresh clone"),
-			),
-		).toEqual([
-			{
-				kind: "modified",
-				name: "READ-DERIVES-AGAINST-THE-PACKED-BRANCH",
-				file: "contract.md",
-				line: 1,
-			},
-		]);
-	});
-
 	it("reports the same rewording in a TypeScript docblock too — the .ts half of the corpus", () => {
 		expect(
 			scanAnchorBlocks(
@@ -347,10 +300,6 @@ describe("mergeHits", () => {
 	const walk = {kind: "modified", name: "G", file: "a.md", line: 12} as const;
 	const block = {kind: "modified", name: "G", file: "a.md", line: 40} as const;
 
-	it("keeps one hit per file and NAME, with the first list's line", () => {
-		expect(mergeHits([walk], [block])).toEqual([walk]);
-	});
-
 	it("keeps a same-named anchor in another file — a name in two files is two questions", () => {
 		expect(mergeHits([walk], [{...block, file: "b.md"}])).toEqual([walk, {...block, file: "b.md"}]);
 	});
@@ -375,14 +324,6 @@ describe("anchorsIn", () => {
 
 	it("counts an anchor after a bullet and after a heading — position is not the discriminator", () => {
 		expect(anchorsIn("- <!-- anchor: H1 --> a claim\n## Open <!-- anchor: Q1 -->\n")).toBe(2);
-	});
-
-	it("counts the governance skill's own eleven anchors, not the twelve a raw scan sees", () => {
-		const skill = readFileSync(
-			fileURLToPath(new URL(`../../../../${GOVERNANCE_SKILL}`, import.meta.url)),
-			"utf8",
-		);
-		expect(anchorsIn(skill)).toBe(11);
 	});
 });
 

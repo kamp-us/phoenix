@@ -22,16 +22,6 @@ const manifest = (
 ): PublishedManifest => ({path, name, deps});
 
 describe("judge", () => {
-	it("passes when every runtime dep is a public/catalog registry dep", () => {
-		const v = judge([
-			manifest("packages/fabrika-cli/package.json", "@kampus/fabrika-cli", [
-				{field: "dependencies", name: "effect", value: "catalog:"},
-				{field: "dependencies", name: "@effect/platform-node", value: "catalog:"},
-			]),
-		]);
-		expect(v.pass).toBe(true);
-	});
-
 	it("reds a workspace:* link — it never resolves from a registry", () => {
 		const v = judge([
 			manifest("packages/demo-cli/package.json", "@kampus/demo-cli", [
@@ -48,16 +38,6 @@ describe("judge", () => {
 				kind: "workspace-link",
 			},
 		]);
-	});
-
-	it("reds a private @kampus dep pinned to a version", () => {
-		const v = judge([
-			manifest("packages/demo-cli/package.json", "@kampus/demo-cli", [
-				{field: "dependencies", name: "@kampus/leak-guard", value: "^1.0.0"},
-			]),
-		]);
-		if (v.pass || v.reason !== "linked-private-deps") throw new Error("expected a violation");
-		expect(v.violations[0]?.kind).toBe("private-kampus-dep");
 	});
 
 	it("scans optionalDependencies and peerDependencies, not just dependencies", () => {

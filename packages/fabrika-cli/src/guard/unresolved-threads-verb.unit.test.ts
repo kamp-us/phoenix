@@ -116,7 +116,10 @@ describe("runUnresolvedThreadsGuard", () => {
 		]);
 		expect(out.code).toBe(VIOLATION);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toContain(SITE);
+		const report = out.stderr.join("\n");
+		expect(report).toContain(SITE);
+		expect(report).toContain("github-advanced-security");
+		expect(report).toContain("resolving the thread with a written rationale");
 	});
 
 	it("passes when the authorized verdict names the site — polarity-blind", async () => {

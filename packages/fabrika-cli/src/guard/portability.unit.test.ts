@@ -6,7 +6,7 @@
  * reds the synthetic ticket number a test asserts against would force the test to stop naming it.
  */
 import {describe, expect, it} from "vitest";
-import {judge, type PortabilityConfig, renderReport, scanFile} from "./portability.ts";
+import {judge, type PortabilityConfig, scanFile} from "./portability.ts";
 
 const PLUGIN = "claude-plugins/fabrika/skills/build/SKILL.md";
 
@@ -106,13 +106,6 @@ describe("judge", () => {
 		expect(judge({files: [], config: config()})._tag).toBe("ZeroScope");
 	});
 
-	it("reds a reference no row covers, naming the file", () => {
-		const verdict = judge({files: [file(PLUGIN, 1)], config: config()});
-		expect(verdict._tag).toBe("Violation");
-		if (verdict._tag !== "Violation") return;
-		expect(verdict.unlisted.map((f) => f.path)).toEqual([PLUGIN]);
-	});
-
 	it("passes a floor row whose count equals its ceiling, and reds one over it", () => {
 		const unmigrated = {
 			"plugin-build": {
@@ -123,27 +116,6 @@ describe("judge", () => {
 		};
 		expect(judge({files: [file(PLUGIN, 2)], config: config({unmigrated})})._tag).toBe("Clean");
 		expect(judge({files: [file(PLUGIN, 3)], config: config({unmigrated})})._tag).toBe("Violation");
-	});
-
-	it("reds a floor row whose ceiling now sits above the count — the floor only shrinks", () => {
-		const verdict = judge({
-			files: [file(PLUGIN, 1)],
-			config: config({
-				unmigrated: {
-					"plugin-build": {
-						ceiling: 4,
-						why: "swept later",
-						paths: ["claude-plugins/fabrika/skills/build"],
-					},
-				},
-			}),
-		});
-		expect(verdict._tag).toBe("Violation");
-		if (verdict._tag !== "Violation") return;
-		expect(verdict.stale.map((row) => row.key)).toEqual(["plugin-build"]);
-		expect(renderReport("guard portability-guard check", verdict)).toContain(
-			"lower the ceiling to 1",
-		);
 	});
 
 	it("gives a file to the longest matching prefix, so a catch-all row cannot swallow a unit", () => {

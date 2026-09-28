@@ -52,7 +52,7 @@ describe("runI18nGuard", () => {
 		const outcome = await run(tree({[`${SRC}/App.tsx`]: 'export const s = "giriş yap";\n'}));
 		expect(outcome.code).toBe(VIOLATION);
 		expect(outcome.stdout).toBe("");
-		expect(outcome.stderr.join("\n")).toContain(`${SCAN_ROOT}/App.tsx`);
+		expect(outcome.stderr.join("\n")).toContain(`${SCAN_ROOT}/App.tsx — 1 hit(s), ceiling 0`);
 		expect(outcome.stderr.join("\n")).toContain("giriş yap");
 	});
 

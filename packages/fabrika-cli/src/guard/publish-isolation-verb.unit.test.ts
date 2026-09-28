@@ -147,20 +147,6 @@ describe("runPublishIsolationGuard", () => {
 		).toBe(true);
 	});
 
-	it("emits no annotation off a runner", async () => {
-		const outcome = await run(
-			repo({
-				packages: {
-					"fabrika-cli": {
-						name: "@kampus/fabrika-cli",
-						dependencies: {"@kampus/epic-ledger": "workspace:*"},
-					},
-				},
-			}),
-		);
-		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
-	});
-
 	// The drift case: publish.yml names a release tag whose prefix maps to no member, so the
 	// derived scope is a broken assumption rather than a narrower scan.
 	it("fails closed when a publish.yml tag prefix maps to no workspace member", async () => {

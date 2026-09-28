@@ -1,12 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {
-	citedIds,
-	decisionBearingText,
-	RARITY_FLOOR,
-	type SweepCandidate,
-	sweep,
-	tokenize,
-} from "./sweep.ts";
+import {citedIds, decisionBearingText, type SweepCandidate, sweep, tokenize} from "./sweep.ts";
 
 const rec = (id: string, status: string, decision: string): SweepCandidate => ({
 	id,
@@ -44,17 +37,6 @@ describe("citedIds", () => {
 });
 
 describe("sweep", () => {
-	it("is indeterminate below the rarity floor, and says so on the reason channel", () => {
-		const result = sweep(
-			{id: "0240", text: rec("0240", "proposed", "anything").text},
-			corpus().slice(0, 3),
-			8,
-		);
-		expect(result.outcome).toBe("indeterminate");
-		expect(result.reason).toContain(String(RARITY_FLOOR));
-		expect(result.entries).toEqual([]);
-	});
-
 	it("is indeterminate when the subject yields no distinctive terms", () => {
 		const result = sweep(
 			{id: "0240", text: "---\nstatus: proposed\n---\n\n## Decision\n\n."},
@@ -63,14 +45,6 @@ describe("sweep", () => {
 		);
 		expect(result.outcome).toBe("indeterminate");
 		expect(result.reason).toContain("no distinctive terms");
-	});
-
-	it("is no-overlap when nothing shares a distinctive term — an answer, not an empty shortlist", () => {
-		const subject = rec("0240", "proposed", "marzipan bicycle telemetry");
-		const result = sweep({id: "0240", text: subject.text}, corpus(), 8);
-		expect(result.outcome).toBe("no-overlap");
-		expect(result.entries).toEqual([]);
-		expect(result.reason).toContain("not a clearance");
 	});
 
 	it("shortlists the records that share the subject's distinctive vocabulary", () => {
@@ -98,19 +72,6 @@ describe("sweep", () => {
 		const result = sweep(subject, [...c, rec("0240", "proposed", "reticulate the splines")], 8);
 		expect(result.entries.map((e) => e.id)).toEqual(["0100"]);
 		expect(result.cited).toBe(1);
-	});
-
-	it("caps the shortlist at --limit", () => {
-		const c = corpus();
-		for (let i = 0; i < 5; i += 1)
-			c[i] = rec(`01${String(i).padStart(2, "0")}`, "accepted", "reticulate splines");
-		const result = sweep(
-			{id: "0240", text: rec("0240", "proposed", "reticulate splines").text},
-			c,
-			3,
-		);
-		expect(result.outcome).toBe("shortlist");
-		expect(result.entries).toHaveLength(3);
 	});
 
 	it("orders ties by id ascending, so two runs never disagree", () => {

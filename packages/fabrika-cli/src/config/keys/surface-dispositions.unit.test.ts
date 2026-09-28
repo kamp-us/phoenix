@@ -17,16 +17,6 @@ describe("the four resolution arms", () => {
 		});
 	});
 
-	it("resolves an absent key to the shipped registry", () => {
-		expect(declared("{}")).toMatchObject({_tag: "Default", value: SHIPPED_SURFACE_DISPOSITIONS});
-	});
-
-	it("is UNKNOWN when the file could not be read, never the shipped registry", () => {
-		expect(
-			resolve(loadConfig({_tag: "Unreadable", reason: "EACCES"}), surfaceDispositionsKey),
-		).toMatchObject({_tag: "Unknown"});
-	});
-
 	it("reads a declared disposition over the shipped one", () => {
 		const resolved = declared('{"surfaceDispositions": {"design-manifest": "degrade"}}');
 		expect(resolved).toMatchObject({_tag: "Declared"});

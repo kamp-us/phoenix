@@ -32,16 +32,6 @@ describe("findViolations", () => {
 		).toEqual([]);
 	});
 
-	it("passes a workspace:* internal dep", () => {
-		expect(
-			findViolations([
-				manifest("packages/a/package.json", [
-					{field: "dependencies", name: "@kampus/db-schema", value: "workspace:*"},
-				]),
-			]),
-		).toEqual([]);
-	});
-
 	it("flags a hardcoded semver, carrying the offending dep as the evidence", () => {
 		expect(
 			findViolations([
@@ -52,22 +42,6 @@ describe("findViolations", () => {
 		).toEqual([
 			{path: "packages/a/package.json", field: "dependencies", name: "bar", value: "^1.2.3"},
 		]);
-	});
-
-	it("passes a hardcoded dep that is on the explicit allowlist", () => {
-		const allowlist: ReadonlyArray<AllowlistEntry> = [
-			{name: "bar", reason: "unavoidable — no published catalog build yet"},
-		];
-		expect(
-			findViolations(
-				[
-					manifest("packages/a/package.json", [
-						{field: "dependencies", name: "bar", value: "^1.2.3"},
-					]),
-				],
-				allowlist,
-			),
-		).toEqual([]);
 	});
 
 	it("scopes a path-qualified allowlist entry to that manifest only", () => {

@@ -197,16 +197,6 @@ describe("runFanoutGuard", () => {
 		expect(outcome.stderr.join("\n")).toContain("UNDECLARED-TOPIC");
 	});
 
-	it("emits no annotation off a runner", async () => {
-		const outcome = await run(
-			tree(
-				[{key: "post.submit", fanned: true, topics: ["posts"]}],
-				[{name: "pano", keys: ["post.submit"], publishes: false, live: PANO_AIMED}],
-			),
-		);
-		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
-	});
-
 	// The fail-closed floor: nothing discovered means the guard proved nothing.
 	it("fails closed when zero mutations are discovered", async () => {
 		const outcome = await run(

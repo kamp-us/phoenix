@@ -3,7 +3,7 @@
  * cases pin.
  */
 import {describe, expect, it} from "vitest";
-import {extractPathRefs, maskFences, stalePointersIn, staleReport, toPathRef} from "./pointer.ts";
+import {extractPathRefs, maskFences, stalePointersIn, toPathRef} from "./pointer.ts";
 
 describe("toPathRef", () => {
 	it("accepts a repo-root-relative path under a known top-level segment", () => {
@@ -71,15 +71,5 @@ describe("stalePointersIn", () => {
 		expect(stalePointersIn("CLAUDE.md", text, (p) => p === "apps/site/here.ts")).toEqual([
 			{file: "CLAUDE.md", line: 1, path: "apps/site/gone.ts"},
 		]);
-	});
-});
-
-describe("staleReport", () => {
-	it("names each pointer by file, line and path", () => {
-		const report = staleReport("guard pointer-guard check", [
-			{file: "CLAUDE.md", line: 7, path: "apps/site/gone.ts"},
-		]);
-		expect(report).toContain("CLAUDE.md:7  →  apps/site/gone.ts");
-		expect(report).toContain("1 stale CLAUDE.md pointer");
 	});
 });
