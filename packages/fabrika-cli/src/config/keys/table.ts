@@ -78,7 +78,7 @@ export interface FabrikaShare {
 	readonly thenPercent: number;
 	/**
 	 * The issue labels that mark fabrika's own work. Shipped empty, because which label means that is
-	 * a fact about one repository: with none declared nothing counts, and the share flag says so.
+	 * a fact about one repository: with none declared the share check is off, neither passed nor unread.
 	 */
 	readonly labels: ReadonlyArray<string>;
 }
@@ -454,7 +454,7 @@ export const tableKey: KeyGroup<TableSettings> = {
 			fabrikaShare: {
 				type: "object",
 				description:
-					"The flagged target share of weekly spend on fabrika's own work, and the labels that mark that work. Default 40 percent for the first 4 tables, then 30, with no label.",
+					"The flagged target share of weekly spend on fabrika's own work, and the labels that mark that work. Default 40 percent for the first 4 tables, then 30, with no label. With no label the check is off: it raises no flag and is never listed as unread.",
 				properties: {
 					percent: percentage("The target share, in percent, for the first tables. Default 40."),
 					forTables: integer("How many tables the first share holds for. Default 4."),
@@ -464,7 +464,7 @@ export const tableKey: KeyGroup<TableSettings> = {
 						items: {type: "string", minLength: 1},
 						uniqueItems: true,
 						description:
-							"The issue labels that mark fabrika's own work; a lane on an issue carrying any of them counts toward the share. Default none, so nothing counts until the repo names its labels.",
+							"The issue labels that mark fabrika's own work; a lane on an issue carrying any of them counts toward the share. Default none. An empty list turns the fabrika-share check off; it runs only once the repo names its labels.",
 					},
 				},
 				additionalProperties: false,
