@@ -5,6 +5,7 @@ import {PROJECT_SCOPE_FIX} from "../io/projects.ts";
 import {
 	blankProject,
 	type FakeProjectsOptions,
+	fakeDatabaseId,
 	fakeProjects,
 } from "../io/projects-fake.test-support.ts";
 import {
@@ -15,10 +16,9 @@ import {
 	SHAPE_CONFLICT,
 } from "./codes.ts";
 import {runSetup} from "./setup-verb.ts";
-import {INBOX_AUTO_ADD_FILTER, PLANNED_WEEKS} from "./shape.ts";
+import {INBOX_AUTO_ADD_FILTER} from "./shape.ts";
 
 const REPO = "acme/widgets";
-const NOW = new Date("2026-09-30T12:00:00Z");
 
 const configured = (table: unknown): Layer.Layer<FileSystem.FileSystem | Path.Path> =>
 	fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify({table})}}).layer;
@@ -29,7 +29,7 @@ const setupOn = (
 ) =>
 	Effect.runPromise(
 		Effect.provide(
-			runSetup({repo: REPO, cwd: "/repo", env: {}, now: () => NOW}),
+			runSetup({repo: REPO, cwd: "/repo", env: {}}),
 			Layer.mergeAll(fs, fakeShell([]).layer, github.layer),
 		),
 	);
@@ -42,11 +42,11 @@ const run = async (options: FakeProjectsOptions = {}) => {
 
 const mutations = (github: ReturnType<typeof fakeProjects>): ReadonlyArray<string> =>
 	github.operations.filter((operation) =>
-		/^Table(Create|Update|Add|Set|Status|Link)/.test(operation),
+		/^(Table(Create|Update|Add|Set|Status|Link)|REST POST)/.test(operation),
 	);
 
 describe("table setup on a repo with no `table` block", () => {
-	it("creates the project with the eight fields, the weekly iteration, the five views and the README", async () => {
+	it("creates the project with its fields, the Table day date field, the five views and the README", async () => {
 		const {outcome, github} = await run();
 
 		expect(outcome.code).toBe(0);
@@ -69,13 +69,12 @@ describe("table setup on a repo with no `table` block", () => {
 			["Rec", "TEXT"],
 			["In plain words", "TEXT"],
 			["Outcome", "SINGLE_SELECT"],
-			["Week", "ITERATION"],
+			["Table day", "DATE"],
 		]);
+		expect(custom.some((field) => field.dataType === "ITERATION")).toBe(false);
 		expect(
 			custom.find((field) => field.name === "Outcome")?.options?.map((option) => option.name),
 		).toEqual(["worked", "didn't", "can't tell"]);
-		const week = custom.find((field) => field.name === "Week");
-		expect(week?.iteration).toEqual({duration: 7, startDay: 1});
 		expect(
 			custom.find((field) => field.name === "Stage")?.options?.map((option) => option.name),
 		).toEqual(["proposed", "bet", "not now", "in lane", "shipped", "check"]);
@@ -94,7 +93,7 @@ describe("table setup on a repo with no `table` block", () => {
 		expect(views.get("Inbox")?.filter).toBe("is:open no:label");
 		expect(views.get("Lanes")?.layout).toBe("BOARD_LAYOUT");
 		expect(views.get("Agenda")?.filter).toBe(
-			'week:@current has:section -section:"Outside the bets" has:rec',
+			'table-day:@today..@today+6d has:section -section:"Outside the bets" has:rec',
 		);
 		const idOf = new Map((project?.fields ?? []).map((field) => [field.id, field.name]));
 		expect(views.get("Agenda")?.fieldIds.map((id) => idOf.get(id))).toEqual([
@@ -119,22 +118,91 @@ describe("table setup on a repo with no `table` block", () => {
 			"Rec",
 			"In plain words",
 			"Outcome",
-			"Week",
+			"Table day",
 		]) {
 			expect(project?.readme).toContain(`## ${column}`);
 		}
+		expect(project?.readme).not.toContain("add the coming");
 	});
 
-	it("prints the grouping, Inbox auto-add and coming-weeks steps, and the README's by-hand section lists them", async () => {
+	it("creates each missing view over REST, grouped, naming every field by its numeric id", async () => {
+		const {github} = await run();
+		const project = github.projects[0];
+		const idOf = (name: string): number => {
+			const field = project?.fields.find((one) => one.name === name);
+			if (field === undefined) throw new Error(`no field ${name}`);
+			return fakeDatabaseId(field);
+		};
+		const bodies = github.operations.flatMap((operation, index) =>
+			operation === "REST POST views" ? [github.variables[index] ?? {}] : [],
+		);
+		const paths = github.requests.filter((request) => request.startsWith("POST /"));
+
+		expect(paths).toHaveLength(5);
+		for (const path of paths)
+			expect(path).toBe(`POST /orgs/acme/projectsV2/${project?.number}/views`);
+		expect(github.operations).not.toContain("TableCreateView");
+		expect(bodies.find((body) => body.name === "Agenda")).toEqual({
+			name: "Agenda",
+			layout: "table",
+			filter: 'table-day:@today..@today+6d has:section -section:"Outside the bets" has:rec',
+			visible_fields: [
+				"Title",
+				"Stage",
+				"Size",
+				"Spent $",
+				"Asks",
+				"Rec",
+				"In plain words",
+				"Outcome",
+			].map(idOf),
+			group_by: [idOf("Section")],
+		});
+		expect(bodies.find((body) => body.name === "Lanes")).toMatchObject({
+			layout: "board",
+			vertical_group_by: [idOf("Stage")],
+		});
+		expect(bodies.find((body) => body.name === "Lanes")).not.toHaveProperty("group_by");
+		expect(bodies.find((body) => body.name === "Inbox")).not.toHaveProperty("group_by");
+		const views = new Map((project?.views ?? []).map((view) => [view.name, view]));
+		expect(views.get("Agenda")?.groupBy).toEqual([
+			project?.fields.find((one) => one.name === "Section")?.id,
+		]);
+	});
+
+	it("leaves a view that already stands as it is grouped, creating only the missing ones", async () => {
+		const started = blankProject({number: 20, title: "widgets table"});
+		started.views.push({
+			id: "own_agenda",
+			number: 2,
+			name: "Agenda",
+			layout: "TABLE_LAYOUT",
+			filter: null,
+			fieldIds: [],
+			groupBy: ["own_grouping"],
+		});
+		const {outcome, github} = await run({projects: [started]});
+
+		expect(outcome.code, outcome.stderr.join("\n")).toBe(0);
+		const created = github.operations.flatMap((operation, index) =>
+			operation === "REST POST views" ? [String(github.variables[index]?.name)] : [],
+		);
+		expect(created).toEqual(["Outside the bets", "Lanes", "Group members", "Inbox"]);
+		const agenda = github.projects[0]?.views.filter((view) => view.name === "Agenda");
+		expect(agenda).toHaveLength(1);
+		expect(agenda?.[0]?.groupBy).toEqual(["own_grouping"]);
+	});
+
+	it("prints the grouping and Inbox auto-add steps, and the README's by-hand section lists them", async () => {
 		const {outcome, github} = await run();
 
 		const {manualSteps} = JSON.parse(outcome.stdout) as {manualSteps: string[]};
-		expect(manualSteps).toHaveLength(3);
+		expect(manualSteps).toHaveLength(2);
 		expect(manualSteps[0]).toContain("Group by: Section");
 		expect(manualSteps[1]).toContain(`\`${INBOX_AUTO_ADD_FILTER}\``);
-		expect(manualSteps[2]).toContain(`first ${PLANNED_WEEKS} weeks`);
+		expect(manualSteps.join(" ")).not.toContain("weeks");
 		expect(INBOX_AUTO_ADD_FILTER).toBe("is:issue is:open no:label");
-		expect(outcome.stderr.filter((line) => line.includes("manual step"))).toHaveLength(3);
+		expect(outcome.stderr.filter((line) => line.includes("manual step"))).toHaveLength(2);
 
 		const readme = github.projects[0]?.readme ?? "";
 		const byHand = readme.slice(
@@ -147,7 +215,7 @@ describe("table setup on a repo with no `table` block", () => {
 	it("names no path, repository, issue number or login beyond the repository it set up", async () => {
 		const {github} = await run();
 		const readme = github.projects[0]?.readme ?? "";
-		expect(readme).not.toMatch(/#\d|@(?!current\b)\w/);
+		expect(readme).not.toMatch(/#\d|@(?!today\b)\w/);
 		expect(new Set(readme.match(/[\w.-]+\/[\w.-]+/g))).toEqual(new Set([REPO]));
 	});
 });
@@ -366,6 +434,7 @@ describe("table setup with a boards block", () => {
 			"project",
 			"changes",
 			"drift",
+			"legacy",
 			"manualSteps",
 		]);
 	});
@@ -381,22 +450,36 @@ describe("table setup with a boards block", () => {
 	});
 });
 
-describe("table setup honours the table block", () => {
-	it("starts the iteration on the configured day and runs it for the cadence", async () => {
-		const github = fakeProjects({repo: REPO});
-		const outcome = await setupOn(github, configured({cadence: "biweekly", day: "saturday"}));
+describe("table setup on a project set up with the Week iteration", () => {
+	const legacy = () => {
+		const project = blankProject({number: 20, title: "widgets table"});
+		project.fields.push({
+			id: "own_week",
+			name: "Week",
+			dataType: "ITERATION",
+			iteration: {duration: 7, startDay: 6},
+			iterations: [{id: "it_1", title: "Sep 26", startDate: "2026-09-26", duration: 7}],
+		});
+		return project;
+	};
 
-		expect(outcome.code).toBe(0);
-		const week = github.projects[0]?.fields.find((field) => field.name === "Week");
-		expect(week?.iteration).toEqual({duration: 14, startDay: 6});
-		expect(week?.iterations?.map((one) => [one.title, one.startDate, one.duration])).toEqual([
-			["Sep 26", "2026-09-26", 14],
-			["Oct 10", "2026-10-10", 14],
-			["Oct 24", "2026-10-24", 14],
-			["Nov 7", "2026-11-07", 14],
-			["Nov 21", "2026-11-21", 14],
-			["Dec 5", "2026-12-05", 14],
-		]);
+	it("adds Table day beside it, leaves Week exactly as it is and reports it as legacy", async () => {
+		const {outcome, github} = await run({projects: [legacy()]});
+
+		expect(outcome.code, outcome.stderr.join("\n")).toBe(0);
+		const answered = JSON.parse(outcome.stdout);
+		expect(answered.legacy).toHaveLength(1);
+		expect(answered.legacy[0]).toContain("field Week (ITERATION) is legacy");
+		expect(outcome.stderr.join("\n")).toContain("legacy: field Week (ITERATION) is legacy");
+		const week = github.projects[0]?.fields.filter((field) => field.name === "Week");
+		expect(week).toEqual([legacy().fields.at(-1)]);
+		expect(github.projects[0]?.fields.some((field) => field.name === "Table day")).toBe(true);
+		expect(github.operations.some((operation) => /Delete|Clear/.test(operation))).toBe(false);
+		expect(github.requests.some((request) => /updateProjectV2Field\b/.test(request))).toBe(false);
+
+		const again = await setupOn(github);
+		expect(JSON.parse(again.stdout)).toMatchObject({answer: "unchanged", changes: []});
+		expect(JSON.parse(again.stdout).legacy).toHaveLength(1);
 	});
 });
 

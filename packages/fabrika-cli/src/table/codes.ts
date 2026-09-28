@@ -46,10 +46,3 @@ export const NOT_SET_UP = 23;
  * asks are undecidable, so nothing was written.
  */
 export const MALFORMED_RECORD = 24;
-
-/**
- * Proven: the project's Week field runs no iteration covering the next table day. `table prep`
- * refuses rather than adding one, because GitHub's API adds an iteration only by rewriting the whole
- * list, which mints new iteration ids and empties every row's Week.
- */
-export const NO_ITERATION = 25;

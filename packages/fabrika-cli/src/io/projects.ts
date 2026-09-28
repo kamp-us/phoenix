@@ -5,7 +5,8 @@
  * GraphQL, by the founder's ruling on the table's home (R4.1 on the issue below). That makes this
  * module the fourth carve from `./gh-api.ts`'s REST default, and the only one that writes project
  * state. It rests on the ruling, not on an absence of REST: GitHub publishes part of this domain
- * over REST, and whether those edges move there is still an open question.
+ * over REST, and whether those edges move there is still an open question. One edge already has:
+ * {@link createView} is REST, because only REST groups a view as it creates it.
  *
  * **A token without the `project` scope is its own answer, `MissingScope`, never a generic
  * failure.** It is the one refusal an operator can fix in a single command, so it carries that
@@ -18,10 +19,20 @@
  * duplicate of a field it did not see.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ * @ruling https://github.com/kamp-us/phoenix/issues/9989
  */
 
 import {Effect} from "effect";
-import {type Api, ambientToken, graphqlRead, onTransport, PAGE_CAP, type Rest} from "./gh-api.ts";
+import {
+	type Api,
+	ambientToken,
+	graphqlRead,
+	onTransport,
+	PAGE_CAP,
+	type Rest,
+	refusalText,
+	restWrite,
+} from "./gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
 import {isRecord} from "./json.ts";
 
@@ -64,22 +75,25 @@ export interface SelectOption {
 	readonly description: string;
 }
 
+/** What every field carries: its node id, and the numeric id the REST API names it by. */
+interface FieldIds {
+	readonly id: string;
+	readonly databaseId: number;
+	readonly name: string;
+}
+
 export type ProjectField =
-	| {
+	| (FieldIds & {
 			readonly _tag: "SingleSelect";
-			readonly id: string;
-			readonly name: string;
 			readonly options: ReadonlyArray<SelectOption>;
-	  }
-	| {
+	  })
+	| (FieldIds & {
 			readonly _tag: "Iteration";
-			readonly id: string;
-			readonly name: string;
 			readonly duration: number;
 			readonly startDay: number;
-	  }
-	/** Every other field, built-in or custom, by its `dataType` (`TEXT`, `NUMBER`, `TITLE`, …). */
-	| {readonly _tag: "Plain"; readonly id: string; readonly name: string; readonly dataType: string};
+	  })
+	/** Every other field, built-in or custom, by its `dataType` (`TEXT`, `NUMBER`, `DATE`, `TITLE`, …). */
+	| (FieldIds & {readonly _tag: "Plain"; readonly dataType: string});
 
 export interface ProjectView {
 	readonly id: string;
@@ -90,9 +104,19 @@ export interface ProjectView {
 	readonly visibleFieldIds: ReadonlyArray<string>;
 }
 
+/**
+ * Who owns a project, as the REST path for its views names them: `/orgs/{login}` or
+ * `/users/{login}`. A user's path takes the login; its numeric id answers 404.
+ */
+export interface ProjectOwner {
+	readonly kind: "Organization" | "User";
+	readonly login: string;
+}
+
 export interface ProjectSnapshot {
 	readonly id: string;
 	readonly number: number;
+	readonly owner: ProjectOwner;
 	readonly url: string;
 	readonly title: string;
 	readonly shortDescription: string | null;
@@ -124,21 +148,7 @@ export type FieldSpec =
 			readonly name: string;
 			readonly options: ReadonlyArray<Omit<SelectOption, "id">>;
 	  }
-	| {
-			readonly _tag: "Iteration";
-			readonly name: string;
-			/** In days; every planned iteration runs this long. */
-			readonly duration: number;
-			/** The iterations the field starts with, earliest first. */
-			readonly iterations: readonly [PlannedIteration, ...PlannedIteration[]];
-	  };
-
-/** One iteration an iteration field is created with. */
-export interface PlannedIteration {
-	/** `YYYY-MM-DD`. */
-	readonly startDate: string;
-	readonly title: string;
-}
+	| {readonly _tag: "Date"; readonly name: string};
 
 export interface ViewUpdate {
 	readonly layout?: ViewLayout;
@@ -263,11 +273,12 @@ const str = (value: unknown): value is string => typeof value === "string";
 const PROJECT_FRAGMENT = `
 fragment TableProject on ProjectV2 {
   id number url title shortDescription readme
+  owner { __typename ... on Organization { login } ... on User { login } }
   fields(first: 100) {
     pageInfo { hasNextPage }
     nodes {
       __typename
-      ... on ProjectV2FieldCommon { id name dataType }
+      ... on ProjectV2FieldCommon { id databaseId name dataType }
       ... on ProjectV2SingleSelectField { options { id name color description } }
       ... on ProjectV2IterationField { configuration { duration startDay } }
     }
@@ -285,7 +296,10 @@ const truncated = (connection: Record<string, unknown>): boolean =>
 	isRecord(connection.pageInfo) && connection.pageInfo.hasNextPage === true;
 
 const readField = (node: unknown): ProjectField | null => {
-	if (!isRecord(node) || !str(node.id) || !str(node.name)) return null;
+	if (!isRecord(node) || !str(node.id) || !str(node.name) || typeof node.databaseId !== "number") {
+		return null;
+	}
+	const ids = {id: node.id, databaseId: node.databaseId, name: node.name};
 	if (node.__typename === "ProjectV2SingleSelectField") {
 		if (!Array.isArray(node.options)) return null;
 		const options: SelectOption[] = [];
@@ -298,25 +312,19 @@ const readField = (node: unknown): ProjectField | null => {
 				description: str(option.description) ? option.description : "",
 			});
 		}
-		return {_tag: "SingleSelect", id: node.id, name: node.name, options};
+		return {_tag: "SingleSelect", ...ids, options};
 	}
 	if (node.__typename === "ProjectV2IterationField") {
 		const config = isRecord(node.configuration) ? node.configuration : null;
 		if (config === null || typeof config.duration !== "number") return null;
 		return {
 			_tag: "Iteration",
-			id: node.id,
-			name: node.name,
+			...ids,
 			duration: config.duration,
 			startDay: typeof config.startDay === "number" ? config.startDay : 0,
 		};
 	}
-	return {
-		_tag: "Plain",
-		id: node.id,
-		name: node.name,
-		dataType: str(node.dataType) ? node.dataType : "UNKNOWN",
-	};
+	return {_tag: "Plain", ...ids, dataType: str(node.dataType) ? node.dataType : "UNKNOWN"};
 };
 
 const LAYOUTS: ReadonlyArray<ViewLayout> = ["TABLE_LAYOUT", "BOARD_LAYOUT", "ROADMAP_LAYOUT"];
@@ -348,6 +356,13 @@ const readView = (node: unknown): Attempt<ProjectView> => {
 	});
 };
 
+const readOwner = (node: unknown): ProjectOwner | null =>
+	isRecord(node) &&
+	(node.__typename === "Organization" || node.__typename === "User") &&
+	str(node.login)
+		? {kind: node.__typename, login: node.login}
+		: null;
+
 export const readSnapshot = (node: unknown): Attempt<ProjectSnapshot> => {
 	if (
 		!isRecord(node) ||
@@ -366,6 +381,10 @@ export const readSnapshot = (node: unknown): Attempt<ProjectSnapshot> => {
 	if (viewPage === null || !Array.isArray(viewPage.nodes)) {
 		return fail("GitHub answered 200 but the project lists no views");
 	}
+	const owner = readOwner(node.owner);
+	if (owner === null) {
+		return fail("GitHub answered 200 but the project names no user or organization owner");
+	}
 	if (truncated(fieldPage)) return fail("the project has more fields than one page holds");
 	if (truncated(viewPage)) return fail("the project has more views than one page holds");
 	const fields: ProjectField[] = [];
@@ -383,6 +402,7 @@ export const readSnapshot = (node: unknown): Attempt<ProjectSnapshot> => {
 	return ok({
 		id: node.id,
 		number: node.number,
+		owner,
 		url: node.url,
 		title: node.title,
 		shortDescription: str(node.shortDescription) ? node.shortDescription : null,
@@ -655,21 +675,8 @@ const fieldInput = (projectId: string, spec: FieldSpec): Record<string, unknown>
 				dataType: "SINGLE_SELECT",
 				singleSelectOptions: spec.options,
 			};
-		case "Iteration":
-			return {
-				projectId,
-				name: spec.name,
-				dataType: "ITERATION",
-				iterationConfiguration: {
-					startDate: spec.iterations[0].startDate,
-					duration: spec.duration,
-					iterations: spec.iterations.map((iteration) => ({
-						startDate: iteration.startDate,
-						duration: spec.duration,
-						title: iteration.title,
-					})),
-				},
-			};
+		case "Date":
+			return {projectId, name: spec.name, dataType: "DATE"};
 	}
 };
 
@@ -696,33 +703,64 @@ const viewOf =
 			: fail("GitHub answered 200 but named no view");
 	};
 
-const CREATE_VIEW = `
-mutation TableCreateView($input: CreateProjectV2ViewInput!) {
-  createProjectV2View(input: $input) { projectV2View { id } }
-}`;
+/**
+ * How a new view groups its rows, by the grouped field's numeric id. A table groups rows; a board's
+ * columns are its grouping, so a board never takes `Rows`.
+ */
+export type NewViewGrouping =
+	| {readonly _tag: "None"}
+	| {readonly _tag: "Rows"; readonly fieldId: number}
+	| {readonly _tag: "Columns"; readonly fieldId: number};
 
-/** A new view. Its filter is set by {@link updateView}: the create input takes none. */
+/** A view to create, every field named by its numeric id as the REST API takes it. */
+export interface NewView {
+	readonly name: string;
+	readonly layout: Exclude<ViewLayout, "ROADMAP_LAYOUT">;
+	readonly filter: string;
+	readonly visibleFields: ReadonlyArray<number>;
+	readonly grouping: NewViewGrouping;
+}
+
+const REST_LAYOUT: Readonly<Record<NewView["layout"], string>> = {
+	TABLE_LAYOUT: "table",
+	BOARD_LAYOUT: "board",
+};
+
+/** The path a project's views are created under, by who owns it. */
+export const viewsPath = (owner: ProjectOwner, number: number): string =>
+	`${owner.kind === "Organization" ? "orgs" : "users"}/${owner.login}/projectsV2/${number}/views`;
+
+/** The REST body that creates `view`, grouped on create — GraphQL's view input takes no grouping. */
+export const newViewBody = (view: NewView): Record<string, unknown> => ({
+	name: view.name,
+	layout: REST_LAYOUT[view.layout],
+	filter: view.filter,
+	visible_fields: view.visibleFields,
+	...(view.grouping._tag === "Rows" ? {group_by: [view.grouping.fieldId]} : {}),
+	...(view.grouping._tag === "Columns" ? {vertical_group_by: [view.grouping.fieldId]} : {}),
+});
+
+/**
+ * A new view, created over REST so it is grouped from the start. Answers its node id, which is what
+ * {@link updateView} and every GraphQL read name it by.
+ */
 export const createView = (
 	token: string,
-	projectId: string,
-	view: {
-		readonly name: string;
-		readonly layout: ViewLayout;
-		readonly visibleFieldIds: ReadonlyArray<string>;
-	},
+	project: {readonly owner: ProjectOwner; readonly number: number},
+	view: NewView,
 ): Api<ProjectsAnswer<string>> =>
-	exchange(
-		token,
-		CREATE_VIEW,
-		{
-			input: {
-				projectId,
-				name: view.name,
-				layout: view.layout,
-				configuration: {visibleFieldIds: view.visibleFieldIds},
-			},
+	Effect.map(
+		restWrite(token, "POST", viewsPath(project.owner, project.number), newViewBody(view)),
+		(outcome): ProjectsAnswer<string> => {
+			if (outcome._tag === "Unreachable") return failed(outcome.reason);
+			if (scopeWithheld(outcome.headers) === true) {
+				return missingScope(`its scopes are: ${outcome.headers["x-oauth-scopes"] || "none"}`);
+			}
+			if (outcome.status < 200 || outcome.status >= 300) return failed(refusalText(outcome));
+			return isRecord(outcome.body) && str(outcome.body.node_id)
+				? done(outcome.body.node_id)
+				: failed("GitHub answered 2xx but created no view");
 		},
-		viewOf("createProjectV2View"),
 	);
 
 const UPDATE_VIEW = `
@@ -1042,41 +1080,25 @@ export interface BoardItem {
 	/** The option name set in each single-select, or `null` when the cell is empty. */
 	readonly stage: string | null;
 	readonly section: string | null;
-	/** The iteration the item is in, or `null` when its iteration cell is empty. */
-	readonly iterationId: string | null;
-}
-
-/** One iteration the iteration field still runs — the current one and those after it. */
-export interface BoardIteration {
-	readonly id: string;
-	readonly title: string;
-	/** `YYYY-MM-DD`, the day the iteration starts. */
-	readonly startDate: string;
-	/** In days. */
-	readonly duration: number;
+	/** The `YYYY-MM-DD` in the item's table-day cell, or `null` when it is empty. */
+	readonly tableDay: string | null;
 }
 
 export interface Board {
 	readonly items: ReadonlyArray<BoardItem>;
-	/** `null` when the project has no iteration field under the name asked for. */
-	readonly iterations: ReadonlyArray<BoardIteration> | null;
 }
 
 /** The field names a board read places items by — the table's fixed vocabulary, passed in. */
 export interface BoardFields {
 	readonly stage: string;
 	readonly section: string;
-	readonly iteration: string;
+	readonly tableDay: string;
 }
 
 const BOARD_QUERY = `
-query TableBoard($id: ID!, $stage: String!, $section: String!, $week: String!, $cursor: String) {
+query TableBoard($id: ID!, $stage: String!, $section: String!, $tableDay: String!, $cursor: String) {
   node(id: $id) {
     ... on ProjectV2 {
-      weekField: field(name: $week) {
-        __typename
-        ... on ProjectV2IterationField { configuration { iterations { id title startDate duration } } }
-      }
       items(first: 100, after: $cursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -1084,7 +1106,7 @@ query TableBoard($id: ID!, $stage: String!, $section: String!, $week: String!, $
           content { __typename ... on Issue { number } }
           stage: fieldValueByName(name: $stage) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
           section: fieldValueByName(name: $section) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
-          week: fieldValueByName(name: $week) { ... on ProjectV2ItemFieldIterationValue { iterationId } }
+          tableDay: fieldValueByName(name: $tableDay) { ... on ProjectV2ItemFieldDateValue { date } }
         }
       }
     }
@@ -1094,39 +1116,12 @@ query TableBoard($id: ID!, $stage: String!, $section: String!, $week: String!, $
 const optionName = (cell: unknown): string | null =>
 	isRecord(cell) && str(cell.name) ? cell.name : null;
 
-const readIterations = (field: unknown): Attempt<ReadonlyArray<BoardIteration> | null> => {
-	if (!isRecord(field) || field.__typename !== "ProjectV2IterationField") return ok(null);
-	const config = isRecord(field.configuration) ? field.configuration : null;
-	if (config === null || !Array.isArray(config.iterations)) {
-		return fail("GitHub answered 200 but the iteration field lists no iterations");
-	}
-	const iterations: BoardIteration[] = [];
-	for (const node of config.iterations) {
-		if (
-			!isRecord(node) ||
-			!str(node.id) ||
-			!str(node.title) ||
-			!str(node.startDate) ||
-			typeof node.duration !== "number"
-		) {
-			return fail("GitHub answered 200 but one iteration is malformed");
-		}
-		iterations.push({
-			id: node.id,
-			title: node.title,
-			startDate: node.startDate,
-			duration: node.duration,
-		});
-	}
-	return ok(iterations);
-};
-
 const readBoardItem = (node: unknown): Attempt<BoardItem> => {
 	if (!isRecord(node) || typeof node.isArchived !== "boolean") {
 		return fail("GitHub answered 200 but one item is not a project item");
 	}
 	const content = isRecord(node.content) ? node.content : null;
-	const week = isRecord(node.week) ? node.week : null;
+	const tableDay = isRecord(node.tableDay) ? node.tableDay : null;
 	return ok({
 		issue:
 			content !== null && content.__typename === "Issue" && typeof content.number === "number"
@@ -1135,13 +1130,13 @@ const readBoardItem = (node: unknown): Attempt<BoardItem> => {
 		archived: node.isArchived,
 		stage: optionName(node.stage),
 		section: optionName(node.section),
-		iterationId: week !== null && str(week.iterationId) ? week.iterationId : null,
+		tableDay: tableDay !== null && str(tableDay.date) ? tableDay.date : null,
 	});
 };
 
 /**
- * Every item on the project with its stage, section and iteration cells, and the iterations the
- * iteration field still runs — read to the last page, so a bet on page two is never left out.
+ * Every item on the project with its stage, section and table-day cells — read to the last page, so
+ * a bet on page two is never left out.
  */
 export const readBoard = (
 	token: string,
@@ -1150,18 +1145,16 @@ export const readBoard = (
 ): Api<ProjectsAnswer<Board>> =>
 	Effect.gen(function* () {
 		const items: BoardItem[] = [];
-		let iterations: ReadonlyArray<BoardIteration> | null = null;
 		let cursor: string | null = null;
 		const variables = {
 			id: projectId,
 			stage: fields.stage,
 			section: fields.section,
-			week: fields.iteration,
+			tableDay: fields.tableDay,
 		};
 		for (let page = 0; page < PAGE_CAP; page++) {
 			const answer: ProjectsAnswer<{
 				readonly items: ReadonlyArray<BoardItem>;
-				readonly iterations: ReadonlyArray<BoardIteration> | null;
 				readonly next: string | null;
 			}> = yield* exchange(token, BOARD_QUERY, {...variables, cursor}, (data) => {
 				const project = isRecord(data.node) ? data.node : null;
@@ -1169,8 +1162,6 @@ export const readBoard = (
 				if (project === null || connection === null || !Array.isArray(connection.nodes)) {
 					return fail(`GitHub knows no project ${projectId}`);
 				}
-				const read = readIterations(project.weekField);
-				if (read._tag === "Failure") return read;
 				const pageItems: BoardItem[] = [];
 				for (const node of connection.nodes) {
 					const item = readBoardItem(node);
@@ -1179,18 +1170,30 @@ export const readBoard = (
 				}
 				const next = nextCursor(connection);
 				if (next._tag === "Failure") return next;
-				return ok({items: pageItems, iterations: read.value, next: next.value});
+				return ok({items: pageItems, next: next.value});
 			});
 			if (answer._tag !== "Ok") return answer;
-			iterations = answer.value.iterations;
 			items.push(...answer.value.items);
-			if (answer.value.next === null) return done({items, iterations});
+			if (answer.value.next === null) return done({items});
 			cursor = answer.value.next;
 		}
 		return failed(`project ${projectId} holds more items than ${PAGE_CAP} pages hold`);
 	});
 
-/** An iteration field's whole history: the iterations it still runs and those it has finished. */
+/** One iteration of a legacy iteration field, as the one-time migration reads it. */
+export interface BoardIteration {
+	readonly id: string;
+	readonly title: string;
+	/** `YYYY-MM-DD`, the day the iteration starts. */
+	readonly startDate: string;
+	/** In days. */
+	readonly duration: number;
+}
+
+/**
+ * An iteration field's whole history: the iterations it still runs and those it has finished. Read
+ * only, by the migration off the legacy Week field — nothing here ever writes an iteration field.
+ */
 export interface IterationHistory {
 	readonly running: ReadonlyArray<BoardIteration>;
 	readonly completed: ReadonlyArray<BoardIteration>;
@@ -1255,7 +1258,7 @@ export const readWeekField = (data: Record<string, unknown>): Attempt<IterationH
 	return ok({running: running.value, completed: completed.value});
 };
 
-/** The iteration field `week` names: every iteration it runs, and every one it has finished. */
+/** The iteration field `week` names, read only: every iteration it runs, and every one it has finished. */
 export const readIterationHistory = (
 	token: string,
 	projectId: string,

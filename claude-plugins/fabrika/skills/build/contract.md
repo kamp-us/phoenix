@@ -486,8 +486,8 @@ fabrika build pick [--repo <owner/name>] [--limit <n>]
 `{"pool": [...], "excluded": {...}, "scanned": {"p0": n, "p1": n, "p2": n}, "bets": {...}}`.
 Each pool entry: `{"number", "title", "priority", "type", "home", "bet"}` — `home` is the open
 milestone's number as a string, or the standing-lane label (`wayfinder:backlog` /
-`axis:pipeline-hardening`) for an issue with no milestone; `bet` says whether the table bet on it
-this iteration. **Bets first**, then `p0` → `p1` → `p2`, milestone order within a bucket (below).
+`axis:pipeline-hardening`) for an issue with no milestone; `bet` says whether the table in force
+bet on it. **Bets first**, then `p0` → `p1` → `p2`, milestone order within a bucket (below).
 **An empty pool is a fact and prints `{"pool": [], ...}` on exit 0** with the scanned counts proving
 what was searched — never an empty stdout (interface convention rule 2).
 
@@ -502,9 +502,9 @@ The scanned counts alone cannot tell a working filter from a broken one; the rea
 reason vocabulary is the whole of what a reader acts on — no skill reads a per-issue row, so the
 rows collapse to counts (`excluded` is an evidence-array, `pool` the answer-array `--limit` caps).
 `bets` is `{"state": "none"}` when the repository keeps no table project, or
-`{"state": "read", "project": "<owner>#<n>", "iteration": "<title>" | null, "bets": n, "inPool": n}`
-— the project read, the current iteration (`null` when none is current), how many issues it bets on,
-and how many of those survived the filter. The stderr bets line carries the same fact.
+`{"state": "read", "project": "<owner>#<n>", "tableDay": "YYYY-MM-DD", "bets": n, "inPool": n}`
+— the project read, the table in force (the `table.day` on or before today, in `table.timeZone`),
+how many issues it bets on, and how many of those survived the filter. The stderr bets line carries the same fact.
 
 The filter, fail-closed on every axis:
 
@@ -561,14 +561,15 @@ The filter, fail-closed on every axis:
 - open, and not a pull request.
 
 **Bets first — an order, never a filter.** When the repository keeps a table project, the issues set
-to Stage `bet` in its **current iteration** lead the pool, and everything else follows in the order
+to Stage `bet` and dated the **table in force** in its Table day field lead the pool, and everything else follows in the order
 above (`packages/fabrika-cli/src/table/bets.ts`, read through `table/bets-read.ts`). Within the bets,
 the order is the agenda's: by Section, in `.fabrika.jsonc`'s `table.sections` order, then the
 project's own item order; a bet whose Section is empty or not on that list comes after every listed
 one rather than dropping out. A bet still has to pass every axis above — the order moves a survivor
 to the front and never admits one — and an issue nobody bet on is still offered, behind the bets.
-The current iteration is the one the `Week` iteration field runs on today's date; with none current,
-nothing is bet on and the pool is in its own order.
+The table in force is the `table.day` weekday on or before today, read in `table.timeZone`; a bet
+dated any other table, earlier or later, is not in the order. With no bet at that table the pool is in
+its own order.
 
 The table project is found the way `table setup` finds it, read-only: the project
 `table.project.number` names under `table.project.owner` (default: the repository's owner), else the
@@ -606,12 +607,12 @@ verdict — the pool still answers on `0`. Those codes are the claim seam's.
 | `build pick: --limit "<value>" is not a positive integer.` | 1 | usage error |
 
 **Scope** — every open issue in `--repo` carrying `status:triaged`, read via paginated REST; the
-table project's items with their Stage, Section and Week cells, when there is a project; plus, for
+table project's items with their Stage, Section and Table day cells, when there is a project; plus, for
 each candidate the graph reads blocked, that issue's parent and the commits `epic/<parent>` adds over
 the trunk in this tree. The scope line on stderr names the per-bucket counts scanned, and the bets
-line after it names where the order came from — `bets: 2 bet(s) in Week of Sep 28 on project
-acme#7, 1 in the pool and first in it.`, `bets: project acme#7 has no current iteration, so nothing is
-bet on this week; the pool is in its own order.`, or `bets: no table project — none is configured,
+line after it names where the order came from — `bets: 2 bet(s) at the 2026-09-26 table on project
+acme#7, 1 in the pool and first in it.`, `bets: project acme#7 bets on nothing at the 2026-09-26
+table; the pool is in its own order.`, or `bets: no table project — none is configured,
 and none titled "widgets table" is linked to acme/widgets; the pool is in its own order.` — so an
 order with no bets in it is visible as such rather than inferred.
 

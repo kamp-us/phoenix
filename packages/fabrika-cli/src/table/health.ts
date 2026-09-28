@@ -1,55 +1,30 @@
 /**
- * The weekly health numbers `table prep` posts as the project's status update, and the iteration
+ * The weekly health numbers `table prep` posts as the project's status update, and the table day
  * they belong to. Pure: it reads lane records, the flags and the rows, and renders one update.
  *
- * **One update per iteration.** The body carries a marker naming the iteration it was posted for,
- * so prep can read the project's updates and tell that this week's already stands. A number it
+ * **One update per table.** The body carries a marker naming the table day it was posted for, so
+ * prep can read the project's updates and tell that this table's already stands. A number it
  * could not measure — a lane with no dollar figure, a week with no lane — is said in words, never
  * shown as a zero. A flag check that could not be read is named in the update, never counted as no
  * flag, and the update is never `ON_TRACK` over it.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ * @ruling https://github.com/kamp-us/phoenix/issues/9989
  */
 
-import {OUTSIDE_THE_BETS, type TableSettings, WEEKDAYS} from "../config/keys/table.ts";
-import type {BoardIteration, StatusUpdate, StatusUpdateInput} from "../io/projects.ts";
+import {OUTSIDE_THE_BETS} from "../config/keys/table.ts";
+import type {StatusUpdate, StatusUpdateInput} from "../io/projects.ts";
 import {asksOf, type LaneRecord} from "../wire/lane-record.ts";
 import {optionOf} from "./agenda.ts";
-import {currentIteration} from "./bets.ts";
 import {type Flag, type FlagReport, type OnCallSpend, type Unread, weekLanes} from "./flags.ts";
 import {FIELD} from "./shape.ts";
 import type {Row} from "./sync.ts";
-
-const DAY_MS = 86_400_000;
+import {dayLabel, plusDays, type TableDay} from "./table-day.ts";
 
 /** Lane outcomes that mean the work landed. */
 const LANDED: ReadonlySet<string> = new Set(["complete", "board:landed"]);
 
 export const isLanded = (lane: LaneRecord): boolean => LANDED.has(lane.outcome);
-
-/** The next table day on or after `now`, at midnight UTC. */
-export const nextTableDay = (settings: TableSettings, now: Date): Date => {
-	const ahead = (WEEKDAYS.indexOf(settings.day) - now.getUTCDay() + 7) % 7;
-	return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + ahead));
-};
-
-/** The iteration the next table day falls in, or `null` when the Week field runs none there. */
-export const targetIteration = (
-	running: ReadonlyArray<BoardIteration>,
-	settings: TableSettings,
-	now: Date,
-): BoardIteration | null => currentIteration(running, nextTableDay(settings, now));
-
-/** The week the health numbers cover: the one that ends where `target` starts. */
-export const healthWindow = (
-	target: BoardIteration,
-): {readonly start: string; readonly end: string} => {
-	const end = Date.parse(`${target.startDate}T00:00:00.000Z`);
-	return {
-		start: new Date(end - target.duration * DAY_MS).toISOString(),
-		end: new Date(end).toISOString(),
-	};
-};
 
 /** Un-bet lanes still running: how many, of which origin, and what they cost. */
 export interface OutsideTally {
@@ -103,7 +78,7 @@ export interface HealthInput {
 	readonly records: ReadonlyMap<number, ReadonlyArray<LaneRecord>>;
 	readonly report: FlagReport;
 	readonly outside: OutsideTally;
-	/** Running bets carried into the new iteration without an agenda row. */
+	/** Running bets carried to the new table without an agenda row. */
 	readonly continuing: number;
 	/** Running bets the flags brought onto the agenda. */
 	readonly flaggedBets: number;
@@ -171,15 +146,13 @@ const percent = (part: number, whole: number): string => `${Math.round((part / w
 const plural = (count: number, one: string, many = `${one}s`): string =>
 	`${count} ${count === 1 ? one : many}`;
 
-/** The line that names which iteration an update was posted for. */
-export const healthMarker = (iterationId: string): string =>
-	`<!-- fabrika:table-health iteration=${iterationId} -->`;
+/** The line that names which table an update was posted for. */
+export const healthMarker = (day: TableDay): string =>
+	`<!-- fabrika:table-health table-day=${day} -->`;
 
-/** Whether an update for `iterationId` already stands among `updates`. */
-export const postedFor = (updates: ReadonlyArray<StatusUpdate>, iterationId: string): boolean =>
-	updates.some((update) => update.body.includes(healthMarker(iterationId)));
-
-const isoDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+/** Whether an update for the table on `day` already stands among `updates`. */
+export const postedFor = (updates: ReadonlyArray<StatusUpdate>, day: TableDay): boolean =>
+	updates.some((update) => update.body.includes(healthMarker(day)));
 
 /** The on-call board as the table reviews it: one summary, never its rows. */
 export interface OnCallHealth {
@@ -219,13 +192,13 @@ const checkName = (one: Unread): string =>
 	`${one.check}${one.issue === null ? "" : ` on #${one.issue}`}`;
 
 /**
- * The status update for `target`: `AT_RISK` while any flag stands or any flag check could not be
- * read, else `ON_TRACK`, dated over the iteration. With an on-call board it covers that board too,
- * as one closing section.
+ * The status update for the table on `target`: `AT_RISK` while any flag stands or any flag check
+ * could not be read, else `ON_TRACK`, dated over that table's week. With an on-call board it covers
+ * that board too, as one closing section.
  */
 export const renderHealth = (
 	health: Health,
-	target: BoardIteration,
+	target: TableDay,
 	flagged: boolean,
 	onCall: OnCallHealth | null = null,
 ): StatusUpdateInput => {
@@ -239,7 +212,7 @@ export const renderHealth = (
 			? `$${outside.spentUsd} measured, ${plural(outside.unmeasured, "lane")} not measured`
 			: `$${outside.spentUsd}`;
 	const lines = [
-		`**Table notes, week of ${target.title}**`,
+		`**Table notes, week of ${dayLabel(target)}**`,
 		"",
 		health.lanes === 0
 			? "- Land rate: no lane ended last week"
@@ -263,13 +236,12 @@ export const renderHealth = (
 				]),
 		...(onCall === null ? [] : onCallLines(onCall)),
 		"",
-		healthMarker(target.id),
+		healthMarker(target),
 	];
-	const start = Date.parse(`${target.startDate}T00:00:00.000Z`);
 	return {
 		body: lines.join("\n"),
 		status: flagged || health.unread.length > 0 ? "AT_RISK" : "ON_TRACK",
-		startDate: target.startDate,
-		targetDate: isoDay(start + target.duration * DAY_MS),
+		startDate: target,
+		targetDate: plusDays(target, 7),
 	};
 };

@@ -1,53 +1,55 @@
 import {describe, expect, it} from "vitest";
+import {SHIPPED_TABLE} from "../config/keys/table.ts";
 import type {Board, BoardItem} from "../io/projects.ts";
-import {BET_STAGE, betOrder, betsFirst, currentIteration} from "./bets.ts";
+import {BET_STAGE, betOrder, betsFirst} from "./bets.ts";
 import {STAGES} from "./shape.ts";
 
+/** A Wednesday; the shipped table meets on Mondays, so the table in force is Monday Sep 28. */
 const NOW = new Date("2026-09-30T12:00:00Z");
-const THIS_WEEK = {id: "it-this", title: "Week of Sep 28", startDate: "2026-09-28", duration: 7};
-const NEXT_WEEK = {id: "it-next", title: "Week of Oct 5", startDate: "2026-10-05", duration: 7};
-const SECTIONS = ["Tails", "Customers", "New bets", "Outside the bets"];
+const THIS_TABLE = "2026-09-28";
+const LAST_TABLE = "2026-09-21";
+const NEXT_TABLE = "2026-10-05";
+const SETTINGS = {
+	...SHIPPED_TABLE,
+	sections: ["Tails", "Customers", "New bets", "Outside the bets"],
+};
 
 const item = (over: Partial<BoardItem> & {readonly issue: number | null}): BoardItem => ({
 	archived: false,
 	stage: BET_STAGE,
 	section: "New bets",
-	iterationId: THIS_WEEK.id,
+	tableDay: THIS_TABLE,
 	...over,
 });
 
-const board = (...items: ReadonlyArray<BoardItem>): Board => ({
-	items,
-	iterations: [THIS_WEEK, NEXT_WEEK],
-});
-
-describe("currentIteration", () => {
-	it("finds the iteration now falls in, start day inclusive and end day exclusive", () => {
-		expect(currentIteration([THIS_WEEK, NEXT_WEEK], NOW)).toEqual(THIS_WEEK);
-		expect(currentIteration([THIS_WEEK], new Date("2026-09-28T00:00:00Z"))).toEqual(THIS_WEEK);
-		expect(currentIteration([THIS_WEEK], new Date("2026-10-05T00:00:00Z"))).toBeNull();
-	});
-});
+const board = (...items: ReadonlyArray<BoardItem>): Board => ({items});
 
 describe("betOrder", () => {
 	it("names the Stage option the table's own shape offers", () => {
 		expect(STAGES.map((stage) => stage.name)).toContain(BET_STAGE);
 	});
 
-	it("keeps only bets in the current iteration", () => {
+	it("counts a bet dated the current table, and not one dated a past or a future table", () => {
 		const order = betOrder(
 			board(
 				item({issue: 1}),
 				item({issue: 2, stage: "proposed"}),
-				item({issue: 3, iterationId: NEXT_WEEK.id}),
-				item({issue: 4, iterationId: null}),
+				item({issue: 3, tableDay: NEXT_TABLE}),
+				item({issue: 4, tableDay: null}),
 				item({issue: null}),
 				item({issue: 5, archived: true}),
+				item({issue: 6, tableDay: LAST_TABLE}),
 			),
-			SECTIONS,
+			SETTINGS,
 			NOW,
 		);
-		expect(order).toEqual({iteration: THIS_WEEK, issues: [1]});
+		expect(order).toEqual({tableDay: THIS_TABLE, issues: [1]});
+	});
+
+	it("reads the table in force as the table day on or before today, the day itself included", () => {
+		expect(betOrder(board(), SETTINGS, new Date("2026-09-28T00:00:00Z")).tableDay).toBe(THIS_TABLE);
+		expect(betOrder(board(), SETTINGS, new Date("2026-10-04T23:59:00Z")).tableDay).toBe(THIS_TABLE);
+		expect(betOrder(board(), SETTINGS, new Date("2026-10-05T00:00:00Z")).tableDay).toBe(NEXT_TABLE);
 	});
 
 	it("orders bets by section in agenda order, then by the project's own item order", () => {
@@ -58,7 +60,7 @@ describe("betOrder", () => {
 				item({issue: 12, section: "Tails"}),
 				item({issue: 13, section: "Customers"}),
 			),
-			SECTIONS,
+			SETTINGS,
 			NOW,
 		);
 		expect(order.issues).toEqual([12, 11, 13, 10]);
@@ -67,21 +69,18 @@ describe("betOrder", () => {
 	it("puts a bet with no section or an unknown one after every listed section, never dropping it", () => {
 		const order = betOrder(
 			board(item({issue: 20, section: null}), item({issue: 21, section: "Tails"})),
-			SECTIONS,
+			SETTINGS,
 			NOW,
 		);
 		expect(order.issues).toEqual([21, 20]);
 	});
 
-	it("answers no bets when no iteration is current, or the project has no iteration field", () => {
+	it("answers no bets when no row is dated the table in force", () => {
 		const late = new Date("2026-11-30T12:00:00Z");
-		expect(betOrder(board(item({issue: 1})), SECTIONS, late)).toEqual({
-			iteration: null,
+		expect(betOrder(board(item({issue: 1})), SETTINGS, late)).toEqual({
+			tableDay: "2026-11-30",
 			issues: [],
 		});
-		expect(betOrder({items: [item({issue: 1})], iterations: null}, SECTIONS, NOW).issues).toEqual(
-			[],
-		);
 	});
 });
 

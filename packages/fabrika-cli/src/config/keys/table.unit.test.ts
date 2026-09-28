@@ -14,6 +14,7 @@ describe("the shipped table", () => {
 		expect(SHIPPED_TABLE).toEqual({
 			cadence: "weekly",
 			day: "monday",
+			timeZone: "UTC",
 			sections: ["Tails", "Customers", "New bets", "Outside the bets"],
 			agendaCap: 25,
 			flagMultiple: 1,
@@ -145,6 +146,14 @@ describe("a declared table block", () => {
 		});
 	});
 
+	it("takes an IANA time zone, in the spelling the platform resolves it to", () => {
+		expect(declared({timeZone: "America/Los_Angeles"})).toMatchObject({
+			_tag: "Declared",
+			value: {timeZone: "America/Los_Angeles"},
+		});
+		expect(declared({timeZone: "utc"})).toMatchObject({value: {timeZone: "UTC"}});
+	});
+
 	it("takes a project target", () => {
 		const resolved = declared({project: {owner: "acme", number: 4}});
 
@@ -157,6 +166,8 @@ describe("a declared table block", () => {
 	it.each([
 		[{cadence: "daily"}, "`table.cadence`"],
 		[{day: "someday"}, "`table.day`"],
+		[{timeZone: "Pacific"}, "`table.timeZone`"],
+		[{timeZone: ""}, "`table.timeZone`"],
 		[{agendaCap: 0}, "`table.agendaCap`"],
 		[{stopMultiple: 1}, "`table.stopMultiple`"],
 		[{sizes: {S: 50}}, "`table.sizes`"],

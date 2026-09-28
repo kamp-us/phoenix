@@ -1,36 +1,13 @@
 /**
- * Which iteration prep readies, and the status update it renders when a number could not be
- * measured.
+ * The status update prep renders for a table, and the marker that keys it on the table day.
  */
 import {describe, expect, it} from "vitest";
-import {SHIPPED_TABLE} from "../config/keys/table.ts";
-import {
-	flagCount,
-	type Health,
-	healthMarker,
-	nextTableDay,
-	postedFor,
-	renderHealth,
-	targetIteration,
-} from "./health.ts";
+import {flagCount, type Health, healthMarker, postedFor, renderHealth} from "./health.ts";
+import {parseTableDay, type TableDay} from "./table-day.ts";
 
-const WEEK = {id: "it_28", title: "Sep 28", startDate: "2026-09-28", duration: 7};
+const day = (text: string): TableDay => parseTableDay(text) as TableDay;
 
-describe("targetIteration", () => {
-	it("readies the iteration the next table day falls in, today included", () => {
-		expect(nextTableDay(SHIPPED_TABLE, new Date("2026-09-27T23:00:00Z")).toISOString()).toBe(
-			"2026-09-28T00:00:00.000Z",
-		);
-		expect(nextTableDay(SHIPPED_TABLE, new Date("2026-09-28T09:00:00Z")).toISOString()).toBe(
-			"2026-09-28T00:00:00.000Z",
-		);
-		expect(targetIteration([WEEK], SHIPPED_TABLE, new Date("2026-09-27T12:00:00Z"))).toEqual(WEEK);
-	});
-
-	it("is null when no iteration runs over the next table day", () => {
-		expect(targetIteration([WEEK], SHIPPED_TABLE, new Date("2026-10-06T12:00:00Z"))).toBeNull();
-	});
-});
+const TABLE = day("2026-09-28");
 
 describe("renderHealth", () => {
 	const quiet: Health = {
@@ -48,7 +25,7 @@ describe("renderHealth", () => {
 	};
 
 	it("says a week with no lane in words, never as a zero rate", () => {
-		const update = renderHealth(quiet, WEEK, false);
+		const update = renderHealth(quiet, TABLE, false);
 
 		expect(update.body).toContain("- Land rate: no lane ended last week");
 		expect(update.body).toContain("- Needed a founder: no lane ended last week");
@@ -56,21 +33,28 @@ describe("renderHealth", () => {
 		expect(update.status).toBe("ON_TRACK");
 	});
 
-	it("names spend it could not measure, and marks the update with its iteration", () => {
-		const update = renderHealth({...quiet, lanes: 2, spentUsd: 10, unmeasuredLanes: 1}, WEEK, true);
+	it("names spend it could not measure, and marks the update with its table day", () => {
+		const update = renderHealth(
+			{...quiet, lanes: 2, spentUsd: 10, unmeasuredLanes: 1},
+			TABLE,
+			true,
+		);
 
 		expect(update.body).toContain("- Spend: $10 measured, 1 lane not measured");
 		expect(update.status).toBe("AT_RISK");
-		expect(postedFor([{id: "SU", body: update.body, startDate: null}], WEEK.id)).toBe(true);
-		expect(postedFor([{id: "SU", body: healthMarker("it_21"), startDate: null}], WEEK.id)).toBe(
-			false,
-		);
+		expect(update.body).toContain("<!-- fabrika:table-health table-day=2026-09-28 -->");
+		expect(update.body).toContain("**Table notes, week of Sep 28**");
+		expect(update).toMatchObject({startDate: "2026-09-28", targetDate: "2026-10-05"});
+		expect(postedFor([{id: "SU", body: update.body, startDate: null}], TABLE)).toBe(true);
+		expect(
+			postedFor([{id: "SU", body: healthMarker(day("2026-09-21")), startDate: null}], TABLE),
+		).toBe(false);
 	});
 
 	it("never posts ON_TRACK over a flag check it could not read, and names the check", () => {
 		const update = renderHealth(
 			{...quiet, unread: [{check: "over-size", issue: 10, reason: "1 lane(s) went unmeasured"}]},
-			WEEK,
+			TABLE,
 			false,
 		);
 
@@ -83,7 +67,7 @@ describe("renderHealth", () => {
 			flags: [],
 			unread: [{check: "past-target" as const, issue: 40, reason: "no Response target yet"}],
 		};
-		const update = renderHealth({...quiet, unread: report.unread}, WEEK, false, {
+		const update = renderHealth({...quiet, unread: report.unread}, TABLE, false, {
 			open: 2,
 			pastTarget: flagCount(report, "PastTarget", "past-target"),
 			spend: {_tag: "Nothing"},

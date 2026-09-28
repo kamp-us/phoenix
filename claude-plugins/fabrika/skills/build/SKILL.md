@@ -55,12 +55,12 @@ fabrika build pick
 ```
 
 The pool is `status:triaged` + `ready-for:agent` + unassigned, **the table's bets first**, then p0
-first. A bet is an issue set to Stage `bet` in the current iteration of the repo's betting table; each
-pool row says `bet: true` or `false`. The `bets` object says where the order came from:
-`{state: "read", project: "<owner>#<n>", iteration, bets, inPool}` when a table was read, with
-`iteration: null` when the project has no current iteration and so nothing is bet on this week, or
-`{state: "none"}` when there is no table, or when an unread one sits in a repo with no `table` block
-(stderr names why). Under `none` or a null iteration the pool is the plain priority order. Exit `11`
+first. A bet is an issue set to Stage `bet` and dated the table in force (its Table day) on the
+repo's betting table; each pool row says `bet: true` or `false`. The `bets` object says where the
+order came from: `{state: "read", project: "<owner>#<n>", tableDay, bets, inPool}` when a table was
+read, with `bets: 0` when nothing is bet on at that table, or `{state: "none"}` when there is no
+table, or when an unread one sits in a repo with no `table` block (stderr names why). Under `none` or
+zero bets the pool is the plain priority order. Exit `11`
 is a table a declared `table` block could not read: the order is UNKNOWN, so stop and name it. Bets
 reorder the pool and never filter it, so take the first row whatever it is. **An
 assigned issue is not yours whatever its labels** — assignment is how humans keep documents out of

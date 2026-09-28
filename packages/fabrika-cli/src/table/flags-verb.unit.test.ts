@@ -5,15 +5,16 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
+import {SHIPPED_TABLE} from "../config/keys/table.ts";
 import {fakeFs, fakeShell, unconfigured} from "../fakes.test-support.ts";
 import {absent, present} from "../io/issues.ts";
 import type {ItemFieldValue, ProjectItem, ProjectSnapshot, ProjectsAnswer} from "../io/projects.ts";
 import {emit, type Instant, type LaneRecord} from "../wire/lane-record.ts";
 import {NO_TARGET} from "./codes.ts";
 import type {Campaigns} from "./flags.ts";
-import {type FlagsBoard, runFlags} from "./flags-verb.ts";
+import {type FlagsBoard, runFlags, shareWindow} from "./flags-verb.ts";
 import {readSizeStop} from "./size-stop.ts";
-import type {SyncNode} from "./sync.ts";
+import type {Row, SyncNode} from "./sync.ts";
 import type {Located} from "./sync-verb.ts";
 
 const REPO = "acme/widgets";
@@ -23,6 +24,7 @@ const NOW = new Date("2026-09-27T12:00:00.000Z");
 const PROJECT: ProjectSnapshot = {
 	id: "PVT_1",
 	number: 3,
+	owner: {kind: "Organization", login: "acme"},
 	url: "https://github.com/orgs/acme/projects/3",
 	title: "widgets table",
 	shortDescription: null,
@@ -53,6 +55,8 @@ interface RowSpec {
 	readonly setter?: string;
 	readonly setAt?: string;
 	readonly size?: string;
+	/** The row's Table day, `YYYY-MM-DD`. */
+	readonly tableDay?: string;
 }
 
 const optionValue = (
@@ -119,6 +123,17 @@ const table = (
 				...(row.size === undefined
 					? []
 					: [optionValue("Size", row.size, OWNER, "2026-09-20T00:00:00.000Z")]),
+				...(row.tableDay === undefined
+					? []
+					: [
+							{
+								fieldId: "F_day",
+								fieldName: "Table day",
+								value: {_tag: "Date", date: row.tableDay},
+								creator: OWNER,
+								updatedAt: "2026-09-20T00:00:00.000Z",
+							} satisfies ItemFieldValue,
+						]),
 			],
 		}));
 	const onCallItems = (): ReadonlyArray<ProjectItem> =>
@@ -160,17 +175,6 @@ const table = (
 		},
 		comments: (_repo, number) =>
 			Effect.succeed({_tag: "Ok" as const, value: (issues[number]?.records ?? []).map(emit)}),
-		week: () =>
-			Effect.succeed(
-				ok({
-					running: [{id: "it_4", title: "Sep 21", startDate: "2026-09-21", duration: 7}],
-					completed: [
-						{id: "it_1", title: "Aug 31", startDate: "2026-08-31", duration: 7},
-						{id: "it_2", title: "Sep 7", startDate: "2026-09-07", duration: 7},
-						{id: "it_3", title: "Sep 14", startDate: "2026-09-14", duration: 7},
-					],
-				}),
-			),
 		labels: (_repo, number) =>
 			Effect.succeed({_tag: "Ok" as const, value: issues[number]?.labels ?? []}),
 		deciders: () => Effect.succeed({_tag: "Roster" as const, logins: new Set([OWNER])}),
@@ -232,10 +236,10 @@ describe("table flags on the whole table", () => {
 				30: {records: [record(30, 2)]},
 			},
 			[
-				{number: 10, stage: "bet", size: "S"},
-				{number: 20, stage: "bet", size: "M"},
-				{number: 21, stage: "in lane"},
-				{number: 30, stage: "bet", setter: "drive-by"},
+				{number: 10, stage: "bet", size: "S", tableDay: "2026-09-07"},
+				{number: 20, stage: "bet", size: "M", tableDay: "2026-09-14"},
+				{number: 21, stage: "in lane", tableDay: "2026-09-21"},
+				{number: 30, stage: "bet", setter: "drive-by", tableDay: "2026-09-21"},
 			],
 		);
 
@@ -414,5 +418,43 @@ describe("the size stop", () => {
 		const {board} = table({}, [], {scopeMissing: true});
 
 		expect(await stop(board, 10)).toMatchObject({_tag: "Unknown"});
+	});
+});
+
+describe("the week the shares are judged over", () => {
+	const row = (issue: number, date: string | null): Row => ({
+		itemId: `PVTI_${issue}`,
+		issue,
+		values:
+			date === null
+				? []
+				: [
+						{
+							fieldId: "F_day",
+							fieldName: "Table day",
+							value: {_tag: "Date", date},
+							creator: OWNER,
+							updatedAt: "2026-09-20T00:00:00.000Z",
+						},
+					],
+	});
+
+	it("is the 7 days ending at the next table day, numbered by the distinct Table days before it", () => {
+		const rows = new Map([
+			[1, row(1, "2026-09-14")],
+			[2, row(2, "2026-09-21")],
+			[3, row(3, "2026-09-21")],
+			[4, row(4, "2026-09-28")],
+			[5, row(5, null)],
+		]);
+
+		expect(shareWindow(SHIPPED_TABLE, rows, NOW)).toEqual({
+			start: "2026-09-21T00:00:00.000Z",
+			end: "2026-09-28T00:00:00.000Z",
+			table: 3,
+		});
+		expect(
+			shareWindow({...SHIPPED_TABLE, timeZone: "America/Los_Angeles"}, new Map(), NOW),
+		).toEqual({start: "2026-09-21T07:00:00.000Z", end: "2026-09-28T07:00:00.000Z", table: 1});
 	});
 });

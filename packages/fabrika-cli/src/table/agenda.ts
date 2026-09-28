@@ -21,6 +21,7 @@
  *   reads "needs your pick" with its options, never "yes".
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ * @ruling https://github.com/kamp-us/phoenix/issues/9989
  */
 
 import type {AppetiteSizes, Size} from "../config/keys/appetite-sizes.ts";
@@ -42,6 +43,7 @@ import {type Flag, recOf} from "./flags.ts";
 import {type Group, issuesOf, membersOf} from "./group.ts";
 import {FIELD} from "./shape.ts";
 import type {Row, Write} from "./sync.ts";
+import type {TableDay} from "./table-day.ts";
 
 export const PROPOSED = "proposed";
 export const CHECK_STAGE = "check";
@@ -63,7 +65,7 @@ const WORKERS: ReadonlySet<string> = new Set(["OWNER", "MEMBER", "COLLABORATOR"]
 
 /** Why an issue is on the agenda. */
 export type Reason =
-	/** Already on this iteration's agenda from an earlier run; it keeps its place and its cells. */
+	/** Already on this table's agenda from an earlier run; it keeps its place and its cells. */
 	| {readonly _tag: "Standing"}
 	/** A running bet the flags bring back. */
 	| {readonly _tag: "Flagged"; readonly flags: ReadonlyArray<Flag>}
@@ -101,8 +103,8 @@ export interface CandidateInput {
 	readonly followUps: ReadonlyArray<FollowUp>;
 	/** The row flags on each running bet's head. */
 	readonly flagged: ReadonlyMap<number, ReadonlyArray<Flag>>;
-	/** The iteration the agenda is prepared for. */
-	readonly target: string;
+	/** The table day the agenda is prepared for. */
+	readonly target: TableDay;
 	/** Issues the on-call board holds: never proposed at the table, not even standing. Empty with one board. */
 	readonly onCall: ReadonlySet<number>;
 }
@@ -120,16 +122,17 @@ export const textOf = (row: Row | undefined, field: string): string | null => {
 	return value?._tag === "Text" && value.text !== "" ? value.text : null;
 };
 
-export const weekOf = (row: Row | undefined): string | null => {
-	const value = cell(row, FIELD.week);
-	return value?._tag === "Iteration" ? value.iterationId : null;
+/** The row's Table day, as its DATE cell holds it; `null` when the cell is empty. */
+export const tableDayOf = (row: Row | undefined): string | null => {
+	const value = cell(row, FIELD.tableDay);
+	return value?._tag === "Date" ? value.date : null;
 };
 
-/** Whether the row already sits on `target`'s agenda: this week, under an agenda section, with a rec. */
-export const onAgenda = (row: Row | undefined, target: string): boolean => {
+/** Whether the row already sits on `target`'s agenda: dated that day, under an agenda section, with a rec. */
+export const onAgenda = (row: Row | undefined, target: TableDay): boolean => {
 	const section = optionOf(row, FIELD.section);
 	return (
-		weekOf(row) === target &&
+		tableDayOf(row) === target &&
 		section !== null &&
 		section !== OUTSIDE_THE_BETS &&
 		textOf(row, FIELD.rec) !== null
@@ -160,7 +163,7 @@ const byPriority =
 
 /**
  * Every candidate in agenda order — section by section as `sections` lists them, each section
- * sorted p0 first — with rows already on this iteration's agenda ahead of all of them, and the
+ * sorted p0 first — with rows already on this table's agenda ahead of all of them, and the
  * Customers reports that must be triaged first. An issue is a candidate once, in its first section.
  */
 export const candidatesOf = (
@@ -453,7 +456,8 @@ export interface PrepFields {
 	readonly size: Select;
 	readonly rec: string;
 	readonly plainWords: string;
-	readonly week: string;
+	/** The DATE field every row prep touches is dated in. */
+	readonly tableDay: string;
 }
 
 /** One row prep writes onto the agenda. `cells` is `null` for a standing row, left as it reads. */
@@ -471,11 +475,11 @@ export type PrepWrite =
 
 export interface PrepInput {
 	readonly fields: PrepFields;
-	readonly target: {readonly id: string; readonly title: string};
+	readonly target: TableDay;
 	readonly rows: ReadonlyMap<number, Row>;
 	readonly open: ReadonlySet<number>;
 	readonly agenda: ReadonlyArray<AgendaRow>;
-	/** Running bets carried into the target iteration without an agenda row. */
+	/** Running bets carried to the target table without an agenda row. */
 	readonly rollover: ReadonlyArray<number>;
 	/** `proposed` rows whose issue has closed. */
 	readonly removals: ReadonlyArray<number>;
@@ -523,6 +527,11 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 	});
 	const clear = (row: Row, field: string, fieldId: string) =>
 		writes.push({_tag: "Clear", issue: row.issue, itemId: row.itemId, field, fieldId});
+	const dateOn = (row: Row) => {
+		if (tableDayOf(row) !== target) {
+			setOn(row, FIELD.tableDay, fields.tableDay, {_tag: "Date", date: target}, target);
+		}
+	};
 
 	for (const entry of input.agenda) {
 		if (leaving(entry.issue)) continue;
@@ -543,15 +552,7 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 					entry.section,
 				);
 			}
-			if (weekOf(row) !== target.id) {
-				setOn(
-					row,
-					FIELD.week,
-					fields.week,
-					{_tag: "Iteration", iterationId: target.id},
-					target.title,
-				);
-			}
+			dateOn(row);
 			if (!entry.flaggedBet && optionOf(row, FIELD.size) === null) {
 				setOn(row, FIELD.size, fields.size.id, option(fields.size, cells.size), cells.size);
 			}
@@ -581,15 +582,7 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 	for (const issue of input.rollover) {
 		const row = rows.get(issue);
 		if (row === undefined) continue;
-		if (weekOf(row) !== target.id) {
-			setOn(
-				row,
-				FIELD.week,
-				fields.week,
-				{_tag: "Iteration", iterationId: target.id},
-				target.title,
-			);
-		}
+		dateOn(row);
 		if (textOf(row, FIELD.rec) !== null) clear(row, FIELD.rec, fields.rec);
 	}
 
@@ -608,15 +601,7 @@ export const planPrep = (input: PrepInput): ReadonlyArray<PrepWrite> => {
 				check.section,
 			);
 		}
-		if (weekOf(row) !== target.id) {
-			setOn(
-				row,
-				FIELD.week,
-				fields.week,
-				{_tag: "Iteration", iterationId: target.id},
-				target.title,
-			);
-		}
+		dateOn(row);
 		if (textOf(row, FIELD.rec) !== check.rec) {
 			setOn(row, FIELD.rec, fields.rec, {_tag: "Text", text: check.rec}, `"${check.rec}"`);
 		}

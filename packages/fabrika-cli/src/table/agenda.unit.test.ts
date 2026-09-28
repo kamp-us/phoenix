@@ -22,6 +22,9 @@ import {
 } from "./agenda.ts";
 import type {Group} from "./group.ts";
 import type {Row} from "./sync.ts";
+import {parseTableDay, type TableDay} from "./table-day.ts";
+
+const NEXT = parseTableDay("2026-10-03") as TableDay;
 
 const issue = (number: number, over: Partial<ListedIssue> = {}): ListedIssue => ({
 	number,
@@ -76,7 +79,7 @@ describe("candidatesOf", () => {
 		rows: new Map(rows.map((row) => [row.issue, row] as const)),
 		followUps: [],
 		flagged: new Map(),
-		target: "it_next",
+		target: NEXT,
 		onCall: new Set<number>(),
 	});
 
@@ -139,7 +142,7 @@ describe("candidatesOf", () => {
 			issue: number,
 			values: [
 				cell("Section", {_tag: "Option", optionId: "s:Customers", name: "Customers"}),
-				cell("Week", {_tag: "Iteration", iterationId: "it_next", title: "Week 2"}),
+				cell("Table day", {_tag: "Date", date: NEXT}),
 				cell("Rec", {_tag: "Text", text: "yes."}),
 			],
 		});
@@ -233,12 +236,12 @@ describe("planPrep with an on-call board", () => {
 		size: select("Size", ["S", "M", "L"]),
 		rec: "F_rec",
 		plainWords: "F_plain",
-		week: "F_week",
+		tableDay: "F_day",
 	};
 	const plan = (over: Partial<PrepInput>) =>
 		planPrep({
 			fields: FIELDS,
-			target: {id: "it_next", title: "Week 2"},
+			target: NEXT,
 			rows: new Map(),
 			open: new Set(),
 			agenda: [],
