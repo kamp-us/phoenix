@@ -1,21 +1,21 @@
 /**
- * `table prep` — fill the next table's agenda, carry the running bets into its iteration, bring
- * the bets shipped long enough ago back as checks, and post the week's health as the project's
- * status update.
+ * `table prep` — fill the next table's agenda, carry the running bets to it, bring the bets shipped
+ * long enough ago back as checks, and post the week's health as the project's status update. Every
+ * row it touches is dated with the next table's day in the Table day field.
  *
  * Everything is read before anything is written: the rows and their lane records the way
- * `table flags` reads them, the Week iteration the next table day falls in, the status updates
- * already posted, the open board, and each check's evidence. Check comments post first, so a re-run
+ * `table flags` reads them, the status updates already posted, the open board, and each check's evidence. Check comments post first, so a re-run
  * after a later write fails still finds them and posts none twice. The row writes then run like
  * `table sync`'s: adds first, the rows re-read so each new item has an id, then the cells, then a
  * last read whose plan must be empty. The status update goes last, so it stands only over an agenda
  * that landed whole.
  *
- * **One prep per iteration.** The update names its iteration, and once one stands the agenda is
+ * **One prep per table.** The update names its table day, and once one stands the agenda is
  * closed: a second run adds no row, carries no bet and posts nothing. It still takes a `proposed`
  * row whose issue closed off the table, since that row must not reach the table.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ * @ruling https://github.com/kamp-us/phoenix/issues/9989
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -74,7 +74,6 @@ import {dueChecks} from "./check.ts";
 import {type CheckBoard, type GatheredCheck, gatherChecks} from "./check-read.ts";
 import {
 	CONFIG_MALFORMED,
-	NO_ITERATION,
 	NOT_SET_UP,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -96,12 +95,10 @@ import {type Group, groupOf, kindOf, membersOf} from "./group.ts";
 import {
 	flagCount,
 	healthOf,
-	healthWindow,
 	type OnCallHealth,
 	outsideOf,
 	postedFor,
 	renderHealth,
-	targetIteration,
 } from "./health.ts";
 import {
 	type OnCallFields,
@@ -121,12 +118,13 @@ import {
 	type SyncBoard,
 	syncBoard,
 } from "./sync-verb.ts";
+import {nextTableDay, weekBefore} from "./table-day.ts";
 
 const VERB = "table prep";
 
 /** Every board act the verb takes, passed in so the verb stays provable offline. */
 export interface PrepBoard<R>
-	extends Pick<FlagsBoard<R>, "locate" | "items" | "node" | "comments" | "week" | "deciders">,
+	extends Pick<FlagsBoard<R>, "locate" | "items" | "node" | "comments" | "deciders">,
 		Pick<SyncBoard<R>, "add" | "set" | "clear">,
 		CheckBoard<R> {
 	/** Post a comment on the issue: a check's evidence. */
@@ -198,22 +196,23 @@ export const prepFields = (project: ProjectSnapshot, settings: TableSettings): R
 	const size = select(FIELD.size, ["S", "M", "L"]);
 	const rec = text(FIELD.rec);
 	const plainWords = text(FIELD.plainWords);
-	const weekField = find(FIELD.week);
-	if (weekField?._tag !== "Iteration") lacking.push(`the iteration field ${FIELD.week}`);
+	const dayField = find(FIELD.tableDay);
+	const tableDay = dayField?._tag === "Plain" && dayField.dataType === "DATE" ? dayField.id : null;
+	if (tableDay === null) lacking.push(`the date field ${FIELD.tableDay}`);
 	if (
 		stage === null ||
 		section === null ||
 		size === null ||
 		rec === null ||
 		plainWords === null ||
-		weekField?._tag !== "Iteration" ||
+		tableDay === null ||
 		lacking.length > 0
 	) {
 		return {_tag: "Missing", what: lacking};
 	}
 	return {
 		_tag: "Resolved",
-		fields: {stage, section, size, rec, plainWords, week: weekField.id},
+		fields: {stage, section, size, rec, plainWords, tableDay},
 	};
 };
 
@@ -426,26 +425,14 @@ export const runPrep = <R>(
 			);
 		}
 
-		const history = yield* board.week(project.id);
-		if (history._tag !== "Ok") {
-			const failed = stopOn(VERB, history, `cannot read the ${FIELD.week} field`);
-			return refuse(failed.code, failed.reason);
-		}
-		const running = history.value?.running ?? [];
-		const target = targetIteration(running, table, now);
-		if (target === null) {
-			return refuse(
-				NO_ITERATION,
-				`${VERB}: the ${FIELD.week} field runs no iteration covering the next ${table.day} (${running.map((one) => `${one.title} from ${one.startDate}`).join(", ") || "it runs none"}) — add the coming weeks in the project's settings under ${FIELD.week}, then re-run. Prep does not add one: GitHub's API adds an iteration only by rewriting the whole list, which empties every row's ${FIELD.week}. Nothing was written.`,
-			);
-		}
+		const target = nextTableDay(table, now);
 
 		const updates = yield* board.statusUpdates(project.id);
 		if (updates._tag !== "Ok") {
 			const failed = stopOn(VERB, updates, "cannot read the project's status updates");
 			return refuse(failed.code, failed.reason);
 		}
-		const prepped = postedFor(updates.value, target.id);
+		const prepped = postedFor(updates.value, target);
 
 		const listing = yield* board.openIssues(repo);
 		if (listing._tag === "Failure") {
@@ -479,7 +466,7 @@ export const runPrep = <R>(
 			...(split?.rows.keys() ?? []),
 			...routedSet,
 		]);
-		const window = healthWindow(target);
+		const window = weekBefore(target, table.timeZone);
 		const onCallOpen =
 			split === null ? [] : onCallItemsOf(split.rows, open, routed, split.settings, now);
 
@@ -535,7 +522,7 @@ export const runPrep = <R>(
 				rows: heads.table,
 				followUps: followUps.value,
 				flagged,
-				target: target.id,
+				target,
 				onCall: routedSet,
 			});
 			triageFirst = sorted.triageFirst;
@@ -599,7 +586,7 @@ export const runPrep = <R>(
 		const converged = yield* converge(board, project, repo, heads.table, (rows) =>
 			planPrep({
 				fields: fields.fields,
-				target: {id: target.id, title: target.title},
+				target,
 				rows,
 				open: openSet,
 				agenda,
@@ -661,10 +648,10 @@ export const runPrep = <R>(
 				return refuse(failed.code, failed.reason);
 			}
 			const back = yield* board.statusUpdates(project.id);
-			if (back._tag !== "Ok" || !postedFor(back.value, target.id)) {
+			if (back._tag !== "Ok" || !postedFor(back.value, target)) {
 				return refuse(
 					READBACK_MISMATCH,
-					`${VERB}: posted the status update for ${target.title} and it does not read back among the project's updates — re-read the project before retrying, or a second update may post.`,
+					`${VERB}: posted the status update for the ${target} table and it does not read back among the project's updates — re-read the project before retrying, or a second update may post.`,
 				);
 			}
 			posted = true;
@@ -672,7 +659,7 @@ export const runPrep = <R>(
 
 		const rowsOut = prepped
 			? [...heads.table.values()]
-					.filter((row) => openSet.has(row.issue) && onAgenda(row, target.id))
+					.filter((row) => openSet.has(row.issue) && onAgenda(row, target))
 					.sort((a, b) => a.issue - b.issue)
 					.map((row) => ({
 						issue: row.issue,
@@ -695,10 +682,10 @@ export const runPrep = <R>(
 		const wrote = changes.length > 0 || onCallChanges.length > 0 || commented.length > 0 || posted;
 		const notes = [
 			`${VERB}: read ${settings.note}; ${sizes.note}${split === null ? "" : `; ${boards.note}`}.`,
-			`${VERB}: project #${project.number} "${project.title}" (${project.url}); preparing ${FIELD.week} ${target.title} (from ${target.startDate}).`,
+			`${VERB}: project #${project.number} "${project.title}" (${project.url}); preparing the ${table.day} ${target} table (${FIELD.tableDay}, read in ${table.timeZone}).`,
 			...(prepped
 				? [
-						`${VERB}: the status update for ${target.title} already stands, so its agenda is closed — no row added, no bet carried, nothing posted.`,
+						`${VERB}: the status update for the ${target} table already stands, so its agenda is closed — no row added, no bet carried, nothing posted.`,
 					]
 				: [
 						`${VERB}: ${rowsOut.length} agenda row(s) of ${table.agendaCap}${selection.overflow.length > 0 ? `; left for a later table: ${numbers(selection.overflow)}` : ""}.`,
@@ -709,7 +696,7 @@ export const runPrep = <R>(
 									`${VERB}: #${row.issue} is a ${kindOf(row.group)} row over ${membersOf(row.group).length === 0 ? "no open member" : numbers(membersOf(row.group))}.`,
 							),
 						...(rollover.length > 0
-							? [`${VERB}: carried into ${target.title}: ${numbers(rollover)}.`]
+							? [`${VERB}: carried to the ${target} table: ${numbers(rollover)}.`]
 							: []),
 					]),
 			...checks.map(
@@ -752,7 +739,7 @@ export const runPrep = <R>(
 					]),
 			...changes.map((change) => `${VERB}: ${change}.`),
 			...onCallChanges.map((change) => `${VERB}: ${change}.`),
-			...(posted ? [`${VERB}: posted the status update for ${target.title}.`] : []),
+			...(posted ? [`${VERB}: posted the status update for the ${target} table.`] : []),
 			...(wrote ? [] : [`${VERB}: nothing was written.`]),
 		];
 		return answer(
@@ -760,7 +747,7 @@ export const runPrep = <R>(
 				answer: wrote ? "prepped" : "unchanged",
 				repo,
 				project: {number: project.number, title: project.title, url: project.url},
-				iteration: {id: target.id, title: target.title, startDate: target.startDate},
+				tableDay: target,
 				agenda: rowsOut,
 				overflow: selection.overflow,
 				rollover: {
@@ -828,7 +815,6 @@ export const prepBoard: PrepBoard<
 	items: syncBoard.items,
 	node: syncBoard.node,
 	comments: syncBoard.comments,
-	week: flagsBoard.week,
 	deciders: flagsBoard.deciders,
 	add: syncBoard.add,
 	set: syncBoard.set,

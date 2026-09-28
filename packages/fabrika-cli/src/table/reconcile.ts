@@ -8,9 +8,11 @@
  * its type would drop every value it holds. A single-select field missing some of the table's
  * options, or holding one whose description differs from the table's, is drift, reported for a
  * person to fix: the API that edits options replaces the whole list, and a replace is one mistake
- * away from deleting options that carry values.
+ * away from deleting options that carry values. A field an older shape used — the Week iteration —
+ * is legacy: left exactly as it is, and named so a person knows it no longer drives the table.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ * @ruling https://github.com/kamp-us/phoenix/issues/9989
  */
 
 import type {FieldSpec, ProjectField, ProjectSnapshot, ViewLayout} from "../io/projects.ts";
@@ -44,12 +46,6 @@ export type Drift =
 			readonly _tag: "StaleDescriptions";
 			readonly field: string;
 			readonly options: ReadonlyArray<StaleDescription>;
-	  }
-	| {
-			readonly _tag: "IterationLength";
-			readonly field: string;
-			readonly days: number;
-			readonly wanted: number;
 	  };
 
 export interface StaleDescription {
@@ -64,10 +60,18 @@ export interface Conflict {
 	readonly found: string;
 }
 
+/** A field an older shape used, found on the project and left in place. */
+export interface Legacy {
+	readonly field: string;
+	/** Its type as the project reads it: `ITERATION` for the Week field. */
+	readonly kind: string;
+}
+
 export interface Plan {
 	readonly steps: ReadonlyArray<Step>;
 	readonly drift: ReadonlyArray<Drift>;
 	readonly conflicts: ReadonlyArray<Conflict>;
+	readonly legacy: ReadonlyArray<Legacy>;
 }
 
 const kindOf = (field: ProjectField): string =>
@@ -85,8 +89,8 @@ const matches = (spec: FieldSpec, field: ProjectField): boolean => {
 			return field._tag === "Plain" && field.dataType === "NUMBER";
 		case "SingleSelect":
 			return field._tag === "SingleSelect";
-		case "Iteration":
-			return field._tag === "Iteration";
+		case "Date":
+			return field._tag === "Plain" && field.dataType === "DATE";
 	}
 };
 
@@ -107,11 +111,6 @@ const fieldDrift = (spec: FieldSpec, field: ProjectField): ReadonlyArray<Drift> 
 			...(stale.length > 0
 				? [{_tag: "StaleDescriptions", field: spec.name, options: stale} as const]
 				: []),
-		];
-	}
-	if (spec._tag === "Iteration" && field._tag === "Iteration" && field.duration !== spec.duration) {
-		return [
-			{_tag: "IterationLength", field: spec.name, days: field.duration, wanted: spec.duration},
 		];
 	}
 	return [];
@@ -168,6 +167,11 @@ export const plan = (shape: TableShape, project: ProjectSnapshot): Plan => {
 		}
 	}
 
+	const legacy = shape.legacy.flatMap((name): ReadonlyArray<Legacy> => {
+		const found = project.fields.find((field) => field.name === name);
+		return found === undefined ? [] : [{field: name, kind: kindOf(found)}];
+	});
+
 	const readme = project.readme === shape.readme ? null : shape.readme;
 	const shortDescription =
 		project.shortDescription === shape.shortDescription ? null : shape.shortDescription;
@@ -175,7 +179,7 @@ export const plan = (shape: TableShape, project: ProjectSnapshot): Plan => {
 		steps.push({_tag: "UpdateProject", readme, shortDescription});
 	}
 
-	return {steps, drift, conflicts};
+	return {steps, drift, conflicts, legacy};
 };
 
 /** One line per step, as the verb reports what it changed. */
@@ -209,7 +213,8 @@ export const describeDrift = (drift: Drift): string => {
 			return `field ${drift.field} lacks the option(s) ${drift.options.map((name) => `"${name}"`).join(", ")} — add them by hand in the field's settings; setup never rewrites an existing field's options`;
 		case "StaleDescriptions":
 			return `field ${drift.field} describes ${drift.options.map((stale) => `option "${stale.option}" as "${stale.found}" where the table says "${stale.wanted}"`).join(", ")} — edit the description(s) by hand in the field's settings; setup never rewrites an existing field's options`;
-		case "IterationLength":
-			return `field ${drift.field} runs ${drift.days}-day iterations, the table's cadence wants ${drift.wanted} — change it by hand in the field's settings if that is not deliberate`;
 	}
 };
+
+export const describeLegacy = (legacy: Legacy): string =>
+	`field ${legacy.field} (${legacy.kind}) is legacy: the table no longer reads or writes it, and setup leaves it in place — \`fabrika table migrate-week\` copies its dates into Table day once`;

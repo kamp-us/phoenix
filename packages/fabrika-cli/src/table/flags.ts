@@ -87,7 +87,7 @@ export type ShareWeek =
 			readonly _tag: "Week";
 			readonly start: string;
 			readonly end: string;
-			/** Which table this is, counting from the first iteration: 1 for the first. */
+			/** Which table this is, counting the distinct Table day dates before it: 1 for the first. */
 			readonly table: number;
 			readonly fabrika: ReadonlySet<number>;
 	  }

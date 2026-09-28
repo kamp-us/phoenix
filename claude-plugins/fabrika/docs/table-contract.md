@@ -15,6 +15,16 @@ fix is `gh auth refresh -h github.com -s project`. `lane brief`, `lane record`, 
 pitch guard read the table too; with no `table` block in `.fabrika.jsonc` they carry on when that
 read fails.
 
+**A row's table is its Table day.** Every row the table dates carries its table's day, `YYYY-MM-DD`,
+in the `Table day` DATE field. Every week the verbs reason about is date math over that day: the
+next table is the `table.day` weekday on or after today, the table in force is the one on or before
+today, and a table's week is the 7 days that end where its day begins. Today is read in
+`table.timeZone` (default `UTC`), because GitHub reads a view's `@today` in the viewer's zone, not
+UTC: on a throwaway project at 2026-09-28T01:20Z, `table-day:@today` matched the row dated
+2026-09-27, the Pacific day. Set `table.timeZone` to the zone the people at the table use, or on a
+Saturday evening in California prep dates rows for the next Saturday while the Agenda view still
+shows today's table. No week needs setting up ahead: a date field holds any day.
+
 ## Readers outside the group
 
 Four callers outside this group read the table. Any `table` block in `.fabrika.jsonc`, even one that
@@ -46,16 +56,28 @@ another.
 
 - the fields Stage, Section, Size, Spent $, Asks, Origin, Rec, In plain words and Outcome (worked,
   didn't, can't tell — a person's answer to a check);
-- the Week iteration field, created with its first 12 weeks from the most recent table day, so a
-  `table prep` right after finds the next table's week;
-- the views Agenda, Outside the bets, Lanes, Group members and Inbox (filter `is:open no:label`),
-  with their filters and visible fields;
+- the `Table day` DATE field;
+- the views Agenda (filter `table-day:@today..@today+6d has:section -section:"Outside the bets"
+  has:rec`, grouped by Section), Outside the bets, Lanes (a board in columns by Stage), Group members
+  and Inbox (filter `is:open no:label`), with their filters and visible fields;
 - the README explaining the table and every column.
+
+**Views are created over REST.** A missing view is created through
+`POST /orgs/{login}/projectsV2/{number}/views` (or `/users/{login}/…` for a user's project), because
+only REST takes a grouping on create: Agenda's `group_by` is Section and Lanes'
+`vertical_group_by` is Stage. REST names fields by their numeric `databaseId`, which setup reads
+with each field. A user's path takes the login; the numeric user id answers 404. A view that already
+stands keeps the grouping it has: setup aligns its layout, filter and visible fields and never
+regroups, recreates or deletes it.
 
 It never deletes or renames anything and never rewrites an existing field's options. It reports as
 drift instead an option a field lacks, or one whose description differs from the table's, so a
 changed `appetiteSizes` rewrites the README and names each stale Size option for a person to edit.
 Idempotent: a project already in shape answers `unchanged` with nothing written.
+
+**The legacy Week field.** A table set up before Table day has a `Week` iteration field. Setup
+leaves it exactly as it is and names it under `legacy`; the table no longer reads or writes it.
+`table migrate-week` copies its dates into Table day once.
 
 **The on-call board.** With a `boards.onCall` block it then does the same for the on-call board: the
 open project titled `<repo name> on-call` (or `boards.onCall.project`), with a Response target field
@@ -63,11 +85,11 @@ open project titled `<repo name> on-call` (or `boards.onCall.project`), with a R
 field, a Queue view (`is:open`) and a README. With no `boards` block it touches one project and its
 answer carries no `onCall` key.
 
-stdout is `{"answer":"created"|"reconciled"|"unchanged","repo":"…","project":{"number":n,"title":"…","url":"…"},"changes":[…],"drift":[…],"manualSteps":[…],"onCall":{"answer":…,"project":{…},"changes":[…],"drift":[…],"manualSteps":[]}}`,
-with `onCall` only under a `boards` block. stderr repeats the three manual steps GitHub's API cannot
-take, which the README's by-hand section also lists: set the Agenda view's grouping to Section and
-the Lanes board's columns to Stage; turn on the "Auto-add to project" workflow with filter
-`is:issue is:open no:label`; and add the coming weeks under Week before the 12 planned ones run out.
+stdout is `{"answer":"created"|"reconciled"|"unchanged","repo":"…","project":{"number":n,"title":"…","url":"…"},"changes":[…],"drift":[…],"legacy":[…],"manualSteps":[…],"onCall":{"answer":…,"project":{…},"changes":[…],"drift":[…],"legacy":[],"manualSteps":[]}}`,
+with `onCall` only under a `boards` block. stderr repeats the two manual steps, which the README's
+by-hand section also lists: on an Agenda or Lanes view that stood before setup, set its grouping by
+hand (Group by Section, Column by Stage); and turn on the "Auto-add to project" workflow with filter
+`is:issue is:open no:label`, which GitHub's API cannot create.
 
 ### Exit status
 
@@ -155,8 +177,10 @@ set `.github/CODEOWNERS` names. The bet stands as set.
 - `campaigns` — ROADMAP's `## Campaigns` table has more `active` rows than
   `table.activeCampaignFlag`.
 - `fabrika-share` — lanes on issues carrying a `table.fabrikaShare.labels` label took more of the
-  current Week iteration's spend than `table.fabrikaShare.percent` for the first `forTables` tables,
-  then `thenPercent`.
+  spend in the 7 days ending at the next table day than `table.fabrikaShare.percent` for the first
+  `forTables` tables, then `thenPercent`. Which table that is counts the distinct Table day dates on
+  the board before it, plus one: a count needs no config and survives the migration, whose rows
+  carry their old weeks' dates.
 
 **The on-call board.** With a `boards.onCall` block the whole-table run also reads the on-call
 board:
@@ -164,11 +188,11 @@ board:
 - `past-target` — per open on-call item whose Response target was set longer ago than the `hours` of
   that target (the target is set when the item arrives, so the wait counts from arrival), carrying
   `issue`.
-- `on-call-share` — lanes on issues on the on-call board took more of the spend in the current Week
-  iteration than `boards.onCall.spendShare` percent.
+- `on-call-share` — lanes on issues on the on-call board took more of the spend in the same 7 days
+  than `boards.onCall.spendShare` percent.
 
 A check it could not answer — a lane unmeasured, a set or roadmap that would not read, no label
-declared, no current iteration, an on-call board that would not read, an item with no target or one
+declared, an on-call board that would not read, an item with no target or one
 the config no longer names — is named under `unread`, never passed.
 
 stdout is `{"answer":"flagged"|"clear","repo":"…","project":{"number":n,"title":"…","url":"…"},"scope":"table"|"issues","rows":[n…],"flags":[{"flag":"over-size"|"asks"|"stuck"|"unknown-decider"|"campaigns"|"fabrika-share"|"past-target"|"on-call-share",…,"rec":"…"}],"unread":[{"check":"…","issue":n|null,"reason":"…"}]}`;
@@ -185,10 +209,9 @@ row flags carry `head`, `group` (`epic`|`chain`|`null`) and `covers`.
 
 ## table prep
 
-Run before each table. It prepares the Week iteration the next table day (`table.day`) falls in,
-which must already exist. `table setup` creates the Week field with its first 12 weeks; after those
-run out, add the coming weeks under the Week field in the project's settings, because GitHub's API
-adds an iteration only by rewriting the whole list, which empties every row's Week.
+Run before each table. It prepares the next table: the `table.day` weekday on or after today in
+`table.timeZone`. Every row it writes is dated with that day in Table day, so nothing needs setting
+up ahead of it.
 
 **Agenda.** It proposes up to `table.agendaCap` rows (25 by default) in `table.sections` order, each
 a real, open issue, never a draft:
@@ -200,7 +223,7 @@ a real, open issue, never a draft:
 
 A row already `bet`, `not now`, `in lane`, `shipped` or `check` is never proposed again, except a
 flagged running bet, which moves to Tails with its Stage and Size untouched. Each proposed row gets
-Stage `proposed`, its Section, the Week, a Size (only when unset: an epic is L, otherwise the
+Stage `proposed`, its Section, the table's Table day, a Size (only when unset: an epic is L, otherwise the
 smallest size covering its issues' pitch sizes, an unpitched issue counting as S), a Rec and an In
 plain words line — the issue's `## In plain words` summary, else its title.
 
@@ -215,12 +238,12 @@ An untriaged Customers report (`status:needs-triage` or no label) is never propo
 under `triageFirst` for the driver to triage and proposed on the next run, and one on
 `status:needs-info` is listed there marked waiting on filer.
 
-**Rollover.** Every other open `bet` row moves to the Week with its Rec cleared, so it continues
+**Rollover.** Every other open `bet` row is dated the next table with its Rec cleared, so it continues
 without an agenda row. A `proposed` row whose issue has closed is taken off the project.
 
 **Checks.** A bet — a row whose Origin reads `bet` — whose Stage has read `shipped` for
 `table.checkDelayDays` days (14 by default, timed from the Stage value's last change) moves to Stage
-`check` under the first agenda section, in the Week, with a Rec asking "did it work?" and an In plain
+`check` under the first agenda section, dated the next table, with a Rec asking "did it work?" and an In plain
 words line, whatever its issue's state, and outside the agenda cap. A shipped row whose Origin is
 anything else, such as an Outside the bets row sync moved to `shipped`, keeps its Stage and Section
 and gets no comment. Its evidence is posted once as a comment on the issue:
@@ -240,12 +263,14 @@ and gets no comment. Its evidence is posted once as a comment on the issue:
 A person answers on the Outcome field; prep never writes it and never re-asks a `check` row.
 
 **Health.** It then posts one project status update: land rate, stale lanes, spend and the share of
-lanes that needed a founder over the week before the iteration; the Outside the bets tally (running
+lanes that needed a founder over the 7 days before the table day; the Outside the bets tally (running
 un-bet lanes, their origins and cost); the bets continuing; and the Inbox count (open issues with no
 labels). It reads `AT_RISK` while a row flag stands or any flag check could not be read — each such
 check is named under "Could not check", and an on-call past-target count it could not read is said
-in words, never as a number — else `ON_TRACK`. The update names its iteration; once it stands, a
-re-run adds no row, carries nothing and posts nothing, and only takes closed `proposed` rows off.
+in words, never as a number — else `ON_TRACK`. The update names its table day in a
+`<!-- fabrika:table-health table-day=YYYY-MM-DD -->` marker; once one stands for that day, a re-run
+adds no row, carries nothing and posts nothing, and only takes closed `proposed` rows off. A row
+already dated that day is left as it reads, so a re-run writes no Table day.
 
 **On-call.** With a `boards.onCall` block, every open issue `boards.onCall.route` sends to on-call
 (the Origin on its table row, else `customer` when its filer only uses the product; any `type:` in
@@ -253,16 +278,18 @@ re-run adds no row, carries nothing and posts nothing, and only takes closed `pr
 `check`, or a shipped bet this run brings back as a check — is never proposed at the table. It is
 added to the on-call board (`table setup` must have made it) in issue order, with its Response target
 set once, while unset, to the first `responseTargets.byLabel` target whose labels it carries, else
-`otherwise`, and its In plain words line. This runs on every prep, the second one in an iteration
+`otherwise`, and its In plain words line. This runs on every prep, the second one for a table
 included. Its issues are left out of the Outside the bets tally, and the status update gains one
 On-call section: open items, how many are past their target, and the share of the spend that week
 that went to on-call, against `boards.onCall.spendShare`. An item past its target or spend over the
 share makes the update `AT_RISK`.
 
-The Agenda view shows this Week's rows with a Section and a Rec, open or closed so a check shows, so
-run `table setup` once to align its filter.
+The Agenda view shows the rows dated today through six days on (`table-day:@today..@today+6d`),
+which is the next table's, with a Section and a Rec, open or closed so a check shows. `@current`
+matches only iteration fields, so a date needs the range. Run `table setup` once to align the filter
+of an Agenda view that stood before.
 
-stdout is `{"answer":"prepped"|"unchanged","repo":"…","project":{…},"iteration":{"id":"…","title":"…","startDate":"…"},"agenda":[{"issue":n,"section":"…","kind":"epic"|"chain"|null,"members":[n…],"size":"…","rec":"…","plainWords":"…"}],"overflow":[n…],"rollover":{"continuing":[n…],"flagged":[n…]},"removed":[n…],"checks":[{"issue":n,"shippedAt":"…","success":"…"|null,"signals":{"prs":[n…],"mentions":[…],"reverts":[…],"reopened":[n…],"followUps":[n…]},"fabrika":{…}|null,"sources":[…],"rec":"…","comment":"posted"|"standing"}],"triageFirst":[{"issue":n,"waitingOnFiler":bool}],"outside":{"count":n,"kinds":{…},"spentUsd":n,"unmeasured":n},"health":{"posted":bool,"alreadyPosted":bool,…},"changes":[…],"onCall":{"project":{…},"items":[{"issue":n,"target":"…"|null}],"pastTarget":[n…],"spend":{"_tag":"Measured","percent":n,"onCallUsd":n,"totalUsd":n}|{"_tag":"Unmeasured","lanes":n}|{"_tag":"Nothing"},"share":n,"changes":[…]}}`,
+stdout is `{"answer":"prepped"|"unchanged","repo":"…","project":{…},"tableDay":"YYYY-MM-DD","agenda":[{"issue":n,"section":"…","kind":"epic"|"chain"|null,"members":[n…],"size":"…","rec":"…","plainWords":"…"}],"overflow":[n…],"rollover":{"continuing":[n…],"flagged":[n…]},"removed":[n…],"checks":[{"issue":n,"shippedAt":"…","success":"…"|null,"signals":{"prs":[n…],"mentions":[…],"reverts":[…],"reopened":[n…],"followUps":[n…]},"fabrika":{…}|null,"sources":[…],"rec":"…","comment":"posted"|"standing"}],"triageFirst":[{"issue":n,"waitingOnFiler":bool}],"outside":{"count":n,"kinds":{…},"spentUsd":n,"unmeasured":n},"health":{"posted":bool,"alreadyPosted":bool,…},"changes":[…],"onCall":{"project":{…},"items":[{"issue":n,"target":"…"|null}],"pastTarget":[n…],"spend":{"_tag":"Measured","percent":n,"onCallUsd":n,"totalUsd":n}|{"_tag":"Unmeasured","lanes":n}|{"_tag":"Nothing"},"share":n,"changes":[…]}}`,
 with `onCall` only under a `boards` block.
 
 ### Exit status
@@ -275,7 +302,32 @@ with `onCall` only under a `boards` block.
 - `12` — the `table`, `appetiteSizes` or `boards` block in `.fabrika.jsonc` does not decode.
 - `20` — the token lacks the `project` scope.
 - `22` — two open projects carry the table's title. Set `table.project.number`.
-- `23` — the table or the on-call board lacks a field or option prep writes. Run `table setup`.
+- `23` — the table or the on-call board lacks a field or option prep writes, the Table day field
+  included. Run `table setup`.
 - `24` — an issue carries a lane record that does not read.
-- `25` — no Week iteration covers the next table day. Add the coming weeks in the project's
-  settings.
+
+## table migrate-week
+
+Run once, on a table set up with the `Week` iteration field, after `table setup` has added Table
+day. It dates every row whose Week cell names an iteration and whose Table day is empty with that
+iteration's start date: an iteration starts on its table's day, so the start is the row's table. A
+row already dated is left as it is, since prep or a person dated it after Week stopped mattering, so
+a second run writes nothing. A row in an iteration the field no longer lists is left undated and
+named under `unresolved`.
+
+It reads the Week field and each item, and its only write is an item's Table day value. It never
+writes an iteration field: GitHub's API changes one only by rewriting its whole iteration list,
+which empties every row's Week. A table with no Week field answers `unchanged`.
+
+stdout is `{"answer":"migrated"|"unchanged","repo":"…","project":{"number":n,"title":"…","url":"…"},"dated":[{"issue":n|null,"tableDay":"YYYY-MM-DD"}],"unresolved":[{"issue":n|null,"iteration":"…"}]}`.
+
+### Exit status
+
+- `7` — no table project. Run `table setup`.
+- `8` — a write did not land. UNKNOWN; re-run to finish.
+- `9` — a row dated this run does not read back dated.
+- `11` — the project, its Week field or its items could not be read. UNKNOWN.
+- `12` — the `table` block in `.fabrika.jsonc` does not decode.
+- `20` — the token lacks the `project` scope.
+- `22` — two open projects carry the table's title. Set `table.project.number`.
+- `23` — the project has no Table day date field. Run `table setup`.

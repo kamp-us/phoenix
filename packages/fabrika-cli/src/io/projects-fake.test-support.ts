@@ -3,7 +3,8 @@
  * production path runs on — the same seam `fakeHttp` replaces — so a test drives the real client.
  *
  * It answers the operations `./projects.ts` sends, by operation name, in the response shapes GitHub
- * answers them with (recorded off a live project; see `./projects.unit.test.ts`), and it keeps state:
+ * answers them with (recorded off a live project; see `./projects.unit.test.ts`), plus the one REST
+ * edge, `POST /{orgs|users}/{login}/projectsV2/{number}/views`, and it keeps state:
  * a mutation changes what the next read returns. That is what lets a test prove a second `table
  * setup` writes nothing, which a fixed script of replies cannot.
  */
@@ -23,6 +24,8 @@ export interface FakeOption {
 
 export interface FakeField {
 	id: string;
+	/** The numeric id REST names the field by; derived from `id` when a fixture leaves it out. */
+	databaseId?: number;
 	name: string;
 	dataType: string;
 	options?: FakeOption[];
@@ -38,12 +41,17 @@ export interface FakeView {
 	layout: string;
 	filter: string | null;
 	fieldIds: string[];
+	/** The field ids a created view groups rows by, and those its board columns are by. */
+	groupBy?: string[];
+	verticalGroupBy?: string[];
 }
 
 export interface FakeProject {
 	id: string;
 	number: number;
 	owner: string;
+	/** Who `owner` is; an organization when a fixture leaves it out. */
+	ownerKind?: "Organization" | "User";
 	title: string;
 	closed: boolean;
 	linked: boolean;
@@ -80,6 +88,8 @@ export interface FakeProjects {
 	readonly operations: ReadonlyArray<string>;
 	/** The variables each operation carried, aligned with {@link FakeProjects.operations}. */
 	readonly variables: ReadonlyArray<Record<string, unknown>>;
+	/** The GraphQL document or `METHOD path` of each request, aligned with {@link FakeProjects.operations}. */
+	readonly requests: ReadonlyArray<string>;
 	readonly projects: ReadonlyArray<FakeProject>;
 }
 
@@ -150,11 +160,26 @@ export const blankProject = (
 	...overrides,
 });
 
+/** A stable positive 31-bit number off a node id: FNV-1a, so two fixture fields never share one by accident. */
+const derivedDatabaseId = (id: string): number => {
+	let hash = 0x811c9dc5;
+	for (const char of id) {
+		hash ^= char.charCodeAt(0);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return (hash >>> 1) + 1;
+};
+
+export const fakeDatabaseId = (field: FakeField): number =>
+	field.databaseId ?? derivedDatabaseId(field.id);
+
 const fieldJson = (field: FakeField): Record<string, unknown> => {
+	const databaseId = fakeDatabaseId(field);
 	if (field.dataType === "SINGLE_SELECT") {
 		return {
 			__typename: "ProjectV2SingleSelectField",
 			id: field.id,
+			databaseId,
 			name: field.name,
 			dataType: field.dataType,
 			options: field.options ?? [],
@@ -164,19 +189,27 @@ const fieldJson = (field: FakeField): Record<string, unknown> => {
 		return {
 			__typename: "ProjectV2IterationField",
 			id: field.id,
+			databaseId,
 			name: field.name,
 			dataType: field.dataType,
 			configuration: field.iteration,
 		};
 	}
-	return {__typename: "ProjectV2Field", id: field.id, name: field.name, dataType: field.dataType};
+	return {
+		__typename: "ProjectV2Field",
+		id: field.id,
+		databaseId,
+		name: field.name,
+		dataType: field.dataType,
+	};
 };
 
 const projectJson = (project: FakeProject): Record<string, unknown> => ({
 	id: project.id,
 	number: project.number,
-	url: `https://github.com/orgs/${project.owner}/projects/${project.number}`,
+	url: `https://github.com/${project.ownerKind === "User" ? "users" : "orgs"}/${project.owner}/projects/${project.number}`,
 	title: project.title,
+	owner: {__typename: project.ownerKind ?? "Organization", login: project.owner},
 	shortDescription: project.shortDescription,
 	readme: project.readme,
 	fields: {pageInfo: {hasNextPage: false}, nodes: project.fields.map(fieldJson)},
@@ -265,6 +298,7 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 	);
 	const operations: string[] = [];
 	const variables: Array<Record<string, unknown>> = [];
+	const requests: string[] = [];
 	let minted = 0;
 	const mint = (prefix: string): string => `${prefix}_${++minted}`;
 	const byId = (id: unknown) => projects.find((project) => project.id === id);
@@ -405,24 +439,6 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 				project.fields.push(field);
 				return {data: {createProjectV2Field: {projectV2Field: {id: field.id}}}};
 			}
-			case "TableCreateView": {
-				const project = byId(input.projectId);
-				if (project === undefined)
-					return {data: null, errors: [{type: "NOT_FOUND", message: "no project"}]};
-				const configuration = isRecord(input.configuration) ? input.configuration : {};
-				const view: FakeView = {
-					id: mint("PVTV"),
-					number: Math.max(0, ...project.views.map((one) => one.number)) + 1,
-					name: String(input.name),
-					layout: String(input.layout),
-					filter: null,
-					fieldIds: Array.isArray(configuration.visibleFieldIds)
-						? configuration.visibleFieldIds.map(String)
-						: [project.fields[0]?.id ?? ""],
-				};
-				project.views.push(view);
-				return {data: {createProjectV2View: {projectV2View: {id: view.id}}}};
-			}
 			case "TableUpdateView": {
 				const view = projects
 					.flatMap((project) => project.views)
@@ -471,21 +487,13 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 						const option = field?.options?.find((one) => one.id === raw.singleSelectOptionId);
 						return option === undefined ? null : {name: option.name};
 					}
-					return typeof raw.iterationId === "string" ? {iterationId: raw.iterationId} : null;
+					return typeof raw.date === "string" && field?.dataType === "DATE"
+						? {date: raw.date}
+						: null;
 				};
-				const week = named(vars.week);
 				return {
 					data: {
 						node: {
-							weekField:
-								week === undefined
-									? null
-									: week.dataType === "ITERATION"
-										? {
-												__typename: "ProjectV2IterationField",
-												configuration: {iterations: week.iterations ?? []},
-											}
-										: {__typename: "ProjectV2Field"},
 							items: {
 								pageInfo: {hasNextPage: false, endCursor: null},
 								nodes: project.items.map((item) => ({
@@ -496,7 +504,7 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 											: {__typename: "Issue", number: item.number},
 									stage: cell(item.values, vars.stage),
 									section: cell(item.values, vars.section),
-									week: cell(item.values, vars.week),
+									tableDay: cell(item.values, vars.tableDay),
 								})),
 							},
 						},
@@ -604,14 +612,84 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 		}
 	};
 
+	/** `POST /{orgs|users}/{login}/projectsV2/{number}/views`, answered as GitHub's REST API does. */
+	const createViewRest = (
+		path: string,
+		body: Record<string, unknown>,
+	): {status: number; body: Record<string, unknown>} => {
+		const match = /\/(orgs|users)\/([^/]+)\/projectsV2\/(\d+)\/views$/.exec(path);
+		const kind = match?.[1] === "users" ? "User" : "Organization";
+		const project = projects.find(
+			(one) =>
+				match !== null &&
+				one.owner === match[2] &&
+				(one.ownerKind ?? "Organization") === kind &&
+				one.number === Number(match[3]),
+		);
+		if (project === undefined) return {status: 404, body: {message: "Not Found"}};
+		const byNumber = (raw: unknown): string | undefined =>
+			project.fields.find((field) => fakeDatabaseId(field) === raw)?.id;
+		const ids = (raw: unknown): string[] =>
+			(Array.isArray(raw) ? raw : []).flatMap((one) => {
+				const id = byNumber(one);
+				return id === undefined ? [] : [id];
+			});
+		const layout = body.layout === "board" ? "BOARD_LAYOUT" : "TABLE_LAYOUT";
+		const view: FakeView = {
+			id: mint("PVTV"),
+			number: Math.max(0, ...project.views.map((one) => one.number)) + 1,
+			name: String(body.name),
+			layout,
+			filter: typeof body.filter === "string" ? body.filter : null,
+			fieldIds: ids(body.visible_fields),
+			groupBy: ids(body.group_by),
+			verticalGroupBy: ids(body.vertical_group_by),
+		};
+		project.views.push(view);
+		return {
+			status: 201,
+			body: {
+				id: view.number * 1000,
+				node_id: view.id,
+				number: view.number,
+				name: view.name,
+				layout: body.layout,
+				filter: view.filter,
+				visible_fields: body.visible_fields ?? [],
+				group_by: body.group_by ?? [],
+				vertical_group_by: body.vertical_group_by ?? [],
+			},
+		};
+	};
+
 	const layer = Layer.succeed(HttpClient.HttpClient)(
 		HttpClient.make((request) => {
+			const url = new URL(request.url);
+			if (url.pathname !== "/graphql") {
+				const body: unknown = JSON.parse(requestBody(request.body) || "{}");
+				operations.push(`REST ${request.method} views`);
+				variables.push(isRecord(body) ? body : {});
+				requests.push(`${request.method} ${url.pathname}`);
+				const headers: Record<string, string> = {"content-type": "application/json"};
+				if (options.scopes !== undefined) headers["x-oauth-scopes"] = options.scopes;
+				const answered =
+					request.method === "POST" && isRecord(body)
+						? createViewRest(url.pathname, body)
+						: {status: 404, body: {message: "Not Found"}};
+				return Effect.succeed(
+					HttpClientResponse.fromWeb(
+						request,
+						new Response(JSON.stringify(answered.body), {status: answered.status, headers}),
+					),
+				);
+			}
 			const parsed: unknown = JSON.parse(requestBody(request.body));
 			const query = isRecord(parsed) && typeof parsed.query === "string" ? parsed.query : "";
 			const vars = isRecord(parsed) && isRecord(parsed.variables) ? parsed.variables : {};
 			const operation = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "anonymous";
 			operations.push(operation);
 			variables.push(vars);
+			requests.push(query);
 			const headers: Record<string, string> = {"content-type": "application/json"};
 			if (options.scopes !== undefined) headers["x-oauth-scopes"] = options.scopes;
 			const scopeRefusal =
@@ -638,5 +716,5 @@ export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects =>
 		}),
 	);
 
-	return {layer, operations, variables, projects};
+	return {layer, operations, variables, requests, projects};
 };

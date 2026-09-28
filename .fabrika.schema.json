@@ -736,7 +736,7 @@
 						"biweekly",
 						"on-demand"
 					],
-					"description": "How often the table meets. Default weekly. The project's iteration field runs 7 days for weekly and on-demand, 14 for biweekly."
+					"description": "How often the table meets. Default weekly. Every row is dated by its Table day, the `day` weekday; the cadence words the README."
 				},
 				"day": {
 					"type": "string",
@@ -749,7 +749,12 @@
 						"friday",
 						"saturday"
 					],
-					"description": "The weekday the table meets and each iteration starts. Default monday."
+					"description": "The weekday the table meets: every row's Table day falls on it. Default monday."
+				},
+				"timeZone": {
+					"type": "string",
+					"minLength": 1,
+					"description": "The IANA time zone the table reads today in, e.g. America/Los_Angeles. Default UTC. Set it to the zone the people at the table use: GitHub reads the Agenda view's `@today` in theirs, so fabrika's next table matches the view only in the same zone."
 				},
 				"sections": {
 					"type": "array",

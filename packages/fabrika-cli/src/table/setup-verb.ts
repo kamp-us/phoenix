@@ -10,7 +10,11 @@
  * is still named in that refusal, so a re-run after the conflict is fixed finds it rather than creating a
  * second one.
  *
+ * A missing view is created over REST with its grouping, since GraphQL's view input takes none. A view
+ * that already stands keeps the grouping it has.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ * @ruling https://github.com/kamp-us/phoenix/issues/9989
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -26,6 +30,7 @@ import {
 	createProject,
 	createView,
 	linkProject,
+	type NewViewGrouping,
 	type ProjectRef,
 	type ProjectSnapshot,
 	type ProjectsAnswer,
@@ -50,14 +55,26 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {onCallBoard, onCallShape} from "./on-call.ts";
-import {describeDrift, describeStep, type Plan, plan, type Step} from "./reconcile.ts";
-import {type BoardTarget, productBoard, type TableShape, tableShape} from "./shape.ts";
+import {
+	describeDrift,
+	describeLegacy,
+	describeStep,
+	type Plan,
+	plan,
+	type Step,
+} from "./reconcile.ts";
+import {
+	type BoardTarget,
+	productBoard,
+	type TableShape,
+	tableShape,
+	type ViewGrouping,
+} from "./shape.ts";
 
 export interface SetupOptions {
 	readonly repo: string | null;
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
-	readonly now: () => Date;
 }
 
 const VERB = "table setup";
@@ -75,6 +92,7 @@ type Run =
 			readonly project: ProjectSnapshot;
 			readonly changes: ReadonlyArray<string>;
 			readonly drift: ReadonlyArray<string>;
+			readonly legacy: ReadonlyArray<string>;
 			readonly manualSteps: ReadonlyArray<string>;
 	  }
 	| {readonly _tag: "Refused"; readonly code: number; readonly reason: string};
@@ -203,6 +221,16 @@ const locate = (
 		return {_tag: "Located", origin: "created", project: read.value};
 	});
 
+/** A grouping by field name, resolved to the numeric id REST takes; `null` when the field is absent. */
+const groupingOf = (
+	grouping: ViewGrouping,
+	databaseIdOf: ReadonlyMap<string, number>,
+): NewViewGrouping | null => {
+	if (grouping._tag === "None") return grouping;
+	const fieldId = databaseIdOf.get(grouping.field);
+	return fieldId === undefined ? null : {_tag: grouping._tag, fieldId};
+};
+
 /** Apply one step against the project as it now reads; `null` is success. */
 const apply = (
 	token: string,
@@ -210,30 +238,33 @@ const apply = (
 	step: Step,
 ): Api<Exclude<ProjectsAnswer<unknown>, {_tag: "Ok"}> | null> =>
 	Effect.gen(function* () {
-		const idOf = new Map(project.fields.map((field) => [field.name, field.id] as const));
-		const visible = (names: ReadonlyArray<string>) =>
-			names.flatMap((name) => {
-				const id = idOf.get(name);
-				return id === undefined ? [] : [id];
-			});
 		switch (step._tag) {
 			case "CreateField": {
 				const done = yield* createField(token, project.id, step.spec);
 				return done._tag === "Ok" ? null : done;
 			}
 			case "CreateView": {
-				const visibleFieldIds = visible(step.view.fields);
-				const made = yield* createView(token, project.id, {
+				const databaseIdOf = new Map(
+					project.fields.map((field) => [field.name, field.databaseId] as const),
+				);
+				const grouping = groupingOf(step.view.grouping, databaseIdOf);
+				if (grouping === null) {
+					return {
+						_tag: "Failed",
+						reason: `the view ${step.view.name} groups by a field the project does not have`,
+					};
+				}
+				const made = yield* createView(token, project, {
 					name: step.view.name,
 					layout: step.view.layout,
-					visibleFieldIds,
-				});
-				if (made._tag !== "Ok") return made;
-				const aligned = yield* updateView(token, made.value, {
 					filter: step.view.filter,
-					visibleFieldIds,
+					visibleFields: step.view.fields.flatMap((name) => {
+						const id = databaseIdOf.get(name);
+						return id === undefined ? [] : [id];
+					}),
+					grouping,
 				});
-				return aligned._tag === "Ok" ? null : aligned;
+				return made._tag === "Ok" ? null : made;
 			}
 			case "UpdateView": {
 				const done = yield* updateView(token, step.viewId, {
@@ -359,6 +390,7 @@ const converge = (
 			project: final.project,
 			changes: landed,
 			drift: settled.drift.map(describeDrift),
+			legacy: settled.legacy.map(describeLegacy),
 			manualSteps: shape.manualSteps,
 		};
 	});
@@ -394,7 +426,6 @@ export const runSetup = (
 		const repo = resolved.value;
 
 		const table = settings.value;
-		const now = options.now();
 		const run = yield* withProjects<Runs>((token) =>
 			Effect.gen(function* () {
 				const node = yield* readRepository(token, repo);
@@ -409,7 +440,7 @@ export const runSetup = (
 					repo,
 					node.value,
 					productBoard(repo, table),
-					(title) => tableShape(table, sizes.value, repo, title, now),
+					(title) => tableShape(table, sizes.value, repo, title),
 				);
 				if (product._tag === "Refused" || boards.value._tag === "One") {
 					return ran({product, onCall: null});
@@ -469,6 +500,7 @@ const summaryOf = (done: Done) => ({
 	project: {number: done.project.number, title: done.project.title, url: done.project.url},
 	changes: done.changes,
 	drift: done.drift,
+	legacy: done.legacy,
 	manualSteps: done.manualSteps,
 });
 
@@ -478,5 +510,6 @@ const notesOf = (done: Done, repo: string, board: string): ReadonlyArray<string>
 		? done.changes.map((change) => `${VERB}: ${change}.`)
 		: [`${VERB}: the project already has ${board}'s shape; nothing was written.`]),
 	...done.drift.map((drift) => `${VERB}: drift: ${drift}.`),
+	...done.legacy.map((legacy) => `${VERB}: legacy: ${legacy}.`),
 	...done.manualSteps.map((step, index) => `${VERB}: manual step ${index + 1}: ${step}`),
 ];

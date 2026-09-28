@@ -9,7 +9,11 @@
  * Naming issues narrows the run to the rows they reach, and then the table-wide checks are not asked,
  * because a campaign count and a share of the week's spend are facts about the whole table.
  *
+ * The week the shares are judged over is the 7 days that end at the next table day — the week that
+ * table looks back on — and which table it is counts the distinct Table day dates before it.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ * @ruling https://github.com/kamp-us/phoenix/issues/9989
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -23,16 +27,12 @@ import {readKey} from "../config/read-key.ts";
 import {exists, readFile} from "../io/fs.ts";
 import {type Attempt, fail, ok} from "../io/git.ts";
 import {getIssue, type ListedIssue, listOpenIssueFacts, resolveRepo} from "../io/issues.ts";
-import {
-	type IterationHistory,
-	type ProjectsAnswer,
-	readIterationHistory,
-	withProjects,
-} from "../io/projects.ts";
+import {withProjects} from "../io/projects.ts";
 import {controlPlaneRoster} from "../ship/roster.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import type {LaneRecord} from "../wire/lane-record.ts";
-import {BET_STAGE, currentIteration} from "./bets.ts";
+import {tableDayOf} from "./agenda.ts";
+import {BET_STAGE} from "./bets.ts";
 import {CONFIG_MALFORMED, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
 	type Campaigns,
@@ -48,19 +48,21 @@ import {
 } from "./flags.ts";
 import {readHeads} from "./flags-read.ts";
 import {onCallItemsOf, readOnCall} from "./on-call-prep.ts";
-import {FIELD} from "./shape.ts";
+import type {Row} from "./sync.ts";
 import {locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
+import {
+	nextTableDay,
+	parseTableDay,
+	type TableClock,
+	type TableDay,
+	tableNumber,
+	weekBefore,
+} from "./table-day.ts";
 
 const VERB = "table flags";
 
-const DAY_MS = 86_400_000;
-
 /** Every read the verb makes, passed in so it stays provable offline. */
 export interface FlagsBoard<R> extends TableBoard<R> {
-	/** The Week field's running and finished iterations; `null` when the project has none. */
-	readonly week: (
-		projectId: string,
-	) => Effect.Effect<ProjectsAnswer<IterationHistory | null>, never, R>;
 	readonly labels: (
 		repo: string,
 		issue: number,
@@ -83,40 +85,36 @@ export interface FlagsOptions<R> {
 	readonly board: FlagsBoard<R>;
 }
 
-type CurrentWeek =
-	| {
-			readonly _tag: "Week";
-			readonly start: string;
-			readonly end: string;
-			/** Which table this is, counting from the first iteration: 1 for the first. */
-			readonly table: number;
-	  }
-	| {readonly _tag: "Unread"; readonly reason: string};
+interface ShareWindow {
+	readonly start: string;
+	readonly end: string;
+	/** Which table this is: 1 for the first. */
+	readonly table: number;
+}
 
-/** The current Week iteration, which the table-wide shares are judged over. */
-const readCurrentWeek = <R>(
-	board: FlagsBoard<R>,
-	projectId: string,
+/**
+ * The week the table-wide shares are judged over: the 7 days that end at the next table day. Its
+ * number counts the distinct Table day dates on the board before that day.
+ */
+export const shareWindow = (
+	settings: TableClock,
+	rows: ReadonlyMap<number, Row>,
 	now: Date,
-): Effect.Effect<CurrentWeek, never, R> =>
-	Effect.gen(function* () {
-		const unread = (reason: string): CurrentWeek => ({_tag: "Unread", reason});
-		const history = yield* board.week(projectId);
-		if (history._tag !== "Ok")
-			return unread(`cannot read the ${FIELD.week} field: ${history.reason}`);
-		if (history.value === null) return unread(`the project has no ${FIELD.week} iteration field`);
-		const current = currentIteration(history.value.running, now);
-		if (current === null) return unread(`no ${FIELD.week} iteration is current`);
-		const start = `${current.startDate}T00:00:00.000Z`;
-		const end = new Date(Date.parse(start) + current.duration * DAY_MS).toISOString();
-		return {_tag: "Week", start, end, table: history.value.completed.length + 1};
+): ShareWindow => {
+	const day = nextTableDay(settings, now);
+	const dated = [...rows.values()].flatMap((row): ReadonlyArray<TableDay> => {
+		const cell = tableDayOf(row);
+		const parsed = cell === null ? null : parseTableDay(cell);
+		return parsed === null ? [] : [parsed];
 	});
+	return {...weekBefore(day, settings.timeZone), table: tableNumber(dated, day)};
+};
 
 /** The week the share is judged over, and which of its lanes were fabrika's own work. */
 const readShare = <R>(
 	board: FlagsBoard<R>,
 	repo: string,
-	projectId: string,
+	rows: ReadonlyMap<number, Row>,
 	settings: TableSettings,
 	records: ReadonlyMap<number, ReadonlyArray<LaneRecord>>,
 	now: Date,
@@ -129,8 +127,7 @@ const readShare = <R>(
 				"`table.fabrikaShare.labels` names no label, so no work counts as fabrika's own",
 			);
 		}
-		const week = yield* readCurrentWeek(board, projectId, now);
-		if (week._tag === "Unread") return week;
+		const week = shareWindow(settings, rows, now);
 		const {start, end} = week;
 		const fabrika = new Set<number>();
 		for (const issue of weekLanes(records, {start, end}).keys()) {
@@ -140,14 +137,15 @@ const readShare = <R>(
 			}
 			if (carried.value.some((label) => labels.includes(label))) fabrika.add(issue);
 		}
-		return {...week, fabrika};
+		return {_tag: "Week", ...week, fabrika};
 	});
 
 /** The on-call board as the whole-table run judges it; `NotAsked` with one board. */
 const readOnCallFlags = <R>(
 	board: FlagsBoard<R>,
 	repo: string,
-	projectId: string,
+	rows: ReadonlyMap<number, Row>,
+	settings: TableSettings,
 	boards: Boards,
 	now: Date,
 ): Effect.Effect<OnCallRead, never, R> =>
@@ -160,13 +158,13 @@ const readOnCallFlags = <R>(
 			return {_tag: "Unread", reason: `cannot read ${repo}'s open issues: ${listing.reason}`};
 		}
 		const open = new Map(listing.value.map((issue) => [issue.number, issue] as const));
-		const week = yield* readCurrentWeek(board, projectId, now);
+		const {start, end} = shareWindow(settings, rows, now);
 		return {
 			_tag: "OnCall",
 			settings: read.settings,
 			issues: new Set(read.rows.keys()),
 			open: onCallItemsOf(read.rows, open, [], read.settings, now),
-			week: week._tag === "Week" ? {_tag: "Week", start: week.start, end: week.end} : week,
+			week: {_tag: "Week", start, end},
 		};
 	});
 
@@ -220,10 +218,10 @@ export const runFlags = <R>(
 			: NOT_ASKED;
 		const campaigns: Campaigns = whole ? yield* board.campaigns(options.cwd) : NOT_ASKED;
 		const share: ShareWeek = whole
-			? yield* readShare(board, repo, heads.project.id, settings.value, heads.records, now)
+			? yield* readShare(board, repo, heads.table, settings.value, heads.records, now)
 			: NOT_ASKED;
 		const onCall: OnCallRead = whole
-			? yield* readOnCallFlags(board, repo, heads.project.id, boards.value, now)
+			? yield* readOnCallFlags(board, repo, heads.table, settings.value, boards.value, now)
 			: NOT_ASKED;
 		const report = flagsOf({
 			settings: settings.value,
@@ -298,7 +296,6 @@ export const flagsBoard: FlagsBoard<
 	items: syncBoard.items,
 	node: syncBoard.node,
 	comments: syncBoard.comments,
-	week: (projectId) => withProjects((token) => readIterationHistory(token, projectId, FIELD.week)),
 	labels: (repo, issue) =>
 		Effect.map(getIssue(repo, issue), (found) =>
 			found._tag === "Present"
