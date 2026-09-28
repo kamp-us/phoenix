@@ -15,7 +15,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/9856
  */
 
-import {Effect, type FileSystem, type Path, Semaphore} from "effect";
+import {Clock, Effect, type FileSystem, type Path, Semaphore} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type TableSettings, tableKey} from "../config/keys/table.ts";
 import {readKey} from "../config/read-key.ts";
@@ -62,6 +62,7 @@ import {
 	SCOPE_MISSING,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {describePlanned, dryRunSync} from "./dry-run.ts";
 import {kindOf, membersOf} from "./group.ts";
 import {type BoardTarget, productBoard} from "./shape.ts";
 import {
@@ -152,6 +153,8 @@ export interface SyncOptions<R> {
 	/** The issues to sync; empty syncs every issue already on the table. */
 	readonly issues: ReadonlyArray<number>;
 	readonly board: SyncBoard<R>;
+	/** Run over a board that records every write and sends none, and print the plan. */
+	readonly dryRun: boolean;
 }
 
 export type Refusal = {readonly _tag: "Refused"; readonly code: number; readonly reason: string};
@@ -497,10 +500,15 @@ export const runSync = <R>(
 			);
 		}
 		const repo = resolved.value;
-		const run = yield* converge(options.board, repo, settings.value, options.issues);
+		const dry = options.dryRun
+			? dryRunSync(options.board, new Date(yield* Clock.currentTimeMillis).toISOString())
+			: null;
+		const run = yield* converge(dry?.board ?? options.board, repo, settings.value, options.issues);
 		if (run._tag === "Refused") return refuse(run.code, run.reason);
 
-		const {project, world, changes, skipped} = run;
+		const {project, world, skipped} = run;
+		const planned = dry?.planned() ?? null;
+		const changes = planned === null ? run.changes : [];
 		const groups = world.scope.heads
 			.filter((group) => group._tag !== "Single")
 			.map((group) => ({head: group.head, kind: kindOf(group), members: membersOf(group)}));
@@ -512,19 +520,25 @@ export const runSync = <R>(
 					`${VERB}: #${group.head} is a ${group.kind} row over ${group.members.length === 0 ? "no open member" : group.members.map((n) => `#${n}`).join(", ")}.`,
 			),
 			...skipped.map((skip) => `${VERB}: skipped #${skip.issue}: ${skip.reason}.`),
-			...(changes.length > 0
-				? changes.map((change) => `${VERB}: ${change}.`)
-				: [`${VERB}: every touched row already reads in step; nothing was written.`]),
+			...(planned !== null
+				? [
+						...planned.map((write) => `${VERB}: would ${describePlanned(write)}.`),
+						`${VERB}: --dry-run: nothing was written.`,
+					]
+				: changes.length > 0
+					? changes.map((change) => `${VERB}: ${change}.`)
+					: [`${VERB}: every touched row already reads in step; nothing was written.`]),
 		];
 		return answer(
 			`${JSON.stringify({
-				answer: changes.length > 0 ? "synced" : "unchanged",
+				answer: planned !== null ? "dry-run" : changes.length > 0 ? "synced" : "unchanged",
 				repo,
 				project: {number: project.number, title: project.title, url: project.url},
 				issues: touched(world),
 				groups,
 				changes,
 				skipped,
+				...(planned === null ? {} : {planned}),
 			})}\n`,
 			notes,
 		);
