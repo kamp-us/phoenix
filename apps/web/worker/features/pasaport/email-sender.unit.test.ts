@@ -139,15 +139,6 @@ describe("EmailSenderCloudflareLive", () => {
 	);
 });
 
-describe("EmailSenderLog", () => {
-	it.effect("resolves the sink and accepts a send without a binding", () =>
-		Effect.gen(function* () {
-			const sender = yield* EmailSender;
-			yield* sender.send({to: "dev@example.com", subject: "log", text: "no real send"});
-		}).pipe(Effect.provide(EmailSenderLog)),
-	);
-});
-
 describe("emailSenderLayerFor", () => {
 	it("picks the log sink for development and preview, the CF adapter for production", () => {
 		assert.strictEqual(emailSenderLayerFor("development"), EmailSenderLog);

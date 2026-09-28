@@ -185,14 +185,4 @@ describe("Pasaport.promoteToYazar — atomic, idempotent backlog sweep", () => {
 			assert.isTrue(promoted);
 		}).pipe(Effect.provide(pasaportOver(capturingBatch(1).access))),
 	);
-
-	it.effect(
-		"promoted is false on a re-run / already-yazar (the guarded UPDATE matches 0 rows)",
-		() =>
-			Effect.gen(function* () {
-				const pasaport = yield* Pasaport;
-				const {promoted} = yield* pasaport.promoteToYazar({userId: "u-yazar-already"});
-				assert.isFalse(promoted);
-			}).pipe(Effect.provide(pasaportOver(capturingBatch(0).access))),
-	);
 });

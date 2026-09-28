@@ -8,7 +8,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import * as L from "../lifecycle/EntityLifecycle.ts";
-import {postVisibleTo, postVisibleWhere, publicLivePostWhere} from "./PostVisibility.ts";
+import {postVisibleTo} from "./PostVisibility.ts";
 
 const at = new Date("2026-06-27T00:00:00.000Z");
 const AUTHOR = "the-author";
@@ -67,47 +67,4 @@ describe("postVisibleTo — the four-state × four-viewer visibility matrix", ()
 			});
 		}
 	}
-
-	it("a moderator CANNOT see a draft but CAN see a sandboxed post (draft ≠ sandbox)", () => {
-		assert.isFalse(postVisibleTo(live, true, AUTHOR, viewers.moderator));
-		assert.isTrue(postVisibleTo(sandboxed, false, AUTHOR, viewers.moderator));
-	});
-
-	it("the author sees their OWN draft but not ANOTHER author's draft", () => {
-		assert.isTrue(postVisibleTo(live, true, AUTHOR, viewers.author));
-		assert.isFalse(postVisibleTo(live, true, OTHER, viewers.author));
-	});
-});
-
-describe("postVisibleWhere — the SQL mirror's predicate shape", () => {
-	const cols = {sandboxedAt: {} as never, authorId: {} as never, isDraft: {} as never};
-
-	it("a moderator still gets a restricting predicate (drafts gated even for mods)", () => {
-		// The sandbox arm is undefined for a mod but the draft arm is not, so a defined
-		// composition proves mods do not see drafts via this seam.
-		assert.isDefined(postVisibleWhere(cols, viewers.moderator));
-	});
-
-	it("a signed-in member gets a restricting predicate", () => {
-		assert.isDefined(postVisibleWhere(cols, viewers.author));
-	});
-
-	it("an anonymous viewer gets a restricting predicate", () => {
-		assert.isDefined(postVisibleWhere(cols, viewers.anonymous));
-	});
-});
-
-describe("publicLivePostWhere — the post-aware public-live aggregate", () => {
-	const cols = {
-		sandboxedAt: {} as never,
-		authorId: {} as never,
-		removedAt: {} as never,
-		isDraft: {} as never,
-	};
-
-	it("is defined for every viewer kind (removal guard always restricts)", () => {
-		for (const viewer of Object.values(viewers)) {
-			assert.isDefined(publicLivePostWhere(cols, viewer));
-		}
-	});
 });

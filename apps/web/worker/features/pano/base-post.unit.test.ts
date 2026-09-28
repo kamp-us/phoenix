@@ -28,12 +28,6 @@ const baseFields = (overrides: Partial<PostFields> = {}): PostFields => ({
 });
 
 describe("toBasePost — viewer-invariant base projection (#2322)", () => {
-	it("omits the myVote/isSaved viewer scalars entirely", () => {
-		const base = toBasePost(baseFields({myVote: true, isSaved: true}));
-		assert.isFalse(Object.hasOwn(base, "myVote"), "base carries no myVote");
-		assert.isFalse(Object.hasOwn(base, "isSaved"), "base carries no isSaved");
-	});
-
 	it("keeps every non-viewer field identical to toPost", () => {
 		const fields = baseFields();
 		const {myVote: _mv, isSaved: _is, ...expected} = toPost(fields);

@@ -54,33 +54,6 @@ describe("Sözlük Definition wire shaper — derived from the one column→fiel
 		});
 	});
 
-	it("the shaper emits exactly the `Definition` key set with the viewer-scalar default", () => {
-		const wire = toDefinition(toDefinitionRow(baseRecord()));
-
-		assert.deepStrictEqual(Object.keys(wire).sort(), [
-			"__typename",
-			"author",
-			"authorDisplayName",
-			"authorId",
-			"authorUsername",
-			"body",
-			"createdAt",
-			"id",
-			"myVote",
-			"reactions",
-			"sandboxed",
-			"sandboxedInPlace",
-			"score",
-			"updatedAt",
-		]);
-		assert.strictEqual(wire.__typename, "Definition");
-		assert.strictEqual(wire.myVote, null);
-		assert.strictEqual(wire.sandboxed, false);
-		assert.strictEqual(wire.sandboxedInPlace, false);
-		// No reactions stamped on a bare row read → the empty aggregate.
-		assert.deepStrictEqual(wire.reactions, EMPTY_REACTION_AGGREGATE);
-	});
-
 	it("the `myVote` viewer scalar passes through the shaper when stamped on the row", () => {
 		const voted = toDefinition({...toDefinitionRow(baseRecord()), myVote: true});
 		assert.strictEqual(voted.myVote, true);

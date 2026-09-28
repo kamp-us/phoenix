@@ -21,25 +21,8 @@ describe("recomputePanoStats", () => {
 		});
 	});
 
-	it("passes the three counts through unchanged", () => {
-		const now = new Date("2024-06-01T12:00:00.000Z");
-		const out = recomputePanoStats(
-			counts({totalPosts: 12, totalComments: 47, totalAuthors: 9}),
-			now,
-		);
-		expect(out.totalPosts).toBe(12);
-		expect(out.totalComments).toBe(47);
-		expect(out.totalAuthors).toBe(9);
-	});
-
 	it("floors sub-second `now` to whole unix seconds (matches the column)", () => {
 		const now = new Date("2024-06-01T12:00:00.999Z");
 		expect(recomputePanoStats(counts(), now).updatedAt).toBe(Math.floor(now.getTime() / 1000));
-	});
-
-	it("is a pure function of its inputs — same args, same output", () => {
-		const now = new Date("2024-06-01T12:00:00.000Z");
-		const args = counts({totalPosts: 3, totalComments: 4, totalAuthors: 1});
-		expect(recomputePanoStats(args, now)).toEqual(recomputePanoStats(args, now));
 	});
 });

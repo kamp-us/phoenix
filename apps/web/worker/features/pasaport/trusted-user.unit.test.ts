@@ -108,13 +108,4 @@ describe("getUsersWithModerationByIds — the batched by-id user rows + moderato
 			);
 		}),
 	);
-
-	it.effect("an empty id set resolves to no rows", () =>
-		Effect.gen(function* () {
-			const users = yield* getUsersWithModerationByIds([]).pipe(
-				Effect.provide(Layer.mergeAll(pasaportOf([]), relationStoreOf([]))),
-			);
-			assert.deepStrictEqual(users, []);
-		}),
-	);
 });

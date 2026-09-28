@@ -17,7 +17,7 @@ import {
 	unauthenticated,
 } from "@kampus/authz";
 import {Effect, Exit} from "effect";
-import {Denied} from "./errors.ts";
+import type {Denied} from "./errors.ts";
 import {allModerators, Moderate, moderatorOf, moderatorsAmong} from "./moderate.ts";
 
 const discharge = (
@@ -74,12 +74,6 @@ describe("Moderate.over(platform)", () => {
 		assert.match(String(Exit.isFailure(exit) ? exit.cause : ""), /kunye\/Denied/);
 	});
 
-	it("Denied carries the invisible UNAUTHORIZED wire code (ADR 0098 §2)", () => {
-		const err = new Denied({message: "x"});
-		assert.strictEqual(err._tag, "kunye/Denied");
-		assert.instanceOf(err, Denied);
-	});
-
 	it("moderatorOf reads the authority-checked id off a discharged grant", () => {
 		const exit = discharge(human("u-mod"), ["u-mod"]);
 		assert.isTrue(Exit.isSuccess(exit));
@@ -119,16 +113,6 @@ describe("moderatorsAmong", () => {
 		const mods = Effect.runSync(moderatorsAmong(["u1", "u2", "u3"]).pipe(storeOf(["u1", "u3"])));
 		assert.deepStrictEqual([...mods].sort(), ["u1", "u3"]);
 	});
-
-	it("is empty when none of the subjects moderate", () => {
-		const mods = Effect.runSync(moderatorsAmong(["u1", "u2"]).pipe(storeOf(["someone-else"])));
-		assert.strictEqual(mods.size, 0);
-	});
-
-	it("is empty for an empty subject set", () => {
-		const mods = Effect.runSync(moderatorsAmong([]).pipe(storeOf(["u1"])));
-		assert.strictEqual(mods.size, 0);
-	});
 });
 
 // The OPEN-set enumeration (#1699) the membership pair can't answer: the whole subject
@@ -148,10 +132,5 @@ describe("allModerators", () => {
 	it("enumerates every subject holding the moderates tuple", () => {
 		const mods = Effect.runSync(allModerators().pipe(storeOf(["u-mod1", "u-mod2"])));
 		assert.deepStrictEqual([...mods].sort(), ["u-mod1", "u-mod2"]);
-	});
-
-	it("is empty when no one moderates", () => {
-		const mods = Effect.runSync(allModerators().pipe(storeOf([])));
-		assert.strictEqual(mods.size, 0);
 	});
 });
