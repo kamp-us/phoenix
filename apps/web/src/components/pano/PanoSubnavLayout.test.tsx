@@ -124,7 +124,12 @@ describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#29
 		const {container} = renderZone(<PublishingLeaf host="foo.com" />);
 		expect(container.querySelector(".kp-subnav__crumb")).toBeTruthy();
 		expect(container.querySelector(".kp-pano-crumb")).toBeNull();
-		expect(screen.getByRole("navigation", {name: "sayfa yolu"}).textContent).toBe("site / foo.com");
+		const nav = screen.getByRole("navigation", {name: "sayfa yolu"});
+		expect(nav.textContent).toBe("site / foo.com");
+		// The zone hands the host to `Breadcrumbs` as the current page (#9705).
+		const current = nav.querySelectorAll('[aria-current="page"]');
+		expect(current).toHaveLength(1);
+		expect(current[0]?.textContent).toBe("foo.com");
 		expect(screen.getByRole("button", {name: "× filtreyi kaldır"})).toBeTruthy();
 	});
 });
