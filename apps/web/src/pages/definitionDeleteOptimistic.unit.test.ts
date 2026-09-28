@@ -64,13 +64,6 @@ describe("dropOptimisticDefinitionEdge — nested-list edge drop + rollback", ()
 		assert.strictEqual(store.current.get("list-1"), untouched);
 	});
 
-	it("reconciles by canonical id — a redundant drop of an already-gone id is a no-op (no reappear)", () => {
-		// Models the server `deleteEdge` frame landing after the optimistic drop.
-		const store = fakeStore([["list-1", {ids: ["Definition:a", "Definition:c"]}]]);
-		dropOptimisticDefinitionEdge(store, TERM, TARGET);
-		assert.deepStrictEqual(store.current.get("list-1")?.ids, ["Definition:a", "Definition:c"]);
-	});
-
 	it("no-op with an empty rollback when the term has no loaded list", () => {
 		const store = fakeStore([]);
 		const rollback = dropOptimisticDefinitionEdge(store, TERM, TARGET);

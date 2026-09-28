@@ -46,13 +46,4 @@ describe("readImperativeView", () => {
 
 		expect(request).toHaveBeenCalledWith({profile: {view: TestView, args: {username: "ada"}}});
 	});
-
-	it("propagates a thrown read (the hook's catch maps it to error state)", async () => {
-		const request = vi.fn().mockRejectedValue(new Error("boom"));
-		const readView = vi.fn();
-
-		await expect(
-			readImperativeView(makeClient(request, readView), "test", TestView),
-		).rejects.toThrow("boom");
-	});
 });

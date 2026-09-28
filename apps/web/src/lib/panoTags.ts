@@ -12,7 +12,7 @@ export const POST_TAG_KINDS = ["göster", "tartışma", "soru", "söylenme", "me
 export type PostTagKind = (typeof POST_TAG_KINDS)[number];
 
 /** `kp-tag--<cls>` — the English alias doubles as the styling key. */
-export const POST_TAG_CLASS: Record<PostTagKind, string> = {
+const POST_TAG_CLASS: Record<PostTagKind, string> = {
 	göster: "show",
 	tartışma: "discuss",
 	soru: "ask",

@@ -1,12 +1,14 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {LOCALES} from "../i18n/locale";
-import {dateFormatter, EDITED_GRACE_MS, editedAfter} from "./datetime";
+import {dateFormatter, editedAfter} from "./datetime";
 
 describe("editedAfter", () => {
 	it("returns true when updatedAt is more than 60s after createdAt", () => {
 		const created = "2026-05-09T10:00:00.000Z";
 		const updated = "2026-05-09T10:02:00.000Z";
 		expect(editedAfter(created, updated)).toBe(true);
+		// One millisecond past the 60s window is the first edit.
+		expect(editedAfter(created, "2026-05-09T10:01:00.001Z")).toBe(true);
 	});
 
 	it("returns false when updatedAt is within the 60s grace window", () => {
@@ -36,10 +38,6 @@ describe("editedAfter", () => {
 		expect(editedAfter("not-a-date", "2026-05-09T10:00:00.000Z")).toBe(false);
 		expect(editedAfter("2026-05-09T10:00:00.000Z", "not-a-date")).toBe(false);
 		expect(editedAfter("", "")).toBe(false);
-	});
-
-	it("EDITED_GRACE_MS is 60 seconds", () => {
-		expect(EDITED_GRACE_MS).toBe(60_000);
 	});
 });
 

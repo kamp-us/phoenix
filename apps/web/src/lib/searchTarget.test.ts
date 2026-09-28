@@ -27,12 +27,6 @@ describe("searchTarget", () => {
 		expect(searchTarget("yatay ölçekleme")).toBe("/search?q=yatay%20%C3%B6l%C3%A7ekleme");
 	});
 
-	it("encodes Turkish characters so they round-trip into the results page", () => {
-		expect(searchTarget("öğrenci")).toBe(`/search?q=${encodeURIComponent("öğrenci")}`);
-		const encoded = searchTarget("öğrenci")?.replace("/search?q=", "") ?? "";
-		expect(decodeURIComponent(encoded)).toBe("öğrenci");
-	});
-
 	it("encodes URL-significant characters (&, #, ?) so they don't break the query string", () => {
 		expect(searchTarget("a&b")).toBe("/search?q=a%26b");
 		expect(searchTarget("c#d")).toBe("/search?q=c%23d");

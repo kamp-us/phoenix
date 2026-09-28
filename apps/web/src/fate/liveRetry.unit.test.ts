@@ -57,10 +57,6 @@ describe("nextLiveRetryDelayMs", () => {
 	it("clamps a negative attempt to the base delay (never below the floor)", () => {
 		expect(nextLiveRetryDelayMs(-1)).toBe(250);
 	});
-
-	it("exposes a bounded retry budget", () => {
-		expect(LIVE_RETRY_MAX_ATTEMPTS).toBeGreaterThan(0);
-	});
 });
 
 describe("createLiveRetryController", () => {

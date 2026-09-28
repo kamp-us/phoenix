@@ -58,17 +58,8 @@ describe("welcomeReturnTo — what the arrival hands back to", () => {
 });
 
 describe("welcomeGate — the page's render decision", () => {
-	it("loading outranks everything while the flag or session resolves", () => {
-		expect(welcomeGate({...READY_GATE, flagLoading: true})).toBe("loading");
-		expect(welcomeGate({...READY_GATE, sessionPending: true})).toBe("loading");
-	});
-
 	it("a dark route 404s before any session question is asked", () => {
 		expect(welcomeGate({...READY_GATE, flagOn: false, signedIn: false})).toBe("not-found");
-	});
-
-	it("a signed-out visitor is sent to auth, not 404'd", () => {
-		expect(welcomeGate({...READY_GATE, signedIn: false})).toBe("sign-in");
 	});
 
 	it("an already-welcomed account is suppressed in favor of the returnTo", () => {

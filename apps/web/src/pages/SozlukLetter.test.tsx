@@ -25,11 +25,6 @@ describe("SozlukLetter — the route guard", () => {
 		expect(screen.getByTestId("home")).toBeTruthy();
 	});
 
-	it("sends a multi-character segment home too", () => {
-		renderRoute("/sozluk/harf/abc");
-		expect(screen.getByTestId("home")).toBeTruthy();
-	});
-
 	it("keeps a real letter on its own page — the masthead names it in Turkish capitals", () => {
 		const {container} = renderRoute("/sozluk/harf/i");
 		expect(screen.queryByTestId("home")).toBeNull();

@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {banLabelKey, createdAtLabel, hasCreatedAt, roleLabelKey} from "./kullanicilar";
+import {banLabelKey, hasCreatedAt, roleLabelKey} from "./kullanicilar";
 
 describe("roleLabelKey", () => {
 	it("keys the moderator role", () => {
@@ -19,12 +19,7 @@ describe("banLabelKey", () => {
 	});
 });
 
-describe("createdAtLabel", () => {
-	it("renders a positive epoch-millis in the active locale", () => {
-		const label = createdAtLabel(Date.UTC(2026, 0, 1), "tr");
-		expect(label).toBeTypeOf("string");
-		expect(label.length).toBeGreaterThan(0);
-	});
+describe("hasCreatedAt", () => {
 	it("the 0 sentinel (no column) is not a date", () => {
 		expect(hasCreatedAt(0)).toBe(false);
 		expect(hasCreatedAt(Date.UTC(2026, 0, 1))).toBe(true);

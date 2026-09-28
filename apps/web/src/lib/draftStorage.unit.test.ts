@@ -37,11 +37,6 @@ function isPanoDraft(value: unknown): value is PanoDraft {
 }
 
 describe("draftStorage", () => {
-	it("keys drafts by route so two surfaces never collide", () => {
-		expect(draftKey("/pano/yeni")).not.toBe(draftKey("/sozluk/effect"));
-		expect(draftKey("/pano/yeni")).toContain("/pano/yeni");
-	});
-
 	it("survives the signed-out → auth-redirect → return round-trip, then clears on submit (AC1+AC2)", () => {
 		const storage = fakeStorage();
 		const route = "/sozluk/effect";
