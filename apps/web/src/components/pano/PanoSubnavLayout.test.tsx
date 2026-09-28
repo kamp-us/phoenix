@@ -129,7 +129,9 @@ describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#29
 		// The zone hands the host to `Breadcrumbs` as the current page (#9705).
 		const current = nav.querySelectorAll('[aria-current="page"]');
 		expect(current).toHaveLength(1);
-		expect(current[0]?.textContent).toBe("foo.com");
+		const spoken = current[0]?.cloneNode(true) as HTMLElement;
+		for (const hidden of spoken.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+		expect(spoken.textContent).toBe("foo.com");
 		expect(screen.getByRole("button", {name: "× filtreyi kaldır"})).toBeTruthy();
 	});
 });
