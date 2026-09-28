@@ -178,14 +178,6 @@ describe("what this binding adds to the shared window", () => {
 		});
 	};
 
-	const _controlsIn = (root: HTMLElement): ReadonlyArray<string> =>
-		Array.from(root.querySelectorAll("button, input, textarea, select, a[href], [tabindex]"))
-			.map(
-				(element) =>
-					`${element.tagName.toLowerCase()}:${element.getAttribute("aria-label") ?? element.textContent?.trim() ?? ""}`,
-			)
-			.sort();
-
 	it("dispatches exactly what the shared window dispatches from the same keystrokes", async () => {
 		const state = claudeSessionState({phase: "prompting"});
 		const shared = await mount(chatWindow, state);

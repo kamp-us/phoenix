@@ -8,19 +8,8 @@
 
 import type {SDKSessionInfo} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
-import {Cause, Effect, Exit, Option} from "effect";
+import {Effect} from "effect";
 import {on} from "./fixtures/harness.ts";
-
-const _failure = (
-	exit: Exit.Exit<unknown, unknown>,
-): {_tag?: string; reason?: string; detail?: string} =>
-	Exit.isFailure(exit)
-		? ((Option.getOrUndefined(Cause.findErrorOption(exit.cause)) ?? {}) as {
-				_tag?: string;
-				reason?: string;
-				detail?: string;
-			})
-		: {};
 
 const stored: ReadonlyArray<SDKSessionInfo> = [
 	{
