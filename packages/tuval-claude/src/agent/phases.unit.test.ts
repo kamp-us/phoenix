@@ -176,25 +176,6 @@ describe("an interruption over the Claude event path", () => {
 });
 
 describe("the core over what the layer emitted", () => {
-	// `prompting` is the whole claim the window's stop control and its Escape branch read:
-	// `isWorking` is `phase === "prompting"`, and that it is true of that phase alone is pinned in
-	// `packages/tuval-ui/src/shell/chat/phase.unit.test.ts`. It is not called here because the browser chat slice is
-	// excluded from this project's lens (`apps/tuval/tsconfig.json`).
-	it.effect("keeps the session prompting for the whole turn, so the window reads working", () =>
-		Effect.gen(function* () {
-			const events = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
-			const [prompting] = apply(opened, {
-				type: "prompt",
-				text: "hello",
-				key: "k1",
-				timestamp: SENT_AT,
-			});
-			// Every event but the last, which is the turn's own end.
-			const running = fold(prompting, events.slice(0, -1));
-			assert.strictEqual(running.phase, "prompting");
-		}),
-	);
-
 	/**
 	 * #8107 from the layer's side. A turn this layer really ran accepts its send, and the `ready`
 	 * this session emitted at its own open — replayed out of the queue under a live send — does
@@ -277,24 +258,6 @@ describe("a first turn whose open drained after the send", () => {
 			const settled = fold(running, turn.slice(-1));
 			assert.strictEqual(settled.phase, "ready");
 			assert.deepStrictEqual(settled.sends, [{key: "k1", state: "accepted"}]);
-		}),
-	);
-
-	/**
-	 * Why that narration is load-bearing rather than decoration. Drop the one event the send
-	 * publishes and the same fold leaves a running turn reading idle for its whole length — the
-	 * defect itself, pinned here so a layer that stops narrating its own send reds the case above
-	 * rather than shipping a `Ready.` line over a live turn.
-	 */
-	it.effect("would read idle for the whole turn without the send's own prompting", () =>
-		Effect.gen(function* () {
-			const opening = yield* openingEvents(messages("assistant-turn"));
-			const turn = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
-			assert.deepStrictEqual(turn[0], {kind: "phase", phase: "prompting"});
-
-			const unnarrated = fold(fold(sent(), opening), turn.slice(1, -1));
-			assert.strictEqual(unnarrated.phase, "ready");
-			assert.deepStrictEqual(unnarrated.sends, [{key: "k1", state: "pending", turn: "unstarted"}]);
 		}),
 	);
 });

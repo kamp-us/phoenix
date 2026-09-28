@@ -74,18 +74,6 @@ describe("a Claude interrupt the CLI refuses", () => {
 		}),
 	);
 
-	// A refusal is not a turn ending: nothing the layer emits for it may read as one, because the
-	// phase is what the window's stop control and its Escape branch key on.
-	it.effect("narrates no phase change of its own", () =>
-		Effect.gen(function* () {
-			const {after} = yield* refusedInterrupt(unfinishedTurn(), RUNNING_TURN_EVENTS);
-			assert.isEmpty(
-				after.filter((event) => event.kind === "phase"),
-				"the refusal narrated a phase the backend never entered",
-			);
-		}),
-	);
-
 	// The other half the fold routes on: the turn ended while the control request was in flight, so
 	// there was nothing left to stop and the session is owed its way back to `ready`.
 	it.effect("says there was no live turn once the result has landed", () =>

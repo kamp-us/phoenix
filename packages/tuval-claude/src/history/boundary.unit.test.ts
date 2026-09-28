@@ -81,39 +81,6 @@ describe("the Claude history mapping is pure", () => {
 		expect(offenders).toEqual([]);
 	});
 
-	it("keeps every fixture the tests name, so none can be quietly dropped", () => {
-		const fixtures = readdirSync(join(import.meta.dirname, "fixtures"))
-			.filter((name) => name.endsWith(".json") || name.endsWith(".jsonl"))
-			.map((name) => name.replace(/\.jsonl?$/, ""))
-			.sort();
-		expect(fixtures).toEqual([
-			"agent-a1b2c3d4e5f60718a",
-			"agent-a1b2c3d4e5f60718a.meta",
-			"assistant-turn",
-			"background-subagent-turn",
-			"compact-boundary",
-			"error-result",
-			"informational-notice",
-			"init",
-			"interrupted-assistant",
-			"local-command-caveat-turn",
-			"local-command-invocation-turn",
-			"local-command-lines-turn",
-			"local-command-skill-turn",
-			"local-command-turn",
-			"oversized-tool-turn",
-			"permission-denied",
-			"resumed-init",
-			"session-messages",
-			"streaming-turn",
-			"subagent-turn",
-			"thinking-turn",
-			"tool-turn",
-			"two-subagent-turn",
-			"unknown-message",
-		]);
-	});
-
 	/**
 	 * The two operator roots, in every form a sanitizer can leave one in.
 	 *

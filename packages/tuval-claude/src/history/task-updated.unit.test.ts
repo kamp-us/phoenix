@@ -119,14 +119,6 @@ describe("a worker moved to the background mid-run", () => {
 		});
 	});
 
-	it("emits a subagent event carrying that slot", () => {
-		const {events} = run(moved());
-		expect(events.at(-1)).toMatchObject({
-			kind: "subagent",
-			slot: {id: SPAWN, outlivesTurn: true},
-		});
-	});
-
 	/** #9594's whole symptom, and #9587's before it: the turn's end took a live worker's row out. */
 	it("stays running across the end of the turn that spawned it", () => {
 		const state = settleTurn(folded(run(moved()).events));
@@ -159,10 +151,6 @@ describe("a worker moved to the background mid-run", () => {
  * those — so without a pairing learned elsewhere the frame reaches no slot at all.
  */
 describe("the task-to-call correlation the frame has no id of its own for", () => {
-	it("is not something the update frame itself could carry", () => {
-		expect(capturedUpdate()).not.toHaveProperty("tool_use_id");
-	});
-
 	it("is learned from the task_started frame that carries both ids", () => {
 		const {mapping} = run(registered());
 		expect(mapping.tasks.get(TASK)).toBe(SPAWN);

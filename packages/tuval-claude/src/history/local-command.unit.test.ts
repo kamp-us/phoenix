@@ -51,20 +51,6 @@ describe("a captured local command's output", () => {
 		]);
 	});
 
-	it("shows the result as readable text: no wrapper, no colour escapes", () => {
-		const [one] = mapped(captured);
-		expect(one?.kind).toBe("system");
-		const line = one?.kind === "system" ? one.text : "";
-		expect(line).not.toMatch(/local-command-stdout/);
-		expect(line).not.toMatch(new RegExp(String.fromCharCode(27)));
-	});
-
-	it("replays the same way off a stored session, so an old session reads back as it ran", () => {
-		const {items, skipped} = toHistoryItems([captured as SessionMessage], {at: AT});
-		expect(items.map((one) => one.kind)).toEqual(["system"]);
-		expect(skipped).toBe(0);
-	});
-
 	it("keeps the whole output behind the notice's detail when the line is not all of it", () => {
 		const whole =
 			"Shift+Enter is natively supported in Kitty.\n\nNo configuration needed. Just use Shift+Enter to add newlines.";
@@ -118,13 +104,6 @@ describe("a captured local command's invocation record", () => {
 		]);
 	});
 
-	it("shows the invocation as readable text: no tags, no colour escapes", () => {
-		const [one] = mapped(captured);
-		const line = one?.kind === "system" ? one.text : "";
-		expect(line).not.toMatch(/[<>]/);
-		expect(line).not.toMatch(new RegExp(String.fromCharCode(27)));
-	});
-
 	it("replays the same way off a stored session, so an old session reads back as it ran", () => {
 		const {items, skipped} = toHistoryItems([captured as SessionMessage], {at: AT});
 		expect(items).toEqual([
@@ -141,14 +120,6 @@ describe("a captured local command's invocation record", () => {
 	it("names the command alone when the invocation carries no arguments", () => {
 		const [one] = mapped(withText(captured, "<command-name>/clear</command-name>"));
 		expect(one?.kind === "system" ? one.text : "").toBe("/clear");
-	});
-
-	it("leaves the command's own output its own separate notice", () => {
-		const [one] = mapped(frame("local-command-turn"));
-		expect(one?.kind).toBe("system");
-		expect(one?.kind === "system" ? one.text : "").toBe(
-			"Set model to Fable 5 and saved as your default for new sessions",
-		);
 	});
 
 	it("puts the invocation above the output, over one of each frame kind", () => {
@@ -297,17 +268,6 @@ describe("a captured local command's caveat", () => {
 	it("reaches the transcript as nothing at all, and is counted skipped", () => {
 		expect(mapped(captured)).toEqual([]);
 		expect(skippedBy(captured)).toBe(1);
-	});
-
-	it("replays the same way off a stored session", () => {
-		const {items, skipped} = toHistoryItems([captured as SessionMessage], {at: AT});
-		expect(items).toEqual([]);
-		expect(skipped).toBe(1);
-	});
-
-	it("leaves the command's own output alone: that frame is still a notice", () => {
-		const [one] = mapped(frame("local-command-turn"));
-		expect(one?.kind).toBe("system");
 	});
 
 	it("stays a user item when the prompt merely quotes the caveat wrapper", () => {

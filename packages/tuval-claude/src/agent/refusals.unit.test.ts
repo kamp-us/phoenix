@@ -144,6 +144,7 @@ describe("a session listing the store refuses", () => {
 			const exit = yield* Effect.exit(on({listFails: thrown()}, (agent) => agent.listSessions));
 			const error = failure(exit);
 			assert.strictEqual(error._tag, "tuval/ai-agent/ListError");
+			assert.strictEqual(error.reason, "store-unreadable");
 			deliberate(error, "could not be enumerated");
 		}),
 	);

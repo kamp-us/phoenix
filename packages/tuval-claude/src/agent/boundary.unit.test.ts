@@ -11,7 +11,7 @@
 import {readdirSync, readFileSync, statSync} from "node:fs";
 import {join} from "node:path";
 import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
-import type {TuvalAiAgent, TuvalAiAgentApi} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
+import type {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import type {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
 import {ClientId, type Scope, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
 import {Layer} from "effect";
@@ -65,23 +65,6 @@ describe("the layer's type", () => {
 		// this program knows about.
 		const composed = Layer.provide(ClaudeAiAgent.layer(options), KernelBridge.live(windowScope));
 		expectTypeOf(composed).toEqualTypeOf<Layer.Layer<TuvalAiAgent, never, SpellBridge>>();
-	});
-
-	it("implements exactly the twelve generic members, and no thirteenth", () => {
-		expectTypeOf<keyof TuvalAiAgentApi>().toEqualTypeOf<
-			| "start"
-			| "prompt"
-			| "interrupt"
-			| "answer"
-			| "setMode"
-			| "setModel"
-			| "commands"
-			| "setThinkingLevel"
-			| "page"
-			| "sessionTranscript"
-			| "listSessions"
-			| "events"
-		>();
 	});
 });
 

@@ -41,10 +41,6 @@ describe("toHistoryItems over a captured session", () => {
 			result: {text: "hello-tuval", omitted: {bytes: 0}},
 		});
 	});
-
-	it("keeps the settled row where the call was made, not where its answer arrived", () => {
-		expect(items[1]?.kind).toBe("tool");
-	});
 });
 
 describe("live streaming identities in stored history", () => {

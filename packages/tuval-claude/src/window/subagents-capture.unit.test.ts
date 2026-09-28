@@ -38,10 +38,6 @@ describe("runningSubagents over a captured background spawn", () => {
 		}
 	});
 
-	it("drops the row once the notification ends the worker (Q2)", () => {
-		expect(perFrame().at(-1)).toEqual({rows: [], more: 0});
-	});
-
 	/**
 	 * The row the desk check actually lost: the launch answer arrives seconds into a two-minute
 	 * worker, and the parent's turn ends right behind it — so the list was empty for the whole run

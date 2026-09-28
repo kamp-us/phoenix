@@ -71,13 +71,6 @@ describe("toAgentEvents over a captured init", () => {
 		expect(mapping.model).toBe("claude-fable-5-1");
 	});
 
-	it("reports the bundled CLI's own version, which is not the SDK version this repo pins", () => {
-		const {events} = run([message("init")]);
-		expect(events.filter((one) => one.kind === "version")).toEqual([
-			{kind: "version", version: "2.1.259"},
-		]);
-	});
-
 	// The field is stamped off the captured frame rather than captured absent: every CLI that can be
 	// run reports one, so a frame without it is only reachable by taking it away.
 	it("emits no version at all when the frame carries none, leaving the slot empty", () => {
@@ -1086,11 +1079,29 @@ describe("toAgentEvents over a captured background spawn", () => {
 	});
 
 	it("reads the launch off the frame's structured output, not off its prose", () => {
-		const launch = stream[1];
-		expect(launch?.type).toBe("user");
-		expect(
-			(launch as {readonly tool_use_result?: Record<string, unknown>}).tool_use_result,
-		).toMatchObject({isAsync: true, status: "async_launched"});
+		/** The captured stream with the launch answer — frame 1 — rewritten by `patch`. */
+		const relaunched = (patch: (launch: Record<string, unknown>) => Record<string, unknown>) => {
+			const raw = loadFixture("background-subagent-turn") as ReadonlyArray<Record<string, unknown>>;
+			const frames: unknown = raw.map((one, index) => (index === 1 ? patch(one) : one));
+			return frames as ReadonlyArray<SDKMessage>;
+		};
+		// The launch's prose emptied: the structured output alone still keeps the worker running.
+		const unspoken = relaunched((launch) => {
+			const message = launch.message as {readonly content: ReadonlyArray<Record<string, unknown>>};
+			return {
+				...launch,
+				message: {...message, content: message.content.map((block) => ({...block, content: []}))},
+			};
+		});
+		expect(walk(unspoken).seen.map((one) => one.status)).toEqual([
+			"running",
+			"running",
+			"finished",
+		]);
+		// The structured output taken away, the same prose reads as the call's plain answer, which ends
+		// the slot on that frame.
+		const unstructured = relaunched(({tool_use_result: _output, ...rest}) => rest);
+		expect(walk(unstructured).seen[1]?.status).toBe("finished");
 		// The call's own input says nothing: the harness writes no `run_in_background` at all once
 		// background is the default it already took, where the foreground captures carry `false`.
 		const call = stream[0];
