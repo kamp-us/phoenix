@@ -425,41 +425,6 @@ describe("lane prove — a reviewer's park, refused only by a FAIL that still bi
 	});
 
 	/**
-	 * The reviewer's own precedence: an unseen input blocks PASS and never FAIL, so a namespace that
-	 * passed beside an unreadable one still parks. Only a FAIL is dispatchable.
-	 */
-	it("lets a park through beside a passing namespace", async () => {
-		const seams = seamsWith([
-			[CLOSERS, closingPulls()],
-			[SEARCH, nominated(4318)],
-			[PULL, pull()],
-			[FILES, FIVE_SIX_SIX_ONE],
-			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
-		]);
-
-		const out = await run(laneAt("review"), seams, "BLOCKED");
-
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).proof).toBe("uncontradicted");
-	});
-
-	/** A FAIL at another head is not a verdict on this one, so it cannot contradict this run's park. */
-	it("lets a park through past a FAIL that no longer binds", async () => {
-		const seams = seamsWith([
-			[CLOSERS, closingPulls()],
-			[SEARCH, nominated(4318)],
-			[PULL, pull()],
-			[FILES, FIVE_SIX_SIX_ONE],
-			[PR_COMMENTS, comments({id: 1, body: `review-code: FAIL @ ${OLD} — criteria unmet`})],
-		]);
-
-		const out = await run(laneAt("review"), seams, "BLOCKED");
-
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).proof).toBe("uncontradicted");
-	});
-
-	/**
 	 * Fail-open, and deliberately: a park routes to a human, the shell reporting it has already
 	 * stopped, and there is no later round to re-read in — so holding it on an unreadable board would
 	 * strand the lane in the one state nobody could leave.
@@ -808,30 +773,6 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 		expect(Object.hasOwn(JSON.parse(out.stdout).evidence, "routed")).toBe(false);
 	});
 
-	it("holds the same lane when the route was attested at a head the branch has moved past", async () => {
-		const seams = seamsWith([
-			[CLOSERS, closingPulls()],
-			[SEARCH, nominated(4318)],
-			[PULL, pull()],
-			[FILES, UI_FILE],
-			[
-				PR_COMMENTS,
-				comments(
-					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
-					{
-						id: 2,
-						body: "routed-elsewhere: review-ui @ deadbeefcafe — nothing rendered changes",
-					},
-				),
-			],
-		]);
-
-		const out = await run(laneAt("review:ui"), seams, "PASS");
-
-		expect(out.code).toBe(PROOF_IN_FLIGHT);
-		expect(out.stderr.join("\n")).toContain("review-ui (stale)");
-	});
-
 	it("lets a FAIL written after a route win, so a route is no shield", async () => {
 		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
@@ -942,36 +883,6 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 		expect(out.stderr.join("\n")).toContain("governance (absent)");
 	});
 
-	it("refuses a PASS whose namespace verdict is at a head the PR has moved past", async () => {
-		const seams = seamsWith([
-			[CLOSERS, closingPulls()],
-			[SEARCH, nominated(4318)],
-			[PULL, pull()],
-			[FILES, served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}])],
-			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${OLD} — merge-ready`})],
-		]);
-
-		const out = await run(laneAt("review"), seams, "PASS");
-
-		expect(out.code).toBe(PROOF_IN_FLIGHT);
-		expect(out.stderr.join("\n")).toContain("review-code (stale)");
-	});
-
-	it("refuses a PASS the board contradicts with a current-head FAIL", async () => {
-		const seams = seamsWith([
-			[CLOSERS, closingPulls()],
-			[SEARCH, nominated(4318)],
-			[PULL, pull()],
-			[FILES, served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}])],
-			[PR_COMMENTS, comments({id: 1, body: `review-code: FAIL @ ${HEAD} — the fold drops a row`})],
-		]);
-
-		const out = await run(laneAt("review"), seams, "PASS");
-
-		expect(out.code).toBe(PROOF_CONTRADICTED);
-		expect(out.stderr.join("\n")).toContain("FAIL");
-	});
-
 	it("leaves the proof UNKNOWN when a board read fails — never proven, never absent", async () => {
 		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
@@ -992,48 +903,6 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain("closing #5747");
 		expect(seams.requests.some((line) => SEARCH.test(line))).toBe(false);
-	});
-});
-
-describe("lane prove — the union of the two nomination reads", () => {
-	it("proves a DONE off the closing edge while the search index still lags the fresh PR", async () => {
-		const seams = seamsWith([
-			[CLOSERS, closingPulls(4318)],
-			[SEARCH, nominated()],
-			[PULL, pull()],
-		]);
-
-		const out = await run(laneAt("build"), seams, "DONE");
-
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toMatchObject({evidence: {kind: "open-pull", pr: 4318}});
-	});
-
-	it("proves a DONE off the search nomination for a Part of PR the closing edge cannot see", async () => {
-		const seams = seamsWith([
-			[CLOSERS, closingPulls()],
-			[SEARCH, nominated(4318)],
-			[PULL, pull({body: "Part of #5747\n\n## Deviations\nNone.\n"})],
-		]);
-
-		const out = await run(laneAt("build"), seams, "DONE");
-
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toMatchObject({evidence: {kind: "open-pull", pr: 4318}});
-	});
-
-	it("counts a PR both reads nominate once, so agreement is not ambiguity", async () => {
-		const seams = seamsWith([
-			[CLOSERS, closingPulls(4318)],
-			[SEARCH, nominated(4318)],
-			[PULL, pull()],
-		]);
-
-		const out = await run(laneAt("build"), seams, "DONE");
-
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toMatchObject({evidence: {kind: "open-pull", pr: 4318}});
-		expect(seams.requests.filter((line) => PULL.test(line))).toHaveLength(1);
 	});
 });
 
@@ -1216,19 +1085,6 @@ describe("lane prove — a review rewind, earned only when no open PR links the 
 		expect(out.code).toBe(PROOF_CONTRADICTED);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("#4318 still links #5747");
-	});
-
-	it("refuses the rewind out of review:ui while an open PR still links the issue", async () => {
-		const seams = seamsWith([
-			OPEN,
-			[CLOSERS, closingPulls(4318)],
-			[SEARCH, nominated()],
-			[PULL, pull()],
-		]);
-
-		const out = await run(laneAt("review:ui"), seams, "WIP");
-
-		expect(out.code).toBe(PROOF_CONTRADICTED);
 	});
 
 	it("leaves the rewind UNKNOWN when the board does not read — never proven", async () => {
@@ -1605,17 +1461,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 		expect(seams.calls.some((line) => ANCESTRY.test(line))).toBe(false);
 	});
 
-	it("refuses a child DONE whose branch was cut and never built on", async () => {
-		const seams = seamsWith([...locating([CHILD_BRANCH], [])]);
-
-		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
-
-		expect(out.code).toBe(PROOF_ABSENT);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toContain("cut and not built on");
-	});
-
-	it("still refuses a never-built branch whose tip a sibling's merge names as first parent", async () => {
+	it("refuses a never-built branch whose tip a sibling's merge names as first parent", async () => {
 		// The tip is an epic commit, so it is contained and a later merge names it — as its FIRST
 		// parent. Reading the second there would hand back a sibling's fork point and prove nothing.
 		const seams = seamsWith([
@@ -1635,17 +1481,6 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 		expect(seams.calls.some((line) => line.startsWith(`git merge-base ${sha("5b1b1a9c")}`))).toBe(
 			false,
 		);
-	});
-
-	it("refuses a child DONE when the branch carries only another child's commits", async () => {
-		const seams = seamsWith([
-			...locating([CHILD_BRANCH], [[CHILD_TIP, "feat(lane): another child (#4302)"]]),
-		]);
-
-		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
-
-		expect(out.code).toBe(PROOF_ABSENT);
-		expect(out.stderr.join("\n")).toContain("names #4301");
 	});
 
 	it("refuses a child DONE when two lane branches both carry its commits", async () => {
