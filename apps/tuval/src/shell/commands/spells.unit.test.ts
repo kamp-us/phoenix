@@ -59,7 +59,7 @@ const failure = (reply: SpellReply) => {
 };
 
 describe("the shell's rows as spells", () => {
-	it("declares one spell per row, at the row's own path and with the row's sentence", () => {
+	it("carries each row's path and sentence onto its spell, in table order", () => {
 		expect(shellSpells.map((spell) => spell.path)).toEqual(
 			shellCommands.map((command) => command.path),
 		);

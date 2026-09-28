@@ -2,7 +2,8 @@
  * The two boundaries this slice keeps. The first is type-level, so `tsc` over this file is the
  * proof: a row's `toMsg` answers with a core Msg and never with a Promise, so nothing awaits a
  * command row and no row can smuggle an async handler in the way a Spellbook spell's `execute`
- * could. The second is behavioural and textual: a row reads its parameters and nothing else.
+ * could. The second is behavioural and textual: a row reads its parameters and nothing else, and
+ * the modules that hold rows, their errors and the line reader import no effect runtime.
  *
  * Every `=` probe below is a claim on the right of an assignment and each was flip-verified — see
  * `.patterns/unconditional-test-assertions.md`, "the type-level sibling".
@@ -29,6 +30,36 @@ const declaredRowReturnsMsg: ReturnsMsg<ShellCommand> = true;
 const promiseDoesNot: ReturnsMsg<{readonly toMsg: () => Promise<ShellMsg>}> = false;
 const someOtherValueDoesNot: ReturnsMsg<{readonly toMsg: () => {readonly type: "nope"}}> = false;
 
+const pureModules = ["row.ts", "table.ts", "errors.ts", "line.ts"];
+
+const pureEffect = new Set(["Schema", "Result"]);
+
+/**
+ * One module's code with comments stripped ("window" and "process" are this slice's own domain
+ * nouns), the value bindings it imports from `effect` or an `effect/*` subpath, named or as a
+ * namespace, and every `Schema.*` member it reaches. A type-only import is erased at build, so it
+ * reaches no runtime.
+ */
+const pureScan = (name: string) => {
+	const code = readFileSync(join(import.meta.dirname, name), "utf8")
+		.replace(/\/\*[\s\S]*?\*\//g, "")
+		.replace(/\/\/.*$/gm, "");
+	const effectImports = [
+		...code.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s+from\s+"effect(?:\/[^"]*)?"/g),
+	].flatMap(([, typeOnly, bindings = ""]) =>
+		typeOnly === undefined
+			? bindings
+					.split(",")
+					.map((binding) => binding.trim())
+					.filter((binding) => binding !== "" && !binding.startsWith("type "))
+			: [],
+	);
+	const namespaces = [...code.matchAll(/import\s+\*\s+as\s+(\w+)\s+from\s+"effect(?:\/[^"]*)?"/g)];
+	effectImports.push(...namespaces.map(([, binding = ""]) => binding));
+	const schemaCalls = [...code.matchAll(/\bSchema\.(\w+)/g)].map(([, member = ""]) => member);
+	return {code, effectImports, schemaCalls};
+};
+
 describe("command row boundary", () => {
 	it("every row's toMsg answers with a core Msg, never a Promise", () => {
 		expect([tableRowReturnsMsg, declaredRowReturnsMsg]).toEqual([true, true]);
@@ -53,14 +84,26 @@ describe("command row boundary", () => {
 		}
 	});
 
-	it("the row and table modules reach no runtime, no clock and no host", () => {
-		const dir = import.meta.dirname;
-		for (const name of ["row.ts", "table.ts", "errors.ts"]) {
-			// Comments go first: "window" and "process" are this slice's own domain nouns.
-			const code = readFileSync(join(dir, name), "utf8")
-				.replace(/\/\*[\s\S]*?\*\//g, "")
-				.replace(/\/\/.*$/gm, "");
-			for (const forbidden of ["Effect", "async ", "await ", "Date.now", "Math.random"]) {
+	it("sees table.ts's effect import and its Schema call sites, so the check below reads real code", () => {
+		const table = pureScan("table.ts");
+		expect(table.effectImports).toEqual(["Schema"]);
+		expect(new Set(table.schemaCalls)).toEqual(
+			new Set(["Struct", "NonEmptyString", "optionalKey"]),
+		);
+	});
+
+	it("the row, table and line modules reach no runtime, no clock and no host", () => {
+		for (const name of pureModules) {
+			const {code, effectImports, schemaCalls} = pureScan(name);
+			// Schema and Result are pure values; every other effect export is a runtime.
+			expect(`${name}: ${effectImports.filter((binding) => !pureEffect.has(binding))}`).toBe(
+				`${name}: `,
+			);
+			// A decoder answering an Effect or a Promise is the runtime arriving through Schema.
+			expect(`${name}: ${schemaCalls.filter((member) => /(Effect|Promise)$/.test(member))}`).toBe(
+				`${name}: `,
+			);
+			for (const forbidden of ["async ", "await ", "Date.now", "Math.random"]) {
 				expect(`${name}: ${code.includes(forbidden)}`).toBe(`${name}: false`);
 			}
 		}

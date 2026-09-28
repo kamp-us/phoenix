@@ -194,11 +194,16 @@ describe("resolving a name", () => {
 });
 
 describe("the Msg a bound key runs", () => {
-	it("is the row's own, for every row that takes no argument", () => {
+	it("is the row's own for every row but the four that need an argument", () => {
+		const needsArgument = ["window:focus", "window:open", "window:attach", "workspace:activate"];
+		const names = shellCommands.map((command) => commandName(command.path));
+		expect(names.filter((name) => msgForCommandName(name) === null).map(String)).toEqual(
+			needsArgument,
+		);
 		for (const command of shellCommands) {
 			const name = commandName(command.path);
-			const expected = parameterNames(command).length === 0 ? command.toMsg({}) : null;
-			expect(msgForCommandName(name)).toEqual(expected);
+			if (needsArgument.includes(String(name))) continue;
+			expect(msgForCommandName(name)).toEqual(command.toMsg({}));
 		}
 	});
 

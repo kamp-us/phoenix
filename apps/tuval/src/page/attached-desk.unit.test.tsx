@@ -9,7 +9,11 @@
 import {assert, describe, it} from "@effect/vitest";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
-import type {ProcessView} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {
+	type ProcessView,
+	type WindowHost,
+	windowRenderer,
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {defaultPrefixTable, type PrefixTable} from "@kampus/tuval-ui/keys";
 import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, fireEvent, render, screen} from "@testing-library/react";
@@ -33,6 +37,13 @@ const renderers = pageRenderers(
 	() => Effect.never,
 	() => undefined,
 );
+
+/** The counter's seat, answered by a renderer whose one control writes its window's view slot. */
+const scrollingRenderer = windowRenderer("host-native", (host: WindowHost) => (
+	<button type="button" onClick={() => Effect.runSync(host.setView({scroll: 42}))}>
+		Scroll {host.windowId}
+	</button>
+));
 
 installDomShims();
 
@@ -506,23 +517,47 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={renderers}
+						renderers={{...renderers, "tuval/demo/counter": scrollingRenderer}}
 						reducedMotion={true}
 						refusal={null}
 					/>,
 				);
 				yield* settle;
 
-				assert.deepStrictEqual(app.sent, []);
-				// The desk's own listener is the page's only input path, and it goes to the kernel.
 				act(() => {
-					document.dispatchEvent(new KeyboardEvent("keydown", {key: "j", bubbles: true}));
+					fireEvent.click(screen.getByRole("button", {name: "Scroll window-2"}));
 				});
-				assert.lengthOf(app.sent, 1);
-				const press = app.sent.at(0);
-				assert.strictEqual(press?.type, "keys.press");
-				assert.include(press?.type === "keys.press" ? press.key : {}, {key: "j"});
+				assert.deepStrictEqual(
+					app.sent.filter((msg) => msg.type === "window.setView"),
+					[{type: "window.setView", windowId: "window-2", view: {scroll: 42}}],
+				);
 			}),
+	);
+
+	it.effect("sends a key the desk hears to the kernel as a key press, its only input path", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted();
+			render(
+				<AttachedDesk
+					page={app.page}
+					shell={app.shell}
+					renderers={renderers}
+					reducedMotion={true}
+					refusal={null}
+				/>,
+			);
+			yield* settle;
+
+			assert.deepStrictEqual(app.sent, []);
+			// The desk's own listener is the page's only input path, and it goes to the kernel.
+			act(() => {
+				document.dispatchEvent(new KeyboardEvent("keydown", {key: "j", bubbles: true}));
+			});
+			assert.lengthOf(app.sent, 1);
+			const press = app.sent.at(0);
+			assert.strictEqual(press?.type, "keys.press");
+			assert.include(press?.type === "keys.press" ? press.key : {}, {key: "j"});
+		}),
 	);
 
 	it.effect(

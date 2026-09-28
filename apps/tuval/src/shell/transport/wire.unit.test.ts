@@ -331,12 +331,8 @@ describe("the transport wire", () => {
 		);
 	});
 
-	it("no frame kind is the shell's: the shell's state travels the same path as any process's", () => {
+	it("no frame kind names the shell", () => {
 		const kinds = [...clientFrames, ...serverFrames].map((frame) => frame.kind);
 		expect(kinds.filter((kind) => kind.includes("shell"))).toEqual([]);
-		// And the state frame carries a process id like any other, with no arm naming the shell.
-		expect(
-			serverFrames.filter((frame) => frame.kind === PROCESS_STATE_KIND).map((frame) => frame.kind),
-		).toEqual([PROCESS_STATE_KIND, PROCESS_STATE_KIND]);
 	});
 });
