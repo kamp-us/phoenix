@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.8.0...fabrika-cli-v0.8.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **fabrika-cli:** a missing project scope skips the table instead of refusing ([#10135](https://github.com/kamp-us/phoenix/issues/10135)) ([#10152](https://github.com/kamp-us/phoenix/issues/10152)) ([c5653ca](https://github.com/kamp-us/phoenix/commit/c5653cac19b5de89eff9f8eab8e4ac622c0fdd9a))
+
 ## [0.8.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.7.1...fabrika-cli-v0.8.0) (2026-09-28)
 
 
