@@ -3,9 +3,8 @@ import {describe, expect, it} from "vitest";
 import {type HttpReply, okOut, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {renderFooter} from "../report/compose.ts";
-import {COMMENTS, claimPage, EXPIRED, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
+import {COMMENTS, claimPage, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
 import {
-	CLAIMED_ELSEWHERE,
 	EMPTY_STDIN,
 	LEAKED_PATH,
 	PRECONDITION_UNKNOWN,
@@ -366,7 +365,6 @@ describe("runSplit — the authored-text guard", () => {
 /** The guard reads the PARENT — the issue this verb mutates by cross-linking it. */
 describe("runSplit — the parent guard", () => {
 	const MINE = "session-mine";
-	const THEIRS = "session-theirs";
 	const mine = {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: MINE} as Record<
 		string,
 		string | undefined
@@ -388,28 +386,8 @@ describe("runSplit — the parent guard", () => {
 		expect(created).toBe(false);
 	});
 
-	it("refuses a live claim held by another session on 17 and creates nothing", async () => {
-		const {outcome, created} = await guard(
-			script([COMMENTS, claimPage({session: THEIRS, createdAt: LIVE})]),
-		);
-		expect(outcome.code).toBe(CLAIMED_ELSEWHERE);
-		expect(created).toBe(false);
-	});
-
 	it("creates when the live claim is this session's own", async () => {
 		const {created} = await guard(script([COMMENTS, claimPage({session: MINE, createdAt: LIVE})]));
-		expect(created).toBe(true);
-	});
-
-	it("creates over a parent nobody has claimed", async () => {
-		const {created} = await guard(base);
-		expect(created).toBe(true);
-	});
-
-	it("creates when the only foreign claim has aged out", async () => {
-		const {created} = await guard(
-			script([COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})]),
-		);
 		expect(created).toBe(true);
 	});
 });

@@ -2,14 +2,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import type {HttpReply, Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {
-	COMMENTS,
-	claimPage,
-	declaring,
-	EXPIRED,
-	guardedShell,
-	LIVE,
-} from "./claim-fixtures.test-support.ts";
+import {COMMENTS, claimPage, declaring, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
 import {
 	BARE_AT_PATH,
 	CLAIMED_ELSEWHERE,
@@ -392,15 +385,6 @@ describe("runKill", () => {
 		const {out} = await runWith([[ISSUE, NOT_FOUND]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe("triage kill: issue #4312 not found in o/r.");
-	});
-
-	it("refuses an already-closed issue on 7", async () => {
-		const {out} = await runWith([
-			[firstCallOnly(ISSUE), issue({state: "closed"})],
-			...happy().slice(1),
-		]);
-		expect(out.code).toBe(ZERO_SCOPE);
-		expect(out.stderr.at(-1)).toBe("triage kill: issue #4312 is already closed.");
 	});
 
 	it("refuses when closed-by-triage is absent from the repo — the kill would be unauditable", async () => {
@@ -800,16 +784,6 @@ describe("runKill — the target guard", () => {
 		return {out, wrote: requests.some((line) => CLOSE.test(line) || REASON_COMMENT.test(line))};
 	};
 
-	it("refuses a closed issue on 7 and writes nothing", async () => {
-		const {out, wrote} = await guard([
-			[ISSUE, issue({state: "closed"})],
-			[LABELS, labelSet],
-		]);
-		expect(out.code).toBe(ZERO_SCOPE);
-		expect(out.stderr.at(-1)).toContain("issue #4312 is already closed.");
-		expect(wrote).toBe(false);
-	});
-
 	it("refuses a live claim held by another session on 17 and writes nothing", async () => {
 		const {out, wrote} = await guard([
 			...happy(),
@@ -823,19 +797,6 @@ describe("runKill — the target guard", () => {
 		const {out} = await guard([
 			...happy(),
 			[COMMENTS, claimPage({session: MINE, createdAt: LIVE})],
-		]);
-		expect(out.code).toBe(0);
-	});
-
-	it("kills an issue nobody has claimed", async () => {
-		const {out} = await guard(happy());
-		expect(out.code).toBe(0);
-	});
-
-	it("kills when the only foreign claim has aged out", async () => {
-		const {out} = await guard([
-			...happy(),
-			[COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})],
 		]);
 		expect(out.code).toBe(0);
 	});

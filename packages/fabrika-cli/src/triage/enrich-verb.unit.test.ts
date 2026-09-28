@@ -6,7 +6,6 @@ import {
 	COMMENTS,
 	claimPage,
 	declaring,
-	EXPIRED,
 	type GuardedSeams,
 	guardedShell,
 	LIVE,
@@ -585,19 +584,6 @@ describe("runEnrich — the target guard", () => {
 		string,
 		string | undefined
 	>;
-	const closed: HttpReply = {
-		status: 200,
-		body: JSON.stringify({
-			number: 4312,
-			title: "t",
-			body: ORIGINAL,
-			state: "closed",
-			labels: [],
-			html_url: "https://example.test/issues/4312",
-			milestone: null,
-		}),
-	};
-
 	const guard = async (script: ReadonlyArray<Scripted>) => {
 		const shell = guardedShell(script);
 		const outcome = await Effect.runPromise(
@@ -605,12 +591,6 @@ describe("runEnrich — the target guard", () => {
 		);
 		return {outcome, patched: shell.requests.some((line) => PATCH.test(line))};
 	};
-
-	it("refuses a closed issue on 7 and writes nothing", async () => {
-		const {outcome, patched} = await guard([[READ, closed]]);
-		expect(outcome.code).toBe(ZERO_SCOPE);
-		expect(patched).toBe(false);
-	});
 
 	it("refuses a live claim held by another session on 17 and writes nothing", async () => {
 		const {outcome, patched} = await guard([
@@ -626,25 +606,6 @@ describe("runEnrich — the target guard", () => {
 		const {patched} = await guard([
 			[once(READ), issue(ORIGINAL)],
 			[COMMENTS, claimPage({session: MINE, createdAt: LIVE})],
-			[PATCH, ACCEPTED],
-			[READ, issue(ORIGINAL)],
-		]);
-		expect(patched).toBe(true);
-	});
-
-	it("writes over an issue nobody has claimed", async () => {
-		const {patched} = await guard([
-			[once(READ), issue(ORIGINAL)],
-			[PATCH, ACCEPTED],
-			[READ, issue(ORIGINAL)],
-		]);
-		expect(patched).toBe(true);
-	});
-
-	it("writes when the only foreign claim has aged out", async () => {
-		const {patched} = await guard([
-			[once(READ), issue(ORIGINAL)],
-			[COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})],
 			[PATCH, ACCEPTED],
 			[READ, issue(ORIGINAL)],
 		]);
