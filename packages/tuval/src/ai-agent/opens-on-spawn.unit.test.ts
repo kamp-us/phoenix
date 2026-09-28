@@ -2,9 +2,10 @@
  * The fresh arm, end to end on `ScriptedAiAgent`: spawning the row is the whole act (#7925).
  *
  * Nothing here dispatches `start`. What the picker does is `processes.spawn` and then bind a
- * window, so that is all this does — and what it has to show is a session that opened itself and a
- * prompt that was answered rather than refused. The restored arm's counterpart is
- * `restore/restore.unit.test.ts`; the checkpoint rule the two share is `restore/checkpoint.ts`.
+ * window, so that is all this does — and what it has to show is a session that opened itself. The
+ * first prompt into such a session is `handlers/handlers.unit.test.ts`'s round trip. The restored
+ * arm's counterpart is `restore/restore.unit.test.ts`; the checkpoint rule the two share is
+ * `restore/checkpoint.ts`.
  */
 
 import {assert, describe, it} from "@effect/vitest";
@@ -20,7 +21,6 @@ import {Registry} from "../registry/Registry.ts";
 import {type AiAgentSessionState, isAiAgentSessionState} from "./core/index.ts";
 import {aiAgentPortNames} from "./handlers/index.ts";
 import {SessionOpening} from "./opening.ts";
-import type {TranscriptPayload} from "./ports/index.ts";
 import {aiAgentProgram} from "./program.ts";
 import {plainReply, SESSION_ID} from "./service/fixtures/scripts.ts";
 import {ScriptedAiAgent} from "./service/index.ts";
@@ -28,23 +28,14 @@ import {ScriptedAiAgent} from "./service/index.ts";
 const PROGRAM = "ai-agent-fresh-spawn-test";
 const CWD = "/work";
 
-interface Emitted {
-	readonly port: string;
-	readonly payload: unknown;
-}
-
 const wired: ReadonlySet<string> = new Set(Object.values(aiAgentPortNames));
 
-const recorder = (log: Array<Emitted>) =>
-	ProcessPorts.of({
-		emit: (port, payload) =>
-			wired.has(port)
-				? Effect.sync(() => {
-						log.push({port, payload});
-						return [];
-					})
-				: Effect.fail(new PortNotWired({node: NodeId.make("test"), port})),
-	});
+const sink = ProcessPorts.of({
+	emit: (port) =>
+		wired.has(port)
+			? Effect.succeed([])
+			: Effect.fail(new PortNotWired({node: NodeId.make("test"), port})),
+});
 
 const row = aiAgentProgram({
 	id: PROGRAM,
@@ -71,20 +62,16 @@ const sessionOf = (handle: ProcessHandle): AiAgentSessionState => {
 };
 
 /** Spawn with no checkpoint and no `start`, exactly as `shell/picker/open.ts` does. */
-const onAFreshSpawn = <A, E>(
-	body: (handle: ProcessHandle, log: ReadonlyArray<Emitted>) => Effect.Effect<A, E>,
-	cwd?: string,
-) =>
+const onAFreshSpawn = <A, E>(body: (handle: ProcessHandle) => Effect.Effect<A, E>, cwd?: string) =>
 	Effect.gen(function* () {
-		const log: Array<Emitted> = [];
 		const processes = yield* Processes;
-		const ports = Context.make(ProcessPorts, recorder(log));
+		const ports = Context.make(ProcessPorts, sink);
 		const services =
 			cwd === undefined
 				? ports
 				: Context.merge(ports, Context.make(SessionOpening, {cwd, resume: null}));
 		const handle = yield* processes.spawn(ProgramId.make(PROGRAM), {services});
-		return yield* body(handle, log);
+		return yield* body(handle);
 	}).pipe(Effect.scoped, Effect.provide(kernel));
 
 describe("a freshly spawned agent session", () => {
@@ -118,35 +105,6 @@ describe("a freshly spawned agent session", () => {
 					assert.isNull(session.failure);
 				}),
 			"/worktrees/reviewer",
-		),
-	);
-
-	it.live("takes a prompt and puts the reply on the transcript port", () =>
-		onAFreshSpawn((handle, log) =>
-			Effect.gen(function* () {
-				yield* eventually(
-					"the spawned session to reach ready",
-					() => sessionOf(handle).phase === "ready",
-				);
-				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1", timestamp: Date.now()});
-				yield* eventually(
-					"both turn items on the session transcript",
-					() => sessionOf(handle).transcript.items.length === 2,
-				);
-
-				const session = sessionOf(handle);
-				assert.isNull(session.failure, "the first prompt into a fresh session was refused");
-				assert.deepStrictEqual(
-					session.transcript.items.map((item) => item.id),
-					["u1", "a1"],
-				);
-				const published = [...log]
-					.reverse()
-					.find((entry) => entry.port === aiAgentPortNames.transcript)?.payload as
-					| TranscriptPayload
-					| undefined;
-				assert.deepStrictEqual(published?.items, session.transcript.items);
-			}),
 		),
 	);
 });

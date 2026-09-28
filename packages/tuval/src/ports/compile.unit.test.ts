@@ -137,20 +137,9 @@ describe("ports.compile", () => {
 			}),
 	);
 
-	it.effect("still routes a legacy row pair by kind, because neither publishes a schema", () =>
+	// A pair where neither end publishes a schema is the first case in this file.
+	it.effect("still routes by kind when only one end publishes a schema", () =>
 		Effect.gen(function* () {
-			const compiled = yield* Effect.provide(
-				compile({
-					nodes: [
-						node("p", "producer", [{port: "ticks", to: to("c", "ticks")}]),
-						node("c", "consumer"),
-					],
-				}),
-				Registry.layer([producer, consumer()]),
-			);
-			assert.strictEqual(compiled.routes.length, 1);
-
-			// And a pair where only one end publishes a schema: still nominal, still routed.
 			const mixed = yield* Effect.provide(
 				compile({
 					nodes: [

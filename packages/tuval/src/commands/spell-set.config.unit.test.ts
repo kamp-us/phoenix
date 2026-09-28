@@ -2,11 +2,11 @@
  * `SpellSet`: the registry table and the key bindings compiled against it, in one cell.
  *
  * The claim under test is that the two are one value and not two pieces of state kept in step —
- * every write recompiles, every read returns both halves of one config, and the `SpellRegistry` the
- * same layer hands out reads that same cell rather than a second one. `reload-proof.unit.test.ts`
+ * every write recompiles, and every read returns both halves of one config. `reload-proof.unit.test.ts`
  * watches a real boot across a real config reload; this file drives the module directly, including
  * the narrower `swap` entry that no config path reaches. `spell-set.unit.test.ts` (#7752) pins the
- * generation and race properties on its own fixtures; this file reads the compiled config.
+ * generation and race properties on its own fixtures, and that the `SpellRegistry` the same layer
+ * hands out reads the same cell; this file reads the compiled config.
  */
 
 import {defineMachine} from "@demlik/tea";
@@ -15,7 +15,6 @@ import {Effect, Layer, Schema} from "effect";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {spells} from "./bindings/fixtures.ts";
 import type {BindingSource} from "./bindings/index.ts";
-import {SpellNotFound} from "./errors.ts";
 import {buildRegistry, SpellRegistry} from "./registry.ts";
 import {type AnySpell, defineSpell, renderPath} from "./spell.ts";
 import {SpellSet, type SpellSetInput} from "./spell-set.ts";
@@ -106,20 +105,6 @@ describe("SpellSet", () => {
 		),
 	);
 
-	it.effect("costs a binding that does not compile its own key and nothing else", () =>
-		on(
-			{...config, keys: [source("global", {"ctrl-c": "window close", "ctrl-x": "window vanish"})]},
-			Effect.gen(function* () {
-				const state = yield* SpellSet.use((set) => set.read);
-
-				assert.deepStrictEqual(keysOf(state), ["ctrl-c"]);
-				assert.strictEqual(state.bindings.errors.length, 1);
-				assert.strictEqual(state.bindings.errors[0]?.key, "ctrl-x");
-				assert.strictEqual(state.bindings.errors[0]?.file, "global");
-			}),
-		),
-	);
-
 	it.effect(
 		"keeps every layer's bindings, in layer order, so a later layer wins a shared key",
 		() =>
@@ -187,34 +172,6 @@ describe("SpellSet", () => {
 					state.bindings.errors.map((error) => error.key),
 					["ctrl-e"],
 					"the narrower swap entry left the two halves disagreeing",
-				);
-			}),
-		),
-	);
-
-	it.effect("serves the registry off the same cell the set reads", () =>
-		on(
-			config,
-			Effect.gen(function* () {
-				const set = yield* SpellSet;
-				const registry = yield* SpellRegistry;
-
-				const row = yield* registry.lookup(["talker", "echo"]);
-				assert.strictEqual(renderPath(row.path), "talker.echo");
-
-				yield* set.reload({core: spells, programs: [program([])], keys: config.keys});
-
-				const gone = yield* Effect.flip(registry.lookup(["talker", "echo"]));
-				assert.instanceOf(gone, SpellNotFound);
-				assert.strictEqual(gone.path, "talker.echo");
-				assert.notInclude(
-					(yield* registry.list).map((held) => renderPath(held.path)),
-					"talker.echo",
-					"the registry is reading a cell of its own",
-				);
-				assert.notInclude(
-					(yield* registry.describe).map((held) => held.path.join(".")),
-					"talker.echo",
 				);
 			}),
 		),

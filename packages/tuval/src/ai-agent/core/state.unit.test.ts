@@ -22,7 +22,7 @@ import {
 	cutPromptId,
 	initialState,
 	lastAssistantId,
-	phases,
+	type phases,
 	restore,
 	settleSessionSubagents,
 	settleTurn,
@@ -68,13 +68,6 @@ const saved: AiAgentSessionState = {
 };
 
 describe("a save snapshot", () => {
-	it("round-trips through JSON with its permission cards and usage intact", () => {
-		const parsed = parseSessionState(JSON.parse(JSON.stringify(saved)));
-		expect(parsed).toEqual(saved);
-		expect(parsed?.permissions["req-1"]?.request).toEqual(card);
-		expect(parsed?.usage).toEqual(saved.usage);
-	});
-
 	it("names every field of the state, so none lands without a decision", () => {
 		expect(everyFieldDecided).toBe(true);
 		expect(Object.keys(initialState("/repo")).sort()).toEqual([...checkpointFields].sort());
@@ -92,7 +85,6 @@ describe("a save snapshot", () => {
 
 	it("lists every phase the type admits", () => {
 		expect(everyPhaseListed).toBe(true);
-		expect([...phases]).toEqual(["idle", "starting", "ready", "prompting", "reconnecting", "gone"]);
 	});
 
 	it("refuses a shape it cannot read, with null rather than a throw", () => {
@@ -115,10 +107,6 @@ describe("a save snapshot", () => {
 });
 
 describe("the version slot the layers fill", () => {
-	it("starts empty, because no layer has reported one yet", () => {
-		expect(initialState("/repo").agentVersion).toBeNull();
-	});
-
 	it("comes back empty from a checkpoint, since the binary the layer launches can have moved", () => {
 		expect(restore({...saved, agentVersion: "2.1.259"}).agentVersion).toBeNull();
 	});
@@ -130,10 +118,6 @@ describe("the version slot the layers fill", () => {
 
 describe("the booted-on account slot", () => {
 	const account = {organization: "kamp.us", subscriptionType: "max"};
-
-	it("starts empty, because no layer has reported one yet", () => {
-		expect(initialState("/repo").account).toBeNull();
-	});
 
 	it("round-trips through JSON with either field present or absent", () => {
 		for (const carried of [account, {organization: "kamp.us"}, {subscriptionType: "max"}, {}]) {

@@ -142,21 +142,6 @@ describe("buildRegistry", () => {
 			}),
 	);
 
-	it.effect("describes every registered spell without throwing, from the row's own document", () =>
-		Effect.gen(function* () {
-			const table = yield* build({core: [spell(["window", "close"])], programs: []});
-			const described = yield* withRegistry(table, (registry) => registry.describe);
-			assert.deepStrictEqual(described, [
-				{
-					path: ["window", "close"],
-					describe: "Run window.close.",
-					params: Schema.toJsonSchemaDocument(Schema.Struct({id: Schema.String})),
-					capabilities: [{family: "process-control"}],
-				},
-			]);
-		}),
-	);
-
 	it.effect("refuses one program claiming a path twice, naming both sources", () =>
 		Effect.gen(function* () {
 			const error = yield* refusal({

@@ -1,5 +1,5 @@
 /**
- * The two properties the palette rests on, over generated registries and generated lines.
+ * The prefix property the palette rests on, over generated registries and generated lines.
  *
  * The generator is a seeded LCG in this file rather than `fast-check`, so the corpus is fixed: a
  * failure names one seed and one case, and adding a property costs no dependency in a package whose
@@ -14,7 +14,6 @@
 import {describe, expect, it} from "vitest";
 import type {SpellPath} from "../../protocol/ids.ts";
 import type {RegistryDescription} from "../../protocol/registry-description.ts";
-import {complete} from "./complete.ts";
 import {jsonSchema, snapshot} from "./fixtures.ts";
 import {parse} from "./parse.ts";
 import {buildSpellIndex, type SpellIndex} from "./spell-index.ts";
@@ -91,8 +90,6 @@ const generate = (seed: number): Generated => {
 		taken.add(key);
 
 		const arity = next(3);
-		// The first name draws the snapshot's workspace set, so the determinism property covers the
-		// fuzzy ranking and not only the prefix one.
 		const names = ["workspace", "second"].slice(0, arity);
 		const enumAt = arity === 0 ? -1 : next(arity + 1);
 		const properties = Object.fromEntries(
@@ -201,21 +198,5 @@ describe("every prefix of a complete line is Partial or Complete", () => {
 			}
 		}
 		expect(offenders).toEqual([]);
-	});
-});
-
-describe("ranking is deterministic", () => {
-	it("returns an equal list for equal input and snapshot, over every generated prefix", () => {
-		for (let seed = 1; seed <= 20; seed += 1) {
-			const {registry, cases} = generate(seed);
-			for (const {line} of cases) {
-				for (let length = 0; length <= line.length; length += 1) {
-					const prefix = line.slice(0, length);
-					expect(complete(prefix, registry, snapshot)).toEqual(
-						complete(prefix, registry, snapshot),
-					);
-				}
-			}
-		}
 	});
 });

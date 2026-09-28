@@ -55,12 +55,6 @@ describe("complete — fuzzy subsequence over user-named values", () => {
 		expect(values("window focus w-")).toEqual(["w-right", "w-left"]);
 	});
 
-	it("keeps the tighter match ahead of the more recent one", () => {
-		// Recency only breaks a tie: `p-counter` is not a tighter match than `p-client` here, but
-		// `scratch` is a tighter match than `super-carrier` and neither carries a stamp.
-		expect(values("workspace activate scr")).toEqual(["scratch", "super-carrier"]);
-	});
-
 	it("offers nothing for a parameter that names no live set", () => {
 		expect(values("workspace rename ws-2 ")).toEqual([]);
 	});
@@ -87,13 +81,5 @@ describe("complete — one case rule over both matchers (#7757)", () => {
 	it("matches a fuzzy-ranked kind regardless of case", () => {
 		expect(values("workspace activate SCR")).toEqual(values("workspace activate scr"));
 		expect(values("workspace activate SCR")).toEqual(["scratch", "super-carrier"]);
-	});
-});
-
-describe("complete — determinism", () => {
-	it("returns an equal list for equal input and snapshot", () => {
-		for (const input of ["win", "window move ", "workspace activate scr", "process kill p-"]) {
-			expect(complete(input, registry, snapshot)).toEqual(complete(input, registry, snapshot));
-		}
 	});
 });

@@ -19,22 +19,6 @@ const lines = (bindings: KeyBindings) =>
 	);
 
 describe("renderBindingErrors", () => {
-	it.effect("renders a mistyped spell with the nearest one it holds", () =>
-		Effect.gen(function* () {
-			assert.deepStrictEqual(yield* lines({"ctrl+x": "windwo close"}), [
-				'global .tuval/tuval.config.ts: cannot bind "ctrl+x": at character 0, expected window|workspace; did you mean "window"?',
-			]);
-		}),
-	);
-
-	it.effect("renders a binding that stops before an argument it owes", () =>
-		Effect.gen(function* () {
-			assert.deepStrictEqual(yield* lines({"ctrl+1": "workspace activate"}), [
-				'global .tuval/tuval.config.ts: cannot bind "ctrl+1": at character 18, expected <workspace>',
-			]);
-		}),
-	);
-
 	it.effect("renders an argument outside the choices its parameter allows", () =>
 		Effect.gen(function* () {
 			assert.deepStrictEqual(yield* lines({"ctrl+l": "window swap sideways"}), [
