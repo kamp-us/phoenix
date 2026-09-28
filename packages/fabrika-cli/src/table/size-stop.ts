@@ -25,7 +25,7 @@ import {failedRead, readAdoption} from "./adoption.ts";
 import {NO_TARGET} from "./codes.ts";
 import {type OverSize, recOf, stopOf} from "./flags.ts";
 import {readHeads} from "./flags-read.ts";
-import {locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
+import {githubWave, locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
 
 export type SizeStop =
 	| {readonly _tag: "Clear"; readonly note: string}
@@ -88,6 +88,7 @@ export const sizeStopOnGitHub =
 				items: syncBoard.items,
 				node: syncBoard.node,
 				comments: syncBoard.comments,
+				wave: githubWave,
 			},
 			verb,
 			cwd,

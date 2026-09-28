@@ -49,7 +49,7 @@ import {
 import {readHeads} from "./flags-read.ts";
 import {onCallItemsOf, readOnCall} from "./on-call-prep.ts";
 import type {Row} from "./sync.ts";
-import {locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
+import {githubWave, locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
 import {
 	nextTableDay,
 	parseTableDay,
@@ -296,6 +296,7 @@ export const flagsBoard: FlagsBoard<
 	items: syncBoard.items,
 	node: syncBoard.node,
 	comments: syncBoard.comments,
+	wave: githubWave,
 	labels: (repo, issue) =>
 		Effect.map(getIssue(repo, issue), (found) =>
 			found._tag === "Present"

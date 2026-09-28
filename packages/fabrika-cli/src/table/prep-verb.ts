@@ -112,9 +112,10 @@ import {FIELD} from "./shape.ts";
 import type {Row, SyncNode} from "./sync.ts";
 import {
 	GRAPH_CAP,
+	githubWave,
 	locateTable,
 	type Refusal,
-	readEach,
+	readNodes,
 	rowsOf,
 	type SyncBoard,
 	syncBoard,
@@ -125,7 +126,7 @@ const VERB = "table prep";
 
 /** Every board act the verb takes, passed in so the verb stays provable offline. */
 export interface PrepBoard<R>
-	extends Pick<FlagsBoard<R>, "locate" | "items" | "node" | "comments" | "deciders">,
+	extends Pick<FlagsBoard<R>, "locate" | "items" | "node" | "comments" | "wave" | "deciders">,
 		Pick<SyncBoard<R>, "add" | "set" | "clear">,
 		CheckBoard<R> {
 	/** Post a comment on the issue: a check's evidence. */
@@ -248,7 +249,7 @@ const prefetchGroups = <R>(
 			});
 			const wanted = [...new Set(lacking)].filter((n) => !graph.has(n) && !unread.has(n));
 			if (wanted.length === 0 || graph.size + wanted.length > GRAPH_CAP) return;
-			for (const [issue, read] of yield* readEach(wanted, (n) => board.node(repo, n))) {
+			for (const [issue, read] of yield* readNodes(board, repo, wanted)) {
 				if (read._tag === "Unknown") unread.add(issue);
 				else graph.set(issue, read._tag === "Present" ? read.value : vanished(issue));
 			}
@@ -850,6 +851,7 @@ export const prepBoard: PrepBoard<
 	items: syncBoard.items,
 	node: syncBoard.node,
 	comments: syncBoard.comments,
+	wave: githubWave,
 	deciders: flagsBoard.deciders,
 	add: syncBoard.add,
 	set: syncBoard.set,
