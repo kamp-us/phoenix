@@ -1,4 +1,5 @@
-import {defineConfig} from "vitest/config";
+import {fileURLToPath} from "node:url";
+import {configDefaults, defineConfig} from "vitest/config";
 import {featuresPlugin} from "./src/page/dev-server.ts";
 
 // A `unit` project so `vitest --project unit` (the pre-push `unit-changed` leg over `apps/**`)
@@ -40,8 +41,24 @@ const maxWorkers = process.env.CI ? undefined : 2;
 // a root `plugins` entry does not reach one.
 const plugins = [featuresPlugin()];
 
+// Anchored to the checkout because `**` never enters a dot directory, and lanes run under
+// `.claude/worktrees/`.
+const repo = fileURLToPath(new URL("../../", import.meta.url));
+
 export default defineConfig({
 	test: {
+		// CI runs `unit` with `vitest --changed <base>` on a PR (#10074), which follows imports only.
+		// The boundary and focus-ring tests walk this app's `src/` and read the SDK's and
+		// `@kampus/tuval-ui`'s sources and manifests as text, so a change to one of these runs the
+		// whole suite. Vitest reads this off the root config, once per run.
+		forceRerunTriggers: [
+			...configDefaults.forceRerunTriggers,
+			`${repo}apps/tuval/package.json`,
+			`${repo}apps/tuval/src/**`,
+			`${repo}packages/tuval/package.json`,
+			`${repo}packages/tuval/src/**`,
+			`${repo}packages/tuval-ui/src/**`,
+		],
 		projects: [
 			{
 				plugins,

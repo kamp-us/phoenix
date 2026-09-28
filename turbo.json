@@ -16,7 +16,12 @@
 	// for `build check --surface code`, and what the pre-push hook runs — then selects `//` alone and
 	// plans 0 typecheck tasks on a root-tsconfig-only change (#8275). Listing it here makes every
 	// package changed for that selection and part of every task's hash.
-	"globalDependencies": ["tsconfig.json"],
+	//
+	// `infra/preview-auth-key/key.txt` belongs to no package, and `@kampus/web`'s unit suite reads it.
+	// It sits here rather than in that task's `inputs` because `--affected` selects packages from
+	// their own files and this list, never from a task's `inputs`: on turbo 2.10.3 a changed file
+	// named only in `inputs` changes the task hash but selects no package (#10074).
+	"globalDependencies": ["tsconfig.json", "infra/preview-auth-key/key.txt"],
 	"tasks": {
 		"dev": {
 			"dependsOn": ["^build"],
@@ -51,6 +56,21 @@
 		"lint": {
 			"dependsOn": ["^build"],
 			"cache": true
+		},
+		// A no-op every package answers, so a task that `dependsOn` it hashes the files of every
+		// workspace package it depends on without building them. The app unit suites import their
+		// dependencies' sources directly, so without this edge a dependency change would leave the
+		// app's hash, and a cached pass, unchanged.
+		"transit": {
+			"dependsOn": ["^transit"]
+		},
+		"test:unit": {
+			"dependsOn": ["transit"],
+			"outputs": []
+		},
+		"test:client": {
+			"dependsOn": ["transit"],
+			"outputs": []
 		},
 		"start": {
 			"dependsOn": ["build"],
