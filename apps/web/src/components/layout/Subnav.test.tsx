@@ -21,9 +21,7 @@ describe("Subnav CTA slot (#2598)", () => {
 			/>,
 		);
 		const slot = container.querySelector(".kp-subnav__cta");
-		expect(slot).toBeTruthy();
-		expect(screen.getByTestId("cta-btn")).toBeTruthy();
-		expect(slot?.querySelector(".kp-subnav__filter")).toBeNull();
+		expect(slot?.contains(screen.getByTestId("cta-btn"))).toBe(true);
 		expect(container.querySelector(".kp-subnav__filter")).toBeNull();
 	});
 

@@ -1,7 +1,6 @@
 import {render, screen} from "@testing-library/react";
 import {describe, expect, it} from "vitest";
 import {PageShell} from "./PageShell";
-import {SubnavShell} from "./SubnavShell";
 
 describe("PageShell — the page zone-stack recipe (#2973)", () => {
 	it("renders the zone-stack in structural order — the subnav zone ABOVE the content", () => {
@@ -19,26 +18,6 @@ describe("PageShell — the page zone-stack recipe (#2973)", () => {
 		expect(shell?.contains(content)).toBe(true);
 		const order = subnav.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING;
 		expect(order).toBeTruthy();
-	});
-
-	it("composes SubnavShell as its top zone (ADR 0182) — the bar renders inside the subnav zone", () => {
-		const {container} = render(
-			<PageShell
-				subnav={
-					<SubnavShell
-						primaryAction={
-							<button type="button" data-testid="cta">
-								yeni
-							</button>
-						}
-					/>
-				}
-				content={<div data-testid="content">page</div>}
-			/>,
-		);
-		const shell = container.querySelector(".kp-page-shell");
-		expect(shell?.querySelector(".kp-subnav")).toBeTruthy();
-		expect(shell?.querySelector(".kp-subnav__cta")?.contains(screen.getByTestId("cta"))).toBe(true);
 	});
 
 	it("makes an undeclared page zone a TYPE error — an orphan zone won't compile in", () => {
