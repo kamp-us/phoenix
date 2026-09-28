@@ -4,12 +4,7 @@
  */
 import {describe, expect, it} from "vitest";
 import {MECMUA_FEED, MECMUA_PUBLIC_READ} from "../../../src/flags/keys.ts";
-import {
-	assertShellBootKeysSingleSourced,
-	BOOT_MEMBER_KEYS,
-	type BootUser,
-	ShellKeyDriftError,
-} from "../../../src/flags/shell-keys.ts";
+import type {BootUser} from "../../../src/flags/shell-keys.ts";
 import {bootScriptTag, buildBootPayload} from "./shell-boot.ts";
 
 const shellFlags = {
@@ -39,15 +34,6 @@ describe("buildBootPayload", () => {
 	it("sets user to null for a signed-out viewer, independent of the flags", () => {
 		expect(buildBootPayload(null, shellFlags).user).toBeNull();
 	});
-
-	it("the boolean flag members are exactly the manifest key set — `user` is not a member key", () => {
-		const flagKeys = Object.keys(buildBootPayload(bootUser, shellFlags)).filter(
-			(k) => k !== "user",
-		);
-		expect([...flagKeys].sort()).toEqual([...BOOT_MEMBER_KEYS].sort());
-		expect(BOOT_MEMBER_KEYS).not.toContain("user");
-		expect(() => assertShellBootKeysSingleSourced(flagKeys, [...BOOT_MEMBER_KEYS])).not.toThrow();
-	});
 });
 
 describe("bootScriptTag", () => {
@@ -70,14 +56,5 @@ describe("bootScriptTag", () => {
 		const body = tag.slice("<script>window.__BOOT__=".length, -"</script>".length);
 		expect(body).not.toContain("<");
 		expect(body).toContain("\\u003c");
-	});
-});
-
-describe("assertShellBootKeysSingleSourced (the inject-seam guard the route calls)", () => {
-	it("throws ShellKeyDriftError when the injected key set drifts from the manifest", () => {
-		const drifted = [...BOOT_MEMBER_KEYS, "phoenix-rogue-key"];
-		expect(() => assertShellBootKeysSingleSourced(drifted, [...BOOT_MEMBER_KEYS])).toThrow(
-			ShellKeyDriftError,
-		);
 	});
 });

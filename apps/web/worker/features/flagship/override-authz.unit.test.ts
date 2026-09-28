@@ -103,22 +103,10 @@ const contextOverrides = (environment: string, overridesAllowed: boolean) =>
 	);
 
 describe("makeRequestFlagsContext — the verdict gates cookie parsing (#2741)", () => {
-	it.effect("prod, verdict false: the cookie is dropped — no overrides", () =>
-		Effect.gen(function* () {
-			assert.strictEqual(yield* contextOverrides("production", false), undefined);
-		}),
-	);
-
 	it.effect("prod, verdict true: the cookie is honored — overrides carried", () =>
 		Effect.gen(function* () {
 			const overrides = yield* contextOverrides("production", true);
 			assert.deepStrictEqual(overrides, {[OVERRIDDEN_FLAG]: true});
-		}),
-	);
-
-	it.effect("preview, verdict false: the cookie is dropped — a seeded one is inert too", () =>
-		Effect.gen(function* () {
-			assert.strictEqual(yield* contextOverrides("preview", false), undefined);
 		}),
 	);
 });

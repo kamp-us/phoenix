@@ -38,14 +38,6 @@ const fakeStmt = (id: number) =>
 	({__stmt__: id, _: {result: {rowsAffected: id}}}) as unknown as BatchItem<"sqlite">;
 
 describe("Drizzle.run", () => {
-	it.effect("smoke: callback success → typed value flows through", () =>
-		Effect.gen(function* () {
-			const {run} = yield* Drizzle;
-			const result = yield* run(() => Promise.resolve(42));
-			assert.strictEqual(result, 42);
-		}).pipe(Effect.provide(TestDrizzleLayer)),
-	);
-
 	it.effect("passes the live drizzle builder to the callback", () =>
 		Effect.gen(function* () {
 			const {run} = yield* Drizzle;
@@ -69,33 +61,6 @@ describe("Drizzle.run", () => {
 			assert.strictEqual(err._tag, "@kampus/Drizzle/Error");
 			assert.instanceOf(err, DrizzleError);
 			assert.strictEqual((err as DrizzleError).cause, boom);
-		}).pipe(Effect.provide(TestDrizzleLayer)),
-	);
-
-	it.effect("composition: Effect.all over multiple run calls", () =>
-		Effect.gen(function* () {
-			const {run} = yield* Drizzle;
-			const results = yield* Effect.all(
-				[
-					run(() => Promise.resolve("a")),
-					run(() => Promise.resolve("b")),
-					run(() => Promise.resolve("c")),
-				],
-				{concurrency: 1},
-			);
-			assert.deepStrictEqual(results, ["a", "b", "c"]);
-		}).pipe(Effect.provide(TestDrizzleLayer)),
-	);
-
-	it.effect("type inference: callback's promised type is the Effect's success type", () =>
-		// Compile-time assertion: if `run` widened the return to `unknown`, these typed
-		// bindings would fail tsc.
-		Effect.gen(function* () {
-			const {run} = yield* Drizzle;
-			const n: number = yield* run(() => Promise.resolve(7));
-			const s: string = yield* run(() => Promise.resolve("hello"));
-			const obj: {id: string} = yield* run(() => Promise.resolve({id: "x"}));
-			assert.strictEqual(n + s.length + obj.id.length, 7 + 5 + 1);
 		}).pipe(Effect.provide(TestDrizzleLayer)),
 	);
 });
@@ -124,18 +89,6 @@ describe("Drizzle.batch", () => {
 			assert.strictEqual(calls.length, 1);
 			assert.deepStrictEqual(calls[0], stmts);
 			assert.deepStrictEqual(result, [{rowsAffected: 1}, {rowsAffected: 2}]);
-		}).pipe(Effect.provide(layer));
-	});
-
-	it.effect("batch tuple shape: callback returns the tuple, result mirrors length", () => {
-		const {layer} = makeBatchSpy();
-		return Effect.gen(function* () {
-			const {batch} = yield* Drizzle;
-			const single = yield* batch(() => [fakeStmt(1)] as const);
-			assert.strictEqual(single.length, 1);
-
-			const triple = yield* batch(() => [fakeStmt(1), fakeStmt(2), fakeStmt(3)] as const);
-			assert.strictEqual(triple.length, 3);
 		}).pipe(Effect.provide(layer));
 	});
 

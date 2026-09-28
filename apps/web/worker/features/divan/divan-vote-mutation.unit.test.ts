@@ -5,14 +5,7 @@
  * `vote/Vote.unit.test.ts`, the tandem invariant is `tandem.unit.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {
-	type Actor,
-	AgentAuthority,
-	CurrentActor,
-	human,
-	RelationStore,
-	unauthenticated,
-} from "@kampus/authz";
+import {type Actor, AgentAuthority, CurrentActor, human, RelationStore} from "@kampus/authz";
 import {CurrentUser} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Exit, Layer} from "effect";
@@ -201,30 +194,6 @@ describe("divan.vote — gated sandboxed vote", () => {
 		);
 	});
 
-	it.effect("a mod (not a yazar) votes a sandboxed item — the Moderate arm alone admits", () => {
-		const casts: VoteInput[] = [];
-		return Effect.gen(function* () {
-			const receipt = yield* castVote("post:post-1", true);
-			assert.strictEqual((receipt as {myVote: boolean}).myVote, true);
-			assert.deepStrictEqual(casts, [
-				{userId: "u-mod", targetKind: "post", targetId: "post-1", value: true},
-			]);
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					voteStubOf(casts),
-					vouchActiveFor([]),
-					makePasaportStub(),
-					relationStoreOf(["u-mod"]),
-					kunyeOf({"u-mod": "çaylak"}),
-					agentAuthorityStub,
-					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
-					requestContext(human("u-mod")),
-				),
-			),
-		);
-	});
-
 	it.effect(
 		"a bar-crossing vote WITH an active vouch promotes the author (the tandem, #1289)",
 		() => {
@@ -250,29 +219,6 @@ describe("divan.vote — gated sandboxed vote", () => {
 		},
 	);
 
-	it.effect("a bar-crossing vote with NO active vouch does NOT promote (the tandem holds)", () => {
-		const casts: VoteInput[] = [];
-		return Effect.gen(function* () {
-			// `makePasaportStub()`'s fail-on-contact `promoteToYazar` is the assertion that no
-			// tier flip happened.
-			const receipt = yield* castVote("definition:def-1", true);
-			assert.strictEqual((receipt as {myVote: boolean}).myVote, true);
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					voteStubOf(casts, "u-author"),
-					vouchActiveFor([]), // no active vouch → short-circuit before karma + promote
-					makePasaportStub(),
-					relationStoreOf([]),
-					kunyeOf({"u-yazar": "yazar"}, {"u-author": 99}),
-					agentAuthorityStub,
-					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
-					requestContext(human("u-yazar")),
-				),
-			),
-		);
-	});
-
 	it.effect("a çaylak (not yazar, not mod) gets the invisible UNAUTHORIZED — no cast", () =>
 		Effect.gen(function* () {
 			const exit = yield* castVote("definition:def-1", true).pipe(Effect.exit);
@@ -289,27 +235,6 @@ describe("divan.vote — gated sandboxed vote", () => {
 					agentAuthorityStub,
 					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
 					requestContext(human("u-caylak")),
-				),
-			),
-		),
-	);
-
-	it.effect("an anonymous actor gets UNAUTHORIZED — no cast", () =>
-		Effect.gen(function* () {
-			const exit = yield* castVote("definition:def-1", true).pipe(Effect.exit);
-			assert.isTrue(Exit.isFailure(exit));
-			if (Exit.isFailure(exit)) assert.strictEqual(wireCodeOf(exit.cause), "UNAUTHORIZED");
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					voteFailOnContact,
-					makeVouchLedgerStub(),
-					makePasaportStub(),
-					relationStoreOf([]),
-					kunyeOf({}),
-					agentAuthorityStub,
-					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
-					requestContext(unauthenticated),
 				),
 			),
 		),

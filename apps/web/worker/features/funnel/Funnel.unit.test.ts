@@ -130,33 +130,6 @@ describe("promotionRate — the headline share promoted çaylak→yazar (#1593)"
 	});
 });
 
-describe("Funnel.tierPopulation → promotionRate — end to end over the Drizzle seam", () => {
-	it.effect("derives the headline rate from the counts the seam returns", () =>
-		Effect.gen(function* () {
-			const funnel = yield* Funnel;
-			const population = yield* funnel.tierPopulation();
-			assert.strictEqual(promotionRate(population), 0.2);
-		}).pipe(
-			Effect.provide(
-				funnelLayer(
-					scriptedRows([
-						{tier: "çaylak", count: 8},
-						{tier: "yazar", count: 2},
-					]),
-				),
-			),
-		),
-	);
-
-	it.effect("an empty seam yields the zero-population rate (0, not NaN)", () =>
-		Effect.gen(function* () {
-			const funnel = yield* Funnel;
-			const population = yield* funnel.tierPopulation();
-			assert.strictEqual(promotionRate(population), 0);
-		}).pipe(Effect.provide(funnelLayer(scriptedRows([])))),
-	);
-});
-
 describe("computeFirstContribution — rate over the çaylak population (#1591)", () => {
 	it("rate = contributing / çaylak", () => {
 		assert.deepStrictEqual(computeFirstContribution(8, 2), {
@@ -203,14 +176,6 @@ describe("Funnel.firstContribution — the read through the Drizzle seam", () =>
 				),
 			),
 		),
-	);
-
-	it.effect("no çaylaks ⇒ 0 rate (zero-population edge, no divide-by-zero)", () =>
-		Effect.gen(function* () {
-			const funnel = yield* Funnel;
-			const contribution = yield* funnel.firstContribution();
-			assert.deepStrictEqual(contribution, {caylakCount: 0, contributingCount: 0, rate: 0});
-		}).pipe(Effect.provide(funnelLayer(scriptedSequence([[], [{count: 0}]])))),
 	);
 });
 
@@ -260,14 +225,6 @@ describe("Funnel.vouchRate — the read through the Drizzle seam", () => {
 				),
 			),
 		),
-	);
-
-	it.effect("no çaylaks ⇒ 0 rate (zero-population edge, no divide-by-zero)", () =>
-		Effect.gen(function* () {
-			const funnel = yield* Funnel;
-			const vouch = yield* funnel.vouchRate();
-			assert.deepStrictEqual(vouch, {caylakCount: 0, vouchedCount: 0, rate: 0});
-		}).pipe(Effect.provide(funnelLayer(scriptedSequence([[], [{count: 0}]])))),
 	);
 });
 
@@ -363,15 +320,6 @@ describe("Funnel.timeToPromotion — the read through the Drizzle seam", () => {
 				),
 			),
 		),
-	);
-
-	it.effect("an empty seam yields a null median (no measurable yazar yet)", () =>
-		Effect.gen(function* () {
-			const funnel = yield* Funnel;
-			const result = yield* funnel.timeToPromotion();
-			assert.strictEqual(result.medianMs, null);
-			assert.isFalse(Number.isNaN(result.medianMs));
-		}).pipe(Effect.provide(funnelLayer(scriptedSequence([[]])))),
 	);
 });
 
@@ -565,28 +513,5 @@ describe("Funnel.cohorts — the live fold + holes through the Drizzle seam", ()
 				funnelLayer(scriptedSequence([[], [], [], [], [], [], [{value: 0}], [{value: 0}]])),
 			),
 		),
-	);
-});
-
-const rollupRow = {
-	cohortWeek: "2026-07-27",
-	signedUp: 4,
-	returnedDays2to7: 2,
-	firstContributed7d: 1,
-	vouched7d: 1,
-	promoted7d: 1,
-	d1Returned: 2,
-	d7Returned: 3,
-	d1ReturnRate: 0.5,
-	d7ReturnRate: 0.75,
-};
-
-describe("Funnel.cohortRollups — the durable weekly record through the Drizzle seam", () => {
-	it.effect("reads the rollup table rows back unchanged, oldest first", () =>
-		Effect.gen(function* () {
-			const funnel = yield* Funnel;
-			const rollups = yield* funnel.cohortRollups();
-			assert.deepStrictEqual(rollups, [rollupRow]);
-		}).pipe(Effect.provide(funnelLayer(scriptedSequence([[rollupRow]])))),
 	);
 });

@@ -1,14 +1,14 @@
 /**
  * The mecmua draft/publish visibility matrix. The load-bearing cell: a null-`publishedAt`
  * draft is hidden from every non-author. mecmua has NO sandbox arm, so there is no
- * moderator-exemption cell to pin.
+ * moderator-exemption cell to pin. The SQL mirror, `mecmuaPostVisibleWhere`, is proven off
+ * its rendered predicate in `public-read-route.unit.test.ts` and `index-route.unit.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
 	anonymousMecmuaViewer,
 	type MecmuaPostViewer,
 	mecmuaPostVisibleTo,
-	mecmuaPostVisibleWhere,
 } from "./MecmuaPostVisibility.ts";
 
 const publishedAt = new Date("2026-06-27T00:00:00.000Z");
@@ -44,26 +44,4 @@ describe("mecmuaPostVisibleTo — the published × viewer visibility matrix", ()
 			});
 		}
 	}
-
-	it("a null-publishedAt draft is hidden from a public read (the mask), a published row is exposed", () => {
-		assert.isFalse(mecmuaPostVisibleTo(null, AUTHOR, anonymousMecmuaViewer));
-		assert.isTrue(mecmuaPostVisibleTo(publishedAt, AUTHOR, anonymousMecmuaViewer));
-	});
-
-	it("the author sees their OWN draft but not ANOTHER author's draft", () => {
-		assert.isTrue(mecmuaPostVisibleTo(null, AUTHOR, viewers.author));
-		assert.isFalse(mecmuaPostVisibleTo(null, OTHER, viewers.author));
-	});
-});
-
-describe("mecmuaPostVisibleWhere — the SQL mirror's predicate shape", () => {
-	const cols = {publishedAt: {} as never, authorId: {} as never};
-
-	it("an anonymous viewer gets a restricting predicate (bare published test)", () => {
-		assert.isDefined(mecmuaPostVisibleWhere(cols, anonymousMecmuaViewer));
-	});
-
-	it("a signed-in member gets a restricting predicate (published OR own)", () => {
-		assert.isDefined(mecmuaPostVisibleWhere(cols, viewers.author));
-	});
 });

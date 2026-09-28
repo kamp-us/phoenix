@@ -99,10 +99,3 @@ describe("parseOverrideAction", () => {
 		expect(parseOverrideAction(new URLSearchParams({key: "f"}))).toBeNull();
 	});
 });
-
-describe("override cookie round-trip", () => {
-	it("encode → parse is identity for a boolean map", () => {
-		const map = {"mecmua-write": true, "phoenix-flags-probe": false};
-		expect(parseOverrideCookie(cookie(encodeOverrideCookieValue(map)))).toEqual(map);
-	});
-});

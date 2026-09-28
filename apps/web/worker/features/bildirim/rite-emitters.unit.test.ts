@@ -1,7 +1,8 @@
 /**
  * Rite-feedback emitter coverage — the decisions that are wrong-or-right with no
  * database (ADR 0082 T1/T2). The `Notification` seam is a fail-on-contact stub with
- * only the expected method overridden, so "touched the wrong write surface" fails.
+ * only the expected method overridden. The emitters swallow every cause, so a silent
+ * arm asserts off the recording stub's `touched`, never off a death that cannot fail it.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
@@ -10,7 +11,7 @@ import {Effect, Layer} from "effect";
 import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {Mute} from "../mute/Mute.ts";
-import {makeNotificationStub} from "./Notification.testing.ts";
+import {makeNotificationStub, makeTouchRecordingNotificationStub} from "./Notification.testing.ts";
 import type {NotificationAggregateInput, NotificationRecordInput} from "./Notification.ts";
 import {
 	BACKLOG_RELEASE_KIND,
@@ -115,23 +116,31 @@ describe("notifyDivanVote — the aggregated divan-vote emit", () => {
 		}),
 	);
 
-	it.effect("a self-vote emits nothing (the fail-on-contact stub is never touched)", () =>
-		notifyDivanVote({
-			authorId: "u-author",
-			actorId: "u-author",
-			targetKind: "post",
-			targetId: "p1",
-		}).pipe(Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(true)))),
-	);
+	it.effect("a self-vote emits nothing (the fail-on-contact stub is never touched)", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		return Effect.gen(function* () {
+			yield* notifyDivanVote({
+				authorId: "u-author",
+				actorId: "u-author",
+				targetKind: "post",
+				targetId: "p1",
+			});
+			assert.deepStrictEqual(notification.touched, []);
+		}).pipe(Effect.provide(Layer.mergeAll(notification.layer, requestContext(true))));
+	});
 
-	it.effect("with the bildirim flag OFF the write never happens (dark by default)", () =>
-		notifyDivanVote({
-			authorId: "u-author",
-			actorId: "u-voter",
-			targetKind: "post",
-			targetId: "p1",
-		}).pipe(Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(false)))),
-	);
+	it.effect("with the bildirim flag OFF the write never happens (dark by default)", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		return Effect.gen(function* () {
+			yield* notifyDivanVote({
+				authorId: "u-author",
+				actorId: "u-voter",
+				targetKind: "post",
+				targetId: "p1",
+			});
+			assert.deepStrictEqual(notification.touched, []);
+		}).pipe(Effect.provide(Layer.mergeAll(notification.layer, requestContext(false))));
+	});
 
 	it.effect(
 		"a DYING notification write is swallowed — the caller still succeeds (the seam AC)",
@@ -181,11 +190,13 @@ describe("notifyKefil — the vouch-received emit", () => {
 		}),
 	);
 
-	it.effect("a self-vouch emits nothing", () =>
-		notifyKefil({candidateId: "u-same", voucherId: "u-same"}).pipe(
-			Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(true))),
-		),
-	);
+	it.effect("a self-vouch emits nothing", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		return Effect.gen(function* () {
+			yield* notifyKefil({candidateId: "u-same", voucherId: "u-same"});
+			assert.deepStrictEqual(notification.touched, []);
+		}).pipe(Effect.provide(Layer.mergeAll(notification.layer, requestContext(true))));
+	});
 
 	it.effect("a DYING notification write is swallowed — the vouch caller still succeeds", () =>
 		Effect.gen(function* () {
@@ -226,11 +237,13 @@ describe("notifyPromotion — the çaylak→yazar ceremony emit", () => {
 		}),
 	);
 
-	it.effect("with the bildirim flag OFF the write never happens (dark by default)", () =>
-		notifyPromotion({userId: "u-promoted"}).pipe(
-			Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(false))),
-		),
-	);
+	it.effect("with the bildirim flag OFF the write never happens (dark by default)", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		return Effect.gen(function* () {
+			yield* notifyPromotion({userId: "u-promoted"});
+			assert.deepStrictEqual(notification.touched, []);
+		}).pipe(Effect.provide(Layer.mergeAll(notification.layer, requestContext(false))));
+	});
 
 	it.effect("a DYING notification write is swallowed — the promotion caller still succeeds", () =>
 		Effect.gen(function* () {
@@ -293,11 +306,13 @@ describe("notifyBacklogRelease — the terfi sweep's what-went-public emit (#706
 		}),
 	);
 
-	it.effect("with the bildirim flag OFF the write never happens (dark by default)", () =>
-		notifyBacklogRelease({userId: "u-promoted", releasedCount: 3}).pipe(
-			Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(false))),
-		),
-	);
+	it.effect("with the bildirim flag OFF the write never happens (dark by default)", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		return Effect.gen(function* () {
+			yield* notifyBacklogRelease({userId: "u-promoted", releasedCount: 3});
+			assert.deepStrictEqual(notification.touched, []);
+		}).pipe(Effect.provide(Layer.mergeAll(notification.layer, requestContext(false))));
+	});
 
 	it.effect("a DYING notification write is swallowed — the promotion caller still succeeds", () =>
 		Effect.gen(function* () {

@@ -1,20 +1,13 @@
 /**
  * `divan.pendingCount` — the topbar badge's read (#6760), driven through the REAL
- * `requireDivanAccess` gate the way `gate.unit.test.ts` proves it: a yazar and a mod are
- * both served (the badge must not be a `tier === "yazar"` check), while a çaylak and an
- * unauthenticated actor draw the same invisible `Denied` `divan.roster` gives them. The
- * count itself comes off a stubbed {@link Divan}, so what is asserted is the gate + shape,
- * not the backlog predicate (that is `Divan.unit.test.ts`'s).
+ * `requireDivanAccess` gate: a yazar is served and a çaylak draws the invisible `Denied`
+ * `divan.roster` gives it, which proves the badge rides the gate rather than a
+ * `tier === "yazar"` check. The gate's other arms are `gate.unit.test.ts`'s. The count
+ * itself comes off a stubbed {@link Divan}, so what is asserted is the gate + shape, not
+ * the backlog predicate (that is `Divan.unit.test.ts`'s).
  */
 import {assert, describe, it} from "@effect/vitest";
-import {
-	type Actor,
-	AgentAuthority,
-	CurrentActor,
-	human,
-	RelationStore,
-	unauthenticated,
-} from "@kampus/authz";
+import {type Actor, AgentAuthority, CurrentActor, human, RelationStore} from "@kampus/authz";
 import {Effect, Exit, Layer} from "effect";
 import type {Denied} from "../kunye/errors.ts";
 import {Kunye} from "../kunye/Kunye.ts";
@@ -88,18 +81,7 @@ describe("divan.pendingCount — the divan gate, not a tier equality (#6760)", (
 		});
 	});
 
-	it("a platform moderator who is only a çaylak is served too — the disjunctive arm", () => {
-		const exit = resolveAs(human("u"), {tier: "çaylak", mods: ["u"], count: 2});
-		assert.isTrue(Exit.isSuccess(exit));
-		if (!Exit.isSuccess(exit)) return;
-		assert.strictEqual(exit.value.count, 2);
-	});
-
 	it("a çaylak with no moderation is denied at the wire, exactly as divan.roster denies", () => {
 		assert.isTrue(Exit.isFailure(resolveAs(human("u"), {tier: "çaylak"})));
-	});
-
-	it("an unauthenticated actor is denied", () => {
-		assert.isTrue(Exit.isFailure(resolveAs(unauthenticated)));
 	});
 });
