@@ -1,8 +1,16 @@
+import {ToastProvider} from "@kampus/design";
+import {act, renderHook, screen} from "@testing-library/react";
+import type {ReactNode} from "react";
+import {MemoryRouter, useLocation} from "react-router";
 import {describe, expect, it, vi} from "vitest";
 import {en} from "../../i18n/en";
 import type {Translate} from "../../i18n/LocaleProvider";
 import {tr} from "../../i18n/tr";
-import {isAuthRedirectError, voteGateMessage} from "./useVoteToggle";
+import {useGatedToggle, voteGateMessage} from "./useVoteToggle";
+
+vi.mock("../../auth/client", () => ({
+	useSession: () => ({data: {user: {id: "u1"}}, isPending: false}),
+}));
 
 /**
  * The shared vote-seam error classification (#1879). These run the REAL exported
@@ -41,55 +49,49 @@ describe("voteGateMessage — the VOTE_REQUIRES_YAZAR ladder copy (real classifi
 	});
 });
 
-describe("the gate's dispatch catch — redirect vs toast vs silent (real classifiers)", () => {
-	// Mirrors useGatedToggle's caught-error branch, over the real classifiers.
-	const guarded = async (
-		dispatch: () => Promise<void>,
-		redirectToAuth: () => void,
-		show: (t: {id: string; message: string}) => void,
-	) => {
-		try {
-			await dispatch();
-		} catch (error) {
-			if (isAuthRedirectError(error)) {
-				redirectToAuth();
-				return;
-			}
-			const message = voteGateMessage(trT, error);
-			if (message) show({id: "vote-gate", message});
-		}
-	};
+describe("useGatedToggle's dispatch catch — redirect vs toast vs silent", () => {
+	function tapRejecting(error: unknown) {
+		const wrapper = ({children}: {children: ReactNode}) => (
+			<MemoryRouter initialEntries={["/pano/p"]}>
+				<ToastProvider>{children}</ToastProvider>
+			</MemoryRouter>
+		);
+		const {result} = renderHook(
+			() => ({
+				tap: useGatedToggle({
+					on: false,
+					returnTo: () => "/pano/p",
+					dispatch: () => Promise.reject(error),
+				}),
+				location: useLocation(),
+			}),
+			{wrapper},
+		);
+		return result;
+	}
 
 	it("toasts the ladder copy on a çaylak's VOTE_REQUIRES_YAZAR — not a silent no-op", async () => {
-		const redirectToAuth = vi.fn();
-		const show = vi.fn();
-		await guarded(() => Promise.reject({code: "VOTE_REQUIRES_YAZAR"}), redirectToAuth, show);
-		expect(show).toHaveBeenCalledTimes(1);
-		expect(show).toHaveBeenCalledWith({id: "vote-gate", message: "yazar olunca oy verebilirsin"});
-		expect(redirectToAuth).not.toHaveBeenCalled();
+		const result = tapRejecting({code: "VOTE_REQUIRES_YAZAR"});
+		await act(async () => result.current.tap());
+		expect((await screen.findByTestId("toast-vote-gate")).textContent).toContain(
+			"yazar olunca oy verebilirsin",
+		);
+		expect(result.current.location.pathname).toBe("/pano/p");
 	});
 
 	it("still redirects on UNAUTHORIZED and never toasts (path unchanged)", async () => {
-		const redirectToAuth = vi.fn();
-		const show = vi.fn();
-		await guarded(() => Promise.reject({code: "UNAUTHORIZED"}), redirectToAuth, show);
-		expect(redirectToAuth).toHaveBeenCalledTimes(1);
-		expect(show).not.toHaveBeenCalled();
+		const result = tapRejecting({code: "UNAUTHORIZED"});
+		await act(async () => result.current.tap());
+		expect(`${result.current.location.pathname}${result.current.location.search}`).toBe(
+			`/auth?returnTo=${encodeURIComponent("/pano/p")}`,
+		);
+		expect(screen.queryByTestId("toast-vote-gate")).toBeNull();
 	});
 
 	it("stays silent on every other code — no redirect, no toast", async () => {
-		const redirectToAuth = vi.fn();
-		const show = vi.fn();
-		await guarded(() => Promise.reject({code: "INTERNAL_SERVER_ERROR"}), redirectToAuth, show);
-		expect(redirectToAuth).not.toHaveBeenCalled();
-		expect(show).not.toHaveBeenCalled();
-	});
-});
-
-describe("catalog coverage holds for the new code", () => {
-	it("carries a message for VOTE_REQUIRES_YAZAR in both locales", () => {
-		// A missing entry is already a compile error; this pins the runtime copy too.
-		expect(tr["wire.VOTE_REQUIRES_YAZAR"]).toBe("yazar olunca oy verebilirsin");
-		expect(en["wire.VOTE_REQUIRES_YAZAR"]).toBeTruthy();
+		const result = tapRejecting({code: "INTERNAL_SERVER_ERROR"});
+		await act(async () => result.current.tap());
+		expect(result.current.location.pathname).toBe("/pano/p");
+		expect(screen.queryByTestId("toast-vote-gate")).toBeNull();
 	});
 });

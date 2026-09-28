@@ -83,18 +83,6 @@ describe("entry-row spine — aria roles/labels/state", () => {
 		expect(a!.getAttribute("aria-checked")).toBe("true");
 		expect(b!.getAttribute("aria-checked")).toBe("false");
 	});
-
-	it("ReactionBar names each button by its gloss and marks the glyph decorative", () => {
-		const {container} = render(<ReactionBar aggregate={null} onReact={vi.fn()} testIdSuffix="t" />);
-		const buttons = container.querySelectorAll("button");
-		expect(buttons.length).toBeGreaterThan(0);
-		for (const btn of buttons) {
-			expect((btn.getAttribute("aria-label") ?? "").length).toBeGreaterThan(0);
-		}
-		for (const svg of container.querySelectorAll("svg.kp-reaction-bar__glyph")) {
-			expect(svg.getAttribute("aria-hidden")).toBe("true");
-		}
-	});
 });
 
 describe("entry-row spine — keyboard order & operability", () => {

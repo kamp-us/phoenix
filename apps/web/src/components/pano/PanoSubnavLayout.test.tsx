@@ -1,5 +1,5 @@
 /** pano's persistent Subnav zone, composed through SubnavShell. See ADR 0182. */
-import {fireEvent, render, screen, within} from "@testing-library/react";
+import {fireEvent, render, screen} from "@testing-library/react";
 import {useEffect} from "react";
 import {Link, MemoryRouter, Route, Routes, useLocation, useNavigate} from "react-router";
 import {afterEach, describe, expect, it, vi} from "vitest";
@@ -82,13 +82,6 @@ describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#29
 		expect(screen.getByTestId("leaf")).toBeTruthy();
 	});
 
-	it("publishes the feed's filters + meta up into the zone Subnav", () => {
-		renderZone();
-		expect(screen.getByRole("button", {name: "sıcak"})).toBeTruthy();
-		expect(screen.getByRole("button", {name: "yeni"})).toBeTruthy();
-		expect(screen.getByText("3 başlık")).toBeTruthy();
-	});
-
 	it("lands pano's content in the shell's typed zones — chips in destinations, meta in signal", () => {
 		signedIn = true;
 		const {container} = renderZone(<PublishingLeaf host="foo.com" />);
@@ -107,13 +100,6 @@ describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#29
 				?.contains(screen.getByRole("button", {name: "yeni gönderi"})),
 		).toBe(true);
 		expect(bar?.querySelector(".kp-subnav__meta")?.textContent).toContain("3 başlık");
-	});
-
-	it("signed in: the primary-action CTA fills the zone's CTA slot", () => {
-		signedIn = true;
-		renderZone();
-		const cta = screen.getByRole("button", {name: "yeni gönderi"});
-		expect(cta.getAttribute("data-variant")).toBe("primary");
 	});
 
 	it("keeps the Subnav zone mounted across a within-pano navigation — no remount", () => {
@@ -143,43 +129,13 @@ describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#29
 	});
 });
 
-/** Each crumb's text with its `aria-hidden` parts removed: what assistive tech reads per item. */
-function spokenCrumbs(nav: HTMLElement): string[] {
-	return within(nav)
-		.getAllByRole("listitem")
-		.map((item) => {
-			const copy = item.cloneNode(true) as HTMLElement;
-			for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
-			return copy.textContent ?? "";
-		});
-}
-
+// The breadcrumb semantics themselves (ordered list, current page, hidden separators) belong to
+// the shared `Breadcrumbs` component and are pinned once, in `PanoCrumb.test.tsx`.
 describe("PanoSubnavLayout — the zoned site-filter crumb is a WAI-ARIA breadcrumb (#9705)", () => {
 	function renderSiteCrumb() {
 		renderZone(<PublishingLeaf host="example.com" />, "/pano/site/example.com");
 		return screen.getByRole("navigation", {name: "sayfa yolu"});
 	}
-
-	it("renders inside a named nav landmark as an ordered list", () => {
-		const nav = renderSiteCrumb();
-		expect(within(nav).getByRole("list").tagName).toBe("OL");
-		expect(spokenCrumbs(nav)).toEqual(["site", "example.com"]);
-	});
-
-	it("hides the separators from assistive tech", () => {
-		const nav = renderSiteCrumb();
-		const seps = nav.querySelectorAll(".kp-breadcrumbs__sep");
-		expect(seps).toHaveLength(1);
-		for (const sep of seps) expect(sep.getAttribute("aria-hidden")).toBe("true");
-	});
-
-	it("marks the host crumb, and only it, as the current page", () => {
-		const nav = renderSiteCrumb();
-		const current = nav.querySelectorAll("[aria-current]");
-		expect(current).toHaveLength(1);
-		expect(current[0]?.getAttribute("aria-current")).toBe("page");
-		expect(within(nav).getAllByRole("listitem").at(-1)).toBe(current[0]);
-	});
 
 	it("keeps the clear control outside the list, and clearing navigates to /pano", () => {
 		const nav = renderSiteCrumb();

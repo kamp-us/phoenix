@@ -79,5 +79,8 @@ describe("PanoPostCard — link-post routing (#2437)", () => {
 		);
 		expect(container.querySelector("a.kp-pano-post__site")).toBeNull();
 		expect(container.querySelector("span.kp-pano-post__site")?.textContent).toBe("yazı");
+		// #2212: reactions live on the post detail, never the feed row. A wired bar would show
+		// here as ReactionBarSlot's placeholder, which renders while the flag is unresolved.
+		expect(container.querySelector(".kp-reaction-slot, .kp-reaction-bar")).toBeNull();
 	});
 });
