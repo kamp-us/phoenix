@@ -1,4 +1,4 @@
-import {fireEvent, render, screen} from "@testing-library/react";
+import {act, fireEvent, render, screen} from "@testing-library/react";
 import {Link, MemoryRouter, Route, Routes, useParams} from "react-router";
 import {describe, expect, it} from "vitest";
 import {SozlukSubnavLayout} from "./SozlukSubnavLayout";
@@ -92,19 +92,7 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 
 	// #3746: `required` alone is no defence — a non-empty punctuation term passes native
 	// validation on its way to slugifying into nothing.
-	it("keeps the create dialog open when the term slugifies to nothing — never a silent dismiss", async () => {
-		renderZone("/sozluk/mevcut-terim");
-		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
-		const field = await screen.findByLabelText(/Terim/);
-		fireEvent.change(field, {target: {value: "!!!"}});
-		const form = field.closest("form");
-		if (!form) throw new Error("the create field is not inside a form");
-		fireEvent.submit(form);
-		expect(screen.getByLabelText(/Terim/)).toBeTruthy();
-		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
-	});
-
-	it("surfaces a Turkish field error when the term slugifies to nothing — not a silent no-op", async () => {
+	it("keeps the dialog open with a Turkish field error when the term slugifies to nothing", async () => {
 		renderZone("/sozluk/mevcut-terim");
 		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
 		const field = await screen.findByLabelText(/Terim/);
@@ -113,6 +101,7 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 		if (!form) throw new Error("the create field is not inside a form");
 		fireEvent.submit(form);
 		expect(await screen.findByText("Terim en az bir harf ya da rakam içermeli.")).toBeTruthy();
+		expect(screen.getByLabelText(/Terim/)).toBeTruthy();
 		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
 	});
 
@@ -127,7 +116,10 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 		const form = field.closest("form");
 		if (!form) throw new Error("the create field is not inside a form");
 		fireEvent.submit(form);
-		expect(screen.getByLabelText(/Terim/)).toBeTruthy();
+		// A close unmounts the field a tick after the state change, so read it once that tick ran;
+		// read synchronously, a dialog that closed still shows its field here.
+		await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+		expect(screen.queryByLabelText(/Terim/)).not.toBeNull();
 		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
 	});
 

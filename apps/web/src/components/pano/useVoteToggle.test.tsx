@@ -6,7 +6,7 @@ import {describe, expect, it, vi} from "vitest";
 import {en} from "../../i18n/en";
 import type {Translate} from "../../i18n/LocaleProvider";
 import {tr} from "../../i18n/tr";
-import {useGatedToggle, voteGateMessage} from "./useVoteToggle";
+import {useGatedToggle, useVoteToggle, voteGateMessage} from "./useVoteToggle";
 
 vi.mock("../../auth/client", () => ({
 	useSession: () => ({data: {user: {id: "u1"}}, isPending: false}),
@@ -93,5 +93,38 @@ describe("useGatedToggle's dispatch catch — redirect vs toast vs silent", () =
 		await act(async () => result.current.tap());
 		expect(result.current.location.pathname).toBe("/pano/p");
 		expect(screen.queryByTestId("toast-vote-gate")).toBeNull();
+	});
+});
+
+// Every vote site (pano posts and comments, sözlük definitions) routes through this hook, so the
+// optimistic delta and the vote / retract choice are pinned here once, on the real hook.
+describe("useVoteToggle — the optimistic vote delta", () => {
+	it.each([
+		{voted: false, score: 3, mutation: "vote", optimistic: {score: 4, myVote: true}},
+		{voted: true, score: 5, mutation: "retractVote", optimistic: {score: 4, myVote: false}},
+		{voted: true, score: 0, mutation: "retractVote", optimistic: {score: 0, myVote: false}},
+	])("voted=$voted at score $score sends $mutation with score $optimistic.score", async (row) => {
+		const calls: Array<{mutation: string; optimistic: unknown}> = [];
+		const wrapper = ({children}: {children: ReactNode}) => (
+			<MemoryRouter>
+				<ToastProvider>{children}</ToastProvider>
+			</MemoryRouter>
+		);
+		const {result} = renderHook(
+			() =>
+				useVoteToggle({
+					voted: row.voted,
+					score: row.score,
+					returnTo: () => "/",
+					mutations: {
+						vote: async (optimistic) => void calls.push({mutation: "vote", optimistic}),
+						retractVote: async (optimistic) =>
+							void calls.push({mutation: "retractVote", optimistic}),
+					},
+				}),
+			{wrapper},
+		);
+		await act(async () => result.current());
+		expect(calls).toEqual([{mutation: row.mutation, optimistic: row.optimistic}]);
 	});
 });
