@@ -15,7 +15,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/9856
  */
 
-import {Effect, type FileSystem, type Path} from "effect";
+import {Effect, type FileSystem, type Path, Semaphore} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type TableSettings, tableKey} from "../config/keys/table.ts";
 import {readKey} from "../config/read-key.ts";
@@ -26,6 +26,7 @@ import {
 	absent,
 	type Existence,
 	getIssue,
+	type IssueRecord,
 	issueNodeId,
 	listCommentsReconciled,
 	present,
@@ -82,12 +83,22 @@ const VERB = "table sync";
 export const GRAPH_CAP = 2000;
 
 /**
- * How many GitHub reads a table reader keeps in flight at once. GitHub asks REST clients to avoid
- * concurrent requests because of its secondary rate limits
+ * How many GitHub reads the shipped table readers keep in flight at once, summed over every issue a
+ * run is reading. GitHub asks REST clients to avoid concurrent requests because of its secondary
+ * rate limits
  * ([best practices](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api#avoid-concurrent-requests)),
- * so the cap stays small.
+ * so the cap stays small. {@link readEach} reads at most this many issues at once, and every GitHub
+ * read the shipped board makes holds one permit of {@link githubReads}, so an issue's three edge
+ * lists spend this one budget rather than multiplying it.
  */
 export const READ_FAN_OUT = 8;
+
+/** The one permit pool, {@link READ_FAN_OUT} wide, every GitHub read of the shipped board draws from. */
+const githubReads = Semaphore.makeUnsafe(READ_FAN_OUT);
+
+/** `read` holding one {@link githubReads} permit; a read made of several calls makes them in turn. */
+const budgeted = <A, R>(read: Effect.Effect<A, never, R>): Effect.Effect<A, never, R> =>
+	githubReads.withPermits(1)(read);
 
 /** Run `read` over every key, at most {@link READ_FAN_OUT} at once, answering in the keys' order. */
 export const readEach = <K, A, R>(
@@ -571,21 +582,42 @@ export const locateTable = (
 		return read._tag === "Ok" ? found({_tag: "Located", project: read.value}) : read;
 	});
 
-/** The shipped board: GitHub, under the ambient token. */
-export const syncBoard: SyncBoard<ChildProcessSpawner.ChildProcessSpawner> = {
-	locate: (repo, target) => withProjects((token) => locateTable(token, repo, target, VERB)),
-	items: (projectId) => withProjects((token) => readItems(token, projectId)),
-	node: (repo, issue) =>
+/** One of an issue's edge lists: its sub-issues, what blocks it, or what it blocks. */
+type EdgeRead<R> = (
+	repo: string,
+	issue: number,
+) => Effect.Effect<Existence<ReadonlyArray<number>>, never, R>;
+
+/** The GitHub reads one graph node is made of: the issue, then its three edge lists. */
+export interface NodeReads<R> {
+	readonly issue: (
+		repo: string,
+		issue: number,
+	) => Effect.Effect<Existence<Pick<IssueRecord, "isPullRequest" | "state" | "parent">>, never, R>;
+	readonly subIssues: EdgeRead<R>;
+	readonly blockedBy: EdgeRead<R>;
+	readonly blocking: EdgeRead<R>;
+}
+
+/**
+ * Read one issue's graph node: the issue, then its three edge lists side by side. Each read holds
+ * one {@link githubReads} permit, so the edge lists count against {@link READ_FAN_OUT}.
+ */
+export const readNode =
+	<R>(reads: NodeReads<R>) =>
+	(repo: string, issue: number): Effect.Effect<Existence<SyncNode>, never, R> =>
 		Effect.gen(function* () {
-			const found = yield* getIssue(repo, issue);
+			const found = yield* budgeted(reads.issue(repo, issue));
 			if (found._tag !== "Present") return found;
 			if (found.value.isPullRequest) return absent<SyncNode>();
-			const reads = yield* Effect.all(
-				[subIssues, blockedBy, blocking].map((list) => list(repo, issue)),
+			const lists = yield* Effect.all(
+				[reads.subIssues, reads.blockedBy, reads.blocking].map((list) =>
+					budgeted(list(repo, issue)),
+				),
 				{concurrency: "unbounded"},
 			);
 			const edges: Array<ReadonlyArray<number>> = [];
-			for (const read of reads) {
+			for (const read of lists) {
 				if (read._tag === "Unknown") return read;
 				if (read._tag === "Absent") return unknown<SyncNode>(`#${issue}'s edges vanished mid-read`);
 				edges.push(read.value);
@@ -599,13 +631,19 @@ export const syncBoard: SyncBoard<ChildProcessSpawner.ChildProcessSpawner> = {
 				blockedBy: blockers,
 				blocking: blocked,
 			});
-		}),
+		});
+
+/** The shipped board: GitHub, under the ambient token. */
+export const syncBoard: SyncBoard<ChildProcessSpawner.ChildProcessSpawner> = {
+	locate: (repo, target) => withProjects((token) => locateTable(token, repo, target, VERB)),
+	items: (projectId) => withProjects((token) => readItems(token, projectId)),
+	node: readNode({issue: getIssue, subIssues, blockedBy, blocking}),
 	comments: (repo, issue): Shell<Attempt<ReadonlyArray<string>>> =>
-		Effect.map(listCommentsReconciled(repo, issue), (scan) =>
+		Effect.map(budgeted(listCommentsReconciled(repo, issue)), (scan) =>
 			scan._tag === "Failure" ? scan : ok(scan.value.comments.map((comment) => comment.body)),
 		),
 	merged: (repo, pr) =>
-		Effect.map(getPullRequest(repo, pr), (found): Attempt<boolean> => {
+		Effect.map(budgeted(getPullRequest(repo, pr)), (found): Attempt<boolean> => {
 			if (found._tag === "Unknown") return fail(found.reason);
 			return ok(found._tag === "Present" && found.value.merged);
 		}),

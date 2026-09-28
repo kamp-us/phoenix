@@ -23,6 +23,7 @@ import {
 	GRAPH_CAP,
 	type Located,
 	READ_FAN_OUT,
+	readNode,
 	readRecords,
 	readScope,
 	runSync,
@@ -588,6 +589,36 @@ describe("reading a 200-row table", () => {
 		expect([...comments.seen].sort((a, b) => a - b)).toEqual(numbers);
 		expect(scoped.graph.size).toBe(WIDE);
 		expect(read.records.size).toBe(WIDE);
+	});
+
+	it("keeps the shipped node's edge-list reads inside READ_FAN_OUT across a wave, not three times it", async () => {
+		const reads = inFlight();
+		const edges = inFlight();
+		const edge = (_repo: string, n: number) =>
+			reads.track(n, edges.track(n, Effect.succeed(present<ReadonlyArray<number>>([]))));
+		const node = readNode({
+			issue: (_repo, n) =>
+				reads.track(
+					n,
+					Effect.succeed(
+						present({isPullRequest: false, state: "open", parent: {_tag: "None"} as const}),
+					),
+				),
+			subIssues: edge,
+			blockedBy: edge,
+			blocking: edge,
+		});
+		const board: SyncBoard<never> = {...wideTable().board, node};
+
+		const scoped = await Effect.runPromise(
+			readScope(board, "table flags", REPO, numbers, new Set(numbers)),
+		);
+
+		expect(scoped._tag).toBe("Graph");
+		expect(edges.seen).toHaveLength(3 * WIDE);
+		expect(edges.peak()).toBeGreaterThan(3);
+		expect(edges.peak()).toBeLessThanOrEqual(READ_FAN_OUT);
+		expect(reads.peak()).toBeLessThanOrEqual(READ_FAN_OUT);
 	});
 
 	it("refuses PRECONDITION_UNKNOWN and writes nothing when one node read fails mid-batch", async () => {
