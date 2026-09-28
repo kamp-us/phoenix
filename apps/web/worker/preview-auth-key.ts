@@ -1,5 +1,5 @@
 /**
- * The fence between the committed preview session-signing key and every stage that is not a
+ * The fence between the committed preview session-signing key and every stage which is not a
  * preview — see `infra/preview-auth-key/README.md` for the key itself and ADR 0406 for the ruling.
  *
  * The key is public by design, so "production must not verify against it" cannot rest on nobody
