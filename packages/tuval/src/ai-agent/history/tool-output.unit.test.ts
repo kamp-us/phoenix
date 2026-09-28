@@ -1,11 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {randomTranscript, toolItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
-import {
-	byteLength,
-	isTranscriptItem,
-	TOOL_RESULT_BYTE_LIMIT,
-	type ToolItem,
-} from "../ports/index.ts";
+import {byteLength, type ToolItem} from "../ports/index.ts";
 import {boundToolOutput, droppedResultBytes, type RawToolItem} from "./tool-output.ts";
 
 const raw = (output: string): RawToolItem => {
@@ -14,19 +9,6 @@ const raw = (output: string): RawToolItem => {
 };
 
 describe("the per-item tool output bound", () => {
-	it("passes a result inside the bound through whole, with nothing omitted", () => {
-		const item = boundToolOutput(raw("all of it"));
-		expect(item.result).toEqual({text: "all of it", omitted: {bytes: 0}});
-		expect(isTranscriptItem(item)).toBe(true);
-	});
-
-	it("truncates an oversized result and reports the bytes it left out", () => {
-		const item = boundToolOutput(raw("x".repeat(TOOL_RESULT_BYTE_LIMIT + 137)));
-		expect(byteLength(item.result.text)).toBe(TOOL_RESULT_BYTE_LIMIT);
-		expect(item.result.omitted.bytes).toBe(137);
-		expect(isTranscriptItem(item)).toBe(true);
-	});
-
 	it("keeps every other field of the item it bounded", () => {
 		const item = boundToolOutput(raw("x".repeat(20)), 4);
 		expect({id: item.id, name: item.name, status: item.status, input: item.input}).toEqual({

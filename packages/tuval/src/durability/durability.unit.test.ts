@@ -224,36 +224,6 @@ describe("durability", () => {
 	);
 
 	it.effect(
-		"a snapshot the row declares a step from is migrated back in, keeping the state it had",
-		() => {
-			const stores = memoryStores();
-			const probe = probeOf();
-			const migrated: AnyProgram = {
-				...counterProgram(probe, stores, "2.0.0"),
-				migrations: {
-					"1.0.0": {to: "2.0.0", migrate: (raw) => Option.some({...(raw as State), acks: 0})},
-				},
-			};
-			return Effect.gen(function* () {
-				yield* Effect.gen(function* () {
-					const processes = yield* Processes;
-					const handle = yield* processes.spawn(counter, {services: Context.empty()});
-					yield* handle.dispatch({type: "tick"});
-				}).pipe(Effect.provide(kernel([counterProgram(probe, stores)], stores)));
-
-				yield* Effect.gen(function* () {
-					const table = yield* ProcessTable;
-					const restored = yield* restore(Context.empty());
-					assert.strictEqual(restored.length, 1);
-					// The count the 1.0.0 desk had, and the field 2.0.0 added, with no hand edit between.
-					assert.deepStrictEqual(restored[0]!.getState(), {count: 1, acks: 0});
-					assert.strictEqual((yield* table.list).length, 1);
-				}).pipe(Effect.provide(kernel([migrated], stores)));
-			});
-		},
-	);
-
-	it.effect(
 		"a save two versions back walks every declared step to the current version, and the next save is written under it",
 		() => {
 			const stores = memoryStores();

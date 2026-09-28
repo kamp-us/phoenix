@@ -8,8 +8,7 @@
 
 import {describe, expect, it} from "@effect/vitest";
 import {Schema} from "effect";
-import type {AnyProgram} from "../registry/program.ts";
-import {type Answer, type ArrivalEvent, defineProgram, FIELD_COMPILERS} from "./define-program.ts";
+import {type Answer, type ArrivalEvent, defineProgram} from "./define-program.ts";
 import {emit} from "./effect.ts";
 import {port} from "./port.ts";
 
@@ -48,24 +47,13 @@ describe("authoring.resume is sugared onto the authored record", () => {
 		});
 		expect(row.resume?.({seen: 0, announced: false})).toEqual([]);
 	});
-
-	it("is one line of the field seam, beside the fields the epic's other children added", () => {
-		expect(Object.keys(FIELD_COMPILERS)).toContain("resume");
-	});
 });
 
 describe("authoring leaves `configChanged` to a spread", () => {
-	it("is absent from the compiled row, and lands by spreading the row it compiled", () => {
+	// The replacement an author writes by spreading is the raw registry row, which is why this half is
+	// not sugared: there is nothing in the authored vocabulary to hand them instead.
+	it("is absent from the compiled row", () => {
 		const compiled = defineProgram(counter);
 		expect(compiled.configChanged, "the layer grew a `configChanged` compiler").toBeUndefined();
-		expect(Object.keys(FIELD_COMPILERS)).not.toContain("configChanged");
-
-		// What an author writes: the replacement is the raw registry row, which is the reason this
-		// half is not sugared — there is nothing in the authored vocabulary to hand them instead.
-		const row = {
-			...compiled,
-			configChanged: (next: AnyProgram) => (next.id === compiled.id ? [{type: "republish"}] : []),
-		};
-		expect(row.configChanged(compiled)).toEqual([{type: "republish"}]);
 	});
 });

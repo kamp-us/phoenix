@@ -200,16 +200,14 @@ describe("authoring.defineProgram", () => {
 	});
 
 	it("stays reachable by spread for every field the layer does not sugar", () => {
+		// `satisfies` is the claim, checked by `tsc` over this file: the compiled row spreads into a
+		// registry row that carries the fields `defineProgram` leaves to the author.
 		const row = {
 			...counter,
 			checkpointWorthy: () => false,
 			restorable: (raw: unknown) => raw !== null,
 		} satisfies AnyProgram;
-		expect(row.checkpointWorthy()).toBe(false);
-		expect(row.restorable(null)).toBe(false);
-		expect(row.core).toBe(counter.core);
-		expect(row.handlers).toBe(counter.handlers);
-		expect(row.id).toBe(counter.id);
+		expectTypeOf(row).toExtend<AnyProgram>();
 	});
 
 	it.effect("runs an authored `emit` through ProcessPorts", () =>

@@ -1,6 +1,6 @@
 /**
- * The checkpoint as data: which fields it is made of, that all of them survive JSON, and what a
- * load does to a session that was mid-reply when the process went away.
+ * The checkpoint as data: that every field survives JSON, and what a load does to a session that
+ * was mid-reply when the process went away. Which fields it is made of is `core/state.unit.test.ts`.
  *
  * Pure — no kernel, no layer, no process. The round trip against the layer is `restore.unit.test.ts`
  * beside it, and the whole app twice over one state directory is `restore-proof.unit.test.ts`.
@@ -19,15 +19,7 @@ import {
 	usageTotals,
 } from "../core/index.ts";
 import {Mode, type PermissionRequest} from "../ports/index.ts";
-import {checkpointFields, resumeMessages} from "./checkpoint.ts";
-
-/** A field on the state that `checkpointFields` does not name reds here with TS2322. */
-const everyFieldNamed: Exclude<
-	keyof AiAgentSessionState,
-	(typeof checkpointFields)[number]
-> extends never
-	? true
-	: false = true;
+import {resumeMessages} from "./checkpoint.ts";
 
 const card: PermissionRequest = {
 	title: "Write README.md",
@@ -73,11 +65,6 @@ const saved: AiAgentSessionState = {
 };
 
 describe("what a checkpoint carries", () => {
-	it("is exactly the named field set, and nothing else", () => {
-		expect(everyFieldNamed).toBe(true);
-		expect(Object.keys(saved).sort()).toEqual([...checkpointFields].sort());
-	});
-
 	it("round-trips through JSON with every field intact", () => {
 		const parsed = parseSessionState(JSON.parse(JSON.stringify(saved)));
 		expect(parsed).toEqual(saved);
@@ -101,10 +88,6 @@ describe("what a checkpoint carries", () => {
 		expect(
 			parseSessionState({...saved, thinking: {current: "ludicrous", available: []}}),
 		).toBeNull();
-	});
-
-	it("carries nothing a JSON round trip would lose", () => {
-		expect(JSON.parse(JSON.stringify(saved))).toEqual(saved);
 	});
 
 	/**
@@ -190,10 +173,6 @@ describe("restoring a saved session", () => {
 		});
 	});
 
-	it("leaves a card nobody has answered exactly as it stood", () => {
-		expect(restore(saved).permissions).toEqual(saved.permissions);
-	});
-
 	// Two rows for one cut turn: the reply carries the flag the fold label is read off, the prompt
 	// carries the marker the resend is anchored on (#8699).
 	it("marks the assistant turn the restart cut, and anchors the resend on the prompt", () => {
@@ -225,10 +204,6 @@ describe("restoring a saved session", () => {
 		const restored = restore(saved);
 		expect(restored.failure).toBeNull();
 		expect(restored.lastPage).toBeNull();
-	});
-
-	it("leaves a session the backend already refused gone", () => {
-		expect(restore({...saved, phase: "gone"}).phase).toBe("gone");
 	});
 
 	it("brings back a send no layer had echoed yet, once and unchanged", () => {

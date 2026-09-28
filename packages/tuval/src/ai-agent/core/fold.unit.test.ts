@@ -250,10 +250,10 @@ describe("folding a subagent slot", () => {
 
 /**
  * #8236's ruling, at the arms rather than at the ledger: a per-turn failure leaves the session
- * alive, so it settles only the send it is about, and `gone` is the terminal arm that settles every
- * one of them.
+ * alive, so it settles only the send it is about. `gone`, the terminal arm that settles every one of
+ * them, is proven through the machine (`./machine.unit.test.ts`).
  */
-describe("folding a failure and a `gone` under two sends in flight", () => {
+describe("folding a failure under two sends in flight", () => {
 	const limits: WindowLimits = {};
 	const refusal = {tag: PROMPT_ERROR, reason: "refused", detail: "the layer refused the handoff"};
 	const inFlight: ReadonlyArray<SendOutcome> = [
@@ -282,14 +282,6 @@ describe("folding a failure and a `gone` under two sends in flight", () => {
 		expect(ended.sends).toEqual([
 			{key: "first", state: "refused", failure: refusal},
 			{key: "second", state: "accepted"},
-		]);
-	});
-
-	it("settles every send in flight when the session goes", () => {
-		const gone = foldEvent(prompting, {kind: "phase", phase: "gone"}, limits);
-		expect(gone.sends).toEqual([
-			{key: "first", state: "uncertain", failure: null},
-			{key: "second", state: "uncertain", failure: null},
 		]);
 	});
 });
@@ -533,13 +525,6 @@ describe("refilling a resumed session's tail over the store's history", () => {
 			"cut",
 			"h4",
 		]);
-	});
-
-	it("leaves the rows only the tail holds above the replies they produced", () => {
-		const items = refilled().items;
-		const at = (id: string) => items.findIndex((item) => item.id === id);
-		expect(at("local:send-q3")).toBeLessThan(at("cut"));
-		expect(at("h3")).toBeLessThan(at("local:send-q3"));
 	});
 
 	it("puts the whole tail behind a history it is recognised in nowhere", () => {

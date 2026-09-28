@@ -23,7 +23,7 @@ import {aiAgentSessionMachine} from "./machine.ts";
 import {type AiAgentSessionCmd, type AiAgentSessionMsg, eventsSubId} from "./messages.ts";
 import {queueLimit} from "./queue.ts";
 import {isAiAgentSessionState, loadCheckpoint} from "./snapshot.ts";
-import {type AiAgentSessionState, checkpointFields, initialState, usageTotals} from "./state.ts";
+import {type AiAgentSessionState, initialState, usageTotals} from "./state.ts";
 
 const machine = aiAgentSessionMachine({cwd: "/repo"});
 
@@ -206,12 +206,6 @@ describe("a checkpoint written by an older build", () => {
 			subagents: {"call-1": {...subagentSlot("call-1"), workers: 0}},
 		});
 		expect(state.failure).toEqual(checkpointUnreadable);
-	});
-
-	// Reds if a field is added to the state with no entry in `initialState` to default it from.
-	it("has a default for every field a checkpoint carries", () => {
-		const defaulted: ReadonlyArray<string> = Object.keys(initialState("/desk"));
-		expect(checkpointFields.filter((field) => !defaulted.includes(field))).toEqual([]);
 	});
 });
 
@@ -464,6 +458,7 @@ describe("a prompt written while the turn runs", () => {
 		const [cut] = apply(running(), {type: "interrupt", at: SENT_AT});
 		const [queued, cmds] = apply(cut, prompt("never mind, do this", "k2"));
 		expect(queued.queued).toEqual([{key: "k2", text: "never mind, do this", timestamp: SENT_AT}]);
+		expect(queued.interruption).toEqual({requestedAt: SENT_AT});
 		expect(cmds).toEqual([]);
 		const [sent, sentCmds] = apply(queued, turnEnded);
 		expect(sentCmds).toEqual([{type: "aiAgent.prompt", text: "never mind, do this", key: "k2"}]);
@@ -522,14 +517,6 @@ describe("the operator's turn once a layer echoes it", () => {
 		const [replied] = apply(sent(), echo(assistantItem("a1", "on it")));
 		const [state] = apply(replied, echo(userItem("pi-7", "make the README")));
 		expect(state.transcript.items.map((item) => item.kind)).toEqual(["user", "assistant"]);
-	});
-
-	it("stays exactly once on a layer that never echoes it", () => {
-		const [replied] = apply(sent(), echo(assistantItem("a1", "on it")));
-		expect(replied.transcript.items).toMatchObject([
-			{kind: "user", id: promptItemId("k1"), local: true},
-			{kind: "assistant", id: assistantItem("a1").id},
-		]);
 	});
 
 	it("does not swallow a second deliberate send of the same text", () => {
@@ -776,12 +763,6 @@ describe("answer", () => {
 		expect(confirmed.permissions).toEqual({});
 		expect(confirmed.failure).toBeNull();
 		expect(cmds).toEqual([{type: "aiAgent.republish"}]);
-	});
-
-	// The card is still there while the confirmation is out — the delayed-confirmation case.
-	it("leaves the card standing until its confirmation arrives", () => {
-		const [answering] = answerOnce(raised());
-		expect(Object.keys(answering.permissions)).toEqual(["req-1"]);
 	});
 
 	it("lets the backend's own resolution settle a card whose answer is still out", () => {
@@ -1031,21 +1012,6 @@ describe("interrupt", () => {
 		const [over] = apply(landed, phaseEvent("ready"));
 		const [next] = apply(over, {type: "prompt", text: "again", key: "k9", timestamp: SENT_AT + 1});
 		expect(next.interrupted).toBeNull();
-	});
-
-	// The prompt waits rather than being refused (#8159), and the stop request stands over it: an
-	// outstanding interruption is still the session's answer about the turn that is running.
-	it("sends nothing new while the interruption is outstanding", () => {
-		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
-		const [next, cmds] = apply(asked, {
-			type: "prompt",
-			text: "never mind, do this",
-			key: "k9",
-			timestamp: SENT_AT + 1,
-		});
-		expect(next.queued).toHaveLength(1);
-		expect(next.interruption).toEqual({requestedAt: SENT_AT});
-		expect(cmds).toEqual([]);
 	});
 
 	// The delayed case: the abort is in flight and the backend has said nothing yet, so the request

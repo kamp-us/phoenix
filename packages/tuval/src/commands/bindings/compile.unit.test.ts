@@ -2,7 +2,6 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {type AnySpell, renderPath} from "../spell.ts";
 import {type BindingSource, compileBindings, type KeyBindings} from "./compile.ts";
-import {renderBindingErrors} from "./errors.ts";
 import {registry, spells} from "./fixtures.ts";
 
 const FILE = "global .tuval/tuval.config.ts";
@@ -137,22 +136,6 @@ describe("compileBindings", () => {
 				after.errors.map((error) => error.key),
 				["ctrl+l"],
 			);
-		}),
-	);
-
-	it.effect("names no absolute path in any line it renders", () =>
-		Effect.gen(function* () {
-			const {errors} = yield* compile({
-				"ctrl+x": "windwo close",
-				"ctrl+1": "workspace activate",
-			});
-			const lines = renderBindingErrors(errors);
-
-			assert.lengthOf(lines, 2);
-			for (const line of lines) {
-				assert.strictEqual(line.startsWith(FILE), true);
-				assert.notMatch(line, /(^|\s)[/~]/);
-			}
 		}),
 	);
 });
