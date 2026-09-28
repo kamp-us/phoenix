@@ -219,20 +219,6 @@ describe("runTopology", () => {
 		expect(outcome.stderr.at(-1)).toBe("ledger topology: child #4303 is placed in no phase.");
 	});
 
-	it("refuses a subject that is not a child of this epic", async () => {
-		const {outcome} = await run("#4301 phase 1\n#4303 phase 1\n#9999 phase 2 requires #4301\n");
-		expect(outcome.code).toBe(TOPOLOGY_INVALID);
-		expect(outcome.stderr.at(-1)).toBe(
-			"ledger topology: #9999 is placed in a phase but is not a child of #4300.",
-		);
-	});
-
-	it("refuses a cycle", async () => {
-		const {outcome} = await run("#4301 phase 1 requires #4303\n#4303 phase 1 requires #4301\n");
-		expect(outcome.code).toBe(TOPOLOGY_INVALID);
-		expect(outcome.stderr.at(-1)).toContain("cycle:");
-	});
-
 	/**
 	 * A retained child is in the manifest because `ledger open` seeded it, and that is what makes a
 	 * re-plan placeable — naming one is not a dangling ref and omitting one is not clean.

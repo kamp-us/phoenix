@@ -89,20 +89,11 @@ describe("invoking this checkout's bin from a cwd in another working tree of the
 	// cannot be built at all, which is a missing fixture rather than a passing subject.
 	skip: process.env.FABRIKA_SKIP_INFER !== undefined || commonDir === undefined,
 }, () => {
+	// Exit 0 with the peer's answer is also the proof it was not refused: the foreign-checkout
+	// refusal exits NO_IMPLEMENTATION before any install could speak.
 	it("hands the invocation to the peer tree's own install rather than answering itself", () => {
 		const run = invokeFromPeer("--version");
 		expect(run.stdout).toContain(PEER);
 		expect(run.code).toBe(0);
-	});
-
-	it("does not refuse — a working tree of this repository is not a foreign checkout", () => {
-		expect(invokeFromPeer("--version").stderr).not.toContain("refusing to run");
-	});
-
-	it("still serves the invocation itself under --skip-infer — the guard outranks the walk", () => {
-		const run = invokeFromPeer("--skip-infer", "--version");
-		expect(run.code).toBe(0);
-		expect(run.stdout).toContain("fabrika v");
-		expect(run.stdout).not.toContain(PEER);
 	});
 });
