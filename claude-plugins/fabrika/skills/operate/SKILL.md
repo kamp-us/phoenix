@@ -21,8 +21,9 @@ all, run by whichever verb does the appending: `lane report` on the shell's path
 on yours. Neither is a read you run separately.
 **Capability set:** shell in the checkout you were spawned in, subagent spawns, and a token with
 repo access plus the `project` scope, which `lane brief`'s size-stop read and `lane record`'s table
-sync spend on the repo's GitHub Projects table. On a repo whose `.fabrika.jsonc` declares a `table`
-block, a brief without that scope refuses; without the block it goes on unchecked.
+sync spend on the repo's GitHub Projects table. A brief without that scope goes on with the size
+stop unchecked, `table` block or not, and names the fix (`gh auth refresh -h github.com -s project`)
+on stderr.
 Writes used — lane-ledger appends, a booted lane's own machine document brought up to the committed
 template through `lane migrate <lane>`, which is the form that writes that lane and no other,
 comments on the driven issue, the driven issue's row fields on the Projects table that `lane record`
@@ -549,7 +550,8 @@ so never clear it yourself. Anything short of the stop is a flag (`table flags`)
 going. In a repo whose `.fabrika.jsonc` declares no `table` block, a table read that fails for any
 reason (missing `project` scope, rate limit, outage, a malformed record) briefs anyway with
 `size stop NOT checked` on stderr, because nothing says a table exists. Declaring any `table` block
-turns that failed read into `11`. Measured spend is a floor: a row whose measured spend alone has
+turns every one of those failed reads but the missing scope into `11`; a missing scope still briefs,
+printing `size stop NOT checked` with the fix (`gh auth refresh -h github.com -s project`). Measured spend is a floor: a row whose measured spend alone has
 reached the stop is stopped even when some of its lanes went unmeasured, so a `71` over such a row is
 real. Only a row short of the stop on measured spend goes on, and the brief's note says how many
 lanes went unmeasured.

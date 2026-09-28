@@ -240,8 +240,9 @@ The `table` verbs are not the only readers. `lane brief` reads the table for the
 `pitch-guard` reads it because a `bet` row approves a pitch. So give the scope to every token that
 drives lanes, not only yours.
 
-Declare a `table` block (11.4) only once every one of those tokens has the scope. Until then a
-table read that fails lets lanes go on and says so; after it, the same failure stops them. What
+A token without the scope never stops a lane: `lane brief` and `build pick` go on without the
+table and print the fix above. Other failed reads differ: until a `table` block (11.4) is declared
+they let lanes go on and say so; after it, they stop them. What
 each reader does on a failed read is the "Readers outside the group" section of
 [`table-contract.md`](../docs/table-contract.md).
 
