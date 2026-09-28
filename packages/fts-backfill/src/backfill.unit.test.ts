@@ -3,13 +3,10 @@
  * test that boots a SQL engine is not a unit test, and `node:sqlite`'s FTS5 is
  * not D1's, so a faked engine proves nothing about the real index).
  *
- * The statements `buildBackfillStatements` returns are drizzle query builders now
- * (ADR 0080 / #863), not `SQL` — so we drive them through the REAL drizzle-d1
- * `batch()` over a recording D1 *client* (the `fts-sync.unit.test.ts` technique):
- * a builder that isn't batch-preparable throws there, so a regression to a
- * non-batchable item shape (e.g. re-wrapping through `db.run(sql)`) fails here, not
- * only on remote D1. To assert the rendered SQL/params we render each builder's
- * `getSQL()` via `SQLiteDialect`.
+ * The statements `buildBackfillStatements` returns are drizzle query builders (ADR 0080 /
+ * #863), rendered here through `SQLiteDialect`. That they survive drizzle-d1's real
+ * `batch()` (the #863/#893 regression) is `backfill.batch.unit.test.ts`'s, which drives
+ * the runner itself.
  *
  * The load-bearing assertion is that the indexed `norm` equals the worker's OWN
  * `normalizeSearchText(title)` — importing the canonical fold here pins the
@@ -25,37 +22,14 @@ import {buildBackfillStatements, type SourceRow} from "./backfill.ts";
 const dialect = new SQLiteDialect();
 const renderStmt = (stmt: {getSQL: () => never}) => dialect.sqlToQuery(stmt.getSQL());
 
-/**
- * A recording D1 *client* — NOT a SQL engine, so this stays a unit test under ADR
- * 0082's "no faked engine" rule: it executes no SQL and asserts no FTS5 behavior.
- * It records only the statements drizzle's real d1 `batch()` builder *prepares and
- * binds* — the exact seam the #863 regression broke (a batch item must `_prepare()`
- * to a `D1PreparedQuery` whose `.stmt` the builder binds params onto).
- */
-const recordingD1 = () => {
-	const built: {sql: string; params: unknown[]}[] = [];
-	const client = {
-		prepare(sql: string) {
-			return {
-				sql,
-				bind(...params: unknown[]) {
-					return {sql, params, run: () => ({}), raw: () => [], all: () => ({results: []})};
-				},
-			};
-		},
-		async batch(stmts: {sql: string; params: unknown[]}[]) {
-			for (const s of stmts) built.push({sql: s.sql, params: s.params});
-			return stmts.map(() => ({results: [], success: true, meta: {}}));
-		},
-	};
-	// biome-ignore lint/plugin: a recording D1 client (no SQL engine) can't be structurally typed as the full `D1Database` interface; `createDrizzle` only calls `prepare`/`batch`, which it provides.
-	const db = createDrizzle(client as unknown as D1Database);
-	return {db, built};
-};
+// Statement building never touches the binding, so an inert one is enough (ADR 0082: no
+// SQL engine in the unit tier).
+// biome-ignore lint/plugin: an inert stand-in can't be structurally typed as the full `D1Database` interface; nothing here calls a binding method.
+const inertDb = () => createDrizzle({} as unknown as D1Database);
 
 describe("buildBackfillStatements — replays the ADR-0080 sync over source rows", () => {
 	it("emits a DELETE+INSERT pair per term, indexing the worker-normalized title", () => {
-		const {db} = recordingD1();
+		const db = inertDb();
 		const terms: SourceRow[] = [{key: "istanbul", title: "İstanbul"}];
 		const {statements, report} = buildBackfillStatements(db, terms, []);
 
@@ -74,7 +48,7 @@ describe("buildBackfillStatements — replays the ADR-0080 sync over source rows
 	});
 
 	it("emits a DELETE+INSERT pair per post, keyed on id", () => {
-		const {db} = recordingD1();
+		const db = inertDb();
 		const posts: SourceRow[] = [{key: "post-1", title: "Şişli buluşması"}];
 		const {statements, report} = buildBackfillStatements(db, [], posts);
 
@@ -90,7 +64,7 @@ describe("buildBackfillStatements — replays the ADR-0080 sync over source rows
 	});
 
 	it("interleaves all terms then all posts; report counts the source rows", () => {
-		const {db} = recordingD1();
+		const db = inertDb();
 		const terms: SourceRow[] = [
 			{key: "a", title: "Alpha"},
 			{key: "b", title: "Beta"},
@@ -105,40 +79,10 @@ describe("buildBackfillStatements — replays the ADR-0080 sync over source rows
 		expect(renderStmt(statements[4] as never).sql).toMatch(/post_search/);
 	});
 
-	it("renders byte-identical statements on a re-run (idempotent by construction)", () => {
-		const {db} = recordingD1();
-		const terms: SourceRow[] = [{key: "k", title: "Kâğıt"}];
-		const first = buildBackfillStatements(db, terms, []).statements.map((s) =>
-			renderStmt(s as never),
-		);
-		const second = buildBackfillStatements(db, terms, []).statements.map((s) =>
-			renderStmt(s as never),
-		);
-		// Delete-then-insert keyed on the slug: the same input yields the same SQL,
-		// so a second run replaces the same FTS row rather than duplicating it.
-		expect(second).toEqual(first);
-		expect(first[0]?.sql).toMatch(/delete from "term_search"/);
-	});
-
 	it("an empty corpus produces no statements (the no-op case)", () => {
-		const {db} = recordingD1();
+		const db = inertDb();
 		const {statements, report} = buildBackfillStatements(db, [], []);
 		expect(statements).toEqual([]);
 		expect(report).toEqual({terms: 0, posts: 0});
-	});
-
-	it("the built statements are batch-safe through the REAL d1 batch builder (#863)", async () => {
-		const {db, built} = recordingD1();
-		const terms: SourceRow[] = [{key: "t", title: "Başlık"}];
-		const {statements} = buildBackfillStatements(db, terms, []);
-		const [first, ...rest] = statements;
-		// Drive the same path the runner does: builders spread straight into batch,
-		// never re-wrapped through `db.run(sql)` (the SQLiteRaw that 500'd in #863).
-		await expect(db.batch([first as never, ...(rest as never[])])).resolves.toBeDefined();
-		expect(built).toHaveLength(2);
-		expect(built[0]?.sql).toBe('delete from "term_search" where "term_search"."slug" = ?');
-		expect(built[0]?.params).toEqual(["t"]);
-		expect(built[1]?.sql).toBe('insert into "term_search" ("slug", "norm") values (?, ?)');
-		expect(built[1]?.params).toEqual(["t", normalizeSearchText("Başlık")]);
 	});
 });

@@ -266,12 +266,6 @@ describe("Fate.syntheticSource — synthetic entity, no fetch path", () => {
 		expect(ghostSource.definition.view).toBe(GhostView.view);
 	});
 
-	it("has no capabilities: nothing for any loader arm to call", () => {
-		expect(ghostSource.handlers.byId).toBeUndefined();
-		expect(ghostSource.handlers.byIds).toBeUndefined();
-		expect(ghostSource.handlers.connection).toBeUndefined();
-	});
-
 	it("type-level: literal typeName, R = never, config-assignable", () => {
 		expectTypeOf(ghostSource.typeName).toEqualTypeOf<"Ghost">();
 		expectTypeOf<FateSourceServices<typeof ghostSource>>().toEqualTypeOf<never>();

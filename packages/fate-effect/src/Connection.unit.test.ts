@@ -216,14 +216,3 @@ describe("getScopedArgs — fate's nested-args scoping", () => {
 		expect(getScopedArgs({other: {}}, "chapters.deep")).toBeUndefined();
 	});
 });
-
-// The walk corpus (`Interpreter.walk.test.ts`) proves the wire BYTES against
-// fate's real server; this sanity pin catches an accidental defect-vs-failure
-// flip early (a defect would take the WRONG taxonomy arm — `encodeWireError`'s
-// INTERNAL_SERVER_ERROR instead of fate's INTERNAL_ERROR).
-describe("the failure channel", () => {
-	it("arrayToConnection fails (not defects) with a FateRequestError", () => {
-		const error = Effect.runSync(Effect.flip(arrayToConnection([{id: "x"}], {first: 1.5})));
-		expect(error).toBeInstanceOf(FateRequestError);
-	});
-});

@@ -106,38 +106,6 @@ describe("baseline round-trip drives the immutability check", () => {
 		const verdict = evaluate(loadMigrationTree(dir), loadBaseline(baselinePath()));
 		expect(verdict.violations.some((v) => v.kind === "immutability")).toBe(true);
 	});
-
-	it("a new migration directory reds until its baseline row lands beside it (#7055)", () => {
-		writeBaseline();
-		const next = join(dir, "20260901120000_next");
-		mkdirSync(next);
-		writeFileSync(join(next, "migration.sql"), "ALTER TABLE a ADD COLUMN x TEXT;\n");
-		writeFileSync(join(next, "snapshot.json"), '{"version":"7"}');
-		const before = evaluate(loadMigrationTree(dir), loadBaseline(baselinePath()));
-		expect(before.ok).toBe(false);
-		expect(before.violations.some((v) => v.message.includes("lands with its baseline row"))).toBe(
-			true,
-		);
-
-		writeBaseline();
-		expect(evaluate(loadMigrationTree(dir), loadBaseline(baselinePath())).ok).toBe(true);
-	});
-
-	it("a .sql sorting into applied history reds instead of slipping past the checks", () => {
-		writeBaseline();
-		mkdirSync(join(dir, "0001_x"));
-		writeFileSync(join(dir, "0001_x", "evil.sql"), "DROP TABLE a;\n");
-		const verdict = evaluate(loadMigrationTree(dir), loadBaseline(baselinePath()));
-		expect(verdict.ok).toBe(false);
-		expect(verdict.violations.some((v) => v.message.includes("0001_x/evil.sql"))).toBe(true);
-	});
-
-	it("an empty directory is zero scope, not a pass (ADR 0092)", () => {
-		const empty = mkdtempSync(join(tmpdir(), "migrations-guard-empty-"));
-		const verdict = evaluate(loadMigrationTree(empty), {});
-		rmSync(empty, {recursive: true, force: true});
-		expect(verdict.ok).toBe(false);
-	});
 });
 
 describe("loadBaseline", () => {

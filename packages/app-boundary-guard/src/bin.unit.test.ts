@@ -91,7 +91,6 @@ describe("app-boundary-guard bin", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => 
 	it.each([
 		"packages/foo/src/index.ts",
 		"packages/foo/src/index.unit.test.ts",
-		"packages/foo/.tuval/tuval.config.ts",
 	])("reds on an app import in %s, naming the file", (file) => {
 		const {status, output} = run(workspace({[file]: `import {x} from "${app("desk")}/kernel";\n`}));
 		expect(status).toBe(EXIT.violated);
@@ -108,13 +107,10 @@ describe("app-boundary-guard bin", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => 
 		);
 	});
 
-	it.each([
-		"scripts/check.ts",
-		"benchmarks/run.mjs",
-		"biome-plugins/rule.js",
-		".pnpmfile.cjs",
-		"claude-plugins/fabrika/hooks/x.js",
-	])("reads root-level source outside every member: %s", (file) => {
+	// Which root-level paths count as source is `inSourceScope`'s, proven per path in its unit
+	// table; this row proves the bin lists and reads files outside every workspace member.
+	it("reads root-level source outside every member", () => {
+		const file = "scripts/check.ts";
 		const withScope = run(workspace({[file]: `import "${app("desk")}";\n`}));
 		expect(withScope.status).toBe(EXIT.violated);
 		expect(withScope.output).toContain(`${file}:1: imports \`${app("desk")}\``);

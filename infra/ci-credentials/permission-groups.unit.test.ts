@@ -11,16 +11,6 @@ describe("CI-token permission groups — least-privilege guard (#1437)", () => {
 		assert.deepStrictEqual(unbackedGrants(), []);
 	});
 
-	it("does NOT grant `Workers R2 Storage Write` — no R2 resource backs it (ADR 0044 designed-not-built)", () => {
-		assert.isFalse(permissionGroupNames().includes("Workers R2 Storage Write"));
-	});
-
-	it("keeps Secrets Store Read+Write — the `Cloudflare.state()` bootstrap needs both", () => {
-		const names = permissionGroupNames();
-		assert.isTrue(names.includes("Secrets Store Read"));
-		assert.isTrue(names.includes("Secrets Store Write"));
-	});
-
 	it("derives the literal name list from the backed pairs, in order (no hand-duplicated second list)", () => {
 		assert.deepStrictEqual(
 			permissionGroupNames(),

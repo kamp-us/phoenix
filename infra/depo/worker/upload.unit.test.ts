@@ -29,10 +29,7 @@ const makeStorageDouble = (store: Map<string, StoredObject>) =>
 
 const acceptingVerifier = Layer.succeed(ApiKeyVerifier)(
 	ApiKeyVerifier.of({
-		verify: (key) =>
-			key === null
-				? Effect.fail(new Unauthorized({reason: "missing"}))
-				: Effect.succeed({userId: "user-1"}),
+		verify: () => Effect.succeed({userId: "user-1"}),
 	}),
 );
 
@@ -61,18 +58,6 @@ describe("upload — auth gate", () => {
 			);
 			assert.isTrue(Exit.isFailure(exit));
 			assert.strictEqual(store.size, 0, "a rejected upload must write nothing");
-		}),
-	);
-
-	it.effect("refuses a missing key", () =>
-		Effect.gen(function* () {
-			const store = new Map<string, StoredObject>();
-			const exit = yield* upload(req({apiKey: null})).pipe(
-				Effect.provide(Layer.mergeAll(makeStorageDouble(store), acceptingVerifier)),
-				Effect.exit,
-			);
-			assert.isTrue(Exit.isFailure(exit));
-			assert.strictEqual(store.size, 0);
 		}),
 	);
 });

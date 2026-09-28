@@ -187,48 +187,6 @@ export class FlagSetTargetInvalid extends Schema.TaggedError<FlagSetTargetInvali
 	}
 }
 
-/**
- * Surfaces ONLY on the TTY ergonomics path (`decideLeverGuard`, ADR 0134); a non-TTY agent/CI
- * caller is never refused.
- */
-export class LeverGuardRefused extends Schema.TaggedError<LeverGuardRefused>()(
-	"@kampus/anka-ops/LeverGuardRefused",
-	{
-		reason: Schema.String,
-	},
-) {
-	override get message(): string {
-		return (
-			`flag set --execute refused: ${this.reason}. ` +
-			"Re-run it in your terminal and answer the [y/N] confirm with y/yes to proceed."
-		);
-	}
-}
-
-export type LeverGuardDecision =
-	| {readonly _tag: "Allow"}
-	| {readonly _tag: "Refuse"; readonly reason: string};
-
-/**
- * Whether `flag set --execute` may flip a flag live. No TTY ⇒ Allow: the lever is agent-invokable
- * and the humans-release boundary lives at the `/release` skill, not at a structural TTY refuse
- * here (ADR 0134, superseding 0133). With a TTY the confirm is human ergonomics only, and it
- * defaults to deny — anything that is not `y`/`yes` refuses.
- */
-export const decideLeverGuard = (input: {
-	readonly isTTY: boolean;
-	readonly confirmResponse: string | undefined;
-}): LeverGuardDecision => {
-	if (!input.isTTY) {
-		return {_tag: "Allow"};
-	}
-	const answer = (input.confirmResponse ?? "").trim().toLowerCase();
-	if (answer === "y" || answer === "yes") {
-		return {_tag: "Allow"};
-	}
-	return {_tag: "Refuse", reason: "the interactive confirmation was not affirmed (expected y/yes)"};
-};
-
 export const selectStatesForKey = (
 	rows: ReadonlyArray<FlagState>,
 	key: string,

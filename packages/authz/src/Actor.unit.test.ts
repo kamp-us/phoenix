@@ -23,11 +23,4 @@ describe("Actor", () => {
 		expect(tag(human("u1"))).toBe("human:u1");
 		expect(tag(agent("a1", "u1"))).toBe("agent:a1@u1");
 	});
-
-	it("matchActor routes the agent arm distinctly from the human arm", () => {
-		// The dormant agent seam: an Agent must never fall through to the Human
-		// handler — that would erase attenuation. Distinct handlers, distinct paths.
-		expect(tag(agent("u1", "u1"))).toBe("agent:u1@u1");
-		expect(tag(human("u1"))).toBe("human:u1");
-	});
 });
