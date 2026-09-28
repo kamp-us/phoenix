@@ -15,6 +15,7 @@ import {join} from "node:path";
 import {type BrowserContext, chromium, type Page} from "@playwright/test";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import {type AccentProof, type AccentRequest, readAccentProof} from "./accent.ts";
 import {readSessionProof, type SessionProof} from "./auth.ts";
 import {readSchemeProof, type SchemeProof, type SchemeRequest} from "./color-scheme.ts";
 import {
@@ -80,6 +81,12 @@ export interface ShotReads {
 	 * requested name.
 	 */
 	readonly schemeProof?: SchemeProof;
+	/**
+	 * The accent the page's root carried after the requested one was set, present only when the
+	 * caller asked for one. An app that re-asserts its own accent paints that one, a valid PNG under
+	 * the requested name.
+	 */
+	readonly accentProof?: AccentProof;
 }
 
 /** The captured bytes + on-disk path for one surface. */
@@ -178,6 +185,14 @@ export interface CaptureOptions {
 	readonly localeSettleMs?: number;
 	/** How long the scheme proof waits for the root attribute to name the requested scheme (default 10s). */
 	readonly schemeSettleMs?: number;
+	/**
+	 * A root attribute set on every shot's page once it has navigated, then proved against the page's
+	 * own `document.documentElement` before the shot. Absent ⇒ nothing is set and `accentProof` stays
+	 * absent.
+	 */
+	readonly accent?: AccentRequest;
+	/** How long the accent proof waits for the root attribute to name the requested accent (default 10s). */
+	readonly accentSettleMs?: number;
 	/** How long one interaction step waits for its element and its action before it refuses (default 5s). */
 	readonly interactionStepMs?: number;
 }
@@ -286,6 +301,39 @@ const proveScheme = async (
 		);
 };
 
+const setRootAttribute = (attribute: string, value: string): string =>
+	`document.documentElement.setAttribute(${JSON.stringify(attribute)}, ${JSON.stringify(value)})`;
+
+/**
+ * Set the requested accent on the page's root, then wait for the attribute to name it and read it
+ * back. The write runs after navigation because an attribute in the served markup would overwrite
+ * one set before the parser created `<html>`. The write is not the answer — the read after the wait
+ * is, so an app that re-asserts its own accent is caught. Total on the terms {@link proveLocale} is.
+ */
+const proveAccent = async (
+	page: Page,
+	request: AccentRequest,
+	settleMs: number,
+): Promise<AccentProof> => {
+	await page
+		.evaluate(setRootAttribute(request.rootAttribute, request.value))
+		.catch(() => undefined);
+	await page
+		.waitForFunction(rootAttributeIs(request.rootAttribute, request.value), undefined, {
+			timeout: settleMs,
+		})
+		.catch(() => undefined);
+	return page
+		.evaluate<unknown>(readRootAttribute(request.rootAttribute))
+		.then((value) => readAccentProof(request, value))
+		.catch(
+			(cause): AccentProof => ({
+				_tag: "Unreadable",
+				reason: `${request.rootAttribute} read failed: ${String(cause)}`,
+			}),
+		);
+};
+
 /** Playwright's errors carry a call log after the first line; the first line is the answer. */
 const firstLine = (cause: unknown): string => String(cause).split("\n")[0] ?? "";
 
@@ -378,6 +426,7 @@ export const captureShots = (
 	const fullPage = options.fullPage ?? true;
 	const localeSettleMs = options.localeSettleMs ?? 10_000;
 	const schemeSettleMs = options.schemeSettleMs ?? 10_000;
+	const accentSettleMs = options.accentSettleMs ?? 10_000;
 	const interactionStepMs = options.interactionStepMs ?? 5_000;
 	return Effect.acquireUseRelease(
 		Effect.tryPromise({
@@ -450,7 +499,12 @@ export const captureShots = (
 									shot.scheme === undefined
 										? undefined
 										: await proveScheme(page, shot.scheme, schemeSettleMs);
-								// After the locale and scheme proofs, so the steps act on the page those answered about.
+								const accent = options.accent;
+								const accentProof =
+									accent === undefined
+										? undefined
+										: await proveAccent(page, accent, accentSettleMs);
+								// After the page proofs, so the steps act on the page those answered about.
 								const interactionProof =
 									shot.interaction === undefined
 										? undefined
@@ -466,6 +520,7 @@ export const captureShots = (
 									...(overrideProof === undefined ? {} : {overrideProof}),
 									...(localeProof === undefined ? {} : {localeProof}),
 									...(schemeProof === undefined ? {} : {schemeProof}),
+									...(accentProof === undefined ? {} : {accentProof}),
 								};
 								if (interactionProof?._tag === "Refused") {
 									return {...reads, interactionProof};
@@ -473,11 +528,13 @@ export const captureShots = (
 								// A clip crops to the changed region; Playwright rejects clip + fullPage
 								// together, so a clipped shot is never full-page. An interaction has just
 								// started the transitions its state paints with, so its shot fast-forwards them
-								// to their end rather than freezing a frame halfway to the state it names.
+								// to their end rather than freezing a frame halfway to the state it names. An accent
+								// set after load starts the colour transitions it paints with, on the same terms.
+								const settle = interactionProof !== undefined || accentProof !== undefined;
 								const buffer = await page.screenshot({
 									type: "png",
 									...(shot.clip === undefined ? {fullPage} : {clip: shot.clip}),
-									...(interactionProof === undefined ? {} : {animations: "disabled" as const}),
+									...(settle ? {animations: "disabled" as const} : {}),
 								});
 								const localPath = join(outDir, shot.fileName);
 								await writeFile(localPath, buffer);

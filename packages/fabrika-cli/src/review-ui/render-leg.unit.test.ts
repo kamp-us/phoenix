@@ -18,6 +18,7 @@ const request = {
 	forcedFlags: NO_FORCED_FLAGS,
 	locale: null,
 	scheme: null,
+	accent: null,
 	interaction: null,
 };
 
@@ -435,6 +436,74 @@ describe("captureRenderLeg — the scheme proof", () => {
 			runScheme(
 				succeeding({
 					schemeProof: {_tag: "Mismatch", rendered: "light"},
+					pageErrors: [{kind: "pageerror", text: "TypeError: x is null"}],
+				}),
+			)._tag,
+		).toBe("Crashed");
+	});
+});
+
+/**
+ * One axis further again: an app that re-asserts its own accent paints that one, a valid PNG under
+ * the requested accent's name.
+ */
+describe("captureRenderLeg — the accent proof", () => {
+	const AMBER = {rootAttribute: "data-color-theme", value: "amber"};
+	const accentRequest = {...request, accent: AMBER};
+	const runAccent = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(accentRequest));
+
+	it("hands the accent to the capture and keeps the file name, and sets nothing when none was asked for", () => {
+		const asked: Array<{readonly accent: unknown; readonly fileName: string | undefined}> = [];
+		const spy: CaptureShots = (plan, _outDir, options) => {
+			asked.push({accent: options?.accent, fileName: plan[0]?.fileName});
+			return succeeding({accentProof: {_tag: "Proven", accent: "amber"}})([], "", {});
+		};
+		runAccent(spy);
+		run(spy);
+		expect(asked).toEqual([
+			{accent: AMBER, fileName: "pano@desktop.png"},
+			{accent: undefined, fileName: "pano@desktop.png"},
+		]);
+	});
+
+	it("records the requested and the proven accent on the entry, and neither without a request", () => {
+		const proven = runAccent(succeeding({accentProof: {_tag: "Proven", accent: "amber"}}));
+		expect(proven._tag === "Rendered" && proven.entry.accent).toEqual({
+			requested: "amber",
+			proven: "amber",
+		});
+		const plain = run(succeeding({}));
+		expect(plain._tag === "Rendered" && "accent" in plain.entry).toBe(false);
+	});
+
+	it("refuses another accent under the requested name, naming what the root carried", () => {
+		expect(runAccent(succeeding({accentProof: {_tag: "Mismatch", rendered: "ember"}}))).toEqual({
+			_tag: "WrongAccent",
+			wanted: "amber",
+			reason: `the page's data-color-theme read back "ember"`,
+		});
+	});
+
+	it("refuses an unreadable attribute and an absent proof — neither is a proof", () => {
+		const unreadable = "the page's root carries no data-color-theme attribute";
+		expect(runAccent(succeeding({accentProof: {_tag: "Unreadable", reason: unreadable}}))).toEqual({
+			_tag: "WrongAccent",
+			wanted: "amber",
+			reason: unreadable,
+		});
+		expect(runAccent(succeeding({}))).toEqual({
+			_tag: "WrongAccent",
+			wanted: "amber",
+			reason: "the capture returned no accent proof",
+		});
+	});
+
+	it("keeps a crash ahead of the accent proof — a page that threw is a red render", () => {
+		expect(
+			runAccent(
+				succeeding({
+					accentProof: {_tag: "Mismatch", rendered: "ember"},
 					pageErrors: [{kind: "pageerror", text: "TypeError: x is null"}],
 				}),
 			)._tag,

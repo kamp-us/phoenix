@@ -94,6 +94,29 @@ describe("the manifest round-trip", () => {
 		});
 	});
 
+	it("round-trips an accented entry, requested and proven accent both", () => {
+		const accented: CaptureManifest = {
+			...manifest,
+			captures: [
+				{...(manifest.captures[0] as CaptureEntry), accent: {requested: "amber", proven: "amber"}},
+			],
+		};
+		assert.deepStrictEqual(parseManifest(serializeManifest(accented)), {
+			_tag: "Manifest",
+			value: accented,
+		});
+	});
+
+	it("refuses an accent field that is not a requested/proven pair, rather than dropping it", () => {
+		for (const accent of ["amber", {requested: "amber"}, {requested: "amber", proven: ""}, null]) {
+			assert.strictEqual(
+				parseManifest(JSON.stringify({...manifest, captures: [{...manifest.captures[0], accent}]}))
+					._tag,
+				"Malformed",
+			);
+		}
+	});
+
 	it("refuses a scheme field that is not a light/dark pair, rather than dropping it", () => {
 		for (const scheme of ["dark", {requested: "dark"}, {requested: "dark", proven: "dim"}, null]) {
 			assert.strictEqual(

@@ -12,6 +12,7 @@
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {type AccentDeclaration, type AccentRequest, parseAccentOperand} from "../capture/accent.ts";
 import {
 	AUTH_SECRET_ENV,
 	type AuthSecretRead,
@@ -112,6 +113,8 @@ export interface SurfaceRenderRequest {
 	readonly locale: LocaleSeed | null;
 	/** The colour scheme the context emulates and the page must publish; `null` ⇒ the browser's default. */
 	readonly scheme: SchemeRequest | null;
+	/** The accent set on the page's root and proved before the shot; `null` ⇒ the app's own accent. */
+	readonly accent: AccentRequest | null;
 	/** The steps run after navigation, each proved before the shot; `null` ⇒ the surface at rest. */
 	readonly interaction: Interaction | null;
 }
@@ -132,6 +135,7 @@ export type SurfaceRender =
 	| {readonly _tag: "OverrideInert"; readonly reason: string}
 	| {readonly _tag: "WrongLocale"; readonly wanted: string; readonly reason: string}
 	| {readonly _tag: "WrongScheme"; readonly wanted: ColorScheme; readonly reason: string}
+	| {readonly _tag: "WrongAccent"; readonly wanted: string; readonly reason: string}
 	| {readonly _tag: "Uninteracted"; readonly reason: string}
 	| {readonly _tag: "Failed"; readonly reason: string};
 
@@ -159,6 +163,14 @@ export interface RenderOptions {
 	 * against. `null` refuses any `--scheme`, because fabrika compiles no app's attribute in.
 	 */
 	readonly schemeDeclaration: SchemeDeclaration | null;
+	/** The raw `--accent` operand. `null` ⇒ every shot in the app's own accent, nothing set. */
+	readonly accent: string | null;
+	/**
+	 * The repo's declared `uiCapture.accent`, the only source of the root attribute an accent is set
+	 * on and of the values it may name. `null` refuses any `--accent`, because fabrika compiles no
+	 * app's attribute in.
+	 */
+	readonly accentDeclaration: AccentDeclaration | null;
 	/**
 	 * Raw `--interact` operands, each `<surface>#<label>=<step>;…` on one of {@link surfaces}. Empty ⇒
 	 * every surface at rest alone.
@@ -219,13 +231,15 @@ interface PlannedShot {
 	readonly locale: string | null;
 	/** The requested scheme, named for the same reason: a dark shot's line must not read as the default. */
 	readonly scheme: SchemeRequest | null;
+	/** The requested accent, named so an amber shot's line never reads as the default accent's. */
+	readonly accent: string | null;
 	/** The interaction, named so a line about an open menu never reads as the closed one. */
 	readonly interaction: Interaction | null;
 }
 
 /** Every enumeration and every refusal names the shot, and a shot is a surface at a viewport. */
 const shotName = (shot: PlannedShot): string =>
-	`surface "${shot.surface}" at ${shot.viewport.label}${shot.locale === null ? "" : ` in locale ${shot.locale}`}${shot.scheme === null ? "" : ` in scheme ${shot.scheme.scheme}`}${shot.interaction === null ? "" : ` with interaction ${shot.interaction.label}`}`;
+	`surface "${shot.surface}" at ${shot.viewport.label}${shot.locale === null ? "" : ` in locale ${shot.locale}`}${shot.scheme === null ? "" : ` in scheme ${shot.scheme.scheme}`}${shot.accent === null ? "" : ` in accent ${shot.accent}`}${shot.interaction === null ? "" : ` with interaction ${shot.interaction.label}`}`;
 
 const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 	const subject = shotName(shot);
@@ -254,6 +268,8 @@ const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 			return `${VERB}: ${subject} did not render in its seeded locale (${render.reason}) — the seeded locale's render is UNKNOWN, never the default one.`;
 		case "WrongScheme":
 			return `${VERB}: ${subject} did not resolve to the ${render.wanted} scheme (${render.reason}) — the requested scheme's render is UNKNOWN, never the other one.`;
+		case "WrongAccent":
+			return `${VERB}: ${subject} did not render in the ${render.wanted} accent (${render.reason}) — the requested accent's render is UNKNOWN, never the default one.`;
 		case "Uninteracted":
 			return `${VERB}: ${subject} did not reach its interaction state (${render.reason}) — the interacted render is UNKNOWN, never the at-rest one; no capture was written.`;
 		case "Failed":
@@ -433,6 +449,20 @@ export const runRender = (
 					`${VERB}: --scheme "${schemeRead.value}" cannot be proved (this repo declares no uiCapture.scheme, so there is no root attribute to read the page's scheme from) — an unproved scheme would shoot the default one under the requested name.`,
 				);
 		}
+		const accentRead = parseAccentOperand(options.accent, options.accentDeclaration);
+		switch (accentRead._tag) {
+			case "Undeclared":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --accent "${accentRead.value}" cannot be set (this repo declares no uiCapture.accent, so there is no root attribute to set it on) — an operand nothing sets would shoot the default accent under the requested name.`,
+				);
+			case "Unknown":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --accent "${accentRead.value}" is not an accent this repo declares — the declared accents are ${accentRead.declared.join(", ")}.`,
+				);
+		}
+		const accent = accentRead._tag === "Requested" ? accentRead.request : null;
 		// Omitted is the browser's default scheme with no emulation and no proof, which is what every
 		// invocation written before this operand asked for implicitly.
 		const schemes: readonly (SchemeRequest | null)[] =
@@ -627,6 +657,7 @@ export const runRender = (
 							viewport,
 							locale: locale?.value ?? null,
 							scheme,
+							accent: accent?.value ?? null,
 							interaction,
 						}),
 					),
@@ -649,6 +680,7 @@ export const runRender = (
 					forcedFlags: tier === null ? NO_FORCED_FLAGS : forcedFlags,
 					locale,
 					scheme: shot.scheme,
+					accent,
 					interaction: shot.interaction,
 				}),
 			);
@@ -668,8 +700,8 @@ export const runRender = (
 		}
 		// Ahead of the proven-red codes below, and deliberately: the shot is a fine PNG of the wrong
 		// page, so routing it as a red surface would accuse the PR of a defect the render never saw.
-		// The six arms are one class — wrong session, wrong tier, wrong flag state, wrong locale, wrong
-		// scheme, an interaction state never reached — and route alike.
+		// The seven arms are one class — wrong session, wrong tier, wrong flag state, wrong locale, wrong
+		// scheme, wrong accent, an interaction state never reached — and route alike.
 		const wrongPage = renders.findIndex(
 			(render) =>
 				render._tag === "Unauthenticated" ||
@@ -677,6 +709,7 @@ export const runRender = (
 				render._tag === "OverrideInert" ||
 				render._tag === "WrongLocale" ||
 				render._tag === "WrongScheme" ||
+				render._tag === "WrongAccent" ||
 				render._tag === "Uninteracted",
 		);
 		if (wrongPage !== -1) {

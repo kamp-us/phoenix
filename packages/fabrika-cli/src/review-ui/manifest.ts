@@ -33,6 +33,12 @@ export interface CaptureScheme {
 	readonly proven: ColorScheme;
 }
 
+/** An accented shot's record: the accent the run asked for, and the one the page's root carried. */
+export interface CaptureAccent {
+	readonly requested: string;
+	readonly proven: string;
+}
+
 /** An interacted shot's record: the label it is filed under, the steps it ran, what the page proved. */
 export interface CaptureInteraction {
 	readonly label: string;
@@ -55,6 +61,11 @@ export interface CaptureEntry {
 	 * half is read off the page, never echoed from the request.
 	 */
 	readonly scheme?: CaptureScheme;
+	/**
+	 * The theme accent an `--accent` run asked for and the one the page's root carried when read back
+	 * — present only on such a run, so a set rendered without the operand reads exactly as before.
+	 */
+	readonly accent?: CaptureAccent;
 	/**
 	 * The interaction an `--interact` shot ran and what the page proved at each proving step —
 	 * present only on such a shot, so an at-rest entry reads exactly as before. The proven half is
@@ -127,6 +138,21 @@ const toScheme = (value: unknown): CaptureScheme | null | undefined => {
 	return {requested: value.requested, proven: value.proven};
 };
 
+/** `undefined` for an absent field, `null` for a present one that is not an accent pair. */
+const toAccent = (value: unknown): CaptureAccent | null | undefined => {
+	if (value === undefined) return undefined;
+	if (
+		!isRecord(value) ||
+		typeof value.requested !== "string" ||
+		typeof value.proven !== "string" ||
+		value.requested.length === 0 ||
+		value.proven.length === 0
+	) {
+		return null;
+	}
+	return {requested: value.requested, proven: value.proven};
+};
+
 const toNonEmptyStrings = (value: unknown): readonly [string, ...string[]] | null => {
 	if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return null;
 	const [first, ...rest] = value as string[];
@@ -146,9 +172,11 @@ const toEntry = (value: unknown): CaptureEntry | null => {
 	if (typeof value !== "object" || value === null) return null;
 	const record = value as Record<string, unknown>;
 	const scheme = toScheme(record.scheme);
+	const accent = toAccent(record.accent);
 	const interaction = toInteraction(record.interaction);
 	if (
 		scheme === null ||
+		accent === null ||
 		interaction === null ||
 		typeof record.surface !== "string" ||
 		typeof record.viewport !== "string" ||
@@ -164,6 +192,7 @@ const toEntry = (value: unknown): CaptureEntry | null => {
 		surface: record.surface,
 		viewport: record.viewport,
 		...(scheme === undefined ? {} : {scheme}),
+		...(accent === undefined ? {} : {accent}),
 		...(interaction === undefined ? {} : {interaction}),
 		path: record.path,
 		width: record.width,

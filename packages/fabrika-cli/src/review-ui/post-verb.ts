@@ -255,6 +255,9 @@ export const galleryTitle = (entry: CaptureEntry): string =>
 		...(entry.scheme === undefined
 			? []
 			: [`scheme requested ${entry.scheme.requested}, proven ${entry.scheme.proven}`]),
+		...(entry.accent === undefined
+			? []
+			: [`accent requested ${entry.accent.requested}, proven ${entry.accent.proven}`]),
 		...(entry.interaction === undefined ? [] : [`interaction ${entry.interaction.label}`]),
 	].join(", ");
 

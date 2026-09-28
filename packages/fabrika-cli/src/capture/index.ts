@@ -16,6 +16,7 @@
  * `resolvePreviewUrl` reads the sticky preview-deploy comment by its per-app anchor.
  */
 
+export type {AccentProof, AccentRequest} from "./accent.ts";
 // The blessing surface: render the operator gallery comment from a candidate set, parse
 // the operator's verdicts, and fold approve/redline into a golden-pointer move — the
 // human-in-the-loop bless → commit path (no re-render: the blessed sha comes from the

@@ -84,6 +84,12 @@ const render = leafCommand(
 				"a colour scheme to shoot every --surface at — light or dark, repeatable and crossed with --surface and --viewport; each shot's browser context emulates prefers-color-scheme, and the root attribute .fabrika.jsonc's uiCapture.scheme declares must read back that scheme before the shot is recorded (default: the browser's own scheme, nothing emulated or proved)",
 			),
 		),
+		accent: Flag.string("accent").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"render every shot in this theme accent — one of the values .fabrika.jsonc's uiCapture.accent declares; the declared attribute is set on document.documentElement after each shot navigates, and must read back as the value before the shot is recorded (default: the app's own accent, nothing set)",
+			),
+		),
 		// `atLeast(0)` is the repeatable form with no floor: omitting it shoots every surface at rest
 		// alone, which is what every earlier invocation asked for.
 		interact: Flag.string("interact").pipe(
@@ -114,6 +120,7 @@ const render = leafCommand(
 		flag,
 		locale,
 		scheme,
+		accent,
 		interact,
 		app,
 		authSecretFrom,
@@ -130,16 +137,17 @@ const render = leafCommand(
 			yield* emit(refuse(PRECONDITION_UNKNOWN, surfaces.message));
 			return;
 		}
-		// Read only when asked for, so a run seeding no locale and requesting no scheme is untouched by
-		// the capture settings.
+		// Read only when asked for, so a run seeding no locale, requesting no scheme and setting no
+		// accent is untouched by the capture settings.
 		const requestedLocale = Option.getOrNull(locale);
+		const requestedAccent = Option.getOrNull(accent);
 		const capture =
-			requestedLocale === null && scheme.length === 0
+			requestedLocale === null && scheme.length === 0 && requestedAccent === null
 				? null
 				: yield* uiCaptureOr(
 						"review-ui render",
 						process.cwd(),
-						"the storage key --locale seeds, or the root attribute --scheme is proved against, is UNKNOWN; nothing was rendered.",
+						"the storage key --locale seeds, or the root attribute --scheme is proved against or --accent is set on, is UNKNOWN; nothing was rendered.",
 					);
 		if (capture?._tag === "Refused") {
 			yield* emit(refuse(PRECONDITION_UNKNOWN, capture.message));
@@ -156,6 +164,8 @@ const render = leafCommand(
 				localeDeclaration: capture?.capture.locale ?? null,
 				schemes: scheme,
 				schemeDeclaration: capture?.capture.scheme ?? null,
+				accent: requestedAccent,
+				accentDeclaration: capture?.capture.accent ?? null,
 				interactions: interact,
 				app: Option.getOrNull(app),
 				surfaceRows: surfaces.surfaces,
@@ -174,7 +184,7 @@ const render = leafCommand(
 		[
 			"Captures the named surfaces from a PR's preview deployment and prints one JSON capture record.",
 			"  7: PR absent or closed",
-			"  10: an operand off its closed set, or --flag, --locale, --scheme or --interact it cannot honor",
+			"  10: an operand off its closed set, or --flag/--locale/--scheme/--accent/--interact unhonorable",
 			"  11: a read, a proof or a capture check failed (UNKNOWN)",
 			"  12: the preview deploys a stale head",
 			"  13: a surface threw during render",

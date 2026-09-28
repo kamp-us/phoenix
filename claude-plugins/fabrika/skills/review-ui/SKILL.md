@@ -139,6 +139,16 @@ root attribute `uiCapture.scheme` declares, and refuses `11` when it names anyth
 scheme-crossed capture is a proven render of that scheme. A repo that declares no attribute
 refuses `--scheme` on `10`; that is a gap to disclose, never a light shot to judge as dark.
 
+**Ask for the accent shot when the change reads the theme accent.** Every shot without `--accent`
+is in the app's own default accent, so a token or component that breaks under one accent passes a
+default-only verdict clean. `--accent amber` sets the attribute `uiCapture.accent` declares on
+`<html>` for every surface, viewport and scheme of the run, and each manifest entry records the
+accent it asked for beside the one the page proved. One accent is one run, so shoot the default and
+the accent into two `--out` sets. You never judge whether the shot is really amber: the verb reads the
+attribute back off the page before the shot and refuses `11` when it names anything else. A repo that
+declares no accent, or a value off its list, refuses on `10`; that is a gap to disclose, never a
+default shot to judge as amber.
+
 **Ask for the interaction shot when the change paints only after someone touches the page.** A
 hover fill, a focus ring, an open menu's highlighted item and a raised toast are all invisible at
 rest, so an at-rest shot of them passes clean. `--interact` adds a shot beside the surface's

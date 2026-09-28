@@ -251,7 +251,7 @@ anchor at all is the proven `16`.
 **Invocation**
 
 ```
-fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--locale <value>] [--scheme light --scheme dark] [--interact '<surface>#<label>=<step>;<step>;…'] [--auth-secret-from <file>] [--app web] [--repo <owner/name>]
+fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--locale <value>] [--scheme light --scheme dark] [--accent <value>] [--interact '<surface>#<label>=<step>;<step>;…'] [--auth-secret-from <file>] [--app web] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -265,6 +265,7 @@ fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
 | `--locale` | string | no | the app's default locale, nothing seeded | render every shot in this locale — one of the values `.fabrika.jsonc`'s `uiCapture.locale` declares; with no declaration, or a value outside its list, it is `10` before a browser launches |
 | `--scheme` | string, repeatable | no | the browser's own scheme, nothing emulated or proved | a colour scheme to shoot every `--surface` at, over the closed set `light` and `dark`; crossed with `--surface` and `--viewport`, so one surface at one viewport in both schemes is two captures. A name outside the set, a name passed twice, or any `--scheme` while `.fabrika.jsonc` declares no `uiCapture.scheme`, is `10` before a browser launches |
+| `--accent` | string | no | the app's own accent, nothing set | render every shot in this theme accent — one of the values `.fabrika.jsonc`'s `uiCapture.accent` declares; applied to every surface, viewport and scheme. With no declaration, or a value outside its list, it is `10` before a browser launches |
 | `--interact` | string, repeatable | no | every surface at rest alone | an interaction state to shoot beside a `--surface`'s at-rest shot: `<surface>#<label>=<step>;<step>;…`, where `<surface>` is one of this run's `--surface` ids exactly, `<label>` is kebab-case (`[a-z0-9-]`, at most 64 characters) and names the shot, and each step is `hover:<locator>`, `focus:<locator>`, `click:<locator>`, `press:<key>` or `expect:<locator>`. Crossed with `--viewport` and `--scheme` like its surface. A malformed operand, an operand on a surface the run did not ask for, two operands whose shots would share a PNG name, or steps ending on `click` or `press`, is `10` before a browser launches |
 | `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve. Whichever app is resolved, a `--surface` whose own `uiSurfaces` row belongs to an app this preview did not announce is `11` — omitting the flag routes around no fence |
 | `--auth-secret-from` | string | no | the committed preview key at `infra/preview-auth-key/key.txt`, else the ambient `$BETTER_AUTH_SECRET` | a file holding a signing secret to use instead of the repo's own — rarely needed, since the committed preview key is what every `pr-<n>` worker deploys with and needs no credential; a file that cannot be read is `11`, and so is a resolved value that is empty or carries the `insecure_` placeholder |
@@ -397,6 +398,40 @@ the evidence gallery heads it `<surface> @ <viewport>, scheme requested <s>, pro
 stderr line names the shot `in scheme <s>`. A run without `--scheme` keeps every name, entry and
 heading it had before.
 
+**`--accent` shoots the surface under a named theme accent**, so a change that reads the accent
+tokens is judged under the accent that breaks it rather than only the default one. A contrast pair
+can clear under nine accents and fail under the tenth, and before this operand that cell could not be
+shot at all. The lever is an attribute on `<html>` the app's stylesheet switches accents on, and
+which attribute, and which values it accepts, is the consumer's declaration in `uiCapture.accent`:
+
+```jsonc
+"uiCapture": {"accent": {"rootAttribute": "data-color-theme", "values": ["ember", "amber"]}}
+```
+
+`rootAttribute` is a lowercase HTML attribute name; `values` is the closed, non-empty list of
+distinct accent names it accepts. The schema refuses a malformed declaration, and an absent one (or
+`null`) makes every `--accent` a `10`, because there is no attribute to set. The operand is read
+against the list before any network read or browser launch, so a value off it is `10` too. A
+`--accent` run reads `uiCapture`, so a declaration that does not decode is `11`; a run without the
+operand never reads it.
+
+The attribute is set on `document.documentElement` once each shot has navigated, not from an init
+script: the parser creates `<html>` after an init script runs, so a value written in the served
+markup would overwrite one set before it. Setting the attribute is not the same as the page
+rendering in that accent, so the shot proves it. Before the screenshot, the verb waits (up to 10s)
+for the attribute to name the requested value, then reads it back. An attribute naming another
+accent, or one that is absent or cannot be read, is `11` and records no capture: an app that
+re-asserts its own accent paints that one cleanly under the requested name. A page that threw during
+render is still `13`, because the crash check reads first. The shot fast-forwards the CSS
+transitions the new accent started, so the pixels are the settled accent.
+
+One accent applies to the whole run, and the PNG name does not carry it, so render the default and
+an accent into two `--out` sets to compare them. Each entry of an accented set carries an `accent`
+object holding the `requested` accent and the `proven` one read off the page; the evidence gallery
+heads it `<surface> @ <viewport>[, scheme …], accent requested <a>, proven <a>`, and every stderr line
+names the shot `in accent <a>`. A run without `--accent` keeps every name, entry and heading it had
+before.
+
 **`--interact` shoots the surface in an interaction state** — hovered, focused, a menu opened, a
 toast raised — so a change that paints only after someone touches the page is judged from its own
 pixels. Before this operand every shot was the page at rest, and a PR whose change lived in `:hover`
@@ -407,8 +442,8 @@ than replacing any.
 
 The operand is `<surface>#<label>=<step>;<step>;…`. The surface is read up to the first `#` and the
 label up to the first `=` after it, so a locator may carry either character; a step cannot carry
-`;`. The steps run in order on the shot's page after navigation and after the locale and scheme
-proofs:
+`;`. The steps run in order on the shot's page after navigation and after the locale, scheme and
+accent proofs:
 
 | Step | Does | Proves |
 |---|---|---|
@@ -517,8 +552,8 @@ re-invocation without it, on the record; never the tool's tolerance.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; `--flag` was passed beside an anonymous surface; `--locale` was passed with no `uiCapture.locale` declared, or with a value outside its declared list; a `--scheme` names a scheme outside the closed set (`light`, `dark`), is passed twice, or is passed with no `uiCapture.scheme` declared; or an `--interact` operand names an unknown step verb, an empty locator, key or label, a non-kebab label or no steps, names a surface no `--surface` asked for, would write the same PNG as another `--interact`, or ends on `click` or `press` |
-| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale` or `--scheme` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; a forced flag evaluated at its default anyway; a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value; a scheme-crossed shot's declared root attribute did not read back as its `--scheme` value; or an interacted shot's step found zero or several elements, timed out, or its `:hover`, `:focus-visible` or visible-match proof did not hold — no capture is written for it |
+| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; `--flag` was passed beside an anonymous surface; `--locale` was passed with no `uiCapture.locale` declared, or with a value outside its declared list; a `--scheme` names a scheme outside the closed set (`light`, `dark`), is passed twice, or is passed with no `uiCapture.scheme` declared; `--accent` was passed with no `uiCapture.accent` declared, or with a value outside its declared list; or an `--interact` operand names an unknown step verb, an empty locator, key or label, a non-kebab label or no steps, names a surface no `--surface` asked for, would write the same PNG as another `--interact`, or ends on `click` or `press` |
+| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale`, `--scheme` or `--accent` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; a forced flag evaluated at its default anyway; a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value; a scheme-crossed shot's declared root attribute did not read back as its `--scheme` value; an accented shot's declared root attribute did not read back as the `--accent` value; or an interacted shot's step found zero or several elements, timed out, or its `:hover`, `:focus-visible` or visible-match proof did not hold — no capture is written for it |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -548,6 +583,9 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: --scheme "<name>" was passed twice — the second shot would overwrite the first's file and evidence.` | 10 | refusal |
 | `review-ui render: --scheme "<name>" cannot be proved (this repo declares no uiCapture.scheme, so there is no root attribute to read the page's scheme from) — an unproved scheme would shoot the default one under the requested name.` | 10 | refusal |
 | `review-ui render: surface "<id>" at <viewport> in scheme <scheme> did not resolve to the <scheme> scheme (<reason>) — the requested scheme's render is UNKNOWN, never the other one.` | 11 | refusal |
+| `review-ui render: --accent "<value>" cannot be set (this repo declares no uiCapture.accent, so there is no root attribute to set it on) — an operand nothing sets would shoot the default accent under the requested name.` | 10 | refusal |
+| `review-ui render: --accent "<value>" is not an accent this repo declares — the declared accents are <list>.` | 10 | refusal |
+| `review-ui render: surface "<id>" at <viewport> in accent <value> did not render in the <value> accent (<reason>) — the requested accent's render is UNKNOWN, never the default one.` | 11 | refusal |
 | `review-ui render: --interact "<operand>" is not <surface>#<label>=<step>;… over the steps hover, focus, expect, click, press (<reason>) — an operand nothing can run or prove would shoot the at-rest surface under the interacted name.` | 10 | refusal |
 | `review-ui render: --interact "<operand>" names surface "<id>", which no --surface asked for — an interaction runs on a surface of this run.` | 10 | refusal |
 | `review-ui render: --interact "<operand>" would write the same PNG as --interact "<other>" — the second shot would overwrite the first's file and evidence.` | 10 | refusal |
@@ -566,7 +604,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: surface "<id>" at <viewport> captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 15 | refusal |
 | `review-ui render: no preview-deploy comment on PR #<n> — nothing to judge without running the PR's code; the run is CANT-SEE.` | 16 | refusal |
 
-**Scope** — exactly the `--surface` × `--viewport` × `--scheme` cross product against one PR's announced preview (no `--scheme` counts as one default-scheme column), each surface's cell shot at rest and once per `--interact` on it. Zero operands
+**Scope** — exactly the `--surface` × `--viewport` × `--scheme` cross product against one PR's announced preview (no `--scheme` counts as one default-scheme column), every cell under the one `--accent` when it is passed, each surface's cell shot at rest and once per `--interact` on it. Zero operands
 is `1`, so "rendered nothing, found nothing wrong" is unrepresentable — this verb fails closed on
 zero scope like every other. The
 per-surface outcome enumeration goes to stderr on every path, success included.
@@ -598,6 +636,12 @@ $ fabrika review-ui render --pr 4321 --out schemes --surface /feed --scheme ligh
 review-ui render: surface "/feed" at desktop in scheme light captured: 1280x2140, 0 page errors
 review-ui render: surface "/feed" at desktop in scheme dark captured: 1280x2140, 0 page errors
 {"set":"schemes","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://app-pr-4321.example.workers.dev","captures":[{"surface":"/feed","viewport":"desktop","scheme":{"requested":"light","proven":"light"},"path":"/tmp/fabrika-review-ui/4321-03135b91/schemes/feed@desktop-light.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}},{"surface":"/feed","viewport":"desktop","scheme":{"requested":"dark","proven":"dark"},"path":"/tmp/fabrika-review-ui/4321-03135b91/schemes/feed@desktop-dark.png","width":1280,"height":2140,"sha256":"41bb…","pageErrors":{"rows":[],"more":0}}]}
+```
+
+```
+$ fabrika review-ui render --pr 4321 --out amber --surface /feed --accent amber
+review-ui render: surface "/feed" at desktop in accent amber captured: 1280x2140, 0 page error(s)
+{"set":"amber","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://app-pr-4321.example.workers.dev","captures":[{"surface":"/feed","viewport":"desktop","accent":{"requested":"amber","proven":"amber"},"path":"/tmp/fabrika-review-ui/4321-03135b91/amber/feed@desktop.png","width":1280,"height":2140,"sha256":"7d20…","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```

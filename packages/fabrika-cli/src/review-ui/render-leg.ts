@@ -85,6 +85,7 @@ export const makeCaptureRenderLeg =
 						}
 					: {}),
 				...(request.locale === null ? {} : {locale: request.locale}),
+				...(request.accent === null ? {} : {accent: request.accent}),
 			}).pipe(Effect.catch((error) => Effect.succeed(error.message)));
 			if (typeof captured === "string") {
 				return captured.startsWith(NAVIGATION_FAILURE_PREFIX)
@@ -183,8 +184,28 @@ export const makeCaptureRenderLeg =
 				}
 				scheme = {requested: request.scheme.scheme, proven: proof.scheme};
 			}
+			// Read off the page like the scheme, and for the same reason after the crash check. Setting the
+			// attribute is only the request: an app that re-asserts its own accent paints that one, a valid
+			// PNG under the requested name.
+			let accent: CaptureEntry["accent"];
+			if (request.accent !== null) {
+				const proof = shot.accentProof;
+				if (proof === undefined || proof._tag !== "Proven") {
+					return {
+						_tag: "WrongAccent",
+						wanted: request.accent.value,
+						reason:
+							proof === undefined
+								? "the capture returned no accent proof"
+								: proof._tag === "Mismatch"
+									? `the page's ${request.accent.rootAttribute} read back "${proof.rendered}"`
+									: proof.reason,
+					} satisfies SurfaceRender;
+				}
+				accent = {requested: request.accent.value, proven: proof.accent};
+			}
 			// Last of the page proofs and after the crash check, for the scheme's reason: a page that threw
-			// is a red render, and the steps ran on the page the locale and scheme proofs answered about.
+			// is a red render, and the steps ran on the page the other page proofs answered about.
 			// A refused interaction wrote no file, so there are no bytes past this point to judge.
 			if (!isWritten(shot)) {
 				return {
@@ -228,6 +249,7 @@ export const makeCaptureRenderLeg =
 					surface: request.surface,
 					viewport: request.viewport.label,
 					...(scheme === undefined ? {} : {scheme}),
+					...(accent === undefined ? {} : {accent}),
 					...(interaction === undefined ? {} : {interaction}),
 					path: shot.localPath,
 					width: validity.width,

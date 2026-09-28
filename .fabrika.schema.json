@@ -932,7 +932,7 @@
 		},
 		"uiCapture": {
 			"type": "object",
-			"description": "How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, the locales a render can be seeded in, and where a page publishes its resolved colour scheme.",
+			"description": "How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, the locales a render can be seeded in, where a page publishes its resolved colour scheme, and the root attribute a theme accent is set on.",
 			"properties": {
 				"viewport": {
 					"type": "object",
@@ -1013,6 +1013,35 @@
 					},
 					"required": [
 						"rootAttribute"
+					],
+					"additionalProperties": false
+				},
+				"accent": {
+					"type": [
+						"object",
+						"null"
+					],
+					"description": "The root attribute the app switches its theme accent on and the closed set of accents it accepts. `review-ui render --accent` sets one of them on `document.documentElement` after navigation and proves it read back before the shot. Null (or absent) refuses `--accent`.",
+					"properties": {
+						"rootAttribute": {
+							"type": "string",
+							"description": "The attribute on `document.documentElement` whose value selects the accent.",
+							"pattern": "^[a-z][a-z0-9-]*$"
+						},
+						"values": {
+							"type": "array",
+							"description": "The accepted accent names, each a value of that attribute.",
+							"items": {
+								"type": "string",
+								"pattern": "^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$"
+							},
+							"minItems": 1,
+							"uniqueItems": true
+						}
+					},
+					"required": [
+						"rootAttribute",
+						"values"
 					],
 					"additionalProperties": false
 				}

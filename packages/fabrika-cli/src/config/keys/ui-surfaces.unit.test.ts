@@ -65,6 +65,7 @@ describe("the shipped default", () => {
 				storageState: null,
 				locale: null,
 				scheme: null,
+				accent: null,
 			},
 		});
 	});
@@ -237,6 +238,44 @@ describe("a declared uiCapture", () => {
 		[
 			"an unknown key inside scheme",
 			{scheme: {rootAttribute: "data-theme", storageKey: "kampus.theme"}},
+			'unknown key "storageKey"',
+		],
+	])("refuses %s whole-value, naming the field it rejected", (_label, value, reason) => {
+		expect(capture(value)).toMatchObject({_tag: "Malformed", reason});
+	});
+
+	it("carries a declared accent through, and leaves it null when absent", () => {
+		const accent = {rootAttribute: "data-color-theme", values: ["ember", "amber"]};
+		expect(capture({accent})).toMatchObject({_tag: "Declared", value: {accent}});
+		expect(capture({locale: null})).toMatchObject({_tag: "Declared", value: {accent: null}});
+		expect(capture({accent: null})).toMatchObject({_tag: "Declared", value: {accent: null}});
+	});
+
+	const ACCENT_VALUES = `"${UI_CAPTURE}.accent.values" is missing or not a non-empty list of distinct accent names`;
+	const ACCENT_ATTRIBUTE = `"${UI_CAPTURE}.accent.rootAttribute" is missing or not a lowercase HTML attribute name`;
+	it.each([
+		["a non-object accent", {accent: "amber"}, `"${UI_CAPTURE}.accent" is not an object`],
+		["an accent with no rootAttribute", {accent: {values: ["amber"]}}, ACCENT_ATTRIBUTE],
+		[
+			"a rootAttribute that is no attribute name",
+			{accent: {rootAttribute: "Data Color", values: ["amber"]}},
+			ACCENT_ATTRIBUTE,
+		],
+		["an accent with no values", {accent: {rootAttribute: "data-accent"}}, ACCENT_VALUES],
+		["an empty values list", {accent: {rootAttribute: "data-accent", values: []}}, ACCENT_VALUES],
+		[
+			"a repeated value",
+			{accent: {rootAttribute: "data-accent", values: ["amber", "amber"]}},
+			ACCENT_VALUES,
+		],
+		[
+			"a value that is no accent name",
+			{accent: {rootAttribute: "data-accent", values: ["amber red"]}},
+			ACCENT_VALUES,
+		],
+		[
+			"an unknown key inside accent",
+			{accent: {rootAttribute: "data-accent", values: ["amber"], storageKey: "k"}},
 			'unknown key "storageKey"',
 		],
 	])("refuses %s whole-value, naming the field it rejected", (_label, value, reason) => {
