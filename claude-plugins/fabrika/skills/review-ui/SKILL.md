@@ -155,7 +155,7 @@ rest, so an at-rest shot of them passes clean. `--interact` adds a shot beside t
 at-rest one: `--interact '/lab/atolye/menu#sil-highlighted=click:role=button[name="Menü"];hover:role=menuitem[name="Sil"];expect:[role=menuitem][data-highlighted]:has-text("Sil")'`
 names the surface, a kebab-case label for the shot, and the steps run after navigation — `hover`,
 `focus`, `click`, `press` and `expect` on Playwright selectors, role and name first. It crosses with
-viewports and schemes like its surface, and composes with tier states, `--flag` and `--locale`. You
+viewports and schemes like its surface, and composes with tier states, `--flag`, `--locale` and `--accent`. You
 never judge whether the shot really shows the state: each `hover` is proved against `:hover`, each
 `focus` against `:focus-visible` and each `expect` against exactly one visible match, a locator that
 matches zero or several elements is refused, and any of those is `11` with no capture written. So an

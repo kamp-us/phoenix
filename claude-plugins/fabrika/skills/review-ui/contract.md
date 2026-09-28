@@ -437,8 +437,8 @@ toast raised — so a change that paints only after someone touches the page is 
 pixels. Before this operand every shot was the page at rest, and a PR whose change lived in `:hover`
 or behind a click parked CANT-SEE. An interaction is its own operand and not a `:state` token:
 `:state` names the identity a page loads as, and an interaction is a thing done to the page after it
-loads, so it composes with every `:state`, `--flag`, `--locale`, `--scheme` and `--viewport` rather
-than replacing any.
+loads, so it composes with every `:state`, `--flag`, `--locale`, `--scheme`, `--accent` and
+`--viewport` rather than replacing any.
 
 The operand is `<surface>#<label>=<step>;<step>;…`. The surface is read up to the first `#` and the
 label up to the first `=` after it, so a locator may carry either character; a step cannot carry
@@ -482,7 +482,7 @@ interactions at one viewport is three captures. An interacted shot carries its l
 after a `~` (`menu~sil-highlighted@desktop.png`, `menu~sil-highlighted@desktop-dark.png`), a
 character a route's name never carries, and an `interaction` object on its manifest entry holding the
 `label`, the `steps` it ran and what the page `proven` at each proving step, read off the page and
-never echoed from the operand. The evidence gallery heads it `<surface> @ <viewport>[, scheme …],
+never echoed from the operand. The evidence gallery heads it `<surface> @ <viewport>[, scheme …][, accent …],
 interaction <label>`, and every stderr line names the shot `with interaction <label>`. A run without
 `--interact` keeps every name, entry and heading it had before.
 
