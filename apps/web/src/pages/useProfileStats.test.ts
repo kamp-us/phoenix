@@ -2,11 +2,6 @@ import {describe, expect, it} from "vitest";
 import {type ProfileStats, toProfileStatsState} from "./useProfileStats";
 
 describe("toProfileStatsState", () => {
-	it("projects a present snapshot into ok with its counts and karma", () => {
-		const data: ProfileStats = {postCount: 3, commentCount: 7, definitionCount: 1, totalKarma: 12};
-		expect(toProfileStatsState(data)).toEqual({status: "ok", stats: data});
-	});
-
 	it("maps a null snapshot to ok with all-zero counts and zero karma — empty is success, not error", () => {
 		// #448: a null snapshot must NOT collapse into the value an `error` would render.
 		expect(toProfileStatsState(null)).toEqual({

@@ -1,11 +1,15 @@
 import {describe, expect, it} from "vitest";
 import {
+	parseOverrideCookie,
+	FLAG_OVERRIDE_COOKIE as WORKER_FLAG_OVERRIDE_COOKIE,
+	encodeOverrideCookieValue as workerEncode,
+} from "../../../worker/features/flagship/dev-override";
+import {
 	actionButtonLabelKey,
 	applyOverride,
 	defaultLabelKey,
 	effectiveLabelKey,
 	effectiveValue,
-	encodeOverrideCookieValue,
 	FLAG_OVERRIDE_COOKIE,
 	overrideLabelKey,
 	overrideOutcomeKey,
@@ -97,10 +101,11 @@ describe("serializeOverrideCookie — the write side", () => {
 		expect(cookie).toContain("max-age=0");
 	});
 
-	it("mirrors the worker encode (URL-encoded JSON)", () => {
-		expect(encodeOverrideCookieValue({f: true})).toBe(
-			encodeURIComponent(JSON.stringify({f: true})),
-		);
+	it("speaks the worker's cookie codec in both directions (the lockstep the header names)", () => {
+		const map = {"mecmua-write": true, "phoenix-user-ban": false};
+		expect(FLAG_OVERRIDE_COOKIE).toBe(WORKER_FLAG_OVERRIDE_COOKIE);
+		expect(parseOverrideCookie(serializeOverrideCookie(map))).toEqual(map);
+		expect(parseOverridesFromCookie(`${FLAG_OVERRIDE_COOKIE}=${workerEncode(map)}`)).toEqual(map);
 	});
 });
 

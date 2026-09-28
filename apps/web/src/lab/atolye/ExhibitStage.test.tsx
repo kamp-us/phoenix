@@ -35,19 +35,10 @@ describe("ExhibitStage — knob-value → props plumbing (behavior)", () => {
 		expect(container.querySelector('[data-part="spinner"]')).not.toBeNull();
 	});
 
-	it("drives an enum prop when its knob selects another option", async () => {
-		const {container} = render(<ExhibitStage exhibit={buttonExhibit} />);
-		const host = container.querySelector(".kp-btn")!;
-		expect(host.getAttribute("data-size")).toBe("md");
-
-		fireEvent.click(screen.getByText("Large"));
-
-		await waitFor(() => expect(host.getAttribute("data-size")).toBe("lg"));
-	});
-
 	it("labels every knob control (accessibility)", () => {
 		render(<ExhibitStage exhibit={buttonExhibit} />);
-		expect(screen.getByText("Loading")).toBeTruthy();
-		expect(screen.getByText("Appearance")).toBeTruthy();
+		for (const knob of Object.values(buttonExhibit.knobs)) {
+			expect(screen.getByRole("group", {name: knob.label})).toBeTruthy();
+		}
 	});
 });

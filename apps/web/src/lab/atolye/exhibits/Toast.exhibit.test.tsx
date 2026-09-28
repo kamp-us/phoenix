@@ -20,10 +20,6 @@ const removalWindowMs = 2000;
 
 // The knob is labelled `0=persistent`: a reviewer sets it to hold a toast up for inspection.
 describe("Toast exhibit — the duration knob keeps its 0=persistent promise", () => {
-	it("is registered under the toast slug", () => {
-		expect(exhibit).toBeDefined();
-	});
-
 	it("keeps a toast raised at 0 in the DOM past the window a short toast is gone in", async () => {
 		raise(0);
 		await waitFor(() => expect(screen.getByText(message)).toBeTruthy());

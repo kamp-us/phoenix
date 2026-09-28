@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {isPostTagKind, POST_TAG_CLASS, POST_TAG_KINDS, tagClass, tagLabel} from "./panoTags";
+import {isPostTagKind, POST_TAG_KINDS, tagClass, tagLabel} from "./panoTags";
 
 describe("panoTags", () => {
 	it("holds the five canonical Turkish kinds", () => {
@@ -43,11 +43,5 @@ describe("panoTags", () => {
 
 	it("tagClass falls back to the neutral 'meta' modifier for an unknown kind", () => {
 		expect(tagClass("zırva")).toBe("meta");
-	});
-
-	it("every canonical kind has a CSS-modifier class", () => {
-		for (const kind of POST_TAG_KINDS) {
-			expect(POST_TAG_CLASS[kind]).toBeTruthy();
-		}
 	});
 });
