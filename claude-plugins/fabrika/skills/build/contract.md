@@ -620,10 +620,10 @@ order with no bets in it is visible as such rather than inferred.
 
 ```
 $ fabrika build pick
-{"pool":[{"number":48,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening","bet":true},{"number":4,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"7","bet":false}],"excluded":{"audience-not-agent":1},"scanned":{"p0":0,"p1":3,"p2":41},"bets":{"state":"read","project":"acme#7","iteration":"Week of Sep 28","bets":1,"inPool":1}}
+{"pool":[{"number":48,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening","bet":true},{"number":4,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"7","bet":false}],"excluded":{"audience-not-agent":1},"scanned":{"p0":0,"p1":3,"p2":41},"bets":{"state":"read","project":"acme#7","tableDay":"2026-09-26","bets":1,"inPool":1}}
 ```
 
-The `p2` chore leads the `p1` bug because the table bet on it this week. With no table project the
+The `p2` chore leads the `p1` bug because the 2026-09-26 table bet on it. With no table project the
 same board answers in its own order:
 
 ```
