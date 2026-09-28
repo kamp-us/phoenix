@@ -784,15 +784,21 @@ describe("runPick — bets first", () => {
 		expect(out.stdout).toBe("");
 	});
 
-	it("refuses on 11 naming the scope fix when the repository declares a table block", async () => {
+	it("keeps its own order on a token without the project scope, even with a table block declared", async () => {
 		const out = await runWithTable(
 			buckets([500], [300]),
-			{projects: [table([])], insufficientScopes: true},
+			{projects: [table([{issue: 300, stage: "bet", section: "Tails"}])], insufficientScopes: true},
 			fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify({table: {stuckDays: 4}})}}),
 		);
-		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toContain(PROJECT_SCOPE_FIX);
+		expect(out.code).toBe(0);
+		expect(pool(out).map((row) => row.number)).toEqual([500, 300]);
+		expect(JSON.parse(out.stdout).bets).toEqual({state: "none"});
+		const scopeLines = out.stderr.filter((line) => line.includes(PROJECT_SCOPE_FIX));
+		expect(scopeLines).toHaveLength(1);
+		expect(scopeLines[0]).toContain("lacks the `project` scope");
+		expect(scopeLines[0]).toContain(
+			"a missing `project` scope skips the table rather than refusing",
+		);
 	});
 
 	it("reads the project `table.project.number` names, not the titled one", async () => {

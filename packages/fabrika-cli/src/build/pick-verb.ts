@@ -31,12 +31,15 @@
  * **Either every bucket was read in full, or the answer is `11`.** v1's pool printed nothing for a
  * failed bucket and kept going, so a `gh` 5xx on the p0 bucket read as "no p0s"
  * (`step1-candidate-pool.sh:12-13`); a bucket whose paginated output stops mid-page is the same fact
- * and lands on the same code. A table project that could not be read refuses the whole pool too — a
- * pool ranked as if nothing were bet on, when bets exist, is an order nobody chose. An empty pool is
+ * and lands on the same code. A table project the repository adopted and that could not be read
+ * refuses the whole pool too — a pool ranked as if nothing were bet on, when bets exist, is an order
+ * nobody chose. A token without the `project` scope is the one exception: the bet order is a
+ * preference, so the pool keeps its own order and one stderr line names the fix. An empty pool is
  * still a fact. No skill consumes individual excluded issues, so the evidence is bounded through
  * ../evidence.ts. See ./command.ts help for the pool answer.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ * @ruling https://github.com/kamp-us/phoenix/issues/10135
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";

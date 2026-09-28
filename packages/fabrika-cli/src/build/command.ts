@@ -164,6 +164,7 @@ const pick = leafCommand(
 			"Prints the ranked pool of issues a lane may claim, with every exclusion counted by reason.",
 			'  {"pool":[{…,"bet"}],"excluded":{"<reason>":n},"scanned":{"p0","p1","p2"},"bets":{"state",…}}',
 			"  Stage-bet issues on the table project lead the pool; no campaign state excludes anything.",
+			"  A token without the project scope degrades to the pool's own order and names the fix.",
 			"  11: a bucket, or the table when .fabrika.jsonc declares one, was unreadable (UNKNOWN)",
 			`  Derivation: the build skill's contract.md, "build pick"`,
 		].join("\n"),

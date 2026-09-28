@@ -443,6 +443,7 @@ describe("the size stop", () => {
 		expect(await stop(board, 10, unconfigured)).toEqual({
 			_tag: "Unchecked",
 			reason: "fabrika lane brief: the token lacks the `project` scope",
+			excuse: "Unadopted",
 		});
 	});
 
@@ -471,10 +472,14 @@ describe("the size stop", () => {
 		expect(await stop(malformed, 10)).toMatchObject({_tag: "Unknown"});
 	});
 
-	it("is UNKNOWN on a token without the project scope once a table block is declared", async () => {
+	it("is Unchecked, never UNKNOWN, on a token without the project scope once a table block is declared", async () => {
 		const {board} = table({}, [], {scopeMissing: true});
 
-		expect(await stop(board, 10)).toMatchObject({_tag: "Unknown"});
+		expect(await stop(board, 10)).toEqual({
+			_tag: "Unchecked",
+			reason: "fabrika lane brief: the token lacks the `project` scope",
+			excuse: "MissingScope",
+		});
 	});
 });
 
