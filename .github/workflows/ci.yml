@@ -47,7 +47,8 @@ jobs:
       e2e: ${{ steps.filter.outputs.e2e }}
       packages: ${{ steps.filter.outputs.packages }}
       workflows: ${{ steps.filter.outputs.workflows }}
-      # The diff basis the `mergebase` step pins, for `packages-tests`' `vitest --changed` (#10023).
+      # The diff basis the `mergebase` step pins, for `packages-tests`' `vitest --changed` (#10023)
+      # and for `check` and `unit` (#10074).
       # Empty on `push` and `workflow_dispatch`, and on any fallback, which runs the full suite.
       merge_base: ${{ steps.mergebase.outputs.sha }}
       # Worker-relevance of the diff (issue #1014): `false` ONLY when the WHOLE PR
@@ -496,10 +497,21 @@ jobs:
     # job's success when `check_required` is true. Skipped → green, not blocking (no
     # required-status-check rule on `main`, so a legitimate skip never wedges a
     # docs-only PR).
+    #
+    # On a PR or a queue batch both halves read only what the diff since the `changes` job's
+    # merge base reaches (#10074): biome checks the changed files, and turbo `--affected`
+    # typechecks the changed packages and their dependents. `push` to main and
+    # `workflow_dispatch` carry no base and check everything, with turbo's cache unread.
     if: needs.changes.outputs.check_required == 'true'
     runs-on: ubuntu-latest
+    env:
+      BASE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.changes.outputs.merge_base || '' }}
     steps:
+      # Full history: biome's `--since` and turbo's `--affected` both diff against the base, so
+      # the base commit has to be in the clone.
       - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4.1.0
 
@@ -510,42 +522,76 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Carries turbo's task cache between runs, so a package build or typecheck whose inputs
+      # did not change replays instead of running — the `integration` job's pattern (#681).
+      - name: Cache turbo task cache
+        uses: actions/cache@v4.2.3
+        with:
+          path: .turbo/cache
+          key: turbo-check-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'apps/**/src/**', 'apps/**/worker/**', 'packages/**/src/**', 'turbo.json') }}
+          restore-keys: |
+            turbo-check-${{ runner.os }}-
+
       # `biome check` is lint + format in one pass (tabs/100-col/no-bracket-spacing).
       # `--reporter=github` (CI-only) emits `::error file=…,line=…::` workflow commands so a
       # lint/format failure renders as an inline annotation on the PR diff, not just buried log
       # text a repair agent must dig through (#3872). The flag lives here rather than in the root
-      # `lint` script so local `pnpm lint` keeps the default human-readable reporter; this
-      # mirrors that script's primary-checkout branch (`biome check .`) with the reporter added.
-      - run: pnpm exec biome check --reporter=github .
+      # `lint` script so local `pnpm lint` keeps the default human-readable reporter.
+      # With a base it checks only the files changed since it; `--no-errors-on-unmatched` keeps a
+      # diff with no file biome reads green. A changed `biome.jsonc` or GritQL plugin changes the
+      # rules for every file, and the lockfile carries biome's own version, so each runs the
+      # whole repo.
+      - name: biome
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ]; then
+            echo "::notice::no pinned diff base — checking the whole repo"
+            exec pnpm exec biome check --reporter=github .
+          fi
+          if ! git diff --quiet "$BASE...HEAD" -- biome.jsonc biome-plugins pnpm-lock.yaml; then
+            echo "::notice::the diff moves biome.jsonc, a biome plugin or pnpm-lock.yaml — checking the whole repo"
+            exec pnpm exec biome check --reporter=github .
+          fi
+          echo "::notice::checking only the files changed since $BASE (biome --changed)"
+          pnpm exec biome check --reporter=github --changed --since="$BASE" --no-errors-on-unmatched
 
       # tsc has no `--reporter=github` equivalent, so the same inline-annotation win the biome
       # step gets above is done by mapping its `path(line,col): error TSxxxx:` diagnostics onto
       # `::error` workflow commands (#3873). `ci annotate` is a pass-through: it re-prints
       # stdin verbatim (the log reads exactly as before) and always exits 0, so `pipefail` is
-      # what keeps the step red — the pipeline's status is `pnpm typecheck`'s own exit code.
-      # Local `pnpm typecheck` is untouched; the mapping lives here, like the biome reporter.
+      # what keeps the step red — the pipeline's status is turbo's own exit code.
+      # With a base, `--affected` is the same selection the root `typecheck:affected` script and
+      # the pre-push hook make. `tsconfig.json` is a turbo `globalDependencies` entry, so a root
+      # tsconfig change still selects every package, and a lockfile change selects the packages
+      # whose resolved dependencies moved.
       - name: typecheck
         run: |
           set -o pipefail
-          pnpm typecheck | node packages/fabrika-cli/src/bin.ts ci annotate
+          if [ -z "$BASE" ]; then
+            echo "::notice::no pinned diff base — typechecking every package"
+            pnpm exec turbo run typecheck --force | node packages/fabrika-cli/src/bin.ts ci annotate
+          else
+            echo "::notice::typechecking the packages the diff since $BASE affects (turbo --affected)"
+            TURBO_SCM_BASE="$BASE" pnpm exec turbo run typecheck --affected | node packages/fabrika-cli/src/bin.ts ci annotate
+          fi
 
   unit:
     name: unit + client tests
     needs: changes
     # Same gate as `check`: skip (→ green, non-blocking) on a docs/skills-only PR.
     #
-    # #771 evaluated PR-scoping this to the AC-relevant unit tests via `vitest run
-    # --changed` (ADR 0082 blesses `--changed` for the unit tier — disjoint import
-    # graphs). It is LEFT FULL deliberately: `--changed` is unsound HERE against
-    # ADR 0092. Vitest forces `passWithNoTests=true` whenever `--changed` is set
-    # (vitest 4 `resolveConfig`), so a `code`-true PR that edits a `worker/**`/`src/**`
-    # module with NO unit test in its import graph runs ZERO tests and exits 0 — a
-    # green that scanned nothing on a relevant change, exactly the silent-no-op
-    # ADR 0092 forbids. The full run has no such hole. Sound PR-scoping needs a
-    # zero-selection-is-FAIL wrapper (assert ≥1 spec selected on a `code`-true PR,
-    # else fail) — that is gate-shaped (ADR 0092 fail-closed-on-zero-scope) and
-    # belongs with the #738/#751 gate-owner, not guessed at here. Until then `unit`
-    # runs FULL on every `code`-true PR + push (cheap: no DB, no creds).
+    # On a PR or a queue batch the app suites run through turbo `--affected` against the
+    # `changes` job's merge base, so an app neither the diff nor any of its dependencies touched
+    # is not run at all, and each selected app runs vitest `--changed <base>`, only the tests
+    # whose import graph reaches a changed file (#10074). A file a test reads from disk instead
+    # of importing is a `forceRerunTriggers` entry in that app's `vitest.config.ts`, which runs
+    # its whole suite. `--changed` passes a run that selects no test, so that holds only as far
+    # as those triggers are complete; `push` to main and `workflow_dispatch` are the backstop,
+    # running every suite with turbo's cache unread. A diff that moves the lockfile, the
+    # workspace manifest or a vitest config runs every app's whole suite: a dependency change
+    # sits in `node_modules`, which vitest never follows, and a config's own path matches none
+    # of vitest's default triggers. There turbo may replay a suite whose hash, which covers the
+    # app's resolved dependencies and its workspace dependencies' files, did not change.
     #
     # Shares `check`'s `code`-gated predicate, so it reads the same single-sourced
     # `check_required` output (#786) — `ci-required` requires this job's success when
@@ -553,7 +599,11 @@ jobs:
     if: needs.changes.outputs.check_required == 'true'
     runs-on: ubuntu-latest
     steps:
+      # Full history: turbo's `--affected` and vitest's `--changed` both diff against the base, so
+      # the base commit has to be in the clone.
       - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4.1.0
 
@@ -564,14 +614,42 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Carries turbo's task cache between runs, the `integration` job's pattern (#681).
+      - name: Cache turbo task cache
+        uses: actions/cache@v4.2.3
+        with:
+          path: .turbo/cache
+          key: turbo-unit-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'apps/**/src/**', 'apps/**/worker/**', 'packages/**/src/**', 'turbo.json') }}
+          restore-keys: |
+            turbo-unit-${{ runner.os }}-
+
+      # One of three scopes, as turbo arguments both test steps below take verbatim.
+      - name: Decide the test scope
+        id: scope
+        env:
+          BASE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.changes.outputs.merge_base || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ]; then
+            echo "::notice::no pinned diff base — running every app's full suite"
+            echo "args=--force" >> "$GITHUB_OUTPUT"
+          elif ! git diff --quiet "$BASE...HEAD" -- pnpm-lock.yaml pnpm-workspace.yaml ':(glob)**/vitest.config.*'; then
+            echo "::notice::the diff moves pnpm-lock.yaml, pnpm-workspace.yaml or a vitest config — running every app's whole suite"
+            echo "args=" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::running the apps turbo --affected selects since $BASE, each with vitest --changed"
+            echo "args=--affected -- --changed $BASE" >> "$GITHUB_OUTPUT"
+            echo "TURBO_SCM_BASE=$BASE" >> "$GITHUB_ENV"
+          fi
+
       # The `unit` vitest project (ADR 0082): node pool, no worker deploy, no
       # creds, no SQL engine. Fast signal over pure logic substituted directly at
       # the Drizzle seam — keyset/cursor-miss decisions, envelope shaping,
       # normalization, auth gates, Effect-DO builders over a DO-state fake.
-      # Discovery-based across apps/ (the `pnpm --filter './packages/**'` idiom, ADR
-      # 0057): runs each app's `test:unit`, so a second app is gated with no edit here.
-      # Recursive `run` skips an app without the script — same posture as packages-tests.
-      - run: pnpm --filter './apps/**' test:unit
+      # Discovery-based across apps/ (ADR 0057): runs each app's `test:unit`, so a second app is
+      # gated with no edit here, and an app without the script is skipped.
+      - name: Run the apps' unit tests
+        run: pnpm exec turbo run test:unit --filter='./apps/*' ${{ steps.scope.outputs.args }}
 
       # The `client` vitest project (#1419, ADR 0082): the SPA component/DOM tier —
       # jsdom, renders the real React shells and queries the DOM for the `src/**/*.test.tsx`
@@ -582,7 +660,8 @@ jobs:
       # heap is already CI-capped (`--max-old-space-size=512`, vitest.config.ts). A
       # failing `.test.tsx` fails this job → UNIT_RESULT ≠ success → `ci-required` fails
       # closed, exactly as a `test:unit` failure does.
-      - run: pnpm --filter './apps/**' test:client
+      - name: Run the apps' client tests
+        run: pnpm exec turbo run test:client --filter='./apps/*' ${{ steps.scope.outputs.args }}
 
       # apps/tuval's `integration` project (#7556): the page-to-kernel transport over a real
       # loopback WebSocket. Named for the socket it binds, not for ADR 0082's remote-D1 tier —
@@ -611,9 +690,9 @@ jobs:
   # `@kampus/infra` (the CI-credential stack, #1437) is named explicitly alongside
   # the `./packages/**` glob so its permission-group guard suite runs here too.
   # These are node-pool unit suites (ADR 0082): no DB, no worker deploy, no creds —
-  # fast (~7s, ~500 tests), no sharding. Run FULL (no `--changed`): the `packages`
-  # path filter already scopes the JOB, and a full run has no zero-selection hole
-  # (ADR 0092) — same posture as `unit`.
+  # no sharding. The `packages` path filter scopes the JOB, and inside it a PR or queue
+  # batch runs only what the diff reaches (vitest `--changed`, below), the same posture
+  # as `unit`.
   #
   # Unlike `ci-required`'s zero-dep bin, the suites need their deps, so this job
   # installs (`--frozen-lockfile`). Run-ness is single-sourced from
