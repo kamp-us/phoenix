@@ -106,6 +106,11 @@ export interface ProjectTarget {
 export interface TableSettings {
 	readonly cadence: Cadence;
 	readonly day: Weekday;
+	/**
+	 * The IANA time zone the table reads "today" in. GitHub resolves a view's `@today` in the
+	 * viewer's zone, not UTC, so this names the zone the people at the table use.
+	 */
+	readonly timeZone: string;
 	/** Agenda sections in agenda order. Unique, and always holding every {@link REQUIRED_SECTIONS} name. */
 	readonly sections: ReadonlyArray<string>;
 	readonly agendaCap: number;
@@ -130,6 +135,7 @@ export interface TableSettings {
 export const SHIPPED_TABLE: TableSettings = {
 	cadence: "weekly",
 	day: "monday",
+	timeZone: "UTC",
 	sections: [TAILS, CUSTOMERS, NEW_BETS, OUTSIDE_THE_BETS],
 	agendaCap: 25,
 	flagMultiple: 1,
@@ -221,6 +227,22 @@ const sectionList: Field<ReadonlyArray<string>> = (raw, path) => {
 		);
 	}
 	return {_tag: "Value", value: names};
+};
+
+const timeZone: Field<string> = (raw, path) => {
+	if (typeof raw !== "string" || raw.trim() === "") {
+		return malformed(`${named(path)} is not an IANA time zone name`);
+	}
+	try {
+		return {
+			_tag: "Value",
+			value: new Intl.DateTimeFormat("en-US", {timeZone: raw}).resolvedOptions().timeZone,
+		};
+	} catch {
+		return malformed(
+			`${named(path)} "${raw}" is not an IANA time zone name — e.g. "America/Los_Angeles" or "UTC"`,
+		);
+	}
 };
 
 const labelList: Field<ReadonlyArray<string>> = (raw, path) => {
@@ -333,6 +355,7 @@ const evidenceSources: Field<ReadonlyArray<EvidenceSource>> = (raw, path) => {
 const SUB_KEYS: {readonly [K in keyof TableSettings]: Field<TableSettings[K]>} = {
 	cadence: oneOf(CADENCES),
 	day: oneOf(WEEKDAYS),
+	timeZone,
 	sections: sectionList,
 	agendaCap: positiveInteger,
 	flagMultiple: flagPoint,
@@ -391,12 +414,19 @@ export const tableKey: KeyGroup<TableSettings> = {
 				type: "string",
 				enum: [...CADENCES],
 				description:
-					"How often the table meets. Default weekly. The project's iteration field runs 7 days for weekly and on-demand, 14 for biweekly.",
+					"How often the table meets. Default weekly. Every row is dated by its Table day, the `day` weekday; the cadence words the README.",
 			},
 			day: {
 				type: "string",
 				enum: [...WEEKDAYS],
-				description: "The weekday the table meets and each iteration starts. Default monday.",
+				description:
+					"The weekday the table meets: every row's Table day falls on it. Default monday.",
+			},
+			timeZone: {
+				type: "string",
+				minLength: 1,
+				description:
+					"The IANA time zone the table reads today in, e.g. America/Los_Angeles. Default UTC. Set it to the zone the people at the table use: GitHub reads the Agenda view's `@today` in theirs, so fabrika's next table matches the view only in the same zone.",
 			},
 			sections: {
 				type: "array",

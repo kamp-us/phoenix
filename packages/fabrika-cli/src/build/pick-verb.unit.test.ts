@@ -559,8 +559,9 @@ describe("runPick — the blocked_by graph", () => {
  * Projects fake, split on the GraphQL endpoint, so one pick runs both the way production does.
  */
 describe("runPick — bets first", () => {
-	const THIS_WEEK = {id: "it-this", title: "Week of Sep 28", startDate: "2026-09-28", duration: 7};
-	const LAST_WEEK = {id: "it-last", title: "Week of Sep 21", startDate: "2026-09-21", duration: 7};
+	/** NOW is a Wednesday, so under the shipped Monday table the table in force is Sep 28. */
+	const THIS_TABLE = "2026-09-28";
+	const LAST_TABLE = "2026-09-21";
 
 	const STAGE = {proposed: "st-proposed", bet: "st-bet"};
 	const SECTION = {Tails: "se-tails", Customers: "se-customers", "New bets": "se-new"};
@@ -571,7 +572,7 @@ describe("runPick — bets first", () => {
 			readonly issue: number;
 			readonly stage: keyof typeof STAGE;
 			readonly section: keyof typeof SECTION;
-			readonly week?: string;
+			readonly tableDay?: string;
 		}>,
 		over: Partial<FakeProject> = {},
 	): FakeProject =>
@@ -602,13 +603,7 @@ describe("runPick — bets first", () => {
 						description: "",
 					})),
 				},
-				{
-					id: "F_week",
-					name: "Week",
-					dataType: "ITERATION",
-					iteration: {duration: 7, startDay: 1},
-					iterations: [LAST_WEEK, THIS_WEEK],
-				},
+				{id: "F_day", name: "Table day", dataType: "DATE"},
 			],
 			items: rows.map((row, index) => ({
 				id: `PVTI_${index}`,
@@ -617,7 +612,7 @@ describe("runPick — bets first", () => {
 				values: {
 					F_stage: {singleSelectOptionId: STAGE[row.stage]},
 					F_section: {singleSelectOptionId: SECTION[row.section]},
-					F_week: {iterationId: row.week ?? THIS_WEEK.id},
+					F_day: {date: row.tableDay ?? THIS_TABLE},
 				},
 			})),
 			...over,
@@ -708,12 +703,12 @@ describe("runPick — bets first", () => {
 		expect(JSON.parse(out.stdout).bets).toEqual({
 			state: "read",
 			project: "o#7",
-			iteration: THIS_WEEK.title,
+			tableDay: THIS_TABLE,
 			bets: 1,
 			inPool: 1,
 		});
 		expect(out.stderr.at(-1)).toBe(
-			`build pick: bets: 1 bet(s) in ${THIS_WEEK.title} on project o#7, 1 in the pool and first in it.`,
+			`build pick: bets: 1 bet(s) at the ${THIS_TABLE} table on project o#7, 1 in the pool and first in it.`,
 		);
 	});
 
@@ -730,12 +725,12 @@ describe("runPick — bets first", () => {
 		expect(pool(out).map((row) => row.number)).toEqual([302, 301, 500]);
 	});
 
-	it("does not move a proposed row, or a bet from an earlier iteration", async () => {
+	it("does not move a proposed row, or a bet dated an earlier table", async () => {
 		const out = await runWithTable(buckets([500], [301, 302]), {
 			projects: [
 				table([
 					{issue: 301, stage: "proposed", section: "Tails"},
-					{issue: 302, stage: "bet", section: "Tails", week: LAST_WEEK.id},
+					{issue: 302, stage: "bet", section: "Tails", tableDay: LAST_TABLE},
 				]),
 			],
 		});

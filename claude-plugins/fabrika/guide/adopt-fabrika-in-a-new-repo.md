@@ -253,27 +253,30 @@ fabrika table setup
 
 It reuses an open project titled `<repo name> table`, first among your repo's linked projects, then
 among the owner's, and links it. Failing that, it creates one under the owner. It then adds the
-fields, the Week field with its first 12 weeks (six two-week iterations for a biweekly table), the
-five views and a README that explains every column. Run it again any time, and once after each
-fabrika upgrade: a project already in shape answers `unchanged`.
+fields, the Table day date field every row is dated in, the five views (Agenda grouped by Section,
+Lanes in columns by Stage) and a README that explains every column. Run it again any time, and once
+after each fabrika upgrade: a project already in shape answers `unchanged`.
 
-### 11.3 Take the three steps the API cannot
+A project set up before Table day keeps its Week iteration field, and setup lists it under
+`legacy`. Run `fabrika table migrate-week` once to copy each row's week into Table day; it never
+writes the Week field.
 
-Setup prints all three, and the project README's "By hand" section lists them.
+### 11.3 Take the steps the API cannot
 
-1. Grouping: in the Agenda view, set *Group by: Section* and save the view. In the Lanes view, set
-   *Column by: Stage* and save it.
+Setup prints them, and the project README's "By hand" section lists them.
+
+1. Grouping, only on an Agenda or Lanes view that stood before setup: set *Group by: Section* on
+   Agenda and *Column by: Stage* on Lanes. Setup creates the views it adds already grouped.
 2. Inbox auto-add: in the project's **Workflows**, turn on *Auto-add to project* for your repo with
    the filter `is:issue is:open no:label`, and save it. Issues nobody labeled then land in the Inbox
    view, where triage sees them.
-3. Weeks: before the last of the 12 planned weeks starts, add the coming weeks in the project's
-   settings under the Week field. Setup never adds them to a Week field that already exists, because
-   GitHub's API adds an iteration only by rewriting the whole list, which empties every row's Week.
 
 ### 11.4 Tune it, if the defaults do not fit
 
-Add a `table` block to `.fabrika.jsonc` with only the keys you change: cadence and day, sections,
-the agenda cap, and the flag and stop points. A `sections` list may reorder and add sections, but it
+Add a `table` block to `.fabrika.jsonc` with only the keys you change: cadence and day, the time
+zone, sections, the agenda cap, and the flag and stop points. Set `table.timeZone` to the zone the
+people at the table live in, such as `America/Los_Angeles`: GitHub shows the Agenda by the viewer's
+today, and prep matches it only when it reads today in the same zone. A `sections` list may reorder and add sections, but it
 must keep Tails, Customers, New bets and Outside the bets, or the config is refused. Remember 11.1:
 the block also makes table reads fail closed. Every key and its default is in
 [`src/config/keys/table.ts`](../../../packages/fabrika-cli/src/config/keys/table.ts).
@@ -302,20 +305,18 @@ its work has merged.
 fabrika table prep
 ```
 
-It fills the agenda for the Week your next table day falls in, carries running bets into it, brings
-shipped bets back as checks, and posts the week's health as the project's status update. Each row's
+It fills the agenda for your next table day, dates every row it touches with that day, carries
+running bets to it, brings shipped bets back as checks, and posts the week's health as the project's status update. Each row's
 In plain words line is the issue's `## In plain words` summary, or its title when it has none
 ([`src/table/agenda.ts`](../../../packages/fabrika-cli/src/table/agenda.ts)), so triage an issue
 before you want it read well at the table.
 
 Then act on what it printed:
 
-- **Exit 25:** the planned weeks ran out, so no Week iteration covers your next table day. Add the
-  coming weeks by hand (11.3, step 3), then prep again.
 - **An `AT_RISK` status update:** a row flag stands, or a flag check could not be read. Its "Could
   not check" line names each check it could not read; it never reads `ON_TRACK` over one.
 - **`triageFirst`:** customer reports nobody triaged yet. Triage them; the next prep proposes them.
-- **A second run in the same Week** adds no row, carries no bet and posts nothing. It still takes a
+- **A second run for the same table** adds no row, carries no bet and posts nothing. It still takes a
   `proposed` row whose issue closed off the table, and with an on-call board it still routes new
   issues there ([`src/table/prep-verb.ts`](../../../packages/fabrika-cli/src/table/prep-verb.ts)).
 

@@ -181,12 +181,10 @@ export const readBets = (
 				readBoard(token, projectId, {
 					stage: FIELD.stage,
 					section: FIELD.section,
-					iteration: FIELD.week,
+					tableDay: FIELD.tableDay,
 				}),
 				(board): ProjectsAnswer<BetOrder> =>
-					board._tag === "Ok"
-						? {_tag: "Ok", value: betOrder(board.value, settings.sections, now)}
-						: board,
+					board._tag === "Ok" ? {_tag: "Ok", value: betOrder(board.value, settings, now)} : board,
 			),
 		),
 		(read): BetsRead =>

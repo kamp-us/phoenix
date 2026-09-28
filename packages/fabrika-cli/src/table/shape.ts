@@ -8,6 +8,7 @@
  * not configurable: a renamed `Stage` field would be a field no sync could find.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ * @ruling https://github.com/kamp-us/phoenix/issues/9989
  */
 
 import type {AppetiteSizes} from "../config/keys/appetite-sizes.ts";
@@ -16,9 +17,8 @@ import {
 	OUTSIDE_THE_BETS,
 	type ProjectTarget,
 	type TableSettings,
-	WEEKDAYS,
 } from "../config/keys/table.ts";
-import type {FieldSpec, OptionColor, PlannedIteration, ViewLayout} from "../io/projects.ts";
+import type {FieldSpec, OptionColor} from "../io/projects.ts";
 
 export const FIELD = {
 	title: "Title",
@@ -31,8 +31,14 @@ export const FIELD = {
 	rec: "Rec",
 	plainWords: "In plain words",
 	outcome: "Outcome",
-	week: "Week",
+	tableDay: "Table day",
 } as const;
+
+/**
+ * The Week iteration field tables were set up with before Table day. Setup leaves it in place and
+ * reports it; `table migrate-week` reads it once to date every row.
+ */
+export const LEGACY_WEEK = "Week";
 
 interface Choice {
 	readonly name: string;
@@ -85,13 +91,31 @@ const options = (choices: ReadonlyArray<Choice>) =>
 		description: choice.description,
 	}));
 
-export interface ViewShape {
-	readonly name: string;
-	readonly layout: ViewLayout;
-	readonly filter: string;
-	/** Field names, in display order. */
-	readonly fields: ReadonlyArray<string>;
-}
+/**
+ * How a view groups its rows, by field name. A table layout groups rows; a board's columns are its
+ * grouping. Set when setup creates the view — a view that already stands keeps its own.
+ */
+export type ViewGrouping =
+	| {readonly _tag: "None"}
+	| {readonly _tag: "Rows"; readonly field: string}
+	| {readonly _tag: "Columns"; readonly field: string};
+
+export type ViewShape =
+	| {
+			readonly name: string;
+			readonly layout: "TABLE_LAYOUT";
+			readonly filter: string;
+			/** Field names, in display order. */
+			readonly fields: ReadonlyArray<string>;
+			readonly grouping: Exclude<ViewGrouping, {_tag: "Columns"}>;
+	  }
+	| {
+			readonly name: string;
+			readonly layout: "BOARD_LAYOUT";
+			readonly filter: string;
+			readonly fields: ReadonlyArray<string>;
+			readonly grouping: Exclude<ViewGrouping, {_tag: "Rows"}>;
+	  };
 
 export interface TableShape {
 	readonly title: string;
@@ -99,6 +123,8 @@ export interface TableShape {
 	readonly readme: string;
 	readonly fields: ReadonlyArray<FieldSpec>;
 	readonly views: ReadonlyArray<ViewShape>;
+	/** Fields an older shape used: setup leaves each in place and reports it as legacy. */
+	readonly legacy: ReadonlyArray<string>;
 	readonly manualSteps: ReadonlyArray<string>;
 }
 
@@ -109,7 +135,14 @@ export const INBOX_VIEW_FILTER = "is:open no:label";
 
 const quote = (value: string): string => (/\s/.test(value) ? `"${value}"` : value);
 
-const filterKey = (field: string): string => field.toLowerCase();
+/** A field's filter key: its name lowercased, spaces hyphenated — `Table day` filters as `table-day`. */
+export const filterKey = (field: string): string => field.toLowerCase().replace(/\s+/g, "-");
+
+/**
+ * The Agenda's window: the rows dated today through six days on, which is the next table's. GitHub
+ * reads `@today` in the viewer's time zone, and `@current` matches iteration fields only.
+ */
+export const AGENDA_DAYS = `${filterKey(FIELD.tableDay)}:@today..@today+6d`;
 
 const LANE_STAGES = ["bet", "in lane", "shipped", "check"];
 
@@ -123,14 +156,15 @@ const WIDE_FIELDS: ReadonlyArray<string> = [
 	FIELD.asks,
 	FIELD.rec,
 	FIELD.outcome,
-	FIELD.week,
+	FIELD.tableDay,
 ];
 
 export const VIEWS: ReadonlyArray<ViewShape> = [
 	{
 		name: "Agenda",
 		layout: "TABLE_LAYOUT",
-		filter: `${filterKey(FIELD.week)}:@current has:${filterKey(FIELD.section)} -${filterKey(FIELD.section)}:${quote(OUTSIDE_THE_BETS)} has:${filterKey(FIELD.rec)}`,
+		filter: `${AGENDA_DAYS} has:${filterKey(FIELD.section)} -${filterKey(FIELD.section)}:${quote(OUTSIDE_THE_BETS)} has:${filterKey(FIELD.rec)}`,
+		grouping: {_tag: "Rows", field: FIELD.section},
 		fields: [
 			FIELD.title,
 			FIELD.stage,
@@ -147,74 +181,36 @@ export const VIEWS: ReadonlyArray<ViewShape> = [
 		layout: "TABLE_LAYOUT",
 		filter: `${filterKey(FIELD.section)}:${quote(OUTSIDE_THE_BETS)}`,
 		fields: WIDE_FIELDS,
+		grouping: {_tag: "None"},
 	},
 	{
 		name: "Lanes",
 		layout: "BOARD_LAYOUT",
 		filter: `has:${filterKey(FIELD.section)} ${filterKey(FIELD.stage)}:${LANE_STAGES.map(quote).join(",")}`,
 		fields: WIDE_FIELDS,
+		grouping: {_tag: "Columns", field: FIELD.stage},
 	},
 	{
 		name: "Group members",
 		layout: "TABLE_LAYOUT",
 		filter: `no:${filterKey(FIELD.section)} has:label`,
 		fields: [FIELD.title, FIELD.stage, FIELD.spent, FIELD.asks],
+		grouping: {_tag: "None"},
 	},
 	{
 		name: "Inbox",
 		layout: "TABLE_LAYOUT",
 		filter: INBOX_VIEW_FILTER,
 		fields: [FIELD.title],
+		grouping: {_tag: "None"},
 	},
 ];
 
-/** How many weeks of iterations setup gives a new Week field: GitHub's API adds iterations only when it creates the field. */
-export const PLANNED_WEEKS = 12;
-
 /** The steps GitHub's API cannot take, worded once for the verb's answer and the README. */
 export const manualSteps = (repo: string): ReadonlyArray<string> => [
-	`Grouping: in the Agenda view, set Group by: ${FIELD.section} and save the view; in the Lanes view, set Column by: ${FIELD.stage} and save it. GitHub's GraphQL API cannot set a view's grouping.`,
+	`Grouping: setup creates the Agenda view grouped by ${FIELD.section} and the Lanes view in columns by ${FIELD.stage}. A view that stood before setup keeps its own grouping, so set it by hand there: Group by: ${FIELD.section} on Agenda, Column by: ${FIELD.stage} on Lanes.`,
 	`Inbox auto-add: in the project's Workflows, turn on "Auto-add to project" for ${repo} with the filter \`${INBOX_AUTO_ADD_FILTER}\`, and save it. Every issue nobody labeled then lands in Inbox. GitHub's API cannot create a workflow.`,
-	`Weeks: setup creates the ${FIELD.week} field with its first ${PLANNED_WEEKS} weeks. Before the last one starts, add the coming weeks in the project's settings under ${FIELD.week}, or \`fabrika table prep\` stops with no week to prepare. GitHub's API adds an iteration only by rewriting the whole list, which empties every row's ${FIELD.week}.`,
 ];
-
-const ITERATION_DAYS: Readonly<Record<Cadence, number>> = {
-	weekly: 7,
-	biweekly: 14,
-	"on-demand": 7,
-};
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-const isoDate = (date: Date): string => date.toISOString().slice(0, 10);
-
-const DAY_MS = 86_400_000;
-
-/** The most recent table day on or before `today`, in UTC — where the first iteration starts. */
-export const iterationStart = (settings: TableSettings, today: Date): Date => {
-	const target = WEEKDAYS.indexOf(settings.day);
-	const back = (today.getUTCDay() - target + 7) % 7;
-	return new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - back));
-};
-
-/**
- * The iterations a new Week field starts with: back-to-back, from the most recent table day on or
- * before `today` through {@link PLANNED_WEEKS} weeks. The first holds today and the next table day,
- * so `table prep` finds its week on any day right after setup.
- */
-export const plannedIterations = (
-	settings: TableSettings,
-	today: Date,
-): readonly [PlannedIteration, ...PlannedIteration[]] => {
-	const start = iterationStart(settings, today).getTime();
-	const days = ITERATION_DAYS[settings.cadence];
-	const at = (index: number): PlannedIteration => {
-		const day = new Date(start + index * days * DAY_MS);
-		return {startDate: isoDate(day), title: `${MONTHS[day.getUTCMonth()]} ${day.getUTCDate()}`};
-	};
-	const count = Math.ceil((PLANNED_WEEKS * 7) / days);
-	return [at(0), ...Array.from({length: count - 1}, (_, index) => at(index + 1))];
-};
 
 const cadenceWords: Readonly<Record<Cadence, string>> = {
 	weekly: "every week",
@@ -244,7 +240,7 @@ export const renderReadme = (
 		"- Carries every running bet into the new week. Only a flagged one comes back on the agenda; the rest keep going quietly, with no rec.",
 		`- Brings back every bet **shipped** ${settings.checkDelayDays} days ago or more as a **check**, with its evidence posted on the issue. A bet is a row whose **${FIELD.origin}** reads \`bet\`; a row that ran without a bet stays where it is.`,
 		"- Posts the health numbers as the project's **status update**.",
-		`- Needs the week to exist: setup adds the first ${PLANNED_WEEKS} weeks under **${FIELD.week}**; add the coming ones by hand after that (below).`,
+		`- Dates every row it touches with the next table's day under **${FIELD.tableDay}**, so nothing weekly needs a person.`,
 		"",
 		"## At the table",
 		"1. Read the latest status update: click the status badge at the top of the project.",
@@ -266,8 +262,8 @@ export const renderReadme = (
 		"",
 		"# What the columns mean",
 		"",
-		`## ${FIELD.week}`,
-		`Which table the row belongs to. One iteration is one table. \`@current\` is this one.`,
+		`## ${FIELD.tableDay}`,
+		`Which table the row belongs to: the day that table meets. The Agenda shows the rows dated today through six days on (\`${AGENDA_DAYS}\`), which is the next table.`,
 		"",
 		`## ${FIELD.section}: why the row is on the agenda`,
 		...settings.sections.map((name) => `- **${name}**: ${sectionDescription(name)}`),
@@ -325,7 +321,6 @@ export const tableShape = (
 	sizes: AppetiteSizes,
 	repo: string,
 	title: string,
-	today: Date,
 ): TableShape => {
 	return {
 		title,
@@ -355,14 +350,10 @@ export const tableShape = (
 			{_tag: "Text", name: FIELD.rec},
 			{_tag: "Text", name: FIELD.plainWords},
 			{_tag: "SingleSelect", name: FIELD.outcome, options: options(OUTCOMES)},
-			{
-				_tag: "Iteration",
-				name: FIELD.week,
-				duration: ITERATION_DAYS[settings.cadence],
-				iterations: plannedIterations(settings, today),
-			},
+			{_tag: "Date", name: FIELD.tableDay},
 		],
 		views: VIEWS,
+		legacy: [LEGACY_WEEK],
 		manualSteps: manualSteps(repo),
 	};
 };

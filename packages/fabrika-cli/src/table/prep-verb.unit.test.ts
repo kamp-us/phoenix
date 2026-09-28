@@ -11,7 +11,6 @@ import {fakeFs, fakeShell, unconfigured} from "../fakes.test-support.ts";
 import type {ChildOutcome, ChildRequest} from "../io/exec.ts";
 import {absent, type ListedIssue, present, type TimelineFacts, unknown} from "../io/issues.ts";
 import type {
-	BoardIteration,
 	FieldValue,
 	ItemFieldValue,
 	ProjectItem,
@@ -22,27 +21,23 @@ import type {
 } from "../io/projects.ts";
 import {emit, type Instant, type LaneRecord} from "../wire/lane-record.ts";
 import {checkMarker} from "./check.ts";
-import {NO_ITERATION, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {type PrepBoard, runPrep} from "./prep-verb.ts";
 import {ORIGINS, OUTCOMES, STAGES} from "./shape.ts";
 import type {SyncNode} from "./sync.ts";
 
 const REPO = "acme/widgets";
 const OWNER = "octo-owner";
-/** A Sunday; the shipped table day is Monday, so prep readies the Sep 28 iteration. */
+/** A Sunday; the shipped table day is Monday, so prep readies the Sep 28 table. */
 const NOW = new Date("2026-09-27T12:00:00.000Z");
 
-const PREVIOUS: BoardIteration = {
-	id: "it_21",
-	title: "Sep 21",
-	startDate: "2026-09-21",
-	duration: 7,
-};
-const NEXT: BoardIteration = {id: "it_28", title: "Sep 28", startDate: "2026-09-28", duration: 7};
+const PREVIOUS = "2026-09-21";
+const NEXT = "2026-09-28";
 
 const selectField = (id: string, name: string, names: ReadonlyArray<string>) => ({
 	_tag: "SingleSelect" as const,
 	id,
+	databaseId: 0,
 	name,
 	options: names.map((n) => ({id: `${id}:${n}`, name: n, color: "GRAY" as const, description: ""})),
 });
@@ -50,6 +45,7 @@ const selectField = (id: string, name: string, names: ReadonlyArray<string>) => 
 const PROJECT: ProjectSnapshot = {
 	id: "PVT_1",
 	number: 3,
+	owner: {kind: "Organization", login: "acme"},
 	url: "https://github.com/orgs/acme/projects/3",
 	title: "widgets table",
 	shortDescription: null,
@@ -62,21 +58,21 @@ const PROJECT: ProjectSnapshot = {
 		),
 		selectField("F_section", "Section", ["Tails", "Customers", "New bets", "Outside the bets"]),
 		selectField("F_size", "Size", ["S", "M", "L"]),
-		{_tag: "Plain", id: "F_spent", name: "Spent $", dataType: "NUMBER"},
-		{_tag: "Plain", id: "F_asks", name: "Asks", dataType: "NUMBER"},
+		{_tag: "Plain", databaseId: 0, id: "F_spent", name: "Spent $", dataType: "NUMBER"},
+		{_tag: "Plain", databaseId: 0, id: "F_asks", name: "Asks", dataType: "NUMBER"},
 		selectField(
 			"F_origin",
 			"Origin",
 			ORIGINS.map((origin) => origin.name),
 		),
-		{_tag: "Plain", id: "F_rec", name: "Rec", dataType: "TEXT"},
-		{_tag: "Plain", id: "F_plain", name: "In plain words", dataType: "TEXT"},
+		{_tag: "Plain", databaseId: 0, id: "F_rec", name: "Rec", dataType: "TEXT"},
+		{_tag: "Plain", databaseId: 0, id: "F_plain", name: "In plain words", dataType: "TEXT"},
 		selectField(
 			"F_outcome",
 			"Outcome",
 			OUTCOMES.map((outcome) => outcome.name),
 		),
-		{_tag: "Iteration", id: "F_week", name: "Week", duration: 7, startDay: 1},
+		{_tag: "Plain", databaseId: 0, id: "F_day", name: "Table day", dataType: "DATE"},
 	],
 	views: [],
 };
@@ -84,13 +80,14 @@ const PROJECT: ProjectSnapshot = {
 const ON_CALL: ProjectSnapshot = {
 	id: "PVT_2",
 	number: 4,
+	owner: {kind: "Organization", login: "acme"},
 	url: "https://github.com/orgs/acme/projects/4",
 	title: "widgets on-call",
 	shortDescription: null,
 	readme: null,
 	fields: [
 		selectField("F_target", "Response target", ["same day", "this week"]),
-		{_tag: "Plain", id: "F_oc_plain", name: "In plain words", dataType: "TEXT"},
+		{_tag: "Plain", databaseId: 0, id: "F_oc_plain", name: "In plain words", dataType: "TEXT"},
 	],
 	views: [],
 };
@@ -125,12 +122,8 @@ const cellValue = (
 	if (field._tag === "SingleSelect") {
 		return {...at, value: {_tag: "Option", optionId: `${field.id}:${raw}`, name: String(raw)}};
 	}
-	if (field._tag === "Iteration") {
-		const iteration = [PREVIOUS, NEXT].find((one) => one.id === raw);
-		return {
-			...at,
-			value: {_tag: "Iteration", iterationId: String(raw), title: iteration?.title ?? "?"},
-		};
+	if (field._tag === "Plain" && field.dataType === "DATE") {
+		return {...at, value: {_tag: "Date", date: String(raw)}};
 	}
 	return typeof raw === "number"
 		? {...at, value: {_tag: "Number", number: raw}}
@@ -220,11 +213,11 @@ const ROWS: Readonly<Record<number, Cells>> = {
 		setAt: "2026-09-24T00:00:00.000Z",
 		Section: "New bets",
 		Size: "S",
-		Week: PREVIOUS.id,
+		"Table day": PREVIOUS,
 		Rec: "yes.",
 	},
-	71: {Stage: "bet", Section: "New bets", Size: "M", Week: PREVIOUS.id, Rec: "yes."},
-	80: {Stage: "proposed", Section: "Customers", Week: PREVIOUS.id, Rec: "yes."},
+	71: {Stage: "bet", Section: "New bets", Size: "M", "Table day": PREVIOUS, Rec: "yes."},
+	80: {Stage: "proposed", Section: "Customers", "Table day": PREVIOUS, Rec: "yes."},
 	90: {Stage: "in lane", Section: "Outside the bets", Origin: "driver pick", "Spent $": 12},
 };
 
@@ -240,7 +233,6 @@ const ran = (stdout: string, exitCode: number | null = 0, stderr = ""): ChildOut
 const world = (
 	issues: Readonly<Record<number, IssueSpec>> = ISSUES,
 	rows: Readonly<Record<number, Cells>> = ROWS,
-	iterations: ReadonlyArray<BoardIteration> = [PREVIOUS, NEXT],
 	source: (request: ChildRequest) => ChildOutcome = () => ran(""),
 ) => {
 	const ok = <A>(value: A): ProjectsAnswer<A> => ({_tag: "Ok", value});
@@ -374,7 +366,6 @@ const world = (
 				spawned.push(request);
 				return source(request);
 			}),
-		week: () => Effect.succeed(ok({running: iterations, completed: []})),
 		deciders: () => Effect.succeed({_tag: "Roster" as const, logins: new Set([OWNER])}),
 		statusUpdates: () => Effect.sync(() => ok([...updates])),
 		openIssues: () => Effect.succeed({_tag: "Ok" as const, value: listed()}),
@@ -401,13 +392,13 @@ const world = (
 			const shown =
 				value._tag === "Option"
 					? value.optionId.slice(value.optionId.indexOf(":") + 1)
-					: value._tag === "Iteration"
-						? value.iterationId
+					: value._tag === "Date"
+						? value.date
 						: value._tag === "Text"
 							? value.text
 							: value._tag === "Number"
 								? value.number
-								: value.date;
+								: value.iterationId;
 			item.values = [
 				...item.values.filter((one) => one.fieldId !== target.fieldId),
 				cellValue(field.name, shown, project),
@@ -458,10 +449,11 @@ const prep = (
 	board: PrepBoard<never>,
 	config = unconfigured,
 	env: Readonly<Record<string, string>> = {},
+	now: Date = NOW,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
-			runPrep({repo: REPO, cwd: "/repo", env, now: NOW, board}),
+			runPrep({repo: REPO, cwd: "/repo", env, now, board}),
 			Layer.mergeAll(config, fakeShell([]).layer),
 		),
 	);
@@ -484,7 +476,8 @@ describe("table prep with no .fabrika.jsonc", () => {
 		expect(out.code, out.stderr.join("\n")).toBe(0);
 		const answer = JSON.parse(out.stdout);
 		expect(answer.answer).toBe("prepped");
-		expect(answer.iteration).toEqual({id: NEXT.id, title: NEXT.title, startDate: NEXT.startDate});
+		expect(answer.tableDay).toBe(NEXT);
+		expect(answer).not.toHaveProperty("iteration");
 		const agenda = answer.agenda as ReadonlyArray<AgendaOut>;
 		expect(agenda.map((row) => `${row.section} #${row.issue}`)).toEqual([
 			"Tails #70",
@@ -498,7 +491,7 @@ describe("table prep with no .fabrika.jsonc", () => {
 			expect(row.rec).not.toBe("");
 			expect(row.plainWords).not.toBe("");
 			expect(cell(row.issue, "Section")).toBe(row.section);
-			expect(cell(row.issue, "Week")).toBe(NEXT.id);
+			expect(cell(row.issue, "Table day")).toBe(NEXT);
 			expect(cell(row.issue, "Rec")).toBe(row.rec);
 			expect(cell(row.issue, "In plain words")).toBe(row.plainWords);
 		}
@@ -557,7 +550,7 @@ describe("table prep with no .fabrika.jsonc", () => {
 		expect(cell(70, "Section")).toBe("Tails");
 		expect(String(cell(70, "Rec"))).toContain("Over its S size ($20 of $15)");
 		expect(cell(71, "Stage")).toBe("bet");
-		expect(cell(71, "Week")).toBe(NEXT.id);
+		expect(cell(71, "Table day")).toBe(NEXT);
 		expect(cell(71, "Rec")).toBeNull();
 		expect(cell(71, "Section")).toBe("New bets");
 	});
@@ -629,16 +622,54 @@ describe("table prep with no .fabrika.jsonc", () => {
 		expect(answer.health).toMatchObject({posted: true, alreadyPosted: false, inbox: 2});
 	});
 
-	it("adds no row and posts no second update on a second run in the same iteration", async () => {
-		const {board, posts} = world();
+	it("finds every row already dated on a second run for the same table, and writes nothing", async () => {
+		const {board, posts, items} = world();
 		await prep(board);
+		const dated = [...items.values()].filter((item) =>
+			item.values.some((one) => one.fieldName === "Table day" && one.value._tag === "Date"),
+		);
 		const again = await prep(board);
 
 		expect(again.code).toBe(0);
 		const answer = JSON.parse(again.stdout);
-		expect(answer).toMatchObject({answer: "unchanged", changes: []});
+		expect(answer).toMatchObject({answer: "unchanged", changes: [], tableDay: NEXT});
 		expect(answer.health).toMatchObject({posted: false, alreadyPosted: true});
 		expect(posts).toHaveLength(1);
+		expect(dated.length).toBeGreaterThan(0);
+		for (const item of dated) {
+			expect(item.values.find((one) => one.fieldName === "Table day")?.value).toEqual({
+				_tag: "Date",
+				date: NEXT,
+			});
+		}
+		expect(again.stderr.join("\n")).toContain("nothing was written");
+	});
+
+	it("marks its health update with the table day, and finds it by that date on the next run", async () => {
+		const {board, posts} = world();
+		await prep(board);
+
+		expect(posts[0]?.body).toContain(`<!-- fabrika:table-health table-day=${NEXT} -->`);
+		const again = JSON.parse((await prep(board)).stdout);
+		expect(again.health).toMatchObject({alreadyPosted: true});
+	});
+
+	it("prepares the Saturday table on a Saturday evening in California, already Sunday in UTC", async () => {
+		const {board, posts, cell} = world();
+		const saturdays = fakeFs({
+			files: {
+				"/repo/.fabrika.jsonc": JSON.stringify({
+					table: {day: "saturday", timeZone: "America/Los_Angeles"},
+				}),
+			},
+		}).layer;
+		const out = await prep(board, saturdays, {}, new Date("2026-10-04T01:30:00Z"));
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		expect(JSON.parse(out.stdout).tableDay).toBe("2026-10-03");
+		expect(cell(71, "Table day")).toBe("2026-10-03");
+		expect(posts[0]?.body).toContain("<!-- fabrika:table-health table-day=2026-10-03 -->");
+		expect(posts[0]).toMatchObject({startDate: "2026-10-03", targetDate: "2026-10-10"});
 	});
 
 	it("closes the agenda once its update stands, even when a new candidate appears", async () => {
@@ -658,16 +689,32 @@ describe("table prep with no .fabrika.jsonc", () => {
 		expect(grown.posts).toHaveLength(0);
 	});
 
-	it("refuses and writes nothing when no Week iteration covers the next table day", async () => {
-		const {board, posts, items} = world(ISSUES, ROWS, [PREVIOUS]);
-		const out = await prep(board);
+	it("needs no week set up ahead: a table months past every earlier date prepares", async () => {
+		const {board, cell} = world();
+		const out = await prep(board, unconfigured, {}, new Date("2027-03-10T12:00:00Z"));
 
-		expect(out.code).toBe(NO_ITERATION);
-		expect(out.stderr.join("\n")).toContain("add the coming weeks");
-		expect(posts).toHaveLength(0);
-		expect(items.get(71)?.values.find((one) => one.fieldName === "Week")?.value).toMatchObject({
-			iterationId: PREVIOUS.id,
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		expect(JSON.parse(out.stdout).tableDay).toBe("2027-03-15");
+		expect(cell(71, "Table day")).toBe("2027-03-15");
+	});
+
+	it("names the date field it lacks and writes nothing on a project set up before Table day", async () => {
+		const {board, posts} = world();
+		const legacy: ProjectSnapshot = {
+			...PROJECT,
+			fields: [
+				...PROJECT.fields.filter((field) => field.name !== "Table day"),
+				{_tag: "Iteration", databaseId: 0, id: "F_week", name: "Week", duration: 7, startDay: 1},
+			],
+		};
+		const out = await prep({
+			...board,
+			locate: () => Effect.succeed({_tag: "Ok", value: {_tag: "Located", project: legacy}}),
 		});
+
+		expect(out.code).toBe(23);
+		expect(out.stderr.join("\n")).toContain("the date field Table day");
+		expect(posts).toHaveLength(0);
 	});
 
 	it("refuses and writes nothing when a candidate's group member cannot be read", async () => {
@@ -751,7 +798,14 @@ const SHIPPED_ISSUES: Readonly<Record<number, IssueSpec>> = {
 
 const shippedRows = (setAt: string): Readonly<Record<number, Cells>> => ({
 	...ROWS,
-	50: {Stage: "shipped", setAt, Section: "New bets", Origin: "bet", Size: "M", Week: PREVIOUS.id},
+	50: {
+		Stage: "shipped",
+		setAt,
+		Section: "New bets",
+		Origin: "bet",
+		Size: "M",
+		"Table day": PREVIOUS,
+	},
 });
 
 const configured = (table: unknown) =>
@@ -859,7 +913,7 @@ describe("table prep's outcome check", () => {
 		expect(out.code, out.stderr.join("\n")).toBe(0);
 		expect(cell(50, "Stage")).toBe("check");
 		expect(cell(50, "Section")).toBe("Tails");
-		expect(cell(50, "Week")).toBe(NEXT.id);
+		expect(cell(50, "Table day")).toBe(NEXT);
 		expect(cell(50, "Size")).toBe("M");
 		const rec = String(cell(50, "Rec"));
 		expect(rec).toContain("Success: exports finish under 2s");
@@ -917,7 +971,6 @@ describe("table prep's outcome check", () => {
 		const {board, cell, comments, spawned} = world(
 			SHIPPED_ISSUES,
 			shippedRows(SHIPPED_AT),
-			[PREVIOUS, NEXT],
 			(request) => scripts[request.file] ?? ran(""),
 		);
 		const out = await prep(
@@ -974,7 +1027,7 @@ describe("table prep's outcome check", () => {
 			50: {
 				Stage: "check",
 				Section: "Tails",
-				Week: PREVIOUS.id,
+				"Table day": PREVIOUS,
 				Rec: "did it work?",
 				Outcome: "worked",
 			},
@@ -985,7 +1038,7 @@ describe("table prep's outcome check", () => {
 		expect(out.code).toBe(0);
 		expect(cell(50, "Stage")).toBe("check");
 		expect(cell(50, "Outcome")).toBe("worked");
-		expect(cell(50, "Week")).toBe(PREVIOUS.id);
+		expect(cell(50, "Table day")).toBe(PREVIOUS);
 		expect(comments.get(50)).toBeUndefined();
 		expect(JSON.parse(out.stdout).checks).toEqual([]);
 	});

@@ -74,6 +74,7 @@ export const ON_CALL_VIEWS: ReadonlyArray<ViewShape> = [
 		layout: "TABLE_LAYOUT",
 		filter: "is:open",
 		fields: [FIELD.title, ON_CALL_FIELD.responseTarget, FIELD.plainWords],
+		grouping: {_tag: "None"},
 	},
 ];
 
@@ -114,7 +115,7 @@ export const renderOnCallReadme = (settings: OnCallBoard): string => {
 	return lines.join("\n");
 };
 
-/** The on-call project's shape. It has a Response target where the table has a Size, and no Week. */
+/** The on-call project's shape. It has a Response target where the table has a Size, and no Table day. */
 export const onCallShape = (settings: OnCallBoard, repo: string, title: string): TableShape => ({
 	title,
 	shortDescription: `The on-call board for ${repo}: continuous work, each item with a response target.`,
@@ -132,5 +133,6 @@ export const onCallShape = (settings: OnCallBoard, repo: string, title: string):
 		{_tag: "Text", name: FIELD.plainWords},
 	],
 	views: ON_CALL_VIEWS,
+	legacy: [],
 	manualSteps: [],
 });

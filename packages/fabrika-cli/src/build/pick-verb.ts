@@ -23,8 +23,8 @@
  *   candidate with its reason on stderr — the whole pool is not refused for one edge list, but a
  *   candidate whose blockedness is UNKNOWN is never offered.
  *
- * **Bets come first.** When the repository keeps a table project, the issues bet on for the current
- * iteration lead the pool in agenda order (`../table/bets.ts`), and everything else follows in the
+ * **Bets come first.** When the repository keeps a table project, the issues bet on at the table in
+ * force lead the pool in agenda order (`../table/bets.ts`), and everything else follows in the
  * order below. It is an order and never a filter: a bet still passes every axis above, and an issue
  * nobody bet on is still offered. With no table project the pool is exactly the order below.
  *
@@ -71,7 +71,7 @@ export interface PickOptions {
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
-	/** The clock the current iteration is read against. */
+	/** The clock the table in force is read against. */
 	readonly now: () => Date;
 }
 
@@ -153,7 +153,7 @@ const betsReport = (
 	| {
 			readonly state: "read";
 			readonly project: string;
-			readonly iteration: string | null;
+			readonly tableDay: string;
 			readonly bets: number;
 			readonly inPool: number;
 	  } =>
@@ -162,7 +162,7 @@ const betsReport = (
 		: {
 				state: "read",
 				project: `${bets.source.owner}#${bets.source.number}`,
-				iteration: bets.order.iteration?.title ?? null,
+				tableDay: bets.order.tableDay,
 				bets: bets.order.issues.length,
 				inPool: inPool(bets, pool),
 			};
@@ -170,10 +170,10 @@ const betsReport = (
 const betsLine = (bets: TableBets, pool: ReadonlyArray<PoolEntry>): string => {
 	if (bets._tag === "NoTable") return `${VERB}: bets: ${bets.note}; the pool is in its own order.`;
 	const project = `project ${bets.source.owner}#${bets.source.number}`;
-	if (bets.order.iteration === null) {
-		return `${VERB}: bets: ${project} has no current iteration, so nothing is bet on this week; the pool is in its own order.`;
+	if (bets.order.issues.length === 0) {
+		return `${VERB}: bets: ${project} bets on nothing at the ${bets.order.tableDay} table; the pool is in its own order.`;
 	}
-	return `${VERB}: bets: ${bets.order.issues.length} bet(s) in ${bets.order.iteration.title} on ${project}, ${inPool(bets, pool)} in the pool and first in it.`;
+	return `${VERB}: bets: ${bets.order.issues.length} bet(s) at the ${bets.order.tableDay} table on ${project}, ${inPool(bets, pool)} in the pool and first in it.`;
 };
 
 export const runPick = (

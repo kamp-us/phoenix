@@ -1,5 +1,5 @@
 /**
- * The `table` verb group — `fabrika table <setup|sync|flags|prep>`.
+ * The `table` verb group — `fabrika table <setup|sync|flags|prep|migrate-week>`.
  *
  * The adapter and nothing else: flags, the pure verb, and its emitted outcome. Every leaf is a
  * `leafCommand`, never a bare `Command.make`, so the excess-operand guard covers it.
@@ -10,6 +10,7 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {flagsBoard, runFlags} from "./flags-verb.ts";
+import {migrateBoard, runMigrate} from "./migrate-verb.ts";
 import {prepBoard, runPrep} from "./prep-verb.ts";
 import {runSetup} from "./setup-verb.ts";
 import {runSync, syncBoard} from "./sync-verb.ts";
@@ -34,7 +35,6 @@ const setup = leafCommand(
 				repo: Option.getOrNull(repo),
 				cwd: process.cwd(),
 				env: process.env,
-				now: () => new Date(),
 			}),
 		);
 	}),
@@ -42,7 +42,7 @@ const setup = leafCommand(
 	Command.withShortDescription("Create or reconcile the repository's betting table project."),
 	Command.withDescription(
 		tableHelp("table setup", [
-			'Creates or reconciles the betting table project; prints {"answer","repo","project","changes",…}.',
+			'Creates or reconciles the betting table project; prints {"answer","project","changes","legacy",…}.',
 			"  7: a configured project number names no project",
 			"  8: a write did not land (UNKNOWN); re-run",
 			"  9: the project does not read back as the table",
@@ -161,7 +161,7 @@ const prep = leafCommand(
 	),
 	Command.withDescription(
 		tableHelp("table prep", [
-			'Prepares the next table\'s Week and posts its health; prints {"answer","agenda","checks",…}.',
+			'Dates the next table\'s rows and posts its health; prints {"answer","tableDay","agenda",…}.',
 			"  7: no table or on-call project; run table setup",
 			"  8: a write did not land (UNKNOWN)",
 			"  9: the rows or the update do not read back",
@@ -171,14 +171,44 @@ const prep = leafCommand(
 			"  22: two open projects carry the table's title",
 			"  23: a field or option is missing; run table setup",
 			"  24: a lane record does not read",
-			"  25: no Week iteration covers the next table day",
 		]),
 	),
 	Command.withExamples([{command: "fabrika table prep"}]),
 );
 
+const migrateWeek = leafCommand(
+	"migrate-week",
+	{repo: repoFlag},
+	Effect.fn(function* ({repo}) {
+		yield* emit(
+			yield* runMigrate({
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+				board: migrateBoard,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Copy each row's legacy Week start date into Table day, once."),
+	Command.withDescription(
+		tableHelp("table migrate-week", [
+			'Dates each undated row by its Week start, never writing Week; prints {"answer","dated",…}.',
+			"  7: no table project",
+			"  8: a write did not land (UNKNOWN); re-run",
+			"  9: the rows do not read back dated",
+			"  11: a read failed (UNKNOWN)",
+			"  12: the table block does not decode",
+			"  20: the token lacks the project scope",
+			"  22: two open projects carry the table's title",
+			"  23: no Table day field; run table setup",
+		]),
+	),
+	Command.withExamples([{command: "fabrika table migrate-week"}]),
+);
+
 export const tableCommand = Command.make("table").pipe(
-	Command.withSubcommands([setup, sync, flags, prep]),
+	Command.withSubcommands([setup, sync, flags, prep, migrateWeek]),
 	Command.withShortDescription("Set up and fill the weekly betting table on GitHub Projects."),
 	Command.withDescription(
 		"The weekly betting table: a GitHub project per repository where control-plane owners decide what gets bet on. Its verbs need the token's `project` scope. `lane brief`, `lane record`, `build pick` and the pitch guard read the table too; with no `table` block they carry on when that read fails.",

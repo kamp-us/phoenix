@@ -39,6 +39,7 @@ const option = (field: string, name: string): string => `${field}:${name}`;
 const selectField = (id: string, name: string, names: ReadonlyArray<string>) => ({
 	_tag: "SingleSelect" as const,
 	id,
+	databaseId: 0,
 	name,
 	options: names.map((n) => ({
 		id: option(id, n),
@@ -51,20 +52,21 @@ const selectField = (id: string, name: string, names: ReadonlyArray<string>) => 
 const PROJECT: ProjectSnapshot = {
 	id: "PVT_1",
 	number: 3,
+	owner: {kind: "Organization", login: "acme"},
 	url: "https://github.com/orgs/acme/projects/3",
 	title: "widgets table",
 	shortDescription: null,
 	readme: null,
 	fields: [
-		{_tag: "Plain", id: "F_title", name: "Title", dataType: "TITLE"},
+		{_tag: "Plain", databaseId: 0, id: "F_title", name: "Title", dataType: "TITLE"},
 		selectField(
 			"F_stage",
 			"Stage",
 			STAGES.map((stage) => stage.name),
 		),
 		selectField("F_section", "Section", ["Tails", "Customers", "New bets", "Outside the bets"]),
-		{_tag: "Plain", id: "F_spent", name: "Spent $", dataType: "NUMBER"},
-		{_tag: "Plain", id: "F_asks", name: "Asks", dataType: "NUMBER"},
+		{_tag: "Plain", databaseId: 0, id: "F_spent", name: "Spent $", dataType: "NUMBER"},
+		{_tag: "Plain", databaseId: 0, id: "F_asks", name: "Asks", dataType: "NUMBER"},
 		selectField(
 			"F_origin",
 			"Origin",

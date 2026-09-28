@@ -13,6 +13,7 @@ import {
 	addItem,
 	clearFieldValue,
 	createField,
+	createView,
 	deleteItem,
 	PROJECT_SCOPE_FIX,
 	postStatusUpdate,
@@ -53,15 +54,23 @@ const RECORDED_PROJECT = {
 	number: 20,
 	url: "https://github.com/orgs/acme/projects/20",
 	title: "Example table",
+	owner: {__typename: "Organization", login: "acme"},
 	shortDescription: "Example weekly betting table",
 	readme: "# How to use this table",
 	fields: {
 		pageInfo: {hasNextPage: false},
 		nodes: [
-			{__typename: "ProjectV2Field", id: "F_title", name: "Title", dataType: "TITLE"},
+			{
+				__typename: "ProjectV2Field",
+				id: "F_title",
+				databaseId: 417848925,
+				name: "Title",
+				dataType: "TITLE",
+			},
 			{
 				__typename: "ProjectV2SingleSelectField",
 				id: "F_stage",
+				databaseId: 417848939,
 				name: "Stage",
 				dataType: "SINGLE_SELECT",
 				options: [
@@ -69,10 +78,24 @@ const RECORDED_PROJECT = {
 					{id: "o_bet", name: "bet", color: "GRAY", description: ""},
 				],
 			},
-			{__typename: "ProjectV2Field", id: "F_spent", name: "Spent $", dataType: "NUMBER"},
+			{
+				__typename: "ProjectV2Field",
+				id: "F_spent",
+				databaseId: 417848940,
+				name: "Spent $",
+				dataType: "NUMBER",
+			},
+			{
+				__typename: "ProjectV2Field",
+				id: "F_day",
+				databaseId: 417848941,
+				name: "Table day",
+				dataType: "DATE",
+			},
 			{
 				__typename: "ProjectV2IterationField",
 				id: "F_week",
+				databaseId: 417848942,
 				name: "Week",
 				dataType: "ITERATION",
 				configuration: {duration: 7, startDay: 6},
@@ -95,7 +118,7 @@ const RECORDED_PROJECT = {
 };
 
 describe("reading a project", () => {
-	it("reads fields by kind, views with their filters and visible fields", async () => {
+	it("reads its owner, fields by kind with their numeric ids, and views with their filters", async () => {
 		const {result} = await runWith(
 			[reply({data: {repositoryOwner: {projectV2: RECORDED_PROJECT}}})],
 			() => readProjectByNumber(TOKEN, "acme", 20),
@@ -103,13 +126,16 @@ describe("reading a project", () => {
 
 		expect(result._tag).toBe("Ok");
 		if (result._tag !== "Ok" || result.value === null) return;
-		expect(result.value.fields.map((field) => [field.name, field._tag])).toEqual([
-			["Title", "Plain"],
-			["Stage", "SingleSelect"],
-			["Spent $", "Plain"],
-			["Week", "Iteration"],
+		expect(result.value.owner).toEqual({kind: "Organization", login: "acme"});
+		expect(result.value.fields.map((field) => [field.name, field._tag, field.databaseId])).toEqual([
+			["Title", "Plain", 417848925],
+			["Stage", "SingleSelect", 417848939],
+			["Spent $", "Plain", 417848940],
+			["Table day", "Plain", 417848941],
+			["Week", "Iteration", 417848942],
 		]);
-		expect(result.value.fields[3]).toMatchObject({duration: 7, startDay: 6});
+		expect(result.value.fields[3]).toMatchObject({dataType: "DATE"});
+		expect(result.value.fields[4]).toMatchObject({duration: 7, startDay: 6});
 		expect(result.value.views[0]).toEqual({
 			id: "V_inbox",
 			number: 6,
@@ -230,36 +256,117 @@ describe("the project scope", () => {
 });
 
 describe("writing to a project", () => {
-	it("creates an iteration field with every planned iteration, starting at the first", async () => {
+	it("creates a date field with nothing but its name and type", async () => {
 		const {result, http} = await runWith(
 			[reply({data: {createProjectV2Field: {projectV2Field: {id: "F_new"}}}})],
-			() =>
-				createField(TOKEN, "PVT_1", {
-					_tag: "Iteration",
-					name: "Week",
-					duration: 7,
-					iterations: [
-						{startDate: "2026-09-28", title: "Sep 28"},
-						{startDate: "2026-10-05", title: "Oct 5"},
-					],
-				}),
+			() => createField(TOKEN, "PVT_1", {_tag: "Date", name: "Table day"}),
 		);
 
 		expect(result).toEqual({_tag: "Ok", value: "F_new"});
-		const sent = JSON.parse(http.bodies[0] ?? "{}");
-		expect(sent.variables.input).toEqual({
+		expect(JSON.parse(http.bodies[0] ?? "{}").variables.input).toEqual({
 			projectId: "PVT_1",
-			name: "Week",
-			dataType: "ITERATION",
-			iterationConfiguration: {
-				startDate: "2026-09-28",
-				duration: 7,
-				iterations: [
-					{startDate: "2026-09-28", duration: 7, title: "Sep 28"},
-					{startDate: "2026-10-05", duration: 7, title: "Oct 5"},
-				],
-			},
+			name: "Table day",
+			dataType: "DATE",
 		});
+	});
+
+	it("creates a view over REST under the owner's login, grouped as it is made", async () => {
+		const created = {
+			id: 49581678,
+			node_id: "PVTV_new",
+			number: 2,
+			name: "Agenda",
+			layout: "table",
+			filter: "has:section",
+			visible_fields: [417848925, 417848939],
+			group_by: [417848939],
+			vertical_group_by: [],
+		};
+		const orgs = fakeHttp([
+			[
+				/^POST https:\/\/api\.github\.com\/orgs\/acme\/projectsV2\/20\/views$/,
+				{status: 201, body: JSON.stringify(created)},
+			],
+		]);
+		const table = await Effect.runPromise(
+			Effect.provide(
+				createView(
+					TOKEN,
+					{owner: {kind: "Organization", login: "acme"}, number: 20},
+					{
+						name: "Agenda",
+						layout: "TABLE_LAYOUT",
+						filter: "has:section",
+						visibleFields: [417848925, 417848939],
+						grouping: {_tag: "Rows", fieldId: 417848939},
+					},
+				),
+				orgs.layer,
+			),
+		);
+		expect(table).toEqual({_tag: "Ok", value: "PVTV_new"});
+		expect(JSON.parse(orgs.bodies[0] ?? "{}")).toEqual({
+			name: "Agenda",
+			layout: "table",
+			filter: "has:section",
+			visible_fields: [417848925, 417848939],
+			group_by: [417848939],
+		});
+
+		const users = fakeHttp([
+			[
+				/^POST https:\/\/api\.github\.com\/users\/octo\/projectsV2\/3\/views$/,
+				{status: 201, body: JSON.stringify({...created, layout: "board"})},
+			],
+		]);
+		const board = await Effect.runPromise(
+			Effect.provide(
+				createView(
+					TOKEN,
+					{owner: {kind: "User", login: "octo"}, number: 3},
+					{
+						name: "Lanes",
+						layout: "BOARD_LAYOUT",
+						filter: "has:section",
+						visibleFields: [417848925],
+						grouping: {_tag: "Columns", fieldId: 417848939},
+					},
+				),
+				users.layer,
+			),
+		);
+		expect(board._tag).toBe("Ok");
+		expect(JSON.parse(users.bodies[0] ?? "{}")).toMatchObject({
+			layout: "board",
+			vertical_group_by: [417848939],
+		});
+		expect(JSON.parse(users.bodies[0] ?? "{}")).not.toHaveProperty("group_by");
+	});
+
+	it("answers a REST refusal to create a view as a failure naming GitHub's message", async () => {
+		const http = fakeHttp([
+			[
+				/^POST https:\/\/api\.github\.com\/orgs\/acme\/projectsV2\/20\/views$/,
+				{status: 422, body: JSON.stringify({message: "Validation Failed"})},
+			],
+		]);
+		const result = await Effect.runPromise(
+			Effect.provide(
+				createView(
+					TOKEN,
+					{owner: {kind: "Organization", login: "acme"}, number: 20},
+					{
+						name: "Inbox",
+						layout: "TABLE_LAYOUT",
+						filter: "is:open",
+						visibleFields: [],
+						grouping: {_tag: "None"},
+					},
+				),
+				http.layer,
+			),
+		);
+		expect(result).toEqual({_tag: "Failed", reason: "GitHub answered HTTP 422: Validation Failed"});
 	});
 
 	it("sends only the view settings it was asked to change", async () => {

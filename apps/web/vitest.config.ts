@@ -20,8 +20,9 @@
  * single-fork model). `forks` + `disableConsoleIntercept` are retained for
  * stability against the alchemy deploy's child-process logging.
  */
+import {fileURLToPath} from "node:url";
 import react from "@vitejs/plugin-react";
-import {defineConfig} from "vitest/config";
+import {configDefaults, defineConfig} from "vitest/config";
 // Single-source the integration hook ceiling (#3146). The value declared here is DEAD for every
 // `Test.make`-registered hook — alchemy passes an explicit per-hook timeout that overrides
 // `config.hookTimeout` (see `HOOK_TIMEOUT_MS`), so `integrationStack` must ALSO thread it. Importing
@@ -34,6 +35,8 @@ import {HOOK_TIMEOUT_MS} from "./tests/integration/_edge-ready.ts";
 // reached 74-87 workers and load average 218. `undefined` on CI falls through to that default, so
 // the integration tier keeps its full per-file-stage width where it matters.
 const maxWorkers = process.env.CI ? undefined : 2;
+
+const repo = fileURLToPath(new URL("../../", import.meta.url));
 
 export default defineConfig({
 	// The `client` project below renders `*.test.tsx` through React's JSX runtime,
@@ -75,26 +78,26 @@ export default defineConfig({
 		// disconnect").
 		onUnhandledError: (error) =>
 			error?.message === "All fibers interrupted without error" ? false : undefined,
-		// `vitest --changed`/`related` narrows by the resolved import graph (ADR
-		// 0082) — sound for the `unit` tier (its tests import disjoint modules, so a
-		// change selects only the touched tests) and ideal for the inner dev loop.
-		// But the graph can't see three out-of-band edges: migrations are SQL read
-		// at runtime (no import edge), and `alchemy.run.ts` + the integration harness
-		// substrate (`tests/integration/_*.ts`) are the deploy/black-box surface the
-		// unit graph never reaches. `forceRerunTriggers` forces the FULL run when any
-		// of them changes, so change-scoped selection never under-selects on an edge
-		// the import graph misses. Root-level on purpose: Vitest reads this off the
-		// global config, not per-project (it gates the `--changed` spec filter once
-		// for the whole run). It does NOT narrow `integration` — that tier runs full,
-		// parallelized via per-file isolated stages, never `--changed`-selected (ADR
-		// 0082, "Change-scoped selection"). Keep the two built-in defaults
-		// (`package.json`, the vitest/vite config) since setting this replaces them.
+		// `vitest --changed`/`related` narrows by the resolved import graph (ADR 0082), and CI runs
+		// `unit` and `client` that way on a PR (#10074). The graph cannot see a file a test reads
+		// through `fs` or a separate bundler, so a change to one of these runs the whole suite:
+		// migrations (SQL read at runtime), the deploy and integration harness surface, the client
+		// setup file, the fate codegen fixture, the stylesheets tests read as text, the committed
+		// preview key, and all of `src/`, which `caylakMeter` and `catalog-split` walk module by
+		// module. Root-level on purpose: Vitest reads this off the global config, once per run. It
+		// does not narrow `integration`, which never runs `--changed`. Globs are anchored to the
+		// checkout because `**` never enters a dot directory, and lanes run under `.claude/worktrees/`.
 		forceRerunTriggers: [
-			"**/package.json/**",
-			"**/{vitest,vite}.config.*/**",
-			"**/worker/db/drizzle/migrations/**",
-			"**/alchemy.run.ts",
-			"**/tests/integration/_*.ts",
+			...configDefaults.forceRerunTriggers,
+			`${repo}apps/web/package.json`,
+			`${repo}apps/web/alchemy.run.ts`,
+			`${repo}apps/web/worker/db/drizzle/migrations/**`,
+			`${repo}apps/web/worker/**/*.fixture.ts`,
+			`${repo}apps/web/tests/integration/*.ts`,
+			`${repo}apps/web/tests/client/**`,
+			`${repo}apps/web/src/**`,
+			`${repo}packages/design/src/**/*.css`,
+			`${repo}infra/preview-auth-key/**`,
 		],
 		projects: [
 			{
