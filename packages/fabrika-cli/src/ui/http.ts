@@ -216,6 +216,3 @@ export const ghAttachmentUpload =
 			credentials.set(repo, cached);
 			return typeof cached === "string" ? failed(cached) : yield* attachmentUpload(cached)(target);
 		});
-
-/** Test-only: the memo is module-level, so a test over laziness needs a way back to a cold start. */
-export const forgetCredentials = (): void => credentials.clear();

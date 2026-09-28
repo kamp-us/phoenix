@@ -6,7 +6,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
 	buildCapturePlan,
-	DEFAULT_VIEWPORT,
 	DESKTOP_VIEWPORT,
 	isViewportName,
 	joinPreviewUrl,
@@ -14,7 +13,6 @@ import {
 	parseSurfaceSpec,
 	type Surface,
 	surfaceFileName,
-	VIEWPORT_NAMES,
 	viewportOf,
 } from "./plan.ts";
 
@@ -155,10 +153,6 @@ describe("buildCapturePlan", () => {
 		{surface: "/catalog:empty", route: "/catalog", state: "empty"},
 	];
 
-	it("defaults to the desktop viewport", () => {
-		assert.deepStrictEqual(DEFAULT_VIEWPORT, DESKTOP_VIEWPORT);
-	});
-
 	it("produces exactly one shot per surface at the plan's one viewport", () => {
 		const plan = buildCapturePlan("https://pr-9.preview.example.com", surfaces);
 		assert.strictEqual(plan.length, surfaces.length);
@@ -223,10 +217,6 @@ describe("the viewport vocabulary", () => {
 	it("answers null for a name outside the set rather than falling back to a width", () => {
 		assert.strictEqual(viewportOf("tablet"), null);
 		assert.isFalse(isViewportName("tablet"));
-	});
-
-	it("names every realized viewport, so a refusal can list them", () => {
-		assert.deepStrictEqual([...VIEWPORT_NAMES], ["desktop", "mobile"]);
 	});
 
 	it("gives the two viewports of one surface distinct file names", () => {

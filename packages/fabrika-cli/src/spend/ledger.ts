@@ -13,8 +13,7 @@
  * runner — `eval`'s `SpendRow` satisfies it, and so does a synthetic row in a test — which is
  * what lets the roll-up read this ledger without depending on the eval harness that writes it.
  */
-import {Effect, type FileSystem, type Path, Result} from "effect";
-import {appendFile, type WriteFailed} from "../io/fs.ts";
+import {Result} from "effect";
 import type {RunSpend, StageSpend} from "./token-spend.ts";
 
 /**
@@ -229,37 +228,3 @@ export const readSpendLedger = (text: string): LedgerRead => {
 	}
 	return {rows, skipped: malformed + newerVersion, skips: {malformed, newerVersion}};
 };
-
-/**
- * Append a suite's rows to the ledger, creating it and its parent directory on first use. No rows
- * means no write at all — an empty file would claim a suite recorded something.
- */
-export const appendSpendLedger = (
-	path: string,
-	rows: ReadonlyArray<LedgerRow>,
-): Effect.Effect<void, WriteFailed, FileSystem.FileSystem | Path.Path> => {
-	const text = encodeSpendRows(rows);
-	return text === "" ? Effect.void : appendFile(path, text);
-};
-
-/**
- * Persist a suite's rows and return what the caller should say about it — no notes on success, one
- * note naming the path and the reason on failure.
- *
- * The error channel is `never` on purpose, and it is the whole contract: recording a measurement is
- * a by-product of a run that already finished, so a ledger that cannot be written must not become a
- * way for that run to fail. Returning the note rather than printing it is what lets that promise be
- * asserted without a process.
- */
-export const persistSpendRows = (
-	path: string,
-	rows: ReadonlyArray<LedgerRow>,
-): Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem | Path.Path> =>
-	appendSpendLedger(path, rows).pipe(
-		Effect.as<ReadonlyArray<string>>([]),
-		Effect.catchTag("fabrika-cli/WriteFailed", (failure) =>
-			Effect.succeed([
-				`could not append the spend ledger at ${failure.path}: ${failure.reason} — the suite's result is unaffected.`,
-			]),
-		),
-	);

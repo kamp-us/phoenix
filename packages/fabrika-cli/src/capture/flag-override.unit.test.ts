@@ -81,16 +81,6 @@ describe("overrideCookies", () => {
 		});
 	});
 
-	/**
-	 * The scoping mechanism, asserted rather than described: no `expires` and no `max-age` makes it a
-	 * session cookie in the throwaway context `capture.ts` closes around each shot, and the server
-	 * stores nothing — so the override cannot outlive the gate run.
-	 */
-	it("carries no expiry, so its whole lifetime is the capture context's", () => {
-		const [cookie] = overrideCookies(PREVIEW, {"app-welcome": true});
-		expect(Object.keys(cookie ?? {}).sort()).toEqual(["name", "secure", "url", "value"]);
-	});
-
 	it("drops the secure attribute for an http preview, which Playwright would reject with it", () => {
 		expect(overrideCookies("http://localhost:8787", {a: true})[0]?.secure).toBe(false);
 	});

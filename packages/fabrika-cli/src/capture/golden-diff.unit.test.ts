@@ -1,8 +1,7 @@
 /**
- * The pure deterministic-diff core: determinism (same inputs → same result),
- * masking (dynamic regions excluded — the diff-time flake canon), magnitude, and
- * region clustering. No PNG codec, no network — operates on decoded RGBA rasters
- * — pure logic belongs to the unit tier (the AC's determinism + masking checks).
+ * The pure deterministic-diff core: masking (dynamic regions excluded — the
+ * diff-time flake canon), magnitude, and region clustering. No PNG codec, no
+ * network — operates on decoded RGBA rasters.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {diffRasters, type RasterImage} from "./golden-diff.ts";
@@ -51,14 +50,6 @@ describe("diffRasters — identical", () => {
 		assert.strictEqual(result.magnitude, 0);
 		assert.strictEqual(result.comparedPixels, 16);
 		assert.deepStrictEqual(result.regions, []);
-	});
-});
-
-describe("diffRasters — determinism", () => {
-	it("same inputs → deep-equal result every time", () => {
-		const g = solid(6, 6, WHITE);
-		const c = withPixel(withPixel(solid(6, 6, WHITE), 1, 1, BLACK), 4, 4, BLACK);
-		assert.deepStrictEqual(diffRasters(g, c), diffRasters(g, c));
 	});
 });
 

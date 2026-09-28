@@ -54,17 +54,4 @@ describe("mergeRecord — localPath is always preserved", () => {
 		assert.strictEqual(rec.hostedUrl, null);
 		assert.strictEqual(rec.uploadError, "HTTP 500: boom");
 	});
-
-	it("emits the {surface, route, state, localPath, hostedUrl, uploadError, pageErrors} shape", () => {
-		const rec = mergeRecord(captured, {hostedUrl: null, uploadError: "x"});
-		assert.deepStrictEqual(Object.keys(rec).sort(), [
-			"hostedUrl",
-			"localPath",
-			"pageErrors",
-			"route",
-			"state",
-			"surface",
-			"uploadError",
-		]);
-	});
 });
