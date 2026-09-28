@@ -18,6 +18,7 @@ import type {
 import {emit, type Instant, type LaneRecord, type Origin} from "../wire/lane-record.ts";
 import {MALFORMED_RECORD, NO_TARGET, NOT_SET_UP, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {ORIGINS, STAGES} from "./shape.ts";
+import {spy} from "./spy.test-support.ts";
 import type {SyncNode} from "./sync.ts";
 import {
 	GRAPH_CAP,
@@ -242,10 +243,10 @@ const world = (
 	return {board, items, writes, valuesOf};
 };
 
-const sync = (board: SyncBoard<never>, issues: ReadonlyArray<number> = []) =>
+const sync = (board: SyncBoard<never>, issues: ReadonlyArray<number> = [], dryRun = false) =>
 	Effect.runPromise(
 		Effect.provide(
-			runSync({repo: REPO, cwd: "/repo", env: {}, issues, board}),
+			runSync({repo: REPO, cwd: "/repo", env: {}, issues, board, dryRun}),
 			Layer.mergeAll(unconfigured, fakeShell([]).layer),
 		),
 	);
@@ -692,5 +693,41 @@ describe("reading a 200-row table", () => {
 		expect(scoped.code).toBe(PRECONDITION_UNKNOWN);
 		expect(scoped.reason).toContain(`reach past ${GRAPH_CAP} issues`);
 		expect(reads).toBe(GRAPH_CAP);
+	});
+});
+
+describe("table sync --dry-run", () => {
+	const WRITES = ["add", "set", "clear"];
+	const record = () => ({
+		42: {
+			records: [laneRecord(42, {usd: 7.5, founderParks: 2, origin: "founder-start", prs: [50]})],
+		},
+	});
+
+	it("sends no write, runs every read a live run makes, and prints each planned write", async () => {
+		const live = spy(world(record(), [], {merged: [50]}).board);
+		await sync(live.board, [42]);
+		const table = world(record(), [], {merged: [50]});
+		const dry = spy(table.board);
+
+		const outcome = await sync(dry.board, [42], true);
+
+		expect(outcome.code, outcome.stderr.join("\n")).toBe(0);
+		expect(dry.calls.filter((call) => WRITES.includes(call))).toEqual([]);
+		expect(table.writes).toEqual([]);
+		expect(dry.calls).toEqual(live.calls.filter((call) => !WRITES.includes(call)));
+		const answer = JSON.parse(outcome.stdout);
+		expect(answer.answer).toBe("dry-run");
+		expect(answer.changes).toEqual([]);
+		expect(answer.planned[0]).toEqual({_tag: "Add", project: 3, issue: 42});
+		expect(answer.planned.slice(1)).toEqual(
+			expect.arrayContaining([
+				{_tag: "Set", project: 3, issue: 42, field: "Stage", value: "shipped"},
+				{_tag: "Set", project: 3, issue: 42, field: "Spent $", value: 7.5},
+				{_tag: "Set", project: 3, issue: 42, field: "Asks", value: 2},
+			]),
+		);
+		expect(outcome.stderr).toContain("table sync: would add #42 to project #3.");
+		expect(outcome.stderr).toContain("table sync: --dry-run: nothing was written.");
 	});
 });

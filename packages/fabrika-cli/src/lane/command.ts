@@ -2259,6 +2259,7 @@ const record = leafCommand(
 							env: process.env,
 							issues: [issue],
 							board: syncBoard,
+							dryRun: false,
 						}),
 				}),
 			),

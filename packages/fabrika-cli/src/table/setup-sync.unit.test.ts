@@ -34,7 +34,7 @@ describe("table sync after table setup on a board whose Origin lacks hand-start"
 		const sync = () =>
 			Effect.runPromise(
 				Effect.provide(
-					runSync({repo: REPO, cwd: "/repo", env: {}, issues: [], board: boardOn}),
+					runSync({repo: REPO, cwd: "/repo", env: {}, issues: [], board: boardOn, dryRun: false}),
 					layer,
 				),
 			);

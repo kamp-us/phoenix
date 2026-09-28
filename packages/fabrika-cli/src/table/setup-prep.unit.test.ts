@@ -54,7 +54,10 @@ const setupThenPrep = async (now: Date) => {
 		Effect.provide(runSetup({repo: REPO, cwd: "/repo", env: {}}), layer),
 	);
 	const prep = await Effect.runPromise(
-		Effect.provide(runPrep({repo: REPO, cwd: "/repo", env: {}, now, board: boardOn}), layer),
+		Effect.provide(
+			runPrep({repo: REPO, cwd: "/repo", env: {}, now, board: boardOn, dryRun: false}),
+			layer,
+		),
 	);
 	return {setup, prep, github};
 };

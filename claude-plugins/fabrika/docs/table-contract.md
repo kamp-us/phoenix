@@ -140,7 +140,16 @@ issue.
 Idempotent: a second run answers `unchanged` with nothing written. `lane record` runs it for the
 lane's issue after posting.
 
-stdout is `{"answer":"synced"|"unchanged","repo":"…","project":{"number":n,"title":"…","url":"…"},"issues":[n…],"groups":[{"head":n,"kind":"epic"|"chain","members":[n…]}],"changes":[…],"skipped":[{"issue":n,"reason":"…"}]}`.
+**Dry run.** `--dry-run` makes every read a live run makes and sends no write. Each write is
+recorded and folded into what the later reads answer, so an issue added in the run reads back as a
+row under a stand-in item id and its cells still plan. The answer is `dry-run` with `changes` empty
+and a `planned` list of every write in the order a live run would send it:
+`{"_tag":"Add","project":n,"issue":n}`, `{"_tag":"Set","project":n,"issue":n,"field":"…","value":"…"|n}`
+or `{"_tag":"Clear","project":n,"issue":n,"field":"…"}`. The exit is `0` once the plan is built; a
+read that fails keeps its code.
+
+stdout is `{"answer":"synced"|"unchanged"|"dry-run","repo":"…","project":{"number":n,"title":"…","url":"…"},"issues":[n…],"groups":[{"head":n,"kind":"epic"|"chain","members":[n…]}],"changes":[…],"skipped":[{"issue":n,"reason":"…"}]}`,
+plus `planned` under `--dry-run`.
 
 ### Exit status
 
@@ -232,30 +241,40 @@ a real, open issue, never a draft:
 
 A row already `bet`, `not now`, `in lane`, `shipped` or `check` is never proposed again, except a
 flagged running bet, which moves to Tails with its Stage and Size untouched. Each proposed row gets
-Stage `proposed`, its Section, the table's Table day, a Size (only when unset: an epic is L, otherwise the
-smallest size covering its issues' pitch sizes, an unpitched issue counting as S), a Rec and an In
-plain words line — the issue's `## In plain words` summary, else its title.
+Stage `proposed`, its Section, the table's Table day, a Size (only when unset: an epic is L,
+otherwise the smallest size covering its issues' pitch sizes, an unpitched issue counting as S), a
+Rec (only into an empty cell; see **Rec**) and an In plain words line — the issue's
+`## In plain words` summary, else its title.
 
 A candidate with open `blocked_by` issues is one chain row over them (followed transitively), and an
 epic one row over its open sub-issues. The row counts once toward the cap, its Size and Rec cover
 every issue in it, its members are added as rows with no Section so they show only in the Group
-members view, and a chosen row a later chain covers moves inside it. A row where any issue carries
-`ready-for:human` gets the Rec "needs your pick" with the options the issue lists (under an Options
-heading, or as "Option A: …" lines), never "yes".
+members view, and a chosen row a later chain covers moves inside it. For a row where any issue
+carries `ready-for:human`, the Rec prep writes into an empty cell is "needs your pick" with the
+options the issue lists (under an Options heading, or as "Option A: …" lines), never "yes"; a Rec
+the row already holds stays as it reads (see **Rec**).
 
 An untriaged Customers report (`status:needs-triage` or no label) is never proposed: it is listed
 under `triageFirst` for the driver to triage and proposed on the next run, and one on
 `status:needs-info` is listed there marked waiting on filer.
 
-**Rollover.** Every other open `bet` row is dated the next table with its Rec cleared, so it continues
-without an agenda row. A `proposed` row whose issue has closed is taken off the project.
+**Rollover.** Every other open `bet` row is dated the next table, so it continues without an agenda
+row, and its Rec is left as it reads. A `proposed` row whose issue has closed is taken off the
+project.
+
+**Rec.** Prep writes Rec only into an empty cell. The board cannot say whose text a Rec holds, so
+prep never clears a non-empty Rec and never replaces one, on an agenda, rollover or check row alike.
+Each row whose Rec it left and that differs from what prep would write is listed under `recsKept`
+with the text it holds and prep's own (`null` on a carried bet) and named on stderr. A Rec prep
+wrote for an earlier table stays too, until a person clears it.
 
 **Checks.** A bet — a row whose Origin reads `bet` — whose Stage has read `shipped` for
 `table.checkDelayDays` days (14 by default, timed from the Stage value's last change) moves to Stage
-`check` under the first agenda section, dated the next table, with a Rec asking "did it work?" and an In plain
-words line, whatever its issue's state, and outside the agenda cap. A shipped row whose Origin is
-anything else, such as an Outside the bets row sync moved to `shipped`, keeps its Stage and Section
-and gets no comment. Its evidence is posted once as a comment on the issue:
+`check` under the first agenda section, dated the next table, with a Rec asking "did it work?" (into
+an empty Rec) and an In plain words line, whatever its issue's state, and outside the agenda cap. A
+shipped row whose Origin is anything else, such as an Outside the bets row sync moved to `shipped`,
+keeps its Stage and Section and gets no comment. Its evidence is posted once as a comment on the
+issue:
 
 - the pitch's `**Success:**` line, or a note that it has none;
 - the GitHub signals since it shipped: issues filed since that mention a pull request its lane
@@ -300,8 +319,17 @@ which is the next table's, with a Section and a Rec, open or closed so a check s
 matches only iteration fields, so a date needs the range. Run `table setup` once to align the filter
 of an Agenda view that stood before.
 
-stdout is `{"answer":"prepped"|"unchanged","repo":"…","project":{…},"tableDay":"YYYY-MM-DD","agenda":[{"issue":n,"section":"…","kind":"epic"|"chain"|null,"members":[n…],"size":"…","rec":"…","plainWords":"…"}],"overflow":[n…],"rollover":{"continuing":[n…],"flagged":[n…]},"removed":[n…],"checks":[{"issue":n,"shippedAt":"…","success":"…"|null,"signals":{"prs":[n…],"mentions":[…],"reverts":[…],"reopened":[n…],"followUps":[n…]},"fabrika":{…}|null,"sources":[…],"rec":"…","comment":"posted"|"standing"}],"triageFirst":[{"issue":n,"waitingOnFiler":bool}],"outside":{"count":n,"kinds":{…},"spentUsd":n,"unmeasured":n},"health":{"posted":bool,"alreadyPosted":bool,…},"changes":[…],"onCall":{"project":{…},"items":[{"issue":n,"target":"…"|null}],"pastTarget":[n…],"spend":{"_tag":"Measured","percent":n,"onCallUsd":n,"totalUsd":n}|{"_tag":"Unmeasured","lanes":n}|{"_tag":"Nothing"},"share":n,"changes":[…]}}`,
-with `onCall` only under a `boards` block.
+**Dry run.** `--dry-run` runs every phase over a board that records its writes, the same way
+[`table sync --dry-run`](#table-sync) does, so the cells of a row added in the run, the checks and
+the status update all plan. The answer is `dry-run`; `changes` are empty, `health.posted` is false,
+a check's `comment` reads `planned`, and `planned` lists every write: sync's three kinds plus
+`{"_tag":"Delete","project":n,"issue":n}`, `{"_tag":"Comment","issue":n,"body":"…"}` and
+`{"_tag":"Post","project":n,"status":"…","body":"…"}`. The exit is `0` once the plan is built; a read
+that fails keeps its code.
+
+stdout is `{"answer":"prepped"|"unchanged"|"dry-run","repo":"…","project":{…},"tableDay":"YYYY-MM-DD","agenda":[{"issue":n,"section":"…","kind":"epic"|"chain"|null,"members":[n…],"size":"…","rec":"…","plainWords":"…"}],"overflow":[n…],"rollover":{"continuing":[n…],"flagged":[n…]},"removed":[n…],"checks":[{"issue":n,"shippedAt":"…","success":"…"|null,"signals":{"prs":[n…],"mentions":[…],"reverts":[…],"reopened":[n…],"followUps":[n…]},"fabrika":{…}|null,"sources":[…],"rec":"…","comment":"posted"|"standing"|"planned"}],"triageFirst":[{"issue":n,"waitingOnFiler":bool}],"outside":{"count":n,"kinds":{…},"spentUsd":n,"unmeasured":n},"health":{"posted":bool,"alreadyPosted":bool,…},"recsKept":[{"issue":n,"rec":"…","wanted":"…"|null}],"changes":[…],"onCall":{"project":{…},"items":[{"issue":n,"target":"…"|null}],"pastTarget":[n…],"spend":{"_tag":"Measured","percent":n,"onCallUsd":n,"totalUsd":n}|{"_tag":"Unmeasured","lanes":n}|{"_tag":"Nothing"},"share":n,"changes":[…]}}`,
+with `onCall` only under a `boards` block and `planned` only under `--dry-run`. An agenda row's
+`rec` is the Rec the row holds after prep, a kept one included.
 
 ### Exit status
 
