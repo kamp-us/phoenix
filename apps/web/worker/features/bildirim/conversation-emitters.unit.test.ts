@@ -13,7 +13,7 @@ import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {Mute} from "../mute/Mute.ts";
 import {notifyCommentReply, REPLY_KIND, replyRecipients} from "./conversation-emitters.ts";
-import {makeNotificationStub} from "./Notification.testing.ts";
+import {makeNotificationStub, makeTouchRecordingNotificationStub} from "./Notification.testing.ts";
 import type {NotificationRecordInput} from "./Notification.ts";
 
 const runtimeContextStub: BaseRuntimeContext = {
@@ -169,23 +169,32 @@ describe("notifyCommentReply — the reply emit", () => {
 		}),
 	);
 
-	it.effect("a self-reply on your own post emits nothing (the stub is never touched)", () =>
-		notifyCommentReply({
-			commentId: "comm-4",
-			postAuthorId: "u-actor",
-			parentAuthorId: "u-actor",
-			actorId: "u-actor",
-		}).pipe(Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(true)))),
-	);
+	// The emitter swallows every cause, so silence is asserted off what was touched.
+	it.effect("a self-reply on your own post emits nothing (the stub is never touched)", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		return Effect.gen(function* () {
+			yield* notifyCommentReply({
+				commentId: "comm-4",
+				postAuthorId: "u-actor",
+				parentAuthorId: "u-actor",
+				actorId: "u-actor",
+			});
+			assert.deepStrictEqual(notification.touched, []);
+		}).pipe(Effect.provide(Layer.mergeAll(notification.layer, requestContext(true))));
+	});
 
-	it.effect("with the bildirim flag OFF the write never happens (dark by default)", () =>
-		notifyCommentReply({
-			commentId: "comm-5",
-			postAuthorId: "u-post",
-			parentAuthorId: "u-parent",
-			actorId: "u-actor",
-		}).pipe(Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(false)))),
-	);
+	it.effect("with the bildirim flag OFF the write never happens (dark by default)", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		return Effect.gen(function* () {
+			yield* notifyCommentReply({
+				commentId: "comm-5",
+				postAuthorId: "u-post",
+				parentAuthorId: "u-parent",
+				actorId: "u-actor",
+			});
+			assert.deepStrictEqual(notification.touched, []);
+		}).pipe(Effect.provide(Layer.mergeAll(notification.layer, requestContext(false))));
+	});
 
 	it.effect(
 		"a DYING notification write is swallowed — the comment caller still succeeds (the seam AC)",

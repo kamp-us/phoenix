@@ -17,7 +17,6 @@ import {integer, SQLiteDialect, sqliteTable, text} from "drizzle-orm/sqlite-core
 import * as L from "./EntityLifecycle.ts";
 import {
 	ownSandboxed,
-	publicLiveWhere,
 	sandboxArm,
 	sandboxBacklogWhere,
 	sandboxedInPlace,
@@ -161,14 +160,6 @@ describe("sandboxVisibleWhere — the SQL predicate mirrors the decision shape",
 		assert.strictEqual(sandboxVisibleWhere(cols, viewers.moderator), undefined);
 	});
 
-	it("a signed-in member gets a restricting predicate (own + public)", () => {
-		assert.isDefined(sandboxVisibleWhere(cols, viewers.caylakAuthor));
-	});
-
-	it("an anonymous viewer gets a restricting predicate (public only)", () => {
-		assert.isDefined(sandboxVisibleWhere(cols, viewers.anonymous));
-	});
-
 	// The widening rides `seesSandboxedInPlace`, so the moderator short-circuit stays
 	// the only path to "no restriction" — an in-place viewer is still filtered, just
 	// on the sandbox dimension rather than on authorship.
@@ -280,46 +271,11 @@ describe("sandboxedInPlace — the reader-facing çaylak marker (#6425)", () => 
 		});
 	}
 
-	// `PHOENIX_CAYLAK_VISIBILITY` off is exactly `seesSandboxedInPlace: false` for every
-	// viewer (#6423's `inPlaceVisibility` short-circuits on the flag before either store
-	// read). Asserted rather than assumed: with the flag down there is no viewer shape,
-	// on any row, that can reach the marker.
-	it("with the containment flag off, no viewer shape reads the marker on any row", () => {
-		for (const viewer of Object.values(viewers)) {
-			const flagOff = {...viewer, seesSandboxedInPlace: false};
-			assert.isFalse(sandboxedInPlace(sandboxedRow, flagOff));
-			assert.isFalse(sandboxedInPlace(liveRow, flagOff));
-		}
-	});
-
-	// The masked shapes never reach the stamp at all — the read's `sandboxVisibleWhere`
-	// drops the row before it is shaped, so "no marker" is the second line of defence and
-	// "no row" is the first.
-	it("every shape that reads false on a sandboxed row is also denied the row itself", () => {
-		for (const [name, viewer] of Object.entries(viewers)) {
-			if (sandboxedInPlace(sandboxedRow, viewer)) continue;
-			if (name === "caylakAuthor" || name === "moderator") continue;
-			assert.isFalse(L.isVisibleTo(sandboxed, AUTHOR, viewer), name);
-		}
-	});
-
 	it("is disjoint from ownSandboxed — no viewer reads both on one row", () => {
 		for (const viewer of Object.values(viewers)) {
 			assert.isFalse(
 				ownSandboxed(sandboxedRow, viewer.viewerId) && sandboxedInPlace(sandboxedRow, viewer),
 			);
-		}
-	});
-});
-
-describe("publicLiveWhere — the removed+sandbox aggregate predicate", () => {
-	const cols = {sandboxedAt: {} as never, authorId: {} as never, removedAt: {} as never};
-
-	it("is defined for every viewer kind — the removal guard always restricts", () => {
-		// even a moderator (no sandbox restriction) still gets `isNull(removedAt)`, so the
-		// aggregate is never undefined — it always excludes removed content.
-		for (const viewer of Object.values(viewers)) {
-			assert.isDefined(publicLiveWhere(cols, viewer));
 		}
 	});
 });

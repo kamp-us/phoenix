@@ -8,7 +8,7 @@ import type {SQL} from "drizzle-orm";
 import {SQLiteDialect} from "drizzle-orm/sqlite-core";
 import {describe, expect, it} from "vitest";
 import {commentRecord, definitionRecord, postRecord, termRecord} from "./drizzle/schema";
-import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "./keyset";
+import {forwardPage, keysetAfter, resolveCursor} from "./keyset";
 
 const dialect = new SQLiteDialect();
 const render = (sql: SQL) => dialect.sqlToQuery(sql);
@@ -102,12 +102,6 @@ describe("resolveCursor", () => {
 		// A null lead value degrades the predicate; it does NOT collapse to a miss.
 		const row = {createdAt: null};
 		expect(resolveCursor("c1", row)).toEqual({kind: "hit", row});
-	});
-});
-
-describe("emptyKeysetPage", () => {
-	it("is the canonical empty forward page (no rows, no next, no cursor)", () => {
-		expect(emptyKeysetPage).toEqual({rows: [], hasNextPage: false, endCursor: null});
 	});
 });
 

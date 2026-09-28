@@ -1,8 +1,8 @@
 /**
- * The subscribed-author feed's two load-bearing ACs, proven with no DB (ADR 0082) and
- * proven TWICE: on the pure `selectMecmuaFeed` decision and on the served
- * `Mecmua.listFeedConnection` path, so the guarantee holds where the feed is actually
- * served, not only in a helper.
+ * The subscribed-author feed's two load-bearing ACs (newest-published-first, no drafts or
+ * unsubscribed authors), proven with no DB (ADR 0082) on the served
+ * `Mecmua.listFeedConnection` path, which runs `selectMecmuaFeed`. The pure decision keeps
+ * only its keyset tie-break, which the served fixture never reaches.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
@@ -39,28 +39,7 @@ const rows: MecmuaRecord[] = [
 
 const toRow = (r: MecmuaRecord): MecmuaPostRow => ({...r});
 
-describe("selectMecmuaFeed — the pure feed decision (ordering + draft mask)", () => {
-	const subscribed = new Set(["A", "B"]);
-
-	it("orders subscribed-author PUBLISHED posts by publishedAt newest-first", () => {
-		const feed = selectMecmuaFeed(rows.map(toRow), subscribed);
-		assert.deepStrictEqual(
-			feed.map((r) => r.id),
-			["b-may", "a-mar"],
-		);
-	});
-
-	it("NEVER includes a draft (null publishedAt), even from a subscribed author", () => {
-		const feed = selectMecmuaFeed(rows.map(toRow), subscribed);
-		assert.isFalse(feed.some((r) => r.id === "a-draft"));
-		assert.isTrue(feed.every((r) => r.publishedAt !== null));
-	});
-
-	it("excludes a non-subscribed author's published post", () => {
-		const feed = selectMecmuaFeed(rows.map(toRow), subscribed);
-		assert.isFalse(feed.some((r) => r.id === "c-apr"));
-	});
-
+describe("selectMecmuaFeed — the tie-break the served rows below do not reach", () => {
 	it("breaks a publishedAt tie by descending id (stable keyset order)", () => {
 		const tie = AT("2026-06-01T00:00:00.000Z");
 		const feed = selectMecmuaFeed(

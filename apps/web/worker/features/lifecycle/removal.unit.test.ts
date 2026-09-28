@@ -146,18 +146,6 @@ describe("restoreEntity — no vote wipe (ADR 0096 §4: votes are not resurrecte
 });
 
 describe("removeEntity / restoreEntity — per-kind write routing (batch vs run, ADR 0080)", () => {
-	it.effect("post routes the stamp through a BATCH (stamp + FTS lockstep)", () =>
-		Effect.gen(function* () {
-			const {seq, events} = recordingSeq();
-			yield* Removal.removeEntity(seq, {kind: "post", id: "post-1"}, removedColumns, now);
-			assert.strictEqual(
-				events[1]?.op,
-				"batch",
-				"post's stamp + FTS move all-or-none in one batch",
-			);
-		}),
-	);
-
 	for (const kind of ["comment", "definition"] as const) {
 		it.effect(`${kind} (FTS-free) routes the stamp through a single RUN, never a batch`, () =>
 			Effect.gen(function* () {

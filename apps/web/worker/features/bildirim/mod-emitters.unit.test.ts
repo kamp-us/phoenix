@@ -3,13 +3,17 @@
  * moderator resolution + actor self-suppression, the flag containment, the çaylak-entry 0→1
  * gate, and the swallow-at-the-seam guarantee (a DYING dependency cannot fail the caller).
  * The `Notification` / `Divan` / `RelationStore` seams are fail-on-contact stubs with only
- * the exercised method overridden, so "touched the wrong surface" is a test failure.
+ * the exercised method overridden. The emitters swallow every cause, so a silent arm asserts
+ * off what the recording stubs touched, never off a death the swallow absorbs.
+ *
+ * The report-page coalescing (one page per reporter per window, #3641) lives in the digest
+ * SQL, proven by `Notification.unit.test.ts`; here only the digest input each call carries.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {RelationStore} from "@kampus/authz";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
-import {Duration, Effect, Layer} from "effect";
+import {type Duration, Effect, Layer} from "effect";
 import {Divan} from "../divan/Divan.ts";
 import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {Flags} from "../flagship/Flags.ts";
@@ -21,12 +25,8 @@ import {
 	REPORT_FILED_KIND,
 	REPORT_PAGE_WINDOW,
 } from "./mod-emitters.ts";
-import {makeNotificationStub} from "./Notification.testing.ts";
-import type {
-	Notification,
-	NotificationDigestInput,
-	NotificationRecordInput,
-} from "./Notification.ts";
+import {makeNotificationStub, makeTouchRecordingNotificationStub} from "./Notification.testing.ts";
+import type {NotificationDigestInput, NotificationRecordInput} from "./Notification.ts";
 
 const runtimeContextStub: BaseRuntimeContext = {
 	Type: "mod-emitters-test",
@@ -83,12 +83,23 @@ const divanPending = (count: number): Layer.Layer<Divan> =>
 		pendingTotal: () => Effect.die(new Error("Divan.pendingTotal not exercised")),
 	});
 
-const divanDies: Layer.Layer<Divan> = Layer.succeed(Divan, {
-	roster: () => Effect.die(new Error("Divan.roster not exercised")),
-	backlogOf: () => Effect.die(new Error("Divan.backlogOf not exercised")),
-	pendingCountOf: () => Effect.die(new Error("Divan.pendingCountOf must not be read")),
-	pendingTotal: () => Effect.die(new Error("Divan.pendingTotal must not be read")),
-});
+// Dies on every read, recording what was reached: the emitter swallows the death, so a
+// path that must not read asserts `touched` is empty.
+const touchRecordingDivan = () => {
+	const touched: Array<string> = [];
+	const dies = (method: string) => () =>
+		Effect.suspend(() => {
+			touched.push(method);
+			return Effect.die(new Error(`Divan.${method} must not be read`));
+		});
+	const layer: Layer.Layer<Divan> = Layer.succeed(Divan, {
+		roster: dies("roster"),
+		backlogOf: dies("backlogOf"),
+		pendingCountOf: dies("pendingCountOf"),
+		pendingTotal: dies("pendingTotal"),
+	});
+	return {layer, touched};
+};
 
 describe("modRecipients — moderator resolution + actor self-suppression, pure", () => {
 	it("returns every moderator, deterministically ordered, when the actor is not one", () => {
@@ -118,47 +129,6 @@ const capturingDigest = () => {
 			}),
 	});
 	return {calls, layer};
-};
-
-// Mirrors the SQL key (#3641): bump the recipient's page for `(kind, actor)` when one was
-// minted inside the window, else mint a fresh one. The clock is scripted, so the window
-// boundary is decidable with no engine.
-const digestingNotification = (clock: {now: Date}) => {
-	const pages: Array<{
-		recipientId: string;
-		kind: string;
-		actorId: string;
-		targetId: string;
-		count: number;
-		mintedAt: Date;
-	}> = [];
-	const layer = makeNotificationStub({
-		recordDigest: (input, window) =>
-			Effect.sync(() => {
-				const since = clock.now.getTime() - Duration.toMillis(window);
-				const open = pages.find(
-					(page) =>
-						page.recipientId === input.recipientId &&
-						page.kind === input.kind &&
-						page.actorId === input.actorId &&
-						page.mintedAt.getTime() >= since,
-				);
-				if (open) {
-					open.count += 1;
-					return {digested: true};
-				}
-				pages.push({
-					recipientId: input.recipientId,
-					kind: input.kind,
-					actorId: input.actorId,
-					targetId: input.targetId,
-					count: 1,
-					mintedAt: clock.now,
-				});
-				return {digested: false};
-			}),
-	});
-	return {pages, layer};
 };
 
 describe("notifyReportFiled — the report-filed mod page", () => {
@@ -210,30 +180,42 @@ describe("notifyReportFiled — the report-filed mod page", () => {
 			}),
 	);
 
-	it.effect("no moderators ⇒ the fail-on-contact Notification stub is never touched", () =>
-		notifyReportFiled({reporterId: "u-reporter", targetKind: "post", targetId: "p1"}).pipe(
-			Effect.provide(
-				Layer.mergeAll(makeNotificationStub(), relationStoreOf([]), requestContext(true)),
-			),
-		),
-	);
+	it.effect("no moderators ⇒ the fail-on-contact Notification stub is never touched", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		return Effect.gen(function* () {
+			yield* notifyReportFiled({reporterId: "u-reporter", targetKind: "post", targetId: "p1"});
+			assert.deepStrictEqual(notification.touched, []);
+		}).pipe(
+			Effect.provide(Layer.mergeAll(notification.layer, relationStoreOf([]), requestContext(true))),
+		);
+	});
 
-	it.effect("with the bildirim flag OFF nothing is read or written (dark by default)", () =>
-		notifyReportFiled({reporterId: "u-reporter", targetKind: "post", targetId: "p1"}).pipe(
+	it.effect("with the bildirim flag OFF nothing is read or written (dark by default)", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		const authorityReads: Array<string> = [];
+		const readAuthority = (method: string) => () =>
+			Effect.suspend(() => {
+				authorityReads.push(method);
+				return Effect.die(new Error("flag OFF must not read authority"));
+			});
+		return Effect.gen(function* () {
+			yield* notifyReportFiled({reporterId: "u-reporter", targetKind: "post", targetId: "p1"});
+			assert.deepStrictEqual(authorityReads, [], "flag-off must not even resolve moderators");
+			assert.deepStrictEqual(notification.touched, []);
+		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
-					makeNotificationStub(),
-					// RelationStore dies on contact: flag-off must not even resolve moderators.
+					notification.layer,
 					Layer.succeed(RelationStore, {
-						has: () => Effect.die(new Error("flag OFF must not read authority")),
-						hasSubjects: () => Effect.die(new Error("flag OFF must not read authority")),
-						subjectsOf: () => Effect.die(new Error("flag OFF must not read authority")),
+						has: readAuthority("has"),
+						hasSubjects: readAuthority("hasSubjects"),
+						subjectsOf: readAuthority("subjectsOf"),
 					}),
 					requestContext(false),
 				),
 			),
-		),
-	);
+		);
+	});
 
 	it.effect(
 		"a DYING notification write is swallowed — the report caller still succeeds (the seam AC)",
@@ -258,95 +240,27 @@ describe("notifyReportFiled — the report-filed mod page", () => {
 	);
 });
 
-describe("notifyReportFiled — per-reporter/window coalescing (the mod-pager fan-out bound)", () => {
-	const fileReport = (
-		reporterId: string,
-		targetId: string,
-		notifications: Layer.Layer<Notification>,
-	) =>
-		notifyReportFiled({reporterId, targetKind: "post", targetId}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					notifications,
-					relationStoreOf(["u-mod-a", "u-mod-b"]),
-					requestContext(true),
-				),
-			),
-		);
-
-	it.effect("a report spree by ONE reporter inside the window is ONE page per moderator", () =>
-		Effect.gen(function* () {
-			const clock = {now: new Date("2026-07-22T10:00:00Z")};
-			const {pages, layer} = digestingNotification(clock);
-			// Eight reports a minute apart across eight DISTINCT targets — un-coalesced this is 16
-			// rows on a two-person team.
-			for (let i = 0; i < 8; i++) {
-				clock.now = new Date(clock.now.getTime() + 60_000);
-				yield* fileReport("u-spammer", `p${i}`, layer);
-			}
-			assert.deepStrictEqual(
-				pages.map((page) => page.recipientId),
-				["u-mod-a", "u-mod-b"],
-			);
-			assert.deepStrictEqual(
-				pages.map((page) => page.count),
-				[8, 8],
-			);
-			assert.deepStrictEqual(
-				pages.map((page) => page.targetId),
-				["p0", "p0"],
-			);
-		}),
-	);
-
-	it.effect("the window is per REPORTER — a second reporter opens their own page", () =>
-		Effect.gen(function* () {
-			const clock = {now: new Date("2026-07-22T10:00:00Z")};
-			const {pages, layer} = digestingNotification(clock);
-			yield* fileReport("u-reporter-a", "p1", layer);
-			yield* fileReport("u-reporter-b", "p2", layer);
-			assert.deepStrictEqual(
-				pages.map((page) => `${page.recipientId}/${page.actorId}`),
-				[
-					"u-mod-a/u-reporter-a",
-					"u-mod-b/u-reporter-a",
-					"u-mod-a/u-reporter-b",
-					"u-mod-b/u-reporter-b",
-				],
-			);
-		}),
-	);
-
-	it.effect("once the window elapses the next report mints a FRESH page (never silence)", () =>
-		Effect.gen(function* () {
-			const clock = {now: new Date("2026-07-22T10:00:00Z")};
-			const {pages, layer} = digestingNotification(clock);
-			yield* fileReport("u-reporter", "p1", layer);
-			clock.now = new Date(clock.now.getTime() + Duration.toMillis(REPORT_PAGE_WINDOW) + 60_000);
-			yield* fileReport("u-reporter", "p2", layer);
-			assert.strictEqual(pages.length, 4);
-			assert.deepStrictEqual(
-				pages.map((page) => page.count),
-				[1, 1, 1, 1],
-			);
-		}),
-	);
-});
-
 describe("notifyCaylakEntersDivan — the çaylak-awaiting-review page, 0→1 transition-gated", () => {
 	it.effect(
 		"a live item (sandboxedAt null) is not a divan entry — nothing is read or written",
-		() =>
-			notifyCaylakEntersDivan({authorId: "u-caylak", sandboxedAt: null}).pipe(
+		() => {
+			const notification = makeTouchRecordingNotificationStub();
+			const divan = touchRecordingDivan();
+			return Effect.gen(function* () {
+				yield* notifyCaylakEntersDivan({authorId: "u-caylak", sandboxedAt: null});
+				assert.deepStrictEqual(divan.touched, []);
+				assert.deepStrictEqual(notification.touched, []);
+			}).pipe(
 				Effect.provide(
 					Layer.mergeAll(
-						makeNotificationStub(),
+						notification.layer,
 						relationStoreOf(["u-mod-a"]),
-						divanDies,
+						divan.layer,
 						requestContext(true),
 					),
 				),
-			),
+			);
+		},
 	);
 
 	it.effect("the çaylak's FIRST pending item (count 1) pages every moderator", () =>
@@ -381,37 +295,47 @@ describe("notifyCaylakEntersDivan — the çaylak-awaiting-review page, 0→1 tr
 		}),
 	);
 
-	it.effect("a çaylak's SECOND+ pending item (count > 1) pages nobody — no re-notify", () =>
-		notifyCaylakEntersDivan({
-			authorId: "u-caylak",
-			sandboxedAt: new Date("2026-01-01T00:00:00Z"),
+	it.effect("a çaylak's SECOND+ pending item (count > 1) pages nobody — no re-notify", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		return Effect.gen(function* () {
+			yield* notifyCaylakEntersDivan({
+				authorId: "u-caylak",
+				sandboxedAt: new Date("2026-01-01T00:00:00Z"),
+			});
+			assert.deepStrictEqual(notification.touched, []);
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
-					makeNotificationStub(),
+					notification.layer,
 					relationStoreOf(["u-mod-a"]),
 					divanPending(3),
 					requestContext(true),
 				),
 			),
-		),
-	);
+		);
+	});
 
-	it.effect("with the bildirim flag OFF nothing is read or written (dark by default)", () =>
-		notifyCaylakEntersDivan({
-			authorId: "u-caylak",
-			sandboxedAt: new Date("2026-01-01T00:00:00Z"),
+	it.effect("with the bildirim flag OFF nothing is read or written (dark by default)", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		const divan = touchRecordingDivan();
+		return Effect.gen(function* () {
+			yield* notifyCaylakEntersDivan({
+				authorId: "u-caylak",
+				sandboxedAt: new Date("2026-01-01T00:00:00Z"),
+			});
+			assert.deepStrictEqual(divan.touched, []);
+			assert.deepStrictEqual(notification.touched, []);
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
-					makeNotificationStub(),
+					notification.layer,
 					relationStoreOf(["u-mod-a"]),
-					divanDies,
+					divan.layer,
 					requestContext(false),
 				),
 			),
-		),
-	);
+		);
+	});
 
 	it.effect("a DYING count read is swallowed — the create caller still succeeds", () =>
 		Effect.gen(function* () {
@@ -423,7 +347,7 @@ describe("notifyCaylakEntersDivan — the çaylak-awaiting-review page, 0→1 tr
 					Layer.mergeAll(
 						makeNotificationStub(),
 						relationStoreOf(["u-mod-a"]),
-						divanDies,
+						touchRecordingDivan().layer,
 						requestContext(true),
 					),
 				),

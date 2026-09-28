@@ -17,10 +17,6 @@ export const ENVIRONMENTS = ["development", "preview", "production", "audit"] as
 
 export type Environment = (typeof ENVIRONMENTS)[number];
 
-// Single-sourced so `environmentForStage` and any audit force-on targeting rule name
-// the same literal.
-export const AUDIT_ENVIRONMENT: Environment = "audit";
-
 export const AUDIT_STAGE = "audit";
 
 // Fail-closed: a missing `ENVIRONMENT` lands in production and closes every dev gate.

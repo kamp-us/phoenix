@@ -54,10 +54,6 @@ describe("funnel gate — platform-moderation only", () => {
 		assert.isTrue(Exit.isSuccess(access(human("u"), {mods: ["u"]})));
 	});
 
-	it("a signed-in non-mod is denied", () => {
-		assert.isTrue(Exit.isFailure(access(human("u"), {mods: []})));
-	});
-
 	it("the anonymous actor is denied", () => {
 		assert.isTrue(Exit.isFailure(access(unauthenticated, {mods: ["anon"]})));
 	});

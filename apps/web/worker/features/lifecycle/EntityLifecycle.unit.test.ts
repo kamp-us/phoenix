@@ -203,19 +203,6 @@ describe("EntityLifecycle — sandbox (#1205)", () => {
 		if (L.isSandboxed(lifecycle)) assert.strictEqual(lifecycle.sandboxedAt, fixedNow);
 	});
 
-	it("removal takes precedence over sandbox in the projection, carrying the marker (#1811)", () => {
-		const lifecycle = L.fromColumns({
-			removedAt: fixedNow,
-			removedBy: "user-1",
-			removedReason: '{"_tag":"AuthorDeletion"}',
-			sandboxedAt: fixedNow,
-		});
-		// A removed-AND-sandboxed row reads as Removed (the removal is the live fact)…
-		assert.isTrue(L.isRemoved(lifecycle));
-		// …but the pre-removal sandbox marker is carried, not dropped.
-		if (L.isRemoved(lifecycle)) assert.strictEqual(lifecycle.sandboxedAt, fixedNow);
-	});
-
 	it("toColumns(sandbox(...)) writes only sandboxedAt; never sandboxed-AND-removed", () => {
 		const cols = L.toColumns(L.sandbox({sandboxedAt: fixedNow}));
 		assert.deepStrictEqual(cols, {

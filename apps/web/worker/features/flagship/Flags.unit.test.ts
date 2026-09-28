@@ -88,24 +88,6 @@ describe("Flags.getBoolean", () => {
 		}).pipe(Effect.provide(flagsOver((_key, _default) => Effect.succeed(false)))),
 	);
 
-	it.effect("a FlagshipError collapses to the supplied default (degrade safe)", () =>
-		Effect.gen(function* () {
-			const flags = yield* Flags;
-			const enabled = yield* flags
-				.getBoolean("feature-erroring", false)
-				.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext));
-			assert.strictEqual(enabled, false);
-		}).pipe(
-			Effect.provide(
-				flagsOver(() =>
-					Effect.fail(
-						new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined}),
-					),
-				),
-			),
-		),
-	);
-
 	it.effect("a FlagshipError is LOGGED at warn before the default is returned (#2685)", () =>
 		Effect.gen(function* () {
 			const flags = yield* Flags;

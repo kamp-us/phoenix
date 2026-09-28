@@ -15,7 +15,6 @@
 
 import {
 	declaredWireCodes,
-	encodeWireError,
 	INTERNAL_WIRE_CODE,
 	Unauthorized,
 	wireCodeOfClass,
@@ -95,8 +94,6 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	[EmailFailingReasonRequired, "EMAIL_FAILING_REASON_REQUIRED"],
 	[Denied, "UNAUTHORIZED"],
 	[Unauthorized, "UNAUTHORIZED"],
-	// The five below carry extra required fields, so they are pinned here but cannot be
-	// generically instantiated in ROUND_TRIP_CLASSES.
 	[RequiresLevel, "FORBIDDEN"],
 	[VouchLimitReached, "VOUCH_LIMIT_REACHED"],
 	[VoterNotEligible, "VOTE_REQUIRES_YAZAR"],
@@ -105,35 +102,6 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 ]);
 
 const ORACLE_ENTRIES = [...EXPECTED_CODE.entries()] as ReadonlyArray<[unknown, string]>;
-
-/**
- * The oracle classes whose only required field is `message`, so an instance can be
- * constructed generically for the `encodeWireError` round-trip. This list authors only
- * WHICH classes to instantiate — codes are looked up in the oracle, never re-listed.
- */
-const ROUND_TRIP_CLASSES = [
-	TitleRequired,
-	TitleTooLong,
-	UrlInvalid,
-	PostBodyTooLong,
-	TagsRequired,
-	TagInvalid,
-	CommentBodyRequired,
-	CommentBodyTooLong,
-	ParentCommentNotFound,
-	PostDeleteFailed,
-	MecmuaDisabled,
-	MecmuaPostNotFound,
-	BodyRequired,
-	UsernameInvalidFormat,
-	UsernameTooShort,
-	UsernameTooLong,
-	DisplayNameEmpty,
-	BanReasonRequired,
-	EmailFailingReasonRequired,
-	Denied,
-	Unauthorized,
-] as const satisfies ReadonlyArray<new (props: {message: string}) => unknown>;
 
 /** Codes the package emits with no domain class to pin, so the staleness guard exempts them. */
 const PACKAGE_INTRINSIC_CODES: ReadonlySet<string> = new Set([
@@ -144,13 +112,6 @@ const PACKAGE_INTRINSIC_CODES: ReadonlySet<string> = new Set([
 describe("fate wire-code annotations", () => {
 	it.each(ORACLE_ENTRIES)("%o carries its specific wire code", (ctor, code) => {
 		expect(wireCodeOfClass(ctor as never)).toBe(code);
-	});
-
-	it.each(ROUND_TRIP_CLASSES)("%o encodes to its wire code with its own message", (ctor) => {
-		const code = EXPECTED_CODE.get(ctor);
-		const wire = encodeWireError(new ctor({message: `${code} message`}));
-		expect(wire.code).toBe(code);
-		expect(wire.message).toBe(`${code} message`);
 	});
 
 	it("the oracle pins every annotated code fateConfig can emit (can't go stale)", () => {
