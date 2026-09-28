@@ -102,11 +102,6 @@ describe("RelationStoreLive.has on real D1 — resolves composite-PK tuple exist
 		).toBe(false);
 	});
 
-	it("a removed tuple is denied on the next call (fresh per call, no cached authority)", async () => {
-		await mint(SUBJECT);
-		expect(await hasWhen({subject: SUBJECT, relation: RELATION, object}, true)).toBe(true);
-
-		await remove(SUBJECT);
-		expect(await hasWhen({subject: SUBJECT, relation: RELATION, object}, false)).toBe(false);
-	});
+	// Fresh-per-call authority (a removed tuple denies the next read) is proven over this same
+	// store by `kunye-admin-seam.test.ts` and `kunye-moderate-seam.test.ts`'s revoke cases.
 });

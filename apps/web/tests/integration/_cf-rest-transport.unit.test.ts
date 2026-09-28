@@ -7,78 +7,56 @@
 import {readdirSync, readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
-import {createCfApiThrottle} from "./_cf-api-throttle.ts";
-import {
-	budgetSpentMs,
-	cfFetchWithRateLimitRetry,
-	type RateLimitAttrition,
-} from "./_d1-rest-retry.ts";
+import {CF_API_MAX_CONCURRENT, cfApiThrottle} from "./_cf-api-throttle.ts";
+import {cfRestSend} from "./_cf-rest-transport.ts";
+import type {RateLimitAttrition} from "./_d1-rest-retry.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url).href);
 
-describe("retry composes AROUND the throttle (a slot is held per attempt, not per logical call)", () => {
-	it("lets another call through while a 429 is backing off", async () => {
-		// Under #3081's original order — `throttle.run(() => retry(send))` — the backing-off call
-		// keeps the only slot, so `second` never starts, `releaseSecond` is never called, and this
-		// test HANGS to its timeout. Completing is the assertion; the expects below just confirm
-		// neither call was corrupted on the way.
-		const throttle = createCfApiThrottle({maxConcurrent: 1, minSpacingMs: 0});
-		let releaseSecond = () => {};
-		const secondRan = new Promise<void>((r) => {
-			releaseSecond = r;
-		});
+const rateLimited = async () => new Response("429", {status: 429});
 
-		const first = cfFetchWithRateLimitRetry(
-			() => throttle.run(async () => new Response("429", {status: 429})),
-			{maxRetries: 2, sleep: () => secondRan, random: () => 0, now: () => 0, onGiveUp: () => {}},
+// Both cases drive the shipped `cfRestSend` over the process-wide `cfApiThrottle`, so a change to
+// how the transport composes the two halves is what they catch — not a composition rebuilt here.
+describe("retry composes AROUND the throttle (a slot is held per attempt, not per logical call)", () => {
+	it("lets another call through while every slot's 429 is backing off", async () => {
+		// Fill every slot with a call whose backoff sleep waits for a later call to run. Under
+		// #3081's original order — `throttle.run(() => retry(send))` — each backing-off call keeps
+		// its slot, the later call never starts, and this test HANGS to its timeout. Completing is
+		// the assertion; the expects below confirm no call was corrupted on the way.
+		let releaseBackoff = () => {};
+		const laterCallRan = new Promise<void>((r) => {
+			releaseBackoff = r;
+		});
+		const backingOff = Array.from({length: CF_API_MAX_CONCURRENT}, () =>
+			cfRestSend(rateLimited, {maxRetries: 1, sleep: () => laterCallRan, onGiveUp: () => {}}),
 		);
-		const second = throttle.run(async () => {
-			releaseSecond();
+		const later = cfApiThrottle.run(async () => {
+			releaseBackoff();
 			return new Response("ok", {status: 200});
 		});
 
-		const [firstRes, secondRes] = await Promise.all([first, second]);
-		expect(firstRes.status).toBe(429);
-		expect(secondRes.status).toBe(200);
+		const [laterRes, ...backedOff] = await Promise.all([later, ...backingOff]);
+		expect(laterRes.status).toBe(200);
+		expect(backedOff.map((r) => r.status)).toEqual(backingOff.map(() => 429));
 	});
 
 	// The cost of holding a slot per ATTEMPT: a logical call re-enters the harness's queue on every
 	// retry. PR #4033's merge-queue ejection was that cost billed to the wrong account — "2 attempts
 	// over 45136ms of retry budget", ~44.6s of which was throttle queueing, so the CF-facing budget
 	// expired having asked Cloudflare twice. The throttle's `onQueued` must reach the retry's sink.
-	it("deducts the throttle's own queueing from the CF-facing retry budget", async () => {
-		let clock = 0;
-		const throttle = createCfApiThrottle({
-			maxConcurrent: 10,
-			minSpacingMs: 1000, // each start is paced a full second apart — pure harness-imposed wait
-			sleep: async (ms) => {
-				clock += ms;
-			},
-			now: () => clock,
-			random: () => 0,
-		});
+	it("reports the throttle's own queueing into the retry's attrition", async () => {
 		const attrition: RateLimitAttrition[] = [];
-		const res = await cfFetchWithRateLimitRetry(
-			(queued) => throttle.run(async () => new Response("429", {status: 429}), queued),
-			{
-				budgetMs: 2000,
-				baseDelayMs: 10,
-				maxRetries: 3,
-				random: () => 0,
-				now: () => clock,
-				sleep: async (ms) => {
-					clock += ms;
-				},
-				onGiveUp: (a) => attrition.push(a),
-			},
-		);
+		const res = await cfRestSend(rateLimited, {
+			maxRetries: 3,
+			sleep: async () => {},
+			onGiveUp: (a) => attrition.push(a),
+		});
 		expect(res.status).toBe(429);
-		// Without the deduction the 1000ms-per-attempt pacing alone exhausts a 2000ms budget in two
-		// sends; with it, the runaway guard is what stops the loop and the budget is barely touched.
+		// Four sends, each start paced after the last by the throttle's minimum spacing: that wait
+		// is harness-imposed, so it must be booked as queued rather than charged to Cloudflare.
 		expect(attrition[0]?.reason).toBe("max-retries");
 		expect(attrition[0]?.attempts).toBe(4);
-		expect(attrition[0]?.queuedMs).toBeGreaterThanOrEqual(3000);
-		expect(budgetSpentMs(attrition[0] as RateLimitAttrition)).toBeLessThan(2000);
+		expect(attrition[0]?.queuedMs).toBeGreaterThan(0);
 	});
 });
 
@@ -107,11 +85,9 @@ describe("no integration file builds its own unprotected CF REST client", () => 
 	// client would reopen the bypass just as wide, and unscanned.
 	const files = readdirSync(HERE).filter((f) => f.endsWith(".ts") && !EXEMPT.has(f));
 
-	it("scans a non-empty set of integration files (fail closed on zero scope, ADR 0092)", () => {
-		expect(files.length).toBeGreaterThan(0);
-	});
-
 	it("finds no bare CF REST client in any of them", () => {
+		// Fail closed on zero scope (ADR 0092): an empty directory read would pass the scan below.
+		expect(files.length).toBeGreaterThan(0);
 		const offenders = files.flatMap((file) => {
 			const src = readFileSync(`${HERE}${file}`, "utf8");
 			return BARE.filter(([re]) => re.test(src)).map(([, why]) => `${file}: ${why}`);

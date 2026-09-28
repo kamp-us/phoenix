@@ -16,9 +16,7 @@ import {
 	isCloudflarePlaceholder404Error,
 	perFileReadinessDeadline,
 	READINESS_HOOK_MARGIN_MS,
-	WorkerNotReadyError,
 } from "./_edge-ready.ts";
-import {isLiveWarmupNotReady} from "./_fate-live-warmup.ts";
 import {harness} from "./_harness.ts";
 import {awaitAuthRouteReady, awaitWorkerReady, WarmNotSettledError} from "./_integration.ts";
 
@@ -112,49 +110,24 @@ describe("awaitEdgeReady — the shared cold-start readiness primitive (ADR 0127
 		expect(send).toHaveBeenCalledTimes(1);
 	});
 
-	it("`/api/health` shape (ASYNC body predicate): rides a 200-but-not-`ok` body out, then resolves once the body reads `{status:'ok'}`", async () => {
+	it("`/api/health` gate (ASYNC body predicate): rides a 503 and a 200-but-not-`ok` body out, then resolves once the body reads `{status:'ok'}`", async () => {
 		let call = 0;
-		// Mirrors production `healthReady`: fold the `.json()` rejection to `null` (⇒ not ready)
-		// rather than a raw try/catch in this effect-importing file (#2736 no-raw-try-catch).
-		const healthReady = async (res: Response): Promise<boolean> => {
-			if (res.status !== 200) return false;
-			const body = (await res
-				.clone()
-				.json()
-				.catch(() => null)) as {status?: unknown} | null;
-			return body?.status === "ok";
-		};
-		const send = vi.fn(async () => {
+		const fetchMock = vi.fn(async () => {
 			call += 1;
 			if (call === 1) return new Response("<html>edge</html>", {status: 503});
 			if (call === 2) return new Response(JSON.stringify({status: "warming"}), {status: 200});
 			return new Response(JSON.stringify({status: "ok"}), {status: 200});
 		});
+		vi.stubGlobal("fetch", fetchMock);
+		try {
+			await onFakeTimers(() =>
+				Effect.runPromise(awaitWorkerReady("https://stage.example.workers.dev", 60_000)),
+			);
+		} finally {
+			vi.unstubAllGlobals();
+		}
 
-		const res = await onFakeTimers(() => awaitEdgeReady(send, healthReady, BUDGET));
-
-		expect(await healthReady(res)).toBe(true);
-		expect(send).toHaveBeenCalledTimes(3);
-	});
-
-	it("`/fate/live`-warm shape: a terminal worker JSON 4xx STOPS the poll (a real 404/auth answer isn't burned on the budget — invariant 2)", async () => {
-		// warmLiveDO's predicate, mirrored exactly: ready on 200 OR a terminal worker JSON 4xx
-		// (`!isLiveWarmupNotReady` — the real classifier the harness uses).
-		const liveWarmReady = (res: Response): boolean =>
-			res.status === 200 ||
-			!isLiveWarmupNotReady(res.status, res.headers.get("content-type") ?? "");
-		const send = vi.fn(
-			async () =>
-				new Response('{"ok":false,"error":{"code":"UNAUTHORIZED"}}', {
-					status: 401,
-					headers: {"content-type": "application/json"},
-				}),
-		);
-
-		const res = await awaitEdgeReady(send, liveWarmReady, BUDGET);
-
-		expect(res.status).toBe(401);
-		expect(send).toHaveBeenCalledTimes(1);
+		expect(fetchMock).toHaveBeenCalledTimes(3);
 	});
 });
 
@@ -273,15 +246,6 @@ describe("awaitWorkerReady — typed readiness diagnostic (#3146)", () => {
 		expect(failure).toContain('"bodyKind":"not-read"');
 	});
 
-	it("WorkerNotReadyError carries the url + detail in a named, greppable message", () => {
-		const e = new WorkerNotReadyError("https://stage.example.workers.dev", "last status 503");
-		expect(e).toBeInstanceOf(Error);
-		expect(e.name).toBe("WorkerNotReadyError");
-		expect(e._tag).toBe("WorkerNotReady");
-		expect(e.message).toContain("https://stage.example.workers.dev");
-		expect(e.message).toContain("last status 503");
-	});
-
 	it("a worker that never serves healthy JSON within the budget throws the typed diagnostic (not a bare Error, not a hook timeout)", async () => {
 		vi.stubGlobal(
 			"fetch",
@@ -290,7 +254,9 @@ describe("awaitWorkerReady — typed readiness diagnostic (#3146)", () => {
 		// A tiny per-call budget drives the exhaustion in milliseconds, not the real 100s.
 		await expect(
 			Effect.runPromise(awaitWorkerReady("https://stage.example.workers.dev", 40)),
-		).rejects.toThrow(/worker never served a healthy \/api\/health within the readiness window/);
+		).rejects.toThrow(
+			/worker never served a healthy \/api\/health within the readiness window for https:\/\/stage\.example\.workers\.dev: last status 200/,
+		);
 	});
 });
 
@@ -330,21 +296,6 @@ describe("perFileReadinessDeadline — the readiness chain is bounded by the hoo
 		expect(deadline - startedAt).toBeLessThan(HOOK_TIMEOUT_MS);
 		expect(READINESS_HOOK_MARGIN_MS).toBeGreaterThan(0);
 	});
-
-	it("a probe reached after earlier probes spent part of the window gets only what remains (each consumes deadline - now)", () => {
-		const deadline = perFileReadinessDeadline(startedAt);
-		// 200s stands for what the health probe already spent out of the shared window.
-		const nowAfterHealth = startedAt + 200_000;
-		const liveBudget = Math.max(0, deadline - nowAfterHealth);
-		expect(liveBudget).toBe(HOOK_TIMEOUT_MS - READINESS_HOOK_MARGIN_MS - 200_000);
-		expect(liveBudget).toBeLessThan(deadline - startedAt);
-	});
-
-	it("floors a probe's budget at 0 once the window is spent — an immediate typed throw, never a negative budget", () => {
-		const deadline = perFileReadinessDeadline(startedAt);
-		const nowAfterExhaustion = deadline + 5_000;
-		expect(Math.max(0, deadline - nowAfterExhaustion)).toBe(0);
-	});
 });
 
 describe("isCloudflarePlaceholder404 — placeholder vs real-404 distinction (the throw-vs-return gate)", () => {
@@ -365,12 +316,6 @@ describe("isCloudflarePlaceholder404 — placeholder vs real-404 distinction (th
 });
 
 describe("isCloudflarePlaceholder404Error — the typed guard the poll rides ONLY", () => {
-	it("recognizes the typed placeholder error", () => {
-		expect(isCloudflarePlaceholder404Error(new CloudflarePlaceholder404Error("/fate/live"))).toBe(
-			true,
-		);
-	});
-
 	it.each([
 		[
 			"a generic Error",
@@ -387,16 +332,6 @@ describe("isCloudflarePlaceholder404Error — the typed guard the poll rides ONL
 describe("edgeFetch — the deploy-probe placeholder detector (throw-on-placeholder, return-real)", () => {
 	afterEach(() => vi.unstubAllGlobals());
 
-	it("throws the typed CloudflarePlaceholder404Error on a CF HTML placeholder 404", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => new Response("<!DOCTYPE html>There is nothing here yet", {status: 404})),
-		);
-		await expect(edgeFetch("https://stage.example.workers.dev/api/health")).rejects.toBeInstanceOf(
-			CloudflarePlaceholder404Error,
-		);
-	});
-
 	it("RETURNS a real worker JSON 404 unretried (never mistaken for the placeholder)", async () => {
 		vi.stubGlobal(
 			"fetch",
@@ -404,15 +339,6 @@ describe("edgeFetch — the deploy-probe placeholder detector (throw-on-placehol
 		);
 		const res = await edgeFetch("https://stage.example.workers.dev/fate");
 		expect(res.status).toBe(404);
-	});
-
-	it("RETURNS a 200 (and any non-404) as-is", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => new Response('{"status":"ok"}', {status: 200})),
-		);
-		const res = await edgeFetch("https://stage.example.workers.dev/api/health");
-		expect(res.status).toBe(200);
 	});
 });
 

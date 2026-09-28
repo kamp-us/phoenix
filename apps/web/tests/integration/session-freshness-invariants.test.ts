@@ -8,9 +8,9 @@
  *
  * Runs on the run-scoped SHARED stage (ADR 0104 step 7). Every email/username is `NS`-
  * prefixed (this file's deterministic token) so its rows can't collide with a
- * concurrent file's on the shared D1. The confirmation phrase is a product constant.
+ * concurrent file's on the shared D1.
  */
-import {beforeAll, describe, expect, it} from "vitest";
+import {describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
@@ -19,8 +19,6 @@ const h = sharedStack();
 const NS = nsToken(import.meta.url);
 let counter = 0;
 const uname = (label: string) => `${NS}-${label}-${counter++}`;
-
-const CONFIRMATION = "hesabımı kalıcı olarak sil";
 
 async function setUsername(cookie: string, value: string): Promise<void> {
 	const r = await h.fate(
@@ -33,10 +31,6 @@ async function setUsername(cookie: string, value: string): Promise<void> {
 async function me(cookie: string) {
 	return h.fate({kind: "query", name: "me", select: ["id"]}, {cookie});
 }
-
-beforeAll(() => {
-	expect(typeof h.url()).toBe("string");
-});
 
 describe("ADR 0169 — session freshness is a two-axis invariant", () => {
 	it("axis 1 — a capability change (çaylak→yazar) is read FRESH under the same session, not from a login snapshot", async () => {
@@ -107,29 +101,6 @@ describe("ADR 0169 — session freshness is a two-axis invariant", () => {
 		if (!after.ok) expect(after.error.code).toBe("UNAUTHORIZED");
 	});
 
-	// The rich re-attribution semantics stay owned by `account-deletion.test`; this pins only
-	// the teardown, in its own home rather than as a side effect of that test.
-	it("axis 2 — account deletion tears down the session immediately; the very next request is UNAUTHORIZED", async () => {
-		const user = await h.signUp(`${NS}-delete@test.local`, "hunter2hunter2", "Delete");
-		await setUsername(user.cookie, uname("delete"));
-
-		const before = await me(user.cookie);
-		expect(before.ok).toBe(true);
-
-		const del = await h.fate(
-			{
-				kind: "mutation",
-				name: "account.delete",
-				input: {confirmation: CONFIRMATION},
-				select: ["deleted"],
-			},
-			{cookie: user.cookie, retry: true},
-		);
-		expect(del.ok).toBe(true);
-		if (del.ok) expect((del.data as {deleted: boolean}).deleted).toBe(true);
-
-		const after = await me(user.cookie);
-		expect(after.ok).toBe(false);
-		if (!after.ok) expect(after.error.code).toBe("UNAUTHORIZED");
-	});
+	// Axis 2 for account deletion is proven where the deletion is: `account-deletion.test.ts`
+	// reads `me` under the same cookie right after the delete and expects UNAUTHORIZED.
 });

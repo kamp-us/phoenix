@@ -2,11 +2,8 @@ import {expect, type Page, test} from "@playwright/test";
 import {isCloudflarePlaceholder404} from "../integration/_edge-ready";
 
 /**
- * Smoke pass — for every route the SPA serves, navigate, assert the page
- * renders, the topbar is mounted, and `<html data-theme>` is set. We sample
- * a real sözlük slug + pano id from the live data instead of hardcoding,
- * because the importer ran against the legacy monorepo content and the
- * slugs don't match the dropped fixtures.
+ * Smoke pass — for every static route the SPA serves, navigate, assert the page
+ * renders, the topbar is mounted, and `<html data-theme>` is set.
  */
 
 const STATIC_ROUTES = ["/", "/pano", "/pano/yeni", "/sozluk", "/auth"] as const;
@@ -59,28 +56,5 @@ for (const route of STATIC_ROUTES) {
 	});
 }
 
-test("smoke: /sozluk/<slug> renders for a real seeded term", async ({page}) => {
-	test.setTimeout(SPA_READY_DEADLINE_MS + 15_000);
-	await gotoSpaReady(page, "/sozluk");
-	const firstTerm = page.locator(".kp-sozluk-term-row").first();
-	await expect(firstTerm).toBeVisible({timeout: 10_000});
-	const href = await firstTerm.getAttribute("href");
-	expect(href).toMatch(/^\/sozluk\/.+/);
-
-	await gotoSpaReady(page, href ?? "/sozluk");
-	await expect(page.locator(".kp-topbar")).toBeVisible();
-	await expect(page.locator(".kp-sozluk-term__title")).toBeVisible({timeout: 10_000});
-});
-
-test("smoke: /pano/<id> renders for a real seeded post", async ({page}) => {
-	test.setTimeout(SPA_READY_DEADLINE_MS + 15_000);
-	await gotoSpaReady(page, "/pano");
-	const firstPost = page.locator(".kp-pano-post").first();
-	await expect(firstPost).toBeVisible({timeout: 10_000});
-	// The title link uses `post.url ?? post.href` (so external links navigate
-	// out). The "N yorum" link is always the in-app pano permalink.
-	const commentsLink = firstPost.locator("a[href^='/pano/']", {hasText: /yorum$/}).first();
-	await commentsLink.click();
-	await expect(page).toHaveURL(/\/pano\/[^/]+/, {timeout: 10_000});
-	await expect(page.locator(".kp-pano-postpage__title")).toBeVisible({timeout: 10_000});
-});
+// A real seeded term and post detail page are reached by click-through in
+// `07-sozluk-term.spec.ts` and `04-pano-post.spec.ts`.

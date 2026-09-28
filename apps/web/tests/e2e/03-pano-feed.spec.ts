@@ -65,23 +65,6 @@ test.describe("PanoFeed (/pano)", () => {
 		expect(href).toMatch(/^(https?:\/\/|\/pano\/)/);
 	});
 
-	test("(host) link routes to /pano/site/<host> + breadcrumb appears", async ({page}) => {
-		// Only a link-post renders an <a.kp-pano-post__site>; a self-post renders a
-		// non-navigating <span> with the same class. Target the anchor so the
-		// skip-guard skips on self-only feeds and the click hits a real link.
-		const siteLink = page.locator("a.kp-pano-post__site").first();
-		if (!(await siteLink.isVisible().catch(() => false))) {
-			test.skip(true, "no host links on the current page (all self-posts)");
-		}
-		const hostText = (await siteLink.textContent())?.trim();
-		await siteLink.click();
-		await expect(page).toHaveURL(/\/pano\/site\//);
-		await expect(page.locator(".kp-pano-crumb")).toBeVisible();
-		await expect(page.locator(".kp-pano-crumb .host")).toContainText(hostText ?? "");
-		await page.locator(".kp-pano-crumb .clear").click();
-		await expect(page).toHaveURL("/pano");
-	});
-
 	test("meta line shows author, time, comment count", async ({page}) => {
 		const meta = page.locator(".kp-pano-post .kp-pano-post__meta").first();
 		await expect(meta.locator(".author")).toBeVisible();

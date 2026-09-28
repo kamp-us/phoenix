@@ -5,8 +5,8 @@ import {randomSuffix} from "./_helpers/rand";
 
 /**
  * The landing stats card, whose counters the sozluk/pano writer modules maintain
- * inline on every write (ADR 0009), plus a deep-link smoke check of the canonical
- * product URLs.
+ * inline on every write (ADR 0009). Deep links to the canonical product URLs are
+ * `00-smoke.spec.ts`'s static routes and `23-auth-redirect.spec.ts`'s 404 cases.
  */
 test.describe("Landing stats", () => {
 	test("/ renders the live stats card with five values", async ({page}) => {
@@ -63,21 +63,6 @@ test.describe("Landing stats", () => {
 			const text = await page.getByTestId("stat-posts").locator(".n").innerText();
 			expect(parseTrNumber(text)).toBeGreaterThan(beforeCount);
 		}).toPass({timeout: 15_000});
-	});
-
-	test("canonical routes are deep-linkable", async ({page}) => {
-		await page.goto("/sozluk");
-		await expect(page.locator(".kp-page")).toBeVisible({timeout: 10_000});
-
-		await page.goto("/pano");
-		// Assert the topbar, not the feed — the feed may be empty on a cold DB.
-		await expect(page.locator(".kp-topbar")).toBeVisible({timeout: 10_000});
-
-		await page.goto("/auth");
-		await expect(page.getByRole("heading", {name: /giriş yap/i})).toBeVisible({timeout: 10_000});
-
-		await page.goto(`/u/nobody-${Date.now().toString(36)}`);
-		await expect(page.getByTestId("not-found-page")).toBeVisible({timeout: 10_000});
 	});
 });
 

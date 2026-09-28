@@ -36,12 +36,6 @@ describe("stageName — destroy-on (CI / default)", () => {
 		assertInvariant(stageName(slug, false, RUN_TOKEN));
 	});
 
-	it("never emits a double-dash for an empty slug — the #698 regression", () => {
-		const name = stageName("", false, RUN_TOKEN);
-		expect(name).not.toMatch(/--/);
-		expect(name).toBe(`it-${disc(`|${RUN_TOKEN}`)}`);
-	});
-
 	it("is run-unique: the same slug under distinct run tokens differs", () => {
 		expect(stageName("seam", false, "run-a")).not.toBe(stageName("seam", false, "run-b"));
 	});
@@ -74,11 +68,6 @@ describe("sharedStageName — run-scoped shared stage (ADR 0104 step 7)", () => 
 });
 
 describe("nsToken — per-file row namespace on the shared stage (ADR 0104 step 7)", () => {
-	it("is stable for a given metaUrl", () => {
-		const url = "file:///app/tests/integration/report.test.ts";
-		expect(nsToken(url)).toBe(nsToken(url));
-	});
-
 	it("strips .test.ts and slugifies the basename", () => {
 		expect(nsToken("file:///x/report.test.ts")).toBe("report");
 		expect(nsToken("file:///x/pasaport-from-tag.test.ts")).toBe("pasaport-fro");

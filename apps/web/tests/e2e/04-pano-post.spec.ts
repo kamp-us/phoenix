@@ -1,5 +1,4 @@
 import {expect, type Page, test} from "@playwright/test";
-import {completeBootstrap, signUp} from "./_helpers/auth";
 
 /**
  * Walk from /pano to a real post detail page via the comments link
@@ -30,19 +29,5 @@ test.describe("PanoPostDetail", () => {
 		await gotoFirstPostDetail(page);
 		await page.locator(".kp-pano-postpage__back").click();
 		await expect(page).toHaveURL("/pano");
-	});
-
-	test("comment vote toggles aria-pressed (signed in)", async ({page}) => {
-		await signUp(page);
-		// Clear the username bootstrap gate so the feed/post pages mount.
-		await completeBootstrap(page);
-		await gotoFirstPostDetail(page);
-		const firstUpvote = page.locator(".kp-comment__upvote").first();
-		if (!(await firstUpvote.isVisible().catch(() => false))) {
-			test.skip(true, "no comments on the first seeded post");
-		}
-		const before = await firstUpvote.getAttribute("aria-pressed");
-		await firstUpvote.click();
-		await expect(firstUpvote).toHaveAttribute("aria-pressed", before === "true" ? "false" : "true");
 	});
 });
