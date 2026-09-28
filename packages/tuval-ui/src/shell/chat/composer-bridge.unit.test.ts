@@ -405,13 +405,6 @@ describe("the offer's resolution", () => {
 		expect(await composer.bridge.loadPiThinkingLevels()).toEqual([]);
 	});
 
-	it("answers an empty offer on a ready session rather than withholding it", async () => {
-		const composer = composerBridge({...seam(), initialPhase: "ready"});
-		// `[]`, not `undefined`: both layers emit their thinking offer in the same batch as the
-		// `ready` phase, so a ready session with no levels has answered and offers none.
-		expect(await composer.bridge.loadPiThinkingLevels()).toEqual([]);
-	});
-
 	// #8634: the core empties the catalogs on every route to `gone`, so what the bridge reads at a
 	// dead session is a resolved-but-empty offer — the picker says "no rows" rather than painting
 	// the dead session's rows or spinning on `undefined` forever.

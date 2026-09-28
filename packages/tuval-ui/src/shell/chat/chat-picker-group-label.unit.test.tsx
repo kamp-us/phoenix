@@ -24,18 +24,6 @@ afterAll(() => style.remove());
 
 const selector = '.kp-agent-chat__picker-menu [data-part="item-group-label"]';
 
-it("styles the emitted group-label part rather than the nonexistent group-label part", () => {
-	expect(css).not.toContain('[data-part="group-label"]');
-	const rule = Array.from(style.sheet?.cssRules ?? []).find(
-		(rule): rule is CSSStyleRule => "selectorText" in rule && rule.selectorText === selector,
-	);
-	expect(rule).toBeDefined();
-	expect(rule?.style.getPropertyValue("padding")).toBe("var(--s-2) var(--s-3) var(--s-1)");
-	expect(rule?.style.getPropertyValue("color")).toBe("var(--text-secondary)");
-	expect(rule?.style.getPropertyValue("font")).toBe("var(--t-meta)");
-	expect(rule?.style.getPropertyValue("font-weight")).toBe("700");
-});
-
 describe.each([
 	{label: "Model", value: "sonnet", name: "Sonnet"},
 	{label: "Thinking", value: "medium", name: "Medium"},

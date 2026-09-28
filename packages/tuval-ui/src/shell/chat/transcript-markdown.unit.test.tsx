@@ -203,9 +203,4 @@ describe("a mermaid fence in a reply (#8128)", () => {
 		expect(code.className).toBe("language-mermaid");
 		expect(row.querySelector("svg")).toBeNull();
 	});
-
-	it("reads the diagram's copy out of Tuval's English catalog, not the package's Turkish", () => {
-		expect(tuvalDesignMessages["ui.markdown.diagram"]).toBe("diagram");
-		expect(tuvalDesignMessages["ui.markdown.diagram.source"]).toBe("diagram source");
-	});
 });

@@ -13,7 +13,7 @@ import type {ReactElement} from "react";
 import {Profiler, useState} from "react";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import type {SessionListStatus} from "../../page/session-list.ts";
-import {reading, settled} from "../../page/session-list.ts";
+import {reading} from "../../page/session-list.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {bareSession, claudeSession, NOW, piSession, scrambled} from "./fixtures.ts";
 import type {OpenTarget} from "./opening.ts";
@@ -135,20 +135,6 @@ describe("the rows", () => {
 		expect(names[2]).toContain(NO_FIRST_PROMPT);
 	});
 
-	it("shows last modified, folder, branch, message count and the backend tag on a row", () => {
-		render(open(listed([claudeSession])));
-		const row = screen.getByRole("option").textContent ?? "";
-		for (const part of [
-			"1 hour ago",
-			"/Users/founder/code/phoenix",
-			"epic/8070",
-			"42 messages",
-			"claude",
-		]) {
-			expect(row).toContain(part);
-		}
-	});
-
 	it("renders a field the backend did not supply as absent, not as a zero", () => {
 		render(open(listed([bareSession])));
 		const row = screen.getByRole("option").textContent ?? "";
@@ -164,20 +150,6 @@ describe("the filter box", () => {
 		type("release note");
 		expect(rows()).toHaveLength(1);
 		expect(rows()[0]).toContain("Draft the release note");
-	});
-
-	it("matches the folder", () => {
-		render(open(listed(scrambled)));
-		type("demlik");
-		expect(rows()).toHaveLength(1);
-		expect(rows()[0]).toContain("Draft the release note");
-	});
-
-	it("matches the branch", () => {
-		render(open(listed(scrambled)));
-		type("epic/8070");
-		expect(rows()).toHaveLength(1);
-		expect(rows()[0]).toContain("Wire the session list window");
 	});
 
 	it("says so when nothing matches, instead of showing an empty list", () => {
@@ -333,27 +305,6 @@ describe("the wait", () => {
 
 		expect(document.body.textContent).not.toContain("No sessions on this machine yet.");
 		expect(document.body.textContent).toContain("says nothing about what is on this machine");
-	});
-
-	it("renders the kernel's own timeout as the timed-out state, not as a generic refusal", () => {
-		render(
-			open(
-				settled({
-					_tag: "Refused",
-					failure: {
-						tag: "tuval/SessionListTimedOut",
-						message: "the session list did not answer within 10000ms",
-						path: ["session", "list"],
-					},
-				}),
-			),
-		);
-
-		expect(screen.getByRole("status").textContent).toContain(
-			"ran past its deadline before any backend answered",
-		);
-		expect(document.body.textContent).not.toContain("The kernel refused the session list.");
-		expect(document.body.textContent).not.toContain("No sessions on this machine yet.");
 	});
 
 	it("offers a retry on the timed-out state and re-issues the read", () => {

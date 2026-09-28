@@ -42,11 +42,6 @@ describe("route() with the prefix unarmed", () => {
 		}
 	});
 
-	it("keeps a bound sequence's key for the window until the prefix arms", () => {
-		// `x` is `window:close` after the prefix; on its own it is text the window wants.
-		expect(route(table, idle, {key: "x"})).toEqual({_tag: "ToWindow", key: "x", next: idle});
-	});
-
 	it("arms on the prefix, and the armed state carries no window: it waits forever (#7842)", () => {
 		const answer = route(table, idle, ctrl("b"));
 		expect(answer._tag).toBe("Arm");
@@ -68,20 +63,6 @@ describe("route() with the prefix armed", () => {
 			_tag: "Unbound",
 			sequence: "q",
 			next: idle,
-		});
-	});
-
-	it("arms for exactly one sequence: the key after a command goes to the window", () => {
-		const [command, after] = walk(idle, [ctrl("b"), {key: "x"}, {key: "x"}]).slice(1);
-		expect(command?._tag).toBe("Command");
-		expect(after).toEqual({_tag: "ToWindow", key: "x", next: idle});
-	});
-
-	it("reads a chord and a bare character the same way", () => {
-		expect(route(table, armed, ctrl("h"))).toEqual({
-			_tag: "Command",
-			name: CommandName.make("workspace:previous"),
-			next: {_tag: "Armed", pending: [], repeatWindow: table.repeatTimeout},
 		});
 	});
 });

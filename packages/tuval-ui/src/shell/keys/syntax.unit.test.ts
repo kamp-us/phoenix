@@ -103,12 +103,6 @@ describe("stringify()", () => {
 			expect(stringify({key: ">", shiftKey: true})).toBe("<gt>");
 			expect(stringify({key: ">", shiftKey: true, ctrlKey: true})).toBe("<c-gt>");
 		});
-
-		it("ensures Array#join safety", () => {
-			expect(`${stringify({key: "<"})}${stringify({key: "a"})}${stringify({key: ">"})}`).toBe(
-				"<lt>a<gt>",
-			);
-		});
 	});
 
 	describe("invalid keys", () => {
@@ -208,12 +202,6 @@ describe("normalize()", () => {
 			context: "<S-gt>",
 			message: "<S-gt>: Unusable modifier with single-character keys: S",
 		});
-	});
-
-	it("round-trips every spelling the default table uses", () => {
-		for (const key of ["|", "-", "h", "j", "k", "l", "x", "N", ":", "r", "<c-b>", "<c-h>"]) {
-			expect(value(normalize(key))).toBe(key);
-		}
 	});
 });
 

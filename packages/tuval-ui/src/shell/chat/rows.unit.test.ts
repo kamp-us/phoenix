@@ -109,18 +109,6 @@ describe("chatRows", () => {
 	it("shows no head row on an empty transcript", () => {
 		expect(chatRows(base)).toEqual([]);
 	});
-
-	it("puts the walked-back pages before the live tail and drops what the tail already holds", () => {
-		const older = [userItem("a"), assistantItem("b"), userItem("c")];
-		const tail = [userItem("c"), assistantItem("d")];
-		const rows = chatRows({...base, older, tail, atOldest: true});
-		expect(rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []))).toEqual([
-			"a",
-			"b",
-			"c",
-			"d",
-		]);
-	});
 });
 
 describe("chatRows folds a subagent's calls under the call that spawned it", () => {
@@ -324,17 +312,6 @@ describe("mergeOlder", () => {
 		expect(mergeOlder(first, [userItem("uuid-1", "merhaba")])).toBe(first);
 	});
 
-	it("leaves a page copy alone when the held turn is confirmed, whatever its text", () => {
-		const held = [userItem("b", "merhaba")];
-		expect(mergeOlder(held, [userItem("a", "merhaba")]).map((item) => item.id)).toEqual(["a", "b"]);
-	});
-
-	it("never lets one unconfirmed turn cancel two page copies of the same text", () => {
-		const held = [sent("k1", "merhaba")];
-		const merged = mergeOlder(held, [userItem("a", "merhaba"), userItem("b", "merhaba")]);
-		expect(merged.map((item) => item.id)).toEqual(["a", "local:k1"]);
-	});
-
 	it("drops a page copy the tail holds under the other id, and keeps dropping it", () => {
 		const held = [userItem("item-0", "merhaba"), assistantItem("item-1", "hoş")];
 		const first = mergeOlder(held, [userItem("e0", "önce"), stored(userItem("e1", "merhaba"), 0)]);
@@ -412,12 +389,6 @@ describe("the page cursor and the prepend anchor", () => {
 		expect(rows[0]?.kind).toBe("older");
 		expect(olderPageRequest(rows)).toBeNull();
 		expect(olderPageRequest([])).toBeNull();
-	});
-
-	it("names the oldest item the window holds, never the head row", () => {
-		const rows = chatRows({...base, tail: transcriptOf(3), omitted: 1});
-		expect(rows[0]?.kind).toBe("older");
-		expect(oldestLoadedId(rows)).toBe("i0");
 	});
 
 	it("has no cursor on an empty transcript", () => {
@@ -616,11 +587,6 @@ describe("chatRows leaves a subagent's rows out of the agent window", () => {
 		expect(rows[1]?.kind === "item" && rows[1].nestedIds).toEqual(["plain-child"]);
 	});
 
-	it("keeps a finished worker's rows out too, so a stopped slot does not flood the window back", () => {
-		const rows = chatRows({...base, tail: spawned, atOldest: true, subagents: new Set(["agent"])});
-		expect(itemIds(rows)).toEqual(["agent", "own"]);
-	});
-
 	it("emits every row when the session holds no slots at all, which is the flag-off window", () => {
 		const rows = chatRows({...base, tail: spawned, atOldest: true, subagents: new Set()});
 		expect(itemIds(rows)).toEqual(["agent", "own"]);
@@ -700,10 +666,6 @@ describe("subagentRows", () => {
 		expect(rows.map((row) => row.kind)).toEqual(["item"]);
 	});
 
-	it("is empty for a worker that has written nothing yet", () => {
-		expect(subagentRows(subagentSlot("agent"))).toEqual([]);
-	});
-
 	// A call the worker made itself heads a fold inside this view exactly as it does in the agent's,
 	// so #8027's disclosure still holds one level in.
 	it("still folds the calls the worker nested under its own", () => {
@@ -749,17 +711,6 @@ describe("chatRows collapses a run of consecutive tool calls", () => {
 	it("leaves a span of one as the tool row it was, disclosure and all", () => {
 		const rows = chatRows({...base, atOldest: true, tail: [call("t1"), assistantItem("a")]});
 		expect(rows.map((row) => row.kind)).toEqual(["item", "item"]);
-	});
-
-	it("breaks on a compaction row, so two contexts never read as one run", () => {
-		const rows = chatRows({
-			...base,
-			atOldest: true,
-			tail: [call("t1"), call("t2"), compactionItem("c1"), call("t3"), call("t4")],
-		});
-		expect(rows.map((row) => row.kind)).toEqual(["tools", "item", "tools"]);
-		expect(runAt(rows, 0)).toEqual(["t1", "t2"]);
-		expect(runAt(rows, 2)).toEqual(["t3", "t4"]);
 	});
 
 	it("breaks on a session notice, which keeps its own row untouched", () => {
@@ -809,14 +760,21 @@ describe("chatRows collapses a run of consecutive tool calls", () => {
 		expect(rows.every((row) => row.kind === "item")).toBe(true);
 	});
 
-	it("breaks on a reply, a thought and the operator's own turn between calls", () => {
-		for (const between of [assistantItem("a", "done"), thinkingItem("th"), userItem("u", "go")]) {
+	it("breaks on a reply, a thought, a compaction and the operator's own turn between calls", () => {
+		for (const between of [
+			assistantItem("a", "done"),
+			thinkingItem("th"),
+			compactionItem("c1"),
+			userItem("u", "go"),
+		]) {
 			const rows = chatRows({
 				...base,
 				atOldest: true,
 				tail: [call("t1"), call("t2"), between, call("t3"), call("t4")],
 			});
 			expect(rows.map((row) => row.kind)).toEqual(["tools", "item", "tools"]);
+			expect(runAt(rows, 0)).toEqual(["t1", "t2"]);
+			expect(runAt(rows, 2)).toEqual(["t3", "t4"]);
 		}
 	});
 

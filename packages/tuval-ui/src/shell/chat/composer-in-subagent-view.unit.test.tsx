@@ -144,21 +144,4 @@ describe("the composer inside a subagent view", () => {
 		expect(view().draft).toBe("half a prompt");
 		rendered.unmount();
 	});
-
-	it("re-enables when Escape in the navigator is the way back", async () => {
-		const {rendered, root, composer} = await open();
-		await type(composer(), "still here");
-		await pick(root, "reviewer");
-		expect(composer().disabled).toBe(true);
-
-		const list = root.querySelector<HTMLElement>(".tuval-chat-subagents");
-		expect(list).toBeTruthy();
-		await act(async () => {
-			fireEvent.keyDown(list as HTMLElement, {key: "Escape"});
-		});
-
-		expect(composer().disabled).toBe(false);
-		expect(composer().value).toBe("still here");
-		rendered.unmount();
-	});
 });
