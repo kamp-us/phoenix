@@ -27,7 +27,7 @@ describe("the Tuval design catalog", () => {
 		expect(tuvalDesignMessages["ui.markdown.diagram.source"]).toBe("diagram source");
 	});
 
-	it("names no backend,because one window renders every agent", () => {
+	it("names no backend, because one window renders every agent", () => {
 		const backend = /\b(Pi|Claude|Anthropic)\b/;
 		expect(entries.filter(([, value]) => backend.test(value))).toEqual([]);
 	});
