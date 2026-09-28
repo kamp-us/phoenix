@@ -217,6 +217,18 @@ describe("galleryTitle", () => {
 		);
 	});
 
+	it("names the requested and the proven accent after the scheme, so an amber shot never heads as the default", () => {
+		expect(
+			galleryTitle({
+				...entry,
+				scheme: {requested: "light", proven: "light"},
+				accent: {requested: "amber", proven: "amber"},
+			}),
+		).toBe(
+			"/pano @ desktop, scheme requested light, proven light, accent requested amber, proven amber",
+		);
+	});
+
 	it("names an interacted shot's label after its scheme, so the open menu never heads as the closed one", () => {
 		const interaction = {
 			label: "sil-highlighted",

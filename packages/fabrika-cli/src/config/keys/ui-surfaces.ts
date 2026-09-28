@@ -16,7 +16,7 @@
  * allocated free ports at start, because a fixed port is not a per-worktree resource: two lanes
  * rendering at once would either collide or, worse, capture each other's tree.
  *
- * `uiCapture` is the list-level half — viewport, evidence store, storage state, locale, scheme. `storageState` is the
+ * `uiCapture` is the list-level half — viewport, evidence store, storage state, locale, scheme, accent. `storageState` is the
  * one field naming a file rather than a value: a Playwright storage-state snapshot, so a repo whose
  * surfaces sit behind a login can be rendered as a logged-in user. It is a credential, so it is a
  * path the repo gitignores — never the cookies inline.
@@ -66,6 +66,9 @@ const VIOLATION = {
 	values: `"${UI_CAPTURE}.locale.values" is missing or not a non-empty list of distinct locale tags`,
 	scheme: `"${UI_CAPTURE}.scheme" is not an object`,
 	rootAttribute: `"${UI_CAPTURE}.scheme.rootAttribute" is missing or not a lowercase HTML attribute name`,
+	accent: `"${UI_CAPTURE}.accent" is not an object`,
+	accentAttribute: `"${UI_CAPTURE}.accent.rootAttribute" is missing or not a lowercase HTML attribute name`,
+	accentValues: `"${UI_CAPTURE}.accent.values" is missing or not a non-empty list of distinct accent names`,
 } as const;
 
 /**
@@ -172,6 +175,28 @@ const ColorSchemeDeclaration = Schema.Struct({
 		.annotateKey({messageMissingKey: VIOLATION.rootAttribute}),
 }).annotate({message: VIOLATION.scheme, messageUnexpectedKey: VIOLATION.unknownKey});
 
+/** An accent name as an attribute value: a token, so a value never carries whitespace or quoting. */
+const ACCENT_NAME = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
+
+const isAccentList = (values: ReadonlyArray<string>): boolean =>
+	values.length > 0 &&
+	new Set(values).size === values.length &&
+	values.every((value) => ACCENT_NAME.test(value));
+
+const AccentDeclaration = Schema.Struct({
+	rootAttribute: Schema.String.annotate({message: VIOLATION.accentAttribute})
+		.check(
+			Schema.makeFilter((value) => ATTRIBUTE_NAME.test(value), {
+				message: VIOLATION.accentAttribute,
+			}),
+		)
+		.annotateKey({messageMissingKey: VIOLATION.accentAttribute}),
+	values: Schema.Array(Schema.String)
+		.annotate({message: VIOLATION.accentValues})
+		.check(Schema.makeFilter(isAccentList, {message: VIOLATION.accentValues}))
+		.annotateKey({messageMissingKey: VIOLATION.accentValues}),
+}).annotate({message: VIOLATION.accent, messageUnexpectedKey: VIOLATION.unknownKey});
+
 const Capture = Schema.Struct({
 	viewport: Viewport,
 	evidenceStore: Schema.NullOr(Schema.String)
@@ -192,11 +217,14 @@ const Capture = Schema.Struct({
 	scheme: Schema.NullOr(ColorSchemeDeclaration)
 		.annotate({message: VIOLATION.scheme})
 		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	accent: Schema.NullOr(AccentDeclaration)
+		.annotate({message: VIOLATION.accent})
+		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 }).annotate({message: VIOLATION.capture, messageUnexpectedKey: VIOLATION.unknownKey});
 
 /** One runnable app: where its source lives, how to start it, and what it serves. */
 export type UiSurface = typeof Surface.Type;
-/** The list-level capture settings — viewport, evidence store, storage state, locale, scheme. */
+/** The list-level capture settings — viewport, evidence store, storage state, locale, scheme, accent. */
 export type UiCapture = typeof Capture.Type;
 
 const decodeList = Schema.decodeUnknownResult(SurfaceList, {onExcessProperty: "error"});
@@ -340,6 +368,7 @@ const SHIPPED_CAPTURE: UiCapture = {
 	storageState: null,
 	locale: null,
 	scheme: null,
+	accent: null,
 };
 
 export const uiCaptureKey: KeyGroup<UiCapture> = {
@@ -354,7 +383,7 @@ export const uiCaptureKey: KeyGroup<UiCapture> = {
 	jsonSchema: {
 		type: "object",
 		description:
-			"How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, the locales a render can be seeded in, and where a page publishes its resolved colour scheme.",
+			"How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, the locales a render can be seeded in, where a page publishes its resolved colour scheme, and the root attribute a theme accent is set on.",
 		properties: {
 			viewport: {
 				type: "object",
@@ -413,6 +442,28 @@ export const uiCaptureKey: KeyGroup<UiCapture> = {
 					},
 				},
 				required: ["rootAttribute"],
+				additionalProperties: false,
+			},
+			accent: {
+				type: ["object", "null"],
+				description:
+					"The root attribute the app switches its theme accent on and the closed set of accents it accepts. `review-ui render --accent` sets one of them on `document.documentElement` after navigation and proves it read back before the shot. Null (or absent) refuses `--accent`.",
+				properties: {
+					rootAttribute: {
+						type: "string",
+						description:
+							"The attribute on `document.documentElement` whose value selects the accent.",
+						pattern: "^[a-z][a-z0-9-]*$",
+					},
+					values: {
+						type: "array",
+						description: "The accepted accent names, each a value of that attribute.",
+						items: {type: "string", pattern: "^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$"},
+						minItems: 1,
+						uniqueItems: true,
+					},
+				},
+				required: ["rootAttribute", "values"],
 				additionalProperties: false,
 			},
 		},

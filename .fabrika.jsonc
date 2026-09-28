@@ -201,10 +201,27 @@
 	// proves the page's `lang` came back `en` (#9893). Its theme defaults to `auto`, which follows
 	// `prefers-color-scheme` and publishes the resolved value on `data-theme`
 	// (`apps/web/src/lib/theme.tsx`), so `review-ui render --scheme dark` emulates the preference and
-	// proves that attribute came back `dark` (#8134).
+	// proves that attribute came back `dark` (#8134). `@kampus/design` switches its ten accents on
+	// `data-color-theme` (`packages/design/src/tokens.css`), so `review-ui render --accent amber` sets
+	// that attribute on `<html>` and proves it read back `amber` (#10006).
 	"uiCapture": {
 		"locale": { "storageKey": "kampus.locale", "values": ["tr", "en"] },
-		"scheme": { "rootAttribute": "data-theme" }
+		"scheme": { "rootAttribute": "data-theme" },
+		"accent": {
+			"rootAttribute": "data-color-theme",
+			"values": [
+				"ember",
+				"crimson",
+				"amber",
+				"jade",
+				"teal",
+				"cyan",
+				"indigo",
+				"iris",
+				"plum",
+				"mauve"
+			]
+		}
 	},
 
 	// The repo's own commands that machine-read `.github/workflows/**`. `fabrika build check

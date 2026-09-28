@@ -1,5 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
+import type {AccentDeclaration} from "../capture/accent.ts";
 import {PREVIEW_AUTH_KEY_PATH, signSessionToken} from "../capture/auth.ts";
 import type {SchemeDeclaration} from "../capture/color-scheme.ts";
 import type {LocaleDeclaration} from "../capture/locale-seed.ts";
@@ -105,6 +106,8 @@ const options = {
 	localeDeclaration: null as LocaleDeclaration | null,
 	schemes: [] as readonly string[],
 	schemeDeclaration: null as SchemeDeclaration | null,
+	accent: null as string | null,
+	accentDeclaration: null as AccentDeclaration | null,
 	interactions: [] as readonly string[],
 	app: null,
 	surfaceRows: ROWS,
@@ -791,6 +794,129 @@ describe("runRender", () => {
 		]);
 	});
 
+	// The accent operand's refusals are decided before any read or browser launch, on the same `10`:
+	// each would shoot the default accent under the requested name.
+	const ACCENTS: AccentDeclaration = {
+		rootAttribute: "data-color-theme",
+		values: ["ember", "amber"],
+	};
+
+	it("refuses --accent when the repo declares no uiCapture.accent on 10, before anything is read", async () => {
+		const legCalls: string[] = [];
+		const {outcome} = await run([], {
+			accent: "amber",
+			render: (request) => {
+				legCalls.push(request.surface);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toBe(
+			'review-ui render: --accent "amber" cannot be set (this repo declares no uiCapture.accent, so there is no root attribute to set it on) — an operand nothing sets would shoot the default accent under the requested name.',
+		);
+		expect(legCalls).toEqual([]);
+	});
+
+	it("refuses an --accent outside the declared list on 10, naming the list", async () => {
+		const {outcome} = await run([], {accent: "jade", accentDeclaration: ACCENTS});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toBe(
+			'review-ui render: --accent "jade" is not an accent this repo declares — the declared accents are ember, amber.',
+		);
+	});
+
+	it("sets the accent on every surface, viewport and scheme, never substituting the default", async () => {
+		const seen: string[] = [];
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			viewports: ["desktop", "mobile"],
+			schemes: ["light", "dark"],
+			schemeDeclaration: SCHEMES,
+			accent: "amber",
+			accentDeclaration: ACCENTS,
+			render: (request) => {
+				seen.push(
+					`${request.surface} ${request.viewport.label} ${request.scheme?.scheme} ${request.accent?.rootAttribute}=${request.accent?.value}`,
+				);
+				return Effect.succeed(
+					rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
+				);
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toHaveLength(8);
+		expect(seen.every((line) => line.endsWith(" data-color-theme=amber"))).toBe(true);
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/b" at mobile in scheme dark in accent amber captured: 390x2140, 0 page error(s)',
+		);
+	});
+
+	it("sets nothing without --accent and keeps every line as before, even when the repo declares one", async () => {
+		const seen: unknown[] = [];
+		const {outcome} = await run(happy(), {
+			accentDeclaration: ACCENTS,
+			render: (request) => {
+				seen.push(request.accent);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([null]);
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano" at desktop captured: 1280x2140, 0 page error(s)',
+		);
+		expect(outcome.stdout).not.toContain("accent");
+	});
+
+	it("refuses a shot that did not render in its requested accent on 11, recording nothing", async () => {
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			accent: "amber",
+			accentDeclaration: ACCENTS,
+			render: legOf({
+				"/pano": {
+					_tag: "WrongAccent",
+					wanted: "amber",
+					reason: `the page's data-color-theme read back "ember"`,
+				},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toBe(
+			`review-ui render: surface "/pano" at desktop in accent amber did not render in the amber accent (the page's data-color-theme read back "ember") — the requested accent's render is UNKNOWN, never the default one.`,
+		);
+	});
+
+	it("carries each shot's requested and proven accent into the manifest it writes", async () => {
+		const {outcome, written} = await run(happy(), {
+			accent: "amber",
+			accentDeclaration: ACCENTS,
+			render: (request) =>
+				Effect.succeed({
+					_tag: "Rendered",
+					entry: {
+						surface: request.surface,
+						viewport: request.viewport.label,
+						accent: {requested: "amber", proven: "amber"},
+						path: `${request.outDir}/pano@desktop.png`,
+						width: 1280,
+						height: 2140,
+						sha256: "9c41",
+						pageErrors: {rows: [], more: 0},
+					},
+				} satisfies SurfaceRender),
+		});
+		expect(outcome.code).toBe(0);
+		const manifest = parseManifest(
+			written.get("/tmp/fabrika-review-ui/4321-03135b91/judged/manifest.json") ?? "",
+		);
+		expect(manifest._tag === "Manifest" && manifest.value.captures.map((c) => c.accent)).toEqual([
+			{requested: "amber", proven: "amber"},
+		]);
+	});
+
 	it("refuses a closed PR on 7 — a closed PR is provably not reviewable scope", async () => {
 		const {outcome} = await run([
 			[PULL, pull("closed")],
@@ -1105,7 +1231,7 @@ describe("runRender — the interaction operand", () => {
 	 * Through the real leg, so the file name is the plan's own and not the fake's: a signed-in,
 	 * flag-forced, seeded-locale, dark, mobile shot of an open menu.
 	 */
-	it("composes with :auth, --flag, --locale, --scheme and --viewport — one pinned name and entry", async () => {
+	it("composes with :auth, --flag, --locale, --scheme, --accent and --viewport — one pinned name and entry", async () => {
 		const pngHeader = (width: number): Uint8Array => {
 			const bytes = new Uint8Array(24);
 			bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
@@ -1128,6 +1254,7 @@ describe("runRender — the interaction operand", () => {
 					sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar"},
 					overrideProof: {_tag: "Forced"},
 					localeProof: {_tag: "Seeded"},
+					accentProof: {_tag: "Proven", accent: "amber"},
 					...(shot.scheme === undefined
 						? {}
 						: {schemeProof: {_tag: "Proven", scheme: shot.scheme.scheme}}),
@@ -1149,6 +1276,8 @@ describe("runRender — the interaction operand", () => {
 			localeDeclaration: {storageKey: "app.locale", values: ["tr", "en"]},
 			schemes: ["dark"],
 			schemeDeclaration: {rootAttribute: "data-theme"},
+			accent: "amber",
+			accentDeclaration: {rootAttribute: "data-color-theme", values: ["ember", "amber"]},
 			interactions: [
 				'/pano:auth#sil-highlighted=click:role=button[name="Aç"];hover:role=menuitem[name="Sil"]',
 			],
@@ -1165,6 +1294,7 @@ describe("runRender — the interaction operand", () => {
 			surface: "/pano:auth",
 			viewport: "mobile",
 			scheme: {requested: "dark", proven: "dark"},
+			accent: {requested: "amber", proven: "amber"},
 			interaction: {
 				label: "sil-highlighted",
 				steps: ['click:role=button[name="Aç"]', 'hover:role=menuitem[name="Sil"]'],
@@ -1177,7 +1307,7 @@ describe("runRender — the interaction operand", () => {
 			pageErrors: {rows: [], more: 0},
 		});
 		expect(outcome.stderr).toContain(
-			'review-ui render: surface "/pano:auth" at mobile in locale en in scheme dark with interaction sil-highlighted captured: 390x2140, 0 page error(s)',
+			'review-ui render: surface "/pano:auth" at mobile in locale en in scheme dark in accent amber with interaction sil-highlighted captured: 390x2140, 0 page error(s)',
 		);
 	});
 });
