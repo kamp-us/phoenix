@@ -2,6 +2,8 @@
 
 **Skill:** [`build`](SKILL.md) · **Date:** 2026-08-08
 
+**Amended 2026-09-28** — `build pick` keeps its own order on a token without the `project` scope, with or without a `table` block, instead of refusing at `11`.
+
 **Amended 2026-09-27** — campaigns become themes: the [admission test](#admission-test--scope-admission-and-the-audience-axis) is three axes (type, audience, criteria), and `build pick` offers the betting table's current bets first.
 
 **Amended 2026-08-09** — the campaign-scope admission term: a new [admission test](#admission-test--scope-admission-and-the-audience-axis) section under shared conventions — scope admission composed with the pre-existing `ready-for:` audience axis, two named axes rather than one widened term — two codes (`20`, `21`) in the shared exit matrix, and the consuming clauses in `build pick` and `build claim`.
@@ -575,13 +577,13 @@ The table project is found the way `table setup` finds it, read-only: the projec
 `table.project.number` names under `table.project.owner` (default: the repository's owner), else the
 one open project linked to the repository and titled `<repo name> table`. **No project is not a
 failure**: a repository that never set a table up gets `bets: {"state": "none"}` and exactly the
-order it had before tables existed. A token without the `project` scope splits on whether
-`.fabrika.jsonc` declares a `table` block: undeclared, it is the same `none`, with the fix
-(`gh auth refresh -h github.com -s project`) named on the bets line; declared, it is `11` naming that
-fix, because a repository that asked for a table is owed the refusal rather than a silent order
-without its bets. A project that could not be read, a `table.project` naming one that does not exist,
-or two open projects under the table's title is `11` too — a pool ranked as if nothing were bet on,
-when bets may exist, is an order nobody chose.
+order it had before tables existed. A token without the `project` scope is the same `none`, whether
+or not `.fabrika.jsonc` declares a `table` block, with the fix
+(`gh auth refresh -h github.com -s project`) named on the one bets line: the bet order is a
+preference, and a token nobody refreshed is no real failure. With a `table` block declared, a project
+that could not be read for any other reason, a `table.project` naming one that does not exist, or two
+open projects under the table's title is `11` — a pool ranked as if nothing were bet on, when bets
+may exist, is an order nobody chose. With no `table` block, those failures are `none` too.
 
 **Every bucket read paginates, and a failed bucket read fails the verb.** The predecessor pipeline's
 candidate pool printed nothing for a failed bucket and kept going — a 5xx on the p0 bucket silently
@@ -592,7 +594,7 @@ on top of that, unpaginated. Here either every bucket was read in full or the an
 
 | Code | Trigger |
 |---|---|
-| `11` | any bucket read failed or came back truncated, or the table project could not be read — including a missing `project` scope in a repository that declares a `table` block — the pool is UNKNOWN, never partial and never ranked as if nothing were bet on |
+| `11` | any bucket read failed or came back truncated, or the table project could not be read in a repository that declares a `table` block — for any reason but a missing `project` scope — the pool is UNKNOWN, never partial and never ranked as if nothing were bet on |
 
 A malformed `--limit` is a plain usage error: `1`, per the reserved table. `21`, `30` and `32` are
 **not** reachable here: a refusal on the browse path is an exclusion with a reason, not the verb's

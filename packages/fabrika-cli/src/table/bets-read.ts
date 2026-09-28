@@ -8,11 +8,13 @@
  * behaves exactly as it did before tables existed.
  *
  * A table that could not be read splits on whether the repository adopted one (`./adoption.ts`).
- * Adopted, it is `Unknown` and a missing scope names the fix, the same one `table setup` names. Not
- * adopted, any failed read — a missing scope, a rate limit, an outage, a forbidden token — is
+ * Not adopted, any failed read — a missing scope, a rate limit, an outage, a forbidden token — is
  * `NoTable` with the reason in its note, rather than a new refusal on every verb that ranks work.
+ * Adopted, a missing scope is `NoTable` too, its note naming the fix `table setup` names; every
+ * other failed read is `Unknown`.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ * @ruling https://github.com/kamp-us/phoenix/issues/10135
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -27,7 +29,7 @@ import {
 	readRepository,
 	withProjects,
 } from "../io/projects.ts";
-import {failedRead, type Known, readAdoption} from "./adoption.ts";
+import {excuseText, failedRead, type Known, readAdoption} from "./adoption.ts";
 import {type BetOrder, betOrder} from "./bets.ts";
 import {defaultTitle, FIELD} from "./shape.ts";
 
@@ -130,13 +132,15 @@ export const tableReadOf = <A>(
 	if (found._tag !== "Ok") {
 		const failed = failedRead(
 			adoption,
-			found._tag === "MissingScope" ? found.reason : `the table project: ${found.reason}`,
+			found._tag === "MissingScope"
+				? found
+				: {_tag: "Failed", reason: `the table project: ${found.reason}`},
 		);
 		return failed._tag === "Unknown"
 			? failed
 			: {
 					_tag: "NoTable",
-					note: `no table read — ${failed.reason}; .fabrika.jsonc declares no \`table\` block, so none is required`,
+					note: `no table read — ${failed.reason}; ${excuseText(failed.excuse)}`,
 				};
 	}
 	return found.value._tag === "None"

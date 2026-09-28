@@ -1375,7 +1375,7 @@ const brief = leafCommand(
 			{
 				4: "bad lane record",
 				7: "no lane",
-				11: "read failed, UNKNOWN",
+				11: "UNKNOWN; a missing scope skips",
 				13: "task not in the machine, or --task missing",
 				18: "state routes to no shell",
 				19: "no issue, or the issue is absent",

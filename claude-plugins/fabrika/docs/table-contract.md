@@ -33,12 +33,15 @@ sets only the cadence, marks the table adopted, and adoption decides what a fail
 
 | Reader | Why it reads | A failed read, `table` block declared | A failed read, no `table` block |
 |---|---|---|---|
-| `lane brief` | the size stop (`src/table/size-stop.ts`) | exit `11`, UNKNOWN | briefs, printing `size stop NOT checked` |
-| `build pick` | to offer bets first | exit `11`, UNKNOWN | keeps its own order |
+| `lane brief` | the size stop (`src/table/size-stop.ts`) | exit `11`, UNKNOWN; on a missing `project` scope, briefs, printing `size stop NOT checked` | briefs, printing `size stop NOT checked` |
+| `build pick` | to offer bets first | exit `11`, UNKNOWN; on a missing `project` scope, keeps its own order | keeps its own order |
 | `lane record` | runs `table sync` after it posts | the record stands; the sync failure is reported | the same |
 | `pitch-guard` | a `bet` row approves a pitch | approves nothing through the table | the same |
 
-A missing `project` scope is one more failed read here, not the `20` this group's own verbs exit on.
+A missing `project` scope degrades here instead of refusing, `table` block or not: the reader goes
+on without the table and prints one stderr line naming `gh auth refresh -h github.com -s project`.
+It is not the `20` this group's own verbs exit on. A token nobody refreshed is no real failure, so
+only the other failed reads refuse.
 A repository that declares no `table.project.number` and has no table project is never stopped by
 `lane brief`. A declared `table.project.number` that names no project is a failed read with a
 `table` block declared, so `lane brief` refuses at `11`.

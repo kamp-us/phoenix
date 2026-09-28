@@ -97,8 +97,8 @@ export interface BriefOptions extends LaneRef {
 /**
  * The refusal a lane at its size stop owes instead of a brief, `null` when it may go on. A table
  * that could not be read is UNKNOWN, never a pass: the stop is the one guardrail behind the flags.
- * `Unchecked` is the one pass without a read, in a repository that never adopted a table, and it
- * says so on stderr.
+ * `Unchecked` is the one pass without a read — in a repository that never adopted a table, or on a
+ * token that lacks the `project` scope — and it says so on stderr.
  */
 const sizeStopRefusal = (
 	stop: SizeStop,
@@ -112,7 +112,9 @@ const sizeStopRefusal = (
 			return null;
 		case "Unchecked":
 			notes.push(
-				`${VERB}: size stop NOT checked: ${stop.reason} — .fabrika.jsonc declares no \`table\` block, so nothing says a table exists and the lane goes on. Declare a \`table\` block to make an unreadable table UNKNOWN (11).`,
+				stop.excuse === "Unadopted"
+					? `${VERB}: size stop NOT checked: ${stop.reason} — .fabrika.jsonc declares no \`table\` block, so nothing says a table exists and the lane goes on. Declare a \`table\` block to make an unreadable table UNKNOWN (11).`
+					: `${VERB}: size stop NOT checked: ${stop.reason} — a missing \`project\` scope skips the table, so the lane goes on unchecked.`,
 			);
 			return null;
 		case "Unknown":
