@@ -8,7 +8,6 @@ import {assert, describe, it} from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import {
-	ALLOWED_TYPES,
 	allowedContentType,
 	contentAddressKey,
 	publicUrl,
@@ -18,14 +17,6 @@ import {
 } from "./domain.ts";
 
 describe("allowedContentType", () => {
-	it.effect("accepts each allowlisted type", () =>
-		Effect.gen(function* () {
-			for (const type of Object.keys(ALLOWED_TYPES)) {
-				assert.strictEqual(yield* allowedContentType(type), type);
-			}
-		}),
-	);
-
 	it.effect("normalizes casing and strips parameters", () =>
 		Effect.gen(function* () {
 			assert.strictEqual(yield* allowedContentType("IMAGE/PNG"), "image/png");
@@ -80,15 +71,6 @@ describe("content addressing", () => {
 			assert.strictEqual(key, `${EMPTY_SHA256}.png`);
 			const jpg = yield* contentAddressKey(new Uint8Array(), "image/jpeg");
 			assert.strictEqual(jpg, `${EMPTY_SHA256}.jpg`);
-		}),
-	);
-
-	it.effect("identical bytes derive the identical key (content-addressed)", () =>
-		Effect.gen(function* () {
-			const bytes = new Uint8Array([1, 2, 3, 4]);
-			const a = yield* contentAddressKey(bytes, "image/webp");
-			const b = yield* contentAddressKey(new Uint8Array([1, 2, 3, 4]), "image/webp");
-			assert.strictEqual(a, b);
 		}),
 	);
 

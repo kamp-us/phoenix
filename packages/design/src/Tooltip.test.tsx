@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {Provider, Tooltip} from "./Tooltip";
 
 describe("Tooltip — Manti positioned anatomy", () => {
-	it("opens from keyboard focus and renders content inside the positioner", async () => {
+	it("opens on pointer hover and renders content inside the positioner", async () => {
 		render(
 			<Provider>
 				<Tooltip content="açıklama" openDelay={0}>

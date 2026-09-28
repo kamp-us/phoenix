@@ -9,16 +9,12 @@
  *     `(id, "moderates", key(platform))` tuple) AND `yazar` (the `user.tier`), and
  *     reports `matched`/`promoted`/`inserted`; `listFounderTuples` reads the tuples back;
  *   - a re-run is idempotent — `promoted === 0`, `inserted === 0`, no duplicate tuple;
- *   - a re-run never DOWNGRADES a founder already at moderator/yazar (the row is left
- *     untouched); the guard targets only the ladder tops;
- *   - an id with no `user` row is skipped (no phantom promotion, no orphan tuple);
- *   - an empty cohort reads distinctly: `{cohort: 0, matched: 0, promoted: 0, inserted: 0}`,
- *     writing nothing.
+ *   - an id with no `user` row is skipped (no phantom promotion, no orphan tuple).
  *
  * These are integration, not unit: each is only-wrong-if-the-DB-differs (does the write
  * actually land, does the changed-count come back, does the re-run no-op on the real PK /
- * guard) — the exact class a faked engine could only fake. The pure statement-building
- * stays in the unit tier (`src/seed.unit.test.ts`).
+ * guard) — the exact class a faked engine could only fake. The empty-cohort short-circuit
+ * and the stored constants stay in the unit tier (`src/seed.unit.test.ts`).
  *
  * Locally (no Cloudflare creds) the `beforeAll` deploy stops at `Unauthorized` —
  * expected; this tier proves itself on CI's integration job.
@@ -94,27 +90,5 @@ describe("seedFounders on real D1 — mints the cohort as moderator+yazar", () =
 
 		const tuples = await listFounderTuples(db);
 		expect(tuples.length).toBe(1);
-	});
-
-	it("never downgrades — a founder already moderator+yazar is left untouched", async () => {
-		await seedUser("u-alice", "moderator", "yazar");
-		const db = h.seedDb();
-
-		const res = await seedFounders(db, ["u-alice"]);
-		expect(res.promoted).toBe(0); // nothing to change; never flips moderator/yazar back down
-
-		expect(await readUser("u-alice")).toEqual({role: "moderator", tier: "yazar"});
-	});
-
-	it("an empty cohort reads distinctly and writes nothing", async () => {
-		await seedUser("u-carol", "member", "çaylak");
-		const db = h.seedDb();
-
-		const res = await seedFounders(db, []);
-		expect(res).toEqual({cohort: 0, matched: 0, promoted: 0, inserted: 0});
-
-		expect(await readUser("u-carol")).toEqual({role: "member", tier: "çaylak"});
-		const tuples = await listFounderTuples(db);
-		expect(tuples.length).toBe(0);
 	});
 });

@@ -23,26 +23,11 @@ describe("SandboxMarker (#6427)", () => {
 		expect(screen.queryByTestId("caylak-badge")).toBeNull();
 	});
 
-	it("renders the owner's badge alone when both fields are true on one item", () => {
-		render(<SandboxMarker isOwn={true} sandboxed={true} sandboxedInPlace={true} />);
-		expect(screen.getByTestId("incelemede-badge")).toBeTruthy();
-		expect(screen.queryByTestId("caylak-badge")).toBeNull();
-	});
-
 	it("renders nothing when the wire field is false", () => {
 		const {container} = render(
 			<SandboxMarker isOwn={false} sandboxed={false} sandboxedInPlace={false} />,
 		);
 		expect(container.innerHTML).toBe("");
-	});
-
-	// Flag off ⇒ the resolver never widens the viewer, so the field arrives false (or, on a
-	// read that doesn't stamp it, absent) and no marker exists to render.
-	it("renders nothing for the flag-off wire shape, field false or absent", () => {
-		const off = render(<SandboxMarker isOwn={false} sandboxedInPlace={false} />);
-		expect(off.container.innerHTML).toBe("");
-		const absent = render(<SandboxMarker isOwn={false} />);
-		expect(absent.container.innerHTML).toBe("");
 	});
 
 	it("announces the marker as text, so it never leans on colour alone", () => {

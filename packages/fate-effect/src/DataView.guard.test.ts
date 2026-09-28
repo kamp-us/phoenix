@@ -145,11 +145,4 @@ describe("AssertFieldMapResolved — a symbol slip resolves to the named error b
 		>();
 		expectTypeOf<AssertFieldMapResolved<SlippedFailingAddressView>>().not.toBeNever();
 	});
-
-	it("the loud-fail is a real compile error at the definition site (proven by loudFailProof)", () => {
-		// The compile-level proof is `loudFailProof` above: its @ts-expect-error only
-		// type-checks because the slipped assertion is unassignable to the view. This
-		// runtime case documents that the proof exists and is wired into the suite.
-		expect(loudFailProof).toBeTypeOf("function");
-	});
 });

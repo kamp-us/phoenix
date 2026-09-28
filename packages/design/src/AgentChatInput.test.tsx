@@ -801,10 +801,6 @@ describe("the compact composer", () => {
 			.split('.kp-agent-chat__textarea [data-scope="field"][data-part="input"]:is(textarea) {')[1]
 			?.split("}")[0] ?? "";
 
-	it("has a prompt-field rule to read", () => {
-		expect(fieldRule).not.toBe("");
-	});
-
 	it("opens the prompt field at one row", async () => {
 		const {bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} />);

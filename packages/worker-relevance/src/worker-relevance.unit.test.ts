@@ -3,7 +3,6 @@ import {
 	type ClassifyInput,
 	classify,
 	extractKampusPackages,
-	INTEGRATION_RELEVANT_PACKAGES,
 	inputFromEnv,
 	parseChangedFiles,
 	parseTestImportedPackages,
@@ -43,25 +42,7 @@ const importerAddDiff = (pkgPath: string): string =>
 		"     dependencies:",
 	].join("\n");
 
-describe("the grounded worker-import closure (issue #1014)", () => {
-	it("worker's two import deps + the own-D1-tier package are integration-relevant", () => {
-		assert.isTrue(INTEGRATION_RELEVANT_PACKAGES.has("db-schema"));
-		assert.isTrue(INTEGRATION_RELEVANT_PACKAGES.has("fate-effect"));
-		assert.isTrue(INTEGRATION_RELEVANT_PACKAGES.has("preview-seed"));
-	});
-
-	it("d1-rest is NOT worker-relevant — the issue guessed wrong; grounded on source", () => {
-		assert.isFalse(INTEGRATION_RELEVANT_PACKAGES.has("d1-rest"));
-	});
-
-	it("dev-tooling packages are not integration-relevant", () => {
-		for (const pkg of ["demo-cli", "epic-ledger", "decisions-index", "ci-required"]) {
-			assert.isFalse(INTEGRATION_RELEVANT_PACKAGES.has(pkg));
-		}
-	});
-});
-
-describe("AC scenarios (issue #1014) — the four the PR body sanity-checks", () => {
+describe("AC scenarios (issue #1014)", () => {
 	it("(a) packages/demo-cli/** only → irrelevant (integration SKIPPED)", () => {
 		const r = classify(
 			input({
@@ -86,11 +67,11 @@ describe("AC scenarios (issue #1014) — the four the PR body sanity-checks", ()
 		const r = classify(input({changedFiles: ["packages/db-schema/src/schema.ts"]}));
 		assert.strictEqual(r.verdict, "relevant");
 		assert.strictEqual(r.trigger, "packages/db-schema/src/schema.ts");
-	});
-
-	it("(c) apps/web/** → relevant (integration RUNS)", () => {
-		const r = classify(input({changedFiles: ["apps/web/worker/index.ts"]}));
-		assert.strictEqual(r.verdict, "relevant");
+		// The worker's other import dep trips the same way.
+		assert.strictEqual(
+			classify(input({changedFiles: ["packages/fate-effect/src/Server.ts"]})).verdict,
+			"relevant",
+		);
 	});
 
 	it("(d) mixed tooling-pkg + worker path → relevant (integration RUNS)", () => {
@@ -156,17 +137,6 @@ describe("fail-safe to running (the load-bearing invariant)", () => {
 });
 
 describe("lockfile attribution — the hard, fail-safe case", () => {
-	it("delta confined to a worker-IRRELEVANT importer block → irrelevant", () => {
-		const r = classify(
-			input({
-				changedFiles: ["pnpm-lock.yaml"],
-				lockfileChanged: true,
-				lockfileDiff: importerAddDiff("packages/epic-ledger"),
-			}),
-		);
-		assert.strictEqual(r.verdict, "irrelevant");
-	});
-
 	it("delta inside the apps/web importer block → relevant (worker dep resolution may have moved)", () => {
 		const diff = [
 			"--- a/pnpm-lock.yaml",

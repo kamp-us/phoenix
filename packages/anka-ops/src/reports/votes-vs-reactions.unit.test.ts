@@ -1,4 +1,8 @@
-/** Pins the rendered SQL against the query ADR 0153 names verbatim. Pure — no AE, no keychain. */
+/**
+ * Pins the product definition: its measures, catalog registration, and the window and day bucket
+ * of the query ADR 0153 names verbatim. The `_sample_interval` weighting every report shares is the
+ * renderer's, pinned in `report.unit.test.ts`. Pure — no AE, no keychain.
+ */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {knownReportIds, renderReportSql, resolveReport} from "../report.ts";
@@ -23,12 +27,6 @@ describe("votes-vs-reactions definition", () => {
 
 describe("votes-vs-reactions AE query shape", () => {
 	const sql = renderReportSql(votesVsReactions.query);
-
-	it("weights each feature-key by _sample_interval, never count() (ADR 0153)", () => {
-		assert.include(sql, "sumIf(_sample_interval, index1 = 'vote') AS votes");
-		assert.include(sql, "sumIf(_sample_interval, index1 = 'reaction') AS reactions");
-		assert.notMatch(sql, /count\s*\(/i);
-	});
 
 	it("reads app_events per day over the 30-day window", () => {
 		assert.include(sql, "FROM app_events");

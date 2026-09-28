@@ -4,10 +4,8 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import {DoormanClient, type DoormanRequest, type DoormanResponse, putBytes} from "./client.ts";
-import {contentAddressKey} from "./domain.ts";
 
 const BYTES = new TextEncoder().encode("abc");
 const KEY_ABC_PNG = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.png";
@@ -72,16 +70,13 @@ describe("putBytes — status → outcome mapping", () => {
 
 	it.effect("2xx with no/blank body → re-derives the URL from the content address", () =>
 		Effect.gen(function* () {
-			const expected = yield* contentAddressKey(BYTES, "image/png");
 			const url = yield* putPng({status: 201, body: ""});
-			assert.strictEqual(url, `https://depo.kamp.us/${expected}`);
+			assert.strictEqual(url, URL_ABC_PNG);
 		}),
 	);
 
 	it.effect("401 → Unauthorized", () =>
 		Effect.gen(function* () {
-			const exit = yield* Effect.exit(putPng({status: 401, body: "unauthorized"}));
-			assert.isTrue(Exit.isFailure(exit));
 			const err = yield* putPng({status: 401, body: "unauthorized"}).pipe(Effect.flip);
 			assert.strictEqual(err._tag, "depo/Unauthorized");
 		}),
