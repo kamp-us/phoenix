@@ -1,14 +1,13 @@
 /**
  * Two claims about a mount. First, the picker carries nothing across one: mount it, change the
  * registry, mount it again, and the second mount shows the second registry — there is no cache to
- * invalidate because there is nothing to cache. Second, the attach route really is the Vim buffer
- * model's door: two windows over the process it binds share one state and keep two `view` slots.
+ * invalidate because there is nothing to cache. Second, the attach route binds the process it names
+ * into the window it was chosen from. That one process then renders in two windows with two `view`
+ * slots is proved end to end, in `../proof/end-to-end.integration.test.ts`.
  */
 
 import {assert, describe, expect, it} from "@effect/vitest";
-import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
-import {Effect, Stream} from "effect";
+import {Effect} from "effect";
 import {readEntries} from "./entries.ts";
 import {pickerHarness, programRow, shellProcessId, windowId} from "./fixtures.ts";
 import {pickerFrame} from "./frame.ts";
@@ -75,36 +74,20 @@ describe("a mount reads the world fresh", () => {
 	});
 });
 
-describe("attaching gives one process a second window", () => {
-	it.effect("both windows read one state and each keeps its own view slot", () =>
+describe("attaching binds the named process", () => {
+	it.effect("answers one window.bind carrying the process and its program", () =>
 		Effect.gen(function* () {
-			const answer = yield* Effect.scoped(
+			const bind = yield* Effect.scoped(
 				Effect.gen(function* () {
 					const harness = yield* pickerHarness([programRow("counter", {label: "Counter"})]);
 					const id = yield* harness.seed("p-1", "counter");
-
-					const bind = yield* runPickerIntent(attachProcess(windowId("window-2"), id), {
+					return yield* runPickerIntent(attachProcess(windowId("window-2"), id), {
 						shellProcessId,
 					}).pipe(Effect.provide(harness.layer));
-
-					const process = yield* testProcess<{readonly count: number}>(ProcessId.make("p-1"), {
-						count: 0,
-					});
-					const one = yield* process.window(windowId("window-1"), {scroll: 0});
-					const two = yield* process.window(windowId("window-2"), {scroll: 0});
-
-					yield* process.commit({count: 7});
-					yield* two.setView({scroll: 42});
-
-					const seen = yield* Effect.all(
-						[Stream.runHead(one.readProcess), Stream.runHead(two.readProcess)],
-						{concurrency: 2},
-					);
-					return {bind, seen, views: [one.view(), two.view()]};
 				}),
 			);
 
-			assert.deepStrictEqual(answer.bind, [
+			assert.deepStrictEqual(bind, [
 				{
 					type: "window.bind",
 					windowId: "window-2",
@@ -113,13 +96,6 @@ describe("attaching gives one process a second window", () => {
 					program: "counter",
 				},
 			]);
-			assert.deepStrictEqual(
-				answer.seen.map((head) =>
-					head._tag === "Some" && head.value._tag === "Live" ? head.value.state : null,
-				),
-				[{count: 7}, {count: 7}],
-			);
-			assert.deepStrictEqual(answer.views, [{scroll: 0}, {scroll: 42}]);
 		}),
 	);
 });
