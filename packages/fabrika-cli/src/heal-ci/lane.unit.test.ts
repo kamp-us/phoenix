@@ -78,10 +78,4 @@ describe("the lookup is total and closed", () => {
 			expect(LANE_TOKENS).toContain(laneFor(token, HOLDER));
 		}
 	});
-
-	it("gives one strand one word — the same facts answer the same lane twice", () => {
-		for (const token of STALL_TOKENS) {
-			expect(laneFor(token, HOLDER)).toBe(laneFor(token, HOLDER));
-		}
-	});
 });

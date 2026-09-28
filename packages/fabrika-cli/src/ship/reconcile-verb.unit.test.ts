@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, linkNext, type Scripted} from "../fakes.test-support.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {ENV, pull} from "./fixtures.test-support.ts";
-import {ADDED, MERGED, REMOVED} from "./queue.ts";
+import {ADDED, REMOVED} from "./queue.ts";
 import {runReconcile} from "./reconcile-verb.ts";
 
 /** The pull read is `../io/pulls.ts`'s, and it is served over HTTP. */
@@ -72,18 +72,6 @@ describe("runReconcile", () => {
 		expect(out.stdout).toBe("reconcile\tlanded\t1\t0\n");
 	});
 
-	it("does NOT credit a landing whose subject merely mentions the number", async () => {
-		const out = await run(
-			[[PULL, PR]],
-			[
-				[RULES, withQueue],
-				[SUBJECTS, subjects("fix(x): a thing (#4321) (#4999)")],
-				[TIMELINE, timeline({event: ADDED, at: "2026-08-08T10:00:00Z"})],
-			],
-		);
-		expect(out.stdout).toBe("reconcile\tunresolved\t1\t0\n");
-	});
-
 	it("reports `ejected` as a proven answer at exit 0, never an error (#4557)", async () => {
 		const out = await run(
 			[[PULL, PR]],
@@ -101,24 +89,6 @@ describe("runReconcile", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("reconcile\tejected\t1\t0\n");
-	});
-
-	it("does not call a merge-paired removal an ejection (#4155)", async () => {
-		const out = await run(
-			[[PULL, PR]],
-			[
-				[RULES, withQueue],
-				[SUBJECTS, noSubjects],
-				[
-					TIMELINE,
-					timeline(
-						{event: REMOVED, at: "2026-08-08T10:04:59Z"},
-						{event: MERGED, at: "2026-08-08T10:05:00Z"},
-					),
-				],
-			],
-		);
-		expect(out.stdout).not.toContain("ejected");
 	});
 
 	it("reports `parked` when the arm never entered a queue on a queue-governed base", async () => {

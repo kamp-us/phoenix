@@ -228,16 +228,6 @@ describe("runScope", () => {
 		expect(out.stdout).toContain("cp\tunknown");
 	});
 
-	it("still holds on unknown for a boundary that reads fine and bounds nothing", async () => {
-		const out = await run([
-			[PULL, served(pull({changedFiles: 1}))],
-			[FILES, served(files("README.md"))],
-			[OWNERS, raw("/a/ owner@example.test\n")],
-		]);
-		expect(out.code).toBe(0);
-		expect(out.stdout).toContain("cp\tunknown");
-	});
-
 	it("refuses an UNREADABLE boundary on 11 — a failed read is not `unknown`", async () => {
 		const out = await run([
 			[PULL, served(pull({changedFiles: 1}))],

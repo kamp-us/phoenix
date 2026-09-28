@@ -561,10 +561,12 @@ describe("the prose leak scan predicts the committed-file gate, not the body gua
 	});
 });
 
-// The regression this pins, one leg per surface. `["a.ts", "README.md"]` is the repo's most common diff
+// The regression this pins, the prose leg. `["a.ts", "README.md"]` is the repo's most common diff
 // shape, and it had no invocation that opened the markdown: `code` never reads it, `plan` runs the
 // grammar check, and `prose` refused on 10 because a code file was present. The leak scan and the
-// link resolver never ran over a mixed diff under any surface.
+// link resolver never ran over a mixed diff under any surface. The code and plan legs over the same
+// shape are "names the markdown a --surface code green did not read" and "names the code a
+// --surface plan green did not read" above.
 describe("a mixed code+markdown diff — every surface has a runnable answer", () => {
 	const MIXED = okOut("src/app/App.tsx\nREADME.md\n");
 
@@ -592,30 +594,6 @@ describe("a mixed code+markdown diff — every surface has a runnable answer", (
 		expect(out.code).toBe(0);
 		const verdict = JSON.parse(out.stdout);
 		expect(verdict.ran).toEqual(["markdown link + leak scan"]);
-		expect(verdict.unvalidated).toEqual(["src/app/App.tsx"]);
-	});
-
-	it("runs the CI commands under --surface code, disclosing the markdown it did not read", async () => {
-		const out = await run([...LANE_OK, [DIFF, MIXED], [TYPECHECK, okOut("")], [LINT, okOut("")]], {
-			surface: "code",
-		});
-		expect(out.code).toBe(0);
-		const verdict = JSON.parse(out.stdout);
-		expect(verdict.ran).toEqual(["pnpm typecheck --force", "pnpm lint:worktree"]);
-		expect(verdict.unvalidated).toEqual(["README.md"]);
-	});
-
-	it("runs the grammar check under --surface plan, disclosing the code file", async () => {
-		const out = await run(
-			[...LANE_OK, [DIFF, MIXED]],
-			{surface: "plan"},
-			{
-				"/repo/trees/lane-a/README.md": "## Dependencies\n\n- phase 1: #12\n",
-			},
-		);
-		expect(out.code).toBe(0);
-		const verdict = JSON.parse(out.stdout);
-		expect(verdict.ran).toEqual(["markdown link + leak scan", "## Dependencies grammar"]);
 		expect(verdict.unvalidated).toEqual(["src/app/App.tsx"]);
 	});
 });
