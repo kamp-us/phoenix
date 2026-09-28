@@ -1,5 +1,74 @@
 # Changelog
 
+## [0.8.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.7.1...fabrika-cli-v0.8.0) (2026-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **epic:** build pick answers "bets" in place of "campaigns", exit 20 is retired, and campaignAuthors / capClearAuthors no longer grant.
+* **fabrika-cli:** `fabrika lane view` is removed. Invoking it now exits with the CLI's unknown-subcommand error; read a lane with `fabrika lane status` or `fabrika lane history`, and sweep lanes with `fabrika lane stale`.
+
+### Features
+
+* A red post-merge run on main reaches nobody: 8 failed web deploys sat unseen for 3 days ([#9522](https://github.com/kamp-us/phoenix/issues/9522)) ([5d7fe34](https://github.com/kamp-us/phoenix/commit/5d7fe34d6912d3ccb846391cf40ca7bd2766877d))
+* **epic:** A weekly table decides what fabrika bets on, tracked in GitHub Projects ([#9947](https://github.com/kamp-us/phoenix/issues/9947)) ([ad28c84](https://github.com/kamp-us/phoenix/commit/ad28c847c924a217b63302b0b527e58ea2ffaf10))
+* **epic:** Command help descriptions have no size or shape rule, so they grow into walls ([#9958](https://github.com/kamp-us/phoenix/issues/9958)) ([f09d2ec](https://github.com/kamp-us/phoenix/commit/f09d2ec3fe17372a56117860e0aca019ea19577e))
+* **epic:** Fabrika behavior that lives only in a driver's private memory never reaches adopters ([#9921](https://github.com/kamp-us/phoenix/issues/9921)) ([1ad249a](https://github.com/kamp-us/phoenix/commit/1ad249adb75214915a8dd65218ffb1dcf6201231))
+* **epic:** Tuval still runs its own Effect host on tea 0.12.0 while tea 0.18.0 ships the engine it needs ([#9798](https://github.com/kamp-us/phoenix/issues/9798)) ([7194b7d](https://github.com/kamp-us/phoenix/commit/7194b7dca048216d31d835999a2cb9809a421d3a))
+* **fabrika-cli:** --version names the commit when run from a source checkout ([#10099](https://github.com/kamp-us/phoenix/issues/10099)) ([#10119](https://github.com/kamp-us/phoenix/issues/10119)) ([e16a8c9](https://github.com/kamp-us/phoenix/commit/e16a8c966625593ad1b1eaf72714d7434dd6b678))
+* **fabrika-cli:** warn when the CLI is older than the plugin's minimum ([#9675](https://github.com/kamp-us/phoenix/issues/9675)) ([#9709](https://github.com/kamp-us/phoenix/issues/9709)) ([0780689](https://github.com/kamp-us/phoenix/commit/0780689bd1908def09d0ffe4cc8b7bdb7fe79b26))
+* **fabrika:** build check runs declared configValidators, so a config-only diff can go green ([#9875](https://github.com/kamp-us/phoenix/issues/9875)) ([#9911](https://github.com/kamp-us/phoenix/issues/9911)) ([804d906](https://github.com/kamp-us/phoenix/commit/804d906a6814713ce731d2b0d2bf8704cdabea83))
+* **fabrika:** configValidators claims non-JS source, so a Java-only diff can go green ([#9124](https://github.com/kamp-us/phoenix/issues/9124)) ([#9945](https://github.com/kamp-us/phoenix/issues/9945)) ([83ab5dd](https://github.com/kamp-us/phoenix/commit/83ab5ddb3c8eb6379bbd1a5eaf37175d33e03b9f))
+* **fabrika:** land skill-doctor — byte-exact upstream vendor, fabrika-shaped ([#8048](https://github.com/kamp-us/phoenix/issues/8048)) ([#8063](https://github.com/kamp-us/phoenix/issues/8063)) ([ec50a41](https://github.com/kamp-us/phoenix/commit/ec50a41c1104392f6b15018b46419acec80d6dea))
+* **fabrika:** lane scratch gives the driver a lane-keyed path for helpers ([#9768](https://github.com/kamp-us/phoenix/issues/9768)) ([#9775](https://github.com/kamp-us/phoenix/issues/9775)) ([9753bb9](https://github.com/kamp-us/phoenix/commit/9753bb999b49759ec0589a1802905f2b2c5cc7ea))
+* packages unit tests job runs every package's suite whatever the diff touched ([#10070](https://github.com/kamp-us/phoenix/issues/10070)) ([b94f01b](https://github.com/kamp-us/phoenix/commit/b94f01b451eebb2b12778551b9a5f74647ba7c59))
+* plan-epic cannot adopt an already-filed issue as an epic child ([#9861](https://github.com/kamp-us/phoenix/issues/9861)) ([8a4cfc4](https://github.com/kamp-us/phoenix/commit/8a4cfc488b01320093da58e6f5ffb2d2ebafdc49))
+* Publishable Tuval packages have no publish arm, and adding one reds publish-isolation-guard ([#9757](https://github.com/kamp-us/phoenix/issues/9757)) ([1aa6bdb](https://github.com/kamp-us/phoenix/commit/1aa6bdbc8f6225389afe0d54eb909d1d76f80879))
+* **report:** retrieve duplicate candidates from a cached lexical index ([#9503](https://github.com/kamp-us/phoenix/issues/9503)) ([0cb9588](https://github.com/kamp-us/phoenix/commit/0cb9588f210bc4a6eed429d32d9f2d262406d8b5))
+* review-ui render has no accent axis, so a per-accent surface is never judged ([#10073](https://github.com/kamp-us/phoenix/issues/10073)) ([2d55c4d](https://github.com/kamp-us/phoenix/commit/2d55c4d8651618ab51570f6b5e12d169ceea96ea))
+* review-ui render has no colour-scheme axis, so a dark surface is never judged ([#10064](https://github.com/kamp-us/phoenix/issues/10064)) ([6a03cf5](https://github.com/kamp-us/phoenix/commit/6a03cf52cc90341506aedec46a6343fb0781f87a))
+* **review-ui:** add a --locale axis to review-ui render ([#9893](https://github.com/kamp-us/phoenix/issues/9893)) ([#9901](https://github.com/kamp-us/phoenix/issues/9901)) ([9ae732e](https://github.com/kamp-us/phoenix/commit/9ae732edabea295a02f469650c1d86afaf6ea920))
+* **review-ui:** shoot proven hover, focus and open states with --interact ([#7051](https://github.com/kamp-us/phoenix/issues/7051)) ([#10071](https://github.com/kamp-us/phoenix/issues/10071)) ([8b32513](https://github.com/kamp-us/phoenix/commit/8b32513da888002891bbe7978cf040ad7f321e72))
+* **review:** filter noisy diffs without removing required reviews ([#9476](https://github.com/kamp-us/phoenix/issues/9476)) ([eeb9966](https://github.com/kamp-us/phoenix/commit/eeb9966ecb6fc4450837798c755030a7ca385fe3))
+* Should lane integrate's replay regenerate a merge=binary lockfile instead of giving up? ([#9885](https://github.com/kamp-us/phoenix/issues/9885)) ([e59c756](https://github.com/kamp-us/phoenix/commit/e59c7566d74aae0353079c3747dc59c4d49214d1))
+* table prep cannot open the next Week iteration without wiping every row's Week ([#10094](https://github.com/kamp-us/phoenix/issues/10094)) ([28963e6](https://github.com/kamp-us/phoenix/commit/28963e62e5e5f78ca935272feb082b8a0c889d97))
+* table sync and table prep have no dry run, and prep's rollover erases Recs ([#10131](https://github.com/kamp-us/phoenix/issues/10131)) ([5557dc0](https://github.com/kamp-us/phoenix/commit/5557dc032167945fea8599ca01d79a68c5516cbc))
+* The machine-local config layer ADR 0398 rules has no implementation, so the cap still lives only in a tracked file ([#9362](https://github.com/kamp-us/phoenix/issues/9362)) ([0c0360e](https://github.com/kamp-us/phoenix/commit/0c0360eca1dacefc8edbf0c147446ec7d25fc2e1))
+
+
+### Bug Fixes
+
+* A lane in review has no way back to build when its PR is re-pointed to another issue ([#9923](https://github.com/kamp-us/phoenix/issues/9923)) ([e8d2ccb](https://github.com/kamp-us/phoenix/commit/e8d2ccbb1e840ba98ded2806ce79d182587b8c22))
+* A lane whose ledger was written by another machine leaves its green PR unreachable at exit 63 ([#9580](https://github.com/kamp-us/phoenix/issues/9580)) ([0d57332](https://github.com/kamp-us/phoenix/commit/0d57332fe2c0112fb910533eb03c703df9269a24))
+* A whole-table run spends about a third of the hourly REST budget ([#10129](https://github.com/kamp-us/phoenix/issues/10129)) ([c26c302](https://github.com/kamp-us/phoenix/commit/c26c302b16035988b6289a8b48b9890c348d49fe))
+* ADR 0404 is recorded but no verb reads the required set as the blocking authority ([#9601](https://github.com/kamp-us/phoenix/issues/9601)) ([fe9126d](https://github.com/kamp-us/phoenix/commit/fe9126dbf7ed827484ed58d61827a2ff9fe7faf5))
+* An integrate FAIL recorded before the evidence pair has no runnable recovery ([#9917](https://github.com/kamp-us/phoenix/issues/9917)) ([06a0d4a](https://github.com/kamp-us/phoenix/commit/06a0d4a1d2e8a0b2019b358f8a16f6867fed93bd))
+* build branch cuts its lane branch in the shared primary checkout and switches it off main ([#9765](https://github.com/kamp-us/phoenix/issues/9765)) ([84710c8](https://github.com/kamp-us/phoenix/commit/84710c868ceeaa15bce40f389c3e8cdd42bde11e))
+* build skill's repair-cap ESCALATED names no park cause ([#9732](https://github.com/kamp-us/phoenix/issues/9732)) ([cbeb60d](https://github.com/kamp-us/phoenix/commit/cbeb60dcaf26378f2bc8c053d5c0f13f6bb7a434))
+* **build:** pr body guard skips inline-code spans, so a backticked control-plane path passes ([#6207](https://github.com/kamp-us/phoenix/issues/6207)) ([#9999](https://github.com/kamp-us/phoenix/issues/9999)) ([60d0786](https://github.com/kamp-us/phoenix/commit/60d07861479db223f8ec97628ee0ef33baf5c914))
+* **fabrika-cli:** an empty fabrikaShare.labels turns the share check off ([#10085](https://github.com/kamp-us/phoenix/issues/10085)) ([#10130](https://github.com/kamp-us/phoenix/issues/10130)) ([a9dc877](https://github.com/kamp-us/phoenix/commit/a9dc877430cfffb0e6b79efcfcec85e77a83e271))
+* **fabrika-cli:** remove lane view and pin @demlik/tea 0.18.0, whose vitest peer admits the vitest adopters run ([#9784](https://github.com/kamp-us/phoenix/issues/9784)) ([6238e24](https://github.com/kamp-us/phoenix/commit/6238e24f71df9eece8e1edd4a37b32c347535d7c))
+* **fabrika:** a builder can take the repair round an integrate FAIL sends it ([#9761](https://github.com/kamp-us/phoenix/issues/9761)) ([#9879](https://github.com/kamp-us/phoenix/issues/9879)) ([c7b2320](https://github.com/kamp-us/phoenix/commit/c7b23203e45a8e77c29b2e595300f847e313df60))
+* **fabrika:** build check judges readme-guard only on the members its diff touches ([#9455](https://github.com/kamp-us/phoenix/issues/9455)) ([#9877](https://github.com/kamp-us/phoenix/issues/9877)) ([8c5ed09](https://github.com/kamp-us/phoenix/commit/8c5ed091fd5fb3bdb348df0725aeecb440e98adc))
+* **graduate:** round-trip multiline decisions ([#9849](https://github.com/kamp-us/phoenix/issues/9849)) ([#10022](https://github.com/kamp-us/phoenix/issues/10022)) ([7ebf919](https://github.com/kamp-us/phoenix/commit/7ebf9195eef777dd02fc3f3869df5108d52c27c3))
+* **hook:** lead every plugin-sync refusal with its reason ([#9460](https://github.com/kamp-us/phoenix/issues/9460)) ([#9462](https://github.com/kamp-us/phoenix/issues/9462)) ([be72614](https://github.com/kamp-us/phoenix/commit/be72614342651aa08070fb44277bb08b73dec4ab))
+* **hook:** worktree-create locks only its fetch and add, and installs outside the lock ([#7057](https://github.com/kamp-us/phoenix/issues/7057)) ([#9965](https://github.com/kamp-us/phoenix/issues/9965)) ([0d39a9d](https://github.com/kamp-us/phoenix/commit/0d39a9d5f3bfe757fa3d56c9ae4429e1a0c6f255))
+* lane report refuses an uncaused ESCALATED that review-ui says carries no cause ([#9724](https://github.com/kamp-us/phoenix/issues/9724)) ([56df132](https://github.com/kamp-us/phoenix/commit/56df1324e13748c967e4ad8fd003f5d8e9d06cf5))
+* **lane:** prove a DONE out of build:ui like one out of build ([#9706](https://github.com/kamp-us/phoenix/issues/9706)) ([#9711](https://github.com/kamp-us/phoenix/issues/9711)) ([2ef3ff6](https://github.com/kamp-us/phoenix/commit/2ef3ff6c1acc5e68b6a1c4bfa0aa5b52f10c8e76))
+* plugin-sync refuses to advance main when the uncommitted files do not overlap the incoming commits ([#9466](https://github.com/kamp-us/phoenix/issues/9466)) ([8fcbee9](https://github.com/kamp-us/phoenix/commit/8fcbee95554f52e4c52663ac099cc90661cbca7d))
+* producerFor counts platform-provided dynamic workflows, so ci.noProducer is unreachable on a repo with none of its own ([#10001](https://github.com/kamp-us/phoenix/issues/10001)) ([3e0d8ad](https://github.com/kamp-us/phoenix/commit/3e0d8add4a9e8ad14acff20acd1a6b7dd3c4e222))
+* Requiring park causes prevents recording the normal owner-approval wait ([#9903](https://github.com/kamp-us/phoenix/issues/9903)) ([139a931](https://github.com/kamp-us/phoenix/commit/139a9312b070b92da0501e62ba0d4f43ec5bd497))
+* Retire run-evidence: ship checks already proves what the bundle proves ([#9818](https://github.com/kamp-us/phoenix/issues/9818)) ([7629ecd](https://github.com/kamp-us/phoenix/commit/7629ecd4e4a078129dfc3677617f4854cae67fa2))
+* review-ui post leaves a counted verdict when its posted evidence fails the after-post check ([#9747](https://github.com/kamp-us/phoenix/issues/9747)) ([f1dda43](https://github.com/kamp-us/phoenix/commit/f1dda430008267de0000930bcb5982456f25eaef))
+* **review-ui:** read evidence back through the GitHub renderer, before and after the post ([#9715](https://github.com/kamp-us/phoenix/issues/9715)) ([#9722](https://github.com/kamp-us/phoenix/issues/9722)) ([46b75f3](https://github.com/kamp-us/phoenix/commit/46b75f325f68583fd0936337c1521cb9b631d002))
+* **review-ui:** refuse a repeated --evidence on post ([#9729](https://github.com/kamp-us/phoenix/issues/9729)) ([#9733](https://github.com/kamp-us/phoenix/issues/9733)) ([8fe4932](https://github.com/kamp-us/phoenix/commit/8fe4932767ea47b4ff4b38cba8ae593a560dfaba))
+* **ship:** name the §CP advisory ship gate withholds without --cp ([#6796](https://github.com/kamp-us/phoenix/issues/6796)) ([#10009](https://github.com/kamp-us/phoenix/issues/10009)) ([1fb28f4](https://github.com/kamp-us/phoenix/commit/1fb28f473d4344099da9486ac3600bba30d28acc))
+* table flags takes about six minutes on a 200-row table ([#10096](https://github.com/kamp-us/phoenix/issues/10096)) ([bdaa3ee](https://github.com/kamp-us/phoenix/commit/bdaa3ee52f3b8724664283f7a03e76a718ca9471))
+* table sync tells an adopted board to run setup, which never adds the missing option ([#10125](https://github.com/kamp-us/phoenix/issues/10125)) ([eab8784](https://github.com/kamp-us/phoenix/commit/eab8784eb7b02a2634696e423275a184f6f29887))
+* The review gate grades the body criteria only, so a founder ruling posted as a comment never binds a PR ([#9549](https://github.com/kamp-us/phoenix/issues/9549)) ([587da21](https://github.com/kamp-us/phoenix/commit/587da21ebf9f392cb079950bf7d256ba1831a971))
+* Three mechanical shell stops park a lane with no cause: hijacked tree, denied push, stranded claim ([#9778](https://github.com/kamp-us/phoenix/issues/9778)) ([8cfb489](https://github.com/kamp-us/phoenix/commit/8cfb489df1935f9e0a53b6d7aeb39f438d27f2c1))
+* **ui:** read evidence uploads back through GitHub's renderer ([#9723](https://github.com/kamp-us/phoenix/issues/9723)) ([#9730](https://github.com/kamp-us/phoenix/issues/9730)) ([5ab5f82](https://github.com/kamp-us/phoenix/commit/5ab5f825e3b0ef2a7f7a5f19a61e9ba37ca00c25))
+
 ## [0.7.1](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.7.0...fabrika-cli-v0.7.1) (2026-09-18)
 
 
