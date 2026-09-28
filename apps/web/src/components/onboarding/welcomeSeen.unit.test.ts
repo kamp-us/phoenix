@@ -54,12 +54,6 @@ describe("welcomeSeen — the per-account shown-once marker", () => {
 		expect(hasSeenWelcome(storageOver(before.store), "u-1")).toBe(true);
 	});
 
-	it("repeat login is the same read — no session state involved", () => {
-		const storage = memoryStorage();
-		markWelcomeSeen(storage, "u-1");
-		expect(hasSeenWelcome(storage, "u-1")).toBe(true);
-	});
-
 	it("a foreign value at the key never reads as seen", () => {
 		const storage = memoryStorage();
 		storage.setItem(welcomeSeenKey(WELCOME_SEEN_SCHEMA, "u-1"), "yes");

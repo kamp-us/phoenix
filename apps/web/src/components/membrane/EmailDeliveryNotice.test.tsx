@@ -66,10 +66,12 @@ describe("EmailDeliveryNotice — presentational (#2693)", () => {
 describe("EmailDeliveryNoticeMount — the membrane gate (#2693)", () => {
 	afterEach(() => vi.clearAllMocks());
 
-	it("flag on + failing user: renders the notice", () => {
+	it("flag on + failing user: renders the notice, whose CTA reaches the change-email surface", () => {
 		flagOn = true;
 		renderNotice(<EmailDeliveryNoticeMount me={makeMe(true)} />);
 		expect(screen.getByTestId("email-delivery-notice")).toBeTruthy();
+		fireEvent.click(screen.getByTestId("email-delivery-notice-cta"));
+		expect(screen.getByTestId("profile-page")).toBeTruthy();
 	});
 
 	it("flag off: renders nothing even for a failing user (dark-ship)", () => {

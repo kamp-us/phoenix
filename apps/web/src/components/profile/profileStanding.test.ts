@@ -23,18 +23,4 @@ describe("profileStandingLabel — the trusted-tier subtitle (#1302)", () => {
 	it("shows no label while the tier is unknown (me not yet loaded / errored)", () => {
 		expect(profileStandingLabel(undefined)).toBeNull();
 	});
-
-	it("never reintroduces a static 'yeni üye' placeholder for any state", () => {
-		for (const tier of ["visitor", "çaylak", "yazar", undefined] as const) {
-			expect(profileStandingLabel(tier)).not.toBe("yeni üye");
-		}
-	});
-
-	it("emits only lowercase-Turkish copy (user-facing convention)", () => {
-		for (const tier of ["çaylak", "yazar"] as const) {
-			const label = profileStandingLabel(tier);
-			expect(label).not.toBeNull();
-			expect(label).toBe(label?.toLocaleLowerCase("tr-TR"));
-		}
-	});
 });

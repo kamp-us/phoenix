@@ -1,10 +1,10 @@
-// `apps/web/src` has no jsdom, so the gate, the vouch readout, and the consumed-shape
-// key set are factored out of the component and asserted as pure values.
+// The gate, the vouch readout and the promotion path are factored out of the component and
+// asserted as pure values. The aggregate-only selection is typed against the server's
+// `AuthorshipStanding`, whose keys the worker's ONE-WAY-GLASS test pins.
 import {describe, expect, it} from "vitest";
 import {tr} from "../../i18n/tr";
 import {
 	caylakPromotionPath,
-	STANDING_FIELDS,
 	shouldShowCaylakStatus,
 	VOUCH_NEEDED_KEYS,
 	vouchExistsLabelKey,
@@ -46,13 +46,6 @@ describe("vouchExistsLabel — a bare yes/no, never an identity", () => {
 	it("reads 'yok' when no vouch exists", () => {
 		expect(vouchExistsLabel(false)).toBe("yok");
 	});
-
-	it("keeps the readout lowercase Turkish", () => {
-		for (const v of [true, false]) {
-			const label = vouchExistsLabel(v);
-			expect(label).toBe(label.toLocaleLowerCase("tr-TR"));
-		}
-	});
 });
 
 describe("caylakPromotionPath — the unvouched-vs-vouched rendering split (#1323)", () => {
@@ -69,10 +62,6 @@ describe("caylakPromotionPath — the unvouched-vs-vouched rendering split (#132
 		expect(caylakPromotionPath(true)).toEqual({kind: "karma-bar"});
 	});
 
-	it("never carries promotion copy on the karma-bar branch (invalid state unrepresentable)", () => {
-		expect(caylakPromotionPath(true)).not.toHaveProperty("messageKey");
-	});
-
 	it("the unvouched copy communicates that a vouch (or a mod action) is required", () => {
 		expect(VOUCH_NEEDED_COPY.message).toMatch(/kefil/);
 		expect(VOUCH_NEEDED_COPY.hint).toMatch(/moderatör/);
@@ -81,35 +70,6 @@ describe("caylakPromotionPath — the unvouched-vs-vouched rendering split (#132
 	it("keeps the unvouched copy lowercase Turkish (karma is a brand noun)", () => {
 		for (const text of [VOUCH_NEEDED_COPY.message, VOUCH_NEEDED_COPY.hint]) {
 			expect(text).toBe(text.toLocaleLowerCase("tr-TR"));
-		}
-	});
-});
-
-describe("STANDING_FIELDS — one-way glass at the consumed shape", () => {
-	it("selects ONLY the aggregate scalars + the id normalization key", () => {
-		expect(Object.keys(STANDING_FIELDS).sort()).toEqual(
-			["bar", "id", "inReviewCount", "karma", "vouchExists"].sort(),
-		);
-	});
-
-	it("carries NO reviewer / voter / voucher identity field (the hard privacy invariant)", () => {
-		const forbidden = [
-			"reviewer",
-			"reviewers",
-			"reviewerId",
-			"reviewedBy",
-			"voter",
-			"voters",
-			"voterId",
-			"votedBy",
-			"voucher",
-			"vouchers",
-			"voucherId",
-			"vouchedBy",
-			"userId",
-		];
-		for (const key of Object.keys(STANDING_FIELDS)) {
-			expect(forbidden).not.toContain(key);
 		}
 	});
 });

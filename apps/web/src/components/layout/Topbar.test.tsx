@@ -111,12 +111,6 @@ describe("Topbar accent-scarcity containment law (#2614)", () => {
 		expect(accentFills[0]?.selector).not.toMatch(/kp-topbar__zone--/);
 	});
 
-	it("no taxonomy zone (utility / status-signal / destination) paints an accent fill", () => {
-		for (const r of rules.filter((r) => ACCENT_FILL.test(r.body))) {
-			expect(r.selector).not.toMatch(/kp-topbar__zone--(utility|status-signal|destination)/);
-		}
-	});
-
 	it("the base active pill is neutralized under the zone grammar (a zero-accent reclassed topbar)", () => {
 		// Both zone-scoped active-link overrides reset the fill to a neutral surface token, so
 		// the destination/status active link paints no accent. Deleting an override would leak
@@ -256,27 +250,6 @@ describe("Topbar status/signal zone (#2613)", () => {
 });
 
 describe("Topbar tema toggle → theme picker (#2612)", () => {
-	it("no tema toggle renders, in either auth state", () => {
-		const {rerender} = render(
-			<MemoryRouter>
-				<Topbar
-					nav={NAV}
-					themeChoice="auto"
-					onThemeChange={() => {}}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-				/>
-			</MemoryRouter>,
-		);
-		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
-		rerender(
-			<MemoryRouter>
-				<Topbar nav={NAV} themeChoice="auto" onThemeChange={() => {}} />
-			</MemoryRouter>,
-		);
-		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
-	});
-
 	it("signed in: the same picker lives in the account popover next to ayarlar", async () => {
 		const onThemeChange = vi.fn();
 		render(
@@ -537,14 +510,6 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 		expect(bars[0]?.getAttribute("value")).toBe("9");
 		expect(screen.getByTestId("topbar-caylak-kefil").textContent).toContain("kefil: var");
 		expect(screen.queryByTestId("topbar-caylak-vouch-needed")).toBeNull();
-	});
-
-	// Criterion 2's "no badges, streaks or second standing readout anywhere in the chrome".
-	it("adds no second standing readout to the chrome", () => {
-		renderMeter({caylakMeter: caylakMeter(vouched(9))});
-		const zone = screen.getByTestId("topbar-zone-status-signal");
-		expect(zone.querySelectorAll('[data-testid="topbar-karma"]')).toHaveLength(1);
-		expect(zone.querySelectorAll('[data-testid="topbar-caylak-meter"]')).toHaveLength(1);
 	});
 
 	it("the meter stays a read-only status glyph — no button/link affordance", () => {

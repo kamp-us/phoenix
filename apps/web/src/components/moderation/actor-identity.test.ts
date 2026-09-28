@@ -13,20 +13,11 @@ describe("actorLabel — the shared actor-row display handle", () => {
 		expect(actorLabel("", " ada ", "çaylak")).toBe("@ada");
 	});
 
+	// The #2126 PII fold-in: `actorLabel` takes no email, so a missing name degrades to this fixed
+	// noun and never to the address the old `?? user.email` leaked.
 	it("degrades to the surface's fallback noun when both are blank/absent", () => {
 		expect(actorLabel(null, null, "çaylak")).toBe("çaylak");
 		expect(actorLabel("", "  ", "çaylak")).toBe("çaylak");
 		expect(actorLabel(null, null, "kullanıcı")).toBe("kullanıcı");
-	});
-
-	// The PII-safety contract the #2126 fold-in rests on: routing every author/name
-	// surface through actorLabel means a missing display name falls back to the
-	// @username, or a fixed noun — NEVER the email the old `?? user.email` leaked.
-	// The helper simply has no email input; these lock that no username-less call
-	// yields anything but the fixed noun (the shape the optimistic author sites use).
-	it("returns only the fixed noun when username is absent — never an email leak", () => {
-		expect(actorLabel(null, null, "kullanıcı")).toBe("kullanıcı");
-		expect(actorLabel("  ", null, "kullanıcı")).toBe("kullanıcı");
-		expect(actorLabel("Ada Lovelace", null, "kullanıcı")).toBe("Ada Lovelace");
 	});
 });

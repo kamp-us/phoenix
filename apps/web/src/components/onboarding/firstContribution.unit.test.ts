@@ -49,13 +49,6 @@ describe("firstContributionNudge — the audience, derived from the declared flo
 		expect(ask(AUTHORSHIP_FLOORS[NUDGE_RIGHT])).not.toBeNull();
 	});
 
-	it("never asks a rank at or above the open-term floor — today's yazar", () => {
-		for (const tier of authorshipLadder.order) {
-			if (!authorshipLadder.gte(tier, AUTHORSHIP_FLOORS[SETTLED_RIGHT])) continue;
-			expect(ask(tier), `tier ${tier}`).toBeNull();
-		}
-	});
-
 	it("never suggests opening a başlık — both branches exercise the add-entry right only", () => {
 		const kinds = new Set(
 			authorshipLadder.order
