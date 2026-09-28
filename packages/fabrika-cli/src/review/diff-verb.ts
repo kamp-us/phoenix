@@ -46,8 +46,6 @@ export interface DiffOptions {
 	readonly filterPlacement?: FilterPlacement | null;
 	/** comma-separated extra exclusion patterns, refused on a guard-probe match. */
 	readonly exclude?: string | null;
-	/** Explicit roots for callers with a proven config read; otherwise read only when filtering. */
-	readonly governedRoots?: ReadonlyArray<string>;
 	/**
 	 * Where the exclusion set's own config arms are read, when the placement turns the filter on —
 	 * the checkout the caller stands in; omitted cwd falls to the process's;
@@ -140,16 +138,12 @@ export const runDiff = (
 		let servedDiff = diff;
 		if (options.filterPlacement != null) {
 			const root = options.cwd ?? process.cwd();
-			let roots = options.governedRoots;
-			if (roots === undefined) {
-				const loaded = yield* governedRootsOr(
-					VERB,
-					root,
-					"the filter refusal union is UNKNOWN without the governed roots.",
-				);
-				if (loaded._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, loaded.message);
-				roots = loaded.roots;
-			}
+			const roots = yield* governedRootsOr(
+				VERB,
+				root,
+				"the filter refusal union is UNKNOWN without the governed roots.",
+			);
+			if (roots._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, roots.message);
 
 			const filterExclusions = yield* reviewFilterExclusionsOr(
 				VERB,
@@ -172,7 +166,7 @@ export const runDiff = (
 				filterUnexclude.unexclude,
 				options.exclude ?? null,
 			);
-			const refused = refusalFor(effective.patterns, refusalProbes(roots));
+			const refused = refusalFor(effective.patterns, refusalProbes(roots.roots));
 			if (refused.length > 0) {
 				const detail = refused
 					.map((entry) =>
@@ -188,7 +182,11 @@ export const runDiff = (
 				);
 			}
 			const split = applyPlacement(listed.value, effective.patterns);
-			const governed = governedExcluded(split.excluded, effective.patterns, refusalProbes(roots));
+			const governed = governedExcluded(
+				split.excluded,
+				effective.patterns,
+				refusalProbes(roots.roots),
+			);
 			if (governed.length > 0) {
 				return refuse(
 					GOVERNED_FILTER,

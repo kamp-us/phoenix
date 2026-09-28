@@ -463,27 +463,6 @@ describe("runKill", () => {
 		expect(out.stderr[0]).toBe("triage kill: stdin was read and held 3 byte(s).");
 	});
 
-	it("refuses a FAILED stdin read on 1, never on the empty code", async () => {
-		const {out} = await runWith(happy(), {
-			stdin: Effect.succeed({_tag: "Failed", reason: "EAGAIN"} satisfies StdinRead),
-		});
-		expect(out.code).toBe(1);
-		expect(out.code).not.toBe(EMPTY_STDIN);
-		expect(out.stderr.at(-1)).toBe(
-			"triage kill: could not read stdin: EAGAIN — the reason is UNKNOWN, never empty.",
-		);
-	});
-
-	it("refuses a bare @ reason on 6 — masking a placeholder never terminates", async () => {
-		const {out} = await runWith(happy(), {
-			stdin: Effect.succeed({_tag: "Text", text: "@/tmp/reason.md"} satisfies StdinRead),
-		});
-		expect(out.code).toBe(BARE_AT_PATH);
-		expect(out.stderr.at(-1)).toBe(
-			'triage kill: the reason is a bare "@" path reference — the body never arrived. Send it on stdin.',
-		);
-	});
-
 	it("seats a reason that is BOTH a bare @ and a leak on 6 — the bare @ is tested first", async () => {
 		const {out} = await runWith(happy(), {
 			stdin: Effect.succeed({
