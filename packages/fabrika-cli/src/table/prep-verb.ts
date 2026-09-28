@@ -114,6 +114,7 @@ import {
 	GRAPH_CAP,
 	locateTable,
 	type Refusal,
+	readEach,
 	rowsOf,
 	type SyncBoard,
 	syncBoard,
@@ -225,6 +226,34 @@ const vanished = (issue: number): SyncNode => ({
 	blockedBy: [],
 	blocking: [],
 });
+
+/**
+ * Read what the heads' groups lack into `graph`, a few at a time, before {@link groupFor} walks the
+ * heads in order. An unreadable issue is left out rather than refused on, so `groupFor` re-reads it
+ * and refuses where the in-order walk reaches it; a wave that would pass {@link GRAPH_CAP} is left
+ * to `groupFor` to refuse.
+ */
+const prefetchGroups = <R>(
+	board: PrepBoard<R>,
+	repo: string,
+	graph: Map<number, SyncNode>,
+	heads: ReadonlyArray<number>,
+): Effect.Effect<void, never, R> =>
+	Effect.gen(function* () {
+		const unread = new Set<number>();
+		for (;;) {
+			const lacking = heads.flatMap((head) => {
+				const membership = groupOf(head, graph);
+				return membership._tag === "Derived" ? [] : membership.missing;
+			});
+			const wanted = [...new Set(lacking)].filter((n) => !graph.has(n) && !unread.has(n));
+			if (wanted.length === 0 || graph.size + wanted.length > GRAPH_CAP) return;
+			for (const [issue, read] of yield* readEach(wanted, (n) => board.node(repo, n))) {
+				if (read._tag === "Unknown") unread.add(issue);
+				else graph.set(issue, read._tag === "Present" ? read.value : vanished(issue));
+			}
+		}
+	});
 
 /** The group `head` stands for, reading whatever the graph still lacks into `graph`. */
 const groupFor = <R>(
@@ -527,6 +556,12 @@ export const runPrep = <R>(
 			});
 			triageFirst = sorted.triageFirst;
 			const graph = new Map(heads.graph);
+			yield* prefetchGroups(
+				board,
+				repo,
+				graph,
+				sorted.candidates.map((candidate) => candidate.issue),
+			);
 			for (const candidate of sorted.candidates) {
 				const group = yield* groupFor(board, repo, graph, candidate.issue);
 				if (group._tag === "Refused") return refuse(group.code, group.reason);

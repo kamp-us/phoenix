@@ -9,7 +9,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeShell, unconfigured} from "../fakes.test-support.ts";
 import type {ChildOutcome, ChildRequest} from "../io/exec.ts";
-import {absent, type ListedIssue, present, type TimelineFacts} from "../io/issues.ts";
+import {absent, type ListedIssue, present, type TimelineFacts, unknown} from "../io/issues.ts";
 import type {
 	FieldValue,
 	ItemFieldValue,
@@ -21,6 +21,7 @@ import type {
 } from "../io/projects.ts";
 import {emit, type Instant, type LaneRecord} from "../wire/lane-record.ts";
 import {checkMarker} from "./check.ts";
+import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {type PrepBoard, runPrep} from "./prep-verb.ts";
 import {ORIGINS, OUTCOMES, STAGES} from "./shape.ts";
 import type {SyncNode} from "./sync.ts";
@@ -714,6 +715,26 @@ describe("table prep with no .fabrika.jsonc", () => {
 		expect(out.code).toBe(23);
 		expect(out.stderr.join("\n")).toContain("the date field Table day");
 		expect(posts).toHaveLength(0);
+	});
+
+	it("refuses and writes nothing when a candidate's group member cannot be read", async () => {
+		const {board, posts, items} = world();
+		const reads: number[] = [];
+		const out = await prep({
+			...board,
+			node: (repo, number) => {
+				reads.push(number);
+				return number === 31
+					? Effect.succeed(unknown<SyncNode>("gh timed out"))
+					: board.node(repo, number);
+			},
+		});
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain("cannot read #31: gh timed out");
+		expect(reads.filter((number) => number === 31)).toHaveLength(2);
+		expect(posts).toHaveLength(0);
+		expect([...items.keys()].sort((a, b) => a - b)).toEqual([70, 71, 80, 90]);
 	});
 });
 
