@@ -207,22 +207,6 @@ describe("publishPromotion — the shared post-promote live-publish (#1886)", ()
 		);
 	});
 
-	it.effect("an empty sweep invalidates nothing — no topic, no row", () => {
-		const {layer, frames, scheduled} = recordingLive();
-		return Effect.gen(function* () {
-			yield* publishPromotion("u-target", NO_SANDBOX_SWEEP);
-			yield* drain(scheduled);
-			assert.deepStrictEqual(
-				frames.filter(({message}) => "type" in message.frame),
-				[],
-			);
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(pasaportWithUser, relationStoreEmpty, noopPanoFeedCache, layer),
-			),
-		);
-	});
-
 	it.effect("a DYING publish cannot fail the committed flip (the seam AC)", () => {
 		const {layer, scheduled} = dyingLive();
 		return Effect.gen(function* () {

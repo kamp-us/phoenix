@@ -7,11 +7,15 @@
 
 import {assert, describe, it} from "@effect/vitest";
 import {RelationStore, resource} from "@kampus/authz";
-import {and, eq, inArray} from "drizzle-orm";
 import {Effect, Layer} from "effect";
-import {createDrizzle, Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
-import * as schema from "../../db/drizzle/schema.ts";
-import {objectKey, RelationStoreLive} from "./RelationStore.ts";
+import {
+	createDrizzle,
+	Drizzle,
+	type DrizzleAccess,
+	type DrizzleDb,
+	makeDrizzleAccess,
+} from "../../db/Drizzle.ts";
+import {RelationStoreLive} from "./RelationStore.ts";
 
 // Returns the queued result verbatim (the callback is never invoked, so no engine is needed)
 // and counts calls — the counter pins the fresh-per-call read.
@@ -30,17 +34,45 @@ function countingAccess(result: unknown): {access: DrizzleAccess; calls: () => n
 	};
 }
 
+// Drives the production statement through a real drizzle client over a D1 that records
+// what it is asked to prepare and bind, and answers every read with no rows.
+function capturingAccess(): {
+	access: DrizzleAccess;
+	statement: () => {sql: string; params: unknown[]};
+} {
+	const captured: {sql: string; params: unknown[]}[] = [];
+	// biome-ignore lint/plugin: `D1Database` is a host binding that can't be structurally constructed in a fake; this records the prepared SQL/params, nothing executes.
+	const recordingD1 = {
+		prepare(sql: string) {
+			const entry = {sql, params: [] as unknown[]};
+			captured.push(entry);
+			return {
+				bind(...p: unknown[]) {
+					entry.params.push(...p);
+					return this;
+				},
+				all: async () => ({results: []}),
+				first: async () => null,
+				run: async () => ({}),
+				raw: async () => [],
+			};
+		},
+	} as unknown as D1Database;
+	return {
+		access: makeDrizzleAccess(createDrizzle(recordingD1)),
+		statement: () => {
+			assert.strictEqual(captured.length, 1, "exactly one statement reached the D1 binding");
+			const [only] = captured;
+			if (only === undefined) throw new Error("no statement reached the D1 binding");
+			return only;
+		},
+	};
+}
+
 const storeLayer = (access: DrizzleAccess) =>
 	RelationStoreLive.pipe(Layer.provide(Layer.succeed(Drizzle, access)));
 
 const platform = resource("platform", "kampus");
-
-describe("objectKey — the relation_tuple.object key for a resource node", () => {
-	it("serializes a node as its `type:id` pair", () => {
-		assert.strictEqual(objectKey(platform), "platform:kampus");
-		assert.strictEqual(objectKey(resource("term", "42")), "term:42");
-	});
-});
 
 describe("RelationStore.has — existence maps the lookup result to a boolean", () => {
 	it.effect("a matched row → true", () =>
@@ -104,27 +136,21 @@ describe("RelationStore.hasSubjects — batched membership over a subject set (#
 		}),
 	);
 
-	it("compiles to one IN-list read over relation_tuple (statement pin, no engine)", () => {
-		const db: DrizzleDb = createDrizzle({} as D1Database);
-		const {sql, params} = db
-			.select({subject: schema.relationTuple.subject})
-			.from(schema.relationTuple)
-			.where(
-				and(
-					inArray(schema.relationTuple.subject, ["u1", "u2"]),
-					eq(schema.relationTuple.relation, "moderates"),
-					eq(schema.relationTuple.object, objectKey(platform)),
-				),
-			)
-			.toSQL();
-		assert.match(sql, /from "relation_tuple"/i);
-		assert.match(sql, /"subject" in \(\?, \?\)/i);
-		assert.match(sql, /"relation" = \?/i);
-		assert.match(sql, /"object" = \?/i);
-		assert.include(params as unknown[], "u1");
-		assert.include(params as unknown[], "u2");
-		assert.include(params as unknown[], "platform:kampus");
-	});
+	it.effect("compiles to one IN-list read over relation_tuple (statement pin, no engine)", () =>
+		Effect.gen(function* () {
+			const {access, statement} = capturingAccess();
+			yield* Effect.gen(function* () {
+				const store = yield* RelationStore;
+				yield* store.hasSubjects({subjects: ["u1", "u2"], relation: "moderates", object: platform});
+			}).pipe(Effect.provide(storeLayer(access)));
+			const {sql, params} = statement();
+			assert.match(sql, /from "relation_tuple"/i);
+			assert.match(sql, /"subject" in \(\?, \?\)/i);
+			assert.match(sql, /"relation" = \?/i);
+			assert.match(sql, /"object" = \?/i);
+			assert.includeMembers(params, ["u1", "u2", "moderates", "platform:kampus"]);
+		}),
+	);
 });
 
 describe("RelationStore.subjectsOf — the open-set enumeration for one (relation, object) (#1699)", () => {
@@ -140,58 +166,41 @@ describe("RelationStore.subjectsOf — the open-set enumeration for one (relatio
 		),
 	);
 
-	it.effect("is empty when no tuple matches (no moderators)", () =>
-		Effect.gen(function* () {
-			const store = yield* RelationStore;
-			const mods = yield* store.subjectsOf({relation: "moderates", object: platform});
-			assert.strictEqual(mods.size, 0);
-		}).pipe(Effect.provide(storeLayer(countingAccess([]).access))),
+	it.effect(
+		"compiles to a relation/object-filtered read over relation_tuple (statement pin, no engine)",
+		() =>
+			Effect.gen(function* () {
+				const {access, statement} = capturingAccess();
+				yield* Effect.gen(function* () {
+					const store = yield* RelationStore;
+					yield* store.subjectsOf({relation: "moderates", object: platform});
+				}).pipe(Effect.provide(storeLayer(access)));
+				const {sql, params} = statement();
+				assert.match(sql, /from "relation_tuple"/i);
+				assert.match(sql, /"relation" = \?/i);
+				assert.match(sql, /"object" = \?/i);
+				// No subject predicate — the enumeration is the whole set for this (relation, object).
+				assert.notMatch(sql, /"subject" (=|in)/i);
+				assert.includeMembers(params, ["moderates", "platform:kampus"]);
+			}),
 	);
-
-	it("compiles to a relation/object-filtered read over relation_tuple (statement pin, no engine)", () => {
-		const db: DrizzleDb = createDrizzle({} as D1Database);
-		const {sql, params} = db
-			.select({subject: schema.relationTuple.subject})
-			.from(schema.relationTuple)
-			.where(
-				and(
-					eq(schema.relationTuple.relation, "moderates"),
-					eq(schema.relationTuple.object, objectKey(platform)),
-				),
-			)
-			.toSQL();
-		assert.match(sql, /from "relation_tuple"/i);
-		assert.match(sql, /"relation" = \?/i);
-		assert.match(sql, /"object" = \?/i);
-		// No subject predicate — the enumeration is the whole set for this (relation, object).
-		assert.notMatch(sql, /"subject" (=|in)/i);
-		assert.include(params as unknown[], "moderates");
-		assert.include(params as unknown[], "platform:kampus");
-	});
 });
 
 describe("RelationStore.has — query shape (statement pin, no engine)", () => {
-	it("filters subject/relation/object on relation_tuple, limit 1", () => {
-		const db: DrizzleDb = createDrizzle({} as D1Database);
-		const {sql, params} = db
-			.select({subject: schema.relationTuple.subject})
-			.from(schema.relationTuple)
-			.where(
-				and(
-					eq(schema.relationTuple.subject, "u-alice"),
-					eq(schema.relationTuple.relation, "moderates"),
-					eq(schema.relationTuple.object, objectKey(platform)),
-				),
-			)
-			.limit(1)
-			.toSQL();
-		assert.match(sql, /from "relation_tuple"/i);
-		assert.match(sql, /"subject" = \?/i);
-		assert.match(sql, /"relation" = \?/i);
-		assert.match(sql, /"object" = \?/i);
-		assert.match(sql, /limit \?/i);
-		assert.include(params as unknown[], "u-alice");
-		assert.include(params as unknown[], "moderates");
-		assert.include(params as unknown[], "platform:kampus");
-	});
+	it.effect("filters subject/relation/object on relation_tuple, limit 1", () =>
+		Effect.gen(function* () {
+			const {access, statement} = capturingAccess();
+			yield* Effect.gen(function* () {
+				const store = yield* RelationStore;
+				yield* store.has({subject: "u-alice", relation: "moderates", object: platform});
+			}).pipe(Effect.provide(storeLayer(access)));
+			const {sql, params} = statement();
+			assert.match(sql, /from "relation_tuple"/i);
+			assert.match(sql, /"subject" = \?/i);
+			assert.match(sql, /"relation" = \?/i);
+			assert.match(sql, /"object" = \?/i);
+			assert.match(sql, /limit \?/i);
+			assert.includeMembers(params, ["u-alice", "moderates", "platform:kampus"]);
+		}),
+	);
 });

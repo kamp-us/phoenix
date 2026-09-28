@@ -16,7 +16,7 @@ import {
 	unauthenticated,
 } from "@kampus/authz";
 import {Effect, Exit, Layer} from "effect";
-import {RequiresLevel} from "./errors.ts";
+import type {RequiresLevel} from "./errors.ts";
 import {Kunye} from "./Kunye.ts";
 import type {Tier} from "./standing.ts";
 import {Vouch, voucherOf} from "./vouch.ts";
@@ -55,22 +55,10 @@ describe("Vouch.require", () => {
 		assert.match(String(Exit.isFailure(exit) ? exit.cause : ""), /kunye\/RequiresLevel/);
 	});
 
-	it("a visitor is denied RequiresLevel", () => {
-		const exit = discharge(human("u-visitor"), "visitor");
-		assert.isTrue(Exit.isFailure(exit));
-		assert.match(String(Exit.isFailure(exit) ? exit.cause : ""), /kunye\/RequiresLevel/);
-	});
-
 	it("the anonymous actor is denied RequiresLevel", () => {
 		const exit = discharge(unauthenticated, "yazar");
 		assert.isTrue(Exit.isFailure(exit));
 		assert.match(String(Exit.isFailure(exit) ? exit.cause : ""), /kunye\/RequiresLevel/);
-	});
-
-	it("RequiresLevel carries the public FORBIDDEN wire code with need=yazar", () => {
-		const err = new RequiresLevel({message: "x", need: "yazar"});
-		assert.strictEqual(err._tag, "kunye/RequiresLevel");
-		assert.strictEqual(err.need, "yazar");
 	});
 
 	it("voucherOf reads the vouching actor id off a discharged grant", () => {

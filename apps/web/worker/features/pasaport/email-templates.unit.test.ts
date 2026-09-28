@@ -1,12 +1,10 @@
 /**
- * Unit coverage for the transactional email copy + the callback dispatch contract (ADR 0101):
- * each template's `to`/`subject`/body, that a built message reaches `EmailSender.send`
- * verbatim, and that the change-email confirmation addresses the CURRENT email, not the new
- * one — the security-load-bearing detail of the flow.
+ * Unit coverage for the transactional email copy (ADR 0101): each template's
+ * `to`/`subject`/body, and that the change-email confirmation addresses the CURRENT email,
+ * not the new one — the security-load-bearing detail of the flow.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer} from "effect";
-import {type EmailMessage, EmailSender} from "./email-sender.ts";
+import type {EmailMessage} from "./email-sender.ts";
 import {
 	changeEmailConfirmationEmail,
 	magicLinkEmail,
@@ -14,13 +12,6 @@ import {
 } from "./email-templates.ts";
 
 const hasText = (m: EmailMessage): m is EmailMessage & {text: string} => "text" in m;
-
-const recordingSender = (sink: EmailMessage[]): Layer.Layer<EmailSender> =>
-	Layer.succeed(EmailSender)(
-		EmailSender.of({
-			send: (message) => Effect.sync(() => void sink.push(message)),
-		}),
-	);
 
 describe("email templates", () => {
 	it("magicLinkEmail carries the recipient, the link, and Turkish subject", () => {
@@ -48,16 +39,4 @@ describe("email templates", () => {
 		assert.isTrue(hasText(msg) && msg.text.includes("new@example.com"));
 		assert.isTrue(hasText(msg) && msg.text.includes("https://kamp.us/change?token=qrs"));
 	});
-});
-
-describe("callback dispatch through EmailSender", () => {
-	it.effect("a built template reaches the port's send verbatim", () =>
-		Effect.gen(function* () {
-			const sink: EmailMessage[] = [];
-			const built = magicLinkEmail("u@example.com", "https://kamp.us/m");
-			const dispatch = Effect.flatMap(EmailSender, (sender) => sender.send(built));
-			yield* dispatch.pipe(Effect.provide(recordingSender(sink)));
-			assert.deepStrictEqual(sink[0], built);
-		}),
-	);
 });

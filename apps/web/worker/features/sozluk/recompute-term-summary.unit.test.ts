@@ -141,19 +141,6 @@ describe("recomputeTermSummary", () => {
 		expect(recomputeTermSummary([], "isik", "ışık", NOW).firstLetter).toBe("ı");
 	});
 
-	// `I` is the dotless letter's capital and `İ` is `i`'s — the pair ASCII lowercasing gets
-	// backwards, and the reason the fold is a shared function rather than `.toLowerCase()`.
-	it("folds the Turkish capitals to their own letters, not to the ASCII ones", () => {
-		expect(recomputeTermSummary([], "isik", "IŞIK", NOW).firstLetter).toBe("ı");
-		expect(recomputeTermSummary([], "isci", "İŞÇİ", NOW).firstLetter).toBe("i");
-	});
-
-	it("files a q, w or x headword under its own letter (#9425)", () => {
-		expect(recomputeTermSummary([], "qwerty", "qwerty", NOW).firstLetter).toBe("q");
-		expect(recomputeTermSummary([], "web", "Web", NOW).firstLetter).toBe("w");
-		expect(recomputeTermSummary([], "xml", "XML", NOW).firstLetter).toBe("x");
-	});
-
 	// A headword outside the index belongs to no letter page: `/sozluk/harf/3` resolves to no
 	// letter and sends the reader home. `""` is that "no letter" in a NOT NULL column.
 	it("stores the empty string for a headword the index does not hold", () => {

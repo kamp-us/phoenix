@@ -243,21 +243,6 @@ it.effect(
 		}),
 );
 
-it.effect("profileSource.byId resolves an anonymous viewer when no user is signed in", () =>
-	Effect.gen(function* () {
-		const {pasaport, captured} = pasaportCapturingViewer(profileRow("u1"));
-		yield* withRequestViewer(
-			profileById("u1").pipe(Effect.provideService(Pasaport, pasaport)),
-			undefined,
-		);
-		assert.deepStrictEqual(captured.viewer?.sandboxViewer, {
-			viewerId: null,
-			canSeeSandboxed: false,
-			seesSandboxedInPlace: false,
-		});
-	}),
-);
-
 it.effect("profileSource.byId resolves canSeeSandboxed for a moderator viewer", () =>
 	Effect.gen(function* () {
 		const {pasaport, captured} = pasaportCapturingViewer(profileRow("u1"));

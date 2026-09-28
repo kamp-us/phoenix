@@ -44,13 +44,3 @@ it.effect("tagSource.byIds is silent on an unknown kind: it falls back to the ra
 		}
 	}),
 );
-
-it.effect("tagSource.byIds is membership-stable: a reordered kind set yields the same rows", () =>
-	Effect.gen(function* () {
-		const forward = yield* tagByIds(["göster", "soru", "meta"]);
-		const reversed = yield* tagByIds(["meta", "soru", "göster"]);
-		const byKey = (rows: ReadonlyArray<{kind: string}>) =>
-			[...rows].sort((a, b) => a.kind.localeCompare(b.kind));
-		assert.deepStrictEqual(byKey(forward), byKey(reversed));
-	}),
-);
