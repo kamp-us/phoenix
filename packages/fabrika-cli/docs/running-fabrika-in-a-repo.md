@@ -30,6 +30,11 @@ Inside a phoenix checkout you can skip the install and run the working tree dire
 node packages/fabrika-cli/src/bin.ts --version
 ```
 
+A source run names the commit it runs, so it is never mistaken for the last release:
+`fabrika v0.7.1+2b61b57 (source)`, with `-dirty` after the commit when tracked files have
+uncommitted changes. The commit is read from the checkout holding the CLI, not from your working
+directory. If git is missing or does not answer, it prints the plain `fabrika v<version>`.
+
 ## Give it a GitHub credential and confirm a GitHub-touching verb works
 
 1. Put a token in the environment, as `GITHUB_TOKEN` or `GH_TOKEN`:
