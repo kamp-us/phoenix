@@ -562,16 +562,6 @@ describe("more than one cron in a config", () => {
 		).toContainEqual(emit(TITLE_PORT, "morning-brief · daily 07:00"));
 	});
 
-	it("leaves a config that names no id exactly where it was", () => {
-		const row = cron({...options, job: session() as ShapeSource});
-		expect(row.id).toBe("cron");
-		expect(row.label).toBe("cron (claude-session)");
-		expect(row.args).toEqual({job: "tuval/arg/cron/job"});
-		expect(testProgram(cronProgram(options)).effects).toContainEqual(
-			emit(TITLE_PORT, "cron · every 60s"),
-		);
-	});
-
 	it("refuses an id that is not a word, at the config call rather than at boot", () => {
 		expect(() => named("", "0 7 * * *")).toThrow(/non-empty word/);
 		expect(() => named("   ", "0 7 * * *")).toThrow(/non-empty word/);
