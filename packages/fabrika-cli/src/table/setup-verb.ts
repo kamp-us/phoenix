@@ -1,8 +1,9 @@
 /**
  * `table setup` — find or create the repository's table project and bring it to the table's shape.
  *
- * The run is three passes over one plan: create the missing fields, re-read, align views and the
- * README against the fields that now exist, re-read, and plan once more. **That last plan must be
+ * The run is three passes over one plan: create the missing fields, re-read, add the options and
+ * blank descriptions a standing field lacks and align views and the README against the fields that
+ * now exist, re-read, and plan once more. **That last plan must be
  * empty**: it is the read-back, and it is also what makes a second run answer `unchanged` — the same
  * function that proves this run landed decides the next run has nothing to do.
  *
@@ -15,6 +16,7 @@
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  * @ruling https://github.com/kamp-us/phoenix/issues/9989
+ * @ruling https://github.com/kamp-us/phoenix/issues/10083
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -39,6 +41,7 @@ import {
 	readProject,
 	readProjectByNumber,
 	readRepository,
+	updateFieldOptions,
 	updateProject,
 	updateView,
 	withProjects,
@@ -55,14 +58,7 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {onCallBoard, onCallShape} from "./on-call.ts";
-import {
-	describeDrift,
-	describeLegacy,
-	describeStep,
-	type Plan,
-	plan,
-	type Step,
-} from "./reconcile.ts";
+import {describeLegacy, describeStep, type Plan, plan, type Step} from "./reconcile.ts";
 import {
 	type BoardTarget,
 	productBoard,
@@ -91,7 +87,6 @@ type Run =
 			readonly origin: Origin;
 			readonly project: ProjectSnapshot;
 			readonly changes: ReadonlyArray<string>;
-			readonly drift: ReadonlyArray<string>;
 			readonly legacy: ReadonlyArray<string>;
 			readonly manualSteps: ReadonlyArray<string>;
 	  }
@@ -243,6 +238,10 @@ const apply = (
 				const done = yield* createField(token, project.id, step.spec);
 				return done._tag === "Ok" ? null : done;
 			}
+			case "UpdateOptions": {
+				const done = yield* updateFieldOptions(token, step.fieldId, step);
+				return done._tag === "Ok" ? null : done;
+			}
 			case "CreateView": {
 				const databaseIdOf = new Map(
 					project.fields.map((field) => [field.name, field.databaseId] as const),
@@ -389,7 +388,6 @@ const converge = (
 			origin,
 			project: final.project,
 			changes: landed,
-			drift: settled.drift.map(describeDrift),
 			legacy: settled.legacy.map(describeLegacy),
 			manualSteps: shape.manualSteps,
 		};
@@ -499,7 +497,6 @@ const summaryOf = (done: Done) => ({
 	answer: verdictOf(done),
 	project: {number: done.project.number, title: done.project.title, url: done.project.url},
 	changes: done.changes,
-	drift: done.drift,
 	legacy: done.legacy,
 	manualSteps: done.manualSteps,
 });
@@ -509,7 +506,6 @@ const notesOf = (done: Done, repo: string, board: string): ReadonlyArray<string>
 	...(done.changes.length > 0
 		? done.changes.map((change) => `${VERB}: ${change}.`)
 		: [`${VERB}: the project already has ${board}'s shape; nothing was written.`]),
-	...done.drift.map((drift) => `${VERB}: drift: ${drift}.`),
 	...done.legacy.map((legacy) => `${VERB}: legacy: ${legacy}.`),
 	...done.manualSteps.map((step, index) => `${VERB}: manual step ${index + 1}: ${step}`),
 ];

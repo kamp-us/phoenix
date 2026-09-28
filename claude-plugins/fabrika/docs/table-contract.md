@@ -70,10 +70,18 @@ with each field. A user's path takes the login; the numeric user id answers 404.
 stands keeps the grouping it has: setup aligns its layout, filter and visible fields and never
 regroups, recreates or deletes it.
 
-It never deletes or renames anything and never rewrites an existing field's options. It reports as
-drift instead an option a field lacks, or one whose description differs from the table's, so a
-changed `appetiteSizes` rewrites the README and names each stale Size option for a person to edit.
-Idempotent: a project already in shape answers `unchanged` with nothing written.
+**Options on a field that already stands.** Setup adds the options the table names and a
+single-select field lacks, and fills each blank description of the table's options with the table's
+text. A description a person wrote stays as written, even where it differs from the table's, so a
+changed `appetiteSizes` rewrites the README and leaves a written Size description alone. Neither is
+reported as something for a person to fix: nothing is left to add by hand. GitHub replaces a field's
+whole option list on update, and an option sent without its id loses every row's value on it, so
+setup sends every option the field holds back with its own id, name, color and description, then
+the new ones.
+
+It never deletes, renames or recolors anything, and keeps an option the table does not name, such as
+a `founder idea` on Origin. Idempotent: a project already in shape answers `unchanged` with nothing
+written.
 
 **The legacy Week field.** A table set up before Table day has a `Week` iteration field. Setup
 leaves it exactly as it is and names it under `legacy`; the table no longer reads or writes it.
@@ -85,7 +93,7 @@ open project titled `<repo name> on-call` (or `boards.onCall.project`), with a R
 field, a Queue view (`is:open`) and a README. With no `boards` block it touches one project and its
 answer carries no `onCall` key.
 
-stdout is `{"answer":"created"|"reconciled"|"unchanged","repo":"…","project":{"number":n,"title":"…","url":"…"},"changes":[…],"drift":[…],"legacy":[…],"manualSteps":[…],"onCall":{"answer":…,"project":{…},"changes":[…],"drift":[…],"legacy":[],"manualSteps":[]}}`,
+stdout is `{"answer":"created"|"reconciled"|"unchanged","repo":"…","project":{"number":n,"title":"…","url":"…"},"changes":[…],"legacy":[…],"manualSteps":[…],"onCall":{"answer":…,"project":{…},"changes":[…],"legacy":[],"manualSteps":[]}}`,
 with `onCall` only under a `boards` block. stderr repeats the two manual steps, which the README's
 by-hand section also lists: on an Agenda or Lanes view that stood before setup, set its grouping by
 hand (Group by Section, Column by Stage); and turn on the "Auto-add to project" workflow with filter

@@ -265,7 +265,7 @@
 	},
 
 	// The on-call board (#9914), adopted from the example built for R27.1. Its Response target
-	// options are the three the board already carries, so setup reports their descriptions as drift
+	// options are the three the board already carries, so setup keeps their descriptions as written
 	// instead of wanting a second set of options. `p0` answers in 4 hours, `p1` within a day, the
 	// rest within 3 days.
 	"boards": {

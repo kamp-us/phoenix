@@ -139,6 +139,9 @@ export interface RepositoryNode {
 	readonly linkedProjects: ReadonlyArray<ProjectRef>;
 }
 
+/** A single-select option GitHub has not minted an id for yet. */
+export type NewOption = Omit<SelectOption, "id">;
+
 /** What a new field is created as. Single-select options carry no id until GitHub mints one. */
 export type FieldSpec =
 	| {readonly _tag: "Text"; readonly name: string}
@@ -146,7 +149,7 @@ export type FieldSpec =
 	| {
 			readonly _tag: "SingleSelect";
 			readonly name: string;
-			readonly options: ReadonlyArray<Omit<SelectOption, "id">>;
+			readonly options: ReadonlyArray<NewOption>;
 	  }
 	| {readonly _tag: "Date"; readonly name: string};
 
@@ -691,6 +694,42 @@ export const createField = (
 		CREATE_FIELD,
 		{input: fieldInput(projectId, spec)},
 		fieldIdOf("createProjectV2Field"),
+	);
+
+const UPDATE_FIELD = `
+mutation TableUpdateField($input: UpdateProjectV2FieldInput!) {
+  updateProjectV2Field(input: $input) { projectV2Field { ... on ProjectV2FieldCommon { id } } }
+}`;
+
+/** A single-select field's whole option list: every option it holds, then the ones to add. */
+export interface OptionList {
+	readonly kept: ReadonlyArray<SelectOption>;
+	readonly added: ReadonlyArray<NewOption>;
+}
+
+/**
+ * Rewrite a single-select field's options. GitHub replaces the whole list, and an option sent
+ * without its id is minted anew, which clears every item's value on the old one — so each kept
+ * option goes back with its own id, name, color and description, ahead of the added ones.
+ */
+export const updateFieldOptions = (
+	token: string,
+	fieldId: string,
+	list: OptionList,
+): Api<ProjectsAnswer<string>> =>
+	exchange(
+		token,
+		UPDATE_FIELD,
+		{
+			input: {
+				fieldId,
+				singleSelectOptions: [
+					...list.kept.map(({id, name, color, description}) => ({id, name, color, description})),
+					...list.added.map(({name, color, description}) => ({name, color, description})),
+				],
+			},
+		},
+		fieldIdOf("updateProjectV2Field"),
 	);
 
 const viewOf =
