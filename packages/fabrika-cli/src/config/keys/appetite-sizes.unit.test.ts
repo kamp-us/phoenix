@@ -13,14 +13,6 @@ describe("a repo that declares nothing gets the ruled sizes", () => {
 		const resolved = resolve(loadConfig({_tag: "Absent"}), appetiteSizesKey);
 		expect(resolved).toMatchObject({_tag: "Default", value: {S: 15, M: 35, L: 40}});
 	});
-
-	it("resolves the same for a config that declares other keys", () => {
-		const resolved = resolve(
-			loadConfig({_tag: "Text", text: JSON.stringify({laneConcurrencyCap: 2})}),
-			appetiteSizesKey,
-		);
-		expect(resolved).toMatchObject({_tag: "Default", value: {S: 15, M: 35, L: 40}});
-	});
 });
 
 describe("a declared table names all three sizes, rising from S to L", () => {

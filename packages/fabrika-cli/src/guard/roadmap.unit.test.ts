@@ -1,7 +1,7 @@
 /**
  * The parse of `ROADMAP.md`'s two tables and the I1–I5 verdict — each invariant's pass and every way
- * it fails, ported from v1's `roadmap-guard`. No IO: the file and the milestone
- * projection are crossed in `./roadmap-verb.ts`.
+ * it fails, ported from v1's `roadmap-guard`. No IO. The clean sweep and the I4 zero-scope floor run
+ * through the real file and milestone projection in `./roadmap-verb.unit.test.ts`.
  */
 import {describe, expect, it} from "vitest";
 import {
@@ -42,54 +42,19 @@ const messages = (v: RoadmapVerdict, code: string): ReadonlyArray<string> =>
 		? []
 		: v.violations.filter((x) => x.code === code).map((x) => x.message);
 
-// A well-formed roadmap: one active arc, queued arcs (one with a lazy pin), one active campaign.
+// A well-formed arc table: one active arc, queued arcs (one with a lazy pin).
 const goodArcs = [
 	arc("Four Pillars", 17, "active"),
 	arc("Geçit", 24, "queued"),
 	arc("Lazy", null, "queued"),
 ];
-const goodCampaigns = [campaign("Mentor Audit", 27, "active")];
 const goodMilestones = [ms(17, "open"), ms(24, "open"), ms(27, "open")];
 
 describe("judge — happy path", () => {
-	it("PASSES when I1–I4 all hold (arcs + campaigns + milestones in sync)", () => {
-		const v = judge(goodArcs, goodCampaigns, goodMilestones);
-		expect(v.pass).toBe(true);
-		if (v.pass) {
-			expect(v.arcCount).toBe(3);
-			expect(v.campaignCount).toBe(1);
-			expect(v.milestoneCount).toBe(3);
-		}
-	});
-
 	it("tolerates a queued arc with NO milestone pin (lazy on activation, I1)", () => {
 		expect(
 			judge([arc("Now", 17, "active"), arc("Later", null, "queued")], [], [ms(17, "open")]).pass,
 		).toBe(true);
-	});
-
-	it("resolves a done arc/campaign pinned to a CLOSED milestone (I1 reads all states)", () => {
-		expect(
-			judge(
-				[arc("Now", 17, "active"), arc("Shipped", 10, "done")],
-				[campaign("Past", 11, "done")],
-				[ms(17, "open"), ms(10, "closed"), ms(11, "closed")],
-			).pass,
-		).toBe(true);
-	});
-});
-
-describe("judge — I4 zero-scope fail-closed", () => {
-	it("FAILS zero-scope on zero arc rows", () => {
-		const v = judge([], goodCampaigns, goodMilestones);
-		expect(v.pass).toBe(false);
-		expect(v.pass === false && v.reason).toBe("zero-scope");
-	});
-
-	it("FAILS zero-scope on zero milestones", () => {
-		const v = judge(goodArcs, goodCampaigns, []);
-		expect(v.pass).toBe(false);
-		expect(v.pass === false && v.reason).toBe("zero-scope");
 	});
 });
 
@@ -284,23 +249,10 @@ describe("judge — collects EVERY violation in one pass", () => {
 });
 
 describe("renderReport", () => {
-	it("names the passing scope", () => {
-		const r = renderReport(judge(goodArcs, goodCampaigns, goodMilestones));
-		expect(r).toContain("in sync");
-		expect(r).toContain("3 arc row(s) + 1 campaign row(s) validated against 3 milestone(s)");
-		expect(r).toContain("1 campaign(s) active (I1–I5 all green).");
-	});
-
 	it("names an all-paused roadmap as no campaign active", () => {
 		expect(
 			renderReport(judge(goodArcs, [campaign("Paused", 27, "paused")], goodMilestones)),
 		).toContain("no campaign active");
-	});
-
-	it("explains the fail-closed zero-scope verdict", () => {
-		const r = renderReport(judge([], goodCampaigns, goodMilestones));
-		expect(r).toContain("fail-closed");
-		expect(r).toContain("(I4)");
 	});
 
 	it("lists each violation with its invariant code", () => {
@@ -364,13 +316,6 @@ describe("parseSectionRows + parseRoadmap", () => {
 		expect(campaigns).toEqual([
 			{kind: "campaign", name: "Mentor Audit", milestone: 27, state: "active"},
 		]);
-	});
-
-	it("the parsed roadmap PASSES judge against a matching milestone projection", () => {
-		const {arcs, campaigns} = parseRoadmap(md);
-		expect(judge(arcs, campaigns, [ms(17, "open"), ms(24, "open"), ms(27, "open")]).pass).toBe(
-			true,
-		);
 	});
 
 	it("returns [] for an absent section", () => {

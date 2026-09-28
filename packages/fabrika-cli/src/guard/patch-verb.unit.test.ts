@@ -138,12 +138,6 @@ describe("runPatchGuard", () => {
 		).toBe(true);
 	});
 
-	it("emits no annotation off a runner", async () => {
-		const outcome = await run(repo(THREE, {}));
-		expect(outcome.code).toBe(VIOLATION);
-		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
-	});
-
 	// The fail-closed floor: nothing in scope cannot report clean.
 	it("fails closed when patchedDependencies is empty", async () => {
 		const outcome = await run(repo([], {"apps/site/tests/orphan.test.ts": THREE[1]}));

@@ -1,12 +1,10 @@
 /**
- * The `homing-guard` decision, in both directions: the four-way home-xor-exempt disposition, the
- * verdict over a scanned set, the two zero-scope forks (backlog fails closed, a single non-triaged
- * issue passes as out-of-scope), the report, and the seat each verdict takes on the guard exit
- * taxonomy. No IO — the board read is crossed in
- * `./homing-verb.ts`.
+ * The `homing-guard` decision: the four-way home-xor-exempt disposition, the verdict over a scanned
+ * set, the report's two defect classes, and the scan a clean verdict counts. No IO. The zero-scope
+ * forks, the exit seats and the report lines a reader acts on are proven through the board read in
+ * `./homing-verb.unit.test.ts`.
  */
 import {describe, expect, it} from "vitest";
-import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 import {
 	disposition,
 	EXEMPT_LABELS,
@@ -17,8 +15,7 @@ import {
 	type TriagedIssue,
 	toGuardVerdict,
 } from "./homing.ts";
-import {type LabelUniverse, PRESENT} from "./label-universe.ts";
-import {verdictCode} from "./verdict.ts";
+import {PRESENT} from "./label-universe.ts";
 
 const issue = (
 	number: number,
@@ -31,17 +28,8 @@ const issue = (
 	labels: ["status:triaged", ...labels],
 });
 
-const BACKLOG: Scope = {_tag: "backlog"};
-
-// Issue scope defaults to a repo that HAS the label — the ordinary case. The absent reading is
-// spelled out where it is the subject.
-const issueScope = (number: number, universe: LabelUniverse = PRESENT): Scope => ({
-	_tag: "issue",
-	number,
-	universe,
-});
-
-const ABSENT: LabelUniverse = {_tag: "absent", missing: ["status:triaged"]};
+// Issue scope in a repo that HAS the label — the ordinary case.
+const issueScope = (number: number): Scope => ({_tag: "issue", number, universe: PRESENT});
 
 describe("EXEMPT_LABELS", () => {
 	it("is EXACTLY the two standing lanes — a third needs a founder ruling", () => {
@@ -167,78 +155,13 @@ describe("judge — violations", () => {
 });
 
 describe("judge — zero scope", () => {
-	it("FAILS CLOSED on an empty BACKLOG scan — a vacuous pass would hide every floater", () => {
-		const v = judge([], BACKLOG);
-		expect(v.pass).toBe(false);
-		if (!v.pass) expect(v.reason).toBe("zero-scope");
-	});
-
 	it("defaults to backlog scope, so a bare empty scan still fails closed", () => {
 		const v = judge([]);
 		expect(v.pass).toBe(false);
 	});
-
-	it("PASSES an empty SINGLE-ISSUE scan — that issue is simply not status:triaged", () => {
-		const v = judge([], issueScope(9));
-		expect(v.pass).toBe(true);
-		if (v.pass) expect(v.scanned).toBe(0);
-	});
-
-	// The two readings of the SAME empty per-issue result, which the verb cannot tell apart from the
-	// issue alone — the vacuous pass this guard closes. The pass above is the first reading.
-	it("FAILS the same empty scan when the label is absent from the REPO — not out of scope", () => {
-		const v = judge([], issueScope(9, ABSENT));
-		expect(v.pass).toBe(false);
-		if (!v.pass && v.reason === "vocabulary-absent") {
-			expect(v.missing).toEqual(["status:triaged"]);
-		}
-	});
 });
 
 describe("renderReport", () => {
-	it("emits what it scanned on a pass", () => {
-		const report = renderReport(judge([issue(1, 17), issue(2, null, ["wayfinder:backlog"])]));
-		expect(report).toContain("scanned 2 triaged issue(s)");
-		expect(report).toContain("1 milestone-homed");
-		expect(report).toContain("1 standing-lane exempt");
-	});
-
-	it("names the out-of-scope issue on an empty single-issue scan", () => {
-		const report = renderReport(judge([], issueScope(9)));
-		expect(report).toContain("issue #9 is not status:triaged");
-	});
-
-	it("distinguishes an absent label universe from an out-of-scope issue, naming what is missing", () => {
-		const report = renderReport(judge([], issueScope(9, ABSENT)));
-		expect(report).toContain("do not exist in this repo at all: status:triaged");
-		expect(report).toContain("Create the missing label(s)");
-		expect(report).not.toContain("out of scope, nothing to check");
-	});
-
-	it("explains the zero-scope refusal rather than just failing", () => {
-		const report = renderReport(judge([], BACKLOG));
-		expect(report).toContain("ZERO status:triaged issues");
-		expect(report).toContain("fail-closed");
-	});
-
-	it("lists each un-homed issue and the three remediation outcomes", () => {
-		const report = renderReport(judge([issue(1, 17), issue(2, null)]));
-		expect(report).toContain("#2 issue 2");
-		expect(report).not.toContain("#1 issue 1");
-		expect(report).toContain("home it in an EXISTING open arc/campaign milestone");
-		expect(report).toContain("wayfinder:backlog or axis:pipeline-hardening");
-		expect(report).toContain("kill it (close not-planned)");
-	});
-
-	it("names a double-marked issue with the two marks it carries, and its own remedy", () => {
-		const report = renderReport(judge([issue(1, 17), issue(2, 24, ["wayfinder:backlog"])]));
-		expect(report).toContain("Carry BOTH a milestone and a standing-lane label");
-		expect(report).toContain("#2 issue 2 — milestone 24 + wayfinder:backlog");
-		expect(report).toContain("banned outright");
-		expect(report).toContain("drop the MILESTONE");
-		expect(report).toContain("drop the STANDING-LANE LABEL");
-	});
-
 	it("separates the two defect classes, each under its own remedy", () => {
 		const report = renderReport(judge([issue(1, null), issue(2, 24, ["wayfinder:backlog"])]));
 		expect(report).toContain("2 of 2 triaged issue(s)");
@@ -255,14 +178,6 @@ describe("renderReport", () => {
 });
 
 describe("toGuardVerdict", () => {
-	it("seats a violation on 12, the empty backlog on 7, and an absent label universe on 11", () => {
-		expect(verdictCode(toGuardVerdict(judge([issue(1, null)])))).toBe(VIOLATION);
-		expect(verdictCode(toGuardVerdict(judge([], BACKLOG)))).toBe(ZERO_SCOPE);
-		expect(verdictCode(toGuardVerdict(judge([], issueScope(9, ABSENT))))).toBe(
-			PRECONDITION_UNKNOWN,
-		);
-	});
-
 	it("counts an out-of-scope single issue as a scan of ONE, never as zero scope", () => {
 		const verdict = toGuardVerdict(judge([], issueScope(9)));
 		expect(verdict._tag).toBe("Clean");

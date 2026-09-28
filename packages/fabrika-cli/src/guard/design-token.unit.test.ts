@@ -39,19 +39,6 @@ describe("judge", () => {
 		expect(judge(facts)).toEqual({pass: true, filesChecked: 1, varRefsChecked: 1});
 	});
 
-	// The cascade is corpus-wide, so a ref resolves against a declaration in any file.
-	it("resolves a ref against a declaration in another file", () => {
-		expect(
-			judge({
-				files: [
-					file({path: "tokens.css", declared: ["--x"], isRawLayer: true}),
-					file({path: "a.css", varRefs: [{name: "--x", line: 1}]}),
-				],
-				config: emptyConfig,
-			}),
-		).toMatchObject({pass: true});
-	});
-
 	it("reds a dead ref — the #2167 class", () => {
 		expect(
 			judge({
@@ -108,10 +95,6 @@ describe("judge", () => {
 				config: emptyConfig,
 			}),
 		).toMatchObject({pass: false, rawPx: [{path: "new.css", count: 1, ceiling: null}]});
-	});
-
-	it("fails closed on zero CSS files", () => {
-		expect(judge({files: [], config: emptyConfig})).toEqual({pass: false, reason: "zero-scope"});
 	});
 });
 

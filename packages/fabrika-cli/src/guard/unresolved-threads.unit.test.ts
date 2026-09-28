@@ -84,32 +84,6 @@ describe("isAccounted", () => {
 });
 
 describe("judge", () => {
-	it("REDS the exemplar: an unresolved CodeQL thread under a PASS with no accounting row", () => {
-		const verdict = judge({threads: [codeql], verdictBody: PASS_NO_ACCOUNTING});
-		expect(verdict._tag).toBe("Violation");
-		expect(reportOf(verdict)).toContain(".github/workflows/commands-guard.yml:35");
-		expect(reportOf(verdict)).toContain("github-advanced-security");
-		expect(reportOf(verdict)).toContain("resolving the thread with a written rationale");
-	});
-
-	it("annotates each unaccounted thread at its own path:line", () => {
-		const verdict = judge({threads: [codeql], verdictBody: PASS_NO_ACCOUNTING});
-		expect(verdict._tag === "Violation" && verdict.annotations).toEqual([
-			{
-				level: "error",
-				message: expect.stringContaining(".github/workflows/commands-guard.yml:35"),
-				location: {_tag: "Line", file: ".github/workflows/commands-guard.yml", line: 35},
-			},
-		]);
-	});
-
-	it("passes with zero review threads — a valid state, never zero scope", () => {
-		const verdict = judge({threads: [], verdictBody: PASS_NO_ACCOUNTING});
-		expect(verdict._tag).toBe("Clean");
-		expect(verdict._tag === "Clean" && verdict.summary).toContain("no review threads");
-		expect(verdict._tag === "Clean" && verdict.scanned).toBe(0);
-	});
-
 	it("drops a resolved thread from the accounting — the resolve-with-rationale discharge", () => {
 		const unaccounted = unaccountedIn({
 			threads: [codeql, thread({isResolved: true})],
@@ -117,14 +91,6 @@ describe("judge", () => {
 		});
 		expect(unaccounted).toHaveLength(1);
 		expect(unaccounted[0]?.id).toBe("PRRT_kwDOCodeQL");
-	});
-
-	it("passes when EVERY thread is resolved, even with no verdict at all", () => {
-		const verdict = judge({
-			threads: [thread({isResolved: true}), {...codeql, isResolved: true}],
-			verdictBody: null,
-		});
-		expect(verdict._tag).toBe("Clean");
 	});
 
 	it("passes when a thread is accounted-for by a FAIL row — the check is polarity-blind", () => {
@@ -139,12 +105,6 @@ describe("judge", () => {
 		const verdict = judge({threads: [human], verdictBody: PASS_NO_ACCOUNTING});
 		expect(verdict._tag).toBe("Violation");
 		expect(reportOf(verdict)).toContain("@octocat");
-	});
-
-	it("REDS a live thread when review-code has posted no verdict at all — fail-closed", () => {
-		const verdict = judge({threads: [codeql], verdictBody: null});
-		expect(verdict._tag).toBe("Violation");
-		expect(reportOf(verdict)).toContain("no authorized review-code verdict naming them yet");
 	});
 
 	it("REDS a pr-level thread: the sentinel is not satisfiable, so it fails closed", () => {

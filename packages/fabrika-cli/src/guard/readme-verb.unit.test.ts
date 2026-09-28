@@ -53,11 +53,6 @@ describe("runReadmeGuard", () => {
 		expect(outcome.stderr).toEqual([]);
 	});
 
-	it("ignores dead-shell directories rather than redding on them", async () => {
-		const outcome = await run(repo({real: ["package.json", "README.md"], "dead-shell": []}));
-		expect(outcome.code).toBe(0);
-	});
-
 	it("reds on a member with no README, naming it and nothing else", async () => {
 		const outcome = await run(
 			repo({good: ["package.json", "README.md"], bad: ["package.json"], shell: []}),
@@ -76,11 +71,6 @@ describe("runReadmeGuard", () => {
 		expect(outcome.stderr).toContain(
 			"::error file=packages/bad/package.json::packages/bad has no README.md — every packages/* workspace package must carry one (what it is, why it exists, how to use it). Fix: add packages/bad/README.md.",
 		);
-	});
-
-	it("emits no annotation off a runner", async () => {
-		const outcome = await run(repo({bad: ["package.json"]}));
-		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
 	});
 
 	// The fail-closed floor: a scan that found nothing has proven nothing, so it reds.

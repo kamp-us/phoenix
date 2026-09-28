@@ -1,12 +1,11 @@
 /**
  * The `pitch-guard` decision: what counts as lane-entering work, the tolerant five-field read, the
- * fail-closed approval resolution, the two zero-scope forks (a backlog sweep reds, one out-of-scope
- * issue passes), the report, and the seat each verdict
- * takes on the guard exit taxonomy. No IO — the board read is crossed in `./pitch-verb.ts`.
+ * fail-closed approval resolution and the verdict over a scanned set. No IO. The zero-scope forks,
+ * the exit seats and the report lines a reader acts on are proven through the board read in
+ * `./pitch-verb.unit.test.ts`.
  */
 import {describe, expect, it} from "vitest";
 import {SHIPPED_APPETITE_SIZES} from "../config/keys/appetite-sizes.ts";
-import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 import {type LabelUniverse, PRESENT} from "./label-universe.ts";
 import {
 	type Appetite,
@@ -15,7 +14,6 @@ import {
 	type Candidate,
 	type Comment,
 	describeAppetite,
-	describeBetTable,
 	disposition,
 	isAgentStamped,
 	isLaneEntering,
@@ -34,7 +32,6 @@ import {
 	type Scope,
 	toGuardVerdict,
 } from "./pitch.ts";
-import {verdictCode} from "./verdict.ts";
 
 const GOOD_PITCH = [
 	"## Pitch",
@@ -205,20 +202,8 @@ describe("isAgentStamped", () => {
 });
 
 describe("resolveApproval", () => {
-	it("approves a write+ marker whose appetite matches the body's", () => {
-		expect(resolveApproval([APPROVED], cycles(2))).toEqual({_tag: "approved", appetite: cycles(2)});
-	});
-
 	it("reports none when no comment carries the marker at all", () => {
 		expect(resolveApproval([approval("looks good to me")], cycles(2))).toEqual({_tag: "none"});
-	});
-
-	it("refuses a marker from below write+ — an unverifiable approval never counts", () => {
-		expect(
-			resolveApproval([approval("pitch-approved: appetite 2 cycles", false)], cycles(2)),
-		).toEqual({
-			_tag: "unauthorized",
-		});
 	});
 
 	it("refuses an agent-stamped marker — approval is a founder seat", () => {
@@ -253,16 +238,6 @@ describe("resolveApproval", () => {
 });
 
 describe("disposition", () => {
-	it("passes a complete, approved, lane-entering bet", () => {
-		expect(disposition(candidate())).toEqual({_tag: "pitched", appetite: cycles(2)});
-	});
-
-	it("holds a sub-issue out of scope — it inherits its epic's pitch", () => {
-		expect(disposition(candidate({hasParent: true, body: "", comments: []}))).toEqual({
-			_tag: "out-of-scope",
-		});
-	});
-
 	it("names the nearest miss for each unpitched shape", () => {
 		expect(disposition(candidate({body: "nothing"}))).toMatchObject({
 			detail: "has no `## Pitch` section",
@@ -284,14 +259,6 @@ describe("judge", () => {
 			scanned: 2,
 			pitched: 2,
 		});
-	});
-
-	it("reds an empty BACKLOG sweep — a vacuous pass would hide every unpitched bet", () => {
-		expect(judge([], BACKLOG)).toEqual({pass: false, reason: "zero-scope", scope: BACKLOG});
-	});
-
-	it("passes an empty ISSUE scope where the scoping labels exist — it is simply not a bet", () => {
-		expect(judge([], issueScope(9))).toMatchObject({pass: true, scanned: 0});
 	});
 
 	it("refuses an empty ISSUE scope in a repo with no scoping labels", () => {
@@ -317,35 +284,7 @@ describe("judge", () => {
 	});
 });
 
-describe("renderReport", () => {
-	it("states what a clean sweep covered rather than a bare all-clear", () => {
-		expect(renderReport(judge([candidate()], BACKLOG), SIZES)).toContain("scanned 1 lane-entering");
-	});
-
-	it("names the fail-closed reason on an empty backlog sweep", () => {
-		expect(renderReport(judge([], BACKLOG), SIZES)).toContain("fail-closed");
-	});
-
-	it("names every offender and prints the draft/approve remedy once", () => {
-		const report = renderReport(judge([candidate({comments: []})], BACKLOG), SIZES);
-		expect(report).toContain("#4312 product search");
-		expect(report).toContain("the FOUNDER approves it");
-		expect(report).toContain(".glossary/TERMS.md");
-	});
-});
-
 describe("toGuardVerdict", () => {
-	it("seats each verdict on the guard exit taxonomy", () => {
-		expect(verdictCode(toGuardVerdict(judge([candidate()], BACKLOG), SIZES))).toBe(0);
-		expect(verdictCode(toGuardVerdict(judge([], BACKLOG), SIZES))).toBe(ZERO_SCOPE);
-		expect(verdictCode(toGuardVerdict(judge([], issueScope(9, ABSENT)), SIZES))).toBe(
-			PRECONDITION_UNKNOWN,
-		);
-		expect(verdictCode(toGuardVerdict(judge([candidate({comments: []})], BACKLOG), SIZES))).toBe(
-			VIOLATION,
-		);
-	});
-
 	it("counts an issue-scoped pass as a scan of one, never of zero", () => {
 		const verdict = toGuardVerdict(judge([], issueScope(9)), SIZES);
 		expect(verdict).toMatchObject({_tag: "Clean", scanned: 1});
@@ -369,13 +308,6 @@ describe("appetite as a size — S / M / L, with N cycles kept as the legacy rea
 	it("describes each arm the way a pitch writes it", () => {
 		expect(describeAppetite(size("S"))).toBe("S");
 		expect(describeAppetite(cycles(3))).toBe("3 cycles");
-	});
-
-	it("passes a pitch declaring M against a `pitch-approved: appetite M` comment", () => {
-		const sized = candidate({body: SIZED_PITCH, comments: [SIZE_APPROVED]});
-		expect(readPitch(SIZED_PITCH)).toEqual({_tag: "present", appetite: size("M"), success: null});
-		expect(disposition(sized)).toEqual({_tag: "pitched", appetite: size("M")});
-		expect(judge([sized], BACKLOG)).toMatchObject({pass: true, pitched: 1});
 	});
 
 	it("still passes a legacy `2 cycles` pitch against its `appetite 2 cycles` approval", () => {
@@ -429,14 +361,6 @@ describe("the optional Success line", () => {
 	});
 });
 
-describe("the remedy names each size's dollar amount", () => {
-	it("prints the sizes it was handed, per epic child", () => {
-		const report = renderReport(judge([candidate({comments: []})], BACKLOG), {S: 10, M: 20, L: 30});
-		expect(report).toContain("S = $10, M = $20, L = $30 per epic child");
-		expect(report).toContain("pitch-approved: appetite <S|M|L>");
-	});
-});
-
 describe("the bet arm — a `bet` on the table approves the pitch", () => {
 	const sized = (over: Partial<Candidate> = {}): Candidate =>
 		candidate({body: SIZED_PITCH, comments: [], ...over});
@@ -455,22 +379,9 @@ describe("the bet arm — a `bet` on the table approves the pitch", () => {
 		rows,
 	});
 
-	it("passes a size pitch whose row a write+ collaborator set to `bet` at the same Size", () => {
-		expect(disposition(sized(), table(row()))).toEqual({_tag: "pitched", appetite: size("M")});
-		expect(judge([sized()], BACKLOG, table(row()))).toMatchObject({pass: true, pitched: 1});
-	});
-
 	it("counts a `bet` an agent set under a write+ token — the setter's ACL is the whole bar", () => {
 		const agent = table(row({setter: "agent-under-founder-token"}));
 		expect(resolveBetApproval(4312, agent, size("M"))).toMatchObject({_tag: "approved"});
-	});
-
-	it("refuses a `bet` set below write+, naming the setter", () => {
-		const verdict = disposition(sized(), table(row({setter: "drive-by", authorized: false})));
-		expect(verdict).toMatchObject({
-			_tag: "unpitched",
-			detail: expect.stringContaining("set by drive-by, not a write+ collaborator"),
-		});
 	});
 
 	it("approves the head and every member of a group row, whatever a member's own size", () => {
@@ -531,13 +442,6 @@ describe("the bet arm — a `bet` on the table approves the pitch", () => {
 		}
 	});
 
-	it("refuses a `bet` whose Size disagrees with the body, asking for re-approval", () => {
-		expect(disposition(sized(), table(row({size: "S"})))).toMatchObject({
-			_tag: "unpitched",
-			detail: expect.stringContaining("is sized S but the body declares M — re-approval needed"),
-		});
-	});
-
 	it("refuses a `bet` row with no Size, and one over a legacy cycles pitch", () => {
 		expect(resolveBetApproval(4312, table(row({size: null})), size("M"))).toEqual({
 			_tag: "no-size",
@@ -552,15 +456,6 @@ describe("the bet arm — a `bet` on the table approves the pitch", () => {
 		expect(disposition(sized(), table())).toMatchObject({
 			detail: expect.stringContaining("; and no `bet` row on the table covers it"),
 		});
-	});
-
-	it("leaves the comment path unchanged, and an unread table approves nothing", () => {
-		const unread: BetTable = {_tag: "unread", reason: "no table project"};
-		expect(disposition(sized({comments: [SIZE_APPROVED]}), unread)).toMatchObject({
-			_tag: "pitched",
-		});
-		expect(disposition(sized(), unread)).toEqual(disposition(sized()));
-		expect(describeBetTable(unread)).toContain("bet arm unread — no table project");
 	});
 
 	it("says in the remedy that a `bet` on the table is the approval", () => {

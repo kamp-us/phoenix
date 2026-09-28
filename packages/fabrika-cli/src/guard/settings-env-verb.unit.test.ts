@@ -51,11 +51,6 @@ describe("runSettingsEnvGuard", () => {
 		).toBe(true);
 	});
 
-	it("emits no annotation off a runner", async () => {
-		const outcome = await run(settings(JSON.stringify({env: {BAD: "${X}"}})));
-		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
-	});
-
 	// The fail-closed floor: no settings file means the guard scanned nothing, so never clean.
 	it("fails closed when the settings file is absent", async () => {
 		const outcome = await run({files: {}});

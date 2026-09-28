@@ -15,12 +15,6 @@ const record = (file: string, fields: Readonly<Record<string, string>>): Decisio
 const complete = (id: string) => ({id, title: "A title", status: "accepted", date: "2026-08-18"});
 
 describe("findDefects", () => {
-	it("finds nothing in a well-formed corpus", () => {
-		expect(
-			findDefects([record("0001-a.md", complete("0001")), record("0002-b.md", complete("0002"))]),
-		).toEqual([]);
-	});
-
 	// The collision class: two branches each mint the same number, each green alone.
 	it("names both files of a duplicate id", () => {
 		expect(

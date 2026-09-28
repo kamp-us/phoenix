@@ -1,6 +1,7 @@
 /**
- * The pure rule behind `guard fanout-guard check`: the three invariants, the fail-closed zero
- * verdict, the report wording, and every source parse. No IO — that is `./fanout-verb.unit.test.ts`.
+ * The pure rule behind `guard fanout-guard check`: the verdict detail for the three invariants, the
+ * report wording, and every source parse. No IO. The pass, the zero-scope floor and each red's seat
+ * run through real sources in `./fanout-verb.unit.test.ts`.
  */
 import {describe, expect, it} from "vitest";
 import {
@@ -36,14 +37,6 @@ const facts = (
 	featureTargets: FeatureTargets = new Map(),
 ): FanoutGuardFacts => ({discovered, manifest, featurePublishes, featureTargets});
 
-describe("judge — fail-closed on zero scope", () => {
-	it("FAILS with zero-scope when no mutations are discovered", () => {
-		const verdict = judge(facts([], [man("post.submit", true, ["posts"])], new Map()));
-		expect(verdict.pass).toBe(false);
-		expect(verdict.pass === false && verdict.reason).toBe("zero-scope");
-	});
-});
-
 describe("judge — drift (every mutation must be classified)", () => {
 	it("FAILS with an unclassified discovered mutation", () => {
 		const verdict = judge(facts([disc("post.submit", "pano")], [], new Map([["pano", true]])));
@@ -68,46 +61,6 @@ describe("judge — drift (every mutation must be classified)", () => {
 });
 
 describe("judge — the fixture pair: a fanned mutation must publish", () => {
-	it("PASSES when a fanned mutation's feature references a publish AND aims at its topic", () => {
-		const verdict = judge(
-			facts(
-				[disc("post.submit", "pano")],
-				[man("post.submit", true, ["posts"])],
-				new Map([["pano", true]]),
-				targets([["pano", ["posts"]]]),
-			),
-		);
-		expect(verdict.pass).toBe(true);
-		expect(verdict.pass && verdict.fanned).toBe(1);
-	});
-
-	it("FAILS when a fanned mutation's feature omits the publish", () => {
-		const verdict = judge(
-			facts(
-				[disc("post.submit", "pano")],
-				[man("post.submit", true, ["posts"])],
-				// pano does NOT reference the publisher — the omission the guard exists to catch
-				new Map([["pano", false]]),
-				targets([["pano", ["posts"]]]),
-			),
-		);
-		expect(
-			verdict.pass === false && verdict.reason === "missing-publish" && verdict.omitted,
-		).toEqual(["post.submit"]);
-	});
-
-	it("a NOT-fanned mutation whose feature omits the publish is fine", () => {
-		const verdict = judge(
-			facts(
-				[disc("bildirim.markRead", "bildirim")],
-				[man("bildirim.markRead", false)],
-				new Map([["bildirim", false]]),
-			),
-		);
-		expect(verdict.pass).toBe(true);
-		expect(verdict.pass && verdict.fanned).toBe(0);
-	});
-
 	it("mixed feature: a fanned + a non-fanned mutation share one publishing feature — passes", () => {
 		const verdict = judge(
 			facts(
@@ -124,18 +77,6 @@ describe("judge — the fixture pair: a fanned mutation must publish", () => {
 });
 
 describe("judge — topic aim (#2554): a fanned mutation must publish to its declared topic", () => {
-	it("PASSES when the declared topic is reachable from the feature's live.ts", () => {
-		const verdict = judge(
-			facts(
-				[disc("comment.add", "pano")],
-				[man("comment.add", true, ["Post.comments"])],
-				new Map([["pano", true]]),
-				targets([["pano", ["posts", "Post.comments", "Post", "Comment"]]]),
-			),
-		);
-		expect(verdict.pass).toBe(true);
-	});
-
 	it("FAILS (mis-aimed) when the declared topic is NOT reachable — the wrong-topic edit", () => {
 		const verdict = judge(
 			facts(
@@ -202,19 +143,6 @@ describe("judge — topic aim (#2554): a fanned mutation must publish to its dec
 				partial.misaimed[0]?.unreachable,
 		).toEqual(["posts"]);
 	});
-
-	it("a delegated feature (report → pano/sozluk) reaches its declared topics through the closure", () => {
-		const verdict = judge(
-			facts(
-				[disc("report.resolve", "report")],
-				[man("report.resolve", true, ["Post", "Term.definitions"])],
-				new Map([["report", true]]),
-				// report/live.ts has no direct targets; the closure gave it pano ∪ sozluk
-				targets([["report", ["posts", "Post.comments", "Post", "Comment", "Term.definitions"]]]),
-			),
-		);
-		expect(verdict.pass).toBe(true);
-	});
 });
 
 describe("renderReport", () => {
@@ -258,12 +186,6 @@ describe("renderReport", () => {
 		expect(report).toContain("MIS-AIMED");
 		expect(report).toContain("comment.add");
 		expect(report).toContain("Post.comments");
-	});
-
-	it("names the scanned scope on a pass", () => {
-		expect(renderReport(VERB, {pass: true, checked: 12, fanned: 4})).toContain(
-			"12 mutations classified, 4 fanned",
-		);
 	});
 });
 

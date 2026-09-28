@@ -116,10 +116,12 @@ describe("runSkillLint", () => {
 	});
 
 	it("reds a scope axis that saw no file, even when the walk found some", async () => {
-		// `.sh` files carry no frontmatter, so a corpus of nothing but shell empties that scope.
-		const outcome = await run(corpus({fabrika: {"run.sh": "echo hi\n"}}));
+		// A plain doc is scanned by every other check but carries no frontmatter, so the frontmatter
+		// axis is the only one left empty. A shell-only corpus would also empty the markdown-only
+		// portability axis, and the red would stand without the frontmatter clause.
+		const outcome = await run(corpus({fabrika: {"notes.md": "# notes\n\nplain prose\n"}}));
 		expect(outcome.code).toBe(ZERO_SCOPE);
-		expect(outcome.stderr.join("\n")).toContain("frontmatter");
+		expect(outcome.stderr.join("\n")).toContain("guard skill-lint check: frontmatter scan(s)");
 	});
 
 	it("answers UNKNOWN when a corpus file cannot be read, never clean", async () => {

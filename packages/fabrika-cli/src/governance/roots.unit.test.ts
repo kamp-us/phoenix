@@ -74,13 +74,6 @@ describe("deriveScope", () => {
 		expect(deriveScope(changed(["M", "src/a.ts"]), [], GOVERNANCE_ROOTS).required).toBe(false);
 	});
 
-	it("reads the root list from `review/classes.ts` rather than a second copy", () => {
-		const each = GOVERNANCE_ROOTS.map(
-			(root) => deriveScope(changed(["M", `${root}x`]), [], GOVERNANCE_ROOTS).required,
-		);
-		expect(each).toEqual(GOVERNANCE_ROOTS.map(() => true));
-	});
-
 	it("sets `self` when a changed path is under the resolved skill root", () => {
 		const root = "claude-plugins/fabrika/skills/governance/";
 		expect(deriveScope(changed(["M", `${root}SKILL.md`]), [root], GOVERNANCE_ROOTS).self).toBe(

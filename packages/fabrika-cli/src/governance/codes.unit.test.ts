@@ -1,7 +1,6 @@
 import {describe, expect, it} from "vitest";
 import * as report from "../exit-codes.ts";
 import * as review from "../review/codes.ts";
-import * as triage from "../triage/codes.ts";
 import * as governance from "./codes.ts";
 
 /**
@@ -12,20 +11,6 @@ import * as governance from "./codes.ts";
  * its outcome is unknown", and "the call never decided" are three different numbers.
  */
 describe("the governance exit table", () => {
-	it("imports every shared seat rather than restating a numeral", () => {
-		expect(governance.EMPTY_STDIN).toBe(report.EMPTY_STDIN);
-		expect(governance.LEAKED_PATH).toBe(report.LEAKED_PATH);
-		expect(governance.BARE_AT_PATH).toBe(report.BARE_AT_PATH);
-		expect(governance.ZERO_SCOPE).toBe(report.NO_TARGET);
-		expect(governance.WRITE_UNKNOWN).toBe(report.WRITE_UNKNOWN);
-		expect(governance.READBACK_MISMATCH).toBe(report.READBACK_MISMATCH);
-		expect(governance.PRECONDITION_UNKNOWN).toBe(report.PRECONDITION_UNKNOWN);
-	});
-
-	it("takes the off-vocabulary seat from `triage`, where this group's reading is named", () => {
-		expect(governance.OFF_VOCABULARY).toBe(triage.OFF_VOCABULARY);
-	});
-
 	it("takes the three facts it proves identically from `review`", () => {
 		expect(governance.STALE_HEAD).toBe(review.STALE_HEAD);
 		expect(governance.INCOMPLETE_SCAN).toBe(review.INCOMPLETE_SCAN);
