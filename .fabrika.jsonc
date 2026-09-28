@@ -255,10 +255,12 @@
 
 	// The weekly betting table (epic #9850). Phoenix adopts the board it built by hand for the
 	// grilling on #9821 instead of letting `table setup` create "phoenix table": that board already
-	// holds the rows. The table meets Saturdays, on stream, so `table prep` targets the Week that
-	// holds the next Saturday.
+	// holds the rows. The table meets Saturdays, on stream, so `table prep` targets the rows whose
+	// Table day is the next Saturday. The founder reads the board in Pacific time, so "today" is
+	// read there.
 	"table": {
 		"day": "saturday",
+		"timeZone": "America/Los_Angeles",
 		"project": { "owner": "kamp-us", "number": 20 }
 	},
 
