@@ -59,6 +59,7 @@ describe("runClassify", () => {
 		const out = await run(text("   \n"));
 		expect(out.code).toBe(EMPTY_STDIN);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("an empty read is not an unclassified failure");
 	});
 
 	it("refuses an UNREADABLE pipe on 1, never as empty", async () => {

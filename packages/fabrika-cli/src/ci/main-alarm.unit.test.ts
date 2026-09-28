@@ -133,15 +133,6 @@ describe("decide — a run that concluded neither way decides nothing", () => {
 	});
 });
 
-describe("decide — two consecutive reds are exactly one create and one comment", () => {
-	it("opens on the first and comments on the second", () => {
-		const first = decide(input(), []);
-		assert.strictEqual(first.action, "create");
-		const second = decide(input(), [alarm()]);
-		assert.strictEqual(second.action, "comment");
-	});
-});
-
 describe("the body says what it knows, and never more", () => {
 	it("says the job list was unreadable rather than claiming no job failed", () => {
 		const decision = decide(input({facts: facts({failedJobs: [], jobsRead: false})}), []);

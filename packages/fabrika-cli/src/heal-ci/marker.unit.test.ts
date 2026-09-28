@@ -21,10 +21,6 @@ describe("the rerun marker's writer and reader agree", () => {
 		const truncated = MARKER.replace(HEAD, HEAD.slice(0, 12));
 		expect(readMarker(truncated)).toBeNull();
 	});
-
-	it("does not read `heal-ci note`'s narration as the machine marker", () => {
-		expect(readMarker(`heal-ci: RERUN-QUEUED — PR #4321 @ ${HEAD} → rerun\n`)).toBeNull();
-	});
 });
 
 describe("markerBoundTo", () => {

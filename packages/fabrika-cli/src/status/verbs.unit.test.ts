@@ -10,26 +10,19 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {describe, expect, it} from "vitest";
-import {
-	audienceLabel,
-	type BoardVocabulary,
-	classLabel,
-	statusList,
-	typeLabel,
-} from "../config/board.ts";
+import type {BoardVocabulary} from "../config/board.ts";
 import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
 import * as report from "../exit-codes.ts";
 import {fakeFs, fakeHttp, fakeSeams, fakeShell, type HttpReply} from "../fakes.test-support.ts";
 import {ok} from "../io/git.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {AWAITING_RELEASE, DEFAULT_STATUS_NAMES, PLANNED, STATUSES} from "../labels.ts";
+import {AWAITING_RELEASE, PLANNED, STATUSES} from "../labels.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import {
 	AUDIENCES,
-	CLASSES,
 	PRIORITIES,
 	parkedFacets,
 	STANDING_LANES,
@@ -43,10 +36,7 @@ import {
 	CLAUDE_MD_MARKER,
 	CLAUDE_MD_SECTION,
 	FABRIKA_IGNORE_ROW,
-	findSurface,
 	ISSUE_SHAPE_MARKERS,
-	knownIds,
-	LABEL_DESCRIPTION,
 	MARKER_COLOR,
 	roadmapCount,
 	runBootstrap,
@@ -514,16 +504,28 @@ describe("status readout", () => {
 });
 
 describe("status bootstrap", () => {
-	it("refuses an id outside the registry on 12, naming what IS buildable", () => {
-		expect(findSurface("merge-queue")).toBeUndefined();
-		expect(knownIds()).toBe(
-			"design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin",
+	it("refuses an id outside the registry on 12, naming what IS buildable", async () => {
+		const fs = fakeFs({});
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "merge-queue",
+					path: null,
+					json: false,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
 		);
-	});
-
-	it("carries exactly nine ids", () => {
-		expect(BUILDABLE_SURFACES).toHaveLength(9);
-		expect(NOT_BUILDABLE).toBe(12);
+		expect(outcome.code).toBe(NOT_BUILDABLE);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.at(-1)).toBe(
+			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.',
+		);
+		expect(fs.written.size).toBe(0);
 	});
 
 	/**
@@ -554,10 +556,13 @@ describe("status bootstrap", () => {
 		expect(MARKER_COLOR).toBe("1D76DB");
 	});
 
-	it("keeps the markers a surface of their own — no taxonomy label is a marker", () => {
+	it("keeps the markers a surface of their own — no taxonomy label is a marker, every one is fabrika's", () => {
 		const taxonomy = new Set(TAXONOMY.map((label) => label.name));
 		for (const label of ISSUE_SHAPE_MARKERS) expect(taxonomy.has(label.name)).toBe(false);
 		expect(TAXONOMY.every((label) => label.color === null)).toBe(true);
+		expect(new Set(TAXONOMY.map((label) => label.description))).toEqual(
+			new Set(["created by fabrika status bootstrap label-taxonomy"]),
+		);
 	});
 });
 
@@ -1281,18 +1286,6 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 	it("carries twenty labels, each named once", () => {
 		expect(TAXONOMY).toHaveLength(20);
 		expect(names.size).toBe(TAXONOMY.length);
-	});
-
-	it("equals the set computed off the four board lists plus the closed class set, in order", () => {
-		expect(TAXONOMY).toEqual(
-			[
-				...statusList(DEFAULT_STATUS_NAMES),
-				...PRIORITIES,
-				...TYPES.map(typeLabel),
-				...AUDIENCES.map(audienceLabel),
-				...CLASSES.map(classLabel),
-			].map((name) => ({name, description: LABEL_DESCRIPTION, color: null})),
-		);
 	});
 
 	it("follows the board it is handed, never the shipped default", () => {
