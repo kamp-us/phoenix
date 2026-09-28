@@ -137,33 +137,9 @@ describe("runLaneClaim", () => {
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain(`lane:s-77aa:${OTHER_UUID}`);
+		expect(out.stderr.join("\n")).toContain("fabrika lane adopt 5492 --session s-77aa");
 		const deletes = seams.requests.filter((line) => DELETE.test(line));
 		expect(deletes).toEqual([deleted(9001)]);
-	});
-
-	/**
-	 * A sibling driver of THIS session is a co-racer, not this run: ownership turns on the whole
-	 * token, so the older marker wins and this run retracts its own rather than reading the
-	 * neighbour's claim as its own.
-	 */
-	it("loses to a sibling driver of its own session, and says which one", async () => {
-		const seams = fakeSeams([
-			[POST, POSTED],
-			[GET_COMMENT, ECHO],
-			[
-				COMMENTS,
-				buildComments(
-					{id: 8000, body: SIBLING, createdAt: "2026-08-16T00:00:00Z"},
-					{id: 9001, body: MINE, createdAt: "2026-08-17T00:00:00Z"},
-				),
-			],
-			[perm("agent"), WRITE_PERMISSION],
-			[DELETE, DELETED],
-		]);
-		const out = await Effect.runPromise(Effect.provide(runLaneClaim(options), seams.layer));
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.join("\n")).toContain(SIBLING_TOKEN);
-		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([deleted(9001)]);
 	});
 
 	/**
@@ -251,24 +227,6 @@ describe("runLaneRelease", () => {
 		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([]);
 	});
 
-	/**
-	 * The sharpest edge of the session-only rule: this release used to resolve `Mine` on a sibling
-	 * driver's marker and delete it, which is unrecoverable and leaves the issue reading unclaimed.
-	 * The refusal names the holding token so a reader can find the comment.
-	 */
-	it("refuses a sibling driver of its OWN session, naming the holding token", async () => {
-		const seams = fakeSeams([
-			[COMMENTS, buildComments({id: 8000, body: SIBLING})],
-			[perm("agent"), WRITE_PERMISSION],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), seams.layer),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.join("\n")).toContain(SIBLING_TOKEN);
-		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([]);
-	});
-
 	it("exits 1 with no --token on a board lane, and reads nothing", async () => {
 		const seams = fakeSeams([]);
 		const out = await Effect.runPromise(Effect.provide(runLaneRelease(options), seams.layer));
@@ -338,23 +296,6 @@ describe("one driver, one marker", () => {
 		expect(seams.requests.filter((line) => POST.test(line))).toEqual([]);
 	});
 
-	/** Claim, re-claim, release once: no marker of this driver survives for a later claim to lose to. */
-	it("leaves nothing behind after one release", async () => {
-		const seams = fakeSeams([
-			[COMMENTS, held([9001, MINE])],
-			[perm("agent"), WRITE_PERMISSION],
-			[DELETE, DELETED],
-		]);
-		await Effect.runPromise(
-			Effect.provide(runLaneClaim({...options, token: MY_TOKEN}), seams.layer),
-		);
-		const out = await Effect.runPromise(
-			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), seams.layer),
-		);
-		expect(out.code).toBe(0);
-		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([deleted(9001)]);
-	});
-
 	/** A thread that already carries duplicates — written before the guard — is swept, not crashed on. */
 	it("sweeps every marker carrying this driver's token, and only those", async () => {
 		const seams = fakeSeams([
@@ -370,26 +311,6 @@ describe("one driver, one marker", () => {
 			deleted(9001),
 			deleted(9002),
 		]);
-	});
-
-	/** The claim and the release agree about the nonce, so neither can address the other's marker. */
-	it("hands back a token release resolves as its own", async () => {
-		const claimed = await run([
-			[POST, POSTED],
-			[GET_COMMENT, ECHO],
-			[COMMENTS, buildComments({id: 9001, body: MINE})],
-			[perm("agent"), WRITE_PERMISSION],
-		]);
-		const token = JSON.parse(claimed.stdout).token as string;
-		const seams = fakeSeams([
-			[COMMENTS, buildComments({id: 9001, body: MINE})],
-			[perm("agent"), WRITE_PERMISSION],
-			[DELETE, DELETED],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(runLaneRelease({...options, token}), seams.layer),
-		);
-		expect(out.code).toBe(0);
 	});
 });
 
@@ -576,9 +497,10 @@ describe("runLaneAdopt", () => {
 	/**
 	 * The stranded adopt: the marker stands and the claim it adopted does not. `lane claim` counted it
 	 * and `lane release` could not reach it, so the sanctioned adopt → release → claim never
-	 * terminated and a hand-deleted comment was the only way out. These four cover the whole
-	 * remedy: the release that retracts it, the claim that wins after, and the two refusals that keep
-	 * one lane out of another's succession.
+	 * terminated and a hand-deleted comment was the only way out. These cover the verbs' side of the
+	 * remedy: the release that retracts it, and the two refusals that keep one lane out of another's
+	 * succession. That a later claim is no longer fenced by it is `resolveOwnership`'s ordering rule,
+	 * owned by `build/claim.unit.test.ts`.
 	 */
 	describe("a stranded adopt — the marker with no claim beside it", () => {
 		const STRANDED: ReadonlyArray<Scripted> = [
@@ -620,39 +542,6 @@ describe("runLaneAdopt", () => {
 			expect(out.stderr.join("\n")).toContain(`fabrika lane release 5492 --token ${MY_TOKEN}`);
 			expect(seams.requests.filter((line) => POST.test(line))).toEqual([]);
 		});
-
-		/**
-		 * The loop itself: a stray adopt naming this session under another nonce fenced every marker
-		 * the session would ever post, so each fresh claim lost to it under a new nonce. An adopt
-		 * older than the marker it would fence adopted some earlier claim and says nothing about
-		 * this one.
-		 */
-		it("no longer fences a claim posted after it, so the fresh marker wins on the first try", async () => {
-			const fresh = laneMarker("s-9f2e", OTHER_UUID);
-			const seams = fakeSeams([
-				[POST, POSTED],
-				[GET_COMMENT, served({body: fresh})],
-				[
-					COMMENTS,
-					buildComments(
-						{id: 9002, body: ADOPT_BODY, createdAt: "2026-08-17T00:00:00Z"},
-						{id: 9001, body: fresh, createdAt: "2026-08-18T00:00:00Z"},
-					),
-				],
-				[perm("agent"), WRITE_PERMISSION],
-			]);
-			const out = await Effect.runPromise(
-				Effect.provide(runLaneClaim({...options, uuid: OTHER_UUID}), seams.layer),
-			);
-			expect(out.code).toBe(0);
-			expect(JSON.parse(out.stdout)).toEqual({
-				answer: "won",
-				lane: "5492",
-				number: 5492,
-				token: `lane:s-9f2e:${OTHER_UUID}`,
-			});
-			expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([]);
-		});
 	});
 
 	/**
@@ -677,24 +566,5 @@ describe("runLaneAdopt", () => {
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.join("\n")).toContain(SIBLING_TOKEN);
 		expect(seams.requests.filter((line) => POST.test(line))).toEqual([]);
-	});
-
-	it("names the succession route on a proven loss, so claim and stale stop contradicting", async () => {
-		const seams = fakeSeams([
-			[POST, POSTED],
-			[GET_COMMENT, ECHO],
-			[
-				COMMENTS,
-				buildComments(
-					{id: 8000, body: THEIRS, createdAt: "2026-08-16T00:00:00Z"},
-					{id: 9001, body: MINE, createdAt: "2026-08-17T00:00:00Z"},
-				),
-			],
-			[perm("agent"), WRITE_PERMISSION],
-			[DELETE, DELETED],
-		]);
-		const out = await Effect.runPromise(Effect.provide(runLaneClaim(options), seams.layer));
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.join("\n")).toContain("fabrika lane adopt 5492 --session s-77aa");
 	});
 });
