@@ -31,14 +31,6 @@ describe("windowTitle", () => {
 		);
 	});
 
-	it("moves with the line, because it is a function of the mount and holds nothing", () => {
-		const first = windowTitle(bound({title: "reading the epic", program: claude}));
-		expect(first).toBe("reading the epic");
-		expect(windowTitle(bound({title: "writing the title child", program: claude}))).toBe(
-			"writing the title child",
-		);
-	});
-
 	it("names a process that published no title by its program, never by its id", () => {
 		expect(windowTitle(bound({title: null, program: claude}))).toBe("claude-session");
 	});

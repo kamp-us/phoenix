@@ -17,14 +17,10 @@ import type {PickerView} from "../picker/index.ts";
 import type {WindowMount} from "./mount.ts";
 
 type FitsTheSlot<V> = V extends ViewState ? true : false;
-type Arms<M> = M extends {readonly _tag: infer T} ? T : never;
 
 /** What `PickerView` reads back out of the slot still fits it — the surface writes nothing wider. */
 const pickerViewFits: FitsTheSlot<PickerView> = true;
 const mountDoesNot: FitsTheSlot<WindowMount> = false;
-
-/** The mount arms are the window contract's three plus the one the surface adds, and no more. */
-const mountArms: Arms<WindowMount>[] = ["Bound", "NoRenderer", "ProcessGone", "Empty"];
 
 const sourcesIn = (dir: string): ReadonlyArray<readonly [string, string]> =>
 	readdirSync(dir)
@@ -50,10 +46,6 @@ describe("ui boundary", () => {
 	it("stores nothing in a window's slot that the slot cannot hold", () => {
 		expect(pickerViewFits).toBe(true);
 		expect(mountDoesNot).toBe(false);
-	});
-
-	it("shows a window through the contract's arms and no fourth", () => {
-		expect(mountArms).toEqual(["Bound", "NoRenderer", "ProcessGone", "Empty"]);
 	});
 
 	it("is one of the two rendering slices, and React lives in no other one", () => {

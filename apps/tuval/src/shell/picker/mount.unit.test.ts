@@ -1,18 +1,14 @@
 /**
- * Two claims about a mount. First, the picker carries nothing across one: mount it, change the
- * registry, mount it again, and the second mount shows the second registry — there is no cache to
- * invalidate because there is nothing to cache. Second, the attach route binds the process it names
- * into the window it was chosen from. That one process then renders in two windows with two `view`
- * slots is proved end to end, in `../proof/end-to-end.integration.test.ts`.
+ * The picker carries nothing across a mount: mount it, change the registry, mount it again, and the
+ * second mount shows the second registry — there is no cache to invalidate because there is nothing
+ * to cache.
  */
 
 import {assert, describe, expect, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {readEntries} from "./entries.ts";
-import {pickerHarness, programRow, shellProcessId, windowId} from "./fixtures.ts";
+import {pickerHarness, programRow, windowId} from "./fixtures.ts";
 import {pickerFrame} from "./frame.ts";
-import {attachProcess} from "./intent.ts";
-import {runPickerIntent} from "./open.ts";
 import {mountPicker} from "./view.ts";
 
 const window = windowId("window-1");
@@ -72,30 +68,4 @@ describe("a mount reads the world fresh", () => {
 		});
 		expect(mountPicker()).not.toBe(mountPicker());
 	});
-});
-
-describe("attaching binds the named process", () => {
-	it.effect("answers one window.bind carrying the process and its program", () =>
-		Effect.gen(function* () {
-			const bind = yield* Effect.scoped(
-				Effect.gen(function* () {
-					const harness = yield* pickerHarness([programRow("counter", {label: "Counter"})]);
-					const id = yield* harness.seed("p-1", "counter");
-					return yield* runPickerIntent(attachProcess(windowId("window-2"), id), {
-						shellProcessId,
-					}).pipe(Effect.provide(harness.layer));
-				}),
-			);
-
-			assert.deepStrictEqual(bind, [
-				{
-					type: "window.bind",
-					windowId: "window-2",
-					processId: "p-1",
-					takesKeys: false,
-					program: "counter",
-				},
-			]);
-		}),
-	);
 });

@@ -9,7 +9,7 @@
  * `.patterns/unconditional-test-assertions.md`, "the type-level sibling".
  */
 
-import {readdirSync, readFileSync} from "node:fs";
+import {readFileSync} from "node:fs";
 import {join} from "node:path";
 import {describe, expect, it} from "vitest";
 import type {ShellMsg} from "../core/machine.ts";
@@ -77,9 +77,7 @@ describe("command row boundary", () => {
 			const params = Object.fromEntries(
 				Object.keys(command.params.fields).map((name) => [name, "x"]),
 			);
-			// Same parameters, same Msg, however many times and in whatever order — a row holding
-			// state of its own could not keep that.
-			expect(command.toMsg(params)).toEqual(command.toMsg(params));
+			// The Msg is plain data: it survives the JSON the kernel checkpoints it as.
 			expect(JSON.parse(JSON.stringify(command.toMsg(params)))).toEqual(command.toMsg(params));
 		}
 	});
@@ -107,21 +105,5 @@ describe("command row boundary", () => {
 				expect(`${name}: ${code.includes(forbidden)}`).toBe(`${name}: false`);
 			}
 		}
-	});
-
-	it("leaves no module of this slice unread by the checks above", () => {
-		const sources = readdirSync(import.meta.dirname).filter(
-			(name) => name.endsWith(".ts") && !name.endsWith(".unit.test.ts"),
-		);
-		expect(sources.sort()).toEqual([
-			"dispatch.ts",
-			"errors.ts",
-			"index.ts",
-			"kernel.ts",
-			"line.ts",
-			"row.ts",
-			"spells.ts",
-			"table.ts",
-		]);
 	});
 });

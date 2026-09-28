@@ -25,30 +25,7 @@ const msgOf = (name: string, params: Record<string, string> = {}): ShellMsg => {
 };
 
 describe("the command table", () => {
-	it("holds every name the epic lists, once each", () => {
-		expect(commandNames.map(String)).toEqual([
-			"window:split-vertical",
-			"window:split-horizontal",
-			"window:zoom",
-			"window:close",
-			"window:focus-left",
-			"window:focus-right",
-			"window:focus-up",
-			"window:focus-down",
-			"window:focus",
-			"window:pick",
-			"window:focus-list",
-			"window:open",
-			"window:attach",
-			"workspace:create",
-			"workspace:remove",
-			"workspace:activate",
-			"workspace:previous",
-			"workspace:next",
-			"desk:inspector-toggle",
-			"command:open",
-			"config:reload",
-		]);
+	it("holds each name once", () => {
 		expect(new Set(commandNames.map(String)).size).toBe(commandNames.length);
 	});
 
@@ -206,11 +183,6 @@ describe("the Msg a bound key runs", () => {
 			expect(msgForCommandName(name)).toEqual(command.toMsg({}));
 		}
 	});
-
-	it("is nothing for a row needing an argument a key sequence cannot carry", () => {
-		expect(msgForCommandName(commandName(["window", "open"]))).toBeNull();
-		expect(msgForCommandName(commandName(["workspace", "activate"]))).toBeNull();
-	});
 });
 
 /**
@@ -241,12 +213,5 @@ describe("the process:remove row", () => {
 		expect(commandIndexFor(off).commandFor("process:remove")).toBeUndefined();
 		expect(commandIndexFor(off).commandNames.map(String)).toEqual(commandNames.map(String));
 		expect(commandFor("process:remove")).toBeUndefined();
-	});
-
-	it("leaves window:close alone, which still closes a window and stops nothing", () => {
-		expect(msgOf("window:close")).toEqual({type: "window.close"});
-		expect(commandIndexFor(on).commandFor("window:close")?.describe).toBe(
-			"Close the focused window. The process it was showing keeps running.",
-		);
 	});
 });

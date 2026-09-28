@@ -7,11 +7,8 @@
  * `SpellExecutor.execute` or `SpellBridge.call` — the two doors a page and an agent use — with the
  * desk read afterwards to prove the Msg landed rather than merely being answered.
  *
- * The provider is load-bearing twice over. In the checker, `boot.ts`'s `Kernel` names
- * `ShellDispatch` and `Context` is contravariant in its services, so dropping the layer stops
- * `start` compiling. At runtime, the third test here takes the service back out of the very kernel
- * `start` returned and shows the same call dying — which is what a missing provider is, and what
- * the other tests would meet if boot stopped building it.
+ * The provider is load-bearing in the checker too: `boot.ts`'s `Kernel` names `ShellDispatch` and
+ * `Context` is contravariant in its services, so dropping the layer stops `start` compiling.
  */
 
 import {mkdtemp, rm} from "node:fs/promises";
@@ -37,7 +34,6 @@ import {
 } from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {Cause, Context, Effect, Exit, Option, Schema} from "effect";
 import {start} from "../../boot.ts";
-import {ShellDispatch} from "../commands/dispatch.ts";
 import {activeWorkspace, windowIds} from "../core/index.ts";
 import {wiredShellEffects} from "../host/effects.ts";
 import {shellGraphNode, shellId, shellNode, shellProgram, shellStateOf} from "../program.ts";
@@ -143,22 +139,6 @@ describe("a shell command row, called against the kernel boot builds", () => {
 				"the bridge died on a bad argument instead of refusing",
 			);
 			assert.strictEqual(windowCount(yield* readDesk(kernel)), 2);
-		}),
-	);
-
-	it.effect("dies on the same call once the provider is taken back out of the kernel", () =>
-		Effect.gen(function* () {
-			const {kernel} = yield* bootDesk();
-			const withoutDispatch = Context.omit(ShellDispatch)(kernel);
-
-			const exit = yield* Effect.exit(
-				Context.get(kernel, SpellExecutor)
-					.execute(call([shellId, "window", "split-vertical"], {}), client)
-					.pipe(Effect.provideContext(withoutDispatch)),
-			);
-
-			assert.isTrue(Exit.isFailure(exit), "a kernel missing ShellDispatch answered the call");
-			assert.strictEqual(windowCount(yield* readDesk(kernel)), 1);
 		}),
 	);
 

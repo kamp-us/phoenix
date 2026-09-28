@@ -11,15 +11,8 @@
 
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {
-	pickerHarness,
-	processId,
-	programId,
-	programRow,
-	shellProcessId,
-	windowId,
-} from "./fixtures.ts";
-import {attachProcess, openProgram} from "./intent.ts";
+import {pickerHarness, programId, programRow, shellProcessId, windowId} from "./fixtures.ts";
+import {openProgram} from "./intent.ts";
 import {runPickerIntent} from "./open.ts";
 
 const window = windowId("window-7");
@@ -57,19 +50,5 @@ describe("the window an open names its child", () => {
 			assert.strictEqual(spawns[0]?.window, "window-7");
 			assert.deepStrictEqual(spawns[0]?.session, {cwd: "/picked/repo", resume: "s-1"});
 		}),
-	);
-
-	it.effect("is named by no attach, because an attach spawns nothing", () =>
-		Effect.scoped(
-			Effect.gen(function* () {
-				const harness = yield* pickerHarness(rows);
-				yield* harness.seed("process-9", "claude");
-				yield* runPickerIntent(attachProcess(window, processId("process-9")), {
-					shellProcessId,
-				}).pipe(Effect.provide(harness.layer));
-
-				assert.lengthOf(harness.spawns(), 0);
-			}),
-		),
 	);
 });

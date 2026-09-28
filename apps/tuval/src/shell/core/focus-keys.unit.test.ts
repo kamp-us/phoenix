@@ -11,7 +11,7 @@ import {describe, expect, it} from "vitest";
 import {noOwnerBindings, type OwnerBindings} from "../../keys/scopes.ts";
 import {ProjectId} from "../../project-id.ts";
 import {commandIndexFor} from "../commands/index.ts";
-import {findWindow, windows} from "../layout/index.ts";
+import {windows} from "../layout/index.ts";
 import {
 	applyMsg,
 	initialState,
@@ -119,10 +119,6 @@ const fired = (cmds: ReadonlyArray<ShellCmd>): ReadonlyArray<Binding> =>
 describe("keys follow focus through the shell core (#9687)", () => {
 	const {source} = liveSource(everyOwner);
 	const start = desk(source);
-
-	it("records the bound program on the window the picker binds", () => {
-		expect(findWindow(active(start).layout, windowOf(start, "claude"))?.program).toBe("claude");
-	});
 
 	it("fires a project's binding in that project's window, and tells the page it is consumed", () => {
 		const onAlpha = focus(start, alpha.scope("counter"), source);

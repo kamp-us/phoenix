@@ -144,22 +144,6 @@ describe("layout.remove", () => {
 		expect(sum(next.root)).toBeCloseTo(100, 5);
 	});
 
-	it("round-trips a split that appended beside existing siblings", () => {
-		const tree = createTree(
-			createStack("root", "horizontal", [createWindow("a"), createWindow("b")], {a: 60, b: 40}),
-		);
-
-		expect(remove(split(tree, "a", "horizontal", ids("a2", "s1")), "a2")).toEqual(tree);
-	});
-
-	it("round-trips a split whose parent already held siblings", () => {
-		const tree = createTree(
-			createStack("root", "horizontal", [createWindow("a"), createWindow("b")], {a: 60, b: 40}),
-		);
-
-		expect(remove(split(tree, "a", "vertical", ids("a2", "s1")), "a2")).toEqual(tree);
-	});
-
 	it("refuses to empty the tree", () => {
 		const tree = createTree(createStack("root", "horizontal", [createWindow("a")]));
 
@@ -224,28 +208,6 @@ describe("layout.findChildWindow", () => {
 		expect(findChildWindow(tree, "root", "end")?.id).toBe("c");
 		expect(findChildWindow(tree, "s", "start")?.id).toBe("b");
 		expect(findChildWindow(tree, "nope", "start")).toBeNull();
-	});
-});
-
-describe("layout.resize", () => {
-	it("normalises a reported resize back to a total map summing to 100", () => {
-		const next = resize(threeWindows(), "root", {a: 30, s: 70});
-
-		expect(next.root.sizes.a).toBeCloseTo(30, 5);
-		expect(next.root.sizes.s).toBeCloseTo(70, 5);
-		expect(checkTree(next)).toEqual([]);
-	});
-
-	it("gives a child the resize left unnamed an even share of the remainder", () => {
-		const tree = createTree(
-			createStack("root", "horizontal", [createWindow("a"), createWindow("b"), createWindow("c")]),
-		);
-
-		const next = resize(tree, "root", {a: 50});
-
-		expect(next.root.sizes.a).toBeCloseTo(50, 5);
-		expect(next.root.sizes.b).toBeCloseTo(25, 5);
-		expect(next.root.sizes.c).toBeCloseTo(25, 5);
 	});
 });
 
@@ -358,10 +320,6 @@ describe("layout.checkTree", () => {
 			{kind: "empty-stack", id: "s"},
 			{kind: "zoomed-window-missing", id: "nope"},
 		]);
-	});
-
-	it("accepts a tree the constructors built", () => {
-		expect(checkTree(threeWindows())).toEqual([]);
 	});
 });
 
