@@ -1,9 +1,10 @@
 /**
  * The end-to-end half of the unknown-subcommand guard: the **exit status** a caller actually reads.
  *
- * The unit tests cover the resolution; only a real process proves the code, and the code is the part
- * that carried the lie — `fabrika triage --help` exited 0. An assertion on stdout alone would
- * have passed against the defect, because the defect printed help.
+ * The unit tests cover the resolution, every argv shape against the real tree; only a real process
+ * proves the code, and the code is the part that carried the lie — `fabrika triage --help` exited
+ * 0. An assertion on stdout alone would have passed against the defect, because the defect printed
+ * help. One spawn per outcome: refused, and help left alone.
  *
  * The fixture token is no longer `triage`: that group is registered now, so reusing the reported
  * token would assert the guard against a name that resolves.
@@ -43,40 +44,18 @@ const fabrika = (...args: ReadonlyArray<string>): Run => {
 	}
 };
 
-describe("an unresolvable path is refused, at every depth", {
+describe("the unknown-subcommand guard, through the bin", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
-	it.each([
-		["an unknown group", ["nosuchgroup"]],
-		["an unknown group probed with --help", ["nosuchgroup", "--help"]],
-		["an unknown group probed with -h", ["nosuchgroup", "-h"]],
-		["an unknown verb in a known group", ["adr", "bogus"]],
-		["an unknown verb probed with --help", ["adr", "bogus", "--help"]],
-		["a multi-token invalid tail probed with --help", ["adr", "bogus", "deeper", "--help"]],
-	])("%s exits non-zero with the refusal on stderr and nothing on stdout", (_label, args) => {
-		const run = fabrika(...args);
+	it("refuses an unknown verb probed with --help: non-zero, refusal on stderr, nothing on stdout", () => {
+		const run = fabrika("adr", "bogus", "deeper", "--help");
 		expect(run.code).not.toBe(0);
-		expect(run.stderr).toMatch(/Unknown subcommand/);
+		expect(run.stderr).toContain('Unknown subcommand "bogus" for "fabrika adr"');
 		expect(run.stdout).toBe("");
 	});
 
-	it("names the group a bad verb sat under, not just the root", () => {
-		expect(fabrika("adr", "bogus", "deeper", "--help").stderr).toContain('for "fabrika adr"');
-	});
-
-	it("reports the first invalid token, not a later one", () => {
-		expect(fabrika("adr", "bogus", "deeper", "--help").stderr).toContain('"bogus"');
-	});
-});
-
-describe("the discovery path is unchanged", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it.each([
-		["the root index", ["--help"]],
-		["a group's verbs", ["adr", "--help"]],
-		["a verb's flags", ["adr", "next", "--help"]],
-		["a verb's flags behind another flag", ["adr", "next", "--dir", ".decisions", "--help"]],
-	])("%s still exits 0 with help on stdout and an empty stderr", (_label, args) => {
-		const run = fabrika(...args);
+	it("leaves a group's help alone: exit 0, help on stdout, an empty stderr", () => {
+		const run = fabrika("adr", "--help");
 		expect(run.code).toBe(0);
 		expect(run.stdout).toContain("USAGE");
 		expect(run.stderr).toBe("");

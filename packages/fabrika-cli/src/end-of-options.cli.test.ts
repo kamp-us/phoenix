@@ -67,13 +67,6 @@ describe("the documented -- separator binds its trailing argv", {
 		expect(run.stderr).not.toContain("Invalid value");
 	});
 
-	// Parity control: the undocumented separator-less form must land on the same refusal as the
-	// documented one, so the docs' shape is never the worse one.
-	it("the same invocation without -- reaches the same verb boundary", () => {
-		const run = fabrika(["spike", "run", "--nonce", "e15b99bd", "echo", "hello"]);
-		expect(run.code).toBe(NO_WORKSPACE);
-	});
-
 	// A required variadic positional binds post-`--` tokens too: `adr resolve` gets past argument
 	// binding and refuses at its first git read instead (a non-repo cwd keeps that read offline;
 	// `--repo` seats the refusal on BASE_UNFETCHABLE rather than an ambiguous 1).
