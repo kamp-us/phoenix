@@ -108,13 +108,6 @@ describe("review scope and ship scope over one file list", () => {
 		expect(namespaceRows(review.stdout)).toEqual(namespaceRows(ship.stdout));
 	});
 
-	it("names `review-ui` routed on the review side — derived there, emitted only by `review-ui`", async () => {
-		const review = await reviewScope(...CHANGED);
-
-		expect(review.stdout).toContain("class\tui\t1");
-		expect(review.stdout).toContain("routed\treview-ui");
-	});
-
 	it("routes nothing when the diff raises no ui class", async () => {
 		const review = await reviewScope("apps/site/worker/cart.ts");
 

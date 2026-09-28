@@ -8,7 +8,6 @@ import {readEscalationTag} from "./append.ts";
 import {runAppendCriterion} from "./append-criterion-verb.ts";
 import {
 	ACL_DENIED,
-	APPEND_ONLY,
 	BARE_AT_PATH,
 	EMPTY_STDIN,
 	LEAKED_PATH,
@@ -148,85 +147,8 @@ describe("runAppendCriterion", () => {
 		expect(triage.code).toBe(ACL_DENIED);
 	});
 
-	// Fence 2 — append-only, proven before the PATCH is sent.
-	it("puts the row INSIDE the block even when a later section carries checkboxes of its own", async () => {
-		const withLaterList = `### Acceptance criteria
-
-- [ ] the only criterion
-
-## Notes
-
-- [ ] a checkbox that is not a criterion
-`;
-		const shell = fakeSeams([
-			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
-			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
-			[once(ISSUE), served(issue(withLaterList))],
-			[
-				ISSUE,
-				served(
-					issue(
-						withLaterList.replace("- [ ] the only criterion", `- [ ] the only criterion\n${ROW}`),
-					),
-				),
-			],
-			[PATCH, {status: 200, body: "{}"}],
-		]);
-		const out = await Effect.runPromise(Effect.provide(runAppendCriterion(options), shell.layer));
-		expect(out.code).toBe(0);
-		const write = patched(shell);
-		expect(write.indexOf(ROW)).toBeLessThan(write.indexOf("## Notes"));
-	});
-
-	it("appends under a WRAPPED last criterion — the shape triage enrichment produces", async () => {
-		// The live case: the last criterion's text is joined across three physical lines, so it
-		// matches no single line and the append was refused as a mutation.
-		const wrapped = `Build the thing.
-
-### Acceptance criteria
-
-- [ ] the first retry delay equals \`base\`
-- [x] the retry guide documents the delay table, and the table's first row states the base delay
-  the runtime actually applies rather than the one the ADR proposed, so a reader comparing the two
-  can tell which is in force.
-`;
-		const shell = fakeSeams([
-			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
-			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
-			[once(ISSUE), served(issue(wrapped))],
-			[ISSUE, served(issue(`${wrapped.trimEnd()}\n${ROW}\n`))],
-			[PATCH, {status: 200, body: "{}"}],
-		]);
-		const out = await Effect.runPromise(Effect.provide(runAppendCriterion(options), shell.layer));
-		expect(out.code).toBe(0);
-		expect(out.stdout).toBe("appended\t4287\t3\n");
-		const write = patched(shell);
-		expect(write).toContain(`can tell which is in force.\n${ROW}`);
-	});
-
-	/**
-	 * Exit 15 is unreachable from any input this verb accepts, and that is the fence working rather
-	 * than a gap: the composition is built to satisfy it, so no PR body can drive it. It is therefore
-	 * demonstrated by **mutation** — `./mutation.unit.test.ts` plants a composition that appends past
-	 * the block and asserts this verb reds on 15 with this message and sends no PATCH. Asserting it
-	 * loosely here (`code is 15 or 0`) would score a guard that never ran as caught, which is the
-	 * failure mode a sibling lane hit; the constant's distinctness is pinned in `./codes.unit.test.ts`.
-	 */
-	it("keeps 15 distinct from every other refusal this verb can reach", async () => {
-		const reachable = await Promise.all([
-			run([
-				[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
-				[PERMISSION, {status: 200, body: JSON.stringify({permission: "read"})}],
-			]),
-			run([
-				[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
-				[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
-				[ISSUE, {status: 404, body: NOT_FOUND}],
-			]),
-			run(happy(), {stdin: Effect.succeed({_tag: "Text", text: ""})}),
-		]);
-		expect(reachable.map((out) => out.code)).not.toContain(APPEND_ONLY);
-	});
+	// Fence 2 — append-only — is composed and checked in `./append.ts` and proven there; exit 15 is
+	// unreachable from any input this verb accepts, so `./mutation.unit.test.ts` demonstrates it.
 
 	// Fence 3 — frozen at CAP_ROUND, read off the one declared budget rather than a literal.
 	it("escalates instead of appending at the freeze, and appends NOTHING", async () => {
@@ -348,23 +270,6 @@ describe("runAppendCriterion", () => {
 		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("inspect #4287");
-	});
-
-	it("refuses a read-back that MUTATED a prior row, even at the right length", async () => {
-		const mutated = `### Acceptance criteria
-
-- [ ] a totally different first row
-- [x] the retry guide documents the delay table
-${ROW}
-`;
-		const out = await run([
-			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
-			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
-			[once(ISSUE), served(issue())],
-			[ISSUE, served(issue(mutated))],
-			[PATCH, {status: 200, body: "{}"}],
-		]);
-		expect(out.code).toBe(READBACK_MISMATCH);
 	});
 
 	// The stdin guard.

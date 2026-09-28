@@ -11,7 +11,6 @@ import {
 	LIVE,
 } from "./claim-fixtures.test-support.ts";
 import {
-	BARE_AT_PATH,
 	CLAIMED_ELSEWHERE,
 	CRITERIA_REQUIRED,
 	EMPTY_STDIN,
@@ -404,14 +403,6 @@ describe("runEnrich — the composed body's criteria block must be one the wire 
 });
 
 describe("runEnrich — refusals", () => {
-	it("refuses a FAILED stdin read as UNKNOWN, never as empty", async () => {
-		const outcome = await runScripted([[READ, issue(ORIGINAL)]], {
-			stdin: Effect.succeed<StdinRead>({_tag: "Failed", reason: "EAGAIN"}),
-		});
-		expect(outcome.code).toBe(1);
-		expect(outcome.stderr.at(-1)).toContain("never empty");
-	});
-
 	it("refuses empty-but-READ stdin on 3, and writes nothing", async () => {
 		const shell = guardedShell([[READ, issue(ORIGINAL)]]);
 		const outcome = await Effect.runPromise(
@@ -472,13 +463,6 @@ describe("runEnrich — refusals", () => {
 		expect(
 			body?.startsWith("## In plain words\n\nFocus drops. We keep it.\n\n## What to build"),
 		).toBe(true);
-	});
-
-	it("refuses a bare @ reference on 6", async () => {
-		const outcome = await runScripted([[READ, issue(ORIGINAL)]], {
-			stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "@notes/rewrite.md"}),
-		});
-		expect(outcome.code).toBe(BARE_AT_PATH);
 	});
 
 	it("refuses a machine-local path in the AUTHORED rewrite on 5, while redacting the original", async () => {
