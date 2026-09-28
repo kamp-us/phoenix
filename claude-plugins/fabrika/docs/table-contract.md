@@ -240,16 +240,18 @@ a real, open issue, never a draft:
 
 A row already `bet`, `not now`, `in lane`, `shipped` or `check` is never proposed again, except a
 flagged running bet, which moves to Tails with its Stage and Size untouched. Each proposed row gets
-Stage `proposed`, its Section, the table's Table day, a Size (only when unset: an epic is L, otherwise the
-smallest size covering its issues' pitch sizes, an unpitched issue counting as S), a Rec and an In
-plain words line — the issue's `## In plain words` summary, else its title.
+Stage `proposed`, its Section, the table's Table day, a Size (only when unset: an epic is L,
+otherwise the smallest size covering its issues' pitch sizes, an unpitched issue counting as S), a
+Rec (only into an empty cell; see **Rec**) and an In plain words line — the issue's
+`## In plain words` summary, else its title.
 
 A candidate with open `blocked_by` issues is one chain row over them (followed transitively), and an
 epic one row over its open sub-issues. The row counts once toward the cap, its Size and Rec cover
 every issue in it, its members are added as rows with no Section so they show only in the Group
-members view, and a chosen row a later chain covers moves inside it. A row where any issue carries
-`ready-for:human` gets the Rec "needs your pick" with the options the issue lists (under an Options
-heading, or as "Option A: …" lines), never "yes".
+members view, and a chosen row a later chain covers moves inside it. For a row where any issue
+carries `ready-for:human`, the Rec prep writes into an empty cell is "needs your pick" with the
+options the issue lists (under an Options heading, or as "Option A: …" lines), never "yes"; a Rec
+the row already holds stays as it reads (see **Rec**).
 
 An untriaged Customers report (`status:needs-triage` or no label) is never proposed: it is listed
 under `triageFirst` for the driver to triage and proposed on the next run, and one on
@@ -268,9 +270,10 @@ wrote for an earlier table stays too, until a person clears it.
 **Checks.** A bet — a row whose Origin reads `bet` — whose Stage has read `shipped` for
 `table.checkDelayDays` days (14 by default, timed from the Stage value's last change) moves to Stage
 `check` under the first agenda section, dated the next table, with a Rec asking "did it work?" (into
-an empty Rec) and an In plain words line, whatever its issue's state, and outside the agenda cap. A shipped row whose Origin is
-anything else, such as an Outside the bets row sync moved to `shipped`, keeps its Stage and Section
-and gets no comment. Its evidence is posted once as a comment on the issue:
+an empty Rec) and an In plain words line, whatever its issue's state, and outside the agenda cap. A
+shipped row whose Origin is anything else, such as an Outside the bets row sync moved to `shipped`,
+keeps its Stage and Section and gets no comment. Its evidence is posted once as a comment on the
+issue:
 
 - the pitch's `**Success:**` line, or a note that it has none;
 - the GitHub signals since it shipped: issues filed since that mention a pull request its lane
