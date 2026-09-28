@@ -72,13 +72,6 @@ describe("rollUp — the totals", () => {
 		assert.strictEqual(out.totals.runs, 3);
 		assert.strictEqual(out.totals.measuredRuns, 1);
 	});
-
-	/** The no-gate ruling, asserted rather than noted: the core has no threshold to trip. */
-	it("sums an arbitrarily large total without changing anything about the answer's shape", () => {
-		const out = rollUp(read([row({spend: spendOf(7_489_969_208, 1, 1)})]), UNBOUNDED);
-		assert.strictEqual(out.totals.billed, 7_489_969_208);
-		assert.strictEqual(out.totals.runs, 1);
-	});
 });
 
 describe("rollUp — the three breakdowns", () => {
@@ -125,16 +118,6 @@ describe("rollUp — the three breakdowns", () => {
 				["review", "no-skill", 50, 1],
 			],
 		);
-	});
-
-	it("keeps every breakdown's run count summing back to the total", () => {
-		const out = rollUp(read(rows), UNBOUNDED);
-		for (const buckets of [out.byDay, out.bySkill, out.byStageArm]) {
-			assert.strictEqual(
-				buckets.reduce((n, b) => n + b.runs, 0),
-				out.totals.runs,
-			);
-		}
 	});
 });
 

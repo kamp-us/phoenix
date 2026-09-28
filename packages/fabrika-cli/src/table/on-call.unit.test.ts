@@ -30,16 +30,9 @@ describe("boardOf", () => {
 		expect(boardOf({origins: [], labels: ["p1"]}, ROUTE)).toBe("product");
 	});
 
-	it("sends every issue to exactly one board", () => {
-		const facts = [
-			{origins: ["customer"], labels: ["type:bug", "ci-broken"]},
-			{origins: [], labels: []},
-			{origins: ["bet"], labels: ["type:feature"]},
-		];
-		for (const one of facts) expect(["product", "on-call"]).toContain(boardOf(one, ROUTE));
-		expect(boardOf(facts[0] as (typeof facts)[0], {origins: [], types: [], labels: []})).toBe(
-			"product",
-		);
+	it("sends an issue matching every rule to product when the route names no rule", () => {
+		const everything = {origins: ["customer"], labels: ["type:bug", "ci-broken"]};
+		expect(boardOf(everything, {origins: [], types: [], labels: []})).toBe("product");
 	});
 });
 

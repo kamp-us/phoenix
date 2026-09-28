@@ -38,12 +38,6 @@ describe("uploadEndpoint", () => {
 		assert.strictEqual(url.pathname, "/user-attachments/assets");
 	});
 
-	// The regression itself: a request with no `name` query param is the HTTP 400
-	// `Invalid name for request` that nulled every hostedUrl.
-	it("never omits `name` — the parameter whose absence was the HTTP 400", () => {
-		assert.ok(new URL(uploadEndpoint(params)).searchParams.has("name"));
-	});
-
 	it("percent-encodes a name so `@` survives the query string", () => {
 		const raw = uploadEndpoint(params);
 		assert.ok(raw.includes("name=catalog%40desktop.png"), raw);
@@ -65,16 +59,11 @@ describe("parseUploadResponse — the fallback classifier (pure core)", () => {
 		);
 	});
 
-	it("falls back on a 4xx status with a diagnostic naming the code", () => {
-		const o = parseUploadResponse({status: 404, body: "Not Found"});
+	// The body carries a valid href, so only the status can be what refuses it.
+	it.each([404, 500])("falls back on HTTP %s with a diagnostic naming the code", (status) => {
+		const o = parseUploadResponse({status, body: JSON.stringify({href: HOSTED})});
 		assert.strictEqual(o.hostedUrl, null);
-		assert.match(o.uploadError ?? "", /HTTP 404/);
-	});
-
-	it("falls back on a 5xx status", () => {
-		const o = parseUploadResponse({status: 500, body: "boom"});
-		assert.strictEqual(o.hostedUrl, null);
-		assert.match(o.uploadError ?? "", /HTTP 500/);
+		assert.match(o.uploadError ?? "", new RegExp(`returned HTTP ${status}`));
 	});
 
 	it("falls back on an unparseable body (undocumented endpoint drift)", () => {
