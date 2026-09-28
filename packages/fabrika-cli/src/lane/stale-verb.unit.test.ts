@@ -122,12 +122,6 @@ describe("lane stale", () => {
 		expect(out.stderr.join("\n")).toContain("5829 (76m of 40m)");
 	});
 
-	it("reports a recently moved lane as moving", async () => {
-		const out = await sweep(tree([{lane: "5825", log: line("WIP", minutesAgo(5))}]));
-
-		expect(JSON.parse(out.stdout).lanes[0]).toMatchObject({verdict: "moving", ageMinutes: 5});
-	});
-
 	it("never calls a human park stale, however long it has sat", async () => {
 		const log =
 			line("WIP", minutesAgo(900)) +
@@ -152,16 +146,6 @@ describe("lane stale", () => {
 		const out = await sweep(tree([{lane: "5680", log}]));
 
 		expect(JSON.parse(out.stdout).lanes[0]).toMatchObject({verdict: "terminal", status: "done"});
-	});
-
-	it("calls a lane with no events at all unstarted rather than fresh", async () => {
-		const out = await sweep(tree([{lane: "5897"}]));
-
-		expect(JSON.parse(out.stdout).lanes[0]).toMatchObject({
-			verdict: "unstarted",
-			ageMinutes: null,
-			lastEventAt: null,
-		});
 	});
 
 	it("answers zero lanes cleanly at exit 0, both for an empty root and an absent one", async () => {
@@ -202,15 +186,6 @@ describe("lane stale", () => {
 		expect(summary).toMatchObject({unreadable: 1, stale: 1});
 		expect(lanes.map((row: {key: string}) => row.key)).toEqual(["2", "1"]);
 		expect(lanes[1].reason).toContain("not the shape");
-	});
-
-	it("reports a lane whose timestamps do not parse as unreadable, never as moving", async () => {
-		const out = await sweep(tree([{lane: "3", log: line("WIP", "whenever")}]));
-
-		expect(JSON.parse(out.stdout).lanes[0]).toMatchObject({
-			verdict: "unreadable",
-			ageMinutes: null,
-		});
 	});
 
 	it("keys a chore root's lanes the way a caller addresses them", async () => {

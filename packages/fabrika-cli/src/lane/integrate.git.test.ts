@@ -7,18 +7,23 @@
  * install it reads was made from the lockfile the merge brought, so an assembly worktree carrying
  * the pre-merge install reds, and the same tree reconciled first goes green — with no source and no
  * lockfile change between the two runs.
+ *
+ * The verb runs in-process over the real spawner. Its git reads spawn in the process's own working
+ * directory, so each run enters the fixture with `process.chdir` and `afterEach` puts the runner's
+ * directory back.
  */
 import {execFileSync} from "node:child_process";
 import {mkdirSync, mkdtempSync, readFileSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {fileURLToPath} from "node:url";
-import {describe, expect, it} from "vitest";
+import {NodeServices} from "@effect/platform-node";
+import {Effect} from "effect";
+import {afterEach, describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {ASSEMBLY_RED, CHILD_UNSEATED, MERGE_CONFLICT, RECONCILE_REFUSED} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
+import {runIntegrate} from "./integrate-verb.ts";
 
-const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
 const EPIC = 7140;
 const CHILD = "build/7162-app-bootstrap";
 
@@ -142,37 +147,27 @@ const collision = (onCollision: string, validate = VALIDATE): Fixture => {
 	return {root, seat, lanes, base, tip};
 };
 
-const integrate = ({root, lanes}: Fixture) => {
-	try {
-		const stdout = execFileSync(
-			process.execPath,
-			[
-				"--experimental-strip-types",
-				BIN,
-				"lane",
-				"integrate",
-				String(EPIC),
-				"--child",
-				CHILD,
-				"--root",
-				lanes,
-			],
-			{cwd: root, encoding: "utf8", env: process.env},
-		);
-		return {code: 0, stdout};
-	} catch (err) {
-		const failure = err as {status?: number; stdout?: string};
-		return {code: failure.status ?? -1, stdout: failure.stdout ?? ""};
-	}
+const runnerCwd = process.cwd();
+afterEach(() => process.chdir(runnerCwd));
+
+const integrate = async ({root, lanes}: Fixture) => {
+	process.chdir(root);
+	const outcome = await Effect.runPromise(
+		Effect.provide(
+			runIntegrate({epic: EPIC, child: CHILD, root: lanes, lane: String(EPIC)}),
+			NodeServices.layer,
+		),
+	);
+	return {code: outcome.code, stdout: outcome.stdout};
 };
 
 describe("lane integrate over a real assembly worktree", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
-	it("reconciles the merged lockfile, so the validators judge the merge and not the stale install", () => {
+	it("reconciles the merged lockfile, so the validators judge the merge and not the stale install", async () => {
 		const tree = fixture("install.sh");
 
-		const {code, stdout} = integrate(tree);
+		const {code, stdout} = await integrate(tree);
 
 		expect(code).toBe(0);
 		expect(stdout.trim().split("\n").at(-1)).toBe("INTEGRATE-VERDICT: MERGED");
@@ -180,20 +175,20 @@ describe("lane integrate over a real assembly worktree", {
 		expect(git(tree.seat, "log", "-1", "--format=%s")).toContain("Merge");
 	});
 
-	it("is the red without that step: the same tree, the same child, no install between", () => {
+	it("is the red without that step: the same tree, the same child, no install between", async () => {
 		const tree = fixture(null);
 
-		const {code} = integrate(tree);
+		const {code} = await integrate(tree);
 
 		expect(code).toBe(ASSEMBLY_RED);
 		// The refusal put the branch back, so the run's next act cannot publish the bad merge.
 		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.base);
 	});
 
-	it("refuses an install that rewrote the lockfile, leaving the branch unpublished and reset", () => {
+	it("refuses an install that rewrote the lockfile, leaving the branch unpublished and reset", async () => {
 		const tree = fixture("rewriting-install.sh");
 
-		const {code} = integrate(tree);
+		const {code} = await integrate(tree);
 
 		expect(code).toBe(RECONCILE_REFUSED);
 		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.base);
@@ -204,10 +199,10 @@ describe("lane integrate over a real assembly worktree", {
 describe("a cross-child collision over a real assembly worktree", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
-	it("refuses it exactly as it always did while assemblyReplay is off", () => {
+	it("refuses it exactly as it always did while assemblyReplay is off", async () => {
 		const tree = collision("off");
 
-		const {code, stdout} = integrate(tree);
+		const {code, stdout} = await integrate(tree);
 
 		expect(code).toBe(MERGE_CONFLICT);
 		expect(stdout).toBe("");
@@ -216,10 +211,10 @@ describe("a cross-child collision over a real assembly worktree", {
 		expect(git(tree.root, "branch", "--list", "replay/*")).toBe("");
 	});
 
-	it("replays it onto the tip with the key on, and validates the replayed tree", () => {
+	it("replays it onto the tip with the key on, and validates the replayed tree", async () => {
 		const tree = collision("on");
 
-		const {code, stdout} = integrate(tree);
+		const {code, stdout} = await integrate(tree);
 
 		expect(code).toBe(0);
 		const lines = stdout.trim().split("\n");
@@ -240,16 +235,16 @@ describe("a cross-child collision over a real assembly worktree", {
 		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
 	});
 
-	it("lands the replayed child on its next integrate, with its row written once", () => {
+	it("lands the replayed child on its next integrate, with its row written once", async () => {
 		// The whole cycle the machine's WIP arm opens: replay, re-review, integrate again. The second
 		// run merged the superseded branch before the replay re-seated it — collided with its own
 		// landing, replayed that, and kept both sides of an empty-base hunk, so the child's row was
 		// written once more every turn and `landed` was unreachable.
 		const tree = collision("on");
-		expect(integrate(tree).code).toBe(0);
+		expect((await integrate(tree)).code).toBe(0);
 		const landed = readFileSync(join(tree.seat, REGISTRY), "utf8");
 
-		const {code, stdout} = integrate(tree);
+		const {code, stdout} = await integrate(tree);
 
 		expect(code).toBe(0);
 		expect(stdout.trim().split("\n").at(-1)).toBe("INTEGRATE-VERDICT: MERGED");
@@ -257,11 +252,11 @@ describe("a cross-child collision over a real assembly worktree", {
 		expect(landed).toBe(rows("one", "epic-row", "child-row"));
 	});
 
-	it("refuses on 54 when a working tree holds the child branch the replay must re-seat", () => {
+	it("refuses on 54 when a working tree holds the child branch the replay must re-seat", async () => {
 		const tree = collision("on");
 		git(tree.root, "checkout", CHILD);
 
-		const {code, stdout} = integrate(tree);
+		const {code, stdout} = await integrate(tree);
 
 		expect(code).toBe(CHILD_UNSEATED);
 		expect(stdout).toBe("");
@@ -269,11 +264,11 @@ describe("a cross-child collision over a real assembly worktree", {
 		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
 	});
 
-	it("puts both branches back when the replayed tree fails a validator", () => {
+	it("puts both branches back when the replayed tree fails a validator", async () => {
 		const tree = collision("on", "exit 1\n");
 		const graded = git(tree.seat, "rev-parse", CHILD);
 
-		const {code} = integrate(tree);
+		const {code} = await integrate(tree);
 
 		expect(code).toBe(ASSEMBLY_RED);
 		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.tip);

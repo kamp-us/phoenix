@@ -5,16 +5,23 @@
  * pin the order and not the outcome. Here the tree decides: the assembly branch is cut before trunk
  * moves, the verb fetches the real remote, and whether the merge is clean or a conflict is git's
  * answer over two real commits rather than a canned exit code.
+ *
+ * The hand calls run the verb in-process over the real spawner. Its git reads spawn in the process's
+ * own working directory, so each run enters the fixture with `process.chdir`. One spawn stays,
+ * because only the adapter binds `--on-review` to the gate and reads the repository's own key.
  */
 import {execFileSync} from "node:child_process";
 import {mkdirSync, mkdtempSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
-import {describe, expect, it} from "vitest";
+import {NodeServices} from "@effect/platform-node";
+import {Effect} from "effect";
+import {afterEach, describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {MERGE_CONFLICT} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
+import {DEFAULT_TRUNK_REF, runRefresh} from "./refresh-verb.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
 const EPIC = 8810;
@@ -78,36 +85,56 @@ const fixture = (collide: boolean): Fixture => {
 	return {root, seat, lanes, cut};
 };
 
-const refresh = ({root, lanes}: Fixture, ...flags: ReadonlyArray<string>) => {
-	try {
-		const stdout = execFileSync(
-			process.execPath,
-			[
-				"--experimental-strip-types",
-				BIN,
-				"lane",
-				"refresh",
-				String(EPIC),
-				"--root",
-				lanes,
-				...flags,
-			],
-			{cwd: root, encoding: "utf8", env: process.env},
-		);
-		return {code: 0, stdout};
-	} catch (err) {
-		const failure = err as {status?: number; stdout?: string; stderr?: string};
-		return {code: failure.status ?? -1, stdout: failure.stdout ?? "", stderr: failure.stderr ?? ""};
-	}
+const runnerCwd = process.cwd();
+afterEach(() => process.chdir(runnerCwd));
+
+/** A driver's hand call, which is never gated, so the key it carries is never read. */
+const refresh = async ({root, lanes}: Fixture) => {
+	process.chdir(root);
+	const outcome = await Effect.runPromise(
+		Effect.provide(
+			runRefresh({
+				epic: EPIC,
+				base: DEFAULT_TRUNK_REF,
+				gate: null,
+				assemblyRefresh: {
+					_tag: "Value",
+					value: {onReview: "off", onDispatch: "off"},
+					note: "the shipped `assemblyRefresh`",
+				},
+				root: lanes,
+				lane: String(EPIC),
+			}),
+			NodeServices.layer,
+		),
+	);
+	return {code: outcome.code, stdout: outcome.stdout, stderr: outcome.stderr.join("\n")};
 };
+
+/** The automatic call goes through the bin: the flag and the repository's own key are the adapter's. */
+const refreshOnReview = ({root, lanes}: Fixture): string =>
+	execFileSync(
+		process.execPath,
+		[
+			"--experimental-strip-types",
+			BIN,
+			"lane",
+			"refresh",
+			String(EPIC),
+			"--root",
+			lanes,
+			"--on-review",
+		],
+		{cwd: root, encoding: "utf8", env: process.env},
+	);
 
 describe("lane refresh over a real assembly worktree behind trunk", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
-	it("merges trunk in, parks nothing, and lands on a head it read back", () => {
+	it("merges trunk in, parks nothing, and lands on a head it read back", async () => {
 		const tree = fixture(false);
 
-		const {code, stdout} = refresh(tree);
+		const {code, stdout} = await refresh(tree);
 
 		expect(code).toBe(0);
 		const lines = stdout.trim().split("\n");
@@ -118,21 +145,21 @@ describe("lane refresh over a real assembly worktree behind trunk", {
 		expect(git(tree.seat, "merge-base", "--is-ancestor", "origin/main", "HEAD")).toBe("");
 	});
 
-	it("is CURRENT the second time, having merged nothing", () => {
+	it("is CURRENT the second time, having merged nothing", async () => {
 		const tree = fixture(false);
-		refresh(tree);
+		await refresh(tree);
 		const merged = git(tree.seat, "rev-parse", "HEAD");
 
-		const {code, stdout} = refresh(tree);
+		const {code, stdout} = await refresh(tree);
 
 		expect(code).toBe(0);
 		expect(stdout.trim().split("\n")).toEqual([merged, "REFRESH-VERDICT: CURRENT"]);
 	});
 
-	it("aborts a real conflict, proves the branch back at its pre-refresh head, and names a cause", () => {
+	it("aborts a real conflict, proves the branch back at its pre-refresh head, and names a cause", async () => {
 		const tree = fixture(true);
 
-		const {code, stderr} = refresh(tree);
+		const {code, stderr} = await refresh(tree);
 
 		expect(code).toBe(MERGE_CONFLICT);
 		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.cut);
@@ -143,10 +170,7 @@ describe("lane refresh over a real assembly worktree behind trunk", {
 	it("declines the automatic call under the shipped key, leaving the branch where it stood", () => {
 		const tree = fixture(false);
 
-		const {code, stdout} = refresh(tree, "--on-review");
-
-		expect(code).toBe(0);
-		expect(stdout.trim()).toBe("REFRESH-VERDICT: DECLINED");
+		expect(refreshOnReview(tree).trim()).toBe("REFRESH-VERDICT: DECLINED");
 		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.cut);
 	});
 });

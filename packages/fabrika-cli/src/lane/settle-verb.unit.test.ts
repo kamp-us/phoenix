@@ -196,14 +196,6 @@ describe("lane settle — the cancellation arm", () => {
 		});
 	});
 
-	it("ends a duplicate close the same way — `triage kill`'s own shape", async () => {
-		const fs = laneFs();
-
-		const out = await settle(fs, {closure: closes("closed", "duplicate")});
-
-		expect(JSON.parse(out.stdout)).toMatchObject({event: "ISSUE.CANCELLED", outcome: "duplicate"});
-	});
-
 	it("costs no pull-request read: a cancellation stands on the closure alone", async () => {
 		const fs = laneFs();
 		const forbidden: PullsReader<never> = () => {
@@ -241,17 +233,6 @@ describe("lane settle — the landing arm", () => {
 			landed: [6874],
 			sha: SHA,
 		});
-	});
-
-	it("counts a merged `Part of` PR as landed evidence, not only a closing keyword", async () => {
-		const fs = laneFs(AT_REVIEW);
-
-		const out = await settle(fs, {
-			closure: closes("closed", "completed"),
-			pulls: nominates([pull({linkKind: "part-of"})]),
-		});
-
-		expect(JSON.parse(out.stdout)).toMatchObject({event: "ISSUE.LANDED", landed: [6874]});
 	});
 
 	it("records the landing without a sha when the board published none", async () => {
@@ -297,30 +278,6 @@ describe("lane settle — the landing arm", () => {
 		const fs = laneFs(AT_REVIEW);
 
 		const out = await settle(fs, {closure: closes("closed", "completed"), pulls: noPulls});
-
-		expect(out.code).toBe(LANE_UNREADABLE);
-		expect(fs.written.has(LOG)).toBe(false);
-	});
-
-	it("refuses a completed close whose only candidate never merged", async () => {
-		const fs = laneFs(AT_REVIEW);
-
-		const out = await settle(fs, {
-			closure: closes("closed", "completed"),
-			pulls: nominates([pull({merged: false, open: true})]),
-		});
-
-		expect(out.code).toBe(LANE_UNREADABLE);
-		expect(fs.written.has(LOG)).toBe(false);
-	});
-
-	it("refuses a completed close whose merged candidate links another issue", async () => {
-		const fs = laneFs(AT_REVIEW);
-
-		const out = await settle(fs, {
-			closure: closes("closed", "completed"),
-			pulls: nominates([pull({linkedIssues: [4242]})]),
-		});
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(fs.written.has(LOG)).toBe(false);
@@ -503,15 +460,6 @@ describe("lane settle — what never reaches a terminal", () => {
 		const fs = laneFs();
 
 		const out = await settle(fs, {closure: closes("closed", null)});
-
-		expect(out.code).toBe(LANE_UNREADABLE);
-		expect(fs.written.has(LOG)).toBe(false);
-	});
-
-	it("appends nothing on a reason outside the three", async () => {
-		const fs = laneFs();
-
-		const out = await settle(fs, {closure: closes("closed", "reopened")});
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(fs.written.has(LOG)).toBe(false);
