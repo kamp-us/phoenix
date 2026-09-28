@@ -1,12 +1,13 @@
 /**
  * `table sync` against an in-memory table and issue graph: rows from lane records, un-bet lanes
  * under Outside the bets, a person's Stage left standing, group rows summed, and a second run that
- * writes nothing.
+ * writes nothing. Its reads run a few at a time and still refuse whole.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeShell, unconfigured} from "../fakes.test-support.ts";
-import {absent, present} from "../io/issues.ts";
+import {fail} from "../io/git.ts";
+import {absent, present, unknown} from "../io/issues.ts";
 import type {
 	FieldValue,
 	ItemFieldValue,
@@ -15,10 +16,18 @@ import type {
 	ProjectsAnswer,
 } from "../io/projects.ts";
 import {emit, type Instant, type LaneRecord, type Origin} from "../wire/lane-record.ts";
-import {MALFORMED_RECORD, NO_TARGET, NOT_SET_UP} from "./codes.ts";
+import {MALFORMED_RECORD, NO_TARGET, NOT_SET_UP, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {ORIGINS, STAGES} from "./shape.ts";
 import type {SyncNode} from "./sync.ts";
-import {type Located, runSync, type SyncBoard} from "./sync-verb.ts";
+import {
+	GRAPH_CAP,
+	type Located,
+	READ_FAN_OUT,
+	readRecords,
+	readScope,
+	runSync,
+	type SyncBoard,
+} from "./sync-verb.ts";
 
 const REPO = "acme/widgets";
 const BOT = "fabrika-bot";
@@ -525,5 +534,130 @@ describe("refusals", () => {
 
 		expect(outcome.code).toBe(MALFORMED_RECORD);
 		expect(table.writes).toEqual([]);
+	});
+});
+
+const WIDE = 200;
+const numbers = Array.from({length: WIDE}, (_, index) => index + 1);
+
+/** A 200-row table, every row an open issue carrying one lane record. */
+const wideTable = () =>
+	world(
+		Object.fromEntries(numbers.map((n) => [n, {records: [laneRecord(n)]}])),
+		numbers.map((number) => ({number})),
+	);
+
+/** Counts the reads in flight at once; each read waits a moment so its siblings can start. */
+const inFlight = () => {
+	let now = 0;
+	let peak = 0;
+	const seen: number[] = [];
+	const track = <A>(issue: number, read: Effect.Effect<A>): Effect.Effect<A> =>
+		Effect.gen(function* () {
+			now++;
+			peak = Math.max(peak, now);
+			seen.push(issue);
+			yield* Effect.sleep("1 millis");
+			const answer = yield* read;
+			now--;
+			return answer;
+		});
+	return {track, peak: () => peak, seen};
+};
+
+describe("reading a 200-row table", () => {
+	it("reads nodes and comments a few at a time, capped at READ_FAN_OUT, each issue once", async () => {
+		const table = wideTable();
+		const nodes = inFlight();
+		const comments = inFlight();
+		const board: SyncBoard<never> = {
+			...table.board,
+			node: (repo, n) => nodes.track(n, table.board.node(repo, n)),
+			comments: (repo, n) => comments.track(n, table.board.comments(repo, n)),
+		};
+		const rows = new Set(numbers);
+
+		const scoped = await Effect.runPromise(readScope(board, "table flags", REPO, numbers, rows));
+		if (scoped._tag !== "Graph") throw new Error(scoped.reason);
+		const read = await Effect.runPromise(readRecords(board, "table flags", REPO, scoped, rows));
+		if (read._tag !== "Records") throw new Error(read.reason);
+
+		expect(nodes.peak()).toBe(READ_FAN_OUT);
+		expect(comments.peak()).toBe(READ_FAN_OUT);
+		expect([...nodes.seen].sort((a, b) => a - b)).toEqual(numbers);
+		expect([...comments.seen].sort((a, b) => a - b)).toEqual(numbers);
+		expect(scoped.graph.size).toBe(WIDE);
+		expect(read.records.size).toBe(WIDE);
+	});
+
+	it("refuses PRECONDITION_UNKNOWN and writes nothing when one node read fails mid-batch", async () => {
+		const table = wideTable();
+		const nodes = inFlight();
+		const board: SyncBoard<never> = {
+			...table.board,
+			node: (repo, n) =>
+				nodes.track(
+					n,
+					n === 57 ? Effect.succeed(unknown<SyncNode>("gh timed out")) : table.board.node(repo, n),
+				),
+		};
+
+		const outcome = await sync(board);
+
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("cannot read #57: gh timed out");
+		expect(nodes.peak()).toBeGreaterThan(1);
+		expect(table.writes).toEqual([]);
+	});
+
+	it("refuses PRECONDITION_UNKNOWN and writes nothing when one comment read fails mid-batch", async () => {
+		const table = wideTable();
+		const comments = inFlight();
+		const board: SyncBoard<never> = {
+			...table.board,
+			comments: (repo, n) =>
+				comments.track(
+					n,
+					n === 123
+						? Effect.succeed(fail("listing came back short"))
+						: table.board.comments(repo, n),
+				),
+		};
+
+		const outcome = await sync(board);
+
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("cannot read #123's comments");
+		expect(comments.peak()).toBeGreaterThan(1);
+		expect(table.writes).toEqual([]);
+	});
+
+	it("still refuses at GRAPH_CAP without reading past it", async () => {
+		const seeds = Array.from({length: GRAPH_CAP}, (_, index) => index + 1);
+		const head = GRAPH_CAP + 1;
+		let reads = 0;
+		const board: SyncBoard<never> = {
+			...world({}).board,
+			node: (_repo, n) =>
+				Effect.sync(() => {
+					reads++;
+					return present<SyncNode>({
+						number: n,
+						open: true,
+						parent: head,
+						subIssues: [],
+						blockedBy: [],
+						blocking: [],
+					});
+				}),
+		};
+
+		const scoped = await Effect.runPromise(readScope(board, "table sync", REPO, seeds, new Set()));
+
+		expect(scoped._tag).toBe("Refused");
+		if (scoped._tag !== "Refused") return;
+		expect(scoped.code).toBe(PRECONDITION_UNKNOWN);
+		expect(scoped.reason).toContain(`reach past ${GRAPH_CAP} issues`);
+		expect(reads).toBe(GRAPH_CAP);
 	});
 });

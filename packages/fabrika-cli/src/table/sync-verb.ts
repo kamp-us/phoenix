@@ -81,6 +81,23 @@ const VERB = "table sync";
 /** How many issues one run may read into its graph before it stops rather than walk on. */
 export const GRAPH_CAP = 2000;
 
+/**
+ * How many GitHub reads a table reader keeps in flight at once. GitHub asks REST clients to avoid
+ * concurrent requests because of its secondary rate limits
+ * ([best practices](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api#avoid-concurrent-requests)),
+ * so the cap stays small.
+ */
+export const READ_FAN_OUT = 8;
+
+/** Run `read` over every key, at most {@link READ_FAN_OUT} at once, answering in the keys' order. */
+export const readEach = <K, A, R>(
+	keys: ReadonlyArray<K>,
+	read: (key: K) => Effect.Effect<A, never, R>,
+): Effect.Effect<ReadonlyArray<readonly [K, A]>, never, R> =>
+	Effect.forEach(keys, (key) => Effect.map(read(key), (value) => [key, value] as const), {
+		concurrency: READ_FAN_OUT,
+	});
+
 export type Located =
 	| {readonly _tag: "Located"; readonly project: ProjectSnapshot}
 	| {readonly _tag: "Refused"; readonly code: number; readonly reason: string};
@@ -202,14 +219,14 @@ export const readScope = <R>(
 		let scoped: Scope = scope(seeds, rows, graph);
 		let wanted: ReadonlyArray<number> = scoped._tag === "Incomplete" ? scoped.missing : [];
 		while (wanted.length > 0) {
-			for (const issue of wanted) {
-				if (graph.size >= GRAPH_CAP) {
-					return refused(
-						PRECONDITION_UNKNOWN,
-						`${verb}: the groups this run touches reach past ${GRAPH_CAP} issues — name fewer issues at a time. Nothing was written.`,
-					);
-				}
-				const read = yield* board.node(repo, issue);
+			if (graph.size + wanted.length > GRAPH_CAP) {
+				return refused(
+					PRECONDITION_UNKNOWN,
+					`${verb}: the groups this run touches reach past ${GRAPH_CAP} issues — name fewer issues at a time. Nothing was written.`,
+				);
+			}
+			const reads = yield* readEach(wanted, (issue) => board.node(repo, issue));
+			for (const [issue, read] of reads) {
 				if (read._tag === "Unknown") {
 					return refused(
 						PRECONDITION_UNKNOWN,
@@ -255,9 +272,11 @@ export const readRecords = <R>(
 ): Effect.Effect<Records | Refusal, never, R> =>
 	Effect.gen(function* () {
 		const records = new Map<number, ReadonlyArray<LaneRecord>>();
-		for (const issue of touched(scoped)) {
-			if (scoped.graph.get(issue)?.open !== true && !rows.has(issue)) continue;
-			const comments = yield* board.comments(repo, issue);
+		const standing = touched(scoped).filter(
+			(issue) => scoped.graph.get(issue)?.open === true || rows.has(issue),
+		);
+		const reads = yield* readEach(standing, (issue) => board.comments(repo, issue));
+		for (const [issue, comments] of reads) {
 			if (comments._tag === "Failure") {
 				return refused(
 					PRECONDITION_UNKNOWN,
@@ -296,8 +315,11 @@ const readWorld = <R>(
 
 		const merged = new Set<number>();
 		const prs = new Set([...records.values()].flat().flatMap((record) => record.prs));
-		for (const pr of [...prs].sort((a, b) => a - b)) {
-			const state = yield* board.merged(repo, pr);
+		const reads = yield* readEach(
+			[...prs].sort((a, b) => a - b),
+			(pr) => board.merged(repo, pr),
+		);
+		for (const [pr, state] of reads) {
 			if (state._tag === "Failure") {
 				return refused(
 					PRECONDITION_UNKNOWN,
@@ -558,9 +580,12 @@ export const syncBoard: SyncBoard<ChildProcessSpawner.ChildProcessSpawner> = {
 			const found = yield* getIssue(repo, issue);
 			if (found._tag !== "Present") return found;
 			if (found.value.isPullRequest) return absent<SyncNode>();
+			const reads = yield* Effect.all(
+				[subIssues, blockedBy, blocking].map((list) => list(repo, issue)),
+				{concurrency: "unbounded"},
+			);
 			const edges: Array<ReadonlyArray<number>> = [];
-			for (const list of [subIssues, blockedBy, blocking]) {
-				const read = yield* list(repo, issue);
+			for (const read of reads) {
 				if (read._tag === "Unknown") return read;
 				if (read._tag === "Absent") return unknown<SyncNode>(`#${issue}'s edges vanished mid-read`);
 				edges.push(read.value);
