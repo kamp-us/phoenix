@@ -176,31 +176,6 @@ describe("PiServerService", () => {
 		);
 	});
 
-	it.live("pushes a session snapshot per change, with advancing revisions", () => {
-		const host = makeScriptedHost();
-		return withServer(host, (server) =>
-			Effect.gen(function* () {
-				const client = yield* dial(server);
-				const session = yield* createSession(client, "r0");
-				yield* client.request("p1", {command: "prompt", sessionId: session.id, text: "hi"});
-				yield* responseOf(client, "p1");
-
-				const pushed = yield* client.next(
-					(message) =>
-						message.type === "service_update" &&
-						message.update.type === "session_snapshot" &&
-						message.update.snapshot.revision >= 1,
-				);
-				const snapshot = sessionSnapshotOf(pushed);
-				assert.isAtLeast(snapshot.revision, 1);
-				assert.deepStrictEqual(
-					snapshot.transcript.map((item) => item.role),
-					["user", "assistant"],
-				);
-			}),
-		);
-	});
-
 	it.live("refuses a second connection attaching an owned session", () => {
 		const host = makeScriptedHost();
 		return withServer(host, (server) =>

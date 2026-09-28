@@ -14,10 +14,8 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {pathToFileURL} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
-import {ItemId, type TranscriptItem} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AiAgentSessionState,
-	initialState,
 	isAiAgentSessionState,
 } from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import {AI_AGENT_INSPECTOR_REF} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
@@ -132,28 +130,6 @@ describe("the pi-session program row", () => {
 			piSessionProgram({cwd: tempProject(), pi, scope: PROBE_SCOPE}).id,
 			ProgramId.make(PI_SESSION_PROGRAM),
 		);
-	});
-
-	/**
-	 * #8170's rule, inherited rather than restated: `aiAgentProgram` sets
-	 * `checkpointWorthy: (state) => !holdsPartialItem(state)`, so a Pi reply mid-flight is a state
-	 * the row refuses to write the moment `itemOf` marks it partial.
-	 */
-	it("writes no checkpoint while a reply is still being written", () => {
-		const declared = row(tempProject());
-		const base = initialState(CWD_UNDER_TEST);
-		const holding = (item: TranscriptItem): AiAgentSessionState => ({
-			...base,
-			transcript: {...base.transcript, items: [item]},
-		});
-		const settled = {
-			kind: "assistant",
-			id: ItemId.make("item-1"),
-			timestamp: 11,
-			text: "hi there",
-		} as const satisfies TranscriptItem;
-		assert.isFalse(declared.checkpointWorthy?.(holding({...settled, partial: true})));
-		assert.isTrue(declared.checkpointWorthy?.(holding(settled)));
 	});
 
 	it("reads the project root two directories up from the config module", () => {

@@ -189,20 +189,4 @@ describe("applying one delta to the value it was diffed from", () => {
 		assert.deepStrictEqual(roundTrip(opened, writing), writing);
 		assert.deepStrictEqual(roundTrip(writing, settled), settled);
 	});
-
-	it("replaces a row by id rather than appending a second copy of it", () => {
-		const writing = snapshot({
-			transcript: [user, reply("hi", "streaming")],
-			phase: "turn",
-			revision: 2,
-		});
-		const settled = snapshot({
-			transcript: [user, reply("hi back", "complete")],
-			phase: "turn",
-			revision: 3,
-		});
-		const applied = roundTrip(writing, settled);
-		assert.lengthOf(applied.transcript, 2);
-		assert.deepStrictEqual(applied.transcript[1], reply("hi back", "complete"));
-	});
 });

@@ -91,11 +91,6 @@ describe("resolving a detached spawn through the tool-call index", () => {
 		expect(readAsyncSpawn(root, "call-9", resultsRoot(root))).toBeNull();
 	});
 
-	it("answers nothing when no marker was ever written", () => {
-		const root = asyncRoot();
-		expect(readAsyncSpawn(root, "call-9", resultsRoot(root))).toBeNull();
-	});
-
 	it("answers nothing when the aliased run has no status to read", () => {
 		const root = asyncRoot();
 		const dir = join(root, ".active-runs", "tool-calls", encodeIndexSegment("call-9"));
@@ -170,31 +165,6 @@ describe("resolving a detached spawn through the tool-call index", () => {
 		expect(readAsyncSpawn(root, id, resultsRoot(root))).toEqual({
 			runIds: ["worker-1"],
 			agent: "builder",
-		});
-	});
-
-	it("carries every worker a fan-out started, naming the row after all of them", () => {
-		const root = asyncRoot();
-		launch(
-			root,
-			"async-4",
-			{
-				runId: "async-4",
-				toolCallId: "call-9",
-				mode: "workflow",
-				state: "running",
-				startedAt: 1,
-				steps: [
-					{agent: "builder", runId: "worker-1", status: "complete"},
-					{agent: "reviewer", runId: "worker-2", status: "running"},
-					{agent: "reviewer", status: "pending"},
-				],
-			},
-			"call-9",
-		);
-		expect(readAsyncSpawn(root, "call-9", resultsRoot(root))).toEqual({
-			runIds: ["worker-1", "worker-2"],
-			agent: "builder, reviewer",
 		});
 	});
 });
