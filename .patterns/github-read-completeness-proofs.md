@@ -30,6 +30,8 @@ disagree with. For comments that fact is the issue payload's own `comments` coun
 `listCommentsReconciled` reads the list first and the count second — the count is therefore the later
 fact — and a list shorter than it provably missed something. A shortfall is re-read on a bounded
 backoff; one that survives every attempt is a failure, never a shorter list handed on.
+`reconcileComments` (`packages/fabrika-cli/src/io/issue-batch.ts`) keeps that order over a wave of
+issues: every list first, then every count in one batched GraphQL read.
 `IssueRecord.comments` is `0` when the payload carried none, so an absent denominator fences nothing
 in either direction.
 

@@ -301,7 +301,9 @@ REST is the default, and issue search stays REST. The supported GraphQL exceptio
 - the auto-merge mutation;
 - the relationship between an issue and the pull requests that close it;
 - GitHub Projects (v2): the betting table's project, fields, views, items, field values and
-  status updates.
+  status updates;
+- batched issue reads: many issues' state, parent, sub-issues, blocked-by, blocking and comment
+  count in one request.
 
 These exceptions belong to the CLI transport. They do not authorize raw GraphQL commands
 in a skill. Extending the list requires a decision in the adopting repository. Every list

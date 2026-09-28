@@ -13,9 +13,10 @@
  *   read proves completeness by `total_count`, a bare-array read declares no count at all and its
  *   proof is exhausted pagination — a terminal page carrying no `rel="next"` link.
  *
- * REST throughout, with exactly four carves: {@link graphqlRead} for review threads
- * and their mutations, the auto-merge mutation, `pullsClosing` in `./pulls.ts`, and the Projects
- * (v2) client in `./projects.ts`, carved by ruling rather than by a missing REST edge. Issue
+ * REST throughout, with exactly five carves: {@link graphqlRead} for review threads
+ * and their mutations, the auto-merge mutation, `pullsClosing` in `./pulls.ts`, the Projects
+ * (v2) client in `./projects.ts`, and the batched issue reads in `./issue-batch.ts`, carved by
+ * ruling rather than by a missing REST edge. Issue
  * *search* stays REST — this org's Projects-classic integration errors GraphQL search out.
  *
  * The credential is an argument to every leg *of this module*, never something a leg resolves —
@@ -543,11 +544,14 @@ export const pagedEnvelope = (
 /**
  * The one non-REST leg, and it is a carve rather than a default.
  *
- * Four things need it and nothing else may: review-thread resolution state with the reply and
- * resolve mutations, `enablePullRequestAutoMerge`, `pullsClosing` in `./pulls.ts`, and the
- * Projects (v2) client in `./projects.ts`. Issue
+ * Five things need it and nothing else may: review-thread resolution state with the reply and
+ * resolve mutations, `enablePullRequestAutoMerge`, `pullsClosing` in `./pulls.ts`, the
+ * Projects (v2) client in `./projects.ts`, and the batched issue reads in `./issue-batch.ts` —
+ * many aliased `issue(number:)` nodes per request, each read for its state, parent, sub-issues,
+ * blocked-by, blocking and comment count. Issue
  * *search* stays REST — what this org's Projects-classic integration errors out is the GraphQL
- * search connection, not the `repository(...){issue(number:)}` node `pullsClosing` reaches.
+ * search connection, not the `repository(...){issue(number:)}` node `pullsClosing` and the batched
+ * issue reads reach.
  */
 export const graphqlRead = (
 	token: string,

@@ -1,7 +1,7 @@
 ---
 id: 0315
 title: fabrika-cli resolves its GitHub token from the environment first, and GraphQL is a three-item carve
-status: amended-in-part by [0418](0418-projects-v2-is-a-graphql-carve.md)
+status: amended-in-part by [0418](0418-projects-v2-is-a-graphql-carve.md), [0431](0431-batched-issue-reads-graphql-carve.md)
 date: 2026-08-20
 tags: [fabrika-cli, github, http, credentials]
 ---
