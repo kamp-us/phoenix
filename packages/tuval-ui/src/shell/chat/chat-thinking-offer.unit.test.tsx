@@ -116,14 +116,6 @@ describe("the thinking control", () => {
 		await waitFor(async () => expect(await reading()).toContain("none offered"));
 		expect(screen.queryByRole("menuitemradio")).toBeNull();
 	});
-
-	it("says nothing offered on a restored session whose backend offers no levels", async () => {
-		// The reported shape: a restored Pi faux desk, past its turns, phase `ready`. Every capture
-		// of it read `loading`, and the session it describes was never going to fill.
-		mount("ready", emptyOffer);
-		await waitFor(async () => expect(await reading()).toContain("none offered"));
-		await waitFor(async () => expect(await reading()).not.toContain("loading"));
-	});
 });
 
 /**

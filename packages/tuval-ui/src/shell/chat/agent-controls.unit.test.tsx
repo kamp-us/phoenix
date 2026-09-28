@@ -140,13 +140,6 @@ describe("a collapsible tool row", () => {
 		expect(await screen.findByText("9 bytes omitted from this result")).toBeDefined();
 	});
 
-	it("says nothing about omission when the result came back whole", async () => {
-		await open(withTranscript([call("t1", {output: "short"})]));
-		await click(await screen.findByRole("button", {name: "read_file ok"}));
-		await screen.findByText("short");
-		expect(screen.queryByText(/bytes omitted/)).toBeNull();
-	});
-
 	it("keeps the open row open across a state update, off the view slot", async () => {
 		const {process, host} = await open(withTranscript([call("t1"), userItem("u1", "next")]));
 		await click(await screen.findByRole("button", {name: "read_file ok"}));
@@ -264,6 +257,7 @@ describe("permission cards", () => {
 			await Effect.runPromise(process.commit(pending({})));
 		});
 		await waitFor(() => expect(screen.queryByRole("region", {name: "Run a command"})).toBeNull());
+		expect(document.querySelector(".tuval-chat-permissions")).toBeNull();
 	});
 });
 

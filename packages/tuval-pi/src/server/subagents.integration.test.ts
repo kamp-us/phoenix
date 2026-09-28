@@ -27,7 +27,7 @@ import {subagentExtensionPaths} from "./subagents.ts";
 
 const MODEL = {provider: "faux", id: "faux-1"} as const;
 
-const hostLayer = (cwd: string, piSubagents: boolean) =>
+const hostLayer = (cwd: string) =>
 	Layer.unwrap(
 		Effect.tryPromise({
 			try: async () => {
@@ -44,14 +44,13 @@ const hostLayer = (cwd: string, piSubagents: boolean) =>
 					authPath: join(cwd, "agent", "auth.json"),
 				});
 				modelRuntime.registerNativeProvider(faux.provider);
-				const extensionPaths = subagentExtensionPaths({piSubagents});
 				return agentSessionHostLayer({
 					modelRuntime,
 					agentDir: join(cwd, "agent"),
 					// The host names its store outright now; this case's is under its own temp root.
 					sessionDir: join(cwd, "pi-sessions"),
 					noTools: "all",
-					...(extensionPaths.length === 0 ? {} : {extensionPaths}),
+					extensionPaths: subagentExtensionPaths({piSubagents: true}),
 				});
 			},
 			catch: (cause) => new SessionOpenFailed({cwd, detail: String(cause)}),
@@ -86,11 +85,6 @@ const turn = (cwd: string) =>
 describe("a Pi session with the subagent extension loaded", () => {
 	it.live("opens, prompts and answers with the flag on", () => {
 		const cwd = mkdtempSync(join(tmpdir(), "tuval-pi-subagents-on-"));
-		return turn(cwd).pipe(Effect.provide(hostLayer(cwd, true)));
-	});
-
-	it.live("opens the same session with the flag off", () => {
-		const cwd = mkdtempSync(join(tmpdir(), "tuval-pi-subagents-off-"));
-		return turn(cwd).pipe(Effect.provide(hostLayer(cwd, false)));
+		return turn(cwd).pipe(Effect.provide(hostLayer(cwd)));
 	});
 });

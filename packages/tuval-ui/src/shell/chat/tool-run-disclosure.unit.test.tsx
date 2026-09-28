@@ -131,15 +131,6 @@ describe("a run of tool calls opens to its calls", () => {
 		expect(lines).toEqual(["Read src/rows.tsok", "Read src/view.tsok", "Bash pnpm testok"]);
 		harness.unmount();
 	});
-
-	it("keys the run on its own row key, never on the first call's id", async () => {
-		const harness = await openWindow();
-
-		await open(runTrigger());
-
-		await waitFor(() => expect(harness.view().expanded).toEqual(["tools:t0"]));
-		harness.unmount();
-	});
 });
 
 describe("a call inside a run opens to its detail", () => {

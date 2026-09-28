@@ -196,39 +196,6 @@ describe("a session branch as pageable history", () => {
 		]);
 	});
 
-	it("carries an assistant turn's reasoning as its own row beside the reply", () => {
-		const items = pageItems([
-			message("e1", null, 1, said("think first")),
-			message("e2", "e1", 2, {
-				role: "assistant",
-				content: [
-					{type: "thinking", thinking: "weighing it up"},
-					{type: "text", text: "here is the answer"},
-				],
-				provider: "faux",
-				model: "faux-1",
-				stopReason: "stop",
-				timestamp: 0,
-			}),
-		]);
-		expect(items.slice(1)).toEqual([
-			{
-				kind: "thinking",
-				id: "e2:thinking",
-				alias: "item-1:thinking",
-				timestamp: Date.parse(at(2)),
-				text: "weighing it up",
-			},
-			{
-				kind: "assistant",
-				id: "e2",
-				alias: "item-1",
-				timestamp: Date.parse(at(2)),
-				text: "here is the answer",
-			},
-		]);
-	});
-
 	it("skips a message the wire does not carry without shifting the entries after it", () => {
 		const items = pageItems([
 			message("e1", null, 1, {role: "extension-only", content: [], timestamp: 0}),

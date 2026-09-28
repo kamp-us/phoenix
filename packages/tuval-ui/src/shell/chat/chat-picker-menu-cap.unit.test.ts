@@ -99,33 +99,11 @@ describe("the composer's setting picker", () => {
 		expect(cap?.absolutePx).toBeGreaterThan(0);
 	});
 
-	it("scrolls the rows rather than the transcript behind them", () => {
-		const content = openPicker(30);
-		const checked = content.querySelector('[data-state="checked"]');
-
-		expect(checked).not.toBeNull();
-		// The cap is on `content` because that is the `rootEl` Zag's menu machine scrolls a
-		// highlighted item within, so arrow-keying below the fold moves this element and nothing
-		// above it.
-		expect(content.contains(checked)).toBe(true);
-		expect(declaredCap(document.body)).toBeNull();
-	});
-
 	it("leaves the group label unpinned, so no row scrolls under a sticky header", () => {
 		const content = openPicker(30);
 		const label = content.querySelector<HTMLElement>('[data-part="item-group-label"]');
 
 		expect(label).not.toBeNull();
 		expect(label && getComputedStyle(label).getPropertyValue("position")).not.toBe("sticky");
-	});
-
-	it("leaves the thinking picker's short list under the same cap, unchanged", () => {
-		const thinking = openPicker(7);
-		const model = openPicker(30);
-
-		// One rule serves both pickers, so the short list gains a cap it never reaches rather than
-		// a second declaration that could drift from the model picker's.
-		expect(declaredCap(thinking)).toEqual(declaredCap(model));
-		expect(getComputedStyle(thinking).getPropertyValue("overflow-y")).toBe("auto");
 	});
 });

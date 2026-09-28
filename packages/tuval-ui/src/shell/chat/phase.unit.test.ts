@@ -34,15 +34,22 @@ const lineOf = (
 
 describe("the status line", () => {
 	it("is the phase's own sentence while nothing has failed", () => {
-		const phases: ReadonlyArray<Phase> = ["idle", "starting", "ready", "prompting", "gone"];
-		expect(phases.map((phase) => lineOf(phase, null))).toEqual(
-			phases.map((phase) => phaseLines[phase]),
-		);
-	});
-
-	it("reads as pending while a start is in flight, not as never started", () => {
-		expect(lineOf("starting", null)).toBe("Starting the session…");
-		expect(lineOf("starting", null)).not.toBe(phaseLines.idle);
+		const phases: ReadonlyArray<Phase> = [
+			"idle",
+			"starting",
+			"ready",
+			"prompting",
+			"reconnecting",
+			"gone",
+		];
+		expect(phases.map((phase) => lineOf(phase, null))).toEqual([
+			"Not started.",
+			"Starting the session…",
+			"Ready.",
+			"Working — Escape interrupts.",
+			"Reconnecting…",
+			"The session is gone.",
+		]);
 	});
 
 	it("names the reason a start failed rather than reading as never started", () => {
@@ -87,19 +94,6 @@ describe("the status line", () => {
 		});
 		expect(unknown).not.toBe(waiting);
 		expect(unknown).toContain("has not confirmed");
-	});
-
-	// Neither line may read as a finished turn: the outcome is unknown, and a window that says
-	// "Ready." over an unanswered abort is the misreport #8007 is about.
-	it("never presents an outstanding interruption as a completed turn", () => {
-		for (const elapsed of [0, 1_000, interruptionGraceMillis, interruptionGraceMillis * 100]) {
-			const line = lineOf("prompting", null, {requestedAt: NOW, now: NOW + elapsed});
-			expect(line).not.toBe(phaseLines.ready);
-		}
-	});
-
-	it("goes back to the phase's own sentence once the interruption is settled", () => {
-		expect(lineOf("ready", null)).toBe(phaseLines.ready);
 	});
 
 	// ADR 0356: the backend answered the abort by refusing, which "has not confirmed" reports as

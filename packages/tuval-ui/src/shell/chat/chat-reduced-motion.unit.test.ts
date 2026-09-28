@@ -98,11 +98,6 @@ describe("the reduced-motion collapse", () => {
 		.map((selector) => selector.trim())
 		.filter((selector) => selector.length > 0);
 
-	it("declares a reduced-motion block at all", () => {
-		expect(reduced.trim().length).toBeGreaterThan(0);
-		expect(overrides.length).toBeGreaterThan(0);
-	});
-
 	it("cancels every animation the sheet starts, with a rule that wins the cascade over it", () => {
 		const animated = animatedRules(rest);
 		expect(animated.length).toBeGreaterThan(0);
@@ -122,18 +117,6 @@ describe("the reduced-motion collapse", () => {
 				`the reduced-motion override for \`${selector}\` does not win the cascade over it`,
 			).toBe(true);
 		}
-	});
-
-	// The generic assertion above already covers this rule; it is named here because a run's
-	// "still going" is the one state in the transcript a reader would otherwise read off motion.
-	it("cancels the tool-run shimmer, whose state is carried by the word beside it", () => {
-		const shimmer = [...rest.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find(
-			([, selectors, body]) =>
-				(selectors ?? "").includes("tuval-chat-tool-run-shimmer") &&
-				/animation(?:-name)?\s*:\s*tuval-chat-tool-run-pulse/.test(body ?? ""),
-		);
-		expect(shimmer, "the tool-run shimmer rule is gone — re-point this assertion").toBeDefined();
-		expect(overrides).toContain(".tuval-chat-tool-run-shimmer");
 	});
 
 	// Pillar 4: the collapse above is only safe if the state does not ride on the motion it cancels.

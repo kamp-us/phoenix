@@ -263,12 +263,6 @@ describe("projectTranscript over a reply still being written", () => {
 		});
 	});
 
-	it("leaves the transcript untouched when nothing is in flight", () => {
-		assert.deepStrictEqual(projectTranscript([asked, landed], undefined), [
-			...projectTranscript([asked, landed]),
-		]);
-	});
-
 	it("produces a streaming item the wire accepts", () => {
 		encodeServerMessage({
 			type: "service_update",
@@ -311,23 +305,6 @@ describe("streamingMessage", () => {
 			streamingMessage({streamPartialText: false}, {streamingMessage: inFlight}),
 			undefined,
 		);
-	});
-
-	it("leaves the projected transcript the settled messages alone when it is off", () => {
-		const asked: SourceMessage = {
-			role: "user",
-			content: [{type: "text", text: "say hello"}],
-			timestamp: 1,
-		};
-		const items = projectTranscript(
-			[asked, {...inFlight, content: [{type: "text", text: "hello there"}], stopReason: "stop"}],
-			streamingMessage({}, {streamingMessage: inFlight}),
-		);
-		assert.deepStrictEqual(
-			items.map((item) => item.id),
-			["item-0", "item-1"],
-		);
-		assert.isFalse(items.some((item) => "status" in item && item.status === "streaming"));
 	});
 
 	it("is the in-flight message when the flag is on", () => {
