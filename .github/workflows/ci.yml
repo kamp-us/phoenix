@@ -690,9 +690,9 @@ jobs:
   # `@kampus/infra` (the CI-credential stack, #1437) is named explicitly alongside
   # the `./packages/**` glob so its permission-group guard suite runs here too.
   # These are node-pool unit suites (ADR 0082): no DB, no worker deploy, no creds —
-  # fast (~7s, ~500 tests), no sharding. Run FULL (no `--changed`): the `packages`
-  # path filter already scopes the JOB, and a full run has no zero-selection hole
-  # (ADR 0092) — same posture as `unit`.
+  # no sharding. The `packages` path filter scopes the JOB, and inside it a PR or queue
+  # batch runs only what the diff reaches (vitest `--changed`, below), the same posture
+  # as `unit`.
   #
   # Unlike `ci-required`'s zero-dep bin, the suites need their deps, so this job
   # installs (`--frozen-lockfile`). Run-ness is single-sourced from

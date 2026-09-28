@@ -49,12 +49,17 @@ export default defineConfig({
 	test: {
 		// CI runs `unit` with `vitest --changed <base>` on a PR (#10074), which follows imports only.
 		// The boundary and focus-ring tests walk this app's `src/` and read the SDK's and
-		// `@kampus/tuval-ui`'s sources and manifests as text, so a change to one of these runs the
-		// whole suite. Vitest reads this off the root config, once per run.
+		// `@kampus/tuval-ui`'s sources and manifests as text. The boot and program tests load
+		// `.tuval/tuval.config.ts` through a spawned bin or a runtime `import()`, and the SDK
+		// boundary tests walk and `tsc`-compile `test-consumer/`. A change to one of these runs the
+		// whole suite. `.tuval/` is held to sources because a desk writes untracked state beside
+		// them. Vitest reads this off the root config, once per run.
 		forceRerunTriggers: [
 			...configDefaults.forceRerunTriggers,
 			`${repo}apps/tuval/package.json`,
+			`${repo}apps/tuval/.tuval/**/*.{ts,tsx}`,
 			`${repo}apps/tuval/src/**`,
+			`${repo}apps/tuval/test-consumer/**`,
 			`${repo}packages/tuval/package.json`,
 			`${repo}packages/tuval/src/**`,
 			`${repo}packages/tuval-ui/src/**`,
