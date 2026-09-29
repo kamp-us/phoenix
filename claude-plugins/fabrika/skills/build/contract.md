@@ -2809,8 +2809,8 @@ the same functions, not a copy — around the push, in this order:
 A re-run is how a half-done step finishes. When the ref already moved, the re-run's push is a no-op
 that reads back `MOVED`, and when the PR already landed, its create answers `existing`, so a re-run
 after an `8` never opens a second PR. A repair lane's PR is already open, so it reads no body and
-runs no PR step. What a failure between the push and the create leaves behind is the ADR's
-accepted cost: this verb adds no cleanup rule and no adoption path for it.
+runs no PR step. A failure between the push and the create can leave a pushed branch with no PR;
+no cleanup rule and no adoption path exist for it, and a re-run or a hand cleanup clears it.
 
 **Output** — machine, **single-stream: the entire report is stdout**, and the last line is always
 exactly one of:
