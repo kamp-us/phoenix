@@ -169,7 +169,7 @@ sibling's numerals is not a goal the doctrine sets.
 | `13` | proven: at least one surface threw an uncaught page error during render — the render is red |
 | `14` | proven: at least one surface is unreachable — status ≥ 400 or failed navigation (no route, dark flag, gated tier); each named on stderr |
 | `15` | proven: a capture was produced but is invalid — zero bytes, undecodable, zero area, or a set member fails its manifest sha |
-| `16` | proven: no preview deployment exists for this PR — the announced-preview convention resolves to nothing; the skill's CANT-SEE route |
+| `16` | proven: no preview deployment exists for this PR — the announced-preview convention resolves to nothing; where the skill tries its `--no-preview` route, and ends CANT-SEE only where that route refuses |
 | `17` | proven: at least one evidence upload or upload-verification failed — **nothing was posted** |
 | `18` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing posted |
 | `20` | refused, proven: the text review a `route` record rests on is not a standing PASS at the head it binds — the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on a hand-verification has no text verdict binding that head — nothing posted |
@@ -184,8 +184,8 @@ GitHub is not a fact about anything; no message here reads "does not exist, or i
 would bind a tree that is not the PR* — because the caller's move is identical (re-render /
 re-review at the live head), where `13`/`14`/`15`/`16` each route differently and stay four codes.
 **`16` is not `7`**: the PR exists; what is proven absent is the repo's ability to show it — a
-routable can't-see state the skill acts on by name — a can't-see the reviewer declares out loud,
-made mechanical.
+routable state the skill acts on by name: it runs the `--no-preview` route there, and only where
+that route refuses is it a can't-see the reviewer declares out loud, made mechanical.
 
 ## Required environment — the two render paths
 
