@@ -19,6 +19,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  * @ruling https://github.com/kamp-us/phoenix/issues/9989
  * @ruling https://github.com/kamp-us/phoenix/issues/10086
+ * @ruling https://github.com/kamp-us/phoenix/issues/9872#issuecomment-5852556900
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -31,10 +32,12 @@ import {subIssues} from "../io/edges.ts";
 import {execRecord} from "../io/exec.ts";
 import {type Attempt, fail, ok} from "../io/git.ts";
 import {
+	type CommentRecord,
 	closedIssuesWithLabel,
 	createComment,
 	getIssue,
 	type ListedIssue,
+	listComments,
 	listOpenIssueFacts,
 	resolveRepo,
 	timelineFacts,
@@ -114,6 +117,7 @@ import {
 	planOnCall,
 	readOnCall,
 } from "./on-call-prep.ts";
+import {type RuledUnbuilt, ruledSuspects, ruledUnbuiltOf} from "./ruled.ts";
 import {FIELD} from "./shape.ts";
 import type {Row, SyncNode} from "./sync.ts";
 import {
@@ -121,6 +125,7 @@ import {
 	githubWave,
 	locateTable,
 	type Refusal,
+	readEach,
 	readNodes,
 	rowsOf,
 	type SyncBoard,
@@ -150,6 +155,11 @@ export interface PrepBoard<R>
 	) => Effect.Effect<Attempt<ReadonlyArray<ListedIssue>>, never, R>;
 	/** The sub-issues of every closed epic, open or not. */
 	readonly followUps: (repo: string) => Effect.Effect<Attempt<ReadonlyArray<FollowUp>>, never, R>;
+	/** Every comment on the issue with its author and stamps: where a ruling marker is read. */
+	readonly rulings: (
+		repo: string,
+		issue: number,
+	) => Effect.Effect<Attempt<ReadonlyArray<CommentRecord>>, never, R>;
 	readonly remove: (
 		projectId: string,
 		itemId: string,
@@ -421,6 +431,42 @@ const converge = <R>(
 const numbers = (issues: ReadonlyArray<number>): string =>
 	issues.map((issue) => `#${issue}`).join(", ");
 
+/**
+ * The rulings no one has built, read off each suspect's comments against the control-plane roster.
+ * An unread roster or comment list refuses: an issue it could not read is neither ruled nor unruled.
+ */
+const readRuled = <R>(
+	board: PrepBoard<R>,
+	repo: string,
+	suspects: ReadonlyArray<number>,
+	deciders: Deciders,
+): Effect.Effect<
+	{readonly _tag: "Read"; readonly ruled: ReadonlyArray<RuledUnbuilt>} | Refusal,
+	never,
+	R
+> =>
+	Effect.gen(function* () {
+		if (suspects.length === 0) return {_tag: "Read" as const, ruled: []};
+		if (deciders._tag !== "Roster") {
+			const why = deciders._tag === "Unread" ? deciders.reason : "the roster was not read";
+			return refused(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot tell which rulings stand: ${why}. Nothing was written.`,
+			);
+		}
+		const reads: Array<readonly [number, ReadonlyArray<CommentRecord>]> = [];
+		for (const [issue, read] of yield* readEach(suspects, (issue) => board.rulings(repo, issue))) {
+			if (read._tag === "Failure") {
+				return refused(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read #${issue}'s comments for a ruling: ${read.reason}. Nothing was written.`,
+				);
+			}
+			reads.push([issue, read.value]);
+		}
+		return {_tag: "Read" as const, ruled: ruledUnbuiltOf(reads, deciders.logins)};
+	});
+
 export const runPrep = <R>(
 	options: PrepOptions<R>,
 ): Effect.Effect<
@@ -510,9 +556,11 @@ export const runPrep = <R>(
 		const onCallOpen =
 			split === null ? [] : onCallItemsOf(split.rows, open, routed, split.settings, now);
 
-		const deciders: Deciders = heads.rows.some((row) => row.stage?.name === BET_STAGE)
-			? yield* board.deciders(repo)
-			: NOT_ASKED;
+		const suspects = prepped ? [] : ruledSuspects(open);
+		const deciders: Deciders =
+			suspects.length > 0 || heads.rows.some((row) => row.stage?.name === BET_STAGE)
+				? yield* board.deciders(repo)
+				: NOT_ASKED;
 		const report = flagsOf({
 			settings: table,
 			sizes: sizes.value,
@@ -548,6 +596,7 @@ export const runPrep = <R>(
 		let rollover: ReadonlyArray<number> = [];
 		let checks: ReadonlyArray<GatheredCheck> = [];
 		let vanished: ReadonlyArray<number> = [];
+		let ruled: ReadonlyArray<RuledUnbuilt> = [];
 		if (!prepped) {
 			const followUps = yield* board.followUps(repo);
 			if (followUps._tag === "Failure") {
@@ -556,12 +605,16 @@ export const runPrep = <R>(
 					`${VERB}: cannot read the closed epics' sub-issues: ${followUps.reason}. Nothing was written.`,
 				);
 			}
+			const rulings = yield* readRuled(board, repo, suspects, deciders);
+			if (rulings._tag === "Refused") return refuse(rulings.code, rulings.reason);
+			ruled = rulings.ruled;
 			const sorted = candidatesOf({
 				settings: table,
 				open,
 				rows: heads.table,
 				followUps: followUps.value,
 				flagged,
+				ruled,
 				target,
 				onCall: routedSet,
 			});
@@ -677,6 +730,7 @@ export const runPrep = <R>(
 			continuing: rollover.length,
 			flaggedBets,
 			inbox: listing.value.filter((issue) => issue.labels.length === 0).length,
+			ruled,
 		});
 		let posted = false;
 		if (!prepped) {
@@ -749,6 +803,11 @@ export const runPrep = <R>(
 							),
 						...(rollover.length > 0
 							? [`${VERB}: carried to the ${target} table: ${numbers(rollover)}.`]
+							: []),
+						...(ruled.length > 0
+							? [
+									`${VERB}: ruled and not built, oldest ruling first: ${numbers(ruled.map((one) => one.issue))}.`,
+								]
 							: []),
 					]),
 			...checks.map(
@@ -888,6 +947,7 @@ export const prepBoard: PrepBoard<
 	statusUpdates: (projectId) => withProjects((token) => readStatusUpdates(token, projectId)),
 	openIssues: listOpenIssueFacts,
 	followUps: readFollowUps,
+	rulings: listComments,
 	remove: (projectId, itemId) => withProjects((token) => deleteItem(token, projectId, itemId)),
 	issue: getIssue,
 	timeline: timelineFacts,

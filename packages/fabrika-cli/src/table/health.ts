@@ -17,6 +17,7 @@ import type {StatusUpdate, StatusUpdateInput} from "../io/projects.ts";
 import {asksOf, type LaneRecord} from "../wire/lane-record.ts";
 import {optionOf} from "./agenda.ts";
 import {type Flag, type FlagReport, type OnCallSpend, type Unread, weekLanes} from "./flags.ts";
+import type {RuledUnbuilt} from "./ruled.ts";
 import {FIELD} from "./shape.ts";
 import type {Row} from "./sync.ts";
 import {dayLabel, plusDays, type TableDay} from "./table-day.ts";
@@ -84,6 +85,8 @@ export interface HealthInput {
 	readonly flaggedBets: number;
 	/** Open issues with no labels: the Inbox view's set. */
 	readonly inbox: number;
+	/** Open issues whose ruling is not built yet, oldest ruling first. */
+	readonly ruled: ReadonlyArray<RuledUnbuilt>;
 }
 
 export interface Health {
@@ -99,6 +102,7 @@ export interface Health {
 	readonly continuing: number;
 	readonly flaggedBets: number;
 	readonly inbox: number;
+	readonly ruled: ReadonlyArray<RuledUnbuilt>;
 	/** The flag checks that could not be read. */
 	readonly unread: ReadonlyArray<Unread>;
 }
@@ -137,6 +141,7 @@ export const healthOf = (input: HealthInput): Health => {
 		continuing: input.continuing,
 		flaggedBets: input.flaggedBets,
 		inbox: input.inbox,
+		ruled: input.ruled,
 		unread: input.report.unread,
 	};
 };
@@ -229,6 +234,9 @@ export const renderHealth = (
 			: `- ${OUTSIDE_THE_BETS}: ${plural(outside.count, "lane")} (${kinds}), ${outsideCost}`,
 		`- Bets continuing: ${health.continuing}${health.flaggedBets > 0 ? ` (and ${health.flaggedBets} flagged onto the agenda)` : ""}`,
 		`- Inbox: ${plural(health.inbox, "open issue")} with no labels`,
+		health.ruled.length === 0
+			? "- Ruled, not built: none"
+			: `- Ruled, not built, oldest ruling first: ${health.ruled.map((one) => `#${one.issue} (${one.ruledAt.slice(0, 10)})`).join(", ")}`,
 		...(health.unread.length === 0
 			? []
 			: [
