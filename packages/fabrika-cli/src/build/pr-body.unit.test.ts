@@ -34,6 +34,12 @@ describe("the closing keyword", () => {
 		expect(bodyDefect(body(""), 4312, false)).toBeNull();
 	});
 
+	it("counts a closing line below ## Deviations as this PR's own link (#10040)", () => {
+		expect(
+			bodyDefect("Summary.\n\n## Deviations\n\nNone.\n\nFixes #4312\n", 4312, false),
+		).toBeNull();
+	});
+
 	it("refuses a stray keyword aimed elsewhere — the #4471 auto-close", () => {
 		expect(bodyDefect(body("\nAlso closes #999.\n"), 4312, false)).toEqual({
 			_tag: "StrayClosing",
