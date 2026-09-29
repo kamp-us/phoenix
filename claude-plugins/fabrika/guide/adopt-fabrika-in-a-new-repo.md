@@ -209,9 +209,16 @@ reasoning for each value in comments.
 
 ### If your app has no preview deploys
 
-A PR that changes a declared `uiSurfaces` path cannot ship until the `review-ui` gate answers at its
-head, and by default that needs a preview deploy to render. With none, the reviewer ends `CANT-SEE`
-and the lane stops. Say by path what a PR with no preview needs instead:
+A PR that changes a declared `uiSurfaces` path cannot ship until the `review-ui` gate is resolved at
+its head. There are two ways to resolve it:
+
+1. **A preview deploy.** Your CI posts a `preview-deploy` comment on the PR with the deployed URL and
+   head. The ui reviewer renders that and posts a PASS or FAIL. It never runs the PR's code itself.
+2. **A route instead of a render.** The ui reviewer posts a `routed-elsewhere` record with
+   `fabrika review-ui route`, which `ship gate` reads as `routed`. With no preview, the route needs
+   a hand-verification at the PR's head and a `review-code` PASS at that same head.
+
+Which hand-verification counts is yours to say, by path, with `reviewUi.whenNoPreview`:
 
 ```jsonc
 "reviewUi": {
@@ -222,12 +229,23 @@ and the lane stops. Say by path what a PR with no preview needs instead:
 }
 ```
 
-`hand-check` lets your own comment on the PR stand in for the render: screenshots, naming the PR's
-exact head, from an account on your control-plane `CODEOWNERS` row. `skip` means no rendered review
-is owed for those files. A file no rule matches still needs a render, and a PR takes the strictest
-mode across its files. The route checks that the PR really has no preview, so a rule never stands in
-for a render that could run. Both looser outcomes are flagged on the PR, in `ship gate` and on the
-table as `not-rendered` (`fabrika table flags`), so nobody mistakes them for a render. The reviewer's side of this is in
+- `require-render` is what every file no rule matches gets. The only hand-verification it takes is
+  the builder's own run of the app at the head, which the ui reviewer routes with
+  `review-ui route --verified-at <head>`.
+- `hand-check` lets your own comment on the PR stand in for the render: screenshots, naming the PR's
+  exact head, from an account on your control-plane `CODEOWNERS` row.
+- `skip` means no rendered review is owed for those files.
+
+A PR takes the strictest mode across its files. The route checks that the PR really has no preview,
+so a rule never stands in for a render that could run. Both looser outcomes are flagged on the PR,
+in `ship gate` and on the table as `not-rendered` (`fabrika table flags`), so nobody mistakes them
+for a render.
+
+**With neither a preview nor the hand-verification its mode asks for,** the ui reviewer ends
+`CANT-SEE` with cause `no-preview-render` and the lane parks. `fabrika recipe unpark` has no recipe
+for that cause, so the park does not clear on its own. The way through is to post the
+hand-verification at the PR's current head and run the ui reviewer again. Do not post a `review-ui`
+verdict by hand. The rules for each route, and their exit codes, are in
 [`review-ui`'s skill](../skills/review-ui/SKILL.md).
 
 ## 10. Re-run the front door
@@ -251,6 +269,19 @@ The `readout` field reads `absent` with the detail
 `no readout artifact` until you run `fabrika status bootstrap readout-artifact`, which opens the
 durable issue the digest is upserted into, and then `absent` with `no digest block` until
 `fabrika governance readout` writes one. Both are facts, not failed reads.
+
+### File the issue before the work
+
+Every code or skill PR needs an issue, filed before the work starts. Review fails a code or skill PR
+with no linked issue: without the issue's acceptance criteria there is nothing to grade the diff
+against. Agent lanes learn this early, because `build claim` refuses without an issue. Work done by
+hand, or by an agent outside a lane, meets it only at review.
+
+So file the issue first, for example with `/fabrika:report`, and then build. An issue written after
+the diff exists describes that diff instead of stating the goal ahead of it.
+
+One exemption: a doc written from a conversation, or a `.glossary/**` change, may land without an
+issue. Review grades it on its own rubric.
 
 Then file something with `/fabrika:report`, triage it with `/fabrika:triage`, and you are running.
 
