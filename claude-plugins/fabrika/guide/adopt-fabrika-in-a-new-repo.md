@@ -73,7 +73,12 @@ that is already there — unknown keys preserved, unparseable bytes refused unwr
 the file when it is absent; it reads no stdin either way. `dep-pin` pins the `@kampus/fabrika-cli`
 dependency row to the version npm's registry publishes at run time — same merge law over the
 repo's `package.json`, an unreachable registry refused unwritten — and prints the exact install
-command; it never runs a package manager or touches a lockfile. `label-taxonomy`,
+command; it never runs a package manager or touches a lockfile. That install is not small: it
+brings in Playwright, adds a few hundred lockfile lines, and the package's `postinstall` downloads a
+headless Chromium (~130MB) for `fabrika ui render`. pnpm 10 skips that `postinstall` until you
+approve it: run `pnpm approve-builds` and pick `@kampus/fabrika-cli`, or add it to
+`onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`. Skip the approval and `ui render`
+refuses with exit `11` until the browser is set up. `label-taxonomy`,
 `issue-shape-markers` and `readout-artifact` write to GitHub and need a resolvable repo —
 `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote.
 

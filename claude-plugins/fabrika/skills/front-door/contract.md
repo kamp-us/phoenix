@@ -1314,7 +1314,10 @@ edit itself rides the same key-merge arm as `settings-patch`: unknown keys prese
 unparseable bytes refused unwritten, absolute idempotency. And per the founder's ruling
 (R1.3), no package manager ever spawns and no lockfile is read or written — the exact install
 command (`pnpm add --save-exact @kampus/fabrika-cli@<version>`) is printed on the notice channel,
-because the lockfile stays the caller's.
+because the lockfile stays the caller's. Two more notices follow it: the install brings in
+Playwright and a headless Chromium download, and pnpm 10 skips the package's `postinstall` until the
+repo approves it (`pnpm approve-builds`, or an `onlyBuiltDependencies` entry plus
+`pnpm rebuild @kampus/fabrika-cli`) — that `postinstall` is what sets up `ui render`'s browser.
 
 The `readout-artifact` body, fixed here so no clause defers to another skill's prose:
 
@@ -1411,6 +1414,8 @@ the shape this seat exists to prevent. The skill loops.
 | `status bootstrap: merged the declared keys into <target> for settings-patch, read-back conformed.` | 0 | notice |
 | `status bootstrap: cannot resolve @kampus/fabrika-cli's current release from npm: <reason> — nothing pinned, nothing written.` | 11 | refusal |
 | `status bootstrap: the lockfile stays yours — install with: pnpm add --save-exact @kampus/fabrika-cli@<version>` | 0 | notice |
+| ``status bootstrap: the install brings in Playwright (@playwright/test) and its postinstall downloads a headless Chromium (~130MB) — the browser `fabrika ui render` drives.`` | 0 | notice |
+| ``status bootstrap: pnpm 10 skips that postinstall until you approve it — run `pnpm approve-builds` and pick @kampus/fabrika-cli, or add @kampus/fabrika-cli to `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`; approving it is what lets `ui render`'s browser setup run.`` | 0 | notice |
 
 **Scope** — the single write target named by `<surface-id>`.
 
@@ -1475,6 +1480,8 @@ $ fabrika status bootstrap dep-pin
 bootstrap	created	dep-pin	package.json	ok
 status bootstrap: created package.json for dep-pin, read-back conformed.
 status bootstrap: the lockfile stays yours — install with: pnpm add --save-exact @kampus/fabrika-cli@0.7.1
+status bootstrap: the install brings in Playwright (@playwright/test) and its postinstall downloads a headless Chromium (~130MB) — the browser `fabrika ui render` drives.
+status bootstrap: pnpm 10 skips that postinstall until you approve it — run `pnpm approve-builds` and pick @kampus/fabrika-cli, or add @kampus/fabrika-cli to `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`; approving it is what lets `ui render`'s browser setup run.
 $ echo $?
 0
 ```

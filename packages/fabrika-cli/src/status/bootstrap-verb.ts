@@ -306,6 +306,17 @@ export const FABRIKA_CLI_PACKAGE = "@kampus/fabrika-cli";
 export const installCommand = (packageName: string, version: string): string =>
 	`pnpm add --save-exact ${packageName}@${version}`;
 
+/**
+ * What the install behind {@link installCommand} costs and what it needs approved. The package's
+ * `postinstall` downloads the headless browser `ui render` drives, and pnpm 10 skips a dependency's
+ * build scripts until the repo approves them — so without this the install lands quietly and the
+ * browser never does. `ui render` still refuses on `11` at run time; this names it up front.
+ */
+export const installCostNotices = (packageName: string): ReadonlyArray<string> => [
+	`${VERB}: the install brings in Playwright (@playwright/test) and its postinstall downloads a headless Chromium (~130MB) — the browser \`fabrika ui render\` drives.`,
+	`${VERB}: pnpm 10 skips that postinstall until you approve it — run \`pnpm approve-builds\` and pick ${packageName}, or add ${packageName} to \`onlyBuiltDependencies\` and run \`pnpm rebuild ${packageName}\`; approving it is what lets \`ui render\`'s browser setup run.`,
+];
+
 /** The marker heading that decides `exists` for the CLAUDE.md section, and its first line. */
 export const CLAUDE_MD_MARKER = "## Work flows through fabrika";
 
@@ -737,6 +748,7 @@ const buildDepPin = (
 			input,
 			[
 				`${VERB}: the lockfile stays yours — install with: ${installCommand(surface.packageName, resolved.value)}`,
+				...installCostNotices(surface.packageName),
 			],
 		);
 	});
