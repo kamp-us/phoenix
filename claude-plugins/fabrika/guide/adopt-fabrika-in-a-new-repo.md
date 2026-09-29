@@ -1,9 +1,8 @@
 # Adopt fabrika in a repo you already have
 
 Steps to get fabrika running on an existing repo — one with a board, a history and its own
-conventions. Everything below is what the verbs do at the commit this page was written against; each
-step names the file or issue the claim was read from, and the two steps that hit an open bug say what
-to do about it today.
+conventions. The commands and outputs below describe the CLI at the version this page ships with.
+After an upgrade, re-check a verb against its own `--help`.
 
 If you have never run fabrika at all, do [`getting-started.md`](getting-started.md) first on a repo
 you do not mind experimenting on. This page assumes you know what the stages are.
