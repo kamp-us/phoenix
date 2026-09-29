@@ -1039,7 +1039,8 @@ The verb then reads `GET /repos/{o}/{r}/actions/workflows` and matches each acti
 against `governance-floor`. A failed read, or one that received fewer workflows than the envelope
 declares, is `unknown` — never `no-floor`, because a read that did not see every workflow cannot
 say one is absent. So is an inventory holding an entry that is not a record or carries no string
-`name` or `state`: that entry could be the floor workflow, so its absence is unproven. The line states the absence as a fact and asks the caller to re-read nothing.
+`name` or `state`: that entry could be the floor workflow, so its absence is unproven. The line
+states the absence as a fact and asks the caller to re-read nothing.
 
 **`no-run`'s line states the read and offers no cause.** The tag is one token, and what the verb
 observed is that this head's run list carried no `governance-floor` entry — never why. The head's own
@@ -1093,9 +1094,10 @@ clothes.
 | `governance post: a standing <PASS\|FAIL> for governance over <base>..<tip> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 17 | refusal |
 
 **Scope** — one PR: its live head, the bound commit's file list for the re-derivation, its comments,
-and the caller's stdin, plus the workflow runs at the bound head for step 7. A read failing at any of
-the first four is `11` — nothing written, outcome known-unwritten; a read failing at the fifth is the
-`unknown` floor, because by then the verdict is written.
+and the caller's stdin, plus two reads for step 7: the workflow runs at the bound head, and, when
+those list no floor run, the repository's workflow inventory (`actions/workflows`). A read failing at
+any of the first four is `11` — nothing written, outcome known-unwritten; a failed run-list read or a
+failed inventory read is the `unknown` floor, because by then the verdict is written.
 
 **Examples**
 
