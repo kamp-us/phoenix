@@ -12,16 +12,20 @@
  * **This verb predicts; the gate decides.** The repo's CI gate owns redness, and where they disagree the
  * gate's answer supersedes this one (interface convention rule 6). Nothing here re-reads CI.
  *
- * **Every run also sweeps the shipped local-tree guards, whatever the surface.** A guard that only
+ * **Every lane run also sweeps the shipped local-tree guards, whatever the surface.** A guard that only
  * needs the checked-out tree runs here so it reds on the builder's machine before it reds in CI, and
  * each member is named in the answer — `guard <name> <leaf>` in `ran`, or `skipped: <name>
  * (<reason>)` for one that refused, which is a disclosure and never a pass. Membership is declared
  * beside each guard's registration in `guard/command.ts` and nowhere else; see
  * {@link sweepLocalTreeGuards}.
  *
- * **The repo's declared config validators run on every surface too**, each one only when the diff
- * touches a file it `reads` — see {@link runConfigValidators}. That is what lets a diff of root config
- * files, or of non-JS source such as Java, alone go green or red instead of refusing as unvalidatable.
+ * **The repo's declared config validators run on every surface of a lane run too**, each one only
+ * when the diff touches a file it `reads` — see {@link runConfigValidators}. That is what lets a diff
+ * of root config files, or of non-JS source such as Java, alone go green or red instead of refusing
+ * as unvalidatable.
+ *
+ * **`--probe` is the one run that is not a lane run**, and it does neither: it starts the declared
+ * code validators and nothing else — see {@link runProbe}.
  *
  * `--surface` is an **anchor, not a second classifier**: naming the surface is a judgement the skill
  * makes reading the issue, and a verb that guessed it from file extensions would be wrong exactly on
@@ -972,7 +976,9 @@ const probedLine = (probed: Probed): string => {
  * first would leave the rest unproven. The fold keeps the lane run's polarities: a red is a proven
  * failure and outranks an unstartable entry, which proves nothing and refuses UNKNOWN; only an
  * all-green run answers green. Nothing here writes: no git mutation, no claim read, no lane state.
- * The local-tree guards and config validators are not run, because both are scoped by a diff.
+ * No local-tree guard or config validator runs: the probe asks whether the declared commands start,
+ * not whether this tree would pass CI, so its green claims less than a lane run's and says so with
+ * `"mode":"probe"`. Config validators have no diff to select them by, either.
  */
 const runProbe = (): Effect.Effect<
 	VerbOutcome,
