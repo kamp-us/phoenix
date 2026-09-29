@@ -37,7 +37,17 @@ import {
 	triagedFacets,
 } from "../triage/facets.ts";
 import {ANSWER} from "../verb.ts";
-import {type BoardRead, type Bucket, boardState, runBoard} from "./board-verb.ts";
+import {
+	absentLabels,
+	type BoardRead,
+	BUCKETS,
+	type Bucket,
+	boardState,
+	IN_FLIGHT,
+	LABEL_TAXONOMY_COMMAND,
+	readBoard,
+	runBoard,
+} from "./board-verb.ts";
 import {
 	BUILDABLE_SURFACES,
 	CLAUDE_MD_MARKER,
@@ -436,33 +446,41 @@ describe("status menu", () => {
 describe("status board", () => {
 	const counted = (name: string, count: number): Bucket => ({
 		name,
-		count,
 		selector: `labels=${name}`,
-		detail: null,
-		asOf: AS_OF,
+		reading: {_tag: "Counted", count, asOf: AS_OF},
 	});
 	const absentLabel = (name: string): Bucket => ({
 		name,
-		count: null,
 		selector: `labels=${name}`,
-		detail: "label absent",
-		asOf: noAsOf,
+		reading: {_tag: "Absent", label: name, asOf: AS_OF},
+	});
+	const unreadLabel = (name: string): Bucket => ({
+		name,
+		selector: `labels=${name}`,
+		reading: {_tag: "Unknown", reason: "EAI_AGAIN — the label set is UNKNOWN"},
 	});
 
 	/** A zero count means the label exists and nothing carries it; an absent label is unaskable. */
-	it("renders an absent label as `unknown`, never as 0", () => {
+	it("renders an absent label as `absent`, never as 0 and never as `unknown`", () => {
 		const read: BoardRead = {
 			_tag: "Read",
 			repo: "acme/storefront",
 			buckets: [absentLabel("needs-triage"), counted("in-flight", 0)],
 		};
-		expect(boardState(read.buckets)).toBe("unknown");
+		expect(boardState(read.buckets)).toBe("absent");
 		const out = runBoard({read, json: false});
 		expect(out.code).toBe(ANSWER);
+		expect(out.stdout.split("\n")[0]).toBe("board\tabsent\t2");
 		expect(out.stdout).toContain(
-			"bucket\tneeds-triage\tunknown\tlabels=needs-triage\tlabel absent\tunknown",
+			"bucket\tneeds-triage\tabsent\tlabels=needs-triage\tlabel needs-triage absent\t",
 		);
 		expect(out.stdout).toContain("bucket\tin-flight\t0\t");
+		expect(out.stderr.join("\n")).toContain(LABEL_TAXONOMY_COMMAND);
+	});
+
+	it("keeps an unread bucket `unknown` even beside absent ones", () => {
+		const buckets = [unreadLabel("needs-triage"), absentLabel("p0"), counted("in-flight", 3)];
+		expect(boardState(buckets)).toBe("unknown");
 	});
 
 	it("refuses on 11 when the repository could not be read at all", () => {
@@ -473,6 +491,67 @@ describe("status board", () => {
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("never 0");
+	});
+
+	describe("readBoard", () => {
+		const LABELS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/labels\?/;
+		const ISSUES = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\?state=open&labels=/;
+		const PULLS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\?state=open/;
+		const served = (body: unknown): HttpReply => ({status: 200, body: JSON.stringify(body)});
+		const BOARD_LABELS = BUCKETS.map((bucket) => bucket.label);
+
+		const read = (labels: HttpReply) => {
+			const seams = fakeSeams([
+				[LABELS, labels],
+				[ISSUES, served([{number: 1, title: "one"}])],
+				[PULLS, served([{number: 9}])],
+			]);
+			return Effect.runPromise(
+				Effect.provide(
+					readBoard("o/r", () => new Date("2026-08-09T14:22:03Z")),
+					seams.layer,
+				),
+			);
+		};
+		const states = (board: BoardRead) =>
+			board._tag === "Read"
+				? Object.fromEntries(board.buckets.map((bucket) => [bucket.name, bucket.reading._tag]))
+				: board._tag;
+
+		it("reads a partly-labelled board as counted buckets beside absent ones", async () => {
+			const board = await read(served(["status:needs-triage", "p1"].map((name) => ({name}))));
+			expect(states(board)).toEqual({
+				"needs-triage": "Counted",
+				triaged: "Absent",
+				"in-flight": "Counted",
+				p0: "Absent",
+				p1: "Counted",
+				p2: "Absent",
+			});
+			expect(board._tag === "Read" && boardState(board.buckets)).toBe("absent");
+		});
+
+		it("reads a fully unlabelled board as absent, and names every missing label with the fix", async () => {
+			const board = await read(served([{name: "bug"}]));
+			expect(board._tag).toBe("Read");
+			if (board._tag !== "Read") return;
+			expect(absentLabels(board.buckets)).toEqual(BOARD_LABELS);
+			const field = boardField(board);
+			expect(field.state).toBe("absent");
+			for (const label of BOARD_LABELS) expect(field.detail).toContain(label);
+			expect(field.detail).toContain(LABEL_TAXONOMY_COMMAND);
+		});
+
+		it("reads every label bucket as unknown when the label set could not be read", async () => {
+			const board = await read({status: 502, body: "{}"});
+			expect(board._tag).toBe("Read");
+			if (board._tag !== "Read") return;
+			const labelBuckets = board.buckets.filter((bucket) => bucket.name !== IN_FLIGHT.name);
+			expect(labelBuckets).toHaveLength(BUCKETS.length);
+			for (const bucket of labelBuckets) expect(bucket.reading._tag).toBe("Unknown");
+			expect(boardState(board.buckets)).toBe("unknown");
+			expect(boardField(board).state).toBe("unknown");
+		});
 	});
 });
 

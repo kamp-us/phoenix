@@ -19,8 +19,15 @@
  * three.
  */
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
-import type {BoardRead} from "./board-verb.ts";
-import {boardState} from "./board-verb.ts";
+import {
+	absentLabels,
+	type BoardRead,
+	boardState,
+	bucketAsOf,
+	bucketCount,
+	bucketDetail,
+	LABEL_TAXONOMY_COMMAND,
+} from "./board-verb.ts";
 import {OFF_VOCABULARY} from "./codes.ts";
 import {type AsOf, asOfToken, detail, noAsOf, row} from "./fields.ts";
 import {menuState} from "./menu-verb.ts";
@@ -125,24 +132,37 @@ export const boardField = (read: BoardRead): Field => {
 		};
 	}
 	const state = boardState(read.buckets);
-	const first = read.buckets.find((bucket) => bucket.name === "needs-triage");
-	const second = read.buckets.find((bucket) => bucket.name === "triaged");
+	const asOf = read.buckets[0] ? bucketAsOf(read.buckets[0].reading) : noAsOf;
 	if (state === "counted") {
+		const count = (name: string) => {
+			const reading = read.buckets.find((bucket) => bucket.name === name)?.reading;
+			return reading ? (bucketCount(reading) ?? 0) : 0;
+		};
 		return {
 			name: "board",
 			state,
-			detail: `${first?.count ?? 0} needs-triage, ${second?.count ?? 0} triaged`,
+			detail: `${count("needs-triage")} needs-triage, ${count("triaged")} triaged`,
 			source: read.repo,
-			asOf: read.buckets[0]?.asOf ?? noAsOf,
+			asOf,
 		};
 	}
-	const unknown = read.buckets.filter((bucket) => bucket.count === null);
+	if (state === "absent") {
+		return {
+			name: "board",
+			state,
+			detail: detail(
+				`missing ${absentLabels(read.buckets).join(",")} — create them with ${LABEL_TAXONOMY_COMMAND}`,
+			),
+			source: read.repo,
+			asOf,
+		};
+	}
+	const unknown = read.buckets.filter((bucket) => bucket.reading._tag === "Unknown");
+	const reason = unknown[0] ? bucketDetail(unknown[0].reading) : null;
 	return {
 		name: "board",
 		state: UNKNOWN,
-		detail: detail(
-			`${unknown.map((bucket) => bucket.name).join(",")}: ${unknown[0]?.detail ?? "unreadable"}`,
-		),
+		detail: detail(`${unknown.map((bucket) => bucket.name).join(",")}: ${reason ?? "unreadable"}`),
 		source: read.repo,
 		asOf: noAsOf,
 	};

@@ -254,7 +254,8 @@ purpose — keeping proven-empty apart from unread — to chance.
 | `wiring` | no settings file, no `enabledPlugins` block, no fabrika key, a key switched off, or a key naming no marketplace | `unwired` | which of those it was. **Never `unknown`**: the repo proved each of them, and folding them into `unknown` hides the one gap this field exists to name |
 | `wiring` | the settings file, or the repo root above the cwd, could not be read; the bytes are not a JSON object; `enabledPlugins` is not an object; the fabrika key is neither `true` nor `false` | `unknown` | the raw failure. **Never `unwired`**: a probe nobody could perform proves nothing about what loads |
 | `board` | every bucket counted | `counted` | the two headline counts |
-| `board` | ≥1 bucket `unknown`, or the repo unresolvable/unreadable | `unknown` | the raw failure, or the absent labels |
+| `board` | every bucket read, ≥1 bucket's label proven missing | `absent` | `missing <labels> — create them with fabrika status bootstrap label-taxonomy`. **Never `unknown`**: the label set was read, so a missing label is a gap the repo proved |
+| `board` | ≥1 bucket `unknown`, or the repo unresolvable/unreadable | `unknown` | the raw failure — a label set that could not be read makes every label bucket `unknown` |
 | `readout` | digest block found | `found` | `<n> rows` |
 | `readout` | artifact read, no digest block | `absent` | `no digest block in <ref>` |
 | `readout` | artifact read, block present, a row non-conforming | `malformed` | which row failed |
@@ -268,8 +269,9 @@ purpose — keeping proven-empty apart from unread — to chance.
 | `lanes` | sweep answered, zero `stale`, ≥1 lane record `unreadable` | `unknown` | which lane failed and why — a lane whose silence cannot be judged is never flattened to clean |
 | `lanes` | the sweep refused — a lane root is there and cannot be listed | `unknown` | the refusal's reason — the lane set is UNKNOWN, never empty |
 
-**A proven-absent artifact is `absent` inside the composite, never `unknown`** — the two rows above
-that both yield `absent` are both facts about the repository, and only a failed *read* is `unknown`.
+**A proven-absent artifact is `absent` inside the composite, never `unknown`** — every row above
+that yields `absent`, the board's missing labels included, is a fact about the repository, and only
+a failed *read* is `unknown`.
 
 ### The shared exit taxonomy
 
@@ -1000,8 +1002,8 @@ fabrika status board [--repo <owner/name>] [--json]
 fixed order below:
 
 ```
-board	<counted|unknown>	<bucket-count>
-bucket	<name>	<count|unknown>	<selector>	<detail>	<as-of>
+board	<counted|absent|unknown>	<bucket-count>
+bucket	<name>	<count|absent|unknown>	<selector>	<detail>	<as-of>
 ```
 
 <a id="bucket-endpoints"></a>**Six buckets, each with the REST call that produces it.** §11 mandates
@@ -1026,9 +1028,12 @@ second answer here could contradict the verb that actually claims the work. **An
 "banked" bucket**: what marks a pull request banked and what clears it on a head-move is an open
 decision, still unruled.
 
-**A bucket whose label does not exist renders `unknown` with `<detail>` `label absent`, never `0`.**
-A zero count means the label exists and nothing carries it; an absent label means the question was
-never askable. The header is `unknown` if any bucket is.
+**A bucket whose label does not exist renders `absent` with `<detail>` `label <label> absent`, never
+`0` and never `unknown`.** A zero count means the label exists and nothing carries it; an absent
+label means the question was never askable, and the label set that was read proves it. Its `<as-of>`
+is when that label set was read. Only a label set that could not be read makes a label bucket
+`unknown`, and then every label bucket is. The header is `unknown` if any bucket is, else `absent` if
+any bucket is, else `counted`.
 
 **Exit status**
 
@@ -1045,7 +1050,8 @@ no zero-scope refusal for a verb whose scope is "this repository".
 |---|---|---|
 | `status board: cannot resolve a target repo — set CLAUDE_PIPELINE_REPO, GITHUB_REPOSITORY, or pass --repo.` | 1 | refusal |
 | `status board: cannot read <repo>: <reason> — every bucket is UNKNOWN, never 0.` | 11 | refusal |
-| `status board: counted 6 buckets over <repo>, <u> unknown (<absent labels>); scanned <n> items.` | 0 | notice |
+| `status board: counted 6 buckets over <repo>, <u> unknown (<unknown buckets>), <a> absent (<absent buckets>); scanned <n> items.` | 0 | notice |
+| `status board: <labels> <is/are> not on <repo> — create them with fabrika status bootstrap label-taxonomy.` | 0 | notice |
 
 **Scope** — the open issues and pull requests of `--repo`, per bucket call, paginated, with each
 bucket's scanned count on stderr.
@@ -1065,22 +1071,23 @@ bucket	p2	8	labels=p2	-	2026-08-09T14:22:06Z
 
 ```
 $ fabrika status board --repo acme/storefront
-board	unknown	6
-bucket	needs-triage	unknown	labels=status:needs-triage	label absent	unknown
-bucket	triaged	unknown	labels=status:triaged	label absent	unknown
+board	absent	6
+bucket	needs-triage	absent	labels=status:needs-triage	label status:needs-triage absent	2026-08-09T14:23:01Z
+bucket	triaged	absent	labels=status:triaged	label status:triaged absent	2026-08-09T14:23:01Z
 bucket	in-flight	0	pulls?state=open	-	2026-08-09T14:23:01Z
-bucket	p0	unknown	labels=p0	label absent	unknown
-bucket	p1	unknown	labels=p1	label absent	unknown
-bucket	p2	unknown	labels=p2	label absent	unknown
+bucket	p0	absent	labels=p0	label p0 absent	2026-08-09T14:23:01Z
+bucket	p1	absent	labels=p1	label p1 absent	2026-08-09T14:23:01Z
+bucket	p2	absent	labels=p2	label p2 absent	2026-08-09T14:23:01Z
 ```
 
-The second example is the fresh-repo case: the taxonomy is absent, so five buckets are `unknown`
-while `in-flight` is a proven `0`. Rendering the five as `0` would tell a new user their queue is
-clear when the question was never askable.
+The second example is the fresh-repo case: the taxonomy is absent, so five buckets are `absent`
+while `in-flight` is a proven `0`, and stderr names `fabrika status bootstrap label-taxonomy`.
+Rendering the five as `0` would tell a new user their queue is clear when the question was never
+askable, and rendering them `unknown` would tell them the repo could not be read.
 
 ```
 $ fabrika status board --json
-{"outcome":"unknown","buckets":[{"name":"in-flight","count":0,"selector":"pulls?state=open","detail":null,"asOf":"2026-08-09T14:23:01Z","asOfKind":"read-now"},{"name":"p0","count":null,"selector":"labels=p0","detail":"label absent","asOf":null,"asOfKind":null}]}
+{"outcome":"absent","buckets":[{"name":"in-flight","state":"counted","count":0,"selector":"pulls?state=open","detail":null,"asOf":"2026-08-09T14:23:01Z","asOfKind":"read-now"},{"name":"p0","state":"absent","count":null,"selector":"labels=p0","detail":"label p0 absent","asOf":"2026-08-09T14:23:01Z","asOfKind":"read-now"}]}
 ```
 
 **Grounding**

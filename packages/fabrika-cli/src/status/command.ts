@@ -235,7 +235,11 @@ const board = leafCommand(
 	Command.withDescription(
 		[
 			"Counts the board's decided buckets, each with its own freshness.",
-			"  stdout: `board\\t<counted|unknown>\\t<bucket-count>`, then one `bucket\\t…` line each",
+			"  stdout: `board\\t<counted|absent|unknown>\\t<bucket-count>`, then one",
+			"  `bucket\\t<name>\\t<count|absent|unknown>\\t<selector>\\t<detail>\\t<as-of>` line each",
+			"  A label missing from a readable label set is `absent` (a proven gap, never 0);",
+			"  stderr names the missing labels and `fabrika status bootstrap label-taxonomy`.",
+			"  A label set that could not be read leaves every label bucket `unknown`.",
 			"  11: the repository could not be read (every bucket UNKNOWN)",
 			'  Derivation: the front-door skill\'s contract.md, "status board"',
 		].join("\n"),
