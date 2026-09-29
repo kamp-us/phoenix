@@ -80,12 +80,17 @@ export interface IndexSection {
 	/** The heading text, leading `#` characters and surrounding whitespace stripped. */
 	readonly heading: string;
 	readonly headingLine: number;
-	/** Every table row under it, in document order. */
+	/** Every table body row under it, in document order. */
 	readonly rows: ReadonlyArray<IndexRow>;
-	/** Where an insertion goes: the last table row's line, or `null` when the section has no table. */
-	readonly lastRowLine: number | null;
-	readonly hasTable: boolean;
+	/**
+	 * The line an insertion goes after: the last body row of the section's last table, or that
+	 * table's `|---|` line when it has no body rows yet. `null` exactly when the section has no table.
+	 */
+	readonly tailLine: number | null;
 }
+
+/** Whether a section carries a table — a `|---|` line is what opens one. */
+export const sectionHasTable = (section: IndexSection): boolean => section.tailLine !== null;
 
 export interface ParsedIndex {
 	readonly sections: ReadonlyArray<IndexSection>;
@@ -101,6 +106,11 @@ const headingTextOf = (line: string): string | null => {
 	return m?.[2] === undefined ? null : m[2].replace(/\s+#*\s*$/, "").trim();
 };
 
+/**
+ * Rows are read only from a table's body: the lines after its `|---|` line, up to the first line
+ * that is not a row. The header above the `|---|` line is never a row, so a table holding only a
+ * header has no rows and its tail is the `|---|` line.
+ */
 export const parseIndex = (text: string): ParsedIndex => {
 	const lines = text.split("\n");
 	const sections: IndexSection[] = [];
@@ -109,17 +119,12 @@ export const parseIndex = (text: string): ParsedIndex => {
 	let heading = "-";
 	let headingLine = -1;
 	let current: IndexRow[] = [];
-	let currentHasTable = false;
+	let tailLine: number | null = null;
+	let inBody = false;
 
 	const close = () => {
-		if (headingLine === -1 && current.length === 0 && !currentHasTable) return;
-		sections.push({
-			heading,
-			headingLine,
-			rows: current,
-			lastRowLine: current.at(-1)?.line ?? null,
-			hasTable: currentHasTable,
-		});
+		if (headingLine === -1 && tailLine === null) return;
+		sections.push({heading, headingLine, rows: current, tailLine});
 	};
 
 	for (const [at, line] of lines.entries()) {
@@ -129,15 +134,21 @@ export const parseIndex = (text: string): ParsedIndex => {
 			heading = head;
 			headingLine = at;
 			current = [];
-			currentHasTable = false;
+			tailLine = null;
+			inBody = false;
 			continue;
 		}
 		if (isDelimiterRow(line)) {
-			currentHasTable = true;
+			tailLine = at;
+			inBody = true;
 			continue;
 		}
 		const cells = rowCells(line);
-		if (cells === null) continue;
+		if (cells === null) {
+			inBody = false;
+			continue;
+		}
+		if (!inBody) continue;
 		const target = linkTarget(cells[0] ?? "");
 		const row: IndexRow = {
 			line: at,
@@ -147,15 +158,16 @@ export const parseIndex = (text: string): ParsedIndex => {
 		};
 		current.push(row);
 		rows.push(row);
+		tailLine = at;
 	}
 	close();
 
-	return {sections, rows, hasTable: sections.some((s) => s.hasTable)};
+	return {sections, rows, hasTable: sections.some(sectionHasTable)};
 };
 
 /** Every section that carries a table, in document order — the set `--section` may name. */
 export const tableSections = (index: ParsedIndex): ReadonlyArray<string> =>
-	index.sections.filter((s) => s.hasTable && s.headingLine !== -1).map((s) => s.heading);
+	index.sections.filter((s) => sectionHasTable(s) && s.headingLine !== -1).map((s) => s.heading);
 
 /**
  * A cell's tabs and newlines flattened and its escapes written, so one row stays one line and a

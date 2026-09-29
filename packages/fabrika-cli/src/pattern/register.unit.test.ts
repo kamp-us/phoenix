@@ -84,6 +84,47 @@ describe("insertRow", () => {
 		expect(insertRow(doubled, request)).toEqual({_tag: "Ambiguous", count: 2});
 	});
 
+	it("puts the first row of an empty table directly below its |---| line", () => {
+		const empty = "## Index — services\n\n| Doc | Topic | Read when |\n|---|---|---|\n\nAfter.\n";
+		const out = insertRow(empty, request);
+		if (out._tag !== "Inserted") throw new Error(`expected Inserted, got ${out._tag}`);
+		expect(out.text).toBe(
+			`## Index — services\n\n| Doc | Topic | Read when |\n|---|---|---|\n${out.row}\n\nAfter.\n`,
+		);
+		expect(readBackCarries(out.text, "worker-queue-retry", "Index — services")).toBe(true);
+	});
+
+	it("appends after the last row of a one-row table, byte for byte", () => {
+		const out = insertRow(INDEX, request);
+		if (out._tag !== "Inserted") throw new Error(`expected Inserted, got ${out._tag}`);
+		const row =
+			"| [cache-invalidation.md](./cache-invalidation.md) | Cache keys | Touching a cached read |";
+		expect(out.text).toBe(INDEX.replace(row, `${row}\n${out.row}`));
+	});
+
+	it("fills only the named empty section when a later section already has rows", () => {
+		const twoSections = `## Index — services
+
+| Doc | Topic | Read when |
+|---|---|---|
+
+## Index — edge
+
+| Doc | Topic | Read when |
+|---|---|---|
+| [edge-session-cookies.md](./edge-session-cookies.md) | Session cookies | Changing session handling |
+`;
+		const first = insertRow(twoSections, request);
+		if (first._tag !== "Inserted") throw new Error(`expected Inserted, got ${first._tag}`);
+		expect(first.text).toBe(
+			twoSections.replace("|---|---|---|\n\n", `|---|---|---|\n${first.row}\n\n`),
+		);
+
+		const second = insertRow(twoSections, {...request, section: "Index — edge"});
+		if (second._tag !== "Inserted") throw new Error(`expected Inserted, got ${second._tag}`);
+		expect(second.text).toBe(`${twoSections}${second.row}\n`);
+	});
+
 	it("reports a document holding no table rather than inventing one", () => {
 		expect(insertRow("# Patterns\n\nNothing yet.\n", request)).toEqual({_tag: "NoTable"});
 	});
