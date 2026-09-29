@@ -194,8 +194,11 @@ is one instance of the convention rather than its definition.
 
 The four rows are convention paths with no key behind them. **What the repo renders is not a path at
 all**: it is the `uiSurfaces` list in `.fabrika.jsonc`, read by `ui render`, `ui manifest` and `ui
-evidence` — and by `review scope` / `ship scope`, which raise the `ui` class off the same rows'
-`prefix` fields, so what renders and what owes a rendered verdict are one declaration.
+evidence` off the checkout they run in, since they act on that tree — and by `review scope` /
+`ship scope`, which raise the `ui` class off the same rows' `prefix` fields, so what renders and
+what owes a rendered verdict are one declaration. The scope verbs read it at the PR's head and its
+merge base rather than off any checkout, and a path under a row either commit declares raises the
+class.
 
 ### The `uiSurfaces` and `uiCapture` schema — canonical here
 

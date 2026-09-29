@@ -1,12 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
+	configAtCommit,
 	errOut,
-	fakeFs,
 	fakeSeams,
 	okOut,
 	type Scripted,
 	unconfigured,
+	unconfiguredAtCommits,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
@@ -51,7 +52,6 @@ const options = {
 	tip: null as string | null,
 	repo: null,
 	json: false,
-	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
@@ -76,34 +76,34 @@ const GOVERNING = happy(
 );
 
 describe("runScope over a foreign repo's declared roots", () => {
-	const declaring = (config: unknown) =>
-		fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}});
+	/** The config both of the PR's commits carry — read out of git, never off the tree. */
+	const declaring = (config: unknown) => configAtCommit(JSON.stringify(config));
 
 	// `review scope` derives the same requirement over the same key. Both verbs read one list.
 	it("tallies the roots the config declares, not the shipped defaults", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options}),
-				Layer.merge(
-					fakeSeams(happy(["M", "src/cart.ts"])).layer,
-					declaring({governedRoots: ["src/", ".fabrika.jsonc"]}).layer,
-				),
-			),
-		);
+		const out = await run([
+			...declaring({governedRoots: ["src/", ".fabrika.jsonc"]}),
+			...happy(["M", "src/cart.ts"]),
+		]);
 		expect(out.stdout).toContain(`governance\trequired\t${HEAD}`);
 		expect(out.stdout).toContain("root\tsrc/\t1");
 		expect(out.stderr).toContain(
-			"governance scope: root set is `governedRoots` as declared in .fabrika.jsonc.",
+			`governance scope: root set is at the head ${HEAD}, \`governedRoots\` as declared in .fabrika.jsonc; at the base ${BASE}, \`governedRoots\` as declared in .fabrika.jsonc.`,
 		);
 	});
 
+	it("tallies a root the merge base declares after the head drops it", async () => {
+		const out = await run([
+			...configAtCommit("{}", HEAD),
+			...configAtCommit(JSON.stringify({governedRoots: ["src/", ".fabrika.jsonc"]}), BASE),
+			...happy(["M", "src/cart.ts"]),
+		]);
+		expect(out.stdout).toContain(`governance\trequired\t${HEAD}`);
+		expect(out.stdout).toContain("root\tsrc/\t1");
+	});
+
 	it("refuses UNKNOWN on a config it cannot decode — never `not-required`", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options}),
-				Layer.merge(fakeSeams(GOVERNING).layer, declaring({governedRoots: 7}).layer),
-			),
-		);
+		const out = await run([...declaring({governedRoots: 7}), ...GOVERNING]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		// Nothing on stdout is the assertion: the answer line is where `not-required` would be, and
 		// the refusal below says in words that it is not one.
@@ -266,6 +266,7 @@ const overRange = (...rows: ReadonlyArray<StatusRow>): ReadonlyArray<Scripted> =
 	// `--name-only` gives a rename its destination alone, which is a record's last field either way.
 	[PATHS_AT(RANGE_BASE, RANGE_TIP), paths(...rows.map((row) => row[row.length - 1] as string))],
 	[TREE_AT(RANGE_TIP), treeOf(...FULL_TREE)],
+	...unconfiguredAtCommits,
 ];
 
 describe("runScope over a range", () => {

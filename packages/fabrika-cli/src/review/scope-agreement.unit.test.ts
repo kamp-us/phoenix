@@ -6,15 +6,21 @@
  * runs *both* catches them drifting. While only the ship side derived `ui`, a reviewer on a rendered
  * diff was told `review-code` was the whole bar, PASSed, and `ship gate` then refused a `review-ui`
  * namespace nobody had routed — one wasted ship dispatch and a park per PR.
+ *
+ * Both read the class config at the PR's head and merge base — review out of git, ship off the
+ * platform — so each side is handed the same config at the same two commits here, and neither reads
+ * the tree the test stands up.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
-	fakeFs,
+	configAtCommit,
+	configOnPlatform,
 	fakeSeams,
 	type HttpReply,
+	mergeBaseOnPlatform,
 	type Scripted,
-	uiConfigured,
+	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
@@ -27,7 +33,7 @@ import {
 	pull as shipPull,
 } from "../ship/fixtures.test-support.ts";
 import {runScope as runShipScope} from "../ship/scope-verb.ts";
-import {binding, PATHS_AT, paths, pull as reviewPull} from "./fixtures.test-support.ts";
+import {BASE, binding, PATHS_AT, paths, pull as reviewPull} from "./fixtures.test-support.ts";
 import {runScope as runReviewScope} from "./scope-verb.ts";
 
 /** One mixed diff: a worker source file, a doc, and a rendered surface beside its own test. */
@@ -52,7 +58,21 @@ const namespaceRows = (stdout: string): ReadonlyArray<string> =>
 		.filter((line) => line.startsWith("namespace\t"))
 		.map((line) => line.slice("namespace\t".length));
 
-type Config = typeof uiConfigured;
+/** The `.fabrika.jsonc` both commits carry. */
+type Config = string;
+
+const configOf = (uiSurfaces: ReadonlyArray<unknown>): Config => JSON.stringify({uiSurfaces});
+
+const twoApps: Config = configOf([
+	{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
+	{
+		name: "desk-chat",
+		prefix: "apps/desk/src/",
+		mount: "/desk/chat",
+		basePath: "/",
+		command: "pnpm proof:chat --port {{port}}",
+	},
+]);
 
 const reviewScopeOver =
 	(config: Config) =>
@@ -69,16 +89,17 @@ const reviewScopeOver =
 				}),
 				Layer.merge(
 					fakeSeams([
+						...configAtCommit(config),
 						[PULL, served(reviewPull({changedFiles: changed.length}))],
 						...binding(),
 						[PATHS_AT(), paths(...changed)],
 					]).layer,
-					config,
+					unconfigured,
 				),
 			),
 		);
 
-const reviewScope = reviewScopeOver(uiConfigured);
+const reviewScope = reviewScopeOver(twoApps);
 
 /**
  * `caller: "shipper"` with the worktree read scripted, because that is the run whose answer the
@@ -93,7 +114,6 @@ const shipScopeOver =
 					pr: 4321,
 					repo: null,
 					json: false,
-					cwd: "/repo",
 					env: ENV,
 					caller: "shipper",
 				}),
@@ -104,30 +124,26 @@ const shipScopeOver =
 						[OWNERS, {status: 200, body: CODEOWNERS}],
 						[RULES, served(branchRules("pull_request"))],
 						[REPO, repositoryServed()],
+						mergeBaseOnPlatform(BASE),
+						...configOnPlatform(config),
 						LINKED_WORKTREE,
 					] as ReadonlyArray<Scripted>).layer,
-					config,
+					unconfigured,
 				),
 			),
 		);
 
-const shipScope = shipScopeOver(uiConfigured);
+const shipScope = shipScopeOver(twoApps);
 
 /** A root-level app: one row naming two directories and one root file as its source roots. */
-const rootLevelApp: Config = fakeFs({
-	files: {
-		"/repo/.fabrika.jsonc": JSON.stringify({
-			uiSurfaces: [
-				{
-					name: "web",
-					prefix: ["app/", "components/", "tailwind.config.ts"],
-					mount: "/",
-					command: "pnpm dev --port {{port}}",
-				},
-			],
-		}),
+const rootLevelApp: Config = configOf([
+	{
+		name: "web",
+		prefix: ["app/", "components/", "tailwind.config.ts"],
+		mount: "/",
+		command: "pnpm dev --port {{port}}",
 	},
-}).layer;
+]);
 
 describe("review scope and ship scope over one file list", () => {
 	it("derive the same required-namespace set from a mixed code + ui diff", async () => {

@@ -3,6 +3,7 @@ import {describe, expect, it} from "vitest";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {
+	configOnPlatform,
 	errOut,
 	fakeFs,
 	fakeSeams,
@@ -10,6 +11,7 @@ import {
 	okOut,
 	once,
 	type Scripted,
+	unconfiguredOnPlatform,
 } from "../fakes.test-support.ts";
 import {JOB_LOG, JOBS, jobs} from "../heal-ci/fixtures.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
@@ -215,7 +217,11 @@ const run = (
 			// `UNDECLARED` is tailed too: this group calls `runChecks` in process, so the blocking
 			// authority's two reads happen here, and an unscripted one refuses at `11` before a case
 			// reaches the park arm it is about.
-			Layer.merge(fs.layer, fakeSeams([...script, ...http, NO_NOMINATIONS, ...UNDECLARED]).layer),
+			Layer.merge(
+				fs.layer,
+				fakeSeams([...script, ...http, NO_NOMINATIONS, ...UNDECLARED, ...unconfiguredOnPlatform()])
+					.layer,
+			),
 		),
 	);
 
@@ -538,23 +544,22 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 	});
 });
 
+const laneWithUi = (log: string) => fakeFs({files: {[WORKFLOW]: laneTemplate(), [LOG]: log}});
+
 /**
- * The declaration `review-ui` is derived over — without it `uiSurfaces` is the shipped empty list
- * and no routed namespace is ever required, which is no ground for a test about one.
+ * The routed-UI park's target half: a diff under the declared prefix, so `review-ui` derives.
+ *
+ * The PR's config declares that prefix — without it `uiSurfaces` is the shipped empty list and no
+ * routed namespace is ever required, which is no ground for a test about one.
  */
-const UI_CONFIG = {
-	[`${CWD}/.fabrika.jsonc`]: JSON.stringify({
-		uiSurfaces: [
-			{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
-		],
-	}),
-};
-
-const laneWithUi = (log: string) =>
-	fakeFs({files: {[WORKFLOW]: laneTemplate(), [LOG]: log, ...UI_CONFIG}});
-
-/** The routed-UI park's target half: a diff under the declared prefix, so `review-ui` derives. */
 const ROUTED_TARGET: ReadonlyArray<Scripted> = [
+	...configOnPlatform(
+		JSON.stringify({
+			uiSurfaces: [
+				{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
+			],
+		}),
+	),
 	[CLOSERS, reply(closingPulls(4321))],
 	[PULL, reply(pull({comments: 2}))],
 	[FILES, reply(files("apps/site/src/routes/page.tsx", "README.md"))],

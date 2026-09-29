@@ -7,7 +7,13 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
+import {
+	fakeSeams,
+	type HttpReply,
+	type Scripted,
+	unconfigured,
+	unconfiguredOnPlatform,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
 import {checkRuns, comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
@@ -59,7 +65,8 @@ const NO_HELD_CHECK: Scripted = [
 
 const options = {pr: 4321, sha: HEAD, repo: null, json: false, cwd: "/repo", env: ENV};
 
-const seamsFor = (script: ReadonlyArray<Scripted>) => fakeSeams([...script, NO_REVIEWS]);
+const seamsFor = (script: ReadonlyArray<Scripted>) =>
+	fakeSeams([...script, NO_REVIEWS, ...unconfiguredOnPlatform()]);
 
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
 	const seams = seamsFor(script);

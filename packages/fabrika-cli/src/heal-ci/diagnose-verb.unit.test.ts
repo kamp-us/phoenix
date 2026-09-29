@@ -6,8 +6,9 @@ import {
 	type HttpReply,
 	linkNext,
 	type Scripted,
-	uiConfigured,
+	uiConfiguredOnPlatform,
 	unconfigured,
+	unconfiguredOnPlatform,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PULL_FILES_CAP} from "../io/pulls.ts";
@@ -102,6 +103,7 @@ const script = (overrides: ReadonlyArray<Scripted> = []): ReadonlyArray<Scripted
 	[PERMISSION, permission("write")],
 	[RULES, rules("ci-required")],
 	[PROTECTION, protection()],
+	...unconfiguredOnPlatform(),
 ];
 
 const run = (rows: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
@@ -150,6 +152,7 @@ describe("runDiagnose answers", () => {
 	it("counts a head-bound routed-elsewhere record as a filled review-ui namespace", async () => {
 		const out = await runWith(
 			script([
+				...uiConfiguredOnPlatform(),
 				[PULL, reply(pull({updatedAt: PUSHED, comments: 2, changedFiles: 1}))],
 				[FILES, reply(files("apps/site/src/flags/shell-keys.ts"))],
 				[
@@ -165,7 +168,7 @@ describe("runDiagnose answers", () => {
 					),
 				],
 			]),
-			uiConfigured,
+			unconfigured,
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("gates\tsatisfied\t2/2");
@@ -175,6 +178,7 @@ describe("runDiagnose answers", () => {
 	it("re-opens the namespace when the route binds a head that has moved", async () => {
 		const out = await runWith(
 			script([
+				...uiConfiguredOnPlatform(),
 				[PULL, reply(pull({updatedAt: PUSHED, comments: 2, changedFiles: 1}))],
 				[FILES, reply(files("apps/site/src/flags/shell-keys.ts"))],
 				[
@@ -190,7 +194,7 @@ describe("runDiagnose answers", () => {
 					),
 				],
 			]),
-			uiConfigured,
+			unconfigured,
 		);
 		expect(out.stdout).toContain("gates\tblocked\t1/2");
 	});

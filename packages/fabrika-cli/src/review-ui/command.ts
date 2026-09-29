@@ -126,8 +126,8 @@ const render = leafCommand(
 		authSecretFrom,
 		repo,
 	}) {
-		// The reviewer's own checked-out tree, never the PR head — the same read `route` takes, and
-		// for the same reason: the declaration is the repo's, not the branch's.
+		// The reviewer's own checked-out tree, never the PR head: this reads which app serves each
+		// `--surface`, derives no class, and the declaration is the repo's, not the branch's.
 		const surfaces = yield* uiSurfacesOr(
 			"review-ui render",
 			process.cwd(),
@@ -369,17 +369,6 @@ const route = leafCommand(
 		repo: repoFlag,
 	},
 	Effect.fn(function* ({pr, sha, clause, verifiedAt, noPreview, handCheck, repo}) {
-		// The reviewer's own checked-out tree, never the PR head: the class this route resolves was
-		// raised over these prefixes, so they are read where the verb is running.
-		const surfaces = yield* uiSurfacesOr(
-			"review-ui route",
-			process.cwd(),
-			"which paths raise the ui class is UNKNOWN; nothing was posted.",
-		);
-		if (surfaces._tag === "Refused") {
-			yield* emit(refuse(PRECONDITION_UNKNOWN, surfaces.message));
-			return;
-		}
 		const offered = Option.getOrNull(handCheck);
 		let request: NoPreviewRequest | undefined;
 		if (noPreview || offered !== null) {
@@ -401,7 +390,6 @@ const route = leafCommand(
 				clause,
 				verifiedAt: Option.getOrNull(verifiedAt),
 				...(request === undefined ? {} : {noPreview: request}),
-				uiPrefixes: surfaces.prefixes,
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				stdin: Effect.sync(readStdin),

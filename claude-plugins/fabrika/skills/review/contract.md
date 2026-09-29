@@ -363,6 +363,17 @@ pair a reviewer keying the governance obligation off `harness` gets wrong: a cle
 then the ship gate blocking on `ns governance absent` with nobody told to fill it. The token
 vocabulary matches `governance scope`'s on purpose — one word, read the same in both places.
 
+**The config the classes derive over is the PR's, never this checkout's.** `governedRoots`,
+`uiSurfaces` and `reviewSubsystems` are read out of git at the bound head and at its merge base, the
+same two commits the file list is read between. A path counts as governed, raises `ui`, or carries a
+subsystem constraint when **either** commit's `.fabrika.jsonc` says so: head alone would let a PR
+drop its own row and skip the gate, base alone would miss a PR that adds an app. A file absent at
+one commit is that commit's shipped defaults; one that does not decode, or a read that fails, is
+`11` naming the commit. Every verb that derives a PR's classes over a bound head — `ship scope`,
+`ship gate`, `ship floor`, `lane prove`, `heal-ci`, `governance scope` and `post`, `review preview`,
+`review-ui route` — reads through the same reader (`packages/fabrika-cli/src/review/class-config.ts`),
+so the tree a verb stands in cannot change its answer. The filter keys stay the checkout's.
+
 **The issue reference** is resolved from the PR body in two passes, and the kinds are reported
 apart rather than collapsed. First the closing keywords (`Fixes/Closes/Resolves #N`), first match
 ⇒ `fixes:<n>`; failing that, an explicit `Part of #N` ⇒ `part-of:<n>`; failing both, `-` /
@@ -382,7 +393,7 @@ the skill states it (`SKILL.md` step 2).
 |---|---|
 | `7` | the PR is proven absent (404), or closed, or has **zero changed files** — a review over nothing, refused fail-closed |
 | `10` | `--sha` is not a head SHA |
-| `11` | the PR could not be read, or the commit could not be bound — the scope is UNKNOWN |
+| `11` | the PR could not be read, the commit could not be bound, or `.fabrika.jsonc` at the head or the merge base could not be read or decoded — the scope is UNKNOWN |
 | `12` | `--sha` is not the PR's head — re-scope at the head, never partition a tree the PR has left |
 | `13` | git reports no changed files for the bound commit's range — an empty read, with nothing to partition |
 

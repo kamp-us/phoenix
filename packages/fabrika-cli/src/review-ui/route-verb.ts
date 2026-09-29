@@ -78,6 +78,7 @@ import {
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "../review/authored.ts";
+import {classConfigOfPull} from "../review/class-config.ts";
 import {isUiSurface} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
@@ -132,8 +133,6 @@ export interface RouteOptions {
 	 * evidence is still evidence of the tree being attested.
 	 */
 	readonly verifiedAt: string | null;
-	/** This repo's `uiSurfaces` prefixes, resolved by the caller off the tree it stands in. */
-	readonly uiPrefixes: ReadonlyArray<string>;
 	/**
 	 * Set where the PR has no preview deploy and the route rests on the repo's
 	 * `reviewUi.whenNoPreview` rules instead of the diff. Absent is the route as it always was.
@@ -296,7 +295,19 @@ export const runRoute = (
 		const listed = platformFileSet(VERB, `#${pr}`, declared, yield* listPullFiles(repo, pr));
 		if (listed._tag === "Unreadable") return unreadable("the changed-file list", pr, listed.reason);
 		const files = listed.set.files;
-		const ui = files.filter((file) => isUiSurface(file, options.uiPrefixes));
+		// The prefixes the PR's own config declares at its head and merge base — the ones `ship scope`
+		// raised the class from — never the checkout this run stands in.
+		const classConfig = yield* classConfigOfPull(
+			VERB,
+			"which paths raise the ui class is UNKNOWN; nothing was posted.",
+			repo,
+			target.pull,
+		);
+		if (classConfig._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, classConfig.message);
+		}
+		const uiPrefixes = classConfig.config.uiPrefixes;
+		const ui = files.filter((file) => isUiSurface(file, uiPrefixes));
 		const diagnostics = [
 			scannedLine(
 				VERB,
@@ -475,7 +486,7 @@ export const runRoute = (
 					diagnostics,
 				);
 			}
-			const spent = compared.value.files.filter((file) => isUiSurface(file, options.uiPrefixes));
+			const spent = compared.value.files.filter((file) => isUiSurface(file, uiPrefixes));
 			diagnostics.push(
 				scannedLine(
 					VERB,

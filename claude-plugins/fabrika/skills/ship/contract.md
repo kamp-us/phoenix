@@ -342,6 +342,12 @@ an authorized author satisfies it at `ship gate` like any `review-*` marker. Req
 and readable move together — a required namespace no marker can carry blocks every
 governance-root PR permanently, which is the fail-**closed** half of that same gap.
 
+**The roots and the `ui` prefixes are the PR's own.** `ship scope`, `ship gate` and `ship floor`
+read `.fabrika.jsonc` at the PR's head and at the merge base the platform names for it, never off
+the checkout the shipper stands in, and take the union: a path either commit governs is governed,
+and a path under either commit's `uiSurfaces` raises `ui`. It is the reader `review scope` uses, so
+the two sides cannot answer differently about one head — see the review contract.
+
 **The `cp` line** is the three-state routing input (see "Considered and deliberately not
 derived"), and its source is the **enforced artifact itself**: `.github/CODEOWNERS`, read at run
 time from **the PR's base ref — the branch the PR targets**.
@@ -401,7 +407,7 @@ downstream verb consumes, and that verb guards itself.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404); or the enumerated changed-file list is empty; or its non-empty diff derives zero required namespaces — a vacuous conjunction |
-| `11` | the PR, its file list, the §CP boundary, or the worktree fact could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
+| `11` | the PR, its file list, the §CP boundary, the worktree fact, the merge base, or `.fabrika.jsonc` at the head or the merge base could not be read or decoded — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
 | `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a class, a namespace or a §CP path could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `33` | the verb is standing in the repository's main working tree — the driver's checkout, not the shipper's own worktree. Proven before anything is read, and only on a shipper's own run: `recipe unpark`'s in-process call is exempt |
 
@@ -715,7 +721,7 @@ answer this contract bans.
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — a conjunction over an empty diff proves nothing |
 | `10` | a `--require` value is not a known gateable namespace |
-| `11` | the changed-file list, comments, reviews, ACL, or the in-force `review-ui` verdict's rendered comment could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
+| `11` | the changed-file list, comments, reviews, ACL, the in-force `review-ui` verdict's rendered comment, or `.fabrika.jsonc` at the head or its merge base could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
 | `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
@@ -922,7 +928,7 @@ it is *present and wrong*. All four of these red on `18`, and each has a unit te
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — whether it touches a governance root is unanswerable |
-| `11` | the PR, its changed-file list, or the conjunction underneath could not be read — the floor is UNKNOWN, never `n/a`. Under `--publish-check`, also: the check-runs at the head could not be enumerated, so whether this head already carries the floor's row is unknown and nothing is published |
+| `11` | the PR, its changed-file list, `.fabrika.jsonc` at the head or its merge base, or the conjunction underneath could not be read — the floor is UNKNOWN, never `n/a`. Under `--publish-check`, also: the check-runs at the head could not be enumerated, so whether this head already carries the floor's row is unknown and nothing is published |
 | `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a governance root could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `18` | the diff touches a governance root and its `governance` verdict at this head is `absent`, `stale` or `fail` |
 | `8` | **`--publish-check` only** — the check-run could not be written, so the floor is resolved and nothing published it |
