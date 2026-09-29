@@ -185,6 +185,9 @@ A transient gets **exactly one** rerun per head, ever. The verb re-derives that 
 and refuses `14` without touching anything — it does not trust the classification you hand it,
 because v1 kept this invariant in the model's memory, and a session-memory invariant is not one.
 
+The queued rerun is the end of your action. If you wait on it to finish, wait the way
+[skill-conventions §14](../../docs/skill-conventions.md) says.
+
 A `14` refusal is a success: the guard proved the state and declined. Report it and stop — a second
 rerun is escalation, not retry, and escalation is a human's.
 
