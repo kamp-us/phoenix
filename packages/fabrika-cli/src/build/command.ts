@@ -767,7 +767,7 @@ const check = leafCommand(
 		probe: Flag.boolean("probe").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				"outside a lane: start every declared codeValidators entry once in this tree, with no session, no diff, no guard and no config validator, naming each result on stderr; writes nothing; its green is the --probe shape in the description (--surface code only; default: false)",
+				'outside a lane: start every declared codeValidators entry once in this tree, naming each result on stderr; no session, diff, guard or config validator, so 7, 14, 15 and 22 never arise; writes nothing; green is {"verdict":"green","mode":"probe","surface","tree","ran"} (--surface code only; default: false)',
 			),
 		),
 	},
@@ -788,14 +788,13 @@ const check = leafCommand(
 	),
 	Command.withDescription(
 		[
-			"A lane run runs this surface's validators and the local-tree guards in this tree; --probe runs only the declared code validators. A green prints as JSON.",
-			'  lane run: {"verdict":"green","surface","tree","ran","skipped","unvalidated"}',
-			'  --probe:  {"verdict":"green","mode":"probe","surface","tree","ran"} (no lane, no diff, no guard)',
-			"  7: the diff is empty (lane run only)",
-			"  10: --surface is off-enum or contradicts the diff, or --probe names a surface other than code",
-			"  11: a validator could not start, codeValidators is absent or empty, or a file, config or claim could not be read (UNKNOWN)",
-			"  14: the branch is not this lane's (lane run only)",
-			"  15: the claim is held by another lane (lane run only)",
+			"Runs this surface's validators and guards in this tree; --probe runs only codeValidators.",
+			'  {"verdict":"green","surface","tree","ran","skipped","unvalidated"}',
+			"  7: the diff is empty",
+			"  10: --surface is off-enum, contradicts the diff, or is not code under --probe",
+			"  11: a validator cannot start, no codeValidators, or a read failed (UNKNOWN)",
+			"  14: the branch is not this lane's",
+			"  15: the claim is held by another lane",
 			"  18: red; the failing validator or guard is named on stderr",
 			"  22: no validator covers any changed file",
 			`  Derivation: the build skill's contract.md, "build check"`,
