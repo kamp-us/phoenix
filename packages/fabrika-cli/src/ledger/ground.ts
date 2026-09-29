@@ -1,5 +1,5 @@
 /**
- * The freshness proof: how far this tree's HEAD sits behind `origin/main`.
+ * The freshness proof: how far this tree's HEAD sits behind the trunk (`../io/trunk.ts`).
  *
  * **The tree is stale by default until shown otherwise.** v1 planned against stale checkouts and
  * minted phantom children, and nothing syncs the tree after a merge at any call site — so there is
@@ -14,10 +14,8 @@ import {Effect} from "effect";
 import {execCapture} from "../io/exec.ts";
 import {type Attempt, fail, fetchAndResolve, ok, type Shell} from "../io/git.ts";
 
-export const BASE_REF = "origin/main";
-
 /** How many commits `base` carries that HEAD does not. `0` is a fresh tree. */
-export const commitsBehind = (base: string = BASE_REF): Shell<Attempt<number>> =>
+export const commitsBehind = (base: string): Shell<Attempt<number>> =>
 	Effect.gen(function* () {
 		const resolved = yield* fetchAndResolve(base);
 		if (resolved._tag === "Failure") return resolved;

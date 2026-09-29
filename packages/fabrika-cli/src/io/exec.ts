@@ -178,7 +178,26 @@ export const execRecord: ChildRunner = (request) =>
 		),
 	);
 
-const captured = (file: string, args: ReadonlyArray<string>, input: string | null): Exec =>
+/**
+ * One run with its exit code kept as part of the answer, for a read where two non-zero codes mean
+ * different things: `git symbolic-ref --quiet` exits 1 when the ref holds no symbolic name, and 128
+ * when git could not read the ref or the repository at all.
+ */
+export type ExecExit =
+	| {
+			readonly _tag: "Exited";
+			readonly code: number;
+			readonly stdout: string;
+			/** The first line of stderr, else `<file> exited <code>`. */
+			readonly reason: string;
+	  }
+	| {readonly _tag: "Unstartable"; readonly reason: string};
+
+const exited = (
+	file: string,
+	args: ReadonlyArray<string>,
+	input: string | null,
+): Effect.Effect<ExecExit, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.scoped(
 		Effect.gen(function* () {
 			const handle =
@@ -191,24 +210,37 @@ const captured = (file: string, args: ReadonlyArray<string>, input: string | nul
 				[collect(handle.stdout), collect(handle.stderr), handle.exitCode],
 				{concurrency: "unbounded"},
 			);
-			if (exitCode !== 0) {
-				return {
-					ok: false,
-					stdout: "",
-					reason: firstLine(stderr) || `${file} exited ${exitCode}`,
-				};
-			}
-			return {ok: true, stdout, reason: ""};
+			return {
+				_tag: "Exited" as const,
+				code: exitCode,
+				stdout,
+				reason: firstLine(stderr) || `${file} exited ${exitCode}`,
+			};
 		}),
 	).pipe(
 		Effect.catchTag("PlatformError", (cause) =>
-			Effect.succeed({
-				ok: false,
-				stdout: "",
+			Effect.succeed<ExecExit>({
+				_tag: "Unstartable",
 				reason: firstLine(cause.message) || `could not run ${file}`,
 			}),
 		),
 	);
+
+const captured = (file: string, args: ReadonlyArray<string>, input: string | null): Exec =>
+	Effect.map(
+		exited(file, args, input),
+		(run): ExecResult =>
+			run._tag === "Exited" && run.code === 0
+				? {ok: true, stdout: run.stdout, reason: ""}
+				: {ok: false, stdout: "", reason: run.reason},
+	);
+
+/** Run a command for its exit code, with a spawn fault kept apart from every code. */
+export const execExit = (
+	file: string,
+	args: ReadonlyArray<string>,
+): Effect.Effect<ExecExit, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	exited(file, args, null);
 
 /** Run a command, capturing stdout; a non-zero exit and a spawn fault are both data, never a throw. */
 export const execCapture = (file: string, args: ReadonlyArray<string>): Exec =>

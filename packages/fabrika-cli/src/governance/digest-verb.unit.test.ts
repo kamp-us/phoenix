@@ -44,6 +44,7 @@ const options = {
 	until: null as string | null,
 	dir: ".decisions",
 	base: "origin/main",
+	env: {},
 	json: false,
 	now: Effect.succeed(Date.parse("2026-08-10T00:00:00Z")),
 };

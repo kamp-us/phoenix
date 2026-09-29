@@ -3,9 +3,9 @@
  *
  * The lane-identity rule lives in `lane.ts`; this verb is where a name that obeys it first comes into
  * existence. Create mode cuts `build/<number>-<slug>-<nonce>` off `FETCH_HEAD` — never a local
- * `origin/main`, which can predate the base the lane needs. **Which base that is, create mode
+ * remote-tracking ref, which can predate the base the lane needs. **Which base that is, create mode
  * derives**: an epic child is cut off its run's assembly branch `epic/<parent>` and a standalone
- * issue off the trunk, with an explicit `--base` honoured verbatim over either — see
+ * issue off the trunk `resolveTrunk` names, with an explicit `--base` honoured verbatim over either — see
  * {@link resolveBase} for the silent wrong base that derivation removes. Resume mode checks the
  * PR's head branch out under the **local** name `build/pr-<pr>-<nonce>` with its upstream pointed at
  * the remote head, so `build push` updates the PR while the local name carries *this* repair claim's
@@ -30,6 +30,7 @@ import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {localBranches} from "../io/git.ts";
+import {resolveTrunk, TRUNK_REMOTE, trunkUnresolved} from "../io/trunk.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
 import {requireCallerToken, requireClaim, requireSession} from "./claim.ts";
@@ -69,7 +70,7 @@ export interface BranchOptions {
 	/**
 	 * The base ref an operator named, honoured verbatim on every lane. `null` is "nobody passed one",
 	 * which is what lets the create path derive an epic child's assembly base instead — the two used
-	 * to be one value, and `origin/main` was then indistinguishable from a deliberate trunk cut.
+	 * to be one value, and a defaulted trunk was then indistinguishable from a deliberate trunk cut.
 	 */
 	readonly base: string | null;
 	/** Resume mode: the PR whose head branch to publish back to. Exclusive with `number`. */
@@ -87,9 +88,6 @@ export interface BranchOptions {
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
-
-/** The trunk a lane with no parent epic and no operator-named base is cut from. */
-const TRUNK: BaseRef = {_tag: "Remote", remote: "origin", ref: "main"};
 
 type ResolvedBase =
 	| {readonly _tag: "Resolved"; readonly base: BaseRef; readonly note: string}
@@ -142,15 +140,26 @@ const resolveBase = (
 				_tag: "Refused" as const,
 				outcome: refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read #${issue}'s parent through GitHub's issue-parent endpoint: ${parent.reason} — whether this is an epic child is UNKNOWN, and cutting off ${baseLabel(TRUNK)} anyway is exactly the silent wrong base this derivation exists to remove. No branch was cut; pass --base to name one yourself.`,
+					`${VERB}: cannot read #${issue}'s parent through GitHub's issue-parent endpoint: ${parent.reason} — whether this is an epic child is UNKNOWN, and cutting off the trunk anyway is exactly the silent wrong base this derivation exists to remove. No branch was cut; pass --base to name one yourself.`,
 				),
 			};
 		}
 		if (parent._tag === "Absent") {
+			const trunk = yield* resolveTrunk(env, repo);
+			if (trunk._tag === "Failure") {
+				return {
+					_tag: "Refused" as const,
+					outcome: refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: #${issue} is proven standalone and ${trunkUnresolved(trunk.reason)}. No branch was cut; pass --base to name one yourself.`,
+					),
+				};
+			}
+			const base: BaseRef = {_tag: "Remote", remote: TRUNK_REMOTE, ref: trunk.value.branch};
 			return {
 				_tag: "Resolved" as const,
-				base: TRUNK,
-				note: `${VERB}: base ${baseLabel(TRUNK)} — #${issue} is proven standalone (its parent endpoint answered 404), so no epic base was derived.`,
+				base,
+				note: `${VERB}: base ${baseLabel(base)} — #${issue} is proven standalone (its parent endpoint answered 404), so no epic base was derived.`,
 			};
 		}
 		const assembly = epicBranch(parent.value);

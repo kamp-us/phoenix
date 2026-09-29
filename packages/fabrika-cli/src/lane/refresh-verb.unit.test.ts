@@ -6,7 +6,15 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import type {AssemblyRefreshSurface} from "../config/keys/assembly-refresh.ts";
 import type {Read} from "../config/read-key.ts";
-import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeSeams,
+	fakeShell,
+	okOut,
+	once,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	APPEND_UNKNOWN,
@@ -97,6 +105,8 @@ const run = (
 			runRefresh({
 				epic: EPIC,
 				base: BASE,
+				repo: null,
+				env: {},
 				gate: options.gate ?? null,
 				assemblyRefresh: options.key ?? ON,
 				root: ROOT,
@@ -106,6 +116,58 @@ const run = (
 		),
 	).then((outcome) => ({outcome, calls: shell.calls}));
 };
+
+/** A run with no `--base`, so the trunk is resolved off GitHub's default branch for `o/r`. */
+const runOnTrunk = (script: ReadonlyArray<Scripted>) => {
+	const seams = fakeSeams(script);
+	return Effect.runPromise(
+		Effect.provide(
+			runRefresh({
+				epic: EPIC,
+				base: null,
+				repo: "o/r",
+				env: {GITHUB_TOKEN: "ghp_scripted"},
+				gate: null,
+				assemblyRefresh: ON,
+				root: ROOT,
+				lane: String(EPIC),
+			}),
+			Layer.merge(seams.layer, fakeFs({files: LANE_FILES}).layer),
+		),
+	).then((outcome) => ({outcome, calls: seams.calls}));
+};
+
+const TRUNK_READ = /^GET \S+\/repos\/o\/r$/;
+
+describe("runRefresh — no --base merges the resolved trunk", () => {
+	it("merges origin/dev in a repo whose default branch is dev", async () => {
+		const {outcome, calls} = await runOnTrunk([
+			[TRUNK_READ, {status: 200, body: JSON.stringify({default_branch: "dev"})}],
+			[LIST, SEATED],
+			[once(HEAD), okOut(BEFORE)],
+			[once(STATUS), okOut("")],
+			[FETCH, okOut("")],
+			[/^git -C .* rev-parse --verify origin\/dev\^\{commit\}$/, okOut(TIP)],
+			[CARRIED, okOut("")],
+		]);
+
+		expect(outcome.code).toBe(0);
+		expect(calls).toContain(`git -C ${SEAT} rev-parse --verify origin/dev^{commit}`);
+		expect(calls.some((line) => line.includes("origin/main"))).toBe(false);
+	});
+
+	it("is UNKNOWN on 11 naming the fix when the trunk cannot be read, merging nothing", async () => {
+		const {outcome, calls} = await runOnTrunk([
+			[TRUNK_READ, {status: 502, body: '{"message":"Bad Gateway"}'}],
+			[LIST, SEATED],
+			[once(HEAD), okOut(BEFORE)],
+		]);
+
+		expect(outcome.code).toBe(LANE_UNREADABLE);
+		expect(outcome.stderr.at(-1)).toContain("cannot resolve the trunk");
+		expect(calls.some((line) => / (fetch|merge) /.test(line))).toBe(false);
+	});
+});
 
 describe("runRefresh", () => {
 	it("merges the trunk in and answers the head it re-read, not the one it merged onto", async () => {

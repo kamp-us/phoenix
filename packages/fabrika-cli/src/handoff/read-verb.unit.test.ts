@@ -25,7 +25,12 @@ const claim = (packComment: number): string => {
 	return composeClaimMarker({nonce, packComment, claimedAt: at});
 };
 
-const options = {issue: ISSUE, base: null, repo: null, env: {CLAUDE_PIPELINE_REPO: REPO}};
+const options = {
+	issue: ISSUE,
+	base: null,
+	repo: null,
+	env: {CLAUDE_PIPELINE_REPO: REPO, GITHUB_TOKEN: "ghp_scripted"},
+};
 
 const run = (script: ReadonlyArray<Scripted>, over: Partial<typeof options> = {}) =>
 	Effect.runPromise(Effect.provide(runRead({...options, ...over}), fakeSeams(script).layer));

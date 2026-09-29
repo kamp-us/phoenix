@@ -1208,6 +1208,7 @@ describe("recipe unpark — a campaign-paused park clears on the row it parked o
 
 	/** The trunk read: fetch the base, resolve it, show `ROADMAP.md` as of that commit. */
 	const trunkRoadmap = (text: string): ReadonlyArray<Scripted> => [
+		[/^GET \S+\/repos\/o\/r$/, {status: 200, body: JSON.stringify({default_branch: "main"})}],
 		[REMOTES, okOut("origin")],
 		[FETCH, okOut("")],
 		[RESOLVE, okOut(TRUNK_SHA)],
@@ -1259,6 +1260,7 @@ describe("recipe unpark — a campaign-paused park clears on the row it parked o
 		const out = await run(
 			fs,
 			[
+				[/^GET \S+\/repos\/o\/r$/, {status: 200, body: JSON.stringify({default_branch: "main"})}],
 				[REMOTES, okOut("origin")],
 				[FETCH, okOut("")],
 				[RESOLVE, okOut(TRUNK_SHA)],

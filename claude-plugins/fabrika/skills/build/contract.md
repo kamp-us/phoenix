@@ -1731,7 +1731,7 @@ the 78 removable trees on the clone this was measured against. Each is classifie
 `PRUNE`.
 
 **`REMOVE` needs four positive proofs together.** The tree holds nothing uncommitted; it carries no
-lock; its HEAD is already on the trunk — reachable from `origin/HEAD`, or landed there as a squash,
+lock; its HEAD is already on the trunk — reachable from `origin/<the repo's GitHub default branch>`, or landed there as a squash,
 matched by comparing the patch id of what the HEAD adds against the trunk's own patches over exactly
 those paths; and the tree reads **quiet**, its directory untouched for 24h. The subject of the third
 is the HEAD commit, not a branch: the harness detaches the trees it registers, so a branch-keyed rule
@@ -1790,7 +1790,7 @@ costs disk anything nor risks work.
 |---|---|
 | `8` | git refused a removal — the tree stays |
 | `9` | git reported a removal and the registration survives, or the read-back failed |
-| `11` | this run's own root, the registrations, or the trunk could not be read — nothing was removed |
+| `11` | this run's own root, the registrations, or the trunk (GitHub's default branch for the repo) could not be read — nothing was removed |
 
 A `--limit` that is not a positive integer is a usage error, `1`: nothing was read and nothing was
 removed.
@@ -1925,7 +1925,7 @@ name carries the *current* repair claim's nonce. Each repair run gets its own lo
 dead earlier lane can never pin this one. A closed or merged PR refuses (`7`).
 
 **Create mode derives the base; it does not default to the trunk.** `build branch` used to fetch
-whatever `--base` said and cut there, with `origin/main` as the flag's own default — and the skill's
+whatever `--base` said and cut there, with a spelled `origin/main` as the flag's own default — and the skill's
 canonical invocation carries no `--base`, so an epic child landed on the trunk unless its builder
 thought to pass one. That is a silent wrong base: the child's commits sit on code the assembly
 branch does not have, `lane prove` resolves a fork point that is not on the branch, and it surfaces
@@ -1938,8 +1938,10 @@ endpoint and derives from it. Both endpoints are derived, never taken from the c
 `readAssembly` derives them: the parent from that endpoint, the branch name from the parent number
 through `epicBranch`. A **`Present`** parent gives the assembly branch `epic/<parent>` —
 `origin/epic/<parent>` when origin carries it, the bare local name when only this clone does. A
-parent **proven `Absent`** (the endpoint's own 404) leaves a standalone lane exactly as it stood:
-`origin/main`, with no epic base invented from a signal nobody read.
+parent **proven `Absent`** (the endpoint's own 404) cuts a standalone lane off the trunk —
+`origin/<the repo's GitHub default branch>`, resolved by `packages/fabrika-cli/src/io/trunk.ts` — with
+no epic base invented from a signal nobody read. A trunk read that **failed** is `11` naming the fix,
+never a fall back to `main`: a repo whose default branch is `dev` may have no `main` at all.
 
 **Every base is fetched from a remote, and the local-ref read is a constructed exception.** A base
 used to be a string, and `fetchBase` split it on the first `/`: a left half naming a configured
@@ -1975,13 +1977,13 @@ the nonce the live claim carries — which is the offending branch itself. It wa
 remedy for one review round, and following it lands back on the same `36`.
 
 Both halves of the ruling are refusals, and they are split on evidence. A parent read that **failed**
-is `11` naming the read — never a fall back to `origin/main`, because that fallback is the defect. A
+is `11` naming the read — never a fall back to the trunk, because that fallback is the defect. A
 derived assembly branch **proven** absent from both origin and this clone is `7` naming the branch it
 derived; a ref read that **failed** is `11`. Nothing fuses the two, per the proven-vs-UNKNOWN split
 `packages/fabrika-cli/src/build/codes.ts` states.
 
 An explicit `--base` is honoured verbatim on every lane, epic child included, and suppresses the
-derivation — the parent is not even read. That is why the flag lost its `origin/main` default:
+derivation — the parent is not even read. That is why the flag lost its spelled `origin/main` default:
 "the operator named the trunk" and "nobody passed one" were the same value, and only one of them
 should skip the derivation.
 
@@ -2069,7 +2071,8 @@ depends on where the tree is.
 | `build branch: <branch> already exists and does not carry <base> at <sha> — the two share only <sha>, so this branch was cut off a different base, or <base> has moved since it was cut. Move it onto the base with "git rebase --onto <sha> <sha> <branch>", or delete it with "git branch -D <branch>" when it carries nothing you need, then re-run. Nothing was changed.` | 36 | refusal |
 | `build branch: <branch> already exists and shares no history with <base> at <sha> — the two were cut from unrelated roots, so there is no merge base to rebase from. Delete it with "git branch -D <branch>" and re-run, or move the commits you need onto <base> by hand first. Nothing was changed.` | 36 | refusal |
 | `build branch: <branch> already exists and what it was cut from could not be read: <reason> — whether it carries <base> is UNKNOWN; nothing was changed.` | 11 | refusal |
-| `build branch: cannot read #<n>'s parent through GitHub's issue-parent endpoint: <reason> — whether this is an epic child is UNKNOWN, and cutting off origin/main anyway is exactly the silent wrong base this derivation exists to remove. No branch was cut; pass --base to name one yourself.` | 11 | refusal |
+| `build branch: cannot read #<n>'s parent through GitHub's issue-parent endpoint: <reason> — whether this is an epic child is UNKNOWN, and cutting off the trunk anyway is exactly the silent wrong base this derivation exists to remove. No branch was cut; pass --base to name one yourself.` | 11 | refusal |
+| `build branch: #<n> is proven standalone and cannot resolve the trunk: <reason> — <fix>. No branch was cut; pass --base to name one yourself.` | 11 | refusal |
 | `build branch: #<n> is a child of epic #<p>, and whether origin carries its assembly branch epic/<p> could not be read: <reason> — which base this child belongs on is UNKNOWN. Nothing was cut.` | 11 | refusal |
 | `build branch: #<n> is a child of epic #<p>, whose assembly branch epic/<p> is proven absent — origin holds no refs/heads/epic/<p> and neither does this clone. Place the run's branch with "fabrika lane assembly <p>" before building a child on it. Nothing was cut.` | 7 | refusal |
 | `build branch: PR #<n> is proven closed or merged — nothing to resume.` | 7 | refusal |
@@ -2126,7 +2129,7 @@ $ echo $?
 **Grounding**
 
 - Branch off `FETCH_HEAD` after a real fetch of a named remote and ref; a stale local ref —
-  `origin/main` or `epic/<n>` — is the recurring wrong base, and a base spelling that could reach one
+  the trunk or `epic/<n>` — is the recurring wrong base, and a base spelling that could reach one
   is removed rather than documented against.
 - Name the base commit in the answer and re-prove it on a re-run: a cut nobody can read back is a
   cut four builders proved by hand.
@@ -2944,7 +2947,7 @@ The PR title is **derived, not the issue title verbatim**
 the served issue's `type:` label maps to a conventional-commit prefix (`type:bug` → `fix`,
 `type:feature` → `feat`, everything else → `chore`) ahead of the issue title unchanged, and a title
 that already leads with a conventional prefix passes through untouched. The repo squash-merges with
-`COMMIT_OR_PR_TITLE`, so on a multi-commit PR this title becomes the commit subject on `main` —
+`COMMIT_OR_PR_TITLE`, so on a multi-commit PR this title becomes the commit subject on the trunk —
 deriving it is what keeps every builder squash parseable by the release tooling that reads those
 subjects.
 

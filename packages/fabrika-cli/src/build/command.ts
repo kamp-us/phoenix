@@ -499,7 +499,7 @@ const reap = leafCommand(
 		),
 	},
 	Effect.fn(function* ({execute, limit}) {
-		yield* emit(yield* runReap({execute, limit: Option.getOrNull(limit)}));
+		yield* emit(yield* runReap({execute, limit: Option.getOrNull(limit), env: process.env}));
 	}),
 ).pipe(
 	Command.withShortDescription("Reclaim the finished agent worktrees this clone never removed."),
@@ -554,7 +554,7 @@ const branch = leafCommand(
 		base: Flag.string("base").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"the base ref, FETCHED from a remote before the branch is cut; honoured verbatim on every lane. A ref with no <remote>/ half is qualified against origin, never read locally. Omit it and create mode DERIVES the base: epic/<parent> for a child of an epic, origin/main for a proven-standalone issue",
+				"the base ref, FETCHED from a remote before the branch is cut; honoured verbatim on every lane. A ref with no <remote>/ half is qualified against origin, never read locally. Omit it and create mode DERIVES the base: epic/<parent> for a child of an epic, the trunk (origin/<the repo's GitHub default branch>) for a proven-standalone issue",
 			),
 		),
 		resume: Flag.integer("resume").pipe(

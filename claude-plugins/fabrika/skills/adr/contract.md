@@ -54,7 +54,7 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
 - **Common inputs.** `--dir <path>` is the record directory; with the flag absent it is
   `.fabrika.jsonc`'s `decisionsDir`, itself defaulting to `.decisions`. A repo that declines that key
   keeps no corpus, and every verb here refuses on `22` rather than reading or writing one. `--base <ref>`
-  (default `origin/main`) is the base ref, **fetched before it is read** — reading a stale local ref
+  (default: the trunk, `origin/<the repo's GitHub default branch>`) is the base ref, **fetched before it is read** — reading a stale local ref
   is the whole defect class this contract exists to close. `--repo <owner/name>` (default: resolved
   from the `origin` remote) is the repository whose open pull requests form the in-flight set.
   `--json` swaps the line grammar for one JSON object with the named keys given per verb.
@@ -111,7 +111,7 @@ fabrika adr next [--dir <path>] [--base <ref>] [--repo <owner/name>] [--json]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--dir` | string | no | `decisionsDir`, else `.decisions` | the directory of `NNNN-slug.md` decision records to scan |
-| `--base` | string | no | `origin/main` | the base ref to fetch and read the merged set from |
+| `--base` | string | no | the trunk | the base ref to fetch and read the merged set from; with none named, an unresolvable trunk is `17` |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository whose open pull requests form the in-flight set |
 | `--json` | boolean | no | `false` | emit the full allocation record instead of the bare id |
 
@@ -431,7 +431,7 @@ One or more ids may be given; each produces one line, in argument order. One fet
 |---|---|---|---|---|
 | `<id>...` | positional string, repeatable | yes | — | the four-digit ids to resolve |
 | `--dir` | string | no | `decisionsDir`, else `.decisions` | the directory of decision records to resolve against |
-| `--base` | string | no | `origin/main` | the base ref to fetch and resolve against |
+| `--base` | string | no | the trunk | the base ref to fetch and resolve against; with none named, an unresolvable trunk is `17` |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository whose open pull requests form the in-flight set |
 | `--json` | boolean | no | `false` | emit one object per id instead of the line grammar |
 

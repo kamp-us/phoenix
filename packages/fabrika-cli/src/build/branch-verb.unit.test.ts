@@ -23,6 +23,7 @@ import {
 	NONCE,
 	pullPayload,
 	served,
+	TRUNK_READ,
 } from "./fixtures.test-support.ts";
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
@@ -446,10 +447,11 @@ describe("runBranch — create mode derives the base (#6730)", () => {
 		);
 	});
 
-	it("cuts a proven-standalone issue off origin/main and invents no epic base", async () => {
+	it("cuts a proven-standalone issue off the trunk GitHub names and invents no epic base", async () => {
 		const shell = seams([
 			...CLAIMED,
 			orphan(),
+			[TRUNK_READ, served({default_branch: "main"})],
 			[REMOTES, okOut("origin\n")],
 			[FETCH, okOut("")],
 			[RESOLVE, okOut(`${HEAD}\n`)],
@@ -465,6 +467,44 @@ describe("runBranch — create mode derives the base (#6730)", () => {
 		expect(out.stderr).toContain(
 			"build branch: base origin/main — #4312 is proven standalone (its parent endpoint answered 404), so no epic base was derived.",
 		);
+	});
+
+	it("cuts a standalone issue off origin/dev in a repo whose default branch is dev and has no main", async () => {
+		const shell = seams([
+			...CLAIMED,
+			orphan(),
+			[TRUNK_READ, served({default_branch: "dev"})],
+			[REMOTES, okOut("origin\n")],
+			[/^git fetch --quiet origin dev$/, okOut("")],
+			[/^git fetch --quiet origin main$/, errOut("fatal: couldn't find remote ref main")],
+			[RESOLVE, okOut(`${HEAD}\n`)],
+			[VERIFY_BRANCH, errOut("")],
+			[SWITCH_NEW, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...derived}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain("git fetch --quiet origin dev");
+		expect(shell.calls.some((line) => /\bmain\b/.test(line))).toBe(false);
+		expect(out.stderr).toContain(
+			`build branch: cut build/4312-editor-focus-loss-${NONCE} off origin/dev at ${HEAD}.`,
+		);
+	});
+
+	it("refuses an unreadable trunk on 11 naming the fix — never a fall back to main", async () => {
+		const shell = seams([
+			...CLAIMED,
+			orphan(),
+			[TRUNK_READ, {status: 502, body: '{"message":"Bad Gateway"}'}],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...derived}), shell.layer),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("cannot resolve the trunk");
+		expect(out.stderr.at(-1)).toContain("no verb falls back to main");
+		expect(shell.calls.some((line) => /^git (fetch|switch)/.test(line))).toBe(false);
 	});
 
 	it("honours an explicit --base on a child, and never reads the parent at all", async () => {

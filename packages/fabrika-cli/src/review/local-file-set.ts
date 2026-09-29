@@ -13,7 +13,7 @@
  * it.** The two counts disagree for reasons that have nothing to do with a truncated read: git pairs
  * a rename into one `--name-only` path where GitHub counts two, and GitHub's count is computed
  * against a base it cached when the PR was last pushed, which a merge commit from an earlier review
- * round can leave behind current `origin/main` indefinitely. Nothing on the reviewer's side re-reads
+ * round can leave behind the current trunk indefinitely. Nothing on the reviewer's side re-reads
  * or invalidates that cache, so a verb that refuses on the disagreement strands the round with no
  * act available to clear it.
  *

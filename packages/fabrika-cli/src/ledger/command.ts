@@ -86,7 +86,7 @@ const open = leafCommand(
 			"  10: not a type:epic",
 			"  11: a read failed (UNKNOWN)",
 			"  15: this lane does not hold the epic's claim",
-			"  20: the base is behind origin/main",
+			"  20: the base is behind the trunk (the repo's default branch)",
 			'  22: more than one "## Plan (plan-epic)" heading',
 			'  Derivation: the plan-epic skill\'s contract.md, "ledger open"',
 		].join("\n"),

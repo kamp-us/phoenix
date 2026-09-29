@@ -79,7 +79,7 @@ import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
 import {LEDGER_SPEND} from "./record.ts";
 import {recordBoard, runRecord} from "./record-verb.ts";
 import {runRecover} from "./recover-verb.ts";
-import {DEFAULT_TRUNK_REF, runRefresh} from "./refresh-verb.ts";
+import {runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
@@ -1011,7 +1011,14 @@ const assembly = leafCommand(
 		}
 		yield* emit(
 			yield* onGround("assembly", [resolvedRoot], process.cwd(), () =>
-				runAssembly({epic, remove, root: resolvedRoot, lane: String(epic)}),
+				runAssembly({
+					epic,
+					remove,
+					root: resolvedRoot,
+					lane: String(epic),
+					repo: null,
+					env: process.env,
+				}),
 			),
 		);
 	}),
@@ -1182,9 +1189,15 @@ const refresh = leafCommand(
 			Argument.withDescription("the epic issue whose run owns the assembly branch"),
 		),
 		base: Flag.string("base").pipe(
-			Flag.withDefault(DEFAULT_TRUNK_REF),
+			Flag.optional,
 			Flag.withDescription(
-				`the trunk ref to merge in, resolved AFTER the fetch (default: ${DEFAULT_TRUNK_REF})`,
+				"the ref to merge in, resolved AFTER the fetch (default: the trunk, origin/<the repo's GitHub default branch>)",
+			),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name whose default branch is the trunk (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
 			),
 		),
 		onReview: Flag.boolean("on-review").pipe(
@@ -1195,7 +1208,7 @@ const refresh = leafCommand(
 		),
 		root: rootFlag,
 	},
-	Effect.fn(function* ({epic, base, onReview, root}) {
+	Effect.fn(function* ({epic, base, repo, onReview, root}) {
 		const resolvedRoot = yield* resolveRootOrRefuse(
 			"fabrika lane refresh",
 			root,
@@ -1216,7 +1229,9 @@ const refresh = leafCommand(
 			yield* onGround("refresh", [resolvedRoot], process.cwd(), () =>
 				runRefresh({
 					epic,
-					base,
+					base: Option.getOrNull(base),
+					repo: Option.getOrNull(repo),
+					env: process.env,
 					gate: onReview ? "onReview" : null,
 					assemblyRefresh,
 					root: resolvedRoot,
@@ -1237,7 +1252,7 @@ const refresh = leafCommand(
 				4: "bad lane record",
 				7: "no lane",
 				8: "reset or head read-back unlanded, UNKNOWN",
-				11: "read failed, UNKNOWN",
+				11: "read failed or the trunk is unresolvable, UNKNOWN",
 				21: "assemblyRefresh is malformed",
 				22: "--base names no commit",
 				33: "epic/<n> in the main tree",

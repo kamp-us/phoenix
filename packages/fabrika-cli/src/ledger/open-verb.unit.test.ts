@@ -35,7 +35,11 @@ const BACKLOG = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\?state=ope
 const SEARCH = /^GET https:\/\/api\.github\.com\/search\/issues\?/;
 const REV_LIST = /^git rev-list --count/;
 
+/** The trunk read: GitHub's default branch for the repo. */
+const TRUNK_READ = /^GET https:\/\/api\.github\.com\/repos\/o\/r$/;
+
 const GROUND: ReadonlyArray<Scripted> = [
+	[TRUNK_READ, {status: 200, body: JSON.stringify({default_branch: "main"})}],
 	[/^git remote$/, okOut("origin\n")],
 	[/^git fetch --quiet origin main$/, okOut("")],
 	[/^git rev-parse --verify --quiet origin\/main/, okOut(`${SHA}\n`)],

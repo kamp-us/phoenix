@@ -63,7 +63,9 @@ the session can re-run one instead of trusting the render. Each field has one co
 `fabrika status menu`, `fabrika status settings`, `fabrika status readout`, `fabrika lane stale` for
 the lanes field (the stale-lane sweep over this machine's `.fabrika/` roots, each lane judged against
 the budget of the work driving it rather than one shared horizon — it reports, it never resumes;
-`fabrika lane stale --claims` is that field's deeper read, below), and for the board:
+`fabrika lane stale --claims` is that field's deeper read, below), `fabrika status open --field trunk`
+for the trunk field (the branch every verb treats as the trunk; `drifted` or `unset` means this
+clone's `origin/HEAD` disagrees, and the detail names the fix), and for the board:
 
 ```bash
 fabrika status board

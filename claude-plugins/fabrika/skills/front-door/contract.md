@@ -25,7 +25,7 @@ access per
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `status open` | the composite front-door readout: six fields, each with its own state, source and freshness | assembling six independent reads and rendering each one's three-state outcome is a total function; deciding what to *do* about a gap is the skill's |
+| `status open` | the composite front-door readout: seven fields, each with its own state, source and freshness | assembling seven independent reads and rendering each one's three-state outcome is a total function; deciding what to *do* about a gap is the skill's |
 | `status settings` | every key on the `.fabrika.jsonc` config surface, its resolved value, and where that value came from | resolving a key against a shipped default and naming its provenance is a total function; deciding what a repo *should* declare is judgment |
 | `status wiring` | whether `.claude/settings.json` enables the fabrika plugin — the precondition under every other verb | reading one `enabledPlugins` key and reporting what it says is mechanical; deciding to *wire* the repo is the operator's, and creating the file is `status bootstrap`'s |
 | `status menu` | the landed skill roster with each skill's invocation and one-line description | reading a directory and each file's frontmatter is a total function; choosing which skill fits the work at hand is judgment |
@@ -267,6 +267,10 @@ purpose — keeping proven-empty apart from unread — to chance.
 | `lanes` | sweep answered, zero `stale`, zero `unreadable` | `empty` | `no lanes on disk`, or `<n> lane(s), none silent past <threshold>m` — the threshold echoed from the verb's answer, never a second constant. **Zero lanes on disk is this row, not a fault**: a fresh checkout has none |
 | `lanes` | sweep answered, zero `stale`, ≥1 lane record `unreadable` | `unknown` | which lane failed and why — a lane whose silence cannot be judged is never flattened to clean |
 | `lanes` | the sweep refused — a lane root is there and cannot be listed | `unknown` | the refusal's reason — the lane set is UNKNOWN, never empty |
+| `trunk` | trunk resolved, this clone's `origin/HEAD` names the same branch | `agrees` | `origin/<branch>; origin/HEAD agrees` |
+| `trunk` | trunk resolved, `origin/HEAD` names another branch | `drifted` | `origin/<branch>; this clone's origin/HEAD names <other> — run git remote set-head origin --auto`. A proven fact about this clone: the worktree hooks branch off `origin/HEAD`, so a drifted clone provisions lanes off the wrong base |
+| `trunk` | trunk resolved, this clone records no `origin/HEAD` | `unset` | `origin/<branch>; this clone records no origin/HEAD — run git remote set-head origin --auto` |
+| `trunk` | the trunk could not be resolved, or `origin/HEAD` could not be read | `unknown` | the raw failure. **Never a spelled `main`**: the trunk is GitHub's default branch, and a repo may have no `main` at all |
 
 **A proven-absent artifact is `absent` inside the composite, never `unknown`** — the two rows above
 that both yield `absent` are both facts about the repository, and only a failed *read* is `unknown`.
@@ -389,8 +393,8 @@ fabrika status open [--field <name>] [--repo <owner/name>] [--skills-dir <path>]
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--field` | string | no | all six | render one field only — `menu`, `settings`, `wiring`, `board`, `readout` or `lanes`; any other value is off-vocabulary |
-| `--repo` | string | no | resolved | the repository the board and digest fields read |
+| `--field` | string | no | all seven | render one field only — `menu`, `settings`, `wiring`, `board`, `readout`, `lanes` or `trunk`; any other value is off-vocabulary |
+| `--repo` | string | no | resolved | the repository the board, digest and trunk fields read |
 | `--skills-dir` | string | no | [resolved](#roster-location) | the roster root the menu field reads |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -401,7 +405,7 @@ open	<field-count>
 field	<name>	<state>	<detail>	<source>	<as-of>
 ```
 
-`<name>` ∈ `menu` · `settings` · `wiring` · `board` · `readout` · `lanes`. `<state>` is drawn from that field's closed set,
+`<name>` ∈ `menu` · `settings` · `wiring` · `board` · `readout` · `lanes` · `trunk`. `<state>` is drawn from that field's closed set,
 **every one of which includes `unknown`**, and is produced by [the mapping](#core-to-field):
 
 | Field | Closed state set |
@@ -412,25 +416,31 @@ field	<name>	<state>	<detail>	<source>	<as-of>
 | `board` | `counted` · `unknown` |
 | `readout` | `found` · `absent` · `malformed` · `unknown` |
 | `lanes` | `stale` · `empty` · `unknown` |
+| `trunk` | `agrees` · `drifted` · `unset` · `unknown` |
 
 The `lanes` field renders `fabrika lane stale`'s sweep over both default roots at its documented
 threshold: `stale` names the silent lanes, zero stale lanes is the proven negative `empty` (no lanes
 on disk is `empty` too), and an unreadable root or lane record is `unknown` with its reason. It
 reports; it never resumes.
 
+The `trunk` field names the trunk every verb resolved — `origin/<the repo's GitHub default branch>`,
+read through `packages/fabrika-cli/src/io/trunk.ts` — and holds this clone's `origin/HEAD` against it.
+It reports; it never runs `git remote set-head` itself.
+
 `<source>` names where the answer came from so the session can re-run one read instead of adopting
 the render: the resolved roster path for `menu`, `.fabrika.jsonc` for `settings`,
 `.claude/settings.json` for `wiring`, `<owner>/<name>` for `board`, and
-`<owner>/<name>#<issue>` for `readout` when an artifact resolved — otherwise `<owner>/<name>`.
+`<owner>/<name>#<issue>` for `readout` when an artifact resolved — otherwise `<owner>/<name>` — and
+`<owner>/<name>` for `trunk`.
 
-**No aggregate state, deliberately.** A roll-up over six independently-sourced fields would need a
+**No aggregate state, deliberately.** A roll-up over seven independently-sourced fields would need a
 rule for "three fine, one unknown", and every such rule either hides the unknown or drowns the three.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
-| `10` | `--field` is not one of `menu`, `settings`, `wiring`, `board`, `readout`, `lanes` |
+| `10` | `--field` is not one of `menu`, `settings`, `wiring`, `board`, `readout`, `lanes`, `trunk` |
 
 **That is the whole table, and it is the point** ([why](#open-is-total)). An unresolvable repo, an
 unreachable GitHub, an unreadable roster, an absent roster and an unregistered digest format each

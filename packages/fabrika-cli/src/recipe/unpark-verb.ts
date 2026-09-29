@@ -45,6 +45,7 @@ import {fetchAndResolve, localBranches, readFileAt} from "../io/git.ts";
 import {getIssue} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import type {PullScope} from "../io/pulls.ts";
+import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {nominatePulls, nominationScope} from "../lane/nominate.ts";
 import {tracePulls} from "../lane/prove.ts";
 import {runProve} from "../lane/prove-verb.ts";
@@ -52,7 +53,6 @@ import {routeUnder} from "../lane/report.ts";
 import {BUILD_CLAIM_BUDGET_MINUTES} from "../lane/shell-budget.ts";
 import {runStatus} from "../lane/status-verb.ts";
 import {runTransition} from "../lane/transition-verb.ts";
-import {BASE_REF} from "../ledger/ground.ts";
 import {runChecks} from "../ship/checks-verb.ts";
 import {runCpApproval} from "../ship/cp-approval-verb.ts";
 import {runGate} from "../ship/gate-verb.ts";
@@ -1027,7 +1027,7 @@ const clearTreeReleased = (
  * Two reads that both already exist, composed rather than re-derived — the lane issue's `milestone`
  * off `../io/issues.ts`, and the `## Campaigns` row off `../campaign/table.ts`, the one parse every
  * campaign reader shares. The row is
- * read at {@link BASE_REF} rather than in the working tree because a resume lands on the trunk and a
+ * read at the trunk (`../io/trunk.ts`) rather than in the working tree because a resume lands on the trunk and a
  * lane clone can be arbitrarily stale; the fetch is what makes that read current.
  *
  * Every arm below leaves the park standing, and each names which one it hit: a campaign that cannot
@@ -1083,21 +1083,19 @@ const clearCampaignActive = (
 		}
 		const roadmap = declared.value;
 
-		const trunk = yield* fetchAndResolve(BASE_REF);
-		if (trunk._tag === "Failure") return unknown(BASE_REF, trunk.reason);
+		const named = yield* resolveTrunk(options.env, resolved.repo);
+		if (named._tag === "Failure") return unknown("the trunk", trunkUnresolved(named.reason));
+		const at = named.value.ref;
+		const trunk = yield* fetchAndResolve(at);
+		if (trunk._tag === "Failure") return unknown(at, trunk.reason);
 		const text = yield* readFileAt(trunk.value, roadmap);
-		if (text._tag === "Failure") return unknown(`${roadmap} at ${BASE_REF}`, text.reason);
+		if (text._tag === "Failure") return unknown(`${roadmap} at ${at}`, text.reason);
 
 		const placed = placedRows(text.value);
 		if (placed._tag === "Malformed") {
-			return unknown(`the ## Campaigns table in ${roadmap} at ${BASE_REF}`, placed.reason);
+			return unknown(`the ## Campaigns table in ${roadmap} at ${at}`, placed.reason);
 		}
-		const scope = scannedLine(
-			VERB,
-			placed.rows.length,
-			"campaign row",
-			`${roadmap} at ${BASE_REF}`,
-		);
+		const scope = scannedLine(VERB, placed.rows.length, "campaign row", `${roadmap} at ${at}`);
 		const row = placed.rows.find((candidate) => selects(candidate, `#${milestone}`))?.row;
 		if (row === undefined) {
 			return no(

@@ -103,6 +103,14 @@ not reintroduced. `<base>` is read from `refs/remotes/origin/HEAD` and falls bac
 > is still exactly what this fetch wrote, and with an explicit refspec the fetch no longer updates
 > `refs/remotes/origin/*` either, so it now moves nothing any other process reads.
 
+> **Amendment, 2026-09-29 ([#10030](https://github.com/kamp-us/phoenix/issues/10030)).** The
+> fallback to `main` is gone. A repo whose default branch is `dev` and that has no `main` would
+> branch every spawn off a ref that does not exist, so no spelled branch stands in for the base.
+> When this clone records no `refs/remotes/origin/HEAD`, the hook runs
+> `git remote set-head origin --auto` and reads it again. If that read still names no branch, the
+> spawn refuses at exit `16` (`BASE_FETCH_FAILED`), names that command as the fix, and creates
+> nothing.
+
 That fetch needs credentials, and the child inherits nothing it is not handed, so the allowlist
 carries the ssh-agent channel (`SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `GIT_SSH`, `GIT_SSH_COMMAND`)
 alongside what the install needs. phoenix's `origin` is SSH-only — `url.git@github.com:.insteadof`

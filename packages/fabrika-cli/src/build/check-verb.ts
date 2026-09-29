@@ -56,6 +56,7 @@ import {loadConfig, resolve} from "../config/load.ts";
 import {readConfigSource} from "../config/source.ts";
 import type {LocalTreeGuard} from "../guard/local-tree.ts";
 import {execStatus} from "../io/exec.ts";
+import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {
 	CONFIG_PATH,
 	readDocLeakExempt,
@@ -74,7 +75,6 @@ import {
 import {predecessorsOf, readTopology, renderRef, sameRef} from "./dependencies.ts";
 import {docLeaks} from "./doc-leaks.ts";
 import {changedFiles, mergeBase, showAt, treePaths} from "./git.ts";
-import {defaultBranch} from "./github.ts";
 import {requireLane} from "./lane-guard.ts";
 import {introducedLeaks} from "./prose-baseline.ts";
 import {resolveTargetRepo} from "./target.ts";
@@ -971,15 +971,15 @@ export const runCheck = (
 		const lane = yield* requireLane(VERB, resolved.repo, session.id, null);
 		if (lane._tag === "Refused") return lane.outcome;
 
-		const branch = yield* defaultBranch(options.env, resolved.repo);
-		if (branch._tag === "Failure") {
+		const trunk = yield* resolveTrunk(options.env, resolved.repo);
+		if (trunk._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read ${resolved.repo}'s default branch: ${branch.reason} — the diff base is UNKNOWN, never green.`,
+				`${VERB}: ${trunkUnresolved(trunk.reason)}. The diff base is UNKNOWN, never green.`,
 				lane.notes,
 			);
 		}
-		const base = `origin/${branch.value}`;
+		const base = trunk.value.ref;
 		const merged = yield* mergeBase(base);
 		if (merged._tag === "Failure") {
 			return refuse(

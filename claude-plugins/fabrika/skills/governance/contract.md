@@ -1160,7 +1160,7 @@ fabrika governance digest --since 2026-08-02 [--until <YYYY-MM-DD>] [--dir <path
 | `--since` | string | yes | — | the window's inclusive start, `YYYY-MM-DD` |
 | `--until` | string | no | now | the window's inclusive end, `YYYY-MM-DD` |
 | `--dir` | string | no | `.decisions` | the corpus whose landings are listed |
-| `--base` | string | no | `origin/main` | the ref whose history is walked; fetched before the walk |
+| `--base` | string | no | the trunk | the ref whose history is walked; fetched before the walk. With none named, the trunk (`origin/<the repo's GitHub default branch>`) is resolved after the window is validated, and an unresolvable one is `11` |
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line: `digest\t<landed|none>\t<count>`. Then one line per landed

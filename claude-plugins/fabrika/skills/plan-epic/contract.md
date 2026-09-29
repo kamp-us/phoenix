@@ -445,7 +445,7 @@ it, and the alignment checker is base-only by design (`occupied = allocatedCodes
 | `11` | a required read failed — nothing was written, no outcome is proven | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `13` | proven: the tree was dirty at a `--require-clean` open (`build`'s meaning, reserved — no `ledger` verb declares that flag) | — | — | — | — | — | — | — | — | — |
 | `15` | proven: this lane does not hold the epic's claim (imported from `build`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `20` | proven: the tree's base is behind `origin/main` | ✓ | — | — | — | — | — | — | — | — |
+| `20` | proven: the tree's base is behind the trunk | ✓ | — | — | — | — | — | — | — | — |
 | `21` | proven: the epic body moved — the recomputed digest differs from `--body-digest` | — | ✓ | — | — | — | ✓ | — | ✓ | — |
 | `22` | proven: the plan region is unresolvable — a duplicated anchor, or a mode the body contradicts | ✓ | — | — | — | — | ✓ | — | ✓ | — |
 | `23` | proven: the child exists — created, or adopted — and its sub-issue link could not be proven | — | — | ✓ | ✓ | — | — | — | — | — |
@@ -462,7 +462,7 @@ this skill cuts no branch, pushes nothing, and has no validation surface.
 
 **`7` versus `11` versus `20`:** a 404 or a closed epic is a fact about the repository (`7`); an
 unreachable GitHub or an unreadable probe is a fact about nothing (`11`); a base that is provably
-behind `origin/main` is a fact about the checkout (`20`). A freshness probe that *fails* is `11`,
+behind the trunk is a fact about the checkout (`20`). A freshness probe that *fails* is `11`,
 never `20` — "I could not tell" is not "it is stale", and it is certainly not "it is fresh".
 
 **`8` versus `9` versus `23`:** `8` is a write whose outcome is unknown; `9` is a write that landed
@@ -526,8 +526,9 @@ interruption is present exactly once, with its observed `linked` state) and **le
 silently discarding a staged document a caller has not replaced would lose authored work with no
 refusal to notice.
 
-**Freshness.** The verb resolves `origin/main` and compares the tree's merge base. Provably
-behind is `20`. A fetch or rev-parse that fails is `11`. There is no third arm: this verb never
+**Freshness.** The verb resolves the trunk — `origin/<the repo's GitHub default branch>`, never a
+spelled `main` — and compares the tree's merge base. Provably behind is `20`. A trunk read, fetch
+or rev-parse that fails is `11`. There is no third arm: this verb never
 answers "fresh" without having proven it, because the whole point is that v1 planned against
 stale checkouts and minted phantom children, and no repo is guaranteed a post-merge sync at any
 call site — so the tree is stale by default until shown otherwise.
@@ -540,7 +541,7 @@ call site — so the tree is stale by default until shown otherwise.
 | `10` | the issue is not a `type:epic` |
 | `11` | the epic, its sub-issue list, the backlog read, the cycle-doc probe, or the freshness probe could not be read |
 | `15` | this lane does not hold the epic's claim |
-| `20` | the tree's base is proven behind `origin/main` |
+| `20` | the tree's base is proven behind the trunk |
 | `22` | the body carries two or more `## Plan (plan-epic)` headings — the run's mode cannot be decided |
 
 **Errors**
@@ -1829,7 +1830,7 @@ fabrika ledger digest 3 --token <claim-token>
 ```
 
 **What it is for.** `--body-digest` had one source: `ledger open`, which allocates the run
-directory, seeds `children.jsonl` and refuses `20` on a tree behind `origin/main`. Inside a plan run
+directory, seeds `children.jsonl` and refuses `20` on a tree behind the trunk. Inside a plan run
 that is right — `draft` and `write` run in the run `open` allocated. For `ledger retopology` it was
 a contradiction: that verb's whole claim is that it needs no staged plan run, and the only way to
 obtain its required digest was to stage one, so the route `operate/SKILL.md` sanctions for a

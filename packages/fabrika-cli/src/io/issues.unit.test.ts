@@ -35,7 +35,6 @@ import {
 	openQueueIssues,
 	patchIssueBody,
 	removeLabel,
-	repoDefaultBranch,
 	searchOpenIssues,
 	setMilestone,
 	timelineFacts,
@@ -986,21 +985,6 @@ describe("timelineFacts", () => {
 			],
 		]);
 		expect((await against(timelineFacts("o/r", 7), http))._tag).toBe("Failure");
-	});
-});
-
-describe("repoDefaultBranch", () => {
-	it("reads the branch name off the repository payload", async () => {
-		const http = scripted([[/repos\/o\/r/, {status: 200, body: {default_branch: "main"}}]]);
-		expect(await against(repoDefaultBranch("o/r"), http)).toEqual({_tag: "Ok", value: "main"});
-	});
-
-	it("refuses a 200 that names no default branch, rather than answering an empty ref", async () => {
-		const result = await against(
-			repoDefaultBranch("o/r"),
-			scripted([[/repos/, {status: 200, body: {}}]]),
-		);
-		expect(result._tag).toBe("Failure");
 	});
 });
 

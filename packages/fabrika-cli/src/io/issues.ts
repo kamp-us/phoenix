@@ -1240,23 +1240,3 @@ export const timelineFacts = (repo: string, issue: number): Shell<Attempt<Timeli
 			}),
 		),
 	);
-
-/**
- * The repository's default branch.
- *
- * Its own read because the single-issue payload carries none: `repos/{repo}/issues/{n}` returns no
- * `repository` object, so a caller defaulting a base branch "off the issue payload" would be reading
- * a field that is not there.
- */
-export const repoDefaultBranch = (repo: string): Shell<Attempt<string>> =>
-	withToken((token) =>
-		Effect.map(restRead(token, "GET", `repos/${repo}`), (outcome) =>
-			then(servedBody(outcome), (body) => {
-				const name =
-					isRecord(body) && typeof body.default_branch === "string" ? body.default_branch : "";
-				return name.trim() === ""
-					? fail("GitHub answered 200 but named no default branch")
-					: ok(name.trim());
-			}),
-		),
-	);

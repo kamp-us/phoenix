@@ -21,6 +21,7 @@ import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getPullRequest} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {leakRefusal, readAuthored} from "./authored.ts";
@@ -34,7 +35,7 @@ import {
 	WRONG_LANE,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {createPull, defaultBranch, getPullHead, openPullForHead, updatePullBody} from "./github.ts";
+import {createPull, getPullHead, openPullForHead, updatePullBody} from "./github.ts";
 import {parseLaneBranch} from "./lane.ts";
 import {requireLane} from "./lane-guard.ts";
 import {bodyDefect, classificationIn, proseOf} from "./pr-body.ts";
@@ -181,11 +182,11 @@ export const runPr = (
 			);
 		}
 
-		const base = yield* defaultBranch(options.env, repo);
+		const base = yield* resolveTrunk(options.env, repo);
 		if (base._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read ${repo}'s default branch: ${base.reason} — nothing was written.`,
+				`${VERB}: ${trunkUnresolved(base.reason)}. Nothing was written.`,
 				lane.notes,
 			);
 		}
@@ -195,7 +196,7 @@ export const runPr = (
 			repo,
 			conventionalTitleOf(target.issue.title, target.issue.labels),
 			lane.branch,
-			base.value,
+			base.value.branch,
 			body,
 		);
 		if (created._tag === "Failure") {

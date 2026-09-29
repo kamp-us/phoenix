@@ -16,7 +16,7 @@ import {configRootOrRefuse} from "./ground.ts";
 import {bareEvent} from "./machine.ts";
 import {epicOf, roleOf} from "./prove.ts";
 import type {ProveOptions} from "./prove-verb.ts";
-import {DEFAULT_TRUNK_REF, type RefreshOptions} from "./refresh-verb.ts";
+import type {RefreshOptions} from "./refresh-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LoadedLane, loadLane} from "./store.ts";
 
@@ -74,7 +74,7 @@ const refreshBeforeChild = (
 		const outcome = yield* refresh({
 			...options,
 			epic,
-			base: DEFAULT_TRUNK_REF,
+			base: null,
 			gate: "onDispatch",
 			assemblyRefresh,
 		});

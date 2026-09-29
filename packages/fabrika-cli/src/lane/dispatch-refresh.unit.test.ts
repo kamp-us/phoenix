@@ -6,7 +6,15 @@ import {Effect, type FileSystem, Layer, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {describe, expect, it} from "vitest";
 import type {EntrypointRead} from "../delegate/entrypoint.ts";
-import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeSeams,
+	fakeShell,
+	okOut,
+	once,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_UNREADABLE, MERGE_CONFLICT, NO_SHELL} from "./codes.ts";
@@ -42,7 +50,8 @@ const SEATED: ExecResult = okOut(
 );
 
 /** The reads a merging run makes before `git merge`, ending on "the branch does not carry trunk". */
-const upToMerge = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const upToMerge = (): ReadonlyArray<Scripted> => [
+	[/^GET \S+\/repos\/o\/r$/, {status: 200, body: JSON.stringify({default_branch: "main"})}],
 	[LIST, SEATED],
 	[once(HEAD), okOut(BEFORE)],
 	[once(STATUS), okOut("")],
@@ -75,7 +84,7 @@ const options: DispatchOptions = {
 	lane: String(EPIC),
 	task: `issue_${CHILD}`,
 	repo: null,
-	env: {CODEX_THREAD_ID: "codex-thread"},
+	env: {CODEX_THREAD_ID: "codex-thread", CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"},
 	entrypoint: {_tag: "Entrypoint", entrypoint: "packages/fabrika-cli/src/bin.ts"} as EntrypointRead,
 	cwd: CWD,
 	harness: "codex",
@@ -89,7 +98,7 @@ const options: DispatchOptions = {
  */
 const run = (
 	declared: string | null,
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	refresh: (
 		options: RefreshOptions,
 	) => Effect.Effect<
@@ -98,7 +107,7 @@ const run = (
 		ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 	> = runRefresh,
 ) => {
-	const shell = fakeShell(script);
+	const shell = fakeSeams(script);
 	const reached: string[] = [];
 	return Effect.runPromise(
 		Effect.provide(
@@ -145,9 +154,9 @@ const straddled = (primary: string | null, worktree: string) =>
 const runStraddled = (
 	primary: string | null,
 	worktree: string,
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 ) => {
-	const shell = fakeShell(script);
+	const shell = fakeSeams(script);
 	const arms: Array<RefreshOptions["assemblyRefresh"]> = [];
 	return Effect.runPromise(
 		Effect.provide(

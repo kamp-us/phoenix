@@ -27,6 +27,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {ASSEMBLY_REFRESH, type AssemblyRefreshSurface} from "../config/keys/assembly-refresh.ts";
 import type {Read} from "../config/read-key.ts";
 import {execCapture} from "../io/exec.ts";
+import {baseOrTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
 import {assemblySeat, worktrees} from "./assembly.ts";
@@ -47,9 +48,6 @@ const VERB = "fabrika lane refresh";
 
 /** The cause a conflict parks under — `lane report --cause`'s closed set, never composed here. */
 export const REFRESH_PARK_CAUSE = "assembly-conflict";
-
-/** The trunk every automatic call merges in, unless an adapter's caller named another `--base`. */
-export const DEFAULT_TRUNK_REF = "origin/main";
 
 /**
  * Which automatic call this is — the `assemblyRefresh` sub-key that gates it, spelled as the key's
@@ -72,8 +70,11 @@ const KEPT: Readonly<Record<RefreshGate, string>> = {
 
 export interface RefreshOptions extends LaneRef {
 	readonly epic: number;
-	/** The ref to merge in. Defaults to {@link DEFAULT_TRUNK_REF} at the adapter, never guessed here. */
-	readonly base: string;
+	/** The ref to merge in; `null` merges the trunk `../io/trunk.ts` resolves, never a spelled name. */
+	readonly base: string | null;
+	/** The repo whose trunk a `null` base resolves to; `null` resolves it off `env`. */
+	readonly repo: string | null;
+	readonly env: Readonly<Record<string, string | undefined>>;
 	/**
 	 * Which automatic call this is, or `null` for a driver typing the verb.
 	 *
@@ -207,17 +208,26 @@ export const runRefresh = (
 		}
 		const head = before.sha;
 
+		const merging = yield* baseOrTrunk(options.base, options.env, options.repo);
+		if (merging._tag === "Failure") {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: ${trunkUnresolved(merging.reason)}. Pass --base to name the ref this run assembles against; nothing was merged and ${path} is still at ${head}.`,
+			);
+		}
+		const base = merging.value;
+
 		const seated = yield* trackedChanges(path);
 		if (seated._tag === "Unreadable") {
 			return refuse(
 				LANE_UNREADABLE,
-				`${VERB}: cannot read whether ${path} is clean before the merge: ${seated.reason} — whether a conflict would be ${options.base}'s or this tree's is UNKNOWN, so nothing was merged.`,
+				`${VERB}: cannot read whether ${path} is clean before the merge: ${seated.reason} — whether a conflict would be ${base}'s or this tree's is UNKNOWN, so nothing was merged.`,
 			);
 		}
 		if (seated.paths.length > 0) {
 			return refuse(
 				ASSEMBLY_DIRTY,
-				`${VERB}: ${path} already holds ${seated.paths.length} modified tracked path(s) — that dirt is the driver's tree and not ${options.base}'s range, so nothing was fetched or merged and ${path} is still at ${head}. Clean the seat, then refresh again.`,
+				`${VERB}: ${path} already holds ${seated.paths.length} modified tracked path(s) — that dirt is the driver's tree and not ${base}'s range, so nothing was fetched or merged and ${path} is still at ${head}. Clean the seat, then refresh again.`,
 				seated.paths,
 			);
 		}
@@ -226,7 +236,7 @@ export const runRefresh = (
 		if (!fetched.ok) {
 			return refuse(
 				LANE_UNREADABLE,
-				`${VERB}: cannot fetch origin in ${path}: ${fetched.reason} — what ${options.base} points at is UNKNOWN, so nothing was merged and ${path} is still at ${head}.`,
+				`${VERB}: cannot fetch origin in ${path}: ${fetched.reason} — what ${base} points at is UNKNOWN, so nothing was merged and ${path} is still at ${head}.`,
 			);
 		}
 
@@ -235,12 +245,12 @@ export const runRefresh = (
 			path,
 			"rev-parse",
 			"--verify",
-			`${options.base}^{commit}`,
+			`${base}^{commit}`,
 		]);
 		if (!resolved.ok) {
 			return refuse(
 				PROOF_ABSENT,
-				`${VERB}: origin was fetched and ${options.base} names no commit in ${path}: ${resolved.reason} — name the trunk this run assembles against with --base; nothing was merged.`,
+				`${VERB}: origin was fetched and ${base} names no commit in ${path}: ${resolved.reason} — name the trunk this run assembles against with --base; nothing was merged.`,
 			);
 		}
 		const tip = resolved.stdout.trim();
@@ -255,7 +265,7 @@ export const runRefresh = (
 		]);
 		if (carried.ok) {
 			return answer(`${head}\nREFRESH-VERDICT: CURRENT\n`, [
-				`${VERB}: ${branch} at ${path} already carries ${options.base} (${tip}) — nothing was merged.`,
+				`${VERB}: ${branch} at ${path} already carries ${base} (${tip}) — nothing was merged.`,
 			]);
 		}
 
@@ -270,7 +280,7 @@ export const runRefresh = (
 				head,
 				refuse(
 					MERGE_CONFLICT,
-					`${VERB}: ${options.base} (${tip}) conflicts with ${branch}; the merge was aborted. Park the lane on \`--cause ${REFRESH_PARK_CAUSE}\` — resolving a conflict that is not a plain keep-both is a judgment no verb makes.`,
+					`${VERB}: ${base} (${tip}) conflicts with ${branch}; the merge was aborted. Park the lane on \`--cause ${REFRESH_PARK_CAUSE}\` — resolving a conflict that is not a plain keep-both is a judgment no verb makes.`,
 					diagnostics(merged.reason),
 				),
 			);
@@ -286,10 +296,10 @@ export const runRefresh = (
 		if (landed.sha === head) {
 			return refuse(
 				APPEND_UNKNOWN,
-				`${VERB}: \`git merge\` reported success and ${path} is still at ${head} — whether ${branch} carries ${options.base} is UNKNOWN, never a silent pass.`,
+				`${VERB}: \`git merge\` reported success and ${path} is still at ${head} — whether ${branch} carries ${base} is UNKNOWN, never a silent pass.`,
 			);
 		}
 		return answer(`${landed.sha}\nREFRESH-VERDICT: MERGED\n`, [
-			`${VERB}: merged ${options.base} (${tip}) into ${branch} at ${path}; nothing was pushed.`,
+			`${VERB}: merged ${base} (${tip}) into ${branch} at ${path}; nothing was pushed.`,
 		]);
 	});

@@ -4,7 +4,7 @@ import {
 	errOut,
 	type FakeFsOptions,
 	fakeFs,
-	fakeShell,
+	fakeSeams,
 	okOut,
 	once,
 	type Scripted,
@@ -16,7 +16,8 @@ import {REAP_JOURNAL, runReap} from "./reap-verb.ts";
 
 const SELF = /^git rev-parse --path-format=absolute/;
 const TREES = /^git worktree list --porcelain$/;
-const TRUNK = /^git symbolic-ref --short refs\/remotes\/origin\/HEAD$/;
+/** The one trunk read — GitHub's default branch for the repo the env names. */
+const TRUNK = /^GET \S+\/repos\/o\/r$/;
 const STATUS = /^git -C \S+ --no-optional-locks status --porcelain$/;
 const ANCESTOR = /^git merge-base --is-ancestor /;
 const DIFF = /^git diff .* origin\/main\.\.\./;
@@ -28,6 +29,9 @@ const SHALLOW = /^git rev-parse --is-shallow-repository$/;
 const REMOVE = /^git worktree remove /;
 const PRUNE = /^git worktree prune$/;
 const UNLOCK = /^git worktree unlock /;
+
+/** The repo and credential the trunk read resolves against. */
+const ENV = {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"};
 
 const HERE = "/repo/.claude/worktrees/agent-self";
 const DEAD = "/repo/.claude/worktrees/agent-dead";
@@ -69,7 +73,7 @@ const here = okOut([`${HERE}/.git`, HERE].join("\n"));
 
 const GROUND: ReadonlyArray<Scripted> = [
 	[SELF, here],
-	[TRUNK, okOut("origin/main\n")],
+	[TRUNK, {status: 200, body: JSON.stringify({default_branch: "main"})}],
 ];
 
 const ago = (seconds: number): Date => new Date(Date.now() - seconds * 1000);
@@ -89,14 +93,17 @@ const run = (
 	fs: FakeFsOptions = QUIET_FS,
 	limit: number | null = null,
 ) => {
-	const shell = fakeShell(script as ReadonlyArray<readonly [RegExp, never]>);
+	const shell = fakeSeams(script);
 	const disk = fakeFs(fs);
 	const layer = Layer.merge(shell.layer, disk.layer);
-	return Effect.runPromise(Effect.provide(runReap({execute, limit}), layer)).then((out) => ({
-		out,
-		calls: shell.calls,
-		journal: disk.written.get(JOURNAL) ?? "",
-	}));
+	return Effect.runPromise(Effect.provide(runReap({execute, limit, env: ENV}), layer)).then(
+		(out) => ({
+			out,
+			calls: shell.calls,
+			requests: shell.requests,
+			journal: disk.written.get(JOURNAL) ?? "",
+		}),
+	);
 };
 
 describe("runReap — the dry run mutates nothing", () => {
@@ -647,11 +654,11 @@ describe("runReap — what it refuses to touch", () => {
 	});
 
 	it("answers none — never a refusal — when no agent tree is registered", async () => {
-		const {out, calls} = await run([...GROUND, [TREES, trees(PRIMARY)]]);
+		const {out, requests} = await run([...GROUND, [TREES, trees(PRIMARY)]]);
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({answer: "none", removed: [], kept: []});
-		expect(calls.some((line) => TRUNK.test(line))).toBe(false);
+		expect(requests.some((line) => TRUNK.test(line))).toBe(false);
 	});
 
 	it("is UNKNOWN when this run cannot recognise its own tree", async () => {
@@ -686,13 +693,13 @@ describe("runReap — what it refuses to touch", () => {
 			[
 				[SELF, here],
 				[TREES, trees(PRIMARY, {path: DEAD})],
-				[TRUNK, errOut("ref refs/remotes/origin/HEAD is not a symbolic ref")],
+				[TRUNK, {status: 502, body: '{"message":"Bad Gateway"}'}],
 			],
 			true,
 		);
 
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stderr.join("\n")).toMatch(/remote set-head/);
+		expect(out.stderr.join("\n")).toMatch(/cannot resolve the trunk/);
 		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
 	});
 });

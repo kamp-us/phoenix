@@ -197,6 +197,32 @@ describe("runPr — the write path", () => {
 		expect(JSON.parse(shell.bodies[create] ?? "null")).toMatchObject({body: BODY});
 	});
 
+	it("opens the PR into dev in a repo whose default branch is dev and has no main", async () => {
+		const shell = fakeSeams([
+			...LANE_OK,
+			[OPEN_PULLS, served([])],
+			[REPO_META, served({default_branch: "dev"})],
+			[CREATE, served({number: 4318, html_url: "https://example.test/o/r/pull/4318"})],
+			[READ_BACK, pull({body: BODY})],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runPr(options), shell.layer));
+		expect(out.code).toBe(0);
+		const create = shell.requests.findIndex((line) => CREATE.test(line));
+		expect(JSON.parse(shell.bodies[create] ?? "null")).toMatchObject({base: "dev"});
+	});
+
+	it("refuses an unreadable trunk on 11 naming the fix, and opens nothing", async () => {
+		const shell = fakeSeams([
+			...LANE_OK,
+			[OPEN_PULLS, served([])],
+			[REPO_META, {status: 502, body: '{"message":"Bad Gateway"}'}],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runPr(options), shell.layer));
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("cannot resolve the trunk");
+		expect(shell.requests.some((line) => CREATE.test(line))).toBe(false);
+	});
+
 	it("answers `existing` on exit 0 when this head already has an open PR — no duplicate", async () => {
 		const shell = fakeSeams([
 			...LANE_OK,
