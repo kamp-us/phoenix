@@ -253,7 +253,10 @@ up ahead of it.
 **Agenda.** It proposes up to `table.agendaCap` rows (25 by default) in `table.sections` order, each
 a real, open issue, never a draft:
 
-- Tails — running bets with a `table flags` row flag, then open sub-issues of closed epics;
+- Tails — running bets with a `table flags` row flag, then ruled issues nobody has built (oldest
+  ruling first), then open sub-issues of closed epics. A ruled issue is an open `type:decision`
+  carrying `ready-for:agent` and a `decision-ruled` marker from an account on the control-plane
+  roster; its Rec reads "yes: you ruled on it YYYY-MM-DD and it is not built yet.";
 - Customers — issues filed by someone whose `author_association` is not OWNER, MEMBER or
   COLLABORATOR, and only once triaged;
 - New bets — `type:epic` issues with a pitch.
@@ -311,8 +314,9 @@ A person answers on the Outcome field; prep never writes it and never re-asks a 
 
 **Health.** It then posts one project status update: land rate, stale lanes, spend and the share of
 lanes that needed a founder over the 7 days before the table day; the Outside the bets tally (running
-un-bet lanes, their origins and cost); the bets continuing; and the Inbox count (open issues with no
-labels). It reads `AT_RISK` while a row flag stands or any flag check could not be read — each such
+un-bet lanes, their origins and cost); the bets continuing; the Inbox count (open issues with no
+labels); and every ruled issue nobody has built, oldest ruling first with its ruling date, so one the
+agenda cap left off is still named. It reads `AT_RISK` while a row flag stands or any flag check could not be read — each such
 check is named under "Could not check", and an on-call past-target count it could not read is said
 in words, never as a number — else `ON_TRACK`. Prep asks neither table-wide check, `campaigns` nor
 `fabrika-share`, so neither is named there, and an empty `table.fabrikaShare.labels` turns the
@@ -355,8 +359,8 @@ with `onCall` only under a `boards` block and `planned` only under `--dry-run`. 
 - `7` — no table project, or no on-call board with a `boards` block. Run `table setup`.
 - `8` — a write, a check comment or the status update did not land. UNKNOWN; re-run to finish.
 - `9` — the rows or the update do not read back after the writes.
-- `11` — the project, the open issues, an issue, its comments, edges or timeline could not be read.
-  UNKNOWN.
+- `11` — the project, the open issues, an issue, its comments, edges or timeline could not be read,
+  or the control-plane roster could not be read while a ruled issue needed it. UNKNOWN.
 - `12` — the `table`, `appetiteSizes` or `boards` block in `.fabrika.jsonc` does not decode.
 - `20` — the token lacks the `project` scope.
 - `22` — two open projects carry the table's title. Set `table.project.number`.

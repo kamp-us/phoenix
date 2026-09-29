@@ -512,7 +512,7 @@ export const NOT_AN_EPIC = 56;
  * keyword the swap did not reach, or a classification claim the block quote did not cover, each
  * named.
  *
- * Both should be impossible while the swap list matches that module's `CLOSING_RE` and the lifted
+ * Both should be impossible while the swap list matches `wire/closing-keyword.ts`'s shape and the lifted
  * text stays quoted, and this seat is what keeps it so: the section is read back through the guard's
  * own predicates, and the refusal is fail-closed rather than an assumption that the two still agree.
  * The remedy is a person's — reword the epic's Problem paragraph, or write the section by hand. The

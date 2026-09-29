@@ -22,10 +22,9 @@
  * backticks escapes the guard too.
  */
 
+import {closingKeywords} from "../wire/closing-keyword.ts";
 import {read as readDeviations} from "../wire/deviations.ts";
 
-/** GitHub's own auto-closing keywords. A body may carry exactly one, aimed at its own issue. */
-const CLOSING_RE = /\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi;
 const PART_OF_RE = /\bpart of\s+#(\d+)\b/i;
 
 const CLASSIFICATION_PATTERNS: ReadonlyArray<{readonly name: string; readonly re: RegExp}> = [
@@ -66,12 +65,14 @@ export const deviationsDefect = (body: string): string | null => {
 	return result._tag === "Found" ? null : result.reason;
 };
 
-/** Every issue number a closing keyword in `prose` aims at, in order. */
+/**
+ * Every issue number a closing keyword in `prose` aims at, in order. A body may carry exactly one,
+ * aimed at its own issue.
+ */
 export const closingTargets = (prose: string): ReadonlyArray<number> => {
 	const targets: number[] = [];
-	CLOSING_RE.lastIndex = 0;
-	for (const match of prose.matchAll(CLOSING_RE)) {
-		const number = match[3];
+	for (const match of prose.matchAll(closingKeywords())) {
+		const number = match[1];
 		if (number !== undefined) targets.push(Number.parseInt(number, 10));
 	}
 	return targets;
