@@ -1283,6 +1283,7 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 | `ship checks: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
 | `ship checks: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `ship checks: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `ship checks: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `ship checks: no run at this head answers any context <base> declares required — pending, never green: the required checks have not reported.` | 0 | notice |
 | `ship checks: every run at this head is informational — pending, never green: nothing here gates.` | 0 | notice |

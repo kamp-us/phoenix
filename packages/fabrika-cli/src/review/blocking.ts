@@ -17,7 +17,9 @@
  *   on that rather than on a check's conclusion.
  * - `no-requirements` — the read succeeded and the branch declares nothing required. That is a
  *   branch nobody has said what gates, not a branch that gates nothing, so the denylist definition
- *   holds and every non-informational red blocks as it did before.
+ *   holds and every non-informational red blocks as it did before. A branch whose repository plan
+ *   offers neither rulesets nor branch protection lands here too: it cannot declare a required
+ *   check, and GitHub's plan-gate 403 says so to every token, so it is no permission finding.
  *
  * Contexts are matched as the platform names them, against the branch the pull request targets —
  * never `main` by name, because the authority belongs to the base a merge would land on.
@@ -26,12 +28,15 @@
  */
 import {Effect} from "effect";
 import {branchProtectionContexts, rulesetContexts} from "../heal-ci/github.ts";
+import type {ServedStatus} from "../io/gh-api.ts";
 import type {Shell} from "../io/git.ts";
 import {isInformational} from "./rollup.ts";
 
 export type DeclaredRead =
 	/** The declared set is known, however many members it has. */
 	| {readonly _tag: "Declared"; readonly contexts: ReadonlyArray<string>; readonly scanned: number}
+	/** The repository's plan offers neither rulesets nor branch protection: nothing can be declared. */
+	| {readonly _tag: "PlanGated"}
 	/** The token cannot see the protection surface — an answer at exit `0`, never `no-requirements`. */
 	| {readonly _tag: "Unprobeable"; readonly reason: string}
 	/** The rules enumeration completed and is provably short of a terminal page. */
@@ -39,7 +44,22 @@ export type DeclaredRead =
 	/** A read failed for a reason that is not this token's permission — coverage is UNKNOWN. */
 	| {readonly _tag: "Unknown"; readonly what: string; readonly reason: string};
 
-const isPermissionDenial = (status: number | null): boolean => status === 401 || status === 403;
+/**
+ * The start of GitHub's `message` on a 403 served because the repository's plan lacks the feature —
+ * a private repository on the free plan, where rulesets and branch protection are paid. It reaches
+ * every token, admin included, so no permission clears it.
+ */
+const PLAN_GATE = "Upgrade to GitHub Pro or make this repository public";
+
+/** One refused authority read, sorted by what the refusal says about the branch. */
+const refused = (answer: ServedStatus, what: string, reason: string): DeclaredRead => {
+	if (answer.status === 403 && answer.message?.startsWith(PLAN_GATE) === true) {
+		return {_tag: "PlanGated"};
+	}
+	return answer.status === 401 || answer.status === 403
+		? {_tag: "Unprobeable", reason}
+		: {_tag: "Unknown", what, reason};
+};
 
 /**
  * The declared required contexts for one base branch: branch protection ∪ the rulesets that match it.
@@ -50,20 +70,15 @@ const isPermissionDenial = (status: number | null): boolean => status === 401 ||
 export const readDeclared = (repo: string, base: string): Shell<DeclaredRead> =>
 	Effect.gen(function* () {
 		const rules = yield* rulesetContexts(repo, base);
-		if (rules._tag === "Failure") {
-			return isPermissionDenial(rules.status)
-				? {_tag: "Unprobeable" as const, reason: rules.reason}
-				: {_tag: "Unknown" as const, what: "the ruleset list", reason: rules.reason};
-		}
+		if (rules._tag === "Failure") return refused(rules, "the ruleset list", rules.reason);
 		if (!rules.value.exhausted) {
 			return {_tag: "Incomplete" as const, scanned: rules.value.scanned};
 		}
 
-		const {read: protection, status} = yield* branchProtectionContexts(repo, base);
+		const answered = yield* branchProtectionContexts(repo, base);
+		const protection = answered.read;
 		if (protection._tag === "Unknown") {
-			return isPermissionDenial(status)
-				? {_tag: "Unprobeable" as const, reason: protection.reason}
-				: {_tag: "Unknown" as const, what: "the branch protection", reason: protection.reason};
+			return refused(answered, "the branch protection", protection.reason);
 		}
 		const fromProtection = protection._tag === "Present" ? protection.value : [];
 		return {
@@ -80,17 +95,32 @@ export const readDeclared = (repo: string, base: string): Shell<DeclaredRead> =>
  * `contexts.length` — the two are one fact, and a reader that recomputes it is the second
  * derivation this module exists to prevent.
  */
-export interface BlockingSet {
-	readonly token: "required" | "no-requirements";
-	/** The declared contexts, as the platform names them. Empty exactly on `no-requirements`. */
-	readonly contexts: ReadonlyArray<string>;
-	readonly blocks: (name: string) => boolean;
-}
+export type BlockingSet =
+	| {
+			readonly token: "required";
+			/** The declared contexts, as the platform names them. */
+			readonly contexts: ReadonlyArray<string>;
+			readonly blocks: (name: string) => boolean;
+	  }
+	| {
+			readonly token: "no-requirements";
+			/** Why nothing is declared: nobody declared it, or the repository's plan cannot. */
+			readonly because: "undeclared" | "plan-gated";
+			readonly contexts: readonly [];
+			readonly blocks: (name: string) => boolean;
+	  };
 
 /** The answer over a declared read: an authority to judge by, or the read that could not be made. */
 export type BlockingRead =
 	| {readonly _tag: "Set"; readonly set: BlockingSet}
-	| Exclude<DeclaredRead, {readonly _tag: "Declared"}>;
+	| Exclude<DeclaredRead, {readonly _tag: "Declared" | "PlanGated"}>;
+
+const denylistSet = (because: "undeclared" | "plan-gated"): BlockingSet => ({
+	token: "no-requirements",
+	because,
+	contexts: [],
+	blocks: (name) => !isInformational(name),
+});
 
 /**
  * The authority one declared set carries — the whole of the `required` / `no-requirements` split.
@@ -99,20 +129,18 @@ export type BlockingRead =
  * provable without a scripted HTTP read standing between the test and the rule.
  */
 export const blockingSet = (declared: ReadonlyArray<string>): BlockingSet => {
-	if (declared.length === 0) {
-		return {token: "no-requirements", contexts: [], blocks: (name) => !isInformational(name)};
-	}
+	if (declared.length === 0) return denylistSet("undeclared");
 	const required = new Set(declared);
 	return {token: "required", contexts: declared, blocks: (name) => required.has(name.trim())};
 };
 
 /** The blocking authority of the branch a pull request targets. */
 export const readBlockingSet = (repo: string, base: string): Shell<BlockingRead> =>
-	Effect.map(readDeclared(repo, base), (declared) =>
-		declared._tag === "Declared"
-			? ({_tag: "Set" as const, set: blockingSet(declared.contexts)} satisfies BlockingRead)
-			: declared,
-	);
+	Effect.map(readDeclared(repo, base), (declared): BlockingRead => {
+		if (declared._tag === "Declared") return {_tag: "Set", set: blockingSet(declared.contexts)};
+		if (declared._tag === "PlanGated") return {_tag: "Set", set: denylistSet("plan-gated")};
+		return declared;
+	});
 
 /**
  * The refusal line one unreadable authority earns, single-sourced so four verbs name one cause.
@@ -137,10 +165,14 @@ export const unreadableCause = (
 };
 
 /** What a verb says about the authority it judged by, so the answer carries its own definition. */
-export const authorityNote = (verb: string, base: string, set: BlockingSet): string =>
-	set.token === "required"
-		? `${verb}: ${base} declares ${set.contexts.length} required context(s): ${[...set.contexts].sort().join(", ")} — a red outside that set is reported, never blocking.`
+export const authorityNote = (verb: string, base: string, set: BlockingSet): string => {
+	if (set.token === "required") {
+		return `${verb}: ${base} declares ${set.contexts.length} required context(s): ${[...set.contexts].sort().join(", ")} — a red outside that set is reported, never blocking.`;
+	}
+	return set.because === "plan-gated"
+		? `${verb}: ${base}'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.`
 		: `${verb}: ${base} declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.`;
+};
 
 /**
  * What a verb says when a head produced runs and **none of them blocks** — an answer that may not

@@ -23,6 +23,7 @@ import {
 	httpError,
 	OTHER_HEAD,
 	PROTECTION,
+	planGated,
 	protection,
 	pull,
 	RULES,
@@ -374,6 +375,25 @@ describe("runDiagnose answers", () => {
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
 		expect(out.stderr.at(-1)).toContain("which checks block is UNKNOWN, never none.");
+	});
+
+	// A private repository on the free plan cannot declare a required check, so the undeclared
+	// branch's definition answers there and the class is derivable.
+	it("classifies over a plan-gated base, naming the plan gate as the authority", async () => {
+		const out = await run(
+			script([
+				[
+					CHECK_RUNS,
+					reply(checkRuns(1, [{name: "unit tests", status: "completed", conclusion: "failure"}])),
+				],
+				[RULES, planGated],
+			]),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`stall\tred\t${HEAD}\t35`);
+		expect(out.stderr.join("\n")).toContain(
+			"main's plan offers no branch protection or rulesets — every non-informational check blocks",
+		);
 	});
 
 	// The live cost this definition was ruled over: a pull request answered `red` on a static-analysis

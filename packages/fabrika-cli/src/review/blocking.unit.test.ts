@@ -1,7 +1,14 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, linkNext, type Scripted} from "../fakes.test-support.ts";
-import {httpError, PROTECTION, protection, RULES, rules} from "../heal-ci/fixtures.test-support.ts";
+import {
+	httpError,
+	PROTECTION,
+	planGated,
+	protection,
+	RULES,
+	rules,
+} from "../heal-ci/fixtures.test-support.ts";
 import {
 	authorityNote,
 	blockingSet,
@@ -84,6 +91,50 @@ describe("readBlockingSet over the three read outcomes", () => {
 		expect(answered._tag).toBe("Unprobeable");
 	});
 
+	// A private repository on the free plan: no token can read either surface, and no branch there
+	// can declare a required check, so the answer is the undeclared branch's, not an UNKNOWN.
+	it("answers no-requirements when the rules read is plan-gated", async () => {
+		const answered = await read([[RULES, planGated]]);
+		expect(answered._tag).toBe("Set");
+		if (answered._tag !== "Set") return;
+		expect(answered.set.token).toBe("no-requirements");
+		expect(answered.set.contexts).toEqual([]);
+		expect(answered.set.blocks("unit tests")).toBe(true);
+		expect(answered.set.blocks("deploy (web)")).toBe(false);
+	});
+
+	it("answers no-requirements when the rules read passes and protection is plan-gated", async () => {
+		const answered = await read([
+			[RULES, rules()],
+			[PROTECTION, planGated],
+		]);
+		expect(answered._tag).toBe("Set");
+		if (answered._tag !== "Set") return;
+		expect(answered.set.token).toBe("no-requirements");
+	});
+
+	it("keeps a 403 carrying any other message unprobeable on either read", async () => {
+		expect((await read([[RULES, httpError(403, "Must have admin rights")]]))._tag).toBe(
+			"Unprobeable",
+		);
+		expect(
+			(
+				await read([
+					[RULES, rules()],
+					[PROTECTION, httpError(403, "Upgrade your plan")],
+				])
+			)._tag,
+		).toBe("Unprobeable");
+	});
+
+	// The match reads GitHub's own `message`, so a plan-gate wording on any other status is no gate.
+	it("reads the plan-gate wording as a gate only on a 403", async () => {
+		const answered = await read([
+			[RULES, httpError(401, "Upgrade to GitHub Pro or make this repository public")],
+		]);
+		expect(answered._tag).toBe("Unprobeable");
+	});
+
 	it("is Unknown, never unprobeable, on a failure that is not this token's permission", async () => {
 		const answered = await read([[RULES, httpError(500, "server error")]]);
 		expect(answered._tag).toBe("Unknown");
@@ -115,6 +166,16 @@ describe("the lines a verb prints about its authority", () => {
 		expect(authorityNote("ship checks", "main", blockingSet([]))).toContain(
 			"declares no required status checks",
 		);
+	});
+
+	it("names the plan gate, not an undeclared branch, when the plan offers no protection", async () => {
+		const answered = await read([[RULES, planGated]]);
+		if (answered._tag !== "Set") throw new Error(`expected a set, got ${answered._tag}`);
+		const note = authorityNote("review ci", "main", answered.set);
+		expect(note).toContain(
+			"main's plan offers no branch protection or rulesets — every non-informational check blocks",
+		);
+		expect(note).not.toContain("declares no required status checks");
 	});
 
 	it("says why a head with no blocking run may not read green", () => {

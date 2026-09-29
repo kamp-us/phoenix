@@ -333,6 +333,15 @@ export const restWrite = (
 const MESSAGE_CAP = 200;
 
 /**
+ * GitHub's own `message` off a response, verbatim and uncapped, or `null` when the body carries none.
+ *
+ * The structured field a caller classifies a refusal by — {@link refusalText} is for printing, and
+ * its bound cuts the very text a classification would match.
+ */
+export const githubMessage = (outcome: Rest & {_tag: "Response"}): string | null =>
+	isRecord(outcome.body) && typeof outcome.body.message === "string" ? outcome.body.message : null;
+
+/**
  * The refusal a non-2xx is, naming GitHub's own `message` when it sent one.
  *
  * Every non-2xx arm in this module and in `./issues.ts` builds its reason here, because the string
@@ -346,8 +355,9 @@ const MESSAGE_CAP = 200;
  */
 export const refusalText = (outcome: Rest & {_tag: "Response"}): string => {
 	const status = `GitHub answered HTTP ${outcome.status}`;
-	if (!isRecord(outcome.body) || typeof outcome.body.message !== "string") return status;
-	const message = outcome.body.message.replace(/\s+/g, " ").trim();
+	const raw = githubMessage(outcome);
+	if (raw === null) return status;
+	const message = raw.replace(/\s+/g, " ").trim();
 	if (message === "") return status;
 	const bounded =
 		message.length <= MESSAGE_CAP ? message : `${message.slice(0, MESSAGE_CAP)}…truncated`;
@@ -417,14 +427,22 @@ const paged = (path: string, page: number): string =>
 	`${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`;
 
 /**
- * A paged read's answer: an {@link Attempt} whose failure also names the status GitHub served.
+ * What GitHub served beside a read: its status and its own `message`, or neither when no status
+ * arrived. A `message` exists only where a status does.
+ */
+export type ServedStatus =
+	| {readonly status: null}
+	| {readonly status: number; readonly message: string | null};
+
+/**
+ * A paged read's answer: an {@link Attempt} whose failure also names what GitHub served.
  *
  * A caller telling a permission denial apart from any other unreadable answer needs the number. A
  * single read gets it from {@link existenceOf}; a paged read walks many responses, so the one it
- * stopped on carries its status here rather than leaving the caller to scrape it back out of the
- * reason — the scraping habit this client exists to end.
+ * stopped on carries its status and message here rather than leaving the caller to scrape them back
+ * out of the reason — the scraping habit this client exists to end.
  */
-export type PagedAttempt<A> = Ok<A> | (Failure & {readonly status: number | null});
+export type PagedAttempt<A> = Ok<A> | (Failure & ServedStatus);
 
 /** A read that produced no status at all — GitHub was never reached, or answered a shape nobody asked for. */
 const statusless = (reason: string): Failure & {readonly status: null} => ({
@@ -432,9 +450,12 @@ const statusless = (reason: string): Failure & {readonly status: null} => ({
 	status: null,
 });
 
-const refusalFor = (outcome: Rest & {_tag: "Response"}): Failure & {readonly status: number} => ({
+const refusalFor = (
+	outcome: Rest & {_tag: "Response"},
+): Failure & {readonly status: number; readonly message: string | null} => ({
 	...fail(refusalText(outcome)),
 	status: outcome.status,
+	message: githubMessage(outcome),
 });
 
 /**

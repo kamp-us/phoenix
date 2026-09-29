@@ -135,8 +135,12 @@ export const runSurface = (
 					);
 		}
 
-		const comparison = compare(declared.contexts, runs);
-		if (comparison.token === "no-requirements") {
+		const comparison = compare(declared._tag === "Declared" ? declared.contexts : [], runs);
+		if (declared._tag === "PlanGated") {
+			notices.push(
+				`${VERB}: ${pull.baseRef}'s plan offers no branch protection or rulesets — this repository cannot declare a required context on ${pull.baseRef}.`,
+			);
+		} else if (comparison.token === "no-requirements") {
 			notices.push(
 				`${VERB}: ${pull.baseRef} declares no required status contexts — this repository gates nothing on ${pull.baseRef}.`,
 			);

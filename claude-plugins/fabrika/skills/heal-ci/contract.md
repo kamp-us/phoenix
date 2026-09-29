@@ -543,6 +543,7 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | `heal-ci diagnose: claim-stale fired on <inactivity\|ground-drift> — last activity <ts>, behind base <k>.` | 0 | notice |
 | `heal-ci diagnose: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
 | `heal-ci diagnose: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `heal-ci diagnose: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `heal-ci diagnose: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `heal-ci diagnose: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `heal-ci diagnose: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
@@ -786,6 +787,11 @@ So the rulesets read is what carries the answer, and the rules are:
 - **`unprobeable`** is when the rulesets read itself is permission-denied, or when the protection
   404 is the only signal and the rulesets read did not complete. The verb answers at exit `0`,
   prints `required:-` on its facts line, and emits no `required` rows.
+- **A plan gate is `no-requirements`, not `unprobeable`.** On a private repository on the free plan
+  rulesets and branch protection are paid features, and either read answers `403` with a `message`
+  beginning `Upgrade to GitHub Pro or make this repository public` to every token, admin included.
+  No permission clears it and the branch cannot declare a required context, so the verb answers
+  `no-requirements` and says why on stderr. Any other `401`/`403` stays `unprobeable`.
 
 Collapsing `unprobeable` into `no-requirements` would tell an adopter their repo gates nothing when
 it may gate everything — the single most dangerous wrong answer this verb can give. Collapsing it
@@ -831,6 +837,7 @@ settings changes with a human's name on them.
 | `heal-ci surface: cannot read <what> for <base>: <reason> — coverage is UNKNOWN, never "no-requirements".` | 11 | refusal |
 | `heal-ci surface: received <k> of <m> declared <rulesets\|check runs> — refusing to compare a truncated set.` | 13 | refusal |
 | `heal-ci surface: <base> declares no required status contexts — this repository gates nothing on <base>.` | 0 | notice |
+| `heal-ci surface: <base>'s plan offers no branch protection or rulesets — this repository cannot declare a required context on <base>.` | 0 | notice |
 | `heal-ci surface: cannot read <base>'s protection surface at this token's permission — the check-surface axis is UNPROBEABLE, never "no requirements".` | 0 | notice |
 
 **Scope** — the PR's base branch protection, the repository's rulesets filtered to those matching
@@ -945,6 +952,7 @@ bytes it never saw.
 | `heal-ci logs: read <k> of <m> failing gating contexts (--context narrowed the read).` | 0 | notice |
 | `heal-ci logs: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
 | `heal-ci logs: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `heal-ci logs: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `heal-ci logs: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `heal-ci logs: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `heal-ci logs: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |

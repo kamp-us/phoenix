@@ -21,12 +21,14 @@ import {
 	authed,
 	authedExistence,
 	existenceOf,
+	githubMessage,
 	onTransport,
 	type PagedAttempt,
 	pagedEnvelope,
 	pagedWithLinkProof,
 	refusalText,
 	restRead,
+	type ServedStatus,
 } from "../io/gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
 import {type Existence, unknown} from "../io/issues.ts";
@@ -182,14 +184,10 @@ export const rerunRun = (repo: string, run: number): Shell<Attempt<void>> =>
 	rerunRequest(`repos/${repo}/actions/runs/${run}/rerun`);
 
 /**
- * A read's answer beside the status GitHub served — which is what a permission denial is told apart
- * by, now that no error string carries the code.
+ * A read's answer beside the status and `message` GitHub served — which is what a permission denial
+ * and a plan gate are told apart by, now that no error string carries either.
  */
-export interface Answered<A> {
-	readonly read: A;
-	/** The status GitHub answered, or `null` when it was never reached and served none. */
-	readonly status: number | null;
-}
+export type Answered<A> = {readonly read: A} & ServedStatus;
 
 /**
  * What a base branch's protection endpoint said — and the one thing its 404 does **not** say.
@@ -217,7 +215,9 @@ export const branchProtectionContexts = (
 			if (!isRecord(required) || !Array.isArray(required.contexts)) return ok([]);
 			return ok(required.contexts.filter((c): c is string => typeof c === "string"));
 		});
-		return {read, status: outcome._tag === "Unreachable" ? null : outcome.status};
+		return outcome._tag === "Unreachable"
+			? {read, status: null}
+			: {read, status: outcome.status, message: githubMessage(outcome)};
 	});
 
 export interface RulesetRead {
@@ -234,8 +234,10 @@ export interface RulesetRead {
  * of each ruleset's ref condition against this branch. Enumerating `/rulesets` and re-deriving which
  * conditions match would be a second implementation of `fnmatch` over include/exclude patterns,
  * `~DEFAULT_BRANCH` and `~ALL` — a platform semantic this package does not get to guess at. Both
- * endpoints answer at ordinary `repo` scope, so nothing about the permission finding changes: a
- * permission denial here is `unprobeable`, never "no requirements".
+ * endpoints answer at ordinary `repo` scope, so a permission denial here is `unprobeable`, never "no
+ * requirements". Not every 403 is one: where the repository's plan offers neither rulesets nor
+ * branch protection, GitHub answers 403 to every token, and the refusal's `message` is what tells
+ * that plan gate apart — which is why it travels beside the status.
  */
 export const rulesetContexts = (repo: string, branch: string): Shell<PagedAttempt<RulesetRead>> =>
 	Effect.gen(function* () {
