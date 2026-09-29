@@ -12,6 +12,7 @@ These pages are written for a person. Each holds one Diátaxis mode.
 | [`getting-started.md`](getting-started.md) | tutorial | Walk me from nothing to a first working fabrika run. |
 | [`adopt-fabrika-in-a-new-repo.md`](adopt-fabrika-in-a-new-repo.md) | how-to | Wire fabrika into a repo I already have. |
 | [`extend-the-wire-registry.md`](extend-the-wire-registry.md) | how-to | Register one new wire format, from an empty editor to a green conformance suite. |
+| [`choose-a-model-per-shell.md`](choose-a-model-per-shell.md) | how-to | Run one fabrika shell, such as `reviewer`, on a model I pick. |
 | [`delegation.md`](delegation.md) | reference | Which copy of fabrika serves this invocation, and why did it refuse? |
 | [`how-fabrika-works.md`](how-fabrika-works.md) | explanation | Why is fabrika shaped the way it is? |
 
