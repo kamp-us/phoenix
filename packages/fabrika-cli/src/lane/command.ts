@@ -608,6 +608,7 @@ const report = leafCommand(
 				55: "ship:queued floor unmet",
 				67: "head derives no route",
 				68: "bad integrate pair",
+				72: "token's shell does not serve this state",
 				...ROOT_EXITS,
 			},
 		),

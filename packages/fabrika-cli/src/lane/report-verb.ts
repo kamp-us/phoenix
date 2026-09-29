@@ -27,6 +27,12 @@
  * the log byte-identical, so the wait budget measures how long a PR has sat rather than how fast a
  * driver passes.
  *
+ * **A token is accepted only from a state its shell serves.** [`report.ts`](report.ts)'s
+ * `GROUP_SERVES` names the leaves each vocabulary group reports out of, and a token none of its
+ * owners serves from the task's leaf is refused at `TOKEN_UNSERVED`, before the proof and again under
+ * the lock. A late builder's `SHIPPED-PR` out of `ship` otherwise maps to the same `DONE` a
+ * shipper's `LANDED` does, and folds a lane with an open PR to `complete`.
+ *
  * **One token names two events, and the proof picks.** `ROUTED-ELSEWHERE` out of `review:ui` is
  * [`report.ts`](report.ts)'s one {@link PROOF_CONDITIONAL_TERMINALS} row: a published head-bound
  * route beside a complete set of binding verdicts is a *finished* review, so the terminal records
@@ -62,6 +68,7 @@ import {
 	PARK_UNCAUSED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
+	TOKEN_UNSERVED,
 	WAIT_TOO_SOON,
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
@@ -78,6 +85,7 @@ import {
 	conditionalTerminal,
 	eventForToken,
 	floorQueueWait,
+	serviceAt,
 	tokenCause,
 } from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
@@ -247,6 +255,10 @@ export const runReport = <R>(
 		if (fold._tag !== "Folded") return replayRefusal(VERB, loaded.logPath, fold);
 
 		const leaf = fold.states[task.taskId]?.type ?? "";
+		const service = serviceAt(resolved.token, leaf);
+		if (service._tag === "Unserved") {
+			return refuse(TOKEN_UNSERVED, `${VERB}: refused (log unappended): ${service.reason}.`);
+		}
 		const conditional = conditionalTerminal(resolved.token, leaf);
 		const proveOptions = (event: OperatorEvent) => ({
 			root: options.root,
@@ -354,6 +366,16 @@ export const runReport = <R>(
 					return refuse(
 						EVENT_REFUSED,
 						`${VERB}: refused (log unappended): task "${freshTask.taskId}" left "${leaf}" while ${resolved.token}'s ${advanced.event} was being proven — re-read the lane and report again.`,
+					);
+				}
+
+				// The late-shell race this check exists for is a writer moving the task between the
+				// pre-lock read and here, so the leaf is judged again against the bytes that decide.
+				const freshService = serviceAt(resolved.token, freshLeafOf(freshFold, freshTask.taskId));
+				if (freshService._tag === "Unserved") {
+					return refuse(
+						TOKEN_UNSERVED,
+						`${VERB}: refused (log unappended): ${freshService.reason}.`,
 					);
 				}
 

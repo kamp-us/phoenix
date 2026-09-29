@@ -15,15 +15,17 @@
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
+import {INTEGRATE_STATE} from "./integrate-failure.ts";
 import {type CompiledLane, MACHINERY_EVENT, type OperatorEvent, type TaskState} from "./machine.ts";
-import {REVIEW_UI_STATE} from "./prove.ts";
+import {BUILD_STATES, REVIEW_STATE, REVIEW_UI_STATE, SHIP_STATES} from "./prove.ts";
 
 /**
  * Every recognised terminal token, grouped by the shell skill that owns its vocabulary — the
  * builder's (`build/SKILL.md`), the reviewer's (`review/SKILL.md`), the shipper's
- * (`ship/SKILL.md`), the UI reviewer's (`review-ui/SKILL.md`) — plus one group that belongs to no
- * shell: `machinery`, which a driver records about the pipeline itself. Documentation and test
- * surface; the lookup below flattens it.
+ * (`ship/SKILL.md`), the UI reviewer's (`review-ui/SKILL.md`) — plus two groups that belong to no
+ * shell: `machinery`, which a driver records about the pipeline itself, and `integrator`, the
+ * driver relaying `lane integrate`'s content verdict on an epic child. The lookup below flattens
+ * it, and {@link GROUP_SERVES} says which leaf states each group may report out of.
  */
 export const SHELL_VOCABULARIES = {
 	builder: {
@@ -107,7 +109,73 @@ export const SHELL_VOCABULARIES = {
 		EJECTED: "FAIL",
 		UNKNOWN: "BLOCKED",
 	},
+	// `lane integrate` exiting `42`, `43` or `44` judged the child's content, and the driver relays
+	// it as the one token that spends the child's repair budget. The integrate evidence pair
+	// (`./integrate-failure.ts`) is what pins the line to that exit.
+	integrator: {
+		FAIL: "FAIL",
+	},
 } as const satisfies Readonly<Record<string, Readonly<Record<string, OperatorEvent>>>>;
+
+export type VocabularyGroup = keyof typeof SHELL_VOCABULARIES;
+
+/** Where a group's reporter runs: a closed list of leaf states, or wherever the task stands. */
+export type Serves =
+	| {readonly _tag: "States"; readonly states: ReadonlyArray<string>}
+	| {readonly _tag: "Anywhere"};
+
+/**
+ * The leaf states each vocabulary group serves — the half of a report the token alone cannot say.
+ *
+ * A token is a self-report from whichever shell ran, and a shell can finish after the lane has moved
+ * on without it. Two groups map tokens to one event (`SHIPPED-PR` and `LANDED` are both `DONE`), so a
+ * builder's late `SHIPPED-PR` out of `ship` walked the shipper's merge arm and folded a lane with an
+ * open PR to `complete`. Only a group that serves the task's current leaf may report out of it.
+ *
+ * `machinery` serves every state because a pipeline failure happens wherever the pipeline is: the
+ * lane's own machine decides whether that state holds a `LAP` cell.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10120
+ */
+export const GROUP_SERVES: Readonly<Record<VocabularyGroup, Serves>> = {
+	builder: {_tag: "States", states: BUILD_STATES},
+	reviewer: {_tag: "States", states: [REVIEW_STATE]},
+	"ui-reviewer": {_tag: "States", states: [REVIEW_UI_STATE]},
+	machinery: {_tag: "Anywhere"},
+	shipper: {_tag: "States", states: SHIP_STATES},
+	integrator: {_tag: "States", states: [INTEGRATE_STATE]},
+};
+
+const servesLeaf = (serves: Serves, leaf: string): boolean =>
+	serves._tag === "Anywhere" || serves.states.includes(leaf);
+
+const describeServes = (serves: Serves): string =>
+	serves._tag === "Anywhere" ? "any state" : serves.states.map((s) => `"${s}"`).join(" / ");
+
+export type Service =
+	| {readonly _tag: "Served"; readonly by: ReadonlyArray<VocabularyGroup>}
+	| {readonly _tag: "Unserved"; readonly reason: string};
+
+/**
+ * Whether any group owning this token serves the task's leaf. A token several groups share (`PASS`,
+ * `FAIL`, `UNKNOWN`, `ESCALATED`) is served when at least one owner serves the leaf, because the
+ * token alone never says which of them sent it.
+ */
+export const serviceAt = (token: string, leaf: string): Service => {
+	const canonical = token.trim().toUpperCase();
+	const owners = (Object.keys(SHELL_VOCABULARIES) as ReadonlyArray<VocabularyGroup>).filter(
+		(group) => Object.hasOwn(SHELL_VOCABULARIES[group], canonical),
+	);
+	const by = owners.filter((group) => servesLeaf(GROUP_SERVES[group], leaf));
+	if (by.length > 0) return {_tag: "Served", by};
+	const named = owners
+		.map((group) => `${group} (serves ${describeServes(GROUP_SERVES[group])})`)
+		.join(", ");
+	return {
+		_tag: "Unserved",
+		reason: `${canonical} is owned by ${named}, and the task stands in "${leaf === "" ? "no state" : leaf}" — a report out of a state its shell does not serve is a late or misrouted terminal, not this state's answer`,
+	};
+};
 
 export type Flattening =
 	| {readonly _tag: "Flat"; readonly tokens: Readonly<Record<string, OperatorEvent>>}

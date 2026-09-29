@@ -21,6 +21,7 @@ import {
 	remedyForCause,
 	routeForCause,
 	SHELL_VOCABULARIES,
+	serviceAt,
 	TERMINAL_PARK_CAUSES,
 	tokenCause,
 } from "./report.ts";
@@ -127,6 +128,51 @@ describe("the shipper's two queue terminals are waits, not landings", () => {
 		expect(eventForToken("REFUSED")).toMatchObject({event: "BLOCKED"});
 		expect(eventForToken("AWAITING-CP-APPROVAL")).toMatchObject({event: "BLOCKED"});
 		expect(eventForToken("UNKNOWN")).toMatchObject({event: "BLOCKED"});
+	});
+});
+
+describe("the states each vocabulary group serves", () => {
+	it("refuses a builder's SHIPPED-PR out of ship, naming the token, the state and its owner", () => {
+		const service = serviceAt("SHIPPED-PR", "ship");
+		expect(service._tag).toBe("Unserved");
+		if (service._tag !== "Unserved") return;
+		expect(service.reason).toContain("SHIPPED-PR");
+		expect(service.reason).toContain('"ship"');
+		expect(service.reason).toContain("builder");
+	});
+
+	it("serves a builder's terminal out of either build state", () => {
+		expect(serviceAt("SHIPPED-PR", "build")).toEqual({_tag: "Served", by: ["builder"]});
+		expect(serviceAt("shipped-pr", "build:ui")).toEqual({_tag: "Served", by: ["builder"]});
+	});
+
+	it("serves the shipper's LANDED out of ship and the queue dwell", () => {
+		expect(serviceAt("LANDED", "ship")).toEqual({_tag: "Served", by: ["shipper"]});
+		expect(serviceAt("LANDED", "ship:queued")).toEqual({_tag: "Served", by: ["shipper"]});
+	});
+
+	it("accepts a shared token wherever any one of its owners serves the state", () => {
+		expect(serviceAt("UNKNOWN", "review")).toEqual({_tag: "Served", by: ["reviewer"]});
+		expect(serviceAt("UNKNOWN", "ship")).toEqual({_tag: "Served", by: ["shipper"]});
+		expect(serviceAt("ESCALATED", "build")).toEqual({_tag: "Served", by: ["builder"]});
+		expect(serviceAt("ESCALATED", "review:ui")).toEqual({_tag: "Served", by: ["ui-reviewer"]});
+		expect(serviceAt("PASS", "review:ui")).toEqual({_tag: "Served", by: ["ui-reviewer"]});
+		expect(serviceAt("FAIL", "integrate")).toEqual({_tag: "Served", by: ["integrator"]});
+	});
+
+	it("names every owner of a shared token when none serves the state", () => {
+		const service = serviceAt("FAIL", "build");
+		expect(service._tag).toBe("Unserved");
+		if (service._tag !== "Unserved") return;
+		for (const owner of ["reviewer", "ui-reviewer", "integrator"]) {
+			expect(service.reason).toContain(owner);
+		}
+	});
+
+	it("serves a machinery token out of any state", () => {
+		for (const leaf of ["review", "review:ui", "ship", "ship:queued", "integrate", "queued"]) {
+			expect(serviceAt("SHELL-DEAD", leaf)).toEqual({_tag: "Served", by: ["machinery"]});
+		}
 	});
 });
 

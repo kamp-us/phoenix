@@ -17,6 +17,7 @@ import {
 	PROOF_IN_FLIGHT,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
+	TOKEN_UNSERVED,
 	WAIT_TOO_SOON,
 } from "./codes.ts";
 import {emitMachine} from "./emit.ts";
@@ -112,7 +113,11 @@ const earned = () =>
 	});
 
 describe("lane report — every shell terminal token maps to one operator event", () => {
-	const stateFor: Readonly<Record<keyof typeof SHELL_VOCABULARIES, keyof typeof LOG_AT>> = {
+	// The integrator group reports out of an epic child's `integrate`, which the coder lane has no
+	// cell for; its one token is proven in the integrate describe block below.
+	const stateFor: Readonly<
+		Record<Exclude<keyof typeof SHELL_VOCABULARIES, "integrator">, keyof typeof LOG_AT>
+	> = {
 		builder: "build",
 		reviewer: "review",
 		"ui-reviewer": "review:ui",
@@ -121,9 +126,10 @@ describe("lane report — every shell terminal token maps to one operator event"
 	};
 
 	for (const [shell, vocabulary] of Object.entries(SHELL_VOCABULARIES)) {
+		if (shell === "integrator") continue;
 		for (const [token, event] of Object.entries(vocabulary)) {
 			it(`${shell} ${token} records ${event}`, async () => {
-				const fs = laneAt(LOG_AT[stateFor[shell as keyof typeof SHELL_VOCABULARIES]]);
+				const fs = laneAt(LOG_AT[stateFor[shell as keyof typeof stateFor]]);
 
 				// The flat table is a floor for the one conditional token, so the run that proves the
 				// floor is the one whose advanced arm the board refuses. Its earned arm has its own
@@ -224,6 +230,83 @@ describe("lane report — refuse without append", () => {
 
 		const out = await run(fs, "SHIPPED-PR");
 		expect(out.code).toBe(LANE_ABSENT);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * Lane 10074's shape: `PASS` moved the task to `ship`, and a repair builder that was still running
+ * then reported `SHIPPED-PR`. Both it and the shipper's `LANDED` map to `DONE`, so the late builder
+ * walked the merge arm and folded a lane with an open PR to `complete`.
+ */
+describe("lane report — a token is accepted only from a state its shell serves", () => {
+	it("refuses a builder's SHIPPED-PR out of ship before any proof, log unappended", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const prover = fakeProver();
+
+		const out = await run(fs, "SHIPPED-PR", {prover, pr: "https://forge.example/o/r/pull/10080"});
+
+		expect(out.code).toBe(TOKEN_UNSERVED);
+		expect(out.stdout).toBe("");
+		const said = out.stderr.at(-1) ?? "";
+		expect(said).toContain("log unappended");
+		expect(said).toContain("SHIPPED-PR");
+		expect(said).toContain('"ship"');
+		expect(said).toContain("builder");
+		expect(prover.asked).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("records SHIPPED-PR out of build", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "SHIPPED-PR");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			event: "ISSUE.DONE",
+			current: {pipeline: {issue: "review"}},
+		});
+	});
+
+	it("records the shipper's LANDED out of ship", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "LANDED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.DONE"});
+	});
+
+	it("records UNKNOWN out of review and out of ship — the reviewer and shipper both own it", async () => {
+		for (const at of [LOG_AT.review, LOG_AT.ship]) {
+			const fs = laneAt(at);
+
+			const out = await run(fs, "UNKNOWN");
+
+			expect(out.code).toBe(0);
+			expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.BLOCKED"});
+		}
+	});
+
+	it("records a machinery token out of a state no builder serves", async () => {
+		const fs = laneAt(LOG_AT.review);
+
+		const out = await run(fs, "SHELL-DEAD");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.LAP", cause: "spawn-dead"});
+	});
+
+	it("refuses a reviewer's FAIL out of build, naming every owner of the shared token", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "FAIL");
+
+		expect(out.code).toBe(TOKEN_UNSERVED);
+		for (const owner of ["reviewer", "ui-reviewer", "integrator"]) {
+			expect(out.stderr.at(-1)).toContain(owner);
+		}
 		expect(fs.written.size).toBe(0);
 	});
 });
@@ -978,7 +1061,9 @@ describe("lane report — a satisfied UI route advances the task it used to stra
 		expect(fs.written.has(LOG)).toBe(false);
 	});
 
-	it("reads flat out of any other cell — the leaf is half the key", async () => {
+	// The ui-reviewer serves `review:ui` alone, so out of any other cell the token is a late or
+	// misrouted terminal and neither arm is tried.
+	it("refuses out of any other cell before either arm is proven", async () => {
 		const fs = laneAt(LOG_AT.review);
 		const prover = fakeProverByEvent({
 			PASS: {outcome: answer(JSON.stringify({proof: "proven"}))},
@@ -987,13 +1072,10 @@ describe("lane report — a satisfied UI route advances the task it used to stra
 
 		const out = await run(fs, "ROUTED-ELSEWHERE", {prover, cause: "no-rendered-delta"});
 
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toMatchObject({
-			event: "ISSUE.BLOCKED",
-			current: {pipeline: {issue: "blocked"}},
-		});
-		// No advance was even tried: `review` is not this row's leaf, so the token is flat there.
-		expect(prover.asked.map((asked) => asked.event)).toEqual(["BLOCKED"]);
+		expect(out.code).toBe(TOKEN_UNSERVED);
+		expect(out.stderr.at(-1)).toContain("ui-reviewer");
+		expect(prover.asked).toEqual([]);
+		expect(fs.written.has(LOG)).toBe(false);
 	});
 });
 

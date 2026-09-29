@@ -1082,7 +1082,9 @@ Two reads stay yours, because no shell can take them:
 - **a spawn that printed a terminal the fold does not show** — its record never landed (a missing
   root, an unproven event, a refused append). Do not re-spawn: prove and record that token's event
   yourself, below, and where the proof refuses there too, the refusal table is what you route on —
-  a `22` is a `BLOCKED`, never the `DONE` the spawn printed;
+  a `22` is a `BLOCKED`, never the `DONE` the spawn printed. The one exception is a report refused
+  at `72`: the lane moved past the state that shell served before it finished, so its terminal is
+  late and you record nothing for it — the fold already says where the lane stands;
 - **a dead or unresponsive spawn, a report you cannot parse, and a permission denial a shell
   reports** — each is a BLOCKED-class outcome, never something to route around, and never a
   retry-in-place: retries belong to the machine (`FAIL` spends one; `human:budget-spent` is its
