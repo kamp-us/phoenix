@@ -1835,6 +1835,12 @@ const archive = leafCommand(
 				"walk the lanes root and archive EVERY lane both gates already clear, reporting one row per lane examined. Takes no lane argument — a key and this flag together name two different jobs",
 			),
 		),
+		retriaged: Flag.boolean("retriaged").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"move a lane whose log replays to `diagnosed` with no pull request, so a re-triaged issue can boot a fresh lane. Every other final refuses at 72; a later move of the same key takes the next free <lane>.archived-<n> slot",
+			),
+		),
 		root: rootFlag,
 		archivedRoot: Flag.string("archived-root").pipe(
 			Flag.optional,
@@ -1855,7 +1861,16 @@ const archive = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, sweep, root, archivedRoot: archived, token, repo}) {
+	Effect.fn(function* ({lane, sweep, retriaged, root, archivedRoot: archived, token, repo}) {
+		if (sweep && retriaged) {
+			yield* emit(
+				refuse(
+					FAILED,
+					"fabrika lane archive: --retriaged names one lane an operator judged re-triaged, and --sweep walks every lane on the unreplayable gate — the two are different jobs, so nothing was moved. Drop one.",
+				),
+			);
+			return;
+		}
 		if (sweep && Option.isSome(lane)) {
 			yield* emit(
 				refuse(
@@ -1920,6 +1935,7 @@ const archive = leafCommand(
 			yield* onGround("archive", [ref.root, destination], process.cwd(), () =>
 				runArchive({
 					ref,
+					route: retriaged ? "retriaged" : "unreplayable",
 					archivedRoot: destination,
 					templatePaths,
 					issue: keyIssue(parsed.key),
@@ -1932,12 +1948,12 @@ const archive = leafCommand(
 	}),
 ).pipe(
 	Command.withShortDescription(
-		"Move lanes whose logs never replay out of the swept root — one or all.",
+		"Move lanes whose logs never replay, or a re-triaged diagnosed lane, out of the swept root.",
 	),
 	Command.withDescription(
 		laneHelp(
 			"archive",
-			"Moves a lane whose log never replays out of the lanes root, or sweeps them; prints JSON.",
+			"Moves a lane whose log never replays out of the lanes root, or sweeps them; --retriaged moves a diagnosed no-PR lane instead; prints JSON.",
 			{
 				4: "bad lane record",
 				7: "no lane",
@@ -1950,11 +1966,13 @@ const archive = leafCommand(
 				39: ROOT_EXITS[39],
 				50: "the log replays, nothing to move",
 				65: ROOT_EXITS[65],
+				72: "--retriaged: the lane did not end diagnosed with no pull request",
 			},
 		),
 	),
 	Command.withExamples([
 		{command: "fabrika lane archive 6037"},
+		{command: "fabrika lane archive 10054 --retriaged --token <your lane-claim token>"},
 		{command: "fabrika lane archive 8810 --token <the token `fabrika lane claim` printed>"},
 		{command: "fabrika lane archive --sweep"},
 	]),

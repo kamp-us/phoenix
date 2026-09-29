@@ -1873,6 +1873,22 @@ machine. On a lane emitted before the rename, `frozen` is the spent-budget fallt
 `human:epic-review` is the tail's, so both of those park for a granted round too. Every other error
 final has no door and ends `LANE-TERMINAL`.
 
+**A `diagnosed` lane whose issue triage has since rewritten gets a fresh lane, and the verbs are
+yours to run.** The old ledger is final, so `lane open` refuses at `14` while it stands in the key.
+Move it aside, then boot:
+
+```bash
+node <fabrika> lane archive $lane_key --retriaged --token <your lane-claim token>
+node <fabrika> lane open $lane_key
+```
+
+The archive moves only a lane that folds to `diagnosed` with no pull request in its log, and keeps
+the log byte for byte. Every other final refuses at `72` and stays where it is. It retracts your
+lane claim under the same `--token` guard as the unreplayable route, and a second re-triage of one
+issue takes the next `<lane>.archived-<n>` slot. This is an engine step, never an ask for the
+founder: run it when the issue reads re-triaged (`status:triaged`, `ready-for:agent`, criteria
+rewritten since the diagnosis), and route any refusal by its code.
+
 **A `complete` fold over an issue the board still calls buildable is a defect, and it has a repair.**
 It means the merge behind the ship's `DONE` carried `Part of #N` and the recorded line never said so,
 so the lane folded past the arm that would have sent it round again. Report the terminal
@@ -2027,7 +2043,9 @@ Every run ends as exactly one of — each naming what was recorded and what the 
 `diagnosed`, `board:cancelled`, `board:landed`, a chore's `swept`, or a `tripped` whose error task
 has no door; no event recorded on top of a final fold; `lane record`'s answer named — on an issue
 lane the record `posted` or `unchanged`, or the `4`, `5`, `9` or UNKNOWN code that kept it off; on a
-chore lane the `lane history` bytes handed to the caller) ·
+chore lane the `lane history` bytes handed to the caller; a `diagnosed` fold whose issue was
+re-triaged is not this terminal, because `lane archive --retriaged` then `lane open` boots it
+fresh — above) ·
 **`LANE-PARKED`** (the fold reads `blocked`, `human:*` or `frozen` — either it already did and no
 event was owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
 posted on the driven issue, and on a `tripped` fold the lane record beside it) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns

@@ -1,9 +1,10 @@
 /**
  * The archive judgement — is this lane's log one no sweep can ever judge?
  *
- * The whole entitlement `lane archive` needs before it moves a directory, the closed-issue gate that
- * used to stand beside it having been retired. This module reads no disk and writes none; the verb's
- * remaining board work is retracting the lane claim, not judging the log.
+ * The entitlement `lane archive` needs before it moves a directory, the closed-issue gate that used
+ * to stand beside it having been retired; {@link judgeRetriage} below is the one other, taken only
+ * under `--retriaged`. This module reads no disk and writes none; the verb's remaining board work is
+ * retracting the lane claim, not judging the log.
  *
  * The judgement is [`migrate.ts`](migrate.ts)'s, deliberately and by call rather than by
  * re-derivation: the lanes an archive is for are exactly the ones `lane migrate` already refuses as
@@ -16,7 +17,7 @@
  * exists to be unknown about, and one it refuses is `Unreplayable` through `current`. Asking for a
  * candidate first would answer neither.
  */
-import {foldLog, type LogEntry} from "./fold.ts";
+import {deriveStatus, foldLog, type LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 import {graftContext, judgeMigration} from "./migrate.ts";
 
@@ -69,4 +70,44 @@ export const judgeArchive = (
 	return judged._tag === "Unreplayable"
 		? {_tag: "Unreplayable", through: judged.through, defects: judged.defects}
 		: {_tag: "Replays"};
+};
+
+/**
+ * The re-triage judgement — did this lane end `diagnosed`, with no pull request anywhere in its log?
+ *
+ * The second thing that entitles `lane archive` to move a lane, and a narrow one. A builder's no-PR
+ * finish is final, so once triage rewrites the issue nothing can boot a fresh lane over the ledger
+ * standing in the key. Only the lane's own machine is folded: the question is which state this lane
+ * is in, not whether a sweep can judge it. A log any line of which names a pull request is refused
+ * whatever it folds to, so moving a ledger aside is never how a lane's published work goes unread.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10190
+ */
+export type RetriageVerdict =
+	| {readonly _tag: "Diagnosed"; readonly state: string}
+	/** The lane's own machine cannot fold the log — the unreplayable route's lane, not this one's. */
+	| {readonly _tag: "Unreplayable"; readonly defects: ReadonlyArray<string>}
+	/** The fold ended on some other final, or has not ended at all. */
+	| {readonly _tag: "NotDiagnosed"; readonly state: string}
+	/** It folds to a diagnosis final, and a line of its log names a pull request. */
+	| {readonly _tag: "Published"; readonly pulls: ReadonlyArray<string>};
+
+export const judgeRetriage = (
+	current: CompiledLane,
+	entries: ReadonlyArray<LogEntry>,
+): RetriageVerdict => {
+	const folded = foldLog(current, entries);
+	if (folded._tag !== "Folded") return {_tag: "Unreplayable", defects: folded.defects};
+	const {status, stateValue} = deriveStatus(current, folded.states);
+	if (typeof stateValue !== "string") {
+		return {_tag: "NotDiagnosed", state: JSON.stringify(stateValue)};
+	}
+	const diagnosed =
+		status === "done" &&
+		Object.values(current.tasks).some((task) => task.diagnosisFinals.has(stateValue));
+	if (!diagnosed) return {_tag: "NotDiagnosed", state: stateValue};
+	const pulls = [
+		...new Set(entries.flatMap((entry) => (entry.pr === undefined ? [] : [entry.pr]))),
+	];
+	return pulls.length > 0 ? {_tag: "Published", pulls} : {_tag: "Diagnosed", state: stateValue};
 };

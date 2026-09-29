@@ -1490,10 +1490,33 @@ needs a skip rule: `reconcile` and `migrate` read the roots they are handed and 
 one. The record stays readable: `fabrika lane history <lane> --root <archived-root>` and
 `fabrika lane brief` read an archived lane when pointed at it.
 
-stdout is `{answer:"archived", lane, issue, from, to, through, defects, retracted}`. `through` is
-`current` or `candidate`, naming which machine refused the log, and `defects` names why.
-`retracted` lists the marker comment ids the claim retraction deleted: empty where the issue carried
-no claim, and on a chore key, which has no claim thread.
+stdout is `{answer:"archived", route:"unreplayable", lane, issue, from, to, through, defects,
+retracted}`. `through` is `current` or `candidate`, naming which machine refused the log, and
+`defects` names why. `retracted` lists the marker comment ids the claim retraction deleted: empty
+where the issue carried no claim, and on a chore key, which has no claim thread.
+
+### `--retriaged`
+
+A builder's no-PR finish folds the lane to `diagnosed`, which is final, so the key stays occupied.
+When triage then rewrites the issue, `lane open` has nothing to boot into. `--retriaged` is the one
+route for that lane, and it is a second gate rather than a widening of the first:
+
+- **The lane's own machine folds the log to a diagnosis final, and no line of the log names a pull
+  request.** Anything else refuses at `72` with nothing retracted or moved: another final (`shipped`,
+  `complete`, `tripped`, a board final), a lane still in flight, a `diagnosed` log carrying a `pr`,
+  and a log that does not replay, which belongs to the route above.
+- **The claim goes with the lane exactly as above**: same `--token` guard, same retraction, same
+  order.
+- **A key re-triaged more than once does not collide.** The move takes the first free slot of
+  `<lane>`, then `<lane>.archived-2`, `<lane>.archived-3` and on, so an earlier archive is never
+  buried. The route above keeps its single slot and still refuses an occupied one at `14`.
+
+After the move, `fabrika lane open <n>` boots a fresh lane through the ordinary boot gates. A
+`diagnosed` lane published no pull request, so `PRIOR_LANE` (`63`) reads nothing to refuse.
+
+stdout is `{answer:"archived", route:"retriaged", lane, issue, from, to, state, retracted}`, where
+`state` is the diagnosis final the log folded to and `to` names the slot taken. `--retriaged` and
+`--sweep` together refuse at `1`.
 
 ### `--sweep`
 
@@ -1528,10 +1551,13 @@ The rows reach stderr either way, so a partly-applied sweep is always enumerable
   never a move. A GENERATED machine binds no template and is not that case, so its own fold is the
   whole judgement.
 - `14` — the archived root already holds a lane by this key; a move onto it would bury a record.
+  Under `--retriaged`, every one of the key's numbered slots is taken.
 - `31` — the issue carries a live lane claim this caller did not name. Pass `--token`, or clear a
   dead seat with `fabrika lane adopt` THEN `fabrika lane release`, since adopt alone leaves the claim
   standing.
-- `50` — the log replays, so every sweep can judge it and there is nothing to move out of scope.
+- `50` — the log replays, so every sweep can judge it and there is nothing to move out of scope. A
+  `diagnosed` lane over a re-triaged issue moves with `--retriaged`.
+- `72` — `--retriaged` only: the lane did not end `diagnosed` with no pull request.
 - `39`, `65` — [the lanes root](#the-lanes-root); `39` here covers both default roots.
 
 ## `lane settle`

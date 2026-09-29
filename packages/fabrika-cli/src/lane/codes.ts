@@ -702,3 +702,13 @@ export const FACT_REFUSED = 70;
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  */
 export const SIZE_STOPPED = 71;
+
+/**
+ * `lane archive --retriaged` was pointed at a lane that did not end `diagnosed` with no pull request:
+ * its fold stands on another final or none, a line of its log names a pull request, or its own
+ * machine cannot fold it at all. Nothing was retracted or moved. The route moves a builder's no-PR
+ * finish aside for a re-triaged issue and no other final, so the remedy is the lane's own route.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10190
+ */
+export const NOT_DIAGNOSED = 72;
