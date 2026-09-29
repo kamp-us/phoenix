@@ -6,6 +6,8 @@ import {SHIPPED_APPETITE_SIZES} from "../config/keys/appetite-sizes.ts";
 import {SHIPPED_TABLE} from "../config/keys/table.ts";
 import {flagsOf, NOT_ASKED, type ShareWeek} from "./flags.ts";
 import {flagCount, type Health, healthMarker, postedFor, renderHealth} from "./health.ts";
+import {rulingComment} from "./ruled.test-support.ts";
+import {ruledUnbuiltOf} from "./ruled.ts";
 import {parseTableDay, type TableDay} from "./table-day.ts";
 
 const day = (text: string): TableDay => parseTableDay(text) as TableDay;
@@ -24,8 +26,24 @@ describe("renderHealth", () => {
 		continuing: 0,
 		flaggedBets: 0,
 		inbox: 1,
+		ruled: [],
 		unread: [],
 	};
+
+	it("lists every ruling nobody built, oldest first, and says none when there is none", () => {
+		expect(renderHealth(quiet, TABLE, false).body).toContain("- Ruled, not built: none");
+
+		const ruled = ruledUnbuiltOf(
+			[
+				[5, [rulingComment("acme/widgets", 5, "2026-09-03T00:00:00Z", "founder")]],
+				[6, [rulingComment("acme/widgets", 6, "2026-09-02T00:00:00Z", "founder")]],
+			],
+			new Set(["founder"]),
+		);
+		expect(renderHealth({...quiet, ruled}, TABLE, false).body).toContain(
+			"- Ruled, not built, oldest ruling first: #6 (2026-09-02), #5 (2026-09-03)",
+		);
+	});
 
 	it("says a week with no lane in words, never as a zero rate", () => {
 		const update = renderHealth(quiet, TABLE, false);
