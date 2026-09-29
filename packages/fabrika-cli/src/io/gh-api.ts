@@ -435,6 +435,23 @@ export type ServedStatus =
 	| {readonly status: number; readonly message: string | null};
 
 /**
+ * The start of GitHub's `message` on a 403 served because the repository's plan lacks the feature —
+ * a private repository on the free plan, where rulesets and branch protection are paid. It reaches
+ * every token, admin included, so no permission clears it.
+ */
+const PLAN_GATE = "Upgrade to GitHub Pro or make this repository public";
+
+/**
+ * Whether GitHub refused because the repository's plan lacks the feature, not because this token
+ * may not read it. Classified on the raw {@link githubMessage}, never {@link refusalText}, whose
+ * bound can cut the prefix; any other 403 is a permission refusal and answers `false`.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10155#issuecomment-5886566592
+ */
+export const isPlanGated = (answer: ServedStatus): boolean =>
+	answer.status === 403 && answer.message?.startsWith(PLAN_GATE) === true;
+
+/**
  * A paged read's answer: an {@link Attempt} whose failure also names what GitHub served.
  *
  * A caller telling a permission denial apart from any other unreadable answer needs the number. A
