@@ -2467,19 +2467,39 @@ $ fabrika build commit < message.txt
 
 ```
 fabrika build check --surface code
+fabrika build check --surface code --probe
 ```
+
+The first form is the lane run; everything below describes it unless it names `--probe`. The second
+is the probe, which needs no lane and is described in its own paragraph after **Output**.
 
 **Inputs**
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--surface` | enum: `code` \| `prose` \| `plan` \| `workflows` | yes | — | the surface whose validators run; the skill names it, this verb anchors it |
+| `--probe` | boolean | no | `false` | start every declared `codeValidators` entry once, outside a lane; `--surface code` only |
 
-**Output** — machine. On green, one JSON object:
+**Output** — machine. On a lane run's green, one JSON object:
 `{"verdict": "green", "surface": "code", "tree": "<abs tree root>", "ran": [<the commands that ran>, "guard <name> <leaf>", …], "skipped": [], "unvalidated": []}`.
 Red and unknown produce no stdout (`18` / `11`), diagnostics on stderr verbatim from the runners.
 
-**Every run also sweeps the shipped local-tree guards, on every surface.** A local-tree guard is
+**`--probe` proves the declared code validators start, before any lane exists.** An adopter's first
+branch is not a lane, so the ordinary run refuses it on `14`. Under `--probe` the verb reads no
+session, no claim and no diff: it finds the tree root, reads `codeValidators`, and starts every entry
+once in this tree whatever the diff touches. It does not stop at the first failure, and it names each
+entry's result on stderr. It writes nothing: no commit, no push, no lane state. It runs no local-tree
+guard and no config validator. The probe answers whether the declared commands start and pass, not
+whether this tree would pass CI, so its green claims less than a lane run's and is labelled
+`"mode": "probe"` to say so; config validators are also selected by a diff, and there is none.
+Green prints
+`{"verdict": "green", "mode": "probe", "surface": "code", "tree": "<abs tree root>", "ran": [<every entry>]}`,
+with no `skipped` and no `unvalidated`, because the probe reads no guard and no diff to report on.
+Any entry that ran and failed is red on `18`, with its diagnostics. Otherwise any entry that could
+not be started is UNKNOWN on `11`, never green. A missing or empty list is `11` too, and any other
+`--surface` is `10`. `--repo` is accepted and not read.
+
+**Every lane run also sweeps the shipped local-tree guards, on every surface.** A local-tree guard is
 argument-free, reads only the checked-out tree, and needs no PR number, no board read and no auth;
 membership is declared beside each guard's registration in
 `packages/fabrika-cli/src/guard/command.ts` and nowhere else. Each member that passed is named in
@@ -2494,8 +2514,8 @@ local predictor with no authority to answer for a gate.
 The sweep is deliberately **not** anchored by `--surface`. `portability-guard` reads shipped
 markdown and `patch-guard` reads `patches/`, so a prose-only diff is exactly the diff that kept
 reaching review red under a `code`-only check. `--surface` stays an anchor over the repo's own
-declared validators, and nothing else. The accepted cost is a dozen-odd tree walks on every
-`build check`, on every lane — cheaper than the review round it saves.
+declared validators, and nothing else. The accepted cost is a dozen-odd tree walks on every lane
+run of `build check` — cheaper than the review round it saves.
 
 `unvalidated` is always present and lists the changed files **this verdict does not cover** —
 computed against *this* surface's validators, so it holds both the class no surface validates
@@ -2673,7 +2693,7 @@ mandatory and non-empty: an entry that names no file can only buy the false gree
 such as `lefthook.yml` matches no surface's pattern, and its validator is the repo's own tool, so
 `.fabrika.jsonc`'s `configValidators` declares it in the `workflowValidators` grammar: an argv plus
 the exact repo-relative files it `reads`, never a glob. A file the patterns leave unclaimed and some
-entry reads leaves the unvalidatable class for a `config` class no surface owns. **Every** run whose
+entry reads leaves the unvalidatable class for a `config` class no surface owns. **Every** lane run whose
 diff touches such a file spawns the entries that read it, whatever `--surface` names, beside the
 local-tree guard sweep, and names each in `ran`. So a diff of config files alone contradicts no
 surface and greens or reds under any token, and a config file no entry reads stays unvalidatable and
@@ -2687,18 +2707,19 @@ open it. A repo declares its own build (for example `./gradlew testDebugUnitTest
 `configValidators`, naming each source file the entry claims in `reads` — exact paths, as for config
 files — and a Java-only diff then greens or reds exactly as a config-only one does.
 
-Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`).
+Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`). Under `--probe`
+the tree root is the only precondition: no session, no lane branch and no claim is read.
 
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
-| `7` | the diff against the branch base is empty — nothing to validate, zero scope |
-| `10` | `--surface` is off-enum, or the diff contains none of the file classes that surface's validators open and is not made only of declared config files |
-| `11` | a validator could not be executed, a changed file could not be read for a reason other than absence, or the lane's claim could not be read — the verdict is UNKNOWN, never green |
-| `14` | proven: the checked-out branch is not this lane's (lane-identity rule) |
-| `15` | proven: the lane's claim is held by another session |
-| `18` | proven red — the failing runner and its diagnostics are on stderr |
+| `7` | lane run only: the diff against the branch base is empty — nothing to validate, zero scope |
+| `10` | `--surface` is off-enum, or the diff contains none of the file classes that surface's validators open and is not made only of declared config files, or `--probe` names a surface other than `code` |
+| `11` | a validator could not be executed, a changed file could not be read for a reason other than absence, or the lane's claim could not be read; under `--probe`, also a `codeValidators` list that is absent, empty or unreadable — the verdict is UNKNOWN, never green |
+| `14` | lane run only — proven: the checked-out branch is not this lane's (lane-identity rule) |
+| `15` | lane run only — proven: the lane's claim is held by another session |
+| `18` | proven red — the failing runner and its diagnostics are on stderr; under `--probe`, every other entry still ran first |
 | `22` | proven: no changed file falls in any surface's validators or any declared config validator's `reads` — nothing to run, never a green |
 
 **Errors**
@@ -2730,6 +2751,14 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: skipped: <name> (<reason>) — not a pass; CI's own gate answers this one.` | 0 | disclosure beside a green |
 | `build check: no surface validates any of the <n> changed file(s) (<files>) — there is nothing here to run, so the verdict is a refusal, never green.` | 22 | refusal |
 | `build check: <n> changed file(s) --surface <surface> does not validate — NOT covered by this verdict: <files>.` | 0 | scope note beside a green |
+| `build check: probe: <entry> — green.` | 0 | per-entry note under `--probe` |
+| `build check: probe: <entry> — red.` | 0 | per-entry note under `--probe`; the verdict is `18` |
+| `build check: probe: <entry> — could not be executed: <reason>; UNKNOWN.` | 0 | per-entry note under `--probe`; the verdict is `11` unless another entry is red |
+| `build check: red — <entries> failed; diagnostics above.` | 18 | refusal under `--probe`, each failing entry's diagnostics above it |
+| `build check: <entries> could not be executed — the verdict is UNKNOWN, never green.` | 11 | refusal under `--probe` |
+| `build check: cannot read \`codeValidators\` from .fabrika.jsonc (<reason>) — which commands validate this repo's code is UNKNOWN, never green.` | 11 | refusal |
+| `build check: <absence> — there is no code validator to probe, so the verdict is UNKNOWN, never green and never red.` | 11 | refusal under `--probe` |
+| `build check: --probe starts the declared \`codeValidators\`, which only --surface code runs; --surface <surface> has none to probe.` | 10 | refusal |
 
 **Scope** — this tree's diff against the branch base. A zero-file diff is `7` — zero scope, never
 a green. A diff no surface validates is `22` — the same rule one step further in: a file
@@ -2737,11 +2766,16 @@ the verb cannot classify is a file it cannot check, and an unchecked file never 
 green. A green's `unvalidated` list is what keeps the partial case honest — and it is scoped to the
 surface that ran, so a file another surface would have read counts as uncovered here too.
 
+Under `--probe` the scope is the declared `codeValidators` list itself, every entry of it, and no
+diff is read, so `7` and `22` never arise. An empty list is the zero-scope case there, and it is `11`.
+
 **Example**
 
 ```
 $ fabrika build check --surface code
 {"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4312","ran":["pnpm typecheck:affected","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
+$ fabrika build check --surface code --probe
+{"verdict":"green","mode":"probe","surface":"code","tree":"/private/var/<redacted>/adopt","ran":["pnpm typecheck:affected","pnpm lint:worktree"]}
 ```
 
 `ran` echoes whatever `codeValidators` resolved to, one `argv.join(" ")` per validator; the two
