@@ -1305,8 +1305,12 @@ produce, however its keys are ordered — is `exists` at exit `0`: a second run 
 is byte-for-byte a no-op, because idempotency is absolute.
 
 A merged write keeps the present file's layout: the indent its first indented line uses (two
-spaces, four spaces or a tab), its line endings, and whether it ends on a newline. So a
-two-space `package.json` gains only the lines the new row adds. A file with no indented line (`{}`,
+spaces, four spaces or a tab), its line endings, and whether it ends on a newline. It does not keep
+inline formatting: the whole object is re-rendered, so an array or object a file writes on one line
+(`"files": ["dist"]`) comes back expanded over several lines. A `dep-pin` that moves the row out of
+`dependencies` also removes that line there. So a two-space `package.json` whose values are already
+expanded one per line gains only the lines the new row adds, plus that removed line when a row
+moves. A file with no indented line (`{}`,
 or one minified line) has no indent to keep and takes a tab. A file created from nothing is written
 tab-indented, with `\n` line endings and a final newline.
 
