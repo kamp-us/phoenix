@@ -825,35 +825,47 @@ const push = leafCommand(
 				"publish a head that does NOT contain the published remote head, dropping its commits — a deliberate history rewrite (default: false)",
 			),
 		),
+		partial: Flag.boolean("partial").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				'the acceptance criteria are not all met: the PR body must say "Part of #<n>", not "Fixes #<n>"; a fresh lane only (default: false)',
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({dropRemoteCommits, forceWithLease, repo}) {
+	Effect.fn(function* ({dropRemoteCommits, forceWithLease, partial, repo}) {
 		yield* emit(
 			yield* runPush({
 				forceWithLease,
 				dropRemoteCommits,
+				partial,
 				repo: Option.getOrNull(repo),
 				env: process.env,
+				stdin: Effect.sync(readStdin),
 			}),
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Push the lane's branch and confirm the remote ref moved."),
+	Command.withShortDescription("Push the lane's branch, confirm the ref moved, and open its PR."),
 	Command.withDescription(
 		[
-			"Pushes this lane's branch, reads the remote ref back and ends stdout on PUSH-VERDICT: MOVED.",
-			"  8: pushed, and the remote ref could not be re-read (UNKNOWN)",
-			"  11: the claim or the remote head could not be read; nothing was pushed",
+			"Vets the PR body on stdin, pushes, proves the ref moved, then opens the lane's PR.",
+			"  3: a build pr guard refuses the body (so do 4, 5, 6, 10)",
+			"  7: the issue is absent or closed",
+			"  8: pushed, then the ref read-back or PR create failed (UNKNOWN); re-run",
+			"  9: the PR body does not read back",
+			"  11: a read failed",
 			"  14: the branch is not this lane's",
-			"  15: the claim is held by another lane",
+			"  15: another lane holds the claim",
 			"  17: the remote ref did not move",
-			"  19: detached HEAD, or non-fast-forward without --force-with-lease",
-			"  23: the push would drop the published head's commits",
+			"  19: detached HEAD, non-fast-forward without the lease flag, or --partial on repair",
+			"  23: the push would drop published commits",
 			`  Derivation: the build skill's contract.md, "build push"`,
 		].join("\n"),
 	),
 	Command.withExamples([
-		{command: "fabrika build push"},
+		{command: "fabrika build push < body.md"},
+		{command: "fabrika build push --partial < body.md"},
 		{command: "fabrika build push --force-with-lease"},
 	]),
 );
