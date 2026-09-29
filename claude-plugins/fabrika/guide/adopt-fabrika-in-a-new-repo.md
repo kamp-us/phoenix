@@ -215,8 +215,10 @@ its head. There are two ways to resolve it:
 1. **A preview deploy.** Your CI posts a `preview-deploy` comment on the PR with the deployed URL and
    head. The ui reviewer renders that and posts a PASS or FAIL. It never runs the PR's code itself.
 2. **A route instead of a render.** The ui reviewer posts a `routed-elsewhere` record with
-   `fabrika review-ui route`, which `ship gate` reads as `routed`. With no preview, the route needs
-   a hand-verification at the PR's head and a `review-code` PASS at that same head.
+   `fabrika review-ui route`, which `ship gate` reads as `routed`. With no preview, what the route
+   needs depends on the path's `reviewUi.whenNoPreview` mode, below: under `require-render` and
+   `hand-check`, a hand-verification at the PR's head and a `review-code` PASS at that same head;
+   under `skip`, neither.
 
 Which hand-verification counts is yours to say, by path, with `reviewUi.whenNoPreview`:
 
@@ -277,13 +279,12 @@ with no linked issue: without the issue's acceptance criteria there is nothing t
 against. Agent lanes learn this early, because `build claim` refuses without an issue. Work done by
 hand, or by an agent outside a lane, meets it only at review.
 
-So file the issue first, for example with `/fabrika:report`, and then build. An issue written after
-the diff exists describes that diff instead of stating the goal ahead of it.
-
 One exemption: a doc written from a conversation, or a `.glossary/**` change, may land without an
 issue. Review grades it on its own rubric.
 
-Then file something with `/fabrika:report`, triage it with `/fabrika:triage`, and you are running.
+So file the issue first, and build after it. An issue written after the diff exists describes that
+diff instead of stating the goal ahead of it. Your first lane starts the same way: file the issue
+with `/fabrika:report`, triage it with `/fabrika:triage`, and you are running.
 
 ## 11. Set up the betting table
 
