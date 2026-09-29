@@ -208,6 +208,11 @@ describe("runOpen seats each refusal on its own code, with nothing on stdout", (
 		expect(out.stderr.join("\n")).toContain("grill open:");
 	});
 
+	it("names the status bootstrap surface that creates the missing session label", async () => {
+		const out = await run([[LABELS, labelled("bug", "chore")]]);
+		expect(out.stderr.join("\n")).toContain("fabrika status bootstrap issue-shape-markers");
+	});
+
 	it("names the orphaned issue when the label write is the half that failed", async () => {
 		const out = await run([
 			withLabel,

@@ -23,6 +23,7 @@ import {readRoadmapFile} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
+import {readBoard} from "../status/label-remedy.ts";
 import {refuse} from "../verb.ts";
 import {runApply} from "./apply-verb.ts";
 import {runAuditMerge} from "./audit-merge-verb.ts";
@@ -125,6 +126,7 @@ const kill = leafCommand(
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
+				board: yield* readBoard(process.cwd()),
 				stdin: Effect.sync(readStdin),
 			}),
 		);
@@ -180,6 +182,7 @@ const split = leafCommand(
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
+				board: yield* readBoard(process.cwd()),
 				stdin: Effect.sync(readStdin),
 				now: () => new Date(),
 			}),
@@ -423,6 +426,7 @@ const queue = leafCommand(
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
+				board: yield* readBoard(process.cwd()),
 				now: () => new Date(),
 			}),
 		);
@@ -690,7 +694,15 @@ const auditSet = leafCommand(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({label, repo, json}) {
-		yield* emit(yield* runAuditSet({label, repo: Option.getOrNull(repo), json, env: process.env}));
+		yield* emit(
+			yield* runAuditSet({
+				label,
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+				board: yield* readBoard(process.cwd()),
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("The whole open issue set a read-only audit judges, for one label."),

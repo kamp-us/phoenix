@@ -3,6 +3,7 @@ import {describe, expect, it} from "vitest";
 import {type HttpReply, okOut, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {renderFooter} from "../report/compose.ts";
+import {SHIPPED_BOARD} from "../status/board.test-support.ts";
 import {COMMENTS, claimPage, EXPIRED, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
 import {
 	CLAIMED_ELSEWHERE,
@@ -108,6 +109,7 @@ const options = {
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	board: SHIPPED_BOARD,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
 	now: () => new Date("2026-01-01T00:00:00.000Z"),
 };
@@ -302,6 +304,7 @@ describe("runSplit — a read that cannot see is never an answer", () => {
 		const {outcome, requests} = await run(script([LABELS, labels("type:bug", "p0")]));
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.at(-1)).toContain("a queue that would scan nothing");
+		expect(outcome.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 		expect(requests.some((c) => CREATE.test(c))).toBe(false);
 	});
 });

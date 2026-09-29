@@ -16,6 +16,7 @@
  * pretends to.
  */
 import {Effect} from "effect";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {
 	listLabels,
 	openQueueIssues,
@@ -23,6 +24,7 @@ import {
 	type QueueIssue,
 	resolveRepo,
 } from "../io/issues.ts";
+import {missingLabelRemedy} from "../status/label-remedy.ts";
 import {answer, FAILED, refuse} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {scannedLine} from "./scope.ts";
@@ -38,6 +40,8 @@ export interface QueueOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The board a missing-label refusal reads its `status bootstrap` remedy against. */
+	readonly board: BoardRead;
 	readonly now: () => Date;
 }
 
@@ -79,6 +83,7 @@ export const labelPrecondition = Effect.fn("labelPrecondition")(function* (
 	noun: string,
 	repo: string,
 	label: string,
+	board: BoardRead,
 ) {
 	const labels = yield* listLabels(repo);
 	if (labels._tag === "Failure") {
@@ -90,7 +95,7 @@ export const labelPrecondition = Effect.fn("labelPrecondition")(function* (
 	if (!labels.value.includes(label)) {
 		return refuse(
 			ZERO_SCOPE,
-			`${verb}: label ${label} does not exist in ${repo} — refusing to report an empty ${noun} over zero scope.`,
+			`${verb}: label ${label} does not exist in ${repo} — refusing to report an empty ${noun} over zero scope. ${missingLabelRemedy(label, board)}`,
 			[scannedLine(verb, repo, labels.value.length, "label", `none of them is ${label}`)],
 		);
 	}
@@ -111,7 +116,7 @@ export const runQueue = Effect.fn("runQueue")(function* (options: QueueOptions) 
 	}
 	const repo = repoAttempt.value;
 
-	const absent = yield* labelPrecondition("triage queue", "queue", repo, label);
+	const absent = yield* labelPrecondition("triage queue", "queue", repo, label, options.board);
 	if (absent !== null) return absent;
 
 	const queue = yield* openQueueIssues(repo, label);

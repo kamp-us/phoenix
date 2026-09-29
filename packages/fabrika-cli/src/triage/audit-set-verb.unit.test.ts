@@ -1,6 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {SHIPPED_BOARD} from "../status/board.test-support.ts";
 import {ANSWER, FAILED} from "../verb.ts";
 import {parseAuditSet} from "./audit.ts";
 import {runAuditSet} from "./audit-set-verb.ts";
@@ -14,6 +15,7 @@ const options = {
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	board: SHIPPED_BOARD,
 };
 
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
@@ -67,6 +69,9 @@ describe("runAuditSet", () => {
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("label audit-me does not exist in o/r");
+		expect(out.stderr.join("\n")).toContain(
+			"No `fabrika status bootstrap` surface creates audit-me",
+		);
 	});
 
 	it("refuses an unreadable label set or issue list as UNKNOWN", async () => {

@@ -1,6 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {SHIPPED_BOARD} from "../status/board.test-support.ts";
 import {ANSWER, FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {ageDays, runQueue, toRows} from "./queue-verb.ts";
@@ -17,6 +18,7 @@ const options = {
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	board: SHIPPED_BOARD,
 	now: () => NOW,
 };
 
@@ -130,6 +132,7 @@ describe("runQueue", () => {
 		const out = await run([[LABELS, labels("type:bug", "p0")]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 	});
 
 	it("never reads the queue once the label is proven absent", async () => {

@@ -68,6 +68,7 @@ import {
 } from "../authorization.ts";
 import {DECISION_TYPE_LABEL, parseCitation} from "../build/scope-admission.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {
 	addLabels,
 	createComment,
@@ -80,6 +81,7 @@ import {
 import {viewerLogin} from "../io/pulls.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {controlPlaneRoster} from "../ship/roster.ts";
+import {missingLabelRemedy} from "../status/label-remedy.ts";
 import {
 	audienceSettled,
 	audienceWrites,
@@ -216,6 +218,8 @@ export interface RuleOptions<R = never> {
 	readonly supersedes: number | null;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The board a missing-label refusal reads its `status bootstrap` remedy against. */
+	readonly board: BoardRead;
 	readonly now: () => Date;
 }
 
@@ -349,7 +353,7 @@ export const runRule = <R = never>(
 			if (!labels.value.includes(READY_FOR_AGENT)) {
 				return refuse(
 					NO_TARGET,
-					`${VERB}: label "${READY_FOR_AGENT}" is absent from ${repo}'s taxonomy — refusing to create it.`,
+					`${VERB}: label "${READY_FOR_AGENT}" is absent from ${repo}'s taxonomy — refusing to create it. ${missingLabelRemedy(READY_FOR_AGENT, options.board)}`,
 					notes,
 				);
 			}

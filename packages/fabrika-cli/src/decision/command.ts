@@ -16,6 +16,7 @@ import type {AuthorizationDocument} from "../authorization.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readFile} from "../io/fs.ts";
+import {readBoard} from "../status/label-remedy.ts";
 import {FAILED, refuse} from "../verb.ts";
 import {type RulingSource, runRule} from "./rule-verb.ts";
 import {runRuling} from "./ruling-verb.ts";
@@ -111,6 +112,7 @@ const rule = leafCommand(
 				supersedes: Option.getOrNull(supersedes),
 				repo: Option.getOrNull(repo),
 				env: process.env,
+				board: yield* readBoard(process.cwd()),
 				now: () => new Date(),
 			}),
 		);

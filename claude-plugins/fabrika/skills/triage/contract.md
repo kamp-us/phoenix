@@ -318,7 +318,7 @@ so a PR could appear as a triageable row.
 |---|---|---|
 | `triage queue: cannot read the <label> queue in <repo>: <reason> — the outcome is UNKNOWN, never "empty".` | 11 | refusal |
 | `triage queue: cannot read the open issues in <repo> that carry no label: <reason> — the outcome is UNKNOWN, never "empty".` | 11 | refusal |
-| `triage queue: label <label> does not exist in <repo> — refusing to report an empty queue over zero scope.` | 7 | refusal |
+| `triage queue: label <label> does not exist in <repo> — refusing to report an empty queue over zero scope. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage queue: --limit must be 1 or greater.` | 1 | usage error |
 
 **Scope** — every open issue in `--repo` carrying `--label`, plus every open issue carrying no
@@ -357,7 +357,7 @@ $ echo $?
 
 ```
 $ fabrika triage queue --label status:needs-triage-typo
-triage queue: label status:needs-triage-typo does not exist in <owner>/<repo> — refusing to report an empty queue over zero scope.
+triage queue: label status:needs-triage-typo does not exist in <owner>/<repo> — refusing to report an empty queue over zero scope. No `fabrika status bootstrap` surface creates status:needs-triage-typo — create it by hand, then re-run.
 $ echo $?
 7
 ```
@@ -1149,7 +1149,7 @@ a silent lost split, in the one direction v1's own module says it refuses.
 | `triage split: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
-| `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing.` | 7 | refusal |
+| `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage split: the child body carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage split: the child body is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage split: cannot read <what> in <repo>: <reason> — UNKNOWN whether a child already exists; refusing to create a possible twin.` | 11 | refusal |
@@ -2067,7 +2067,7 @@ stamp.
 | `triage apply: --lane must be wayfinder:backlog or axis:pipeline-hardening — got "<v>".` | 10 | refusal |
 | `triage apply: milestone <n> is not an open milestone in <repo>.` | 10 | refusal |
 | `triage apply: give exactly one of --home or --lane; an issue cannot be both homed and lane-exempt.` | 1 | usage error |
-| `triage apply: label <name> does not exist in <repo> — refusing to write, because the API would create it.` | 7 | refusal |
+| `triage apply: label <name> does not exist in <repo> — refusing to write, because the API would create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage apply: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage apply: issue #<n> is already closed.` | 7 | refusal |
 | `triage apply: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
@@ -2267,7 +2267,7 @@ it.
 | `triage park: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage park: the questions text carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage park: the questions text is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
-| `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it.` | 7 | refusal |
+| `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage park: cannot read <what> in <repo>: <reason> — nothing was written; the park is UNKNOWN.` | 11 | refusal |
 | `triage park: the questions comment on #<n> failed: <reason> — nothing was labelled and #<n> is unchanged. Re-run.` | 8 | refusal |
 | `triage park: the questions landed but the label swap failed: <reason> — #<n> carries the questions and may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
@@ -2392,7 +2392,7 @@ location, with the leak matcher literally named for comments.
 | `triage kill: --duplicate-of #<m> is closed — refusing to fold this issue's content into a closed issue where nobody will read it.` | 7 | refusal |
 | `triage kill: the reason carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage kill: the reason is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
-| `triage kill: label closed-by-triage does not exist in <repo> — refusing a kill that would be invisible to the audit.` | 7 | refusal |
+| `triage kill: label closed-by-triage does not exist in <repo> — refusing a kill that would be invisible to the audit. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage kill: cannot read #<n> in <repo>: <reason> — the provenance test has no evidence; refusing to close on a body that was never read.` | 11 | refusal |
 | `triage kill: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
 | `triage kill: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
@@ -2564,7 +2564,7 @@ Stderr carries the scanned count as a scope line in both modes.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `triage audit-set: label <label> does not exist in <repo> — refusing to report an empty audit set over zero scope.` | 7 | refusal |
+| `triage audit-set: label <label> does not exist in <repo> — refusing to report an empty audit set over zero scope. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage audit-set: cannot read the label set of <repo>: <reason> — whether the <label> audit set exists is UNKNOWN, and so is the outcome.` | 11 | refusal |
 | `triage audit-set: cannot read the open <label> issues in <repo>: <reason> — the audit set is UNKNOWN, never "empty".` | 11 | refusal |
 | `triage audit-set: --label must name a label.` | 1 | usage error |

@@ -16,6 +16,7 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, getIssue, listLabels, resolveRepo} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {missingLabelRemedy} from "../status/label-remedy.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -107,7 +108,7 @@ export const runPark = (
 		if (!vocabulary.value.includes(needsInfo)) {
 			return refuse(
 				ZERO_SCOPE,
-				`triage park: label ${needsInfo} does not exist in ${repo} — refusing to write, because the API would create it.`,
+				`triage park: label ${needsInfo} does not exist in ${repo} — refusing to write, because the API would create it. ${missingLabelRemedy(needsInfo, {_tag: "Resolved", resolved})}`,
 				diagnostics,
 			);
 		}

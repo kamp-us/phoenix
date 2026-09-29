@@ -1,6 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
+import {SHIPPED_BOARD} from "../status/board.test-support.ts";
 import {read as readRuling} from "../wire/decision-ruling.ts";
 import {bodyDigest} from "./digest.ts";
 import {
@@ -54,7 +55,7 @@ const run = (script: Script, ruling: RulingSource = citing(), supersedes: number
 	const seams = fakeSeams(script);
 	return Effect.runPromise(
 		Effect.provide(
-			runRule({number: ISSUE, ruling, supersedes, repo: null, env, now: NOW}),
+			runRule({number: ISSUE, ruling, supersedes, repo: null, env, board: SHIPPED_BOARD, now: NOW}),
 			seams.layer,
 		),
 	).then((outcome) => ({outcome, calls: seams.requests, bodies: seams.bodies}));
@@ -314,6 +315,7 @@ describe("runRule", () => {
 			...upToMarker(),
 		]);
 		expect(outcome.code).toBe(7);
+		expect(outcome.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 		expect(calls.some((line) => POST.test(line))).toBe(false);
 	});
 

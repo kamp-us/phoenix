@@ -813,7 +813,7 @@ positional, and everything else is re-derived from the source itself.
 | `graduate emit: the spec carries a machine-local path: <path> — refusing to file it.` | 5 | refusal |
 | `graduate emit: the spec is a bare @ path reference — not redactable, refusing to file it.` | 6 | refusal |
 | `graduate emit: #<n> does not exist.` | 7 | refusal |
-| `graduate emit: label "status:needs-triage" does not exist in <repo> — refusing to file a spec no triage run can find. Create it, or run the front-door bootstrap.` | 7 | refusal |
+| `graduate emit: label "status:needs-triage" does not exist in <repo> — refusing to file a spec no triage run can find. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `graduate emit: the create failed, so whether a spec issue exists is UNKNOWN — check <repo> before re-running.` | 8 | refusal |
 | `graduate emit: filed #<n> and the marker write failed — the spec EXISTS but #<source> does not record it, so a re-run would file a second. Post the marker or check #<source> before re-running.` | 8 | refusal |
 | `graduate emit: filed #<n> but the read-back does not match what was sent.` | 9 | refusal |

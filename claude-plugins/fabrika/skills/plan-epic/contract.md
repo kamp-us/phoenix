@@ -853,7 +853,7 @@ link, deliberately** — see step 5.
 | `ledger child: --ready-for is required — a child must never inherit its audience by omission.` | 10 | refusal |
 | `ledger child: --ready-for human requires --assignee — a held child is born assigned.` | 10 | refusal |
 | `ledger child: --type type:decision with --ready-for agent is refused — a child minted now carries no ruling comment of its own, and the citation that opens a decision claim names a comment on the decision issue itself, so the first builder refuses it on the type axis. Mint it --ready-for human with --assignee, record the ruling on the child, then flip it with \`fabrika decision rule <n> --cites <child-comment-url>\`.` | 10 | refusal |
-| `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it.` | 10 | refusal |
+| `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 10 | refusal |
 | `ledger child: milestone "<title>" is not an open milestone of <repo>.` | 10 | refusal |
 | `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built.` | 10 | refusal |
 | `ledger child: --priority <v> is off the closed set (p0, p1, p2).` | 10 | refusal |
@@ -1056,7 +1056,7 @@ composed, and it needs a human eye.
 | `ledger adopt: #<c> is already a sub-issue of #<p> — an issue has one parent, and moving it out of another plan is that plan's decision.` | 10 | refusal |
 | `ledger adopt: #<c> cannot be adopted: it still carries status:needs-triage — an untriaged issue is not a plannable child.` | 10 | refusal |
 | `ledger adopt: #<c> cannot be adopted: it carries <status> — adoption parks a status:triaged issue on status:planned until the gate flips it back, and that flip would lose <status>.` | 10 | refusal |
-| `ledger adopt: label "status:planned" is absent from <repo>'s taxonomy — refusing to create it.` | 10 | refusal |
+| `ledger adopt: label "status:planned" is absent from <repo>'s taxonomy — refusing to create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 10 | refusal |
 | `ledger adopt: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
 | `ledger adopt: this lane does not hold #<n>'s claim.` | 15 | refusal |
 | `ledger adopt: #<c> is recorded in the run manifest as linked:false and its sub-issue link could not be proven; re-run the same \`ledger adopt\` — it re-reads the issue and repeats only what is missing.` | 23 | refusal |
