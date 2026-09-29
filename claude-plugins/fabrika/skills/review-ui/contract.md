@@ -1014,7 +1014,7 @@ The reasoning arrives on **stdin only**, for the same reason as `post` and `note
 | `--no-preview` | boolean | no | `false` | the PR has no preview deploy: route under the repo's `reviewUi.whenNoPreview` rules instead of the diff; the verb checks the absence itself and refuses on `23` when a preview is announced; refused beside `--verified-at` |
 | `--hand-check` | string | no | none | pin the owner's hand-check comment on this PR, as an id or a URL ending `#issuecomment-<id>`, instead of letting the verb find the newest one; implies `--no-preview` |
 | `--repo` | string | no | resolved | the repository |
-| stdin | markdown | yes | — | which files changed and why none of them renders anything |
+| stdin | markdown | yes | — | which files changed and why none of them renders anything, or, on a `--no-preview` route, why the PR has no preview and what stands in for the render |
 
 **Output** — machine. One JSON object:
 `{"answer":"routed","namespace":"review-ui","sha":"6c6fe226…","uiFiles":2,"verifiedAt":null,"basis":null,"textReview":"absent","upsert":"created","commentUrl":"…"}`.
@@ -1023,7 +1023,8 @@ rested on no hand-verification. `basis` is `hand-check` or `skip` on a `--no-pre
 `null` otherwise; it is the same token the record's first line carries. `handCheck` is the id of the
 owner's comment a `hand-check` route stood on, and is absent on every other route. `textReview` is the `review-code` verdict this record rests on:
 `pass` where one stands in force at `--sha`, `absent` where none binds that head — and `absent` is
-reachable only on a route carrying no `--verified-at`, because one that does is refused at `20`.
+reachable only on a prose-only or `skip` route, because a route carrying `--verified-at` or resting
+on a `hand-check` is refused at `20` without one.
 
 **Why it exists.** `ship scope` raises the `ui` class from a path test that cannot see whether
 pixels moved, so a PR whose only change under a declared `uiSurfaces` prefix is prose requires this namespace — and
@@ -1048,7 +1049,8 @@ cannot rule out on its own and it can only ever shrink the `ui` count. Refuse a 
 this namespace, so there is nothing to route; the predicate is `review/classes.ts`'s own
 `isUiSurface`, over the same declared `uiSurfaces` prefixes the gate raised the class from, never a
 second copy. Read the PR's comments and resolve the `review-code` verdict in force at `--sha`; a
-standing FAIL is `20`, and so is an absent verdict on a route carrying `--verified-at`. That read
+standing FAIL is `20`, and so is an absent verdict on a route carrying `--verified-at` or resting on
+a `hand-check`. That read
 runs **before** the `--verified-at` comparison below, so a route that is both spent at
 `--verified-at` and standing-FAIL at `--sha` exits `20`, not `12` — a record asserting a text PASS
 that is not there is unpostable at any head, while a spent hand-verification is cleared by re-running
@@ -1089,8 +1091,9 @@ polarity by the one `advisoryPolarity` its sibling readers call, so no two reade
 rules. That last one was a copy before it was shared, and the copy diverged: a `[FAIL]` row inside an
 advisory is an invalid emission, and it cleared this route while `ship gate` refused on the same
 comment. A standing FAIL refuses on `20`. An **absent** verdict refuses on `20` only where
-`--verified-at` is passed: that route asserts the conjunction, while a prose-only route asserts
-nothing about the text lane and says so on stderr instead of blocking. The host's native review fold
+`--verified-at` is passed or the route rests on a `hand-check`: each asserts the conjunction, while
+a prose-only or `skip` route asserts nothing about the text lane and says so on stderr instead of
+blocking. The host's native review fold
 is `ship gate`'s widening and is not read here — the merge gate still reads it, and this verb only
 judges what its own clause claims.
 
