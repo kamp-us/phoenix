@@ -27,6 +27,11 @@ codex plugin marketplace add ./
 codex plugin add fabrika@kampus
 ```
 
+`codex plugin add` copies the plugin into Codex's cache, so editing or pulling the checkout does
+not change what Codex runs. After updating the checkout, re-run `codex plugin add fabrika@kampus`
+and restart the session. `codex plugin marketplace upgrade` does not apply here: it refreshes Git
+marketplaces only and refuses one added from a local path.
+
 ## Point Codex at the Fabrika section
 
 Codex reads `AGENTS.md`, while `fabrika status bootstrap claude-md-section` writes `CLAUDE.md`
