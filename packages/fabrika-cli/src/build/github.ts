@@ -15,7 +15,7 @@
  * refuses on.
  */
 import {Effect} from "effect";
-import type * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
 	attemptOf,
@@ -150,20 +150,42 @@ export const isPullRequest = (
 		);
 	});
 
+/**
+ * Default branches already read, per transport. `src/run.ts` provides one `HttpClient` per process,
+ * so this is a per-process memo there, while each test's fake transport starts cold with no reset
+ * hook to call.
+ */
+const defaultBranches = new WeakMap<HttpClient.HttpClient, Map<string, string>>();
+
+/**
+ * The repository's default branch, read from `repos/{repo}` at most once per repo per transport.
+ *
+ * A failed read is not memoised: it is a transient answer, and the next caller asks again.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10123
+ */
 export const defaultBranch = (
 	env: Readonly<Record<string, string | undefined>>,
 	repo: string,
 ): Called<Attempt<string>> =>
 	Effect.gen(function* () {
+		const client = yield* HttpClient.HttpClient;
+		const known = defaultBranches.get(client) ?? new Map<string, string>();
+		defaultBranches.set(client, known);
+		const cached = known.get(repo);
+		if (cached !== undefined) return ok(cached);
+
 		const token = yield* resolveToken(env);
 		if (token._tag === "Failure") return token;
 		const outcome = yield* restRead(token.value, "GET", `repos/${repo}`);
-		return attemptOf(outcome, (body) => {
+		const read = attemptOf(outcome, (body) => {
 			const name = isRecord(body) ? body.default_branch : undefined;
 			return typeof name === "string" && name.trim() !== ""
 				? ok(name.trim())
 				: fail("GitHub answered 200 but named no default branch");
 		});
+		if (read._tag === "Ok") known.set(repo, read.value);
+		return read;
 	});
 
 export interface PullHead {
