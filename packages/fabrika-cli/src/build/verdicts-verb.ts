@@ -21,6 +21,11 @@
  *   The platform's uncomputed read stays `unknown` all the way out — folded as clean it rebuilds the
  *   bug behind a field that looks like it fixed it.
  *
+ * - **`requiredChecks` is folded beside mergeability for the same reason** (`./required-checks.ts`):
+ *   a reviewer's PASS can land before CI settles red, and an all-PASS fold over a red required check
+ *   read as nothing to fix. An unreadable CI read is `unknown` on the field and never refuses the
+ *   fold, because the gate rows are still proven.
+ *
  * - **`capReached` is the declared cap plus what the founder cleared, never a second constant.** A
  *   recorded clearance (`./clearances.ts`) buys the one round it names, so the field the Repair
  *   section tells a builder to trust stays the only budget number anyone reads.
@@ -57,6 +62,7 @@ import {contentOf, gate} from "./content-gate.ts";
 import {listReviews} from "./github.ts";
 import {closingTargets, proseOf} from "./pr-body.ts";
 import {readRangeVerdicts} from "./range-verdicts.ts";
+import {requiredChecksAt, requiredChecksNote} from "./required-checks.ts";
 import {countRounds, roundsOn} from "./rounds.ts";
 import {openPull, resolveTargetRepo} from "./target.ts";
 
@@ -214,11 +220,14 @@ export const runVerdicts = (
 			);
 		}
 
+		const requiredChecks = yield* requiredChecksAt(VERB, repo, target.pull.baseRef, head);
+
 		const granted = grantedFrom(cleared.rows);
 		return answer(
 			JSON.stringify({
 				head,
 				mergeability: target.pull.mergeability,
+				requiredChecks,
 				rows,
 				rounds,
 				capReached: capReached(rounds, granted),
@@ -229,6 +238,7 @@ export const runVerdicts = (
 			[
 				`${VERB}: head ${head}; scanned ${listed.value.length} comment(s) and ${reviews.value.length} review(s) on #${pr}.`,
 				mergeabilityNote(pr, target.pull.baseRef, target.pull.mergeability),
+				requiredChecksNote(VERB, pr, head, requiredChecks),
 				escalatedNote(linked.escalated),
 				`${VERB}: ${capNote(granted)}, from ${cleared.rows.length} marker(s).`,
 				...headContent.diagnostics,
