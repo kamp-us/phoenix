@@ -6,9 +6,10 @@
  * contradict the verb that actually claims the work. There is no "banked" bucket either — what
  * marks a pull request banked is an open decision.
  *
- * **An absent label renders `unknown`, never `0`.** A zero count means the label exists and nothing
- * carries it; an absent label means the question was never askable — the shape where a fresh repo
- * would be told its queue is clear.
+ * **An absent label renders `absent`, never `0` and never `unknown`.** A zero count means the label
+ * exists and nothing carries it; an absent label means the question was never askable — the shape
+ * where a fresh repo would be told its queue is clear. The label set was read, so the absence is
+ * proven: only a label set that could not be read makes a bucket `unknown`.
  */
 import {Effect} from "effect";
 import {scannedLine} from "../build/target.ts";
@@ -22,6 +23,9 @@ import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {type AsOf, asOfToken, detail, EMPTY_CELL, instant, noAsOf, readNow, row} from "./fields.ts";
 
 const VERB = "status board";
+
+/** The verb that creates every label an `absent` bucket names. */
+export const LABEL_TAXONOMY_COMMAND = "fabrika status bootstrap label-taxonomy";
 
 /** The label whose absence makes a bucket unaskable, and the selector printed for it. */
 const labelBucket = (name: string, label: string) => ({
@@ -43,13 +47,37 @@ export const BUCKETS = [
 /** The pull-request bucket, read off `/pulls` rather than `/issues` — it counts PRs on purpose. */
 export const IN_FLIGHT = {name: "in-flight", selector: "pulls?state=open"} as const;
 
+/**
+ * What one bucket's read established: a count, a label the repository proved it lacks, or nothing.
+ * `Absent` is a proven negative and `Unknown` a failed read, so neither carries a count.
+ */
+export type BucketReading =
+	| {readonly _tag: "Counted"; readonly count: number; readonly asOf: AsOf}
+	| {readonly _tag: "Absent"; readonly label: string; readonly asOf: AsOf}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
 export interface Bucket {
 	readonly name: string;
-	readonly count: number | null;
 	readonly selector: string;
-	readonly detail: string | null;
-	readonly asOf: AsOf;
+	readonly reading: BucketReading;
 }
+
+/** The number a counted bucket carries; `null` for a bucket that has none to carry. */
+export const bucketCount = (reading: BucketReading): number | null =>
+	reading._tag === "Counted" ? reading.count : null;
+
+export const bucketDetail = (reading: BucketReading): string | null =>
+	reading._tag === "Counted"
+		? null
+		: reading._tag === "Absent"
+			? detail(`label ${reading.label} absent`)
+			: detail(reading.reason);
+
+export const bucketState = (reading: BucketReading): "counted" | "absent" | "unknown" =>
+	reading._tag === "Counted" ? "counted" : reading._tag === "Absent" ? "absent" : "unknown";
+
+export const bucketAsOf = (reading: BucketReading): AsOf =>
+	reading._tag === "Unknown" ? noAsOf : reading.asOf;
 
 export type BoardRead =
 	/** The repository could not be read at all — every bucket is UNKNOWN, so there is no readout. */
@@ -59,16 +87,20 @@ export type BoardRead =
 const unknownBucket = (name: string, selector: string, reason: string): Bucket => ({
 	name,
 	selector,
-	count: null,
-	detail: detail(reason),
-	asOf: noAsOf,
+	reading: {_tag: "Unknown", reason},
+});
+
+const countedBucket = (name: string, selector: string, count: number, at: Date): Bucket => ({
+	name,
+	selector,
+	reading: {_tag: "Counted", count, asOf: readNow(instant(at))},
 });
 
 /**
  * Read every bucket.
  *
  * The label set is read first because it is what separates the two negative answers: with it in
- * hand a `0` is proven, and an absent label is reported as the unasked question it is. When the
+ * hand a `0` is proven, and an absent label is proven `Absent` — the unasked question it is. When the
  * label read itself fails, every label bucket is UNKNOWN — a count taken without it could not be
  * told apart from a proven zero.
  */
@@ -91,7 +123,11 @@ export const readBoard = (repo: string, now: () => Date): Shell<BoardRead> =>
 				continue;
 			}
 			if (!known.has(bucket.label)) {
-				buckets.push(unknownBucket(bucket.name, bucket.selector, "label absent"));
+				buckets.push({
+					name: bucket.name,
+					selector: bucket.selector,
+					reading: {_tag: "Absent", label: bucket.label, asOf: readNow(instant(now()))},
+				});
 				continue;
 			}
 			const rows = yield* openIssuesWithLabel(repo, bucket.label);
@@ -99,29 +135,17 @@ export const readBoard = (repo: string, now: () => Date): Shell<BoardRead> =>
 				buckets.push(unknownBucket(bucket.name, bucket.selector, rows.reason));
 				continue;
 			}
-			buckets.push({
-				name: bucket.name,
-				selector: bucket.selector,
-				count: rows.value.length,
-				detail: null,
-				asOf: readNow(instant(now())),
-			});
+			buckets.push(countedBucket(bucket.name, bucket.selector, rows.value.length, now()));
 		}
 
 		const pulls = yield* openPullRequests(repo);
 		if (pulls._tag === "Failure") {
 			buckets.push(unknownBucket(IN_FLIGHT.name, IN_FLIGHT.selector, pulls.reason));
 		} else {
-			buckets.push({
-				name: IN_FLIGHT.name,
-				selector: IN_FLIGHT.selector,
-				count: pulls.value.length,
-				detail: null,
-				asOf: readNow(instant(now())),
-			});
+			buckets.push(countedBucket(IN_FLIGHT.name, IN_FLIGHT.selector, pulls.value.length, now()));
 		}
 
-		return buckets.every((bucket) => bucket.count === null)
+		return buckets.every((bucket) => bucket.reading._tag === "Unknown")
 			? ({
 					_tag: "Failed",
 					repo,
@@ -136,10 +160,23 @@ const ordered = (buckets: ReadonlyArray<Bucket>): ReadonlyArray<Bucket> => {
 	return [...buckets].sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
 };
 
-export type BoardState = "counted" | "unknown";
+/**
+ * The board's header state. One unread bucket makes the whole board `unknown`, because nothing
+ * about it can be presented as clear; with every bucket read, one proven-missing label makes it
+ * `absent`.
+ */
+export type BoardState = "counted" | "absent" | "unknown";
 
 export const boardState = (buckets: ReadonlyArray<Bucket>): BoardState =>
-	buckets.every((bucket) => bucket.count !== null) ? "counted" : "unknown";
+	buckets.some((bucket) => bucket.reading._tag === "Unknown")
+		? "unknown"
+		: buckets.some((bucket) => bucket.reading._tag === "Absent")
+			? "absent"
+			: "counted";
+
+/** The labels the repository proved it lacks, in bucket order. */
+export const absentLabels = (buckets: ReadonlyArray<Bucket>): ReadonlyArray<string> =>
+	buckets.flatMap((bucket) => (bucket.reading._tag === "Absent" ? [bucket.reading.label] : []));
 
 export interface BoardInput {
 	readonly read: BoardRead;
@@ -154,16 +191,27 @@ export const runBoard = ({read, json}: BoardInput): VerbOutcome => {
 		);
 	}
 	const state = boardState(read.buckets);
-	const unknown = read.buckets.filter((bucket) => bucket.count === null);
-	const counted = read.buckets.reduce((sum, bucket) => sum + (bucket.count ?? 0), 0);
-	const notice = scannedLine(
-		VERB,
-		counted,
-		"item",
-		`counted ${read.buckets.length} buckets over ${read.repo}, ${unknown.length} unknown (${
-			unknown.map((bucket) => bucket.name).join(",") || EMPTY_CELL
-		})`,
-	);
+	const unknown = read.buckets.filter((bucket) => bucket.reading._tag === "Unknown");
+	const absent = read.buckets.filter((bucket) => bucket.reading._tag === "Absent");
+	const missing = absentLabels(read.buckets);
+	const counted = read.buckets.reduce((sum, bucket) => sum + (bucketCount(bucket.reading) ?? 0), 0);
+	const names = (group: ReadonlyArray<Bucket>) =>
+		group.map((bucket) => bucket.name).join(",") || EMPTY_CELL;
+	const notices = [
+		scannedLine(
+			VERB,
+			counted,
+			"item",
+			`counted ${read.buckets.length} buckets over ${read.repo}, ${unknown.length} unknown (${names(
+				unknown,
+			)}), ${absent.length} absent (${names(absent)})`,
+		),
+		...(missing.length > 0
+			? [
+					`${VERB}: ${missing.join(",")} ${missing.length === 1 ? "is" : "are"} not on ${read.repo} — create them with ${LABEL_TAXONOMY_COMMAND}.`,
+				]
+			: []),
+	];
 
 	if (json) {
 		return answer(
@@ -171,14 +219,15 @@ export const runBoard = ({read, json}: BoardInput): VerbOutcome => {
 				outcome: state,
 				buckets: read.buckets.map((bucket) => ({
 					name: bucket.name,
-					count: bucket.count,
+					state: bucketState(bucket.reading),
+					count: bucketCount(bucket.reading),
 					selector: bucket.selector,
-					detail: bucket.detail,
-					asOf: bucket.asOf.at,
-					asOfKind: bucket.asOf.kind,
+					detail: bucketDetail(bucket.reading),
+					asOf: bucketAsOf(bucket.reading).at,
+					asOfKind: bucketAsOf(bucket.reading).kind,
 				})),
 			})}\n`,
-			[notice],
+			notices,
 		);
 	}
 	const lines = [
@@ -187,12 +236,14 @@ export const runBoard = ({read, json}: BoardInput): VerbOutcome => {
 			row(
 				"bucket",
 				bucket.name,
-				bucket.count === null ? "unknown" : String(bucket.count),
+				bucket.reading._tag === "Counted"
+					? String(bucket.reading.count)
+					: bucketState(bucket.reading),
 				bucket.selector,
-				bucket.detail ?? EMPTY_CELL,
-				asOfToken(bucket.asOf),
+				bucketDetail(bucket.reading) ?? EMPTY_CELL,
+				asOfToken(bucketAsOf(bucket.reading)),
 			),
 		),
 	];
-	return answer(`${lines.join("\n")}\n`, [notice]);
+	return answer(`${lines.join("\n")}\n`, notices);
 };

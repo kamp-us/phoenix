@@ -74,6 +74,10 @@ fabrika status board
 The readout carries only two headline counts, so the other buckets are **not seen** rather than zero
 until you run this. Report them that way.
 
+A `board` field of `absent` is a proven negative, not an unread source: the label set was read and
+the labels it names are not on it. That is a gap to build in step 3 with
+`fabrika status bootstrap label-taxonomy`, never the unreadable-source terminal.
+
 **The lanes field's deeper read is `fabrika lane stale --claims`.** It additionally pairs each
 non-terminal lane with the claim standing on its issue, which is the other half a dead session
 strands: the lane record cannot see markers. It costs a board read per paired lane where the bare

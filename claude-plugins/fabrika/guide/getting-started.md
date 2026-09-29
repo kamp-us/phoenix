@@ -69,8 +69,10 @@ field	readout	absent	no digest block in acme/storefront#9412	acme/storefront#941
 field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-08-19T03:23:01Z
 ```
 
-That output is from a repo already set up, so yours will differ — the `board` row will report a
-board with no fabrika labels on it yet, and the `readout` row will say `absent`. Read the six
+That output is from a repo already set up, so yours will differ — the `board` row will say `absent`
+and name the fabrika labels your board does not have yet, pointing at the command in step 4, and the
+`readout` row will say `absent` too. `absent` means fabrika read the repo and found the thing
+missing; only `unknown` means it could not read it. Read the six
 fields as: which skills are installed, what this repo declares, whether the plugin carrying the
 skills is switched on here, what is on the board, whether the decision digest exists, and which runs
 are in flight on this machine.
