@@ -594,8 +594,10 @@ given through the filesystem service. An unreadable input or config refuses on `
 head on `12`, a provably incomplete diff on `13`, and a governed exclusion on `21`.
 
 The answer starts `preview\tafter`, then `matched\t<count>`, raw-derived class and namespace
-rows, and excluded/removal rows in scope's grammar. Required namespaces use the same configured
-governed roots and UI prefixes as scope. `--json` returns `outcome: "previewed"`, `placement`,
+rows, and excluded/removal rows in scope's grammar. For a PR or range subject, required namespaces
+use the same governed roots and UI prefixes as scope, read at the subject's two commits. A
+`--diff-file` subject has no commit to read, so it takes them from the checkout's `.fabrika.jsonc`.
+`--json` returns `outcome: "previewed"`, `placement`,
 `matched_paths`, `excluded: {count, paths}`, optional `unexcluded: {count, paths}`, `active_classes`,
 `namespaces`, `filtered_diff_bytes` and `filtered_diff_lines`. `--emit-diff` returns the filtered
 bytes in `review diff`'s grammar instead. No review verdict or network write is produced.
