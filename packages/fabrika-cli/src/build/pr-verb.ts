@@ -1,5 +1,9 @@
 /**
- * The two guarded writes over a PR body: `build pr` opens one, `build pr-body` rewrites an open one.
+ * The guarded writes over a PR body: `build pr` opens one, `build pr-body` rewrites an open one, and
+ * `build push` runs `build pr`'s guards and create through {@link vetBody} and {@link openLanePull}
+ * so a build round pushes and opens in one step.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/6933#issuecomment-5519864602
  *
  * *Authoring* stays the skill's; the guards here are mechanical and run **in order, all before any
  * write**: stdin non-empty (`3`), no machine-local path (`5` / `6`), body shape (`4`), no
@@ -19,6 +23,7 @@
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import type {IssueRecord} from "../io/issues.ts";
 import {getPullRequest} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
@@ -51,7 +56,6 @@ const surfaceFor = (verb: string) => ({
 	bareAtMessage: `${verb}: the body is a bare @ path reference — write the body, not a pointer to it.`,
 });
 
-const SURFACE = surfaceFor(VERB);
 const BODY_SURFACE = surfaceFor(BODY_VERB);
 
 export interface PrOptions {
@@ -122,6 +126,132 @@ const classificationRefusal = (verb: string, body: string): VerbOutcome | null =
 	);
 };
 
+/** A body that passed every guard the create path runs before its first read, or the refusal. */
+export type VettedBody =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Body"; readonly text: string};
+
+/**
+ * The create path's body guards, in order: stdin (`3`), machine-local path (`5` / `6`), shape (`4`),
+ * classification (`10`). `build pr` and `build push` both run this one function, so a body one of
+ * them refuses is a body the other refuses.
+ */
+export const vetBody = (
+	verb: string,
+	read: StdinRead,
+	issue: number,
+	partial: boolean,
+): VettedBody => {
+	const authored = readAuthored(surfaceFor(verb), read);
+	if (authored._tag === "Refused") return authored;
+	const body = authored.text;
+
+	const leaked = leakRefusal(verb, body);
+	if (leaked !== null) return {_tag: "Refused", outcome: leaked};
+
+	const defect = bodyDefect(body, issue, partial);
+	if (defect !== null) {
+		return {_tag: "Refused", outcome: shapeRefusal(verb, defect, issue, partial)};
+	}
+
+	const classified = classificationRefusal(verb, body);
+	if (classified !== null) return {_tag: "Refused", outcome: classified};
+
+	return {_tag: "Body", text: body};
+};
+
+export type LanePull =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {
+			readonly _tag: "Pull";
+			readonly answer: "opened" | "existing";
+			readonly number: number;
+			readonly url: string;
+	  };
+
+/** The one stdout line both create paths print for the PR they opened or found. */
+export const pullAnswerLine = (pull: Extract<LanePull, {readonly _tag: "Pull"}>): string =>
+	JSON.stringify({answer: pull.answer, number: pull.number, url: pull.url});
+
+export interface LanePullRequest {
+	readonly verb: string;
+	readonly env: Readonly<Record<string, string | undefined>>;
+	readonly repo: string;
+	/** The remote branch the PR is opened from. */
+	readonly head: string;
+	readonly issue: IssueRecord;
+	/** A body {@link vetBody} already passed. */
+	readonly body: string;
+	/** Diagnostics every refusal carries ahead of its own reason. */
+	readonly notes: ReadonlyArray<string>;
+}
+
+/** Open the lane's PR, or answer `existing` with the one already open for its head branch. */
+export const openLanePull = (
+	request: LanePullRequest,
+): Effect.Effect<
+	LanePull,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
+	Effect.gen(function* () {
+		const {verb, env, repo, head, issue, body, notes} = request;
+		const refused = (code: number, reason: string): LanePull => ({
+			_tag: "Refused",
+			outcome: refuse(code, reason, notes),
+		});
+
+		const existing = yield* openPullForHead(env, repo, head);
+		if (existing._tag === "Failure") {
+			return refused(
+				PRECONDITION_UNKNOWN,
+				`${verb}: cannot read the open pull requests for ${head}: ${existing.reason} — no PR was written.`,
+			);
+		}
+		if (existing.value !== null) {
+			return {
+				_tag: "Pull",
+				answer: "existing",
+				number: existing.value.number,
+				url: existing.value.url,
+			};
+		}
+
+		const base = yield* resolveTrunk(env, repo);
+		if (base._tag === "Failure") {
+			return refused(
+				PRECONDITION_UNKNOWN,
+				`${verb}: ${trunkUnresolved(base.reason)}. No PR was written.`,
+			);
+		}
+
+		const created = yield* createPull(
+			env,
+			repo,
+			conventionalTitleOf(issue.title, issue.labels),
+			head,
+			base.value.branch,
+			body,
+		);
+		if (created._tag === "Failure") {
+			return refused(
+				WRITE_UNKNOWN,
+				`${verb}: the create failed: ${created.reason} — it may or may not have landed; re-run, the verb re-checks for an existing PR first.`,
+			);
+		}
+
+		const back = yield* getPullRequest(repo, created.value.number);
+		const matches =
+			back._tag === "Present" &&
+			normalizeForReadback(back.value.body) === normalizeForReadback(body);
+		return matches
+			? {_tag: "Pull", answer: "opened", number: created.value.number, url: created.value.url}
+			: refused(
+					READBACK_MISMATCH,
+					`${verb}: the PR landed (#${created.value.number}) but its body does not read back as sent — it needs a human eye.`,
+				);
+	});
+
 export const runPr = (
 	options: PrOptions,
 ): Effect.Effect<
@@ -132,18 +262,8 @@ export const runPr = (
 	Effect.gen(function* () {
 		const {number, partial} = options;
 
-		const authored = readAuthored(SURFACE, yield* options.stdin);
-		if (authored._tag === "Refused") return authored.outcome;
-		const body = authored.text;
-
-		const leaked = leakRefusal(VERB, body);
-		if (leaked !== null) return leaked;
-
-		const defect = bodyDefect(body, number, partial);
-		if (defect !== null) return shapeRefusal(VERB, defect, number, partial);
-
-		const classified = classificationRefusal(VERB, body);
-		if (classified !== null) return classified;
+		const vetted = vetBody(VERB, yield* options.stdin, number, partial);
+		if (vetted._tag === "Refused") return vetted.outcome;
 
 		const session = requireSession(VERB, options.env);
 		if (session._tag === "Refused") return session.outcome;
@@ -163,64 +283,16 @@ export const runPr = (
 		const lane = yield* requireLane(VERB, repo, session.id, number);
 		if (lane._tag === "Refused") return lane.outcome;
 
-		const existing = yield* openPullForHead(options.env, repo, lane.branch);
-		if (existing._tag === "Failure") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the open pull requests for ${lane.branch}: ${existing.reason} — nothing was written.`,
-				lane.notes,
-			);
-		}
-		if (existing.value !== null) {
-			return answer(
-				JSON.stringify({
-					answer: "existing",
-					number: existing.value.number,
-					url: existing.value.url,
-				}),
-				lane.notes,
-			);
-		}
-
-		const base = yield* resolveTrunk(options.env, repo);
-		if (base._tag === "Failure") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: ${trunkUnresolved(base.reason)}. Nothing was written.`,
-				lane.notes,
-			);
-		}
-
-		const created = yield* createPull(
-			options.env,
+		const pull = yield* openLanePull({
+			verb: VERB,
+			env: options.env,
 			repo,
-			conventionalTitleOf(target.issue.title, target.issue.labels),
-			lane.branch,
-			base.value.branch,
-			body,
-		);
-		if (created._tag === "Failure") {
-			return refuse(
-				WRITE_UNKNOWN,
-				`${VERB}: the create failed: ${created.reason} — it may or may not have landed; re-run, the verb re-checks for an existing PR first.`,
-				lane.notes,
-			);
-		}
-
-		const back = yield* getPullRequest(repo, created.value.number);
-		const matches =
-			back._tag === "Present" &&
-			normalizeForReadback(back.value.body) === normalizeForReadback(body);
-		return matches
-			? answer(
-					JSON.stringify({answer: "opened", number: created.value.number, url: created.value.url}),
-					lane.notes,
-				)
-			: refuse(
-					READBACK_MISMATCH,
-					`${VERB}: the PR landed (#${created.value.number}) but its body does not read back as sent — it needs a human eye.`,
-					lane.notes,
-				);
+			head: lane.branch,
+			issue: target.issue,
+			body: vetted.text,
+			notes: lane.notes,
+		});
+		return pull._tag === "Refused" ? pull.outcome : answer(pullAnswerLine(pull), lane.notes);
 	});
 
 /**

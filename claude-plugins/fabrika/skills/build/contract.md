@@ -96,8 +96,8 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build scratch` | the per-lane scratch path, allocated fail-closed | deterministic path derivation keyed session + issue + claim nonce |
 | `build commit` | create this lane's commit from an authored message, and prove the commit carries it | a prescribed carrying path, a claim test over the numbers named, and a read-back — no judgment; *authoring* the message stays in the skill |
 | `build check` | run this surface's validators in this tree; green/red/unknown | command execution + tree-binding assertions; *fixing red* stays in the skill |
-| `build push` | publish the branch and independently confirm the remote ref moved | push + `ls-remote` read-back, three proven outcomes |
-| `build pr` | open the PR from a stdin body, refusing the known defect shapes, with read-back | mechanical guards over an authored body; *authoring* stays in the skill |
+| `build push` | publish the branch, independently confirm the remote ref moved, and open the lane's PR in the same step | push + `ls-remote` read-back, then `build pr`'s guarded create over a body vetted before the push; *authoring* stays in the skill |
+| `build pr` | open the PR from a stdin body, refusing the known defect shapes, with read-back — the same guards and create a fresh lane's `build push` runs | mechanical guards over an authored body; *authoring* stays in the skill |
 | `build pr-body` | replace an open PR's body from a stdin body, under `build pr`'s guards, with read-back | the same mechanical guards as `build pr`, over a `PATCH` that moves no ref; *authoring* stays in the skill |
 | `build note` | post a progress/handoff comment, head-stamped, leak-guarded, with read-back | as `report note`, plus the head stamp |
 | `build deviations` | post an epic child's `## Deviations` disclosure as the ONE `build-deviations` marker on its issue, edited in place on every later round and carrying every standing entry; `--standing` reads what stands | a claim-gated upsert with a read-back, over a section validated by the wire format and compared against the standing disclosure; *authoring* the disclosure stays in the skill |
@@ -145,7 +145,7 @@ Every verb obeys these; stated once.
 - **A non-zero exit is UNKNOWN** to the caller until the code is read. No verb prints a partial or
   permissive answer on a non-zero exit.
 - **A body-on-stdin verb is invoked with a heredoc or with a literal input redirect, and the two are
-  one interface.** `commit`, `deviations`, `pr`, `pr-body` and `note` read their body from stdin, so
+  one interface.** `commit`, `deviations`, `push`, `pr`, `pr-body` and `note` read their body from stdin, so
   a redirect from the path `build scratch` printed delivers the same bytes a heredoc would, and
   every guard the verb makes still fires. The redirect is the route
   [skill-conventions §4](../../docs/skill-conventions.md#a-body-too-large-for-one-command-is-staged-never-trimmed)
@@ -2815,15 +2815,36 @@ above are an example of what a repo declares, not a contract.
 **Invocation**
 
 ```
-fabrika build push [--force-with-lease] [--drop-remote-commits]
+fabrika build push [--partial] [--force-with-lease] [--drop-remote-commits] <<'EOF'
+…the authored PR body (a fresh lane only)…
+EOF
 ```
 
 **Inputs**
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
+| `--partial` | boolean | no | `false` | the acceptance criteria are not all met: the body must say `Part of #<n>`, not `Fixes #<n>` — carried to the create exactly as `build pr` takes it; refused (`19`) on a repair lane |
 | `--force-with-lease` | boolean | no | `false` | permit a non-fast-forward update of this lane's own branch (repair resubmission) |
 | `--drop-remote-commits` | boolean | no | `false` | publish a head that does **not** contain the published remote head — a deliberate history rewrite |
+| stdin | text | on a fresh lane | — | the PR body; a repair lane (`build/pr-<pr>-<nonce>`) reads none |
+
+**Push and PR-open are one step.** On a fresh lane (`build/<issue>-<slug>-<nonce>`) the verb runs `build pr`'s guards and create —
+the same functions, not a copy — around the push, in this order:
+
+1. **The body, before any push.** `build pr`'s steps 1–4 — stdin non-empty (`3`), no machine-local
+   path (`5`, `6`), body shape against the issue the lane branch names (`4`), no forbidden
+   classification (`10`) — then the issue is open (`7`). A body `build pr` would refuse pushes
+   nothing and opens nothing.
+2. **The push**, proven by the read-back below.
+3. **The PR**, only after the ref is proven moved: an open PR for the pushed head branch answers
+   `existing`; otherwise the create and its body read-back (`8`, `9`, `11`), exactly as `build pr`.
+
+A re-run is how a half-done step finishes. When the ref already moved, the re-run's push is a no-op
+that reads back `MOVED`, and when the PR already landed, its create answers `existing`, so a re-run
+after an `8` never opens a second PR. A repair lane's PR is already open, so it reads no body and
+runs no PR step. A failure between the push and the create can leave a pushed branch with no PR;
+no cleanup rule and no adoption path exist for it, and a re-run or a hand cleanup clears it.
 
 **Output** — machine, **single-stream: the entire report is stdout**, and the last line is always
 exactly one of:
@@ -2832,8 +2853,12 @@ exactly one of:
 PUSH-VERDICT: MOVED
 ```
 
-on exit 0. `NOT-MOVED` and `UNKNOWN` are exits `17` and `8` with empty stdout and the report on
-stderr — so `tail -1` of stdout on exit 0 is always the verdict line. (v1 *documented* this idiom
+on exit 0. On a fresh lane the line directly above it is the PR's answer,
+`{"answer":"opened"|"existing","number":<n>,"url":"..."}`, the same object `build pr` prints. Exit
+`0` means both halves stand: the ref moved and the PR is open. `NOT-MOVED` and `UNKNOWN` are exits
+`17` and `8` with empty stdout and the report on stderr — so `tail -1` of stdout on exit 0 is always
+the verdict line. A PR-step refusal after the push carries the push report on stderr ahead of its
+reason, so the caller sees that the ref moved. (v1 *documented* this idiom
 and then both call sites redirected the report to stderr, so the documented `tail -1` never ran —
 `SKILL.md:778-781` vs `step5-push.sh:47`. Here the channel is part of the contract.)
 
@@ -2847,7 +2872,8 @@ the push *target* would make every repair push a false `17` — the target is th
 halves share.
 
 Refusals before any push (`19`): HEAD is detached; or the update is non-fast-forward and
-`--force-with-lease` was not given. `--force-with-lease` is the only force shape — a bare
+`--force-with-lease` was not given; or `--partial` was given on a repair lane, whose PR body is
+`build pr-body`'s to rewrite. `--force-with-lease` is the only force shape — a bare
 `--force` flag does not exist here, and there is no `--no-verify` — the ban is enforced by the flag not existing rather than by prose.
 
 **Containment is proven on every path, the force path included (`23`).** Whenever the target ref
@@ -2878,33 +2904,58 @@ Preconditions: a readable tree root (`11`), the lane's branch (`14`).
 
 | Code | Trigger |
 |---|---|
-| `8` | the push was attempted but the remote ref could not be re-read — the outcome is UNKNOWN (the matrix's `8`: an attempted write whose outcome cannot be proven) |
-| `11` | the lane's claim could not be read, or the remote head could not be made readable so containment is UNKNOWN — nothing was pushed |
+| `3`, `4`, `5`, `6`, `10` | the PR body is refused exactly as `build pr` refuses it — nothing was pushed |
+| `7` | the issue the lane branch names is proven absent or closed — nothing was pushed |
+| `8` | the push was attempted but the remote ref could not be re-read, or the ref moved and the PR create failed — the outcome is UNKNOWN (the matrix's `8`: an attempted write whose outcome cannot be proven); re-run |
+| `9` | the ref moved and the PR landed, but its body does not read back as sent |
+| `11` | before the push: the lane's claim or the issue could not be read, or the remote head could not be made readable so containment is UNKNOWN — nothing was pushed; after it: the open pull requests or the trunk could not be read — no PR was written |
 | `14` | proven: the checked-out branch is not this lane's (lane-identity rule) |
 | `15` | proven: the lane's claim is held by another session — nothing was pushed |
-| `17` | proven: the remote ref did not move |
-| `19` | refused before pushing: detached HEAD, or non-fast-forward without `--force-with-lease` |
+| `17` | proven: the remote ref did not move — no PR was written |
+| `19` | refused before pushing: detached HEAD, non-fast-forward without `--force-with-lease`, or `--partial` on a repair lane |
 | `23` | proven: the local head does not contain the published remote head — the push would drop its commits |
 
-**Errors**
+**Errors** — the body and PR rows are `build pr`'s with the verb name substituted, plus:
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `build push: HEAD is detached — refusing to guess a branch.` | 19 | refusal |
 | `build push: non-fast-forward — pass --force-with-lease only for this lane's own repair resubmission.` | 19 | refusal |
+| `build push: --partial describes a new PR's body, and this repair lane's PR #<pr> is already open — nothing was pushed. Rewrite its body with build pr-body.` | 19 | refusal |
+| `build push: cannot read #<n>: <reason> — nothing was pushed.` | 11 | refusal |
+| `build push: cannot read the open pull requests for <head>: <reason> — no PR was written.` | 11 | refusal |
 | `build push: the local head does not contain <remote>/<ref> (<sha>) — this push would DROP <commits>. Rebase onto the published head, or pass --drop-remote-commits to rewrite it deliberately.` | 23 | refusal |
 | `build push: cannot prove containment — <remote>/<ref> is at <sha>, which this checkout does not hold and could not fetch. Nothing was pushed.` | 11 | refusal |
 | `build push: the remote ref did not move (remote <sha> ≠ local <sha>).` | 17 | refusal |
 | `build push: pushed, but the remote ref could not be re-read: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
 
-**Scope** — one branch, one remote ref, read back independently of the push's own report.
+**Scope** — one branch, one remote ref, read back independently of the push's own report, and on a
+fresh lane the one PR for that branch.
 
-**Example**
+**Examples**
 
 ```
-$ fabrika build push
-pushed build/4-editor-focus-loss-c1a4d6f8 → origin
+$ fabrika build push <<'EOF'
+Fixes #4
+
+Editor focus now survives a save: the toolbar re-render no longer steals it.
+
+## Deviations
+
+None.
+EOF
+pushed build/4-editor-focus-loss-c1a4d6f8 → origin/build/4-editor-focus-loss-c1a4d6f8
 remote ref read back: 03135b91
+{"answer":"opened","number":8,"url":"https://<host>/<owner>/<repo>/pull/8"}
+PUSH-VERDICT: MOVED
+```
+
+A repair lane reads no body:
+
+```
+$ fabrika build push --force-with-lease
+pushed build/pr-8-5e0b2c71 → origin/build/4-editor-focus-loss-c1a4d6f8
+remote ref read back: 7d41a0c2
 PUSH-VERDICT: MOVED
 ```
 
@@ -2920,6 +2971,10 @@ PUSH-VERDICT: MOVED
 - The same gap reproduces from a stale *local branch ref*: the rebase is clean, the
   bare lease is defeated by the lane's own fetch, and the verdict is `MOVED`. Containment against a
   live remote read is the only test that catches it.
+- Push and PR-open were two verbs, and a builder that died between them (`API Error: 529
+  Overloaded`) left a pushed branch with no PR, so `lane prove` found no `OpenPull` and parked the
+  lane. Folding the create into the push shrinks that window from a whole agent turn to the inside
+  of one verb.
 
 ---
 
@@ -3020,6 +3075,7 @@ posts the literal string.
 | `build pr: the PR landed (#<m>) but its body does not read back as sent — it needs a human eye.` | 9 | refusal |
 | `build pr: the body asserts a control-plane classification — that verdict is the merge gate's.` | 10 | refusal |
 | `build pr: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
+| `build pr: cannot read the open pull requests for <head>: <reason> — no PR was written.` | 11 | refusal |
 | `build pr: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
 
 The `11`/`14` tree-precondition messages are `build tree`'s rows with the verb name substituted

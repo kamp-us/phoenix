@@ -1926,6 +1926,14 @@ nothing and is novel.
   older template gains the arm through `lane migrate`. A generated machine, such as an epic tail's
   emitted region, is never migrated and has no such arm, so there the park clears only on green. A
   machine that cannot be read is `11`.
+- The reviewer's red-CI park is `blocked` keyed `head-ci-red`: a reviewer that read the head red
+  and parked before judging it. The leaf tells it apart from the shipper's row above. Its read is
+  that row's floor minus the gate: `ship scope` for the PR still being open and not a draft, and
+  `ship checks`'s rollup at the live head, where only `green` clears. There is no `ship gate` read,
+  because the verdicts it would ask for are the review this park interrupted. Every other rollup,
+  `red` included, is `13` with nothing written. No log is read and no `FAIL` is sent, since
+  `blocked` has no `FAIL` arm. The clear lands back in `review` with a `mechanism` of
+  `head-green:#<pr> at <head>`. Any read failing is `11`.
 - The routed-UI park (`blocked` keyed `no-rendered-delta`, or `no-preview-routed` where the route
   stood on the repo's `reviewUi.whenNoPreview` rules) is that same floor minus CI, and it clears
   the lanes stranded before `lane report` learned to advance a satisfied route: `ship scope` for the

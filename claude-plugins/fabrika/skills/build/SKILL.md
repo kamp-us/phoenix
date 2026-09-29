@@ -317,7 +317,7 @@ not prove.
 
 <!-- anchor: STAGE-THE-BODY-RATHER-THAN-TRIM-IT --> **That verb is also how a body the harness
 refuses to carry reaches a verb — staged, never trimmed.** Four verbs below take their body on a
-heredoc — `build commit`, `build deviations`, `build pr` and `build note` — and a heredoc puts the
+heredoc — `build commit`, `build deviations`, `build push` and `build note` — and a heredoc puts the
 whole body inside the one command string a worktree-isolated shell's verifier grades. Past a size,
 and on some content below any size, it refuses with a containment message that names neither. Read
 as a containment fault, that refusal costs the lane a round and then the disclosure itself: a
@@ -333,7 +333,7 @@ them lands on the `notes` slug. Treat the returned path as the staging directory
 `mkdir -p <allocated-directory>` with that literal absolute path. Put the body in a leaf file
 named `body.md` inside it. Write that file's absolute path literally in each bounded
 `cat >> <allocated-directory>/body.md` append and in the verb's input redirect:
-`fabrika build pr $issue_or_pr_number < <allocated-directory>/body.md`.
+`fabrika build push < <allocated-directory>/body.md`.
 The bytes arrive on stdin exactly
 as the heredoc would have delivered them, so each verb makes every refusal it always makes — the commit's
 read-back, the `## Deviations` shape, the leak scan — and the allocated path is machine-local, so a
@@ -391,16 +391,10 @@ means the commit exists and carries a message you did not write: amend it and re
 Exit `4` means your message names an issue this lane holds no claim on — a related reference belongs
 in the PR body, not the merge record.
 
-## 5 — Push verified, open the PR through the guard
+## 5 — Push and open the PR in one step
 
-```bash
-fabrika build push
-```
-
-Done only on `PUSH-VERDICT: MOVED`. `UNKNOWN` is not a success with a caveat — re-run; an
-unverified push is how "pushed" and "the remote never heard" become one claim.
-
-Author the PR body yourself: a human-first summary, `Fixes #<n>` only when every acceptance
+`fabrika build push` pushes the branch and opens its PR in one step, so write the PR body before you
+run it. Author the PR body yourself: a human-first summary, `Fixes #<n>` only when every acceptance
 criterion is met (else `Part of #<n>`, and pass `--partial`), and a `## Deviations` section — the
 verb refuses a body without the heading, and an empty one is a lie if you deviated. **Assert no
 control-plane verdict in it**: that classification is the merge gate's, and a body claiming "not
@@ -422,7 +416,7 @@ deviation, each stating all four fields:
 An optional bold class lead (`Scope narrowing`, `Governing-ADR departure`, `Known defect left
 unfixed`, `Declined guidance`, `Guard or gate bypassed`, `Pre-existing test or fixture changed`,
 `Out-of-scope change`) routes the entry; the gate matches an entry's substance, never its label. A
-prose bullet with no fields is refused by `build pr` at the point you write it — that refusal used
+prose bullet with no fields is refused by `build push` at the point you write it — that refusal used
 to arrive a whole review round later, and could not say what was wrong.
 
 **An epic child opens no PR, and its disclosure surface moves with that.** When your spawn
@@ -482,13 +476,24 @@ per row defending a choice nobody attacked. Same no-op test as the prose — del
 absence would change no reviewer behaviour.
 
 ```bash
-fabrika build pr $issue_or_pr_number <<'EOF'
+fabrika build push <<'EOF'
 …body…
 EOF
 ```
 
-The verb is the guard: it refuses leaks, stray closing keywords, a Deviations section the review
-gate would read as malformed, and reads back what landed. When the harness refuses the fence above —
+The verb is the guard, and it runs in this order. It checks the body first and refuses leaks, stray
+closing keywords and a Deviations section the review gate would read as malformed. A refused body
+pushes nothing. Then it pushes, reads the remote ref back, and opens the PR, reading back what
+landed. If an open PR for this branch already exists, it answers `existing` and opens no second one.
+
+Done only on exit `0`, with `PUSH-VERDICT: MOVED` as the last stdout line and the PR's
+`{"answer":"opened"|"existing","number","url"}` line above it. **Any other exit is not a success with
+a caveat.** An `8` means the push or the create is UNKNOWN. Re-run the same command: its push is a
+no-op when the ref already moved, and its create answers `existing` when the PR already landed, so
+the re-run finishes the step and never duplicates it. An unverified push is how "pushed" and "the
+remote never heard" become one claim.
+
+When the harness refuses the fence above —
 or the `build deviations` and `build note` fences beside it — the body is staged and redirected
 rather than trimmed, under `build scratch` in step 4. Then hand off and release:
 
@@ -770,8 +775,9 @@ stay this round's whole contract, as step 3 says, and the whole-diff read checks
 against those findings only.
 
 Then re-validate with `fabrika build check --surface <yours>`, push with `fabrika build push
---force-with-lease`, answer the findings in a `fabrika build note <repair-pr> --token <claim-token>`
-naming each one addressed, then release with `fabrika build release <repair-pr> --token
+--force-with-lease` (a repair lane's PR is already open, so this push reads no body), answer the
+findings in a `fabrika build note <repair-pr> --token <claim-token>` naming each one addressed, then
+release with `fabrika build release <repair-pr> --token
 <claim-token>`. Exit `23` on that push means your head **drops commits the PR already published** —
 `build branch --resume` again so you rebuild on the published head, never
 `--drop-remote-commits`, which is for a rewrite you actually intend. The fold's `frozenCriteria`
@@ -781,7 +787,7 @@ round's work — each one you verify is still unfixed, because nothing retires a
 
 **When the whole fix is the PR body, the route is `fabrika build pr-body <pr>` and nothing else.**
 The recurring one is a FAIL reading `deviations malformed`: the head does not need to move, so a
-push is the wrong tool and a raw `gh` call runs none of the guards `build pr` runs on a create. This
+push is the wrong tool and a raw `gh` call runs none of the guards `build push` runs on a create. This
 verb runs all of them over the rewrite — leak scan, the `## Deviations` shape, the closing-keyword
 target read off the PR's own head branch, the classification check — and reads the landed body back.
 Re-send the corrected body on stdin, then answer the finding in a `fabrika build note` and

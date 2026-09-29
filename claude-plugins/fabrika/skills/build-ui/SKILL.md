@@ -169,9 +169,10 @@ the gate.
 
 ## 4 — Ship with the evidence attached
 
-Push (`fabrika build push`, done only on `PUSH-VERDICT: MOVED`) and open the PR
-(`fabrika build pr $issue_or_pr_number`) exactly as `build` does — Deviations section, closing keyword, no
-classification claims. Then attach what you rendered:
+Push and open the PR in one step, exactly as `build` does: `fabrika build push` with the PR body on
+stdin — Deviations section, closing keyword, no classification claims. It is done only on exit `0`,
+with `PUSH-VERDICT: MOVED` last and the PR's answer line above it. An `8` is re-run; any other exit
+is handled as [`build` §5](../build/SKILL.md) says, never read as a success. Then attach what you rendered to the PR that line names:
 
 ```bash
 fabrika ui evidence --pr <pr> --before before --after after

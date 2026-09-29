@@ -56,6 +56,16 @@ export const PARKED_AT_CP_UNCAUSED = eventLog("WIP", "DONE", "PASS", "BLOCKED");
 /** The red-CI park: BLOCKED out of `ship` because `ship checks` read the head red. */
 export const PARKED_ON_CI_RED = PARKED_AT_CP_ON("head-ci-red");
 
+/** The reviewer's red-CI park: queued → build → review → blocked, on the same cause. */
+export const PARKED_IN_REVIEW_ON_CI_RED =
+	eventLog("WIP", "DONE") +
+	`${JSON.stringify({
+		task: "issue",
+		event: "ISSUE.BLOCKED",
+		at: "2026-08-16T00:02:00.000Z",
+		cause: "head-ci-red",
+	})}\n`;
+
 /**
  * queued → … → ship, then a dwell that spends the whole wait budget — the queue-stall park.
  *
