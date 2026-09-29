@@ -158,13 +158,35 @@ describe("review-ui route", () => {
 
 	// The whole point of the verb: this is the shape that was unshippable, because `review-ui` had no
 	// legal emission for it and `ship gate` blocks on the absence.
-	it("refuses on 7 when the diff raises no ui class — there is nothing to route", async () => {
-		const {outcome} = await run([
+	// A clean end, not a refusal: the exit code alone separates it from an unread PR, so a caller
+	// never parses the sentence to pick between ROUTED-ELSEWHERE and CANT-SEE.
+	it("answers none on 0 when the diff raises no ui class, posting nothing", async () => {
+		const {outcome, requests} = await run([
 			[PULL, pull({changed: 1})],
 			[FILES, files("packages/fabrika-cli/src/wire/registry.ts")],
 		]);
-		expect(outcome.code).toBe(ZERO_SCOPE);
-		expect(outcome.stderr.join("\n")).toContain("raises no ui class");
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			answer: "none",
+			namespace: "review-ui",
+			sha: HEAD,
+			uiFiles: 0,
+		});
+		expect(requests.some((request) => CREATE.test(request) || PATCH.test(request))).toBe(false);
+	});
+
+	it("keeps an absent or closed PR on 7, distinct from the no-ui-class answer", async () => {
+		const absent = await run([[PULL, {status: 404, body: '{"message":"Not Found"}'}]]);
+		const closed = await run([[PULL, pull({state: "closed"})]]);
+		const clean = await run([
+			[PULL, pull({changed: 1})],
+			[FILES, files("packages/fabrika-cli/src/wire/registry.ts")],
+		]);
+		expect(absent.outcome.code).toBe(ZERO_SCOPE);
+		expect(closed.outcome.code).toBe(ZERO_SCOPE);
+		expect(clean.outcome.code).not.toBe(ZERO_SCOPE);
+		expect(absent.outcome.stdout).toBe("");
+		expect(closed.outcome.stdout).toBe("");
 	});
 
 	// The record's count is computed against a base cached at the last push, so a shortfall against it
