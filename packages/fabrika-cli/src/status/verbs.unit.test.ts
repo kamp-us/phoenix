@@ -980,6 +980,17 @@ describe("the dep-pin surface", () => {
 		);
 	});
 
+	it("names the install footprint and the pnpm 10 approval step the browser setup needs", async () => {
+		const {outcome} = await bootstrapWith({[MANIFEST]: '{"dependencies":{}}'});
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr).toContain(
+			"status bootstrap: the install brings in Playwright (@playwright/test) and its postinstall downloads a headless Chromium (~130MB) — the browser `fabrika ui render` drives.",
+		);
+		expect(outcome.stderr).toContain(
+			"status bootstrap: pnpm 10 skips that postinstall until you approve it — run `pnpm approve-builds` and pick @kampus/fabrika-cli, or add @kampus/fabrika-cli to `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`; approving it is what lets `ui render`'s browser setup run.",
+		);
+	});
+
 	it("creates the manifest whole when it is absent", async () => {
 		const {outcome, written} = await bootstrapWith({});
 		expect(outcome.code).toBe(ANSWER);
