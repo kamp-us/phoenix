@@ -826,8 +826,9 @@ It is idempotent in both directions:
 - a worktree whose directory is gone but whose record git still carries (`prunable`) is that same
   state: the registration is cleared and the branch placed again, never answered as a live path.
 
-**Every resume fetches first** and asks one question of the branch it found: does `origin/HEAD`
-already carry its content. A multi-phase epic that shipped an intermediate tail lands in exactly
+**Every resume resolves the trunk and fetches first** — the trunk is `origin/<the repo's GitHub
+default branch>`, never a spelled `main` — and asks one question of the branch it found: does the
+trunk already carry its content. A multi-phase epic that shipped an intermediate tail lands in exactly
 that state. The branch holds nothing the trunk lacks and conflicts with everything the trunk took
 since, and until this read the verb could not tell it from an ordinary unlanded resume.
 
@@ -837,7 +838,7 @@ against the patches the trunk took since their merge base, limited to the paths 
 (200 commits back). A match means it landed as a squash, and a branch that adds nothing to the
 trunk at all counts the same.
 
-A contained branch is re-cut off `origin/HEAD` in one `worktree add --no-track -B`, and the note
+A contained branch is re-cut off the trunk in one `worktree add --no-track -B`, and the note
 says it re-cut and which of the three proofs opened it. Its seat, if it still has one, is dropped
 first WITHOUT `--force`, so git refusing to drop uncommitted work is what keeps unlanded bytes out
 of a re-cut. Containment is the whole warrant: a branch that is not contained, including one whose
@@ -855,8 +856,8 @@ Every mode reads the outcome back off `git worktree list` before answering.
   machine first.
 - `8` — the placement or removal ran and did not read back, or a contained branch's seat would not
   drop. UNKNOWN.
-- `11` — the working trees, the branches, the fetch, `origin/HEAD` or the containment read could not
-  be read: a failed fetch, an `origin/HEAD` naming no commit, a diff or patch read that failed.
+- `11` — the working trees, the branches, the trunk, the fetch or the containment read could not
+  be read: an unresolvable trunk, a failed fetch, a trunk ref naming no commit, a diff or patch read that failed.
   Nothing was placed or removed, and the containment answer is never resolved either way.
 - `33` — `epic/<n>` is checked out in the main working tree. Switch that tree off it first.
 - `39`, `65` — [the lanes root](#the-lanes-root).
@@ -1009,11 +1010,13 @@ placed, both derived from the epic number and never taken from the caller, so th
 binds to a head the merge queue can take.
 
 Nothing else in this package touches trunk after the first cut. `lane assembly` cuts off
-`origin/HEAD` once, and a resume fetches only to judge whether the branch is already landed, merging
+the trunk once, and a resume fetches only to judge whether the branch is already landed, merging
 nothing. So the branch drifts behind trunk with nothing to notice, and `lane push` names "fetch and
 re-merge" as the remedy for its `29` without any verb performing it.
 
-The order is the verb: refuse a dirty seat, `git fetch origin`, resolve `--base` to a commit, answer
+The order is the verb: resolve the ref to merge — `--base` verbatim, else the trunk, whose read
+failing is `11` naming the fix and never a fall back to `main` — refuse a dirty seat, `git fetch
+origin`, resolve that ref to a commit, answer
 CURRENT when the branch already carries it, else `git merge --no-ff` and re-read HEAD. A clean merge
 is silent and parks nothing. A conflict aborts, resets through `ORIG_HEAD` and PROVES the reset by
 re-reading HEAD, and the refusal names `--cause assembly-conflict` as the park to record. A reset
@@ -1040,8 +1043,8 @@ the head. A DECLINED prints no head, because nothing was read.
   machine first.
 - `8` — the restore or a head read-back did not land, or the merge reported success and the head did
   not move. UNKNOWN, so nothing may be recorded.
-- `11` — the working trees, the head, the seat's cleanliness or the fetch could not be read.
-  UNKNOWN, never green.
+- `11` — the trunk (with no `--base`), the working trees, the head, the seat's cleanliness or the
+  fetch could not be read. UNKNOWN, never green; an unresolvable trunk names its fix.
 - `21` — `assemblyRefresh` is malformed in `.fabrika.jsonc`, so whether this repo refreshes its
   assembly branch is UNKNOWN.
 - `22` — `--base` names no commit after the fetch.
@@ -1823,7 +1826,7 @@ nothing and is novel.
 - The `worktree-holds-branch` park: the same working-tree read `build branch --resume-lane` refuses
   on.
 - The `campaign-paused` park, which nothing records any more, since no campaign state gates a lane:
-  the lane milestone's `## Campaigns` State cell at `origin/main`. It clears only on `active`, and
+  the lane milestone's `## Campaigns` State cell at the trunk. It clears only on `active`, and
   the campaign is never resumed here.
 - The `spawn-dead` park is the one whose read is the lane rather than the cause. No verb can spawn an
   agent to ask whether the provider is back, so it proves only that the dead shell left nothing that

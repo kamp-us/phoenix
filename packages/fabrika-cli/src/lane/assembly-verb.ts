@@ -13,7 +13,7 @@
  * that reported success and left no tree, or a `remove` that left one behind, is UNKNOWN and seats
  * on `8` — the same discipline `lane push` holds against a remote ref.
  *
- * A resume asks one more question than "does the branch exist": whether `origin/HEAD` already
+ * A resume asks one more question than "does the branch exist": whether the trunk already
  * carries its content. A multi-phase epic that ships an intermediate tail lands in exactly that
  * state, and the branch is then simultaneously the sanctioned base for every remaining child and
  * guaranteed to conflict with the trunk. Containment is the one proof that re-cutting loses nothing,
@@ -25,6 +25,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type Containment, containmentOf} from "../io/containment.ts";
 import {execCapture} from "../io/exec.ts";
 import {localBranches} from "../io/git.ts";
+import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
 import {assemblySeat, worktrees} from "./assembly.ts";
@@ -38,6 +39,9 @@ export interface AssemblyOptions extends LaneRef {
 	readonly epic: number;
 	/** Remove the run's assembly worktree instead of placing it — the lane's terminal step. */
 	readonly remove: boolean;
+	/** The repo whose trunk the branch is cut from; `null` resolves it off `env`. */
+	readonly repo: string | null;
+	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
 const seatOf = (epic: number, branch: string) =>
@@ -128,9 +132,16 @@ export const runAssembly = (
 		}
 		const existing = branches.value.includes(branch);
 
-		// Both arms need a fresh `origin/HEAD` — git's own pointer at the default branch, which
-		// `set-head` writes in a checkout where it was never set. A cut is never taken off a stale
-		// base, and a containment answer computed against one would call a live branch landed.
+		// Both arms need the trunk, freshly fetched. A cut is never taken off a stale base, and a
+		// containment answer computed against one would call a live branch landed.
+		const named = yield* resolveTrunk(options.env, options.repo);
+		if (named._tag === "Failure") {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: ${trunkUnresolved(named.reason)}. Nothing was placed.`,
+			);
+		}
+		const trunkRef = named.value.ref;
 		const fetched = yield* execCapture("git", ["fetch", "--quiet", "origin"]);
 		if (!fetched.ok) {
 			return refuse(
@@ -138,20 +149,19 @@ export const runAssembly = (
 				`${VERB}: cannot fetch origin: ${fetched.reason} — the assembly branch is never cut off a stale base, nor judged landed against one.`,
 			);
 		}
-		yield* execCapture("git", ["remote", "set-head", "origin", "--auto"]);
 
 		// The branch outliving its worktree is the ordinary state after `--remove` at a terminal, a
 		// pruned tree, or a crash mid-run — so it is resumed, checked out as it stands. The one
-		// exception is a branch `origin/HEAD` already carries: its content landed, it holds nothing
+		// exception is a branch the trunk already carries: its content landed, it holds nothing
 		// the trunk lacks, and every child cut from it conflicts with what the trunk took since. That
 		// containment is the whole warrant for re-cutting, so an unreadable answer refuses instead.
 		let contained: Containment = {_tag: "Unlanded"};
 		if (existing) {
-			const trunk = yield* execCapture("git", ["rev-parse", "--verify", "origin/HEAD^{commit}"]);
+			const trunk = yield* execCapture("git", ["rev-parse", "--verify", `${trunkRef}^{commit}`]);
 			if (!trunk.ok) {
 				return refuse(
 					LANE_UNREADABLE,
-					`${VERB}: origin was fetched and origin/HEAD names no commit: ${trunk.reason} — whether ${branch} is already contained in the default branch is UNKNOWN, so nothing was placed.`,
+					`${VERB}: origin was fetched and ${trunkRef} names no commit: ${trunk.reason} — whether ${branch} is already contained in the default branch is UNKNOWN, so nothing was placed.`,
 				);
 			}
 			contained = yield* containmentOf(branch, trunk.stdout.trim());
@@ -203,10 +213,10 @@ export const runAssembly = (
 						existing ? "-B" : "-b",
 						branch,
 						seat.expected,
-						"origin/HEAD",
+						trunkRef,
 					],
 		);
-		// A branch cut off `origin/HEAD` without `--no-track` records `refs/heads/main` as its
+		// A branch cut off the trunk's remote ref without `--no-track` records the trunk as its
 		// upstream, which aimed the run's pushes at the default branch. `--no-track` covers a fresh
 		// cut and nothing else: measured on git 2.40.1, `worktree add --no-track -B` leaves a
 		// pre-existing `branch.<name>.remote`/`.merge` in place, so a branch cut by an older fabrika
@@ -230,7 +240,7 @@ export const runAssembly = (
 		}
 		return answer(`${after.seat.path}\n`, [
 			landed
-				? `${VERB}: re-cut ${branch} off origin/HEAD for the lane at ${loaded.dir} — ${whyContained(contained)}, so it carried no unlanded work and every child cut from it would have conflicted with what the trunk took since; the invoking checkout was not switched.`
+				? `${VERB}: re-cut ${branch} off ${trunkRef} for the lane at ${loaded.dir} — ${whyContained(contained)}, so it carried no unlanded work and every child cut from it would have conflicted with what the trunk took since; the invoking checkout was not switched.`
 				: `${VERB}: ${existing ? "re-placed the worktree of the existing" : "placed"} ${branch} for the lane at ${loaded.dir}; the invoking checkout was not switched.`,
 		]);
 	});

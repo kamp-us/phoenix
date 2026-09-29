@@ -21,6 +21,7 @@ import {corpusOverride, decisionsDirOr} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
+import {TRUNK_DEFAULT_HELP} from "../io/trunk.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {runBase} from "./base-verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -396,8 +397,10 @@ const digest = leafCommand(
 		),
 		dir: dirFlag,
 		base: Flag.string("base").pipe(
-			Flag.withDefault("origin/main"),
-			Flag.withDescription("the ref whose history is walked; fetched before the walk"),
+			Flag.optional,
+			Flag.withDescription(
+				`the ref whose history is walked; fetched before the walk (default: ${TRUNK_DEFAULT_HELP})`,
+			),
 		),
 		json: jsonFlag,
 	},
@@ -409,7 +412,8 @@ const digest = leafCommand(
 				since,
 				until: Option.getOrNull(until),
 				dir: corpus.dir,
-				base: ref,
+				base: Option.getOrNull(ref),
+				env: process.env,
 				json,
 				now: Effect.sync(() => Date.now()),
 			}),

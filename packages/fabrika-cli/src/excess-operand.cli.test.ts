@@ -98,7 +98,10 @@ describe("what already worked still works", {timeout: SUBPROCESS_TEST_TIMEOUT_MS
 	 * origin-remote lookup would return, so the code alone separates "ran" from "refused".
 	 */
 	it("a variadic verb absorbs its operands rather than refusing them", () => {
-		const run = fabrika(["adr", "resolve", "0164", "0023", "--repo", "owner/name"], scratchDir());
+		const run = fabrika(
+			["adr", "resolve", "0164", "0023", "--repo", "owner/name", "--base", "origin/main"],
+			scratchDir(),
+		);
 		expect(run.stderr).not.toContain("unexpected operand");
 		expect(run.code).toBe(BASE_UNFETCHABLE);
 	});

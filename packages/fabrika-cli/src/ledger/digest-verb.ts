@@ -2,7 +2,7 @@
  * `ledger digest` — print one epic's body digest, staging nothing.
  *
  * The digest the guarded verbs require had exactly one source: `ledger open`, which allocates the
- * run directory, seeds `children.jsonl` and refuses `20` on a tree behind `origin/main`. For
+ * run directory, seeds `children.jsonl` and refuses `20` on a tree behind the trunk. For
  * `draft` and `write` that is right — they run inside the run `open` allocated. For `ledger
  * retopology` it was a contradiction: that verb's whole claim is that it needs no staged plan run,
  * and the only way to obtain its required `--body-digest` was to stage one. An operator who hit

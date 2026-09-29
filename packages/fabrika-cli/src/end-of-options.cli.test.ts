@@ -75,10 +75,13 @@ describe("the documented -- separator binds its trailing argv", {
 	});
 
 	// A required variadic positional binds post-`--` tokens too: `adr resolve` gets past argument
-	// binding and refuses at its first git read instead (a non-repo cwd keeps that read offline;
-	// `--repo` seats the refusal on BASE_UNFETCHABLE rather than an ambiguous 1).
+	// binding and refuses at its first git read instead (a non-repo cwd and a named `--base` keep
+	// that read offline; `--repo` seats the refusal on BASE_UNFETCHABLE rather than an ambiguous 1).
 	it("adr resolve binds its ids after -- instead of reporting 0 values", () => {
-		const run = fabrika(["adr", "resolve", "--repo", "owner/name", "--", "0164"], scratchDir());
+		const run = fabrika(
+			["adr", "resolve", "--repo", "owner/name", "--base", "origin/main", "--", "0164"],
+			scratchDir(),
+		);
 		expect(run.code).toBe(BASE_UNFETCHABLE);
 		expect(run.stderr).toContain("cannot fetch");
 		expect(run.stderr).not.toContain("Invalid value");

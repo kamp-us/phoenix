@@ -256,7 +256,7 @@ fabrika build branch $issue_or_pr_number --slug editor-focus-loss --token <claim
 
 **The base is the verb's to pick, and that line is complete without one.** It reads the issue's own
 parent and cuts an epic child off the run's assembly branch `epic/<parent>`, a proven-standalone
-issue off `origin/main`, and refuses rather than guessing when either read fails — so never hand it
+issue off the trunk (`origin/<the repo's GitHub default branch>`), and refuses rather than guessing when either read fails — so never hand it
 `--base` to "make sure" a child lands on the epic branch. It says which base it used and where that
 came from on stderr; read that line instead of re-deriving it. Pass `--base` only when you mean a
 ref the derivation would not pick, and expect it to be honoured verbatim — qualified against `origin`

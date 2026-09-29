@@ -49,10 +49,13 @@ import {
 	fetchBaseArgs,
 	installArgs,
 	isCommitId,
+	originHeadArgs,
+	originHeadBranch,
 	pruneWorktreesArgs,
 	RECOVERY_ATTEMPTS,
 	recoveryBackoffMs,
 	resolveBaseArgs,
+	setOriginHeadArgs,
 	type WorktreePlan,
 } from "./worktree-create.ts";
 
@@ -164,25 +167,25 @@ const spent = (attempted: Attempted): string =>
 		: ` after ${attempted.attempts} attempts against ${CONCURRENCY_ARM_CAUSE[attempted.exhausted]}`;
 
 /**
- * The branch `origin`'s HEAD points at, or `main`.
+ * The branch `origin`'s HEAD points at, or `null` when no read names one.
  *
- * Read rather than hardcoded so a repo whose default branch is not `main` provisions instead of
- * refusing on every spawn — but the fallback is a plain default, not a guess dressed as a read: an
- * unresolvable `origin/HEAD` is the ordinary state of a fresh clone, and the fetch below is what
- * turns a wrong answer into a loud one.
+ * Never a spelled default: a clone that recorded no `origin/HEAD` asks the remote with
+ * `git remote set-head origin --auto` and reads again, so a repo whose default branch is `dev`
+ * provisions off `dev` and a repo with no `main` never branches off a ref that is not there.
  */
 const baseBranch = (
 	repoRoot: string,
 	env: Record<string, string>,
-): Effect.Effect<string, never, ChildProcessSpawner.ChildProcessSpawner> =>
-	git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], repoRoot, env).pipe(
-		Effect.map((outcome) => {
-			if (!succeeded(outcome)) return "main";
-			const ref = stdoutOf(outcome);
-			const slash = ref.indexOf("/");
-			return slash > 0 ? ref.slice(slash + 1) : "main";
-		}),
-	);
+): Effect.Effect<string | null, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const read = Effect.map(git(originHeadArgs, repoRoot, env), (outcome) =>
+			succeeded(outcome) ? originHeadBranch(stdoutOf(outcome)) : null,
+		);
+		const recorded = yield* read;
+		if (recorded !== null) return recorded;
+		yield* git(setOriginHeadArgs, repoRoot, env);
+		return yield* read;
+	});
 
 /** What the locked section produced: a tree at a commit, or the refusal that stopped it. */
 type Added =
@@ -192,7 +195,7 @@ type Added =
 /**
  * The fetch and the add — the only commands the creation lock holds.
  *
- * The fetch is not a courtesy. The primary checkout's `origin/main` only advances on an explicit
+ * The fetch is not a courtesy. The primary checkout's remote-tracking trunk only advances on an explicit
  * fetch and nothing fetches per spawn, so branching off the cached tip bases a lane on state missing
  * a sibling lane's just-merged commit — two lanes then both go green in isolation and collide at
  * ship time, or one silently reverts the other. So the base is what *this* fetch just
@@ -294,6 +297,12 @@ export const createWorktree = (
 		}
 		const lockDir = lockDirFor(commonDir);
 		const base = yield* baseBranch(plan.repoRoot, env);
+		if (base === null) {
+			return refuse(
+				BASE_FETCH_FAILED,
+				`${VERB}: ${plan.repoRoot} names no default branch — origin/HEAD is unset and \`git remote set-head origin --auto\` could not record it, so there is no base to branch from. Run that command in ${plan.repoRoot} once origin is reachable; nothing was created`,
+			);
+		}
 
 		const locked = yield* withCreationLock(
 			fs,

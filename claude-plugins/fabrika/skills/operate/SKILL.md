@@ -246,7 +246,7 @@ node packages/fabrika-cli/src/bin.ts build release <epic> --token <claim-token>
 
 `ledger digest` is the digest's source on this route and it writes nothing — no run directory, no
 file, no issue. **Take it from there and never from `ledger open`**, which prints the same value
-only by staging a plan run and refuses `20` on a tree behind `origin/main`, so a mid-drive lane on
+only by staging a plan run and refuses `20` on a tree behind the trunk, so a mid-drive lane on
 a slightly stale tree would be wedged at the middle step with the body still unrepaired. A `21` out
 of `ledger retopology` means the body moved between the two reads: re-run `ledger digest` and pass
 the new value.
@@ -401,7 +401,7 @@ node <fabrika> lane assembly $lane_key
 ```
 
 Its stdout is the absolute path of that worktree — `.claude/worktrees/epic-<lane-key>`, cut off the
-repository's default branch through git's own `origin/HEAD` pointer, tracking nothing — and **every git write this run
+repository's default branch — the trunk GitHub names, never a spelled `main` — tracking nothing — and **every git write this run
 performs on the assembly branch happens there, addressed as `git -C <that path>`**. It is idempotent
 from either side: a later pass finding the tree still there resumes it and re-prints the same path,
 and a pass finding the branch alive with its tree gone — what `--remove` at a terminal leaves behind,
@@ -414,7 +414,7 @@ run it at the top of any pass that is about to integrate rather than carrying a 
 **A branch whose content already landed is the verb's problem, not yours.** An epic that ships an
 intermediate tail and still has phases left comes back to a branch holding nothing `main` lacks and
 conflicting with everything `main` took since — a base guaranteed to break every remaining child.
-Every resume now fetches and asks whether `origin/HEAD` already carries that branch's content, and a
+Every resume now fetches and asks whether the trunk already carries that branch's content, and a
 contained one is re-cut off the trunk in the same command that places the tree, with the reason on
 stderr. The question is content, not ancestry: every PR here lands as a squash, so a landed branch's
 own commits never enter the trunk and an ancestry test alone says "not contained" for every branch
@@ -820,7 +820,7 @@ Every later integration pushes the same branch and **appends that child's closin
 body, so the set of references tracks the set of landed children rather than the plan's intent.
 
 **Refresh the assembly branch before the tail enters review, so the review binds to a head the queue
-can take.** Nothing else moves this branch onto trunk: `lane assembly` cuts off `origin/HEAD` on a
+can take.** Nothing else moves this branch onto trunk: `lane assembly` cuts off the trunk on a
 first cut only and a resume fetches just to judge containment, so the branch drifts behind `main`
 while the children build, and
 the queue ejects the tail for it — three times on one run. Run it from the assembly worktree, before

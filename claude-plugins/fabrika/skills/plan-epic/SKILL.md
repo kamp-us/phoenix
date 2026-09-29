@@ -108,7 +108,7 @@ back to `build`: you hold no claim, and `build note` requires one.
 fabrika ledger open $epic_number --token <claim-token>
 ```
 
-This proves the ground fresh against `origin/main`, allocates the run directory keyed on the
+This proves the ground fresh against the trunk (`origin/<the repo's GitHub default branch>`), allocates the run directory keyed on the
 **claim nonce `--token` names** — never the session, which every sibling subagent of one run shares
 — and reads what already exists. That is why every `ledger` verb takes the token: handed only a
 session id, the claim check passed for a lane that had *lost* the epic's claim and then derived the
@@ -555,7 +555,7 @@ and every row below that seats one says so.
   was written to it.
 - `EPIC-MOVED` — `21` from `ledger draft` or `ledger write`: the epic body changed under the run.
   **A back-off, retryable** — nothing was written; re-open from step 2.
-- `GROUND-STALE` — `20` from `ledger open`: the tree is proven behind `origin/main`. **A
+- `GROUND-STALE` — `20` from `ledger open`: the tree is proven behind the trunk. **A
   back-off, terminal here** — nothing read into a plan, nothing written, no children. Refreshing
   the tree is outside this skill's capabilities and is a fresh run.
 - `CHILD-ORPHANED` — `23` or `26` from `ledger child`: a child was created and something after the

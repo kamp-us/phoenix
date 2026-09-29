@@ -90,6 +90,9 @@ const refresh = ({root, lanes}: Fixture, ...flags: ReadonlyArray<string>) => {
 				String(EPIC),
 				"--root",
 				lanes,
+				// The fixture's origin lives on disk, so there is no GitHub default branch to read.
+				"--base",
+				"origin/main",
 				...flags,
 			],
 			{cwd: root, encoding: "utf8", env: process.env},

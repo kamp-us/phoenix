@@ -281,9 +281,7 @@ describe("runEligible", () => {
 				[TRUNK, GATEWAY],
 			]);
 			expect(out.code).toBe(BLOCKED);
-			expect(out.stderr.some((line) => line.includes("cannot name o/r's default branch"))).toBe(
-				true,
-			);
+			expect(out.stderr.some((line) => line.includes("cannot resolve the trunk"))).toBe(true);
 		});
 
 		it("never discharges when the range has no merge base with the trunk", async () => {

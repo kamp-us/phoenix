@@ -4,7 +4,7 @@
  *
  * Two disciplines, both scars:
  *
- * - **A branch is cut off `FETCH_HEAD`, never off a local ref.** A checkout's `origin/main` can
+ * - **A branch is cut off `FETCH_HEAD`, never off a local ref.** A checkout's remote-tracking trunk can
  *   predate the commit the lane needs, and a branch cut off it misses work that is already on the
  *   base. Every create here fetches first and cuts off what was just fetched. {@link fetchBase}
  *   takes a {@link BaseRef} rather than a ref string so the one spelling that cannot be fetched —

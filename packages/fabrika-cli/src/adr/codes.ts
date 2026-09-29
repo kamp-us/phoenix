@@ -39,6 +39,7 @@ export const NO_BY = 13;
 export const NO_STATUS_LINE = 14;
 export const MULTI_LINE_DIFF = 15;
 export const ALREADY_SUPERSEDED = 16;
+/** The base ref could not be obtained: a named `--base` would not fetch, or none was named and the trunk would not resolve. */
 export const BASE_UNFETCHABLE = 17;
 export const IN_FLIGHT_UNKNOWN = 18;
 

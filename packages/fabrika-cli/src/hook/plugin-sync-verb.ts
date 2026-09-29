@@ -63,7 +63,7 @@ import {
 	short,
 	type WorktreeFacts,
 } from "./plugin-sync.ts";
-import {childEnv} from "./worktree-create.ts";
+import {childEnv, originHeadArgs, originHeadBranch, setOriginHeadArgs} from "./worktree-create.ts";
 
 const VERB = "fabrika hook plugin-sync";
 const EVENT = "SessionStart";
@@ -152,19 +152,23 @@ const primaryWorktree = (
 		}),
 	);
 
-/** The branch `origin/HEAD` names, or `main` when the clone has never recorded one. */
+/**
+ * The branch `origin/HEAD` names, or `null` when no read names one. A clone that never recorded it
+ * asks the remote with `git remote set-head origin --auto` and reads again; it never guesses `main`.
+ */
 const defaultBranchOf = (
 	root: string,
 	env: Readonly<Record<string, string>>,
-): Effect.Effect<string, never, ChildProcessSpawner.ChildProcessSpawner> =>
-	git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root, env).pipe(
-		Effect.map((outcome) => {
-			if (!ran(outcome)) return "main";
-			const ref = stdoutOf(outcome);
-			const slash = ref.indexOf("/");
-			return slash > 0 ? ref.slice(slash + 1) : "main";
-		}),
-	);
+): Effect.Effect<string | null, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const read = Effect.map(git(originHeadArgs, root, env), (outcome) =>
+			ran(outcome) ? originHeadBranch(stdoutOf(outcome)) : null,
+		);
+		const recorded = yield* read;
+		if (recorded !== null) return recorded;
+		yield* git(setOriginHeadArgs, root, env);
+		return yield* read;
+	});
 
 /**
  * Read every fact the plan needs, after the fetch that makes the remote half current.
@@ -369,6 +373,13 @@ export const runPluginSync = ({
 		const scope = `${VERB}: judging the plugin source at ${root}`;
 
 		const defaultBranch = yield* defaultBranchOf(root, child);
+		if (defaultBranch === null) {
+			return refuseLeadingWithReason(
+				REMOTE_UNREADABLE,
+				`${VERB}: ${root} names no default branch — origin/HEAD is unset and \`git remote set-head origin --auto\` could not record it, so whether this checkout is current is UNKNOWN; run that command once origin is reachable`,
+				[scope],
+			);
+		}
 		const fetched = yield* git(["fetch", "--quiet", "origin", defaultBranch], root, child);
 		if (!ran(fetched)) {
 			return refuseLeadingWithReason(
