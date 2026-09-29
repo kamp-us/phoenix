@@ -79,6 +79,8 @@ command; it never runs a package manager or touches a lockfile. `label-taxonomy`
 
 ## 4. Create the labels
 
+**Writes to GitHub:** both commands create labels in your repo.
+
 ```bash
 fabrika status bootstrap label-taxonomy
 fabrika status bootstrap issue-shape-markers
@@ -107,7 +109,16 @@ It appends its own block to `.gitignore` and rewrites nothing already there; the
 the row `/.fabrika/` appearing anywhere in the file, so a row you added by hand with the same
 spelling reads as `exists`. Commit the change before running a lane.
 
-## 6. Write a `ROADMAP.md`
+## 6. Open at least one milestone
+
+**Writes to GitHub:** you create a milestone in your repo, by hand. No fabrika verb does this, so a
+permission tool that asks before outside writes will ask here.
+
+`triage homes` offers only **open** milestones joined to a roadmap row, and zero open milestones is a
+refusal (exit 7), not an empty answer. It creates none — curating the milestone set is a human act.
+Open one on GitHub and note its number: the roadmap you write next pins it.
+
+## 7. Write a `ROADMAP.md`
 
 **Write one even though the config calls it optional.** `roadmapFile` resolves to `ROADMAP.md`
 unless you say otherwise, and an absent file means no arc and no campaign is declared.
@@ -123,7 +134,9 @@ rows is legal and zero arc rows refuses. A campaign row groups work under a them
 its `State` cell says whether the theme is being worked. An `active` row marks its milestone
 `running` in `triage homes`, and triage then homes only `p0`, `p1` and blocker work there.
 
-Draft it and hand it to the verb, which reports what its own parser joined out of the bytes it wrote:
+Draft it with the milestone number from step 6 in the arc row, and hand it to the verb. It writes a
+local file only. It reports what its own parser joined out of the bytes it wrote, then checks each
+arc's pin against your repo's open milestones:
 
 ```bash
 fabrika status bootstrap roadmap-focus <<'EOF'
@@ -137,16 +150,13 @@ EOF
 
 ```
 status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 1 arc, 0 campaigns.
+status bootstrap: pin check — every arc pin is an open milestone in you/your-repo (scanned 1 open milestone).
 ```
 
 `0 arcs` there means the table did not parse. Fix it before moving on, or the join is silently
-empty.
-
-## 7. Open at least one milestone
-
-`triage homes` offers only **open** milestones joined to a roadmap row, and zero open milestones is a
-refusal (exit 7), not an empty answer. It creates none — curating the milestone set is a human act.
-Open one on GitHub, then pin it from a `## Arcs` row by its number.
+empty. A `warning` line names each arc pin that is not an open milestone: open it, or fix the
+number. `pin check unknown` means the milestone read failed, so the pins are unchecked, not fine.
+Both still exit 0.
 
 ```bash
 fabrika triage homes
@@ -168,7 +178,8 @@ triage homes: standing lanes: 0 of 2 declared carry a label in you/your-repo —
 
 That is the correct answer, not a gap to fix. Home everything to a milestone and skip `--lane`.
 
-If you do want a standing lane: create the label on your board, then declare it under
+If you do want a standing lane: create the label on your board (**writes to GitHub**: a label you
+create by hand), then declare it under
 `boardVocabulary.standingLanes` in `.fabrika.jsonc` (next section). Both halves are required — a
 declared lane whose label does not exist is not offered, which is what stops `triage apply --lane`
 from failing a write at the end of a full triage run.
@@ -232,6 +243,10 @@ table as `not-rendered` (`fabrika table flags`), so nobody mistakes them for a r
 
 ## 10. Re-run the front door
 
+**Writes to GitHub:** `status open` only reads. The follow-ups below write:
+`status bootstrap readout-artifact` creates an issue, `/fabrika:report` files one, and
+`/fabrika:triage` labels it.
+
 ```bash
 fabrika status open
 ```
@@ -283,6 +298,8 @@ each reader does on a failed read is the "Readers outside the group" section of
 [`table-contract.md`](../docs/table-contract.md).
 
 ### 11.2 Create the project
+
+**Writes to GitHub:** it creates or links a GitHub project and adds its fields, views and README.
 
 ```bash
 fabrika table setup
@@ -338,6 +355,9 @@ standing there. Sync never moves a `bet` row, though, so set its Stage to `shipp
 its work has merged.
 
 ### 11.6 Run prep before each table
+
+**Writes to GitHub:** it adds and updates project rows, comments on issues and posts a project
+status update.
 
 ```bash
 fabrika table prep
@@ -397,7 +417,7 @@ so name one if you want it read.
 
 Continuous work, such as customer reports, crashes and CI breakage, is not bet on. To give it its
 own board, declare `boards.onCall`, then re-run `fabrika table setup` to create the
-`<repo name> on-call` project:
+`<repo name> on-call` project (**writes to GitHub**: a new project):
 
 ```jsonc
 {
