@@ -13,8 +13,10 @@ import {
 	type Scripted,
 	unconfiguredOnPlatform,
 } from "../fakes.test-support.ts";
+import {readGoldenFixture} from "../golden-fixture.ts";
 import {JOB_LOG, JOBS, jobs} from "../heal-ci/fixtures.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {emitMachine} from "../lane/emit.ts";
 import {parkCauseRead} from "../lane/fixtures.test-support.ts";
 import {foldLog, type LogEntry, parseLog} from "../lane/fold.ts";
 import {compileText} from "../lane/machine.ts";
@@ -307,7 +309,7 @@ const redLog = (text: string): ReadonlyArray<Scripted> => [
 /** A log line `heal-ci classify` seats on its `assertion-failure` logic row. */
 const ASSERTION = "AssertionError: expected 87 to be 72";
 
-/** The coder template with `human:cp-approval`'s `FAIL` arm removed, as an epic tail's region reads. */
+/** The coder template with `human:cp-approval`'s `FAIL` arm removed, as a lane booted before it reads. */
 const armlessTemplate = (): string => {
 	const strip = (node: unknown): void => {
 		if (typeof node !== "object" || node === null) return;
@@ -320,6 +322,39 @@ const armlessTemplate = (): string => {
 	strip(doc);
 	return JSON.stringify(doc);
 };
+
+/** The lane's own issue as an epic, its machine emitted fresh from the committed epic fixture body. */
+const EPIC_TASK = `epic_${LANE}`;
+
+const emittedEpic = (): string => {
+	const body = readGoldenFixture(import.meta.url, "../lane/__fixtures__/epic-4300.body.txt");
+	const children = [4301, 4302, 4303].map((number) => ({
+		number,
+		state: "open" as const,
+		stateReason: null,
+		classes: [],
+	}));
+	const result = emitMachine(Number(LANE), body, children);
+	if (result._tag !== "Emitted") throw new Error(`expected Emitted, got ${result._tag}`);
+	return result.text;
+};
+
+/** Every child landed, then the tail reviewed and parked out of `ship` on a red head. */
+const EPIC_PARKED_ON_CI_RED = [
+	...[4301, 4302, 4303].flatMap((child) =>
+		["WIP", "DONE", "PASS", "DONE"].map((event) => ({
+			task: `issue_${child}`,
+			event: `ISSUE_${child}.${event}`,
+		})),
+	),
+	{task: EPIC_TASK, event: `EPIC_${LANE}.PASS`},
+	{task: EPIC_TASK, event: `EPIC_${LANE}.BLOCKED`, cause: "head-ci-red"},
+]
+	.map(
+		(entry, index) =>
+			`${JSON.stringify({...entry, at: new Date(Date.UTC(2026, 7, 16, 0, index)).toISOString()})}\n`,
+	)
+	.join("");
 
 /** The red-CI park reached with every repair retry already spent on earlier review FAILs. */
 const PARKED_ON_CI_RED_SPENT =
@@ -492,6 +527,23 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 		expect(out.code).toBe(PARK_HOLDS);
 		expect(out.stderr.join("\n")).toMatch(/no FAIL arm, so the red has no repair route/);
 		expect(fs.written.size).toBe(0);
+	});
+
+	it("records FAIL out of a freshly emitted epic tail's park into the tail's `build` on a logic red", async () => {
+		const fs = fakeFs({files: {[WORKFLOW]: emittedEpic(), [LOG]: EPIC_PARKED_ON_CI_RED}});
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog(ASSERTION)], OURS, EPIC_TASK);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "human:cp-approval",
+			event: "FAIL",
+			mechanism: `ci-logic:#4321 at ${HEAD}, ci=assertion-failure`,
+			current: "build",
+		});
+		const written = fs.written.get(LOG) ?? "";
+		expect(written).toMatch(new RegExp(`EPIC_${LANE}\\.FAIL`));
+		expect(written).not.toMatch(/UNBLOCKED/);
 	});
 
 	it("is PARK_HOLDS on a logic red over a PR the pipeline does not own — its author repairs it", async () => {
