@@ -77,6 +77,15 @@ Zero scope is a root walked to nothing, a directory that contributed no file, or
 allow-list. A violation is a reference found, a ceiling exceeded, or a floor row sitting above its
 count.
 
+`--sha <commit>` changes the subject from the working tree to one commit. The guard then reads that
+commit's file list, file bytes, allow-list and `portability` key out of the object database, and
+never reads the working tree. The floors and the verdict are the same as the tree walk's, and every
+line of the answer names the commit. The flag exists for a reviewer: its worktree is cut from
+another checkout and never holds a pull request's head, so a walk of it grades files the verdict
+does not name. A commit this clone does not hold is UNKNOWN (`11`), and the guard does not fall back
+to the tree. `--sha` beside `--root` names two subjects and is refused (`10`). `build check` and CI
+run the guard with no `--sha`, over the tree they stand on, and that behaviour is unchanged.
+
 ## homing-guard check
 
 Every `status:triaged` issue must carry either an arc/campaign milestone or exactly one of the two

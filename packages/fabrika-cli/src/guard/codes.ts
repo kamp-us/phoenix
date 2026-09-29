@@ -10,6 +10,7 @@
  */
 
 import {
+	OFF_VOCABULARY as BUILD_OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN as BUILD_PRECONDITION_UNKNOWN,
 	ZERO_SCOPE as BUILD_ZERO_SCOPE,
 } from "../build/codes.ts";
@@ -19,6 +20,9 @@ import {
  * glob to scan under. Fail-closed, never a vacuous pass.
  */
 export const ZERO_SCOPE = BUILD_ZERO_SCOPE;
+
+/** Flags that name no subject: a malformed revision, or two subjects at once. Nothing was scanned. */
+export const OFF_VOCABULARY = BUILD_OFF_VOCABULARY;
 
 /** A read the verdict rests on failed, so nothing is proven — deliberately not a clean exit. */
 export const PRECONDITION_UNKNOWN = BUILD_PRECONDITION_UNKNOWN;

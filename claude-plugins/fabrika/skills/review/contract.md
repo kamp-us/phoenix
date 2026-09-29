@@ -54,7 +54,11 @@ the same tracked debt the sibling contracts carry.)
   and read the artifact out of the **object database**
   (`git diff <base>...<head>`), which writes objects and no working tree. Nothing is checked out,
   so no head instruction file is ever on disk to be loaded — a diff that adds a worktree or a
-  checkout is still the wrong fix and should be red at review.
+  checkout is still the wrong fix and should be red at review. The one fence a reviewer runs over
+  files holds the same line: `guard portability-guard check --sha <head>` reads the head's files
+  out of the object database rather than walking the reviewer's worktree, which was cut from
+  another checkout and never holds the head. It refuses on `11` when the head is not in the clone,
+  and never falls back to the tree.
 
   **`review seat` is the one checkout this group performs, and it is narrower than the posture it
   looks like it reverses.** It executes nothing and judges nothing: it moves the reviewer's *own*

@@ -28,7 +28,8 @@ Read the CI-at-head result; do not re-derive them.
   a real measurement (CLAUDE.md's grounding rule); an intuition stated as fact is a finding.
 - **No reference only this repo can resolve, in fabrika's own text.** On a diff under
   `claude-plugins/fabrika/` or `packages/fabrika-cli/src/`, run
-  `fabrika guard portability-guard check` and take a red as a finding: a ticket number, a
+  `fabrika guard portability-guard check --sha <head>` at the head you scoped and take a red as a
+  finding: a ticket number, a
   decision-record number in either spelling, a decision-corpus path, a hosted issue URL and a name
   the repo declared as its own all resolve nowhere else, and the docs fabrika ships are read
   elsewhere. Raising an allow-list ceiling to fit a new one is itself the finding — that floor only

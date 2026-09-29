@@ -34,7 +34,7 @@ import {runPatchGuard} from "./patch-verb.ts";
 import {runPathFilterGuard} from "./path-filter-verb.ts";
 import {runPitchGuard} from "./pitch-verb.ts";
 import {runPointerGuard} from "./pointer-verb.ts";
-import {runPortabilityGuard} from "./portability-verb.ts";
+import {runPortabilityCheck, runPortabilityGuard} from "./portability-verb.ts";
 import {runPublishIsolationGuard} from "./publish-isolation-verb.ts";
 import {runReadmeGuard} from "./readme-verb.ts";
 import {runRoadmapGuard} from "./roadmap-verb.ts";
@@ -164,11 +164,20 @@ const noGhGuard = Command.make("no-gh").pipe(
 
 const portabilityCheck = leafCommand(
 	"check",
-	{root: rootFlag},
-	Effect.fn(function* ({root}) {
+	{
+		root: rootFlag,
+		sha: Flag.string("sha").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"read this commit out of the object database instead of the working tree: the head a review verdict will name",
+			),
+		),
+	},
+	Effect.fn(function* ({root, sha}) {
 		yield* emit(
-			yield* runPortabilityGuard({
+			yield* runPortabilityCheck({
 				root: Option.getOrNull(root),
+				sha: Option.getOrNull(sha),
 				cwd: process.cwd(),
 				env: process.env,
 			}),
@@ -179,13 +188,21 @@ const portabilityCheck = leafCommand(
 	Command.withDescription(
 		leafHelp("portability-guard check", [
 			"Prints a one-line all-clear when fabrika's shipped text holds no reference only its home resolves.",
+			"  Scans the working tree; with --sha, scans that commit's files out of the object database and never the tree.",
 			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
 			"  7: zero scope: an empty walk, or an unusable allow-list",
-			"  11: a read failed, so the verdict is UNKNOWN",
+			"  10: --sha is not a revision, or is given beside --root",
+			"  11: a read failed, or the --sha commit is not in this clone, so the verdict is UNKNOWN",
 			"  12: a reference found, or an allow-list ceiling or floor out of line",
 		]),
 	),
-	Command.withExamples([{command: "fabrika guard portability-guard check"}]),
+	Command.withExamples([
+		{command: "fabrika guard portability-guard check"},
+		{
+			command: "fabrika guard portability-guard check --sha 03135b91",
+			description: "Judge a pull request's head without standing on it",
+		},
+	]),
 );
 
 const portabilityGuard = Command.make("portability-guard").pipe(
