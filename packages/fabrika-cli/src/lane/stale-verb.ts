@@ -19,14 +19,14 @@
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {Claimants} from "../build/claim.ts";
-import {exists, readDir} from "../io/fs.ts";
+import {exists} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_UNREADABLE} from "./codes.ts";
 import {deriveStatus, foldLog, type LaneStatus} from "./fold.ts";
 import {CHORE_PREFIX, rawKeyIssue} from "./key.ts";
 import {DISPATCH_BUDGET} from "./shell-budget.ts";
 import {type Judgement, judge, lastMoved, type Verdict} from "./stale.ts";
-import {DEFAULT_CHORES_ROOT, loadLane} from "./store.ts";
+import {DEFAULT_CHORES_ROOT, listLanes, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane stale";
 
@@ -230,7 +230,7 @@ export const runStale = <R = never>(
 				scanned.push({root, present: false, lanes: 0});
 				continue;
 			}
-			const names = yield* Effect.result(readDir(root));
+			const names = yield* Effect.result(listLanes(root));
 			if (Result.isFailure(names)) {
 				return refuse(
 					LANE_UNREADABLE,
@@ -238,7 +238,7 @@ export const runStale = <R = never>(
 				);
 			}
 			let found = 0;
-			for (const name of [...names.success].sort()) {
+			for (const name of names.success) {
 				const row = yield* judgeLane(root, name, nowEpochMs, override);
 				if (row === null) continue;
 				found += 1;

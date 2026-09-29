@@ -23,13 +23,13 @@ import {Effect, type FileSystem, type Path} from "effect";
 import {CONFIG_PATH} from "../config/document.ts";
 import {LANE_CONCURRENCY_CAP} from "../config/keys/lane-concurrency-cap.ts";
 import type {Read} from "../config/read-key.ts";
-import {exists, readDir} from "../io/fs.ts";
+import {exists} from "../io/fs.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
 import {CONCURRENCY_CAPPED, LANE_UNREADABLE} from "./codes.ts";
 import {deriveStatus, foldLog, standingCauses} from "./fold.ts";
 import {rawKeyIssue} from "./key.ts";
-import {loadLane} from "./store.ts";
+import {listLanes, loadLane} from "./store.ts";
 
 /** One lane holding a seat, and why it is not free. */
 export interface Seat {
@@ -66,7 +66,7 @@ export const seatsIn = <R = never>(
 			return {_tag: "Unreadable", reason: there.failure.reason} as const;
 		}
 		if (!there.success) return {_tag: "Counted", seats: [], idle: []} as const;
-		const listed = yield* Effect.result(readDir(root));
+		const listed = yield* Effect.result(listLanes(root));
 		if (listed._tag === "Failure") {
 			return {_tag: "Unreadable", reason: listed.failure.reason} as const;
 		}

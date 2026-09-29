@@ -17,10 +17,19 @@ export const ROOT_EXITS = {
 /** The contract every migrated lane verb points at, relative to the repository root. */
 export const LANE_CONTRACT = "claude-plugins/fabrika/skills/operate/contract.md";
 
-/** A lane verb's long description: summary, exit lines, then the pointer to `## \`lane <verb>\``. */
-export const laneHelp = (verb: string, summary: string, exits: ExitLines): string =>
+/**
+ * A lane verb's long description: summary, any caller-fact lines, exit lines, then the pointer to
+ * `## \`lane <verb>\``.
+ */
+export const laneHelp = (
+	verb: string,
+	summary: string,
+	exits: ExitLines,
+	facts: ReadonlyArray<string> = [],
+): string =>
 	[
 		summary,
+		...facts.map((fact) => `  ${fact}`),
 		...Object.entries(exits).map(([code, meaning]) => `  ${code}: ${meaning}`),
 		`  See operate contract.md, "lane ${verb}"`,
 	].join("\n");
