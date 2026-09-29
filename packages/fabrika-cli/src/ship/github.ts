@@ -329,13 +329,19 @@ export interface ActiveWorkflow {
  * The repository's active workflows beside the envelope's completeness proof.
  *
  * `declared` and `received` count every workflow in any state, so a caller concluding that a
- * workflow is absent can refuse a read that stopped short of the declared total.
+ * workflow is absent can refuse a read that stopped short of the declared total. `malformed` counts
+ * the entries that are not a record or carry no string `name` or `state`: such an entry may be the
+ * workflow the caller looks for, so absence read beside a non-zero count is unproven.
  */
 export interface WorkflowInventory {
 	readonly declared: number;
 	readonly received: number;
+	readonly malformed: number;
 	readonly active: ReadonlyArray<ActiveWorkflow>;
 }
+
+const isReadableWorkflow = (value: unknown): value is Record<string, unknown> =>
+	isRecord(value) && typeof value.name === "string" && typeof value.state === "string";
 
 export const listWorkflowInventory = (repo: string): Shell<Attempt<WorkflowInventory>> =>
 	authed((token) =>
@@ -351,6 +357,7 @@ export const listWorkflowInventory = (repo: string): Shell<Attempt<WorkflowInven
 				return ok({
 					declared: enveloped.value.declared,
 					received: enveloped.value.entries.length,
+					malformed: enveloped.value.entries.filter((value) => !isReadableWorkflow(value)).length,
 					active,
 				});
 			},

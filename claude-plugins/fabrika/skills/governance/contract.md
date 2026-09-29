@@ -1038,7 +1038,8 @@ a pass).
 The verb then reads `GET /repos/{o}/{r}/actions/workflows` and matches each active workflow's `name`
 against `governance-floor`. A failed read, or one that received fewer workflows than the envelope
 declares, is `unknown` — never `no-floor`, because a read that did not see every workflow cannot
-say one is absent. The line states the absence as a fact and asks the caller to re-read nothing.
+say one is absent. So is an inventory holding an entry that is not a record or carries no string
+`name` or `state`: that entry could be the floor workflow, so its absence is unproven. The line states the absence as a fact and asks the caller to re-read nothing.
 
 **`no-run`'s line states the read and offers no cause.** The tag is one token, and what the verb
 observed is that this head's run list carried no `governance-floor` entry — never why. The head's own

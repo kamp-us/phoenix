@@ -99,7 +99,8 @@ export type FloorAssertion =
 	/**
 	 * The repository's complete workflow inventory holds no active `governance-floor` workflow, so it
 	 * runs no floor and there is nothing to re-fire. Proven from that inventory, never from an empty
-	 * run list, and a read that could not prove the inventory complete is `Unknown`.
+	 * run list, and a read that could not prove the inventory complete, or that holds an entry it
+	 * cannot read, is `Unknown`.
 	 *
 	 * @ruling https://github.com/kamp-us/phoenix/issues/10053
 	 */
@@ -155,6 +156,11 @@ export const assertFloorAt = (
 			if (inventory.value.received < inventory.value.declared) {
 				return unknown(
 					`received ${inventory.value.received} of ${inventory.value.declared} declared workflows in ${repo}`,
+				);
+			}
+			if (inventory.value.malformed > 0) {
+				return unknown(
+					`${inventory.value.malformed} workflow(s) in ${repo} arrived without a readable name or state`,
 				);
 			}
 			return inventory.value.active.some((workflow) => workflow.name === FLOOR_WORKFLOW_NAME)

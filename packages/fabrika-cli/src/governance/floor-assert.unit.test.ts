@@ -302,6 +302,35 @@ describe("every unread state is UNKNOWN, never a re-fire nobody proved", () => {
 		expect(assertion._tag === "Unknown" && assertion.reason).toContain("of 40 declared workflows");
 	});
 
+	it.each([
+		["an entry with no name", {id: 9, path: ".github/workflows/x.yml", state: "active"}],
+		["an entry with a non-string name", {id: 9, name: 7, state: "active"}],
+		["an entry with no state", {id: 9, name: "governance-floor"}],
+		["an entry that is not a record", "governance-floor"],
+	])("refuses to read NoFloor out of an inventory holding %s", async (_label, entry) => {
+		const assertion = await assert([
+			[
+				WORKFLOWS,
+				{
+					status: 200,
+					body: JSON.stringify({
+						total_count: 2,
+						workflows: [
+							{id: 1, name: "ci", path: ".github/workflows/ci.yml", state: "active"},
+							entry,
+						],
+					}),
+				},
+			],
+			...listed({id: 1, name: "ci"}),
+		]);
+		expect(assertion._tag).toBe("Unknown");
+		expect(assertion._tag === "Unknown" && assertion.reason).toContain(
+			"1 workflow(s) in o/r arrived without a readable name or state",
+		);
+		expect(floorToken(assertion)).toBe("unknown");
+	});
+
 	it("reports an unreadable run list as UNKNOWN", async () => {
 		const assertion = await assert([[RUNS, {status: 502, body: "{}"}]]);
 		expect(assertion._tag).toBe("Unknown");
