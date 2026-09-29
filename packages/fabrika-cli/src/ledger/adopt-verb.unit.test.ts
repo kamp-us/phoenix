@@ -240,6 +240,7 @@ describe("runAdopt", () => {
 		]);
 		expect(result.outcome.code).toBe(OFF_VOCABULARY);
 		expect(result.outcome.stderr.at(-1)).toContain('label "status:planned" is absent');
+		expect(result.outcome.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 		expect(writes(result.requests)).toEqual([]);
 	});
 

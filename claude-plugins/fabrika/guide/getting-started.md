@@ -4,7 +4,7 @@ In this lesson you stand fabrika up on a GitHub repo you own, then drive one iss
 open pull request. It takes about half an hour. Nothing here is throwaway — the repo you set up is
 the repo you keep using.
 
-Use a repo you are happy to add labels and a milestone to. This lesson creates nineteen labels and
+Use a repo you are happy to add labels and a milestone to. This lesson creates twenty-four labels and
 one milestone on its board.
 
 You need:
@@ -88,12 +88,12 @@ anything can move. Create them:
 fabrika status bootstrap label-taxonomy
 ```
 
-On a fresh board that reports `created` and names all twenty. On a board that already has them it
+On a fresh board that reports `created` and names all twenty-one. On a board that already has them it
 reports `exists` and writes nothing:
 
 ```
-status bootstrap: status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui is already present for label-taxonomy — nothing written.
-bootstrap	exists	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui	-
+status bootstrap: status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage is already present for label-taxonomy — nothing written.
+bootstrap	exists	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage	-
 ```
 
 Three more labels mark what an issue *is* rather than where it sits:

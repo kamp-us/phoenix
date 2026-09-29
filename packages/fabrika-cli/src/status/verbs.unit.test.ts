@@ -23,7 +23,7 @@ import {fakeFs, fakeHttp, fakeSeams, fakeShell, type HttpReply} from "../fakes.t
 import {ok} from "../io/git.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {AWAITING_RELEASE, DEFAULT_STATUS_NAMES, PLANNED, STATUSES} from "../labels.ts";
+import {AWAITING_RELEASE, DEFAULT_STATUS_NAMES, KILL_LABEL, PLANNED, STATUSES} from "../labels.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
@@ -1278,12 +1278,12 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 		expect(names.has(AWAITING_RELEASE)).toBe(true);
 	});
 
-	it("carries twenty labels, each named once", () => {
-		expect(TAXONOMY).toHaveLength(20);
+	it("carries twenty-one labels, each named once", () => {
+		expect(TAXONOMY).toHaveLength(21);
 		expect(names.size).toBe(TAXONOMY.length);
 	});
 
-	it("equals the set computed off the four board lists plus the closed class set, in order", () => {
+	it("equals the set computed off the four board lists plus the closed class set and the kill label, in order", () => {
 		expect(TAXONOMY).toEqual(
 			[
 				...statusList(DEFAULT_STATUS_NAMES),
@@ -1291,6 +1291,7 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 				...TYPES.map(typeLabel),
 				...AUDIENCES.map(audienceLabel),
 				...CLASSES.map(classLabel),
+				KILL_LABEL,
 			].map((name) => ({name, description: LABEL_DESCRIPTION, color: null})),
 		);
 	});
@@ -1325,6 +1326,7 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 			"class:doc",
 			"class:skill",
 			"class:ui",
+			"closed-by-triage",
 		]);
 	});
 });

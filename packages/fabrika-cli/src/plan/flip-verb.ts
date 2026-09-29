@@ -38,6 +38,7 @@ import {cycleDocOr} from "../config/paths.ts";
 import {type ReasonHistogram, reasonHistogram} from "../evidence.ts";
 import {addLabels, getIssue, listLabels, removeLabel} from "../io/issues.ts";
 import {PLANNED, TRIAGED} from "../labels.ts";
+import {missingLabelRemedy, readBoard} from "../status/label-remedy.ts";
 import {
 	audienceSettled,
 	audienceWrites,
@@ -234,9 +235,10 @@ export const runFlip = (
 			}
 			for (const label of required) {
 				if (labels.value.includes(label)) continue;
+				const remedy = missingLabelRemedy(label, yield* readBoard(options.cwd));
 				return refuse(
 					LABEL_ABSENT,
-					`${VERB}: label "${label}" is absent from ${repo}'s taxonomy — refusing to create it.`,
+					`${VERB}: label "${label}" is absent from ${repo}'s taxonomy — refusing to create it. ${remedy}`,
 					notes,
 				);
 			}

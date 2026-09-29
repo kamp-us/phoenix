@@ -36,7 +36,7 @@ import {
 import {isRecord, parseJsonOrReason} from "../io/json.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {CLASS_LABELS} from "../labels.ts";
+import {CLASS_LABELS, KILL_LABEL} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
 import {DEFAULT_BOARD_VOCABULARY, FACET_VOCABULARY} from "../triage/facets.ts";
@@ -76,7 +76,9 @@ export const LABEL_DESCRIPTION = "created by fabrika status bootstrap label-taxo
  * `triage park`, `plan flip` or `ship release` — each refuses a label the repo lacks, correctly,
  * over a gap that list left. Deriving it from the board vocabulary is what makes a seventh type
  * widen the bootstrap with no second edit here — and what makes a repo that declared its own
- * vocabulary get *its* labels rather than the shipped defaults.
+ * vocabulary get *its* labels rather than the shipped defaults. The class labels and
+ * `closed-by-triage` are the rows no board declares: fixed in code, and minted here because a verb
+ * refuses without them.
  */
 export const taxonomy = (board: BoardVocabulary): ReadonlyArray<LabelSpec> =>
 	[
@@ -85,6 +87,7 @@ export const taxonomy = (board: BoardVocabulary): ReadonlyArray<LabelSpec> =>
 		...board.types.map(typeLabel),
 		...board.audiences.map(audienceLabel),
 		...CLASS_LABELS,
+		KILL_LABEL,
 	].map((name) => ({name, description: LABEL_DESCRIPTION, color: null}));
 
 /** The taxonomy a repo that declared no vocabulary gets — the shipped default. */
@@ -333,6 +336,20 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 
 export const findSurface = (id: string): BuildableSurface | undefined =>
 	BUILDABLE_SURFACES.find((surface) => surface.id === id);
+
+/**
+ * The id of the `labels` surface whose set holds `label` on this board, or `null` when no surface
+ * creates it.
+ *
+ * Read off {@link BUILDABLE_SURFACES} so a verb refusing over a missing label names the command that
+ * creates it without restating which set holds it, and so a repo that declared its own vocabulary
+ * is answered for its own label names.
+ */
+export const labelSurface = (label: string, board: BoardVocabulary): string | null =>
+	BUILDABLE_SURFACES.find(
+		(surface) =>
+			surface.kind === "labels" && surface.labels(board).some((spec) => spec.name === label),
+	)?.id ?? null;
 
 export const knownIds = (): string => BUILDABLE_SURFACES.map((surface) => surface.id).join(", ");
 

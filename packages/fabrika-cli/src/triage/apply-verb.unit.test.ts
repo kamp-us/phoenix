@@ -331,7 +331,23 @@ describe("runApply", () => {
 		const out = await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("label ready-for:agent does not exist");
+		expect(out.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 		expect(shell.requests.some((c) => ADD.test(c) || PATCH.test(c))).toBe(false);
+	});
+
+	it("names the bootstrap surface for a label only the repo's own declared board holds", async () => {
+		const shell = guardedShell([
+			[once(ISSUE), issue(["status:needs-triage"], null)],
+			[LABELS, labelSet("type:bug", "status:triaged", "ready-for:agent")],
+			[MILESTONES, OPEN_MILESTONES],
+		]);
+		const config = JSON.stringify({boardVocabulary: {priorities: ["sev1", "sev2"]}});
+		const out = await Effect.runPromise(
+			Effect.provide(runApply({...options, priority: "sev2"}), triageContext(shell, config)),
+		);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.at(-1)).toContain("label sev2 does not exist");
+		expect(out.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 	});
 
 	it("checks only the labels THIS run writes, not the whole vocabulary", async () => {
@@ -895,5 +911,6 @@ describe("runApply --class", () => {
 		const out = await run(happy(), {classes: ["ui"]});
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.join(" ")).toContain("label class:ui does not exist");
+		expect(out.stderr.join(" ")).toContain("fabrika status bootstrap label-taxonomy");
 	});
 });

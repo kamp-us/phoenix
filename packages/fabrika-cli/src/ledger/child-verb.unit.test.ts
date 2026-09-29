@@ -261,9 +261,19 @@ describe("runChild", () => {
 		const {outcome, requests} = await run({labels: ["not-a-label"]});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toBe(
-			'ledger child: label "not-a-label" is absent from o/r\'s taxonomy — refusing to create it.',
+			'ledger child: label "not-a-label" is absent from o/r\'s taxonomy — refusing to create it. No `fabrika status bootstrap` surface creates not-a-label — create it by hand, then re-run.',
 		);
 		expect(requests.some((line) => CREATE.test(line))).toBe(false);
+	});
+
+	it("names the bootstrap surface that creates a missing status:planned", async () => {
+		const {outcome} = await run({}, [
+			...HAPPY.filter(([pattern]) => pattern !== LABELS),
+			[LABELS, labelSet(...DEFAULT_LABELS.filter((label) => label !== "status:planned"))],
+		]);
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toContain('label "status:planned" is absent');
+		expect(outcome.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 	});
 
 	it("refuses a milestone that is not open in the repo", async () => {

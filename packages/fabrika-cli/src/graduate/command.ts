@@ -16,6 +16,7 @@ import {emit as emitOutcome} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readFile} from "../io/fs.ts";
 import {readStdin} from "../io/stdin.ts";
+import {readBoard} from "../status/label-remedy.ts";
 import type {DocumentRead} from "./compose-verb.ts";
 import {runCompose} from "./compose-verb.ts";
 import {runEmit} from "./emit-verb.ts";
@@ -136,6 +137,7 @@ const emit = leafCommand(
 				title,
 				repo: Option.getOrNull(repo),
 				env: process.env,
+				board: yield* readBoard(process.cwd()),
 				now: () => new Date(),
 			}),
 		);

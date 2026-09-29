@@ -238,6 +238,7 @@ describe("runRelease", () => {
 		expect(out.code).toBe(LABEL_ABSENT);
 		expect(out.stderr.at(-1)).toContain('label "status:awaiting-release" is absent');
 		expect(out.stderr.at(-1)).toContain("A real dark ship is not queued");
+		expect(out.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 		expect(calls.some((line) => LABEL.test(line))).toBe(false);
 	});
 

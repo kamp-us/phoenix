@@ -34,6 +34,7 @@ import {PLANNED, TRIAGED} from "../labels.ts";
 import {listSubIssues} from "../plan/github.ts";
 import {compose} from "../report/amend.ts";
 import {normalizeForReadback} from "../report/compose.ts";
+import {missingLabelRemedy, readBoard} from "../status/label-remedy.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {amendmentSection, judgeAdoption, parseStoriesFlag} from "./adoption.ts";
 import {
@@ -181,9 +182,10 @@ export const runAdopt = (
 				);
 			}
 			if (!taxonomy.value.includes(PLANNED)) {
+				const remedy = missingLabelRemedy(PLANNED, yield* readBoard(options.cwd));
 				return refuse(
 					OFF_VOCABULARY,
-					`${VERB}: label "${PLANNED}" is absent from ${repo}'s taxonomy — refusing to create it.`,
+					`${VERB}: label "${PLANNED}" is absent from ${repo}'s taxonomy — refusing to create it. ${remedy}`,
 					diagnostics,
 				);
 			}

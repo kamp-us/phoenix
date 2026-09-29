@@ -19,6 +19,7 @@
  */
 
 import {Effect} from "effect";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {
 	createComment,
 	createIssue,
@@ -34,6 +35,7 @@ import {
 import {sessionIdFrom} from "../io/session-id.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback, renderFooter} from "../report/compose.ts";
+import {missingLabelRemedy} from "../status/label-remedy.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -48,7 +50,7 @@ import {
 import {guardTarget} from "./target-guard.ts";
 
 const VERB = "triage split";
-const QUEUE_LABEL = "status:needs-triage";
+export const QUEUE_LABEL = "status:needs-triage";
 
 const SURFACE: AuthoredSurface = {
 	verb: VERB,
@@ -63,6 +65,8 @@ export interface SplitOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The board a missing-label refusal reads its `status bootstrap` remedy against. */
+	readonly board: BoardRead;
 	/** The claim token `triage claim` handed this lane — which lane of the session is asking. */
 	readonly token: string | null;
 	/** The fd-0 read, injected so the failed-read and TTY paths are testable without a descriptor. */
@@ -198,7 +202,7 @@ export const runSplit = Effect.fn(function* (options: SplitOptions) {
 	if (!labels.value.includes(QUEUE_LABEL)) {
 		return refuse(
 			ZERO_SCOPE,
-			`${VERB}: label ${QUEUE_LABEL} does not exist in ${repo} — refusing to create a child over a queue that would scan nothing.`,
+			`${VERB}: label ${QUEUE_LABEL} does not exist in ${repo} — refusing to create a child over a queue that would scan nothing. ${missingLabelRemedy(QUEUE_LABEL, options.board)}`,
 		);
 	}
 

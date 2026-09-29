@@ -43,6 +43,7 @@ import {listLabels, listOpenMilestones} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {PLANNED} from "../labels.ts";
 import {listSubIssues} from "../plan/github.ts";
+import {missingLabelRemedy, readBoard} from "../status/label-remedy.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {composeChildBody} from "./child-body.ts";
 import {
@@ -212,9 +213,10 @@ export const runChild = (
 		}
 		for (const label of labels) {
 			if (taxonomy.value.includes(label)) continue;
+			const remedy = missingLabelRemedy(label, yield* readBoard(options.cwd));
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: label "${label}" is absent from ${repo}'s taxonomy — refusing to create it.`,
+				`${VERB}: label "${label}" is absent from ${repo}'s taxonomy — refusing to create it. ${remedy}`,
 				notes,
 			);
 		}
