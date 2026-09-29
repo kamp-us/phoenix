@@ -1,0 +1,10 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
+		"types": ["node", "react"]
+	},
+	"include": ["src/window.tsx", "src/hsbg-program.ts", "src/renderer-ref.ts", "src/styles.d.ts"],
+	"exclude": ["node_modules", "dist"]
+}

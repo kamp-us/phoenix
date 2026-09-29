@@ -1,0 +1,14 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": false,
+		"rewriteRelativeImportExtensions": true,
+		"rootDir": "src",
+		"outDir": "dist",
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": false
+	},
+	"include": ["src"],
+	"exclude": ["node_modules", "dist", "src/window.tsx"]
+}

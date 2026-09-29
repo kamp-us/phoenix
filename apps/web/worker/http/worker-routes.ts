@@ -13,6 +13,7 @@ import {liveRoute} from "../features/fate-live/route.ts";
 import {flagsEvaluateRoute, flagsProbeRoute} from "../features/flagship/route.ts";
 import {flagsDevApplyRoute, flagsDevPageRoute} from "../features/flagship/route-dev.ts";
 import {shellBootRoute} from "../features/flagship/shell-boot-route.ts";
+import {hsbgGetRoute, hsbgPublishRoute} from "../features/hsbg/route.ts";
 import {mecmuaIndexRoute} from "../features/mecmua/index-route.ts";
 import {mecmuaPublicReadRoute} from "../features/mecmua/public-read-route.ts";
 import {baseFeedRoute} from "../features/pano/base-feed-route.ts";
@@ -53,6 +54,8 @@ export const rawWorkerRoutes: readonly [WorkerRoute, ...WorkerRoute[]] = [
 	{path: "/api/flags/dev", glob: "/api/*", route: flagsDevPageRoute},
 	{path: "/api/flags/dev", glob: "/api/*", route: flagsDevApplyRoute},
 	{path: "/api/pano/link-metadata", glob: "/api/*", route: linkMetadataRoute},
+	{path: "/api/hsbg/rooms/:roomId", glob: "/api/*", route: hsbgPublishRoute},
+	{path: "/api/hsbg/rooms/:roomId", glob: "/api/*", route: hsbgGetRoute},
 	{path: "/rss.xml", glob: "/rss.xml", route: rssRoute},
 	// The edge-render shell catch-all (#2929, ADR 0179). Specific routes above win by
 	// find-my-way precedence, so this catches only what they do not.

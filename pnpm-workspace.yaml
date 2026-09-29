@@ -66,6 +66,7 @@ catalog:
   '@tiptap/starter-kit': 3.27.3
   '@types/node': ^25.6.2
   '@types/semver': 7.8.0
+  '@types/three': 0.186.0
   '@types/ws': ^8.18.1
   '@types/react': ^19.2.14
   '@types/react-dom': ^19.2.3
@@ -126,6 +127,7 @@ catalog:
   # What `@kampus/tuval-sdk` reads a program's declared SDK range with (#9686). Pinned to the exact
   # 7.8.5 an existing lockfile parent already links (sharp), so no third version enters the tree.
   semver: 7.8.5
+  three: 0.186.1
   turbo: ^2.9.14
   # Pi's own pin (`@earendil-works/pi-coding-agent@0.85.1`'s `package.json`), because a
   # `ToolDefinition.parameters` this repo writes and one Pi's own tools write have to be the same
