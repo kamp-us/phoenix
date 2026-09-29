@@ -808,8 +808,10 @@ head red; a still-running run outside it never makes it `pending` either. The `c
 `run` count stay the **whole** enumeration's: the rollup narrowed, the evidence did not, and the
 completeness proof still divides by what the platform declared. A base branch declaring **nothing**
 required falls back to the informational-name denylist in `src/review/rollup.ts`, so every
-non-informational check blocks there. A declared set that cannot be read at this token's permission
-is `11` naming that read as the cause — never a colour over it. Which definition answered is stated
+non-informational check blocks there. A plan-gated base takes the same denylist: GitHub's `403`
+beginning `Upgrade to GitHub Pro or make this repository public` says the branch cannot declare a
+required check, so it is not a permission failure. Any other declared set that cannot be read at
+this token's permission is `11` naming that read as the cause — never a colour over it. Which definition answered is stated
 on the notes channel on every run. The two governance-floor settle tokens read the blocking set too,
 so a non-required red beside a stale floor no longer hides it.
 
@@ -936,6 +938,7 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `review ci: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 | `review ci: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
 | `review ci: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `review ci: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `review ci: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `review ci: no run at this head answers any context <base> declares required — pending, never green: the required checks have not reported.` | 0 | notice |
 | `review ci: every run at this head is informational — pending, never green: nothing here gates.` | 0 | notice |

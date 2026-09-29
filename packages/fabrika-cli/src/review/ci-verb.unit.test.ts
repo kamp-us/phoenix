@@ -5,6 +5,7 @@ import type {ExecResult} from "../io/exec.ts";
 import {
 	httpError,
 	PROTECTION,
+	planGated,
 	protection,
 	RULES,
 	rules,
@@ -190,6 +191,19 @@ describe("runCi under the base branch's required set", () => {
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
 		expect(out.stderr.at(-1)).toContain("which checks block is UNKNOWN, never none.");
+	});
+
+	it("answers a colour over a plan-gated base, naming the plan gate as the authority", async () => {
+		const out = await run([
+			[RULES, planGated],
+			[PULL, served(pull())],
+			[RUNS, runs(1, [{name: "unit tests", status: "completed", conclusion: "failure"}])],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tred`);
+		expect(out.stderr.join("\n")).toContain(
+			"main's plan offers no branch protection or rulesets — every non-informational check blocks",
+		);
 	});
 
 	it("falls back to the denylist on a base branch that declares nothing required", async () => {

@@ -12,6 +12,7 @@ import {
 	JOBS,
 	jobs,
 	PROTECTION,
+	planGated,
 	protection,
 	pull,
 	RULES,
@@ -134,6 +135,22 @@ describe("runLogs reads every failing gating context, not the first", () => {
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
+	});
+
+	it("reads the failing logs over a plan-gated base, naming the plan gate as the authority", async () => {
+		const out = await run([
+			[RULES, planGated],
+			[PULL, reply(pull())],
+			[CHECK_RUNS, reply(checkRuns(1, [failed("unit tests")]))],
+			[RUNS_AT_HEAD, reply(runsAtHead(1, [{id: 77}]))],
+			[JOBS, jobs(1, [{id: 441, name: "unit tests"}])],
+			[JOB_LOG, logText("AssertionError")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`logs\t1\t${HEAD}`);
+		expect(out.stderr.join("\n")).toContain(
+			"main's plan offers no branch protection or rulesets — every non-informational check blocks",
+		);
 	});
 
 	it("emits a context with no workflow job behind it rather than failing the whole read", async () => {

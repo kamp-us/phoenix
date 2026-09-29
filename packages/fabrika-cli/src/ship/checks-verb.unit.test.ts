@@ -11,6 +11,7 @@ import {
 	HEAD,
 	httpError,
 	PROTECTION,
+	planGated,
 	protection,
 	pull,
 	RULES,
@@ -262,6 +263,22 @@ describe("runChecks under the base branch's required set", () => {
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
+	});
+
+	it("answers a colour over a plan-gated base, naming the plan gate as the authority", async () => {
+		const out = await run(
+			[[RULES, planGated], ...found],
+			[
+				[RUNS, served(checkRuns(1, [noRun("unit tests", "completed", "failure")]))],
+				[WORKFLOWS, served(workflows("active"))],
+				[RUN_COUNT, served(runsTotal(1))],
+			],
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tred`);
+		expect(out.stderr.join("\n")).toContain(
+			"main's plan offers no branch protection or rulesets — every non-informational check blocks",
+		);
 	});
 
 	// Narrowing the rollup to the declared set opens an empty-gating-set case wherever the required

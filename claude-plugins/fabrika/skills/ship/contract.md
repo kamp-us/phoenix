@@ -1209,7 +1209,9 @@ the head, so a `--wait` poll never re-reads it. A failing check outside that set
 <name>, … — reported, never blocking.`, and does not red the head. A base branch that declares
 **nothing** falls back to the informational-name denylist, so every non-informational check gates
 there — an undeclared branch is one nobody has said what gates, not one that gates nothing. A
-declared set that cannot be read at this token's permission is `11` naming that read as the cause:
+plan-gated base takes the same denylist: GitHub's `403` beginning `Upgrade to GitHub Pro or make
+this repository public` says the branch cannot declare a required check, so it is not a permission
+failure. Any other declared set that cannot be read at this token's permission is `11` naming that read as the cause:
 this group is the merge authority, and no green here may be served over an authority nobody could
 name. Which definition answered is stated on the notes channel on every run.
 
@@ -1283,6 +1285,7 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 | `ship checks: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
 | `ship checks: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `ship checks: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `ship checks: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `ship checks: no run at this head answers any context <base> declares required — pending, never green: the required checks have not reported.` | 0 | notice |
 | `ship checks: every run at this head is informational — pending, never green: nothing here gates.` | 0 | notice |

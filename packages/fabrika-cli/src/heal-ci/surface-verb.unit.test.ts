@@ -9,6 +9,7 @@ import {
 	HEAD,
 	httpError,
 	PROTECTION,
+	planGated,
 	protection,
 	pull,
 	RULES,
@@ -96,6 +97,24 @@ describe("runSurface compares the two sides and judges neither", () => {
 			].join("\n"),
 		);
 		expect(out.stderr.at(-1)).toContain('UNPROBEABLE, never "no requirements"');
+	});
+
+	it("answers no-requirements, never unprobeable, over a plan-gated base", async () => {
+		const out = await run([
+			[PULL, reply(pull())],
+			[CHECK_RUNS, reply(checkRuns(1, [completed("unit tests")]))],
+			[RULES, planGated],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(
+			[
+				`surface\tno-requirements\t${HEAD}`,
+				"extra\tunit tests",
+				"facts\trequired:0\tproducing:0\textra:1",
+				"",
+			].join("\n"),
+		);
+		expect(out.stderr.at(-1)).toContain("main's plan offers no branch protection or rulesets");
 	});
 });
 
