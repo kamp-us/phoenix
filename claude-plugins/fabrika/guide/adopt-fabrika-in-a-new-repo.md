@@ -212,8 +212,9 @@ and the lane stops. Say by path what a PR with no preview needs instead:
 `hand-check` lets your own comment on the PR stand in for the render: screenshots, naming the PR's
 exact head, from an account on your control-plane `CODEOWNERS` row. `skip` means no rendered review
 is owed for those files. A file no rule matches still needs a render, and a PR takes the strictest
-mode across its files. Both looser outcomes are flagged on the PR and in `ship gate`, so nobody
-mistakes them for a render. The reviewer's side of this is in
+mode across its files. The route checks that the PR really has no preview, so a rule never stands in
+for a render that could run. Both looser outcomes are flagged on the PR, in `ship gate` and on the
+table as `not-rendered` (`fabrika table flags`), so nobody mistakes them for a render. The reviewer's side of this is in
 [`review-ui`'s skill](../skills/review-ui/SKILL.md).
 
 ## 10. Re-run the front door

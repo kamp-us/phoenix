@@ -99,3 +99,13 @@ export const NO_PREVIEW_MODE_UNMET = 21;
  * author is not on the control plane, it names no head this PR is at, or it carries no screenshot.
  */
 export const HAND_CHECK_INADMISSIBLE = 22;
+/**
+ * Refused, proven: a no-preview route found a preview announced on the PR.
+ *
+ * The route stands only where `review-ui render` would refuse on {@link NO_PREVIEW}, read off the
+ * same resolver. Any announced preview — current, behind the head, or naming several apps — means
+ * a render can run, so a `skip` or `hand-check` rule may not stand in for it.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10038#issuecomment-5860347862
+ */
+export const PREVIEW_EXISTS = 23;

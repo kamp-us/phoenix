@@ -357,13 +357,13 @@ const route = leafCommand(
 		noPreview: Flag.boolean("no-preview").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				"the PR has no preview deploy: route under the repo's reviewUi.whenNoPreview rules — skip posts a record flagged basis:skip, hand-check needs --hand-check, require-render is refused at 21",
+				"the PR has no preview deploy: route under the repo's reviewUi.whenNoPreview rules — skip posts a record flagged basis:skip, hand-check posts one flagged basis:hand-check over the newest owner's hand-check at this head the verb finds on the PR (refused at 21 when there is none), require-render is refused at 21; the verb reads the PR's preview announcement itself and refuses at 23 when one is there",
 			),
 		),
 		handCheck: Flag.string("hand-check").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"the owner's hand-check comment on this PR, by id or #issuecomment URL — a control-plane account's screenshots naming the exact head; implies --no-preview, and is refused at 22 when the comment is not one",
+				"pin the owner's hand-check comment on this PR, by id or #issuecomment URL, instead of letting --no-preview find the newest one — a control-plane account's screenshots naming the exact head; implies --no-preview, and is refused at 22 when the comment is not one",
 			),
 		),
 		repo: repoFlag,
@@ -420,11 +420,12 @@ const route = leafCommand(
 			"  8: post failed (UNKNOWN)",
 			"  9: read-back mismatch",
 			"  10: bad flag value or pairing",
-			"  11: a read failed, came back capped, or diverged",
-			"  12: head moved, or a ui file changed since --verified-at",
-			"  20: review-code FAIL, or absent on an evidence route",
+			"  11: a read failed, capped, or diverged",
+			"  12: head moved, or ui changed since --verified-at",
+			"  20: review-code FAIL, or absent where owed",
 			"  21: reviewUi.whenNoPreview refuses the route",
 			"  22: not an owner's hand-check at this head",
+			"  23: a preview is announced; render it",
 			'  Derivation: the review-ui skill\'s contract.md, "review-ui route"',
 		].join("\n"),
 	),

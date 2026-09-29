@@ -545,3 +545,64 @@ describe("the on-call board", () => {
 		expect(report.unread).toEqual([]);
 	});
 });
+
+describe("not rendered", () => {
+	const line = (event: string, extra: Record<string, unknown> = {}) =>
+		JSON.stringify({task: "issue", event, at: daysAgo(1), ...extra});
+	const passed = (basis: "hand-check" | "skip") =>
+		line("PASS", {
+			pr: "https://forge.example/o/r/pull/12",
+			routed: ["review-ui"],
+			routedBasis: {"review-ui": basis},
+		});
+	const withLog = (issue: number, log: ReadonlyArray<string>): LaneRecord => ({
+		...record(issue),
+		log,
+	});
+	const unrendered = (report: ReturnType<typeof flagsOf>) =>
+		report.flags.filter((one) => one._tag === "NotRendered");
+
+	it("flags a row whose lane passed review-ui on a hand-check, naming the issue and the PR", () => {
+		const report = flagsOf(
+			input([row(single(10))], {10: [withLog(10, [line("DONE"), passed("hand-check")])]}),
+		);
+		const [flag] = unrendered(report);
+		expect(flag).toMatchObject({
+			head: 10,
+			issue: 10,
+			namespace: "review-ui",
+			basis: "hand-check",
+			pr: "https://forge.example/o/r/pull/12",
+		});
+		expect(recOf(flag as Flag, SHIPPED_TABLE)).toContain("an owner's hand-check, not a render");
+	});
+
+	it("flags a skip, and flags it on a row that is no longer live", () => {
+		const report = flagsOf(
+			input([row(single(11), {stage: null})], {11: [withLog(11, [passed("skip")])]}),
+		);
+		expect(named(report)).toEqual(["NotRendered #11"]);
+		expect(recOf(report.flags[0] as Flag, SHIPPED_TABLE)).toContain(
+			"skipped by reviewUi.whenNoPreview",
+		);
+	});
+
+	it("clears when a later PASS of the same task stood on a render", () => {
+		const log = [passed("hand-check"), line("PASS", {routed: ["review-ui"]})];
+		const report = flagsOf(input([row(single(12))], {12: [withLog(12, log)]}));
+		expect(unrendered(report)).toEqual([]);
+	});
+
+	it("raises nothing for a lane with no flagged route", () => {
+		const report = flagsOf(input([row(single(13))], {13: [withLog(13, [line("PASS")])]}));
+		expect(unrendered(report)).toEqual([]);
+		expect(report.unread).toEqual([]);
+	});
+
+	it("reads a log it cannot parse as unread, never clear", () => {
+		const report = flagsOf(input([row(single(14))], {14: [withLog(14, ["not json"])]}));
+		expect(report.unread).toContainEqual(
+			expect.objectContaining({check: "not-rendered", issue: 14}),
+		);
+	});
+});

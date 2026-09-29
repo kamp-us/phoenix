@@ -66,3 +66,25 @@ export const admitHandCheck = (
 	}
 	return {_tag: "Admitted", comment};
 };
+
+/**
+ * The newest admissible hand-check on the PR, or `null` where no comment passes all four facts —
+ * so a reviewer never browses comments for one; the verb reads them and names what it stood on.
+ */
+export const findHandCheck = (
+	comments: ReadonlyArray<CommentRecord>,
+	head: string,
+	owners: ReadonlySet<string>,
+): CommentRecord | null => {
+	const admitted = comments.filter(
+		(comment) => admitHandCheck(comment.id, comments, head, owners)._tag === "Admitted",
+	);
+	const stamp = (comment: CommentRecord) =>
+		comment.updatedAt === "" ? comment.createdAt : comment.updatedAt;
+	return admitted.reduce<CommentRecord | null>((newest, comment) => {
+		if (newest === null) return comment;
+		const [a, b] = [stamp(comment), stamp(newest)];
+		if (a !== b) return a > b ? comment : newest;
+		return comment.id > newest.id ? comment : newest;
+	}, null);
+};

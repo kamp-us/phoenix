@@ -34,7 +34,7 @@ import type {ParentedCommit} from "../io/git.ts";
 import type {PullScope} from "../io/pulls.ts";
 import {type IssueRefs, ROUTED_NAMESPACES} from "../review/classes.ts";
 import {isBuildState, SHELL_STATES} from "../wire/lane-brief.ts";
-import type {RouteBasis} from "../wire/routed-elsewhere.ts";
+import type {RouteBasis, RoutedBasis} from "../wire/routed-elsewhere.ts";
 import {rawKeyIssue} from "./key.ts";
 
 /** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
@@ -589,6 +589,14 @@ export const judgeVerdicts = (
 			? {...row, basis: verdict.basis}
 			: row;
 	});
+
+/** The basis each flagged `routed` row stood on, or `null` where no row carries one. */
+export const basisOfRows = (rows: ReadonlyArray<NamespaceRow>): RoutedBasis | null => {
+	const flagged = rows.flatMap((row) =>
+		row.state === "routed" && row.basis !== undefined ? [[row.namespace, row.basis] as const] : [],
+	);
+	return flagged.length === 0 ? null : Object.fromEntries(flagged);
+};
 
 export type Proof =
 	| {readonly _tag: "Proven"; readonly note: string}

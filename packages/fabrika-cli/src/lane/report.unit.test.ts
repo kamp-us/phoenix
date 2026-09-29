@@ -37,11 +37,16 @@ const RENDERED_PARKS = [
 ] as const;
 
 /**
- * Every park the rendered gate records: the three above plus `ESCALATED`, a verdict that provably
+ * Every park the rendered gate records: the three above, `ROUTED-ELSEWHERE`'s second cause for a
+ * route the repo's `reviewUi.whenNoPreview` rules admitted, and `ESCALATED`, a verdict that provably
  * could not land. Under `parkCause.uncaused: "refuse"` an uncaused park is never recorded, so it
  * names its own cause too.
  */
-const UI_REVIEWER_PARKS = [...RENDERED_PARKS, ["ESCALATED", "write-unlanded"]] as const;
+const UI_REVIEWER_PARKS = [
+	...RENDERED_PARKS,
+	["ROUTED-ELSEWHERE", "no-preview-routed"],
+	["ESCALATED", "write-unlanded"],
+] as const;
 
 describe("the builder's no-PR terminals", () => {
 	it("routes an epic child's BUILT-NO-PR to DONE, not to the BLOCKED a clean build never earned", () => {
@@ -210,7 +215,7 @@ describe("the UI reviewer's vocabulary against the skill that owns it", () => {
 		expect(section).toMatch(new RegExp(`${token}[\\s\\S]*?\`${cause}\``));
 	});
 
-	it("names those four causes and no fifth", () => {
+	it("names those five causes and no sixth", () => {
 		const named = PARK_CAUSE_TOKENS.filter((cause) => (section ?? "").includes(cause));
 
 		expect(new Set(named)).toEqual(new Set(UI_REVIEWER_PARKS.map(([, cause]) => cause)));

@@ -59,7 +59,7 @@ this contract (one registry-side enum addition; flagged in the implementation ti
 | `review-ui render` | capture named surfaces from the PR's preview deployment at the inspected head, one validated PNG per surface, each surface's outcome proven | preview resolution, head-binding, capture and per-surface outcome typing are mechanical; *choosing the surfaces and looking at the pixels* stays in the skill |
 | `review-ui post` | the single sanctioned `review-ui` verdict emit: verify-upload the evidence set, compose through the wire format, bind to the inspected head at post time, append into this namespace's one comment, read it back | upload-verify-compose-post-readback is a protocol; *the polarity and every finding behind it* are judgment |
 | `review-ui note` | the single sanctioned non-verdict write: post one plain comment naming a proven blocker state (can't-see, escalation), leak-scanned, read back — never a marker | compose-scan-post-readback is a protocol; *whether the state warrants a note* is judgment |
-| `review-ui route` | the single sanctioned way to resolve this namespace with no verdict: post one head-bound `routed-elsewhere` record stating that the PR renders nothing, leak-scanned, upserted, read back | binding, upsert and read-back are a protocol; *whether the diff renders anything* is judgment, and no verb may take it |
+| `review-ui route` | the single sanctioned way to resolve this namespace with no verdict: post one head-bound `routed-elsewhere` record stating that the PR renders nothing, or, on a PR with no preview, that the repo's `reviewUi.whenNoPreview` rules skip the render or an owner's hand-check stands in for it (its `basis:`), leak-scanned, upserted, read back | binding, upsert and read-back are a protocol; *whether the diff renders anything* is judgment, and no verb may take it |
 
 ### Considered and deliberately not derived
 
@@ -173,8 +173,9 @@ sibling's numerals is not a goal the doctrine sets.
 | `17` | proven: at least one evidence upload or upload-verification failed — **nothing was posted** |
 | `18` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing posted |
 | `20` | refused, proven: the text review a `route` record rests on is not a standing PASS at the head it binds — the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on a hand-verification has no text verdict binding that head — nothing posted |
-| `21` | refused, proven: the repo's `reviewUi.whenNoPreview` rules do not admit a `--no-preview` route — the PR resolves `require-render`, or `hand-check` with no hand-check named — nothing posted |
+| `21` | refused, proven: the repo's `reviewUi.whenNoPreview` rules do not admit a `--no-preview` route — the PR resolves `require-render`, or `hand-check` with no owner's hand-check at the head on the PR — nothing posted |
 | `22` | refused, proven: the named hand-check is not an owner's screenshots at this head — nothing posted |
+| `23` | refused, proven: a `--no-preview` route found a preview announced on the PR, so a render can run — nothing posted |
 | `127` | the verb never ran at all (unresolved binary) |
 
 **`7` versus `11`** is the package's spine: a 404 is a fact about the repository, an unreachable
@@ -1010,8 +1011,8 @@ The reasoning arrives on **stdin only**, for the same reason as `post` and `note
 | `--sha` | string | yes | — | the head whose diff was read, 7–40 lowercase hex |
 | `--clause` | string | yes | — | the one-line why, carried on the record's first line; blank is refused |
 | `--verified-at` | string | no | none | the head a hand-verification standing in for the render ran at, 7–40 lowercase hex; the range to `--sha` is then read and a `ui`-class file in it refuses the route, as does a range the platform could not read whole or at all |
-| `--no-preview` | boolean | no | `false` | the PR has no preview deploy: route under the repo's `reviewUi.whenNoPreview` rules instead of the diff; refused beside `--verified-at` |
-| `--hand-check` | string | no | none | the owner's hand-check comment on this PR, as an id or a URL ending `#issuecomment-<id>`; implies `--no-preview` |
+| `--no-preview` | boolean | no | `false` | the PR has no preview deploy: route under the repo's `reviewUi.whenNoPreview` rules instead of the diff; the verb checks the absence itself and refuses on `23` when a preview is announced; refused beside `--verified-at` |
+| `--hand-check` | string | no | none | pin the owner's hand-check comment on this PR, as an id or a URL ending `#issuecomment-<id>`, instead of letting the verb find the newest one; implies `--no-preview` |
 | `--repo` | string | no | resolved | the repository |
 | stdin | markdown | yes | — | which files changed and why none of them renders anything |
 
@@ -1019,7 +1020,8 @@ The reasoning arrives on **stdin only**, for the same reason as `post` and `note
 `{"answer":"routed","namespace":"review-ui","sha":"6c6fe226…","uiFiles":2,"verifiedAt":null,"basis":null,"textReview":"absent","upsert":"created","commentUrl":"…"}`.
 `verifiedAt` is the `--verified-at` head the range was cleared over, and `null` where the route
 rested on no hand-verification. `basis` is `hand-check` or `skip` on a `--no-preview` route and
-`null` otherwise; it is the same token the record's first line carries. `textReview` is the `review-code` verdict this record rests on:
+`null` otherwise; it is the same token the record's first line carries. `handCheck` is the id of the
+owner's comment a `hand-check` route stood on, and is absent on every other route. `textReview` is the `review-code` verdict this record rests on:
 `pass` where one stands in force at `--sha`, `absent` where none binds that head — and `absent` is
 reachable only on a route carrying no `--verified-at`, because one that does is refused at `20`.
 
@@ -1056,7 +1058,11 @@ the range raises the `ui` class — the hand-verification is then spent and a fr
 `--sha`; a comparison that came back at GitHub's 300-file ceiling is `11`, because the compare
 declares no total and a capped list can only ever hide a `ui`-class file, and so is one whose two
 heads have diverged, because the platform's three-dot compare then answers from their merge base and
-the range was never read at all. Compose the record's first
+the range was never read at all. With `--no-preview`, the mode is resolved right after the `ui`
+class (`21` on `require-render`); the comments read then checks that no preview is announced
+(`23`, or `11` when the announcement does not read) and, under `hand-check`, admits the owner's
+hand-check (`21` with none found, `22` when a pinned one fails a fact), both before the text
+verdict. Compose the record's first
 line through the `routed-elsewhere` wire format, leak-scan the assembled comment (`5`/`6`), upsert
 one record for this namespace on the emitter's own comment, and read it back from live state (`9` on
 mismatch, `8` on an unproven write).
@@ -1095,20 +1101,30 @@ the PR's `ui`-class files: the first rule whose glob matches a file sets its mod
 matches is `require-render`, and the PR takes the strictest — `require-render`, then `hand-check`,
 then `skip`. The verb then acts on it:
 
+**The verb checks the "no preview" itself.** Before it routes, it reads the PR's preview
+announcement through the same resolver `review-ui render` uses for its exit `16`, and it routes only
+where `render` would refuse there for want of one. An announced preview, at this head, behind it or
+naming several apps, refuses on `23`: a render can run, so no rule may stand in for it. An
+announcement that does not read is `11`. So `--no-preview` is never the caller's word alone.
+
 - `require-render` refuses on `21`. A render is owed, so no preview is CANT-SEE, exactly as with no
   rules at all.
 - `skip` posts the record with `basis:skip` on its first line. The standing `review-code` FAIL
   refusal still holds; an absent text verdict does not refuse.
-- `hand-check` needs `--hand-check <comment>`, and refuses on `21` without it. **The owner's
-  hand-check is admissible evidence here**: a comment on this PR, by an account on the control-plane
-  roster `.github/CODEOWNERS` names, that names the PR's exact head (a 7–40 hex prefix of it) and
-  carries at least one screenshot. Anything else refuses on `22`. It stands in for the render the
-  way a desk run does, so it rests on a standing `review-code` PASS at `--sha` too (`20` without
-  one). The record carries `basis:hand-check` and a closing line naming the comment and its author.
-  Under a `skip` mode a named hand-check is checked the same way and recorded as `hand-check`.
+- `hand-check` needs the owner's hand-check. **The owner's hand-check is admissible evidence here**:
+  a comment on this PR, by an account on the control-plane roster `.github/CODEOWNERS` names, that
+  names the PR's exact head (a 7–40 hex prefix of it) and carries at least one screenshot. The verb
+  reads the PR's comments and stands on the newest one that passes all four facts; with none, it
+  refuses on `21`. `--hand-check <comment>` pins one instead, and a pinned comment that fails a fact
+  refuses on `22`. It stands in for the render the way a desk run does, so it rests on a standing
+  `review-code` PASS at `--sha` too (`20` without one). The record carries `basis:hand-check` and a
+  closing line naming the comment and its author. Under a `skip` mode a pinned hand-check is checked
+  the same way and recorded as `hand-check`.
 
 Both flags ride the record's first line, so `ship gate` still reads the namespace as `routed` and
-flags the row with the basis, and `lane prove` carries it onto the namespace row it records.
+flags the row with the basis, and `lane prove` carries it onto the namespace row it records. `lane
+report` writes it on the `PASS` line as `routedBasis`, and `table flags` raises `not-rendered` on the
+board row off it.
 
 **What this verb does not decide.** Whether the diff renders anything. That is the skill's judgment
 over `review diff`'s refusal-guarded bytes. Narrowing the `ui` path class instead was proposed and
@@ -1128,9 +1144,10 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `10` | `--sha` or `--verified-at` is not a head SHA, `--clause` is blank, `--hand-check` names no comment, or `--verified-at` is passed beside `--no-preview` |
 | `11` | a precondition read failed, the changed-file list came back at GitHub's 3000-file ceiling, or the `--verified-at` comparison came back at the 300-file ceiling or between two diverged heads — nothing was posted |
 | `12` | the live head moved past `--sha` — the diff you read is gone; or a `ui`-class file changed between `--verified-at` and `--sha`, so the hand-verification is spent |
-| `20` | the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on `--verified-at` or `--hand-check` has no `review-code` verdict binding that head |
-| `21` | a `--no-preview` route the repo's `reviewUi.whenNoPreview` rules do not admit: the PR resolves `require-render`, or `hand-check` with no `--hand-check` named |
+| `20` | the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on `--verified-at` or an owner's hand-check has no `review-code` verdict binding that head |
+| `21` | a `--no-preview` route the repo's `reviewUi.whenNoPreview` rules do not admit: the PR resolves `require-render`, or `hand-check` with no owner's hand-check at the head on the PR |
 | `22` | the `--hand-check` comment is not an owner's hand-check: not on this PR, not by a control-plane account, naming no head this PR is at, or carrying no screenshot |
+| `23` | a `--no-preview` route over a PR that announces a preview, at the head, behind it, or for several apps |
 
 **Errors**
 
@@ -1159,9 +1176,13 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `review-ui route: review-code stands FAIL at <sha> (comment <id>) — this record would assert a text PASS that is not there; repair the finding and route at the head the text gate passes.` | 20 | refusal |
 | `review-ui route: no standing review-code verdict binds <sha>, and a route resting on a hand-verification asserts one — land the text verdict first, and read what stands with fabrika review verdicts <n>.` | 20 | refusal |
 | `review-ui route: reviewUi.whenNoPreview resolves require-render for #<n> (<files>) — a render is owed, so a PR with no preview is CANT-SEE, never routed.` | 21 | refusal |
-| `review-ui route: reviewUi.whenNoPreview resolves hand-check for #<n> (<files>) — name the owner's hand-check comment with --hand-check; with none posted, the PR is CANT-SEE.` | 21 | refusal |
-| `review-ui route: cannot read <roster> — whether comment <id> is an owner's is UNKNOWN; nothing was posted.` | 11 | refusal |
+| `review-ui route: reviewUi.whenNoPreview resolves hand-check for #<n>, and no comment on it is an owner's hand-check at <head> — a control-plane account's screenshots naming this head; with none posted, the PR is CANT-SEE.` | 21 | refusal |
+| `review-ui route: cannot read <roster> — whether an owner's hand-check stands on #<n> is UNKNOWN; nothing was posted.` | 11 | refusal |
 | `review-ui route: comment <id> <why it is not an owner's hand-check at this head>; nothing was posted.` | 22 | refusal |
+| `review-ui route: #<n>'s preview comment carries the anchor but does not read (<reason>) — whether a preview exists is UNKNOWN; nothing was posted.` | 11 | refusal |
+| `review-ui route: #<n> announces a <app> preview at <sha> — a render can run, so a no-preview rule cannot stand in for it; run review-ui render.` | 23 | refusal |
+| `review-ui route: #<n> announces a <app> preview at <deployed>, not yet at <sha> — this PR deploys previews, so wait for it to redeploy and render; a no-preview rule cannot stand in for it.` | 23 | refusal |
+| `review-ui route: #<n> announces a preview for <apps> — a render can run, so a no-preview rule cannot stand in for it; run review-ui render --app <app>.` | 23 | refusal |
 
 **Scope** — one PR, one comment write, the caller's stdin.
 
@@ -1211,16 +1232,16 @@ A PR with no preview, in a repo whose `.fabrika.jsonc` declares
 `"reviewUi": {"whenNoPreview": [{"paths": ["apps/admin/**"], "mode": "hand-check"}]}`:
 
 ```
-$ fabrika review-ui route 5210 --sha 3a9e41c0 --hand-check 5870011234 \
+$ fabrika review-ui route 5210 --sha 3a9e41c0 --no-preview \
     --clause "no preview; the owner hand-checked this head" <<'EOF'
-apps/admin deploys to no preview. The owner's comment 5870011234 carries screenshots of the two
-changed readouts at 3a9e41c0.
+apps/admin deploys to no preview. The owner's screenshots of the two changed readouts at 3a9e41c0
+stand in for the render.
 EOF
-{"answer":"routed","namespace":"review-ui","sha":"3a9e41c0","uiFiles":2,"verifiedAt":null,"basis":"hand-check","textReview":"pass","upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/5210#issuecomment-5870019876"}
+{"answer":"routed","namespace":"review-ui","sha":"3a9e41c0","uiFiles":2,"verifiedAt":null,"basis":"hand-check","handCheck":5870011234,"textReview":"pass","upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/5210#issuecomment-5870019876"}
 ```
 
-The same route with no `--hand-check` refuses on `21`, naming the files the `hand-check` rule
-matched and asking for the owner's comment.
+With no owner's hand-check at `3a9e41c0` on the PR, the same route refuses on `21`. On a PR whose
+preview comment announces a deploy, it refuses on `23` and names the preview to render.
 
 **Grounding**
 

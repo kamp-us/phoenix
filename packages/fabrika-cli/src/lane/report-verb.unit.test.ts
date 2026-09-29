@@ -897,6 +897,25 @@ describe("lane report — a satisfied UI route advances the task it used to stra
 		expect(JSON.parse(out.stdout).routed).toEqual(["review-ui"]);
 	});
 
+	it("records a flagged route's basis on the line, so the table can flag the row", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+		const prover = fakeProverByEvent({
+			PASS: {
+				outcome: answer(JSON.stringify({proof: "proven"})),
+				routed: ["review-ui"],
+				routedBasis: {"review-ui": "hand-check"},
+			},
+		});
+
+		const out = await run(fs, "ROUTED-ELSEWHERE", {prover});
+
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			routed: ["review-ui"],
+			routedBasis: {"review-ui": "hand-check"},
+		});
+		expect(JSON.parse(out.stdout).routedBasis).toEqual({"review-ui": "hand-check"});
+	});
+
 	it("drops the park's cause from the advanced line rather than refusing the caller for passing one", async () => {
 		const fs = laneAt(LOG_AT["review:ui"]);
 

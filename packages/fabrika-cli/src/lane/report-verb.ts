@@ -413,6 +413,7 @@ export const runReport = <R>(
 					...(cause === null ? {} : {cause}),
 					...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 					...(proved.routed.length === 0 ? {} : {routed: proved.routed}),
+					...(proved.routedBasis === undefined ? {} : {routedBasis: proved.routedBasis}),
 					...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
 					...(integrate === null ? {} : {integrate}),
 				};
@@ -436,6 +437,7 @@ export const runReport = <R>(
 							...(cause === null ? {} : {cause}),
 							...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 							...(proved.routed.length === 0 ? {} : {routed: proved.routed}),
+							...(proved.routedBasis === undefined ? {} : {routedBasis: proved.routedBasis}),
 							...(proved.partial === null ? {} : {partial: proved.partial}),
 							...(proved.diagnosis ? {diagnosis: true} : {}),
 							...(proved.landed.length === 0 ? {} : {landed: proved.landed}),

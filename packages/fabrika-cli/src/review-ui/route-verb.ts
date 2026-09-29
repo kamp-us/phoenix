@@ -55,14 +55,16 @@
  * `basis:hand-check` only over an owner's comment that names this head and carries screenshots
  * (`./hand-check.ts`). A hand-check stands in for the render exactly as a desk run does, so it rests
  * on a standing text PASS too. Both flags ride the record's first line, so `ship gate` and the
- * lane's proof say the namespace was not rendered.
+ * lane's proof say the namespace was not rendered. The verb does not take `--no-preview` on the
+ * caller's word: it reads the PR's preview announcement through `render`'s own resolver and routes
+ * only where `render` would refuse for want of one.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9196#issuecomment-5688739893
  * @ruling https://github.com/kamp-us/phoenix/issues/10038#issuecomment-5860347862
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {createComment, getComment, listComments} from "../io/issues.ts";
+import {type CommentRecord, createComment, getComment, listComments} from "../io/issues.ts";
 import {
 	COMPARE_FILE_CAP,
 	compareFiles,
@@ -91,15 +93,17 @@ import {
 	NO_PREVIEW_MODE_UNMET,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
+	PREVIEW_EXISTS,
 	READBACK_MISMATCH,
 	STALE_TREE,
 	TEXT_REVIEW_UNMET,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {admitHandCheck, handCheckCommentId} from "./hand-check.ts";
+import {admitHandCheck, findHandCheck, handCheckCommentId} from "./hand-check.ts";
 import {filesAtMode, type NoPreviewMode, type NoPreviewRule, noPreviewMode} from "./no-preview.ts";
 import {NAMESPACE} from "./post-verb.ts";
+import {resolvePreview} from "./preview.ts";
 import {standingTextVerdict, TEXT_NAMESPACE, textClaims} from "./text-verdict.ts";
 
 const VERB = "review-ui route";
@@ -140,7 +144,10 @@ export interface RouteOptions {
 export interface NoPreviewRequest {
 	/** The repo's `reviewUi.whenNoPreview` rules, resolved by the caller off the tree it stands in. */
 	readonly rules: ReadonlyArray<NoPreviewRule>;
-	/** The owner's hand-check comment, by id or URL, or `null` where none is offered. */
+	/**
+	 * The owner's hand-check comment, by id or URL, or `null` to let the verb find the newest
+	 * admissible one on the PR itself.
+	 */
 	readonly handCheck: string | null;
 }
 
@@ -160,14 +167,42 @@ const basisUnder = (
 			why: `reviewUi.whenNoPreview resolves require-render for #${pr} (${files}) — a render is owed, so a PR with no preview is CANT-SEE, never routed.`,
 		};
 	}
-	if (offered) return {_tag: "Basis", basis: "hand-check"};
-	if (mode === "hand-check") {
-		return {
-			_tag: "Unmet",
-			why: `reviewUi.whenNoPreview resolves hand-check for #${pr} (${files}) — name the owner's hand-check comment with --hand-check; with none posted, the PR is CANT-SEE.`,
-		};
+	return offered || mode === "hand-check"
+		? {_tag: "Basis", basis: "hand-check"}
+		: {_tag: "Basis", basis: "skip"};
+};
+
+/**
+ * `null` exactly where `review-ui render` would refuse on its no-preview exit, over the same
+ * resolver; otherwise the refusal a no-preview route owes.
+ */
+const previewAbsence = (
+	pr: number,
+	sha: string,
+	comments: ReadonlyArray<CommentRecord>,
+): {readonly code: number; readonly message: string} | null => {
+	const preview = resolvePreview(comments, null);
+	switch (preview._tag) {
+		case "NoPreview":
+			return null;
+		case "Malformed":
+			return {
+				code: PRECONDITION_UNKNOWN,
+				message: `${VERB}: #${pr}'s preview comment carries the anchor but does not read (${preview.reason}) — whether a preview exists is UNKNOWN; nothing was posted.`,
+			};
+		case "Ambiguous":
+			return {
+				code: PREVIEW_EXISTS,
+				message: `${VERB}: #${pr} announces a preview for ${preview.apps.join(", ")} — a render can run, so a no-preview rule cannot stand in for it; run review-ui render --app <app>.`,
+			};
+		case "Resolved":
+			return {
+				code: PREVIEW_EXISTS,
+				message: prefixMatch(preview.value.deployedSha, sha)
+					? `${VERB}: #${pr} announces a ${preview.value.app} preview at ${sha} — a render can run, so a no-preview rule cannot stand in for it; run review-ui render.`
+					: `${VERB}: #${pr} announces a ${preview.value.app} preview at ${preview.value.deployedSha}, not yet at ${sha} — this PR deploys previews, so wait for it to redeploy and render; a no-preview rule cannot stand in for it.`,
+			};
 	}
-	return {_tag: "Basis", basis: "skip"};
 };
 
 /** Either side may be abbreviated, so the match is a prefix in whichever direction is shorter. */
@@ -328,6 +363,50 @@ export const runRoute = (
 		const comments = yield* listComments(repo, pr);
 		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
 		diagnostics.push(scannedLine(VERB, comments.value.length, "comment"));
+		if (noPreview !== null) {
+			const absent = previewAbsence(pr, inspected, comments.value);
+			if (absent !== null) return refuse(absent.code, absent.message, diagnostics);
+		}
+		let handCheckLine = "";
+		let handCheckComment: number | null = null;
+		if (basis === "hand-check") {
+			const roster = yield* controlPlaneRoster(repo);
+			if (roster._tag === "Unknown") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read ${roster.reason} — whether an owner's hand-check stands on #${pr} is UNKNOWN; nothing was posted.`,
+					diagnostics,
+				);
+			}
+			let admitted: CommentRecord;
+			if (handCheckId === null) {
+				const found = findHandCheck(comments.value, live, roster.logins);
+				if (found === null) {
+					return refuse(
+						NO_PREVIEW_MODE_UNMET,
+						`${VERB}: reviewUi.whenNoPreview resolves hand-check for #${pr}, and no comment on it is an owner's hand-check at ${live} — a control-plane account's screenshots naming this head; with none posted, the PR is CANT-SEE.`,
+						diagnostics,
+					);
+				}
+				admitted = found;
+			} else {
+				const named = admitHandCheck(handCheckId, comments.value, live, roster.logins);
+				if (named._tag === "Inadmissible") {
+					return refuse(
+						HAND_CHECK_INADMISSIBLE,
+						`${VERB}: ${named.reason}; nothing was posted.`,
+						diagnostics,
+					);
+				}
+				admitted = named.comment;
+			}
+			diagnostics.push(
+				`${VERB}: stands on comment ${admitted.id} by ${admitted.author}, an owner's hand-check at ${live}.`,
+			);
+			handCheckComment = admitted.id;
+			handCheckLine = `\nHand-check: comment ${admitted.id} by ${admitted.author}, at ${live}.\n`;
+		}
+
 		const claims = textClaims(comments.value);
 		const headContent = yield* headContentFor(
 			VERB,
@@ -419,27 +498,6 @@ export const runRoute = (
 			}
 		}
 
-		let handCheckLine = "";
-		if (handCheckId !== null) {
-			const roster = yield* controlPlaneRoster(repo);
-			if (roster._tag === "Unknown") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read ${roster.reason} — whether comment ${handCheckId} is an owner's is UNKNOWN; nothing was posted.`,
-					diagnostics,
-				);
-			}
-			const admitted = admitHandCheck(handCheckId, comments.value, live, roster.logins);
-			if (admitted._tag === "Inadmissible") {
-				return refuse(
-					HAND_CHECK_INADMISSIBLE,
-					`${VERB}: ${admitted.reason}; nothing was posted.`,
-					diagnostics,
-				);
-			}
-			handCheckLine = `\nHand-check: comment ${handCheckId} by ${admitted.comment.author}, at ${live}.\n`;
-		}
-
 		const route =
 			basis === null
 				? {namespace: NAMESPACE, sha: inspected, clause}
@@ -524,6 +582,7 @@ export const runRoute = (
 				uiFiles: ui.length,
 				verifiedAt: verified,
 				basis,
+				...(handCheckComment === null ? {} : {handCheck: handCheckComment}),
 				textReview: text === null ? "absent" : "pass",
 				upsert: mine === undefined ? "created" : "edited",
 				commentUrl: landed.url,

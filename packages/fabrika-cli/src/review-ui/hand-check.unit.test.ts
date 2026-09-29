@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import type {CommentRecord} from "../io/issues.ts";
-import {admitHandCheck, handCheckCommentId} from "./hand-check.ts";
+import {admitHandCheck, findHandCheck, handCheckCommentId} from "./hand-check.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const OWNERS = new Set(["owner"]);
@@ -44,5 +44,19 @@ describe("admitHandCheck", () => {
 		const answer = admitHandCheck(7001, comments, HEAD, OWNERS);
 		expect(answer).toMatchObject({_tag: "Inadmissible"});
 		if (answer._tag === "Inadmissible") expect(answer.reason).toContain(reason);
+	});
+});
+
+describe("findHandCheck", () => {
+	it("finds the newest admissible hand-check, passing over the ones that fail a fact", () => {
+		const older = comment(`at ${HEAD} ${SHOT}`, "owner", 1);
+		const newer = {...comment(`at ${HEAD} ${SHOT}`, "owner", 2), updatedAt: "2026-09-29T01:00:00Z"};
+		const agent = {...comment(`at ${HEAD} ${SHOT}`, "agent", 3), updatedAt: "2026-09-29T02:00:00Z"};
+		expect(findHandCheck([older, newer, agent], HEAD, OWNERS)?.id).toBe(2);
+	});
+
+	it("finds none where no comment passes all four facts", () => {
+		const found = [comment(`looks right at ${HEAD}`), comment(`at 9fe12ab04f ${SHOT}`, "owner", 2)];
+		expect(findHandCheck(found, HEAD, OWNERS)).toBeNull();
 	});
 });

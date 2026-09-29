@@ -70,6 +70,32 @@ const BASIS_PREFIX = "basis:";
 const routeBasis = (raw: string): RouteBasis | null =>
 	(ROUTE_BASES as ReadonlyArray<string>).includes(raw) ? (raw as RouteBasis) : null;
 
+/**
+ * Each routed namespace a lane's proof stood on a flagged route for, with its basis — the shape a
+ * lane event line carries as `routedBasis`. Never empty: no flagged route is the field's absence.
+ */
+export type RoutedBasis = Readonly<Record<string, RouteBasis>>;
+
+/**
+ * Read a `routedBasis` value off a parsed event line: `null` unless it is a non-empty object whose
+ * every key is one of `routed` and every value a basis — a partial read would flag the wrong row.
+ */
+export const readRoutedBasis = (
+	value: unknown,
+	routed: ReadonlyArray<string>,
+): RoutedBasis | null => {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+	const entries = Object.entries(value);
+	if (entries.length === 0) return null;
+	const read: Record<string, RouteBasis> = {};
+	for (const [namespace, raw] of entries) {
+		const basis = typeof raw === "string" ? routeBasis(raw) : null;
+		if (basis === null || !routed.includes(namespace)) return null;
+		read[namespace] = basis;
+	}
+	return read;
+};
+
 export interface RoutedElsewhere {
 	/** The required namespace this record resolves — `review-ui` is the only one `ship gate` admits. */
 	readonly namespace: string;

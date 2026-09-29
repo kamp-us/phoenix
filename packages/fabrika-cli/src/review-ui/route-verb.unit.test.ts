@@ -20,6 +20,7 @@ import {
 	NO_PREVIEW_MODE_UNMET,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
+	PREVIEW_EXISTS,
 	READBACK_MISMATCH,
 	STALE_TREE,
 	TEXT_REVIEW_UNMET,
@@ -520,10 +521,32 @@ describe("review-ui route --no-preview", () => {
 		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
 	});
 
-	it("refuses on 21 under hand-check when no hand-check comment is named", async () => {
-		const {outcome} = await run(script([], flagged("hand-check")), under("hand-check"));
+	it("refuses on 21 under hand-check when no owner's hand-check at this head is on the PR", async () => {
+		const {outcome, requests} = await run(
+			script(
+				[handCheck("agent"), handCheck(OWNER, `Hand-checked at ${MOVED}.\n\n${SHOT}`)],
+				flagged("hand-check"),
+				roster,
+			),
+			under("hand-check"),
+		);
 		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
-		expect(outcome.stderr.join("\n")).toContain("--hand-check");
+		expect(outcome.stderr.join("\n")).toContain("no comment on it is an owner's hand-check");
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("finds the owner's hand-check itself when none is named", async () => {
+		const {outcome, requests, bodies} = await run(
+			script([handCheck(), textVerdict("PASS")], flagged("hand-check", HAND_CHECK_TAIL), roster),
+			under("hand-check"),
+		);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			basis: "hand-check",
+			handCheck: HAND_CHECK_ID,
+		});
+		const at = requests.findIndex((request) => CREATE.test(request));
+		expect(bodies[at]).toContain(`Hand-check: comment ${HAND_CHECK_ID} by ${OWNER}`);
 	});
 
 	it("posts a record flagged basis:hand-check over an owner's screenshots at this head", async () => {
@@ -570,6 +593,55 @@ describe("review-ui route --no-preview", () => {
 			under("hand-check", String(HAND_CHECK_ID)),
 		);
 		expect(outcome.code).toBe(TEXT_REVIEW_UNMET);
+	});
+
+	const preview = (body: string) => ({
+		id: 7100,
+		user: {login: "kampus-bot"},
+		created_at: "2026-09-29T00:00:00Z",
+		updated_at: "2026-09-29T00:00:00Z",
+		body,
+	});
+	const deployed = (sha: string, app = "web") =>
+		`<!-- preview-deploy:${app} -->\n- **${app}** — Stage \`pr-6326\` → https://pr-6326-${app}.example.test <sub>(${sha})</sub>`;
+
+	it("refuses on 23 where the PR announces a preview at this head, under skip or hand-check", async () => {
+		const skipped = await run(script([preview(deployed(HEAD))], flagged("skip")), under("skip"));
+		expect(skipped.outcome.code).toBe(PREVIEW_EXISTS);
+		expect(skipped.outcome.stderr.join("\n")).toContain("run review-ui render");
+		expect(skipped.requests.some((request) => CREATE.test(request))).toBe(false);
+
+		const checked = await run(
+			script(
+				[preview(deployed(HEAD)), handCheck(), textVerdict("PASS")],
+				flagged("hand-check"),
+				roster,
+			),
+			under("hand-check", String(HAND_CHECK_ID)),
+		);
+		expect(checked.outcome.code).toBe(PREVIEW_EXISTS);
+		expect(checked.requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("refuses on 23 where the announced preview lags the head, or names several apps", async () => {
+		const behind = await run(script([preview(deployed(MOVED))], flagged("skip")), under("skip"));
+		expect(behind.outcome.code).toBe(PREVIEW_EXISTS);
+		expect(behind.outcome.stderr.join("\n")).toContain("wait for it to redeploy");
+
+		const two = await run(
+			script([preview(`${deployed(HEAD, "api")}\n${deployed(HEAD)}`)], flagged("skip")),
+			under("skip"),
+		);
+		expect(two.outcome.code).toBe(PREVIEW_EXISTS);
+	});
+
+	it("refuses on 11 where the preview announcement does not read", async () => {
+		const {outcome, requests} = await run(
+			script([preview("<!-- preview-deploy:web -->\nno url here")], flagged("skip")),
+			under("skip"),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("refuses --verified-at beside --no-preview on 10, before any read", async () => {
