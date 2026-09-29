@@ -117,10 +117,10 @@ export const resendTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "ready"},
 ];
 
-/** The idempotency keys the proof sends its four prompts under. */
-export const KEYS = {first: "k1", second: "k2", cut: "k3", resend: "k4"} as const;
+/** The idempotency keys the proof sends its three prompts under. */
+export const KEYS = {first: "k1", second: "k2", cut: "k3"} as const;
 
-/** The item ids the tail holds after the cut, and after the resend that follows the restore. */
+/** The item ids the tail holds after the cut. */
 export const afterTheCut = [
 	promptItemId(KEYS.first),
 	"t1",
@@ -130,7 +130,6 @@ export const afterTheCut = [
 	promptItemId(KEYS.cut),
 	"a3",
 ];
-export const afterTheResend = [...afterTheCut, promptItemId(KEYS.resend), "a4"];
 
 const script: AgentScript = {
 	sessionId: SESSION,

@@ -85,26 +85,6 @@ describe("choosing the next attempt", () => {
 		assert.deepStrictEqual(delays, [100, 200, 400, 400]);
 	});
 
-	it("refuses a protocol disagreement at once, however much budget is left", () => {
-		const next = nextAttempt(recovery, "protocol", 1, "1008: undecodable frame");
-		assert.strictEqual(next._tag, "Refuse");
-		assert.include(next._tag === "Refuse" ? next.reason : "", "disagree about the wire");
-	});
-
-	it("refuses a kernel running no shell at once, with the cause as the whole reason", () => {
-		const cause = new NoShellProcess().message;
-		assert.deepStrictEqual(nextAttempt(recovery, "no-shell", 1, cause), {
-			_tag: "Refuse",
-			reason: cause,
-		});
-	});
-
-	it("refuses once the budget is spent, and names the token as one of the two readings", () => {
-		const next = nextAttempt(recovery, "never-opened", 5, "An error occurred during Open");
-		assert.strictEqual(next._tag, "Refuse");
-		assert.include(next._tag === "Refuse" ? next.reason : "", "launch token");
-	});
-
 	it("never retries under `noRecovery` — the control the browser proof's negative arm runs", () => {
 		assert.strictEqual(nextAttempt(noRecovery, "dropped", 1, "gone")._tag, "Refuse");
 	});
@@ -200,6 +180,8 @@ describe("driving the lifecycle", () => {
 			assert.strictEqual(state.opened, 3);
 			assert.strictEqual(state.refusals.length, 1);
 			assert.include(state.refusals[0] ?? "", "3 attempt(s)");
+			// A socket that never opened is named as one of its two readings, the token among them.
+			assert.include(state.refusals[0] ?? "", "launch token");
 		}),
 	);
 
@@ -220,6 +202,7 @@ describe("driving the lifecycle", () => {
 
 			assert.strictEqual(state.opened, 1);
 			assert.strictEqual(state.refusals.length, 1);
+			assert.include(state.refusals[0] ?? "", "disagree about the wire");
 		}),
 	);
 

@@ -39,12 +39,13 @@ const zoomLabels = (input: string): ReadonlyArray<string> =>
 	paletteCandidates(input, zoomRegistry, snapshot).map((candidate) => candidate.label);
 
 describe("paletteCandidates", () => {
-	it("lists the spells under a path prefix, not the bare segment", () => {
-		expect(labels("win")).toEqual(["window close", "window move", "window focus"]);
-	});
-
-	it("carries each spell's describe", () => {
+	it("lists the spells under a path prefix, not the bare segment, each with its describe", () => {
 		const found = paletteCandidates("win", registry, snapshot);
+		expect(found.map((candidate) => candidate.label)).toEqual([
+			"window close",
+			"window move",
+			"window focus",
+		]);
 		expect(found.map((candidate) => candidate.describe)).toEqual([
 			"Close the focused window.",
 			"Move the focused window.",

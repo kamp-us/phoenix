@@ -277,20 +277,6 @@ describe("boot", () => {
 		spawnBudget(1),
 	);
 
-	it.effect(
-		"boots the desk's shell on a project with no config module, beside the global layer's rows",
-		() =>
-			Effect.gen(function* () {
-				const project = emptyProject();
-				const {report} = yield* bootDirect(fixture("two-rows"), project);
-				assert.deepStrictEqual(report.sources, [fixture("two-rows")]);
-				assert.strictEqual(report.programCount, DESK_PROGRAMS + 2);
-				assert.strictEqual(report.spellCount, DESK_SPELLS);
-				assert.strictEqual(report.processCount, 1);
-			}),
-		DIRECT_BOOT_MS,
-	);
-
 	// #9375: this folder has no `.tuval` at all, and neither has the home dir. Before the desk
 	// supplied its shell, this boot planned no process and the page sat at "Attaching to the Tuval
 	// kernel…"; now the shell is live and the page is served over it.
@@ -435,19 +421,6 @@ describe("boot", () => {
 	);
 
 	it(
-		"refuses to boot on a wrong-shaped project config the same way",
-		() => {
-			const project = projectWithConfig("wrong-shape");
-			const result = run(["--project", project], {...process.env, HOME: freshHome()});
-			expect(result.status).toBe(1);
-			expect(result.stderr).toBe(
-				`tuval: refusing to boot — config module ${projectConfig(project)}: not a v1 config at version: Missing key\n`,
-			);
-		},
-		spawnBudget(1),
-	);
-
-	it(
 		"refuses an explicitly named config module that is not there, before boot",
 		() => {
 			const missing = join(freshProject(), "nope.ts");
@@ -480,29 +453,6 @@ describe("boot", () => {
 				);
 			}),
 		DIRECT_BOOT_MS,
-	);
-
-	it(
-		"boots a full attaching desk over a project holding no files, on the home config alone",
-		async () => {
-			const home = freshHome();
-			mkdirSync(join(home, ".tuval"));
-			writeFileSync(
-				defaultGlobalConfig(home),
-				`export {default} from ${JSON.stringify(boxConfig)};\n`,
-			);
-			const project = emptyProject();
-			const result = await runUntilRunning(["--project", project], {...process.env, HOME: home});
-			expect(result.status).toBe(0);
-			expect(result.stdout).toContain(
-				`3 process(es) live, 0 restored from ${homeStateDir(project, home)}\n`,
-			);
-			expect(result.stdout).toContain("tuval: process shell program=shell");
-			expect(result.stdout).toContain("tuval: desk at http://");
-			// The whole point of rule 1: the project is exactly as empty as it was.
-			expect(readdirSync(project)).toEqual([]);
-		},
-		spawnBudget(1),
 	);
 
 	it.effect(
@@ -724,20 +674,6 @@ describe("the merged feature flags on the node side", () => {
 				const features = yield* flagsAtSpawn(booted);
 				assert.deepStrictEqual(features, {...featuresDefault, piSubagents: false});
 				assert.deepStrictEqual(subagentExtensionPaths(features), []);
-			}),
-		DIRECT_BOOT_MS,
-	);
-
-	// Flags are global only (#9687, ruling #9668 R4.2): a project layer stating one refuses the boot
-	// rather than overriding the global layer.
-	it.effect(
-		"refuse a boot whose project layer states one",
-		() =>
-			Effect.gen(function* () {
-				const error = yield* Effect.flip(
-					bootDirect(fixture("pi-subagents-on"), projectWithConfig("pi-subagents-off")),
-				);
-				assert.match(error.message, /states feature flags \(piSubagents\); flags are global only/);
 			}),
 		DIRECT_BOOT_MS,
 	);

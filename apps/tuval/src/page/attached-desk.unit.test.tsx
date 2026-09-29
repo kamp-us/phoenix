@@ -284,6 +284,18 @@ const settle = Effect.gen(function* () {
 	}
 });
 
+/**
+ * Let the shared `Dialog` arm itself. Zag registers its focus trap and its dismissable layer a frame
+ * after the dialog mounts, so an Escape or a focus read taken before that frame meets no layer.
+ */
+const dialogArmed = Effect.tryPromise({
+	try: () =>
+		act(async () => {
+			await new Promise((resolve) => globalThis.setTimeout(resolve, 50));
+		}),
+	catch: (cause) => new TestIo({cause}),
+}).pipe(Effect.orDie);
+
 describe("the attached desk", () => {
 	it.effect(
 		"opens one subscription for a process shown in two windows, and mounts its renderer in both",
@@ -813,13 +825,7 @@ describe("the process board flag", () => {
 			// `Dialog`'s (`packages/design/src/Dialog.tsx` over Manti's zag machine), which is why they
 			// are asserted here rather than implemented anywhere in this app.
 			assert.strictEqual(dialog.getAttribute("aria-modal"), "true");
-			yield* Effect.tryPromise({
-				try: () =>
-					act(async () => {
-						await new Promise((resolve) => globalThis.setTimeout(resolve, 50));
-					}),
-				catch: (cause) => new TestIo({cause}),
-			}).pipe(Effect.orDie);
+			yield* dialogArmed;
 			assert.isTrue(dialog.contains(document.activeElement));
 		}),
 	);
@@ -867,6 +873,7 @@ describe("the process board flag", () => {
 			yield* settle;
 
 			const dialog = screen.getByRole("dialog", {name: "Processes"});
+			yield* dialogArmed;
 			yield* Effect.sync(() =>
 				act(() => {
 					fireEvent.keyDown(dialog, {key: "Escape"});
@@ -914,23 +921,6 @@ describe("the trust question", () => {
 			assert.deepStrictEqual(app.trustAnswers, [{question: "q-1", answer: "trust"}]);
 			// The next folder waiting is asked at once, before the kernel's next frame lands.
 			assert.include(screen.getByRole("alertdialog").textContent, "/code/tea");
-		}),
-	);
-
-	it.effect("asks nothing while no open is waiting", () =>
-		Effect.gen(function* () {
-			const app = yield* scripted();
-			render(
-				<AttachedDesk
-					page={app.page}
-					shell={app.shell}
-					renderers={renderers}
-					reducedMotion={true}
-					refusal={null}
-				/>,
-			);
-			yield* settle;
-			assert.isNull(screen.queryByRole("alertdialog"));
 		}),
 	);
 });

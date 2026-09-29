@@ -2,17 +2,15 @@
  * @vitest-environment jsdom
  *
  * The subagent rows' focus ring (#8751). The rows are buttons, so they owe a visible ring, and the
- * desk paints it once for everything under `.tuval-surface`. What is proven here is that the chat
- * sheet hand-rolls none of its own and that a focused row is inside the desk rule's reach. The
- * chat sheet is `@kampus/tuval-ui`'s and the desk rule is the app's, so the proof lives in the app.
+ * desk paints it once for everything under `.tuval-surface`. What is proven here is that a focused
+ * row is inside the desk rule's reach; that the rule is the desk's one ring and no sheet — the chat
+ * sheet included — hand-rolls another is `./composer-focus-ring.unit.test.tsx`'s. The chat window
+ * is `@kampus/tuval-ui`'s and the desk rule is the app's, so the proof lives in the app.
  *
- * jsdom does not resolve `var()` substitution, so a computed `outline` string would read the same
- * whether the declaration survived or was dropped — the sheet is read off disk and the desk rule is
- * checked by selector match instead.
+ * jsdom does not resolve `var()` substitution, so the rule is checked by selector match rather than
+ * by a computed `outline` string.
  */
 
-import {readFileSync} from "node:fs";
-import {fileURLToPath} from "node:url";
 import type {SubagentSlot} from "@kampus/tuval-sdk/ai-agent/ports";
 import type {
 	AiAgentSessionMsg,
@@ -30,14 +28,8 @@ import {render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import {chatSheetPath} from "./ui-source.testing.ts";
 
 installDomShims();
-
-const chatSheet = (): string => readFileSync(chatSheetPath, "utf8");
-
-const deskSheet = (): string =>
-	readFileSync(fileURLToPath(import.meta.resolve("../shell/ui/tokens.css")), "utf8");
 
 const slots = (...entries: ReadonlyArray<SubagentSlot>): Record<string, SubagentSlot> =>
 	Object.fromEntries(entries.map((slot) => [slot.id, slot]));
@@ -72,21 +64,6 @@ const openUnderSurface = async (state: AiAgentSessionState) => {
 };
 
 describe("the subagent rows' focus ring", () => {
-	it("is hand-rolled nowhere in the chat sheet", () => {
-		const blocks = chatSheet()
-			.split("}")
-			.filter((block) => /tuval-chat-subagent/.test(block.split("{")[0] ?? ""));
-
-		expect(blocks.length).toBeGreaterThan(0);
-		expect(blocks.filter((block) => /\boutline\s*:/.test(block))).toEqual([]);
-	});
-
-	it("is the desk's one rule, declared off the ring tokens", () => {
-		expect(deskSheet()).toMatch(
-			/\.tuval-board-overlay :focus-visible,\s*\.tuval-surface:not\(\[data-input-modality="pointer"\]\) :focus-visible \{[^}]*outline: var\(--focus-ring\);[^}]*outline-offset: var\(--focus-ring-offset\);/s,
-		);
-	});
-
 	it("reaches a focused pick row, which sits under the desk root", async () => {
 		const opened = await openUnderSurface(
 			withTranscript([userItem("u1", "go")], {

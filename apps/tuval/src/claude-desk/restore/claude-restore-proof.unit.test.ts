@@ -5,9 +5,10 @@
  *
  * Boot one runs two turns — answering the card the first one raises and switching the mode — and is
  * stopped in the middle of a third. Boot two spawns the same graph back over the same `fileStore`
- * checkpoints; the kernel dispatches the row's own resume rule. What it has to show is the same
- * transcript with the cut turn marked, no turn replayed, and one deliberate resend producing
- * exactly one new emission.
+ * checkpoints; the kernel dispatches the row's own resume rule. What it has to show is the mode the
+ * operator switched to, carried back by the reconnect (#7953). The generic restore — the transcript
+ * with the cut turn marked, no turn replayed, one resend — is `aiAgentProgram`'s, which this row
+ * reuses, and is proven once in `../../ai-agent/restore/restore-proof.unit.test.ts`.
  *
  * There is no window and no renderer here: the row declares one, and a headless run is the same run
  * (founder ruling, #7557). Nothing opens the session by hand either — the first boot spawns fresh
@@ -20,15 +21,10 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert} from "@effect/vitest";
-import type {
-	ModePayload,
-	PermissionPayload,
-	TranscriptPayload,
-} from "@kampus/tuval-sdk/ai-agent/ports";
+import type {PermissionPayload, TranscriptPayload} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AiAgentSessionState,
 	isAiAgentSessionState,
-	promptItemId,
 } from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
@@ -40,9 +36,7 @@ import {scratchHome} from "../../scratch-home.ts";
 import {
 	AGENT_NODE,
 	afterTheCut,
-	afterTheResend,
 	CARD,
-	CWD,
 	KEYS,
 	OFFERED,
 	SESSION,
@@ -85,20 +79,14 @@ const sessionOf = (agent: ProcessHandle): AiAgentSessionState => {
 const payloadsOn = <T>(arrivals: ReadonlyArray<Arrival>, port: string): ReadonlyArray<T> =>
 	arrivals.filter((arrival) => arrival.port === port).map((arrival) => arrival.payload as T);
 
-const transcriptsIn = (arrivals: ReadonlyArray<Arrival>): ReadonlyArray<TranscriptPayload> =>
-	payloadsOn<TranscriptPayload>(arrivals, aiAgentPortNames.transcript);
-
 const pendingIn = (arrivals: ReadonlyArray<Arrival>): ReadonlyArray<ReadonlyArray<string>> =>
 	payloadsOn<PermissionPayload>(arrivals, aiAgentPortNames.permissionPending).flatMap((payload) =>
 		payload.kind === "pending" ? [Object.keys(payload.requests)] : [],
 	);
 
-const modesIn = (arrivals: ReadonlyArray<Arrival>): ReadonlyArray<ModePayload> =>
-	payloadsOn<ModePayload>(arrivals, aiAgentPortNames.modeState);
-
 /** The tail as the window last saw it, by item id. Everything the proof reads comes off this. */
 const rendered = (window: ProcessHandle): ReadonlyArray<string> =>
-	transcriptsIn(arrivalsOf(window))
+	payloadsOn<TranscriptPayload>(arrivalsOf(window), aiAgentPortNames.transcript)
 		.at(-1)
 		?.items.map((item) => item.id) ?? [];
 
@@ -112,7 +100,7 @@ const until = (what: string, check: () => boolean) =>
 /**
  * Wait for the window to stop hearing anything. A resume's replayed history rides the events Sub,
  * which only opens once `started` has landed, so the phase this test can see reaches `ready` while
- * those payloads are still in flight — and a count taken there would fold them into the resend's.
+ * those payloads are still in flight.
  */
 const quiet = (window: ProcessHandle) =>
 	Effect.gen(function* () {
@@ -163,26 +151,7 @@ interface FirstRun {
 	readonly phase: AiAgentSessionState["phase"];
 	readonly sessionId: string | null;
 	readonly rendered: ReadonlyArray<string>;
-	/** The pending sets the window was shown, oldest first: the card raised, then cleared. */
-	readonly cards: ReadonlyArray<ReadonlyArray<string>>;
-	readonly modes: ReadonlyArray<ModePayload>;
-	/** The mode in the committed state at the cut — which is what the checkpoint is. */
-	readonly committedMode: AiAgentSessionState["modes"];
 	readonly restoredCount: number;
-	/** How much the window had heard when the app stopped: the mark the second boot reads past. */
-	readonly arrivals: number;
-}
-
-interface SecondRun {
-	readonly restored: AiAgentSessionState;
-	readonly restoredCount: number;
-	readonly afterReconnect: ReadonlyArray<string>;
-	readonly modeAfterReconnect: AiAgentSessionState["modes"];
-	readonly emissionsForTheResend: number;
-	/** The item ids the *first* of those emissions carried, which is the send's own. */
-	readonly firstEmissionForTheResend: ReadonlyArray<string>;
-	readonly afterResend: ReadonlyArray<string>;
-	readonly phaseAfterResend: AiAgentSessionState["phase"];
 }
 
 /**
@@ -230,58 +199,31 @@ const runToTheCut = (project: string): Effect.Effect<FirstRun, unknown, FileSyst
 			phase: sessionOf(agent).phase,
 			sessionId: sessionOf(agent).sessionId,
 			rendered: rendered(window),
-			cards: pendingIn(arrivalsOf(window)),
-			modes: modesIn(arrivalsOf(window)),
-			committedMode: sessionOf(agent).modes,
 			restoredCount: booted.report.restoredCount,
-			arrivals: arrivalsOf(window).length,
 		} satisfies FirstRun;
 	}).pipe(Effect.scoped);
 
 /**
- * Boot the same project back, then send one deliberate resend. Nothing here dispatches the resume:
- * the kernel does it for every restored process (`durability/resume.ts`, #7877), so what settles
- * below is what a real restart does.
+ * Boot the same project back and read the mode the reconnect settled on. Nothing here dispatches
+ * the resume: the kernel does it for every restored process (`durability/resume.ts`, #7877), so
+ * what settles below is what a real restart does.
  */
 const runFromTheCheckpoint = (
 	project: string,
-): Effect.Effect<SecondRun, unknown, FileSystem.FileSystem> =>
+): Effect.Effect<AiAgentSessionState["modes"], unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const booted = yield* boot({global: configModule, project, home});
 		const {agent, window} = yield* handlesOf(booted);
-		const restored = sessionOf(agent);
-
 		yield* until("the reconnect to settle", () => sessionOf(agent).phase === "ready");
 		yield* quiet(window);
-
-		const afterReconnect = rendered(window);
-		const modeAfterReconnect = sessionOf(agent).modes;
-		const beforeResend = arrivalsOf(window).length;
-
-		yield* say(window, "try that again", KEYS.resend);
-		yield* until("the resent turn's reply", () => rendered(window).includes("a4"));
-		yield* until("the resend to settle", () => sessionOf(agent).phase === "ready");
-		yield* quiet(window);
-
-		return {
-			restored,
-			restoredCount: booted.report.restoredCount,
-			afterReconnect,
-			modeAfterReconnect,
-			emissionsForTheResend: transcriptsIn(arrivalsOf(window).slice(beforeResend)).length,
-			firstEmissionForTheResend:
-				transcriptsIn(arrivalsOf(window).slice(beforeResend))[0]?.items.map((item) => item.id) ??
-				[],
-			afterResend: rendered(window),
-			phaseAfterResend: sessionOf(agent).phase,
-		} satisfies SecondRun;
+		return sessionOf(agent).modes;
 	}).pipe(Effect.scoped);
 
 const proof = Effect.fnUntraced(function* () {
 	const project = freshProject();
 	const first = yield* runToTheCut(project);
-	// A first run that already finished its third turn leaves no cut to restore, and every assertion
-	// below would then be testing a clean reload. Fail here, naming that, not later.
+	// A first run that already finished its third turn leaves no cut to restore, and the reconnect
+	// below would then be a clean reload's. Fail here, naming that, not later.
 	assert.strictEqual(
 		first.phase,
 		"prompting",
@@ -291,104 +233,26 @@ const proof = Effect.fnUntraced(function* () {
 	assert.deepStrictEqual(first.rendered, afterTheCut, "the first run's tail is not the cut tail");
 	assert.strictEqual(first.restoredCount, 0, "the first boot restored something already on disk");
 
-	const second = yield* runFromTheCheckpoint(project);
-	return {first, second};
+	return yield* runFromTheCheckpoint(project);
 });
 
 const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Scope.Scope>) =>
 	effect.pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
 
-/**
- * The two boots run once for the whole file. Each case reads a different fact out of the one run,
- * and running the app twice per case would be five times the work for the same answers.
- */
-let outcome: {readonly first: FirstRun; readonly second: SecondRun};
+let modeAfterReconnect: AiAgentSessionState["modes"];
 
 beforeAll(async () => {
-	outcome = await Effect.runPromise(run(proof()));
+	modeAfterReconnect = await Effect.runPromise(run(proof()));
 }, 60_000);
 
 describe("the claude-session row, driven through ports and booted back over its checkpoints", () => {
-	it("opens in the project root the config named and holds the script's session", () => {
-		expect(outcome.first.sessionId).toBe(SESSION);
-		expect(outcome.second.restored.cwd).toBe(CWD);
-	});
-
-	it("raises the card the turn asked for and clears it when the operator answers", () => {
-		expect(
-			outcome.first.cards.some((keys) => keys.includes(CARD)),
-			"the window was never shown the card the turn raised",
-		).toBe(true);
-		expect(
-			outcome.first.cards.at(-1),
-			"the answered card is still on the permission port, so the window would render it open",
-		).toEqual([]);
-	});
-
-	it("carries the operator's mode switch onto the mode port and into the state it saves", () => {
-		expect(outcome.first.modes.at(-1)).toEqual({
-			kind: "state",
-			current: SWITCHED_TO,
-			available: OFFERED,
-		});
-		expect(
-			outcome.first.committedMode,
-			"the switch never reached the committed state, which is what the checkpoint is",
-		).toEqual({current: SWITCHED_TO, available: OFFERED});
-	});
-
 	it("brings the operator's mode switch back, announced by the layer the reconnect rebuilt", () => {
 		// The rebuilt layer holds no mode of its own, so this passes only because the reconnect hands
 		// it the checkpointed one to open on: its own `mode` event, which supersedes the republished
 		// checkpoint, already carries the switch (#7953).
-		expect(outcome.second.modeAfterReconnect).toEqual({
+		expect(modeAfterReconnect).toEqual({
 			current: SWITCHED_TO,
 			available: OFFERED,
 		});
-	});
-
-	it("brings every process back from the state directory, nothing fresh-booted", () => {
-		expect(outcome.first.restoredCount).toBe(0);
-		expect(
-			outcome.second.restoredCount,
-			"the second boot did not bring the claude session, the window and the desk's shell back from their checkpoints",
-		).toBe(3);
-		expect(outcome.second.restored.sessionId).toBe(SESSION);
-	});
-
-	it("shows the same transcript, with the turn the restart cut marked interrupted", () => {
-		expect(
-			outcome.second.afterReconnect,
-			"the restored window is not looking at the transcript the stop left",
-		).toEqual(afterTheCut);
-		expect(outcome.second.restored.interrupted).toBe(promptItemId(KEYS.cut));
-		const cut = outcome.second.restored.transcript.items.at(-1);
-		expect(
-			cut?.kind === "assistant" && cut.interrupted === true,
-			"the cut turn came back unmarked, so no window could offer the resend",
-		).toBe(true);
-	});
-
-	it("replays no prompt: the reload adds no turn until one is asked for", () => {
-		expect(
-			outcome.second.afterReconnect,
-			"the reload re-sent the interrupted prompt instead of waiting to be asked",
-		).not.toContain("a4");
-	});
-
-	// Two, not one: the operator's own turn is published when they send it and the reply when it
-	// arrives (#7978/#7979). A single emission would mean the window shows your message only once
-	// the agent has answered, which is the wait the founder reported.
-	it("answers one resend with two emissions, the operator's turn before the reply", () => {
-		expect(
-			outcome.second.emissionsForTheResend,
-			"one deliberate resend did not produce the send's emission and the reply's",
-		).toBe(2);
-		expect(
-			outcome.second.firstEmissionForTheResend,
-			"the send's own emission did not already carry the operator's turn",
-		).toEqual(outcome.second.afterResend.slice(0, -1));
-		expect(outcome.second.afterResend).toEqual(afterTheResend);
-		expect(outcome.second.phaseAfterResend).toBe("ready");
 	});
 });

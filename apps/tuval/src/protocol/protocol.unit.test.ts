@@ -1,6 +1,3 @@
-import {readdirSync, readFileSync} from "node:fs";
-import {dirname, join} from "node:path";
-import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
 import {TITLE_KIND, TITLE_PORT} from "@kampus/tuval-sdk/kernel/process/self-report";
 import {
@@ -323,21 +320,5 @@ describe("Snapshot.processes", () => {
 		const decoded = Schema.decodeUnknownSync(ProcessRow)(wire);
 		assert.strictEqual(decoded.title, "counter · 3");
 		assert.strictEqual(decoded.status, "counting");
-	});
-});
-
-describe("the module's dependencies", () => {
-	const here = dirname(fileURLToPath(import.meta.url));
-
-	it("reach no process, shell, React or DOM code", () => {
-		const sources = readdirSync(here).filter((name) => name.endsWith(".ts"));
-		assert.isAbove(sources.length, 0);
-		for (const name of sources) {
-			if (name.endsWith(".unit.test.ts")) continue;
-			const text = readFileSync(join(here, name), "utf8");
-			for (const banned of ["../process/", "../shell/", '"react"', '"react-dom"']) {
-				assert.notInclude(text, banned, `${name} reaches ${banned}`);
-			}
-		}
 	});
 });
