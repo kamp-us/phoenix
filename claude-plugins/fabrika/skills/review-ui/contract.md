@@ -516,8 +516,9 @@ preview and no session, so it still refuses every `:state`.
 ```
 
 **The mechanism, in order — each step gates the next.** Resolve the PR and its live head (`7` /
-`11`). Resolve the preview comment for `--app` (paginated sweep; anchor absent → `16`, anchor
-present but unparseable → `11`). **Bind the preview to the head**: the comment's deployed SHA
+`11`). Resolve the preview comment for `--app` (paginated sweep; anchor absent, or a
+`none head:<sha>` marker naming the live head → `16`; anchor present but unparseable, or a `none`
+marker naming another head → `11`). **Bind the preview to the head**: the comment's deployed SHA
 must equal the live head — a preview that lags the push is `12`, because pixels of an old tree
 bound to a new SHA are the stale-verdict class at the capture seam. **Fence the app axis**: every
 surface resolves to its owning `uiSurfaces` row by longest claiming mount and that row to its app —
@@ -568,7 +569,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
 | `15` | proven: at least one capture is invalid (zero bytes, undecodable, zero area) |
-| `16` | proven: no comment carrying the preview anchor exists on the PR — this repo, or this PR, has no preview to judge |
+| `16` | proven: this repo, or this PR, has no preview to judge — no comment carries the preview anchor, or the newest announcement is a `none head:<sha>` marker naming the live head |
 | `19` | proven: a capture's PNG width, read back from its own bytes, is not the requested viewport's width — the requested viewport's render is UNKNOWN, and nothing was recorded under that label |
 
 **Errors**
@@ -613,6 +614,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: surface "<id>" at <viewport> is unreachable at the preview (<reason>) — judge what renders, and hold the gap against the PR's Deviations (#4305).` | 14 | refusal |
 | `review-ui render: surface "<id>" at <viewport> captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 15 | refusal |
 | `review-ui render: no preview-deploy comment on PR #<n> — nothing to judge without running the PR's code; the run is CANT-SEE.` | 16 | refusal |
+| `review-ui render: PR #<n>'s preview comment marks no preview deploy at <head7> — nothing to judge without running the PR's code; the run is CANT-SEE.` | 16 | refusal |
 
 **Scope** — exactly the `--surface` × `--viewport` × `--scheme` cross product against one PR's announced preview (no `--scheme` counts as one default-scheme column), every cell under the one `--accent` when it is passed, each surface's cell shot at rest and once per `--interact` on it. Zero operands
 is `1`, so "rendered nothing, found nothing wrong" is unrepresentable — this verb fails closed on
