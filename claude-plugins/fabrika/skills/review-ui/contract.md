@@ -1254,9 +1254,10 @@ preview comment announces a deploy, it refuses on `23` and names the preview to 
 - **Two rules that could not both hold.** The `ui` class is raised by a path test, and the gate
   demanded a namespace nothing legal could fill; recording the routed answer is the shape that
   keeps both, rather than narrowing the class.
-- **The zero-scope refusals this verb inherits rather than loosens**: `render` still refuses zero
-  surfaces, `post` still refuses without captures, and this verb refuses a diff that raises no `ui`
-  class.
+- **The zero-scope rules this verb inherits rather than loosens**: `render` still refuses zero
+  surfaces, `post` still refuses without captures, and this verb refuses a diff nobody read (an
+  empty changed-file list) — while a diff it did read that raises no `ui` class is not a refusal:
+  it answers `none` on exit `0` and writes nothing.
 - **The record is authored**, so the write+ ACL binds it at `ship gate` exactly as it binds a
   verdict marker.
 - **A hand-verification's currency is the verb's judgment, not the gate's**, and it binds the
@@ -1281,7 +1282,8 @@ live once in the shared matrix, which owns every code's single meaning); every e
 message, stream, and code; every verb states scope and zero-scope behavior (`render` refuses
 zero surfaces at `1`; `post` refuses an empty body at `3` and an unreadable evidence set at
 `4`/`11`; `note` refuses an empty body at `3` and a verdict-shaped body at `10`; `route` refuses an
-empty body at `3` and a diff raising no `ui` class at `7`); and no clause
+empty body at `3` and an empty changed-file list at `7`, and answers `none` on exit `0` over a diff
+raising no `ui` class); and no clause
 defers to a v1 script, another skill's prose, or the authoring session —
 the `review` and `build-ui` references are to sibling fabrika contracts, the sanctioned
 cross-contract shape, with the `build-ui` reference flagged as pre-merge in the authoring PR.

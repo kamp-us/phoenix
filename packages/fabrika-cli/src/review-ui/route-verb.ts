@@ -20,9 +20,10 @@
  * is a clean end, not a refusal, so it answers `none` on exit 0 and writes nothing — a caller tells it
  * from an absent or closed PR by the exit code alone, without parsing a sentence.
  * Deriving it re-uses `review/classes.ts`'s own `isUiSurface`, over the same declared `uiSurfaces`
- * prefixes the gate raised the class from, rather than a second predicate — the refusal must bind
- * the exact rule that raised the class, or the two drift and this verb refuses on a PR the gate is
- * meanwhile blocking.
+ * prefixes the gate raised the class from, rather than a second predicate — the `none` answer must
+ * bind the exact rule that raised the class, or the two drift and this verb answers `none` on a PR
+ * the gate is meanwhile blocking, sending the reviewer to ROUTED-ELSEWHERE while `ship gate` still
+ * owes the namespace.
  *
  * The file set that runs over is the `pulls/<n>/files` enumeration read through
  * {@link platformFileSet}, so the `changed_files` the pull-request record declares is reported as a
