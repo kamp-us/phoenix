@@ -3400,7 +3400,8 @@ fabrika build verdicts --pr 8 [--repo <owner/name>]
 **Output** — machine. One JSON object:
 
 ```
-{"head": "03135b91", "mergeability": "conflicting", "rows": [
+{"head": "03135b91", "mergeability": "conflicting",
+ "requiredChecks": {"state": "red", "failing": ["packages unit tests"]}, "rows": [
    {"gate": "review-code", "polarity": "FAIL", "sha": "03135b91", "current": true,
     "commentId": 512001, "kind": "marker", "body": "review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."},
    {"gate": "native-review", "polarity": "CHANGES_REQUESTED", "sha": null, "current": null,
@@ -3430,6 +3431,20 @@ against its base is repair work no gate emits a FAIL for: the field is what keep
 over a conflicting PR from reading as the proven no-work answer a repair lane routes on. Every value
 gets its own stderr line, and the `conflicting` one names the base ref. Who clears a conflict is not
 this verb's to say — it reports the state and routes nothing.
+
+**`requiredChecks` is the fold's fourth value, the head's required-check state.** It is one of
+`{"state": "green"}`, `{"state": "red", "failing": [<context>, …]}`,
+`{"state": "pending", "awaiting": [<context>, …]}` or `{"state": "unknown", "reason": "<line>"}`.
+"Required" is the base branch's declared set, read through the same blocking authority `review ci`
+and `ship checks` judge by, so the three verbs agree on which check blocks. `green` needs every
+blocking run concluded passing and every declared context reported. A run still in flight or a
+declared context with no run at this head is `pending` and named in `awaiting`. An unreadable
+required set, a failed check-run read, or a partial enumeration is `unknown`. None of these is ever
+`green`. The field exists for the same reason `mergeability` does: a reviewer's PASS can land
+before CI settles red, and a red required check is repair work no gate emits a FAIL for. An
+unreadable CI read never refuses the fold, because the gate rows are still proven; it lands as
+`unknown` with its own stderr line. This `green` is not merge authority: gate coverage and the wait
+belong to `ship checks`.
 
 **Cleared rounds.** `clearances` lists every `cap-cleared` marker on the PR, judged. A row is
 `honoured` only when four clauses hold: its author is in the repo's control-plane set — the owners
@@ -3490,8 +3505,8 @@ one, so a finding an earlier round repaired is folded again identically. Judging
 tree is the reader's, which is why `build`'s Repair section instructs it.
 
 **`{"rows": [], ...}` on exit 0 is a proven "no verdicts", readable against the scope line's
-comment/review counts — a proven answer about the gates, never about the PR's mergeability, which
-is its own field.** An unreadable page is `11` — never a shorter list. All content passes
+comment/review counts — a proven answer about the gates, never about the PR's mergeability or its
+required checks, which are their own fields.** An unreadable page is `11` — never a shorter list. All content passes
 the content gate.
 
 **The child arm (`--issue`).** An epic child opens no PR, so the same fold is asked of the
@@ -3528,16 +3543,17 @@ subject and folds all of them.
 | `build verdicts: give either --pr <n> or --issue <n>, never both and never neither.` | 10 | usage error |
 | `build verdicts: #<n> is a pull request — its verdicts are head-bound; drop --issue and pass --pr.` | 7 | refusal |
 
-**Scope** — one PR: its head, its mergeability, all comments, all reviews, and the linked issue's
-body and all its comments. The stderr scope line
-names the head SHA and both counts, so an empty `rows` is auditable as "N comments read, none
-carried a marker", and the line under it names the mergeability whichever of the three it is.
+**Scope** — one PR: its head, its mergeability, the base branch's required set and the check runs
+at the head, all comments, all reviews, and the linked issue's body and all its comments. The stderr
+scope line names the head SHA and both counts, so an empty `rows` is auditable as "N comments read,
+none carried a marker". The line under it names the mergeability whichever of the three it is, and
+the next names the required-check state whichever of the four it is.
 
 **Example**
 
 ```
 $ fabrika build verdicts --pr 8
-{"head":"03135b91","mergeability":"mergeable","rows":[{"gate":"review-code","polarity":"FAIL","sha":"03135b91","current":true,"commentId":512001,"kind":"marker","body":"review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."}],"rounds":1,"capReached":false,"frozenCriteria":[],"escalatedFindings":[]}
+{"head":"03135b91","mergeability":"mergeable","requiredChecks":{"state":"green"},"rows":[{"gate":"review-code","polarity":"FAIL","sha":"03135b91","current":true,"commentId":512001,"kind":"marker","body":"review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."}],"rounds":1,"capReached":false,"frozenCriteria":[],"escalatedFindings":[]}
 ```
 
 **Grounding**
