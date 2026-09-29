@@ -7,6 +7,10 @@
  * route), while an unreadable one and an ambiguous one are UNKNOWNs a reviewer must not read as
  * "no preview".
  *
+ * A no-preview marker (`<!-- preview-deploy:none head:<sha> -->`) proves absence only at the head
+ * it names. A marker naming another head means the workflow has not answered for this push yet, so
+ * it is unreadable rather than absent.
+ *
  * The comment is picked by **recency, explicitly** — the newest announcement wins, and a repo that
  * posts a fresh comment per deploy is as readable as one that upserts a sticky one. Leaving the
  * pick to whatever order the API returned is how a stale announcement comes to bind a new head.
@@ -14,6 +18,7 @@
 import {
 	announcedApps,
 	isPreviewAnnouncement,
+	noPreviewHead,
 	type PreviewAnnouncement,
 	readPreviewAnnouncement,
 } from "../capture/resolve.ts";
@@ -31,8 +36,11 @@ export type PreviewResolution =
 			readonly value: PreviewAnnouncement;
 			readonly apps: readonly string[];
 	  }
-	/** Proven: no comment carries the preview anchor at all. */
-	| {readonly _tag: "NoPreview"}
+	/**
+	 * Proven: no comment carries the preview anchor at all (`markedAt: null`), or the newest one is a
+	 * no-preview marker naming the judged head (`markedAt` is the SHA it names).
+	 */
+	| {readonly _tag: "NoPreview"; readonly markedAt: string | null}
 	/** The announcement names several apps and the caller picked none. */
 	| {readonly _tag: "Ambiguous"; readonly apps: readonly string[]}
 	/** The anchor is there and unreadable for this app — unreadable is not absent. */
@@ -52,13 +60,35 @@ const newestAnnouncement = (comments: readonly CommentRecord[]): CommentRecord |
 			return comment.id > newest.id ? comment : newest;
 		}, undefined);
 
+/** Either side may be abbreviated, so the match is a prefix in whichever direction is shorter. */
+const sameHead = (a: string, b: string): boolean => {
+	const [x, y] = [a.toLowerCase(), b.toLowerCase()];
+	return x.startsWith(y) || y.startsWith(x);
+};
+
+/** `head` is the SHA the caller judges; a no-preview marker proves absence at that head alone. */
 export const resolvePreview = (
 	comments: readonly CommentRecord[],
 	app: string | null,
+	head: string,
 ): PreviewResolution => {
 	const announcement = newestAnnouncement(comments);
-	if (announcement === undefined) return {_tag: "NoPreview"};
+	if (announcement === undefined) return {_tag: "NoPreview", markedAt: null};
 	const apps = announcedApps(announcement.body);
+	const marked = noPreviewHead(announcement.body);
+	if (marked !== null) {
+		if (apps.length > 0) {
+			return {
+				_tag: "Malformed",
+				reason: `the comment carries both a no-preview marker and app blocks (${apps.join(", ")})`,
+			};
+		}
+		if (sameHead(marked, head)) return {_tag: "NoPreview", markedAt: marked};
+		return {
+			_tag: "Malformed",
+			reason: `the no-preview marker names ${marked}, not the head ${head} — no preview at an earlier push is not proof of none at this one`,
+		};
+	}
 	if (apps.length === 0) {
 		return {
 			_tag: "Malformed",

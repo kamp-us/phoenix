@@ -538,11 +538,15 @@ export const runRender = (
 		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
 		const scanned = scannedLine(VERB, comments.value.length, "comment");
 
-		const preview = resolvePreview(comments.value, options.app);
+		const preview = resolvePreview(comments.value, options.app, head);
 		if (preview._tag === "NoPreview") {
+			const why =
+				preview.markedAt === null
+					? `no preview-deploy comment on PR #${pr}`
+					: `PR #${pr}'s preview comment marks no preview deploy at ${shortSha(head)}`;
 			return refuse(
 				NO_PREVIEW,
-				`${VERB}: no preview-deploy comment on PR #${pr} — nothing to judge without running the PR's code; the run is CANT-SEE.`,
+				`${VERB}: ${why} — nothing to judge without running the PR's code; the run is CANT-SEE.`,
 				[scanned],
 			);
 		}

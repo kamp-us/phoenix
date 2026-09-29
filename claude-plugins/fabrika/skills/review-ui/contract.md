@@ -247,6 +247,13 @@ comment that carries the anchor but no parseable URL + SHA for `--app` is malfor
 on `11` (a malformed announcement is an unreadable one, not a missing one); no comment with the
 anchor at all is the proven `16`.
 
+A PR that mints no preview is announced with the same prefix in its no-preview form,
+`<!-- preview-deploy:none head:<sha> -->`. When the newest announcement is that form, the SHA decides
+the answer. A SHA naming the head being judged (either side may be abbreviated) is the proven `16`,
+the same as no anchor, and `review-ui route --no-preview` routes on it. A SHA naming any other
+head refuses on `11`: the marker proves there was no preview at an earlier push, and the workflow
+may not have answered for this one yet. A no-preview marker beside an app block is malformed, `11`.
+
 ---
 
 ## `review-ui render`
