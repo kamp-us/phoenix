@@ -587,7 +587,7 @@ const report = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"report",
-			"Appends a terminal token's proven event; prints {token, previous, event, current, taskAffected}.",
+			"Appends a token's proven event; prints {token, previous, event, current, taskAffected}.",
 			{
 				4: "bad lane record",
 				7: "no lane",
@@ -603,11 +603,12 @@ const report = leafCommand(
 				32: "unknown token",
 				35: "bad --cause",
 				38: "bad --class",
-				40: "ledger lock held",
+				40: "lock held",
 				52: "uncaused BLOCKED",
-				55: "ship:queued floor unmet",
+				55: "queue floor unmet",
 				67: "head derives no route",
 				68: "bad integrate pair",
+				72: "token unserved",
 				...ROOT_EXITS,
 			},
 		),
@@ -781,7 +782,7 @@ const open = leafCommand(
 					expectation: expectationReader(Option.getOrNull(repo), process.env),
 					priorLane: priorLaneReader(Option.getOrNull(repo), process.env),
 					fromBoard,
-					boardSeat: boardSeatReader(Option.getOrNull(repo), process.cwd(), process.env),
+					boardSeat: boardSeatReader(Option.getOrNull(repo), process.env),
 					record: boardRecorder(Option.getOrNull(repo), process.env),
 					cap,
 					claimed: claimHoldReader(Option.getOrNull(repo), process.env),
@@ -1838,7 +1839,7 @@ const archive = leafCommand(
 		retriaged: Flag.boolean("retriaged").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				"move a lane whose log replays to `diagnosed` with no pull request and no spent round, so a re-triaged issue can boot a fresh lane. Every other final refuses at 72; a later move of the same key takes the next free <lane>.archived-<n> slot",
+				"move a lane whose log replays to `diagnosed` with no pull request and no spent round, so a re-triaged issue can boot a fresh lane. Every other final refuses at 73; a later move of the same key takes the next free <lane>.archived-<n> slot",
 			),
 		),
 		root: rootFlag,
@@ -1966,7 +1967,7 @@ const archive = leafCommand(
 				39: ROOT_EXITS[39],
 				50: "the log replays, nothing to move",
 				65: ROOT_EXITS[65],
-				72: "--retriaged: not diagnosed, or a PR or spent round",
+				73: "--retriaged: not diagnosed, or a PR or spent round",
 			},
 		),
 	),

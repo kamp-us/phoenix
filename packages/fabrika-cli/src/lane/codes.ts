@@ -704,11 +704,22 @@ export const FACT_REFUSED = 70;
 export const SIZE_STOPPED = 71;
 
 /**
+ * `lane report` was handed a known token that no group owning it serves from the task's current
+ * leaf state — a builder's `SHIPPED-PR` out of `ship`, say. Refused with the log unappended: the
+ * shell that sent it finished after the lane moved on, and its terminal answers a state the lane
+ * has left.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10120
+ */
+export const TOKEN_UNSERVED = 72;
+
+/**
  * `lane archive --retriaged` was pointed at a lane that did not end `diagnosed` with no pull request
  * and no spent round: its fold stands on another final or none, a line of its log names a pull
- * request, its log shows a retry, a review verdict or a grant, or its own machine cannot fold it. Nothing was retracted or moved. The route moves a builder's no-PR
- * finish aside for a re-triaged issue and no other final, so the remedy is the lane's own route.
+ * request, its log shows a retry, a review verdict or a grant, or its own machine cannot fold it.
+ * Nothing was retracted or moved. The route moves a builder's no-PR finish aside for a re-triaged
+ * issue and no other final, so the remedy is the lane's own route.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/10190
  */
-export const NOT_DIAGNOSED = 72;
+export const NOT_DIAGNOSED = 73;

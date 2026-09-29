@@ -55,6 +55,18 @@ export const announcedApps = (commentBody: string): readonly string[] => {
 	return apps;
 };
 
+const NO_PREVIEW_MARKER = /<!-- preview-deploy:none head:([0-9a-f]{7,40}) -->/i;
+
+/**
+ * The head a no-preview announcement names, or `null` when the body carries no such marker.
+ *
+ * `deploy.yml` posts `<!-- preview-deploy:none head:<sha> -->` when a diff mints no preview stack.
+ * It shares the per-app anchor's prefix, so {@link isPreviewAnnouncement} counts it and
+ * {@link announcedApps} never does: the suffix after `none` is what tells the two apart.
+ */
+export const noPreviewHead = (commentBody: string): string | null =>
+	NO_PREVIEW_MARKER.exec(commentBody)?.[1]?.toLowerCase() ?? null;
+
 /** What one app's block announces: where the preview is, and which tree it deployed. */
 export interface PreviewAnnouncement {
 	readonly app: string;

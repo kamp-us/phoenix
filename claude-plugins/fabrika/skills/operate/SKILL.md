@@ -1082,7 +1082,9 @@ Two reads stay yours, because no shell can take them:
 - **a spawn that printed a terminal the fold does not show** — its record never landed (a missing
   root, an unproven event, a refused append). Do not re-spawn: prove and record that token's event
   yourself, below, and where the proof refuses there too, the refusal table is what you route on —
-  a `22` is a `BLOCKED`, never the `DONE` the spawn printed;
+  a `22` is a `BLOCKED`, never the `DONE` the spawn printed. The one exception is a report refused
+  at `72`: the lane moved past the state that shell served before it finished, so its terminal is
+  late and you record nothing for it — the fold already says where the lane stands;
 - **a dead or unresponsive spawn, a report you cannot parse, and a permission denial a shell
   reports** — each is a BLOCKED-class outcome, never something to route around, and never a
   retry-in-place: retries belong to the machine (`FAIL` spends one; `human:budget-spent` is its
@@ -1348,7 +1350,7 @@ refused at `20` and the only move left was a `BLOCKED` over a lane that had fini
 A `SHIPPED-PR` and an epic child's `BUILT-NO-PR` carry no such field and fold to `review` exactly as
 they always did.
 
-**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Five terminal tokens
+**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Six terminal tokens
 belong to no shell's vocabulary — `lane report` groups them as `machinery` in
 [`report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)'s `SHELL_VOCABULARIES` — and each
 one says the pipeline carrying the artifact failed while nothing about the artifact was judged. All
@@ -1444,8 +1446,9 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token FAIL --int
 ```
 
 **A `FAIL` recorded before the pair existed is fixed with `lane attach-integrate`, not by recording
-it again.** That old `FAIL` already folded the child back into `build`, where `lane report` refuses
-the pair at `68`, so running `lane integrate` again to report a new `FAIL` hits the same refusal.
+it again.** That old `FAIL` already folded the child back into `build`, and no shell that owns a
+`FAIL` serves `build`, so running `lane integrate` again to report a new `FAIL` is refused at `72`
+(the token is unserved there) with the log unappended.
 The builder's claim refuses on `31` in the meantime. Read the `FAIL` line's `at` off `lane history`,
 take the exit and head from that integrate run's output, and attach them:
 
@@ -1894,7 +1897,7 @@ lane runs with no marker, a second driver can claim it beside you, and it takes 
 cap. Keep the token that claim prints for the rest of the run, and continue at step 2.
 
 The archive moves only a lane that folds to `diagnosed` with no pull request and no spent round in
-its log, and keeps the log byte for byte. Everything else refuses at `72` and stays where it is. A
+its log, and keeps the log byte for byte. Everything else refuses at `73` and stays where it is. A
 second re-triage of one issue takes the next `<lane>.archived-<n>` slot. This is an engine step,
 never an ask for the founder, so route any refusal by its code.
 

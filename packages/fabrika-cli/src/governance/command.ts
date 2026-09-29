@@ -134,7 +134,6 @@ const scope = leafCommand(
 				tip: Option.getOrNull(tip),
 				repo: Option.getOrNull(repo),
 				json,
-				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);

@@ -4,7 +4,12 @@
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {
+	fakeSeams,
+	type HttpReply,
+	type Scripted,
+	uiConfiguredOnPlatform,
+} from "../fakes.test-support.ts";
 import {COMPARE_FILE_CAP, PULL_FILES_CAP} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {emitAdvisory, reviewedHeadLine} from "../review/advisory.ts";
@@ -70,7 +75,6 @@ const options = {
 	sha: HEAD,
 	clause: CLAUSE,
 	verifiedAt: null as string | null,
-	uiPrefixes: ["apps/site/src/", "apps/desk/src/"],
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
 		string,
@@ -107,7 +111,7 @@ const happy = (): ReadonlyArray<Scripted> => [
 ];
 
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
-	const seams = fakeSeams(script);
+	const seams = fakeSeams([...script, ...uiConfiguredOnPlatform()]);
 	return Effect.runPromise(Effect.provide(runRoute({...options, ...overrides}), seams.layer)).then(
 		(outcome) => ({outcome, requests: seams.requests, bodies: seams.bodies}),
 	);
@@ -339,7 +343,10 @@ describe("review-ui route", () => {
 			const {outcome, requests} = await run(happy());
 			expect(outcome.code).toBe(0);
 			expect(JSON.parse(outcome.stdout).verifiedAt).toBeNull();
-			expect(requests.some((request) => request.includes("/compare/"))).toBe(false);
+			// The one comparison is the merge base the class config is read at, never a range.
+			expect(requests.filter((request) => request.includes("/compare/"))).toEqual([
+				expect.stringMatching(/\/compare\/main\.\.\.[0-9a-f]+\?per_page=1$/),
+			]);
 		});
 	});
 
@@ -461,7 +468,7 @@ describe("review-ui route", () => {
 
 describe("review-ui route --no-preview", () => {
 	const run = (script: ReadonlyArray<Scripted>, overrides: Partial<RouteOptions> = {}) => {
-		const seams = fakeSeams(script);
+		const seams = fakeSeams([...script, ...uiConfiguredOnPlatform()]);
 		return Effect.runPromise(
 			Effect.provide(runRoute({...options, ...overrides}), seams.layer),
 		).then((outcome) => ({outcome, requests: seams.requests, bodies: seams.bodies}));
@@ -655,6 +662,38 @@ describe("review-ui route --no-preview", () => {
 			under("skip"),
 		);
 		expect(two.outcome.code).toBe(PREVIEW_EXISTS);
+	});
+
+	const noPreviewMarker = (sha: string) =>
+		"<!-- preview-deploy -->\n### No preview deploy\n" +
+		`<!-- preview-deploy:none head:${sha} -->\n` +
+		"- No preview deploy for this PR — its diff touches no deploy-relevant path, " +
+		"so no preview stack was minted and `e2e` is not applicable. " +
+		`<sub>(${sha.slice(0, 7)})</sub>`;
+
+	it("routes per whenNoPreview over the workflow's no-preview marker at this head", async () => {
+		const skipped = await run(
+			script([preview(noPreviewMarker(HEAD))], flagged("skip")),
+			under("skip"),
+		);
+		expect(skipped.outcome.code).toBe(0);
+		expect(JSON.parse(skipped.outcome.stdout)).toMatchObject({answer: "routed", basis: "skip"});
+
+		const required = await run(
+			script([preview(noPreviewMarker(HEAD))], flagged("skip")),
+			under("require-render"),
+		);
+		expect(required.outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
+		expect(required.requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("refuses on 11 where the no-preview marker names another head, posting nothing", async () => {
+		const {outcome, requests} = await run(
+			script([preview(noPreviewMarker(MOVED))], flagged("skip")),
+			under("skip"),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("refuses on 11 where the preview announcement does not read", async () => {

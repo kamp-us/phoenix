@@ -74,7 +74,6 @@ const scope = leafCommand(
 				pr,
 				repo: Option.getOrNull(repo),
 				json,
-				cwd: process.cwd(),
 				env: process.env,
 				caller: "shipper",
 			}),

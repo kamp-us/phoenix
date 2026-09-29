@@ -1,6 +1,7 @@
-import {Effect, Layer} from "effect";
+import {Effect, type FileSystem, Layer, type Path} from "effect";
 import {describe, expect, it} from "vitest";
 import {
+	configAtCommit,
 	errOut,
 	fakeFs,
 	fakeSeams,
@@ -8,6 +9,7 @@ import {
 	okOut,
 	type Scripted,
 	uiConfigured,
+	uiConfiguredAtCommits,
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
@@ -67,6 +69,16 @@ const shell = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof option
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	shell(script, overrides).out;
 
+/** One config, declared the same at the PR's head and its merge base. */
+const declaredAt = (config: Record<string, unknown>) => configAtCommit(JSON.stringify(config));
+
+const SITE_SURFACE = {
+	name: "web",
+	prefix: "apps/site/src/",
+	mount: "/",
+	command: "pnpm dev --port {{port}}",
+};
+
 /**
  * The green path. The PR-number files endpoint is scripted too, and deliberately answers a
  * *different* file set — so a read that drifts back to it derives `review-doc` where the bound
@@ -109,32 +121,20 @@ describe("runScope", () => {
 	// The whole point: the fence a repo declares is the fence this verb derives over. The
 	// same diff answers `not-required` above under the shipped roots.
 	it("derives the namespace over a FOREIGN repo's declared roots", async () => {
-		const declared = fakeFs({
-			files: {
-				"/repo/.fabrika.jsonc": JSON.stringify({governedRoots: ["src/", ".fabrika.jsonc"]}),
-			},
-		});
-		const out = await Effect.runPromise(
-			Effect.provide(runScope({...options}), Layer.merge(fakeSeams(happy()).layer, declared.layer)),
-		);
+		const out = await run([...declaredAt({governedRoots: ["src/", ".fabrika.jsonc"]}), ...happy()]);
 		expect(out.stdout).toContain("governance\trequired");
 		expect(out.stderr).toContain(
-			"review scope: governance derived over 2 root(s) — `governedRoots` as declared in .fabrika.jsonc.",
+			`review scope: governance derived over 2 root(s) — at the head ${HEAD}, \`governedRoots\` as declared in .fabrika.jsonc; at the base ${BASE}, \`governedRoots\` as declared in .fabrika.jsonc.`,
 		);
 	});
 
 	// The prefix list is the repo's own, so a second runnable app's diff derives `review-ui` — which
 	// a compiled-in source-root literal could not.
 	it("derives review-ui from a Desk-only diff, over the declared uiSurfaces prefixes", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options}),
-				Layer.merge(
-					fakeSeams(over("apps/desk/src/ui/Chat.tsx", "apps/desk/src/ui/Chat.test.tsx")).layer,
-					uiConfigured,
-				),
-			),
-		);
+		const out = await run([
+			...uiConfiguredAtCommits,
+			...over("apps/desk/src/ui/Chat.tsx", "apps/desk/src/ui/Chat.test.tsx"),
+		]);
 		expect(out.stdout).toContain("class\tui\t1");
 		expect(out.stdout).toContain("routed\treview-ui");
 	});
@@ -146,13 +146,87 @@ describe("runScope", () => {
 	});
 
 	it("refuses rather than deriving when the config cannot be decoded", async () => {
-		const broken = fakeFs({files: {"/repo/.fabrika.jsonc": '{"governedRoots": []}'}});
-		const out = await Effect.runPromise(
-			Effect.provide(runScope({...options}), Layer.merge(fakeSeams(happy()).layer, broken.layer)),
-		);
+		const out = await run([
+			...configAtCommit('{"governedRoots": []}', BASE),
+			...configAtCommit("{}", HEAD),
+			...happy(),
+		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(`.fabrika.jsonc at the base ${BASE} is refused`);
 		expect(out.stderr.at(-1)).toContain("nothing would be governed");
+	});
+
+	it("refuses naming the head when the head's config cannot be decoded", async () => {
+		const out = await run([...configAtCommit("{not json", HEAD), ...happy()]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(`.fabrika.jsonc at the head ${HEAD} is refused`);
+	});
+
+	it("refuses naming the ref when the config at it cannot be read", async () => {
+		const out = await run([
+			[
+				new RegExp(`^git ls-tree --full-tree ${BASE} -- \\.fabrika\\.jsonc$`),
+				errOut("fatal: not a tree object"),
+			],
+			...happy(),
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain(`.fabrika.jsonc at the base ${BASE} is refused`);
+		expect(out.stderr.at(-1)).toContain("fatal: not a tree object");
+	});
+
+	/**
+	 * The class config is the PR's, read at its head and its merge base — never the checkout this
+	 * run stands in. A checkout whose tree predates the PR's `uiSurfaces` row derived no ui class for
+	 * a PR under that row's prefix, and pulling `main` changed the answer.
+	 */
+	describe("reads the class config at the PR's two commits, never the working tree", () => {
+		const SITE = "apps/site/src/App.tsx";
+		const withTree = (
+			tree: Layer.Layer<FileSystem.FileSystem | Path.Path>,
+			script: ReadonlyArray<Scripted>,
+		) =>
+			Effect.runPromise(
+				Effect.provide(runScope({...options}), Layer.merge(fakeSeams(script).layer, tree)),
+			);
+
+		it("raises the ui class off the head's uiSurfaces row when the working tree declares none", async () => {
+			const out = await withTree(unconfigured, [
+				...configAtCommit(JSON.stringify({uiSurfaces: [SITE_SURFACE]}), HEAD),
+				...over(SITE, "README.md"),
+			]);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toContain("class\tui\t1");
+			expect(out.stdout).toContain("routed\treview-ui");
+		});
+
+		it("raises the ui class off the base's uiSurfaces row when the head removes it", async () => {
+			const out = await withTree(unconfigured, [
+				...configAtCommit("{}", HEAD),
+				...configAtCommit(JSON.stringify({uiSurfaces: [SITE_SURFACE]}), BASE),
+				...over(SITE, "README.md"),
+			]);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toContain("class\tui\t1");
+		});
+
+		it("derives no ui class off a working-tree row neither commit declares", async () => {
+			const out = await withTree(uiConfigured, over(SITE, "README.md"));
+			expect(out.code).toBe(0);
+			expect(out.stdout).not.toContain("class\tui");
+		});
+
+		it("reads a config absent at one commit as that commit's shipped defaults", async () => {
+			const out = await withTree(unconfigured, [
+				...configAtCommit(JSON.stringify({governedRoots: ["src/", ".fabrika.jsonc"]}), HEAD),
+				...happy(),
+			]);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toContain("governance\trequired");
+			expect(out.stderr.join("\n")).toContain(`at the base ${BASE}, the shipped \`governedRoots\``);
+		});
 	});
 
 	it("emits the record with --json, including the derived namespace set", async () => {
@@ -409,51 +483,30 @@ describe("runScope binds its file list to the commit it prints", () => {
  */
 describe("runScope subsystem rows", () => {
 	const CART = "Totals are cents, never floats.";
-	const configured = (rows: ReadonlyArray<unknown>) =>
-		fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify({reviewSubsystems: rows})}});
+	/** The happy script, with `rows` declared at both of the PR's commits. */
+	const configured = (rows: ReadonlyArray<unknown>) => [
+		...declaredAt({reviewSubsystems: rows}),
+		...happy(),
+	];
 
 	// The fence the key exists behind: no declared subsystems, no changed emission — not one byte of
 	// stdout, and the JSON mirror carries no `subsystems` key at all.
 	it("leaves stdout byte-identical when the key is absent, the file has no keys, or the list is empty", async () => {
 		const plain = await run(happy());
-		const absentKey = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options}),
-				Layer.merge(
-					fakeSeams(happy()).layer,
-					fakeFs({files: {"/repo/.fabrika.jsonc": "{}"}}).layer,
-				),
-			),
-		);
-		const empty = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options}),
-				Layer.merge(fakeSeams(happy()).layer, configured([]).layer),
-			),
-		);
+		const absentKey = await run([...declaredAt({}), ...happy()]);
+		const empty = await run(configured([]));
 		expect(absentKey.stdout).toBe(plain.stdout);
 		expect(empty.stdout).toBe(plain.stdout);
 	});
 
 	it("carries no subsystems key in the JSON when the list is empty", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options, json: true}),
-				Layer.merge(fakeSeams(happy()).layer, configured([]).layer),
-			),
-		);
+		const out = await run(configured([]), {json: true});
 		expect("subsystems" in JSON.parse(out.stdout)).toBe(false);
 	});
 
 	it("prints one subsystem row and its note per matching subsystem, between the class and namespace rows", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options}),
-				Layer.merge(
-					fakeSeams(happy()).layer,
-					configured([{pattern: "src/cart.ts", subsystem: "cart", constraint: CART}]).layer,
-				),
-			),
+		const out = await run(
+			configured([{pattern: "src/cart.ts", subsystem: "cart", constraint: CART}]),
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
@@ -473,22 +526,16 @@ describe("runScope subsystem rows", () => {
 			].join("\n"),
 		);
 		expect(out.stderr.join("\n")).toContain(
-			"review scope: subsystem constraints derived over 1 row(s) — `reviewSubsystems` as declared in .fabrika.jsonc.",
+			`review scope: subsystem constraints derived over 1 row(s) — at the head ${HEAD}, \`reviewSubsystems\` as declared in .fabrika.jsonc; at the base ${BASE}, \`reviewSubsystems\` as declared in .fabrika.jsonc.`,
 		);
 	});
 
 	it("sorts the rows by subsystem name, not by declaration order", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options}),
-				Layer.merge(
-					fakeSeams(happy()).layer,
-					configured([
-						{pattern: "src/**", subsystem: "zeta", constraint: "z"},
-						{pattern: "README.md", subsystem: "alpha", constraint: "a"},
-					]).layer,
-				),
-			),
+		const out = await run(
+			configured([
+				{pattern: "src/**", subsystem: "zeta", constraint: "z"},
+				{pattern: "README.md", subsystem: "alpha", constraint: "a"},
+			]),
 		);
 		const lines = out.stdout.split("\n");
 		expect(lines).toContain("subsystem\talpha\t1");
@@ -500,63 +547,41 @@ describe("runScope subsystem rows", () => {
 	// Additive, never a partition: one path under two globs counts in BOTH rows — the opposite of
 	// the class map, which assigns each file exactly one class.
 	it("counts a path matching several patterns under each subsystem", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options}),
-				Layer.merge(
-					fakeSeams(happy()).layer,
-					configured([
-						{pattern: "src/**", subsystem: "source", constraint: "s"},
-						{pattern: "**/cart.ts", subsystem: "cart", constraint: CART},
-					]).layer,
-				),
-			),
+		const out = await run(
+			configured([
+				{pattern: "src/**", subsystem: "source", constraint: "s"},
+				{pattern: "**/cart.ts", subsystem: "cart", constraint: CART},
+			]),
 		);
 		expect(out.stdout).toContain("subsystem\tcart\t1");
 		expect(out.stdout).toContain("subsystem\tsource\t1");
 	});
 
 	it("prints no row for a subsystem whose pattern matched nothing", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options}),
-				Layer.merge(
-					fakeSeams(happy()).layer,
-					configured([
-						{pattern: "docs/**", subsystem: "absent", constraint: "never matched"},
-						{pattern: "README.md", subsystem: "docs", constraint: "d"},
-					]).layer,
-				),
-			),
+		const out = await run(
+			configured([
+				{pattern: "docs/**", subsystem: "absent", constraint: "never matched"},
+				{pattern: "README.md", subsystem: "docs", constraint: "d"},
+			]),
 		);
 		expect(out.stdout).not.toContain("subsystem\tabsent");
 		expect(out.stdout).toContain("subsystem\tdocs\t1");
 	});
 
 	it("retains subsystem constraints when their matched content is excluded", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options, filterPlacement: "after", exclude: "src/cart.ts"}),
-				Layer.merge(
-					fakeSeams(happy()).layer,
-					configured([{pattern: "src/**", subsystem: "cart", constraint: CART}]).layer,
-				),
-			),
-		);
+		const out = await run(configured([{pattern: "src/**", subsystem: "cart", constraint: CART}]), {
+			filterPlacement: "after",
+			exclude: "src/cart.ts",
+		});
 		expect(out.stdout).toContain("subsystem\tcart\t1");
 		expect(out.stdout).toContain("subsystem-path\tcart\tsrc/cart.ts");
 		expect(out.stdout).toContain("namespace\treview-code");
 	});
 
 	it("mirrors the rows in the JSON, named, counted, and carrying the constraint", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options, json: true}),
-				Layer.merge(
-					fakeSeams(happy()).layer,
-					configured([{pattern: "README.md", subsystem: "docs", constraint: "d"}]).layer,
-				),
-			),
+		const out = await run(
+			configured([{pattern: "README.md", subsystem: "docs", constraint: "d"}]),
+			{json: true},
 		);
 		expect(JSON.parse(out.stdout).subsystems).toEqual([
 			{name: "docs", files: 1, paths: ["README.md"], constraint: "d"},
@@ -564,15 +589,7 @@ describe("runScope subsystem rows", () => {
 	});
 
 	it("refuses an undecodable list on 11 rather than partitioning over a value nobody read", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options}),
-				Layer.merge(
-					fakeSeams(happy()).layer,
-					configured([{pattern: "src/**", subsystem: "cart"}]).layer,
-				),
-			),
-		);
+		const out = await run(configured([{pattern: "src/**", subsystem: "cart"}]));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("is missing, empty, or not a string");
@@ -745,19 +762,13 @@ describe("runScope's exclusion set reads .fabrika.jsonc", () => {
  * longer holds everything.
  */
 describe("runScope refuses a filter that excludes governed content", () => {
-	const roots = {governedRoots: ["governed/", ".fabrika.jsonc"]};
-	const configured = (config: Record<string, unknown>) =>
-		fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}});
+	const roots = declaredAt({governedRoots: ["governed/", ".fabrika.jsonc"]});
+	const filtered = {filterPlacement: "after" as const, exclude: "**/*.ts"};
 
 	it("refuses on 21 when the split actually excluded a governed-rooted path", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options, filterPlacement: "after", exclude: "**/*.ts"}),
-				Layer.merge(
-					fakeSeams(over("governed/cart.ts", "src/cart.ts", "README.md")).layer,
-					configured(roots).layer,
-				),
-			),
+		const out = await run(
+			[...roots, ...over("governed/cart.ts", "src/cart.ts", "README.md")],
+			filtered,
 		);
 		expect(out.code).toBe(GOVERNED_FILTER);
 		expect(out.stdout).toBe("");
@@ -766,12 +777,7 @@ describe("runScope refuses a filter that excludes governed content", () => {
 	});
 
 	it("lets the filter exclude non-governed paths beside a declared governed root", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options, filterPlacement: "after", exclude: "**/*.ts"}),
-				Layer.merge(fakeSeams(over("src/cart.ts", "README.md")).layer, configured(roots).layer),
-			),
-		);
+		const out = await run([...roots, ...over("src/cart.ts", "README.md")], filtered);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("excluded-path\tsrc/cart.ts");
 		expect(out.stdout).not.toContain("excludes governed path");
@@ -799,7 +805,10 @@ describe("retained requirements with filtering", () => {
 			Effect.runPromise(
 				Effect.provide(
 					runScope({...options, json: true, filterPlacement, exclude: "apps/site/src/View.tsx"}),
-					Layer.merge(fakeSeams(over(...changed)).layer, uiConfigured),
+					Layer.merge(
+						fakeSeams([...uiConfiguredAtCommits, ...over(...changed)]).layer,
+						unconfigured,
+					),
 				),
 			);
 		const raw = await read(null);

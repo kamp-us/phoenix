@@ -342,6 +342,12 @@ an authorized author satisfies it at `ship gate` like any `review-*` marker. Req
 and readable move together — a required namespace no marker can carry blocks every
 governance-root PR permanently, which is the fail-**closed** half of that same gap.
 
+**The roots and the `ui` prefixes are the PR's own.** `ship scope`, `ship gate` and `ship floor`
+read `.fabrika.jsonc` at the PR's head and at the merge base the platform names for it, never off
+the checkout the shipper stands in, and take the union: a path either commit governs is governed,
+and a path under either commit's `uiSurfaces` raises `ui`. It is the reader `review scope` uses, so
+the two sides cannot answer differently about one head — see the review contract.
+
 **The `cp` line** is the three-state routing input (see "Considered and deliberately not
 derived"), and its source is the **enforced artifact itself**: `.github/CODEOWNERS`, read at run
 time from **the PR's base ref — the branch the PR targets**.
@@ -401,7 +407,7 @@ downstream verb consumes, and that verb guards itself.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404); or the enumerated changed-file list is empty; or its non-empty diff derives zero required namespaces — a vacuous conjunction |
-| `11` | the PR, its file list, the §CP boundary, or the worktree fact could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
+| `11` | the PR, its file list, the §CP boundary, the worktree fact, the merge base, or `.fabrika.jsonc` at the head or the merge base could not be read or decoded — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
 | `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a class, a namespace or a §CP path could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `33` | the verb is standing in the repository's main working tree — the driver's checkout, not the shipper's own worktree. Proven before anything is read, and only on a shipper's own run: `recipe unpark`'s in-process call is exempt |
 
@@ -420,14 +426,17 @@ downstream verb consumes, and that verb guards itself.
 | `ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. Nothing was read.` | 33 | refusal |
 
 **Scope** — on a shipper's own run, one `git rev-parse --git-dir --git-common-dir` in the checkout
-the verb runs in, then one PR's metadata and changed-file list, paginated to exhaustion, plus one boundary read from
-the PR's base ref and one `governedRoots` read from that same checkout. The partition is taken over
-that enumerated list rather than over the pull-request record's `changed_files`: GitHub computes the
-record's count against a base it cached at the PR's last push, so a disagreement is reported and
-never refused on. What still refuses is the list arriving at GitHub's own 3000-file ceiling, where
-the endpoint stops serving files and ends its Link chain normally. The worktree read is first
-and writes nothing; a boundary read that failed refuses `11` on the spot and reads no config. The
-partition is total over what was read.
+the verb runs in, then one PR's metadata; the class config, which is one
+`compare/<base>...<head>?per_page=1` for the merge base and `.fabrika.jsonc` through the contents
+API at the head and at that merge base; the changed-file list, paginated to exhaustion; and one
+boundary read from the PR's base ref. No `.fabrika.jsonc` is read from the checkout. The partition is
+taken over that enumerated list rather than over the pull-request record's `changed_files`: GitHub
+computes the record's count against a base it cached at the PR's last push, so a disagreement is
+reported and never refused on. What still refuses is the list arriving at GitHub's own 3000-file
+ceiling, where the endpoint stops serving files and ends its Link chain normally. The worktree read
+is first and writes nothing. A class-config read that fails refuses `11` naming the commit and reads
+no file list; a boundary read that fails refuses `11` on the spot. The partition is total over what
+was read.
 
 **Examples**
 
@@ -715,7 +724,7 @@ answer this contract bans.
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — a conjunction over an empty diff proves nothing |
 | `10` | a `--require` value is not a known gateable namespace |
-| `11` | the changed-file list, comments, reviews, ACL, or the in-force `review-ui` verdict's rendered comment could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
+| `11` | the changed-file list, comments, reviews, ACL, the in-force `review-ui` verdict's rendered comment, or `.fabrika.jsonc` at the head or its merge base could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
 | `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
@@ -740,7 +749,10 @@ answer this contract bans.
 **Scope** — one PR's changed-file list (paginated to exhaustion, and the floor is derived from that
 list rather than from the pull-request record's `changed_files`; a list at GitHub's 3000-file
 ceiling refuses at `13`, because exhaustion cannot tell that case from a complete read), its verdict comments (paginated,
-count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved, plus, for
+count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved; the class
+config the floor's governed roots come from, which is one `compare/<base>...<head>?per_page=1` for
+the merge base and `.fabrika.jsonc` through the contents API at the head and at that merge base,
+never the checkout's; plus, for
 an in-force `review-ui` verdict, that comment's rendered HTML (`GET issues/comments/<id>`) and one
 anonymous fetch of each capture its gallery links. The verdict-marker and advisory grammars are the registered wire
 formats (`packages/fabrika-cli/src/wire/verdict-marker.ts`, `src/review/advisory.ts`) —
@@ -922,7 +934,7 @@ it is *present and wrong*. All four of these red on `18`, and each has a unit te
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — whether it touches a governance root is unanswerable |
-| `11` | the PR, its changed-file list, or the conjunction underneath could not be read — the floor is UNKNOWN, never `n/a`. Under `--publish-check`, also: the check-runs at the head could not be enumerated, so whether this head already carries the floor's row is unknown and nothing is published |
+| `11` | the PR, its changed-file list, `.fabrika.jsonc` at the head or its merge base, or the conjunction underneath could not be read — the floor is UNKNOWN, never `n/a`. Under `--publish-check`, also: the check-runs at the head could not be enumerated, so whether this head already carries the floor's row is unknown and nothing is published |
 | `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a governance root could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `18` | the diff touches a governance root and its `governance` verdict at this head is `absent`, `stale` or `fail` |
 | `8` | **`--publish-check` only** — the check-run could not be written, so the floor is resolved and nothing published it |
@@ -947,9 +959,11 @@ it is *present and wrong*. All four of these red on `18`, and each has a unit te
 | `ship floor --publish-check: posted check-run <id> — the job's own exit code no longer carries the floor.` | 0 | notice |
 | `ship floor --publish-check: rewrote check-run <id> — the job's own exit code no longer carries the floor.` | 0 | notice |
 
-**Scope** — one PR's changed-file list, paginated to exhaustion, plus whatever `ship gate` scans for
-the one required namespace (its own file list, the comments, the reviews and the comment authors'
-ACL). Both scanned counts reach stderr, this verb's first. Neither verb refuses on that list
+**Scope** — one PR's changed-file list, paginated to exhaustion; the class config that says whether
+the floor binds, which is one `compare/<base>...<head>?per_page=1` for the merge base and
+`.fabrika.jsonc` through the contents API at the head and at that merge base, never the checkout's;
+plus whatever `ship gate` scans for the one required namespace (its own file list, the same class
+config reads, the comments, the reviews and the comment authors' ACL). Both scanned counts reach stderr, this verb's first. Neither verb refuses on that list
 disagreeing with the pull-request record's `changed_files`: GitHub computes the record's count
 against a base it cached at the PR's last push, so the disagreement is reported and the enumerated
 list is the file set both derive from. What both still refuse on is that list arriving at GitHub's

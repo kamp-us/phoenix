@@ -280,7 +280,9 @@ unless 480s of elapsed time, the shipper's own watch horizon, have run since tha
 recorded line. So the wait budget measures how long a PR has sat rather than how fast a driver
 passes, and the refusal names the seconds still to run.
 
-One group of tokens belongs to no shell: the machinery group (`REPLAY-COLLIDED`, `BASE-DRIFTED`,
+Two groups of tokens belong to no shell. The integrator group is the one `FAIL` a driver relays
+from `lane integrate`'s `42`, `43` or `44` out of an epic child's `integrate`. The other is the
+machinery group (`REPLAY-COLLIDED`, `BASE-DRIFTED`,
 `BASE-CONFLICTED`, `QUEUE-EJECTED`, `SEAT-DIRTY`, `SHELL-DEAD`), which a driver records about the
 pipeline itself. Each maps to the machine's LAP event, spending the lap budget instead of the repair
 one. Each carries its own cause off the same closed set with no `--cause` typed; pass one to
@@ -310,6 +312,12 @@ at all.
   `integrate` cell, malformed, only half given, or given on any other line. The log is unappended.
   That pair is the only record a repair builder's `build claim --lane` reads an integrate FAIL off,
   and it lands on the line as `integrate`.
+- `72` — no group that owns the token serves the task's current leaf state: builder `build` /
+  `build:ui`, reviewer `review`, ui-reviewer `review:ui`, shipper `ship` / `ship:queued`,
+  integrator `integrate`, machinery any state. A token several groups share is accepted when any
+  owner serves the leaf. The refusal names the token, the leaf and the owners, and the log is
+  unappended. It is a late or misrouted terminal: the lane already moved past the state that shell
+  was sent to serve.
 - `39`, `65` — [the lanes root](#the-lanes-root).
 
 ## `lane attach-integrate`
@@ -1509,7 +1517,7 @@ route for that lane, and it is a second gate rather than a widening of the first
   a cleared round on any task, a `PASS`, `FAIL` or `CLEARED` line, or a `DONE` not proven off a
   diagnosis. A fresh lane boots at zero retries, so moving a spent ledger aside would hand back a
   budget no granted round restored.
-- **Anything else refuses at `72`** with nothing retracted or moved: another final (`shipped`,
+- **Anything else refuses at `73`** with nothing retracted or moved: another final (`shipped`,
   `complete`, `tripped`, a board final), a lane still in flight, a `diagnosed` log carrying a `pr` or
   a spent round, and a log that does not replay, which belongs to the route above.
 - **The claim goes with the lane exactly as above**: same `--token` guard, same retraction, same
@@ -1567,7 +1575,7 @@ The rows reach stderr either way, so a partly-applied sweep is always enumerable
   standing.
 - `50` — the log replays, so every sweep can judge it and there is nothing to move out of scope. A
   `diagnosed` lane over a re-triaged issue moves with `--retriaged`.
-- `72` — `--retriaged` only: the lane did not end `diagnosed` with no pull request and no spent
+- `73` — `--retriaged` only: the lane did not end `diagnosed` with no pull request and no spent
   round.
 - `39`, `65` — [the lanes root](#the-lanes-root); `39` here covers both default roots.
 

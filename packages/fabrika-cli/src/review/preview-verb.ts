@@ -37,6 +37,7 @@ import {
 } from "../config/paths.ts";
 import {diffRange, diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {type ClassRefs, classConfigAtCommits} from "./class-config.ts";
 import {GOVERNED_FILTER, INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {filesInDiff} from "./diff.ts";
 import {effectiveExclusions, isFilterPlacement, previewOf} from "./filter-spike.ts";
@@ -67,7 +68,10 @@ export interface PreviewOptions {
 	readonly exclude: string | null;
 	readonly emitDiff: boolean;
 	readonly json: boolean;
-	/** Where to look for `.fabrika.jsonc` — the governed roots half of the refusal union. */
+	/**
+	 * The checkout this run stands in: the filter keys are read here, and the class config too for a
+	 * `--diff-file` subject alone — a PR or a range reads it at its own two commits.
+	 */
 	readonly cwd: string;
 	/** The env `--repo` resolution falls back to. `null`/omitted means an empty one. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
@@ -120,20 +124,6 @@ export const runPreview = (
 			return refuse(OFF_VOCABULARY, `${VERB}: name exactly one subject — ${SUBJECTS}.`);
 		}
 
-		const roots = yield* governedRootsOr(
-			VERB,
-			options.cwd,
-			"the refusal union is UNKNOWN without the governed roots, and an UNKNOWN union refuses nothing.",
-		);
-		if (roots._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, roots.message);
-
-		const surfaces = yield* uiSurfacesOr(
-			VERB,
-			options.cwd,
-			"the required UI reviews are UNKNOWN without configured UI prefixes.",
-		);
-		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
-
 		const filterExclusions = yield* reviewFilterExclusionsOr(
 			VERB,
 			options.cwd,
@@ -157,17 +147,22 @@ export const runPreview = (
 			options.exclude,
 		);
 		const patterns = effective.patterns;
-		const probes = refusalProbes(roots.roots);
 
 		/**
 		 * The subject-independent tail: the governed-filter refusal, then the three emission arms,
 		 * each carrying the subject's provenance on stderr. `previewOf` runs the refusal union
 		 * strictly after the completeness proof the PR and range subjects have already passed above
 		 * — `--diff-file` carries none to pass — so the exclusion headers answer for deliberate
-		 * narrowings only.
+		 * narrowings only. `classes` is the subject's own class config: read at its two commits for a
+		 * PR or a range, and off this checkout only for a diff file, which names no commit.
 		 */
-		const serve = (diff: string, provenance: ReadonlyArray<string>): VerbOutcome => {
-			const preview = previewOf(diff, placement, patterns, probes, roots.roots, surfaces.prefixes);
+		const serve = (
+			diff: string,
+			provenance: ReadonlyArray<string>,
+			classes: {readonly roots: ReadonlyArray<string>; readonly prefixes: ReadonlyArray<string>},
+		): VerbOutcome => {
+			const probes = refusalProbes(classes.roots);
+			const preview = previewOf(diff, placement, patterns, probes, classes.roots, classes.prefixes);
 			if (preview._tag === "Refused") {
 				const runtime = preview.refusals.some((entry) => entry.excludedPath !== undefined);
 				const detail = preview.refusals
@@ -270,7 +265,20 @@ export const runPreview = (
 					`${VERB}: cannot read --diff-file "${diffFile}": ${read.message}`,
 				);
 			}
-			return serve(read.text, []);
+			// A diff on disk names no commit, so the checkout's own config is the only one to read.
+			const roots = yield* governedRootsOr(
+				VERB,
+				options.cwd,
+				"the refusal union is UNKNOWN without the governed roots, and an UNKNOWN union refuses nothing.",
+			);
+			if (roots._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, roots.message);
+			const surfaces = yield* uiSurfacesOr(
+				VERB,
+				options.cwd,
+				"the required UI reviews are UNKNOWN without configured UI prefixes.",
+			);
+			if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
+			return serve(read.text, [], {roots: roots.roots, prefixes: surfaces.prefixes});
 		}
 
 		if (pr !== null) {
@@ -310,7 +318,9 @@ export const runPreview = (
 				provenance,
 			);
 			if (short !== null) return short;
-			return serve(served.value, provenance);
+			const classes = yield* classesAt({head: head.sha, base: head.mergeBase});
+			if (classes._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, classes.message);
+			return serve(served.value, provenance, classes);
 		}
 
 		if (repo !== null) {
@@ -360,5 +370,25 @@ export const runPreview = (
 			provenance,
 		);
 		if (short !== null) return short;
-		return serve(served.value, provenance);
+		const classes = yield* classesAt({head: range.tip, base: merged.value});
+		if (classes._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, classes.message);
+		return serve(served.value, provenance, classes);
 	});
+
+/** A bound subject's class inputs, read at its two commits rather than off this checkout. */
+const classesAt = (refs: ClassRefs) =>
+	Effect.map(
+		classConfigAtCommits(
+			VERB,
+			"the refusal union and the required UI reviews are UNKNOWN, and an UNKNOWN union refuses nothing.",
+			refs,
+		),
+		(read) =>
+			read._tag === "Refused"
+				? read
+				: {
+						_tag: "Classes" as const,
+						roots: read.config.governedRoots,
+						prefixes: read.config.uiPrefixes,
+					},
+	);

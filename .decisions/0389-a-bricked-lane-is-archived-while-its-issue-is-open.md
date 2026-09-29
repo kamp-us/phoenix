@@ -230,7 +230,7 @@ triage rewrote them, and the next operator parked on a person because no verb co
 
 **What the route refuses.** Every other final (`shipped`, `complete`, `tripped`, the board finals),
 a lane still in flight, a `diagnosed` log that names a pull request or shows a spent round, and a
-log its own machine cannot fold refuse at `72` `NOT_DIAGNOSED` with nothing retracted or moved. A
+log its own machine cannot fold refuse at `73` `NOT_DIAGNOSED` with nothing retracted or moved. A
 log naming a pull request or a spent round is refused because moving a ledger aside must not be how
 a spent budget gets laundered: ADR 0384 point 3 returns a spent budget only through a granted round.
 

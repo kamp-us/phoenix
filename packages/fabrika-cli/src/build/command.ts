@@ -764,14 +764,21 @@ const check = leafCommand(
 			),
 		),
 		repo: repoFlag,
+		probe: Flag.boolean("probe").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				'outside a lane: start every declared codeValidators entry once in this tree, naming each result on stderr; no session, diff, guard or config validator, so 7, 14, 15 and 22 never arise; writes nothing; green is {"verdict":"green","mode":"probe","surface","tree","ran"} (--surface code only; default: false)',
+			),
+		),
 	},
-	Effect.fn(function* ({surface, repo}) {
+	Effect.fn(function* ({surface, repo, probe}) {
 		yield* emit(
 			yield* runCheck({
 				surface,
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				guards: localTreeGuards,
+				probe,
 			}),
 		);
 	}),
@@ -781,11 +788,11 @@ const check = leafCommand(
 	),
 	Command.withDescription(
 		[
-			"Runs this surface's validators and the local-tree guards in this tree and prints a green as JSON.",
+			"Runs this surface's validators and guards in this tree; --probe runs only codeValidators.",
 			'  {"verdict":"green","surface","tree","ran","skipped","unvalidated"}',
 			"  7: the diff is empty",
-			"  10: --surface is off-enum or contradicts the diff",
-			"  11: a validator, file, config or claim could not be read (UNKNOWN)",
+			"  10: --surface is off-enum, contradicts the diff, or is not code under --probe",
+			"  11: a validator cannot start, no codeValidators, or a read failed (UNKNOWN)",
 			"  14: the branch is not this lane's",
 			"  15: the claim is held by another lane",
 			"  18: red; the failing validator or guard is named on stderr",
@@ -793,7 +800,10 @@ const check = leafCommand(
 			`  Derivation: the build skill's contract.md, "build check"`,
 		].join("\n"),
 	),
-	Command.withExamples([{command: "fabrika build check --surface code"}]),
+	Command.withExamples([
+		{command: "fabrika build check --surface code"},
+		{command: "fabrika build check --surface code --probe"},
+	]),
 );
 
 /**
@@ -1076,8 +1086,9 @@ const verdicts = leafCommand(
 	Command.withDescription(
 		[
 			"Prints the latest gate verdict per namespace for a PR's head, or an epic child, as JSON.",
-			'  {"head","mergeability","rows","rounds","capReached","clearances","escalatedFindings",…}',
-			"  Empty rows is a proven no-verdict answer about the gates, never about mergeability",
+			'  {"head","mergeability","requiredChecks","rows","capReached","escalatedFindings",…}',
+			"  requiredChecks.state: green | red (.failing) | pending | unknown; only green is green",
+			"  Empty rows is a proven no-verdict answer about the gates, never about mergeability or CI",
 			"  7: the PR or issue is absent or closed, or --issue names a PR",
 			"  10: neither or both of --pr and --issue",
 			"  11: a page, the head or the linked issue could not be read (UNKNOWN)",

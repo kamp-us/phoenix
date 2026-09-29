@@ -939,6 +939,41 @@ describe("runRender", () => {
 		expect(outcome.code).toBe(NO_PREVIEW);
 	});
 
+	const noPreviewComment = (sha: string): HttpReply => ({
+		status: 200,
+		body: JSON.stringify([
+			{
+				id: 1,
+				user: {login: "github-actions[bot]"},
+				created_at: "2026-09-29T00:00:00Z",
+				updated_at: "2026-09-29T00:00:00Z",
+				body:
+					"<!-- preview-deploy -->\n### No preview deploy\n" +
+					`<!-- preview-deploy:none head:${sha} -->\n` +
+					"- No preview deploy for this PR — its diff touches no deploy-relevant path, " +
+					"so no preview stack was minted and `e2e` is not applicable. " +
+					`<sub>(${sha.slice(0, 7)})</sub>`,
+			},
+		]),
+	});
+
+	it("proves CANT-SEE (16) when the only announcement is the no-preview marker at the head", async () => {
+		const {outcome} = await run([
+			[PULL, pull()],
+			[COMMENTS, noPreviewComment(HEAD)],
+		]);
+		expect(outcome.code).toBe(NO_PREVIEW);
+		expect(outcome.stderr.at(-1)).toMatch(/marks no preview deploy at 03135b9/);
+	});
+
+	it("calls a no-preview marker for another head UNKNOWN (11), never absent", async () => {
+		const {outcome} = await run([
+			[PULL, pull()],
+			[COMMENTS, noPreviewComment("9fd5949747856d37a3604d628b5c16156b060fe8")],
+		]);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+	});
+
 	it("calls a malformed announcement UNKNOWN (11), never absent", async () => {
 		const malformed: HttpReply = {
 			status: 200,

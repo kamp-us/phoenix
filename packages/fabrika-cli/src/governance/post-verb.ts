@@ -32,12 +32,12 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {governedRootsOr} from "../config/paths.ts";
 import {diffRangePaths} from "../io/git.ts";
 import {createComment, getComment, listComments} from "../io/issues.ts";
 import {patchComment, viewerLogin} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
+import {type ClassRefs, classConfigAtCommits} from "../review/class-config.ts";
 import {touchesGovernanceRoot} from "../review/classes.ts";
 import {contentDigestAt} from "../review/content-binding.ts";
 import {readRangeFlags} from "../review/range-flags.ts";
@@ -179,6 +179,27 @@ const unreadable = (what: string, pr: number, reason: string): VerbOutcome =>
 		`${VERB}: cannot read ${what} for #${pr}: ${reason} — nothing was posted.`,
 	);
 
+/** The governed roots the subject's own two commits declare, never this checkout's. */
+const governedRootsAt = (
+	refs: ClassRefs,
+): Effect.Effect<
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Roots"; readonly roots: ReadonlyArray<string>},
+	never,
+	ChildProcessSpawner.ChildProcessSpawner
+> =>
+	Effect.map(
+		classConfigAtCommits(
+			VERB,
+			"whether this diff is even in the namespace is UNKNOWN. Nothing was posted.",
+			refs,
+		),
+		(read) =>
+			read._tag === "Refused"
+				? {_tag: "Refused" as const, outcome: refuse(PRECONDITION_UNKNOWN, read.message)}
+				: {_tag: "Roots" as const, roots: read.config.governedRoots},
+	);
+
 export const runPost = (
 	options: PostOptions,
 ): Effect.Effect<
@@ -193,14 +214,6 @@ export const runPost = (
 		const {pr, json} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
 		if (bad !== null) return bad;
-
-		const governed = yield* governedRootsOr(
-			VERB,
-			options.cwd,
-			"whether this diff is even in the namespace is UNKNOWN. Nothing was posted.",
-		);
-		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
-		const governedRoots = governed.roots;
 
 		const polarity = options.polarity.toUpperCase();
 		if (polarity !== "PASS" && polarity !== "FAIL") {
@@ -238,6 +251,9 @@ export const runPost = (
 
 		if (flags._tag === "Ranged") {
 			const {base, tip} = flags.range;
+			const governed = yield* governedRootsAt({head: tip, base});
+			if (governed._tag === "Refused") return governed.outcome;
+			const governedRoots = governed.roots;
 			return yield* runRangePost(
 				{
 					verb: VERB,
@@ -304,6 +320,9 @@ export const runPost = (
 		);
 		if (bound._tag === "Refused") return bound.outcome;
 		const head = bound.head;
+		const governed = yield* governedRootsAt({head: head.sha, base: head.mergeBase});
+		if (governed._tag === "Refused") return governed.outcome;
+		const governedRoots = governed.roots;
 		const listed = yield* diffRangePaths(head.mergeBase, head.sha);
 		if (listed._tag === "Failure") return unreadable("the changed-file list", pr, listed.reason);
 		// Taken at the SAME bound commit the requirement is re-derived at — see `review/post-verb.ts`.

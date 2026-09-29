@@ -12,11 +12,11 @@
  * no subsystems gets exactly the scope output it got before — nothing is opt-out by default, and no
  * constraint text ships for anybody's code.
  *
- * This module ships the key, its default and its decode, and `review scope` reads it through
- * `config/paths.ts`'s `reviewSubsystemsOr`. A key group knows nothing about files, so the matching
- * itself lives in the verb that reads the value, over the one glob grammar the package ships
- * (`review/filter-spike.ts`'s `patternToMatcher` — the same engine the review filter spike uses, so
- * a repo never learns two dialects).
+ * This module ships the key, its default and its decode, and `review scope` reads it at the PR's
+ * head and merge base through `review/class-config.ts`. A key group knows nothing about files, so
+ * the matching itself lives in the verb that reads the value, over the one glob grammar the package
+ * ships (`review/filter-spike.ts`'s `patternToMatcher` — the same engine the review filter spike
+ * uses, so a repo never learns two dialects).
  */
 
 import type {Decoded, KeyGroup} from "../key-group.ts";

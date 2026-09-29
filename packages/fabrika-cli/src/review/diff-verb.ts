@@ -14,13 +14,10 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {
-	governedRootsOr,
-	reviewFilterExclusionsOr,
-	reviewFilterUnexcludeOr,
-} from "../config/paths.ts";
+import {reviewFilterExclusionsOr, reviewFilterUnexcludeOr} from "../config/paths.ts";
 import {diffRange, diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {classConfigAtCommits} from "./class-config.ts";
 import {GOVERNED_FILTER, INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {filesInDiff} from "./diff.ts";
 import {
@@ -142,13 +139,14 @@ export const runDiff = (
 			const root = options.cwd ?? process.cwd();
 			let roots = options.governedRoots;
 			if (roots === undefined) {
-				const loaded = yield* governedRootsOr(
+				// The PR's own roots at the served range's two commits, as `review scope` reads them.
+				const loaded = yield* classConfigAtCommits(
 					VERB,
-					root,
 					"the filter refusal union is UNKNOWN without the governed roots.",
+					{head: head.sha, base: head.mergeBase},
 				);
 				if (loaded._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, loaded.message);
-				roots = loaded.roots;
+				roots = loaded.config.governedRoots;
 			}
 
 			const filterExclusions = yield* reviewFilterExclusionsOr(
