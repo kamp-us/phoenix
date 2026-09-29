@@ -27,7 +27,8 @@ on stderr.
 Writes used — lane-ledger appends, a booted lane's own machine document brought up to the committed
 template through `lane migrate <lane>`, which is the form that writes that lane and no other,
 comments on the driven issue, the driven issue's row fields on the Projects table that `lane record`
-writes through `table sync`, whatever a recipe verb writes on
+writes through `table sync`, the `ship disarm --site post-enqueue` a `parked` read at
+`ship:queued` owes, whatever a recipe verb writes on
 its own account (step 3's chore row), and, **on an epic lane only**, that run's assembly branch: you
 merge a passing child into it, push it, and open the one draft PR (step 2's `integrate`). Never a
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
@@ -878,8 +879,9 @@ on its own clock, and one PR took ~1.7x the shipper's ~480s horizon to do it. So
 horizon stays exactly where it is and the waiting happens out here, one re-read per driver pass, in
 `ship:queued` — a queue dwell is a wait, not a park.
 
-You spawn nothing. One read answers the whole cell — `--polls 1` makes it a single look rather than
-another watch, so this costs a driver pass, not a horizon:
+You spawn nothing. One read answers the whole cell (only a `parked` answer adds a write, the
+disarm in the table below). `--polls 1` makes it a single look rather than another watch, so this
+costs a driver pass, not a horizon:
 
 ```bash
 node <fabrika> ship reconcile <pr> --polls 1
@@ -908,9 +910,9 @@ alone.
 | `reconcile` says | Record — `lane report … --token` |
 | --- | --- |
 | `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped`, unless the merge carried `Part of #N` and closed nothing, and then it lands back in `queued` (below). **On an epic lane's tail there is no such arm and none is wanted**: a tail body that does not close its epic is refused where it is written, so the tail's `DONE` folds to `shipped` either way |
-| `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own. This is the one record the floor below can refuse |
+| `unresolved` | `--token UNRESOLVED` — still queued, or armed and not yet past `ship reconcile`'s floor; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own. This is the one record the floor below can refuse |
 | `ejected` | `--token EJECTED` — the PR left the queue un-merged, which is repair work: the machine spends a retry back into `build` |
-| `parked` | `--token UNKNOWN` — the timeline shows a PR neither queued, ejected nor merged, and an unread queue state is UNKNOWN, never a wait to keep sitting in |
+| `parked` | disarm first, then record — the arm has sat unqueued past `ship reconcile`'s floor, so the enqueue did not take effect, and a live arm left standing enqueues ungated later. Run `node <fabrika> ship disarm <pr> --site post-enqueue` before `lane report`. On `kept live-queued` the PR entered the queue between the two reads: `--token UNRESOLVED`. On any other answer, `--token UNKNOWN`. A disarm exit `8` or `11` also records `UNKNOWN`, and your terminal line carries `merge intent: NOT cleared` |
 
 **`lane report` may answer "too soon", and that is the wait working.** A queue re-fold is floored on
 elapsed time as well as counted: exit `55` says the shipper's own ~480s horizon has not run since
