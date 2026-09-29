@@ -87,6 +87,10 @@ that row sits under, and the commit that last touched it. The header line carrie
 day one; `absent` and `none` both exit `0` and both are facts. Only `11` is UNKNOWN — and it is never
 `none`.
 
+**The verb reads the fetched base ref, not your working tree.** With no `--base` it reads the trunk,
+so docs written on a branch and not yet merged read as `absent` or leave the count unchanged. Pass
+`--base <ref>` to read another ref, such as your pushed branch.
+
 Read the rows before writing: a doc that already covers the shape gets **extended**, and a second
 doc on one subject is how a corpus starts contradicting itself. `unregistered` on a doc is
 a real defect — a doc with no row is one no reader will find — and step 6 is where you fix it.
