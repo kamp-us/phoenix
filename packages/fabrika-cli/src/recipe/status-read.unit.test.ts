@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {clearProof, issueOf, leafOf} from "./status-read.ts";
+import {clearProof, issueOf, leafOf, repairProof} from "./status-read.ts";
 
 const status = (stateValue: unknown): string => JSON.stringify({stateValue, status: "active"});
 
@@ -88,6 +88,43 @@ describe("clearProof", () => {
 
 		expect(proof._tag).toBe("Unproven");
 		expect(proof._tag === "Unproven" && proof.reason).toMatch(/still reads the park/);
+	});
+});
+
+describe("repairProof", () => {
+	const tripped = (errors: ReadonlyArray<string>): string =>
+		JSON.stringify({stateValue: "tripped", status: "done", context: {errors}});
+
+	it("is Repaired when the re-fold reads the task off the park it left", () => {
+		const proof = repairProof(
+			0,
+			status({pipeline: {issue: "build"}}),
+			"issue",
+			"human:cp-approval",
+		);
+
+		expect(proof).toEqual({_tag: "Repaired", leaf: "build"});
+	});
+
+	it("is Spent when the fallthrough tripped the lane on this task", () => {
+		const proof = repairProof(0, tripped(["issue"]), "issue", "human:cp-approval");
+
+		expect(proof).toEqual({_tag: "Spent", terminal: "tripped"});
+	});
+
+	it("is Unproven on a finished lane that names no error on the task", () => {
+		expect(repairProof(0, tripped([]), "issue", "human:cp-approval")._tag).toBe("Unproven");
+	});
+
+	it("is Unproven when the task still sits on the park that recorded the route", () => {
+		const proof = repairProof(
+			0,
+			status({pipeline: {issue: "human:cp-approval"}}),
+			"issue",
+			"human:cp-approval",
+		);
+
+		expect(proof._tag).toBe("Unproven");
 	});
 });
 

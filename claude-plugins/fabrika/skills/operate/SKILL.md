@@ -1665,6 +1665,18 @@ and either way the ledger is untouched and the park below is what you do. You ne
 codes and never retype what the verb does: which parks clear on their own is that table's decision,
 not yours: you relay that table's answer and never derive it.
 
+**A `head-ci-red` park on a real defect leaves through this same call, into repair.** On a red head
+the verb relays `heal-ci logs` and `heal-ci classify` itself. When a failing required context classes
+`logic` on a PR the pipeline owns, it records the park's `FAIL` rather than an `UNBLOCKED`, and its
+answer reads `"event": "FAIL"`. That spends one repair retry and lands the lane in `build`, so your
+next move is a repair builder on the PR. With no retry left it falls to the spent-budget park, which
+on a single-task lane re-folds as `tripped`; that is the budget park below. A `transient` or
+`unclassified` red, or one whose logs will not read, stays at `13` and waits for `heal-ci`'s rerun
+or for the head to go green. Never type `lane transition … UNBLOCKED` and then a `FAIL` out of `ship`
+by hand to get the same move: this verb is the route, and it proves the defect before it spends the
+retry. A `20` on that `FAIL` is a lane booted before the arm existed, so run
+`node <fabrika> lane migrate <lane-key>` and then `recipe unpark` again.
+
 **Exit `23` is the one refusal that is yours to answer, and answering it is a sentence.** It says
 the park's cause routes to the *driver* — machinery a driver session owns, not a call only the
 founder can make — and this repo lets a driver clear one, so the clear is yours to take and no

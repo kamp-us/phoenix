@@ -86,9 +86,13 @@ export const traceLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): 
 	return {_tag: "Traced", steps, states: before.states};
 };
 
-const PROGRESS_EVENTS = ["DONE", "PASS", "FAIL", "WIP", "LAP", "BLOCKED"];
+const PROGRESS_EVENTS = ["DONE", "PASS", "WIP", "LAP", "BLOCKED"];
 
-/** A park is a leaf whose one way out is `UNBLOCKED` — read off the machine, never a name list. */
+/**
+ * A park is a leaf a lane resumes out of by `UNBLOCKED` and where no shell's work lands — read off
+ * the machine, never a name list. A `FAIL` beside that door does not unmake the park: out of
+ * `human:cp-approval` it is the red-CI repair route, which leaves the park rather than working in it.
+ */
 const isPark = (lane: CompiledLane, task: string, leaf: string): boolean => {
 	const compiled = lane.tasks[task];
 	if (compiled === undefined) return false;

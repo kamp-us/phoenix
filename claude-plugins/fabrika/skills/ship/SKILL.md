@@ -158,6 +158,8 @@ Terminals: `green` → continue. `red` → disarm, note, route the failing gatin
 names to `heal-ci`, stop. **Name the cause when you record that terminal**, so the park is one a
 recipe can clear rather than one that spends a person: a red head is the park class whose cause most
 often goes away with nobody acting, and `recipe unpark` clears it by re-reading this same rollup.
+You still never tell a flake from a defect here. A red that `heal-ci` classes `logic` leaves that
+park into repair through the driver's `recipe unpark`, never through a `ROUTED-REPAIR` of yours.
 
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token ROUTED-HEAL-CI --cause head-ci-red --pr <pr-url>

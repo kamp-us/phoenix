@@ -15,6 +15,8 @@
  *      rival reading of it. A driver-routed park with no
  *      recipe has no such read, and clears on the driver's rationale instead.
  *   4. `lane transition … UNBLOCKED` records the clear, carrying that rationale where there is one.
+ *      The one exception is a red head `heal-ci` classes a defect: no wait clears that, so it is
+ *      recorded as the park's `FAIL` into repair instead.
  *   5. `lane status` is folded **again**, and the answer is emitted only once that re-fold shows the
  *      task out of the park: no recipe reports a mutation it did not read back.
  *
@@ -41,8 +43,10 @@ import {CONFIG_PATH} from "../config/document.ts";
 import {PARK_CAUSE, type ParkCauseSurface} from "../config/keys/park-cause.ts";
 import {readRoadmapFile} from "../config/paths.ts";
 import type {Read} from "../config/read-key.ts";
+import {runClassify} from "../heal-ci/classify-verb.ts";
+import {runLogs} from "../heal-ci/logs-verb.ts";
 import {fetchAndResolve, localBranches, readFileAt} from "../io/git.ts";
-import {getIssue} from "../io/issues.ts";
+import {getIssue, listComments} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import type {PullScope} from "../io/pulls.ts";
 import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
@@ -53,6 +57,7 @@ import {routeUnder} from "../lane/report.ts";
 import {BUILD_CLAIM_BUDGET_MINUTES} from "../lane/shell-budget.ts";
 import {runStatus} from "../lane/status-verb.ts";
 import {runTransition} from "../lane/transition-verb.ts";
+import {ownershipGate} from "../ownership/gate.ts";
 import {runChecks} from "../ship/checks-verb.ts";
 import {runCpApproval} from "../ship/cp-approval-verb.ts";
 import {runGate} from "../ship/gate-verb.ts";
@@ -69,9 +74,9 @@ import {
 	TARGET_ABSENT,
 	TASK_UNRESOLVED,
 } from "./codes.ts";
-import {classifyPark, type ParkClass, type ParkRecipe, QUEUE_MOVED_GRANT} from "./parks.ts";
+import {classifyPark, isPark, type ParkClass, type ParkRecipe, QUEUE_MOVED_GRANT} from "./parks.ts";
 import {buildExit, laneExit, relayRefusal} from "./relay.ts";
-import {clearProof, issueOf, leafOf} from "./status-read.ts";
+import {clearProof, issueOf, leafOf, repairProof} from "./status-read.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "fabrika recipe unpark";
@@ -131,6 +136,11 @@ type Clearance =
 			 */
 			readonly waitGrant: number | null;
 	  }
+	/**
+	 * The park's cause is a defect no wait removes, so the lane leaves the park into repair: recorded
+	 * as the park's `FAIL`, never as an `UNBLOCKED` back into the state that parked it.
+	 */
+	| {readonly _tag: "Repair"; readonly mechanism: string}
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
 
 type Deps =
@@ -199,17 +209,21 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 						waitGrant: null,
 					};
 		if (clearance._tag === "Refused") return clearance.outcome;
+		const repair = clearance._tag === "Repair";
+		const event = repair ? "FAIL" : "UNBLOCKED";
 
 		const recorded = yield* runTransition(
 			{
 				...ref,
-				event: "UNBLOCKED",
+				event,
 				task,
 				cause: null,
 				parkCause: options.parkCause,
 				classes: [],
-				waitGrant: clearance.waitGrant,
-				rationale,
+				waitGrant: repair ? null : clearance.waitGrant,
+				// A rationale names why a park was cleared, and a repair clears nothing: its reason is the
+				// mechanism the answer reports, and `lane transition` refuses one on a FAIL.
+				rationale: repair ? null : rationale,
 				repo: options.repo,
 				cwd: options.cwd,
 				env: options.env,
@@ -221,21 +235,53 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 		}
 
 		const after = yield* runStatus(ref);
+		const clearanceName = routed._tag === "Recipe" ? routed.recipe.clearance : "driver-rationale";
+
+		if (clearance._tag === "Repair") {
+			const routedTo = repairProof(after.code, after.stdout, task, leaf);
+			if (routedTo._tag === "Unproven") {
+				return refuse(
+					READBACK_MISMATCH,
+					`${VERB}: ${event} was appended and ${routedTo.reason} — the repair route is NOT proven, and the lane needs a human.`,
+					[...after.stderr],
+				);
+			}
+			const current = routedTo._tag === "Repaired" ? routedTo.leaf : routedTo.terminal;
+			const spent = routedTo._tag === "Spent" || isPark(current);
+			return answer(
+				JSON.stringify({
+					lane: options.lane,
+					task,
+					park: leaf,
+					clearance: clearanceName,
+					event,
+					mechanism: clearance.mechanism,
+					current,
+				}),
+				[
+					`${VERB}: park "${leaf}" matched a known recipe whose cause needs a repair; recorded ${event} via ${clearance.mechanism}.`,
+					spent
+						? `${VERB}: re-fold reads "${current}" — the repair budget was spent, so "${task}" fell to its spent-budget park instead of reaching a builder.`
+						: `${VERB}: re-fold reads "${current}" — the repair route is proven, and one retry is spent.`,
+				],
+			);
+		}
+
 		const proof = clearProof(after.code, after.stdout, task);
 		if (proof._tag === "Unproven") {
 			return refuse(
 				READBACK_MISMATCH,
-				`${VERB}: UNBLOCKED was appended and ${proof.reason} — the clear is NOT proven, and the lane needs a human.`,
+				`${VERB}: ${event} was appended and ${proof.reason} — the clear is NOT proven, and the lane needs a human.`,
 				[...after.stderr],
 			);
 		}
-
 		return answer(
 			JSON.stringify({
 				lane: options.lane,
 				task,
 				park: leaf,
-				clearance: routed._tag === "Recipe" ? routed.recipe.clearance : "driver-rationale",
+				clearance: clearanceName,
+				event,
 				mechanism: clearance.mechanism,
 				current: proof.leaf,
 				...(clearance.waitGrant === null ? {} : {waitGrant: clearance.waitGrant}),
@@ -1283,8 +1329,9 @@ const soleParkedPull = (
  *
  * The rollup is `ship checks`'s answer relayed and never a second reading of the check list here, at
  * one poll because a recipe pass is a snapshot — waiting is what the shipper's `--wait` already did.
- * Only `green` clears. `red` and `pending` are the park standing correctly, and so is every other
- * rollup word, because none of them is the one this repo merges on.
+ * Only `green` clears. `pending` is the park standing correctly, and so is every other rollup word
+ * but `red`, because none of them is the one this repo merges on. A `red` is read once more, by
+ * {@link repairOrHold}: a defect leaves the park into repair, and every other red holds it.
  *
  * Three reads and not one, because the cause is what parked the lane and not what the lane needs to
  * leave it. A clear says the shipper can be dispatched again, so it re-proves what that shipper had
@@ -1394,6 +1441,9 @@ const clearCiGreen = (
 		if (!isRecord(rolled) || typeof rolled.rollup !== "string") {
 			return unknown(`#${pr}'s CI at ${head}`, "fabrika ship checks exited 0 and named no rollup");
 		}
+		if (rolled.rollup === "red") {
+			return yield* repairOrHold(options, repo, pr, head, recipe, scanned);
+		}
 		if (rolled.rollup !== "green") {
 			return no(
 				refuse(
@@ -1443,3 +1493,124 @@ const clearCiGreen = (
 			waitGrant: null,
 		};
 	});
+
+/**
+ * Decide whether a red head is a defect this lane repairs, or a red the park keeps waiting out.
+ *
+ * `heal-ci`'s own two verbs answer it, relayed rather than re-read: `heal-ci logs` takes every failing
+ * required context at the live head, and `heal-ci classify` seats each on its closed signature table.
+ * One `logic` context is enough, because a PR is only as healed as its worst context and no rerun or
+ * wait turns a deterministic failure green. The repair spends a retry through the park's own `FAIL`
+ * arm, the same guarded pair `ship` walks, so an exhausted budget falls to its park.
+ *
+ * Everything short of a `logic` context holds the park exactly as the red did before this arm
+ * existed: an all-`transient` or `unclassified` red, and a log that could not be read or classified,
+ * which is a red nobody has classified yet. So does a `logic` red on a PR the pipeline does not own,
+ * because that repair is its author's (`heal-ci` §2's ownership rule, read through the same gate
+ * `build claim` puts in front of a repair).
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9946
+ */
+const repairOrHold = (
+	options: UnparkOptions,
+	repo: string,
+	pr: number,
+	head: string,
+	recipe: ParkRecipe,
+	scanned: string,
+): Effect.Effect<Clearance, never, Deps> =>
+	Effect.gen(function* () {
+		const holds = (why: string, lines: ReadonlyArray<string> = []): Clearance => ({
+			_tag: "Refused",
+			outcome: refuse(
+				PARK_HOLDS,
+				`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${pr}'s CI at ${head} rolls up "red" and ${why}; nothing was written.`,
+				[scanned, ...lines],
+			),
+		});
+
+		const logs = yield* runLogs({
+			pr,
+			sha: head,
+			context: "",
+			maxBytes: LOG_TAIL_BYTES,
+			repo,
+			json: false,
+			env: options.env,
+		});
+		if (logs.code !== 0) {
+			return holds(
+				`fabrika heal-ci logs refused at exit ${logs.code}, so the red is unclassified`,
+				logs.stderr,
+			);
+		}
+		const classified = yield* runClassify({
+			json: true,
+			stdin: Effect.succeed({_tag: "Text", text: logs.stdout}),
+		});
+		const rows = classifiedContexts(classified);
+		if (rows === null) {
+			return holds(
+				`fabrika heal-ci classify answered exit ${classified.code} with no context rows, so the red is unclassified`,
+				classified.stderr,
+			);
+		}
+		const logic = rows.filter((row) => row.class === "logic");
+		if (logic.length === 0) {
+			const seen = rows.map((row) => `${row.context}: ${row.class}`).join(", ");
+			return holds(
+				`heal-ci classes no failing context logic (${seen === "" ? "no failing required context" : seen}), so it is no repair`,
+			);
+		}
+
+		const target = yield* openPull(
+			VERB,
+			repo,
+			pr,
+			(reason) =>
+				`${VERB}: cannot read PR #${pr}: ${reason} — whose repair this red is is UNKNOWN, and nothing was written.`,
+		);
+		if (target._tag === "Refused") return {_tag: "Refused", outcome: target.outcome};
+		const owned = yield* ownershipGate(
+			VERB,
+			repo,
+			{number: pr, author: target.pull.authorLogin, baseRef: target.pull.baseRef},
+			listComments(repo, pr),
+			{notOurs: PARK_HOLDS, unknown: PRECONDITION_UNKNOWN},
+			"its logic red is its author's to repair, so the park holds and nothing was written.",
+		);
+		if (owned._tag === "Refused") return {_tag: "Refused", outcome: owned.outcome};
+
+		return {
+			_tag: "Repair",
+			mechanism: `ci-logic:#${pr} at ${head}, ${logic.map((row) => `${row.context}=${row.signature}`).join(",")}`,
+		};
+	});
+
+/** `heal-ci logs`'s own default tail, so the relay classifies the bytes a hand run would. */
+const LOG_TAIL_BYTES = 65536;
+
+interface ClassifiedContext {
+	readonly context: string;
+	readonly class: string;
+	readonly signature: string;
+}
+
+/** `heal-ci classify --json`'s context rows, or `null` for an answer that carries none. */
+const classifiedContexts = (outcome: VerbOutcome): ReadonlyArray<ClassifiedContext> | null => {
+	if (outcome.code !== 0) return null;
+	const parsed = parseJson(outcome.stdout);
+	if (!isRecord(parsed) || !Array.isArray(parsed.contexts)) return null;
+	return parsed.contexts.flatMap(
+		(row): ReadonlyArray<ClassifiedContext> =>
+			isRecord(row) && typeof row.context === "string" && typeof row.class === "string"
+				? [
+						{
+							context: row.context,
+							class: row.class,
+							signature: typeof row.signature === "string" ? row.signature : "-",
+						},
+					]
+				: [],
+	);
+};
