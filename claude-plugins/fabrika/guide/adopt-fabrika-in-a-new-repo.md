@@ -70,10 +70,13 @@ overwritten. `design-manifest` and `roadmap-focus` take their content on stdin. 
 and `claude-md-section` append their own row/block and read no stdin. `settings-patch` merges the
 `kampus` marketplace registration and the `fabrika@kampus` flip into a `.claude/settings.json`
 that is already there — unknown keys preserved, unparseable bytes refused unwritten — and creates
-the file when it is absent; it reads no stdin either way. `dep-pin` pins the `@kampus/fabrika-cli`
-dependency row to the version npm's registry publishes at run time — same merge law over the
-repo's `package.json`, an unreachable registry refused unwritten — and prints the exact install
-command; it never runs a package manager or touches a lockfile. That install is not small: it
+the file when it is absent; it reads no stdin either way. Both keep a present file's indentation
+and final newline, so the diff shows only the added lines. `dep-pin` pins the `@kampus/fabrika-cli`
+row under `devDependencies` to the version npm's registry publishes at run time — same merge law
+over the repo's `package.json`, an unreachable registry refused unwritten. A row an earlier
+`dep-pin` put under `dependencies` moves to `devDependencies`. It prints the exact dev install
+command, `pnpm add -D --save-exact @kampus/fabrika-cli@<version>`; it never runs a package manager
+or touches a lockfile. That install is not small: it
 brings in Playwright, adds a few hundred lockfile lines, and the package's `postinstall` downloads a
 headless Chromium (~130MB) for `fabrika ui render`. pnpm 10 skips that `postinstall` until you
 approve it: run `pnpm approve-builds` and pick `@kampus/fabrika-cli`, or add it to

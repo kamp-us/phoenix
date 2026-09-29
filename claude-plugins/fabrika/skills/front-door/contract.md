@@ -1138,7 +1138,7 @@ a tenth is a change to this table, not a new rule.
 | `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
 | `settings-patch` | `--path`, default `.claude/settings.json` at the repo root | **none** — the two keys [fixed below](#json-key-merge), merged into the object a present file parses to, written whole into a file that is absent | a present file re-reads to the merged object — every undeclared key intact, the declared keys at their registry values — through `normalizeForReadback` |
-| `dep-pin` | `--path`, default `package.json` at the repo root | **none** — the `dependencies.@kampus/fabrika-cli` row at the version npm's registry currently [publishes](#json-key-merge), merged into the object a present manifest parses to, written whole into a manifest that is absent | a present manifest re-reads to the merged object — every undeclared key intact, the row at exactly the resolved version — through `normalizeForReadback`; an unreachable registry refuses unwritten |
+| `dep-pin` | `--path`, default `package.json` at the repo root | **none** — the `devDependencies.@kampus/fabrika-cli` row at the version npm's registry currently [publishes](#json-key-merge), merged into the object a present manifest parses to, written whole into a manifest that is absent | a present manifest re-reads to the merged object — every undeclared key intact, the row at exactly the resolved version — through `normalizeForReadback`; an unreachable registry refuses unwritten |
 
 <a id="taxonomy-is-derived"></a>**The taxonomy is derived from the vocabularies, never restated.**
 Every name comes from the constant the writing verb already reads — `STATUSES` for the five statuses,
@@ -1304,8 +1304,18 @@ arm's write-and-read-back protocol. Already merged — the parsed object equals 
 produce, however its keys are ordered — is `exists` at exit `0`: a second run over an adopted repo
 is byte-for-byte a no-op, because idempotency is absolute.
 
+A merged write keeps the present file's layout: the indent its first indented line uses (two
+spaces, four spaces or a tab), its line endings, and whether it ends on a newline. So a
+two-space `package.json` gains only the lines the new row adds. A file with no indented line (`{}`,
+or one minified line) has no indent to keep and takes a tab. A file created from nothing is written
+tab-indented, with `\n` line endings and a final newline.
+
 **`dep-pin` resolves the version at run time; the registry's answer is the only pin it knows.** The
-row it merges is `dependencies.@kampus/fabrika-cli`, at exactly what
+row it merges is `devDependencies.@kampus/fabrika-cli`, because the CLI is a dev tool and never a
+runtime dependency of what the repo ships. A row already under `dependencies`, where an earlier
+`dep-pin` wrote it, moves in the same write: it leaves `dependencies` (which stays, even when that
+empties it) and lands under `devDependencies`, so the manifest never holds two rows for the package.
+The row's version is exactly what
 `https://registry.npmjs.org/@kampus/fabrika-cli/latest` publishes when the verb runs — never a
 constant in this table, which is what makes a re-run move a stale row forward instead of declaring
 it already adopted. A registry that cannot be reached or answers without a version is exit `11` —
@@ -1313,7 +1323,7 @@ nothing pinned, nothing written; a guessed version is the one outcome this surfa
 edit itself rides the same key-merge arm as `settings-patch`: unknown keys preserved verbatim,
 unparseable bytes refused unwritten, absolute idempotency. And per the founder's ruling
 (R1.3), no package manager ever spawns and no lockfile is read or written — the exact install
-command (`pnpm add --save-exact @kampus/fabrika-cli@<version>`) is printed on the notice channel,
+command (`pnpm add -D --save-exact @kampus/fabrika-cli@<version>`) is printed on the notice channel,
 because the lockfile stays the caller's. Two more notices follow it: the install brings in
 Playwright and a headless Chromium download, and pnpm 10 skips the package's `postinstall` until the
 repo approves it (`pnpm approve-builds`, or an `onlyBuiltDependencies` entry plus
@@ -1413,7 +1423,7 @@ the shape this seat exists to prevent. The skill loops.
 | `status bootstrap: appended <marker> to <target> for <surface-id>, read-back conformed.` | 0 | notice |
 | `status bootstrap: merged the declared keys into <target> for settings-patch, read-back conformed.` | 0 | notice |
 | `status bootstrap: cannot resolve @kampus/fabrika-cli's current release from npm: <reason> — nothing pinned, nothing written.` | 11 | refusal |
-| `status bootstrap: the lockfile stays yours — install with: pnpm add --save-exact @kampus/fabrika-cli@<version>` | 0 | notice |
+| `status bootstrap: the lockfile stays yours — install with: pnpm add -D --save-exact @kampus/fabrika-cli@<version>` | 0 | notice |
 | ``status bootstrap: the install brings in Playwright (@playwright/test) and its postinstall downloads a headless Chromium (~130MB) — the browser `fabrika ui render` drives.`` | 0 | notice |
 | ``status bootstrap: pnpm 10 skips that postinstall until you approve it — run `pnpm approve-builds` and pick @kampus/fabrika-cli, or add @kampus/fabrika-cli to `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`; approving it is what lets `ui render`'s browser setup run.`` | 0 | notice |
 
@@ -1479,7 +1489,7 @@ nothing else moved. A second run over it reads `{"outcome":"exists",…}` and wr
 $ fabrika status bootstrap dep-pin
 bootstrap	created	dep-pin	package.json	ok
 status bootstrap: created package.json for dep-pin, read-back conformed.
-status bootstrap: the lockfile stays yours — install with: pnpm add --save-exact @kampus/fabrika-cli@0.7.1
+status bootstrap: the lockfile stays yours — install with: pnpm add -D --save-exact @kampus/fabrika-cli@0.7.1
 status bootstrap: the install brings in Playwright (@playwright/test) and its postinstall downloads a headless Chromium (~130MB) — the browser `fabrika ui render` drives.
 status bootstrap: pnpm 10 skips that postinstall until you approve it — run `pnpm approve-builds` and pick @kampus/fabrika-cli, or add @kampus/fabrika-cli to `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`; approving it is what lets `ui render`'s browser setup run.
 $ echo $?

@@ -878,6 +878,25 @@ describe("the settings-patch surface", () => {
 		expect(written.size).toBe(0);
 	});
 
+	it("keeps a two-space settings file two-space-indented", async () => {
+		const before = `${JSON.stringify({permissions: {allow: ["Bash"]}}, null, 2)}\n`;
+		const {written} = await bootstrapWith({[SETTINGS]: before});
+		expect(written.get(SETTINGS)).toBe(
+			`${JSON.stringify({...JSON.parse(before), ...SETTINGS_PATCH}, null, 2)}\n`,
+		);
+	});
+
+	it("reads its own merged settings file back as exists on the second run", async () => {
+		const first = await bootstrapWith({
+			[SETTINGS]: `${JSON.stringify({permissions: {allow: ["Bash"]}}, null, 4)}\n`,
+		});
+		const merged = first.written.get(SETTINGS) ?? "";
+		expect(merged).toContain('\n    "enabledPlugins": {\n        "fabrika@kampus": true\n    }\n');
+		const second = await bootstrapWith({[SETTINGS]: merged});
+		expect(JSON.parse(second.outcome.stdout).outcome).toBe("exists");
+		expect(second.written.size).toBe(0);
+	});
+
 	it("creates the file whole when it is absent", async () => {
 		const {outcome, written} = await bootstrapWith({});
 		expect(outcome.code).toBe(ANSWER);
@@ -887,7 +906,7 @@ describe("the settings-patch surface", () => {
 			target: ".claude/settings.json",
 			readback: "ok",
 		});
-		expect(JSON.parse(written.get(SETTINGS) ?? "")).toEqual(SETTINGS_PATCH);
+		expect(written.get(SETTINGS)).toBe(`${JSON.stringify(SETTINGS_PATCH, null, "\t")}\n`);
 		expect(outcome.stderr).toEqual([
 			"status bootstrap: created .claude/settings.json for settings-patch, read-back conformed.",
 		]);
@@ -965,7 +984,8 @@ describe("the dep-pin surface", () => {
 			readback: "ok",
 		});
 		const merged = JSON.parse(written.get(MANIFEST) ?? "");
-		expect(merged.dependencies).toEqual({express: "^4.21.0", "@kampus/fabrika-cli": "0.5.0"});
+		expect(merged.dependencies).toEqual({express: "^4.21.0"});
+		expect(merged.devDependencies).toEqual({"@kampus/fabrika-cli": "0.5.0"});
 		// Everything dep-pin did not declare survives the re-serialize verbatim.
 		expect(merged.name).toBe("adopting-repo");
 		expect(merged.private).toBe(true);
@@ -976,7 +996,7 @@ describe("the dep-pin surface", () => {
 		const {outcome} = await bootstrapWith({[MANIFEST]: '{"dependencies":{}}'});
 		expect(outcome.code).toBe(ANSWER);
 		expect(outcome.stderr).toContain(
-			"status bootstrap: the lockfile stays yours — install with: pnpm add --save-exact @kampus/fabrika-cli@0.5.0",
+			"status bootstrap: the lockfile stays yours — install with: pnpm add -D --save-exact @kampus/fabrika-cli@0.5.0",
 		);
 	});
 
@@ -995,9 +1015,92 @@ describe("the dep-pin surface", () => {
 		const {outcome, written} = await bootstrapWith({});
 		expect(outcome.code).toBe(ANSWER);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({outcome: "created", target: "package.json"});
-		expect(JSON.parse(written.get(MANIFEST) ?? "")).toEqual({
-			dependencies: {"@kampus/fabrika-cli": "0.5.0"},
+		expect(written.get(MANIFEST)).toBe(
+			'{\n\t"devDependencies": {\n\t\t"@kampus/fabrika-cli": "0.5.0"\n\t}\n}\n',
+		);
+	});
+
+	// An earlier dep-pin wrote the row under `dependencies`. The re-run moves it whole: one row, under
+	// `devDependencies`, never two and never one left behind.
+	it("moves a row found under dependencies to devDependencies, leaving one row", async () => {
+		const {outcome, written} = await bootstrapWith({
+			[MANIFEST]: JSON.stringify({
+				dependencies: {express: "^4.21.0", "@kampus/fabrika-cli": "0.4.1"},
+				devDependencies: {typescript: "5.9.2"},
+			}),
 		});
+		expect(JSON.parse(outcome.stdout).outcome).toBe("created");
+		const merged = JSON.parse(written.get(MANIFEST) ?? "");
+		expect(merged.dependencies).toEqual({express: "^4.21.0"});
+		expect(merged.devDependencies).toEqual({
+			typescript: "5.9.2",
+			"@kampus/fabrika-cli": "0.5.0",
+		});
+	});
+
+	it("moves a current row too, and keeps an emptied dependencies section in place", async () => {
+		const {written} = await bootstrapWith({
+			[MANIFEST]: JSON.stringify({name: "a", dependencies: {"@kampus/fabrika-cli": "0.5.0"}}),
+		});
+		expect(JSON.parse(written.get(MANIFEST) ?? "")).toEqual({
+			name: "a",
+			dependencies: {},
+			devDependencies: {"@kampus/fabrika-cli": "0.5.0"},
+		});
+	});
+
+	it("drops a stray dependencies row when devDependencies already holds the pin", async () => {
+		const {written} = await bootstrapWith({
+			[MANIFEST]: JSON.stringify({
+				dependencies: {"@kampus/fabrika-cli": "0.4.1"},
+				devDependencies: {"@kampus/fabrika-cli": "0.5.0"},
+			}),
+		});
+		expect(JSON.parse(written.get(MANIFEST) ?? "")).toEqual({
+			dependencies: {},
+			devDependencies: {"@kampus/fabrika-cli": "0.5.0"},
+		});
+	});
+
+	// The adopter's 74-line diff: a two-space manifest came back tab-indented. The merge keeps the
+	// file's own layout, so the only lines that change are the ones the row adds.
+	it("keeps a two-space manifest's indentation and final newline, adding only the new lines", async () => {
+		const before = `${JSON.stringify(
+			{name: "site", scripts: {build: "next build"}, devDependencies: {typescript: "5.9.2"}},
+			null,
+			2,
+		)}\n`;
+		const {written} = await bootstrapWith({[MANIFEST]: before});
+		const after = written.get(MANIFEST) ?? "";
+		const beforeLines = before.split("\n");
+		const afterLines = after.split("\n");
+		expect(afterLines.filter((line) => !beforeLines.includes(line))).toEqual([
+			'    "typescript": "5.9.2",',
+			'    "@kampus/fabrika-cli": "0.5.0"',
+		]);
+		expect(beforeLines.filter((line) => !afterLines.includes(line))).toEqual([
+			'    "typescript": "5.9.2"',
+		]);
+		expect(after.endsWith("}\n")).toBe(true);
+	});
+
+	it("keeps a tab-indented manifest tab-indented", async () => {
+		const before = `${JSON.stringify({name: "site"}, null, "\t")}\n`;
+		const {written} = await bootstrapWith({[MANIFEST]: before});
+		expect(written.get(MANIFEST)).toBe(
+			'{\n\t"name": "site",\n\t"devDependencies": {\n\t\t"@kampus/fabrika-cli": "0.5.0"\n\t}\n}\n',
+		);
+	});
+
+	it("reads its own merged manifest back as exists and writes nothing on the second run", async () => {
+		const first = await bootstrapWith({
+			[MANIFEST]: `${JSON.stringify({name: "site", dependencies: {next: "15.0.0"}}, null, 2)}\n`,
+		});
+		const merged = first.written.get(MANIFEST) ?? "";
+		expect(merged).toContain('\n  "devDependencies": {\n    "@kampus/fabrika-cli": "0.5.0"\n  }\n');
+		const second = await bootstrapWith({[MANIFEST]: merged});
+		expect(JSON.parse(second.outcome.stdout).outcome).toBe("exists");
+		expect(second.written.size).toBe(0);
 	});
 
 	// The npm read carries the same client-side bound as every GitHub exchange:
@@ -1037,10 +1140,10 @@ describe("the dep-pin surface", () => {
 	// forward to whatever npm publishes next rather than being declared already-adopted.
 	it("moves a stale pin forward to the current release", async () => {
 		const {outcome, written} = await bootstrapWith({
-			[MANIFEST]: JSON.stringify({dependencies: {"@kampus/fabrika-cli": "0.4.1"}}),
+			[MANIFEST]: JSON.stringify({devDependencies: {"@kampus/fabrika-cli": "0.4.1"}}),
 		});
 		expect(JSON.parse(outcome.stdout).outcome).toBe("created");
-		expect(JSON.parse(written.get(MANIFEST) ?? "").dependencies["@kampus/fabrika-cli"]).toBe(
+		expect(JSON.parse(written.get(MANIFEST) ?? "").devDependencies["@kampus/fabrika-cli"]).toBe(
 			"0.5.0",
 		);
 	});
@@ -1050,7 +1153,7 @@ describe("the dep-pin surface", () => {
 		const {outcome, written} = await bootstrapWith({
 			[MANIFEST]: JSON.stringify({
 				name: "adopting-repo",
-				dependencies: {"@kampus/fabrika-cli": "0.5.0"},
+				devDependencies: {"@kampus/fabrika-cli": "0.5.0"},
 			}),
 		});
 		expect(outcome.code).toBe(ANSWER);
