@@ -1838,7 +1838,7 @@ const archive = leafCommand(
 		retriaged: Flag.boolean("retriaged").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				"move a lane whose log replays to `diagnosed` with no pull request, so a re-triaged issue can boot a fresh lane. Every other final refuses at 72; a later move of the same key takes the next free <lane>.archived-<n> slot",
+				"move a lane whose log replays to `diagnosed` with no pull request and no spent round, so a re-triaged issue can boot a fresh lane. Every other final refuses at 72; a later move of the same key takes the next free <lane>.archived-<n> slot",
 			),
 		),
 		root: rootFlag,
@@ -1966,7 +1966,7 @@ const archive = leafCommand(
 				39: ROOT_EXITS[39],
 				50: "the log replays, nothing to move",
 				65: ROOT_EXITS[65],
-				72: "--retriaged: the lane did not end diagnosed with no pull request",
+				72: "--retriaged: the lane did not end diagnosed with no pull request and no spent round",
 			},
 		),
 	),

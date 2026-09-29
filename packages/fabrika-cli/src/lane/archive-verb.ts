@@ -15,9 +15,9 @@
  * roots they are handed, and the archived one is not among them.
  *
  * **`--retriaged` is the one other entitlement, and it is a separate route rather than a widening.**
- * A lane whose log replays to `diagnosed` with no pull request anywhere in it is a builder's no-PR
- * finish, and that final leaves the key occupied: once triage rewrites the issue, `lane open` has
- * nothing to boot into. Under the flag the lane moves on {@link judgeRetriage}'s verdict alone, every
+ * A lane whose log replays to `diagnosed` with no pull request and no spent round anywhere in it is
+ * a builder's no-PR finish, and that final leaves the key occupied: once triage rewrites the issue,
+ * `lane open` has nothing to boot into. Under the flag the lane moves on {@link judgeRetriage}'s verdict alone, every
  * other final is refused on {@link NOT_DIAGNOSED}, and the unreplayable route keeps its own gate
  * untouched. An issue re-triaged twice leaves two such ledgers, so this route takes the first free
  * `<lane>`, `<lane>.archived-<n>` slot rather than refusing on the first; the unreplayable route
@@ -219,6 +219,13 @@ const judgeRetriaged = (loaded: LoadedLaneRecord): Judged => {
 				refuse(
 					NOT_DIAGNOSED,
 					`${VERB}: ${loaded.logPath} folds to \`diagnosed\` and its log names pull request(s) ${judged.pulls.join(", ")} — --retriaged moves only a lane that published nothing, so its work is never moved out of the record \`lane open\` reads. Nothing was moved.`,
+				),
+			);
+		case "Spent":
+			return refused(
+				refuse(
+					NOT_DIAGNOSED,
+					`${VERB}: ${loaded.logPath} folds to \`diagnosed\` and its log shows a round spent (${judged.spend.join("; ")}) — a fresh lane boots at zero retries, so --retriaged moves only a lane that spent none, and a spent budget comes back through a granted round, never a move. Nothing was moved.`,
 				),
 			);
 	}

@@ -18,7 +18,13 @@
  * candidate first would answer neither.
  */
 import {deriveStatus, foldLog, type LogEntry} from "./fold.ts";
-import {type CompiledLane, compileText} from "./machine.ts";
+import {
+	bareEvent,
+	CLEARED_EVENT,
+	type CompiledLane,
+	compileText,
+	type TaskState,
+} from "./machine.ts";
 import {graftContext, judgeMigration} from "./migrate.ts";
 
 export type ArchiveVerdict =
@@ -81,6 +87,12 @@ export const judgeArchive = (
  * is in, not whether a sweep can judge it. A log any line of which names a pull request is refused
  * whatever it folds to, so moving a ledger aside is never how a lane's published work goes unread.
  *
+ * A line's `pr` is optional evidence — `lane transition` never writes one — so its absence proves
+ * nothing, and the fold is read for spend as well: a retry or a cleared round on any task, a review
+ * verdict or a `CLEARED` line, or a `DONE` not proven off a diagnosis (which only a delivered pull
+ * request earns). Any of them is `Spent`, because a fresh lane boots at zero retries and moving this
+ * ledger aside would hand back a repair budget no granted round restored.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/10190
  */
 export type RetriageVerdict =
@@ -90,7 +102,33 @@ export type RetriageVerdict =
 	/** The fold ended on some other final, or has not ended at all. */
 	| {readonly _tag: "NotDiagnosed"; readonly state: string}
 	/** It folds to a diagnosis final, and a line of its log names a pull request. */
-	| {readonly _tag: "Published"; readonly pulls: ReadonlyArray<string>};
+	| {readonly _tag: "Published"; readonly pulls: ReadonlyArray<string>}
+	/** It folds to a diagnosis final, and the log shows a review round or repair budget spent. */
+	| {readonly _tag: "Spent"; readonly spend: ReadonlyArray<string>};
+
+/** The review verdicts and grants whose presence on a log says a round was reviewed or granted. */
+const ROUND_EVENTS: ReadonlySet<string> = new Set(["PASS", "FAIL", CLEARED_EVENT]);
+
+/** Every fact in a folded log that says the lane spent a review round or its repair budget. */
+const spendIn = (
+	states: Readonly<Record<string, TaskState>>,
+	entries: ReadonlyArray<LogEntry>,
+): ReadonlyArray<string> => [
+	...Object.entries(states).flatMap(([task, state]) => [
+		...(state.retries > 0 ? [`task "${task}" spent ${state.retries} retry(s)`] : []),
+		...(state.cleared.length > 0
+			? [`task "${task}" holds cleared round(s) ${state.cleared.join(", ")}`]
+			: []),
+	]),
+	...entries.flatMap((entry) => {
+		const event = bareEvent(entry.event);
+		if (ROUND_EVENTS.has(event)) return [`${entry.event} at ${entry.at}`];
+		if (event === "DONE" && entry.diagnosis !== true) {
+			return [`${entry.event} at ${entry.at}, not proven off a diagnosis`];
+		}
+		return [];
+	}),
+];
 
 export const judgeRetriage = (
 	current: CompiledLane,
@@ -109,5 +147,7 @@ export const judgeRetriage = (
 	const pulls = [
 		...new Set(entries.flatMap((entry) => (entry.pr === undefined ? [] : [entry.pr]))),
 	];
-	return pulls.length > 0 ? {_tag: "Published", pulls} : {_tag: "Diagnosed", state: stateValue};
+	if (pulls.length > 0) return {_tag: "Published", pulls};
+	const spend = spendIn(folded.states, entries);
+	return spend.length > 0 ? {_tag: "Spent", spend} : {_tag: "Diagnosed", state: stateValue};
 };

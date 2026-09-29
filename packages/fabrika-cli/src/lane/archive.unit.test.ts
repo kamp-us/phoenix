@@ -597,6 +597,22 @@ describe("judgeRetriage", () => {
 			judgeRetriage(compiled(coderTemplateText()), log("WIP", "DONE", "PASS", "DONE")),
 		).toEqual({_tag: "NotDiagnosed", state: "complete"});
 	});
+
+	it("answers `Spent` for a diagnosed log that spent a repair round and names no pull request", () => {
+		const [, diagnosis] = DIAGNOSED_LOG;
+		if (diagnosis === undefined) throw new Error("fixture");
+		const verdict = judgeRetriage(compiled(coderTemplateText()), [
+			...log("WIP", "DONE", "FAIL"),
+			diagnosis,
+		]);
+
+		expect(verdict._tag).toBe("Spent");
+		expect(verdict._tag === "Spent" ? verdict.spend : []).toEqual([
+			'task "issue" spent 1 retry(s)',
+			"ISSUE.DONE at 2026-08-19T00:00:00.000Z, not proven off a diagnosis",
+			"ISSUE.FAIL at 2026-08-19T00:00:00.000Z",
+		]);
+	});
 });
 
 describe("lane archive --retriaged", () => {
@@ -682,6 +698,22 @@ describe("lane archive --retriaged", () => {
 
 		expect(out.code).toBe(NOT_DIAGNOSED);
 		expect(out.stderr.join("\n")).toContain("pull-request-1");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses a diagnosed lane that spent a repair round, though no line names a pull request", async () => {
+		const [, diagnosis] = DIAGNOSED_LOG;
+		if (diagnosis === undefined) throw new Error("fixture");
+		const fs = laneOnDisk([...log("WIP", "DONE", "FAIL"), diagnosis]);
+		const {deleted, retract} = recorder();
+		const out = await run(
+			fs,
+			runArchive({...RETRIAGED, claims: holds(claimant(11, TOKEN)), retract, token: TOKEN}),
+		);
+
+		expect(out.code).toBe(NOT_DIAGNOSED);
+		expect(out.stderr.join("\n")).toContain("spent 1 retry(s)");
+		expect(deleted).toEqual([]);
 		expect(fs.written.size).toBe(0);
 	});
 

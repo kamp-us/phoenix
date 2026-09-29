@@ -208,7 +208,10 @@ The verb decides; `--token` and `lane adopt` are the two ways a *live* driver st
 --retriaged` moves a lane on one other fact.
 
 **The fact.** The lane's own machine folds its log to a diagnosis final (`diagnosed` on the coder
-machine), and no line of the log names a pull request. That is a builder's no-PR finish. It is
+machine), no line of the log names a pull request, and the log shows no spent round: no retry or
+cleared round on any task, no `PASS`, `FAIL` or `CLEARED` line, and no `DONE` that was not proven off
+a diagnosis. A line's `pr` is optional evidence (`lane transition` never writes one), so the spend
+read is what makes the check hold when that field is missing. That is a builder's no-PR finish. It is
 final, so the ledger holds the key, and once triage rewrites the issue `lane open` has nothing to
 boot into. #10054 hit this: its first lane ended `diagnosed` over criteria naming a retired key,
 triage rewrote them, and the next operator parked on a person because no verb could restart it
@@ -221,14 +224,18 @@ triage rewrote them, and the next operator parked on a person because no verb co
   guard, before the move, and refuses a claim the caller does not name at `31`.
 - §3. The fresh lane boots through `lane open`'s gates. ADR
   [0384](0384-a-retired-lane-does-not-re-open-over-its-own-work.md)'s `63` `PRIOR_LANE` still reads
-  the board, and a `diagnosed` lane published no pull request, so there is nothing for it to refuse.
+  the board for a pull request that landed. A lane this route moves has a log that records no pull
+  request and no spent round, so the fresh lane's zero-retry budget is not one a move handed back.
 - The log. It moves byte for byte, and no final is reopened in place.
 
 **What the route refuses.** Every other final (`shipped`, `complete`, `tripped`, the board finals),
-a lane still in flight, a `diagnosed` log that names a pull request, and a log its own machine
-cannot fold refuse at `72` `NOT_DIAGNOSED` with nothing retracted or moved. A log naming a pull
-request is refused because that work is what `PRIOR_LANE` reads, and moving a ledger aside must not
-be how a spent budget gets laundered.
+a lane still in flight, a `diagnosed` log that names a pull request or shows a spent round, and a
+log its own machine cannot fold refuse at `72` `NOT_DIAGNOSED` with nothing retracted or moved. A
+log naming a pull request or a spent round is refused because moving a ledger aside must not be how
+a spent budget gets laundered: ADR 0384 point 3 returns a spent budget only through a granted round.
+
+**Who decides the issue was re-triaged.** Not the verb, which reads the log and nothing about the
+issue, and not the driver, which is type-blind. The driver's caller names it in the brief.
 
 **Repeated re-triage.** One issue can be re-triaged more than once, so the route takes the first
 free slot of `<lane>`, `<lane>.archived-2`, `<lane>.archived-3` and on, and never buries an earlier
