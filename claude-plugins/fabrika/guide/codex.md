@@ -4,15 +4,49 @@ Install the CLI and initialize the repository using [adopt Fabrika](adopt-fabrik
 The plugin supplies shared skills and references; the CLI supplies their deterministic verbs.
 GitHub credentials, Node, Git, and Codex CLI must already work in the environment.
 
-From this repository's root, install the existing marketplace entry:
+## Install the plugin
+
+From your own repository, register the `kampus` marketplace from GitHub and install the plugin.
+`<owner>/<repo>` is the GitHub repository that publishes the plugin, the `repository` field of
+its `plugin.json`:
+
+```bash
+codex plugin marketplace add <owner>/<repo> --ref main
+codex plugin add fabrika@kampus
+```
+
+Start a new session. Use `/plugins` to inspect the installed plugin. To pick up a newer plugin,
+run `codex plugin marketplace upgrade kampus`, then restart the session to use the updated cached
+skills.
+
+In the plugin's source checkout only, register the working tree instead, since `./` must hold
+`.claude-plugin/marketplace.json`:
 
 ```bash
 codex plugin marketplace add ./
 codex plugin add fabrika@kampus
 ```
 
-Start a new session. Use `/plugins` to inspect the installed plugin. Re-run the install command
-after updating the marketplace checkout and restart the session to use updated cached skills.
+`codex plugin add` copies the plugin into Codex's cache, so editing or pulling the checkout does
+not change what Codex runs. After updating the checkout, re-run `codex plugin add fabrika@kampus`
+and restart the session. `codex plugin marketplace upgrade` does not apply here: it refreshes Git
+marketplaces only and refuses one added from a local path.
+
+## Point Codex at the Fabrika section
+
+Codex reads `AGENTS.md`, while `fabrika status bootstrap claude-md-section` writes `CLAUDE.md`
+unless told otherwise. In a repository Codex works in, write the section to `AGENTS.md`:
+
+```bash
+fabrika status bootstrap claude-md-section --path AGENTS.md
+```
+
+When the repository also uses Claude Code, pick one of two setups:
+
+- Keep one file: write the section to `AGENTS.md` and make `CLAUDE.md` a symlink to it
+  (`ln -s AGENTS.md CLAUDE.md`). Both tools then read the same instructions.
+- Keep two files: run the verb once with `--path AGENTS.md` and once without `--path`, so each
+  file carries the section. Edit both when the instructions change.
 
 ## Enable interactive usage collection
 
