@@ -1733,6 +1733,9 @@ const seats = leafCommand(
 				39: ROOT_EXITS[39],
 				65: ROOT_EXITS[65],
 			},
+			[
+				"Non-directory and dot-prefixed entries under the root are not lanes, so they hold no seat.",
+			],
 		),
 	),
 	Command.withExamples([

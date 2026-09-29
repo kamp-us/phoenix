@@ -1198,7 +1198,10 @@ active AND whose issue carries a live `lane claim` marker, plus every lane no re
 record that will not load, a log that will not replay, or a claim the board would not answer for. An
 active lane nobody claims is IDLE and holds nothing; it is reported separately, never counted. An
 archived lane is under a sibling root and is already out of the count, and a chore lane is counted
-by nobody.
+by nobody. An entry under the root that is not a directory, or whose name starts with a dot (such as
+`.DS_Store`), is not a lane and holds no seat. An entry whose kind cannot be read is still read as a
+lane, so it counts as unaccountable when its record will not load. Every verb that sweeps a lanes root
+lists it the same way.
 
 stdout is `{answer, root, cap, held, retryAfter, free, claimed, unaccountable, idle}`. `answer` is
 one of:

@@ -75,7 +75,7 @@ import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {ClaimStanding} from "../build/dead-claim.ts";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
-import {exists, readDir} from "../io/fs.ts";
+import {exists} from "../io/fs.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {APPEND_UNKNOWN, CONCURRENT_WRITE, LANE_UNREADABLE} from "./codes.ts";
@@ -85,7 +85,7 @@ import type {PullTrace} from "./prove.ts";
 import {epicOf, issueOf, roleOf} from "./prove.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {buildingBy, DEAD_SPAWN_CAUSE, DEAD_SPAWN_EVENT, owedBy, publicationOf} from "./recover.ts";
-import {DEFAULT_CHORES_ROOT, loadLane} from "./store.ts";
+import {DEFAULT_CHORES_ROOT, listLanes, loadLane} from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
 
 const VERB = "fabrika lane recover";
@@ -602,14 +602,14 @@ export const runRecover = <R = never>(
 				listings.push({root});
 				continue;
 			}
-			const names = yield* Effect.result(readDir(root));
+			const names = yield* Effect.result(listLanes(root));
 			if (Result.isFailure(names)) {
 				return refuse(
 					LANE_UNREADABLE,
 					`${VERB}: cannot list ${root}: ${names.failure.reason} — the lane set is UNKNOWN, never empty. Nothing was appended.`,
 				);
 			}
-			listings.push({root, names: [...names.success].sort()});
+			listings.push({root, names: names.success});
 		}
 
 		const lanes: LaneRow[] = [];

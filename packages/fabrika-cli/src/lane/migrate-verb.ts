@@ -36,7 +36,7 @@
  * writes only where the swap is provably inert.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
-import {exists, readDir, readFile, writeFile} from "../io/fs.ts";
+import {exists, readFile, writeFile} from "../io/fs.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_ABSENT, LANE_UNREADABLE, MIGRATION_UNSAFE, SHAPE_MISMATCH} from "./codes.ts";
@@ -45,7 +45,7 @@ import {CHORE_PREFIX, rawKeyIssue} from "./key.ts";
 import {compileText} from "./machine.ts";
 import {type Drift, graftContext, judgeMigration, sameMachine} from "./migrate.ts";
 import {judgeShape, originOf} from "./shape.ts";
-import {DEFAULT_CHORES_ROOT, loadLane} from "./store.ts";
+import {DEFAULT_CHORES_ROOT, listLanes, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane migrate";
 
@@ -288,7 +288,7 @@ export const runMigrate = <R = never>(
 				scanned.push({root, present: false, lanes: 0});
 				continue;
 			}
-			const names = yield* Effect.result(readDir(root));
+			const names = yield* Effect.result(listLanes(root));
 			if (Result.isFailure(names)) {
 				return refuse(
 					LANE_UNREADABLE,
@@ -296,7 +296,7 @@ export const runMigrate = <R = never>(
 				);
 			}
 			let found = 0;
-			for (const name of [...names.success].sort()) {
+			for (const name of names.success) {
 				// The filter sits ahead of `migrateLane`, so a narrowed run does not read, judge or
 				// write any other entry — a lane belonging to another driver is never opened at all.
 				if (options.lane !== null && keyOf(root, name) !== options.lane) continue;

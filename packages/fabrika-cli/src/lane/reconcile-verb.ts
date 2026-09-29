@@ -26,7 +26,7 @@
  * sweep and costs the same reads twice.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
-import {appendText, exists, readDir, readFile} from "../io/fs.ts";
+import {appendText, exists, readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
 import type {ClosureReader} from "./closure.ts";
@@ -36,7 +36,7 @@ import {CHORE_PREFIX, rawKeyIssue} from "./key.ts";
 import {compileText} from "./machine.ts";
 import {graftContext} from "./migrate.ts";
 import {correctionEntry, declaresClosureGuard, findMisroute} from "./reconcile.ts";
-import {DEFAULT_CHORES_ROOT, loadLane} from "./store.ts";
+import {DEFAULT_CHORES_ROOT, listLanes, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane reconcile";
 
@@ -292,7 +292,7 @@ export const runReconcile = <R = never>(
 				scanned.push({root, present: false, lanes: 0});
 				continue;
 			}
-			const names = yield* Effect.result(readDir(root));
+			const names = yield* Effect.result(listLanes(root));
 			if (Result.isFailure(names)) {
 				return refuse(
 					LANE_UNREADABLE,
@@ -300,7 +300,7 @@ export const runReconcile = <R = never>(
 				);
 			}
 			let found = 0;
-			for (const name of [...names.success].sort()) {
+			for (const name of names.success) {
 				const row = yield* reconcileLane(root, name, templateTexts, options);
 				if (row === null) continue;
 				found += 1;

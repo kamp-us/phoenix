@@ -22,11 +22,12 @@
  * whose rename landed and whose destination will not read back is `moved-unverified` instead.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
-import {exists, readDir} from "../io/fs.ts";
+import {exists} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {type ArchiveOutcome, archiveLane, type ClosedReader} from "./archive-move.ts";
 import {APPEND_UNKNOWN, LANE_UNREADABLE, MARKER_READBACK} from "./codes.ts";
 import {resolveRawIssue} from "./key.ts";
+import {listLanes} from "./store.ts";
 
 const VERB = "fabrika lane archive --sweep";
 
@@ -190,7 +191,7 @@ export const runArchiveSweep = <R = never>(
 				[`${VERB}: ${options.root} is not there, so it holds no lanes. Nothing was moved.`],
 			);
 		}
-		const names = yield* Effect.result(readDir(options.root));
+		const names = yield* Effect.result(listLanes(options.root));
 		if (Result.isFailure(names)) {
 			return refuse(
 				LANE_UNREADABLE,
@@ -199,7 +200,7 @@ export const runArchiveSweep = <R = never>(
 		}
 
 		const lanes: SweepRow[] = [];
-		for (const name of [...names.success].sort()) {
+		for (const name of names.success) {
 			// An entry with no workflow.json is not a lane at all — a scratch directory under the root
 			// is not a skip to report, and reporting it would put noise in front of every real row.
 			const present = yield* Effect.result(exists(path.join(options.root, name, "workflow.json")));
