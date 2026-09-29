@@ -6,7 +6,9 @@ packages:
 catalog:
   # Exact pin (epic #7498): @kampus/tuval-claude's Claude program is built against this SDK's `tool()` /
   # `createSdkMcpServer` surface, and its three peers below are pinned with it so one copy of each
-  # lives in the tree. Dependabot bumps it; the CLI it spawns is the `claude` on PATH (#7580).
+  # lives in the tree. Bump it by hand, in one commit with those lockstep peers: Dependabot opens a
+  # PR for it only on a security advisory, never for a new release (#10133). The CLI it spawns is
+  # the `claude` on PATH (#7580).
   '@anthropic-ai/claude-agent-sdk': 0.3.259
   '@anthropic-ai/sdk': 0.123.0
   # Lockstep with better-auth 1.6.23 (the `^1.6.13` catalog pin resolves there):
@@ -23,7 +25,8 @@ catalog:
   # (NoCellError refusal, Transitions-form cells), so the version is part of the contract (#5673);
   # fold.no-cell.unit.test.ts pins the no-cell half. 0.19.0's optional `vitest` peer admits
   # `^4 || ^5`, so an adopter on current vitest installs fabrika-cli without an unmet-peer warning
-  # (#9771); fabrika-cli's tea-peer test holds it there.
+  # (#9771); fabrika-cli's tea-peer test holds it there. The daily `release-watch` workflow files an
+  # issue when npm ships a newer @demlik/* release (#10133).
   '@demlik/tea': 0.19.0
   '@distilled.cloud/cloudflare': 1.0.0-rc.9
   '@effect/language-service': ^0.85.1
