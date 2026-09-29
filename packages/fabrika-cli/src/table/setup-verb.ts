@@ -17,6 +17,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  * @ruling https://github.com/kamp-us/phoenix/issues/9989
  * @ruling https://github.com/kamp-us/phoenix/issues/10083
+ * @ruling https://github.com/kamp-us/phoenix/issues/10084
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -58,7 +59,14 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {onCallBoard, onCallShape} from "./on-call.ts";
-import {describeLegacy, describeStep, type Plan, plan, type Step} from "./reconcile.ts";
+import {
+	describeDrift,
+	describeLegacy,
+	describeStep,
+	type Plan,
+	plan,
+	type Step,
+} from "./reconcile.ts";
 import {
 	type BoardTarget,
 	productBoard,
@@ -87,6 +95,8 @@ type Run =
 			readonly origin: Origin;
 			readonly project: ProjectSnapshot;
 			readonly changes: ReadonlyArray<string>;
+			/** What a person wrote that differs from the table's and setup left for them to change. */
+			readonly drift: ReadonlyArray<string>;
 			readonly legacy: ReadonlyArray<string>;
 			readonly manualSteps: ReadonlyArray<string>;
 	  }
@@ -275,7 +285,7 @@ const apply = (
 			}
 			case "UpdateProject": {
 				const done = yield* updateProject(token, project.id, {
-					...(step.readme !== null ? {readme: step.readme} : {}),
+					...(step.readme !== null ? {readme: step.readme.text} : {}),
 					...(step.shortDescription !== null ? {shortDescription: step.shortDescription} : {}),
 				});
 				return done._tag === "Ok" ? null : done;
@@ -388,6 +398,7 @@ const converge = (
 			origin,
 			project: final.project,
 			changes: landed,
+			drift: settled.drift.map(describeDrift),
 			legacy: settled.legacy.map(describeLegacy),
 			manualSteps: shape.manualSteps,
 		};
@@ -497,6 +508,7 @@ const summaryOf = (done: Done) => ({
 	answer: verdictOf(done),
 	project: {number: done.project.number, title: done.project.title, url: done.project.url},
 	changes: done.changes,
+	drift: done.drift,
 	legacy: done.legacy,
 	manualSteps: done.manualSteps,
 });
@@ -506,6 +518,7 @@ const notesOf = (done: Done, repo: string, board: string): ReadonlyArray<string>
 	...(done.changes.length > 0
 		? done.changes.map((change) => `${VERB}: ${change}.`)
 		: [`${VERB}: the project already has ${board}'s shape; nothing was written.`]),
+	...done.drift.map((drift) => `${VERB}: drift: ${drift}.`),
 	...done.legacy.map((legacy) => `${VERB}: legacy: ${legacy}.`),
 	...done.manualSteps.map((step, index) => `${VERB}: manual step ${index + 1}: ${step}`),
 ];

@@ -119,7 +119,7 @@ export const renderOnCallReadme = (settings: OnCallBoard): string => {
 export const onCallShape = (settings: OnCallBoard, repo: string, title: string): TableShape => ({
 	title,
 	shortDescription: `The on-call board for ${repo}: continuous work, each item with a response target.`,
-	readme: renderOnCallReadme(settings),
+	readme: {name: "on-call", body: renderOnCallReadme(settings)},
 	fields: [
 		{
 			_tag: "SingleSelect",

@@ -63,7 +63,23 @@ another.
 - the views Agenda (filter `table-day:@today..@today+6d has:section -section:"Outside the bets"
   has:rec`, grouped by Section), Outside the bets, Lanes (a board in columns by Stage), Group members
   and Inbox (filter `is:open no:label`), with their filters and visible fields;
-- the README explaining the table and every column.
+- fabrika's section of the README, explaining the table and every column.
+
+**The README and short description stay a person's.** Setup owns only its own section of the
+project README: the text between the lines `<!-- fabrika:table:start -->` and
+`<!-- fabrika:table:end -->` (`fabrika:on-call:…` on the on-call board). GitHub hides HTML comments
+when it renders Markdown, so a reader sees the section and not the markers. Setup keeps a person's
+README text byte for byte, and each change line says which case it met:
+
+- an empty README gets the marked section alone;
+- a README holding the markers gets only the text between them replaced;
+- a README fabrika wrote before sections existed, unmarked and exactly the text it would render, is
+  replaced by the marked form, not appended to;
+- any other README keeps its text as is, with the marked section appended below it.
+
+Markers that are not one start line followed by one end line leave the README untouched and are
+reported under `drift`. Setup writes the short description only when it is empty; one that differs
+from the table's is reported under `drift` for a person to change by hand, never overwritten.
 
 **Views are created over REST.** A missing view is created through
 `POST /orgs/{login}/projectsV2/{number}/views` (or `/users/{login}/…` for a user's project), because
@@ -76,7 +92,7 @@ regroups, recreates or deletes it.
 **Options on a field that already stands.** Setup adds the options the table names and a
 single-select field lacks, and fills each blank description of the table's options with the table's
 text. A description a person wrote stays as written, even where it differs from the table's, so a
-changed `appetiteSizes` rewrites the README and leaves a written Size description alone. Neither is
+changed `appetiteSizes` rewrites fabrika's README section and leaves a written Size description alone. Neither is
 reported as something for a person to fix: nothing is left to add by hand. GitHub replaces a field's
 whole option list on update, and an option sent without its id loses every row's value on it, so
 setup sends every option the field holds back with its own id, name, color and description, then
@@ -96,7 +112,7 @@ open project titled `<repo name> on-call` (or `boards.onCall.project`), with a R
 field, a Queue view (`is:open`) and a README. With no `boards` block it touches one project and its
 answer carries no `onCall` key.
 
-stdout is `{"answer":"created"|"reconciled"|"unchanged","repo":"…","project":{"number":n,"title":"…","url":"…"},"changes":[…],"legacy":[…],"manualSteps":[…],"onCall":{"answer":…,"project":{…},"changes":[…],"legacy":[],"manualSteps":[]}}`,
+stdout is `{"answer":"created"|"reconciled"|"unchanged","repo":"…","project":{"number":n,"title":"…","url":"…"},"changes":[…],"drift":[…],"legacy":[…],"manualSteps":[…],"onCall":{"answer":…,"project":{…},"changes":[…],"drift":[…],"legacy":[],"manualSteps":[]}}`,
 with `onCall` only under a `boards` block. stderr repeats the two manual steps, which the README's
 by-hand section also lists: on an Agenda or Lanes view that stood before setup, set its grouping by
 hand (Group by Section, Column by Stage); and turn on the "Auto-add to project" workflow with filter
