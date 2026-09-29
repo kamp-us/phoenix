@@ -108,10 +108,11 @@ fabrika adr resolve 0164 0055
 `indeterminate`. **All three exit 0, all three are answers, and none is a clearance.** `no-overlap`
 means nothing mechanically adjacent was left to open — two records that disagree about what a
 *label means* share no distinctive vocabulary and never appear at all. `indeterminate` means the run
-carried no information: the live-accepted corpus is below the sweep's floor of 10 records, which is
-where a new repo sits for weeks, or the subject yielded no distinctive terms, and stderr names which.
-**On `indeterminate`, read the decision corpus by hand** as you would with no record in the diff,
-and record in the verdict which of the two fired. The sweep is **citation-independent by construction**: never derive your
+carried no information: the live-accepted corpus is below the sweep's rarity floor (its value is in
+the [`adr sweep` contract](../adr/contract.md)), which is where a new repo sits for weeks, or the
+subject yielded no distinctive terms, and stderr names which. **On `indeterminate`, read the
+decision corpus by hand** as you would with no record in the diff, and record in the verdict which
+of the two fired. The sweep is **citation-independent by construction**: never derive your
 candidates from the subject's own reference list, or the record it contradicts is exactly the one it
 never cited.
 
