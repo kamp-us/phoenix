@@ -532,6 +532,22 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
+	 * The rendered gate's `ROUTED-ELSEWHERE` over a PR with no preview, when the repo's
+	 * `reviewUi.whenNoPreview` rules routed it — a `skip`, or an owner's hand-check standing in for
+	 * the render — and the review it waits on is not finished. The diff may well render, which is why
+	 * this is not {@link no-rendered-delta}; the park is the same shape and clears the same way.
+	 *
+	 * Route `driver`: dispatching the other gate is the driver's own act.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10038#issuecomment-5860347862
+	 */
+	"no-preview-routed": {
+		meaning:
+			"the PR has no preview and the repo's reviewUi.whenNoPreview rules routed the rendered gate, so the verdict left to give is `review`'s",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * An `ESCALATED` whose work is done but whose write provably did not land: `review-ui`'s verdict
 	 * or its evidence upload, or `build-ui`'s capture attach on an open PR, refused again on its one
 	 * re-run. Nothing about the artifact was judged wrong — the channel that carries the judgment

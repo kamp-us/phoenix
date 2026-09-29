@@ -23,6 +23,7 @@ import {type AppetiteSizes, SIZES, type Size} from "../config/keys/appetite-size
 import type {OnCallBoard, ResponseTargets} from "../config/keys/boards.ts";
 import type {TableSettings} from "../config/keys/table.ts";
 import type {LaneRecord} from "../wire/lane-record.ts";
+import {type RouteBasis, readRoutedBasis} from "../wire/routed-elsewhere.ts";
 import {BET_STAGE} from "./bets.ts";
 import {type Group, type GroupKind, issuesOf, kindOf} from "./group.ts";
 import {ON_CALL_FIELD, targetsOf} from "./on-call.ts";
@@ -160,6 +161,7 @@ export type Flag =
 			readonly waiting: string | null;
 	  })
 	| (OnRow & {readonly _tag: "UnknownDecider"; readonly setter: string | null})
+	| NotRendered
 	| {readonly _tag: "Campaigns"; readonly active: ReadonlyArray<string>; readonly cap: number}
 	| {
 			readonly _tag: "FabrikaShare";
@@ -178,6 +180,21 @@ export type Flag =
 			readonly totalUsd: number;
 	  };
 
+/**
+ * A lane on the row passed a review namespace on an owner's hand-check or the repo's skip rule
+ * rather than a render, so a person can tell the ui review was not one.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10038#issuecomment-5860347862
+ */
+export interface NotRendered extends OnRow {
+	readonly _tag: "NotRendered";
+	readonly issue: number;
+	readonly namespace: string;
+	readonly basis: RouteBasis;
+	/** The pull request the passing event names, when it names one. */
+	readonly pr: string | null;
+}
+
 /** An open on-call item that has waited longer than its Response target allows. */
 export interface PastTarget {
 	readonly _tag: "PastTarget";
@@ -194,6 +211,7 @@ export interface Unread {
 	readonly check:
 		| "over-size"
 		| "unknown-decider"
+		| "not-rendered"
 		| "campaigns"
 		| "fabrika-share"
 		| "past-target"
@@ -321,8 +339,81 @@ const stuckOf = (row: HeadRow, input: FlagInput): Flag | null => {
 	};
 };
 
-const rowFlags = (row: HeadRow, input: FlagInput, unread: Unread[]): ReadonlyArray<Flag> => {
+/** A log line's bare event: a machine-scoped `review.PASS` and a plain `PASS` are one event. */
+const bareEventOf = (event: string): string => event.slice(event.indexOf(".") + 1);
+
+/**
+ * The flagged routes one lane's review last passed on: per task, the newest `PASS` line decides,
+ * so a round that later rendered clears the flag an earlier hand-check raised. A line that does not
+ * parse leaves the lane unread rather than clear.
+ */
+export const unrenderedOf = (
+	record: Pick<LaneRecord, "issue" | "log">,
+):
+	| {
+			readonly _tag: "Read";
+			readonly routes: ReadonlyArray<{
+				readonly namespace: string;
+				readonly basis: RouteBasis;
+				readonly pr: string | null;
+			}>;
+	  }
+	| {readonly _tag: "Unread"; readonly reason: string} => {
+	const lastPass = new Map<string, Record<string, unknown>>();
+	for (const [index, line] of record.log.entries()) {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(line);
+		} catch {
+			return {_tag: "Unread", reason: `lane log line ${index + 1} on #${record.issue} is not JSON`};
+		}
+		if (typeof parsed !== "object" || parsed === null) continue;
+		const entry = parsed as Record<string, unknown>;
+		if (typeof entry.task !== "string" || typeof entry.event !== "string") continue;
+		if (bareEventOf(entry.event) === "PASS") lastPass.set(entry.task, entry);
+	}
+	const routes = [...lastPass.values()].flatMap((entry) => {
+		if (entry.routedBasis === undefined) return [];
+		const routed = Array.isArray(entry.routed) ? (entry.routed as ReadonlyArray<string>) : [];
+		const read = readRoutedBasis(entry.routedBasis, routed);
+		if (read === null) return [null];
+		const pr = typeof entry.pr === "string" ? entry.pr : null;
+		return Object.entries(read).map(([namespace, basis]) => ({namespace, basis, pr}));
+	});
+	return routes.includes(null)
+		? {
+				_tag: "Unread",
+				reason: `a lane log on #${record.issue} carries a routedBasis that does not read`,
+			}
+		: {
+				_tag: "Read",
+				routes: routes.filter((route): route is NonNullable<typeof route> => route !== null),
+			};
+};
+
+const notRenderedOf = (row: HeadRow, input: FlagInput, unread: Unread[]): ReadonlyArray<Flag> => {
+	const seen = new Set<string>();
 	const flags: Flag[] = [];
+	for (const issue of issuesOf(row.group)) {
+		for (const record of latestPerLane(input.records.get(issue) ?? [])) {
+			const read = unrenderedOf(record);
+			if (read._tag === "Unread") {
+				unread.push({check: "not-rendered", issue, reason: read.reason});
+				continue;
+			}
+			for (const route of read.routes) {
+				const key = `${issue} ${route.namespace} ${route.basis}`;
+				if (seen.has(key)) continue;
+				seen.add(key);
+				flags.push({_tag: "NotRendered", ...onRow(row.group), issue, ...route});
+			}
+		}
+	}
+	return flags;
+};
+
+const rowFlags = (row: HeadRow, input: FlagInput, unread: Unread[]): ReadonlyArray<Flag> => {
+	const flags: Flag[] = [...notRenderedOf(row, input, unread)];
 	if (row.stage?.name === BET_STAGE && input.deciders._tag === "Roster") {
 		const setter = row.stage.setter;
 		const known = new Set([...input.deciders.logins].map((login) => login.toLowerCase()));
@@ -556,6 +647,7 @@ const TAG_NAME: Readonly<Record<Flag["_tag"], string>> = {
 	Asks: "asks",
 	Stuck: "stuck",
 	UnknownDecider: "unknown-decider",
+	NotRendered: "not-rendered",
 	Campaigns: "campaigns",
 	FabrikaShare: "fabrika-share",
 	PastTarget: "past-target",
@@ -579,6 +671,8 @@ export const recOf = (flag: Flag, settings: TableSettings): string => {
 			return `Quiet for ${flag.quietDays} days${flag.waiting === null ? "" : ` (${flag.waiting})`}. Unblock, re-shape, or drop?`;
 		case "UnknownDecider":
 			return `Bet set by ${flag.setter === null ? "an account GitHub no longer names" : `@${flag.setter}`}, who is not a control-plane owner; the bet stands as set. Keep it, or set it back?`;
+		case "NotRendered":
+			return `${flag.namespace} on #${flag.issue}${flag.pr === null ? "" : ` (PR ${flag.pr})`} was ${flag.basis === "hand-check" ? "an owner's hand-check" : "skipped by reviewUi.whenNoPreview"}, not a render. Fine as is, or render it?`;
 		case "Campaigns":
 			return `${flag.active.length} campaigns are active, over the ${flag.cap} the table keeps. Which ones pause?`;
 		case "FabrikaShare":

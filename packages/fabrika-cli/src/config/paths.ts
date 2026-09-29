@@ -18,6 +18,7 @@ import {
 	roadmapFileKey,
 } from "./keys/paths.ts";
 import {type ReviewSubsystem, reviewSubsystemsKey} from "./keys/review-subsystems.ts";
+import {type NoPreviewRule, reviewUiKey} from "./keys/review-ui.ts";
 import {
 	NO_UI_SURFACES,
 	prefixesOf,
@@ -245,6 +246,29 @@ export const uiCaptureOr = (
 	Effect.map(readUiCapture(cwd), (read) =>
 		read._tag === "Value"
 			? {_tag: "Capture" as const, capture: read.value, note: read.note}
+			: {
+					_tag: "Refused" as const,
+					message: `${verb}: ${CONFIG_PATH} is refused — ${read.reason.replace(/\.$/, "")}, so ${consequence}`,
+				},
+	);
+
+export type NoPreviewRulesRead =
+	| {
+			readonly _tag: "Rules";
+			readonly rules: ReadonlyArray<NoPreviewRule>;
+			readonly note: string;
+	  }
+	| {readonly _tag: "Refused"; readonly message: string};
+
+/** The `reviewUi.whenNoPreview` rules, or the refusal their readers print. */
+export const noPreviewRulesOr = (
+	verb: string,
+	cwd: string,
+	consequence: string,
+): Effect.Effect<NoPreviewRulesRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.map(readKey(cwd, reviewUiKey), (read) =>
+		read._tag === "Value"
+			? {_tag: "Rules" as const, rules: read.value.whenNoPreview, note: read.note}
 			: {
 					_tag: "Refused" as const,
 					message: `${verb}: ${CONFIG_PATH} is refused — ${read.reason.replace(/\.$/, "")}, so ${consequence}`,

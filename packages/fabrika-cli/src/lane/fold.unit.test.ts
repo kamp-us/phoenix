@@ -768,6 +768,39 @@ describe("the deferral a proven PASS carries", () => {
 	});
 });
 
+describe("the basis a flagged route carries onto a proven PASS", () => {
+	const line = (fields: string) => `{"task":"issue","event":"ISSUE.PASS","at":"t"${fields}}\n`;
+
+	it("carries each routed namespace's basis back off the line", () => {
+		expect(
+			parseLog(line(`,"routed":["review-ui"],"routedBasis":{"review-ui":"hand-check"}`)),
+		).toEqual({
+			_tag: "Parsed",
+			entries: [
+				{
+					task: "issue",
+					event: "ISSUE.PASS",
+					at: "t",
+					routed: ["review-ui"],
+					routedBasis: {"review-ui": "hand-check"},
+				},
+			],
+		});
+	});
+
+	it("refuses a basis off the vocabulary, one for a namespace nobody routed, or an empty one", () => {
+		expect(
+			parseLog(line(`,"routed":["review-ui"],"routedBasis":{"review-ui":"eyeballed"}`)),
+		).toMatchObject({_tag: "Malformed"});
+		expect(parseLog(line(`,"routedBasis":{"review-ui":"skip"}`))).toMatchObject({
+			_tag: "Malformed",
+		});
+		expect(parseLog(line(`,"routed":["review-ui"],"routedBasis":{}`))).toMatchObject({
+			_tag: "Malformed",
+		});
+	});
+});
+
 /**
  * The routing payload a ship's `DONE` carries. Absent reads as a closing merge, so the
  * whole ledger written before the field existed folds byte-for-byte as it did.

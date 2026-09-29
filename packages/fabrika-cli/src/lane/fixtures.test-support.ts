@@ -12,6 +12,7 @@ import type {
 import type {Read} from "../config/read-key.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {answer, type VerbOutcome} from "../verb.ts";
+import type {RoutedBasis} from "../wire/routed-elsewhere.ts";
 import {LOCK_DIR_NAME} from "./append-lock.ts";
 import {type ProveOptions, proofLabelOf} from "./prove-verb.ts";
 
@@ -77,6 +78,7 @@ export const fakeProverByEvent = (
 					landed: facts.landed ?? [],
 					diagnosis: facts.diagnosis ?? false,
 					routed: facts.routed ?? [],
+					...(facts.routedBasis === undefined ? {} : {routedBasis: facts.routedBasis}),
 					proof: proofLabelOf(facts.outcome),
 				};
 			}),
@@ -91,6 +93,7 @@ export interface ProofFacts {
 	readonly landed?: ReadonlyArray<number>;
 	readonly diagnosis?: boolean;
 	readonly routed?: ReadonlyArray<string>;
+	readonly routedBasis?: RoutedBasis;
 }
 
 /** A `parkCause` read at any arm, for a verb test that does not open a config file. */

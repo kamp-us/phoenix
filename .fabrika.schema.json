@@ -661,6 +661,46 @@
 				]
 			}
 		},
+		"reviewUi": {
+			"type": "object",
+			"description": "What the rendered-review gate (`review-ui`) needs from a PR that has no preview deploy. Absent changes nothing: a PR with no preview ends CANT-SEE.",
+			"properties": {
+				"whenNoPreview": {
+					"type": "array",
+					"description": "Path rules for a PR with no preview deploy. The first rule whose glob matches a ui-class file sets that file's mode; a file no rule matches needs a render (`require-render`). A PR whose ui files land in different modes takes the strictest: require-render, then hand-check, then skip.",
+					"items": {
+						"type": "object",
+						"properties": {
+							"paths": {
+								"type": "array",
+								"description": "Repo-relative globs — `*` within one segment, `**` spanning directories. Never absolute, never through `..`.",
+								"minItems": 1,
+								"items": {
+									"type": "string",
+									"minLength": 1,
+									"pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$))\\S(.*\\S)?$"
+								}
+							},
+							"mode": {
+								"type": "string",
+								"enum": [
+									"require-render",
+									"hand-check",
+									"skip"
+								],
+								"description": "`require-render`: no preview is CANT-SEE. `hand-check`: an owner's screenshots on the PR naming its exact head stand in for the render, routed with `fabrika review-ui route --hand-check`. `skip`: no rendered review is owed, routed with `fabrika review-ui route --no-preview`. Both non-render outcomes are flagged on the record and in `ship gate`."
+							}
+						},
+						"required": [
+							"paths",
+							"mode"
+						],
+						"additionalProperties": false
+					}
+				}
+			},
+			"additionalProperties": false
+		},
 		"roadmapFile": {
 			"type": "string",
 			"description": "The roadmap file carrying the `## Campaigns` focus table, repo-relative.",

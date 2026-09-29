@@ -11,6 +11,7 @@
  * discriminated union rather than throwing, so a verb's refusal is data it seats on an exit code.
  */
 import {acceptsOf, applyCell, foldMsgs, msgKeysOf, NoCellError} from "@demlik/tea";
+import {type RoutedBasis, readRoutedBasis} from "../wire/routed-elsewhere.ts";
 import {type Deferral, deferredTasks, resolveDeferrals} from "./deferral.ts";
 import {type IntegrateFailure, isIntegrateFailure} from "./integrate-failure.ts";
 import {
@@ -111,6 +112,12 @@ export interface LogEntry {
 	 * that moves a state.
 	 */
 	readonly routed?: ReadonlyArray<string>;
+	/**
+	 * Each {@link routed} namespace whose route stood on the repo's `reviewUi.whenNoPreview` rules,
+	 * with its basis — evidence like `routed`, read by `table flags` so the row says the ui review
+	 * was a hand-check or a skip, never a render. Every key is one `routed` names.
+	 */
+	readonly routedBasis?: RoutedBasis;
 	readonly waitGrant?: number;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
@@ -219,6 +226,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			classes?: unknown;
 			deferred?: unknown;
 			routed?: unknown;
+			routedBasis?: unknown;
 			waitGrant?: unknown;
 			partial?: unknown;
 			landed?: unknown;
@@ -309,6 +317,20 @@ export const parseLog = (text: string): ParseLogResult => {
 		) {
 			defects.push(
 				`line ${index + 1} carries a \`routed\` field that is not a non-empty list of names`,
+			);
+			continue;
+		}
+		// A basis names a routed namespace or it flags a row for a route nobody recorded.
+		const routedBasis =
+			record.routedBasis === undefined
+				? undefined
+				: readRoutedBasis(
+						record.routedBasis,
+						Array.isArray(record.routed) ? (record.routed as ReadonlyArray<string>) : [],
+					);
+		if (routedBasis === null) {
+			defects.push(
+				`line ${index + 1} carries a \`routedBasis\` field that is not a basis per namespace \`routed\` names`,
 			);
 			continue;
 		}
@@ -481,6 +503,7 @@ export const parseLog = (text: string): ParseLogResult => {
 				? {}
 				: {deferred: record.deferred as ReadonlyArray<string>}),
 			...(record.routed === undefined ? {} : {routed: record.routed as ReadonlyArray<string>}),
+			...(routedBasis === undefined ? {} : {routedBasis}),
 			...(record.waitGrant === undefined ? {} : {waitGrant: record.waitGrant as number}),
 			...(record.partial === undefined ? {} : {partial: record.partial as boolean}),
 			...(record.landed === undefined ? {} : {landed: record.landed as ReadonlyArray<number>}),

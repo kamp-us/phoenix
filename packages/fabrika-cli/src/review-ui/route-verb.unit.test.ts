@@ -16,14 +16,17 @@ import {
 } from "../wire/verdict-marker.ts";
 import {
 	EMPTY_STDIN,
+	HAND_CHECK_INADMISSIBLE,
+	NO_PREVIEW_MODE_UNMET,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
+	PREVIEW_EXISTS,
 	READBACK_MISMATCH,
 	STALE_TREE,
 	TEXT_REVIEW_UNMET,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {runRoute} from "./route-verb.ts";
+import {type RouteOptions, runRoute} from "./route-verb.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const MOVED = "9fe12ab04f5a6b7c8d9e0f1a2b3c4d5e6f708192";
@@ -431,5 +434,225 @@ describe("review-ui route", () => {
 			[READBACK, served({body: composed(MOVED)})],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
+	});
+});
+
+describe("review-ui route --no-preview", () => {
+	const run = (script: ReadonlyArray<Scripted>, overrides: Partial<RouteOptions> = {}) => {
+		const seams = fakeSeams(script);
+		return Effect.runPromise(
+			Effect.provide(runRoute({...options, ...overrides}), seams.layer),
+		).then((outcome) => ({outcome, requests: seams.requests, bodies: seams.bodies}));
+	};
+	const TRUNK = /^GET \S+api\.github\.com\/repos\/o\/r$/;
+	const CODEOWNERS = /contents\/\.github\/CODEOWNERS\?ref=main$/;
+	const MEMBERS = /^GET \S+\/orgs\/o\/teams\/control-plane\/members/;
+	const OWNER = "owner";
+	const HAND_CHECK_ID = 7001;
+	const SHOT = "![row](https://github.com/user-attachments/assets/1234)";
+
+	const handCheck = (author = OWNER, body = `Hand-checked at ${HEAD}.\n\n${SHOT}`) => ({
+		id: HAND_CHECK_ID,
+		user: {login: author},
+		created_at: "2026-09-29T00:00:00Z",
+		updated_at: "2026-09-29T00:00:00Z",
+		body,
+	});
+
+	const roster: ReadonlyArray<Scripted> = [
+		[TRUNK, served({default_branch: "main"})],
+		[CODEOWNERS, {status: 200, body: "/packages/ @o/control-plane\n"}],
+		[MEMBERS, served([{login: OWNER}])],
+	];
+
+	const flagged = (basis: "hand-check" | "skip", tail = ""): string =>
+		`routed-elsewhere: review-ui @ ${HEAD} basis:${basis} — ${CLAUSE}\n\n${BODY.replace(/\n+$/, "")}\n${tail}`;
+
+	const HAND_CHECK_TAIL = `\nHand-check: comment ${HAND_CHECK_ID} by ${OWNER}, at ${HEAD}.\n`;
+
+	const script = (
+		comments: ReadonlyArray<unknown>,
+		readback: string,
+		extra: ReadonlyArray<Scripted> = [],
+	): ReadonlyArray<Scripted> => [
+		[PULL, pull()],
+		[FILES, PROSE_UI],
+		[USER, served({login: "reviewer"})],
+		[COMMENTS, served(comments)],
+		...extra,
+		[CREATE, {status: 201, body: JSON.stringify({id: 512399, html_url: URL})}],
+		[READBACK, served({body: readback})],
+	];
+
+	const under = (
+		mode: "require-render" | "hand-check" | "skip",
+		handCheckRef: string | null = null,
+	) => ({
+		noPreview: {rules: [{paths: ["apps/site/**"], mode}], handCheck: handCheckRef},
+	});
+
+	it("posts a record flagged basis:skip where every ui file resolves to skip", async () => {
+		const {outcome, requests, bodies} = await run(script([], flagged("skip")), under("skip"));
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({answer: "routed", basis: "skip"});
+		const at = requests.findIndex((request) => CREATE.test(request));
+		expect(bodies[at]).toContain(`review-ui @ ${HEAD} basis:skip —`);
+		expect(outcome.stderr.join("\n")).toContain("reviewUi.whenNoPreview resolves skip");
+	});
+
+	it("refuses on 21 where a file needs a render, naming it and posting nothing", async () => {
+		const {outcome, requests} = await run(script([], flagged("skip")), {
+			noPreview: {
+				rules: [{paths: ["apps/site/src/flags/**"], mode: "skip"}],
+				handCheck: null,
+			},
+		});
+		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
+		expect(outcome.stderr.join("\n")).toContain("apps/site/src/styles/lint.config.json");
+		expect(outcome.stderr.join("\n")).toContain("require-render");
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("refuses on 21 under require-render even with a hand-check named", async () => {
+		const {outcome} = await run(
+			script([handCheck(), textVerdict("PASS")], flagged("hand-check", HAND_CHECK_TAIL), roster),
+			under("require-render", String(HAND_CHECK_ID)),
+		);
+		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
+	});
+
+	it("refuses on 21 under hand-check when no owner's hand-check at this head is on the PR", async () => {
+		const {outcome, requests} = await run(
+			script(
+				[handCheck("agent"), handCheck(OWNER, `Hand-checked at ${MOVED}.\n\n${SHOT}`)],
+				flagged("hand-check"),
+				roster,
+			),
+			under("hand-check"),
+		);
+		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
+		expect(outcome.stderr.join("\n")).toContain("no comment on it is an owner's hand-check");
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("finds the owner's hand-check itself when none is named", async () => {
+		const {outcome, requests, bodies} = await run(
+			script([handCheck(), textVerdict("PASS")], flagged("hand-check", HAND_CHECK_TAIL), roster),
+			under("hand-check"),
+		);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			basis: "hand-check",
+			handCheck: HAND_CHECK_ID,
+		});
+		const at = requests.findIndex((request) => CREATE.test(request));
+		expect(bodies[at]).toContain(`Hand-check: comment ${HAND_CHECK_ID} by ${OWNER}`);
+	});
+
+	it("posts a record flagged basis:hand-check over an owner's screenshots at this head", async () => {
+		const {outcome, requests, bodies} = await run(
+			script([handCheck(), textVerdict("PASS")], flagged("hand-check", HAND_CHECK_TAIL), roster),
+			under("hand-check", `https://forge.example/o/r/pull/6326#issuecomment-${HAND_CHECK_ID}`),
+		);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			answer: "routed",
+			basis: "hand-check",
+			textReview: "pass",
+		});
+		const at = requests.findIndex((request) => CREATE.test(request));
+		expect(bodies[at]).toContain("basis:hand-check");
+		expect(bodies[at]).toContain(`Hand-check: comment ${HAND_CHECK_ID} by ${OWNER}`);
+	});
+
+	it("refuses on 22 when the hand-check is not an owner's", async () => {
+		const {outcome, requests} = await run(
+			script([handCheck("agent"), textVerdict("PASS")], flagged("hand-check"), roster),
+			under("hand-check", String(HAND_CHECK_ID)),
+		);
+		expect(outcome.code).toBe(HAND_CHECK_INADMISSIBLE);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("refuses on 22 when the hand-check names another head", async () => {
+		const {outcome} = await run(
+			script(
+				[handCheck(OWNER, `Hand-checked at ${MOVED}.\n\n${SHOT}`), textVerdict("PASS")],
+				flagged("hand-check"),
+				roster,
+			),
+			under("hand-check", String(HAND_CHECK_ID)),
+		);
+		expect(outcome.code).toBe(HAND_CHECK_INADMISSIBLE);
+		expect(outcome.stderr.join("\n")).toContain("does not name the head");
+	});
+
+	it("refuses on 20 when a hand-check route has no text verdict at this head", async () => {
+		const {outcome} = await run(
+			script([handCheck()], flagged("hand-check"), roster),
+			under("hand-check", String(HAND_CHECK_ID)),
+		);
+		expect(outcome.code).toBe(TEXT_REVIEW_UNMET);
+	});
+
+	const preview = (body: string) => ({
+		id: 7100,
+		user: {login: "kampus-bot"},
+		created_at: "2026-09-29T00:00:00Z",
+		updated_at: "2026-09-29T00:00:00Z",
+		body,
+	});
+	const deployed = (sha: string, app = "web") =>
+		`<!-- preview-deploy:${app} -->\n- **${app}** — Stage \`pr-6326\` → https://pr-6326-${app}.example.test <sub>(${sha})</sub>`;
+
+	it("refuses on 23 where the PR announces a preview at this head, under skip or hand-check", async () => {
+		const skipped = await run(script([preview(deployed(HEAD))], flagged("skip")), under("skip"));
+		expect(skipped.outcome.code).toBe(PREVIEW_EXISTS);
+		expect(skipped.outcome.stderr.join("\n")).toContain("run review-ui render");
+		expect(skipped.requests.some((request) => CREATE.test(request))).toBe(false);
+
+		const checked = await run(
+			script(
+				[preview(deployed(HEAD)), handCheck(), textVerdict("PASS")],
+				flagged("hand-check"),
+				roster,
+			),
+			under("hand-check", String(HAND_CHECK_ID)),
+		);
+		expect(checked.outcome.code).toBe(PREVIEW_EXISTS);
+		expect(checked.requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("refuses on 23 where the announced preview lags the head, or names several apps", async () => {
+		const behind = await run(script([preview(deployed(MOVED))], flagged("skip")), under("skip"));
+		expect(behind.outcome.code).toBe(PREVIEW_EXISTS);
+		expect(behind.outcome.stderr.join("\n")).toContain("wait for it to redeploy");
+
+		const two = await run(
+			script([preview(`${deployed(HEAD, "api")}\n${deployed(HEAD)}`)], flagged("skip")),
+			under("skip"),
+		);
+		expect(two.outcome.code).toBe(PREVIEW_EXISTS);
+	});
+
+	it("refuses on 11 where the preview announcement does not read", async () => {
+		const {outcome, requests} = await run(
+			script([preview("<!-- preview-deploy:web -->\nno url here")], flagged("skip")),
+			under("skip"),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("refuses --verified-at beside --no-preview on 10, before any read", async () => {
+		const {outcome, requests} = await run([], {...under("skip"), verifiedAt: HEAD});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(requests).toEqual([]);
+	});
+
+	it("refuses a --hand-check that names no comment on 10, before any read", async () => {
+		const {outcome, requests} = await run([], under("hand-check", "row screenshot"));
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(requests).toEqual([]);
 	});
 });

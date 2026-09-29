@@ -12,7 +12,7 @@
 import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {uiCaptureOr, uiSurfacesOr} from "../config/paths.ts";
+import {noPreviewRulesOr, uiCaptureOr, uiSurfacesOr} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
@@ -22,7 +22,7 @@ import {runNote} from "./note-verb.ts";
 import {runPostFlags} from "./post-verb.ts";
 import {captureRenderLeg} from "./render-leg.ts";
 import {runRender} from "./render-verb.ts";
-import {runRoute} from "./route-verb.ts";
+import {type NoPreviewRequest, runRoute} from "./route-verb.ts";
 import {githubAttachmentUploadLeg, githubPostedEvidenceCheck} from "./upload-leg.ts";
 
 const repoFlag = Flag.string("repo").pipe(
@@ -354,9 +354,21 @@ const route = leafCommand(
 				"the head a hand-verification standing in for the render ran at (7–40 lowercase hex); the route is refused when any file in that range to --sha raises the ui class, because the evidence is then spent, and refused as UNKNOWN when the two heads have diverged, because the range was never read (omit it where the route rests on no such evidence)",
 			),
 		),
+		noPreview: Flag.boolean("no-preview").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"the PR has no preview deploy: route under the repo's reviewUi.whenNoPreview rules — skip posts a record flagged basis:skip, hand-check posts one flagged basis:hand-check over the newest owner's hand-check at this head the verb finds on the PR (refused at 21 when there is none), require-render is refused at 21; the verb reads the PR's preview announcement itself and refuses at 23 when one is there",
+			),
+		),
+		handCheck: Flag.string("hand-check").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"pin the owner's hand-check comment on this PR, by id or #issuecomment URL, instead of letting --no-preview find the newest one — a control-plane account's screenshots naming the exact head; implies --no-preview, and is refused at 22 when the comment is not one",
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({pr, sha, clause, verifiedAt, repo}) {
+	Effect.fn(function* ({pr, sha, clause, verifiedAt, noPreview, handCheck, repo}) {
 		// The reviewer's own checked-out tree, never the PR head: the class this route resolves was
 		// raised over these prefixes, so they are read where the verb is running.
 		const surfaces = yield* uiSurfacesOr(
@@ -368,12 +380,27 @@ const route = leafCommand(
 			yield* emit(refuse(PRECONDITION_UNKNOWN, surfaces.message));
 			return;
 		}
+		const offered = Option.getOrNull(handCheck);
+		let request: NoPreviewRequest | undefined;
+		if (noPreview || offered !== null) {
+			const rules = yield* noPreviewRulesOr(
+				"review-ui route",
+				process.cwd(),
+				"which mode a PR with no preview needs is UNKNOWN; nothing was posted.",
+			);
+			if (rules._tag === "Refused") {
+				yield* emit(refuse(PRECONDITION_UNKNOWN, rules.message));
+				return;
+			}
+			request = {rules: rules.rules, handCheck: offered};
+		}
 		yield* emit(
 			yield* runRoute({
 				pr,
 				sha,
 				clause,
 				verifiedAt: Option.getOrNull(verifiedAt),
+				...(request === undefined ? {} : {noPreview: request}),
 				uiPrefixes: surfaces.prefixes,
 				repo: Option.getOrNull(repo),
 				env: process.env,
@@ -385,17 +412,20 @@ const route = leafCommand(
 	Command.withShortDescription("Record that this PR renders nothing, so no verdict is owed."),
 	Command.withDescription(
 		[
-			"Records that a PR renders nothing, bound to --sha, so no verdict is owed; prints one JSON.",
+			"Records that no review-ui verdict is owed at --sha; prints one JSON.",
 			"  3: empty stdin",
 			"  5: machine-local path",
 			"  6: bare @ reference",
 			"  7: nothing to route, or PR absent or closed",
-			"  8: the post failed (UNKNOWN)",
+			"  8: post failed (UNKNOWN)",
 			"  9: read-back mismatch",
-			"  10: bad --sha or --verified-at, or a blank --clause",
-			"  11: a read failed, came back capped, or diverged",
-			"  12: head moved, or a ui file changed since --verified-at",
-			"  20: review-code FAIL, or absent on a --verified-at route",
+			"  10: bad flag value or pairing",
+			"  11: a read failed, capped, or diverged",
+			"  12: head moved, or ui changed since --verified-at",
+			"  20: review-code FAIL, or absent where owed",
+			"  21: reviewUi.whenNoPreview refuses the route",
+			"  22: not an owner's hand-check at this head",
+			"  23: a preview is announced; render it",
 			'  Derivation: the review-ui skill\'s contract.md, "review-ui route"',
 		].join("\n"),
 	),
@@ -404,6 +434,12 @@ const route = leafCommand(
 			command:
 				'fabrika review-ui route 6326 --sha 6c6fe226 --clause "no rendered delta; both files are prose only" < why.md',
 			description: "Route a prose-only PR away from review-ui",
+		},
+		{
+			command:
+				'fabrika review-ui route 6326 --sha 6c6fe226 --hand-check 5123990412 --clause "no preview; the owner hand-checked this head" < why.md',
+			description:
+				"Route a no-preview PR on the owner's hand-check, where a hand-check rule matches",
 		},
 	]),
 );

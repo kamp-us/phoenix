@@ -467,6 +467,32 @@ describe("runGate", () => {
 		);
 	});
 
+	// A repo's `reviewUi.whenNoPreview` rules let a PR with no preview resolve the namespace on an
+	// owner's hand-check or a skip; the row and its stderr line flag which, so nobody reads a render.
+	it.each([
+		["hand-check", "hand-checked, not rendered"],
+		["skip", "skipped by config"],
+	] as const)("reads a basis:%s route as routed and flags it on the row", async (basis, said) => {
+		const flagged = route("review-ui", HEAD).replace(`@ ${HEAD} —`, `@ ${HEAD} basis:${basis} —`);
+		const script: ReadonlyArray<Scripted> = [
+			[PULL, served(pull({comments: 1}))],
+			[COMMENTS, commentsServed({id: 1, body: flagged})],
+			[ACL, permission("write")],
+		];
+		const out = await run(script, {require: ["review-ui"]});
+		expect(out.stdout).toBe(
+			[`gate\tsatisfied\t${HEAD}`, `ns\treview-ui\trouted\trouted-elsewhere\t${basis}`, ""].join(
+				"\n",
+			),
+		);
+		expect(out.stderr.join("\n")).toContain(said);
+		const json = await run(script, {require: ["review-ui"], json: true});
+		expect(JSON.parse(json.stdout)).toMatchObject({
+			outcome: "satisfied",
+			namespaces: [{name: "review-ui", state: "routed", basis}],
+		});
+	});
+
 	it("blocks when the route binds a head that has moved — a push re-opens the question", async () => {
 		const out = await run(
 			[

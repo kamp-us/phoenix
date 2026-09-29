@@ -208,6 +208,13 @@ no field and reverts no value.
 Per `bet` row: `unknown-decider`, when the account that set Stage `bet` is not in the control-plane
 set `.github/CODEOWNERS` names. The bet stands as set.
 
+Per row, live or not: `not-rendered`, when a lane on one of the group's issues last passed a review
+namespace on a route the repo's `reviewUi.whenNoPreview` rules admitted rather than on a render —
+an owner's hand-check or a skip. It carries `issue`, `namespace`, `basis` (`hand-check`|`skip`) and
+`pr`. It reads the `routedBasis` field `lane report` writes on the proven `PASS` line; per task the
+newest `PASS` decides, so a later rendered pass clears it. A lane log line that does not parse is
+named under `unread` as `not-rendered`.
+
 **Table-wide checks.** With no issue named it also asks two:
 
 - `campaigns` — ROADMAP's `## Campaigns` table has more `active` rows than
@@ -232,7 +239,7 @@ A check it could not answer — a lane unmeasured, a set, roadmap or label that 
 on-call board that would not read, an item with no target or one the config no longer names — is
 named under `unread`, never passed. A check the config turns off is neither.
 
-stdout is `{"answer":"flagged"|"clear","repo":"…","project":{"number":n,"title":"…","url":"…"},"scope":"table"|"issues","rows":[n…],"flags":[{"flag":"over-size"|"asks"|"stuck"|"unknown-decider"|"campaigns"|"fabrika-share"|"past-target"|"on-call-share",…,"rec":"…"}],"unread":[{"check":"…","issue":n|null,"reason":"…"}]}`;
+stdout is `{"answer":"flagged"|"clear","repo":"…","project":{"number":n,"title":"…","url":"…"},"scope":"table"|"issues","rows":[n…],"flags":[{"flag":"over-size"|"asks"|"stuck"|"unknown-decider"|"not-rendered"|"campaigns"|"fabrika-share"|"past-target"|"on-call-share",…,"rec":"…"}],"unread":[{"check":"…","issue":n|null,"reason":"…"}]}`;
 row flags carry `head`, `group` (`epic`|`chain`|`null`) and `covers`.
 
 ### Exit status

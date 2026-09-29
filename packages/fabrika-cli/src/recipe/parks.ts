@@ -233,6 +233,13 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		waitingOn:
 			"the review this route hands the verdict to — every required namespace answering at the PR's live head",
 	}),
+	row({
+		park: "blocked",
+		cause: "no-preview-routed",
+		clearance: "route-satisfied",
+		waitingOn:
+			"the review this no-preview route hands the verdict to — every required namespace answering at the PR's live head",
+	}),
 ];
 
 /** Whether a leaf state is a park at all — the lane machine's two park shapes. */

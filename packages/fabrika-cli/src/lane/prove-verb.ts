@@ -63,7 +63,11 @@ import {classify} from "../ship/codeowners.ts";
 import {ROUTABLE} from "../ship/gate-verb.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
-import {readNamespaced as readRoute} from "../wire/routed-elsewhere.ts";
+import {
+	type RouteBasis,
+	type RoutedBasis,
+	readNamespaced as readRoute,
+} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
 import {closureReader} from "./closure.ts";
 import {
@@ -78,6 +82,7 @@ import {
 import {foldLog, resolveTask, walkOf} from "./fold.ts";
 import {nominatePulls} from "./nominate.ts";
 import {
+	basisOfRows,
 	claimOf,
 	epicOf,
 	foldNamespaces,
@@ -115,6 +120,8 @@ interface Claim {
 	 * (`./ruling-currency.ts`).
 	 */
 	readonly stamp: string;
+	/** A route's basis, when it stood on an owner's hand-check or the repo's skip rule. */
+	readonly basis?: RouteBasis;
 }
 
 export interface ProveOptions extends LaneRef {
@@ -193,6 +200,12 @@ export interface ProofOutcome extends VerbOutcome {
 	 * or downstream promotes one into a `PASS` marker.
 	 */
 	readonly routed: ReadonlyArray<string>;
+	/**
+	 * Each {@link routed} namespace whose route stood on the repo's `reviewUi.whenNoPreview` rules,
+	 * with the basis it stood on — absent where no route did. `lane report` records it on the event
+	 * line, and the table flags the row off it, so a hand-check or a skip never reads as a render.
+	 */
+	readonly routedBasis?: RoutedBasis;
 	readonly partial: boolean | null;
 	readonly landed: ReadonlyArray<number>;
 	/**
@@ -244,6 +257,7 @@ export const proofLabelOf = (outcome: VerbOutcome): ProofLabel | null => {
 type ProofAnswer = VerbOutcome & {
 	readonly deferred?: ReadonlyArray<string>;
 	readonly routed?: ReadonlyArray<string>;
+	readonly routedBasis?: RoutedBasis;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
 	readonly diagnosis?: boolean;
@@ -847,6 +861,7 @@ export const readNamespaceRows = (
 						// route can never gain survival it did not earn.
 						content: null,
 						stamp: comment.updatedAt,
+						...(route.basis === undefined ? {} : {basis: route.basis}),
 					},
 					comment.updatedAt,
 				);
@@ -920,7 +935,9 @@ export const readNamespaceRows = (
 		for (const claim of claims) {
 			if (claim.polarity !== "ROUTED") continue;
 			notes.push(
-				`${VERB}: ${claim.namespace} on #${pr} is routed rather than judged — a routed-elsewhere record at ${claim.sha} states this PR owes no verdict.`,
+				claim.basis === undefined
+					? `${VERB}: ${claim.namespace} on #${pr} is routed rather than judged — a routed-elsewhere record at ${claim.sha} states this PR owes no verdict.`
+					: `${VERB}: ${claim.namespace} on #${pr} is routed on basis ${claim.basis}, not rendered — the routed-elsewhere record at ${claim.sha} rests on reviewUi.whenNoPreview.`,
 			);
 		}
 		// A verdict survives a head move only through the content it bound, so the digest
@@ -961,6 +978,7 @@ export const readNamespaceRows = (
 				polarity: claim.polarity,
 				binding: ruled === "superseded" ? "stale" : ruled === "unknown" ? "unknown" : bound,
 				commentId: claim.commentId,
+				...(claim.basis === undefined ? {} : {basis: claim.basis}),
 			};
 		});
 		// A review-ui verdict counts only while its evidence opens — `ship gate`'s re-check, one
@@ -1073,6 +1091,7 @@ const proveVerdicts = (
 		// Read off the rows the fold just accepted rather than off the required set: only a row the
 		// proof actually stood on is evidence, and a namespace that merely *could* be routed is not.
 		const routed = read.rows.filter((row) => row.state === "routed").map((row) => row.namespace);
+		const routedBasis = basisOfRows(read.rows);
 		return {
 			...answer(
 				JSON.stringify(
@@ -1097,6 +1116,7 @@ const proveVerdicts = (
 			),
 			deferred: read.deferred,
 			routed,
+			...(routedBasis === null ? {} : {routedBasis}),
 		};
 	});
 

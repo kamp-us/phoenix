@@ -620,10 +620,12 @@ fabrika ship gate 4321 --sha 03135b91 --require review-code [--require review-do
 **Output** — machine channel. First line: `gate\t<satisfied|blocked>\t<sha>`. Then one line
 per required namespace, in the order required:
 `ns\t<namespace>\t<pass|fail|absent|stale|routed|unopened>\t<marker|advisory|review-fold|routed-elsewhere|->`
-— the fourth field names which carrier produced the in-force verdict (`-` on `absent`).
+— the fourth field names which carrier produced the in-force verdict (`-` on `absent`). A
+`routed` row whose record carries a basis gains a fifth field, `hand-check` or `skip`, and a stderr
+line saying it was hand-checked or skipped by config, not rendered (see `routed` below).
 `satisfied` iff every required namespace reads `pass` or `routed`.
 
-With `--json`: `{"outcome":…,"sha":…,"namespaces":[{name,state,carrier,commentId}…],"required":<n>}`.
+With `--json`: `{"outcome":…,"sha":…,"namespaces":[{name,state,carrier,commentId[,basis]}…],"required":<n>}`.
 
 **The flag-collapse and coverage scars are designed out at two layers.** `--require` is a
 repeatable flag whose values accumulate — a single-valued parse that keeps the first and
@@ -685,6 +687,9 @@ refuses without captures, so the `ui` class — raised off a path test that cann
 moved — named a namespace nothing legal could fill, and a prose-only PR under the UI surface map
 was permanently unshippable. A record aimed at any other namespace is read and ignored; that
 namespace stays `absent`. `ship floor` is unaffected — it asks for `governance` and requires `pass`.
+A record `review-ui route --no-preview` posted under the repo's `reviewUi.whenNoPreview` rules
+carries a `basis:hand-check` or `basis:skip` token, and the row keeps it: still `routed`, flagged so
+a person can tell an owner's hand-check or a config skip from a render.
 
 **`unopened` is the sixth state: a `review-ui` verdict counts only while its evidence opens.**
 `review-ui post` never withdraws a verdict it has posted, so a verdict whose captures stopped

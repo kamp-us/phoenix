@@ -23,6 +23,16 @@
  * stricter reading — every branch push voids the route and it must be re-attested against the new
  * tree. A record that survived a head move would be a claim about a diff nobody read.
  *
+ * **The basis, when the record stands on something other than the diff.** A repo's
+ * `reviewUi.whenNoPreview` rules can let a PR with no preview resolve the namespace without a render,
+ * and a person reading the gate must be able to tell that apart from "nothing here renders". So the
+ * record may carry one `basis:` token between the head and the clause: `hand-check`, where an
+ * owner's screenshots at this head stood in for the render, or `skip`, where the repo's rules say no
+ * rendered review is owed. Absent keeps the original meaning. A reader that predates the token reads
+ * it as the first word of the clause, so the record still resolves `routed` there.
+ *
+ *     routed-elsewhere: review-ui @ 03135b91 basis:hand-check — the owner's screenshots at 03135b91
+ *
  * The key is its own, not a `review…:` prefix, so `./verdict-marker.ts` reads these bytes as
  * `Absent` rather than as a verdict whose polarity drifted — and this reader is `Absent` on every
  * verdict marker for the same reason. Two formats, no overlap, no reading that turns one into the
@@ -51,12 +61,49 @@ export {clause, headSha} from "./marker-line.ts";
 /** The key that names these bytes. Never widened — a second meaning would need a second format. */
 export const KEY = "routed-elsewhere";
 
+/** What a record stands on when it is not the diff alone. */
+export const ROUTE_BASES = ["hand-check", "skip"] as const;
+export type RouteBasis = (typeof ROUTE_BASES)[number];
+
+const BASIS_PREFIX = "basis:";
+
+const routeBasis = (raw: string): RouteBasis | null =>
+	(ROUTE_BASES as ReadonlyArray<string>).includes(raw) ? (raw as RouteBasis) : null;
+
+/**
+ * Each routed namespace a lane's proof stood on a flagged route for, with its basis — the shape a
+ * lane event line carries as `routedBasis`. Never empty: no flagged route is the field's absence.
+ */
+export type RoutedBasis = Readonly<Record<string, RouteBasis>>;
+
+/**
+ * Read a `routedBasis` value off a parsed event line: `null` unless it is a non-empty object whose
+ * every key is one of `routed` and every value a basis — a partial read would flag the wrong row.
+ */
+export const readRoutedBasis = (
+	value: unknown,
+	routed: ReadonlyArray<string>,
+): RoutedBasis | null => {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+	const entries = Object.entries(value);
+	if (entries.length === 0) return null;
+	const read: Record<string, RouteBasis> = {};
+	for (const [namespace, raw] of entries) {
+		const basis = typeof raw === "string" ? routeBasis(raw) : null;
+		if (basis === null || !routed.includes(namespace)) return null;
+		read[namespace] = basis;
+	}
+	return read;
+};
+
 export interface RoutedElsewhere {
 	/** The required namespace this record resolves — `review-ui` is the only one `ship gate` admits. */
 	readonly namespace: string;
 	readonly sha: HeadSha;
 	/** Why the gate owes no verdict at this head. Blank is not a reason. */
 	readonly clause: Clause;
+	/** Absent where the record rests on the diff alone; see the module docblock. */
+	readonly basis?: RouteBasis;
 }
 
 export type RoutedElsewhereRead = WireRead<RoutedElsewhere>;
@@ -102,15 +149,34 @@ export const read = (artifact: string): RoutedElsewhereRead => {
 		);
 	}
 
+	const {token: basisToken, after: afterBasis} = takeToken(afterSha);
+	let basis: RouteBasis | undefined;
+	let rest = afterSha;
+	if (basisToken.toLowerCase().startsWith(BASIS_PREFIX)) {
+		const named = routeBasis(basisToken.slice(BASIS_PREFIX.length).toLowerCase());
+		if (named === null) {
+			return malformed(
+				`"${basisToken}" names no basis — expected ${ROUTE_BASES.map((name) => `${BASIS_PREFIX}${name}`).join(" or ")}`,
+				evidence,
+			);
+		}
+		basis = named;
+		rest = afterBasis;
+	}
+
 	// `payloadOf` already stripped a skill's bold emphasis, so the clause read needs none.
-	const text = readClause(afterSha, "");
+	const text = readClause(rest, "");
 	if (text === null) {
 		return malformed(
 			"the record carries no trailing clause — the one field that says why no verdict is owed",
 			evidence,
 		);
 	}
-	return {_tag: "Found", value: {namespace, sha, clause: text}};
+	return {
+		_tag: "Found",
+		value:
+			basis === undefined ? {namespace, sha, clause: text} : {namespace, sha, clause: text, basis},
+	};
 };
 
 /**
@@ -128,13 +194,14 @@ export const readNamespaced = (artifact: string, namespace: string): RoutedElsew
 };
 
 /** Compose the record's first line. Round-trips through {@link read}. */
-export const emit = ({namespace, sha, clause: text}: RoutedElsewhere): string =>
-	`${KEY}: ${namespace} @ ${sha} ${CLAUSE_SEPARATOR} ${text}\n`;
+export const emit = ({namespace, sha, clause: text, basis}: RoutedElsewhere): string =>
+	`${KEY}: ${namespace} @ ${sha}${basis === undefined ? "" : ` ${BASIS_PREFIX}${basis}`} ${CLAUSE_SEPARATOR} ${text}\n`;
 
 export const renderRecord = (record: RoutedElsewhere): NonEmptyReadonlyArray<string> => [
 	`namespace\t${record.namespace}`,
 	`sha\t${record.sha}`,
 	`clause\t${record.clause}`,
+	...(record.basis === undefined ? [] : [`basis\t${record.basis}`]),
 ];
 
 export type RoutedElsewhereFields =
@@ -143,7 +210,7 @@ export type RoutedElsewhereFields =
 
 /** `<key>: <value>` or `<key><TAB><value>`, so `wire read`'s own output pipes back into `wire emit`. */
 const FIELD_LINE = /^([A-Za-z-]+)[ \t]*[:\t][ \t]*(.*)$/;
-const KEYS = ["namespace", "sha", "clause"] as const;
+const KEYS = ["namespace", "sha", "clause", "basis"] as const;
 type FieldKey = (typeof KEYS)[number];
 
 const isFieldKey = (key: string): key is FieldKey => (KEYS as ReadonlyArray<string>).includes(key);
@@ -186,7 +253,16 @@ export const parseFields = (fields: string): RoutedElsewhereFields => {
 	if (text === null) {
 		return {_tag: "Unusable", reason: "the trailing clause is blank"};
 	}
-	return {_tag: "Fields", record: {namespace, sha, clause: text}};
+	const declared = seen.get("basis");
+	if (declared === undefined) return {_tag: "Fields", record: {namespace, sha, clause: text}};
+	const basis = routeBasis(declared.trim().toLowerCase());
+	if (basis === null) {
+		return {
+			_tag: "Unusable",
+			reason: `"${declared}" is not a basis — expected ${ROUTE_BASES.join(" or ")}`,
+		};
+	}
+	return {_tag: "Fields", record: {namespace, sha, clause: text, basis}};
 };
 
 /** The registry row's byte-level `emit`, bound to this module's typed core. */

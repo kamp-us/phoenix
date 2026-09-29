@@ -111,6 +111,13 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
 	});
 
+	it("clears a no-preview route's park the way it clears a no-rendered-delta one", () => {
+		const parked = classifyPark("blocked", "no-preview-routed");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("route-satisfied");
+	});
+
 	it("is Novel for a bare BLOCKED, and says the ledger records no cause", () => {
 		const parked = classifyPark("blocked", null);
 

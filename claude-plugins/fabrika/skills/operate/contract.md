@@ -261,6 +261,10 @@ Four more fields land on the line, and each is the prover's, never a flag:
 - `routed` is `deferred`'s complement: the required namespaces the proof stood on a head-bound
   routed-elsewhere record for, rather than on a verdict. `deferred` says a verdict is still owed
   somewhere; `routed` says none is owed at all. It is absent wherever every namespace was judged.
+- `routedBasis` rides beside `routed` when a route stood on the repo's `reviewUi.whenNoPreview`
+  rules: an object naming each such routed namespace's basis, `hand-check` or `skip`. `table flags`
+  reads it to flag the row `not-rendered`. It is absent wherever no route carried a basis, and a
+  key `routed` does not name is a parse defect.
 
 One token is not a constant, and `routed` is what makes its line legible. `ROUTED-ELSEWHERE` maps
 flat to BLOCKED and, out of `review:ui` alone, also names PASS; the proof picks between them. A
@@ -283,7 +287,8 @@ one. Each carries its own cause off the same closed set with no `--cause` typed;
 override it, and a cause outside the set still refuses at `35`.
 
 stdout is `{token, previous, event, current, taskAffected}` plus the refs, plus `deferred` when the
-proof deferred anything, `routed` when it stood on a route, `partial` at whichever polarity the
+proof deferred anything, `routed` when it stood on a route, `routedBasis` when that route carried a
+basis, `partial` at whichever polarity the
 closure read answered, `diagnosis` where the terminal stood on one, and `landed` where it answered
 at all.
 
@@ -1857,7 +1862,8 @@ nothing and is novel.
   for the PR still being open and not a draft, and `ship gate` (with no `--cp`, which is the
   shipper's to discharge) for every namespace the diff derives still holding a binding verdict at
   that head. Any of those reads failing is `11`, never a clear.
-- The routed-UI park (`blocked` keyed `no-rendered-delta`) is that same floor minus CI, and it clears
+- The routed-UI park (`blocked` keyed `no-rendered-delta`, or `no-preview-routed` where the route
+  stood on the repo's `reviewUi.whenNoPreview` rules) is that same floor minus CI, and it clears
   the lanes stranded before `lane report` learned to advance a satisfied route: `ship scope` for the
   PR still being open, and `ship gate` (no `--cp`) for the conjunction at the live head, which must
   read `satisfied` AND leave some required namespace still reading `routed` there. The second half is
