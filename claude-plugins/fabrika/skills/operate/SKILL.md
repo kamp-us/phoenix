@@ -1618,7 +1618,8 @@ what is never right is reaching for a token because it is nearby rather than bec
 happened.
 
 A shipper's `AWAITING-CP-APPROVAL` lands `awaiting-cp-approval` with nothing typed, because that
-token has one reason. When you park an owner-approval wait yourself, name it:
+token has one reason, and its `ROUTED-REVIEW` lands `verdict-owed` the same way: a required
+namespace has no binding verdict at the head, so dispatch the gate that owes it. When you park an owner-approval wait yourself, name it:
 `lane transition <lane> BLOCKED --task <task> --cause awaiting-cp-approval`. A `ship` park with no
 cause matches no `human:cp-approval` row, so it never clears by reading an approval nobody asked for.
 

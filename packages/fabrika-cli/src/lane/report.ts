@@ -691,6 +691,30 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
+	 * `ship gate` answered `blocked` on a required namespace that holds no binding verdict at the
+	 * PR's head — absent, stale against moved content, or a `review-ui` verdict whose evidence does
+	 * not open — so the shipper routed back to the gate that owns it and reported `ROUTED-REVIEW`.
+	 * Nothing about the artifact was judged: the verdict the head owes has not been given yet. The
+	 * ordinary producer is a head that moved after review, which a long-lived epic branch re-merged
+	 * with its trunk hits on every merge.
+	 *
+	 * The shipper's `ROUTED-REVIEW` carries it without being typed ({@link TERMINAL_PARK_CAUSES}),
+	 * because the gate's absence arm is that token's one reason. Distinct from a `FAIL` routed to
+	 * repair: a verdict that exists and says no is `ROUTED-REPAIR`, never this.
+	 *
+	 * No remedy: giving the verdict is the owning gate's judgment, and a verb that "removed" this
+	 * cause would be making it.
+	 *
+	 * Route `driver`: dispatching the gate that owes the verdict is the driver's own act, and no
+	 * product call is in it.
+	 */
+	"verdict-owed": {
+		meaning:
+			"a namespace the ship gate requires holds no binding verdict at the PR's head, so the shipper routed back to the gate that owes it",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * The task spent its whole repair budget on content FAILs, so the guarded FAIL arm fell through
 	 * to `human:budget-spent`. Nothing about the machinery went wrong — a reviewer graded the work
 	 * and found it wrong `RETRY_BUDGET` times.
@@ -805,13 +829,16 @@ export const machineryCause = (token: string): ParkCause | null =>
  *
  * Only a token with exactly one reason belongs here. `AWAITING-CP-APPROVAL` is `ship cp-approval`'s
  * `stop`, which says the owners' approval is absent; a `--cause` still overrides it, which is how a
- * shipper standing on a head behind its base says `head-behind-base` instead. `REFUSED`, `UNKNOWN`
- * and the routing arms fold to the same leaf for other reasons, so they carry nothing here.
+ * shipper standing on a head behind its base says `head-behind-base` instead. `ROUTED-REVIEW` is
+ * `ship gate`'s absence arm and nothing else — a required namespace with no binding verdict at the
+ * head — so it carries `verdict-owed`. `REFUSED` and `UNKNOWN` fold to the same leaf for other
+ * reasons, so they carry nothing here, and a shipper names `ROUTED-HEAL-CI`'s cause by hand.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9180#issuecomment-5752464229
  */
 export const TERMINAL_PARK_CAUSES: Readonly<Record<string, ParkCause>> = {
 	"AWAITING-CP-APPROVAL": "awaiting-cp-approval",
+	"ROUTED-REVIEW": "verdict-owed",
 };
 
 /** The cause a terminal token carries on its own — a lap's or a park's — or `null`. */
