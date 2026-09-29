@@ -11,9 +11,15 @@
  * an older shape used — the Week iteration — is legacy: left exactly as it is, and named so a person
  * knows it no longer drives the table.
  *
+ * **Setup owns only its marked section of the README.** A person's README text before and after
+ * fabrika's markers stays byte for byte, and a README with no markers keeps its text with the
+ * section appended below it. The short description is written only when it is empty; one a person
+ * wrote is drift, reported for them to change by hand, never overwritten.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  * @ruling https://github.com/kamp-us/phoenix/issues/9989
  * @ruling https://github.com/kamp-us/phoenix/issues/10083
+ * @ruling https://github.com/kamp-us/phoenix/issues/10084
  * @ruling https://github.com/kamp-us/phoenix/issues/10089
  */
 
@@ -25,6 +31,7 @@ import type {
 	SelectOption,
 	ViewLayout,
 } from "../io/projects.ts";
+import {mergeReadme, type ReadmeCase} from "./readme-section.ts";
 import type {TableShape, ViewShape} from "./shape.ts";
 
 export type Step =
@@ -51,9 +58,15 @@ export type Step =
 	  }
 	| {
 			readonly _tag: "UpdateProject";
-			readonly readme: string | null;
+			readonly readme: {readonly case: ReadmeCase; readonly text: string} | null;
+			/** Only ever written over an empty short description. */
 			readonly shortDescription: string | null;
 	  };
+
+/** Something a person wrote that differs from the table's, left as it is for them to change by hand. */
+export type Drift =
+	| {readonly _tag: "ShortDescription"; readonly found: string; readonly wanted: string}
+	| {readonly _tag: "BrokenReadmeMarkers"; readonly section: string};
 
 export interface Conflict {
 	readonly field: string;
@@ -70,6 +83,7 @@ export interface Legacy {
 
 export interface Plan {
 	readonly steps: ReadonlyArray<Step>;
+	readonly drift: ReadonlyArray<Drift>;
 	readonly conflicts: ReadonlyArray<Conflict>;
 	readonly legacy: ReadonlyArray<Legacy>;
 }
@@ -171,14 +185,25 @@ export const plan = (shape: TableShape, project: ProjectSnapshot): Plan => {
 		return found === undefined ? [] : [{field: name, kind: kindOf(found)}];
 	});
 
-	const readme = project.readme === shape.readme ? null : shape.readme;
-	const shortDescription =
-		project.shortDescription === shape.shortDescription ? null : shape.shortDescription;
+	const drift: Drift[] = [];
+	const merged = mergeReadme(project.readme, shape.readme);
+	if (merged._tag === "Broken") {
+		drift.push({_tag: "BrokenReadmeMarkers", section: shape.readme.name});
+	}
+	const readme = merged._tag === "Write" ? {case: merged.case, text: merged.readme} : null;
+	const shortDescription = project.shortDescription === null ? shape.shortDescription : null;
+	if (project.shortDescription !== null && project.shortDescription !== shape.shortDescription) {
+		drift.push({
+			_tag: "ShortDescription",
+			found: project.shortDescription,
+			wanted: shape.shortDescription,
+		});
+	}
 	if (readme !== null || shortDescription !== null) {
 		steps.push({_tag: "UpdateProject", readme, shortDescription});
 	}
 
-	return {steps, conflicts, legacy};
+	return {steps, drift, conflicts, legacy};
 };
 
 /** One line per step, as the verb reports what it changed. */
@@ -208,11 +233,28 @@ export const describeStep = (step: Step): string => {
 		}
 		case "UpdateProject": {
 			const parts = [
-				step.readme !== null ? "README" : null,
-				step.shortDescription !== null ? "short description" : null,
+				step.readme !== null ? readmeWords[step.readme.case] : null,
+				step.shortDescription !== null ? "wrote the empty project short description" : null,
 			].filter((part) => part !== null);
-			return `wrote the project ${parts.join(" and ")}`;
+			return parts.join("; ");
 		}
+	}
+};
+
+const readmeWords: Record<ReadmeCase, string> = {
+	Fresh: "wrote fabrika's section as the empty project README",
+	Marked: "marked the project README fabrika wrote earlier as fabrika's section",
+	Appended: "kept the project README's own text and added fabrika's section below it",
+	Rewrote: "rewrote fabrika's section of the project README, keeping the text around it",
+};
+
+/** One line per drift, telling a person what to change by hand. */
+export const describeDrift = (drift: Drift): string => {
+	switch (drift._tag) {
+		case "ShortDescription":
+			return `the project short description reads "${drift.found}", not the table's "${drift.wanted}" — setup leaves it as written; change it by hand in the project's settings if you want the table's`;
+		case "BrokenReadmeMarkers":
+			return `the project README's fabrika:${drift.section} markers are not one start marker followed by one end marker — setup left the README as it is; fix or remove the markers by hand, then re-run`;
 	}
 };
 

@@ -19,6 +19,7 @@ import {
 	type TableSettings,
 } from "../config/keys/table.ts";
 import type {FieldSpec, OptionColor} from "../io/projects.ts";
+import type {ReadmeSection} from "./readme-section.ts";
 
 export const FIELD = {
 	title: "Title",
@@ -120,7 +121,8 @@ export type ViewShape =
 export interface TableShape {
 	readonly title: string;
 	readonly shortDescription: string;
-	readonly readme: string;
+	/** fabrika's own section of the project README; a person's text around it is kept. */
+	readonly readme: ReadmeSection;
 	readonly fields: ReadonlyArray<FieldSpec>;
 	readonly views: ReadonlyArray<ViewShape>;
 	/** Fields an older shape used: setup leaves each in place and reports it as legacy. */
@@ -325,7 +327,7 @@ export const tableShape = (
 	return {
 		title,
 		shortDescription: `The betting table for ${repo}: what gets bet on, and whether it worked.`,
-		readme: renderReadme(settings, sizes, repo),
+		readme: {name: "table", body: renderReadme(settings, sizes, repo)},
 		fields: [
 			{_tag: "SingleSelect", name: FIELD.stage, options: options(STAGES)},
 			{

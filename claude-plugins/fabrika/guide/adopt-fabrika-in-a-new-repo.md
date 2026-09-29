@@ -255,8 +255,10 @@ fabrika table setup
 It reuses an open project titled `<repo name> table`, first among your repo's linked projects, then
 among the owner's, and links it. Failing that, it creates one under the owner. It then adds the
 fields, the Table day date field every row is dated in, the five views (Agenda grouped by Section,
-Lanes in columns by Stage) and a README that explains every column. Run it again any time, and once
-after each fabrika upgrade: a project already in shape answers `unchanged`.
+Lanes in columns by Stage) and a README section that explains every column. A README or short
+description your team already wrote stays: setup adds its section below your text and lists a
+differing short description under `drift`. Run it again any time, and once after each fabrika
+upgrade: a project already in shape answers `unchanged`.
 
 A project set up before Table day keeps its Week iteration field, and setup lists it under
 `legacy`. Run `fabrika table migrate-week` once to copy each row's week into Table day; it never
@@ -285,7 +287,7 @@ the block also makes table reads fail closed. Every key and its default is in
 - To point setup at a project you already have, set `table.project.number`, and
   `table.project.owner` if it lives under another account.
 - Set the size dollars in `appetiteSizes`, the key pitch-guard reads, not in the `table` block. If you
-  change them after the Size field exists, re-run setup: it rewrites the README, fills each blank
+  change them after the Size field exists, re-run setup: it rewrites its README section, fills each blank
   Size description with the new amount, and keeps a description someone already wrote as it is.
 
 ### 11.5 Boot bets with `--origin bet`

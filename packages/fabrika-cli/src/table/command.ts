@@ -42,7 +42,7 @@ const setup = leafCommand(
 	Command.withShortDescription("Create or reconcile the repository's betting table project."),
 	Command.withDescription(
 		tableHelp("table setup", [
-			'Creates or reconciles the betting table project; prints {"answer","project","changes","legacy",…}.',
+			'Creates or reconciles the betting table project; prints {"answer","project","changes","drift",…}.',
 			"  7: a configured project number names no project",
 			"  8: a write did not land (UNKNOWN); re-run",
 			"  9: the project does not read back as the table",
