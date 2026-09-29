@@ -28,7 +28,7 @@
  */
 import {Effect} from "effect";
 import {branchProtectionContexts, rulesetContexts} from "../heal-ci/github.ts";
-import type {ServedStatus} from "../io/gh-api.ts";
+import {isPlanGated, type ServedStatus} from "../io/gh-api.ts";
 import type {Shell} from "../io/git.ts";
 import {isInformational} from "./rollup.ts";
 
@@ -44,18 +44,9 @@ export type DeclaredRead =
 	/** A read failed for a reason that is not this token's permission — coverage is UNKNOWN. */
 	| {readonly _tag: "Unknown"; readonly what: string; readonly reason: string};
 
-/**
- * The start of GitHub's `message` on a 403 served because the repository's plan lacks the feature —
- * a private repository on the free plan, where rulesets and branch protection are paid. It reaches
- * every token, admin included, so no permission clears it.
- */
-const PLAN_GATE = "Upgrade to GitHub Pro or make this repository public";
-
 /** One refused authority read, sorted by what the refusal says about the branch. */
 const refused = (answer: ServedStatus, what: string, reason: string): DeclaredRead => {
-	if (answer.status === 403 && answer.message?.startsWith(PLAN_GATE) === true) {
-		return {_tag: "PlanGated"};
-	}
+	if (isPlanGated(answer)) return {_tag: "PlanGated"};
 	return answer.status === 401 || answer.status === 403
 		? {_tag: "Unprobeable", reason}
 		: {_tag: "Unknown", what, reason};

@@ -27,7 +27,9 @@ import {
 	authed,
 	authedExistence,
 	pagedEnvelope as envelopeOverHttp,
+	githubMessage,
 	graphqlRead,
+	isPlanGated,
 	pagedWithLinkProof as linkProofOverHttp,
 	PAGE_CAP,
 	type Rest,
@@ -582,10 +584,21 @@ export const commitDate = (repo: string, sha: string): Shell<Attempt<string>> =>
  *
  * Read off the **branch's** active rules, never this PR's queue history: a per-PR proxy exempts
  * exactly the parked intent `ship disarm` exists to clear.
+ *
+ * A plan-gated 403 is `false`: a plan with no rulesets has no merge queue. Any other 403 stays a
+ * failure, because a token that may not read the rules has not shown there is no queue.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10155#issuecomment-5886566592
  */
 export const isQueueGoverned = (repo: string, branch: string): Shell<Attempt<boolean>> =>
 	authed((token) =>
 		Effect.map(restRead(token, "GET", `repos/${repo}/rules/branches/${branch}`), (outcome) => {
+			if (
+				outcome._tag === "Response" &&
+				isPlanGated({status: outcome.status, message: githubMessage(outcome)})
+			) {
+				return ok(false);
+			}
 			const body = bodyOf(outcome);
 			if (body._tag === "Failure") return body;
 			if (!Array.isArray(body.value)) {

@@ -2,7 +2,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeHttp, fakeShell, type HttpReply, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {branchRules, ENV, repositoryServed} from "./fixtures.test-support.ts";
+import {branchRules, ENV, httpError, planGated, repositoryServed} from "./fixtures.test-support.ts";
 import {landingOf, preferredMethod, readLanding} from "./landing.ts";
 
 const RULES = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/rules\/branches\/main$/;
@@ -78,6 +78,19 @@ describe("readLanding", () => {
 			[REPO, repositoryServed({squash: false, merge: false, rebase: false})],
 		]);
 		expect(out).toEqual({_tag: "Ok", value: {path: "none", method: null}});
+	});
+
+	it("answers a direct landing when the plan offers no rulesets — no queue can govern it", async () => {
+		const out = await read([
+			[RULES, planGated],
+			[REPO, repositoryServed()],
+		]);
+		expect(out).toEqual({_tag: "Ok", value: {path: "direct", method: "squash"}});
+	});
+
+	it("fails rather than assuming no queue when the token may not read the rules", async () => {
+		const out = await read([[RULES, httpError(403, "Resource not accessible by integration")]]);
+		expect(out._tag).toBe("Failure");
 	});
 
 	it("fails rather than assuming a regime when the rules read fails", async () => {
