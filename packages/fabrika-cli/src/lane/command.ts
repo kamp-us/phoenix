@@ -1948,12 +1948,12 @@ const archive = leafCommand(
 	}),
 ).pipe(
 	Command.withShortDescription(
-		"Move lanes whose logs never replay, or a re-triaged diagnosed lane, out of the swept root.",
+		"Move an unreplayable or re-triaged diagnosed lane out of the swept root.",
 	),
 	Command.withDescription(
 		laneHelp(
 			"archive",
-			"Moves a lane whose log never replays out of the lanes root, or sweeps them; --retriaged moves a diagnosed no-PR lane instead; prints JSON.",
+			"Moves an unreplayable lane aside, or sweeps; --retriaged moves a diagnosed no-PR one; prints JSON.",
 			{
 				4: "bad lane record",
 				7: "no lane",
@@ -1966,7 +1966,7 @@ const archive = leafCommand(
 				39: ROOT_EXITS[39],
 				50: "the log replays, nothing to move",
 				65: ROOT_EXITS[65],
-				72: "--retriaged: the lane did not end diagnosed with no pull request and no spent round",
+				72: "--retriaged: not diagnosed, or a PR or spent round",
 			},
 		),
 	),
