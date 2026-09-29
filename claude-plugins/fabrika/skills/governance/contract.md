@@ -945,7 +945,7 @@ poster reads success.
 write opened a fresh comment or appended into this namespace's existing comment at this head,
 retiring the verdict that was there.
 With `--json`:
-`{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"content":…,"upsert":"created"|"superseded","floor":"refired"|"restarting"|"green"|"in-flight"|"no-run"|"unknown","commentUrl":…}`.
+`{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"content":…,"upsert":"created"|"superseded","floor":"refired"|"restarting"|"green"|"in-flight"|"no-run"|"no-floor"|"unknown","commentUrl":…}`.
 The tab line does not carry `floor` — the floor's outcome is on stderr, one line, always.
 
 **The namespace is fixed.** There is no `--namespace` flag: this verb emits exactly one namespace and
@@ -1024,13 +1024,23 @@ a lone `--base` or `--tip` (`10`); an issue that is absent, closed or a pull req
 
 **The floor assertion never changes the exit code.** By step 7 the verdict is landed and read back, so
 a floor that could not be asserted is a red check, not an unwritten verdict — every outcome is one
-stderr line and the `--json` `floor` field. The six: `refired` (a new attempt exists), `restarting`
+stderr line and the `--json` `floor` field. The seven: `refired` (a new attempt exists), `restarting`
 (the re-fired run is queued or running again under its own id with the new attempt number not yet
 published — wait and re-read that run, never escalate it), `green` (the run at this head already
 passed), `in-flight` (the run had not completed, so it may still judge state older than this verdict
-— re-read the check), `no-run` (the runs listed at this head carry no `governance-floor` one),
+— re-read the check), `no-run` (the runs listed at this head carry no `governance-floor` one, and
+the repository does carry that workflow), `no-floor` (the repository's complete workflow inventory
+holds no active `governance-floor` workflow, so it runs no floor and nothing needs re-firing),
 `unknown` (the state could not be read or the re-fire could not be proven — never read as
 a pass).
+
+**`no-floor` is read only when the head lists no floor run, and only from a complete inventory.**
+The verb then reads `GET /repos/{o}/{r}/actions/workflows` and matches each active workflow's `name`
+against `governance-floor`. A failed read, or one that received fewer workflows than the envelope
+declares, is `unknown` — never `no-floor`, because a read that did not see every workflow cannot
+say one is absent. So is an inventory holding an entry that is not a record or carries no string
+`name` or `state`: that entry could be the floor workflow, so its absence is unproven. The line
+states the absence as a fact and asks the caller to re-read nothing.
 
 **`no-run`'s line states the read and offers no cause.** The tag is one token, and what the verb
 observed is that this head's run list carried no `governance-floor` entry — never why. The head's own
@@ -1084,9 +1094,10 @@ clothes.
 | `governance post: a standing <PASS\|FAIL> for governance over <base>..<tip> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 17 | refusal |
 
 **Scope** — one PR: its live head, the bound commit's file list for the re-derivation, its comments,
-and the caller's stdin, plus the workflow runs at the bound head for step 7. A read failing at any of
-the first four is `11` — nothing written, outcome known-unwritten; a read failing at the fifth is the
-`unknown` floor, because by then the verdict is written.
+and the caller's stdin, plus two reads for step 7: the workflow runs at the bound head, and, when
+those list no floor run, the repository's workflow inventory (`actions/workflows`). A read failing at
+any of the first four is `11` — nothing written, outcome known-unwritten; a failed run-list read or a
+failed inventory read is the `unknown` floor, because by then the verdict is written.
 
 **Examples**
 

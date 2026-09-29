@@ -319,6 +319,51 @@ export const latestPerContext = (
 	return [...byName.values()];
 };
 
+/** One active workflow: the `name:` its runs carry, and the `path` the platform addresses it by. */
+export interface ActiveWorkflow {
+	readonly name: string;
+	readonly path: string;
+}
+
+/**
+ * The repository's active workflows beside the envelope's completeness proof.
+ *
+ * `declared` and `received` count every workflow in any state, so a caller concluding that a
+ * workflow is absent can refuse a read that stopped short of the declared total. `malformed` counts
+ * the entries that are not a record or carry no string `name` or `state`: such an entry may be the
+ * workflow the caller looks for, so absence read beside a non-zero count is unproven.
+ */
+export interface WorkflowInventory {
+	readonly declared: number;
+	readonly received: number;
+	readonly malformed: number;
+	readonly active: ReadonlyArray<ActiveWorkflow>;
+}
+
+const isReadableWorkflow = (value: unknown): value is Record<string, unknown> =>
+	isRecord(value) && typeof value.name === "string" && typeof value.state === "string";
+
+export const listWorkflowInventory = (repo: string): Shell<Attempt<WorkflowInventory>> =>
+	authed((token) =>
+		Effect.map(
+			envelopeOverHttp(token, `repos/${repo}/actions/workflows`, "workflows"),
+			(enveloped) => {
+				if (enveloped._tag === "Failure") return enveloped;
+				const active = enveloped.value.entries.flatMap((value) =>
+					isRecord(value) && value.state === "active"
+						? [{name: str(value.name), path: str(value.path)}]
+						: [],
+				);
+				return ok({
+					declared: enveloped.value.declared,
+					received: enveloped.value.entries.length,
+					malformed: enveloped.value.entries.filter((value) => !isReadableWorkflow(value)).length,
+					active,
+				});
+			},
+		),
+	);
+
 /**
  * The repository's active workflow inventory, each entry as the platform addresses it: its `path`.
  *
@@ -327,17 +372,8 @@ export const latestPerContext = (
  * apart is what `../review/gate-coverage.ts` needs, and the path is the only field that says it.
  */
 export const listWorkflowPaths = (repo: string): Shell<Attempt<ReadonlyArray<string>>> =>
-	authed((token) =>
-		Effect.map(
-			envelopeOverHttp(token, `repos/${repo}/actions/workflows`, "workflows"),
-			(enveloped) => {
-				if (enveloped._tag === "Failure") return enveloped;
-				const active = enveloped.value.entries.filter(
-					(value) => isRecord(value) && value.state === "active",
-				);
-				return ok(active.map((value) => str((value as Record<string, unknown>).path)));
-			},
-		),
+	Effect.map(listWorkflowInventory(repo), (read) =>
+		read._tag === "Failure" ? read : ok(read.value.active.map((workflow) => workflow.path)),
 	);
 
 /**
