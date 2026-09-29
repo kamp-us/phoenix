@@ -43,12 +43,21 @@
  * half: which tasks to ask about ({@link buildingBy}), where a builder in each role would have left
  * its work ({@link publicationOf}), and the park those reads record ({@link DEAD_SPAWN_EVENT},
  * {@link DEAD_SPAWN_CAUSE}).
+ *
+ * **The queue arm asks a third question: has the merge queue already answered?** A task in
+ * `ship:queued` owes no proven event, because its PR is just waiting. But the queue can finish with it
+ * after the shipper's watch ended, and then all that is missing is the one read a driver pass makes.
+ * {@link queuedBy} finds those tasks, {@link queuedPullOf} names the PR their own ledger recorded, and
+ * {@link QUEUE_SETTLEMENTS} is the operate skill's `ship:queued` table minus the rows that spend a
+ * wait or park: the sweep relays a landing or an ejection and records nothing else.
  */
 
+import type {Reconciled} from "../ship/reconcile-verb.ts";
 import {isBuildState, shellState} from "../wire/lane-brief.ts";
-import type {LaneStatus} from "./fold.ts";
+import type {LaneStatus, LogEntry} from "./fold.ts";
 import type {LaneRole} from "./prove.ts";
-import {REVIEW_STATE, REVIEW_UI_STATE} from "./prove.ts";
+import {REVIEW_STATE, REVIEW_UI_STATE, SHIP_QUEUED_STATE} from "./prove.ts";
+import {pullNumberIn} from "./reconcile.ts";
 
 /**
  * The event each leaf owes its ledger, keyed by the leaf a killed shell would have left the task in.
@@ -169,3 +178,58 @@ export type Publication =
 
 export const publicationOf = (role: LaneRole): Publication =>
 	role._tag === "Child" ? {_tag: "LaneBranch"} : {_tag: "OpenPull"};
+
+/** Every task of a non-terminal lane waiting in the merge-queue dwell. */
+export const queuedBy = (status: LaneStatus): ReadonlyArray<TaskLeaf> => {
+	if (status.status === "done") return [];
+	return activeTaskLeaves(status).filter(({leaf}) => leaf === SHIP_QUEUED_STATE);
+};
+
+/** The pull request a task's ledger names, as its URL and its number. */
+export interface QueuedPull {
+	readonly url: string;
+	readonly number: number;
+}
+
+/**
+ * The PR this task's own ledger names last, or `null` where no line of it carries a PR URL.
+ *
+ * The last one, because a lane that went round records each new PR after the one it replaced. Only
+ * a URL counts: `lane report --pr` hands the ref to the closure read, which reads a URL alone, so a
+ * bare `#N` would record a landing whose closure nobody could read.
+ */
+export const queuedPullOf = (entries: ReadonlyArray<LogEntry>, task: string): QueuedPull | null => {
+	for (const entry of [...entries].reverse()) {
+		if (entry.task !== task || entry.pr === undefined) continue;
+		const number = pullNumberIn(entry.pr);
+		if (number !== null) return {url: entry.pr, number};
+	}
+	return null;
+};
+
+/** What the sweep does with one `ship reconcile --polls 1` answer. */
+export type Settlement =
+	/** The queue finished with the PR, so this `lane report` token records its answer. */
+	| {readonly _tag: "Record"; readonly token: "LANDED" | "EJECTED"}
+	/** An answer the sweep may not record: the row names it, and nothing lands. */
+	| {readonly _tag: "Hold"; readonly why: string};
+
+/**
+ * The queue arm's relay table, keyed on every answer `ship reconcile` can give.
+ *
+ * A driver pass records `unresolved` as `UNRESOLVED` and `parked` as `UNKNOWN`. The sweep records
+ * neither: the first spends a wait on the sweep's clock rather than the queue's, and the second is a
+ * park, which a driver decides and a sweep only reports.
+ */
+export const QUEUE_SETTLEMENTS: Readonly<Record<Reconciled, Settlement>> = {
+	landed: {_tag: "Record", token: "LANDED"},
+	ejected: {_tag: "Record", token: "EJECTED"},
+	unresolved: {
+		_tag: "Hold",
+		why: "the PR is still in the queue, and a sweep records no wait, so the lane's wait budget is untouched",
+	},
+	parked: {
+		_tag: "Hold",
+		why: "the timeline shows the PR neither queued, ejected nor merged; that park is a driver pass's `--token UNKNOWN` to record, never a sweep's",
+	},
+};

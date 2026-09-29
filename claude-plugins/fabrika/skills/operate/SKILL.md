@@ -912,6 +912,23 @@ alone.
 | `ejected` | `--token EJECTED` — the PR left the queue un-merged, which is repair work: the machine spends a retry back into `build` |
 | `parked` | `--token UNKNOWN` — the timeline shows a PR neither queued, ejected nor merged, and an unread queue state is UNKNOWN, never a wait to keep sitting in |
 
+**To settle every queued lane at once, run the sweep instead of an operator per lane.** A PR that
+merges after the shipper's watch leaves its lane in `ship:queued` with nothing left to do but record
+the landing, and spawning a whole operator for that one read is the cost this sweep removes:
+
+```bash
+node <fabrika> lane recover --check   # read every queued PR, append nothing
+node <fabrika> lane recover           # record what the queue already answered
+```
+
+For each task standing in `ship:queued` it takes the PR its own ledger names, makes this same
+`ship reconcile <pr> --polls 1` read, and relays the answer through `lane report`'s own path. A
+`landed` row records `LANDED --pr <url>`, and an `ejected` one records `EJECTED`, exactly as the
+table above does. It records neither `unresolved` nor `parked`. Each lands as a `waiting` row naming
+the answer, so the sweep never spends a wait and never meets the floor below. A lane on a `waiting`
+row is still yours to re-read on a later pass. A failed read is an `unreadable` row that appended
+nothing. The sweep's other arms are described under `lane recover` in §4.
+
 **`lane report` may answer "too soon", and that is the wait working.** A queue re-fold is floored on
 elapsed time as well as counted: exit `55` says the shipper's own ~480s horizon has not run since
 this task's last recorded line, so the record is refused with the log byte-identical and the wait
@@ -2003,7 +2020,9 @@ is a new way onto a ledger. It asks about one event — a `PASS` out of either r
 other answer is a row that changed nothing: `unproven` (which carries `not-required` and every
 refusal code alike, told apart by the row's own `proof` and `proofCode`), `refused`, `contended`,
 `current`, `terminal`, `unreadable`. With `--spawns` the row set gains `parked`, `parkable` and
-`working`, which are that arm's own and are described below.
+`working`, which are that arm's own and are described below. The same run also settles every lane
+waiting in `ship:queued`, under the rows `settled`, `settleable` and `waiting`. The `## ship:queued`
+section above says what it records there.
 
 **Two events a live shell also satisfies are not in this sweep**, and that is what keeps it from
 folding a lane out from under one of your own spawns. A reviewer's `BLOCKED` claims the run reached

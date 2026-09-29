@@ -296,7 +296,9 @@ and why an ejection costs the ticket no repair round.
 `unresolved` → report it in those words with the horizon; still-queued at the horizon is
 neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. Your horizon
 is fixed: you never poll past it, and a lane that needs longer gets it from the driver's re-reads at
-`ship:queued`, not from a wider watch in here. `parked` →
+`ship:queued`, not from a wider watch in here. A driver settles every lane left there with one
+`lane recover` sweep rather than an operator spawn per lane (operate's `ship:queued` section).
+`parked` →
 the enqueue never took effect: run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a
 read and disarms nothing), note, and stop. The `mergeable_state` assertion and each terminal's proof
 are the verbs' sections

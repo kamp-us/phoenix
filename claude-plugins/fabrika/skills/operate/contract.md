@@ -1424,6 +1424,24 @@ that lane's role publishes to, is a lane whose shell is gone and which will neve
 - Its rows are `parked` (appended) and `parkable` (`--check` withheld it). It is OFF unless the flag
   is passed, because it spends a board read per lane standing in build.
 
+**The queue arm settles lanes whose PR already left the merge queue.** A task standing in
+`ship:queued` owes no proven event, but the queue can finish with its PR after the shipper's watch
+ended. For each such task the sweep takes the last PR URL the task's own ledger names and runs the
+driver's single read, `ship reconcile <pr> --polls 1`. It relays the answer through `lane report`'s
+whole path (token map, served-leaf check, proof gate, floor and ledger lock), because `LANDED` and
+`EJECTED` are that verb's tokens and `lane transition` refuses them.
+
+- `landed` records `LANDED --pr <url>`, which folds the task to `shipped`, or back to `queued` on a
+  merge that carried `Part of #N` and closed nothing.
+- `ejected` records `EJECTED`, which spends one retry back into `build`.
+- `unresolved` and `parked` record nothing. Each is a `waiting` row carrying `answer`, so a sweep
+  never spends a wait and never meets the `55` floor, and it never parks a lane.
+- A task whose ledger names no PR URL, or a read that exited non-zero or named no known outcome, is an
+  `unreadable` row that appended nothing.
+- Its rows are `settled` (appended) and `settleable` (`--check` ran the read and withheld the
+  append). Each carries `pr`, `answer` and `token`. The arm is ON by default, because it records an
+  answer and never a park, and it costs one read per lane in `ship:queued`.
+
 **Budget.** Budget a recoverable lane at TWO board reads: this sweep asks what the proof says, and
 `lane transition` asks again under its own gate before appending, which is that gate declining to
 take this sweep's word for it. Every other judged task costs one. `--check` pays the first read alone
@@ -1443,11 +1461,12 @@ Each row carries one verdict:
 - `contended` — `40`: another writer held this lane's ledger lock for the whole wait budget, so
   nothing was validated and nothing appended. The same event is still the right one and the sweep
   says so on stderr, which is why this is not bucketed with `refused`;
-- `current` — the lane is non-terminal and no active task stands in a leaf that owes a provable
-  event;
+- `settled` / `settleable` / `waiting` — the queue arm's rows, described above;
+- `current` — the lane is non-terminal, no active task stands in a leaf that owes a provable
+  event, and none waits in `ship:queued`;
 - `terminal` — the fold is done, so nothing is owed and no board read is spent;
-- `unreadable` — the lane record or its log could not be read, or the log does not replay. A row,
-  since nothing here caused it and nothing here can fix it;
+- `unreadable` — the lane record or its log could not be read, or the log does not replay, or a
+  queue-arm read did not answer. A row, since nothing here caused it and nothing here can fix it;
 - `unappended` — this run tried to append and could not.
 
 stdout is `{check, scanned, summary, lanes}`. Both default roots are swept unless `--root` names one;

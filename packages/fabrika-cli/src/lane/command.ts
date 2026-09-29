@@ -25,6 +25,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {localBranches} from "../io/git.ts";
 import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
+import {runReconcile as runShipReconcile} from "../ship/reconcile-verb.ts";
 import {sizeStopOnGitHub} from "../table/size-stop.ts";
 import {runSync, syncBoard} from "../table/sync-verb.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -78,7 +79,7 @@ import {runPush} from "./push-verb.ts";
 import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
 import {LEDGER_SPEND} from "./record.ts";
 import {recordBoard, runRecord} from "./record-verb.ts";
-import {runRecover} from "./recover-verb.ts";
+import {queueReadOf, runRecover} from "./recover-verb.ts";
 import {runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
@@ -2194,6 +2195,16 @@ const recover = leafCommand(
 				runRecover({
 					roots,
 					check,
+					// The driver's own `ship:queued` read: one look, never the shipper's horizon.
+					queue: (pr: number) =>
+						runShipReconcile({
+							pr,
+							polls: 1,
+							cadenceSeconds: 0,
+							repo: Option.getOrNull(repo),
+							json: true,
+							env: process.env,
+						}).pipe(Effect.map(queueReadOf)),
 					spawns: spawnReads,
 					prove: runProve,
 					parkCause,
@@ -2209,7 +2220,7 @@ const recover = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"recover",
-			"Records the event each lane's own artifact proves but its ledger never learned; prints JSON.",
+			"Records the event each lane's own artifact proves but its ledger never learned, and settles each ship:queued task from one `ship reconcile <pr> --polls 1` read: landed records LANDED, ejected records EJECTED, unresolved and parked record nothing; prints JSON.",
 			{
 				8: "an append did not land, UNKNOWN",
 				11: "a root could not be listed, UNKNOWN",
