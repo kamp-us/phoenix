@@ -416,7 +416,7 @@ const pipedInput = (stdin: unknown): Effect.Effect<string> => {
  * spawn, which cannot express "`git` works and `actionlint` is not installed").
  */
 export const fakeShell = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<readonly [RegExp, ScriptedExec]>,
 	fallback: ExecResult = {ok: false, stdout: "", reason: "unscripted command"},
 	unstartable: ReadonlyArray<RegExp> = [],
 	/** A shared sink both seams push to, so an ordering assertion can span them ({@link fakeSeams}). */
@@ -456,7 +456,7 @@ export const fakeShell = (
 					stdout: Stream.fromIterable([enc.encode(result.ok ? result.stdout : "")]),
 					stderr: Stream.fromIterable([enc.encode(result.ok ? "" : result.reason)]),
 					all: Stream.fromIterable([enc.encode(result.ok ? result.stdout : result.reason)]),
-					exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(result.ok ? 0 : 1)),
+					exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(exitCodeOf(result))),
 					isRunning: Effect.succeed(false),
 					kill: () => Effect.void,
 					getInputFd: () => Sink.drain,
@@ -558,6 +558,19 @@ export const once = (source: RegExp): RegExp => {
 export const okOut = (stdout: string): ExecResult => ({ok: true, stdout, reason: ""});
 
 export const errOut = (reason: string): ExecResult => ({ok: false, stdout: "", reason});
+
+/** A scripted spawn answer that may name its exit code; without one, a failure exits 1. */
+export type ScriptedExec = ExecResult & {readonly exitCode?: number};
+
+const exitCodeOf = (result: ScriptedExec): number => result.exitCode ?? (result.ok ? 0 : 1);
+
+/** A child that exits `code` having written `reason` to stderr — `git` dies on 128, for one. */
+export const exitOut = (code: number, reason = ""): ScriptedExec => ({
+	ok: false,
+	stdout: "",
+	reason,
+	exitCode: code,
+});
 
 /**
  * A tree with no `.fabrika.jsonc` in it — every config key resolves to its shipped default.
@@ -733,9 +746,9 @@ export const linkNext = (url: string): Record<string, string> => ({link: `<${url
  * shape says it, and the pattern reads it back — `gh …`/`git …` for a spawn, `METHOD <url>` for a
  * request.
  */
-export type Scripted = readonly [RegExp, ExecResult | HttpReply];
+export type Scripted = readonly [RegExp, ScriptedExec | HttpReply];
 
-const isReply = (answer: ExecResult | HttpReply): answer is HttpReply => "status" in answer;
+const isReply = (answer: ScriptedExec | HttpReply): answer is HttpReply => "status" in answer;
 
 /**
  * Both fakes off one script.
@@ -766,7 +779,7 @@ export const fakeSeams = (
 	/** Both seams' traffic in one order — the only place a "X happened before Y" claim can be read. */
 	readonly log: ReadonlyArray<string>;
 } => {
-	const spawns: Array<readonly [RegExp, ExecResult]> = [];
+	const spawns: Array<readonly [RegExp, ScriptedExec]> = [];
 	const replies: Array<readonly [RegExp, HttpReply]> = [];
 	for (const [pattern, answer] of script) {
 		if (isReply(answer)) replies.push([pattern, answer]);

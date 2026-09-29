@@ -1,6 +1,13 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
+import {
+	exitOut,
+	fakeHttpBy,
+	fakeSeams,
+	fakeShell,
+	okOut,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import type {Shell} from "./git.ts";
 import {
 	baseOrTrunk,
@@ -75,21 +82,88 @@ describe("trunkUnresolved", () => {
 	});
 });
 
+describe("readTrunk's memo", () => {
+	/** A transport whose first `repos/{repo}` answers are 502s and every later one names `main`. */
+	const flakyTrunk = (failures: number) => {
+		let asked = 0;
+		return fakeHttpBy((line) => {
+			if (!REPO_READ.test(line)) return {status: 500, body: '{"message":"unscripted request"}'};
+			asked += 1;
+			return asked <= failures
+				? {status: 502, body: '{"message":"Bad Gateway"}'}
+				: {status: 200, body: JSON.stringify({default_branch: "main"})};
+		});
+	};
+
+	const readTimes = (http: ReturnType<typeof flakyTrunk>, times: number) =>
+		Effect.runPromise(
+			Effect.provide(
+				Effect.forEach(Array.from({length: times}), () => resolveTrunk(ENV, null), {
+					concurrency: 1,
+				}),
+				[http.layer, fakeShell([]).layer],
+			),
+		);
+
+	it("reads repos/{repo} once per repo, however many callers ask", async () => {
+		const http = flakyTrunk(0);
+		const answers = await readTimes(http, 3);
+		expect(answers.map((answer) => answer._tag)).toEqual(["Ok", "Ok", "Ok"]);
+		expect(http.calls.filter((line) => REPO_READ.test(line))).toHaveLength(1);
+	});
+
+	it("does not remember a failed read — the next caller asks again", async () => {
+		const http = flakyTrunk(1);
+		const answers = await readTimes(http, 3);
+		expect(answers.map((answer) => answer._tag)).toEqual(["Failure", "Ok", "Ok"]);
+		expect(http.calls.filter((line) => REPO_READ.test(line))).toHaveLength(2);
+	});
+});
+
 describe("readOriginHead", () => {
-	const EXISTS = /^git rev-parse --verify --quiet refs\/remotes\/origin\/HEAD$/;
-	const NAMES = /^git symbolic-ref --short refs\/remotes\/origin\/HEAD$/;
+	const NAMES = /^git symbolic-ref --quiet --short refs\/remotes\/origin\/HEAD$/;
+	const LISTS = /^git for-each-ref --format=%\(refname\) refs\/remotes\/origin\/HEAD$/;
 
 	it("reads the branch this clone's origin/HEAD names", async () => {
-		const {value} = await run(readOriginHead, [
-			[EXISTS, okOut("abc\n")],
-			[NAMES, okOut("origin/main\n")],
-		]);
+		const {value} = await run(readOriginHead, [[NAMES, okOut("origin/main\n")]]);
 		expect(value).toEqual({_tag: "Ok", value: "main"});
 	});
 
-	it("answers null — a proven fact, not a failure — when no origin/HEAD is recorded", async () => {
-		const {value} = await run(readOriginHead, [[EXISTS, errOut("")]]);
+	it("answers null — a proven fact, not a failure — when git lists no origin/HEAD", async () => {
+		const {value} = await run(readOriginHead, [
+			[NAMES, exitOut(1)],
+			[LISTS, okOut("")],
+		]);
 		expect(value).toEqual({_tag: "Ok", value: null});
+	});
+
+	it("fails on an origin/HEAD that holds a bare commit, which records no branch", async () => {
+		const {value} = await run(readOriginHead, [
+			[NAMES, exitOut(1)],
+			[LISTS, okOut("refs/remotes/origin/HEAD\n")],
+		]);
+		expect(value._tag).toBe("Failure");
+	});
+
+	it("fails, never answering unset, when git cannot read the repository or the ref", async () => {
+		const notARepo = await run(readOriginHead, [
+			[NAMES, exitOut(128, "fatal: not a git repository (or any of the parent directories): .git")],
+		]);
+		expect(notARepo.value).toEqual({
+			_tag: "Failure",
+			reason: "fatal: not a git repository (or any of the parent directories): .git",
+		});
+		const corrupt = await run(readOriginHead, [
+			[NAMES, exitOut(128, "fatal: No such ref: refs/remotes/origin/HEAD")],
+		]);
+		expect(corrupt.value._tag).toBe("Failure");
+		expect(corrupt.calls.some((line) => LISTS.test(line))).toBe(false);
+	});
+
+	it("fails when git itself cannot start", async () => {
+		const seams = fakeSeams([], undefined, [NAMES]);
+		const value = await Effect.runPromise(Effect.provide(readOriginHead, seams.layer));
+		expect(value._tag).toBe("Failure");
 	});
 });
 

@@ -444,7 +444,7 @@ const open = leafCommand(
 	}),
 ).pipe(
 	Command.withShortDescription(
-		"The composite readout: menu, settings, wiring, board, readout, lanes, trunk.",
+		"Composite readout: menu, settings, wiring, board, readout, lanes, trunk.",
 	),
 	Command.withDescription(
 		[

@@ -70,6 +70,8 @@ this pool. Read the `excluded` histogram beside the pool: it counts why issues w
 `blocked`, this verb's own axis: an issue whose native `blocked_by` graph still names an open blocker
 that the parent epic's assembly branch does not already carry — the same discharged gate
 `build claim` runs, so the pool and the claim never state different facts about one edge.
+That graph is read in rank order only until `--limit` candidates survive, so `blocked` and
+`unreadable` count what the walk met, and `unread` counts the admitted candidates it never reached.
 Two refusals before claiming: a `type:decision`'s deliverable is a recorded choice
 (`/adr`'s, not yours), and a rendered-visual deliverable is outside this skill's modality
 (`build-ui`'s) — **do not claim either**. Each refusal has exactly one arm. The rendered-visual one
@@ -710,7 +712,7 @@ That ref is recomputed as base moves, so the tree you fetch is the merge of your
 conflicted. Neither case makes the red false; both mean you have not reproduced it yet.
 
 The shape that puts you here carries no textual conflict to warn you: a branch renames a symbol
-while main adds call sites on the old name, git merges both sides clean, and the merged file defines
+while the base adds call sites on the old name, git merges both sides clean, and the merged file defines
 the new name and calls the old one. It is invisible in the head blob and invisible in the diff, and
 it exists only in the merge ref. One epic's PR spent a whole repair round filing that correct FAIL
 as a gate misreading its own SHA, because the builder checked the head, found the symbol clean, and

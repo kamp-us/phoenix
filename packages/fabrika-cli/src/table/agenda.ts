@@ -19,9 +19,12 @@
  *   Tails with the flag's rec, its Stage and Size untouched.
  * - **A ruling is asked for as a pick.** A row whose issue waits on a person (`ready-for:human`)
  *   reads "needs your pick" with its options, never "yes".
+ * - **A ruling nobody built comes back.** An open issue carrying a ruling ({@link RuledUnbuilt}) is
+ *   a Tails candidate, oldest ruling first, until someone answers it at the table.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  * @ruling https://github.com/kamp-us/phoenix/issues/9989
+ * @ruling https://github.com/kamp-us/phoenix/issues/9872#issuecomment-5852556900
  */
 
 import type {AppetiteSizes, Size} from "../config/keys/appetite-sizes.ts";
@@ -41,6 +44,7 @@ import {readPlainSummary} from "../triage/plain-summary.ts";
 import {BET_STAGE} from "./bets.ts";
 import {type Flag, recOf} from "./flags.ts";
 import {type Group, issuesOf, membersOf} from "./group.ts";
+import type {RuledUnbuilt} from "./ruled.ts";
 import {FIELD} from "./shape.ts";
 import type {Row, Write} from "./sync.ts";
 import type {TableDay} from "./table-day.ts";
@@ -71,6 +75,8 @@ export type Reason =
 	| {readonly _tag: "Flagged"; readonly flags: ReadonlyArray<Flag>}
 	/** Left open under an epic that has closed. */
 	| {readonly _tag: "FollowUp"; readonly epic: number}
+	/** Ruled on, still open, and not built. */
+	| {readonly _tag: "Ruled"; readonly ruledAt: string}
 	/** Filed by someone who uses the product, and triaged. */
 	| {readonly _tag: "Customer"}
 	/** An epic with a pitch nobody has bet on. */
@@ -103,6 +109,8 @@ export interface CandidateInput {
 	readonly followUps: ReadonlyArray<FollowUp>;
 	/** The row flags on each running bet's head. */
 	readonly flagged: ReadonlyMap<number, ReadonlyArray<Flag>>;
+	/** Open issues whose ruling is not built yet, oldest ruling first. */
+	readonly ruled: ReadonlyArray<RuledUnbuilt>;
 	/** The table day the agenda is prepared for. */
 	readonly target: TableDay;
 	/** Issues the on-call board holds: never proposed at the table, not even standing. Empty with one board. */
@@ -163,7 +171,8 @@ const byPriority =
 
 /**
  * Every candidate in agenda order — section by section as `sections` lists them, each section
- * sorted p0 first — with rows already on this table's agenda ahead of all of them, and the
+ * sorted p0 first except Tails, which runs flagged bets, then rulings oldest first, then epic
+ * follow-ups — with rows already on this table's agenda ahead of all of them, and the
  * Customers reports that must be triaged first. An issue is a candidate once, in its first section.
  */
 export const candidatesOf = (
@@ -199,6 +208,15 @@ export const candidatesOf = (
 	for (const [head, flags] of [...input.flagged].sort(([a], [b]) => a - b)) {
 		if (open.has(head) && optionOf(rows.get(head), FIELD.stage) === BET_STAGE) {
 			push(TAILS, {issue: head, section: TAILS, reason: {_tag: "Flagged", flags}});
+		}
+	}
+	for (const one of input.ruled) {
+		if (fresh(one.issue)) {
+			push(TAILS, {
+				issue: one.issue,
+				section: TAILS,
+				reason: {_tag: "Ruled", ruledAt: one.ruledAt},
+			});
 		}
 	}
 	const followUps = [...input.followUps]
@@ -401,6 +419,8 @@ const baseRec = (reason: Reason, settings: TableSettings): string => {
 			return reason.flags.map((flag) => recOf(flag, settings)).join(" ");
 		case "FollowUp":
 			return `yes: finish what #${reason.epic} left open.`;
+		case "Ruled":
+			return `yes: you ruled on it ${reason.ruledAt.slice(0, 10)} and it is not built yet.`;
 		case "Customer":
 			return "yes: someone using the product reported it.";
 		case "Pitched":

@@ -412,8 +412,8 @@ registration and places the branch again, so the path it prints is always one yo
 run it at the top of any pass that is about to integrate rather than carrying a path you remembered.
 
 **A branch whose content already landed is the verb's problem, not yours.** An epic that ships an
-intermediate tail and still has phases left comes back to a branch holding nothing `main` lacks and
-conflicting with everything `main` took since — a base guaranteed to break every remaining child.
+intermediate tail and still has phases left comes back to a branch holding nothing the trunk lacks and
+conflicting with everything the trunk took since — a base guaranteed to break every remaining child.
 Every resume now fetches and asks whether the trunk already carries that branch's content, and a
 contained one is re-cut off the trunk in the same command that places the tree, with the reason on
 stderr. The question is content, not ancestry: every PR here lands as a squash, so a landed branch's
@@ -501,7 +501,7 @@ its worktree; inspect its named cause before retrying. Never replace it with a n
 
 **An epic child is briefed off the assembly branch, so the branch is refreshed before it and checked
 by it.** A child's worktree is cut from `epic/<lane_key>`, and that branch was cut once — so it runs
-whatever copy of fabrika it carried on the day it was cut, and a `lane` verb that landed on `main`
+whatever copy of fabrika it carried on the day it was cut, and a `lane` verb that landed on the trunk
 afterwards is simply not there. The shell then does real work, produces a real verdict, and cannot
 record it. Two steps close that, and neither is yours to type:
 
@@ -808,12 +808,12 @@ opening.
 
 **The `feat(epic):` prefix that title leads with is not decoration: release-please reads this
 title.** The repo squash-merges with `squash_merge_commit_title: COMMIT_OR_PR_TITLE`, so the title
-becomes the subject on `main`, and the node strategy classifies on the subject alone: an untyped one
+becomes the subject on the trunk, and the node strategy classifies on the subject alone: an untyped one
 is unroutable and a `chore`/`docs` one is hidden, either way dropping every package change the epic
 carried from the notes. The same rule binds a builder PR's title, and `feat` is read out of the same
 map both derivations use — [`pr-title.ts`](../../../../packages/fabrika-cli/src/build/pr-title.ts),
 where `type:epic` maps to the one shown type an epic earns by construction. Five epics landed before
-this under the literal `#<n> one-PR run`, whose subject on `main` is a lane key with no sentence in
+this under the literal `#<n> one-PR run`, whose subject on the trunk is a lane key with no sentence in
 it. `lane brief` still resolves the tail's PR through the body's links, not the title.
 
 Every later integration pushes the same branch and **appends that child's closing reference** to the
@@ -821,7 +821,7 @@ body, so the set of references tracks the set of landed children rather than the
 
 **Refresh the assembly branch before the tail enters review, so the review binds to a head the queue
 can take.** Nothing else moves this branch onto trunk: `lane assembly` cuts off the trunk on a
-first cut only and a resume fetches just to judge containment, so the branch drifts behind `main`
+first cut only and a resume fetches just to judge containment, so the branch drifts behind the trunk
 while the children build, and
 the queue ejects the tail for it — three times on one run. Run it from the assembly worktree, before
 you dispatch the tail's review:
@@ -851,8 +851,8 @@ PR *and* `epic/<lane_key>`, so the repair knows which branch it is repairing. Fo
 
 **The branch itself stays yours.** The repair builder pushes nothing and merges nothing — the
 assembly worktree is this driver's, and no spawned shell reaches it. So the common tail failure, an
-assembly gone stale against a moved `main`, is discharged by you with `lane refresh` from that
-worktree, above: it merges `main` into `epic/<lane_key>`, **merge, never rebase**, because every
+assembly gone stale against a moved trunk, is discharged by you with `lane refresh` from that
+worktree, above: it merges the trunk into `epic/<lane_key>`, **merge, never rebase**, because every
 landed child's range verdict is bound to the commits it names and a rebase rewrites all of them. A
 lane emitted before this cell landed does not grow one — its tail `FAIL` still points at `review`,
 and re-emitting is the only way to it.

@@ -14,7 +14,8 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/10030
  */
 import {Effect} from "effect";
-import {execCapture} from "./exec.ts";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import {execCapture, execExit} from "./exec.ts";
 import {type Api, onTransport, refusalText, resolveToken, restRead} from "./gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
 import {resolveRepo} from "./issues.ts";
@@ -40,15 +41,37 @@ export const TRUNK_FIX =
 export const trunkUnresolved = (reason: string): string =>
 	`cannot resolve the trunk: ${reason} — ${TRUNK_FIX}`;
 
-/** GitHub's default branch for `repo`, on a credential the caller already holds. */
+/**
+ * Trunks already read, per transport. `src/run.ts` provides one `HttpClient` per process, so this is
+ * a per-process memo there, while each test's fake transport starts cold with no reset hook to call.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10123
+ */
+const knownTrunks = new WeakMap<HttpClient.HttpClient, Map<string, Trunk>>();
+
+/**
+ * GitHub's default branch for `repo`, on a credential the caller already holds, read at most once per
+ * repo per transport. A failed read is not memoised: it is a transient answer, and the next caller
+ * asks again.
+ */
 export const readTrunk = (token: string, repo: string): Api<Attempt<Trunk>> =>
-	Effect.map(restRead(token, "GET", `repos/${repo}`), (outcome) => {
+	Effect.gen(function* () {
+		const client = yield* HttpClient.HttpClient;
+		const known = knownTrunks.get(client) ?? new Map<string, Trunk>();
+		knownTrunks.set(client, known);
+		const cached = known.get(repo);
+		if (cached !== undefined) return ok(cached);
+
+		const outcome = yield* restRead(token, "GET", `repos/${repo}`);
 		if (outcome._tag === "Unreachable") return fail(outcome.reason);
 		if (outcome.status < 200 || outcome.status >= 300) return fail(refusalText(outcome));
 		const name = isRecord(outcome.body) ? outcome.body.default_branch : undefined;
-		return typeof name === "string" && name.trim() !== ""
-			? ok(trunkNamed(name.trim()))
-			: fail(`GitHub answered 200 for ${repo} but named no default branch`);
+		if (typeof name !== "string" || name.trim() === "") {
+			return fail(`GitHub answered 200 for ${repo} but named no default branch`);
+		}
+		const trunk = trunkNamed(name.trim());
+		known.set(repo, trunk);
+		return ok(trunk);
 	});
 
 /**
@@ -89,26 +112,31 @@ export const baseOrTrunk = (
 /** How a `--base` flag's help names its default. */
 export const TRUNK_DEFAULT_HELP = "the trunk, origin/<the repo's GitHub default branch>";
 
-/** The branch this clone's `origin/HEAD` names, or `null` when git has recorded none. */
+const ORIGIN_HEAD = `refs/remotes/${TRUNK_REMOTE}/HEAD`;
+
+/**
+ * The branch this clone's `origin/HEAD` names, or `null` only when git proves it records none.
+ *
+ * `git symbolic-ref --quiet` exits 1 both when the ref is absent and when it holds a bare commit, so
+ * a `for-each-ref` listing splits those two. Every other exit — not a repository, a corrupt ref — and
+ * a `git` that cannot start are failures: a read that did not happen proves nothing is recorded.
+ */
 export const readOriginHead: Shell<Attempt<string | null>> = Effect.gen(function* () {
-	const exists = yield* execCapture("git", [
-		"rev-parse",
-		"--verify",
-		"--quiet",
-		`refs/remotes/${TRUNK_REMOTE}/HEAD`,
-	]);
-	if (!exists.ok) return ok(null);
-	const r = yield* execCapture("git", [
-		"symbolic-ref",
-		"--short",
-		`refs/remotes/${TRUNK_REMOTE}/HEAD`,
-	]);
-	if (!r.ok) return fail(r.reason);
-	const ref = r.stdout.trim();
-	const prefix = `${TRUNK_REMOTE}/`;
-	return ref.startsWith(prefix) && ref.length > prefix.length
-		? ok(ref.slice(prefix.length))
-		: fail(`\`git symbolic-ref\` named "${ref}", which is not an ${prefix}<branch> ref`);
+	const named = yield* execExit("git", ["symbolic-ref", "--quiet", "--short", ORIGIN_HEAD]);
+	if (named._tag === "Unstartable") return fail(named.reason);
+	if (named.code === 0) {
+		const ref = named.stdout.trim();
+		const prefix = `${TRUNK_REMOTE}/`;
+		return ref.startsWith(prefix) && ref.length > prefix.length
+			? ok(ref.slice(prefix.length))
+			: fail(`\`git symbolic-ref\` named "${ref}", which is not an ${prefix}<branch> ref`);
+	}
+	if (named.code !== 1) return fail(named.reason);
+	const listed = yield* execCapture("git", ["for-each-ref", "--format=%(refname)", ORIGIN_HEAD]);
+	if (!listed.ok) return fail(listed.reason);
+	return listed.stdout.trim() === ""
+		? ok(null)
+		: fail(`${ORIGIN_HEAD} holds a commit, not the name of a branch`);
 });
 
 /** How this clone's `origin/HEAD` stands against the trunk. */

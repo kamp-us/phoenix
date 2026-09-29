@@ -9,7 +9,14 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeShell, unconfigured} from "../fakes.test-support.ts";
 import type {ChildOutcome, ChildRequest} from "../io/exec.ts";
-import {absent, type ListedIssue, present, type TimelineFacts, unknown} from "../io/issues.ts";
+import {
+	absent,
+	type CommentRecord,
+	type ListedIssue,
+	present,
+	type TimelineFacts,
+	unknown,
+} from "../io/issues.ts";
 import type {
 	FieldValue,
 	ItemFieldValue,
@@ -23,6 +30,7 @@ import {emit, type Instant, type LaneRecord} from "../wire/lane-record.ts";
 import {checkMarker} from "./check.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {type PrepBoard, runPrep} from "./prep-verb.ts";
+import {rulingComment} from "./ruled.test-support.ts";
 import {ORIGINS, OUTCOMES, STAGES} from "./shape.ts";
 import {spy} from "./spy.test-support.ts";
 import type {SyncNode} from "./sync.ts";
@@ -108,6 +116,8 @@ interface IssueSpec {
 	readonly blockedBy?: ReadonlyArray<number>;
 	readonly records?: ReadonlyArray<LaneRecord>;
 	readonly timeline?: TimelineFacts;
+	/** The comments a ruling is read from, with their authors. */
+	readonly rulings?: ReadonlyArray<CommentRecord>;
 }
 
 type Cells = Readonly<Record<string, string | number>>;
@@ -368,6 +378,8 @@ const world = (
 				return source(request);
 			}),
 		deciders: () => Effect.succeed({_tag: "Roster" as const, logins: new Set([OWNER])}),
+		rulings: (_repo, number) =>
+			Effect.succeed({_tag: "Ok" as const, value: issues[number]?.rulings ?? []}),
 		statusUpdates: () => Effect.sync(() => ok([...updates])),
 		openIssues: () => Effect.succeed({_tag: "Ok" as const, value: listed()}),
 		followUps: () =>
@@ -764,6 +776,88 @@ describe("table prep with no .fabrika.jsonc", () => {
 		expect(reads.filter((number) => number === 31)).toHaveLength(2);
 		expect(posts).toHaveLength(0);
 		expect([...items.keys()].sort((a, b) => a - b)).toEqual([70, 71, 80, 90]);
+	});
+});
+
+describe("table prep's ruled-unbuilt Tails", () => {
+	const DECISION = ["type:decision", "status:triaged", "ready-for:agent"];
+	const RULED: Readonly<Record<number, IssueSpec>> = {
+		...ISSUES,
+		100: {labels: DECISION, rulings: [rulingComment(REPO, 100, "2026-09-20T00:00:00Z", OWNER)]},
+		101: {labels: DECISION, rulings: [rulingComment(REPO, 101, "2026-09-02T00:00:00Z", OWNER)]},
+		102: {labels: DECISION},
+		103: {labels: DECISION, rulings: [rulingComment(REPO, 103, "2026-09-01T00:00:00Z", "a-bot")]},
+		104: {
+			open: false,
+			labels: DECISION,
+			rulings: [rulingComment(REPO, 104, "2026-08-01T00:00:00Z", OWNER)],
+		},
+	};
+
+	it("lists each open ruled issue under Tails, oldest ruling first, and names them in the update", async () => {
+		const {board, cell, posts} = world(RULED);
+		const out = await prep(board);
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		const agenda = JSON.parse(out.stdout).agenda as ReadonlyArray<AgendaOut>;
+		expect(agenda.map((row) => `${row.section} #${row.issue}`).slice(0, 4)).toEqual([
+			"Tails #70",
+			"Tails #101",
+			"Tails #100",
+			"Tails #11",
+		]);
+		expect(agenda.some((row) => [102, 103, 104].includes(row.issue))).toBe(false);
+		expect(cell(101, "Rec")).toBe("yes: you ruled on it 2026-09-02 and it is not built yet.");
+		expect(cell(101, "Stage")).toBe("proposed");
+		expect(posts[0]?.body).toContain(
+			"- Ruled, not built, oldest ruling first: #101 (2026-09-02), #100 (2026-09-20)",
+		);
+		expect(out.stderr).toContain(
+			"table prep: ruled and not built, oldest ruling first: #101, #100.",
+		);
+	});
+
+	it("never re-proposes a ruled issue someone already answered or put in a lane", async () => {
+		const {board} = world(RULED, {
+			...ROWS,
+			100: {Stage: "not now", Section: "Tails", "Table day": PREVIOUS, Rec: "yes."},
+			101: {Stage: "in lane", Section: "Outside the bets"},
+		});
+		const agenda = JSON.parse((await prep(board)).stdout).agenda as ReadonlyArray<AgendaOut>;
+
+		expect(agenda.some((row) => row.issue === 100 || row.issue === 101)).toBe(false);
+	});
+
+	it("refuses and writes nothing when a ruled issue's comments cannot be read", async () => {
+		const {board, posts, items} = world(RULED);
+		const out = await prep({
+			...board,
+			rulings: (repo, number) =>
+				number === 101
+					? Effect.succeed({_tag: "Failure" as const, reason: "gh timed out"})
+					: board.rulings(repo, number),
+		});
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain(
+			"cannot read #101's comments for a ruling: gh timed out",
+		);
+		expect(posts).toHaveLength(0);
+		expect([...items.keys()].sort((a, b) => a - b)).toEqual([70, 71, 80, 90]);
+	});
+
+	it("refuses when the control-plane roster that says whose ruling counts cannot be read", async () => {
+		const {board, posts} = world(RULED);
+		const out = await prep({
+			...board,
+			deciders: () => Effect.succeed({_tag: "Unread" as const, reason: "CODEOWNERS unreadable"}),
+		});
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain(
+			"cannot tell which rulings stand: CODEOWNERS unreadable",
+		);
+		expect(posts).toHaveLength(0);
 	});
 });
 
