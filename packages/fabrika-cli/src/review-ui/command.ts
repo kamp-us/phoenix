@@ -190,7 +190,7 @@ const render = leafCommand(
 			"  13: a surface threw during render",
 			"  14: a surface is unreachable",
 			"  15: a capture is invalid",
-			"  16: no preview-deploy comment, or a none marker at the head (the CANT-SEE route)",
+			"  16: no preview deploy at the head (the CANT-SEE route)",
 			"  19: a capture's PNG width is not the requested viewport's",
 			'  Derivation: the review-ui skill\'s contract.md, "review-ui render"',
 		].join("\n"),
