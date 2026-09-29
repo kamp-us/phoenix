@@ -13,7 +13,7 @@ import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {commitExists} from "../io/pulls.ts";
 import {authorityNote, readBlockingSet, reportedLine, unreadableCause} from "../review/blocking.ts";
-import {isFailing, statusOf} from "../review/rollup.ts";
+import {statusOf} from "../review/rollup.ts";
 import {latestPerContext, listRunsAtHead, listShipCheckRuns} from "../ship/github.ts";
 import {
 	badNumber,
@@ -130,14 +130,7 @@ export const runLogs = (
 		}
 		const latest = latestPerContext(enumerated.value.runs);
 		notices.push(authorityNote(VERB, target.pull.baseRef, authority.set));
-		notices.push(
-			...reportedLine(
-				VERB,
-				latest
-					.filter((run) => !authority.set.blocks(run.name) && isFailing(run))
-					.map((run) => run.name),
-			),
-		);
+		notices.push(...reportedLine(VERB, authority.set, latest));
 		const failing = latest
 			.filter((run) => authority.set.blocks(run.name))
 			.filter((run) => run.status === "completed" && statusOf(run) !== "success")

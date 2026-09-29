@@ -191,10 +191,20 @@ describe("the lines a verb prints about its authority", () => {
 	});
 
 	it("names every non-required red, and says nothing when there is none", () => {
-		expect(reportedLine("ship checks", ["Analyze (python)", "deploy (web)"])).toEqual([
+		const set = blockingSet(["ci-required"]);
+		const red = (name: string) => ({name, status: "completed", conclusion: "failure"});
+		expect(
+			reportedLine("ship checks", set, [
+				red("deploy (web)"),
+				red("Analyze (python)"),
+				red("ci-required"),
+				{name: "e2e", status: "queued", conclusion: null},
+				{name: "lint", status: "completed", conclusion: "success"},
+			]),
+		).toEqual([
 			"ship checks: failing outside the required set: Analyze (python), deploy (web) — reported, never blocking.",
 		]);
-		expect(reportedLine("ship checks", [])).toEqual([]);
+		expect(reportedLine("ship checks", set, [red("ci-required")])).toEqual([]);
 	});
 });
 

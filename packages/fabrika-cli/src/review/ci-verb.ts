@@ -1,6 +1,11 @@
 /**
  * `review ci` — the live check-run rollup at a head, fail-closed on incomplete enumeration.
  *
+ * The rollup judges only the runs the base branch's declared required set names
+ * (`./blocking.ts`, the authority `ship checks` judges by too). A red outside that set is named on the
+ * notes channel and never settles `--wait`, so a repository-wide red cannot end the wait while the
+ * required checks are still queued behind it.
+ *
  * v1's CI-at-head read was dispatch-prompt-dependent: a gate ruled on a live RED check as a prose
  * question because one sentence was omitted. This verb is that read made structural, and its
  * refusals are what keep it honest — zero declared runs is a vacuous green, an enumeration short
@@ -23,6 +28,8 @@
  * return on the first read rather than burning the budget. The governance floor is such a state on
  * both of its rollups — `governance-owed` on the `pending` one, `governance-stale` on the `red`
  * (`./governance-owed.ts`).
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9570#issuecomment-5753839456
  */
 import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -302,12 +309,7 @@ export const runCi = (
 			const rollup: Rollup = owedRollup(rollupOf(blocked), reporting);
 			notes.push(...reportingNote(VERB, base, blocking, reporting));
 			notes.push(...namedLines(VERB, runs, blocking));
-			notes.push(
-				...reportedLine(
-					VERB,
-					runs.filter((run) => !blocking.blocks(run.name) && isFailing(run)).map((run) => run.name),
-				),
-			);
+			notes.push(...reportedLine(VERB, blocking, runs));
 			// A red rollup is already the answer a caller must act on, so the coverage question is asked
 			// only where it changes one: `green` and `pending` are the two words that read as "nothing to
 			// do here", and both are wrong over bytes no gate inspected.
