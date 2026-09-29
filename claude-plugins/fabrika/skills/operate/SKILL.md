@@ -1876,6 +1876,31 @@ machine. On a lane emitted before the rename, `frozen` is the spent-budget fallt
 `human:epic-review` is the tail's, so both of those park for a granted round too. Every other error
 final has no door and ends `LANE-TERMINAL`.
 
+**A `diagnosed` lane whose issue triage has since rewritten gets a fresh lane, and the verbs are
+yours to run.** The old ledger is final, so `lane open` refuses at `14` while it stands in the key.
+
+Whether the issue was re-triaged is not a read you make. You are type-blind, so you never judge it off
+labels or the body, and no verb serves it yet. It reaches you as one fact your caller relays: the
+brief that handed you this key says the issue was re-triaged since the diagnosis. That is the whole
+trigger. Without it, a `diagnosed` fold ends `LANE-TERMINAL` as below.
+
+With it, move the old lane aside, claim again, and boot:
+
+```bash
+node <fabrika> lane archive $lane_key --retriaged --token <your lane-claim token>
+node <fabrika> lane claim $lane_key
+node <fabrika> lane open $lane_key
+```
+
+The archive retracts the claim you held, so the second line is not optional: without it the fresh
+lane runs with no marker, a second driver can claim it beside you, and it takes no seat against the
+cap. Keep the token that claim prints for the rest of the run, and continue at step 2.
+
+The archive moves only a lane that folds to `diagnosed` with no pull request and no spent round in
+its log, and keeps the log byte for byte. Everything else refuses at `73` and stays where it is. A
+second re-triage of one issue takes the next `<lane>.archived-<n>` slot. This is an engine step,
+never an ask for the founder, so route any refusal by its code.
+
 **A `complete` fold over an issue the board still calls buildable is a defect, and it has a repair.**
 It means the merge behind the ship's `DONE` carried `Part of #N` and the recorded line never said so,
 so the lane folded past the arm that would have sent it round again. Report the terminal
@@ -2030,7 +2055,9 @@ Every run ends as exactly one of — each naming what was recorded and what the 
 `diagnosed`, `board:cancelled`, `board:landed`, a chore's `swept`, or a `tripped` whose error task
 has no door; no event recorded on top of a final fold; `lane record`'s answer named — on an issue
 lane the record `posted` or `unchanged`, or the `4`, `5`, `9` or UNKNOWN code that kept it off; on a
-chore lane the `lane history` bytes handed to the caller) ·
+chore lane the `lane history` bytes handed to the caller; a `diagnosed` fold your caller names as
+re-triaged is not this terminal, because `lane archive --retriaged`, `lane claim` and `lane open`
+boot it fresh — above) ·
 **`LANE-PARKED`** (the fold reads `blocked`, `human:*` or `frozen` — either it already did and no
 event was owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
 posted on the driven issue, and on a `tripped` fold the lane record beside it) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns
