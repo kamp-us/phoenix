@@ -23,6 +23,7 @@
  * classes, the M/R/D tiers — and was read as prior art, never called.
  */
 
+import {isClosingLine} from "./closing-keyword.ts";
 import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";
 
 declare const FIELD_TEXT: unique symbol;
@@ -154,7 +155,10 @@ const driftReason = (heading: Heading): string => {
 	return `the deviations heading has drifted — ${parts.join("; ")}`;
 };
 
-/** The lines under `heading`, up to the next heading outside a fence, or the end of the body. */
+/**
+ * The lines under `heading`, up to the next heading or closing-keyword line outside a fence, or the
+ * end of the body. A body's last line is often `Fixes #N`; it is the PR's link, never a deviation.
+ */
 const sectionOf = (lines: ReadonlyArray<string>, heading: Heading): ReadonlyArray<string> => {
 	const body: string[] = [];
 	let openFence: string | null = null;
@@ -167,10 +171,26 @@ const sectionOf = (lines: ReadonlyArray<string>, heading: Heading): ReadonlyArra
 			body.push(line);
 			continue;
 		}
-		if (openFence === null && ATX_HEADING.test(line)) break;
+		if (openFence === null && (ATX_HEADING.test(line) || isClosingLine(line))) break;
 		body.push(line);
 	}
 	return body;
+};
+
+/**
+ * The first non-blank line after a leading `None.`, with its 1-based body line — or `null` when the
+ * section does not open on `None.`. `None.` with anything after it is neither claim, and naming the
+ * trailing line is what tells an author who already wrote `None.` what to remove.
+ */
+const trailingAfterNone = (
+	section: ReadonlyArray<string>,
+	heading: Heading,
+): {readonly line: number; readonly text: string} | null => {
+	const nonBlank = section
+		.map((text, index) => ({line: heading.line + 1 + index, text: text.trim()}))
+		.filter(({text}) => text !== "");
+	const [first, next] = nonBlank;
+	return first !== undefined && NONE_RE.test(first.text) && next !== undefined ? next : null;
 };
 
 /**
@@ -294,6 +314,13 @@ export const read = (body: string): DeviationsRead => {
 		);
 	}
 	if (NONE_RE.test(text)) return {_tag: "Found", value: {_tag: "NoneDeclared"}};
+	const trailing = trailingAfterNone(section, heading);
+	if (trailing !== null) {
+		return malformed(
+			`"${NONE_TEXT}" is followed by other text in the section — declare nothing with "${NONE_TEXT}" alone, or replace it with "- " entries`,
+			`line ${trailing.line}: "${trailing.text}"`,
+		);
+	}
 
 	const entries: DeviationEntry[] = [];
 	for (const bullet of bulletsOf(section)) {

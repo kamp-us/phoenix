@@ -2891,7 +2891,10 @@ The guards, in order, all before any write:
    the same module `review deviations` resolves against, so a body this verb accepts can never
    fail that gate as malformed. That means: the heading is exactly `## Deviations`, and
    under it either the literal `None.` or one or more entries, each stating all four of
-   `**Said:**` / `**Did:**` / `**Why:**` / `**Disposition:**`. "None." is content, silence is not,
+   `**Said:**` / `**Did:**` / `**Why:**` / `**Disposition:**`. The section ends at the next
+   heading, at a line that is only a closing keyword (`Fixes #<n>`), or at the end of the body, so
+   the PR's link may sit below it; `None.` followed by any other text in the section is refused,
+   naming that line. "None." is content, silence is not,
    and a prose bullet is refused here rather than a review round later (the *truth* of the
    section stays the skill's — a verb can force the author to write, not to be
    honest); exactly one closing-keyword line, targeting `<number>` and matching `--partial`

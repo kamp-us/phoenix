@@ -95,7 +95,7 @@ export const problemParagraph = (body: string): string | null => {
 	return paragraph === "" ? null : paragraph;
 };
 
-/** GitHub's auto-closing keywords followed by an issue reference — `pr-body.ts`'s `CLOSING_RE`. */
+/** GitHub's auto-closing keywords followed by an issue reference — `wire/closing-keyword.ts`'s shape. */
 const CLOSING_REF = /\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)(\s+#\d+)\b/gi;
 
 /**
@@ -187,7 +187,7 @@ export type AboutRead =
  *
  * The verification is `pr-body.ts`'s own readers, so the answer is not "this looks safe" but "the
  * guard's predicates were run over it". Both reads should be empty by construction, and that is the
- * point: they are what keeps the swap list matched to `CLOSING_RE` and the quoting intact as this
+ * point: they are what keeps the swap list matched to `wire/closing-keyword.ts` and the quoting intact as this
  * module changes, rather than leaving either to be noticed at a refused `build pr`.
  */
 export const aboutSection = (epic: number, body: string): AboutRead => {
