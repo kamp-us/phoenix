@@ -1,9 +1,13 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeSeams, okOut, once, type Scripted} from "../fakes.test-support.ts";
+import type {StdinRead} from "../io/stdin.ts";
 import {
+	BAD_SECTIONS,
 	CLAIM_NOT_MINE,
+	EMPTY_STDIN,
 	HEAD_DROPS_REMOTE,
+	LEAKED_PATH,
 	PRECONDITION_UNKNOWN,
 	REF_NOT_MOVED,
 	UNSAFE_PUSH,
@@ -12,6 +16,7 @@ import {
 } from "./codes.ts";
 import {
 	comments,
+	GH_TOKEN_ENV,
 	GIT_DIRS,
 	HEAD,
 	issue,
@@ -19,6 +24,7 @@ import {
 	marker,
 	NONCE,
 	OLD_HEAD,
+	pull,
 	served,
 } from "./fixtures.test-support.ts";
 import {runPush} from "./push-verb.ts";
@@ -40,9 +46,30 @@ const PRESENT = /^git rev-parse --verify --quiet /;
 const FETCH = /^git fetch /;
 const LOG = /^git log /;
 
-const LANE = `build/4312-editor-focus-loss-${NONCE}`;
+const OPEN_PULLS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\?state=open&head=/;
+const REPO_META = /^GET https:\/\/api\.github\.com\/repos\/o\/r$/;
+const CREATE = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/pulls$/;
+const READ_BACK = /^GET \S+\/repos\/o\/r\/pulls\/4318$/;
 
-const LANE_OK: ReadonlyArray<Scripted> = [
+const LANE = `build/4312-editor-focus-loss-${NONCE}`;
+const BODY = "Fixes #4312\n\nEditor focus now survives a save.\n\n## Deviations\nNone.\n";
+const PR_URL = "https://example.test/o/r/pull/4318";
+
+/** The PR half on a fresh lane whose PR is already open: the push tests' default. */
+const PR_EXISTS: ReadonlyArray<Scripted> = [
+	[OPEN_PULLS, served([{number: 4318, html_url: PR_URL}])],
+];
+
+/** The PR half on a fresh lane with no PR yet: the create and its read-back. */
+const PR_OPENS: ReadonlyArray<Scripted> = [
+	[OPEN_PULLS, served([])],
+	[REPO_META, served({default_branch: "main"})],
+	[CREATE, served({number: 4318, html_url: PR_URL})],
+	[READ_BACK, pull({body: BODY})],
+];
+
+/** The lane's own reads, before any PR row. */
+const LANE_READS: ReadonlyArray<Scripted> = [
 	[REV_PARSE, GIT_DIRS],
 	[BRANCH, okOut(`${LANE}\n`)],
 	[ISSUE, issue()],
@@ -54,15 +81,21 @@ const LANE_OK: ReadonlyArray<Scripted> = [
 	[PRESENT, okOut(`${OLD_HEAD}\n`)],
 ];
 
+const LANE_OK: ReadonlyArray<Scripted> = [...LANE_READS, ...PR_EXISTS];
+
 const options = {
 	forceWithLease: false,
 	dropRemoteCommits: false,
+	partial: false,
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
+	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e", ...GH_TOKEN_ENV} as Record<
 		string,
 		string | undefined
 	>,
+	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
 };
+
+const withBody = (text: string) => ({stdin: Effect.succeed<StdinRead>({_tag: "Text", text})});
 
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(Effect.provide(runPush({...options, ...overrides}), fakeSeams(script).layer));
@@ -276,6 +309,171 @@ describe("runPush", () => {
 		]);
 		const out = await Effect.runPromise(Effect.provide(runPush(options), seams.layer));
 		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(seams.calls.some((line) => PUSH.test(line))).toBe(false);
+	});
+});
+
+/** The push rows of a fresh lane whose ref moves: remote absent before, at HEAD after. */
+const moves = (): ReadonlyArray<Scripted> => [
+	[/^git remote$/, okOut("origin\n")],
+	[once(LS_REMOTE), okOut("")],
+	[LS_REMOTE, okOut(`${HEAD}\trefs/heads/${LANE}\n`)],
+	[PUSH, okOut("")],
+];
+
+describe("runPush — a fresh lane opens its PR in the same step (#10015)", () => {
+	it("opens the PR after the ref is proven moved, with the verdict line still last", async () => {
+		const seams = fakeSeams([...LANE_READS, ...moves(), ...PR_OPENS]);
+		const out = await Effect.runPromise(Effect.provide(runPush(options), seams.layer));
+		expect(out.code).toBe(0);
+		const lines = out.stdout.trimEnd().split("\n");
+		expect(lines.at(-1)).toBe("PUSH-VERDICT: MOVED");
+		expect(JSON.parse(lines.at(-2) ?? "null")).toEqual({
+			answer: "opened",
+			number: 4318,
+			url: PR_URL,
+		});
+		const create = seams.requests.findIndex((line) => CREATE.test(line));
+		expect(JSON.parse(seams.bodies[create] ?? "null")).toMatchObject({body: BODY, head: LANE});
+	});
+
+	it("answers `existing` on a re-run over an open PR, and opens no second one", async () => {
+		const seams = fakeSeams([...LANE_READS, ...moves(), ...PR_EXISTS]);
+		const out = await Effect.runPromise(Effect.provide(runPush(options), seams.layer));
+		expect(out.code).toBe(0);
+		const lines = out.stdout.trimEnd().split("\n");
+		expect(JSON.parse(lines.at(-2) ?? "null")).toEqual({
+			answer: "existing",
+			number: 4318,
+			url: PR_URL,
+		});
+		expect(seams.requests.some((line) => CREATE.test(line))).toBe(false);
+	});
+
+	it.each([
+		[
+			"a machine-local path",
+			"Fixes #4312\n\nsee /Users/someone/notes.md\n\n## Deviations\nNone.\n",
+			LEAKED_PATH,
+		],
+		[
+			"a stray closing keyword",
+			BODY.replace("## Deviations", "Also closes #999.\n\n## Deviations"),
+			BAD_SECTIONS,
+		],
+		["an empty body", "  \n", EMPTY_STDIN],
+	])("refuses %s as build pr does, and pushes and opens nothing", async (_, body, code) => {
+		const seams = fakeSeams([...LANE_READS, ...moves(), ...PR_OPENS]);
+		const out = await Effect.runPromise(
+			Effect.provide(runPush({...options, ...withBody(body)}), seams.layer),
+		);
+		expect(out.code).toBe(code);
+		expect(out.stderr.at(-1)).toMatch(/^build push: /);
+		expect(seams.calls.some((line) => PUSH.test(line))).toBe(false);
+		expect(seams.requests.some((line) => CREATE.test(line))).toBe(false);
+	});
+
+	it("carries --partial to the create: a Part-of body opens, a Fixes body is refused unpushed", async () => {
+		const partialBody = BODY.replace("Fixes #4312", "Part of #4312");
+		const opened = fakeSeams([
+			...LANE_READS,
+			...moves(),
+			...PR_OPENS.map(
+				([pattern, reply]): Scripted =>
+					pattern === READ_BACK ? [pattern, pull({body: partialBody})] : [pattern, reply],
+			),
+		]);
+		const ok = await Effect.runPromise(
+			Effect.provide(runPush({...options, partial: true, ...withBody(partialBody)}), opened.layer),
+		);
+		expect(ok.code).toBe(0);
+		const create = opened.requests.findIndex((line) => CREATE.test(line));
+		expect(JSON.parse(opened.bodies[create] ?? "null")).toMatchObject({body: partialBody});
+
+		const refused = fakeSeams([...LANE_READS, ...moves(), ...PR_OPENS]);
+		const out = await Effect.runPromise(
+			Effect.provide(runPush({...options, partial: true}), refused.layer),
+		);
+		expect(out.code).toBe(BAD_SECTIONS);
+		expect(refused.calls.some((line) => PUSH.test(line))).toBe(false);
+	});
+
+	it("opens no PR when the ref did not move", async () => {
+		const seams = fakeSeams([
+			...LANE_READS,
+			[/^git remote$/, okOut("origin\n")],
+			[LS_REMOTE, okOut("")],
+			[PUSH, okOut("")],
+			...PR_OPENS,
+		]);
+		const out = await Effect.runPromise(Effect.provide(runPush(options), seams.layer));
+		expect(out.code).toBe(REF_NOT_MOVED);
+		expect(seams.requests.some((line) => CREATE.test(line) || OPEN_PULLS.test(line))).toBe(false);
+	});
+
+	it("refuses a failed create on 8 with the push report on stderr, so a re-run is the route", async () => {
+		const out = await run([
+			...LANE_READS,
+			...moves(),
+			[OPEN_PULLS, served([])],
+			[REPO_META, served({default_branch: "main"})],
+			[CREATE, served({message: "Gateway timeout"}, 504)],
+		]);
+		expect(out.code).toBe(WRITE_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr).toContain("build push: PUSH-VERDICT: MOVED");
+		expect(out.stderr.at(-1)).toContain("re-run, the verb re-checks for an existing PR first");
+	});
+});
+
+describe("runPush — a repair lane's PR is already open", () => {
+	const REPAIR = `build/pr-4310-${NONCE}`;
+	const REPAIR_READS: ReadonlyArray<Scripted> = [
+		[REV_PARSE, GIT_DIRS],
+		[BRANCH, okOut(`${REPAIR}\n`)],
+		[/^GET \S+\/repos\/o\/r\/issues\/4310$/, issue({number: 4310})],
+		[
+			/^GET \S+\/repos\/o\/r\/issues\/4310\/comments/,
+			comments({id: 1, body: marker("s-9f2e", LANE_UUID)}),
+		],
+		[PERM, WRITE],
+		[HEAD_SHA, okOut(`${HEAD}\n`)],
+		[UPSTREAM, okOut("origin/umut/fix-focus\n")],
+		[PRESENT, okOut(`${HEAD}\n`)],
+		[/^git remote$/, okOut("origin\n")],
+		[LS_REMOTE, okOut(`${HEAD}\trefs/heads/umut/fix-focus\n`)],
+		[ANCESTOR, okOut("")],
+		[PUSH, okOut("")],
+	];
+
+	it("reads no body and touches no PR", async () => {
+		let read = false;
+		const seams = fakeSeams(REPAIR_READS);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runPush({
+					...options,
+					forceWithLease: true,
+					stdin: Effect.sync((): StdinRead => {
+						read = true;
+						return {_tag: "Text", text: BODY};
+					}),
+				}),
+				seams.layer,
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(read).toBe(false);
+		expect(out.stdout.trimEnd().split("\n").at(-1)).toBe("PUSH-VERDICT: MOVED");
+		expect(seams.requests.some((line) => /\/pulls/.test(line))).toBe(false);
+	});
+
+	it("refuses --partial on 19 and pushes nothing", async () => {
+		const seams = fakeSeams(REPAIR_READS);
+		const out = await Effect.runPromise(
+			Effect.provide(runPush({...options, forceWithLease: true, partial: true}), seams.layer),
+		);
+		expect(out.code).toBe(UNSAFE_PUSH);
 		expect(seams.calls.some((line) => PUSH.test(line))).toBe(false);
 	});
 });
