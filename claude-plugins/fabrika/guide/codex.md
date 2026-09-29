@@ -50,15 +50,23 @@ When the repository also uses Claude Code, pick one of two setups:
 
 ## Enable interactive usage collection
 
-In a source checkout, merge the event entries from
-[codex-hooks.json](../../../packages/fabrika-cli/docs/codex-hooks.json) into the repository's
-`.codex/hooks.json`. Create that file if absent; retain any existing hooks. This uses Codex's
-supported repository hook path and writes no per-user configuration.
+In a source checkout, merge the event entries from the checkout's
+`packages/fabrika-cli/docs/codex-hooks.json` into the repository's `.codex/hooks.json`. Each of
+`PreToolUse`, `PostToolUse`, `SessionStart`, `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt`
+and `SessionEnd` gets one command hook running
+`node "$(git rev-parse --show-toplevel)/packages/fabrika-cli/src/spend/codex-hook.ts"`, with
+`"timeout": 3` on `Interrupt` and `SessionEnd`. Create the file if absent; retain any existing
+hooks. This uses Codex's supported repository hook path and writes no per-user configuration.
 
 Restart Codex, trust the repository, then review and trust these definitions with `/hooks`.
 Start Fabrika work normally. The hook binds the issue when Fabrika reads or claims it and replays
-usage at later callbacks. See [collection details](../../../packages/fabrika-cli/docs/codex-usage.md)
-for supported versions, missing coverage and recovery. Lane dispatch also collects without hooks.
+usage at later callbacks. Lane dispatch also collects without hooks.
+
+Collection reads Codex 0.153.4 and 0.154.0 session files; another version records incomplete
+coverage rather than guessing. Coverage is always `partial`, because readable files cannot prove
+that no unseen subagent ran. Usage lands in
+`.fabrika/spend-ledger.jsonl` in the primary checkout; `fabrika spend rollup` prints its totals
+with that coverage. A recording error prints a warning and never changes the task's result.
 
 ## Recover interrupted collection
 
@@ -85,13 +93,18 @@ The adapter creates a detached worktree, verifies its repository and commit, and
 repository's `dependencyReconciler` if declared. A repository requiring dependencies must declare
 that command in `.fabrika.jsonc`. Each child receives a fixed instruction to read the selected
 stage skills, followed by the emitted lane brief without changing its bytes. The child runs
-`codex exec --cd` there. Read the [dispatch contract](../../../packages/fabrika-cli/docs/codex-dispatch.md)
-for refusals, completion, and recovery.
+`codex exec --cd` there. `fabrika lane dispatch --help` lists its refusals by exit code.
+
+Exit zero from the child is not completion. Dispatch succeeds only when exactly one new terminal
+addresses the task and the lane's artifact proof confirms it; route from the lane state, not the
+dispatch exit code. Every worktree it creates stays on disk, and the child's output is kept beside
+the ledger as `dispatch-<task>.stdout` and `dispatch-<task>.stderr`. Read those and the worktree
+before retrying, and do not delete or reset a worktree just to retry. A killed dispatcher can leave
+its lock directory behind: confirm its process is gone before removing the lock.
 
 Codex's persistent model, reasoning, developer instructions, sandbox and approval configuration
 remain authoritative: the adapter overrides none of them. So a Codex-dispatched shell's model is
-the one Codex's own configuration resolves: the
-[adapter](../../../packages/fabrika-cli/src/lane/dispatch-verb.ts) runs `codex exec --cd <worktree> -`
+the one Codex's own configuration resolves: the adapter runs `codex exec --cd <worktree> -`
 with no `--model`, `--profile` or `-c` flag. Every role gets that same command, so there is no
 per-role model pin on this route; `reviewer` and `builder` run on the same configured model.
 Parent-chat transient settings are not a CLI configuration export; configure the child policy in
