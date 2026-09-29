@@ -3,8 +3,8 @@ import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, linkNext, type Scripted} from "../fakes.test-support.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {ENV, pull} from "./fixtures.test-support.ts";
-import {ADDED, MERGED, REMOVED} from "./queue.ts";
-import {runReconcile} from "./reconcile-verb.ts";
+import {ADDED, ARMED, MERGED, REMOVED} from "./queue.ts";
+import {ARM_SETTLE_FLOOR_SECONDS, runReconcile} from "./reconcile-verb.ts";
 
 /** The pull read is `../io/pulls.ts`'s, and it is served over HTTP. */
 const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4321$/;
@@ -44,6 +44,12 @@ const timeline = (...rows: ReadonlyArray<{event: string; at: string}>): HttpRepl
 	status: 200,
 	body: JSON.stringify(rows.map((row) => ({event: row.event, created_at: row.at}))),
 });
+/** An arm stamped this many seconds before the real clock the verb reads. */
+const armedAgo = (seconds: number) => ({
+	event: ARMED,
+	at: new Date(Date.now() - seconds * 1000).toISOString(),
+});
+
 /** The same page, but declaring a `next` — the read that can never prove it is complete. */
 const unexhaustedPage = (): HttpReply => ({
 	status: 200,
@@ -131,6 +137,59 @@ describe("runReconcile", () => {
 			],
 		);
 		expect(out.stdout).toBe("reconcile\tparked\t1\t0\n");
+	});
+
+	it("reports `unresolved` at --polls 1 while the arm is younger than the floor", async () => {
+		const out = await run(
+			[[PULL, PR]],
+			[
+				[RULES, withQueue],
+				[SUBJECTS, noSubjects],
+				[TIMELINE, timeline(armedAgo(514))],
+			],
+		);
+		expect(out.stdout).toBe("reconcile\tunresolved\t1\t0\n");
+	});
+
+	it("reports `unresolved` over a multi-poll watch while the arm is younger than the floor", async () => {
+		const out = await run(
+			[[PULL, PR]],
+			[
+				[RULES, withQueue],
+				[SUBJECTS, noSubjects],
+				[TIMELINE, timeline(armedAgo(60))],
+			],
+			{polls: 3},
+		);
+		expect(out.stdout).toBe("reconcile\tunresolved\t3\t0\n");
+	});
+
+	it("reports `parked` once the latest arm is older than the floor", async () => {
+		const out = await run(
+			[[PULL, PR]],
+			[
+				[RULES, withQueue],
+				[SUBJECTS, noSubjects],
+				[TIMELINE, timeline(armedAgo(ARM_SETTLE_FLOOR_SECONDS + 60))],
+			],
+		);
+		expect(out.stdout).toBe("reconcile\tparked\t1\t0\n");
+	});
+
+	it("measures from the latest arm, so a re-arm restarts the wait", async () => {
+		const out = await run(
+			[[PULL, PR]],
+			[
+				[RULES, withQueue],
+				[SUBJECTS, noSubjects],
+				[TIMELINE, timeline(armedAgo(ARM_SETTLE_FLOOR_SECONDS + 600), armedAgo(30))],
+			],
+		);
+		expect(out.stdout).toBe("reconcile\tunresolved\t1\t0\n");
+	});
+
+	it("keeps the floor above the 514 s GitHub was seen taking to queue an arm", () => {
+		expect(ARM_SETTLE_FLOOR_SECONDS).toBeGreaterThan(514);
 	});
 
 	it("reports `unresolved` off a queue, where a long dwell is ordinary", async () => {
