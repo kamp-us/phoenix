@@ -132,6 +132,16 @@ other namespace can read that way. The polarity rules, the
 content-digest binding and the whole `blocked` taxonomy are the verb's section
 (`fabrika wire doc-section --heading "ship gate" < <skill-base>/contract.md`).
 
+**Every route to a gate is one terminal, `ROUTED-REVIEW`, and it needs no `--cause`.** Absent,
+stale and unopened all say the same thing: a namespace the gate requires has no binding verdict at
+this head. So the token records `verdict-owed` by itself, and the lane leaves `ship` as a named park
+the driver can act on. A head that moved after review is the usual way to get here. A `FAIL` is
+never this route: it goes to repair as `ROUTED-REPAIR`.
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token ROUTED-REVIEW --pr <pr-url>
+```
+
 **Your reading of `blocked` is not the only thing enforcing the governance floor.**
 `.github/workflows/governance-floor.yml` runs `fabrika ship floor --publish-check` on every PR and
 publishes the answer as the `governance floor at head` check-run: pending while no verdict has been
