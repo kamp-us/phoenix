@@ -27,7 +27,8 @@ on stderr.
 Writes used — lane-ledger appends, a booted lane's own machine document brought up to the committed
 template through `lane migrate <lane>`, which is the form that writes that lane and no other,
 comments on the driven issue, the driven issue's row fields on the Projects table that `lane record`
-writes through `table sync`, whatever a recipe verb writes on
+writes through `table sync`, the `ship disarm --site post-enqueue` a `parked` read at
+`ship:queued` owes, whatever a recipe verb writes on
 its own account (step 3's chore row), and, **on an epic lane only**, that run's assembly branch: you
 merge a passing child into it, push it, and open the one draft PR (step 2's `integrate`). Never a
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
@@ -878,8 +879,9 @@ on its own clock, and one PR took ~1.7x the shipper's ~480s horizon to do it. So
 horizon stays exactly where it is and the waiting happens out here, one re-read per driver pass, in
 `ship:queued` — a queue dwell is a wait, not a park.
 
-You spawn nothing. One read answers the whole cell — `--polls 1` makes it a single look rather than
-another watch, so this costs a driver pass, not a horizon:
+You spawn nothing. One read answers the whole cell (only a `parked` answer adds a write, the
+disarm in the table below). `--polls 1` makes it a single look rather than another watch, so this
+costs a driver pass, not a horizon:
 
 ```bash
 node <fabrika> ship reconcile <pr> --polls 1
@@ -908,9 +910,9 @@ alone.
 | `reconcile` says | Record — `lane report … --token` |
 | --- | --- |
 | `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped`, unless the merge carried `Part of #N` and closed nothing, and then it lands back in `queued` (below). **On an epic lane's tail there is no such arm and none is wanted**: a tail body that does not close its epic is refused where it is written, so the tail's `DONE` folds to `shipped` either way |
-| `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own. This is the one record the floor below can refuse |
+| `unresolved` | `--token UNRESOLVED` — still queued, or armed and not yet past `ship reconcile`'s floor; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own. This is the one record the floor below can refuse |
 | `ejected` | `--token EJECTED` — the PR left the queue un-merged, which is repair work: the machine spends a retry back into `build` |
-| `parked` | `--token UNKNOWN` — the timeline shows a PR neither queued, ejected nor merged, and an unread queue state is UNKNOWN, never a wait to keep sitting in |
+| `parked` | disarm first, then record — the arm has sat unqueued past `ship reconcile`'s floor, so the enqueue did not take effect, and a live arm left standing enqueues ungated later. Run `node <fabrika> ship disarm <pr> --site post-enqueue` before `lane report`. On `kept live-queued` the PR entered the queue between the two reads: `--token UNRESOLVED`. On any other answer, `--token UNKNOWN`. A disarm exit `8` or `11` also records `UNKNOWN`, and your terminal line carries `merge intent: NOT cleared` |
 
 **To settle every queued lane at once, run the sweep instead of an operator per lane.** A PR that
 merges after the shipper's watch leaves its lane in `ship:queued` with nothing left to do but record
@@ -1647,10 +1649,11 @@ verb reads the cause for you:
 node <fabrika> recipe unpark <lane-key> --task <task>
 ```
 
-The table it keys on holds ten rows today: `human:cp-approval` twice — once keyed on
+The table it keys on holds eleven rows today: `human:cp-approval` twice — once keyed on
 `awaiting-cp-approval`, the owner-approval wait, and once on `head-ci-red`, which is the shipper's
 route to `heal-ci` folding to the same leaf —
-`human:queue-stall`, and `blocked` carrying one of `worktree-holds-branch`, `spawn-dead`,
+`human:queue-stall`, and `blocked` carrying one of `head-ci-red` (a reviewer that parked on a red
+head, cleared on a green one with no verdict read), `worktree-holds-branch`, `spawn-dead`,
 `no-rendered-delta`, `no-preview-routed`, `tree-hijacked`, `claim-stranded`, or `campaign-paused`, a legacy row that
 clears a lane parked on it before campaigns became themes and that no park records now. Reading which one
 matched is the verb's answer, not a list you maintain here — the rows live in
@@ -1700,7 +1703,9 @@ without one, every red holds at `13`, and the refusal says `no FAIL arm`. On a c
 before the arm existed, run `node <fabrika> lane migrate <lane-key>` and then `recipe unpark` again.
 When `lane migrate` answers `generated`, the lane runs a generated machine, such as an epic tail's,
 which is never migrated and has no such arm. There the park clears only on a green head, so a
-`logic` red on it is a park for a human, not a migrate.
+`logic` red on it is a park for a human, not a migrate. That repair route belongs to the shipper's
+`human:cp-approval` park alone: a reviewer's `blocked` park on `head-ci-red` holds at `13` on every
+red, because `blocked` has no `FAIL` arm.
 
 **Exit `23` is the one refusal that is yours to answer, and answering it is a sentence.** It says
 the park's cause routes to the *driver* — machinery a driver session owns, not a call only the

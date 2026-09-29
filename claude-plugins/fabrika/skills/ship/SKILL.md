@@ -293,14 +293,16 @@ conflict nobody's code caused.
 repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts. The
 routing is to repair and the *charge* is not: see the ejection row below for which token records it,
 and why an ejection costs the ticket no repair round.
-`unresolved` → report it in those words with the horizon; still-queued at the horizon is
-neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. Your horizon
+`unresolved` → report it in those words with the horizon; a PR still queued at the horizon, or
+armed and unqueued but younger than reconcile's floor, is neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. Your horizon
 is fixed: you never poll past it, and a lane that needs longer gets it from the driver's re-reads at
 `ship:queued`, not from a wider watch in here. A driver settles every lane left there with one
 `lane recover` sweep rather than an operator spawn per lane (operate's `ship:queued` section).
 `parked` →
-the enqueue never took effect: run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a
-read and disarms nothing), note, and stop. The `mergeable_state` assertion and each terminal's proof
+the arm waited past reconcile's floor and never entered the queue, so the enqueue did not take
+effect (a younger unqueued arm reads `unresolved`): run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a
+read and disarms nothing), note, and stop. The floor outlasts your default horizon, so a readable
+arm usually first reads `parked` at the driver's `ship:queued` re-read, which runs the same disarm. The `mergeable_state` assertion and each terminal's proof
 are the verbs' sections
 (`fabrika wire doc-section --heading "ship enqueue" < <skill-base>/contract.md`, then
 `--heading "ship reconcile"`, and `--heading "ship merge"` for the direct route).
@@ -327,7 +329,7 @@ ledger through `lane report` at the `--root` your brief carries, a path outside 
 push, no local git mutation, no
 implementation, no review verdict, no flag flip. Every run ends as exactly one of:
 **already-merged (idempotent success)** · **QUEUED — enqueued, awaiting the queue** and
-**UNRESOLVED at horizon — still queued, still clean** (the two queue waits: your run ends, the lane
+**UNRESOLVED at horizon — still queued, or armed and not yet past the floor; still clean** (the two queue waits: your run ends, the lane
 does not. Neither is a landing — no merge was observed — and neither is a park: both record `WIP`,
 which folds the lane to `ship:queued` for the driver to re-read) ·
 **landed** (the direct route's, and

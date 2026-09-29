@@ -66,6 +66,7 @@ import {
 	PARKED_AT_CP_UNCAUSED,
 	PARKED_AT_QUEUE_STALL,
 	PARKED_BLOCKED,
+	PARKED_IN_REVIEW_ON_CI_RED,
 	PARKED_ON_CAMPAIGN,
 	PARKED_ON_CI_RED,
 	PARKED_ON_ROUTED_UI,
@@ -540,6 +541,70 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 		const out = await run(fs, [], []);
 
 		expect(out.code).toBe(PARK_NOVEL);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * A reviewer that read the head red parked before judging it, so no verdict stands at the head and
+ * none is scripted: the clear must not wait on the review it interrupted.
+ */
+describe("recipe unpark — a reviewer's red-CI park clears on an open green head alone", () => {
+	it("clears into `review` when CI is green and the PR open, reading no verdict", async () => {
+		const fs = lane(PARKED_IN_REVIEW_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...GREEN_CI], []);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "head-green",
+			event: "UNBLOCKED",
+			mechanism: `head-green:#4321 at ${HEAD}`,
+			current: "review",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	// Before the row existed this park keyed on nothing and refused at PARK_NOVEL; an unmet condition
+	// is now the known park still standing.
+	it("holds at PARK_HOLDS on a red head, never PARK_NOVEL, and sends no repair FAIL", async () => {
+		const fs = lane(PARKED_IN_REVIEW_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog(ASSERTION)], OURS);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/rolls up "red"; nothing was written/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("holds at PARK_HOLDS while a check at the head has not concluded", async () => {
+		const fs = lane(PARKED_IN_REVIEW_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...ciAt("in_progress", null)], []);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/rolls up "pending"/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("holds at PARK_HOLDS on a green head whose PR is a draft", async () => {
+		const fs = lane(PARKED_IN_REVIEW_ON_CI_RED);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull({comments: 2, draft: true}))],
+				[FILES, reply(files("apps/site/src/App.tsx", "README.md"))],
+				[OWNERS, {status: 200, body: CODEOWNERS}],
+				...GREEN_CI,
+			],
+			[],
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/reads "draft"/);
 		expect(fs.written.size).toBe(0);
 	});
 });

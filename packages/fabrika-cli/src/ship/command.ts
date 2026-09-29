@@ -25,7 +25,7 @@ import {runMerge} from "./merge-verb.ts";
 import {MERGEABILITY_WINDOW_SECONDS} from "./mergeability.ts";
 import {runNote} from "./note-verb.ts";
 import {runNudge} from "./nudge-verb.ts";
-import {runReconcile} from "./reconcile-verb.ts";
+import {ARM_SETTLE_FLOOR_SECONDS, runReconcile} from "./reconcile-verb.ts";
 import {runRelease} from "./release-verb.ts";
 import {runResolve} from "./resolve-verb.ts";
 import {runScope} from "./scope-verb.ts";
@@ -457,6 +457,8 @@ const reconcile = leafCommand(
 	Command.withShortDescription("Watch a queued PR to a terminal classification."),
 	Command.withDescription(
 		"Watches a queued PR and prints landed, ejected, unresolved or parked, with the polls used." +
+			"\n  parked needs a never-queued arm on a queue-governed base that has waited past the floor" +
+			`\n  (its latest auto_merge_enabled event is ${ARM_SETTLE_FLOOR_SECONDS} s old or more); a younger one reads unresolved` +
 			"\n  7: the PR is absent" +
 			"\n  11: every poll failed to read; UNKNOWN, not unresolved" +
 			"\n  13: the timeline read never reached a terminal page" +
