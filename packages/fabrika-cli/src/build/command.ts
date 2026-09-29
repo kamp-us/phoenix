@@ -1076,8 +1076,8 @@ const verdicts = leafCommand(
 	Command.withDescription(
 		[
 			"Prints the latest gate verdict per namespace for a PR's head, or an epic child, as JSON.",
-			'  {"head","mergeability","requiredChecks","rows","rounds","capReached","clearances","escalatedFindings",…}',
-			"  requiredChecks.state: green | red (names .failing) | pending | unknown; only green is green",
+			'  {"head","mergeability","requiredChecks","rows","capReached","escalatedFindings",…}',
+			"  requiredChecks.state: green | red (.failing) | pending | unknown; only green is green",
 			"  Empty rows is a proven no-verdict answer about the gates, never about mergeability or CI",
 			"  7: the PR or issue is absent or closed, or --issue names a PR",
 			"  10: neither or both of --pr and --issue",
