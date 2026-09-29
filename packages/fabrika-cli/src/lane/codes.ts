@@ -702,3 +702,13 @@ export const FACT_REFUSED = 70;
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  */
 export const SIZE_STOPPED = 71;
+
+/**
+ * `lane report` was handed a known token that no group owning it serves from the task's current
+ * leaf state — a builder's `SHIPPED-PR` out of `ship`, say. Refused with the log unappended: the
+ * shell that sent it finished after the lane moved on, and its terminal answers a state the lane
+ * has left.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10120
+ */
+export const TOKEN_UNSERVED = 72;
