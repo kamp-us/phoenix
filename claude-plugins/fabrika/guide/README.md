@@ -21,8 +21,8 @@ These pages are written for a person. Each holds one Diátaxis mode.
 - **`guide/`** — this directory: the human pages, one Diátaxis mode each.
 - **[`../docs/`](../docs/README.md)** — the agent-facing convention and contract docs.
 - **the host repo's decision records** — the why, and the history including superseded approaches.
-- **[`packages/fabrika-cli/docs/verb-reference.md`](../../../packages/fabrika-cli/docs/verb-reference.md)**
-  — group overviews and routes to help and implementation contracts.
+- **`fabrika --help`** — every command group, one line each. `fabrika <group> --help` lists a
+  group's verbs, and `fabrika <group> <verb> --help` gives one verb's flags, answer and exit codes.
 - **[`../skills/`](../skills/)** — one `SKILL.md` per skill: the contracts agents execute.
 
 - [Use Fabrika in Codex](codex.md): install the shared plugin and dispatch isolated lane stages.

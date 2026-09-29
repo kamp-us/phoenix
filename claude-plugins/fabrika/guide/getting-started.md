@@ -253,5 +253,5 @@ Where to go next:
   state lives on disk.
 - [`delegation.md`](delegation.md) — which copy of `fabrika` served a command, and what each refusal
   means.
-- [`../../../packages/fabrika-cli/docs/verb-reference.md`](../../../packages/fabrika-cli/docs/verb-reference.md)
-  — group overviews; follow each group's help route for verbs, flags and exit meanings.
+- `fabrika --help` — every command group. `fabrika <group> --help` lists that group's verbs, and
+  `fabrika <group> <verb> --help` gives one verb's flags and exit meanings.

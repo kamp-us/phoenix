@@ -39,10 +39,8 @@ the shipped default; `--surfaces` expands `surfaceDispositions` into one row per
 naming what the surface *is* — without it that key prints as one raw id-to-word value. Each row's
 disposition is what a missing surface costs you: `fail-loud` makes a verb refuse and name the
 surface, `degrade` continues with a narrower answer and says so, and `bootstrap` marks a surface you
-have not adopted yet — those are the ones the CLI can create for you, which is step 3. The registry
-itself,
-[`packages/fabrika-cli/src/config/keys/surface-dispositions.ts`](../../../packages/fabrika-cli/src/config/keys/surface-dispositions.ts),
-says in one line what each surface is.
+have not adopted yet — those are the ones the CLI can create for you, which is step 3. Each
+`surface` row's last column says in one line what that surface is.
 
 **A `read-back conformed` from `status bootstrap` means one surface landed — it does not mean the
 setup is finished**, and nothing in that verb's output says so.
@@ -63,8 +61,6 @@ fabrika status bootstrap --help
 surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin
 ```
 
-The registry is `BUILDABLE_SURFACES` in
-[`packages/fabrika-cli/src/status/bootstrap-verb.ts`](../../../packages/fabrika-cli/src/status/bootstrap-verb.ts).
 One id per invocation; a target already present is `exists` at exit 0 and nothing is written or
 overwritten. `design-manifest` and `roadmap-focus` take their content on stdin. `gitignore-row`
 and `claude-md-section` append their own row/block and read no stdin. `settings-patch` merges the
@@ -91,10 +87,11 @@ fabrika status bootstrap label-taxonomy
 fabrika status bootstrap issue-shape-markers
 ```
 
-Both sets are derived, not listed here: `TAXONOMY` in
-[`bootstrap-verb.ts`](../../../packages/fabrika-cli/src/status/bootstrap-verb.ts) composes the label
-vocabularies and widens on its own when one grows, and `issue-shape-markers` adds the shape markers
-declared beside it in the same file.
+Both sets are derived, not listed here: the CLI composes the label list from its board
+vocabularies, so it widens on its own when one grows, and `issue-shape-markers` adds the shape
+markers `wayfinding:map`, `prototyping:spike` and `grilling:session`. The
+[`status bootstrap` contract](../skills/front-door/contract.md#status-bootstrap) spells out the
+current label set.
 
 Where some labels are present the verb creates only the missing ones and reports what it created;
 a label already there under another colour is left alone.
@@ -102,8 +99,7 @@ a label already there under another colour is left alone.
 ## 5. Ignore fabrika's run state
 
 fabrika writes a per-run ledger into your working tree: `.fabrika/lanes/<n>/` for an issue lane and
-`.fabrika/chores/` for a chore lane, each holding a `workflow.json` and an `events.jsonl`
-([`packages/fabrika-cli/src/lane/key.ts`](../../../packages/fabrika-cli/src/lane/key.ts)). That is
+`.fabrika/chores/` for a chore lane, each holding a `workflow.json` and an `events.jsonl`. That is
 one machine's log and never belongs in shared history.
 
 ```bash
@@ -131,9 +127,8 @@ unless you say otherwise, and an absent file means no arc and no campaign is dec
 An absent roadmap does not stop you — `triage homes` degrades on it — but without the file nothing
 homes to an arc, so writing it is a first-triage quality step, not a blocker.
 
-The grammar is a parse contract, not a convention
-([`packages/fabrika-cli/src/triage/roadmap.ts`](../../../packages/fabrika-cli/src/triage/roadmap.ts)),
-and two facts carry this recipe: headings exactly `## Arcs` and `## Campaigns`, and each row's second
+The grammar is a parse contract the CLI enforces, not a convention, and two facts carry this
+recipe: headings exactly `## Arcs` and `## Campaigns`, and each row's second
 cell naming the pinned milestone as `#<number>` — the arc's name is never matched on. Zero campaign
 rows is legal and zero arc rows refuses. A campaign row groups work under a theme and a milestone;
 its `State` cell says whether the theme is being worked. An `active` row marks its milestone
@@ -202,10 +197,9 @@ empty declaration above is how you opt out of it entirely.
 
 ## 9. Add the config file
 
-`.fabrika.jsonc` at your repo root carries the keys the CLI reads — one `register(...)` line per key
-in
-[`packages/fabrika-cli/src/config/registry.ts`](../../../packages/fabrika-cli/src/config/registry.ts).
-A key you leave out falls back to its shipped default. An absent file, an absent key, an empty array
+`.fabrika.jsonc` at your repo root carries the keys the CLI reads; `fabrika status settings` lists
+every one with its resolved value and whether it came from your file or the shipped default. A key
+you leave out falls back to its shipped default. An absent file, an absent key, an empty array
 and a malformed entry all give the narrowest behaviour, never the permissive one. **Narrowest is
 safe, but it is not always enough to finish a lane.** For the rows below, the default makes a verb
 refuse partway through real work, so write them before your first lane:
@@ -373,8 +367,9 @@ zone, sections, the agenda cap, and the flag and stop points. Set `table.timeZon
 people at the table live in, such as `America/Los_Angeles`: GitHub shows the Agenda by the viewer's
 today, and prep matches it only when it reads today in the same zone. A `sections` list may reorder and add sections, but it
 must keep Tails, Customers, New bets and Outside the bets, or the config is refused. Remember 11.1:
-the block also makes table reads fail closed. Every key and its default is in
-[`src/config/keys/table.ts`](../../../packages/fabrika-cli/src/config/keys/table.ts).
+the block also makes table reads fail closed. `fabrika status settings` prints the `table` key's
+resolved value, every sub-key included; before you add the block, that value is the shipped
+default.
 
 - To point setup at a project you already have, set `table.project.number`, and
   `table.project.owner` if it lives under another account.
@@ -405,7 +400,7 @@ fabrika table prep
 It fills the agenda for your next table day, dates every row it touches with that day, carries
 running bets to it, brings shipped bets back as checks, and posts the week's health as the project's status update. Each row's
 In plain words line is the issue's `## In plain words` summary, or its title when it has none
-([`src/table/agenda.ts`](../../../packages/fabrika-cli/src/table/agenda.ts)), so triage an issue
+([the `table prep` contract](../docs/table-contract.md#table-prep)), so triage an issue
 before you want it read well at the table.
 
 Then act on what it printed:
@@ -415,7 +410,7 @@ Then act on what it printed:
 - **`triageFirst`:** customer reports nobody triaged yet. Triage them; the next prep proposes them.
 - **A second run for the same table** adds no row, carries no bet and posts nothing. It still takes a
   `proposed` row whose issue closed off the table, and with an on-call board it still routes new
-  issues there ([`src/table/prep-verb.ts`](../../../packages/fabrika-cli/src/table/prep-verb.ts)).
+  issues there ([the `table prep` contract](../docs/table-contract.md#table-prep)).
 
 ### 11.7 Answer the checks
 
