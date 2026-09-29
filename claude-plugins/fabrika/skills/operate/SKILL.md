@@ -2014,15 +2014,17 @@ A `recovered` row's `to` is the append's own answer rather than that prediction,
 the lane is in even when another writer landed while the sweep was reading. Read it as the lane's
 current fold; the `--check` row above is a prediction and stays one.
 
-**It records on a proven artifact and on nothing else.** The bar is `lane prove`'s own read and the
-append is `lane transition`'s whole path, so nothing here is a judgement of yours and nothing here
-is a new way onto a ledger. It asks about one event — a `PASS` out of either review cell — and every
-other answer is a row that changed nothing: `unproven` (which carries `not-required` and every
-refusal code alike, told apart by the row's own `proof` and `proofCode`), `refused`, `contended`,
-`current`, `terminal`, `unreadable`. With `--spawns` the row set gains `parked`, `parkable` and
-`working`, which are that arm's own and are described below. The same run also settles every lane
-waiting in `ship:queued`, under the rows `settled`, `settleable` and `waiting`. The `## ship:queued`
-section above says what it records there.
+**It records on a verb's answer and on nothing else, through a verb's own path.** Nothing here is a
+judgement of yours and nothing here is a new way onto a ledger. It has two arms. The proven arm
+asks about one event, a `PASS` out of either review cell: the bar is `lane prove`'s own read and the
+append is `lane transition`'s whole path. The queue arm settles every lane waiting in
+`ship:queued`: it relays one `ship reconcile <pr> --polls 1` answer through `lane report`'s whole
+path, so `landed` records `LANDED` and `ejected` records `EJECTED`, under the rows `settled` and
+`settleable`. The `## ship:queued` section above says what it records there. Every other answer is
+a row that changed nothing: `unproven` (which carries `not-required` and every refusal code alike,
+told apart by the row's own `proof` and `proofCode`), `waiting` (a queue answer of `unresolved` or
+`parked`), `refused`, `contended`, `current`, `terminal`, `unreadable`. With `--spawns` the row set
+gains `parked`, `parkable` and `working`, which are that arm's own and are described below.
 
 **Two events a live shell also satisfies are not in this sweep**, and that is what keeps it from
 folding a lane out from under one of your own spawns. A reviewer's `BLOCKED` claims the run reached

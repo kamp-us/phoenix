@@ -1379,7 +1379,8 @@ Sweeps every lane on disk and records the event its own artifact already proves 
 learned. A shell posts its SHA-bound verdict on the artifact and then records the event. Killed
 between the two, it leaves the verdict standing and the ledger silent, and the lane sits non-terminal
 until a driver happens to run `lane prove` by hand: one lane sat in review for 448 minutes carrying
-a proven PASS on its PR.
+a proven PASS on its PR. The same run settles every task waiting in `ship:queued` whose PR the merge
+queue already answered for, described under the queue arm below.
 
 Each non-terminal lane's active tasks are read off the fold, and a task standing in a leaf that OWES
 a provable event is asked about: PASS out of `review`, PASS out of `review:ui`. Those are the arms of
@@ -1394,12 +1395,14 @@ out, for one reason: a shell that is merely still working satisfies each of them
   lane in a repair round carries exactly that PR for the whole round, so a sweep standing on it would
   move the lane to review under the live builder.
 
-It introduces NO proof path and NO second way onto a log. The bar is `lane prove`'s read, unchanged,
-and the append is `lane transition`'s whole path: the same machine validation, the same proof gate
-and the same ledger lock. What moves is only who runs them. It records on the literal `proven` and on
-nothing else. `not-required`, `uncontradicted` and every refusal code leave the lane byte-identical
-and land as their own row, so an unreadable board is a row to re-run rather than a lane moved on a
-read nobody made.
+It introduces NO proof path and NO second way onto a log. Every append is an existing verb's whole
+path, unchanged: the proven arm and the `--spawns` arm append through `lane transition`, and the
+queue arm through `lane report`. Each keeps its own machine validation, proof gate and ledger lock.
+What moves is only who runs them. The proven arm's bar is `lane prove`'s read, and it records on the
+literal `proven` and on nothing else. `not-required`, `uncontradicted` and every refusal code leave
+the lane byte-identical and land as their own row, so an unreadable board is a row to re-run rather
+than a lane moved on a read nobody made. The queue arm records on a `landed` or `ejected` answer from
+`ship reconcile` and on nothing else, as that arm's section says.
 
 **`--spawns` parks rather than finishes.** A lane standing in `build` or `build:ui` whose build claim
 has outlived the builder's own budget, with NO lane branch in this clone and NOTHING on the surface
@@ -1444,8 +1447,9 @@ whole path (token map, served-leaf check, proof gate, floor and ledger lock), be
 
 **Budget.** Budget a recoverable lane at TWO board reads: this sweep asks what the proof says, and
 `lane transition` asks again under its own gate before appending, which is that gate declining to
-take this sweep's word for it. Every other judged task costs one. `--check` pays the first read alone
-and appends nothing.
+take this sweep's word for it. A queued task costs its one `ship reconcile` read, and a `landed`
+answer adds one more: `lane report`'s own proof read of the `DONE`, which reads the PR's closure.
+Every other judged task costs one. `--check` pays the first read alone and appends nothing.
 
 Each row carries one verdict:
 
@@ -1461,7 +1465,8 @@ Each row carries one verdict:
 - `contended` — `40`: another writer held this lane's ledger lock for the whole wait budget, so
   nothing was validated and nothing appended. The same event is still the right one and the sweep
   says so on stderr, which is why this is not bucketed with `refused`;
-- `settled` / `settleable` / `waiting` — the queue arm's rows, described above;
+- `settled` / `settleable` / `waiting` — the queue arm's rows, described above. A `settled` row's
+  `to` is `lane report`'s own answer, the same way a `recovered` row's is `lane transition`'s;
 - `current` — the lane is non-terminal, no active task stands in a leaf that owes a provable
   event, and none waits in `ship:queued`;
 - `terminal` — the fold is done, so nothing is owed and no board read is spent;

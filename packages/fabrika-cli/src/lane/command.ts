@@ -2220,7 +2220,7 @@ const recover = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"recover",
-			"Records the event each lane's own artifact proves but its ledger never learned, and settles each ship:queued task from one `ship reconcile <pr> --polls 1` read: landed records LANDED, ejected records EJECTED, unresolved and parked record nothing; prints JSON.",
+			"Records the events lane artifacts prove and settles tasks the merge queue left; prints JSON.",
 			{
 				8: "an append did not land, UNKNOWN",
 				11: "a root could not be listed, UNKNOWN",

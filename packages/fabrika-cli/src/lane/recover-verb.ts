@@ -20,19 +20,21 @@
  * reads no artifact, `lane reconcile` reads an artifact and corrects an already-recorded line, and
  * this reads an artifact and records a line nobody wrote.
  *
- * **It adds no trust and no proof path.** The claim's bar is `lane prove`'s, unchanged, and the
- * append is `lane transition`'s, unchanged — the same machine validation, the same proof gate and the
- * same ledger lock a driver's own record goes through. What moves is only who runs them: a sweep
- * rather than a person who happened to think of it.
+ * **It adds no trust and no proof path.** Every append is an existing verb's whole path, unchanged:
+ * the proven and spawn arms append through `lane transition`, and the queue arm through `lane
+ * report` — the same machine validation, the same proof gate and the same ledger lock a driver's own
+ * record goes through. What moves is only who runs them: a sweep rather than a person who happened
+ * to think of it.
  *
- * **It records on the literal `proven` and on nothing else.** `not-required` and every refusal code
- * leave the lane exactly where it was and land as their own row, so an unreadable board is a row to
- * re-run rather than a lane moved on a read nobody made.
+ * **The proven arm records on the literal `proven` and on nothing else.** Its bar is `lane prove`'s
+ * read, unchanged. `not-required` and every refusal code leave the lane exactly where it was and land
+ * as their own row, so an unreadable board is a row to re-run rather than a lane moved on a read
+ * nobody made.
  *
- * **And it asks only about the events a finished shell alone can have earned.** A `PASS` out of
- * either review cell is the whole owed set; the `BLOCKED` a reviewer's park claims and the `DONE` a
- * builder's open PR claims are both out of scope, because a shell that is merely still working
- * satisfies each of them too. `./recover.ts` carries the argument for both arms.
+ * **And the proven arm asks only about the events a finished shell alone can have earned.** A `PASS`
+ * out of either review cell is its whole owed set; the `BLOCKED` a reviewer's park claims and the
+ * `DONE` a builder's open PR claims are both out of scope, because a shell that is merely still
+ * working satisfies each of them too. `./recover.ts` carries the argument for both arms.
  *
  * **`--spawns` adds the second arm: the builder that died leaving nothing behind at all.** The arm
  * above recovers a shell that finished and could not say so; this one parks a lane whose shell never
@@ -58,22 +60,26 @@
  *
  * **The queue arm settles a lane whose PR left the merge queue after the shipper stopped watching.**
  * It is the operate skill's `ship:queued` driver pass, run for every queued lane at once: the same
- * `ship reconcile <pr> --polls 1` read, relayed through `lane report`'s own path. It is on by default,
- * unlike `--spawns`, because what it records is an answer and never a park, and it costs one read per
- * lane standing in `ship:queued`, which is a handful and not the whole building population.
+ * `ship reconcile <pr> --polls 1` read, with its answer relayed through `lane report`'s own path —
+ * `landed` records `LANDED` and `ejected` records `EJECTED`, the `DONE` and `FAIL` out of
+ * `ship:queued` that only `lane report` maps. `unresolved`, `parked` and an unreadable read record
+ * nothing, so the sweep never spends a wait. It is on by default, unlike `--spawns`, because what it
+ * records is an answer and never a park, and it reads only the lanes standing in `ship:queued`, which
+ * is a handful and not the whole building population.
  *
- * **A `recovered` row reports where the append says the lane landed, not where this sweep predicted
- * it would.** The prediction is taken off a fold nothing holds a lock over, and `lane transition`
- * re-reads and re-folds the log inside the ledger lock before it applies anything, so a writer
- * landing between the two makes them disagree — and the row a driver reads and acts on would name a
- * state the lane is not in, on an exit-0 sweep. A `--check` row keeps the prediction, which is the
- * only ground a run that appends nothing has.
+ * **A `recovered` or `settled` row reports where the append says the lane landed, not where this
+ * sweep predicted it would.** The prediction is taken off a fold nothing holds a lock over, and the
+ * appending verb re-reads and re-folds the log inside the ledger lock before it applies anything, so
+ * a writer landing between the two makes them disagree — and the row a driver reads and acts on would
+ * name a state the lane is not in, on an exit-0 sweep. A `--check` row keeps the prediction, which is
+ * the only ground a run that appends nothing has.
  *
  * Each recoverable lane costs two board reads rather than one: this sweep asks the proof what the
  * answer is, and `lane transition` asks it again under its own gate before it appends. That second
  * read is the gate refusing to take this sweep's word for it, which is the property worth the read —
  * and it is paid only by a lane that is actually recoverable, which is a killed shell's lane and not
- * a busy one. `--check` pays the first read alone and appends nothing.
+ * a busy one. A queued task costs its one `ship reconcile` read, plus `lane report`'s own proof read
+ * of the `DONE` when that answer is `landed`. `--check` pays the first read alone and appends nothing.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9241#issuecomment-5687141320
  */
