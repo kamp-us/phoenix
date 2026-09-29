@@ -300,6 +300,20 @@ const redLog = (text: string): ReadonlyArray<Scripted> => [
 /** A log line `heal-ci classify` seats on its `assertion-failure` logic row. */
 const ASSERTION = "AssertionError: expected 87 to be 72";
 
+/** The coder template with `human:cp-approval`'s `FAIL` arm removed, as an epic tail's region reads. */
+const armlessTemplate = (): string => {
+	const strip = (node: unknown): void => {
+		if (typeof node !== "object" || node === null) return;
+		const record = node as Record<string, unknown>;
+		const park = record["human:cp-approval"] as {on?: Record<string, unknown>} | undefined;
+		if (park?.on !== undefined) delete park.on["ISSUE.FAIL"];
+		for (const child of Object.values(record)) strip(child);
+	};
+	const doc: unknown = JSON.parse(laneTemplate());
+	strip(doc);
+	return JSON.stringify(doc);
+};
+
 /** The red-CI park reached with every repair retry already spent on earlier review FAILs. */
 const PARKED_ON_CI_RED_SPENT =
 	eventLog(
@@ -461,6 +475,16 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 		expect(JSON.parse(out.stdout)).toMatchObject({event: "FAIL", current: "tripped"});
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.FAIL/);
 		expect(out.stderr.join("\n")).toMatch(/the repair budget was spent/);
+	});
+
+	it("is PARK_HOLDS on a logic red when the lane's machine gives the park no FAIL arm", async () => {
+		const fs = fakeFs({files: {[WORKFLOW]: armlessTemplate(), [LOG]: PARKED_ON_CI_RED}});
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog(ASSERTION)], OURS);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/no FAIL arm, so the red has no repair route/);
+		expect(fs.written.size).toBe(0);
 	});
 
 	it("is PARK_HOLDS on a logic red over a PR the pipeline does not own — its author repairs it", async () => {

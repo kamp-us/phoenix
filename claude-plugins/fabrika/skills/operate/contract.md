@@ -1871,6 +1871,13 @@ nothing and is novel.
   spent, or falls to `human:budget-spent` when none is left. Every other red holds at `13` with
   nothing written: all contexts `transient` or `unclassified`, a log that could not be read or
   classified, or a `logic` red on a PR its author owns. An ownership read that fails is `11`.
+
+  Before any log is read, the lane's own `workflow.json` is asked whether the park holds a `FAIL`
+  arm. Where it holds none, every red holds at `13` naming the missing arm, exactly as before the arm
+  existed, so a `FAIL` is never sent to a machine that would refuse it. A coder lane booted on an
+  older template gains the arm through `lane migrate`. A generated machine, such as an epic tail's
+  emitted region, is never migrated and has no such arm, so there the park clears only on green. A
+  machine that cannot be read is `11`.
 - The routed-UI park (`blocked` keyed `no-rendered-delta`, or `no-preview-routed` where the route
   stood on the repo's `reviewUi.whenNoPreview` rules) is that same floor minus CI, and it clears
   the lanes stranded before `lane report` learned to advance a satisfied route: `ship scope` for the
@@ -1920,7 +1927,7 @@ a clear that granted and `rationale` on one the driver named. `clearance` is the
 | `13` | a known recipe whose clearing condition is not met yet — nothing was written |
 | `14` | the task is not parked |
 | `15` | the task is not in the active phase, `--task` was omitted where it is required, or no issue number can be resolved |
-| `20` | the machine refused the `UNBLOCKED` or `FAIL`, log unappended. A `FAIL` refused here is a lane booted on a template whose `human:cp-approval` cell has no `FAIL` arm; `lane migrate` brings it onto the current one |
+| `20` | the machine refused the `UNBLOCKED` or `FAIL`, log unappended. A machine with no `FAIL` arm at the park never reaches here: that red holds at `13` instead |
 | `23` | the park routes to the driver and this run named no `--rationale` — nothing was written; re-run naming one |
 | `39` | the lanes root resolves nowhere: `--root` is absent and no `.git` entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root, or a relative `--root` stands on a cwd holding neither `.fabrika` nor `.git`. The `parkCause` read ahead of it never exits here, since a cwd in no repository reads the shipped declaration at itself, and an unreadable repository identity is UNKNOWN at `11`. NOT "no lane here", so never a park |
 | `65` | the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop `--root` |

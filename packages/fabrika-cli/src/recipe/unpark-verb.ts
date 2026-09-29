@@ -29,6 +29,7 @@
  *
  * Respawning whatever the lane parked out of is the operator's, not this verb's.
  */
+import {acceptsOf} from "@demlik/tea";
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -56,6 +57,7 @@ import {runProve} from "../lane/prove-verb.ts";
 import {routeUnder} from "../lane/report.ts";
 import {BUILD_CLAIM_BUDGET_MINUTES} from "../lane/shell-budget.ts";
 import {runStatus} from "../lane/status-verb.ts";
+import {loadLane} from "../lane/store.ts";
 import {runTransition} from "../lane/transition-verb.ts";
 import {ownershipGate} from "../ownership/gate.ts";
 import {runChecks} from "../ship/checks-verb.ts";
@@ -1442,7 +1444,7 @@ const clearCiGreen = (
 			return unknown(`#${pr}'s CI at ${head}`, "fabrika ship checks exited 0 and named no rollup");
 		}
 		if (rolled.rollup === "red") {
-			return yield* repairOrHold(options, repo, pr, head, recipe, scanned);
+			return yield* repairOrHold(options, repo, pr, head, task, recipe, scanned);
 		}
 		if (rolled.rollup !== "green") {
 			return no(
@@ -1507,7 +1509,9 @@ const clearCiGreen = (
  * existed: an all-`transient` or `unclassified` red, and a log that could not be read or classified,
  * which is a red nobody has classified yet. So does a `logic` red on a PR the pipeline does not own,
  * because that repair is its author's (`heal-ci` §2's ownership rule, read through the same gate
- * `build claim` puts in front of a repair).
+ * `build claim` puts in front of a repair). And so does every red on a lane whose own machine gives
+ * the park no `FAIL` arm, read before any log: an epic tail's emitted region declares none, and a
+ * generated machine is never migrated, so there a `FAIL` could only be refused.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9946
  */
@@ -1516,6 +1520,7 @@ const repairOrHold = (
 	repo: string,
 	pr: number,
 	head: string,
+	task: string,
 	recipe: ParkRecipe,
 	scanned: string,
 ): Effect.Effect<Clearance, never, Deps> =>
@@ -1528,6 +1533,23 @@ const repairOrHold = (
 				[scanned, ...lines],
 			),
 		});
+
+		const arm = yield* failArmAt(options, task, recipe.park);
+		if (arm._tag === "Unknown") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read lane ${options.lane}'s machine: ${arm.reason} — whether "${recipe.park}" has a repair arm is UNKNOWN, and nothing was written.`,
+					[scanned],
+				),
+			};
+		}
+		if (arm._tag === "Armless") {
+			return holds(
+				`this lane's machine gives "${recipe.park}" no FAIL arm, so the red has no repair route and waits on green as before; \`fabrika lane migrate\` adds the arm to a lane booted on an older template, and a generated machine (an epic tail) never gains it`,
+			);
+		}
 
 		const logs = yield* runLogs({
 			pr,
@@ -1585,6 +1607,43 @@ const repairOrHold = (
 			_tag: "Repair",
 			mechanism: `ci-logic:#${pr} at ${head}, ${logic.map((row) => `${row.context}=${row.signature}`).join(",")}`,
 		};
+	});
+
+type FailArm =
+	| {readonly _tag: "Armed"}
+	| {readonly _tag: "Armless"}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+/**
+ * Whether the lane's own machine lets `leaf` take a `FAIL`, read off the document the lane runs and
+ * never the committed template: a booted lane keeps the template it opened on until `lane migrate`,
+ * and a generated machine is never migrated, so a `FAIL` sent without the arm would be refused at
+ * `lane transition` with a remedy that may not exist.
+ */
+const failArmAt = (
+	options: UnparkOptions,
+	task: string,
+	leaf: string,
+): Effect.Effect<FailArm, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const loaded = yield* loadLane({root: options.root, lane: options.lane});
+		switch (loaded._tag) {
+			case "Absent":
+				return {_tag: "Unknown", reason: `no workflow.json under ${loaded.dir}`} as const;
+			case "Unreadable":
+				return {_tag: "Unknown", reason: `${loaded.path}: ${loaded.reason}`} as const;
+			case "Malformed":
+				return {_tag: "Unknown", reason: `${loaded.path}: ${loaded.defects.join("; ")}`} as const;
+			case "Loaded": {
+				const compiled = loaded.lane.tasks[task];
+				if (compiled === undefined) {
+					return {_tag: "Unknown", reason: `the machine declares no task "${task}"`} as const;
+				}
+				return acceptsOf(compiled.machine, leaf).includes("FAIL")
+					? ({_tag: "Armed"} as const)
+					: ({_tag: "Armless"} as const);
+			}
+		}
 	});
 
 /** `heal-ci logs`'s own default tail, so the relay classifies the bytes a hand run would. */

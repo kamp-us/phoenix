@@ -1658,8 +1658,9 @@ The row clears only once the issue and every open PR linking it read `unclaimed`
 nothing. A winner whose spawn has not returned, or one you cannot tie to a spawn of yours, is possibly
 live: record nothing and release nothing, and let that spawn's own return route the lane.
 
-Exit `0` cleared it — the verb recorded the `UNBLOCKED` itself and re-read the fold to prove the task
-left the park, so your next move is the state that re-fold reads, not a park comment. Exit `12` is
+Exit `0` moved the task off the park — the verb recorded the `UNBLOCKED` (or, on the red-CI repair
+route below, the `FAIL`) itself and re-read the fold to prove the task left the park, so your next
+move is the state that re-fold reads, not a park comment. Exit `12` is
 the park's cause outside the table, `13` is a known cause whose clearing condition is not met yet,
 and either way the ledger is untouched and the park below is what you do. You never read past those
 codes and never retype what the verb does: which parks clear on their own is that table's decision,
@@ -1674,8 +1675,12 @@ on a single-task lane re-folds as `tripped`; that is the budget park below. A `t
 `unclassified` red, or one whose logs will not read, stays at `13` and waits for `heal-ci`'s rerun
 or for the head to go green. Never type `lane transition … UNBLOCKED` and then a `FAIL` out of `ship`
 by hand to get the same move: this verb is the route, and it proves the defect before it spends the
-retry. A `20` on that `FAIL` is a lane booted before the arm existed, so run
-`node <fabrika> lane migrate <lane-key>` and then `recipe unpark` again.
+retry. The verb sends that `FAIL` only where the lane's own machine gives the park a `FAIL` arm;
+without one, every red holds at `13`, and the refusal says `no FAIL arm`. On a coder lane booted
+before the arm existed, run `node <fabrika> lane migrate <lane-key>` and then `recipe unpark` again.
+When `lane migrate` answers `generated`, the lane runs a generated machine, such as an epic tail's,
+which is never migrated and has no such arm. There the park clears only on a green head, so a
+`logic` red on it is a park for a human, not a migrate.
 
 **Exit `23` is the one refusal that is yours to answer, and answering it is a sentence.** It says
 the park's cause routes to the *driver* — machinery a driver session owns, not a call only the
