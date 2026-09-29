@@ -374,6 +374,16 @@ the rollup. Each token routes on its own:
 The refusals reach you unchanged and on the first read — `--wait` polls a `pending` and nothing else,
 so a `16` head, a repo with no producer, or a floor waiting on you never burns the budget.
 
+**The wait judges only the checks the base branch declares required, not every check at the head.**
+The first stderr line names that set. A branch that declares none falls back to every check outside
+the informational denylist, and a set the token cannot read is a refusal, never a colour. A red
+outside the required set does not settle the wait: the verb names it on stderr as
+`failing outside the required set: <names> — reported, never blocking.` and keeps polling while any
+required check is still running. So a red beside a still-pending required check tells you nothing
+about this diff. Wait for the `settle` line and judge on the rollup beside it. Quote a named
+non-required red in your findings if it bears on the diff, but never fail the class on it and never
+end `UNKNOWN` over it. A required red still settles on the first read, however much else is queued.
+
 **Give the call a caller-side deadline above `--budget-seconds`, or the budget decides nothing.**
 The verb owns the loop only for as long as its process lives: a shell that wraps this call in a
 timeout shorter than the budget kills the CLI mid-poll, so none of the four `settle` tokens comes

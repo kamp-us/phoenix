@@ -46,7 +46,7 @@ import {authorityNote, readBlockingSet, reportedLine, unreadableCause} from "../
 import {classConfigOfPull} from "../review/class-config.ts";
 import {partitionWithUi, shipNamespacesOf, touchesGovernanceRoot} from "../review/classes.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
-import {isFailing, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
+import {isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {inForce, ROUTABLE} from "../ship/gate-verb.ts";
 import {
 	behindBase,
@@ -374,14 +374,7 @@ export const diagnoseOne = (
 		}
 		const blocking = latest.filter((run) => authority.set.blocks(run.name));
 		notices.push(authorityNote(VERB, pull.baseRef, authority.set));
-		notices.push(
-			...reportedLine(
-				VERB,
-				latest
-					.filter((run) => !authority.set.blocks(run.name) && isFailing(run))
-					.map((run) => run.name),
-			),
-		);
+		notices.push(...reportedLine(VERB, authority.set, latest));
 
 		const stranded = blocking.filter(isStalled).map((run) => run.name);
 		const wedged = stranded.length > 0 && headAgeMinutes >= params.wedgeDwellMinutes;
