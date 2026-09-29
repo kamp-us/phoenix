@@ -1,0 +1,41 @@
+name: release-watch
+
+# Daily check that the root catalog's first-party `@demlik/*` pins are not behind npm `latest`
+# (#10133). A lagging package gets one `status:needs-triage` issue, updated in place on later runs.
+# It helps and never polices (ADR 0430): no PR trigger, not a required check, and a lagging pin is
+# a filed issue, never a red. The decision is packages/release-watch/src/release-watch.ts.
+on:
+  schedule:
+    # Daily at 05:41 UTC, off the top of the hour and away from the other scheduled sweeps.
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Two overlapping runs would each read the other's issue as absent and file twice.
+  group: release-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: read # checkout
+  issues: write # file or update the one issue per lagging package
+
+jobs:
+  watch:
+    name: compare @demlik/* catalog pins with npm latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check the @demlik/* pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node packages/release-watch/src/bin.ts check
