@@ -156,6 +156,11 @@ flake. There is no path from an ambiguous log to "safe to rerun". Each token lic
   line for every `red`, so read it there: on anything but `ours` or `granted`, route it to its author
   instead (§2's
   [ownership rule](#2--the-green-stalls-nobody-is-holding-it)). You never edit code and never push.
+  When a lane parked on this red (`human:cp-approval`, cause `head-ci-red`), the move into `build`
+  is not yours either, and it is one verb for the lane's driver:
+  `node <fabrika> recipe unpark <lane-key> --task <task>`. It re-reads these same two verbs at the
+  live head and, on a `logic` context over a PR the pipeline owns, records the park's `FAIL`
+  (`"event": "FAIL"` in its answer), spending one repair retry.
 - **`unclassified`** — no signature matched. It leaves through the intake seam as an observation:
   fire the `fabrika:report` skill, whose verb owns the write and returns the number your
   `FILED — #N` terminal carries. Guessing "probably a flake" is how a rerun loop starts.

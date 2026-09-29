@@ -156,8 +156,10 @@ export const QUEUE_MOVED_GRANT = 1;
  * matches no row on this leaf at all. Its clearance is the shipper's own step-4 read taken again —
  * `ship checks`'s rollup at the live head — conjoined with the reads that step ran before it, so the
  * clear proves the whole floor the shipper was standing on rather than the one condition that
- * failed. It names no remedy because turning a red head green is `heal-ci`'s repair work, and a
- * recipe that "removed" this cause would be doing it.
+ * failed. It names no remedy because turning a red head green is repair work, and a recipe that
+ * "removed" this cause would be doing it. What its read does instead, on a red `heal-ci` classes a
+ * defect, is route that repair: the verb records the park's `FAIL` into `build` rather than holding
+ * a park that no wait would ever clear.
  */
 /**
  * One row, with its route and its remedy read off the cause table rather than written down a second

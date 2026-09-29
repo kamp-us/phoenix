@@ -170,7 +170,15 @@
 							},
 							"human:cp-approval": {
 								"on": {
-									"ISSUE.UNBLOCKED": "hist"
+									"ISSUE.UNBLOCKED": "hist",
+									"ISSUE.FAIL": [
+										{
+											"target": "build",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{ "target": "human:budget-spent" }
+									]
 								}
 							},
 							"human:queue-stall": {

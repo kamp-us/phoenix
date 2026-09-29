@@ -11,10 +11,12 @@ import {
 	once,
 	type Scripted,
 } from "../fakes.test-support.ts";
+import {JOB_LOG, JOBS, jobs} from "../heal-ci/fixtures.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {parkCauseRead} from "../lane/fixtures.test-support.ts";
 import {foldLog, type LogEntry, parseLog} from "../lane/fold.ts";
 import {compileText} from "../lane/machine.ts";
+import {RETRY_BUDGET} from "../retry-budget.ts";
 import {evidenced, evidenceOpens} from "../review-ui/evidence.test-support.ts";
 import {
 	CODEOWNERS,
@@ -24,6 +26,7 @@ import {
 	files,
 	HEAD,
 	OTHER_HEAD,
+	OURS,
 	pull,
 	runsTotal,
 	UNDECLARED,
@@ -47,6 +50,7 @@ import {
 	campaignsTable,
 	closingPulls,
 	closingPullsIn,
+	eventLog,
 	httpError,
 	LANE,
 	LANE_BRANCH,
@@ -285,6 +289,40 @@ const ciAt = (status: string, conclusion: string | null): ReadonlyArray<Scripted
 ];
 
 const GREEN_CI = ciAt("completed", "success");
+const RED_CI = ciAt("completed", "failure");
+
+/** The failing `ci` context's job and its log, as `heal-ci logs` reads them at the head. */
+const redLog = (text: string): ReadonlyArray<Scripted> => [
+	[JOBS, jobs(1, [{id: 441, name: "ci"}])],
+	[JOB_LOG, {status: 200, body: text}],
+];
+
+/** A log line `heal-ci classify` seats on its `assertion-failure` logic row. */
+const ASSERTION = "AssertionError: expected 87 to be 72";
+
+/** The coder template with `human:cp-approval`'s `FAIL` arm removed, as an epic tail's region reads. */
+const armlessTemplate = (): string => {
+	const strip = (node: unknown): void => {
+		if (typeof node !== "object" || node === null) return;
+		const record = node as Record<string, unknown>;
+		const park = record["human:cp-approval"] as {on?: Record<string, unknown>} | undefined;
+		if (park?.on !== undefined) delete park.on["ISSUE.FAIL"];
+		for (const child of Object.values(record)) strip(child);
+	};
+	const doc: unknown = JSON.parse(laneTemplate());
+	strip(doc);
+	return JSON.stringify(doc);
+};
+
+/** The red-CI park reached with every repair retry already spent on earlier review FAILs. */
+const PARKED_ON_CI_RED_SPENT =
+	eventLog(
+		"WIP",
+		"DONE",
+		"PASS",
+		...Array.from({length: RETRY_BUDGET}, () => ["FAIL", "DONE", "PASS"]).flat(),
+	) +
+	`${JSON.stringify({task: "issue", event: "ISSUE.BLOCKED", at: "2026-08-16T01:00:00.000Z", cause: "head-ci-red"})}\n`;
 
 /** Both derived namespaces holding an authorized PASS at `sha`. */
 const boundAt = (sha: string): ReadonlyArray<Scripted> => [
@@ -317,13 +355,14 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	it("is PARK_HOLDS while a gating check at the head is still red", async () => {
+	// No job log is scripted, so `heal-ci logs` refuses and the red is one nobody has classified yet.
+	it("is PARK_HOLDS while a gating check at the head is still red and unclassified", async () => {
 		const fs = lane(PARKED_ON_CI_RED);
 
-		const out = await run(fs, [...RED_TARGET, ...ciAt("completed", "failure")], [...boundAt(HEAD)]);
+		const out = await run(fs, [...RED_TARGET, ...RED_CI], [...boundAt(HEAD)]);
 
 		expect(out.code).toBe(PARK_HOLDS);
-		expect(out.stderr.join("\n")).toMatch(/rolls up "red"/);
+		expect(out.stderr.join("\n")).toMatch(/rolls up "red" and fabrika heal-ci logs refused/);
 		expect(fs.written.size).toBe(0);
 	});
 
@@ -385,6 +424,87 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 		);
 
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_HOLDS on a red heal-ci classes transient — a flake waits for its rerun", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog("ETIMEDOUT")], OURS);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/ci: transient\), so it is no repair/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_HOLDS on a red no signature matched — unclassified is never a repair", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog("nothing recognisable")], OURS);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/ci: unclassified\), so it is no repair/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("records FAIL out of the park into `build` on a logic red, spending one retry", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog(ASSERTION)], OURS);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "human:cp-approval",
+			clearance: "ci-green",
+			event: "FAIL",
+			mechanism: `ci-logic:#4321 at ${HEAD}, ci=assertion-failure`,
+			current: "build",
+		});
+		const written = fs.written.get(LOG) ?? "";
+		expect(written).toMatch(/ISSUE\.FAIL/);
+		expect(written).not.toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("falls to `human:budget-spent` on a logic red once the repair budget is spent", async () => {
+		const fs = lane(PARKED_ON_CI_RED_SPENT);
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog(ASSERTION)], OURS);
+
+		// A single-task lane's spent-budget fallthrough is an error final, so the fold trips the lane.
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({event: "FAIL", current: "tripped"});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.FAIL/);
+		expect(out.stderr.join("\n")).toMatch(/the repair budget was spent/);
+	});
+
+	it("is PARK_HOLDS on a logic red when the lane's machine gives the park no FAIL arm", async () => {
+		const fs = fakeFs({files: {[WORKFLOW]: armlessTemplate(), [LOG]: PARKED_ON_CI_RED}});
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog(ASSERTION)], OURS);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/no FAIL arm, so the red has no repair route/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_HOLDS on a logic red over a PR the pipeline does not own — its author repairs it", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull({comments: 2, author: "ada"}))],
+				[FILES, reply(files("apps/site/src/App.tsx", "README.md"))],
+				[OWNERS, {status: 200, body: CODEOWNERS}],
+				...RED_CI,
+				...redLog(ASSERTION),
+			],
+			OURS,
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/ada's to finish/);
 		expect(fs.written.size).toBe(0);
 	});
 

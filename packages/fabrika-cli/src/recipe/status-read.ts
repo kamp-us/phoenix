@@ -107,6 +107,55 @@ export const clearProof = (code: number, stdout: string, task: string): ClearPro
 		: {_tag: "Cleared", leaf: read.leaf};
 };
 
+export type RepairProof =
+	/** The task left the park for the leaf the machine's repair arm reached. */
+	| {readonly _tag: "Repaired"; readonly leaf: string}
+	/**
+	 * The repair arm's spent-budget fallthrough took the task to an error final, so the fold reads the
+	 * lane's own terminal with the task among its `errors` rather than a leaf.
+	 */
+	| {readonly _tag: "Spent"; readonly terminal: string}
+	| {readonly _tag: "Unproven"; readonly reason: string};
+
+/** Whether `lane status`'s `context.errors` names the task — the fold's own trip record. */
+const trippedOn = (stdout: string, task: string): boolean => {
+	const parsed = parseJson(stdout);
+	if (!isRecord(parsed) || !isRecord(parsed.context)) return false;
+	const errors = parsed.context.errors;
+	return Array.isArray(errors) && errors.includes(task);
+};
+
+/**
+ * Whether a re-fold proves a repair route left the park it was recorded out of.
+ *
+ * Unlike {@link clearProof}, a spent budget is a proven answer here: a repair spends a retry, and the
+ * guarded arm's fallthrough is an error final, which trips the lane with this task named among its
+ * errors. Which leaf a funded route reaches is the machine's to say, so that half proves only that
+ * the task is no longer on the park that recorded it.
+ */
+export const repairProof = (
+	code: number,
+	stdout: string,
+	task: string,
+	park: string,
+): RepairProof => {
+	if (code !== 0) {
+		return {_tag: "Unproven", reason: `the re-fold refused at exit ${code}`};
+	}
+	const read = leafOf(stdout, task);
+	if (read._tag === "Finished") {
+		return trippedOn(stdout, task)
+			? {_tag: "Spent", terminal: read.terminal}
+			: {_tag: "Unproven", reason: `the re-fold is "${read.terminal}" with no error on "${task}"`};
+	}
+	if (read._tag === "Unreadable") {
+		return {_tag: "Unproven", reason: `the re-fold ${read.reason}`};
+	}
+	return read.leaf === park
+		? {_tag: "Unproven", reason: `the re-fold still reads the park "${park}"`}
+		: {_tag: "Repaired", leaf: read.leaf};
+};
+
 /**
  * The issue a task drives: the number in an emitted epic lane's task name (`issue_<n>`), else the
  * lane id itself on a single-issue lane. `null` when neither carries one — the same derivation
