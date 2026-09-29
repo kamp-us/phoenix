@@ -584,7 +584,7 @@ export const recOf = (flag: Flag, settings: TableSettings): string => {
 		case "FabrikaShare":
 			return `fabrika's own work took ${flag.percent}% of this week's spend ($${flag.fabrikaUsd} of $${flag.totalUsd}), over the ${flag.target}% target. Fewer fabrika bets next table?`;
 		case "PastTarget":
-			return `Open on-call for ${flag.waitedHours} hours, past its "${flag.target}" target of ${flag.hours}. Pick it up now, or move it to the table?`;
+			return `Open on-call for ${flag.waitedHours} hours, past its "${flag.target}" target (${flag.hours} ${flag.hours === 1 ? "hour" : "hours"}). Pick it up now, or move it to the table?`;
 		case "OnCallShare":
 			return `On-call took ${flag.percent}% of the week's spend ($${flag.onCallUsd} of $${flag.totalUsd}), over its ${flag.target}% share. Raise the share, or fix what keeps breaking?`;
 	}
