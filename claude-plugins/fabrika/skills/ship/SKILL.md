@@ -151,6 +151,9 @@ it refuses on WRONG and not only on MISSING, and the conclusion map are its sect
 fabrika ship checks $pr_number --sha 03135b91 --wait
 ```
 
+That `--wait` is your whole wait on CI; any other wait follows
+[skill-conventions §14](../../docs/skill-conventions.md).
+
 Terminals: `green` → continue. `red` → disarm, note, route the failing gating runs the notes channel
 names to `heal-ci`, stop. **Name the cause when you record that terminal**, so the park is one a
 recipe can clear rather than one that spends a person: a red head is the park class whose cause most

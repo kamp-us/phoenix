@@ -497,6 +497,9 @@ EOF
 fabrika build release $issue_or_pr_number --token <claim-token>
 ```
 
+If you wait on the PR's CI before you hand off, here or after a repair push, wait the way
+[skill-conventions §14](../../docs/skill-conventions.md) says.
+
 **Terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed);
 `SUCCESS-NO-PR` (work finished with no diff to ship, such as an investigation's diagnosis, proven
 by the note you posted with `build note` since the lane entered build — branch removed, findings
