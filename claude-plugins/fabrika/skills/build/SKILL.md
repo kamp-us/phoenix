@@ -686,6 +686,15 @@ nor handing it on is this skill's instruction — so what you owe is that the co
 lane named: state it in your `build note` and in your terminal report, and never end a round
 claiming there was nothing to fix.
 
+**Read the fold's `requiredChecks` beside its rows too, because no gate emits a FAIL for a red
+required check.** A reviewer's PASS can land before CI settles, so every row can read PASS over a
+head whose required check is red. `red` is repair work, and its `failing` list names each context
+to fix: reproduce each one on the merge ref (below), fix it, and push. A fold with no FAIL rows is
+not a no-work answer over it, and the round never ends claiming there was nothing to fix while a
+required check at head is red. `pending` and `unknown` are unproven, never green: wait for CI the
+way [skill-conventions §14](../../docs/skill-conventions.md) says, then re-run the fold before you
+call the round empty.
+
 The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
 escalation via `fabrika build note <repair-pr> --token <claim-token>` instead of another push.

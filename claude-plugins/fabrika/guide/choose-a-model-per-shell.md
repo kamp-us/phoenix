@@ -6,15 +6,16 @@ different model family than `builder`.
 ## Shells inherit unless you override
 
 No fabrika agent shell sets a model. The Claude Code shells in [`../agents/`](../agents/) and the Pi
-shells in [`packages/fabrika-pi/agents/`](../../../packages/fabrika-pi/agents/) carry no `model` field,
+shells bundled in the `@kampus/fabrika-pi` package carry no `model` field,
 so each one runs on the spawning session's model unless a harness setting or a per-spawn override
 says otherwise. A driver on model X spawns `reviewer` on model X.
 
 Pick the override for your harness:
 
 - Claude Code: the steps below.
-- Pi: [pin one shell's model](../../../packages/fabrika-pi/README.md#pin-one-shells-model) in the
-  package README.
+- Pi: with `pi-subagents`, set `subagents.agentOverrides.<shell name>.model` in `.pi/settings.json`
+  (project) or `~/.pi/agent/settings.json` (user; project wins). The `@kampus/fabrika-pi` README's
+  "Pin one shell's model" section has the full example and precedence order.
 - Codex: [the dispatch section](codex.md#dispatch-a-lane-task) of the Codex guide.
 
 ## Run one shell on a chosen model in Claude Code
