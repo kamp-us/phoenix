@@ -1017,7 +1017,10 @@ The reasoning arrives on **stdin only**, for the same reason as `post` and `note
 | stdin | markdown | yes | — | which files changed and why none of them renders anything, or, on a `--no-preview` route, why the PR has no preview and what stands in for the render |
 
 **Output** — machine. One JSON object:
-`{"answer":"routed","namespace":"review-ui","sha":"6c6fe226…","uiFiles":2,"verifiedAt":null,"basis":null,"textReview":"absent","upsert":"created","commentUrl":"…"}`.
+`{"answer":"routed","namespace":"review-ui","sha":"6c6fe226…","uiFiles":2,"verifiedAt":null,"basis":null,"textReview":"absent","upsert":"created","commentUrl":"…"}`,
+or, where the diff raises no `ui` class and nothing is posted,
+`{"answer":"none","namespace":"review-ui","sha":"6c6fe226…","uiFiles":0}`. `answer` is the closed
+outcome token: `routed` or `none`.
 `verifiedAt` is the `--verified-at` head the range was cleared over, and `null` where the route
 rested on no hand-verification. `basis` is `hand-check` or `skip` on a `--no-preview` route and
 `null` otherwise; it is the same token the record's first line carries. `handCheck` is the id of the
@@ -1044,9 +1047,9 @@ diff was read, and is re-read rather than re-bound. Read the changed-file list t
 because that count is computed against a base cached at the last push and no caller can invalidate
 it. An **empty** list is `7` — the `ui` count would then be derived over a diff nobody read — and a
 list at GitHub's 3000-file ceiling is `11`, because that is the one truncation the enumeration
-cannot rule out on its own and it can only ever shrink the `ui` count. Refuse a diff that raises no
-`ui` class (`7`) — nothing required
-this namespace, so there is nothing to route; the predicate is `review/classes.ts`'s own
+cannot rule out on its own and it can only ever shrink the `ui` count. Answer `none` on exit `0` over a
+diff that raises no `ui` class, writing nothing — nothing required
+this namespace, so there is nothing to route, and that is a clean end rather than a refusal; the predicate is `review/classes.ts`'s own
 `isUiSurface`, over the same declared `uiSurfaces` prefixes the gate raised the class from, never a
 second copy. Read the PR's comments and resolve the `review-code` verdict in force at `--sha`; a
 standing FAIL is `20`, and so is an absent verdict on a route carrying `--verified-at` or resting on
@@ -1141,7 +1144,8 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `3` | stdin was read and held nothing |
 | `5` | the assembled comment carries a machine-local path |
 | `6` | the body is a bare `@` path reference |
-| `7` | the PR is proven absent (404), closed, has zero changed files, is served an empty changed-file list, or its diff raises no `ui` class |
+| `0` with `"answer":"none"` | the diff raises no `ui` class — nothing required this namespace, so nothing was posted |
+| `7` | the PR is proven absent (404), closed, has zero changed files, or is served an empty changed-file list |
 | `8` | the create/edit failed — UNKNOWN whether the record landed |
 | `9` | the record landed but does not read back as sent |
 | `10` | `--sha` or `--verified-at` is not a head SHA, `--clause` is blank, `--hand-check` names no comment, or `--verified-at` is passed beside `--no-preview` |
@@ -1162,7 +1166,6 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `review-ui route: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review-ui route: PR #<n> is closed — a route on a closed PR resolves nothing.` | 7 | refusal |
 | `review-ui route: GitHub served no changed files for #<n> against the <m> its own pull-request record declares — refusing to derive the ui class from a diff nobody read.` | 7 | refusal |
-| `review-ui route: #<n>'s diff raises no ui class, so ship gate requires no review-ui namespace — there is nothing to route.` | 7 | refusal |
 | `review-ui route: create/edit failed: <reason> — UNKNOWN whether the route landed; re-read the PR before retrying.` | 8 | refusal |
 | `review-ui route: posted, but the read-back does not yield this record (<why>) — inspect comment <id>.` | 9 | refusal |
 | `review-ui route: --sha "<value>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
@@ -1251,9 +1254,10 @@ preview comment announces a deploy, it refuses on `23` and names the preview to 
 - **Two rules that could not both hold.** The `ui` class is raised by a path test, and the gate
   demanded a namespace nothing legal could fill; recording the routed answer is the shape that
   keeps both, rather than narrowing the class.
-- **The zero-scope refusals this verb inherits rather than loosens**: `render` still refuses zero
-  surfaces, `post` still refuses without captures, and this verb refuses a diff that raises no `ui`
-  class.
+- **The zero-scope rules this verb inherits rather than loosens**: `render` still refuses zero
+  surfaces, `post` still refuses without captures, and this verb refuses a diff nobody read (an
+  empty changed-file list) — while a diff it did read that raises no `ui` class is not a refusal:
+  it answers `none` on exit `0` and writes nothing.
 - **The record is authored**, so the write+ ACL binds it at `ship gate` exactly as it binds a
   verdict marker.
 - **A hand-verification's currency is the verb's judgment, not the gate's**, and it binds the
@@ -1278,7 +1282,8 @@ live once in the shared matrix, which owns every code's single meaning); every e
 message, stream, and code; every verb states scope and zero-scope behavior (`render` refuses
 zero surfaces at `1`; `post` refuses an empty body at `3` and an unreadable evidence set at
 `4`/`11`; `note` refuses an empty body at `3` and a verdict-shaped body at `10`; `route` refuses an
-empty body at `3` and a diff raising no `ui` class at `7`); and no clause
+empty body at `3` and an empty changed-file list at `7`, and answers `none` on exit `0` over a diff
+raising no `ui` class); and no clause
 defers to a v1 script, another skill's prose, or the authoring session —
 the `review` and `build-ui` references are to sibling fabrika contracts, the sanctioned
 cross-contract shape, with the `build-ui` reference flagged as pre-merge in the authoring PR.

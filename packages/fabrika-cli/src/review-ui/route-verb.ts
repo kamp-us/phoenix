@@ -16,11 +16,14 @@
  * requirement is reachable from here.
  *
  * The one mechanical precondition is that the PR actually raises the class: routing a namespace the
- * diff never derived resolves nothing and leaves a record claiming a question nobody asked.
+ * diff never derived resolves nothing and leaves a record claiming a question nobody asked. That case
+ * is a clean end, not a refusal, so it answers `none` on exit 0 and writes nothing — a caller tells it
+ * from an absent or closed PR by the exit code alone, without parsing a sentence.
  * Deriving it re-uses `review/classes.ts`'s own `isUiSurface`, over the same declared `uiSurfaces`
- * prefixes the gate raised the class from, rather than a second predicate — the refusal must bind
- * the exact rule that raised the class, or the two drift and this verb refuses on a PR the gate is
- * meanwhile blocking.
+ * prefixes the gate raised the class from, rather than a second predicate — the `none` answer must
+ * bind the exact rule that raised the class, or the two drift and this verb answers `none` on a PR
+ * the gate is meanwhile blocking, sending the reviewer to ROUTED-ELSEWHERE while `ship gate` still
+ * owes the namespace.
  *
  * The file set that runs over is the `pulls/<n>/files` enumeration read through
  * {@link platformFileSet}, so the `changed_files` the pull-request record declares is reported as a
@@ -304,7 +307,7 @@ export const runRoute = (
 			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 		];
 		// Zero is the shortfall the enumeration alone establishes, and with the declared count no
-		// longer refusing it is the only seat left: the zero-class refusal below would then answer
+		// longer refusing it is the only seat left: the no-ui-class answer below would then say
 		// "nothing renders" over a diff nobody read.
 		if (files.length === 0) {
 			return refuse(
@@ -314,7 +317,7 @@ export const runRoute = (
 			);
 		}
 		// The ceiling is the one truncation the enumeration cannot rule out on its own, and a
-		// truncated list can only ever *shrink* the ui count, so the zero-class refusal below would
+		// truncated list can only ever *shrink* the ui count, so the no-ui-class answer below would
 		// fire on a PR whose class the gate is meanwhile raising. Seated at PRECONDITION_UNKNOWN
 		// rather than the `13` the `ship` verbs use: `13` is RENDER_CRASHED in this group's table,
 		// and this verb already answers UNKNOWN for its other capped platform read, the
@@ -331,10 +334,12 @@ export const runRoute = (
 			);
 		}
 		if (ui.length === 0) {
-			return refuse(
-				ZERO_SCOPE,
-				`${VERB}: #${pr}'s diff raises no ui class, so ship gate requires no ${NAMESPACE} namespace — there is nothing to route.`,
-				diagnostics,
+			return answer(
+				JSON.stringify({answer: "none", namespace: NAMESPACE, sha: inspected, uiFiles: 0}),
+				[
+					...diagnostics,
+					`${VERB}: #${pr}'s diff raises no ui class, so ship gate requires no ${NAMESPACE} namespace — there is nothing to route; nothing was posted.`,
+				],
 			);
 		}
 
