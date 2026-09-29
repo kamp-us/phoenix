@@ -265,9 +265,15 @@ describe("a subproject's refused rows", () => {
 				yield* eventually("the subproject's processes run", liveIds(kernel), (ids) =>
 					ids.includes(s.scope("main")),
 				);
-				const said = logs.flat().filter((line): line is string => typeof line === "string");
-				const refusal = said.find((line) => line.includes(s.scope("future-counter")));
-				assert.isDefined(refusal, JSON.stringify(said));
+				const said = Effect.sync(() =>
+					logs.flat().filter((line): line is string => typeof line === "string"),
+				);
+				const namesRow = (line: string) => line.includes(s.scope("future-counter"));
+				const lines = yield* eventually("the refused row is logged", said, (lines) =>
+					lines.some(namesRow),
+				);
+				const refusal = lines.find(namesRow);
+				assert.isDefined(refusal, JSON.stringify(lines));
 				assert.include(refusal, sub);
 			}).pipe(
 				Effect.scoped,
