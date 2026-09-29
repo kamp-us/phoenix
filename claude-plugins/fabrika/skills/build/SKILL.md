@@ -748,6 +748,14 @@ UNKNOWN, `14` means the branch, nonce, PR, or issue relationship is wrong, and `
 claim is foreign: stop on every one before
 mutation, naming the code. Re-run this same two-subject proof before each later git mutation.
 
+**The next round reviews the whole PR at your new head, not your fix.** A verdict binds only the
+head it read, so your push leaves every verdict stale, and the next [`review`](../review/SKILL.md)
+reads the full diff at the new head against every acceptance criterion of `<served-issue>`. A round
+that fixed only the lines its FAIL rows named comes back with new findings elsewhere in the PR. So
+before you push, re-read the whole diff against the served issue's criteria
+(`fabrika build issue <served-issue>`), not only the rows you fixed, and fix what that read finds in
+this round.
+
 Then re-validate with `fabrika build check --surface <yours>`, push with `fabrika build push
 --force-with-lease`, answer the findings in a `fabrika build note <repair-pr> --token <claim-token>`
 naming each one addressed, then release with `fabrika build release <repair-pr> --token
