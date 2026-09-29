@@ -68,7 +68,7 @@ The registry is `BUILDABLE_SURFACES` in
 One id per invocation. A surface whose content is already in place is `exists` at exit 0, and
 nothing is written. `design-manifest` and `roadmap-focus` take their content on stdin, and a target
 already present is `exists`. `gitignore-row` and `claude-md-section` append their own row/block and
-read no stdin. `settings-patch` and `dep-pin` are the two that write into a file already there.
+read no stdin. `settings-patch` and `dep-pin` are the two that merge into a file already there.
 `settings-patch` merges the `kampus` marketplace registration and the `fabrika@kampus` flip into a
 `.claude/settings.json` that is already there — unknown keys preserved, unparseable bytes refused
 unwritten — and creates the file when it is absent; it reads no stdin either way. `dep-pin` pins the

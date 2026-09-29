@@ -1309,8 +1309,10 @@ spaces, four spaces or a tab), its line endings, and whether it ends on a newlin
 inline formatting: the whole object is re-rendered, so an array or object a file writes on one line
 (`"files": ["dist"]`) comes back expanded over several lines. A `dep-pin` that moves the row out of
 `dependencies` also removes that line there. So a two-space `package.json` whose values are already
-expanded one per line gains only the lines the new row adds, plus that removed line when a row
-moves. A file with no indented line (`{}`,
+expanded one per line gets a diff of mostly the lines the new row adds, plus the comma edits JSON
+forces around it: the sibling line before an added last row gains a trailing comma, the line before
+a removed last row loses one, and a `dependencies` whose only row moved collapses to `{}`. A file
+with no indented line (`{}`,
 or one minified line) has no indent to keep and takes a tab. A file created from nothing is written
 tab-indented, with `\n` line endings and a final newline.
 
