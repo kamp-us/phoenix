@@ -19,8 +19,15 @@ import {
 } from "../config/board.ts";
 import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
 import * as report from "../exit-codes.ts";
-import {fakeFs, fakeHttp, fakeSeams, fakeShell, type HttpReply} from "../fakes.test-support.ts";
-import {ok} from "../io/git.ts";
+import {
+	fakeFs,
+	fakeHttp,
+	fakeSeams,
+	fakeShell,
+	type HttpReply,
+	type Scripted,
+} from "../fakes.test-support.ts";
+import {type Attempt, ok} from "../io/git.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {AWAITING_RELEASE, DEFAULT_STATUS_NAMES, KILL_LABEL, PLANNED, STATUSES} from "../labels.ts";
@@ -1111,6 +1118,37 @@ describe("the dep-pin surface", () => {
 	});
 });
 
+const MILESTONES = /GET .*\/repos\/o\/r\/milestones\?state=open/;
+
+const openMilestones = (...numbers: ReadonlyArray<number>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(numbers.map((number) => ({number, title: `M${number}`}))),
+});
+
+const writeRoadmap = (
+	content: string,
+	script: ReadonlyArray<Scripted> = [],
+	surfaceId = "roadmap-focus",
+	repo: Attempt<string> = ok("o/r"),
+) => {
+	const fs = fakeFs({files: {}});
+	const seams = fakeSeams(script);
+	return Effect.runPromise(
+		Effect.provide(
+			runBootstrap({
+				surfaceId,
+				path: null,
+				json: true,
+				repoRoot: "/repo",
+				configSource: {_tag: "Absent"},
+				repo,
+				stdin: Effect.succeed({_tag: "Text", text: content} as StdinRead),
+			}),
+			Layer.mergeAll(fs.layer, seams.layer),
+		),
+	).then((outcome) => ({outcome, requests: seams.requests}));
+};
+
 /**
  * `roadmap-focus` writes a machine-read file — `triage homes` joins milestones through its
  * `#<n>` cells — and a byte-match read-back reads the same over a roadmap that parses to nothing.
@@ -1118,23 +1156,10 @@ describe("the dep-pin surface", () => {
  * other file surface's bytes do not move.
  */
 describe("the roadmap-focus row count", () => {
-	const write = (content: string, surfaceId = "roadmap-focus") => {
-		const fs = fakeFs({files: {}});
-		return Effect.runPromise(
-			Effect.provide(
-				runBootstrap({
-					surfaceId,
-					path: null,
-					json: true,
-					repoRoot: "/repo",
-					configSource: {_tag: "Absent"},
-					repo: ok("o/r"),
-					stdin: Effect.succeed({_tag: "Text", text: content} as StdinRead),
-				}),
-				Layer.mergeAll(fs.layer, fakeShell([]).layer),
-			),
+	const write = (content: string, surfaceId = "roadmap-focus") =>
+		writeRoadmap(content, [[MILESTONES, openMilestones(46, 47)]], surfaceId).then(
+			({outcome}) => outcome,
 		);
-	};
 
 	const PARSING = [
 		"# Roadmap",
@@ -1185,9 +1210,9 @@ describe("the roadmap-focus row count", () => {
 	it("counts the rows a parsing roadmap joins, singular at one", async () => {
 		const outcome = await write(PARSING);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({arcs: 2, campaigns: 1});
-		expect(outcome.stderr).toEqual([
+		expect(outcome.stderr[0]).toBe(
 			"status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 2 arcs, 1 campaign.",
-		]);
+		);
 		expect(roadmapCount(PARSING).clause).toBe("2 arcs, 1 campaign");
 	});
 
@@ -1226,6 +1251,81 @@ describe("the roadmap-focus row count", () => {
 		expect(outcome.stderr).toEqual([
 			"status bootstrap: created design-system-manifest.md for design-manifest, read-back conformed.",
 		]);
+	});
+});
+
+/**
+ * An adopter wrote a roadmap pinning a milestone they had not opened yet, got `read-back conformed`
+ * at exit 0, and first heard of it when `triage homes` refused. The pin check warns at the write,
+ * and a failed milestone read is said to be unknown rather than left silent.
+ */
+describe("the roadmap-focus pin check", () => {
+	const ROADMAP = [
+		"## Arcs",
+		"",
+		"| Arc | Milestone | State |",
+		"|---|---|---|",
+		"| Search | #46 | active |",
+		"| Editor | #47 | next |",
+		"",
+		"## Campaigns",
+		"",
+		"| Campaign | Milestone | State |",
+		"|---|---|---|",
+		"| fabrika everywhere | #99 | paused |",
+		"",
+	].join("\n");
+
+	it("confirms every arc pin that is an open milestone", async () => {
+		const {outcome} = await writeRoadmap(ROADMAP, [[MILESTONES, openMilestones(46, 47, 50)]]);
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr.slice(1)).toEqual([
+			"status bootstrap: pin check — every arc pin is an open milestone in o/r (scanned 3 open milestones).",
+		]);
+	});
+
+	it("warns naming each arc pin that is not an open milestone, and still exits 0", async () => {
+		const {outcome} = await writeRoadmap(ROADMAP, [[MILESTONES, openMilestones(47)]]);
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({outcome: "created", arcs: 2});
+		expect(outcome.stderr.slice(1)).toEqual([
+			"status bootstrap: warning — an arc pins a milestone that is not open in o/r: #46 (Search). `triage homes` offers only open milestones; open it or fix the pin.",
+		]);
+	});
+
+	it("names every unopened arc pin in one warning, over a repo with no milestones", async () => {
+		const {outcome} = await writeRoadmap(ROADMAP, [[MILESTONES, openMilestones()]]);
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr.slice(1)).toEqual([
+			"status bootstrap: warning — arcs pin milestones that are not open in o/r: #46 (Search), #47 (Editor). `triage homes` offers only open milestones; open them or fix the pin.",
+		]);
+	});
+
+	it("says the check is unknown when the milestone read fails, never that the pins are fine", async () => {
+		const {outcome} = await writeRoadmap(ROADMAP, [[MILESTONES, {status: 502, body: "{}"}]]);
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr).toHaveLength(2);
+		expect(outcome.stderr[1]).toMatch(
+			/^status bootstrap: pin check unknown — cannot read o\/r's open milestones: .+; whether the arc pins are open milestones is unread\.$/,
+		);
+	});
+
+	it("says the check is unknown when no target repo resolved", async () => {
+		const {outcome, requests} = await writeRoadmap(ROADMAP, [], "roadmap-focus", {
+			_tag: "Failure",
+			reason: "no origin remote",
+		});
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr[1]).toBe(
+			"status bootstrap: pin check unknown — no target repo resolved (no origin remote); whether the arc pins are open milestones is unread.",
+		);
+		expect(requests).toHaveLength(0);
+	});
+
+	it("reads no milestones for a roadmap with no arc rows", async () => {
+		const {outcome, requests} = await writeRoadmap("## Arcs\n\n| Arc | Milestone |\n|---|---|\n");
+		expect(outcome.stderr).toHaveLength(1);
+		expect(requests).toHaveLength(0);
 	});
 });
 

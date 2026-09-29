@@ -81,3 +81,14 @@ export const parseRoadmap = (text: string): RoadmapRows => ({
  */
 export const roadmapRowFor = (rows: RoadmapRows, milestone: number): string | null =>
 	[...rows.arcs, ...rows.campaigns].find((row) => row.milestone === milestone)?.name ?? null;
+
+/**
+ * The arc rows whose pinned milestone is not among `open`, in roadmap order.
+ *
+ * Only arcs are read: `triage homes` offers an arc's milestone only while it is open, so an arc
+ * pinning an absent or closed milestone is a row that offers no home.
+ */
+export const unopenedArcPins = (
+	rows: RoadmapRows,
+	open: ReadonlySet<number>,
+): ReadonlyArray<RoadmapRow> => rows.arcs.filter((row) => !open.has(row.milestone));

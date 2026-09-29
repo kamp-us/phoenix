@@ -1131,7 +1131,7 @@ a tenth is a change to this table, not a new rule.
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
 | `design-manifest` | `--path`, default `design-system-manifest.md` at the repo root | **stdin**, required — the skill's inferred draft | the file's bytes match stdin through `normalizeForReadback` |
-| `roadmap-focus` | `--path`, default the `roadmapFile` this repo declares, itself defaulting to `ROADMAP.md` | **stdin**, required — to the [grammar below](#roadmap-grammar), which is not the drafting skill's judgement | same, plus the parsed row count in the notice ([why](#roadmap-grammar)) |
+| `roadmap-focus` | `--path`, default the `roadmapFile` this repo declares, itself defaulting to `ROADMAP.md` | **stdin**, required — to the [grammar below](#roadmap-grammar), which is not the drafting skill's judgement | same, plus the parsed row count in the notice ([why](#roadmap-grammar)) and a [pin check](#roadmap-pin-check) notice that never changes the exit |
 | `gitignore-row` | `--path`, default `.gitignore` at the repo root | **none** — the two comment lines and the row `/.fabrika/`, fixed below, appended to whatever the file already holds | the re-read contains both the row and the whole of the pre-existing text, each through `normalizeForReadback` |
 | `claude-md-section` | `--path`, default `CLAUDE.md` at the repo root | **none** — the canonical operator-first "work flows through fabrika" section, fixed below, appended when its marker heading `## Work flows through fabrika` is absent — the append-if-absent arm of the merge rule | the re-read contains both the heading and the whole of the pre-existing text, each through `normalizeForReadback` |
 | `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, `ready-for:` + every imported `AUDIENCES` member, every imported `CLASS_LABELS` member (`class:code`, `class:doc`, `class:skill`, `class:ui`), and `closed-by-triage`, the label `triage kill` stamps — twenty-one today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
@@ -1214,6 +1214,15 @@ read-back predicate stays the byte match this table states — a count is not a 
 Refusing an unjoinable roadmap belongs to `triage homes`, whose exit `7` already fires at the point
 the rows are actually needed; gating here would block the write a human then has to fix by hand. A
 later reader tempted to "fix" this into a gate is looking at the design, not a gap.
+
+<a id="roadmap-pin-check"></a>**The write also checks each arc's pin against the target repo's open
+milestones**, under the same rule: reported, never enforced. After the read-back it reads the repo's
+open milestones and prints one more notice. Every arc pin open reads `pin check — every arc pin is an
+open milestone`. Any arc pinning a milestone that is absent or closed gets one `warning` naming each
+such `#<n>` with its arc, at exit `0`, because `triage homes` offers only open milestones. A failed
+milestone read, or no resolvable target repo, prints `pin check unknown`. It is never silent, so no
+notice can be read as "every pin resolves". A roadmap with no arc rows pins nothing and reads nothing.
+Campaign rows are not checked. `--json` does not change.
 
 The `gitignore-row` block, fixed here so no clause defers to source. The last line is the row
 itself, and it is also the marker the collision guard and the read-back match on:
@@ -1320,7 +1329,7 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 |---|---|---|---|---|
 | *(positional)* | string | yes | — | one `<surface-id>` from the registry above |
 | `--path` | string | no | the registry default | override the target path for a file, line, json or dep-pin surface; must resolve inside the repository root |
-| `--repo` | string | no | resolved | the repository, for the two non-file surfaces |
+| `--repo` | string | no | resolved | the repository the three GitHub surfaces (`label-taxonomy`, `issue-shape-markers`, `readout-artifact`) write to, and the one whose open milestones the `roadmap-focus` [pin check](#roadmap-pin-check) reads |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes for `design-manifest` and `roadmap-focus` | — | the content. `NoStdin` and `Text("")` are exit `3`; a **failed** stdin read is exit `1` — the content is UNKNOWN, never empty, the split `packages/fabrika-cli/src/report/file-verb.ts` already ships |
 
@@ -1394,6 +1403,10 @@ the shape this seat exists to prevent. The skill loops.
 | `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.
 | `status bootstrap: created <target> for <surface-id>, read-back conformed.` | 0 | notice |
 | `status bootstrap: created <target> for roadmap-focus, read-back conformed — <n> arc(s), <n> campaign(s).` | 0 | notice |
+| `status bootstrap: pin check — every arc pin is an open milestone in <owner/name> (scanned <n> open milestone(s)).` | 0 | notice |
+| ``status bootstrap: warning — <an arc pins a milestone that is|arcs pin milestones that are> not open in <owner/name>: #<n> (<arc>), …. `triage homes` offers only open milestones; open <it|them> or fix the pin.`` | 0 | notice |
+| `status bootstrap: pin check unknown — cannot read <owner/name>'s open milestones: <reason>; whether the arc pins are open milestones is unread.` | 0 | notice |
+| `status bootstrap: pin check unknown — no target repo resolved (<reason>); whether the arc pins are open milestones is unread.` | 0 | notice |
 | `status bootstrap: appended <marker> to <target> for <surface-id>, read-back conformed.` | 0 | notice |
 | `status bootstrap: merged the declared keys into <target> for settings-patch, read-back conformed.` | 0 | notice |
 | `status bootstrap: cannot resolve @kampus/fabrika-cli's current release from npm: <reason> — nothing pinned, nothing written.` | 11 | refusal |
@@ -1433,6 +1446,7 @@ $ fabrika status bootstrap roadmap-focus <<'EOF'
 EOF
 bootstrap	created	roadmap-focus	ROADMAP.md	ok
 status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 1 arc, 0 campaigns.
+status bootstrap: pin check — every arc pin is an open milestone in acme/storefront (scanned 1 open milestone).
 ```
 
 ```

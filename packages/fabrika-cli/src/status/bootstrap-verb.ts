@@ -25,12 +25,13 @@ import {loadConfig} from "../config/load.ts";
 import {type Read, readRoadmapFile} from "../config/paths.ts";
 import {resolveBoard} from "../config/resolve-board.ts";
 import {appendText, exists, readFile, writeFile} from "../io/fs.ts";
-import type {Attempt} from "../io/git.ts";
+import type {Attempt, Shell} from "../io/git.ts";
 import {
 	createLabel,
 	createUnlabelledIssue,
 	getIssue,
 	listLabels,
+	listOpenMilestones,
 	openIssuesTitled,
 } from "../io/issues.ts";
 import {isRecord, parseJsonOrReason} from "../io/json.ts";
@@ -40,7 +41,7 @@ import {CLASS_LABELS, KILL_LABEL} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
 import {DEFAULT_BOARD_VOCABULARY, FACET_VOCABULARY} from "../triage/facets.ts";
-import {parseRoadmap, ROADMAP_FILE} from "../triage/roadmap.ts";
+import {parseRoadmap, ROADMAP_FILE, unopenedArcPins} from "../triage/roadmap.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	BARE_AT_PATH,
@@ -158,6 +159,44 @@ export const roadmapCount = (text: string): ContentCount => {
 };
 
 /**
+ * The `roadmap-focus` pin check: each arc's `#<n>` against the target repo's open milestones.
+ *
+ * Reported like {@link roadmapCount}, never enforced — a pin to a milestone not yet open is a
+ * warning at exit `0`. A repo or milestone read that fails says the check is unknown, so a silent
+ * notice can never be read as "every pin resolves". A roadmap with no arc rows pins nothing, and
+ * reads nothing.
+ */
+export const roadmapPinCheck = (
+	text: string,
+	repo: Attempt<string>,
+): Shell<ReadonlyArray<string>> =>
+	Effect.gen(function* () {
+		const rows = parseRoadmap(text);
+		if (rows.arcs.length === 0) return [];
+		if (repo._tag === "Failure") {
+			return [
+				`${VERB}: pin check unknown — no target repo resolved (${repo.reason}); whether the arc pins are open milestones is unread.`,
+			];
+		}
+		const open = yield* listOpenMilestones(repo.value);
+		if (open._tag === "Failure") {
+			return [
+				`${VERB}: pin check unknown — cannot read ${repo.value}'s open milestones: ${open.reason}; whether the arc pins are open milestones is unread.`,
+			];
+		}
+		const unopened = unopenedArcPins(rows, new Set(open.value.map((m) => m.number)));
+		if (unopened.length === 0) {
+			return [
+				`${VERB}: pin check — every arc pin is an open milestone in ${repo.value} (scanned ${plural(open.value.length, "open milestone")}).`,
+			];
+		}
+		const named = unopened.map((row) => `#${row.milestone} (${row.name})`).join(", ");
+		return [
+			`${VERB}: warning — ${unopened.length === 1 ? "an arc pins a milestone that is" : "arcs pin milestones that are"} not open in ${repo.value}: ${named}. \`triage homes\` offers only open milestones; open ${unopened.length === 1 ? "it" : "them"} or fix the pin.`,
+		];
+	});
+
+/**
  * A surface carries only the fields its own kind uses, so no caller reads a `defaultPath` off a
  * label surface or a label set off a file.
  */
@@ -182,6 +221,11 @@ export type BuildableSurface =
 			 * object exactly as they were, which is what keeps the other surfaces byte-identical.
 			 */
 			readonly count?: (text: string) => ContentCount;
+			/**
+			 * Present only where the content names things in the target repo. Its lines ride the
+			 * notice channel after the write; it never changes the outcome or the exit.
+			 */
+			readonly repoCheck?: (text: string, repo: Attempt<string>) => Shell<ReadonlyArray<string>>;
 	  }
 	| {
 			readonly id: string;
@@ -306,6 +350,7 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 		defaultPath: ROADMAP_FILE,
 		declared: readRoadmapFile,
 		count: roadmapCount,
+		repoCheck: roadmapPinCheck,
 	},
 	{
 		id: "gitignore-row",
@@ -523,12 +568,15 @@ const buildFile = (
 			);
 		}
 		const count = surface.count?.(content);
+		const checked =
+			surface.repoCheck === undefined ? [] : yield* surface.repoCheck(content, input.repo);
 		return created(
 			surface.id,
 			relative,
 			input.json,
 			`${VERB}: created ${relative} for ${surface.id}, read-back conformed${count === undefined ? "" : ` — ${count.clause}`}.`,
 			count?.fields,
+			checked,
 		);
 	});
 
