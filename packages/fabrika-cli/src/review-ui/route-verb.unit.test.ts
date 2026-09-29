@@ -657,6 +657,38 @@ describe("review-ui route --no-preview", () => {
 		expect(two.outcome.code).toBe(PREVIEW_EXISTS);
 	});
 
+	const noPreviewMarker = (sha: string) =>
+		"<!-- preview-deploy -->\n### No preview deploy\n" +
+		`<!-- preview-deploy:none head:${sha} -->\n` +
+		"- No preview deploy for this PR — its diff touches no deploy-relevant path, " +
+		"so no preview stack was minted and `e2e` is not applicable. " +
+		`<sub>(${sha.slice(0, 7)})</sub>`;
+
+	it("routes per whenNoPreview over the workflow's no-preview marker at this head", async () => {
+		const skipped = await run(
+			script([preview(noPreviewMarker(HEAD))], flagged("skip")),
+			under("skip"),
+		);
+		expect(skipped.outcome.code).toBe(0);
+		expect(JSON.parse(skipped.outcome.stdout)).toMatchObject({answer: "routed", basis: "skip"});
+
+		const required = await run(
+			script([preview(noPreviewMarker(HEAD))], flagged("skip")),
+			under("require-render"),
+		);
+		expect(required.outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
+		expect(required.requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("refuses on 11 where the no-preview marker names another head, posting nothing", async () => {
+		const {outcome, requests} = await run(
+			script([preview(noPreviewMarker(MOVED))], flagged("skip")),
+			under("skip"),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
 	it("refuses on 11 where the preview announcement does not read", async () => {
 		const {outcome, requests} = await run(
 			script([preview("<!-- preview-deploy:web -->\nno url here")], flagged("skip")),

@@ -184,7 +184,7 @@ const previewAbsence = (
 	sha: string,
 	comments: ReadonlyArray<CommentRecord>,
 ): {readonly code: number; readonly message: string} | null => {
-	const preview = resolvePreview(comments, null);
+	const preview = resolvePreview(comments, null, sha);
 	switch (preview._tag) {
 		case "NoPreview":
 			return null;
