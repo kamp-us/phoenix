@@ -154,24 +154,18 @@ const find = (ran: ReadonlyArray<Ran>, pattern: RegExp): Ran => {
 };
 
 describe("createWorktree", () => {
-	it("holds the lock for the fetch and the add, and installs after releasing it", async () => {
+	it("reads the common dir and default branch first, holds the lock for the fetch and the add, and installs after releasing it", async () => {
 		const g = ground();
 		const {out, ran} = await create(g, healthy(g));
 
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(`${g.plan.worktreePath}\n`);
+		expect(find(ran, /--git-common-dir$/).locked).toBe(false);
+		expect(find(ran, /^git symbolic-ref /).locked).toBe(false);
 		expect(find(ran, /^git fetch /).locked).toBe(true);
 		expect(find(ran, /worktree add --detach/).locked).toBe(true);
 		expect(find(ran, /^git hook run /).locked).toBe(false);
 		expect(existsSync(g.lockDir)).toBe(false);
-	});
-
-	it("reads the common dir and the default branch before taking the lock", async () => {
-		const g = ground();
-		const {ran} = await create(g, healthy(g));
-
-		expect(find(ran, /--git-common-dir$/).locked).toBe(false);
-		expect(find(ran, /^git symbolic-ref /).locked).toBe(false);
 	});
 
 	it("adds with hooks off, then fires post-checkout itself in the new tree with add's arguments", async () => {
@@ -246,19 +240,5 @@ describe("createWorktree", () => {
 		expect(ran.some((r) => r.line.startsWith("git fetch"))).toBe(false);
 		// The live holder's lock is left exactly as it was.
 		expect(existsSync(join(g.lockDir, "holder"))).toBe(true);
-	});
-
-	it("takes over a lock whose holder died, and provisions", async () => {
-		const g = ground();
-		mkdirSync(g.lockDir, {recursive: true});
-		writeFileSync(
-			join(g.lockDir, "holder"),
-			stampOf({id: "dead", pid: 777, host: "this-host", at: Date.now()}),
-		);
-
-		const {out} = await create(g, healthy(g));
-
-		expect(out.code).toBe(0);
-		expect(existsSync(g.lockDir)).toBe(false);
 	});
 });

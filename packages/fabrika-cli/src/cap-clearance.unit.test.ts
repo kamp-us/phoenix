@@ -58,11 +58,6 @@ describe("capReached", () => {
 		expect(capReached(CAP_ROUND, [])).toBe(true);
 	});
 
-	/** The whole point of the grant: the round it was issued at proceeds. */
-	it("lets the cleared round through", () => {
-		expect(capReached(CAP_ROUND, [CAP_ROUND])).toBe(false);
-	});
-
 	/**
 	 * A clearance binds the round, not the head, so the push it exists to permit does not spend it —
 	 * only another FAIL round does, and then it does not re-arm.

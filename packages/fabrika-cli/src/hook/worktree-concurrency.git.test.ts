@@ -23,8 +23,8 @@
  * read the arm out of a timing race, and a test that waits for one is a test that hangs on the
  * machine where it never fires. The state is reproduced directly instead — the exact
  * administrative directory a failed `git worktree add` leaves — so the fault fires on every git
- * measured without waiting for anything. The timing race is still driven, at a declared bound, and
- * asserts nothing when it does not open.
+ * measured without waiting for anything. The unlocked fan below still drives the race, and holds
+ * that no spawn is lost whether or not a window opens.
  *
  * **One thing about that planted state is version-dependent, and it is asserted as a choice between
  * the two behaviours measured rather than as the one this machine has.** Whether a *bare* re-run
@@ -285,24 +285,6 @@ describe("provisioning a worktree under parallel spawns", () => {
 		// Asserted as sets so a failure prints the losing spawn's own diagnostics, not `191 !== 192`.
 		expect(new Set(spawns.map((spawn) => spawn.base))).toEqual(new Set([tip]));
 		expect(new Set(spawns.map((spawn) => spawn.created))).toEqual(new Set([true]));
-	}, 300_000);
-
-	/**
-	 * The live-sibling source, which unlike the planted one has to be raced for. Bounded and
-	 * declared: on a machine where the window does not open in this budget the test asserts nothing
-	 * rather than spinning until it does.
-	 */
-	it("recovers from the live window too, when this machine's timing opens one", async ({skip}) => {
-		const {clone, scratch} = openClone();
-		const spawns = await fan(clone, scratch, RECOVERY_ATTEMPTS, "live");
-
-		if (armsIn(spawns).size === 0) {
-			skip(
-				`no live concurrency window opened in ${SPAWNS * ROUNDS} spawns on ${gitVersion()} — the window is timing-dependent and this budget is bounded, so nothing is asserted rather than spun for`,
-			);
-			return;
-		}
-		expect(spawns.filter((spawn) => !spawn.created)).toEqual([]);
 	}, 300_000);
 });
 

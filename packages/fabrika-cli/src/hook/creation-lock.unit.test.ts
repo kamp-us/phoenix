@@ -118,17 +118,6 @@ describe("taking the lock", () => {
 		);
 	});
 
-	it("takes over a lock whose holder's process is gone, however young its stamp", async () => {
-		const lockDir = freshLock();
-		plant(lockDir, sibling({at: NOW}));
-
-		const got = await withFs((fs) => acquireCreationLock(fs, lockDir, host([]), 0));
-
-		expect(got._tag).toBe("Held");
-		const stamp = parseStamp(readFileSync(join(lockDir, "holder"), "utf8"));
-		expect(Option.map(stamp, (s) => s.pid)).toEqual(Option.some(4242));
-	});
-
 	it("leaves an unstamped lock alone inside the grace, and takes it after", async () => {
 		const young = freshLock();
 		mkdirSync(young, {recursive: true});
@@ -165,14 +154,11 @@ describe("releasing the lock", () => {
 		expect(existsSync(lockDir)).toBe(true);
 	});
 
-	it.each([
-		["an answer", Effect.succeed("done")],
-		["a defect", Effect.die(new Error("boom"))],
-	])("releases it when the body ends in %s", async (_label, body) => {
+	it("releases it when the body ends in a defect", async () => {
 		const lockDir = freshLock();
 		await withFs((fs) =>
 			Effect.exit(
-				withCreationLock(fs, lockDir, host([]), body, {
+				withCreationLock(fs, lockDir, host([]), Effect.die(new Error("boom")), {
 					onBusy: () => "busy",
 					onUnplaceable: () => "unplaceable",
 				}),

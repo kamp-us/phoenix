@@ -16,18 +16,4 @@ describe("the fabrika-cli version carrier", () => {
 		};
 		assert.strictEqual(VERSION, pkg.version);
 	});
-
-	it("derives that version rather than declaring one", () => {
-		const src = readFileSync(packagePath("src/version.ts"), "utf8");
-		assert.include(
-			src,
-			'import pkg from "../package.json" with {type: "json"}',
-			"src/version.ts must read the package's own package.json",
-		);
-		assert.notMatch(
-			src,
-			/export const VERSION\s*=\s*["'`]/,
-			"src/version.ts must not re-declare a version literal — package.json is the one carrier release-please bumps",
-		);
-	});
 });

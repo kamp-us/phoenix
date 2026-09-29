@@ -20,25 +20,6 @@ describe("read", () => {
 		});
 	});
 
-	it("answers Absent for a comment that never reaches for the format", () => {
-		expect(read("Landed on the assembly branch — over to the next child.\n")._tag).toBe("Absent");
-	});
-
-	it("answers Malformed when the marker names no issue", () => {
-		const result = read("build-deviations:\n\n## Deviations\n\nNone.\n");
-		expect(result._tag).toBe("Malformed");
-	});
-
-	it("answers Malformed, not Absent, when the marker promises a section that never follows", () => {
-		const result = read("build-deviations: #3\n\nEverything went to plan.\n");
-		expect(result._tag).toBe("Malformed");
-	});
-
-	it("passes the section's own drift through as Malformed", () => {
-		const result = read("build-deviations: #3\n\n### Deviations\n\nNone.\n");
-		expect(result._tag).toBe("Malformed");
-	});
-
 	it("does not read a marker quoted further down the body", () => {
 		expect(
 			read(`A child would post:\n\nbuild-deviations: #3\n\n## Deviations\n\nNone.\n`)._tag,

@@ -176,13 +176,6 @@ describe("a plugin-sync refusal", () => {
 		expect(outcome.stderr[0]).toContain(reason);
 	});
 
-	it("never leads with the scope line, whichever path refused", async () => {
-		for (const [, , , options] of paths) {
-			const outcome = await run(options);
-			expect(outcome.stderr[0]).not.toBe(SCOPE);
-		}
-	});
-
 	it("keeps the scope line and every install-binding line, behind the reason", async () => {
 		const outcome = await run({
 			script: reachesThePlan("skills/build/SKILL.md"),

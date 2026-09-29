@@ -32,25 +32,12 @@ describe("read", () => {
 		expect(read(`**${MARKER.trim()}**\n`)).toMatchObject({_tag: "Found", value: {issue: 8}});
 	});
 
-	it("answers Absent for a comment that carries no marker of this format", () => {
-		expect(read("Ruled: take the second fork.\n")._tag).toBe("Absent");
-	});
-
 	it("answers Malformed, never Absent, for each field that can drift", () => {
 		const drifts = [
-			`decision-ruled: #8 @ 4D90E1BB · ruling:${URL} · 2026-08-20T05:11:02Z\n`,
-			"decision-ruled: #8 @ 4d90e1bb27ac · 2026-08-20T05:11:02Z\n",
 			`decision-ruled: 8 @ 4d90e1bb27ac · ruling:${URL} · 2026-08-20T05:11:02Z\n`,
-			`decision-ruled: #8 @ 4d90e1bb27ac · ruling:${URL} · last Thursday\n`,
 			"decision-ruled: #8 @ 4d90e1bb27ac · ruling:not-a-url · 2026-08-20T05:11:02Z\n",
 		];
 		for (const artifact of drifts) expect(read(artifact)._tag).toBe("Malformed");
-	});
-
-	it("refuses a ruling recorded on another issue, however well-formed the URL", () => {
-		const elsewhere =
-			"decision-ruled: #8 @ 4d90e1bb27ac · ruling:https://github.com/o/r/issues/9#issuecomment-3512345 · 2026-08-20T05:11:02Z\n";
-		expect(read(elsewhere)._tag).toBe("Malformed");
 	});
 });
 

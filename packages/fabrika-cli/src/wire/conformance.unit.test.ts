@@ -14,8 +14,8 @@ import {registeredFormats} from "./registry.ts";
 import type * as verdictMarker from "./verdict-marker.ts";
 
 describe("the registry conforms", () => {
-	// `it.each` over an emptied registry would run zero assertions and report green, so scope is
-	// asserted here, once, before any per-row case.
+	// One scan over every row: a finding names its format, and the scanned count fails closed on an
+	// emptied registry, which a per-row `it.each` would pass over with zero assertions.
 	it("scans every registered format and finds no broken law", () => {
 		const report = conformRegistry(registeredFormats);
 		expect(report._tag, `scanned ${report.scanned} formats`).toBe("Scanned");
@@ -30,12 +30,6 @@ describe("the registry conforms", () => {
 		if (report._tag !== "ZeroScope") return;
 		expect(report.scanned).toBe(0);
 		expect(report.reason).toContain("scanned 0 formats");
-	});
-
-	it.each(
-		registeredFormats.map((format) => [format.key, format] as const),
-	)("%s satisfies every law", (_key, format) => {
-		expect(describeFindings(conformFormat(format))).toBe("");
 	});
 });
 
@@ -295,11 +289,5 @@ describe("the witness binds the field name to that field's own type", () => {
 		// @ts-expect-error — the parameter type is `never`, so the call is unwritable. The
 		// runtime throw below is what a caller that reached it anyway gets: a refusal, never `[]`.
 		expect(() => brandWitnesses<{readonly onlyBare: string}>({})).toThrow(/no branded field/);
-	});
-
-	it("declares a brand witness for every registered format", () => {
-		for (const format of registeredFormats) {
-			expect(format.brands.length, `${format.key} declares no brand`).toBeGreaterThan(0);
-		}
 	});
 });

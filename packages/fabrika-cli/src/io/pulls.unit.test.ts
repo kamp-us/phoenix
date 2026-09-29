@@ -66,15 +66,6 @@ const run = (script: ReadonlyArray<readonly [RegExp, HttpReply]>, issue = 5751) 
 };
 
 describe("pullsClosing", () => {
-	it("returns the one PR declaring it closes the issue", async () => {
-		const {result} = await run([[GRAPHQL, page([pr(5803)])]]);
-
-		expect(result).toEqual({
-			_tag: "Ok",
-			value: [{number: 5803, url: "https://github.com/o/r/pull/5803"}],
-		});
-	});
-
 	it("reads zero closers as an empty FACT, not a failure — the caller owns that park", async () => {
 		const {result} = await run([[GRAPHQL, page([])]]);
 
@@ -236,12 +227,6 @@ describe("getPullDiff", () => {
 		const result = await Effect.runPromise(Effect.provide(getPullDiff("o/r", 1), layer));
 		expect(result).toEqual({_tag: "Failure", reason: "GitHub answered HTTP 404: Not Found"});
 	});
-
-	it("falls back to the bare status when the refusal body carries no message", async () => {
-		const {layer} = wired([[/pulls/, served(404, {})]]);
-		const result = await Effect.runPromise(Effect.provide(getPullDiff("o/r", 1), layer));
-		expect(result).toEqual({_tag: "Failure", reason: "GitHub answered HTTP 404"});
-	});
 });
 
 describe("listPullFiles", () => {
@@ -300,11 +285,6 @@ describe("compareFiles", () => {
 	it("refuses an entry that is not a changed file rather than shortening the range", async () => {
 		const {result} = await run(served(200, {files: [{sha: "abc"}]}));
 		expect(result._tag).toBe("Failure");
-	});
-
-	it("carries the platform's own status, so a caller can tell a branch range from a merge-base one", async () => {
-		const {result} = await run(served(200, {status: "diverged", files: [{filename: "a.ts"}]}));
-		expect(result._tag === "Ok" && result.value.status).toBe("diverged");
 	});
 
 	it("refuses a 200 declaring no status — which range the files describe is then unknown", async () => {

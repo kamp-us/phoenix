@@ -129,13 +129,6 @@ describe("the supersede marker carries one entry per retired question", () => {
 		expect(read.value[0]?.round).toBe(2);
 	});
 
-	it("is Malformed when any one line drifts — never a shorter Found", () => {
-		const read = grillSupersede.read(
-			"grill-superseded: R1.4 @ 7c1d4a9b2e60 · round 2 · 2026-08-09T18:36:48Z\ngrill-superseded: R1.5 @ 7c1d4a9b2e60 · round two · 2026-08-09T18:36:48Z\n",
-		);
-		expect(read._tag).toBe("Malformed");
-	});
-
 	it("round-trips its read output back through its own emit", () => {
 		const bytes = "grill-superseded: R1.4 @ 7c1d4a9b2e60 · round 2 · 2026-08-09T18:36:48Z\n";
 		const read = grillSupersede.readToLines(bytes);

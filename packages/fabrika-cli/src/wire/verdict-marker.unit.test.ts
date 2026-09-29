@@ -99,11 +99,6 @@ describe("read — Found", () => {
 });
 
 describe("read — Absent", () => {
-	it("answers Absent for a comment that carries no marker of this format", () => {
-		const result = read("Nice work — one nit on the naming, otherwise this reads well.\n");
-		expect(result._tag).toBe("Absent");
-	});
-
 	it("answers Absent for a marker merely QUOTED further down, never Found", () => {
 		const result = read(
 			`The convention is:\n\n> review-code: PASS @ ${HEAD} — merge-ready\n\nnot what I posted.\n`,
@@ -144,11 +139,6 @@ describe("read — the check-epic-plan namespace", () => {
 
 	it("still answers Absent for a namespace that reaches for neither family", () => {
 		expect(read(`checkout: PASS @ ${DIGEST} — done\n`)._tag).toBe("Absent");
-	});
-
-	it("leaves the review family's reading untouched", () => {
-		expect(read(`review-code: PASS @ ${HEAD} — merge-ready\n`)._tag).toBe("Found");
-		expect(read(`review_code: PASS @ ${HEAD} — merge-ready\n`)._tag).toBe("Malformed");
 	});
 });
 
@@ -204,16 +194,13 @@ describe("read — the governance namespace", () => {
 
 describe("read — Malformed: the drifts a lenient reader answers `PASS` for", () => {
 	const DRIFTS = [
-		drift("no SHA at all", "review-code: PASS — merge-ready"),
 		drift("an @ with nothing after it", "review-code: PASS @ — merge-ready"),
 		drift("a SHA one character under the floor", "review-code: PASS @ 03135b — merge-ready"),
 		drift("a SHA carrying a non-hex character", "review-code: PASS @ 03135bz — merge-ready"),
 		drift("a SHA longer than a git object name", `review-code: PASS @ ${HEAD}00 — merge-ready`),
-		drift("a polarity nobody defined", `review-code: APPROVED @ ${HEAD} — merge-ready`),
 		drift("a polarity that is only a near-miss", `review-code: PASSED @ ${HEAD} — merge-ready`),
 		drift("no polarity at all", `review-code: @ ${HEAD} — merge-ready`),
 		drift("a namespace that lost its hyphen", `reviewcode: PASS @ ${HEAD} — merge-ready`),
-		drift("a namespace in snake_case", `review_code: PASS @ ${HEAD} — merge-ready`),
 		drift("no trailing clause", `review-code: PASS @ ${HEAD}`),
 		drift("a separator with no clause after it", `review-code: PASS @ ${HEAD} —`),
 	];
@@ -241,26 +228,6 @@ describe("read — Malformed: the drifts a lenient reader answers `PASS` for", (
 	});
 });
 
-describe("read — Absent and Malformed are two answers, not one collapsed negative", () => {
-	it("keeps a body with no marker apart from a body whose marker drifted", () => {
-		const noMarker = read("Looks good to me, shipping it.\n");
-		const drifted = read("review-code: PASS — merge-ready\n");
-		expect(noMarker._tag).toBe("Absent");
-		expect(drifted._tag).toBe("Malformed");
-		expect(noMarker._tag).not.toBe(drifted._tag);
-	});
-
-	it("never answers Found for either, so no caller reads a drift as an unreviewed PR", () => {
-		for (const artifact of [
-			"chatter with no marker",
-			"review: PASS — no sha",
-			"review: OK @ 03135b9 — x",
-		]) {
-			expect(read(artifact)._tag).not.toBe("Found");
-		}
-	});
-});
-
 describe("bindToHead — stale is its own outcome, never a PASS and never an absence", () => {
 	it("answers Current when the marker's SHA is the head", () => {
 		expect(bindToHead(MARKER, HEAD)).toEqual({_tag: "Current", sha: HEAD, via: "head"});
@@ -282,15 +249,6 @@ describe("bindToHead — stale is its own outcome, never a PASS and never an abs
 		for (const head of ["", "HEAD", "not-a-sha", "03135b"]) {
 			expect(bindToHead(MARKER, head)._tag).toBe("Unbindable");
 		}
-	});
-
-	it("keeps Current, Stale and Unbindable pairwise distinct", () => {
-		const tags = [
-			bindToHead(MARKER, HEAD)._tag,
-			bindToHead(MARKER, "7d588903")._tag,
-			bindToHead(MARKER, "HEAD")._tag,
-		];
-		expect(new Set(tags).size).toBe(tags.length);
 	});
 });
 

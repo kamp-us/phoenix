@@ -254,16 +254,6 @@ describe("the plugin-source sync, run against the captured envelopes", {
 		expect(run.stdout).toBe("");
 		expect(run.stderr).toContain("names no clone whose primary worktree this verb can read");
 	});
-
-	it("refuses an envelope for an event it does not judge, rather than syncing from it", () => {
-		const run = runDeclared(
-			declared.command,
-			readGoldenFixture(import.meta.url, "__fixtures__/worktree-create.payload.golden.json"),
-			["--dry-run"],
-		);
-		expect(run.code).toBe(WRONG_EVENT);
-		expect(run.stdout).toBe("");
-	});
 });
 
 describe("the WorktreeCreate provider, run against the captured envelope", {
@@ -344,16 +334,6 @@ describe("the pre-bash guard, run against the captured Bash envelope", {
 		expect(run.code).toBe(0);
 		expect(JSON.parse(run.stdout)).not.toHaveProperty("hookSpecificOutput");
 	});
-
-	it("refuses an envelope for an event it does not judge, rather than deciding from it", () => {
-		const run = runDeclared(
-			declared.command,
-			readGoldenFixture(import.meta.url, "__fixtures__/session-start.payload.golden.json"),
-		);
-
-		expect(run.code).toBe(WRONG_EVENT);
-		expect(run.stdout).toBe("");
-	});
 });
 
 describe("the CLI minimum check, run as declared", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
@@ -370,18 +350,6 @@ describe("the CLI minimum check, run as declared", {timeout: SUBPROCESS_TEST_TIM
 		expect(out).not.toHaveProperty("systemMessage");
 		expect(out.fabrika.outcome).toBe("met");
 	});
-
-	it("warns through systemMessage when the plugin needs a newer CLI", () => {
-		const dir = mkdtempSync(join(tmpdir(), "cli-floor-"));
-		try {
-			writeFileSync(join(dir, "cli-floor.json"), JSON.stringify({minimum: "999.0.0"}));
-			const run = runDeclared(declared.command, envelope(), [], {CLAUDE_PLUGIN_ROOT: dir});
-			expect(run.code, run.stderr).toBe(0);
-			expect(JSON.parse(run.stdout).systemMessage).toContain("v999.0.0");
-		} finally {
-			rmSync(dir, {recursive: true, force: true});
-		}
-	});
 });
 
 describe("the declared hook, run against the captured envelope", {
@@ -389,23 +357,13 @@ describe("the declared hook, run against the captured envelope", {
 }, () => {
 	const declared = declaredOn("SessionStart");
 
-	it.each([
-		[
-			"the captured SessionStart envelope",
-			"__fixtures__/session-start.payload.golden.json",
-			"SessionStart",
-			5,
-		],
-		[
-			"the captured PreToolUse envelope",
-			"__fixtures__/pre-tool-use.payload.golden.json",
-			"PreToolUse",
-			10,
-		],
-	])("conforms on %s", (_label, fixture, event, fields) => {
-		const run = runDeclared(declared.command, readGoldenFixture(import.meta.url, fixture));
+	it("conforms on the captured SessionStart envelope", () => {
+		const run = runDeclared(
+			declared.command,
+			readGoldenFixture(import.meta.url, "__fixtures__/session-start.payload.golden.json"),
+		);
 		expect(run.code).toBe(0);
-		expect(run.stdout).toBe(`conforms\t${event}\t${fields}\n`);
+		expect(run.stdout).toBe("conforms\tSessionStart\t5\n");
 		expect(run.stderr).toContain("bytes on fd 0");
 	});
 

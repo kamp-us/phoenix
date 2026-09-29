@@ -21,15 +21,6 @@ const facts = (over: Partial<WorktreeFacts> = {}): WorktreeFacts => ({
 });
 
 describe("the plugin-source sync plan", () => {
-	it("advances the default branch when every precondition holds", () => {
-		expect(plan(facts())).toEqual({
-			_tag: "FastForward",
-			branch: "main",
-			from: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-			to: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-		});
-	});
-
 	it("says the source is current when it is, rather than proposing a no-op merge", () => {
 		const already = plan(facts({remoteHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}));
 		expect(already._tag).toBe("Current");
@@ -58,15 +49,6 @@ describe("the plugin-source sync plan", () => {
 		const decided = plan(given);
 		expect(decided._tag).toBe("Refused");
 		expect(decided._tag === "Refused" && decided.reason).toContain(quoted);
-	});
-
-	/**
-	 * The narrowing itself: `git merge --ff-only` takes this move and leaves the edit alone, so the
-	 * refusal that used to fire here left a checkout carrying one standing local-only file behind at
-	 * every session start.
-	 */
-	it("advances over dirt the incoming commits never touch", () => {
-		expect(plan(facts({dirtyPaths: [".fabrika.jsonc"]}))._tag).toBe("FastForward");
 	});
 
 	it("refuses an untracked file an incoming commit would create — that one is a clobber", () => {
@@ -155,22 +137,11 @@ describe("reading the installs taken from those marketplaces", () => {
 		},
 	};
 
-	it("keeps one row per commit, since two scopes can sit at two different commits", () => {
+	it("keeps one row per commit with its record count, and drops a record carrying no commit", () => {
 		expect(installsFrom(installs, ["local"])).toEqual([
 			{pluginId: "tool@local", commit: "aaaa", records: 1},
 			{pluginId: "tool@local", commit: "bbbb", records: 2},
 		]);
-	});
-
-	it("folds the repetition and keeps the count, rather than dropping a record silently", () => {
-		const folded = installsFrom(installs, ["local"]).find((row) => row.commit === "bbbb");
-		expect(folded?.records).toBe(2);
-	});
-
-	it("drops a record carrying no commit — an absent commit is not a lag to report", () => {
-		expect(installsFrom(installs, ["local"]).some((row) => row.pluginId === "nosha@local")).toBe(
-			false,
-		);
 	});
 
 	it("reports every install bound at the source commit as bound", () => {

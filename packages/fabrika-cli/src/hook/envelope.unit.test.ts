@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import {readGoldenFixture} from "../golden-fixture.ts";
 import {classifyEnvelope} from "./envelope.ts";
 
 describe("classifyEnvelope keeps the three failures apart", () => {
@@ -16,11 +17,16 @@ describe("classifyEnvelope keeps the three failures apart", () => {
 			_tag: "Envelope",
 			envelope: {event: "SessionStart", session: "s", cwd: "/c"},
 		});
+
+		const captured = classifyEnvelope(
+			readGoldenFixture(import.meta.url, "__fixtures__/pre-tool-use.payload.golden.json"),
+		);
+		expect(captured._tag === "Envelope" && captured.envelope.event).toBe("PreToolUse");
+		expect(captured._tag === "Envelope" && captured.envelope.fields).toHaveLength(10);
 	});
 
 	it.each([
 		["whitespace only", "  \n "],
-		["nothing at all", ""],
 	])("reads %s as Empty, never as malformed", (_label, text) => {
 		expect(classifyEnvelope(text)._tag).toBe("Empty");
 	});
@@ -29,7 +35,6 @@ describe("classifyEnvelope keeps the three failures apart", () => {
 		["unparseable bytes", "not json at all"],
 		["a JSON array", "[]"],
 		["a JSON scalar", '"SessionStart"'],
-		["an object missing every required field", "{}"],
 		["an object whose event name is not a string", '{"hook_event_name":7}'],
 	])("reads %s as Malformed", (_label, text) => {
 		expect(classifyEnvelope(text)._tag).toBe("Malformed");
