@@ -152,11 +152,18 @@ the ones the repo declares under `leakNames` in `.fabrika.jsonc` ([below](#confi
 shipped default declares none, so no repo, person or number is refused by default.
 
 1. **Home-relative** — a path beginning with the home marker `~` followed by a separator. An issue
-   body has no legitimate use for one: the `## Pointers` section is repo-relative by contract. Two
-   carve-outs, both pinned to a shape rather than a membership list — the claude CLI's public,
-   machine-agnostic config leaves `~/.claude.json` and `~/.claude/settings.json`, which are
-   byte-identical on every machine and name nothing operator-specific. Because each carve-out pins
-   the exact leaf, a deeper descent or a longer name still matches.
+   body has no legitimate use for one: the `## Pointers` section is repo-relative by contract. Four
+   carve-outs, each pinned to a shape rather than a membership list. Two are the claude CLI's
+   public, machine-agnostic config leaves `~/.claude.json` and `~/.claude/settings.json`, which are
+   byte-identical on every machine and name nothing operator-specific; because each pins the exact
+   leaf, a deeper descent or a longer name still matches. Two are the code shapes a tilde-slash
+   path alias takes, which no tool expands to a home folder: a **module specifier** — the path is
+   the whole content of a matching `"` or `'` pair directly after `from`, `import`, `import(` or
+   `require(`, optional whitespace between — and a **path-mapping key** — a quoted path whose last
+   segment is `*`, followed by optional whitespace and `:`, the shape of a tsconfig or jsconfig
+   `paths` key. A tilde-slash path anywhere else refuses, bare or backticked prose included, since
+   nothing there tells an alias from a real home path; a filer quotes the alias inside an import
+   line instead.
 2. **Absolute home root** — an absolute path under an OS home root: `/Users/<account>` on macOS,
    `/home/<account>` on Linux.
 3. **Temp and scratch roots** — `/tmp/<…>`, `/private/tmp/<…>`, `/private/var/<…>`,

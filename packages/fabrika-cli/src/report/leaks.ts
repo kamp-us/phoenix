@@ -46,6 +46,50 @@ export interface Scan {
  */
 const CARVE_OUTS = new Set(["~/.claude.json", "~/.claude/settings.json"]);
 
+/** Where a match sits in the line it came from, so a rule can read the code shape around it. */
+interface Site {
+	readonly line: string;
+	/** Offset of the first character of the untrimmed match. */
+	readonly start: number;
+	/** Offset one past the last character of the untrimmed match. */
+	readonly end: number;
+}
+
+/**
+ * A quote directly after `from`, `import`, `import(` or `require(`, ending the text before a match.
+ * Node and bundlers never expand `~` in a module specifier, so a path filling that quote pair is a
+ * path alias, not a home path.
+ */
+const SPECIFIER_OPENER = /\b(?:from|import|(?:import|require)\s*\()\s*(["'])$/;
+
+/** A quote ending the text before a match — the opener of a path-mapping key. */
+const KEY_OPENER = /(["'])$/;
+
+/**
+ * The two code shapes a tilde-slash path alias appears in, each pinned by the text around the
+ * match rather than by which directories it names: the whole content of a quote pair that is a
+ * module specifier, or a quoted path-mapping key whose last segment is `*` and which a `:` follows
+ * (the tsconfig/jsconfig `paths` key). A bare or backticked path in prose is neither, so it still
+ * refuses — nothing in the text tells an alias there from a real home path.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10233
+ */
+const isPathAlias = ({line, start, end}: Site): boolean => {
+	const quoted = line.slice(start, end);
+	const before = line.slice(0, start);
+	const after = line.slice(end);
+	if (!quoted.startsWith("~/")) return false;
+	const specifier = SPECIFIER_OPENER.exec(before)?.[1];
+	if (specifier !== undefined && after.startsWith(specifier)) return true;
+	const key = KEY_OPENER.exec(before)?.[1];
+	return (
+		key !== undefined &&
+		quoted.endsWith("/*") &&
+		after.startsWith(key) &&
+		/^\s*:/.test(after.slice(key.length))
+	);
+};
+
 /** One path segment: anything up to a separator or a character that ends a run in prose/markdown. */
 const SEG = String.raw`[^\s\x60'"<>)\]}/]+`;
 
@@ -122,6 +166,7 @@ interface Rule {
 	readonly judge: (
 		match: string,
 		groups: ReadonlyArray<string | undefined>,
+		site: Site,
 	) => {cls: LeakClass; mask: string} | null;
 	/** Whether trailing sentence punctuation is split off before judging, as a path's is. */
 	readonly trims: boolean;
@@ -130,7 +175,7 @@ interface Rule {
 const PATH_RULE: Rule = {
 	re: PATH_RE,
 	trims: true,
-	judge: (path) => (CARVE_OUTS.has(path) ? null : rootOf(path)),
+	judge: (path, _groups, site) => (CARVE_OUTS.has(path) || isPathAlias(site) ? null : rootOf(path)),
 };
 
 const EMAIL_RULE: Rule = {
@@ -196,13 +241,12 @@ export const scanBody = (body: string, names: LeakNames = NO_LEAK_NAMES): Scan =
 			rule.re.lastIndex = 0;
 			return text.replace(rule.re, (raw: string, ...rest: unknown[]) => {
 				// `replace` hands the capture groups first, then the numeric offset.
-				const groups = rest.slice(
-					0,
-					rest.findIndex((part) => typeof part === "number"),
-				) as ReadonlyArray<string | undefined>;
+				const offsetAt = rest.findIndex((part) => typeof part === "number");
+				const groups = rest.slice(0, offsetAt) as ReadonlyArray<string | undefined>;
+				const start = rest[offsetAt] as number;
 				const match = rule.trims ? trimPunctuation(raw) : raw;
 				const tail = raw.slice(match.length);
-				const verdict = rule.judge(match, groups);
+				const verdict = rule.judge(match, groups, {line: text, start, end: start + raw.length});
 				if (verdict === null) return raw;
 				leaks.push({line: index + 1, class: verdict.cls, text: match});
 				return verdict.mask + tail;
