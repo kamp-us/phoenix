@@ -160,7 +160,12 @@ render` captures in evidence**: the verb's validation is what makes a capture a 
 
 Validate the text layer like any code diff: `fabrika build check --surface code`. Its unit-test
 scope is [`build`](../build/SKILL.md)'s too — the areas your diff touches, never the package's whole
-suite.
+suite. **Run [`test-audit`](../test-audit/SKILL.md)'s authoring gate before adding a new test to the
+text layer**, in a repair round exactly as in a first build: a repair that answers a finding with
+more tests is where a suite fills with tests pinning CSS classes and label strings. Answer the
+gate's questions there and add the test only when every one has an answer. A mechanical edit to an
+existing test — a timeout bump, a snapshot update, test config — adds no new test and does not open
+the gate.
 
 ## 4 — Ship with the evidence attached
 
