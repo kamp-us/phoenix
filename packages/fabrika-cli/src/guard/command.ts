@@ -188,11 +188,11 @@ const portabilityCheck = leafCommand(
 	Command.withDescription(
 		leafHelp("portability-guard check", [
 			"Prints a one-line all-clear when fabrika's shipped text holds no reference only its home resolves.",
-			"  Scans the working tree; with --sha, scans that commit's files out of the object database and never the tree.",
+			"  --sha <commit>: scan that commit's files, never the working tree.",
 			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
 			"  7: zero scope: an empty walk, or an unusable allow-list",
 			"  10: --sha is not a revision, or is given beside --root",
-			"  11: a read failed, or the --sha commit is not in this clone, so the verdict is UNKNOWN",
+			"  11: a read failed, or the --sha commit is not in this clone: UNKNOWN",
 			"  12: a reference found, or an allow-list ceiling or floor out of line",
 		]),
 	),

@@ -186,8 +186,8 @@ the working tree.
 range tip before you run anything that reads the working tree.** A child's build branch is local and
 unpushed by design — one epic run is one branch and one PR at the tail — so a reviewer worktree cut
 fresh from the driver's checkout stands on the assembly branch, or on whatever that checkout last
-held, and the range's tip commit is not in your tree at all. Every fence that reads files — a
-typecheck, a formatter, a test run, the guard below — then reads a tree your verdict never names, and
+held, and the range's tip commit is not in your tree at all. Every fence that reads the working
+tree — a typecheck, a formatter, a test run — then reads a tree your verdict never names, and
 the range verdict records base, tip and a content digest, never which tree the commands ran in, so a
 wrong verdict is indistinguishable afterwards from a right one. One reviewer stood on a third commit
 for its whole first pass, caught it itself, and retracted two posted verdicts; nothing forced that

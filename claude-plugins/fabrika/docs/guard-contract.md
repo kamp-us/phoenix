@@ -79,8 +79,8 @@ count.
 
 `--sha <commit>` changes the subject from the working tree to one commit. The guard then reads that
 commit's file list, file bytes, allow-list and `portability` key out of the object database, and
-never reads the working tree. The floors and the verdict are the same as the tree walk's, and every
-line of the answer names the commit. The flag exists for a reviewer: its worktree is cut from
+never reads the working tree. The floors and the verdict are the same as the tree walk's, and the
+answer's first line names the commit. The flag exists for a reviewer: its worktree is cut from
 another checkout and never holds a pull request's head, so a walk of it grades files the verdict
 does not name. A commit this clone does not hold is UNKNOWN (`11`), and the guard does not fall back
 to the tree. `--sha` beside `--root` names two subjects and is refused (`10`). `build check` and CI
