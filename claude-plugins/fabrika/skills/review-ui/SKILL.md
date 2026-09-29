@@ -283,7 +283,9 @@ not handed.
 **What still owes disclosure is a state you could not render.** Seeded data absent, a state with no
 mechanism, a preview you hold no credentials for: name each one in the verdict, with why, and judge
 what did paint. When nothing the PR adds painted, that is CANT-SEE, on the same terms as an
-every-surface-unreachable render. A flag-gated state is one you render rather than one you disclose:
+every-surface-unreachable render. When the preview stood and what blocked you is a state render has
+no mechanism for, that CANT-SEE takes cause `render-axis-missing` and names the issue tracking the
+axis (Terminal vocabulary below). A flag-gated state is one you render rather than one you disclose:
 the override exists precisely so "I could not see it" stops being an acceptable answer for a state
 the flag alone was hiding.
 
@@ -366,7 +368,9 @@ plain "does not count" note `review-ui post` leaves when that evidence fails its
 (exit `9`), the can't-see/escalation comment, the routed-elsewhere record, and one append to the driver's lane
 ledger through `lane report` at the `--root` your brief carries, a path outside this checkout. No push, no merge, no label. Every run ends as exactly one of:
 **verdict PASS** · **verdict FAIL** · **CANT-SEE** (no preview, stale preview unrepairable, or
-nothing renderable — no verdict posted, blocker named on the PR; cause `no-preview-render`) ·
+nothing renderable — no verdict posted, blocker named on the PR; cause `no-preview-render`, or
+`render-axis-missing` with its axis issue when the preview stood but render cannot reach the state
+the changed pixels need) ·
 **ESCALATED** (a verdict was
 formed but provably could not land — the evidence upload or the write path failed after exactly
 one re-run; the state named on the PR through `review-ui note` where that write still lands, and
@@ -408,6 +412,21 @@ cause on the same line:
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token CANT-SEE --cause no-preview-render --pr <pr-url>
 ```
+
+**A `CANT-SEE` over a preview that stood takes `render-axis-missing` instead.** That is the case
+where the preview rendered but the changed pixels only show in a state `review-ui render` has no
+way to reach: a colour scheme, an accent, a hover or other interaction state. A retry cannot fix
+that, so the park waits on the open issue that tracks the missing axis and clears when it closes.
+Name that issue on the same line. If no open issue tracks the axis, file one through `report`
+first, then name it:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token CANT-SEE --cause render-axis-missing --axis-issue <axis-issue-number> --pr <pr-url>
+```
+
+Keep `no-preview-render` for a missing, stale or unrenderable preview. The verb refuses
+`render-axis-missing` without `--axis-issue`, and `--axis-issue` beside any other cause, at exit
+`35`.
 
 `BLOCKED-NO-MANIFEST` reports `--cause no-design-manifest`, `ROUTED-ELSEWHERE` reports
 `--cause no-rendered-delta`, or `--cause no-preview-routed` where the record you posted carries a

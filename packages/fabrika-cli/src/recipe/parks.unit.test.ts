@@ -118,6 +118,21 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("route-satisfied");
 	});
 
+	// A retry sends the lane back to the reviewer who hit the same wall, so this park clears on the
+	// axis issue closing and never on a driver's rationale.
+	it("is Known for a BLOCKED whose cause is the render-axis-missing shape", () => {
+		const parked = classifyPark("blocked", "render-axis-missing");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("axis-closed");
+		expect(parked._tag === "Known" && parked.recipe.route).toBe("driver");
+		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
+	});
+
+	it("keeps no-preview-render Novel beside it — a missing preview is not a missing axis", () => {
+		expect(classifyPark("blocked", "no-preview-render")._tag).toBe("Novel");
+	});
+
 	it("is Novel for a bare BLOCKED, and says the ledger records no cause", () => {
 		const parked = classifyPark("blocked", null);
 

@@ -71,8 +71,11 @@ append it, and refuse on the prover's own code with the log byte-identical. The 
   table on. Every cause also carries a route, `driver` or `founder`, saying whose failure the park
   is. A BLOCKED with no cause is the bare park it always was: it is novel and routes to a human, so
   it costs a human UNBLOCKED.
+- `--axis-issue <n>` names the open issue a `render-axis-missing` park waits on, and lands on the
+  same line as `axisIssue`. That cause requires it, and every other cause refuses it.
 - `35` — `--cause` is outside the closed park-cause set, or rides on an event that is neither
-  BLOCKED nor the machinery LAP.
+  BLOCKED nor the machinery LAP; or `--axis-issue` is missing beside `render-axis-missing`, present
+  beside any other cause, or no issue number.
 - `52` — a BLOCKED names no cause at all, under a repo declaring `parkCause.uncaused: "refuse"`.
   Name one from the closed set; the log is unappended.
 - A repeatable `--class` lands the lane classes standing at the event on the same line. It is the
@@ -1942,6 +1945,11 @@ nothing and is novel.
   what keeps the clear the inverse of this cause rather than a generic everything-passed: a PR whose
   rendered gate came back and judged it is a different park, and it holds at `13` with the reason
   named.
+- The render-axis park (`blocked` keyed `render-axis-missing`) waits on another issue: the one
+  tracking the render axis the rendered review could not reach, which the park line names as
+  `axisIssue`. Its read is that issue's state. `closed` clears back into `review:ui` with a
+  `mechanism` of `axis-closed:#<issue>`, so the reviewer renders again with the axis built. Open is
+  `13` with nothing written, an issue proven absent is `7`, and a read that fails is `11`.
 - The `queue-stall` park is the one row whose clear also GRANTS. Its read is `ship reconcile`'s
   answer relayed, where `landed` and `ejected` clear and `unresolved` is exit `13`. Because the park
   IS a spent wait budget, the clear records the waits it buys on the very same `UNBLOCKED` — one

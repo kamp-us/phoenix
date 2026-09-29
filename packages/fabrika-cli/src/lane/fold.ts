@@ -30,7 +30,7 @@ import {
 	OPERATOR_EVENTS,
 	type TaskState,
 } from "./machine.ts";
-import {ROUTED_MACHINERY_CAUSES} from "./report.ts";
+import {causeTakesAxisIssue, ROUTED_MACHINERY_CAUSES} from "./report.ts";
 
 /**
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
@@ -95,6 +95,12 @@ export interface LogEntry {
 	 * record an `UNBLOCKED` without it.
 	 */
 	readonly rationale?: string;
+	/**
+	 * The open issue a `render-axis-missing` park waits on — evidence beside `cause`, and the number
+	 * `recipe unpark` reads to clear the park once that issue closes. Present exactly when the line's
+	 * cause is one `report.ts`'s `AXIS_ISSUE_CAUSES` names.
+	 */
+	readonly axisIssue?: number;
 	readonly round?: number;
 	readonly classes?: ReadonlyArray<string>;
 	readonly deferred?: ReadonlyArray<string>;
@@ -222,6 +228,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			comment?: unknown;
 			cause?: unknown;
 			rationale?: unknown;
+			axisIssue?: unknown;
 			round?: unknown;
 			classes?: unknown;
 			deferred?: unknown;
@@ -264,6 +271,24 @@ export const parseLog = (text: string): ParseLogResult => {
 			!(typeof record.rationale === "string" && record.rationale.trim() !== "")
 		) {
 			defects.push(`line ${index + 1} carries a \`rationale\` field that says nothing`);
+			continue;
+		}
+		// The axis issue is what the park's clear reads, so a line whose cause takes one and carries
+		// none is a park nothing can clear, and one riding any other cause is a claim nothing checks.
+		const takesAxis = causeTakesAxisIssue(typeof record.cause === "string" ? record.cause : null);
+		if (
+			record.axisIssue !== undefined &&
+			!(Number.isInteger(record.axisIssue) && (record.axisIssue as number) > 0)
+		) {
+			defects.push(`line ${index + 1} carries an \`axisIssue\` that is no issue number`);
+			continue;
+		}
+		if (takesAxis !== (record.axisIssue !== undefined)) {
+			defects.push(
+				takesAxis
+					? `line ${index + 1} parks on "${String(record.cause)}" and names no \`axisIssue\` — the issue that park waits on`
+					: `line ${index + 1} carries \`axisIssue\` beside a cause that waits on no issue`,
+			);
 			continue;
 		}
 		if (record.round !== undefined && !Number.isInteger(record.round)) {
@@ -497,6 +522,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.comment === undefined ? {} : {comment: record.comment}),
 			...(record.cause === undefined ? {} : {cause: record.cause}),
 			...(record.rationale === undefined ? {} : {rationale: record.rationale as string}),
+			...(record.axisIssue === undefined ? {} : {axisIssue: record.axisIssue as number}),
 			...(record.round === undefined ? {} : {round: record.round as number}),
 			...(record.classes === undefined ? {} : {classes: record.classes as ReadonlyArray<string>}),
 			...(record.deferred === undefined
@@ -699,20 +725,29 @@ export const standingRationales = (
 	entries: ReadonlyArray<LogEntry>,
 ): Readonly<Record<string, string>> => standingField(entries, "rationale");
 
-const standingField = (
+/**
+ * The axis issue standing over each task — the `axisIssue` on that task's latest entry, when it
+ * carries one. It stands exactly while the park that named it does, derived the way
+ * {@link standingCauses} is.
+ */
+export const standingAxisIssues = (
 	entries: ReadonlyArray<LogEntry>,
-	field: "cause" | "rationale",
-): Readonly<Record<string, string>> => {
+): Readonly<Record<string, number>> => standingField(entries, "axisIssue");
+
+const standingField = <K extends "cause" | "rationale" | "axisIssue">(
+	entries: ReadonlyArray<LogEntry>,
+	field: K,
+): Readonly<Record<string, NonNullable<LogEntry[K]>>> => {
 	const latest: Record<string, LogEntry> = {};
 	for (const entry of entries) {
 		const bare = bareEvent(entry.event);
 		if (bare === CLEARED_EVENT || bare === CORRECTED_EVENT || bare === AMENDED_EVENT) continue;
 		latest[entry.task] = entry;
 	}
-	const standing: Record<string, string> = {};
+	const standing: Record<string, NonNullable<LogEntry[K]>> = {};
 	for (const [task, entry] of Object.entries(latest)) {
 		const value = entry[field];
-		if (value !== undefined) standing[task] = value;
+		if (value !== undefined) standing[task] = value as NonNullable<LogEntry[K]>;
 	}
 	return standing;
 };
@@ -729,6 +764,7 @@ export const deriveStatus = (
 	states: Readonly<Record<string, TaskState>>,
 	causes: Readonly<Record<string, string>> = {},
 	rationales: Readonly<Record<string, string>> = {},
+	axisIssues: Readonly<Record<string, number>> = {},
 ): LaneStatus => {
 	const errors = Object.entries(states)
 		.filter(([taskId, state]) => taskIn(lane, taskId).errorFinals.has(state.type))
@@ -737,6 +773,7 @@ export const deriveStatus = (
 	for (const [taskId, state] of Object.entries(states)) {
 		const cause = causes[taskId];
 		const rationale = rationales[taskId];
+		const axisIssue = axisIssues[taskId];
 		context[taskId] = {
 			retries: state.retries,
 			maxRetries: state.maxRetries,
@@ -755,6 +792,7 @@ export const deriveStatus = (
 			...taskIn(lane, taskId).extras,
 			...(cause === undefined ? {} : {cause}),
 			...(rationale === undefined ? {} : {rationale}),
+			...(axisIssue === undefined ? {} : {axisIssue}),
 		};
 	}
 	context.errors = errors;

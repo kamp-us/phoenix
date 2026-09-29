@@ -47,6 +47,7 @@ const run = (fs: ReturnType<typeof fakeFs>) =>
 					event: "WIP",
 					task: null,
 					cause: null,
+					axisIssue: null,
 					parkCause: parkCauseRead(),
 					classes: [],
 					waitGrant: null,

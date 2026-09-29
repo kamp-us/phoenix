@@ -356,6 +356,7 @@ const recoverLane = <R>(
 						event,
 						task: base.task,
 						cause,
+						axisIssue: null,
 						parkCause: options.parkCause,
 						classes: [],
 						waitGrant: null,

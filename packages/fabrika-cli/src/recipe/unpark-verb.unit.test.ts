@@ -48,6 +48,7 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {
+	AXIS_ISSUE,
 	branchList,
 	campaignsTable,
 	closingPulls,
@@ -69,6 +70,7 @@ import {
 	PARKED_IN_REVIEW_ON_CI_RED,
 	PARKED_ON_CAMPAIGN,
 	PARKED_ON_CI_RED,
+	PARKED_ON_RENDER_AXIS,
 	PARKED_ON_ROUTED_UI,
 	PARKED_ON_SPAWN,
 	PARKED_ON_WORKTREE,
@@ -1503,6 +1505,81 @@ describe("recipe unpark — a campaign-paused park clears on the row it parked o
 
 		expect(out.code).toBe(TARGET_ABSENT);
 		expect(out.stderr.join("\n")).toMatch(new RegExp(`pins milestone #${LANE_MILESTONE}`));
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("recipe unpark — a render-axis park clears once its axis issue closes", () => {
+	const AXIS = new RegExp(`^GET \\S+/repos/o/r/issues/${AXIS_ISSUE}$`);
+
+	const axis = (state: string): ReadonlyArray<Scripted> => [
+		[
+			AXIS,
+			{
+				status: 200,
+				body: JSON.stringify({...openIssue, number: AXIS_ISSUE, state}),
+			},
+		],
+	];
+
+	it("clears back into review:ui when the axis issue reads closed", async () => {
+		const fs = lane(PARKED_ON_RENDER_AXIS);
+
+		const out = await run(fs, [], axis("closed"));
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "axis-closed",
+			mechanism: `axis-closed:#${AXIS_ISSUE}`,
+			current: "review:ui",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("is PARK_HOLDS with the ledger untouched while the axis issue is open", async () => {
+		const fs = lane(PARKED_ON_RENDER_AXIS);
+
+		const out = await run(fs, [], axis("open"));
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(new RegExp(`#${AXIS_ISSUE} reads open`));
+		expect(fs.written.size).toBe(0);
+	});
+
+	// A driver-routed cause with a recipe row is the recipe's to clear, so a rationale buys nothing
+	// here: the open axis still holds the park.
+	it("holds on an open axis issue even under driverRouted clear with a rationale", async () => {
+		const fs = lane(PARKED_ON_RENDER_AXIS);
+
+		const out = await run(
+			fs,
+			[],
+			axis("open"),
+			null,
+			parkCauseRead("record", "clear"),
+			"retry the render",
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is TARGET_ABSENT when the axis issue is proven absent", async () => {
+		const fs = lane(PARKED_ON_RENDER_AXIS);
+
+		const out = await run(fs, [], [[AXIS, httpError(404, "Not Found")]]);
+
+		expect(out.code).toBe(TARGET_ABSENT);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is UNKNOWN when the axis issue cannot be read — never a cleared park", async () => {
+		const fs = lane(PARKED_ON_RENDER_AXIS);
+
+		const out = await run(fs, [], [[AXIS, httpError(500)]]);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(fs.written.size).toBe(0);
 	});
 });
