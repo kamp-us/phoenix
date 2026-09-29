@@ -38,6 +38,7 @@ export type Clearance =
 	| "claim-released"
 	| "queue-moved"
 	| "ci-green"
+	| "head-green"
 	| "route-satisfied";
 
 export interface ParkRecipe {
@@ -93,7 +94,7 @@ export interface ParkRecipe {
 export const QUEUE_MOVED_GRANT = 1;
 
 /**
- * The parks with a fixed fix today: one keyed by its leaf, eight by their cause.
+ * The parks with a fixed fix today: one keyed by its leaf, ten by their cause.
  *
  * `human:cp-approval` + `awaiting-cp-approval`'s clearance is `ship cp-approval`'s own discharge
  * table, relayed rather than re-derived — the §CP cardinality question has exactly one answer in this
@@ -160,6 +161,17 @@ export const QUEUE_MOVED_GRANT = 1;
  * "removed" this cause would be doing it. What its read does instead, on a red `heal-ci` classes a
  * defect, is route that repair: the verb records the park's `FAIL` into `build` rather than holding
  * a park that no wait would ever clear.
+ *
+ * `blocked` + `head-ci-red` is the same cause met one stage earlier: a reviewer that read the head
+ * red and parked rather than judge it. `review`'s `BLOCKED` folds to `blocked`, so the leaf keeps it
+ * apart from the shipper's row and the cause keeps it apart from every other `blocked` row. Its
+ * clearance, `head-green`, proves less than `ci-green` does, because the reviewer stood on less:
+ * `ship scope` for the PR still being open and not a draft, and `ship checks`'s rollup reading
+ * `green` at the live head. Those are `ci-green`'s first two reads without its third. `ci-green`
+ * also asks `ship gate` for a binding verdict in every derived namespace, and those verdicts are the
+ * reviewer's own unfinished work, so asking for them here would hold the park until the very review
+ * it stopped. A red holds and never routes to repair: `blocked` carries no `FAIL` arm. It names no
+ * remedy for `ci-green`'s reason.
  */
 /**
  * One row, with its route and its remedy read off the cause table rather than written down a second
@@ -188,6 +200,12 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		clearance: "ci-green",
 		waitingOn:
 			"the head's CI to go green with the PR still open and every derived namespace still bound to that head",
+	}),
+	row({
+		park: "blocked",
+		cause: "head-ci-red",
+		clearance: "head-green",
+		waitingOn: "the head's CI to go green with the PR still open, so the review can judge it",
 	}),
 	row({
 		park: "human:queue-stall",

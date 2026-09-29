@@ -68,6 +68,16 @@ describe("recipe unpark's repository-root help contract", () => {
 		expect(unparkContract()).toContain("unreadable repository identity is UNKNOWN at `11`");
 	});
 
+	// The cause reaches two leaves with two floors, and an operator reading a 13 needs to tell which.
+	it("tells the two head-ci-red rows apart on one line, by leaf", () => {
+		const line = (leafNamed("unpark").description ?? "")
+			.split("\n")
+			.find((text) => text.includes("head-ci-red"));
+
+		expect(line).toContain("human:cp-approval clears on green+open+gate");
+		expect(line).toContain("blocked on green+open");
+	});
+
 	// The `parkCause` read is a second derivation off the owning repository, and it refuses on 11
 	// alone — a cwd in no repository reads the shipped declaration at itself. A contract claiming
 	// 39 for it would send an operator to fix a root the read never touched.

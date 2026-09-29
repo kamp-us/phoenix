@@ -1630,10 +1630,11 @@ verb reads the cause for you:
 node <fabrika> recipe unpark <lane-key> --task <task>
 ```
 
-The table it keys on holds ten rows today: `human:cp-approval` twice — once keyed on
+The table it keys on holds eleven rows today: `human:cp-approval` twice — once keyed on
 `awaiting-cp-approval`, the owner-approval wait, and once on `head-ci-red`, which is the shipper's
 route to `heal-ci` folding to the same leaf —
-`human:queue-stall`, and `blocked` carrying one of `worktree-holds-branch`, `spawn-dead`,
+`human:queue-stall`, and `blocked` carrying one of `head-ci-red` (a reviewer that parked on a red
+head, cleared on a green one with no verdict read), `worktree-holds-branch`, `spawn-dead`,
 `no-rendered-delta`, `no-preview-routed`, `tree-hijacked`, `claim-stranded`, or `campaign-paused`, a legacy row that
 clears a lane parked on it before campaigns became themes and that no park records now. Reading which one
 matched is the verb's answer, not a list you maintain here — the rows live in
@@ -1683,7 +1684,9 @@ without one, every red holds at `13`, and the refusal says `no FAIL arm`. On a c
 before the arm existed, run `node <fabrika> lane migrate <lane-key>` and then `recipe unpark` again.
 When `lane migrate` answers `generated`, the lane runs a generated machine, such as an epic tail's,
 which is never migrated and has no such arm. There the park clears only on a green head, so a
-`logic` red on it is a park for a human, not a migrate.
+`logic` red on it is a park for a human, not a migrate. That repair route belongs to the shipper's
+`human:cp-approval` park alone: a reviewer's `blocked` park on `head-ci-red` holds at `13` on every
+red, because `blocked` has no `FAIL` arm.
 
 **Exit `23` is the one refusal that is yours to answer, and answering it is a sentence.** It says
 the park's cause routes to the *driver* — machinery a driver session owns, not a call only the

@@ -142,6 +142,20 @@ describe("classifyPark", () => {
 		expect(red._tag === "Known" && red.recipe.remedy).toBeNull();
 	});
 
+	// A reviewer's red-head park folds to `blocked`, not the shipper's leaf, and stands on a floor
+	// with no verdicts yet — so it is its own row with its own clearance.
+	it("is Known for a BLOCKED carrying the red-CI cause, on the reviewer's head-green read", () => {
+		const reviewer = classifyPark("blocked", "head-ci-red");
+		const shipper = classifyPark("human:cp-approval", "head-ci-red");
+
+		expect(reviewer._tag).toBe("Known");
+		expect(reviewer._tag === "Known" && reviewer.recipe.park).toBe("blocked");
+		expect(reviewer._tag === "Known" && reviewer.recipe.clearance).toBe("head-green");
+		expect(reviewer._tag === "Known" && reviewer.recipe.route).toBe("driver");
+		expect(reviewer._tag === "Known" && reviewer.recipe.remedy).toBeNull();
+		expect(shipper._tag === "Known" && shipper.recipe.clearance).toBe("ci-green");
+	});
+
 	it("is Novel for the §CP park carrying a cause no row on that leaf names", () => {
 		const parked = classifyPark("human:cp-approval", "worktree-holds-branch");
 
