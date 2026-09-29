@@ -1,9 +1,9 @@
 /**
  * `uiSurfaces` and `uiCapture` — the runnable apps this repo renders, and how a capture is taken.
  *
- * One row per runnable app. A row carries where the app's rendered source lives
- * (`prefix`), how to start it (`command`), what part of the surface namespace it owns (`mount`,
- * `basePath`) and how to tell it is up (`readyPath`). Two questions read this one list: which changed
+ * One row per runnable app. A row carries where the app's rendered source lives (`prefix`: one
+ * source root or a list of them), how to start it (`command`), what part of the surface namespace it
+ * owns (`mount`, `basePath`) and how to tell it is up (`readyPath`). Two questions read this one list: which changed
  * paths raise the `ui` class (`review/classes.ts`'s `isUiSurface` over the prefixes), and which
  * server a surface is captured from (`ui render`). While the first was a compiled-in source-root
  * literal, a second runnable app's pixels passed every gate unrendered.
@@ -52,7 +52,7 @@ const VIOLATION = {
 	unknownKey: 'unknown key "%key%"',
 	name: `"${UI_SURFACES}[].name" is missing or is not a kebab-case app name`,
 	command: `"${UI_SURFACES}[].command" is missing or not a non-empty string`,
-	prefix: `"${UI_SURFACES}[].prefix" is missing or is not a repo-relative directory prefix ending in "/"`,
+	prefix: `"${UI_SURFACES}[].prefix" is missing or is not a repo-relative source root (a directory ending in "/" or an exact file) or a non-empty list of them`,
 	mount: `"${UI_SURFACES}[].mount" is missing or is not a path beginning with "/"`,
 	basePath: `"${UI_SURFACES}[].basePath" is not a path beginning with "/"`,
 	readyPath: `"${UI_SURFACES}[].readyPath" is not a path beginning with "/"`,
@@ -115,13 +115,30 @@ const Viewport = Schema.Struct({
 	.annotate({message: VIOLATION.viewport, messageUnexpectedKey: VIOLATION.unknownKey})
 	.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed({...DEFAULT_VIEWPORT})));
 
-/** A repo-relative source root: never absolute, never parent-relative, and ending at a directory. */
-const isPrefix = (value: string): boolean =>
+/**
+ * A repo-relative source root: never absolute, never parent-relative, never padded. A trailing `/`
+ * makes it a directory; without one it names exactly one file (`review/classes.ts`'s `isUiSurface`).
+ */
+const isSourceRoot = (value: string): boolean =>
 	value.trim() !== "" &&
 	!value.startsWith("/") &&
 	!value.startsWith("..") &&
-	value.endsWith("/") &&
 	value === value.trim();
+
+// The missing-key message is what an empty list reads: `NonEmptyArray` reports it as a missing
+// first element.
+const SourceRoot = Schema.String.annotate({message: VIOLATION.prefix})
+	.check(Schema.makeFilter(isSourceRoot, {message: VIOLATION.prefix}))
+	.annotateKey({messageMissingKey: VIOLATION.prefix});
+
+/**
+ * One root as a bare string (the original shape, decoded unchanged) or a non-empty list, so an app
+ * whose rendered source spans several roots — `app/`, `components/`, `tailwind.config.ts` — is one
+ * row rather than one row per root under an invented mount.
+ */
+const Prefix = Schema.Union([SourceRoot, Schema.NonEmptyArray(SourceRoot)])
+	.annotate({message: VIOLATION.prefix})
+	.annotateKey({messageMissingKey: VIOLATION.prefix});
 
 const Surface = Schema.Struct({
 	name: Schema.String.annotate({message: VIOLATION.name})
@@ -130,9 +147,7 @@ const Surface = Schema.Struct({
 	command: Schema.String.annotate({message: VIOLATION.command})
 		.check(Schema.makeFilter((value) => value.trim() !== "", {message: VIOLATION.command}))
 		.annotateKey({messageMissingKey: VIOLATION.command}),
-	prefix: Schema.String.annotate({message: VIOLATION.prefix})
-		.check(Schema.makeFilter(isPrefix, {message: VIOLATION.prefix}))
-		.annotateKey({messageMissingKey: VIOLATION.prefix}),
+	prefix: Prefix,
 	mount: routePath(VIOLATION.mount),
 	basePath: Schema.NullOr(routePath(VIOLATION.basePath))
 		.annotate({message: VIOLATION.basePath})
@@ -300,10 +315,22 @@ const decodeSurfaces = (raw: unknown): Decoded<ReadonlyArray<UiSurface>> => {
  */
 export const previewAppOf = (surface: UiSurface): string => surface.name.split("-")[0] as string;
 
+/** One row's source roots, whichever shape its `prefix` was declared in. */
+export const sourceRootsOf = (surface: UiSurface): ReadonlyArray<string> =>
+	typeof surface.prefix === "string" ? [surface.prefix] : surface.prefix;
+
 /** The repo-relative source roots the declared surfaces cover, deduplicated in declaration order. */
 export const prefixesOf = (surfaces: ReadonlyArray<UiSurface>): ReadonlyArray<string> => [
-	...new Set(surfaces.map((surface) => surface.prefix)),
+	...new Set(surfaces.flatMap(sourceRootsOf)),
 ];
+
+const sourceRootSchema: JsonSchema = {
+	type: "string",
+	description:
+		"A repo-relative source root. Ending in `/` it is a directory covering every file under it; otherwise it names exactly one file.",
+	minLength: 1,
+	pattern: "^(?![/\\s])(?!\\.\\.)(?:.*\\S)?$",
+};
 
 const surfaceSchema: JsonSchema = {
 	type: "object",
@@ -316,11 +343,9 @@ const surfaceSchema: JsonSchema = {
 			pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
 		},
 		prefix: {
-			type: "string",
 			description:
-				"The repo-relative source root whose changed files raise the ui class, ending in `/`.",
-			minLength: 1,
-			pattern: "^(?!/)(?!\\.\\.).*/$",
+				"Where the app's rendered source lives: one source root, or a non-empty list of them. A changed file under a directory root, or equal to a file root, raises the ui class.",
+			oneOf: [sourceRootSchema, {type: "array", items: sourceRootSchema, minItems: 1}],
 		},
 		mount: {
 			type: "string",

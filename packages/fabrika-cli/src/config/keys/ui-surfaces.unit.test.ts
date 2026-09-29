@@ -92,9 +92,30 @@ describe("a declared uiSurfaces row", () => {
 		expect(prefixesOf(answer)).toEqual(["apps/site/src/"]);
 	});
 
+	it("keeps a single-string prefix exactly as declared", () => {
+		const answer = rowsOf([WEB]);
+		expect(answer[0]?.prefix).toBe("apps/site/src/");
+		expect(prefixesOf(answer)).toEqual(["apps/site/src/"]);
+	});
+
+	it("decodes a list-shaped prefix — directories and exact files — into one row's roots", () => {
+		const roots = ["app/", "components/", "tailwind.config.ts"];
+		const answer = rowsOf([{...WEB, prefix: roots}]);
+		expect(answer[0]?.prefix).toEqual(roots);
+		expect(prefixesOf(answer)).toEqual(roots);
+	});
+
+	it("flattens and deduplicates roots across both shapes in declaration order", () => {
+		const answer = rowsOf([
+			{...WEB, prefix: ["app/", "tailwind.config.ts"]},
+			{...DESK, prefix: "app/"},
+		]);
+		expect(prefixesOf(answer)).toEqual(["app/", "tailwind.config.ts"]);
+	});
+
 	const NAME = `"${UI_SURFACES}[].name" is missing or is not a kebab-case app name`;
 	const COMMAND = `"${UI_SURFACES}[].command" is missing or not a non-empty string`;
-	const PREFIX = `"${UI_SURFACES}[].prefix" is missing or is not a repo-relative directory prefix ending in "/"`;
+	const PREFIX = `"${UI_SURFACES}[].prefix" is missing or is not a repo-relative source root (a directory ending in "/" or an exact file) or a non-empty list of them`;
 	const MOUNT = `"${UI_SURFACES}[].mount" is missing or is not a path beginning with "/"`;
 	const BASE_PATH = `"${UI_SURFACES}[].basePath" is not a path beginning with "/"`;
 	const READY_PATH = `"${UI_SURFACES}[].readyPath" is not a path beginning with "/"`;
@@ -105,9 +126,16 @@ describe("a declared uiSurfaces row", () => {
 		["no command", [{name: "web", prefix: "a/", mount: "/"}], COMMAND],
 		["a non-string command", [{...WEB, command: 3}], COMMAND],
 		["no prefix", [{name: "web", mount: "/", command: "x {{port}}"}], PREFIX],
-		["a prefix with no trailing slash", [{...WEB, prefix: "apps/site/src"}], PREFIX],
+		["a blank prefix", [{...WEB, prefix: "  "}], PREFIX],
+		["a padded prefix", [{...WEB, prefix: " apps/site/src/"}], PREFIX],
 		["an absolute prefix", [{...WEB, prefix: "/apps/site/src/"}], PREFIX],
 		["a parent-relative prefix", [{...WEB, prefix: "../web/src/"}], PREFIX],
+		["a non-string prefix", [{...WEB, prefix: 3}], PREFIX],
+		["an empty prefix list", [{...WEB, prefix: []}], PREFIX],
+		["a blank entry in a prefix list", [{...WEB, prefix: ["app/", ""]}], PREFIX],
+		["an absolute entry in a prefix list", [{...WEB, prefix: ["app/", "/etc/"]}], PREFIX],
+		["a parent-relative entry in a prefix list", [{...WEB, prefix: ["../x.ts"]}], PREFIX],
+		["a non-string entry in a prefix list", [{...WEB, prefix: ["app/", 3]}], PREFIX],
 		["no mount", [{name: "web", prefix: "a/", command: "x {{port}}"}], MOUNT],
 		["a relative mount", [{...WEB, mount: "lab"}], MOUNT],
 		["a relative basePath", [{...WEB, basePath: "lab"}], BASE_PATH],
@@ -369,5 +397,26 @@ describe("previewAppOf", () => {
 		["desk-pi-window", "desk"],
 	])("reads %s as a surface of app %s", (name, app) => {
 		expect(previewAppOf(row(name))).toBe(app);
+	});
+});
+
+describe("the emitted editor schema for uiSurfaces[].prefix", () => {
+	const prefix = uiSurfacesKey.jsonSchema?.items?.properties?.prefix;
+
+	it("describes both shapes: one source root, or a non-empty list of them", () => {
+		const [single, list] = prefix?.oneOf ?? [];
+		expect(single).toMatchObject({type: "string", minLength: 1});
+		expect(list).toMatchObject({type: "array", minItems: 1, items: single});
+	});
+
+	it("admits a directory and an exact file, and refuses a padded, absolute or parent-relative entry", () => {
+		const admits = (value: string) => new RegExp(prefix?.oneOf?.[0]?.pattern ?? "").test(value);
+		expect(["app/", "tailwind.config.ts"].map(admits)).toEqual([true, true]);
+		expect([" app/", "app/ ", "/app/", "../app/"].map(admits)).toEqual([
+			false,
+			false,
+			false,
+			false,
+		]);
 	});
 });
