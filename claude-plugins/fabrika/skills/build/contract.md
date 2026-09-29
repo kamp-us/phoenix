@@ -2474,10 +2474,22 @@ fabrika build check --surface code
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--surface` | enum: `code` \| `prose` \| `plan` \| `workflows` | yes | — | the surface whose validators run; the skill names it, this verb anchors it |
+| `--probe` | boolean | no | `false` | start every declared `codeValidators` entry once, outside a lane; `--surface code` only |
 
 **Output** — machine. On green, one JSON object:
 `{"verdict": "green", "surface": "code", "tree": "<abs tree root>", "ran": [<the commands that ran>, "guard <name> <leaf>", …], "skipped": [], "unvalidated": []}`.
 Red and unknown produce no stdout (`18` / `11`), diagnostics on stderr verbatim from the runners.
+
+**`--probe` proves the declared code validators start, before any lane exists.** An adopter's first
+branch is not a lane, so the ordinary run refuses it on `14`. Under `--probe` the verb reads no
+session, no claim and no diff: it finds the tree root, reads `codeValidators`, and starts every entry
+once in this tree whatever the diff touches. It does not stop at the first failure, and it names each
+entry's result on stderr. It runs no local-tree guard and no config validator, because both are
+scoped by a diff, and it writes nothing: no commit, no push, no lane state. Green prints
+`{"verdict": "green", "mode": "probe", "surface": "code", "tree": "<abs tree root>", "ran": [<every entry>]}`.
+Any entry that ran and failed is red on `18`, with its diagnostics. Otherwise any entry that could
+not be started is UNKNOWN on `11`, never green. A missing or empty list is `11` too, and any other
+`--surface` is `10`.
 
 **Every run also sweeps the shipped local-tree guards, on every surface.** A local-tree guard is
 argument-free, reads only the checked-out tree, and needs no PR number, no board read and no auth;

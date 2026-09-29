@@ -764,14 +764,21 @@ const check = leafCommand(
 			),
 		),
 		repo: repoFlag,
+		probe: Flag.boolean("probe").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				'outside a lane: start every declared codeValidators entry once in this tree, with no session, no diff and no guard, naming each result on stderr; writes nothing; green adds "mode":"probe" (--surface code only; default: false)',
+			),
+		),
 	},
-	Effect.fn(function* ({surface, repo}) {
+	Effect.fn(function* ({surface, repo, probe}) {
 		yield* emit(
 			yield* runCheck({
 				surface,
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				guards: localTreeGuards,
+				probe,
 			}),
 		);
 	}),
@@ -785,7 +792,7 @@ const check = leafCommand(
 			'  {"verdict":"green","surface","tree","ran","skipped","unvalidated"}',
 			"  7: the diff is empty",
 			"  10: --surface is off-enum or contradicts the diff",
-			"  11: a validator, file, config or claim could not be read (UNKNOWN)",
+			"  11: a validator could not start, or a file, config or claim could not be read (UNKNOWN)",
 			"  14: the branch is not this lane's",
 			"  15: the claim is held by another lane",
 			"  18: red; the failing validator or guard is named on stderr",
@@ -793,7 +800,10 @@ const check = leafCommand(
 			`  Derivation: the build skill's contract.md, "build check"`,
 		].join("\n"),
 	),
-	Command.withExamples([{command: "fabrika build check --surface code"}]),
+	Command.withExamples([
+		{command: "fabrika build check --surface code"},
+		{command: "fabrika build check --surface code --probe"},
+	]),
 );
 
 /**

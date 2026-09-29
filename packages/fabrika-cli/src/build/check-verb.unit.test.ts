@@ -115,6 +115,7 @@ const options = {
 	>,
 	/** No local-tree guard unless a test names one — the sweep has its own describe block. */
 	guards: [] as ReadonlyArray<LocalTreeGuard>,
+	probe: false,
 };
 
 const run = (
@@ -1693,5 +1694,114 @@ describe("configValidators — a Java-only diff greens or reds on the repo's dec
 			unvalidated: [HELPER],
 		});
 		expect(out.stderr.join("\n")).toContain(`NOT covered by this verdict: ${HELPER}`);
+	});
+});
+
+describe("--probe — the declared code validators, with no lane and no diff", () => {
+	/** The only read a probe makes before spawning: the tree root. No branch, claim or diff read. */
+	const GROUND: ReadonlyArray<Scripted> = [[REV_PARSE, GIT_DIRS]];
+	const TRIO =
+		'{"codeValidators": [{"command": ["pnpm", "typecheck", "--force"]}, {"command": ["biome", "ci"]}, {"command": ["pnpm", "lint:worktree"]}]}';
+	const BIOME = /^biome ci$/;
+
+	const probeRun = (
+		script: ReadonlyArray<Scripted>,
+		config: string = TRIO,
+		unstartable: ReadonlyArray<RegExp> = [],
+		overrides: Partial<typeof options> = {},
+	) => {
+		const shell = fakeSeams([...GROUND, ...script], undefined, unstartable);
+		const fs = fakeFs({files: {[CONFIG_FILE]: config}});
+		return Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, probe: true, env: {}, ...overrides}),
+				Layer.merge(shell.layer, fs.layer),
+			),
+		).then((out) => ({out, calls: shell.calls, written: fs.written}));
+	};
+
+	it("greens with no session and no lane branch, starting each entry once and writing nothing", async () => {
+		const {out, calls, written} = await probeRun([
+			[TYPECHECK, okOut("")],
+			[BIOME, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			verdict: "green",
+			mode: "probe",
+			surface: "code",
+			tree: ROOT,
+			ran: ["pnpm typecheck --force", "biome ci", "pnpm lint:worktree"],
+		});
+		expect(calls.filter((call) => !REV_PARSE.test(call))).toEqual([
+			"pnpm typecheck --force",
+			"biome ci",
+			"pnpm lint:worktree",
+		]);
+		expect(written.size).toBe(0);
+	});
+
+	it("reds on 18 with the failing entry's diagnostics, and still starts every other entry", async () => {
+		const {out, calls} = await probeRun([
+			[TYPECHECK, errOut("src/App.tsx(12,3): error TS2345")],
+			[BIOME, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr).toContain("src/App.tsx(12,3): error TS2345");
+		expect(out.stderr).toContain("build check: probe: biome ci — green.");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: red — pnpm typecheck --force failed; diagnostics above.",
+		);
+		expect(calls).toContain("pnpm lint:worktree");
+	});
+
+	it("refuses UNKNOWN on 11 naming an entry that cannot be started — never green", async () => {
+		const {out, calls} = await probeRun(
+			[
+				[TYPECHECK, okOut("")],
+				[LINT, okOut("")],
+			],
+			TRIO,
+			[BIOME],
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: biome ci could not be executed — the verdict is UNKNOWN, never green.",
+		);
+		expect(calls).toContain("pnpm lint:worktree");
+	});
+
+	it("reds rather than UNKNOWN when one entry failed and another could not start", async () => {
+		const {out} = await probeRun(
+			[
+				[TYPECHECK, errOut("error TS2345")],
+				[LINT, okOut("")],
+			],
+			TRIO,
+			[BIOME],
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(
+			out.stderr.some((line) =>
+				line.startsWith("build check: probe: biome ci — could not be executed"),
+			),
+		).toBe(true);
+	});
+
+	it("refuses UNKNOWN on 11 when the repo declares no code validator", async () => {
+		const {out, calls} = await probeRun([], "{}");
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("there is no code validator to probe");
+		expect(calls.filter((call) => !REV_PARSE.test(call))).toEqual([]);
+	});
+
+	it("refuses a non-code surface on 10 before touching the tree", async () => {
+		const {out, calls} = await probeRun([], TRIO, [], {surface: "prose"});
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(calls).toEqual([]);
 	});
 });
