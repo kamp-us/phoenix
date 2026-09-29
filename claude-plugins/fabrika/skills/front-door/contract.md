@@ -411,7 +411,7 @@ field	<name>	<state>	<detail>	<source>	<as-of>
 | `menu` | `ready` · `empty` · `unknown` |
 | `settings` | `resolved` · `unknown` |
 | `wiring` | `wired` · `unwired` · `unknown` |
-| `board` | `counted` · `unknown` |
+| `board` | `counted` · `absent` · `unknown` |
 | `readout` | `found` · `absent` · `malformed` · `unknown` |
 | `lanes` | `stale` · `empty` · `unknown` |
 
