@@ -748,13 +748,17 @@ UNKNOWN, `14` means the branch, nonce, PR, or issue relationship is wrong, and `
 claim is foreign: stop on every one before
 mutation, naming the code. Re-run this same two-subject proof before each later git mutation.
 
-**The next round reviews the whole PR at your new head, not your fix.** A verdict binds only the
-head it read, so your push leaves every verdict stale, and the next [`review`](../review/SKILL.md)
-reads the full diff at the new head against every acceptance criterion of `<served-issue>`. A round
-that fixed only the lines its FAIL rows named comes back with new findings elsewhere in the PR. So
-before you push, re-read the whole diff against the served issue's criteria
-(`fabrika build issue <served-issue>`), not only the rows you fixed, and fix what that read finds in
-this round.
+**The next round reviews the whole PR at your new head, not your fix.** A verdict binds the content
+it read, and your repair changes that content, so every verdict goes stale and the next
+[`review`](../review/SKILL.md) reads the full diff at the new head against every acceptance criterion
+of `<served-issue>`. A round that fixed only the lines its FAIL rows named can come back with new
+findings elsewhere in the PR. So before you push, re-read the whole diff against the served issue's
+criteria (`fabrika build issue <served-issue>`), not only the rows you fixed, and fix what that read
+finds in this round. Two limits bound that read. The fold's `frozenCriteria` rows print among those
+criteria, and the rule below holds for them: note them, do not chase them. And when that issue's
+criteria read `absent` or `malformed`, there are no criteria to re-read against: the fold's findings
+stay this round's whole contract, as step 3 says, and the whole-diff read checks the full diff
+against those findings only.
 
 Then re-validate with `fabrika build check --surface <yours>`, push with `fabrika build push
 --force-with-lease`, answer the findings in a `fabrika build note <repair-pr> --token <claim-token>`
