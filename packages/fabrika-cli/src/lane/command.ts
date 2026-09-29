@@ -587,7 +587,7 @@ const report = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"report",
-			"Appends a terminal token's proven event; prints {token, previous, event, current, taskAffected}.",
+			"Appends a token's proven event; prints {token, previous, event, current, taskAffected}.",
 			{
 				4: "bad lane record",
 				7: "no lane",
@@ -603,12 +603,12 @@ const report = leafCommand(
 				32: "unknown token",
 				35: "bad --cause",
 				38: "bad --class",
-				40: "ledger lock held",
+				40: "lock held",
 				52: "uncaused BLOCKED",
-				55: "ship:queued floor unmet",
+				55: "queue floor unmet",
 				67: "head derives no route",
 				68: "bad integrate pair",
-				72: "token's shell does not serve this state",
+				72: "token unserved",
 				...ROOT_EXITS,
 			},
 		),

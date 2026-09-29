@@ -1350,7 +1350,7 @@ refused at `20` and the only move left was a `BLOCKED` over a lane that had fini
 A `SHIPPED-PR` and an epic child's `BUILT-NO-PR` carry no such field and fold to `review` exactly as
 they always did.
 
-**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Five terminal tokens
+**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Six terminal tokens
 belong to no shell's vocabulary — `lane report` groups them as `machinery` in
 [`report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)'s `SHELL_VOCABULARIES` — and each
 one says the pipeline carrying the artifact failed while nothing about the artifact was judged. All
@@ -1446,8 +1446,9 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token FAIL --int
 ```
 
 **A `FAIL` recorded before the pair existed is fixed with `lane attach-integrate`, not by recording
-it again.** That old `FAIL` already folded the child back into `build`, where `lane report` refuses
-the pair at `68`, so running `lane integrate` again to report a new `FAIL` hits the same refusal.
+it again.** That old `FAIL` already folded the child back into `build`, and no shell that owns a
+`FAIL` serves `build`, so running `lane integrate` again to report a new `FAIL` is refused at `72`
+(the token is unserved there) with the log unappended.
 The builder's claim refuses on `31` in the meantime. Read the `FAIL` line's `at` off `lane history`,
 take the exit and head from that integrate run's output, and attach them:
 
