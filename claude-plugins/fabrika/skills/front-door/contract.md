@@ -1322,7 +1322,7 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 |---|---|---|---|---|
 | *(positional)* | string | yes | — | one `<surface-id>` from the registry above |
 | `--path` | string | no | the registry default | override the target path for a file, line, json or dep-pin surface; must resolve inside the repository root |
-| `--repo` | string | no | resolved | the repository, for the two non-file surfaces |
+| `--repo` | string | no | resolved | the repository the three GitHub surfaces (`label-taxonomy`, `issue-shape-markers`, `readout-artifact`) write to, and the one whose open milestones the `roadmap-focus` [pin check](#roadmap-pin-check) reads |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes for `design-manifest` and `roadmap-focus` | — | the content. `NoStdin` and `Text("")` are exit `3`; a **failed** stdin read is exit `1` — the content is UNKNOWN, never empty, the split `packages/fabrika-cli/src/report/file-verb.ts` already ships |
 

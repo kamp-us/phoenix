@@ -1039,12 +1039,6 @@ describe("the dep-pin surface", () => {
 	});
 });
 
-/**
- * `roadmap-focus` writes a machine-read file — `triage homes` joins milestones through its
- * `#<n>` cells — and a byte-match read-back reads the same over a roadmap that parses to nothing.
- * The counts make an inert draft visible at the moment it is written; they gate nothing, and the
- * other file surface's bytes do not move.
- */
 const MILESTONES = /GET .*\/repos\/o\/r\/milestones\?state=open/;
 
 const openMilestones = (...numbers: ReadonlyArray<number>): HttpReply => ({
@@ -1076,6 +1070,12 @@ const writeRoadmap = (
 	).then((outcome) => ({outcome, requests: seams.requests}));
 };
 
+/**
+ * `roadmap-focus` writes a machine-read file — `triage homes` joins milestones through its
+ * `#<n>` cells — and a byte-match read-back reads the same over a roadmap that parses to nothing.
+ * The counts make an inert draft visible at the moment it is written; they gate nothing, and the
+ * other file surface's bytes do not move.
+ */
 describe("the roadmap-focus row count", () => {
 	const write = (content: string, surfaceId = "roadmap-focus") =>
 		writeRoadmap(content, [[MILESTONES, openMilestones(46, 47)]], surfaceId).then(

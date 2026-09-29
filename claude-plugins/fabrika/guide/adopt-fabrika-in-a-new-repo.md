@@ -155,8 +155,10 @@ status bootstrap: pin check — every arc pin is an open milestone in you/your-r
 
 `0 arcs` there means the table did not parse. Fix it before moving on, or the join is silently
 empty. A `warning` line names each arc pin that is not an open milestone: open it, or fix the
-number. `pin check unknown` means the milestone read failed, so the pins are unchecked, not fine.
-Both still exit 0.
+number. `pin check unknown` means the pins are unchecked, not fine. It has two causes: the
+milestone read failed, or no target repo resolved. For the second, pass `--repo` or set
+`$CLAUDE_PIPELINE_REPO`, the same chain step 3 lists. The warning and the unknown line both
+still exit 0.
 
 ```bash
 fabrika triage homes
