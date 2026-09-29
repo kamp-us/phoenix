@@ -55,10 +55,14 @@ stage skills, followed by the emitted lane brief without changing its bytes. The
 for refusals, completion, and recovery.
 
 Codex's persistent model, reasoning, developer instructions, sandbox and approval configuration
-remain authoritative: the adapter overrides none of them. Parent-chat transient settings are
-not a CLI configuration export; configure the child policy in Codex before dispatch when such
-settings matter. Noninteractive approval failures remain failures. Never add an unrestricted
-execution flag to make a blocked stage continue.
+remain authoritative: the adapter overrides none of them. So a Codex-dispatched shell's model is
+the one Codex's own configuration resolves: the
+[adapter](../../../packages/fabrika-cli/src/lane/dispatch-verb.ts) runs `codex exec --cd <worktree> -`
+with no `--model`, `--profile` or `-c` flag. Every role gets that same command, so there is no
+per-role model pin on this route; `reviewer` and `builder` run on the same configured model.
+Parent-chat transient settings are not a CLI configuration export; configure the child policy in
+Codex before dispatch when such settings matter. Noninteractive approval failures remain failures.
+Never add an unrestricted execution flag to make a blocked stage continue.
 
 Session attribution preserves the existing precedence: `FABRIKA_SESSION_ID`, then
 `CLAUDE_CODE_SESSION_ID`, then `PI_SUBAGENT_PARENT_SESSION`, then `CODEX_THREAD_ID`, then
