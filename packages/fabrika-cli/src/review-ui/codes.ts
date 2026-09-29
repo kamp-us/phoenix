@@ -84,3 +84,18 @@ export const WRONG_VIEWPORT = 19;
  * @ruling https://github.com/kamp-us/phoenix/issues/9196#issuecomment-5688739893
  */
 export const TEXT_REVIEW_UNMET = 20;
+/**
+ * Refused, proven: the repo's `reviewUi.whenNoPreview` rules do not admit the route asked for.
+ *
+ * A PR whose ui files resolve to `require-render` owes a render, so a no-preview route over it would
+ * pass a gate the repo never loosened; one that resolves to `hand-check` owes the owner's hand-check
+ * comment. The caller's move is to read the mode the refusal names, not to retry.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10038#issuecomment-5860347862
+ */
+export const NO_PREVIEW_MODE_UNMET = 21;
+/**
+ * Refused, proven: the comment named as the owner's hand-check is not one — it is not on this PR, its
+ * author is not on the control plane, it names no head this PR is at, or it carries no screenshot.
+ */
+export const HAND_CHECK_INADMISSIBLE = 22;

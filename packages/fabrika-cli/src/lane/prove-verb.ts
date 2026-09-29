@@ -63,7 +63,7 @@ import {classify} from "../ship/codeowners.ts";
 import {ROUTABLE} from "../ship/gate-verb.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
-import {readNamespaced as readRoute} from "../wire/routed-elsewhere.ts";
+import {type RouteBasis, readNamespaced as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
 import {closureReader} from "./closure.ts";
 import {
@@ -115,6 +115,8 @@ interface Claim {
 	 * (`./ruling-currency.ts`).
 	 */
 	readonly stamp: string;
+	/** A route's basis, when it stood on an owner's hand-check or the repo's skip rule. */
+	readonly basis?: RouteBasis;
 }
 
 export interface ProveOptions extends LaneRef {
@@ -847,6 +849,7 @@ export const readNamespaceRows = (
 						// route can never gain survival it did not earn.
 						content: null,
 						stamp: comment.updatedAt,
+						...(route.basis === undefined ? {} : {basis: route.basis}),
 					},
 					comment.updatedAt,
 				);
@@ -920,7 +923,9 @@ export const readNamespaceRows = (
 		for (const claim of claims) {
 			if (claim.polarity !== "ROUTED") continue;
 			notes.push(
-				`${VERB}: ${claim.namespace} on #${pr} is routed rather than judged — a routed-elsewhere record at ${claim.sha} states this PR owes no verdict.`,
+				claim.basis === undefined
+					? `${VERB}: ${claim.namespace} on #${pr} is routed rather than judged — a routed-elsewhere record at ${claim.sha} states this PR owes no verdict.`
+					: `${VERB}: ${claim.namespace} on #${pr} is routed on basis ${claim.basis}, not rendered — the routed-elsewhere record at ${claim.sha} rests on reviewUi.whenNoPreview.`,
 			);
 		}
 		// A verdict survives a head move only through the content it bound, so the digest
@@ -961,6 +966,7 @@ export const readNamespaceRows = (
 				polarity: claim.polarity,
 				binding: ruled === "superseded" ? "stale" : ruled === "unknown" ? "unknown" : bound,
 				commentId: claim.commentId,
+				...(claim.basis === undefined ? {} : {basis: claim.basis}),
 			};
 		});
 		// A review-ui verdict counts only while its evidence opens — `ship gate`'s re-check, one

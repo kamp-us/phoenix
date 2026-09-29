@@ -16,6 +16,8 @@ import {
 } from "../wire/verdict-marker.ts";
 import {
 	EMPTY_STDIN,
+	HAND_CHECK_INADMISSIBLE,
+	NO_PREVIEW_MODE_UNMET,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -23,7 +25,7 @@ import {
 	TEXT_REVIEW_UNMET,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {runRoute} from "./route-verb.ts";
+import {type RouteOptions, runRoute} from "./route-verb.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const MOVED = "9fe12ab04f5a6b7c8d9e0f1a2b3c4d5e6f708192";
@@ -431,5 +433,154 @@ describe("review-ui route", () => {
 			[READBACK, served({body: composed(MOVED)})],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
+	});
+});
+
+describe("review-ui route --no-preview", () => {
+	const run = (script: ReadonlyArray<Scripted>, overrides: Partial<RouteOptions> = {}) => {
+		const seams = fakeSeams(script);
+		return Effect.runPromise(
+			Effect.provide(runRoute({...options, ...overrides}), seams.layer),
+		).then((outcome) => ({outcome, requests: seams.requests, bodies: seams.bodies}));
+	};
+	const TRUNK = /^GET \S+api\.github\.com\/repos\/o\/r$/;
+	const CODEOWNERS = /contents\/\.github\/CODEOWNERS\?ref=main$/;
+	const MEMBERS = /^GET \S+\/orgs\/o\/teams\/control-plane\/members/;
+	const OWNER = "owner";
+	const HAND_CHECK_ID = 7001;
+	const SHOT = "![row](https://github.com/user-attachments/assets/1234)";
+
+	const handCheck = (author = OWNER, body = `Hand-checked at ${HEAD}.\n\n${SHOT}`) => ({
+		id: HAND_CHECK_ID,
+		user: {login: author},
+		created_at: "2026-09-29T00:00:00Z",
+		updated_at: "2026-09-29T00:00:00Z",
+		body,
+	});
+
+	const roster: ReadonlyArray<Scripted> = [
+		[TRUNK, served({default_branch: "main"})],
+		[CODEOWNERS, {status: 200, body: "/packages/ @o/control-plane\n"}],
+		[MEMBERS, served([{login: OWNER}])],
+	];
+
+	const flagged = (basis: "hand-check" | "skip", tail = ""): string =>
+		`routed-elsewhere: review-ui @ ${HEAD} basis:${basis} — ${CLAUSE}\n\n${BODY.replace(/\n+$/, "")}\n${tail}`;
+
+	const HAND_CHECK_TAIL = `\nHand-check: comment ${HAND_CHECK_ID} by ${OWNER}, at ${HEAD}.\n`;
+
+	const script = (
+		comments: ReadonlyArray<unknown>,
+		readback: string,
+		extra: ReadonlyArray<Scripted> = [],
+	): ReadonlyArray<Scripted> => [
+		[PULL, pull()],
+		[FILES, PROSE_UI],
+		[USER, served({login: "reviewer"})],
+		[COMMENTS, served(comments)],
+		...extra,
+		[CREATE, {status: 201, body: JSON.stringify({id: 512399, html_url: URL})}],
+		[READBACK, served({body: readback})],
+	];
+
+	const under = (
+		mode: "require-render" | "hand-check" | "skip",
+		handCheckRef: string | null = null,
+	) => ({
+		noPreview: {rules: [{paths: ["apps/site/**"], mode}], handCheck: handCheckRef},
+	});
+
+	it("posts a record flagged basis:skip where every ui file resolves to skip", async () => {
+		const {outcome, requests, bodies} = await run(script([], flagged("skip")), under("skip"));
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({answer: "routed", basis: "skip"});
+		const at = requests.findIndex((request) => CREATE.test(request));
+		expect(bodies[at]).toContain(`review-ui @ ${HEAD} basis:skip —`);
+		expect(outcome.stderr.join("\n")).toContain("reviewUi.whenNoPreview resolves skip");
+	});
+
+	it("refuses on 21 where a file needs a render, naming it and posting nothing", async () => {
+		const {outcome, requests} = await run(script([], flagged("skip")), {
+			noPreview: {
+				rules: [{paths: ["apps/site/src/flags/**"], mode: "skip"}],
+				handCheck: null,
+			},
+		});
+		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
+		expect(outcome.stderr.join("\n")).toContain("apps/site/src/styles/lint.config.json");
+		expect(outcome.stderr.join("\n")).toContain("require-render");
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("refuses on 21 under require-render even with a hand-check named", async () => {
+		const {outcome} = await run(
+			script([handCheck(), textVerdict("PASS")], flagged("hand-check", HAND_CHECK_TAIL), roster),
+			under("require-render", String(HAND_CHECK_ID)),
+		);
+		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
+	});
+
+	it("refuses on 21 under hand-check when no hand-check comment is named", async () => {
+		const {outcome} = await run(script([], flagged("hand-check")), under("hand-check"));
+		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
+		expect(outcome.stderr.join("\n")).toContain("--hand-check");
+	});
+
+	it("posts a record flagged basis:hand-check over an owner's screenshots at this head", async () => {
+		const {outcome, requests, bodies} = await run(
+			script([handCheck(), textVerdict("PASS")], flagged("hand-check", HAND_CHECK_TAIL), roster),
+			under("hand-check", `https://forge.example/o/r/pull/6326#issuecomment-${HAND_CHECK_ID}`),
+		);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			answer: "routed",
+			basis: "hand-check",
+			textReview: "pass",
+		});
+		const at = requests.findIndex((request) => CREATE.test(request));
+		expect(bodies[at]).toContain("basis:hand-check");
+		expect(bodies[at]).toContain(`Hand-check: comment ${HAND_CHECK_ID} by ${OWNER}`);
+	});
+
+	it("refuses on 22 when the hand-check is not an owner's", async () => {
+		const {outcome, requests} = await run(
+			script([handCheck("agent"), textVerdict("PASS")], flagged("hand-check"), roster),
+			under("hand-check", String(HAND_CHECK_ID)),
+		);
+		expect(outcome.code).toBe(HAND_CHECK_INADMISSIBLE);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("refuses on 22 when the hand-check names another head", async () => {
+		const {outcome} = await run(
+			script(
+				[handCheck(OWNER, `Hand-checked at ${MOVED}.\n\n${SHOT}`), textVerdict("PASS")],
+				flagged("hand-check"),
+				roster,
+			),
+			under("hand-check", String(HAND_CHECK_ID)),
+		);
+		expect(outcome.code).toBe(HAND_CHECK_INADMISSIBLE);
+		expect(outcome.stderr.join("\n")).toContain("does not name the head");
+	});
+
+	it("refuses on 20 when a hand-check route has no text verdict at this head", async () => {
+		const {outcome} = await run(
+			script([handCheck()], flagged("hand-check"), roster),
+			under("hand-check", String(HAND_CHECK_ID)),
+		);
+		expect(outcome.code).toBe(TEXT_REVIEW_UNMET);
+	});
+
+	it("refuses --verified-at beside --no-preview on 10, before any read", async () => {
+		const {outcome, requests} = await run([], {...under("skip"), verifiedAt: HEAD});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(requests).toEqual([]);
+	});
+
+	it("refuses a --hand-check that names no comment on 10, before any read", async () => {
+		const {outcome, requests} = await run([], under("hand-check", "row screenshot"));
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(requests).toEqual([]);
 	});
 });

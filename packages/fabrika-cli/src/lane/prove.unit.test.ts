@@ -626,6 +626,22 @@ describe("judgeVerdicts", () => {
 		);
 		expect(rows.map((row) => row.state)).toEqual(["stale", "unknown"]);
 	});
+
+	it("flags a routed row with the basis its route stood on, and a stale one not at all", () => {
+		const routed = {
+			namespace: "review-ui",
+			polarity: "ROUTED",
+			binding: "current",
+			commentId: 2,
+			basis: "hand-check",
+		} as const;
+		expect(judgeVerdicts(["review-ui"], [routed])).toEqual([
+			{namespace: "review-ui", state: "routed", commentId: 2, basis: "hand-check"},
+		]);
+		expect(judgeVerdicts(["review-ui"], [{...routed, binding: "stale"}])).toEqual([
+			{namespace: "review-ui", state: "stale", commentId: 2},
+		]);
+	});
 });
 
 describe("foldNamespaces", () => {

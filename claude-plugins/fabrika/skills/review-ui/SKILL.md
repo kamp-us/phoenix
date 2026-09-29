@@ -72,6 +72,19 @@ the route can post; exit `11` naming the ceiling, or naming the two heads as div
 flag where there is no hand-verification, and never derive the range by hand — a condition you check
 by eye is one the next gate checks differently.
 
+**A PR with no preview routes only as far as the repo's `reviewUi.whenNoPreview` rules allow.**
+When `render` finds no preview (exit `16`), run `fabrika review-ui route $pr_number --sha <head>
+--no-preview --clause "<why>"` before you end CANT-SEE. The verb resolves the mode over the PR's
+`ui` files. `skip` posts a record flagged `basis:skip`; nothing needed rendering, so end
+**ROUTED-ELSEWHERE**. `require-render` refuses on `21`: end **CANT-SEE** as below. `hand-check` also
+refuses on `21` until you name the owner's hand-check. **When a `hand-check` rule matches, the
+owner's hand-check is admissible evidence**: a comment on the PR by a control-plane account that
+names the exact head and carries screenshots. Find it in the PR's comments and re-run with
+`--hand-check <comment-id>`. The verb checks all four facts and refuses on `22` if one fails. With
+no such comment at this head, end **CANT-SEE** and say in the note that an owner's hand-check at
+`<head>` is what the rule asks for. Never write a hand-check yourself, and never pass a builder's or
+another agent's comment as one.
+
 **The route also rests on the text gate's verdict, and the verb reads that for you.** Exit `20`
 means the `review-code` verdict in force at `--sha` is a **FAIL**: the record would assert a text
 PASS that is not there, and the polarity-free format leaves no later reader able to falsify it. That
@@ -216,7 +229,8 @@ surface is FAIL ground** — a screenshot of a broken page is not composition to
 **unreachable** surface forks on disclosure: named in the PR's Deviations with its reason
 (`fabrika review deviations $pr_number`) → judge what you can see and record the gap; undisclosed → a
 FAIL finding, because an undisclosed hole in the evidence is indistinguishable from a clean read.
-Exit 16 or an every-surface-unreachable render is **CANT-SEE**: post no verdict — the empty
+Exit 16 (once the `--no-preview` route in §1 has refused) or an every-surface-unreachable render
+is **CANT-SEE**: post no verdict — the empty
 namespace fail-closes the ship gate — and name the blocker on the PR through `fabrika review-ui
 note` (stdin body, never a marker); never a "plausible" partial PASS. Each per-surface outcome, each
 run-level refusal and what makes a capture valid are the verb's section

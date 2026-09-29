@@ -194,6 +194,28 @@ shipped default, which is what every repo ran on before these keys existed.
 Add the file only when a default does not fit your repo. The repo that authors fabrika keeps its own
 `.fabrika.jsonc` as the worked example, with the reasoning for each value in comments.
 
+### If your app has no preview deploys
+
+A PR that changes a declared `uiSurfaces` path cannot ship until the `review-ui` gate answers at its
+head, and by default that needs a preview deploy to render. With none, the reviewer ends `CANT-SEE`
+and the lane stops. Say by path what a PR with no preview needs instead:
+
+```jsonc
+"reviewUi": {
+  "whenNoPreview": [
+    {"paths": ["apps/admin/**"], "mode": "hand-check"},
+    {"paths": ["docs/site/**"], "mode": "skip"}
+  ]
+}
+```
+
+`hand-check` lets your own comment on the PR stand in for the render: screenshots, naming the PR's
+exact head, from an account on your control-plane `CODEOWNERS` row. `skip` means no rendered review
+is owed for those files. A file no rule matches still needs a render, and a PR takes the strictest
+mode across its files. Both looser outcomes are flagged on the PR and in `ship gate`, so nobody
+mistakes them for a render. The reviewer's side of this is in
+[`review-ui`'s skill](../skills/review-ui/SKILL.md).
+
 ## 10. Re-run the front door
 
 ```bash

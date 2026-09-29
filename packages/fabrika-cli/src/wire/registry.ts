@@ -1186,6 +1186,18 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 						"no rendered delta; both apps/site/src files are docblock-only",
 					],
 				},
+				{
+					shape:
+						"a no-preview route flagged with its basis — an owner's hand-check stood in for the render",
+					artifact:
+						"routed-elsewhere: review-ui @ 6c6fe226 basis:hand-check — no preview; the owner hand-checked this head\n\nHand-check: comment 5123990412 by owner, at 6c6fe226.\n",
+					values: [
+						"review-ui",
+						"6c6fe226",
+						"no preview; the owner hand-checked this head",
+						"hand-check",
+					],
+				},
 			],
 			absent:
 				"review-ui: PASS @ 6c6fe226 — every surface matches its golden\n\nA verdict is not a route.\n",

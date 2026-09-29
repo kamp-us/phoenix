@@ -49,7 +49,16 @@
  * nothing about the text lane, so an absent verdict there is stated on stderr rather than refused.
  * The reader is `review verdicts`'s and the ordering `ship gate`'s — see `./text-verdict.ts`.
  *
+ * **A PR with no preview routes only as far as the repo's `reviewUi.whenNoPreview` rules allow.**
+ * `--no-preview` resolves the mode over the PR's ui files (`./no-preview.ts`): `require-render`
+ * refuses, `skip` posts a record flagged `basis:skip`, and `hand-check` posts one flagged
+ * `basis:hand-check` only over an owner's comment that names this head and carries screenshots
+ * (`./hand-check.ts`). A hand-check stands in for the render exactly as a desk run does, so it rests
+ * on a standing text PASS too. Both flags ride the record's first line, so `ship gate` and the
+ * lane's proof say the namespace was not rendered.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9196#issuecomment-5688739893
+ * @ruling https://github.com/kamp-us/phoenix/issues/10038#issuecomment-5860347862
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -68,14 +77,18 @@ import {isUiSurface} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
+import {controlPlaneRoster} from "../ship/roster.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	emit as emitRecord,
 	headSha,
+	type RouteBasis,
 	readNamespaced,
 	clause as toClause,
 } from "../wire/routed-elsewhere.ts";
 import {
+	HAND_CHECK_INADMISSIBLE,
+	NO_PREVIEW_MODE_UNMET,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -84,6 +97,8 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
+import {admitHandCheck, handCheckCommentId} from "./hand-check.ts";
+import {filesAtMode, type NoPreviewMode, type NoPreviewRule, noPreviewMode} from "./no-preview.ts";
 import {NAMESPACE} from "./post-verb.ts";
 import {standingTextVerdict, TEXT_NAMESPACE, textClaims} from "./text-verdict.ts";
 
@@ -112,10 +127,48 @@ export interface RouteOptions {
 	readonly verifiedAt: string | null;
 	/** This repo's `uiSurfaces` prefixes, resolved by the caller off the tree it stands in. */
 	readonly uiPrefixes: ReadonlyArray<string>;
+	/**
+	 * Set where the PR has no preview deploy and the route rests on the repo's
+	 * `reviewUi.whenNoPreview` rules instead of the diff. Absent is the route as it always was.
+	 */
+	readonly noPreview?: NoPreviewRequest;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
 }
+
+export interface NoPreviewRequest {
+	/** The repo's `reviewUi.whenNoPreview` rules, resolved by the caller off the tree it stands in. */
+	readonly rules: ReadonlyArray<NoPreviewRule>;
+	/** The owner's hand-check comment, by id or URL, or `null` where none is offered. */
+	readonly handCheck: string | null;
+}
+
+/** The basis a no-preview route posts under this mode, or the refusal the mode owes. */
+const basisUnder = (
+	mode: NoPreviewMode,
+	offered: boolean,
+	pr: number,
+	decisive: ReadonlyArray<string>,
+):
+	| {readonly _tag: "Basis"; readonly basis: RouteBasis}
+	| {readonly _tag: "Unmet"; readonly why: string} => {
+	const files = decisive.join(", ");
+	if (mode === "require-render") {
+		return {
+			_tag: "Unmet",
+			why: `reviewUi.whenNoPreview resolves require-render for #${pr} (${files}) — a render is owed, so a PR with no preview is CANT-SEE, never routed.`,
+		};
+	}
+	if (offered) return {_tag: "Basis", basis: "hand-check"};
+	if (mode === "hand-check") {
+		return {
+			_tag: "Unmet",
+			why: `reviewUi.whenNoPreview resolves hand-check for #${pr} (${files}) — name the owner's hand-check comment with --hand-check; with none posted, the PR is CANT-SEE.`,
+		};
+	}
+	return {_tag: "Basis", basis: "skip"};
+};
 
 /** Either side may be abbreviated, so the match is a prefix in whichever direction is shorter. */
 const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.startsWith(a);
@@ -153,6 +206,23 @@ export const runRoute = (
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: --verified-at "${options.verifiedAt}" is not a head SHA — expected 7–40 hex characters.`,
+			);
+		}
+		const noPreview = options.noPreview ?? null;
+		if (noPreview !== null && verified !== null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --verified-at and --no-preview name two different routes — a desk run at an earlier head, or the repo's no-preview rules at this one; pass one.`,
+			);
+		}
+		const handCheckId =
+			noPreview === null || noPreview.handCheck === null
+				? null
+				: handCheckCommentId(noPreview.handCheck);
+		if (noPreview !== null && noPreview.handCheck !== null && handCheckId === null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --hand-check "${noPreview.handCheck}" is not a comment id or a comment URL ending in #issuecomment-<id>.`,
 			);
 		}
 
@@ -233,6 +303,24 @@ export const runRoute = (
 			);
 		}
 
+		let basis: RouteBasis | null = null;
+		if (noPreview !== null) {
+			const mode = noPreviewMode(noPreview.rules, ui);
+			diagnostics.push(
+				`${VERB}: reviewUi.whenNoPreview resolves ${mode} over #${pr}'s ${ui.length} ui file(s).`,
+			);
+			const under = basisUnder(
+				mode,
+				handCheckId !== null,
+				pr,
+				filesAtMode(noPreview.rules, ui, mode),
+			);
+			if (under._tag === "Unmet") {
+				return refuse(NO_PREVIEW_MODE_UNMET, `${VERB}: ${under.why}`, diagnostics);
+			}
+			basis = under.basis;
+		}
+
 		// The clause's other half. `ship gate` reads the two namespaces independently, so a route over
 		// a standing text FAIL merges nothing wrong — what it costs is a permanent record asserting a
 		// PASS nobody formed, which the polarity-free wire format gives a later reader no way to
@@ -272,7 +360,7 @@ export const runRoute = (
 		// Absence refuses exactly where the record claims a PASS: a route resting on a
 		// hand-verification stands in for the render under an interim exception whose prescribed
 		// clause names both halves. A prose-only route claims neither, so it says so instead.
-		if (text === null && verified !== null) {
+		if (text === null && (verified !== null || basis === "hand-check")) {
 			return refuse(
 				TEXT_REVIEW_UNMET,
 				`${VERB}: no standing ${TEXT_NAMESPACE} verdict binds ${inspected}, and a route resting on a hand-verification asserts one — land the text verdict first, and read what stands with fabrika review verdicts ${pr}.`,
@@ -331,7 +419,32 @@ export const runRoute = (
 			}
 		}
 
-		const composed = `${emitRecord({namespace: NAMESPACE, sha: inspected, clause})}\n${authored.text.replace(/\n+$/, "")}\n`;
+		let handCheckLine = "";
+		if (handCheckId !== null) {
+			const roster = yield* controlPlaneRoster(repo);
+			if (roster._tag === "Unknown") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read ${roster.reason} — whether comment ${handCheckId} is an owner's is UNKNOWN; nothing was posted.`,
+					diagnostics,
+				);
+			}
+			const admitted = admitHandCheck(handCheckId, comments.value, live, roster.logins);
+			if (admitted._tag === "Inadmissible") {
+				return refuse(
+					HAND_CHECK_INADMISSIBLE,
+					`${VERB}: ${admitted.reason}; nothing was posted.`,
+					diagnostics,
+				);
+			}
+			handCheckLine = `\nHand-check: comment ${handCheckId} by ${admitted.comment.author}, at ${live}.\n`;
+		}
+
+		const route =
+			basis === null
+				? {namespace: NAMESPACE, sha: inspected, clause}
+				: {namespace: NAMESPACE, sha: inspected, clause, basis};
+		const composed = `${emitRecord(route)}\n${authored.text.replace(/\n+$/, "")}\n${handCheckLine}`;
 		const leaked = leakRefusal(SURFACE, composed);
 		if (leaked !== null) return leaked;
 
@@ -390,9 +503,11 @@ export const runRoute = (
 					? `sha ${record.sha}, expected ${inspected}`
 					: record.clause !== clause
 						? `clause "${record.clause}", expected "${clause}"`
-						: normalizeForReadback(back.value) === normalizeForReadback(composed)
-							? null
-							: "the comment's bytes are not the ones that were sent";
+						: (record.basis ?? null) !== basis
+							? `basis ${record.basis ?? "none"}, expected ${basis ?? "none"}`
+							: normalizeForReadback(back.value) === normalizeForReadback(composed)
+								? null
+								: "the comment's bytes are not the ones that were sent";
 		if (mismatch !== null) {
 			return refuse(
 				READBACK_MISMATCH,
@@ -408,6 +523,7 @@ export const runRoute = (
 				sha: inspected,
 				uiFiles: ui.length,
 				verifiedAt: verified,
+				basis,
 				textReview: text === null ? "absent" : "pass",
 				upsert: mine === undefined ? "created" : "edited",
 				commentUrl: landed.url,
