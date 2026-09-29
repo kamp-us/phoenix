@@ -317,6 +317,76 @@ describe("runChecks under the base branch's required set", () => {
 		expect(out.stderr.join("\n")).toContain("every run at this head is informational");
 	});
 
+	/** Three declared contexts posted and passed; the fourth has posted nothing at this head yet. */
+	describe("a declared context with no run beside ones that passed", () => {
+		const FOUR_DECLARED = blockingSet([
+			"ci-required",
+			"governance floor at head",
+			"scan changed files for leaks",
+			"validate skill frontmatter",
+		]);
+		const THREE = sampleOf([
+			{name: "governance floor at head", conclusion: "success"},
+			{name: "scan changed files for leaks", conclusion: "success"},
+			{name: "validate skill frontmatter", conclusion: "success"},
+		]);
+		const FOUR = sampleOf([
+			{name: "ci-required", conclusion: "success"},
+			{name: "governance floor at head", conclusion: "success"},
+			{name: "scan changed files for leaks", conclusion: "success"},
+			{name: "validate skill frontmatter", conclusion: "success"},
+		]);
+
+		it("rolls up pending, never green, while one declared context has no run", () => {
+			expect(rollupFor(THREE, [], FOUR_DECLARED)).toBe("pending");
+		});
+
+		it("rolls up green once all four declared contexts concluded success", () => {
+			expect(rollupFor(FOUR, [], FOUR_DECLARED)).toBe("green");
+		});
+
+		it("still rolls up red over a failing declared context, however many are missing", () => {
+			const failing = sampleOf([{name: "scan changed files for leaks", conclusion: "failure"}]);
+			expect(rollupFor(failing, [], FOUR_DECLARED)).toBe("red");
+		});
+
+		it("names the missing context on the notes channel", async () => {
+			const out = await run(
+				[
+					[
+						RULES,
+						rules(
+							"ci-required",
+							"governance floor at head",
+							"scan changed files for leaks",
+							"validate skill frontmatter",
+						),
+					],
+					[PROTECTION, protection()],
+					...found,
+				],
+				[
+					[
+						RUNS,
+						served(
+							checkRuns(3, [
+								noRun("governance floor at head", "completed", "success"),
+								noRun("scan changed files for leaks", "completed", "success"),
+								noRun("validate skill frontmatter", "completed", "success"),
+							]),
+						),
+					],
+					[WORKFLOWS, served(workflows("active"))],
+					[RUN_COUNT, served(runsTotal(3))],
+				],
+			);
+			expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tpending`);
+			expect(out.stderr).toContain(
+				"ship checks: no run at this head for ci-required, which main declares required — pending, never green: a declared context that has not reported is not satisfied.",
+			);
+		});
+	});
+
 	it("says which definition answered on every run", async () => {
 		const out = await run(
 			[...REQUIRES_CI, ...found],

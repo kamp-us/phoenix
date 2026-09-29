@@ -1227,6 +1227,11 @@ posted yet. What is missing there is a report, so the answer is `pending` with t
 notes channel. The same rule covers the fallback definition's version of it, a head whose every run
 is on the informational name list.
 
+**A declared required context with no run is not satisfied either, however many others passed.** A
+head where some declared contexts concluded `success` and one has posted nothing is `pending`, with
+the missing contexts named on the notes channel; a `red` declared context still answers `red`. The
+rule is read from `src/review/blocking.ts`, the same place `review ci` reads it.
+
 **Zero workflows is `no-producer`, and it no longer collapses into `pending`.** A repo with
 no CI and a repo whose CI has not reported yet are different facts, and printing the second over the
 first tells an operator to wait for a run nothing will ever start. Workflow *existence* is the whole
@@ -1293,6 +1298,7 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `ship checks: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `ship checks: no run at this head answers any context <base> declares required — pending, never green: the required checks have not reported.` | 0 | notice |
+| `ship checks: no run at this head for <list>, which <base> declares required — pending, never green: a declared context that has not reported is not satisfied.` | 0 | notice |
 | `ship checks: every run at this head is informational — pending, never green: nothing here gates.` | 0 | notice |
 | `ship checks: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `ship checks: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |

@@ -182,6 +182,95 @@ describe("runCi under the base branch's required set", () => {
 		);
 	});
 
+	/**
+	 * The partial shape: three declared contexts posted and passed, the fourth has posted nothing. A
+	 * rollup over the runs that exist would call that green while the fourth's jobs have not started.
+	 */
+	describe("a declared context with no run beside ones that passed", () => {
+		const FOUR: ReadonlyArray<Scripted> = [
+			[
+				RULES,
+				rules(
+					"ci-required",
+					"governance floor at head",
+					"scan changed files for leaks",
+					"validate skill frontmatter",
+				),
+			],
+			[PROTECTION, protection()],
+		];
+		const posted = (
+			aggregator: ReadonlyArray<{name: string; status: string; conclusion: string | null}>,
+		) =>
+			runs(3 + aggregator.length, [
+				{name: "governance floor at head", status: "completed", conclusion: "success"},
+				{name: "scan changed files for leaks", status: "completed", conclusion: "success"},
+				{name: "validate skill frontmatter", status: "completed", conclusion: "success"},
+				...aggregator,
+			]);
+		const THREE = posted([]);
+		const FOUR_GREEN = posted([{name: "ci-required", status: "completed", conclusion: "success"}]);
+
+		it("pends, never greens, and names the declared context that has not reported", async () => {
+			const out = await run([...FOUR, [PULL, served(pull())], [RUNS, THREE]], GATED);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tpending`);
+			expect(out.stderr).toContain(
+				"review ci: no run at this head for ci-required, which main declares required — pending, never green: a declared context that has not reported is not satisfied.",
+			);
+		});
+
+		it("is green once all four declared contexts concluded success", async () => {
+			const out = await run([...FOUR, [PULL, served(pull())], [RUNS, FOUR_GREEN]], GATED);
+			expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
+			expect(out.stderr.join("\n")).not.toContain("has not reported");
+		});
+
+		it("--wait keeps polling and exhausts the budget, never settling over the missing context", async () => {
+			const out = await run([...FOUR, [PULL, served(pull())], [RUNS, THREE]], GATED, {
+				wait: true,
+				cadenceSeconds: 0,
+				budgetSeconds: 0,
+			});
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual([
+				"settle\tbudget-exhausted",
+				`ci\t${HEAD}\tpending`,
+			]);
+		});
+
+		it("--wait settles green once the missing context posts and passes", async () => {
+			const out = await run(
+				[...FOUR, [PULL, served(pull())], [once(RUNS), THREE], [RUNS, FOUR_GREEN]],
+				GATED,
+				{wait: true, cadenceSeconds: 0},
+			);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tgreen`]);
+		});
+
+		// A cadence no test could sit through proves the red is answered on the first read.
+		it("--wait still settles a red declared context at once, whatever else is missing", async () => {
+			const out = await run(
+				[
+					[
+						RULES,
+						rules("ci-required", "scan changed files for leaks", "validate skill frontmatter"),
+					],
+					[PROTECTION, protection()],
+					[PULL, served(pull())],
+					[
+						RUNS,
+						runs(1, [
+							{name: "scan changed files for leaks", status: "completed", conclusion: "failure"},
+						]),
+					],
+				],
+				[],
+				{wait: true, cadenceSeconds: 86_400},
+			);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tred`]);
+		});
+	});
+
 	it("refuses on 11 when the required set cannot be read, never a colour over it", async () => {
 		const out = await run([
 			[RULES, httpError(403, "Resource not accessible by integration")],

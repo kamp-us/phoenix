@@ -38,9 +38,11 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	authorityNote,
 	type BlockingSet,
-	noBlockingRunNote,
+	owedRollup,
 	readBlockingSet,
 	reportedLine,
+	reportingAt,
+	reportingNote,
 	unreadableCause,
 } from "./blocking.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -293,11 +295,12 @@ export const runCi = (
 			// completeness proof above still divides by the whole enumeration, because a short read is a
 			// fact about the page rather than about what blocks.
 			const blocked = runs.filter((run) => blocking.blocks(run.name));
-			// `rollupOf` over an empty set is `green` by construction — every run it was given passed,
-			// there having been none — and the narrowing opens that case wherever the declared contexts
-			// have not posted yet. Runs exist and none of them blocks, so what is missing is a report.
-			const rollup: Rollup = blocked.length === 0 ? "pending" : rollupOf(blocked);
-			if (blocked.length === 0) notes.push(noBlockingRunNote(VERB, base, blocking));
+			const reporting = reportingAt(
+				blocking,
+				runs.map((run) => run.name),
+			);
+			const rollup: Rollup = owedRollup(rollupOf(blocked), reporting);
+			notes.push(...reportingNote(VERB, base, blocking, reporting));
 			notes.push(...namedLines(VERB, runs, blocking));
 			notes.push(
 				...reportedLine(
@@ -386,7 +389,10 @@ export const runCi = (
 						`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors inspected ${head}.`,
 					);
 				}
-				owedGovernance = governanceOwed(blocked, atHead.value.runs);
+				// A declared context that has not posted is unfinished too, so the floor is not the only
+				// thing left and the wait still has something external to wait for.
+				owedGovernance =
+					reporting._tag === "Reported" && governanceOwed(blocked, atHead.value.runs);
 				if (owedGovernance) {
 					notes.push(
 						`${VERB}: the only unfinished check at ${sha} is "${CHECK_RUN_NAME}", and its ${FLOOR_WORKFLOW_NAME} run has completed — what is still owed is a governance verdict bound at this head, which no wait produces. Fire the governance skill, then re-read.`,

@@ -13,8 +13,11 @@ import {
 	authorityNote,
 	blockingSet,
 	noBlockingRunNote,
+	owedRollup,
 	readBlockingSet,
 	reportedLine,
+	reportingAt,
+	reportingNote,
 	unreadableCause,
 } from "./blocking.ts";
 
@@ -192,5 +195,62 @@ describe("the lines a verb prints about its authority", () => {
 			"ship checks: failing outside the required set: Analyze (python), deploy (web) — reported, never blocking.",
 		]);
 		expect(reportedLine("ship checks", [])).toEqual([]);
+	});
+});
+
+/**
+ * `rollupOf` sees only the runs that exist, so a declared context that has posted nothing would
+ * read as satisfied beside three passing ones. The reporting read is what keeps it owed.
+ */
+describe("the reports a declared set is still owed at a head", () => {
+	const FOUR = blockingSet([
+		"ci-required",
+		"governance floor at head",
+		"scan changed files for leaks",
+		"validate skill frontmatter",
+	]);
+	const THREE_POSTED = [
+		"governance floor at head",
+		"scan changed files for leaks",
+		"validate skill frontmatter",
+		"Analyze (python)",
+	];
+
+	it("names the declared context with no run while the others have posted", () => {
+		expect(reportingAt(FOUR, THREE_POSTED)).toEqual({
+			_tag: "Unreported",
+			contexts: ["ci-required"],
+		});
+	});
+
+	it("is reported once every declared context has a run", () => {
+		expect(reportingAt(FOUR, [...THREE_POSTED, "ci-required"])).toEqual({_tag: "Reported"});
+	});
+
+	it("is silent when no run blocks at all, whichever definition answered", () => {
+		expect(reportingAt(FOUR, ["Analyze (python)"])).toEqual({_tag: "Silent"});
+		expect(reportingAt(blockingSet([]), ["deploy (web)"])).toEqual({_tag: "Silent"});
+	});
+
+	it("owes nothing under the denylist once any run blocks — that branch declares no context", () => {
+		expect(reportingAt(blockingSet([]), ["unit tests"])).toEqual({_tag: "Reported"});
+	});
+
+	it("caps green at pending while a report is owed, and never softens a red", () => {
+		const owed = reportingAt(FOUR, THREE_POSTED);
+		expect(owedRollup("green", owed)).toBe("pending");
+		expect(owedRollup("red", owed)).toBe("red");
+		expect(owedRollup("green", {_tag: "Silent"})).toBe("pending");
+		expect(owedRollup("green", {_tag: "Reported"})).toBe("green");
+	});
+
+	it("names the owed contexts on the note, and keeps the silent head's own note", () => {
+		expect(reportingNote("review ci", "main", FOUR, reportingAt(FOUR, THREE_POSTED))).toEqual([
+			"review ci: no run at this head for ci-required, which main declares required — pending, never green: a declared context that has not reported is not satisfied.",
+		]);
+		expect(reportingNote("review ci", "main", FOUR, {_tag: "Silent"})).toEqual([
+			noBlockingRunNote("review ci", "main", FOUR),
+		]);
+		expect(reportingNote("review ci", "main", FOUR, {_tag: "Reported"})).toEqual([]);
 	});
 });
