@@ -11,8 +11,9 @@
  *      makes the novel exit a proven no-op rather than a claim about one.
  *   3. The recipe's clearance is read from the verb that owns it — `ship cp-approval`'s own
  *      discharge table, never a second reading of §CP in this file; `ship checks`, `ship scope` and
- *      `ship gate` for the red-CI row, which is the shipper's own floor taken again rather than a
- *      rival reading of it. A driver-routed park with no
+ *      `ship gate` for the shipper's red-CI row, which is the shipper's own floor taken again rather
+ *      than a rival reading of it, and the first two alone for the reviewer's. A driver-routed park
+ *      with no
  *      recipe has no such read, and clears on the driver's rationale instead.
  *   4. `lane transition … UNBLOCKED` records the clear, carrying that rationale where there is one.
  *      The one exception is a red head `heal-ci` classes a defect: no wait clears that, so it is
@@ -362,6 +363,8 @@ const clear = (
 			return clearQueueMoved(options, task, recipe);
 		case "ci-green":
 			return clearCiGreen(options, task, recipe);
+		case "head-green":
+			return clearHeadGreen(options, task, recipe);
 		case "route-satisfied":
 			return clearRouteSatisfied(options, task, recipe);
 	}
@@ -1352,14 +1355,132 @@ const clearCiGreen = (
 	recipe: ParkRecipe,
 ): Effect.Effect<Clearance, never, Deps> =>
 	Effect.gen(function* () {
-		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
-		const unknown = (what: string, reason: string): Clearance =>
-			no(
-				refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read ${what}: ${reason} — whether the head is green is UNKNOWN, never cleared.`,
-				),
+		const read = yield* readOpenHeadCi(options, task, recipe);
+		if (read._tag === "Refused") return read;
+		const {repo, pr, head, namespaces, rollup, scanned} = read;
+		if (rollup === "red") {
+			return yield* repairOrHold(options, repo, pr, head, task, recipe, scanned);
+		}
+		if (rollup !== "green") return holdOnRollup(recipe, read);
+
+		const gated = yield* runGate({
+			pr,
+			sha: head,
+			require: namespaces,
+			cp: false,
+			repo,
+			json: true,
+			cwd: options.cwd,
+			env: options.env,
+		});
+		if (gated.code !== 0) {
+			return headUnknown(
+				`#${pr}'s verdicts at ${head}`,
+				`fabrika ship gate refused at exit ${gated.code}`,
 			);
+		}
+		const conjunction = parseJson(gated.stdout);
+		if (!isRecord(conjunction) || typeof conjunction.outcome !== "string") {
+			return headUnknown(
+				`#${pr}'s verdicts at ${head}`,
+				"fabrika ship gate exited 0 and named no outcome",
+			);
+		}
+		if (conjunction.outcome !== "satisfied") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${pr}'s conjunction over ${namespaces.join(", ")} at ${head} reads "${conjunction.outcome}"; nothing was written.`,
+					[scanned],
+				),
+			};
+		}
+
+		return {
+			_tag: "Cleared",
+			mechanism: `ci-green:#${pr} at ${head}, ${namespaces.join(",")} bound`,
+			waitGrant: null,
+		};
+	});
+
+/**
+ * Read whether the reviewer's red-CI park is gone: the PR still open and its live head rolling up
+ * `green`, and nothing more.
+ *
+ * The same two reads {@link clearCiGreen} opens with, stopping before its `ship gate` read: the
+ * reviewer parked before giving the verdicts that read asks for, so requiring them would hold this
+ * park until the review it interrupted had run. Every rollup but `green` holds, `red` included —
+ * `blocked` has no `FAIL` arm to send a defect into repair through, so the heal-ci relay
+ * {@link repairOrHold} runs for the shipper's park has nowhere to land here.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9579
+ */
+const clearHeadGreen = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<Clearance, never, Deps> =>
+	Effect.gen(function* () {
+		const read = yield* readOpenHeadCi(options, task, recipe);
+		if (read._tag === "Refused") return read;
+		if (read.rollup !== "green") return holdOnRollup(recipe, read);
+		return {
+			_tag: "Cleared",
+			mechanism: `head-green:#${read.pr} at ${read.head}`,
+			waitGrant: null,
+		};
+	});
+
+/** The open PR a red-CI park hangs on and its CI rollup at the live head, or the refusal owed. */
+type OpenHeadCi =
+	| {
+			readonly _tag: "Read";
+			readonly repo: string;
+			readonly pr: number;
+			readonly head: string;
+			/** The namespaces `ship scope` derives off the diff at that head. */
+			readonly namespaces: ReadonlyArray<string>;
+			readonly rollup: string;
+			readonly scanned: string;
+	  }
+	| Refusal;
+
+type Refusal = {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+const headUnknown = (what: string, reason: string): Refusal => ({
+	_tag: "Refused",
+	outcome: refuse(
+		PRECONDITION_UNKNOWN,
+		`${VERB}: cannot read ${what}: ${reason} — whether the head is green is UNKNOWN, never cleared.`,
+	),
+});
+
+/** The park still standing on a rollup that is not `green`. */
+const holdOnRollup = (
+	recipe: ParkRecipe,
+	read: Extract<OpenHeadCi, {readonly _tag: "Read"}>,
+): Refusal => ({
+	_tag: "Refused",
+	outcome: refuse(
+		PARK_HOLDS,
+		`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${read.pr}'s CI at ${read.head} rolls up "${read.rollup}"; nothing was written.`,
+		[read.scanned],
+	),
+});
+
+/**
+ * The floor both red-CI rows stand on: the one PR the park hangs on, still open and not a draft
+ * through `ship scope`, and `ship checks`'s rollup at that PR's live head.
+ */
+const readOpenHeadCi = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<OpenHeadCi, never, Deps> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Refusal => ({_tag: "Refused", outcome});
+		const unknown = headUnknown;
 
 		const issue = issueOf(options.lane, task);
 		if (issue === null) {
@@ -1441,57 +1562,7 @@ const clearCiGreen = (
 		if (!isRecord(rolled) || typeof rolled.rollup !== "string") {
 			return unknown(`#${pr}'s CI at ${head}`, "fabrika ship checks exited 0 and named no rollup");
 		}
-		if (rolled.rollup === "red") {
-			return yield* repairOrHold(options, repo, pr, head, task, recipe, scanned);
-		}
-		if (rolled.rollup !== "green") {
-			return no(
-				refuse(
-					PARK_HOLDS,
-					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${pr}'s CI at ${head} rolls up "${rolled.rollup}"; nothing was written.`,
-					[scanned],
-				),
-			);
-		}
-
-		const gated = yield* runGate({
-			pr,
-			sha: head,
-			require: namespaces,
-			cp: false,
-			repo,
-			json: true,
-			cwd: options.cwd,
-			env: options.env,
-		});
-		if (gated.code !== 0) {
-			return unknown(
-				`#${pr}'s verdicts at ${head}`,
-				`fabrika ship gate refused at exit ${gated.code}`,
-			);
-		}
-		const conjunction = parseJson(gated.stdout);
-		if (!isRecord(conjunction) || typeof conjunction.outcome !== "string") {
-			return unknown(
-				`#${pr}'s verdicts at ${head}`,
-				"fabrika ship gate exited 0 and named no outcome",
-			);
-		}
-		if (conjunction.outcome !== "satisfied") {
-			return no(
-				refuse(
-					PARK_HOLDS,
-					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${pr}'s conjunction over ${namespaces.join(", ")} at ${head} reads "${conjunction.outcome}"; nothing was written.`,
-					[scanned],
-				),
-			);
-		}
-
-		return {
-			_tag: "Cleared",
-			mechanism: `ci-green:#${pr} at ${head}, ${namespaces.join(",")} bound`,
-			waitGrant: null,
-		};
+		return {_tag: "Read", repo, pr, head, namespaces, rollup: rolled.rollup, scanned};
 	});
 
 /**
