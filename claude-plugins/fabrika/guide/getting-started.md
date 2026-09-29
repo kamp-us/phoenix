@@ -4,7 +4,7 @@ In this lesson you stand fabrika up on a GitHub repo you own, then drive one iss
 open pull request. It takes about half an hour. Nothing here is throwaway — the repo you set up is
 the repo you keep using.
 
-Use a repo you are happy to add labels and a milestone to. This lesson creates nineteen labels and
+Use a repo you are happy to add labels and a milestone to. This lesson creates twenty-four labels and
 one milestone on its board.
 
 You need:
