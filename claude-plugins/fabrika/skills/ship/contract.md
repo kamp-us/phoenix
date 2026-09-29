@@ -1915,8 +1915,13 @@ around this verb can launder it into a success or a crash — v1's healthy KEPT 
 exited 1 off a trailing conditional, and its reconcile loop's predicate could not see the
 ejection marker. `unresolved` means still-queued at the horizon — neither a landing nor a
 failure; the honest words are the contract, and "auto-merges on green" is not in the
-vocabulary. `parked` means the arm never entered a queue on a queue-governed base —
-the enqueue did not take effect.
+vocabulary. `parked` means the arm never entered a queue on a queue-governed base and has
+waited past the floor: its latest `auto_merge_enabled` timeline event is at least
+`ARM_SETTLE_FLOOR_SECONDS` (1200 s) old — the enqueue did not take effect. GitHub can hold a
+live arm for minutes before it queues the PR (514 s has been seen), so a never-queued arm younger
+than the floor reads `unresolved` at any `--polls`, `1` included, and the driver's
+`ship:queued` re-reads carry it past the floor. An arm with no readable `auto_merge_enabled`
+time is not held back by the floor.
 
 With `--json`: `{"outcome":…,"polls":<n>,"horizonSeconds":<n>}`.
 

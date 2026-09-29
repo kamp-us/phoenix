@@ -297,7 +297,8 @@ and why an ejection costs the ticket no repair round.
 neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. Your horizon
 is fixed: you never poll past it, and a lane that needs longer gets it from the driver's re-reads at
 `ship:queued`, not from a wider watch in here. `parked` →
-the enqueue never took effect: run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a
+the arm waited past reconcile's floor and never entered the queue, so the enqueue did not take
+effect (a younger unqueued arm reads `unresolved`): run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a
 read and disarms nothing), note, and stop. The `mergeable_state` assertion and each terminal's proof
 are the verbs' sections
 (`fabrika wire doc-section --heading "ship enqueue" < <skill-base>/contract.md`, then
