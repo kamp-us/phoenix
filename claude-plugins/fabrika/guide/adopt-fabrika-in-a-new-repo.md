@@ -187,12 +187,25 @@ empty declaration above is how you opt out of it entirely.
 `.fabrika.jsonc` at your repo root carries the keys the CLI reads — one `register(...)` line per key
 in
 [`packages/fabrika-cli/src/config/registry.ts`](../../../packages/fabrika-cli/src/config/registry.ts).
-Every key is fail-closed — an absent file, an absent key, an empty array and a malformed entry all
-give the narrowest behaviour, never the permissive one — and a key you leave out falls back to the
-shipped default, which is what every repo ran on before these keys existed.
+A key you leave out falls back to its shipped default. An absent file, an absent key, an empty array
+and a malformed entry all give the narrowest behaviour, never the permissive one. **Narrowest is
+safe, but it is not always enough to finish a lane.** For the rows below, the default makes a verb
+refuse partway through real work, so write them before your first lane:
 
-Add the file only when a default does not fit your repo. The repo that authors fabrika keeps its own
-`.fabrika.jsonc` as the worked example, with the reasoning for each value in comments.
+| Key or file | What happens without it | Exit | A first value |
+|---|---|---|---|
+| `codeValidators` | `lane integrate` merges the child into `epic/<n>`, then refuses and resets the branch. `build check --surface code` refuses too. | `11` from both | `[{"command": ["pnpm", "typecheck"]}, {"command": ["pnpm", "lint"]}]`, with your own script names |
+| `dependencyReconciler` | No verb refuses. `lane integrate` skips the install and says so on stderr, so a child that changes the lockfile is validated against the old install and can fail there. | none; `44` from `lane integrate` when a validator then fails | `{"command": ["pnpm", "install", "--frozen-lockfile"]}` |
+| `.github/CODEOWNERS` | `plan approve` refuses every account. `ship cp-approval` answers `stop zero-owners`, so every PR waits for an approval nobody can give. | `24` from `plan approve`; `ship cp-approval` exits `0` with the stop | `/.github/ @your-login` and `/.fabrika.jsonc @your-login`. A row that owns everything (`*`) is a hold, not an owner. |
+| a CI workflow in `.github/workflows/`, or `"ci": {"noProducer": "degrade"}` | `ship checks` and `review ci` refuse. | `7` from both | a `ci.yml` that runs your validators on `pull_request`; `degrade` only for a repo that runs no Actions on purpose |
+| `uiSurfaces` | No verb refuses in review: no path raises the `ui` class, so a rendered change is reviewed as text only. `review scope` and `ship scope` print one stderr line saying so. `ui render` refuses, and `review-ui route` refuses because there is nothing to route. | `19` from `ui render`, `7` from `review-ui route` | one row per app: `{"name": "web", "prefix": "src/", "mount": "/", "command": "pnpm dev --port {{port}}"}`; `[]` for a repo that renders nothing |
+
+A workflow that exists but never runs on a PR's head is a different refusal: `ship checks` exits `20`
+and `review ci` exits `16`. The exit codes above are the ones each verb's `--help` prints; after an
+upgrade, re-read them there rather than here.
+
+The repo that authors fabrika keeps its own `.fabrika.jsonc` as the worked example, with the
+reasoning for each value in comments.
 
 ## 10. Re-run the front door
 
