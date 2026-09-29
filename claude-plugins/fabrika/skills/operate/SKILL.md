@@ -1618,10 +1618,33 @@ what is never right is reaching for a token because it is nearby rather than bec
 happened.
 
 A shipper's `AWAITING-CP-APPROVAL` lands `awaiting-cp-approval` with nothing typed, because that
-token has one reason, and its `ROUTED-REVIEW` lands `verdict-owed` the same way: a required
-namespace has no binding verdict at the head, so dispatch the gate that owes it. When you park an owner-approval wait yourself, name it:
+token has one reason. Its `ROUTED-REVIEW` lands `verdict-owed` the same way (below). When you park
+an owner-approval wait yourself, name it:
 `lane transition <lane> BLOCKED --task <task> --cause awaiting-cp-approval`. A `ship` park with no
 cause matches no `human:cp-approval` row, so it never clears by reading an approval nobody asked for.
+
+**A `verdict-owed` park needs a verdict before it needs a clear.** A namespace the ship gate
+requires has no binding verdict at the PR's head, usually because the head moved after review. The
+fold reads `human:cp-approval`, and no cell out of it reaches `review`: `UNBLOCKED` returns to
+history, which is `ship`, and `lane brief` briefs a reviewer only from the `review` state. So a
+clear taken first hands a shipper the same missing verdict, and it parks the lane again. Run the
+owing gate first, then clear, in this order:
+
+1. Read the owed namespace off the parking shipper's report, which names each `blocked` line.
+2. Spawn the gate that owns it, `isolation: worktree`, with no lane. The whole prompt is the skill's
+   invocation and the PR number: `/fabrika:review <pr>` for a `review-*` namespace,
+   `/fabrika:review-ui <pr>` for `review-ui`, `/fabrika:governance <pr>` for `governance`. No brief
+   exists for a park, so this is the one spawn without `lane brief` output. The invocation is the
+   whole prompt, so you still compose nothing. With no lane named, the gate posts its verdict on
+   the PR and records nothing on the ledger.
+3. When the spawn returns, run `node <fabrika> build verdicts --pr <pr>`. Go on only when each owed
+   gate has a row with `"current": true`. `PASS` or `FAIL` makes no difference here: the shipper
+   routes a `FAIL` to repair itself. No current row means the verdict is still owed, so do not
+   clear. The gate's own terminal names why; park on that.
+4. Clear it: `recipe unpark <lane-key> --task <task>`. `verdict-owed` routes to the driver and has
+   no recipe row, so where this repo lets a driver clear, it answers `23`. Re-run it with
+   `--rationale` naming the verdict the gate posted at the head. Any other answer is read as below.
+   The lane returns to `ship`, and the next shipper merges or routes the `FAIL`.
 
 **So try `recipe unpark` before you post a park comment**, whenever the fold reads `blocked` or
 `human:*` — a park comment is the founder-routed answer, and you do not know the route until this
