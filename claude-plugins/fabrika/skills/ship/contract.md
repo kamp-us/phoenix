@@ -1209,7 +1209,9 @@ the head, so a `--wait` poll never re-reads it. A failing check outside that set
 <name>, … — reported, never blocking.`, and does not red the head. A base branch that declares
 **nothing** falls back to the informational-name denylist, so every non-informational check gates
 there — an undeclared branch is one nobody has said what gates, not one that gates nothing. A
-declared set that cannot be read at this token's permission is `11` naming that read as the cause:
+plan-gated base takes the same denylist: GitHub's `403` beginning `Upgrade to GitHub Pro or make
+this repository public` says the branch cannot declare a required check, so it is not a permission
+failure. Any other declared set that cannot be read at this token's permission is `11` naming that read as the cause:
 this group is the merge authority, and no green here may be served over an authority nobody could
 name. Which definition answered is stated on the notes channel on every run.
 
