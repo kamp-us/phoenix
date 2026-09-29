@@ -349,7 +349,9 @@ enough: the verb owns the loop, bounds it by a wall-clock budget, and prints a `
 the rollup. Each token routes on its own:
 
 - `settled` — CI concluded inside the budget. The `green` or `red` beside it is the code class's
-  execution evidence; judge on it.
+  execution evidence; judge on it. A `green` means every required context the base branch declares
+  has a run at this head and each one concluded passing, not just that no check present failed. A
+  declared context that has posted nothing keeps the head `pending`, and the verb names it on stderr.
 - `budget-exhausted` — the budget ran out with the head still `pending`. Nothing about this head was
   proven, and a wait that long is a stuck queue rather than a race with one, so the class ends on
   `UNKNOWN — the artifact could not be read`, naming the token. That is a park a human should see;

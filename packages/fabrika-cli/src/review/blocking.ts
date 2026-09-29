@@ -30,7 +30,7 @@ import {Effect} from "effect";
 import {branchProtectionContexts, rulesetContexts} from "../heal-ci/github.ts";
 import {isPlanGated, type ServedStatus} from "../io/gh-api.ts";
 import type {Shell} from "../io/git.ts";
-import {isInformational} from "./rollup.ts";
+import {isInformational, type Rollup} from "./rollup.ts";
 
 export type DeclaredRead =
 	/** The declared set is known, however many members it has. */
@@ -178,6 +178,57 @@ export const noBlockingRunNote = (verb: string, base: string, set: BlockingSet):
 	set.token === "required"
 		? `${verb}: no run at this head answers any context ${base} declares required — pending, never green: the required checks have not reported.`
 		: `${verb}: every run at this head is informational — pending, never green: nothing here gates.`;
+
+/**
+ * Which declared contexts have reported at one head — the read `rollupOf` cannot make, because it
+ * sees only the runs that exist.
+ *
+ * Kept beside {@link BlockingSet} rather than folded into `blocks`: that predicate says which runs may
+ * stop a merge, and a declared context that has posted nothing is no run to judge. Both head-reading
+ * verbs roll up through {@link owedRollup} over this, so absence is one rule rather than a guard each
+ * verb writes for itself.
+ */
+export type Reporting =
+	/** Every declared context has a run here — or, under the denylist, at least one run blocks. */
+	| {readonly _tag: "Reported"}
+	/** Runs block here, and these declared contexts have posted nothing at this head yet. */
+	| {readonly _tag: "Unreported"; readonly contexts: readonly [string, ...string[]]}
+	/** No run at this head blocks at all. */
+	| {readonly _tag: "Silent"};
+
+/** The reporting state of `set` over the check-run names present at one head. */
+export const reportingAt = (set: BlockingSet, names: ReadonlyArray<string>): Reporting => {
+	if (!names.some((name) => set.blocks(name))) return {_tag: "Silent"};
+	const posted = new Set(names.map((name) => name.trim()));
+	const [first, ...rest] = set.contexts.filter((context) => !posted.has(context)).sort();
+	return first === undefined
+		? {_tag: "Reported"}
+		: {_tag: "Unreported", contexts: [first, ...rest]};
+};
+
+/**
+ * A rollup over the blocking runs present, with the reports still owed folded in.
+ *
+ * Only `green` is capped: it claims every required context concluded passing, which a context that
+ * never posted cannot back. A `red` stands however many contexts are still owed — one failing
+ * required run already decides the head.
+ */
+export const owedRollup = (present: Rollup, reporting: Reporting): Rollup =>
+	present === "green" && reporting._tag !== "Reported" ? "pending" : present;
+
+/** The line one reporting state earns: the silent head's note, or the declared contexts still owed. */
+export const reportingNote = (
+	verb: string,
+	base: string,
+	set: BlockingSet,
+	reporting: Reporting,
+): ReadonlyArray<string> => {
+	if (reporting._tag === "Silent") return [noBlockingRunNote(verb, base, set)];
+	if (reporting._tag === "Reported") return [];
+	return [
+		`${verb}: no run at this head for ${reporting.contexts.join(", ")}, which ${base} declares required — pending, never green: a declared context that has not reported is not satisfied.`,
+	];
+};
 
 /** The names failing outside the blocking set: real reds a caller reports rather than routes. */
 export const reportedLine = (verb: string, names: ReadonlyArray<string>): ReadonlyArray<string> =>

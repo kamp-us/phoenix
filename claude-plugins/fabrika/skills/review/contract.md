@@ -820,6 +820,14 @@ empty set is green by construction, and narrowing to the declared set opens that
 required contexts have not posted yet. What is missing there is a report, so the answer is `pending`
 with the reason on the notes channel.
 
+**The same holds when only some declared contexts have posted.** A declared required context with no
+run at the head is not satisfied, so a head where three declared contexts passed and a fourth has
+posted nothing is `pending`, never `green`, and the notes channel names the contexts still owed.
+`--wait` keeps polling it and ends `settled` only once every declared context has a concluded run, or
+`budget-exhausted` when the budget runs out first. A `red` declared context still answers `red` at
+once, whatever else has not posted. `ship checks` reads the same rule from the same module
+(`src/review/blocking.ts`).
+
 **The rollup is total over the status vocabulary, fail-closed on the ambiguous rows:** `red`
 when any completed run concluded `failure`, `timed_out`, `action_required` or `cancelled` (a
 cancelled check proved nothing, and "proved nothing" must not read green); `pending` when none
@@ -880,7 +888,8 @@ a bound that ran out:
   it.
 - `head-moved` — the PR left the head this answer binds during the wait. The last read still binds
   what it inspected; the caller re-reads at the new head rather than trusting a stale `settled`.
-- `governance-owed` — the only unfinished check at this head is `governance floor at head`, and the
+- `governance-owed` — every declared required context has a run, the only unfinished check at this
+  head is `governance floor at head`, and the
   `governance-floor` workflow run at this head has completed. The floor reports through a check
   run, and that check-run stays `in_progress` while no governance verdict is bound at the head, so what the wait is
   waiting for is a verdict its own caller owes. Nothing was proven — the rollup still reads `pending`
@@ -941,6 +950,7 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `review ci: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `review ci: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `review ci: no run at this head answers any context <base> declares required — pending, never green: the required checks have not reported.` | 0 | notice |
+| `review ci: no run at this head for <list>, which <base> declares required — pending, never green: a declared context that has not reported is not satisfied.` | 0 | notice |
 | `review ci: every run at this head is informational — pending, never green: nothing here gates.` | 0 | notice |
 | `review ci: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `review ci: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
