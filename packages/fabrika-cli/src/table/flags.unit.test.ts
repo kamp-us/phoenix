@@ -510,6 +510,22 @@ describe("the on-call board", () => {
 		expect(recOf(report.flags[0] as Flag, SHIPPED_TABLE)).toContain('past its "same day" target');
 	});
 
+	it("says a past target's length in hours with its unit", () => {
+		const targets = {
+			byLabel: [{name: "4h", hours: 4, labels: ["p0"]}],
+			otherwise: {name: "1 day", hours: 24},
+		};
+		const waiting = [item(5, "4h", hoursAgo(5)), item(6, "1 day", hoursAgo(30))];
+		const report = flagsOf(input([], {}, {onCall: board(waiting, [], {responseTargets: targets})}));
+		const recs = report.flags.map((flag) => recOf(flag, SHIPPED_TABLE));
+
+		expect(recs).toEqual([
+			'Open on-call for 5 hours, past its "4h" target (4 hours). Pick it up now, or move it to the table?',
+			'Open on-call for 30 hours, past its "1 day" target (24 hours). Pick it up now, or move it to the table?',
+		]);
+		expect(recs.join("\n")).not.toContain("target of");
+	});
+
 	it("names an item with no target, or one the config no longer names, unread rather than clear", () => {
 		const report = flagsOf(input([], {}, {onCall: board([item(5, null), item(6, "someday")])}));
 
