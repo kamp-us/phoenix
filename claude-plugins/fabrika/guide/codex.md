@@ -6,10 +6,12 @@ GitHub credentials, Node, Git, and Codex CLI must already work in the environmen
 
 ## Install the plugin
 
-From your own repository, register the `kampus` marketplace from GitHub and install the plugin:
+From your own repository, register the `kampus` marketplace from GitHub and install the plugin.
+`<owner>/<repo>` is the GitHub repository that publishes the plugin, the `repository` field of
+its `plugin.json`:
 
 ```bash
-codex plugin marketplace add kamp-us/phoenix --ref main
+codex plugin marketplace add <owner>/<repo> --ref main
 codex plugin add fabrika@kampus
 ```
 

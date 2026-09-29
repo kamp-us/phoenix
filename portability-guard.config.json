@@ -9,10 +9,6 @@
 			"ceiling": 6,
 			"why": "The plugin manifest's `homepage`/`repository` name where this plugin is published; a published package has to say where it lives."
 		},
-		"claude-plugins/fabrika/guide/codex.md": {
-			"ceiling": 2,
-			"why": "The Codex install command's `owner/repo` operand names the GitHub repository the `kampus` marketplace is published from — the same fact as the plugin manifest's `repository`. An adopter runs it from their own repository, so it has to name the publishing one."
-		},
 		"packages/fabrika-cli/src/guard/i18n-literal-verb.ts": {
 			"ceiling": 5,
 			"why": "This guard's scan root and config path are this repo's own directories, and they are behaviour rather than prose — moving them onto config is a separate ticket of its own class."
