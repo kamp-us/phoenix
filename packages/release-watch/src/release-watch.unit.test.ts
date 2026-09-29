@@ -27,7 +27,10 @@ describe("planReleaseWatch", () => {
 		assert.include(verdict.issue.title, "@demlik/tea");
 		assert.include(verdict.issue.body, "`0.19.0`");
 		assert.include(verdict.issue.body, "`0.20.0`");
-		assert.include(verdict.issue.body, watchMarker("@demlik/tea"));
+		assert.include(
+			verdict.issue.body,
+			watchMarker({pkg: "@demlik/tea", pinned: "0.19.0", latest: "0.20.0"}),
+		);
 	});
 
 	it("compares by semver, so 0.10.0 is newer than 0.9.0", () => {
@@ -58,6 +61,40 @@ describe("planReleaseWatch", () => {
 			latest: "0.20.0",
 			issueNumber: 42,
 		});
+	});
+
+	it("writes nothing to a triaged issue whose recorded versions still match", () => {
+		const filed = issueText("@demlik/tea", "0.19.0", "0.20.0");
+		const enriched: OpenIssue = {
+			number: 42,
+			title: "Bump @demlik/tea to 0.20.0",
+			body: [
+				"## In plain words",
+				"",
+				"Rewritten by triage.",
+				"",
+				"<!-- fabrika:enriched issue=42 mode=rewrite -->",
+				"<details>",
+				"<summary>Original report (verbatim)</summary>",
+				"",
+				filed.body,
+				"",
+				"</details>",
+			].join("\n"),
+		};
+		const [verdict] = planReleaseWatch([{pin: tea("0.19.0"), latest: "0.20.0"}], [enriched]);
+		assert.strictEqual(verdict?._tag, "AlreadyFiled");
+
+		const [newer] = planReleaseWatch([{pin: tea("0.19.0"), latest: "0.21.0"}], [enriched]);
+		assert.strictEqual(newer?._tag === "Update" && newer.issueNumber, 42);
+	});
+
+	it("updates the open issue when the pin moved but latest still lags", () => {
+		const [verdict] = planReleaseWatch(
+			[{pin: tea("0.20.0"), latest: "0.21.0"}],
+			[standing(42, "0.19.0", "0.21.0")],
+		);
+		assert.strictEqual(verdict?._tag === "Update" && verdict.issueNumber, 42);
 	});
 
 	it("ignores an open issue that carries another package's marker", () => {

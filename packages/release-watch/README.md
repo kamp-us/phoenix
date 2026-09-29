@@ -15,10 +15,13 @@ not a red.
 3. Reads the open issues `github-actions[bot]` authored, in one REST call.
 4. For each package whose `latest` is newer than its pin, files one `status:needs-triage` issue,
    or updates the one already open for it. A `latest` that equals the pin, is older, or is a
-   prerelease writes nothing. So does an open issue that already says the same thing.
+   prerelease writes nothing. So does an open issue whose marker records the same pin and
+   `latest` as this run, even when triage or a person has rewritten its title or body.
 
-The open issue is found by the `<!-- release-watch pkg=<name> -->` marker in its body, never by
-its title. The decision lives in [`src/release-watch.ts`](src/release-watch.ts), with no IO;
+The open issue is found by the
+`<!-- release-watch pkg=<name> pinned=<version> latest=<version> -->` marker in its body, never
+by its title. Only a change to one of those two versions rewrites the issue. `triage enrich`
+keeps the original body, marker included, so a triaged issue is still found and left alone. The decision lives in [`src/release-watch.ts`](src/release-watch.ts), with no IO;
 [`src/bin.ts`](src/bin.ts) does the reads and writes.
 
 ## Run it locally

@@ -4,7 +4,10 @@
  * single write each one owes. No IO; `bin.ts` reads the three inputs and performs the writes.
  *
  * Dedup is on a body marker, never on title text: {@link watchMarker} is an HTML comment nothing
- * renders and nothing rewrites, keyed on the package so two lagging packages keep separate issues.
+ * renders, keyed on the package so two lagging packages keep separate issues. It also records the
+ * pin and `latest` the issue was written for, and "changed" is read off those versions alone:
+ * `triage enrich` keeps the original body, marker included, verbatim, so comparing whole bodies
+ * would reset every triaged issue on every run.
  */
 import * as semver from "semver";
 
@@ -17,7 +20,25 @@ export const TRIAGE_LABEL = "status:needs-triage";
 /** GitHub's default-token identity: the only author whose marker this watch trusts. */
 export const ACTIONS_BOT = "github-actions[bot]";
 
-export const watchMarker = (pkg: string): string => `<!-- release-watch pkg=${pkg} -->`;
+/** What one issue was written for: the package, and the pin and `latest` it reported. */
+export interface WatchRecord {
+	readonly pkg: string;
+	readonly pinned: string;
+	readonly latest: string;
+}
+
+export const watchMarker = ({pkg, pinned, latest}: WatchRecord): string =>
+	`<!-- release-watch pkg=${pkg} pinned=${pinned} latest=${latest} -->`;
+
+const MARKER_RE = /<!-- release-watch pkg=(\S+) pinned=(\S+) latest=(\S+) -->/g;
+
+/** Every watch marker in a body; a rewritten issue can carry more than one. */
+export const readWatchMarkers = (body: string): ReadonlyArray<WatchRecord> =>
+	Array.from(body.matchAll(MARKER_RE), ([, pkg = "", pinned = "", latest = ""]) => ({
+		pkg,
+		pinned,
+		latest,
+	}));
 
 /** One root-`catalog:` entry in the watched scope, exactly as the catalog spells its version. */
 export interface CatalogPin {
@@ -64,7 +85,7 @@ export type Verdict =
 			readonly issueNumber: number;
 			readonly issue: IssueText;
 	  }
-	/** The open issue already says exactly this, so the run writes nothing. */
+	/** The open issue was written for this same pin and `latest`, so the run writes nothing. */
 	| {
 			readonly _tag: "AlreadyFiled";
 			readonly name: string;
@@ -85,9 +106,9 @@ export const issueText = (pkg: string, pinned: string, latest: string): IssueTex
 		`- pinned: \`${pinned}\``,
 		`- npm latest: \`${latest}\``,
 		"",
-		"Filed by the `release-watch` workflow (#10133). A later run updates this issue in place when a newer release ships, and files no second one while this stays open.",
+		"Filed by the `release-watch` workflow (#10133). A later run updates this issue in place only when the pin or npm `latest` changes, and files no second one while this stays open.",
 		"",
-		watchMarker(pkg),
+		watchMarker({pkg, pinned, latest}),
 	].join("\n"),
 });
 
@@ -121,19 +142,22 @@ export const judge = (
 	if (!cmp.newer) return {_tag: "Current", name: pin.name, pinned, latest, reason: cmp.reason};
 
 	const issue = issueText(pin.name, pinned, latest);
-	const marker = watchMarker(pin.name);
 	const standing = openIssues
-		.filter((candidate) => candidate.body.includes(marker))
-		.reduce<OpenIssue | undefined>(
-			(oldest, candidate) =>
-				oldest === undefined || candidate.number < oldest.number ? candidate : oldest,
+		.map((candidate) => ({
+			number: candidate.number,
+			records: readWatchMarkers(candidate.body).filter((record) => record.pkg === pin.name),
+		}))
+		.filter(({records}) => records.length > 0)
+		.reduce<{number: number; records: ReadonlyArray<WatchRecord>} | undefined>(
+			(oldest, next) => (oldest === undefined || next.number < oldest.number ? next : oldest),
 			undefined,
 		);
 	if (standing === undefined) return {_tag: "File", name: pin.name, pinned, latest, issue};
-	if (standing.title === issue.title && standing.body === issue.body) {
-		return {_tag: "AlreadyFiled", name: pin.name, pinned, latest, issueNumber: standing.number};
+	const issueNumber = standing.number;
+	if (standing.records.some((record) => record.pinned === pinned && record.latest === latest)) {
+		return {_tag: "AlreadyFiled", name: pin.name, pinned, latest, issueNumber};
 	}
-	return {_tag: "Update", name: pin.name, pinned, latest, issueNumber: standing.number, issue};
+	return {_tag: "Update", name: pin.name, pinned, latest, issueNumber, issue};
 };
 
 /** One watched pin beside the npm `latest` read for it. */
@@ -159,6 +183,6 @@ export const renderVerdict = (verdict: Verdict): string => {
 		case "Update":
 			return `${verdict.name}: lags (pinned ${verdict.pinned}, npm latest ${verdict.latest}) — updating #${verdict.issueNumber}`;
 		case "AlreadyFiled":
-			return `${verdict.name}: lags (pinned ${verdict.pinned}, npm latest ${verdict.latest}) — #${verdict.issueNumber} already says so`;
+			return `${verdict.name}: lags (pinned ${verdict.pinned}, npm latest ${verdict.latest}) — #${verdict.issueNumber} already reports these versions`;
 	}
 };
