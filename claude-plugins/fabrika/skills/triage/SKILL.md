@@ -275,6 +275,10 @@ fails it earns a kill rather than a price. Then price what survives, on the work
 merit: `p0` for ship-work and fires, `p1` for what you would genuinely pull next, **`p2` is the
 default** and most of a healthy backlog. A roadmap row confers no band either way.
 
+**A defect a signed-out visitor can see is priced `p1` or `p0`, never below, whatever the fix
+costs.** It overrides the `p2` default. Whether a visitor can see it is your judgment on this
+issue, so your `Triage note:` says why you judged the defect visible or not.
+
 ```bash
 fabrika triage apply $issue_number --type bug --priority p2 --ready-for agent --home 47 --token <claim-token>
 ```
