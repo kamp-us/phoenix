@@ -7,7 +7,13 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
+import {
+	fakeSeams,
+	type HttpReply,
+	type Scripted,
+	unconfigured,
+	unconfiguredOnPlatform,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {
@@ -49,7 +55,10 @@ const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options>
 	Effect.runPromise(
 		Effect.provide(
 			runFloor({...options, ...overrides}),
-			Layer.merge(fakeSeams([...script, NO_REVIEWS]).layer, unconfigured),
+			Layer.merge(
+				fakeSeams([...script, NO_REVIEWS, ...unconfiguredOnPlatform()]).layer,
+				unconfigured,
+			),
 		),
 	);
 

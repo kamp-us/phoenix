@@ -782,7 +782,7 @@ const open = leafCommand(
 					expectation: expectationReader(Option.getOrNull(repo), process.env),
 					priorLane: priorLaneReader(Option.getOrNull(repo), process.env),
 					fromBoard,
-					boardSeat: boardSeatReader(Option.getOrNull(repo), process.cwd(), process.env),
+					boardSeat: boardSeatReader(Option.getOrNull(repo), process.env),
 					record: boardRecorder(Option.getOrNull(repo), process.env),
 					cap,
 					claimed: claimHoldReader(Option.getOrNull(repo), process.env),

@@ -47,13 +47,13 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
-import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {newestRulingAt} from "../decision/ruling.ts";
 import {standingRulings} from "../decision/standing-rulings.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {getPullRequest, listPullFiles} from "../io/pulls.ts";
 import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
+import {classConfigAtCommits, classConfigOfPull} from "../review/class-config.ts";
 import {partitionWithUi, ROUTED_NAMESPACES, shipNamespacesOf} from "../review/classes.ts";
 import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
@@ -105,6 +105,10 @@ import {type LaneRef, type LoadedLane, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane prove";
 
+/** What a verdict arm cannot answer when the config its classes derive over did not read. */
+const CLASS_CONFIG_UNREAD =
+	"the required namespace set is UNKNOWN, and a set short one namespace would prove an event nobody gated.";
+
 /** One namespace's newest claim, before the binding question is asked of it. */
 interface Claim {
 	readonly namespace: string;
@@ -145,7 +149,10 @@ export interface ProveOptions extends LaneRef {
 	 */
 	readonly pr: string | null;
 	readonly repo: string | null;
-	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in, not the ledger root. */
+	/**
+	 * The checkout this run stands in, not the ledger root. No arm reads `.fabrika.jsonc` here: the
+	 * classes a verdict arm derives read the config at the head it binds (`../review/class-config.ts`).
+	 */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
@@ -423,43 +430,10 @@ const prove = (
 			);
 		}
 
-		// Only the verdict arms need it: the two arms above prove commits and states, and neither asks
-		// what namespace a diff derives.
-		const governed = yield* governedRootsOr(
-			VERB,
-			options.cwd,
-			"the required namespace set is UNKNOWN, and a set short one namespace would prove an event nobody gated.",
-		);
-		if (governed._tag === "Refused") {
-			if (!park) return refuse(LANE_UNREADABLE, governed.message);
-			return uncontradicted(event, taskId, issue, null, [
-				`${VERB}: the governed roots did not read, so the derived namespace set is UNKNOWN and nothing could contradict the park — it stands.`,
-			]);
-		}
-
-		const surfaces = yield* uiSurfacesOr(
-			VERB,
-			options.cwd,
-			"the required namespace set is UNKNOWN, and a set short one namespace would prove an event nobody gated.",
-		);
-		if (surfaces._tag === "Refused") {
-			if (!park) return refuse(LANE_UNREADABLE, surfaces.message);
-			return uncontradicted(event, taskId, issue, null, [
-				`${VERB}: the declared UI surfaces did not read, so the derived namespace set is UNKNOWN and nothing could contradict the park — it stands.`,
-			]);
-		}
-
+		// The namespace a diff derives is read over the config at the head the verdicts bind — inside
+		// each verdict arm, where that head is known — never off the checkout this run stands in.
 		if (claim._tag === "RangeVerdict") {
-			return yield* proveRangeVerdicts(
-				repo,
-				claim.epic,
-				issue,
-				taskId,
-				event,
-				governed.roots,
-				surfaces.prefixes,
-				claim.defers,
-			);
+			return yield* proveRangeVerdicts(repo, claim.epic, issue, taskId, event, claim.defers);
 		}
 
 		const traced = yield* traceOpenPull(repo, issue);
@@ -538,8 +512,6 @@ const prove = (
 				taskId,
 				event,
 				diagnostics,
-				governed.roots,
-				surfaces.prefixes,
 			);
 		}
 		return yield* proveVerdicts(
@@ -549,8 +521,6 @@ const prove = (
 			taskId,
 			event,
 			diagnostics,
-			governed.roots,
-			surfaces.prefixes,
 			claim.defers,
 		);
 	});
@@ -785,8 +755,6 @@ export const readNamespaceRows = (
 	repo: string,
 	pr: number,
 	diagnostics: ReadonlyArray<string>,
-	roots: ReadonlyArray<string>,
-	uiPrefixes: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
 	rulingAt: string | null,
 ): Effect.Effect<HeadRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
@@ -804,7 +772,13 @@ export const readNamespaceRows = (
 		if (files._tag === "Failure") {
 			return {_tag: "Unread" as const, what: `the changed files of #${pr}`, reason: files.reason};
 		}
-		const derived = shipNamespacesOf(partitionWithUi(files.value, roots, uiPrefixes));
+		const config = yield* classConfigOfPull(VERB, CLASS_CONFIG_UNREAD, repo, pull.value);
+		if (config._tag === "Refused") {
+			return {_tag: "Unread" as const, what: `the class config of #${pr}`, reason: config.reason};
+		}
+		const derived = shipNamespacesOf(
+			partitionWithUi(files.value, config.config.governedRoots, config.config.uiPrefixes),
+		);
 		const deferred = derived.filter((namespace) => defers.includes(namespace));
 		const required = derived.filter((namespace) => !defers.includes(namespace));
 
@@ -1038,8 +1012,6 @@ const proveVerdicts = (
 	taskId: string,
 	event: string,
 	diagnostics: ReadonlyArray<string>,
-	roots: ReadonlyArray<string>,
-	uiPrefixes: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
 ): Effect.Effect<ProofAnswer, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
@@ -1064,8 +1036,6 @@ const proveVerdicts = (
 				...diagnostics,
 				`${VERB}: #${issue} carries ${ruled.scan.all.length} standing ruling(s)${rulingAt === null ? "" : `, the newest at ${rulingAt}`}; ${ruled.scan.disregarded} drifted marker(s) disregarded, ${ruled.scan.unauthorized} off the control-plane roster.`,
 			],
-			roots,
-			uiPrefixes,
 			defers,
 			rulingAt,
 		);
@@ -1142,13 +1112,11 @@ const proveParkUncontradicted = (
 	taskId: string,
 	event: string,
 	diagnostics: ReadonlyArray<string>,
-	roots: ReadonlyArray<string>,
-	uiPrefixes: ReadonlyArray<string>,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		// A park is refused only by a FAIL that still binds, and a ruling cannot make one bind
 		// harder — so this arm asks no ruling question and pays no read for one.
-		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, uiPrefixes, [], null);
+		const read = yield* readNamespaceRows(repo, pr, diagnostics, [], null);
 		if (read._tag !== "Rows") {
 			return uncontradicted(event, taskId, issue, pr, [
 				...diagnostics,
@@ -1270,8 +1238,6 @@ const proveRangeVerdicts = (
 	issue: number,
 	taskId: string,
 	event: string,
-	roots: ReadonlyArray<string>,
-	uiPrefixes: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
 ): Effect.Effect<ProofAnswer, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
@@ -1283,7 +1249,17 @@ const proveRangeVerdicts = (
 		if (content._tag === "Failure") {
 			return {...unreadable(`the content ${range} changes`, content.reason), deferred: []};
 		}
-		const derived = shipNamespacesOf(partitionWithUi(content.value.paths, roots, uiPrefixes));
+		// The range's own two ends, read out of the object database this range was located in.
+		const config = yield* classConfigAtCommits(VERB, CLASS_CONFIG_UNREAD, {
+			head: read.range.tip,
+			base: read.range.base,
+		});
+		if (config._tag === "Refused") {
+			return {...unreadable(`the class config of ${range}`, config.reason), deferred: []};
+		}
+		const derived = shipNamespacesOf(
+			partitionWithUi(content.value.paths, config.config.governedRoots, config.config.uiPrefixes),
+		);
 		const deferred = derived.filter((namespace) => defers.includes(namespace));
 		const required = derived.filter((namespace) => !defers.includes(namespace));
 

@@ -4,7 +4,12 @@
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {
+	fakeSeams,
+	type HttpReply,
+	type Scripted,
+	uiConfiguredOnPlatform,
+} from "../fakes.test-support.ts";
 import {COMPARE_FILE_CAP, PULL_FILES_CAP} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {emitAdvisory, reviewedHeadLine} from "../review/advisory.ts";
@@ -70,7 +75,6 @@ const options = {
 	sha: HEAD,
 	clause: CLAUSE,
 	verifiedAt: null as string | null,
-	uiPrefixes: ["apps/site/src/", "apps/desk/src/"],
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
 		string,
@@ -107,7 +111,7 @@ const happy = (): ReadonlyArray<Scripted> => [
 ];
 
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
-	const seams = fakeSeams(script);
+	const seams = fakeSeams([...script, ...uiConfiguredOnPlatform()]);
 	return Effect.runPromise(Effect.provide(runRoute({...options, ...overrides}), seams.layer)).then(
 		(outcome) => ({outcome, requests: seams.requests, bodies: seams.bodies}),
 	);
@@ -339,7 +343,10 @@ describe("review-ui route", () => {
 			const {outcome, requests} = await run(happy());
 			expect(outcome.code).toBe(0);
 			expect(JSON.parse(outcome.stdout).verifiedAt).toBeNull();
-			expect(requests.some((request) => request.includes("/compare/"))).toBe(false);
+			// The one comparison is the merge base the class config is read at, never a range.
+			expect(requests.filter((request) => request.includes("/compare/"))).toEqual([
+				expect.stringMatching(/\/compare\/main\.\.\.[0-9a-f]+\?per_page=1$/),
+			]);
 		});
 	});
 
@@ -461,7 +468,7 @@ describe("review-ui route", () => {
 
 describe("review-ui route --no-preview", () => {
 	const run = (script: ReadonlyArray<Scripted>, overrides: Partial<RouteOptions> = {}) => {
-		const seams = fakeSeams(script);
+		const seams = fakeSeams([...script, ...uiConfiguredOnPlatform()]);
 		return Effect.runPromise(
 			Effect.provide(runRoute({...options, ...overrides}), seams.layer),
 		).then((outcome) => ({outcome, requests: seams.requests, bodies: seams.bodies}));

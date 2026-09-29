@@ -20,7 +20,7 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import {layerPath} from "./document.ts";
 import type {KeyGroup} from "./key-group.ts";
-import {resolve} from "./load.ts";
+import {type Load, resolve} from "./load.ts";
 import {loadRepoConfig} from "./working-root.ts";
 
 export type Read<A> =
@@ -33,23 +33,26 @@ export const readKey = <A>(
 	cwd: string,
 	group: KeyGroup<A>,
 ): Effect.Effect<Read<A>, never, FileSystem.FileSystem | Path.Path> =>
-	Effect.gen(function* () {
-		const resolved = resolve(yield* loadRepoConfig(cwd), group);
-		switch (resolved._tag) {
-			case "Malformed":
-			case "Unknown":
-				return {_tag: "Refused" as const, reason: resolved.reason};
-			case "Declared":
-				return {
-					_tag: "Value" as const,
-					value: resolved.value,
-					note: `\`${group.key}\` as declared in ${layerPath(resolved.layer)}`,
-				};
-			case "Default":
-				return {
-					_tag: "Value" as const,
-					value: resolved.value,
-					note: `the shipped \`${group.key}\` — ${resolved.reason}`,
-				};
-		}
-	});
+	Effect.map(loadRepoConfig(cwd), (load) => readFromLoad(load, group));
+
+/** One key off a load already taken — the working tree's, or one read out of git at a ref. */
+export const readFromLoad = <A>(load: Load, group: KeyGroup<A>): Read<A> => {
+	const resolved = resolve(load, group);
+	switch (resolved._tag) {
+		case "Malformed":
+		case "Unknown":
+			return {_tag: "Refused", reason: resolved.reason};
+		case "Declared":
+			return {
+				_tag: "Value",
+				value: resolved.value,
+				note: `\`${group.key}\` as declared in ${layerPath(resolved.layer)}`,
+			};
+		case "Default":
+			return {
+				_tag: "Value",
+				value: resolved.value,
+				note: `the shipped \`${group.key}\` — ${resolved.reason}`,
+			};
+	}
+};

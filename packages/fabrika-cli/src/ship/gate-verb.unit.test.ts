@@ -8,6 +8,7 @@ import {
 	okOut,
 	type Scripted,
 	unconfigured,
+	unconfiguredOnPlatform,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PULL_FILES_CAP} from "../io/pulls.ts";
@@ -97,7 +98,10 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runGate({...options, ...overrides}),
-			Layer.merge(fakeSeams([...script, ...http, ORDINARY, NO_REVIEWS]).layer, unconfigured),
+			Layer.merge(
+				fakeSeams([...script, ...http, ORDINARY, NO_REVIEWS, ...unconfiguredOnPlatform()]).layer,
+				unconfigured,
+			),
 		),
 	);
 
@@ -882,6 +886,7 @@ describe("runGate — staleness is the content question", () => {
 			[ACL, permission("write")],
 			ORDINARY,
 			NO_REVIEWS,
+			...unconfiguredOnPlatform(),
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runGate(options), Layer.merge(seams.layer, unconfigured)),
@@ -904,6 +909,7 @@ describe("runGate — staleness is the content question", () => {
 			[ACL, permission("write")],
 			ORDINARY,
 			NO_REVIEWS,
+			...unconfiguredOnPlatform(),
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runGate(options), Layer.merge(seams.layer, unconfigured)),

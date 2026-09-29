@@ -60,10 +60,10 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {governedRootsOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {listPullFiles, permissionFor} from "../io/pulls.ts";
 import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
+import {classConfigOfPull} from "../review/class-config.ts";
 import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
@@ -320,13 +320,6 @@ export const runGate = (
 		const bound = inspectedSha(VERB, options.sha);
 		if (typeof bound !== "string") return bound;
 
-		const governed = yield* governedRootsOr(
-			VERB,
-			options.cwd,
-			"the floor cannot be raised and the conjunction is UNKNOWN, never satisfied.",
-		);
-		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
-
 		const requested = [...new Set(options.require)];
 		if (requested.length === 0) {
 			return refuse(
@@ -396,7 +389,22 @@ export const runGate = (
 				diagnostics,
 			);
 		}
-		const {required, floored} = requiredWithFloor(requested, changed, governed.roots);
+		// The governed roots are the PR's own, at the head its file list is read at and that head's
+		// merge base — never the checkout this run stands in.
+		const classConfig = yield* classConfigOfPull(
+			VERB,
+			"the floor cannot be raised and the conjunction is UNKNOWN, never satisfied.",
+			repo,
+			pull,
+		);
+		if (classConfig._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, classConfig.message, diagnostics);
+		}
+		const {required, floored} = requiredWithFloor(
+			requested,
+			changed,
+			classConfig.config.governedRoots,
+		);
 		if (floored.length > 0) {
 			diagnostics.push(
 				`${VERB}: #${pr}'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.`,

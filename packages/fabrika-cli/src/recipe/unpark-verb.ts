@@ -421,7 +421,6 @@ const clearRouteSatisfied = (
 			pr,
 			repo,
 			json: true,
-			cwd: options.cwd,
 			env: options.env,
 			caller: "relay",
 		});
@@ -1387,7 +1386,6 @@ const clearCiGreen = (
 			pr,
 			repo,
 			json: true,
-			cwd: options.cwd,
 			env: options.env,
 			caller: "relay",
 		});

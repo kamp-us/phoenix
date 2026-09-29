@@ -581,6 +581,23 @@ export const exitOut = (code: number, reason = ""): ScriptedExec => ({
  */
 export const unconfigured: Layer.Layer<FileSystem.FileSystem | Path.Path> = fakeFs({}).layer;
 
+/** Two `uiSurfaces` rows, one per runnable app. */
+const UI_SURFACES = [
+	{
+		name: "web",
+		prefix: "apps/site/src/",
+		mount: "/",
+		command: "pnpm dev --port {{port}}",
+	},
+	{
+		name: "desk-chat",
+		prefix: "apps/desk/src/",
+		mount: "/desk/chat",
+		basePath: "/",
+		command: "pnpm proof:chat --port {{port}}",
+	},
+];
+
 /**
  * A `/repo` tree declaring two `uiSurfaces` rows, one per runnable app.
  *
@@ -589,26 +606,85 @@ export const unconfigured: Layer.Layer<FileSystem.FileSystem | Path.Path> = fake
  * declared nothing, and the wrong ground to derive that class on.
  */
 export const uiConfigured: Layer.Layer<FileSystem.FileSystem | Path.Path> = fakeFs({
-	files: {
-		"/repo/.fabrika.jsonc": JSON.stringify({
-			uiSurfaces: [
-				{
-					name: "web",
-					prefix: "apps/site/src/",
-					mount: "/",
-					command: "pnpm dev --port {{port}}",
-				},
-				{
-					name: "desk-chat",
-					prefix: "apps/desk/src/",
-					mount: "/desk/chat",
-					basePath: "/",
-					command: "pnpm proof:chat --port {{port}}",
-				},
-			],
+	files: {"/repo/.fabrika.jsonc": JSON.stringify({uiSurfaces: UI_SURFACES})},
+}).layer;
+
+/**
+ * Any commit's object name, for a config row that answers the same at the head and the merge base.
+ */
+const ANY_COMMIT = "[0-9a-f]{40}";
+
+/**
+ * `.fabrika.jsonc` out of the object database at `sha` — `null` for a commit that carries none.
+ *
+ * The class config a PR's classes derive over is read at its head and its merge base
+ * (`review/class-config.ts`), never off the tree a test's {@link fakeFs} stands up, so a test about
+ * the classes scripts these rows rather than a file. Put a per-commit row ahead of an any-commit one:
+ * the first matching row answers.
+ */
+export const configAtCommit = (
+	text: string | null,
+	sha: string = ANY_COMMIT,
+): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	[
+		new RegExp(`^git ls-tree --full-tree ${sha} -- \\.fabrika\\.jsonc$`),
+		okOut(text === null ? "" : `100644 blob ${"e".repeat(40)}\t.fabrika.jsonc\n`),
+	],
+	...(text === null
+		? []
+		: [[new RegExp(`^git show ${sha}:\\.fabrika\\.jsonc$`), okOut(text)] as const]),
+];
+
+/** No config at any commit — every class key resolves to its shipped default. */
+export const unconfiguredAtCommits = configAtCommit(null);
+
+/** {@link uiConfigured}'s two rows, at every commit. */
+export const uiConfiguredAtCommits = configAtCommit(JSON.stringify({uiSurfaces: UI_SURFACES}));
+
+/**
+ * `.fabrika.jsonc` as the platform serves it at `sha` — `null` answers `404`, a commit carrying none.
+ */
+export const configOnPlatform = (
+	text: string | null,
+	sha: string = ANY_COMMIT,
+): ReadonlyArray<Scripted> => [
+	[
+		new RegExp(`^GET .*/repos/[^/]+/[^/]+/contents/\\.fabrika\\.jsonc\\?ref=${sha}$`),
+		text === null ? {status: 404, body: '{"message":"Not Found"}'} : {status: 200, body: text},
+	],
+];
+
+/**
+ * The platform's comparison naming `mergeBase` — the read a PR-record verb takes its merge base from.
+ *
+ * The envelope also carries an `ahead`, zero-behind standing, so a verb that reads the same
+ * comparison for where its head stands is answered by this row too.
+ */
+export const mergeBaseOnPlatform = (mergeBase: string): Scripted => [
+	/^GET .*\/repos\/[^/]+\/[^/]+\/compare\/[^?]+\?per_page=1$/,
+	{
+		status: 200,
+		body: JSON.stringify({
+			merge_base_commit: {sha: mergeBase},
+			status: "ahead",
+			ahead_by: 1,
+			behind_by: 0,
+			files: [],
 		}),
 	},
-}).layer;
+];
+
+/** No config on the platform at any commit, over a merge base the comparison names. */
+export const unconfiguredOnPlatform = (mergeBase: string = "b".repeat(40)) => [
+	mergeBaseOnPlatform(mergeBase),
+	...configOnPlatform(null),
+];
+
+/** {@link uiConfigured}'s two rows, at every commit the platform serves. */
+export const uiConfiguredOnPlatform = (mergeBase: string = "b".repeat(40)) => [
+	mergeBaseOnPlatform(mergeBase),
+	...configOnPlatform(JSON.stringify({uiSurfaces: UI_SURFACES})),
+];
 
 /** `git ls-tree --name-only` output: one name per line. */
 export const tree = (...names: ReadonlyArray<string>): string => names.join("\n");

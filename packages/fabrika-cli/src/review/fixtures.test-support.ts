@@ -4,7 +4,7 @@
  * They live in one module because every verb in the group reads the same PR shape, and a per-test
  * literal is how two tests come to disagree about what the platform returns.
  */
-import {okOut} from "../fakes.test-support.ts";
+import {okOut, unconfiguredAtCommits} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 
 export const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
@@ -110,6 +110,10 @@ export const binding = (
 	// The content binding's own read, in the binding script because every verb that binds a head then
 	// digests that same range; a per-test copy is how two tests come to digest differently.
 	[RAW_AT(base, sha), okOut(RAW)],
+	// The class config at both ends of the bound range, absent, for the same reason: every verb that
+	// binds a head derives its classes over that range. A test about the config puts its own
+	// `configAtCommit` rows ahead of these.
+	...unconfiguredAtCommits,
 ];
 
 export const files = (...names: ReadonlyArray<string>): ExecResult =>

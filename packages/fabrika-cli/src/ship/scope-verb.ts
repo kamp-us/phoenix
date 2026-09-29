@@ -45,14 +45,20 @@
  * there, so the pagination proof passes over a list GitHub already truncated — and a class, a
  * namespace or a §CP path could sit in the part it never served.
  *
+ * **The classes derive over the PR's own config, never this checkout's.** `.fabrika.jsonc` is read at
+ * the PR's head and at the merge base the platform diffs its file list from
+ * (`../review/class-config.ts`), so a shipper standing in a stale tree derives what `review scope`
+ * derives over the same head.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {governedRootsOr, noUiSurfaces, uiSurfacesOr} from "../config/paths.ts";
+import {noUiSurfaces} from "../config/paths.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {standingInLinkedWorktree} from "../lane/assembly.ts";
+import {classConfigOfPull} from "../review/class-config.ts";
 import {issueRefOf, partitionWithUi, renderIssueRef, shipNamespacesOf} from "../review/classes.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -84,8 +90,6 @@ export interface ScopeOptions {
 	readonly pr: number;
 	readonly repo: string | null;
 	readonly json: boolean;
-	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
-	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** Whether this run is a shipper's own, and so whether the worktree refusal binds it. */
 	readonly caller: ScopeCaller;
@@ -126,20 +130,6 @@ export const runScope = (
 			}
 		}
 
-		const governed = yield* governedRootsOr(
-			VERB,
-			options.cwd,
-			"whether this diff derives the governance namespace is UNKNOWN, and a required set short one namespace is a merge gated on less than the diff earns.",
-		);
-		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
-
-		const surfaces = yield* uiSurfacesOr(
-			VERB,
-			options.cwd,
-			"whether this diff derives the review-ui namespace is UNKNOWN, and a required set short one namespace is a merge gated on less than the diff earns.",
-		);
-		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
-
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
@@ -150,6 +140,15 @@ export const runScope = (
 		});
 		if (target._tag === "Refused") return target.outcome;
 		const pull = target.pull;
+
+		const configRead = yield* classConfigOfPull(
+			VERB,
+			"whether this diff derives the governance or review-ui namespace is UNKNOWN, and a required set short one namespace is a merge gated on less than the diff earns.",
+			repo,
+			pull,
+		);
+		if (configRead._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, configRead.message);
+		const classConfig = configRead.config;
 
 		// The enumerated list IS the file set this verb partitions, and the pull-request record's
 		// `changed_files` is reported beside it rather than refused on — `platformFileSet` carries why.
@@ -169,9 +168,9 @@ export const runScope = (
 		const diagnostics = [
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared`),
 			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
-			surfaces.prefixes.length === 0
+			classConfig.uiPrefixes.length === 0
 				? noUiSurfaces(VERB)
-				: `${VERB}: ui derived over ${surfaces.prefixes.length} prefix(es) — ${surfaces.note}.`,
+				: `${VERB}: ui derived over ${classConfig.uiPrefixes.length} prefix(es) — ${classConfig.notes.uiSurfaces}.`,
 		];
 		// Zero is the shortfall the enumeration alone establishes, and with the declared count no longer
 		// refusing it is the whole floor: an empty list partitions into no class and derives no
@@ -197,7 +196,7 @@ export const runScope = (
 			);
 		}
 
-		const partition = partitionWithUi(files, governed.roots, surfaces.prefixes);
+		const partition = partitionWithUi(files, classConfig.governedRoots, classConfig.uiPrefixes);
 		const namespaces = shipNamespacesOf(partition);
 		if (namespaces.length === 0) {
 			return refuse(
