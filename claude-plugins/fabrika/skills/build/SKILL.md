@@ -70,6 +70,8 @@ this pool. Read the `excluded` histogram beside the pool: it counts why issues w
 `blocked`, this verb's own axis: an issue whose native `blocked_by` graph still names an open blocker
 that the parent epic's assembly branch does not already carry — the same discharged gate
 `build claim` runs, so the pool and the claim never state different facts about one edge.
+That graph is read in rank order only until `--limit` candidates survive, so `blocked` and
+`unreadable` count what the walk met, and `unread` counts the admitted candidates it never reached.
 Two refusals before claiming: a `type:decision`'s deliverable is a recorded choice
 (`/adr`'s, not yours), and a rendered-visual deliverable is outside this skill's modality
 (`build-ui`'s) — **do not claim either**. Each refusal has exactly one arm. The rendered-visual one

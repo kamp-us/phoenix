@@ -2,6 +2,8 @@
 
 **Skill:** [`build`](SKILL.md) · **Date:** 2026-08-08
 
+**Amended 2026-09-29** — `build pick` ranks before it reads the `blocked_by` graph and stops once `--limit` candidates survive: a new `unread` count names the admitted candidates it never read, and `excluded` and `inPool` count read candidates only.
+
 **Amended 2026-09-28** — `build pick` keeps its own order on a token without the `project` scope, with or without a `table` block, instead of refusing at `11`.
 
 **Amended 2026-09-27** — campaigns become themes: the [admission test](#admission-test--scope-admission-and-the-audience-axis) is three axes (type, audience, criteria), and `build pick` offers the betting table's current bets first.
@@ -482,10 +484,10 @@ fabrika build pick [--repo <owner/name>] [--limit <n>]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository whose issue board is read |
-| `--limit` | integer | no | `20` | maximum candidates to emit, after ranking |
+| `--limit` | integer | no | `20` | maximum candidates to emit; the `blocked_by` read stops once this many survive it |
 
 **Output** — machine. One JSON object:
-`{"pool": [...], "excluded": {...}, "scanned": {"p0": n, "p1": n, "p2": n}, "bets": {...}}`.
+`{"pool": [...], "excluded": {...}, "unread": n, "scanned": {"p0": n, "p1": n, "p2": n}, "bets": {...}}`.
 Each pool entry: `{"number", "title", "priority", "type", "home", "bet"}` — `home` is the open
 milestone's number as a string, or the standing-lane label (`wayfinder:backlog` /
 `axis:pipeline-hardening`) for an issue with no milestone; `bet` says whether the table in force
@@ -503,10 +505,16 @@ one reason per outcome — or `blocked`, this verb's own axis (below).
 The scanned counts alone cannot tell a working filter from a broken one; the reasons can, and the
 reason vocabulary is the whole of what a reader acts on — no skill reads a per-issue row, so the
 rows collapse to counts (`excluded` is an evidence-array, `pool` the answer-array `--limit` caps).
+**`excluded` covers only the candidates the verb read.** Every admission axis is answered for every
+listed issue, but the `blocked_by` axis is read in rank order and stops once `--limit` candidates
+survive it (below), so a `blocked` or `unreadable` count says what the walk met, never what the whole
+backlog holds. `unread` is the number of admitted candidates ranked past that stop and never
+graph-read: they are in neither `pool` nor `excluded`, and `0` means the walk reached the end of the
+ranked pool.
 `bets` is `{"state": "none"}` when the repository keeps no table project, or
 `{"state": "read", "project": "<owner>#<n>", "tableDay": "YYYY-MM-DD", "bets": n, "inPool": n}`
 — the project read, the table in force (the `table.day` on or before today, in `table.timeZone`),
-how many issues it bets on, and how many of those survived the filter. The stderr bets line carries the same fact.
+how many issues it bets on, and how many of those were graph-read and survived — a bet ranked past the `--limit` stop is unread, not in `inPool`. The stderr bets line carries the same fact.
 
 The filter, fail-closed on every axis:
 
@@ -550,6 +558,14 @@ The filter, fail-closed on every axis:
   branch for a candidate the graph already reads clear. It replaces the retired `status:blocked`
   label, which this filter only ever dropped as a side effect of the one-`status:`-label rule above,
   printing no reason at all.
+
+  **The graph is read in rank order, and the read stops once `--limit` candidates survive.** Every
+  rank input — the bucket, the milestone order, the bet order — is a fact the listing and the table
+  read already returned, so the order is final before any graph read. The verb walks it one candidate
+  at a time, excludes a `blocked` or `unreadable` one exactly as above and moves on, and stops at the
+  `--limit`th survivor. The pool it prints is the one a full read then a slice would print, while the
+  cost tracks `--limit` rather than the triaged backlog: one filed run spent about 600 REST calls on
+  `blocked_by` reads to print 20 rows. The candidates past the stop are counted in `unread`.
 
   **The pool answers the same discharge question the claim seam does.**
   It used to read the pre-discharge gate, so one edge got three answers: `build eligible` said
@@ -609,9 +625,12 @@ verdict — the pool still answers on `0`. Those codes are the claim seam's.
 | `build pick: --limit "<value>" is not a positive integer.` | 1 | usage error |
 
 **Scope** — every open issue in `--repo` carrying `status:triaged`, read via paginated REST; the
-table project's items with their Stage, Section and Table day cells, when there is a project; plus, for
-each candidate the graph reads blocked, that issue's parent and the commits `epic/<parent>` adds over
-the trunk in this tree. The scope line on stderr names the per-bucket counts scanned, and the bets
+table project's items with their Stage, Section and Table day cells, when there is a project; the
+`blocked_by` graph of each admitted candidate in rank order, until `--limit` survive; plus, for each
+candidate the graph reads blocked, that issue's parent and the commits `epic/<parent>` adds over the
+trunk in this tree, with the repository's default branch read at most once per run. The scope line on
+stderr names the per-bucket counts scanned and ends with the `unread` count
+(`… 0 on the blocked_by graph. 12 admitted candidate(s) left unread once --limit 20 filled.`), and the bets
 line after it names where the order came from — `bets: 2 bet(s) at the 2026-09-26 table on project
 acme#7, 1 in the pool and first in it.`, `bets: project acme#7 bets on nothing at the 2026-09-26
 table; the pool is in its own order.`, or `bets: no table project — none is configured,
@@ -622,7 +641,7 @@ order with no bets in it is visible as such rather than inferred.
 
 ```
 $ fabrika build pick
-{"pool":[{"number":48,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening","bet":true},{"number":4,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"7","bet":false}],"excluded":{"audience-not-agent":1},"scanned":{"p0":0,"p1":3,"p2":41},"bets":{"state":"read","project":"acme#7","tableDay":"2026-09-26","bets":1,"inPool":1}}
+{"pool":[{"number":48,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening","bet":true},{"number":4,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"7","bet":false}],"excluded":{"audience-not-agent":1},"unread":0,"scanned":{"p0":0,"p1":3,"p2":41},"bets":{"state":"read","project":"acme#7","tableDay":"2026-09-26","bets":1,"inPool":1}}
 ```
 
 The `p2` chore leads the `p1` bug because the 2026-09-26 table bet on it. With no table project the
@@ -631,7 +650,7 @@ same board answers in its own order:
 ```
 $ fabrika build pick
 build pick: bets: no table project — none is configured, and none titled "widgets table" is linked to acme/widgets; the pool is in its own order.
-{"pool":[{"number":4,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"7","bet":false},{"number":48,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening","bet":false}],"excluded":{"audience-not-agent":1},"scanned":{"p0":0,"p1":3,"p2":41},"bets":{"state":"none"}}
+{"pool":[{"number":4,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"7","bet":false},{"number":48,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening","bet":false}],"excluded":{"audience-not-agent":1},"unread":0,"scanned":{"p0":0,"p1":3,"p2":41},"bets":{"state":"none"}}
 ```
 
 An epic child whose blocker is still open on the board but whose work already landed on the run's
@@ -639,10 +658,19 @@ assembly branch is in the pool, and the branch read that put it there is on stde
 
 ```
 $ fabrika build pick
-build pick: scanned p0 0, p1 1, p2 0 in owner/repo; 1 candidate(s) survived the filter, 0 excluded — 0 by the admission test, 0 for no acceptance-criteria block, 0 on the blocked_by graph.
+build pick: scanned p0 0, p1 1, p2 0 in owner/repo; 1 candidate(s) survived the filter, 0 excluded — 0 by the admission test, 0 for no acceptance-criteria block, 0 on the blocked_by graph. 0 admitted candidate(s) left unread once --limit 20 filled.
 build pick: bets: no table project — none is configured, and none titled "repo table" is linked to owner/repo; the pool is in its own order.
 build pick: origin/main..epic/3 adds a commit that lands #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
-{"pool":[{"number":30,"title":"The second tracer","priority":"p1","type":"chore","home":"7","bet":false}],"excluded":{},"scanned":{"p0":0,"p1":1,"p2":0},"bets":{"state":"none"}}
+{"pool":[{"number":30,"title":"The second tracer","priority":"p1","type":"chore","home":"7","bet":false}],"excluded":{},"unread":0,"scanned":{"p0":0,"p1":1,"p2":0},"bets":{"state":"none"}}
+```
+
+With `--limit 1` the walk stops at the first survivor. The bet `p2` chore is ranked first and reads
+clear, so the `p1` bug behind it is never graph-read — it is `unread`, not excluded, and the bet is
+the one survivor `inPool` counts:
+
+```
+$ fabrika build pick --limit 1
+{"pool":[{"number":48,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening","bet":true}],"excluded":{"audience-not-agent":1},"unread":1,"scanned":{"p0":0,"p1":3,"p2":41},"bets":{"state":"read","project":"acme#7","tableDay":"2026-09-26","bets":1,"inPool":1}}
 ```
 
 ```

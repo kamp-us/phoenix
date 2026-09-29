@@ -162,8 +162,9 @@ const pick = leafCommand(
 	Command.withDescription(
 		[
 			"Prints the ranked pool of issues a lane may claim, with every exclusion counted by reason.",
-			'  {"pool":[{…,"bet"}],"excluded":{"<reason>":n},"scanned":{"p0","p1","p2"},"bets":{"state",…}}',
+			'  {"pool":[{…,"bet"}],"excluded":{"<reason>":n},"unread":n,"scanned":{"p0","p1","p2"},"bets":{"state",…}}',
 			"  Stage-bet issues on the table project lead the pool; no campaign state excludes anything.",
+			"  The blocked_by graph is read in rank order until --limit survive; unread counts the rest.",
 			"  A token without the project scope degrades to the pool's own order and names the fix.",
 			"  11: a bucket, or the table when .fabrika.jsonc declares one, was unreadable (UNKNOWN)",
 			`  Derivation: the build skill's contract.md, "build pick"`,
