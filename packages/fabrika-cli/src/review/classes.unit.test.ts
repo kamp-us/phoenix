@@ -129,6 +129,14 @@ describe("isUiSurface", () => {
 		expect(isUiSurface("apps/desk/src/ui/Chat.spec.tsx", UI_PREFIXES)).toBe(false);
 	});
 
+	it("matches a root with no trailing slash as one exact file, never as a leading-characters prefix", () => {
+		const roots = ["app/", "tailwind.config.ts"];
+		expect(isUiSurface("tailwind.config.ts", roots)).toBe(true);
+		expect(isUiSurface("tailwind.config.ts.bak", roots)).toBe(false);
+		expect(isUiSurface("tailwind.config.tsx", roots)).toBe(false);
+		expect(isUiSurface("apps/tailwind.config.ts", roots)).toBe(false);
+	});
+
 	it("raises nothing on an empty prefix list — a repo declaring no surface has no rendered gate", () => {
 		expect(isUiSurface("apps/site/src/App.tsx", [])).toBe(false);
 	});

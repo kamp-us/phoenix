@@ -1067,10 +1067,25 @@
 						"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 					},
 					"prefix": {
-						"type": "string",
-						"description": "The repo-relative source root whose changed files raise the ui class, ending in `/`.",
-						"minLength": 1,
-						"pattern": "^(?!/)(?!\\.\\.).*/$"
+						"description": "Where the app's rendered source lives: one source root, or a non-empty list of them. A changed file under a directory root, or equal to a file root, raises the ui class.",
+						"oneOf": [
+							{
+								"type": "string",
+								"description": "A repo-relative source root. Ending in `/` it is a directory covering every file under it; otherwise it names exactly one file.",
+								"minLength": 1,
+								"pattern": "^(?![/\\s])(?!\\.\\.)(?:.*\\S)?$"
+							},
+							{
+								"type": "array",
+								"items": {
+									"type": "string",
+									"description": "A repo-relative source root. Ending in `/` it is a directory covering every file under it; otherwise it names exactly one file.",
+									"minLength": 1,
+									"pattern": "^(?![/\\s])(?!\\.\\.)(?:.*\\S)?$"
+								},
+								"minItems": 1
+							}
+						]
 					},
 					"mount": {
 						"type": "string",

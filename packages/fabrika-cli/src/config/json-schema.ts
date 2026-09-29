@@ -44,6 +44,7 @@ export interface JsonSchema {
 	readonly additionalProperties?: boolean | JsonSchema;
 	readonly propertyNames?: JsonSchema;
 	readonly items?: JsonSchema;
+	readonly oneOf?: ReadonlyArray<JsonSchema>;
 	readonly minItems?: number;
 	readonly uniqueItems?: boolean;
 }

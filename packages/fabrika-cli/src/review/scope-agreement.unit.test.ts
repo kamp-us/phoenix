@@ -9,7 +9,13 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted, uiConfigured} from "../fakes.test-support.ts";
+import {
+	fakeFs,
+	fakeSeams,
+	type HttpReply,
+	type Scripted,
+	uiConfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	branchRules,
@@ -46,56 +52,82 @@ const namespaceRows = (stdout: string): ReadonlyArray<string> =>
 		.filter((line) => line.startsWith("namespace\t"))
 		.map((line) => line.slice("namespace\t".length));
 
-const reviewScope = (...changed: ReadonlyArray<string>) =>
-	Effect.runPromise(
-		Effect.provide(
-			runReviewScope({
-				pr: 4321,
-				sha: null,
-				repo: null,
-				json: false,
-				cwd: "/repo",
-				env: {CLAUDE_PIPELINE_REPO: "o/r"},
-			}),
-			Layer.merge(
-				fakeSeams([
-					[PULL, served(reviewPull({changedFiles: changed.length}))],
-					...binding(),
-					[PATHS_AT(), paths(...changed)],
-				]).layer,
-				uiConfigured,
+type Config = typeof uiConfigured;
+
+const reviewScopeOver =
+	(config: Config) =>
+	(...changed: ReadonlyArray<string>) =>
+		Effect.runPromise(
+			Effect.provide(
+				runReviewScope({
+					pr: 4321,
+					sha: null,
+					repo: null,
+					json: false,
+					cwd: "/repo",
+					env: {CLAUDE_PIPELINE_REPO: "o/r"},
+				}),
+				Layer.merge(
+					fakeSeams([
+						[PULL, served(reviewPull({changedFiles: changed.length}))],
+						...binding(),
+						[PATHS_AT(), paths(...changed)],
+					]).layer,
+					config,
+				),
 			),
-		),
-	);
+		);
+
+const reviewScope = reviewScopeOver(uiConfigured);
 
 /**
  * `caller: "shipper"` with the worktree read scripted, because that is the run whose answer the
  * review side has to agree with — a `relay` seat would compare against a read no shipper performs.
  */
-const shipScope = (...changed: ReadonlyArray<string>) =>
-	Effect.runPromise(
-		Effect.provide(
-			runShipScope({
-				pr: 4321,
-				repo: null,
-				json: false,
-				cwd: "/repo",
-				env: ENV,
-				caller: "shipper",
-			}),
-			Layer.merge(
-				fakeSeams([
-					[PULL, served(shipPull({changedFiles: changed.length}))],
-					[SHIP_FILES, served(shipFiles(...changed))],
-					[OWNERS, {status: 200, body: CODEOWNERS}],
-					[RULES, served(branchRules("pull_request"))],
-					[REPO, repositoryServed()],
-					LINKED_WORKTREE,
-				] as ReadonlyArray<Scripted>).layer,
-				uiConfigured,
+const shipScopeOver =
+	(config: Config) =>
+	(...changed: ReadonlyArray<string>) =>
+		Effect.runPromise(
+			Effect.provide(
+				runShipScope({
+					pr: 4321,
+					repo: null,
+					json: false,
+					cwd: "/repo",
+					env: ENV,
+					caller: "shipper",
+				}),
+				Layer.merge(
+					fakeSeams([
+						[PULL, served(shipPull({changedFiles: changed.length}))],
+						[SHIP_FILES, served(shipFiles(...changed))],
+						[OWNERS, {status: 200, body: CODEOWNERS}],
+						[RULES, served(branchRules("pull_request"))],
+						[REPO, repositoryServed()],
+						LINKED_WORKTREE,
+					] as ReadonlyArray<Scripted>).layer,
+					config,
+				),
 			),
-		),
-	);
+		);
+
+const shipScope = shipScopeOver(uiConfigured);
+
+/** A root-level app: one row naming two directories and one root file as its source roots. */
+const rootLevelApp: Config = fakeFs({
+	files: {
+		"/repo/.fabrika.jsonc": JSON.stringify({
+			uiSurfaces: [
+				{
+					name: "web",
+					prefix: ["app/", "components/", "tailwind.config.ts"],
+					mount: "/",
+					command: "pnpm dev --port {{port}}",
+				},
+			],
+		}),
+	},
+}).layer;
 
 describe("review scope and ship scope over one file list", () => {
 	it("derive the same required-namespace set from a mixed code + ui diff", async () => {
@@ -113,6 +145,28 @@ describe("review scope and ship scope over one file list", () => {
 
 		expect(review.stdout).toContain("class\tui\t1");
 		expect(review.stdout).toContain("routed\treview-ui");
+	});
+
+	it.each([
+		["the first listed directory", ["app/page.tsx"]],
+		["the second listed directory", ["components/Nav.tsx"]],
+		["the listed root file alone", ["tailwind.config.ts"]],
+	])("both raise the ui class off %s of a list-shaped prefix", async (_label, changed) => {
+		const review = await reviewScopeOver(rootLevelApp)(...changed);
+		const ship = await shipScopeOver(rootLevelApp)(...changed);
+
+		expect(review.stdout).toContain("class\tui\t1");
+		expect(namespaceRows(review.stdout)).toEqual(["review-code", "review-ui"]);
+		expect(namespaceRows(ship.stdout)).toEqual(namespaceRows(review.stdout));
+	});
+
+	it("both leave a file that only shares a listed root file's leading characters outside ui", async () => {
+		const review = await reviewScopeOver(rootLevelApp)("tailwind.config.ts.bak");
+		const ship = await shipScopeOver(rootLevelApp)("tailwind.config.ts.bak");
+
+		expect(review.stdout).not.toContain("class\tui");
+		expect(namespaceRows(review.stdout)).toEqual(["review-code"]);
+		expect(namespaceRows(ship.stdout)).toEqual(["review-code"]);
 	});
 
 	it("routes nothing when the diff raises no ui class", async () => {
