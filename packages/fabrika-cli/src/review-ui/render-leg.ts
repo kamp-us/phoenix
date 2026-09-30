@@ -20,7 +20,7 @@ import {stepToken} from "../capture/interaction.ts";
 import {isRenderCrash} from "../capture/page-errors.ts";
 import {buildCapturePlan, joinPreviewUrl, parseSurfaceSpec} from "../capture/plan.ts";
 import {validateCaptureBytes} from "../capture/png.ts";
-import {tierOf} from "../capture/states.ts";
+import {CAPTURE_IDENTITIES, identityOf} from "../capture/states.ts";
 import {capAndCount} from "../evidence.ts";
 import {type CaptureEntry, PAGE_ERROR_CAP, sha256Hex} from "./manifest.ts";
 import type {RenderLeg, SurfaceRender} from "./render-verb.ts";
@@ -67,13 +67,14 @@ export const makeCaptureRenderLeg =
 
 			// A seeded session is asked to prove itself, because pixels cannot: a cookie that does not
 			// authenticate renders the visitor's page, and that is a valid PNG under the `:auth` name.
-			const wantedTier = tierOf(plan[0]?.surface.state ?? null);
+			const wantedIdentity = identityOf(plan[0]?.surface.state ?? null);
+			const wanted = wantedIdentity === null ? null : CAPTURE_IDENTITIES[wantedIdentity];
 			// Same reason one layer over: an override the preview dropped renders the flag-off page,
 			// and that page is a valid PNG under the flag-on name.
 			const forcing = isForcing(request.forcedFlags);
 			const captured = yield* capture(plan, request.outDir, {
 				cookies: request.cookies,
-				...(wantedTier !== null
+				...(wanted !== null
 					? {sessionProbeUrl: joinPreviewUrl(request.previewUrl, SESSION_PROBE_PATH)}
 					: {}),
 				...(forcing
@@ -104,7 +105,7 @@ export const makeCaptureRenderLeg =
 			}
 			// Classified before the bytes: an anonymous shot under a signed-in name is a valid PNG of
 			// the wrong page, so validating it first would answer a question nobody asked.
-			if (wantedTier !== null) {
+			if (wanted !== null) {
 				const proof = shot.sessionProof;
 				if (proof === undefined || proof._tag !== "SignedIn") {
 					return {
@@ -120,11 +121,19 @@ export const makeCaptureRenderLeg =
 				// Signed in is not the whole question. A surface whose audience is defined by NOT
 				// clearing a floor renders perfectly for somebody above it, so the tier the preview
 				// itself reports back decides whether these are the pixels the surface id named.
-				if (proof.tier !== wantedTier) {
+				if (proof.tier !== wanted.tier) {
 					return {
 						_tag: "WrongTier",
-						wanted: wantedTier,
+						wanted: wanted.tier,
 						rendered: proof.tier,
+					} satisfies SurfaceRender;
+				}
+				// The same floor on the other axis: a verified çaylak renders the write an unverified
+				// one is refused, so the pixels are the wrong audience's either way round.
+				if (proof.emailVerified !== wanted.emailVerified) {
+					return {
+						_tag: "WrongVerification",
+						wanted: wanted.emailVerified,
 					} satisfies SurfaceRender;
 				}
 			}

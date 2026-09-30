@@ -182,7 +182,9 @@ describe("captureRenderLeg — the :auth session proof", () => {
 		const asked: Array<string | undefined> = [];
 		const spy: CaptureShots = (_plan, _outDir, options) => {
 			asked.push(options?.sessionProbeUrl);
-			return authShot({sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar"}})([], "", {});
+			return authShot({
+				sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar", emailVerified: true},
+			})([], "", {});
 		};
 		runAuth(spy);
 		run(spy);
@@ -192,7 +194,11 @@ describe("captureRenderLeg — the :auth session proof", () => {
 
 	it("records the shot only when the proof came back signed in", () => {
 		expect(
-			runAuth(authShot({sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar"}}))._tag,
+			runAuth(
+				authShot({
+					sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar", emailVerified: true},
+				}),
+			)._tag,
 		).toBe("Rendered");
 	});
 
@@ -231,7 +237,7 @@ describe("captureRenderLeg — the rendered actor's tier", () => {
 					pngBytes: pngHeader(),
 					pageErrors: [],
 					status: 200,
-					sessionProof: {_tag: "SignedIn" as const, userId: "u1", tier},
+					sessionProof: {_tag: "SignedIn" as const, userId: "u1", tier, emailVerified: true},
 				},
 			]);
 	const runCaylak = (capture: CaptureShots): SurfaceRender =>
@@ -251,8 +257,85 @@ describe("captureRenderLeg — the rendered actor's tier", () => {
 
 	it("refuses a çaylak's render under the yazar-tier :auth name too — the fence runs both ways", () => {
 		expect(
-			runAuth(authShot({sessionProof: {_tag: "SignedIn", userId: "u1", tier: "çaylak"}})),
+			runAuth(
+				authShot({
+					sessionProof: {_tag: "SignedIn", userId: "u1", tier: "çaylak", emailVerified: true},
+				}),
+			),
 		).toEqual({_tag: "WrongTier", wanted: "yazar", rendered: "çaylak"});
+	});
+});
+
+/**
+ * The email-verification half of the proof. The unverified çaylak shares its tier with the
+ * verified one, so the tier arm alone passes a verified çaylak's clean render under the unverified
+ * name — the shot of the write the surface exists to show being refused.
+ */
+describe("captureRenderLeg — the rendered actor's email verification", () => {
+	const unverifiedRequest = {...request, surface: "/hosgeldin:auth-caylak-unverified"};
+	const unverifiedShot =
+		(tier: string, emailVerified: boolean): CaptureShots =>
+		() =>
+			Effect.succeed([
+				{
+					surface: "/hosgeldin:auth-caylak-unverified",
+					route: "/hosgeldin",
+					state: "auth-caylak-unverified",
+					localPath: "/tmp/shots/hosgeldin-auth-caylak-unverified.png",
+					fileName: "hosgeldin-auth-caylak-unverified.png",
+					pngBytes: pngHeader(),
+					pageErrors: [],
+					status: 200,
+					sessionProof: {_tag: "SignedIn" as const, userId: "u1", tier, emailVerified},
+				},
+			]);
+	const runUnverified = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(unverifiedRequest));
+
+	it("records the shot when the preview reports an email-unverified çaylak", () => {
+		expect(runUnverified(unverifiedShot("çaylak", false))._tag).toBe("Rendered");
+	});
+
+	it("refuses a verified çaylak's render under the unverified name", () => {
+		expect(runUnverified(unverifiedShot("çaylak", true))).toEqual({
+			_tag: "WrongVerification",
+			wanted: false,
+		});
+	});
+
+	it("refuses an unverified yazar's render on the tier arm first", () => {
+		expect(runUnverified(unverifiedShot("yazar", false))).toEqual({
+			_tag: "WrongTier",
+			wanted: "çaylak",
+			rendered: "yazar",
+		});
+	});
+
+	it("refuses an unverified çaylak's render under the verified :auth-caylak name too", () => {
+		const caylak = {...request, surface: "/hosgeldin:auth-caylak"};
+		const shot: CaptureShots = () =>
+			Effect.succeed([
+				{
+					surface: "/hosgeldin:auth-caylak",
+					route: "/hosgeldin",
+					state: "auth-caylak",
+					localPath: "/tmp/shots/hosgeldin-auth-caylak.png",
+					fileName: "hosgeldin-auth-caylak.png",
+					pngBytes: pngHeader(),
+					pageErrors: [],
+					status: 200,
+					sessionProof: {
+						_tag: "SignedIn" as const,
+						userId: "u1",
+						tier: "çaylak",
+						emailVerified: false,
+					},
+				},
+			]);
+		expect(Effect.runSync(makeCaptureRenderLeg(shot)(caylak))).toEqual({
+			_tag: "WrongVerification",
+			wanted: true,
+		});
 	});
 });
 
@@ -265,7 +348,7 @@ describe("captureRenderLeg — the forced-flag proof", () => {
 	const forcedRequest = {...authRequest, forcedFlags: FORCED};
 	const runForced = (capture: CaptureShots): SurfaceRender =>
 		Effect.runSync(makeCaptureRenderLeg(capture)(forcedRequest));
-	const signedIn = {_tag: "SignedIn", userId: "u1", tier: "yazar"} as const;
+	const signedIn = {_tag: "SignedIn", userId: "u1", tier: "yazar", emailVerified: true} as const;
 
 	it("asks the preview's own evaluation seam, and asks nothing when no flag is forced", () => {
 		const asked: Array<unknown> = [];
