@@ -1,12 +1,12 @@
 ---
-id: 0440
+id: 0441
 title: A markdown task item renders a decorative glyph plus a visually-hidden state word
 status: accepted
 date: 2026-09-30
 tags: [design, frontend, markdown, accessibility, manifest]
 ---
 
-# 0440 — A markdown task item renders a decorative glyph plus a visually-hidden state word
+# 0441 — A markdown task item renders a decorative glyph plus a visually-hidden state word
 
 **What this decides:** in the shared `Markdown` block, `- [x] done` renders as a glyph a sighted
 reader sees plus a hidden word a screen reader hears once. It never renders as the literal `[x]`
@@ -44,9 +44,10 @@ existing rule already answers the question, and each of those is cited below.
    glyph that fails either bound is a functional glyph under §1's ban, and needs a Lucide icon.
 4. **The state words come from the design package's message catalog.** The `Markdown` block already
    takes its accessible names from `packages/design/src/i18n.tsx` (`ui.markdown.table`, and
-   `ui.markdown.code` through `CodeBlock`), and [ADR 0347](0347-web-copy-behind-i18n-catalog.md) puts user-facing copy
-   behind that catalog. The ruling named the words, so the locale-free option #8023 raised, a glyph
-   pair with no announced word, is out.
+   `ui.markdown.code` through `CodeBlock`), so the state words follow that precedent.
+   [ADR 0347](0347-web-copy-behind-i18n-catalog.md) sets the same rule for `apps/web`'s catalog;
+   this record applies it here by that precedent, not by 0347's own scope. The ruling named the
+   words, so the locale-free option #8023 raised, a glyph pair with no announced word, is out.
 
 **Rejected.**
 

@@ -175,7 +175,7 @@ function Block({
 			) : (
 				<CodeBlock token={token} />
 			);
-		// Still the literal marker: ADR 0440 rules a decorative glyph plus a hidden state word, and
+		// Still the literal marker: ADR 0441 rules a decorative glyph plus a hidden state word, and
 		// #10284 builds it.
 		case "checkbox":
 			return token.raw;
