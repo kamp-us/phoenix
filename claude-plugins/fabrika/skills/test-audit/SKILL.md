@@ -12,8 +12,8 @@ subsystem mode is renamed "subsystem sweep" (SWEEP.md); Discovery, Validation
 and Landing are made repository-neutral and bounded to one ticket and one
 pull request, with outside work routed to fabrika's report skill; Discovery
 first reads open pull requests and sets aside in-flight candidates; a repo-wide
-audit mode (REPO-WIDE.md) files one ranked ticket, and Discovery's cross-cutting
-pass follows its exclusion rule.
+audit mode (REPO-WIDE.md) files one ranked ticket, Discovery's in-flight read
+opens it too, and Discovery's cross-cutting pass follows its exclusion rule.
 -->
 
 # Test Audit
@@ -104,7 +104,8 @@ Keep discovery read-only and report evidence before editing.
 
 Before any pass, read the **in-flight set**: the repository's open pull
 requests and the files each one changes. Hand that set to every pass. This read
-opens discovery in audit mode and in a subsystem sweep alike.
+opens discovery in audit mode, in a subsystem sweep and in a repo-wide audit
+alike.
 
 For a broad scope the ticket names, run parallel read-only passes when
 available:

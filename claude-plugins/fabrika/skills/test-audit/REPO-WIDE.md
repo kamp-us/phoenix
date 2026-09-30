@@ -32,11 +32,14 @@ one residual area.
 
 Each pass holds a **share** of areas, capped at 150 test files unless the ticket
 states another cap. An area over the cap splits along its production owner
-boundaries, the way a subsystem sweep's slices do, until every part fits. Areas
-under the cap may share one pass up to the cap.
+boundaries, the way a subsystem sweep's slices do, until every part fits, and
+each part is its own share. Areas under the cap pack into shares in path order,
+sorted by each area's boundary path with the residual area last: open a share,
+add the next area whole while the share stays within the cap, and open a new
+share when the next area would exceed it.
 
-Done when every test file belongs to exactly one pass's share and no share
-exceeds the cap.
+Done when every test file belongs to exactly one pass's share, no share exceeds
+the cap, and the under-cap shares match that path-order fill.
 
 ## 3. Area and cross-cutting passes
 
