@@ -200,15 +200,17 @@ const comments = (
 		})),
 	);
 
+const issueFields = {
+	number: 5747,
+	title: "a lane task",
+	body: "",
+	state: "open",
+	labels: [],
+	html_url: "https://forge.example/o/r/issues/5747",
+};
+
 const issue = (labels: ReadonlyArray<string>): HttpReply =>
-	served({
-		number: 5747,
-		title: "a lane task",
-		body: "",
-		state: "open",
-		labels: labels.map((name) => ({name})),
-		html_url: "https://forge.example/o/r/issues/5747",
-	});
+	served({...issueFields, labels: labels.map((name) => ({name}))});
 
 const run = (
 	fs: ReturnType<typeof fakeFs>,
@@ -2080,14 +2082,52 @@ describe("lane prove — the ship stage's closure, read off the PR the event nam
 	});
 
 	it("answers `closes` for a merged body carrying a closing keyword", async () => {
-		const seams = seamsWith([...blindNominator, [PULL, merged("Fixes #5747")]]);
+		const seams = seamsWith([
+			...blindNominator,
+			[PULL, merged("Fixes #5747")],
+			[ISSUE, served({...issueFields, state: "closed"})],
+		]);
 
 		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
 
 		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toMatchObject({closure: "closes"});
+		expect(JSON.parse(out.stdout)).toMatchObject({closure: "closes", issueState: "closed"});
 		expect(out.partial).toBe(false);
 		expect(out.landed).toEqual([4318]);
+		expect(out.closingMerge).toEqual({_tag: "Closed", issue: 5747});
+	});
+
+	/**
+	 * A merge-queue merge has left a `Fixes #N` issue open. The prover reads the issue back and hands
+	 * the answer to `lane report`, and writes nothing itself: every scripted reply is a GET.
+	 */
+	it("reads the issue back after a closing merge and answers `open`, writing nothing", async () => {
+		const seams = seamsWith([...blindNominator, [PULL, merged("Fixes #5747")], [ISSUE, issue([])]]);
+
+		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({closure: "closes", issueState: "open"});
+		expect(out.closingMerge).toEqual({_tag: "Open", issue: 5747, merged: [4318]});
+	});
+
+	it("answers `unread` where the issue read fails, never folding it into closed", async () => {
+		const seams = seamsWith([...blindNominator, [PULL, merged("Fixes #5747")], [ISSUE, GATEWAY]]);
+
+		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({closure: "closes", issueState: "unread"});
+		expect(out.closingMerge?._tag).toBe("Unread");
+	});
+
+	it("reads no issue on a partial merge", async () => {
+		const seams = seamsWith([...blindNominator, [PULL, merged("Part of #5747")]]);
+
+		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
+
+		expect(out.closingMerge).toBe(null);
+		expect(Object.hasOwn(JSON.parse(out.stdout), "issueState")).toBe(false);
 	});
 
 	it("answers `unknown` with no `partial` where the event names no PR", async () => {

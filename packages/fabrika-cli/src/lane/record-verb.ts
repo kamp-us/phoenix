@@ -5,8 +5,9 @@
  * costs no board read. It is then scrubbed of machine-local paths and checked against the leak
  * guard, so nothing reaches a public issue that the guard would refuse. The issue's comments are
  * read next, and a record already standing for this same terminal answers `unchanged` with nothing
- * written — which is what makes the driver's terminal step safe to re-run. Only then is the comment
- * posted, and it is read back through the format's own reader before the verb says `posted`.
+ * written — which is what makes the driver's terminal step safe to re-run. A `complete` record then
+ * reads the issue itself and refuses while it is open or unread. Only then is the comment posted,
+ * and it is read back through the format's own reader before the verb says `posted`.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9855
  */
@@ -14,7 +15,13 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {findLeaks} from "../guard/leak.ts";
 import type {Attempt} from "../io/git.ts";
-import {createComment, getComment, listCommentsReconciled, resolveRepo} from "../io/issues.ts";
+import {
+	createComment,
+	getComment,
+	getIssue,
+	listCommentsReconciled,
+	resolveRepo,
+} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {scanBody} from "../report/leaks.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -26,8 +33,10 @@ import {
 	type Spent,
 	sameTerminal,
 } from "../wire/lane-record.ts";
+import {type IssueRead, issueStateOf} from "./closing-merge.ts";
 import {
 	APPEND_UNKNOWN,
+	ISSUE_LIVE,
 	ISSUE_UNRESOLVED,
 	LANE_NOT_TERMINAL,
 	LANE_UNREADABLE,
@@ -43,6 +52,9 @@ import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane record";
 
+/** The terminal state a lane that finished its work folds to (`templates/*.workflow.json`). */
+const COMPLETE = "complete";
+
 /** The path the leak guard judges the body as — a doc, so every doc-surface shape applies. */
 const LEAK_SURFACE = "lane-record.md";
 
@@ -51,8 +63,10 @@ export interface IssueComment {
 	readonly body: string;
 }
 
-/** The three board acts the verb takes, passed in so the verb stays provable offline. */
+/** The board acts the verb takes, passed in so the verb stays provable offline. */
 export interface RecordBoard<R> {
+	/** One read of the issue itself, taken before a `complete` record is posted. */
+	readonly issue: (issue: number) => Effect.Effect<IssueRead, never, R>;
 	readonly comments: (
 		issue: number,
 	) => Effect.Effect<Attempt<ReadonlyArray<IssueComment>>, never, R>;
@@ -208,6 +222,26 @@ export const runRecord = <R>(
 			}
 		}
 
+		// A `complete` record says the work is done, and a merge-queue merge has left a `Fixes #N`
+		// issue open under a lane that folded to `complete` anyway — so the issue is read first.
+		if (record.outcome === COMPLETE) {
+			const state = issueStateOf(issue, yield* options.board.issue(issue));
+			if (state._tag === "Open") {
+				return refuse(
+					ISSUE_LIVE,
+					`${VERB}: lane ${options.lane} folded to ${COMPLETE}, and #${issue} is still open — close #${issue} as completed with a pointer to the merge the lane's terminal line names, then re-run this. Nothing was posted.`,
+					notes,
+				);
+			}
+			if (state._tag === "Unread") {
+				return refuse(
+					LANE_UNREADABLE,
+					`${VERB}: ${state.reason} — whether #${issue} is closed is UNKNOWN, so no ${COMPLETE} record is posted over it. Nothing was posted.`,
+					notes,
+				);
+			}
+		}
+
 		const posted = yield* options.board.post(issue, body);
 		if (posted._tag === "Failure") {
 			return refuse(
@@ -251,6 +285,13 @@ export const recordBoard = (
 ): RecordBoard<ChildProcessSpawner.ChildProcessSpawner> => {
 	const target = resolveRepo(repo, env);
 	return {
+		issue: (issue) =>
+			Effect.gen(function* () {
+				const name = yield* target;
+				return name._tag === "Failure"
+					? {_tag: "Unknown" as const, reason: name.reason}
+					: yield* getIssue(name.value, issue);
+			}),
 		comments: (issue) =>
 			Effect.gen(function* () {
 				const name = yield* target;

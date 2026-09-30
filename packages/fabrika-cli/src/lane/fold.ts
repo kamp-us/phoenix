@@ -12,6 +12,7 @@
  */
 import {acceptsOf, applyCell, foldMsgs, msgKeysOf, NoCellError} from "@demlik/tea";
 import {type RoutedBasis, readRoutedBasis} from "../wire/routed-elsewhere.ts";
+import {ISSUE_CLOSES, type IssueClose, isIssueClose} from "./closing-merge.ts";
 import {type Deferral, deferredTasks, resolveDeferrals} from "./deferral.ts";
 import {type IntegrateFailure, isIntegrateFailure} from "./integrate-failure.ts";
 import {
@@ -127,6 +128,13 @@ export interface LogEntry {
 	readonly waitGrant?: number;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
+	/**
+	 * What the issue read back after a closing ship `DONE` said, and what the lane did about it —
+	 * evidence, never a payload the fold reads. It tells "the board closed it" from "the lane had to"
+	 * and names a failed close or an unread issue, so neither reads as a plain `complete`
+	 * ([`closing-merge.ts`](closing-merge.ts)).
+	 */
+	readonly issueClose?: IssueClose;
 	readonly diagnosis?: boolean;
 	readonly corrects?: string;
 	/** The task set an {@link AMENDED_EVENT} left the lane's machine holding. */
@@ -237,6 +245,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			waitGrant?: unknown;
 			partial?: unknown;
 			landed?: unknown;
+			issueClose?: unknown;
 			diagnosis?: unknown;
 			corrects?: unknown;
 			tasks?: unknown;
@@ -377,6 +386,18 @@ export const parseLog = (text: string): ParseLogResult => {
 		) {
 			defects.push(
 				`line ${index + 1} carries a \`landed\` field that is not a non-empty list of pull request numbers`,
+			);
+			continue;
+		}
+		if (record.issueClose !== undefined && !isIssueClose(record.issueClose)) {
+			defects.push(
+				`line ${index + 1} carries an \`issueClose\` that is not one of ${ISSUE_CLOSES.join("/")}`,
+			);
+			continue;
+		}
+		if (record.issueClose !== undefined && bareEvent(record.event) !== "DONE") {
+			defects.push(
+				`line ${index + 1} carries \`issueClose\` on a "${bareEvent(record.event)}" event — only a ship's DONE reads its issue back`,
 			);
 			continue;
 		}
@@ -533,6 +554,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.waitGrant === undefined ? {} : {waitGrant: record.waitGrant as number}),
 			...(record.partial === undefined ? {} : {partial: record.partial as boolean}),
 			...(record.landed === undefined ? {} : {landed: record.landed as ReadonlyArray<number>}),
+			...(record.issueClose === undefined ? {} : {issueClose: record.issueClose as IssueClose}),
 			...(record.diagnosis === undefined ? {} : {diagnosis: record.diagnosis as boolean}),
 			...(record.corrects === undefined ? {} : {corrects: record.corrects as string}),
 			...(record.tasks === undefined ? {} : {tasks: record.tasks as ReadonlyArray<string>}),

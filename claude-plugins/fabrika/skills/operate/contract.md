@@ -254,7 +254,8 @@ prover as well as recorded on the line, because the closure is judged off exactl
 that declares `parkCause.uncaused: "refuse"` refuses a cause-less BLOCKED at `52` rather than
 recording one.
 
-Four more fields land on the line, and each is the prover's, never a flag:
+These fields land on the line too, and none is a flag. Each is the prover's, except `issueClose`,
+which records what this verb did with the prover's issue read:
 
 - `deferred` names the namespaces the proof subtracted from this cell's bar and handed to a later
   one, such as the routed `review-ui` an epic child owes its epic's tail. It is absent wherever the
@@ -268,6 +269,14 @@ Four more fields land on the line, and each is the prover's, never a flag:
   judged, absent wherever `partial` is. So a recorded `false` says which reader wrote it and not
   only which way it fell, which is what `lane reconcile` reads to tell a real answer from the old
   nominator's fallthrough.
+- `issueClose` rides a ship DONE whose closure read answered `closes`. A merged `Fixes #N` does not
+  prove #N closed, so the prover reads the issue back, and this verb acts on what it read.
+  `already-closed` means the issue read closed and nothing was written to it. `closed-by-lane` means
+  it read open, so this verb posted one comment naming the merged PR by URL and closed it as
+  completed. `close-failed` means it read open and that comment or close failed. `unread` means the
+  issue read failed. The last two are never a plain `complete`: the line names them, stderr says
+  what to do, and `lane record` will not post a `complete` record while the issue reads open. The
+  field is absent wherever the closure read did not answer `closes`.
 - `diagnosis` rides a DONE out of `build`. It says the prover stood this terminal on a diagnosis
   comment rather than a pull request, which is what the machine's `done:diagnosis` arm carries a
   finished no-PR build to its own `diagnosed` terminal on, instead of the `review` it opened no PR
@@ -307,8 +316,8 @@ override it, and a cause outside the set still refuses at `35`.
 stdout is `{token, previous, event, current, taskAffected}` plus the refs, plus `deferred` when the
 proof deferred anything, `routed` when it stood on a route, `routedBasis` when that route carried a
 basis, `partial` at whichever polarity the
-closure read answered, `diagnosis` where the terminal stood on one, and `landed` where it answered
-at all.
+closure read answered, `diagnosis` where the terminal stood on one, `landed` where it answered
+at all, and `issueClose` where it answered `closes`.
 
 ### Exit status
 
@@ -443,6 +452,11 @@ about the merge and nothing about the board: no `--pr`, or a PR read that failed
 `unknown`, which records NO `partial` and leaves the line for `lane reconcile` to read again rather
 than stranding the shipper.
 
+A `closes` answer then reads the issue back, because a merged `Fixes #N` has left #N open. The
+answer is an `issueState` field reading `open`, `closed` or `unread`, absent on every other answer.
+It is a read and nothing more: this verb never writes to the issue. `lane report` acts on it and
+records `issueClose`.
+
 The refusals are artifact-independent, so the range arms take no new seat.
 
 ### Exit status
@@ -475,7 +489,9 @@ order. Each line also carries, where it applies:
   as the routed `review-ui` an epic child owes its epic's tail, absent wherever the bar was whole;
 - the `partial` a ship's DONE carries at either polarity once its closure was read: `true` where the
   merge left the issue open, `false` where it closed it, absent where nobody read it; and the
-  `landed` PRs that read stood on beside it.
+  `landed` PRs that read stood on beside it;
+- the `issueClose` a closing ship DONE carries: `already-closed`, `closed-by-lane`, `close-failed`
+  or `unread`, as [`lane report`](#lane-report) recorded it.
 
 The log IS the history. `from` and `to` are reconstructible by folding, never stored. A lane with no
 events yet answers `[]`.
@@ -1451,7 +1467,9 @@ whole path (token map, served-leaf check, proof gate, floor and ledger lock), be
 `EJECTED` are that verb's tokens and `lane transition` refuses them.
 
 - `landed` records `LANDED --pr <url>`, which folds the task to `shipped`, or back to `queued` on a
-  merge that carried `Part of #N` and closed nothing.
+  merge that carried `Part of #N` and closed nothing. A closing merge also reads the issue back, and
+  an issue that stayed open is commented on and closed exactly as `lane report` does it (see
+  `issueClose` under [`lane report`](#lane-report)). So this sweep can write to an issue.
 - `ejected` records `EJECTED`, which spends one retry back into `build`.
 - `unresolved` and `parked` record nothing, so a sweep never spends a wait, never meets the `55`
   floor, and never parks a lane. `unresolved` is a `waiting` row carrying `answer`.
@@ -1468,8 +1486,9 @@ whole path (token map, served-leaf check, proof gate, floor and ledger lock), be
 **Budget.** Budget a recoverable lane at TWO board reads: this sweep asks what the proof says, and
 `lane transition` asks again under its own gate before appending, which is that gate declining to
 take this sweep's word for it. A queued task costs its one `ship reconcile` read, and a `landed`
-answer adds one more: `lane report`'s own proof read of the `DONE`, which reads the PR's closure.
-Every other judged task costs one. `--check` pays the first read alone and appends nothing.
+answer adds more: `lane report`'s own proof read of the `DONE`, which reads the PR's closure, and on
+a closing merge one more read of the issue. An issue that read open adds two writes, the comment and
+the close. Every other judged task costs one. `--check` pays the first read alone and appends nothing.
 
 Each row carries one verdict:
 
@@ -1921,7 +1940,9 @@ no rate card.
 The body is scrubbed of machine-local paths and must then pass the leak guard, or nothing is posted.
 The issue's comments are read whole first: a record already standing for the same terminal (same
 issue, outcome and terminal instant) answers `unchanged` and writes nothing, so re-running this
-after a terminal is safe. The posted comment is read back through the format's reader.
+after a terminal is safe. A `complete` record then reads the issue itself and posts nothing while
+it reads open (`49`) or does not read (`11`). The posted comment is read back through the format's
+reader.
 
 Once the record stands, posted now or already there, it runs `fabrika table sync <issue>`. A sync
 that refuses leaves the record standing, repeats the sync's reason and exit on stderr, and changes
@@ -1938,9 +1959,12 @@ reviews, parks, spent, prs, table: {code, answer}}`, plus `url` on a post.
 - `7` — no lane there.
 - `8` — the post failed. It may or may not have landed; re-run.
 - `9` — the posted comment does not read back as this terminal's record.
-- `11` — the lane, its facts or the issue's comments could not be read.
+- `11` — the lane, its facts, the issue's comments or, on a `complete` record, the issue itself could
+  not be read.
 - `19` — the key names no issue: a chore lane has nowhere to post a record.
 - `21` — the key is not a lane key.
+- `49` — the lane folded to `complete` and its issue is still open; nothing was posted. Close the
+  issue with a pointer to the merge the lane's terminal line names, then re-run.
 - `69` — the lane has not reached a terminal state; nothing was posted.
 - `39`, `65` — [the lanes root](#the-lanes-root).
 

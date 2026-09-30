@@ -22,6 +22,13 @@
  * three builder terminals that reach this verb all report one `DONE` and only the prover can tell
  * them apart.
  *
+ * **A closing merge's issue is read back, and closed here if it stayed open.** A merged `Fixes #N`
+ * has left #N open, so the ship `DONE`'s proof reads the issue after a `closes` answer. On `Open`
+ * this verb posts a comment naming the merge and closes the issue as completed — the one issue write
+ * it makes, and never `lane prove`'s. `issueClose` lands on the line saying which of
+ * [`closing-merge.ts`](closing-merge.ts)'s four answers happened, so a failed close or an unread
+ * issue is on the record rather than folded into a plain `complete`.
+ *
  * **A queue wait is floored as well as counted.** A `ship:queued` re-fold that arrives before
  * `WAIT_FLOOR_SECONDS` of elapsed time since the task's last line is refused at `WAIT_TOO_SOON` with
  * the log byte-identical, so the wait budget measures how long a PR has sat rather than how fast a
@@ -53,11 +60,20 @@
  * offline; the CLI always hands it `runProve`, which is the only prover a shell ever invokes.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {appendText} from "../io/fs.ts";
+import {closeCompleted, createComment, resolveRepo} from "../io/issues.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
+import {
+	type CloseAct,
+	closeComment,
+	type OpenMerge,
+	type SettledClose,
+	settleClosingMerge,
+} from "./closing-merge.ts";
 import {
 	APPEND_UNKNOWN,
 	CAUSE_UNRECOGNISED,
@@ -138,6 +154,40 @@ export interface ReportOptions extends LaneRef {
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
+
+/**
+ * The one write this verb makes to an issue: close an issue a closing merge left open, with a
+ * comment naming the merge. A parameter so the unit tier stays offline, like the prover.
+ */
+export type IssueCloser<R> = (open: OpenMerge) => Effect.Effect<CloseAct, never, R>;
+
+/**
+ * The shipped closer. The comment goes first, so an issue this closes always carries the pointer;
+ * a failed comment leaves the issue open and answers `Failed`.
+ */
+export const issueCloser = (
+	repo: string | null,
+	env: Readonly<Record<string, string | undefined>>,
+): IssueCloser<ChildProcessSpawner.ChildProcessSpawner> => {
+	return (open) =>
+		Effect.gen(function* () {
+			const target = yield* resolveRepo(repo, env);
+			if (target._tag === "Failure") return {_tag: "Failed", reason: target.reason};
+			const pulls = open.merged.map((pr) => `https://github.com/${target.value}/pull/${pr}`);
+			const commented = yield* createComment(
+				target.value,
+				open.issue,
+				closeComment(open.issue, pulls),
+			);
+			if (commented._tag === "Failure") {
+				return {_tag: "Failed", reason: `the pointer comment failed: ${commented.reason}`};
+			}
+			const closed = yield* closeCompleted(target.value, open.issue);
+			return closed._tag === "Failure"
+				? {_tag: "Failed", reason: `the close failed: ${closed.reason}`}
+				: {_tag: "Closed"};
+		});
+};
 
 /** The leaf a folded task stands in — `""` where the fold holds no state for it. */
 const freshLeafOf = (
@@ -221,6 +271,7 @@ const tryAdvance = <R>(input: AdvanceInput<R>): Effect.Effect<Advance, never, R>
 export const runReport = <R>(
 	options: ReportOptions,
 	prove: (options: ProveOptions) => Effect.Effect<ProofOutcome, never, R>,
+	closeIssue: IssueCloser<R>,
 ): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path | R> =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
@@ -352,6 +403,12 @@ export const runReport = <R>(
 		if (gated._tag === "Refused") return gated.outcome;
 		const proved = gated.proof;
 		const conditionalNotes = attempt === null ? [] : [attempt.note];
+		// Before the lock for the proof's reason: a board write held under the ledger lock buys
+		// nothing. The proof's issue read is fresh, and only an `Open` answer reaches the closer.
+		const settled: SettledClose | null =
+			proved.closingMerge === null
+				? null
+				: yield* settleClosingMerge(proved.closingMerge, closeIssue);
 
 		// Authoritative pass, inside the write lock: a fresh load → fold → validate → append against
 		// the bytes as they exist under the lock, so a shell recording its terminal cannot validate
@@ -452,6 +509,7 @@ export const runReport = <R>(
 					...(proved.routed.length === 0 ? {} : {routed: proved.routed}),
 					...(proved.routedBasis === undefined ? {} : {routedBasis: proved.routedBasis}),
 					...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
+					...(settled === null ? {} : {issueClose: settled.close}),
 					...(integrate === null ? {} : {integrate}),
 				};
 				const wrote = yield* Effect.result(appendText(fresh.logPath, `${JSON.stringify(entry)}\n`));
@@ -479,6 +537,7 @@ export const runReport = <R>(
 							...(proved.partial === null ? {} : {partial: proved.partial}),
 							...(proved.diagnosis ? {diagnosis: true} : {}),
 							...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
+							...(settled === null ? {} : {issueClose: settled.close}),
 							...(integrate === null ? {} : {integrate}),
 						},
 						null,
@@ -487,6 +546,7 @@ export const runReport = <R>(
 					[
 						...conditionalNotes,
 						...proved.stderr,
+						...(settled === null ? [] : [`${VERB}: ${settled.note}`]),
 						`${VERB}: appended ${entry.event} (token ${resolved.token}) to ${fresh.logPath}, proven first.`,
 					],
 				);

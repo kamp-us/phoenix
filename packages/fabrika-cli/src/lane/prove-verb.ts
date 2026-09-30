@@ -69,7 +69,8 @@ import {
 	readNamespaced as readRoute,
 } from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
-import {closureReader} from "./closure.ts";
+import {type ClosingMerge, judgeClosingMerge} from "./closing-merge.ts";
+import {closureReader, issueStateReader} from "./closure.ts";
 import {
 	LANE_UNREADABLE,
 	PROOF_ABSENT,
@@ -216,6 +217,12 @@ export interface ProofOutcome extends VerbOutcome {
 	readonly partial: boolean | null;
 	readonly landed: ReadonlyArray<number>;
 	/**
+	 * What the issue read after a closing merge said — `null` on every event whose closure read did
+	 * not answer `closes`. The read is this verb's; acting on an `Open` answer is `lane report`'s,
+	 * so this verb never writes to the issue.
+	 */
+	readonly closingMerge: ClosingMerge | null;
+	/**
 	 * Whether this `DONE` was proven off a diagnosis comment rather than a pull request — the
 	 * `done:diagnosis` guard's whole input, and the one thing that tells a `SUCCESS-NO-PR`
 	 * from a `SHIPPED-PR` or a `BUILT-NO-PR`, all three of which report the same `DONE` event.
@@ -267,6 +274,7 @@ type ProofAnswer = VerbOutcome & {
 	readonly routedBasis?: RoutedBasis;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
+	readonly closingMerge?: ClosingMerge;
 	readonly diagnosis?: boolean;
 };
 
@@ -293,6 +301,7 @@ export const runProve = (
 		routed: outcome.routed ?? [],
 		partial: outcome.partial ?? null,
 		landed: outcome.landed ?? [],
+		closingMerge: outcome.closingMerge ?? null,
 		diagnosis: outcome.diagnosis ?? false,
 		proof: proofLabelOf(outcome),
 	}));
@@ -547,6 +556,9 @@ const prove = (
  * An answered read names the merged PRs it stood on, and `lane report` records them beside the
  * polarity. That is what lets a later sweep tell a `false` this reader wrote from a `false` the
  * nominator fell through to, which the polarity alone cannot say and no timestamp can either.
+ *
+ * A `closes` answer also reads the issue back, because merge-queue merges have left a `Fixes #N`
+ * issue open. The answer rides {@link ProofOutcome.closingMerge}; this verb writes nothing.
  */
 const readClosure = (
 	options: ProveOptions,
@@ -584,6 +596,24 @@ const readClosure = (
 			closure._tag === "Partial"
 				? `${VERB}: ${closure.prs.map((pr) => `#${pr}`).join(", ")} merged carrying "Part of #${issue}" and no closing keyword, so #${issue} is not discharged — the lane goes round rather than folding to its terminal.`
 				: `${VERB}: ${closure.why}, so this ${event} folds the lane exactly as it always did.`;
+		// A closing keyword on the merged body does not prove the issue closed, so the issue is read
+		// back. Only the read happens here: closing an open one is `lane report`'s write.
+		const closingMerge =
+			closure._tag === "Closes"
+				? judgeClosingMerge(
+						issue,
+						read.landed,
+						yield* issueStateReader(options.repo, options.env)(issue),
+					)
+				: null;
+		const issueNote =
+			closingMerge === null
+				? []
+				: [
+						closingMerge._tag === "Unread"
+							? `${VERB}: ${closingMerge.reason}, so whether #${issue} is closed is UNKNOWN.`
+							: `${VERB}: #${issue} reads ${closingMerge._tag === "Open" ? "open" : "closed"} after its closing merge.`,
+					];
 		return {
 			...answer(
 				JSON.stringify(
@@ -595,14 +625,16 @@ const readClosure = (
 						issue,
 						closure: closure._tag === "Partial" ? "partial" : "closes",
 						landed: read.landed,
+						...(closingMerge === null ? {} : {issueState: closingMerge._tag.toLowerCase()}),
 					},
 					null,
 					2,
 				),
-				[`${VERB}: ${why} — nothing to prove, record it.`, note],
+				[`${VERB}: ${why} — nothing to prove, record it.`, note, ...issueNote],
 			),
 			partial: closure._tag === "Partial",
 			landed: read.landed,
+			...(closingMerge === null ? {} : {closingMerge}),
 		};
 	});
 

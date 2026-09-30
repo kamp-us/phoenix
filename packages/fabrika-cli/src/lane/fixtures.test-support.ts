@@ -14,6 +14,7 @@ import {readGoldenFixture} from "../golden-fixture.ts";
 import {answer, type VerbOutcome} from "../verb.ts";
 import type {RoutedBasis} from "../wire/routed-elsewhere.ts";
 import {LOCK_DIR_NAME} from "./append-lock.ts";
+import type {ClosingMerge} from "./closing-merge.ts";
 import {type ProveOptions, proofLabelOf} from "./prove-verb.ts";
 
 /**
@@ -31,6 +32,7 @@ export const fakeProver = (
 	landed: ReadonlyArray<number> = [],
 	diagnosis = false,
 	routed: ReadonlyArray<string> = [],
+	closingMerge: ClosingMerge | null = null,
 ) => {
 	const asked: ProveOptions[] = [];
 	return {
@@ -47,6 +49,7 @@ export const fakeProver = (
 					landed,
 					diagnosis,
 					routed,
+					closingMerge,
 					proof: proofLabelOf(outcome),
 				};
 			}),
@@ -78,6 +81,7 @@ export const fakeProverByEvent = (
 					landed: facts.landed ?? [],
 					diagnosis: facts.diagnosis ?? false,
 					routed: facts.routed ?? [],
+					closingMerge: facts.closingMerge ?? null,
 					...(facts.routedBasis === undefined ? {} : {routedBasis: facts.routedBasis}),
 					proof: proofLabelOf(facts.outcome),
 				};
@@ -94,6 +98,7 @@ export interface ProofFacts {
 	readonly diagnosis?: boolean;
 	readonly routed?: ReadonlyArray<string>;
 	readonly routedBasis?: RoutedBasis;
+	readonly closingMerge?: ClosingMerge;
 }
 
 /** A `parkCause` read at any arm, for a verb test that does not open a config file. */
