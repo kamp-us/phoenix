@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.9.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.8.1...fabrika-cli-v0.9.0) (2026-09-30)
+
+
+### Features
+
+* A lane that ended diagnosed can't restart after its issue is re-triaged ([#10210](https://github.com/kamp-us/phoenix/issues/10210)) ([70685bc](https://github.com/kamp-us/phoenix/commit/70685bc3e032a02dccf3a8bcff18be69d01d081a))
+* A no-preview-render park from a missing render axis has no exit but a loop ([#10238](https://github.com/kamp-us/phoenix/issues/10238)) ([7cee653](https://github.com/kamp-us/phoenix/commit/7cee653f5827481e992b888d66411351604b53ff))
+* build check cannot run its validators outside a lane, so an adopter cannot prove them before the first lane ([#10205](https://github.com/kamp-us/phoenix/issues/10205)) ([48cf0e6](https://github.com/kamp-us/phoenix/commit/48cf0e67160f6c176dd4de7687d5d3ac236c5b7d))
+* During a builder re-spawn the ledger can't show whether any builder is alive ([#10248](https://github.com/kamp-us/phoenix/issues/10248)) ([05de7b9](https://github.com/kamp-us/phoenix/commit/05de7b93411faaa2ba1e83075a34a704b02d5b41))
+* Every lane today stopped at ship:queued and needed a second operator pass to land ([#10225](https://github.com/kamp-us/phoenix/issues/10225)) ([b98f0d0](https://github.com/kamp-us/phoenix/commit/b98f0d0cf254a76c423b2cf63b3fcc1dea15e28a))
+* **fabrika-cli:** a uiSurfaces prefix can list several source roots, files included ([#10047](https://github.com/kamp-us/phoenix/issues/10047)) ([#10172](https://github.com/kamp-us/phoenix/issues/10172)) ([0572a9c](https://github.com/kamp-us/phoenix/commit/0572a9c0961ef34f9d3b33be19e360da94494c8c))
+* **fabrika-cli:** hook stash-guard refuses a stash in a linked worktree ([#6844](https://github.com/kamp-us/phoenix/issues/6844)) ([#10281](https://github.com/kamp-us/phoenix/issues/10281)) ([d3a1ab9](https://github.com/kamp-us/phoenix/commit/d3a1ab909c2dbe97fdd8dbfc2f17deacc13c550d))
+* **fabrika-cli:** table prep lists ruled-unbuilt decisions under Tails, oldest ruling first ([#9872](https://github.com/kamp-us/phoenix/issues/9872)) ([#10166](https://github.com/kamp-us/phoenix/issues/10166)) ([7624285](https://github.com/kamp-us/phoenix/commit/7624285d4151f3eb687843a33a85ebd7710f8014))
+* preview-seed has no way to seed an email-unverified çaylak account ([#10265](https://github.com/kamp-us/phoenix/issues/10265)) ([0ae3e50](https://github.com/kamp-us/phoenix/commit/0ae3e5027c4cc87440eef660735deadd100f8559))
+
+
+### Bug Fixes
+
+* A builder's late SHIPPED-PR folds a lane in ship to complete while its PR is unmerged ([#10208](https://github.com/kamp-us/phoenix/issues/10208)) ([a10c354](https://github.com/kamp-us/phoenix/commit/a10c354e7dadc3c04e4b901d69b3e3320b42005d))
+* A conflicting control-plane PR parks on approval instead of going back to a builder ([#10247](https://github.com/kamp-us/phoenix/issues/10247)) ([e2064d7](https://github.com/kamp-us/phoenix/commit/e2064d7e502bb68464e3c5345b544711ac86643d))
+* A head-ci-red park on a real test failure has no route to a repair build ([#10193](https://github.com/kamp-us/phoenix/issues/10193)) ([d084f63](https://github.com/kamp-us/phoenix/commit/d084f639e75af23cbd1a545500cb1738a577297f))
+* A PR reviewer's working-tree fences grade the driver's checkout, not the head the verdict names ([#10227](https://github.com/kamp-us/phoenix/issues/10227)) ([52b5b00](https://github.com/kamp-us/phoenix/commit/52b5b003dfe4267d6cc425e3fadbf0d689153ace))
+* A repair builder reads an all-PASS verdict fold as nothing to fix over a red required check ([#10206](https://github.com/kamp-us/phoenix/issues/10206)) ([a3c26db](https://github.com/kamp-us/phoenix/commit/a3c26db1d6a44270d00bb80b0e90c92f9ec3af07))
+* A shipper's ROUTED-REVIEW on stale verdicts has no park cause, so lane report refuses it ([#10221](https://github.com/kamp-us/phoenix/issues/10221)) ([8d7eefd](https://github.com/kamp-us/phoenix/commit/8d7eefd9e3191d78147291ddd9edeb203ae2d60d))
+* build push does not open the PR, so a spawn killed between the two strands the branch ([#10217](https://github.com/kamp-us/phoenix/issues/10217)) ([1806436](https://github.com/kamp-us/phoenix/commit/1806436c6c9e1fdcf8b28420799a398e57cfbf12))
+* **fabrika-cli:** a closing line after ## Deviations no longer makes None. malformed ([#10040](https://github.com/kamp-us/phoenix/issues/10040)) ([#10177](https://github.com/kamp-us/phoenix/issues/10177)) ([d290dee](https://github.com/kamp-us/phoenix/commit/d290deec62a55a4ee18349b9448be656fe7dc22c))
+* **fabrika-cli:** a declared required context with no run keeps review ci and ship checks pending ([#9620](https://github.com/kamp-us/phoenix/issues/9620)) ([#10186](https://github.com/kamp-us/phoenix/issues/10186)) ([be3b941](https://github.com/kamp-us/phoenix/commit/be3b94131726eadb5bdd54c9ad4d2810a8d5838c))
+* **fabrika-cli:** a plan-gated rules read is no merge queue, not an unknown landing ([#10159](https://github.com/kamp-us/phoenix/issues/10159)) ([#10161](https://github.com/kamp-us/phoenix/issues/10161)) ([4d6baae](https://github.com/kamp-us/phoenix/commit/4d6baae2bb064956101da31fb0e12cf1535547f2))
+* **fabrika-cli:** pattern register puts an empty table's first row below its |---| line ([#10057](https://github.com/kamp-us/phoenix/issues/10057)) ([#10189](https://github.com/kamp-us/phoenix/issues/10189)) ([54c0872](https://github.com/kamp-us/phoenix/commit/54c087276c438fbb3139bb5915d01ab17eec0015))
+* **fabrika-cli:** resolve the trunk one way, off GitHub's default branch ([#10030](https://github.com/kamp-us/phoenix/issues/10030)) ([#10178](https://github.com/kamp-us/phoenix/issues/10178)) ([8349ab7](https://github.com/kamp-us/phoenix/commit/8349ab7170d66e5ef923a8f3e0d456117d73be74))
+* **fabrika-cli:** table flags' past-target rec names its target's hours with a unit ([#10090](https://github.com/kamp-us/phoenix/issues/10090)) ([#10169](https://github.com/kamp-us/phoenix/issues/10169)) ([aa69191](https://github.com/kamp-us/phoenix/commit/aa691916af26a0839581bb063b4007fc4b541df7))
+* **fabrika:** dep-pin names the Playwright footprint and the pnpm 10 approval step ([#10048](https://github.com/kamp-us/phoenix/issues/10048)) ([#10203](https://github.com/kamp-us/phoenix/issues/10203)) ([bc62475](https://github.com/kamp-us/phoenix/commit/bc6247520b4284a8737bbb26230d597de43949fe))
+* Fixes #N on a merge-queue merge sometimes leaves the issue open, and the lane still reads complete ([#10277](https://github.com/kamp-us/phoenix/issues/10277)) ([5d45c26](https://github.com/kamp-us/phoenix/commit/5d45c267b95800c8c91ac4a092beebdf1bfbb555))
+* governance post reads like a failure in a repo that has no governance-floor workflow ([#10185](https://github.com/kamp-us/phoenix/issues/10185)) ([73160cb](https://github.com/kamp-us/phoenix/commit/73160cb1a8d5bd443e50cabc887c1c5b41263c4f))
+* **lane:** give the epic tail's cp-approval park a FAIL arm into repair ([#10192](https://github.com/kamp-us/phoenix/issues/10192)) ([#10243](https://github.com/kamp-us/phoenix/issues/10243)) ([451433e](https://github.com/kamp-us/phoenix/commit/451433e44181abd77ddbfb45e8c87bd0ef3d3ea9))
+* **lane:** lane amend stops refusing after an earlier amendment deferred a task ([#9801](https://github.com/kamp-us/phoenix/issues/9801)) ([#10218](https://github.com/kamp-us/phoenix/issues/10218)) ([1568c47](https://github.com/kamp-us/phoenix/commit/1568c4725b7d5792de2e826b6ff3acd862d26ac7))
+* **lane:** list a lanes root through one helper that skips files and dot-names ([#9779](https://github.com/kamp-us/phoenix/issues/9779)) ([#10219](https://github.com/kamp-us/phoenix/issues/10219)) ([4d2bdba](https://github.com/kamp-us/phoenix/commit/4d2bdbacdb9fd4177cabc7651b3d2d516c386bfc))
+* One build pick run spends about 600 REST calls, one per candidate ([#10173](https://github.com/kamp-us/phoenix/issues/10173)) ([b2899c1](https://github.com/kamp-us/phoenix/commit/b2899c1b09e5b325b76f33316487dead477f3793))
+* **recipe:** recipe unpark clears a reviewer's head-ci-red park on a green open head ([#9579](https://github.com/kamp-us/phoenix/issues/9579)) ([#10223](https://github.com/kamp-us/phoenix/issues/10223)) ([39fe353](https://github.com/kamp-us/phoenix/commit/39fe3530f97bdbada3dd23e171092b2f1a799e35))
+* report file's leak guard reads a tilde-slash path alias as a home path ([#10239](https://github.com/kamp-us/phoenix/issues/10239)) ([ce59675](https://github.com/kamp-us/phoenix/commit/ce596759d4a1647f335dab374a7f06032bef0f50))
+* review ci --wait settles red on a repo-state check while the diff's own jobs are still queued ([#10224](https://github.com/kamp-us/phoenix/issues/10224)) ([8b60a45](https://github.com/kamp-us/phoenix/commit/8b60a45b547da7cd3feb750eb719c4a5900aef16))
+* review ci parks every lane on free-plan private repos: plan-gated 403 read as Unprobeable ([#10156](https://github.com/kamp-us/phoenix/issues/10156)) ([75dde61](https://github.com/kamp-us/phoenix/commit/75dde618477a70feb68ce3ab6411db971ac703a5))
+* review-ui reads this repo's no-preview comment as a malformed preview ([#10207](https://github.com/kamp-us/phoenix/issues/10207)) ([da51164](https://github.com/kamp-us/phoenix/commit/da51164e5b37b9a2c3c11e6ad998dbc0961f12a8))
+* review-ui route exits 7 both for a missing PR and for a diff with nothing to route ([#10196](https://github.com/kamp-us/phoenix/issues/10196)) ([7317c3a](https://github.com/kamp-us/phoenix/commit/7317c3a655bc277fe1c411b18244338ec227cf56))
+* ship reconcile reads parked while GitHub is still adding the PR to the queue ([#10220](https://github.com/kamp-us/phoenix/issues/10220)) ([a88ef2b](https://github.com/kamp-us/phoenix/commit/a88ef2bf01e1efedf8c41b2d171204c51af79807))
+* **spend:** stream Codex transcripts and read the history once per dispatch pass ([#9701](https://github.com/kamp-us/phoenix/issues/9701)) ([#10251](https://github.com/kamp-us/phoenix/issues/10251)) ([9a1c133](https://github.com/kamp-us/phoenix/commit/9a1c1335926c7832ed662714a3cae3984443bbb7))
+* table setup replaces an adopted board's hand-written README without saying what it dropped ([#10165](https://github.com/kamp-us/phoenix/issues/10165)) ([b8e0b34](https://github.com/kamp-us/phoenix/commit/b8e0b34356fe9bce8da1ef72e439450f4ffe975e))
+
 ## [0.8.1](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.8.0...fabrika-cli-v0.8.1) (2026-09-28)
 
 
