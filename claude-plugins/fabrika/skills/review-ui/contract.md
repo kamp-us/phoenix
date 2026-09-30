@@ -203,8 +203,8 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   verb changes behavior based on it. Chrome absent means the default path, silently.
 - Chrome output never enters `review-ui post --evidence`: evidence comes from `review-ui render`
   capture sets only, so the attach path has one validated producer.
-- **A tier-naming surface needs the preview worker's signing secret plus that tier's own session
-  token.** The tokens are unset by default; the secret is not, since it resolves off the checkout.
+- **A tier-naming surface needs the preview worker's signing secret plus its identity's own
+  session token.** The tokens are unset by default; the secret is not, since it resolves off the checkout.
   The secret is the one the *preview worker deployed with*, so the
   cookie signature verifies, and it needs no credential: every `pr-<n>` preview deploys with the key
   committed at `infra/preview-auth-key/key.txt`, deliberately public, which the verb resolves off
@@ -231,12 +231,13 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
 - **`--flag` needs those same values plus one grant on the preview D1.** The override cookie is
   honored only for a platform admin, per the repo's own override authorization, and
   `preview-seed test-account` provisions moderation authority to the yazar identity and nothing at
-  all to the çaylak one. So a forced run is preceded by `node packages/admin-grant/src/bin.ts grant
+  all to either çaylak identity. So a forced run is preceded by `node packages/admin-grant/src/bin.ts grant
   --user-id <the identity's account id> --database-id <preview-d1>` — offline and direct-D1, on a
   throwaway preview only, never against a database holding real accounts. Admin is a relation tuple,
   not a tier, so granting it to `preview-test-caylak` or `preview-test-caylak-unverified` leaves that
-  identity a çaylak with its own email verification, and the session proof still binds. The grant is what makes the forced capture an admin's view as well, which is
-  the trade the operand asks for and the reason it is not the default.
+  identity a çaylak with its own email verification, and the session proof still binds. The grant
+  is what makes the forced capture an admin's view as well, which is the trade the operand asks for
+  and the reason it is not the default.
 
 **The preview-deploy convention.** The repo announces each PR's preview as a sticky PR comment
 carrying the anchor `<!-- preview-deploy:<app> -->`, whose body names, per app: the deployed URL
@@ -298,11 +299,15 @@ showing the state the PR did not add. That is the dangerous failure this axis cl
 capture of the wrong audience.
 
 Seeding a cookie is not the same as being signed in, and being signed in is not the same as being
-signed in *as that tier*, so the shot proves both rather than assuming either. From the same browser
-context, before the shot is classified, the verb reads the preview's own `/api/auth/get-session` and
-requires a user back **whose `tier` is the one the surface named**; anything else — a bare `null`, a
-non-200, an unreadable body, a user with no tier, a user at another tier — refuses the surface on
-`11` and records no capture under that surface id. A cookie that did not authenticate renders the
+signed in *as that identity*, so the shot proves both rather than assuming either. From the same
+browser context, before the shot is classified, the verb reads the preview's own
+`/api/auth/get-session` and requires a user back **whose `tier` is the one the surface named and
+whose boolean `emailVerified` is the one the surface's identity carries** — `false` for
+`:auth-caylak-unverified`, `true` for `:auth` and `:auth-caylak`. Anything else — a bare `null`, a
+non-200, an unreadable body, a user with no tier, a user with no boolean `emailVerified`, a user at
+another tier, a user with the other email verification — refuses the surface on `11` and records no
+capture under that surface id. The verification check is what tells the two çaylak identities apart:
+a verified çaylak on `:auth-caylak-unverified` clears the tier check and is still refused. A cookie that did not authenticate renders the
 visitor's page and one that authenticated as the wrong identity renders somebody else's, and both are
 perfectly valid PNGs no byte check can tell from the real one.
 
@@ -570,7 +575,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
 | `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`, `auth-caylak-unverified`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; `--flag` was passed beside an anonymous surface; `--locale` was passed with no `uiCapture.locale` declared, or with a value outside its declared list; a `--scheme` names a scheme outside the closed set (`light`, `dark`), is passed twice, or is passed with no `uiCapture.scheme` declared; `--accent` was passed with no `uiCapture.accent` declared, or with a value outside its declared list; or an `--interact` operand names an unknown step verb, an empty locator, key or label, a non-kebab label or no steps, names a surface no `--surface` asked for, would write the same PNG as another `--interact`, or ends on `click` or `press` |
-| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale`, `--scheme` or `--accent` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, came back at a tier the surface did not name, or came back with an email verification the surface did not name; a forced flag evaluated at its default anyway; a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value; a scheme-crossed shot's declared root attribute did not read back as its `--scheme` value; an accented shot's declared root attribute did not read back as the `--accent` value; or an interacted shot's step found zero or several elements, timed out, or its `:hover`, `:focus-visible` or visible-match proof did not hold — no capture is written for it |
+| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale`, `--scheme` or `--accent` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while its identity's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, came back at a tier the surface did not name, or came back with an email verification the surface did not name; a forced flag evaluated at its default anyway; a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value; a scheme-crossed shot's declared root attribute did not read back as its `--scheme` value; an accented shot's declared root attribute did not read back as the `--accent` value; or an interacted shot's step found zero or several elements, timed out, or its `:hover`, `:focus-visible` or visible-match proof did not hold — no capture is written for it |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -731,8 +736,9 @@ $ echo $?
   its own proof exists because an override the preview dropped is the same clean-but-wrong capture.
 - **One identity meant one audience.** A tier-only surface could not be rendered at all, and the
   yazar's shot of it came back `captured`, valid and decodable, showing the state the PR did not add.
-  The tier rides the surface id, one seeded identity per tier, and the session proof reads the tier
-  back — the third instance of the same class the two bullets above name.
+  The audience rides the surface id, one seeded identity per realized state, and the session proof
+  reads its tier and email verification back — the third instance of the same class the two bullets
+  above name.
 
 ---
 

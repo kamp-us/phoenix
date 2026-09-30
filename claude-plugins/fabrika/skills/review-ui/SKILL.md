@@ -199,7 +199,8 @@ the composition is for.** A nudge, a vouch prompt or an onboarding ask that a ya
 suppressed for `:auth` by the product rule, so an `:auth` shot of it comes back clean showing nothing
 — the failure that reads as a judged surface. A denial only an unverified address meets, such as a
 composer refusing to post until the email is verified, renders on `:auth-caylak-unverified` alone.
-Anything else after the colon is refused on `10`, because a state nothing renders would shoot the default pixels under a variant's name.
+Anything else after the colon is refused on `10`, because a state nothing renders would shoot the
+default pixels under a variant's name.
 
 The values that make a tier state work come from somewhere specific. The signing secret is the
 **preview worker's**, not your local one, because it is the worker that verifies the cookie's
@@ -222,8 +223,10 @@ that account and its session row on this PR's preview D1. **One identity's token
 another's**: an unset one means that identity was not seeded here, and the verb refuses on `11`
 rather than shooting one it does hold. None of them is yours to mint — if you do not have them,
 you have not been handed the account, and `review-ui note` is the honest route. A `--flag` run needs
-one thing more: that tier's account holding platform admin on this preview's D1, granted offline with
-`node packages/admin-grant/src/bin.ts grant --user-id <preview-test-moderator|preview-test-caylak|preview-test-caylak-unverified> --database-id <preview-d1>`.
+one thing more: the surface's identity holding platform admin on this preview's D1, granted offline
+with `node packages/admin-grant/src/bin.ts grant --user-id <account id> --database-id <preview-d1>`,
+where the account id is `preview-test-moderator`, `preview-test-caylak` or
+`preview-test-caylak-unverified`.
 That is an operator's act against a throwaway preview, never yours and never against a database
 holding real accounts.
 
@@ -231,8 +234,9 @@ holding real accounts.
 preview's own session endpoint from the same browser context before it records anything, and refuses
 `11` when the answer is not a user at the tier and email verification the surface named — an unset
 credential, a wrong or expired token, an account absent from this preview's D1, a shot that came
-back at another tier or with the other verification all land there. So a tier-state capture in a manifest is a proven render of that tier, and a missing one
-is a refusal you read, never a silent shot of the wrong audience.
+back at another tier or with the other verification all land there. So a tier-state capture in a
+manifest is a proven render of that identity, and a missing one is a refusal you read, never a
+silent shot of the wrong audience.
 
 The verb captures the PR's **preview deployment** at the inspected head — never a checkout, never
 the PR's code run on your machine. Every surface returns a proven outcome — captured, crashed
@@ -274,8 +278,8 @@ fabrika review-ui render --pr $pr_number --out forced --surface /welcome:auth --
 
 Both fences hold, so neither can quietly hand you the default pixels. A forced run must name a
 tier state (`:auth`, `:auth-caylak` or `:auth-caylak-unverified`) on every surface — the preview
-honors the override only for an authorized platform-admin actor — and each forced key is proved against the preview's own evaluation before a shot is
-recorded, so an override that got dropped is `11`, never a flag-off capture under the flag-on name.
+honors the override only for an authorized platform-admin actor — and each forced key is proved
+against the preview's own evaluation before a shot is recorded, so an override that got dropped is `11`, never a flag-off capture under the flag-on name.
 Those two `10`/`11` refusals are the whole grammar; the rest is the verb's section.
 
 The credentials are the operator's, not yours (see below), and one more grant rides with them:
