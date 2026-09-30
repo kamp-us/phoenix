@@ -93,7 +93,9 @@ Deviations` section, carried as four-field entries or the literal `None.`. The e
 once, in this format's schema module, and both sides resolve it there; the producing verb runs the
 consumer-side read before posting, so a section the review gate would reject is refused where the
 body is written, not a round later. The obligation behind it is that a build discloses its
-departures in the PR body — the one surface the merge record keeps.
+departures in the PR body — the one surface the merge record keeps. A repair round **replaces**
+the section rather than appending to it: the section describes the change at the reviewed head, not
+a round-tagged log of every round.
 
 The read is total over three answers where the section has four meanings, so `None.` is a `Found`
 carrying a tag of its own rather than an empty entry list. That is the load-bearing distinction:
