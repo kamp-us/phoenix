@@ -15,6 +15,7 @@ const die =
 const failOnContact: KunyeShape = {
 	tierOf: die("tierOf"),
 	karmaOf: die("karmaOf"),
+	emailVerifiedOf: die("emailVerifiedOf"),
 	rootOf: die("rootOf"),
 };
 

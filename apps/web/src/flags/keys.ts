@@ -63,6 +63,13 @@ export const PHOENIX_REACTIONS = "phoenix-reactions";
 export const PHOENIX_KARMA_GATES = "phoenix-karma-gates";
 
 /**
+ * The seam for the çaylak write gate (ADR 0434): on ⇒ a çaylak with an unverified email is refused
+ * `post.submit`/`post.edit`, `comment.add`/`comment.edit` and `definition.add`/`definition.edit`
+ * with `EMAIL_UNVERIFIED`. Signup, sign-in and reads never read it. Default-off, ADR 0083.
+ */
+export const PHOENIX_EMAIL_VERIFIED_WRITES = "phoenix-email-verified-writes";
+
+/**
  * The single seam for ban/unban (#970): the `user.banUser` / `user.unbanUser` mutations, the
  * `user.banState` read, and the moderator-UI controls. Off ⇒ the invisible `Denied`, so no session
  * is ever refused by an unreleased feature. Default-off, ADR 0083.
@@ -182,6 +189,7 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_BILDIRIM, defaultValue: false},
 	{key: PHOENIX_REACTIONS, defaultValue: false},
 	{key: PHOENIX_KARMA_GATES, defaultValue: false},
+	{key: PHOENIX_EMAIL_VERIFIED_WRITES, defaultValue: false},
 	{key: PHOENIX_USER_BAN, defaultValue: false},
 	{key: PHOENIX_USER_ROLE_ASSIGN, defaultValue: false},
 	{key: PHOENIX_EMAIL_DELIVERY_ADMIN, defaultValue: false},

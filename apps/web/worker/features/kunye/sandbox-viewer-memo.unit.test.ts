@@ -67,6 +67,7 @@ const countingLayer = (counts: Counts, options: {readonly flagOn: boolean}) =>
 					return "yazar" as const;
 				}),
 			karmaOf: () => Effect.die("Kunye.karmaOf not exercised"),
+			emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 			rootOf: () => Effect.die("Kunye.rootOf not exercised"),
 		}),
 		Layer.succeed(CaylakVisibility, {

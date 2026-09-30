@@ -26,6 +26,7 @@ const kunyeAt = (tier: Tier): Layer.Layer<Kunye> =>
 	Layer.succeed(Kunye, {
 		tierOf: () => Effect.succeed(tier),
 		karmaOf: () => Effect.die(new Error("Vouch.require must not read karma")),
+		emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 		rootOf: (id: string) => Effect.succeed(id),
 	});
 

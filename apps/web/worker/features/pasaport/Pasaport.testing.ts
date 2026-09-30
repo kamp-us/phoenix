@@ -17,6 +17,7 @@ const die =
 const failOnContact: PasaportShape = {
 	validateSession: die("validateSession"),
 	getUserById: die("getUserById"),
+	isEmailVerified: die("isEmailVerified"),
 	getUsersByIds: die("getUsersByIds"),
 	getProfileIdentitiesByIds: die("getProfileIdentitiesByIds"),
 	setUsername: die("setUsername"),

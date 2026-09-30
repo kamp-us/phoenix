@@ -51,6 +51,7 @@ const bildirimOffStub = Layer.mergeAll(
 	// Flag off ⇒ the `CanFlag` gate auto-passes without a karma read (#150).
 	Layer.succeed(Kunye, {
 		karmaOf: () => Effect.die("Kunye.karmaOf not exercised in report-mutation (flag off)"),
+		emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 		tierOf: () => Effect.die("Kunye.tierOf not exercised in report-mutation"),
 		rootOf: (id: string) => Effect.succeed(id),
 	} as typeof Kunye.Service),

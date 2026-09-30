@@ -18,9 +18,10 @@ import {notifyContentVote} from "../bildirim/vote-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
-import {InsufficientKarma} from "../kunye/errors.ts";
+import {EmailUnverified, InsufficientKarma} from "../kunye/errors.ts";
 import {gateContentOnKarma} from "../kunye/privilege.ts";
 import {currentSandboxViewer, decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {gateWriteOnVerifiedEmail} from "../kunye/verified-writer.ts";
 import {authorDisplayLabel} from "../pasaport/author-label.ts";
 import {SelfVoteNotAllowed, VoterNotEligible} from "../vote/errors.ts";
 import {
@@ -86,7 +87,13 @@ export const mutations = {
 		{
 			input: AddDefinitionInput,
 			type: DefinitionView,
-			error: Schema.Union([Unauthorized, InsufficientKarma, BodyRequired, BodyTooLong]),
+			error: Schema.Union([
+				Unauthorized,
+				EmailUnverified,
+				InsufficientKarma,
+				BodyRequired,
+				BodyTooLong,
+			]),
 		},
 		Effect.fn("definition.add")(function* ({input}) {
 			const user = yield* CurrentUser.required;
@@ -113,8 +120,9 @@ export const mutations = {
 				yield* notifyCaylakEntersDivan({authorId: user.id, sandboxedAt});
 				return definition;
 			});
-			// Post-value karma gate, dark behind `phoenix-karma-gates` — the same ≥ −4 floor as pano's.
-			return yield* gateContentOnKarma(add());
+			// Post-value karma gate, dark behind `phoenix-karma-gates` — the same ≥ −4 floor as pano's —
+			// under the çaylak write gate (ADR 0434), dark behind `phoenix-email-verified-writes`.
+			return yield* gateWriteOnVerifiedEmail(gateContentOnKarma(add()));
 		}),
 	),
 	"definition.vote": Fate.mutation(
@@ -215,6 +223,7 @@ export const mutations = {
 			type: DefinitionView,
 			error: Schema.Union([
 				Unauthorized,
+				EmailUnverified,
 				BodyRequired,
 				BodyTooLong,
 				DefinitionNotFound,
@@ -223,25 +232,29 @@ export const mutations = {
 		},
 		Effect.fn("definition.edit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
-			const sozluk = yield* Sozluk;
-			const live = sozlukLive(yield* WorkerLivePublisher);
-			const result = yield* sozluk.editDefinition({
-				definitionId: input.id,
-				actorId: UserId.make(user.id),
-				body: input.body,
+			const edit = Effect.fn("definition.editBody")(function* () {
+				const sozluk = yield* Sozluk;
+				const live = sozlukLive(yield* WorkerLivePublisher);
+				const result = yield* sozluk.editDefinition({
+					definitionId: input.id,
+					actorId: UserId.make(user.id),
+					body: input.body,
+				});
+				// Re-read the viewer's vote so the edit doesn't blank `myVote`.
+				const sandboxViewer = yield* currentSandboxViewer;
+				const [fresh] = yield* sozluk.getDefinitionsByIds([result.definitionId], {
+					viewerId: user.id,
+					sandboxViewer,
+				});
+				const definition = shapeDefinition({...result, myVote: fresh?.myVote ?? null});
+				yield* live.definition.update(definition.id, {
+					changed: ["body", "updatedAt"],
+					data: definition,
+				});
+				return definition;
 			});
-			// Re-read the viewer's vote so the edit doesn't blank `myVote`.
-			const sandboxViewer = yield* currentSandboxViewer;
-			const [fresh] = yield* sozluk.getDefinitionsByIds([result.definitionId], {
-				viewerId: user.id,
-				sandboxViewer,
-			});
-			const definition = shapeDefinition({...result, myVote: fresh?.myVote ?? null});
-			yield* live.definition.update(definition.id, {
-				changed: ["body", "updatedAt"],
-				data: definition,
-			});
-			return definition;
+			// The çaylak write gate (ADR 0434), dark behind `phoenix-email-verified-writes`.
+			return yield* gateWriteOnVerifiedEmail(edit());
 		}),
 	),
 	"definition.delete": Fate.mutation(
