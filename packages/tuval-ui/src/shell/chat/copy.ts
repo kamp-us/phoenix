@@ -40,6 +40,8 @@ const messages: Readonly<Record<DesignCatalogKey, string>> = {
 	"ui.markdown.diagram": "diagram",
 	"ui.markdown.diagram.source": "diagram source",
 	"ui.markdown.diagram.error": "The diagram could not be drawn: {reason}",
+	"ui.markdown.task.done": "done",
+	"ui.markdown.task.open": "not done",
 	"admin.agent.label": "Agent composer",
 	"admin.agent.scope": "this window only",
 	"admin.agent.compose.label": "Write a message to the agent",
