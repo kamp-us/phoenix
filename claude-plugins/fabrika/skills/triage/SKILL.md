@@ -188,6 +188,10 @@ Stage `bet` — his own write or an agent's on his instruction, with the row's S
 pitch's Appetite. Take an existing
 home: **triage never creates a milestone**, and `wayfinder:backlog` is bounded to genuine fog rather
 than work you would rather not decide about.
+**A board-wide homing breach is swept by a verb, never by raw `gh`.** When `guard homing-guard check`
+reds on double-marked issues, `fabrika triage sweep-homes` drops the milestone and keeps the lane,
+dry run first, then `--apply` with the citation on stdin. The un-homed issues it refuses on `27` are
+yours to home one at a time here.
 **An `active` campaign's milestone admits new intake only at `p0` or `p1`**, or when the work blocks
 one of that milestone's own in-flight lanes — `triage homes` marks those rows
 `running: p0/p1 or blocker`, and is where you read which milestones they are. This narrows

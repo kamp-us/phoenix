@@ -269,6 +269,9 @@ Turn an intake issue into work with a clear scope, home and audience. Use `triag
 For an existing acceptance-criteria block with a damaged heading or list shape, see
 `triage repair-criteria --help`. Content changes belong to the triage authoring flow.
 
+To fix what `guard homing-guard check` reports, see `triage sweep-homes --help`. It clears a
+double-marked issue's milestone and leaves un-homed issues to triage.
+
 ## The `ui` group
 
 Read design rules, capture a local build and compare it with a golden image. Use `ui --help` and

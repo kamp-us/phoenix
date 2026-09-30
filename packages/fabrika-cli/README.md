@@ -58,6 +58,14 @@ Ordered recipes — installing, credentialing, finding a group and a verb, readi
 from a consumer repo — are in
 [`docs/running-fabrika-in-a-repo.md`](./docs/running-fabrika-in-a-repo.md).
 
+A board-only chore runs through a verb, never through raw `gh`. `fabrika triage sweep-homes` is the
+apply side of `guard homing-guard check`: a dry run by default (`--dry-run` says so explicitly), and
+`--apply` clears the milestone on each double-marked triaged issue, keeps its standing lane, and
+posts one trail comment whose citation is read from stdin. It lists un-homed issues and leaves them
+alone, exiting `27`; an empty or unreadable backlog is `7` or `11`, never a clean sweep. Its full
+exit table is in `fabrika triage sweep-homes --help` and the
+[triage contract](../../claude-plugins/fabrika/skills/triage/contract.md#triage-sweep-homes).
+
 ## Reference
 
 - [`docs/usage-recording.md`](./docs/usage-recording.md) describes the shared host recording API,
