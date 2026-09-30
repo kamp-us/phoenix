@@ -68,7 +68,8 @@ registers, so that refusal is named in full and left to a human
 ([#6881](https://github.com/kamp-us/phoenix/issues/6881)).
 
 The two rulings are therefore one act, not a conflict: #6610 says a dirty tree is still retired, and
-0321 says its work is preserved first. A detached-HEAD tree, whose salvage arm 0321 leaves undefined
+0321 says its work is preserved first. A detached-HEAD tree, whose salvage arm is
+[0321's 2026-09-30 amendment](0321-dead-spawn-worktree-ownership.md#amendment-2026-09-30-6868--the-detached-head-arm-and-the-wiped-tree-exception)
 (#6868), never reaches this verb at all: it holds no branch name, so it is no lane's pin and appears
 in no subject list.
 

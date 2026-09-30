@@ -1170,6 +1170,12 @@ this order:
   you are.** The harness rule that refuses a *typed* cross-worktree `git` reads the command you
   type, so it does not bind the verb's own child process — which is why this obligation is no longer
   the primary checkout's alone.
+  **A detached-HEAD tree is yours by hand, because the verb never sees it**: it holds no branch, so
+  it is no lane's subject. If it is dirty, commit its contents onto a fresh, never-pushed
+  `salvage/<worktree-id>` branch, `<worktree-id>` being the tree's directory name, then remove it
+  without `--force`. A tree whose dirty state is a mass deletion may skip the salvage: file it
+  through [`report`](../report/SKILL.md) naming the tree and what it deleted, restore it to its
+  HEAD, then remove it without `--force`.
 
 **Name that failure `spawn-dead`.** A shell its provider killed before it recorded a terminal — a
 session limit, a transport drop, a `network_error` on every completion — is one class with one
