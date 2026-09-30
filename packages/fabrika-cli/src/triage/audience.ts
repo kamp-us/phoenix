@@ -3,7 +3,7 @@
  *
  * Who picks an issue up is a two-valued facet, and three seams act on it: `triage apply`
  * stamps it, `plan flip` moves a gated epic onto the agent side, and `decision rule` moves a ruled
- * decision there. The label strings are derived from `../config/board.ts`'s vocabulary rather than
+ * issue of any type but an epic there. The label strings are derived from `../config/board.ts`'s vocabulary rather than
  * typed, so a board that renames an audience renames it everywhere at once.
  *
  * **The predicates are here because the ordering they encode is a safety property.** The add lands

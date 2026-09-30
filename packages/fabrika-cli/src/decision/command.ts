@@ -123,7 +123,7 @@ const rule = leafCommand(
 	),
 	Command.withDescription(
 		[
-			'Posts a ruling marker, flips the issue to ready-for:agent (never a type:epic) and prints {"answer":"ruled",…}.',
+			"Posts a ruling marker and flips the issue to ready-for:agent; a type:epic is never flipped.",
 			"  4: marker posted, no criteria block, not flipped",
 			"  5: a machine-local path in the authorization",
 			"  6: the authorization is a bare @ reference",
