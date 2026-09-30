@@ -98,6 +98,71 @@ describe("scanBody", () => {
 	});
 });
 
+describe("scanBody's tilde-slash path-alias shapes", () => {
+	it.each([
+		["a double-quoted `from` specifier", `import {Button} from "~/components/Button";`],
+		["a single-quoted `from` specifier", "export * from '~/lib/utils';"],
+		["a side-effect `import` specifier", `import "~/styles/globals.css";`],
+		["an `import(` specifier", "const Page = await import( '~/app/page' );"],
+		["a `require(` specifier", `const cfg = require("~/config");`],
+		["a type-only `from` specifier", `import type {Props} from "~/types";`],
+		["a default-plus-named `from` specifier", `import React, {useState} from "~/lib/react";`],
+		["a `from` closing a multi-line clause", `} from "~/components/Button";`],
+		["a backticked import line in prose", "the repro is `import {cn} from '~/lib/utils'` there"],
+		[
+			"a backticked import line after an earlier inline-code span",
+			"run `make`, then `import {cn} from '~/lib/utils'` resolves",
+		],
+		["a double-quoted `paths` key", `    "~/*": ["./src/*"],`],
+		["a single-quoted `paths` key", "{'~/components/*' : ['./src/components/*']}"],
+	])("passes %s", (_name, body) => {
+		expect(scanBody(body)).toEqual({leaks: [], redacted: body});
+	});
+
+	it.each([
+		["a bare path in prose", "the alias ~/lib/utils resolves to src"],
+		["a backticked path in prose", "the alias `~/lib/utils` resolves to src"],
+		["a quoted home path after no import keyword", `open "~/Documents/notes.txt" first`],
+		["a quoted `/*` string with no following colon", `glob "~/src/*" matched nothing`],
+		[
+			"a double-quoted path after prose `from`",
+			`I loaded the config from "~/.config/app/settings.json"`,
+		],
+		[
+			"a single-quoted path after prose `from`",
+			"copied it from '~/Documents/client-acme/notes.txt'",
+		],
+		["a quoted path after prose `import`", `then I import "~/Downloads/data.csv" by hand`],
+		[
+			"a quoted path after a prose clause opening on `import`",
+			`import the file from "~/Documents/x.txt"`,
+		],
+		[
+			"a quoted path after prose `import` following a closing backtick",
+			'run `make` import "~/Documents/a.txt"',
+		],
+		[
+			"a quoted path after prose `} from` following a closing backtick",
+			'the `x` } from "~/Documents/x.txt"',
+		],
+	])("still refuses %s", (_name, body) => {
+		expect(scanBody(body).leaks).toEqual([
+			expect.objectContaining({line: 1, class: "home-relative"}),
+		]);
+	});
+
+	it("refuses a specifier whose closing quote does not match its opening one", () => {
+		expect(scanBody(`import x from "~/lib/x';`).leaks).toHaveLength(1);
+	});
+
+	it("masks only the home path on a line that also carries an exempt specifier", () => {
+		const specifier = `import {cn} from "~/lib/utils";`;
+		const scan = scanBody(`${specifier} // copied from ~/Documents/notes.txt`);
+		expect(scan.leaks).toEqual([{line: 1, class: "home-relative", text: "~/Documents/notes.txt"}]);
+		expect(scan.redacted).toBe(`${specifier} // copied from ~/<redacted>`);
+	});
+});
+
 describe("scanBody's email shape", () => {
 	it("refuses an address and masks it whole, domain included", () => {
 		const scan = scanBody("mail first.last+tag@mail.company.io, then retry");
