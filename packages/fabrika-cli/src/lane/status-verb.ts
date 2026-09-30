@@ -4,7 +4,8 @@
  * The answer is the operator's status shape: compound `stateValue` (active phase → per-task leaf,
  * future phases `"waiting"`), `status` active/done, and per-task `{retries, maxRetries, …extras}`
  * context with the tripped tasks in `errors`. A task whose latest event named a park cause carries
- * it as `context.<task>.cause` — the key `recipe unpark` seats a park against — and a task
+ * it as `context.<task>.cause` — the key `recipe unpark` seats a park against — beside the
+ * `context.<task>.axisIssue` a `render-axis-missing` park waits on, and a task
  * with lane classes standing carries them as `context.<task>.classes`, which is what a driver
  * relays onto the next event's `--class`.
  *
@@ -23,7 +24,13 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import {answer, type VerbOutcome} from "../verb.ts";
 import {resolveDeferrals} from "./deferral.ts";
-import {deriveStatus, foldLog, standingCauses, standingRationales} from "./fold.ts";
+import {
+	deriveStatus,
+	foldLog,
+	standingAxisIssues,
+	standingCauses,
+	standingRationales,
+} from "./fold.ts";
 import {inFlight, loadInFlight} from "./in-flight.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LaneRef, loadLane} from "./store.ts";
@@ -43,6 +50,7 @@ export const runStatus = (
 			fold.states,
 			standingCauses(loaded.entries),
 			standingRationales(loaded.entries),
+			standingAxisIssues(loaded.entries),
 		);
 		const deferrals = resolveDeferrals(loaded.entries);
 		const deferred = deferrals._tag === "Resolved" ? deferrals.deferrals : [];

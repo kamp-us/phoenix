@@ -6,6 +6,8 @@ import {EPIC_RULES} from "../wire/lane-brief.ts";
 import {MACHINERY_EVENT} from "./machine.ts";
 import {REVIEW_UI_STATE} from "./prove.ts";
 import {
+	AXIS_ISSUE_CAUSES,
+	axisIssueForCause,
 	causeForEvent,
 	conditionalTerminal,
 	eventForToken,
@@ -45,6 +47,7 @@ const RENDERED_PARKS = [
  */
 const UI_REVIEWER_PARKS = [
 	...RENDERED_PARKS,
+	["CANT-SEE", "render-axis-missing"],
 	["ROUTED-ELSEWHERE", "no-preview-routed"],
 	["ESCALATED", "write-unlanded"],
 ] as const;
@@ -261,7 +264,7 @@ describe("the UI reviewer's vocabulary against the skill that owns it", () => {
 		expect(section).toMatch(new RegExp(`${token}[\\s\\S]*?\`${cause}\``));
 	});
 
-	it("names those five causes and no sixth", () => {
+	it("names those six causes and no seventh", () => {
 		const named = PARK_CAUSE_TOKENS.filter((cause) => (section ?? "").includes(cause));
 
 		expect(new Set(named)).toEqual(new Set(UI_REVIEWER_PARKS.map(([, cause]) => cause)));
@@ -303,6 +306,43 @@ describe("the rendered gate's three parks name a cause instead of landing bare",
 	});
 });
 
+describe("a render-axis park names the issue it waits on", () => {
+	it("requires --axis-issue beside render-axis-missing", () => {
+		const resolved = axisIssueForCause(null, "render-axis-missing");
+
+		expect(resolved._tag).toBe("Rejected");
+		expect(resolved._tag === "Rejected" && resolved.reason).toMatch(/--axis-issue/);
+	});
+
+	it("seats the issue beside render-axis-missing", () => {
+		expect(axisIssueForCause(9615, "render-axis-missing")).toEqual({
+			_tag: "Named",
+			axisIssue: 9615,
+		});
+	});
+
+	it.each([
+		["no-preview-render", 9615],
+		[null, 9615],
+	] as const)("refuses --axis-issue beside %p", (cause, issue) => {
+		expect(axisIssueForCause(issue, cause)._tag).toBe("Rejected");
+	});
+
+	it.each([0, -3, 1.5])("refuses %p as no issue number", (issue) => {
+		expect(axisIssueForCause(issue, "render-axis-missing")._tag).toBe("Rejected");
+	});
+
+	it("leaves every other cause without one exactly as it was", () => {
+		expect(axisIssueForCause(null, "no-preview-render")).toEqual({_tag: "Named", axisIssue: null});
+		expect(axisIssueForCause(null, null)).toEqual({_tag: "Named", axisIssue: null});
+	});
+
+	it("keys only the render-axis cause on an issue", () => {
+		expect([...AXIS_ISSUE_CAUSES]).toEqual(["render-axis-missing"]);
+		expect(PARK_CAUSE_TOKENS).toContain("render-axis-missing");
+	});
+});
+
 /**
  * The route axis: every cause carries one, both `KNOWN_PARKS` shapes read it off this one table, and
  * a cause added without a route reds here rather than routing silently.
@@ -337,6 +377,7 @@ describe("every park cause carries a route", () => {
 		"head-behind-base",
 		"spawn-dead",
 		"no-preview-render",
+		"render-axis-missing",
 		"no-design-manifest",
 		"no-rendered-delta",
 		"write-unlanded",

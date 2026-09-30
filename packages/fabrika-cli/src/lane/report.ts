@@ -560,6 +560,28 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
+	 * The rendered gate's `CANT-SEE` over a preview that stood: the changed pixels only show in a state
+	 * none of `review-ui render`'s operands can reach — a scroll position, a pane no route opens — so no
+	 * re-render and no driver retry can shoot them. Only building that render axis ends it.
+	 *
+	 * Distinct from `no-preview-render`, whose preview a later deploy or a re-seed fixes: a retry there
+	 * is a real move, and here it spends a review round hitting the same wall. So this cause carries
+	 * the number of the open issue tracking the missing axis ({@link AXIS_ISSUE_CAUSES}), and its
+	 * `KNOWN_PARKS` row clears when that issue closes.
+	 *
+	 * No remedy: building a render axis is its own issue's work, and no verb here removes the gap.
+	 *
+	 * Route `driver`: a missing render capability is machinery, and no product call is in it.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10007
+	 */
+	"render-axis-missing": {
+		meaning:
+			"the preview stood, but the changed pixels need a state `review-ui render` cannot reach, so the park waits on the issue that builds that render axis",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * The rendered gate's `BLOCKED-NO-MANIFEST`: the repo's design law covers no surface in
 	 * this diff, so the gate has nothing to judge against and routed to the front door.
 	 *
@@ -877,6 +899,55 @@ export const structuralParkCause = (leaf: string): ParkCause | null =>
  * @ruling https://github.com/kamp-us/phoenix/issues/9852
  */
 export const RETIRED_PARK_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>(["campaign-paused"]);
+
+/**
+ * The causes whose park waits on another issue closing, so the park line names that issue as
+ * `axisIssue` — required with one of these causes and refused with any other.
+ *
+ * The number is what the `KNOWN_PARKS` row reads: without it the clear would have no issue to read.
+ */
+export const AXIS_ISSUE_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>([
+	"render-axis-missing",
+]);
+
+/** Whether a recorded cause makes its park line carry an `axisIssue`. */
+export const causeTakesAxisIssue = (cause: string | null): boolean =>
+	cause !== null && AXIS_ISSUE_CAUSES.has(cause as ParkCause);
+
+export type AxisIssueResolution =
+	| {readonly _tag: "Named"; readonly axisIssue: number | null}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+/**
+ * Resolve one `--axis-issue` against the cause the same line records.
+ *
+ * Both directions refuse. A cause in {@link AXIS_ISSUE_CAUSES} with no issue is a park nothing can
+ * clear, because the row has no issue to read. An issue beside any other cause is seated on a line
+ * no row reads, so it records a claim nothing will check.
+ */
+export const axisIssueForCause = (
+	raw: number | null,
+	cause: ParkCause | null,
+): AxisIssueResolution => {
+	const takes = causeTakesAxisIssue(cause);
+	if (raw === null) {
+		return takes
+			? {
+					_tag: "Rejected",
+					reason: `"${cause}" waits on the open issue that tracks the missing render axis — pass --axis-issue <number>, filing that issue first if none exists`,
+				}
+			: {_tag: "Named", axisIssue: null};
+	}
+	if (!takes) {
+		return {
+			_tag: "Rejected",
+			reason: `--axis-issue names the issue a ${[...AXIS_ISSUE_CAUSES].join("/")} park waits on, and this line records ${cause === null ? "no cause" : `"${cause}"`} — drop --axis-issue ${raw}`,
+		};
+	}
+	return Number.isInteger(raw) && raw > 0
+		? {_tag: "Named", axisIssue: raw}
+		: {_tag: "Rejected", reason: `--axis-issue ${raw} is no issue number`};
+};
 
 /** The causes a recorder may pass, for a refusal's listing — sorted so the listing is deterministic. */
 export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES)

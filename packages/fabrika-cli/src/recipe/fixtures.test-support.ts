@@ -128,6 +128,29 @@ export const PARKED_ON_ROUTED_UI = [
 	.map((entry) => `${JSON.stringify(entry)}\n`)
 	.join("");
 
+/** The open issue the render-axis park names as tracking the render axis the review could not reach. */
+export const AXIS_ISSUE = 9615;
+
+/**
+ * queued → build → review → review:ui → blocked, on `render-axis-missing` naming {@link AXIS_ISSUE}
+ * — the `CANT-SEE` a rendered review records when the preview stood but the state it needs did not
+ * render.
+ */
+export const PARKED_ON_RENDER_AXIS = [
+	{task: "issue", event: "ISSUE.WIP", at: "2026-08-16T00:00:00.000Z", classes: ["ui"]},
+	{task: "issue", event: "ISSUE.DONE", at: "2026-08-16T00:01:00.000Z"},
+	{task: "issue", event: "ISSUE.PASS", at: "2026-08-16T00:02:00.000Z"},
+	{
+		task: "issue",
+		event: "ISSUE.BLOCKED",
+		at: "2026-08-16T00:03:00.000Z",
+		cause: "render-axis-missing",
+		axisIssue: AXIS_ISSUE,
+	},
+]
+	.map((entry) => `${JSON.stringify(entry)}\n`)
+	.join("");
+
 /** The milestone {@link LANE}'s issue is homed on, and the one a campaign row pins. */
 export const LANE_MILESTONE = 49;
 

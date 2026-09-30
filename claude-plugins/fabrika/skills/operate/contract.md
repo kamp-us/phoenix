@@ -71,8 +71,11 @@ append it, and refuse on the prover's own code with the log byte-identical. The 
   table on. Every cause also carries a route, `driver` or `founder`, saying whose failure the park
   is. A BLOCKED with no cause is the bare park it always was: it is novel and routes to a human, so
   it costs a human UNBLOCKED.
+- `--axis-issue <n>` names the open issue a `render-axis-missing` park waits on, and lands on the
+  same line as `axisIssue`. That cause requires it, and every other cause refuses it.
 - `35` — `--cause` is outside the closed park-cause set, or rides on an event that is neither
-  BLOCKED nor the machinery LAP.
+  BLOCKED nor the machinery LAP; or `--axis-issue` is missing beside `render-axis-missing`, present
+  beside any other cause, or no issue number.
 - `52` — a BLOCKED names no cause at all, under a repo declaring `parkCause.uncaused: "refuse"`.
   Name one from the closed set; the log is unappended.
 - A repeatable `--class` lands the lane classes standing at the event on the same line. It is the
@@ -2031,6 +2034,12 @@ nothing and is novel.
   what keeps the clear the inverse of this cause rather than a generic everything-passed: a PR whose
   rendered gate came back and judged it is a different park, and it holds at `13` with the reason
   named.
+- The render-axis park (`blocked` keyed `render-axis-missing`) waits on another issue: the one
+  tracking the render axis the rendered review could not reach, which the park line names as
+  `axisIssue`. Its read is that issue's state. `closed` clears back into `review:ui` with a
+  `mechanism` of `axis-closed:#<issue>`, so the reviewer renders again with the axis built. Open is
+  `13` with nothing written, a park naming no axis issue or an axis issue proven absent is `7`, and
+  a read that fails is `11`.
 - The `queue-stall` park is the one row whose clear also GRANTS. Its read is `ship reconcile`'s
   answer relayed, where `landed` and `ejected` clear and `unresolved` is exit `13`. Because the park
   IS a spent wait budget, the clear records the waits it buys on the very same `UNBLOCKED` — one
@@ -2064,7 +2073,7 @@ a clear that granted and `rationale` on one the driver named. `clearance` is the
 | Code | Trigger |
 |---|---|
 | `4` | a lane record was read in full and is not the shape |
-| `7` | no lane there; the PR the park waits on is proven absent, or closed where the row needs it open — the `queue-stall` row nominates at open-or-merged scope, since a landed PR is closed; or the lane's issue is absent, homed on no milestone, or homed on one no `## Campaigns` row pins |
+| `7` | no lane there; the PR the park waits on is proven absent, or closed where the row needs it open — the `queue-stall` row nominates at open-or-merged scope, since a landed PR is closed; or the lane's issue is absent, homed on no milestone, or homed on one no `## Campaigns` row pins; or a `render-axis-missing` park names no axis issue, or the one it names is proven absent |
 | `8` | the `UNBLOCKED` or `FAIL` append did not land — it is NOT recorded |
 | `9` | the append landed and the re-fold does not prove the clear or the repair route — the lane needs a human |
 | `11` | a precondition could not be read — UNKNOWN, never cleared. `parkCause` itself is one, and so is the repository identity its owning root is derived from, since a cwd whose repository will not read leaves the declaration unresolved rather than guessed at the cwd |

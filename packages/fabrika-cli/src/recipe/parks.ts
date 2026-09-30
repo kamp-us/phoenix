@@ -39,7 +39,8 @@ export type Clearance =
 	| "queue-moved"
 	| "ci-green"
 	| "head-green"
-	| "route-satisfied";
+	| "route-satisfied"
+	| "axis-closed";
 
 export interface ParkRecipe {
 	/** The lane leaf state this recipe clears. */
@@ -94,7 +95,7 @@ export interface ParkRecipe {
 export const QUEUE_MOVED_GRANT = 1;
 
 /**
- * The parks with a fixed fix today: one keyed by its leaf, ten by their cause.
+ * The parks with a fixed fix today: one keyed by its leaf, eleven by their cause.
  *
  * `human:cp-approval` + `awaiting-cp-approval`'s clearance is `ship cp-approval`'s own discharge
  * table, relayed rather than re-derived — the §CP cardinality question has exactly one answer in this
@@ -172,6 +173,12 @@ export const QUEUE_MOVED_GRANT = 1;
  * reviewer's own unfinished work, so asking for them here would hold the park until the very review
  * it stopped. A red holds and never routes to repair: `blocked` carries no `FAIL` arm. It names no
  * remedy for `ci-green`'s reason.
+ *
+ * `blocked` + `render-axis-missing` is the one row whose read is another issue: the park line names
+ * the open issue tracking the render axis the rendered review could not reach (`axisIssue`), and
+ * `axis-closed` clears once that issue reads closed. A retry before then re-dispatches `review:ui`
+ * into the same gap, which is why this park does not clear on a driver's rationale. It names no
+ * remedy: building the axis is that issue's own work.
  */
 /**
  * One row, with its route and its remedy read off the cause table rather than written down a second
@@ -259,6 +266,13 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		clearance: "route-satisfied",
 		waitingOn:
 			"the review this no-preview route hands the verdict to — every required namespace answering at the PR's live head",
+	}),
+	row({
+		park: "blocked",
+		cause: "render-axis-missing",
+		clearance: "axis-closed",
+		waitingOn:
+			"the issue tracking the render axis this review could not reach to close, so the render can reach the state",
 	}),
 ];
 

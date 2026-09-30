@@ -1697,12 +1697,14 @@ verb reads the cause for you:
 node <fabrika> recipe unpark <lane-key> --task <task>
 ```
 
-The table it keys on holds eleven rows today: `human:cp-approval` twice — once keyed on
+The table it keys on holds twelve rows today: `human:cp-approval` twice — once keyed on
 `awaiting-cp-approval`, the owner-approval wait, and once on `head-ci-red`, which is the shipper's
 route to `heal-ci` folding to the same leaf —
 `human:queue-stall`, and `blocked` carrying one of `head-ci-red` (a reviewer that parked on a red
 head, cleared on a green one with no verdict read), `worktree-holds-branch`, `spawn-dead`,
-`no-rendered-delta`, `no-preview-routed`, `tree-hijacked`, `claim-stranded`, or `campaign-paused`, a legacy row that
+`no-rendered-delta`, `no-preview-routed`, `render-axis-missing` (a rendered review that could
+not reach a state, cleared once the axis issue it names is closed), `tree-hijacked`,
+`claim-stranded`, or `campaign-paused`, a legacy row that
 clears a lane parked on it before campaigns became themes and that no park records now. Reading which one
 matched is the verb's answer, not a list you maintain here — the rows live in
 [`packages/fabrika-cli/src/recipe/parks.ts`](../../../../packages/fabrika-cli/src/recipe/parks.ts).

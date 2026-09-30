@@ -57,6 +57,7 @@ const run = (
 		pr?: string | null;
 		comment?: string | null;
 		cause?: string | null;
+		axisIssue?: number | null;
 		parkCause?: Read<ParkCauseSurface>;
 		classes?: ReadonlyArray<string>;
 		prover?: ReturnType<typeof fakeProver> | ReturnType<typeof fakeProverByEvent>;
@@ -76,6 +77,7 @@ const run = (
 					pr: extra.pr ?? null,
 					comment: extra.comment ?? null,
 					cause: extra.cause ?? null,
+					axisIssue: extra.axisIssue ?? null,
 					integrateExit: extra.integrateExit ?? null,
 					assemblyHead: extra.assemblyHead ?? null,
 					parkCause: extra.parkCause ?? parkCauseRead(),
@@ -559,6 +561,28 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 			event: "ISSUE.BLOCKED",
 			cause: "write-unlanded",
 		});
+	});
+
+	it("records a CANT-SEE on a missing render axis with the issue it waits on", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+
+		const out = await run(fs, "CANT-SEE", {cause: "render-axis-missing", axisIssue: 9615});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "render-axis-missing",
+			axisIssue: 9615,
+		});
+	});
+
+	it("refuses a CANT-SEE on a missing render axis that names no issue, log unappended", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+
+		const out = await run(fs, "CANT-SEE", {cause: "render-axis-missing"});
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(fs.written.size).toBe(0);
 	});
 
 	it("still refuses a ui-reviewer ESCALATED that names no cause", async () => {

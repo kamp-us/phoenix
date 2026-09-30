@@ -20,6 +20,8 @@ export type LeafRead =
 			readonly leaf: string;
 			/** Why the task parked, off the fold's `context.<task>.cause`; `null` on a causeless park. */
 			readonly cause: string | null;
+			/** The issue the park waits on, off `context.<task>.axisIssue`; `null` where none stands. */
+			readonly axisIssue: number | null;
 	  }
 	| {readonly _tag: "Finished"; readonly terminal: string}
 	| {readonly _tag: "Unreadable"; readonly reason: string};
@@ -41,11 +43,24 @@ const activeTasks = (stateValue: unknown): Readonly<Record<string, unknown>> | n
  * the bare one it was before the field existed and `classifyPark` answers Novel for it.
  */
 const causeOf = (parsed: Readonly<Record<string, unknown>>, task: string): string | null => {
+	const entry = contextOf(parsed, task);
+	return entry !== null && typeof entry.cause === "string" ? entry.cause : null;
+};
+
+/** The axis issue `lane status` folded onto one task, or `null`, read as {@link causeOf} reads. */
+const axisIssueOf = (parsed: Readonly<Record<string, unknown>>, task: string): number | null => {
+	const entry = contextOf(parsed, task);
+	return entry !== null && Number.isInteger(entry.axisIssue) ? (entry.axisIssue as number) : null;
+};
+
+const contextOf = (
+	parsed: Readonly<Record<string, unknown>>,
+	task: string,
+): Readonly<Record<string, unknown>> | null => {
 	const context = parsed.context;
 	if (!isRecord(context)) return null;
 	const entry = context[task];
-	if (!isRecord(entry)) return null;
-	return typeof entry.cause === "string" ? entry.cause : null;
+	return isRecord(entry) ? entry : null;
 };
 
 /** One task's leaf, off `lane status`'s stdout. `requested` is `null` on a single-task lane. */
@@ -77,7 +92,13 @@ export const leafOf = (stdout: string, requested: string | null): LeafRead => {
 	}
 	const leaf = tasks[task];
 	return typeof leaf === "string"
-		? {_tag: "Leaf", task, leaf, cause: causeOf(parsed, task)}
+		? {
+				_tag: "Leaf",
+				task,
+				leaf,
+				cause: causeOf(parsed, task),
+				axisIssue: axisIssueOf(parsed, task),
+			}
 		: {_tag: "Unreadable", reason: `task "${task}" carries no leaf state`};
 };
 

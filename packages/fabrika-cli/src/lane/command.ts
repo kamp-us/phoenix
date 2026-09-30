@@ -83,7 +83,7 @@ import {recordBoard, runRecord} from "./record-verb.ts";
 import {queueReadOf, runRecover} from "./recover-verb.ts";
 import {runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
-import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
+import {AXIS_ISSUE_CAUSES, classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 import {runRetrigger} from "./retrigger-verb.ts";
 import {runLaneScratch} from "./scratch-verb.ts";
@@ -236,6 +236,14 @@ const causeFlag = Flag.string("cause").pipe(
 	),
 );
 
+/** The issue a `render-axis-missing` park waits on, on the same two verbs `--cause` rides. */
+const axisIssueFlag = Flag.integer("axis-issue").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		`the open issue tracking the render axis this park waits on — required with --cause ${[...AXIS_ISSUE_CAUSES].join("/")} and refused with any other cause, both at exit 35 with the log unappended. \`recipe unpark\` reads it and clears the park once that issue is closed.`,
+	),
+);
+
 /**
  * The lane classes standing at the event being recorded, on the same two appending verbs.
  *
@@ -286,6 +294,7 @@ const transition = leafCommand(
 			Flag.withDescription("the task the event addresses; omittable on a single-task lane"),
 		),
 		cause: causeFlag,
+		axisIssue: axisIssueFlag,
 		classes: classFlag,
 		grantWait: Flag.integer("grant-wait").pipe(
 			Flag.optional,
@@ -301,7 +310,18 @@ const transition = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, event, root, task, cause, classes, grantWait, rationale, repo}) {
+	Effect.fn(function* ({
+		lane,
+		event,
+		root,
+		task,
+		cause,
+		axisIssue,
+		classes,
+		grantWait,
+		rationale,
+		repo,
+	}) {
 		const configRoot = yield* configRootOrRefuse("fabrika lane transition", process.cwd());
 		if (typeof configRoot !== "string") {
 			yield* emit(configRoot);
@@ -316,6 +336,7 @@ const transition = leafCommand(
 						event,
 						task: Option.getOrNull(task),
 						cause: Option.getOrNull(cause),
+						axisIssue: Option.getOrNull(axisIssue),
 						parkCause,
 						classes,
 						waitGrant: Option.getOrNull(grantWait),
@@ -349,7 +370,7 @@ const transition = leafCommand(
 				23: "no binding verdict",
 				24: "FAIL or link stands",
 				25: "ambiguous",
-				35: "bad --cause",
+				35: "bad cause",
 				36: "unbudgeted resume",
 				38: "bad --class",
 				40: "ledger lock held",
@@ -522,6 +543,7 @@ const report = leafCommand(
 			Flag.withDescription("the comment URL the terminal names, recorded on the event line"),
 		),
 		cause: causeFlag,
+		axisIssue: axisIssueFlag,
 		classes: classFlag,
 		integrateExit: Flag.integer("integrate-exit").pipe(
 			Flag.optional,
@@ -550,6 +572,7 @@ const report = leafCommand(
 		pr,
 		comment,
 		cause,
+		axisIssue,
 		classes,
 		integrateExit,
 		assemblyHead,
@@ -571,6 +594,7 @@ const report = leafCommand(
 						pr: Option.getOrNull(pr),
 						comment: Option.getOrNull(comment),
 						cause: Option.getOrNull(cause),
+						axisIssue: Option.getOrNull(axisIssue),
 						integrateExit: Option.getOrNull(integrateExit),
 						assemblyHead: Option.getOrNull(assemblyHead),
 						parkCause,
@@ -603,7 +627,7 @@ const report = leafCommand(
 				24: "FAIL or link stands",
 				25: "ambiguous",
 				32: "unknown token",
-				35: "bad --cause",
+				35: "bad cause",
 				38: "bad --class",
 				40: "lock held",
 				52: "uncaused BLOCKED",

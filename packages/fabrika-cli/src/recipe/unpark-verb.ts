@@ -206,7 +206,7 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 
 		const clearance: Clearance =
 			routed._tag === "Recipe"
-				? yield* clear(options, task, routed.recipe)
+				? yield* clear(options, task, routed.recipe, read.axisIssue)
 				: {
 						_tag: "Cleared",
 						mechanism: `driver-rationale:${routed.cause}`,
@@ -222,6 +222,7 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 				event,
 				task,
 				cause: null,
+				axisIssue: null,
 				parkCause: options.parkCause,
 				classes: [],
 				waitGrant: repair ? null : clearance.waitGrant,
@@ -346,8 +347,11 @@ const clear = (
 	options: UnparkOptions,
 	task: string,
 	recipe: ParkRecipe,
+	axisIssue: number | null,
 ): Effect.Effect<Clearance, never, Deps> => {
 	switch (recipe.clearance) {
+		case "axis-closed":
+			return clearAxisClosed(options, recipe, axisIssue);
 		case "cp-approval":
 			return clearCpApproval(options, task, recipe);
 		case "branch-free":
@@ -1078,6 +1082,55 @@ const clearTreeReleased = (
 					: `tree-released:${unclaimed}, ${candidates.join(",")} free (retired ${freed.retired} working tree(s))`,
 			waitGrant: null,
 		};
+	});
+
+/**
+ * Read whether the render-axis park's cause is gone: the issue its park line named as tracking the
+ * missing render axis reads closed.
+ *
+ * Closed is the whole test, whatever its state reason: a reviewer sent back into `review:ui` over an
+ * axis nobody built hits the same wall and parks on a fresh issue, while one left parked over a
+ * closed issue would wait on nothing. Open holds; an unread issue is UNKNOWN, never a clear.
+ */
+const clearAxisClosed = (
+	options: UnparkOptions,
+	recipe: ParkRecipe,
+	axisIssue: number | null,
+): Effect.Effect<Clearance, never, Deps> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+		if (axisIssue === null) {
+			return no(
+				refuse(
+					TARGET_ABSENT,
+					`${VERB}: "${recipe.park}" parked on "${recipe.cause}" names no axis issue, so there is no issue to read for ${recipe.waitingOn}; nothing was written.`,
+				),
+			);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return no(resolved.outcome);
+
+		const found = yield* getIssue(resolved.repo, axisIssue);
+		if (found._tag === "Unknown") {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read axis issue #${axisIssue}: ${found.reason} — whether the render axis was built is UNKNOWN, never cleared.`,
+				),
+			);
+		}
+		if (found._tag === "Absent") {
+			return no(refuse(TARGET_ABSENT, `${VERB}: axis issue #${axisIssue} is proven absent.`));
+		}
+		if (found.value.state !== "closed") {
+			return no(
+				refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — axis issue #${axisIssue} reads ${found.value.state}; nothing was written.`,
+				),
+			);
+		}
+		return {_tag: "Cleared", mechanism: `axis-closed:#${axisIssue}`, waitGrant: null};
 	});
 
 /**

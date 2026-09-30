@@ -7,7 +7,13 @@ describe("leafOf", () => {
 	it("reads the only task of a single-task active phase with no --task", () => {
 		const read = leafOf(status({pipeline: {issue: "human:cp-approval"}}), null);
 
-		expect(read).toEqual({_tag: "Leaf", task: "issue", leaf: "human:cp-approval", cause: null});
+		expect(read).toEqual({
+			_tag: "Leaf",
+			task: "issue",
+			leaf: "human:cp-approval",
+			cause: null,
+			axisIssue: null,
+		});
 	});
 
 	it("reads the named task past the future phases the fold marks waiting", () => {
@@ -16,7 +22,13 @@ describe("leafOf", () => {
 			"issue_2",
 		);
 
-		expect(read).toEqual({_tag: "Leaf", task: "issue_2", leaf: "build", cause: null});
+		expect(read).toEqual({
+			_tag: "Leaf",
+			task: "issue_2",
+			leaf: "build",
+			cause: null,
+			axisIssue: null,
+		});
 	});
 
 	it("reads the park cause the fold hung on the task's context", () => {
@@ -30,6 +42,20 @@ describe("leafOf", () => {
 		);
 
 		expect(read).toMatchObject({leaf: "blocked", cause: "worktree-holds-branch"});
+	});
+
+	it("reads the axis issue a render-axis park waits on, and nothing that is not a number", () => {
+		const at = (axisIssue: unknown) =>
+			leafOf(
+				JSON.stringify({
+					stateValue: {pipeline: {issue: "blocked"}},
+					context: {issue: {cause: "render-axis-missing", axisIssue}},
+				}),
+				null,
+			);
+
+		expect(at(9615)).toMatchObject({cause: "render-axis-missing", axisIssue: 9615});
+		expect(at("9615")).toMatchObject({axisIssue: null});
 	});
 
 	it("is causeless on a context with no cause, a cause that is not a string, or no context", () => {
