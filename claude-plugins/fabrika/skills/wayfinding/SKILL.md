@@ -172,9 +172,11 @@ eligibility whoever wrote it — `build claim`, `build pick` and `build eligible
 That gating is intended, not a side effect: the native dependency graph is the one carrier of
 blockedness, and a map edge is a real edge on it like any other. But `map ticket` only joins
 frontier tickets of one map, so the ticket it holds back is always another frontier ticket; the map
-issue and any issue outside the map are refused as targets. To hold a destination issue until a
-ticket closes, write that edge with `fabrika triage apply <destination> --blocked-by <ticket>` (or
-`fabrika ledger edges` for an epic child).
+issue and any issue outside the map are refused as targets. An edge that holds a destination issue
+until a ticket closes is not this skill's write. It is triage's: its `--blocked-by` flag rides a
+full `triage apply` run on the destination, which also stamps that issue's type, priority,
+audience and home. For an epic child it is the epic's: `fabrika ledger edges` writes the edges the
+epic's `## Dependencies` block names, so the ticket is named there first.
 
 **Done when** every open question you named is a ticket, `map read` shows the frontier you
 intended, and the frontier's `STATUS-BETWEEN-WRITES` update is posted.

@@ -209,8 +209,10 @@ one reader, and `build claim`, `build pick` and `build eligible` all gate on it.
 out by who wrote it: the native dependency graph is the one carrier of blockedness, and a map edge
 is a real edge on it like any other. So a map edge holds back the frontier ticket at its gated end.
 When a destination issue should wait on a frontier ticket, that edge is written outside this group:
-`fabrika triage apply <destination> --blocked-by <ticket>`, `fabrika ledger edges` when the
-destination is an epic child, or a person calling the dependency endpoint above.
+by triage, whose `--blocked-by <ticket>` flag rides a full `triage apply` run on the destination
+beside its required `--type`, `--priority`, `--ready-for` and `--home`/`--lane` flags; by
+`fabrika ledger edges` when the destination is an epic child, once the epic's `## Dependencies`
+block names the ticket; or by a person calling the dependency endpoint above.
 
 <!-- anchor: EDGE-BODY-TAKES-AN-INTERNAL-ID --> **Both POST bodies take the target's internal `id`,
 not its issue number**, and the sub-issue key is the singular `sub_issue_id`. Passing a number
