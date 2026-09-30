@@ -85,6 +85,16 @@ fabrika ship cp-approval $pr_number --sha 03135b91
 before it is solicited, a base-drift notice from the verb routes rebase → re-gate → re-bank first,
 so the approval is never spent on a head that must move.
 
+**`base-conflicted` → disarm and report `BASE-CONFLICTED`, never `AWAITING-CP-APPROVAL`.** The verb
+answers it instead of `stop` when no approval binds the head and GitHub definitely reads the head
+`dirty` against its base. Nobody should approve bytes the rebase will replace, so the lane goes to a
+builder, not a person. Record it exactly as step 6 records `ship enqueue`'s `21`, with the same
+`ROUTED-REPAIR` fallback on a `12`:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token BASE-CONFLICTED --pr <pr-url>
+```
+
 **On a `stop`, the terminal is `AWAITING-CP-APPROVAL` and a base-drift notice never changes that.**
 The notice says what has to happen before the approval is solicited; it is not a second outcome, and
 the verb's own emitted outcome stays `stop` on the `behind > 0` branch. So a base-drift diagnostic on
@@ -96,7 +106,9 @@ cause when you record it, so the park is one a sweep can read:
 node <fabrika> lane report <lane> --root <root> --task <task> --token AWAITING-CP-APPROVAL --cause head-behind-base --pr <pr-url>
 ```
 
-Pass it when the head is still behind at the moment you record. A `stop` with no drift needs no
+Pass it only on a `stop` whose head is still behind at the moment you record. A `stop` means the
+head merges clean, so `head-behind-base` never names a conflicting head; that one answered
+`base-conflicted` above. A `stop` with no drift needs no
 `--cause`: the token itself records `awaiting-cp-approval`, which is the park `recipe unpark` clears
 by re-reading the approval. <!-- anchor: NO-REBASE-AFTER-APPROVAL -->
 Once a control-plane approval exists, **never rebase or force-push the head**: a moved head means
@@ -351,7 +363,8 @@ budget** — report it as `QUEUE-EJECTED`, which records the machine's own lap a
 `queue-ejected` cause off the routed table. `EJECTED` is the pre-lap token, and it spends a retry;
 where the lap axis is off, the lane's machine holds no lap cell and `QUEUE-EJECTED` is refused on
 exit `12` with the log untouched, which is the one case that token is right) ·
-**BASE-CONFLICTED — routed to repair** (a `dirty` base at `ship enqueue`'s pre-arm read is
+**BASE-CONFLICTED — routed to repair** (a `dirty` base at `ship enqueue`'s pre-arm read, or
+`ship cp-approval`'s `base-conflicted` answer, is
 **machinery** on the same test an ejection is: main moved under the branch and nothing about this
 artifact was judged, so it **spends no repair budget** — report it as `BASE-CONFLICTED`, which
 records the machine's own lap, carries the `base-conflicted` cause, and folds the lane to `build`
