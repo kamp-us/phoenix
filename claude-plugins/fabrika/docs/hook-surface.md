@@ -15,7 +15,7 @@ Both rules are checked as **data**, not by eye: [`../../../packages/fabrika-cli/
 
 ### The declared hooks, and how they are proven
 
-The plugin declares the envelope check, the CLI minimum check, the Bash worktree guard and the [Claude usage collector](claude-usage.md). An adopting repo may declare a worktree provider on its own, in
+The plugin declares the envelope check, the CLI minimum check, the two Bash guards (worktree escape and stash) and the [Claude usage collector](claude-usage.md). An adopting repo may declare a worktree provider on its own, in
 its `.claude/settings.json` — `fabrika hook worktree-create` on `WorktreeCreate` — for the reason
 [below](#worktreecreate--a-provider-hook-left-undeclared): that event is safe where the toolchain is
 guaranteed and unsafe where it is not, so it lives where the guarantee holds and never here. It may
@@ -30,7 +30,11 @@ two rules; what differs is which events each may carry.
 
 `fabrika hook cli-floor` on `SessionStart` warns when the running CLI is older than the minimum the plugin declares in [`../cli-floor.json`](../cli-floor.json). The skills ship with every commit and the CLI ships by release, so an adopter's pinned CLI can lack a verb or flag a skill calls. The warning goes out as `systemMessage` and names both versions and the upgrade command; a CLI at or above the minimum shows nothing. release-please writes the minimum in each fabrika-cli Release PR, and [`cli-floor.repo.test.ts`](../../../packages/fabrika-cli/src/hook/cli-floor.repo.test.ts) reds when it drifts from the package version. It does not dispatch anything, so it is not a version marker in the sense above. A CLI released before this verb existed refuses it as an unknown subcommand, which the session shows and then starts anyway.
 
-`fabrika hook pre-bash` on `PreToolUse`/`Bash` is the only fabrika hook that **decides** anything: it denies a Bash command whose leading `cd`/`pushd` resolves outside the linked worktree the command runs in, whatever follows that jump, and read through the wrappers that jump can be written inside — a subshell, a command substitution, a brace group, `VAR=value` prefixes — since each of those is the same act one keystroke away. It exists because the harness's own escape refusals read the *command text*, so a program that reaches git in a child process passes them and moves the shared checkout's HEAD — observed twice in the field. It arms only inside a linked worktree, since which tree an agent works in is the operator's call and only *leaving* an isolated one is judged.
+Two fabrika hooks **decide** something, both on `PreToolUse`/`Bash`, and each denies one command shape.
+
+`fabrika hook pre-bash` denies a Bash command whose leading `cd`/`pushd` resolves outside the linked worktree the command runs in, whatever follows that jump, and read through the wrappers that jump can be written inside — a subshell, a command substitution, a brace group, `VAR=value` prefixes — since each of those is the same act one keystroke away. It exists because the harness's own escape refusals read the *command text*, so a program that reaches git in a child process passes them and moves the shared checkout's HEAD — observed twice in the field. It arms only inside a linked worktree, since which tree an agent works in is the operator's call and only *leaving* an isolated one is judged.
+
+`fabrika hook stash-guard` denies a Bash command that runs `git stash`, in any subcommand form and however it is addressed, when `git rev-parse --git-dir` and `--git-common-dir` differ in the command's `cwd` — that is, in a linked worktree. `refs/stash` lives in the common git dir, so every worktree of a clone shares one stash stack, and a pop can restore a sibling lane's files and drop its entry with no warning. `git -C "$WT" stash` is scoped and still shares the stack, which is why the refusal keys on the subcommand. It exists because this happened twice in the field before the guard did, once from a review shell and once between two build lanes, and a prose rule reaches only the shells whose skill carries it. Where the two dirs agree, the stash is let through.
 
 The former `fabrika hook spawn` on `PreToolUse` was a model-allowlist guard. It is **retired** — verb and declaration both deleted — because which model a subagent runs on is a per-run human choice, and a hook that second-guesses it only blocks the choice the human already made.
 
@@ -190,7 +194,7 @@ Both legs were also confirmed live on build 2.1.227: a probe hook on matcher `Ta
 
 The consequence is a **polarity**, not a style preference. A bootstrap or dispatch failure is a state in which no verb ran and no evidence exists, which must fail **open**; seating any such state on `2` makes it deny instead. Three sites did — `bin.ts`'s `ERR_MODULE_NOT_FOUND`, and `delegate/entry.ts`'s foreign-checkout refusal and walk-fault — plus a fourth found while fixing them, `delegate/resolve.ts`'s spawn fault. All four now exit `126` ([`../../../packages/fabrika-cli/src/verb.ts`](../../../packages/fabrika-cli/src/verb.ts), `NO_IMPLEMENTATION`), and the polarity is pinned by [`../../../packages/fabrika-cli/src/hook/pretooluse-polarity.cli.test.ts`](../../../packages/fabrika-cli/src/hook/pretooluse-polarity.cli.test.ts), which runs the argv out of the committed declaration against a real cross-checkout refusal and asserts the exit code is not the blocking one.
 
-**A deny never used an exit code anyway.** The retired `fabrika hook spawn` denied by returning exit **0** carrying `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",…}}`, and `fabrika hook pre-bash` denies the same way. That JSON mechanism is independent of the exit status, so a `PreToolUse` hook that means to refuse says so without touching `2`. The exposure this section describes is **live** rather than latent: `pre-bash` is consulted on every Bash call, so a bootstrap failure seated on `2` would block the whole session's shell — which is what the polarity is pinned against.
+**A deny never used an exit code anyway.** The retired `fabrika hook spawn` denied by returning exit **0** carrying `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",…}}`, and `fabrika hook pre-bash` and `fabrika hook stash-guard` deny the same way. That JSON mechanism is independent of the exit status, so a `PreToolUse` hook that means to refuse says so without touching `2`. The exposure this section describes is **live** rather than latent: `pre-bash` is consulted on every Bash call, so a bootstrap failure seated on `2` would block the whole session's shell — which is what the polarity is pinned against.
 
 **The allow side is the half that is easy to get wrong.** `permissionDecision: "allow"` is not "I have no objection": it bypasses the permission rules the operator configured. So a hook whose answer is "nothing to refuse here" emits no decision field at all, and `pre-bash`'s allow carries a fabrika-namespaced token the harness ignores — a positive answer for the convention's rule 2, and no decision for the harness.
 
@@ -211,14 +215,14 @@ This section previously grouped `2` and `127` together as "the verb never ran, s
 
 Failing *closed* still has no admissible form, and for the reason the ruling gives: it would mean minting the interception rule 5 forbids. Do not spread the behaviour to a per-verb site; this section is the one place a later ruling flips.
 
-`hook pre-bash` makes that cost real, and it is named rather than left implicit: a machine where `fabrika` does not resolve runs every Bash call with the escape refusal silently absent — the exact silence the defence exists to remove.
+`hook pre-bash` and `hook stash-guard` make that cost real, and it is named rather than left implicit: a machine where `fabrika` does not resolve runs every Bash call with the escape refusal and the stash refusal silently absent — the exact silence each defence exists to remove.
 
 **The notice is owed and only half-implementable today, so it is recorded rather than assumed.** On exit `126` the process did start and fabrika speaks for itself (`resolve.ts`'s foreign-checkout refusal). On exit `127` fabrika cannot speak, because `fabrika` is what failed to resolve — so that half has **no owner**, and its structural cure is installing the package: available to any machine that takes it, absent on any that does not. An adversarial review precedes any implementation of this horn in either direction.
 
 ## The hook verbs' derivations
 
 Each `fabrika hook <verb> --help` owns calling the verb: its answer bytes and one line per exit. The
-derivation facts behind four of them live here; `hook claude-spend`'s live in the
+derivation facts behind five of them live here; `hook claude-spend`'s live in the
 [Claude usage collector](claude-usage.md).
 
 ### `hook cli-floor`
@@ -242,6 +246,20 @@ it runs. Where the verb arms, and why, is stated [above](#the-declared-hooks-and
 the primary checkout and a cwd under no repository are therefore allowed untouched. Exit `19` is the one arm
 where the cwd's working tree could not be established: the jump was NOT judged, and the command
 proceeds. Why a deny is JSON at exit `0` and an allow carries no decision field is
+[the harness exit-code contract](#the-harness-exit-code-contract).
+
+### `hook stash-guard`
+
+The verb reads every simple command on the line, including those inside `$( )`, backticks, a
+subshell, a brace group, `sh -c '…'` and `eval`, and reads through `VAR=value` prefixes and the
+wrappers `env`, `sudo`, `nice`, `command`, `exec`, `nohup` and `time`. A here-document body is data
+and is not read. A `git` reached through an alias, a function, a variable or `xargs` is out of key and
+allowed. Only a command that runs `git stash` costs a git call: the verb then runs
+`git rev-parse --path-format=absolute --git-dir --git-common-dir` in the envelope's `cwd`, with a 5s
+timeout. Absolute paths keep a cwd reached through a symlink from reading as two different dirs.
+Exit `19` covers every state where those two dirs could not be read — a relative `cwd`, a `cwd` git
+cannot start in, a failed or timed-out probe. The stash was NOT judged, and the command proceeds.
+Why a deny is JSON at exit `0` and an allow carries no decision field is
 [the harness exit-code contract](#the-harness-exit-code-contract).
 
 ### `hook worktree-create`

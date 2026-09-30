@@ -130,7 +130,8 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   and scoping is a real remedy. For `stash` the damage is that the stack itself is shared:
   `git -C "$WT" stash push` is textbook worktree-scoped and still writes the shared stack, so the
   guard waved through the exact command that caused #6701. Do not read this paragraph as licensing a
-  scoped `stash`; that rule is *never*, in any form. The prose-only rule alone did not hold (the
+  scoped `stash`; that rule is *never*, in any form, and `fabrika hook stash-guard` now refuses the
+  scoped form too (the stash bullet below). The prose-only rule alone did not hold (the
   detach recurred after it shipped), which is why the mechanical guard route was taken (#1571).
 
   **Keeping the primary current, by hand.** `pipeline-cli main-sync` retired with that package and
@@ -170,6 +171,16 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   [#6629](https://github.com/kamp-us/phoenix/issues/6629); the incident is reported in full on
   [#6701](https://github.com/kamp-us/phoenix/issues/6701). Epic runs fan several lanes on purpose, so
   the collision window is routine, not rare.
+
+  **The rule is enforced mechanically, for every shell.** `fabrika hook stash-guard`, declared on
+  `PreToolUse`/`Bash` in the plugin's [`hooks.json`](../claude-plugins/fabrika/hooks.json), denies
+  any `git stash` whose `cwd` reports a `--git-dir` different from its `--git-common-dir` — a linked
+  worktree — whichever skill the shell runs and however the command is addressed. It lets the
+  command through in a checkout where the two agree, and fails open, saying so on stderr, when it
+  cannot read them. What it reads and what it knowingly misses (an alias, a variable holding `git`,
+  `xargs`) is in [`hook-surface.md`](../claude-plugins/fabrika/docs/hook-surface.md#hook-stash-guard);
+  the decision is ADR [0439](../.decisions/0439-git-stash-in-a-linked-worktree-is-refused-by-fabrikas-own-hook.md).
+  A machine where `fabrika` does not resolve runs without it, so the rule above still binds.
 
   **What to do instead.** To get a clean tree for a baseline run, commit to your lane branch and
   `git -C "$WT" reset` back to it afterwards, or read the baseline from a second checkout. Both keep
