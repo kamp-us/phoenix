@@ -195,8 +195,11 @@ export const judge = (
 const scopeLabel = (scope: Scope): string =>
 	scope._tag === "backlog" ? "the open status:triaged backlog" : `issue #${scope.number}`;
 
-/** The un-homed remediation, stated once — the three outcomes the triage rubric allows. */
-const UNHOMED_REMEDY =
+/**
+ * The un-homed remediation, stated once — the three outcomes the triage rubric allows. Exported so
+ * `triage sweep-homes` refuses an un-homed issue with the same remedy this guard prints.
+ */
+export const UNHOMED_REMEDY =
 	"Each issue above left triage un-homed. Give it one of the three home-or-exempt-or-kill outcomes\n" +
 	"(claude-plugins/fabrika/skills/triage/SKILL.md):\n" +
 	"  1. home it in an EXISTING open arc/campaign milestone from ROADMAP.md (triage never creates one);\n" +

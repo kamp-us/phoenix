@@ -24,7 +24,7 @@ import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {readBoard} from "../status/label-remedy.ts";
-import {refuse} from "../verb.ts";
+import {FAILED, refuse} from "../verb.ts";
 import {runApply} from "./apply-verb.ts";
 import {runAuditMerge} from "./audit-merge-verb.ts";
 import {runAuditSet} from "./audit-set-verb.ts";
@@ -43,6 +43,7 @@ import {ROADMAP_FILE} from "./roadmap.ts";
 import {runScratch} from "./scratch-verb.ts";
 import {runSplit} from "./split-verb.ts";
 import {readStandingLanes} from "./standing-lanes.ts";
+import {runSweepHomes} from "./sweep-homes-verb.ts";
 
 /**
  * The two flags every verb in this group shares, declared once here.
@@ -758,6 +759,68 @@ const auditMerge = leafCommand(
 	]),
 );
 
+/**
+ * `--dry-run` and `--apply` are two flags for one mode, and passing both is refused rather than
+ * resolved by precedence: a caller who typed both has not said which they meant.
+ */
+const sweepHomes = leafCommand(
+	"sweep-homes",
+	{
+		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"print the per-issue plan and write nothing; a run with neither flag does the same",
+			),
+		),
+		apply: Flag.boolean("apply").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"clear each double-marked issue's milestone and post its trail comment, citation read from stdin",
+			),
+		),
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({dryRun, apply, repo, json}) {
+		if (dryRun && apply) {
+			return yield* emit(
+				refuse(FAILED, "triage sweep-homes: pass --dry-run or --apply, not both."),
+			);
+		}
+		yield* emit(
+			yield* runSweepHomes({
+				mode: apply ? "apply" : "dry-run",
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+				stdin: Effect.sync(readStdin),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Clear the milestone on double-marked triaged issues, with a trail.",
+	),
+	Command.withDescription(
+		[
+			"Clears double-marked milestones, lanes kept; prints `planned\\t<n>` or `swept\\t…`, then rows.",
+			"  3: --apply with no citation on stdin",
+			"  5: the citation carries a machine-local path",
+			"  6: the citation is a bare @ reference",
+			"  7: the triaged backlog is empty",
+			"  8: a write failed (UNKNOWN); re-run",
+			"  9: a read-back does not match",
+			"  11: a read failed",
+			"  27: un-homed issues remain, untouched",
+			'  Derivation: the triage skill\'s contract.md, "triage sweep-homes"',
+		].join("\n"),
+	),
+	Command.withExamples([
+		{command: "fabrika triage sweep-homes"},
+		{command: "fabrika triage sweep-homes --apply < citation.md"},
+	]),
+);
+
 export const triageCommand = Command.make("triage").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so five in-flight slices append at five distinct lines rather than all
@@ -776,6 +839,7 @@ export const triageCommand = Command.make("triage").pipe(
 		scratch,
 		auditSet,
 		auditMerge,
+		sweepHomes,
 	]),
 	Command.withShortDescription("Take one intake-queue issue from arrival to triaged."),
 	Command.withDescription(
