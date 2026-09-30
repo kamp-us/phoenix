@@ -8,9 +8,23 @@
  * `src/bin.ts` is the one caller that means the real home dir; everything else names one of these.
  */
 
-import {mkdtempSync, realpathSync, rmSync} from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {dirname, join} from "node:path";
+import {
+	decodeOpenProjectsText,
+	OpenProjects,
+	openProjectsFile,
+	openProjectsText,
+} from "./projects/open-projects.ts";
 
 const made: Array<string> = [];
 
@@ -23,6 +37,23 @@ export const scratchHome = (label: string): string => {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), `tuval-home-${label}-`)));
 	made.push(dir);
 	return dir;
+};
+
+/**
+ * Record `folders` as trusted in `home`'s saved list, as if the person had answered yes for each,
+ * keeping whatever the list already held. A test or proof that boots a fixture project holding a
+ * config is not about the trust question, so it trusts the folder up front rather than wait on a
+ * page that never attaches (#9977).
+ */
+export const trustFolders = (home: string, folders: ReadonlyArray<string>): void => {
+	const file = openProjectsFile(home);
+	const saved = existsSync(file) ? decodeOpenProjectsText(readFileSync(file, "utf8")) : null;
+	const trusted = folders.reduce(
+		(projects, folder) => projects.trust(folder),
+		OpenProjects.restoring(saved),
+	);
+	mkdirSync(dirname(file), {recursive: true});
+	writeFileSync(file, openProjectsText(trusted));
 };
 
 process.on("exit", () => {
