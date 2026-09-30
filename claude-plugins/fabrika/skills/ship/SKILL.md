@@ -132,6 +132,16 @@ other namespace can read that way. The polarity rules, the
 content-digest binding and the whole `blocked` taxonomy are the verb's section
 (`fabrika wire doc-section --heading "ship gate" < <skill-base>/contract.md`).
 
+**Every route to a gate is one terminal, `ROUTED-REVIEW`, and it needs no `--cause`.** Absent,
+stale and unopened all say the same thing: a namespace the gate requires has no binding verdict at
+this head. So the token records `verdict-owed` by itself, and the lane leaves `ship` as a named park
+the driver can act on. A head that moved after review is the usual way to get here. A `FAIL` is
+never this route: it goes to repair as `ROUTED-REPAIR`.
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token ROUTED-REVIEW --pr <pr-url>
+```
+
 **Your reading of `blocked` is not the only thing enforcing the governance floor.**
 `.github/workflows/governance-floor.yml` runs `fabrika ship floor --publish-check` on every PR and
 publishes the answer as the `governance floor at head` check-run: pending while no verdict has been
@@ -296,7 +306,11 @@ and why an ejection costs the ticket no repair round.
 `unresolved` → report it in those words with the horizon; a PR still queued at the horizon, or
 armed and unqueued but younger than reconcile's floor, is neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. Your horizon
 is fixed: you never poll past it, and a lane that needs longer gets it from the driver's re-reads at
-`ship:queued`, not from a wider watch in here. `parked` →
+`ship:queued`, not from a wider watch in here. A driver settles every lane left there with one
+`lane recover` sweep rather than an operator spawn per lane (operate's `ship:queued` section). The
+sweep runs no disarm: a `parked` answer comes back as a `disarm-owed` row, and the driver owes
+`ship disarm <pr> --site post-enqueue` on it now.
+`parked` →
 the arm waited past reconcile's floor and never entered the queue, so the enqueue did not take
 effect (a younger unqueued arm reads `unresolved`): run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a
 read and disarms nothing), note, and stop. The floor outlasts your default horizon, so a readable

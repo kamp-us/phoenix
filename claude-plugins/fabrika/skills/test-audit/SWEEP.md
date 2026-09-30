@@ -5,7 +5,7 @@ MIT License, Copyright (c) 2026 OpenClaw Foundation. See LICENSE-OPENCLAW.
 Changes: the mode is renamed "subsystem sweep"; OpenClaw's examples, runner
 APIs and review process are replaced with repository-neutral text; the sweep
 is bounded to one ticket and one pull request, with outside work routed to
-fabrika's report skill.
+fabrika's report skill; Baseline first reads SKILL.md's in-flight set.
 -->
 
 # Subsystem sweep
@@ -21,12 +21,17 @@ fix, leaves through [`report`](../report/SKILL.md) as a follow-up issue.
 
 ## 1. Baseline
 
+Read the in-flight set first, as [Discovery](SKILL.md#discovery) opens, and
+hand it to every read-only pass in steps 3 and 4; a candidate it touches is in
+flight under that section's rule.
+
 Record the subsystem's test and support line counts and every test file's
 pass/fail state at a pinned default-branch commit. Keep baseline failures in
 their own list: a failing test is as likely to be a real product bug as a stale
 test.
 
-Done when every in-scope test file has a recorded baseline result.
+Done when the in-flight set is recorded and every in-scope test file has a
+recorded baseline result.
 
 ## 2. Slices and inventory
 

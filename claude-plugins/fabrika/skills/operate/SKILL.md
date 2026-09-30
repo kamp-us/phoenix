@@ -914,6 +914,25 @@ alone.
 | `ejected` | `--token EJECTED` — the PR left the queue un-merged, which is repair work: the machine spends a retry back into `build` |
 | `parked` | disarm first, then record — the arm has sat unqueued past `ship reconcile`'s floor, so the enqueue did not take effect, and a live arm left standing enqueues ungated later. Run `node <fabrika> ship disarm <pr> --site post-enqueue` before `lane report`. On `kept live-queued` the PR entered the queue between the two reads: `--token UNRESOLVED`. On any other answer, `--token UNKNOWN`. A disarm exit `8` or `11` also records `UNKNOWN`, and your terminal line carries `merge intent: NOT cleared` |
 
+**To settle every queued lane at once, run the sweep instead of an operator per lane.** A PR that
+merges after the shipper's watch leaves its lane in `ship:queued` with nothing left to do but record
+the landing, and spawning a whole operator for that one read is the cost this sweep removes:
+
+```bash
+node <fabrika> lane recover --check   # read every queued PR, append nothing
+node <fabrika> lane recover           # record what the queue already answered
+```
+
+For each task standing in `ship:queued` it takes the PR its own ledger names, makes this same
+`ship reconcile <pr> --polls 1` read, and relays the answer through `lane report`'s own path. A
+`landed` row records `LANDED --pr <url>`, and an `ejected` one records `EJECTED`, exactly as the
+table above does. It records neither `unresolved` nor `parked`, so the sweep never spends a wait
+and never meets the floor below. An `unresolved` answer lands as a `waiting` row, and a lane on one
+is still yours to re-read on a later pass. **A `parked` answer is not a wait.** It lands as a
+`disarm-owed` row whose `owes` field is `ship disarm <pr> --site post-enqueue`: run that disarm now,
+then record off its answer exactly as the table's `parked` row says. The sweep runs no disarm
+itself. A failed read is an `unreadable` row that appended nothing. The sweep's other arms are described under `lane recover` in §4.
+
 **`lane report` may answer "too soon", and that is the wait working.** A queue re-fold is floored on
 elapsed time as well as counted: exit `55` says the shipper's own ~480s horizon has not run since
 this task's last recorded line, so the record is refused with the log byte-identical and the wait
@@ -1620,9 +1639,33 @@ what is never right is reaching for a token because it is nearby rather than bec
 happened.
 
 A shipper's `AWAITING-CP-APPROVAL` lands `awaiting-cp-approval` with nothing typed, because that
-token has one reason. When you park an owner-approval wait yourself, name it:
+token has one reason. Its `ROUTED-REVIEW` lands `verdict-owed` the same way (below). When you park
+an owner-approval wait yourself, name it:
 `lane transition <lane> BLOCKED --task <task> --cause awaiting-cp-approval`. A `ship` park with no
 cause matches no `human:cp-approval` row, so it never clears by reading an approval nobody asked for.
+
+**A `verdict-owed` park needs a verdict before it needs a clear.** A namespace the ship gate
+requires has no binding verdict at the PR's head, usually because the head moved after review. The
+fold reads `human:cp-approval`, and no cell out of it reaches `review`: `UNBLOCKED` returns to
+history, which is `ship`, and `lane brief` briefs a reviewer only from the `review` state. So a
+clear taken first hands a shipper the same missing verdict, and it parks the lane again. Run the
+owing gate first, then clear, in this order:
+
+1. Read the owed namespace off the parking shipper's report, which names each `blocked` line.
+2. Spawn the gate that owns it, `isolation: worktree`, with no lane. The whole prompt is the skill's
+   invocation and the PR number: `/fabrika:review <pr>` for a `review-*` namespace,
+   `/fabrika:review-ui <pr>` for `review-ui`, `/fabrika:governance <pr>` for `governance`. No brief
+   exists for a park, so this is the one spawn without `lane brief` output. The invocation is the
+   whole prompt, so you still compose nothing. With no lane named, the gate posts its verdict on
+   the PR and records nothing on the ledger.
+3. When the spawn returns, run `node <fabrika> build verdicts --pr <pr>`. Go on only when each owed
+   gate has a row with `"current": true`. `PASS` or `FAIL` makes no difference here: the shipper
+   routes a `FAIL` to repair itself. No current row means the verdict is still owed, so do not
+   clear. The gate's own terminal names why; park on that.
+4. Clear it: `recipe unpark <lane-key> --task <task>`. `verdict-owed` routes to the driver and has
+   no recipe row, so where this repo lets a driver clear, it answers `23`. Re-run it with
+   `--rationale` naming the verdict the gate posted at the head. Any other answer is read as below.
+   The lane returns to `ship`, and the next shipper merges or routes the `FAIL`.
 
 **So try `recipe unpark` before you post a park comment**, whenever the fold reads `blocked` or
 `human:*` — a park comment is the founder-routed answer, and you do not know the route until this
@@ -2002,13 +2045,18 @@ A `recovered` row's `to` is the append's own answer rather than that prediction,
 the lane is in even when another writer landed while the sweep was reading. Read it as the lane's
 current fold; the `--check` row above is a prediction and stays one.
 
-**It records on a proven artifact and on nothing else.** The bar is `lane prove`'s own read and the
-append is `lane transition`'s whole path, so nothing here is a judgement of yours and nothing here
-is a new way onto a ledger. It asks about one event — a `PASS` out of either review cell — and every
-other answer is a row that changed nothing: `unproven` (which carries `not-required` and every
-refusal code alike, told apart by the row's own `proof` and `proofCode`), `refused`, `contended`,
-`current`, `terminal`, `unreadable`. With `--spawns` the row set gains `parked`, `parkable` and
-`working`, which are that arm's own and are described below.
+**It records on a verb's answer and on nothing else, through a verb's own path.** Nothing here is a
+judgement of yours and nothing here is a new way onto a ledger. It has two arms. The proven arm
+asks about one event, a `PASS` out of either review cell: the bar is `lane prove`'s own read and the
+append is `lane transition`'s whole path. The queue arm settles every lane waiting in
+`ship:queued`: it relays one `ship reconcile <pr> --polls 1` answer through `lane report`'s whole
+path, so `landed` records `LANDED` and `ejected` records `EJECTED`, under the rows `settled` and
+`settleable`. The `## ship:queued` section above says what it records there. Every other answer is
+a row that changed nothing: `unproven` (which carries `not-required` and every refusal code alike,
+told apart by the row's own `proof` and `proofCode`), `waiting` (a queue answer of `unresolved`),
+`disarm-owed` (a queue answer of `parked`, which still owes you `ship disarm <pr> --site
+post-enqueue` now, per `## ship:queued`), `refused`, `contended`, `current`, `terminal`, `unreadable`. With `--spawns` the row set
+gains `parked`, `parkable` and `working`, which are that arm's own and are described below.
 
 **Two events a live shell also satisfies are not in this sweep**, and that is what keeps it from
 folding a lane out from under one of your own spawns. A reviewer's `BLOCKED` claims the run reached

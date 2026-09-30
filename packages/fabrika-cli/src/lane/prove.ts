@@ -72,6 +72,9 @@ export const REVIEW_STATE = "review";
  */
 export const REVIEW_UI_STATE = "review:ui";
 
+/** The queue dwell a shipper's `QUEUED` or `UNRESOLVED` leaves a task waiting in. */
+export const SHIP_QUEUED_STATE = "ship:queued";
+
 /**
  * The two leaves a shipper runs in — `ship` and the queue dwell it re-enters.
  *
@@ -80,7 +83,7 @@ export const REVIEW_UI_STATE = "review:ui";
  * beside the proof rather than folded into it. A refused proof would strand the shipper with no
  * legal terminal over a merge that really did land.
  */
-export const SHIP_STATES: ReadonlyArray<string> = ["ship", "ship:queued"];
+export const SHIP_STATES: ReadonlyArray<string> = ["ship", SHIP_QUEUED_STATE];
 
 /**
  * Which of the two shapes a task sits in — the union that makes "a child with no epic" unwritable.

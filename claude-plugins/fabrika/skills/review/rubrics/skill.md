@@ -50,10 +50,10 @@ test. A restated sibling behavior (rather than an imported module or a cited sec
 waiting to happen; name it.
 
 **No step, rationale or exit-code note may point at something only this repo can resolve.** Run
-`fabrika guard portability-guard check` on any diff under `claude-plugins/fabrika/` or
-`packages/fabrika-cli/src/` and take a red as a finding: a skill installed elsewhere whose refusal
-rationale names a ticket the reader cannot open teaches nothing, and the fix is a self-contained
-sentence, not a shorter pointer. The guard's floor only shrinks, so a diff that lifts a ceiling to
+`fabrika guard portability-guard check --sha <head>` at the head you scoped, on any diff under
+`claude-plugins/fabrika/` or `packages/fabrika-cli/src/`, and take a red as a finding: a skill
+installed elsewhere whose refusal rationale names a ticket the reader cannot open teaches nothing,
+and the fix is a self-contained sentence, not a shorter pointer. The guard's floor only shrinks, so a diff that lifts a ceiling to
 admit a new reference is the finding rather than the remedy. Skill text gets no exception: the
 `@ruling` citation tag the guard admits is scoped to `packages/fabrika-cli/`, because a skill's
 reader is the adopter's agent and a link into this repo's history teaches that agent nothing.

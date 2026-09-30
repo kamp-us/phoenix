@@ -161,12 +161,33 @@ the verb. There are two, and only one of them is a defect:
 
 ## 3 — Judge each class by its rubric
 
+<!-- anchor: A-FENCE-READS-THE-HEAD-NOT-YOUR-TREE --> **On an ordinary pull request, no fence reads
+your working tree: it reads the head you scoped.** Your worktree was cut from the driver's checkout,
+and this skill never checks the PR's head out, so the files the PR adds are not in your tree at all.
+A fence that walks the tree you stand on answers a clean, plausible number over files your verdict
+does not name, and the verdict records the head, never the tree the fence ran in, so nothing
+afterwards tells it from a real one. So pass step 1's head as `--sha` to every fence that reads
+files:
+
+```bash
+fabrika guard portability-guard check --sha 03135b91
+```
+
+The guard reads that commit's files, allow-list and config out of the object database and names
+the commit on its answer; it never reads the tree. **Exit `11` is a stop, not a note**: the head is
+not in this clone, and nothing falls back to the tree in its place. Step 1's reads fetch the head, so
+you meet this only when that fetch did not land. Report it and end the class on `UNKNOWN`; grading
+in place is the one thing the flag exists to refuse. A fence with no `--sha` form does not run on a
+pull request at all: its evidence is CI's, read through `review ci` below. Reads that already take a
+commit are unchanged: `git show <rev>:<path>` and the `review` verbs read the object database, not
+the working tree.
+
 <!-- anchor: AN-EPIC-CHILD-SEATS-ITS-TREE-FIRST --> **On an epic child, seat your worktree at the
 range tip before you run anything that reads the working tree.** A child's build branch is local and
 unpushed by design — one epic run is one branch and one PR at the tail — so a reviewer worktree cut
 fresh from the driver's checkout stands on the assembly branch, or on whatever that checkout last
-held, and the range's tip commit is not in your tree at all. Every fence that reads files — a
-typecheck, a formatter, a test run, the guard below — then reads a tree your verdict never names, and
+held, and the range's tip commit is not in your tree at all. Every fence that reads the working
+tree — a typecheck, a formatter, a test run — then reads a tree your verdict never names, and
 the range verdict records base, tip and a content digest, never which tree the commands ran in, so a
 wrong verdict is indistinguishable afterwards from a right one. One reviewer stood on a third commit
 for its whole first pass, caught it itself, and retracted two posted verdicts; nothing forced that
@@ -185,7 +206,8 @@ in this clone — no lane branch of the child, no object for that tip, or no lan
 it — and the range was built in a tree this one cannot see, so there is nothing here to grade. Report
 it and end; grading in place is the one thing the verb exists to refuse. `8`, `9` and `11` are
 UNKNOWN in the same way: where the tree stands was not proven, so nothing below this line has run on
-a tree you can name.
+a tree you can name. Once seated, run the guard below with `--sha` set to the range tip, as a PR
+reviewer passes its head.
 
 The object-database reads further down are unaffected either way — `git show <rev>:<path>` reads a
 commit, not the working tree, so it is right before the seat and after it.
@@ -232,10 +254,11 @@ constraint; a class whose files match none is graded by its rubric alone.
 
 **A diff touching fabrika's own two trees owes the portability check, in the doc class and the skill
 class alike.** When any changed file sits under `claude-plugins/fabrika/` or
-`packages/fabrika-cli/src/`, run it and read the verdict into those classes:
+`packages/fabrika-cli/src/`, run it at the head, as the top of this step says, and read the verdict
+into those classes:
 
 ```bash
-fabrika guard portability-guard check
+fabrika guard portability-guard check --sha 03135b91
 ```
 
 A red is a FAIL finding, never a note. The text fabrika ships installs into repositories that are
