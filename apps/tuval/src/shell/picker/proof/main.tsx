@@ -32,13 +32,17 @@
  * `offerEntries` over labels `projectLabels` would give these folders — written out, because that
  * module reads Node's path separator and this is a browser page.
  *
- * The last eight panes are #9697's "Open project…", answered by a fixture kernel
+ * The eight panes after those are #9697's "Open project…", answered by a fixture kernel
  * (`./open-project-fixtures.ts`): the program list ending on the new row with the highlight on it,
  * the recent projects with two already open, a desk that has opened nothing yet, the folder browser,
  * the browser narrowed by its filter, the recent list narrowed to one project and the browser
  * narrowed to nothing (#9981), and the refusal a failed open leaves in the step. Each step is
  * reached the way the desk reaches it, through the window's view slot, so the pane reads its rows off
  * the fixture exactly as the page reads them off the kernel.
+ *
+ * The last pane is #9987's: two open projects that share a folder name, whose program and process
+ * ids carry the path key their state is stored under. The rows read each id under its project's
+ * label instead, and the global row beside them keeps its bare id.
  */
 
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
@@ -46,6 +50,7 @@ import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {empty, type ViewState, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {StrictMode, useState} from "react";
 import {createRoot} from "react-dom/client";
+import {ProjectLabels} from "../../../projects/labels.ts";
 import type {ShellMsg} from "../../core/index.ts";
 import {WindowView} from "../../ui/WindowView.tsx";
 import {
@@ -171,6 +176,43 @@ const twoOpen: PickerEntries = {
 	processes: [],
 };
 
+/**
+ * Two open projects whose folders share a name (#9987), keyed the way ADR 0402 keys their state
+ * directories. Their ids carry that path key; the picker shows each project's label in its place.
+ */
+const PHOENIX_KAMP_US = "-Users-ada-code-github.com-kamp_-us-phoenix";
+const PHOENIX_USIRIN = "-Users-ada-code-github.com-usirin-phoenix";
+const clashingProjects = ProjectLabels.of([
+	{key: PHOENIX_KAMP_US, label: "kamp-us/phoenix"},
+	{key: PHOENIX_USIRIN, label: "usirin/phoenix"},
+]);
+
+/**
+ * A running process as the page lists it (`../../../page/AttachedDesk.tsx`): named by its program
+ * id, read under the program's project label.
+ */
+const scopedProcess = (id: string, programId: string, parent?: string) =>
+	process(id, programId, clashingProjects.displayId(programId), parent);
+
+/** Program and process rows from both projects beside one global row, which keeps its bare id. */
+const scopedEntries: PickerEntries = {
+	programs: [
+		program(`${PHOENIX_KAMP_US}/counter`, "counter"),
+		program(`${PHOENIX_USIRIN}/counter`, "counter"),
+		program("module-counter", "Module counter"),
+	],
+	processes: [
+		scopedProcess(`${PHOENIX_KAMP_US}/log`, `${PHOENIX_KAMP_US}/log`),
+		scopedProcess(
+			`${PHOENIX_KAMP_US}/7f3a9c2e-1b4d-4e8a-9c61-2d5f0e8b7a14`,
+			`${PHOENIX_KAMP_US}/counter`,
+			`${PHOENIX_KAMP_US}/log`,
+		),
+		scopedProcess(`${PHOENIX_USIRIN}/counter`, `${PHOENIX_USIRIN}/counter`),
+		scopedProcess("p-module-counter", "module-counter"),
+	],
+};
+
 const withRecent = fixtureOpener(RECENT_PROJECTS);
 const withNoRecent = fixtureOpener([]);
 
@@ -184,6 +226,7 @@ function Pane({
 	processRemove = false,
 	offered = entries,
 	opener = null,
+	projects = ProjectLabels.none,
 }: {
 	readonly name: string;
 	readonly start: PickerViewState;
@@ -194,6 +237,8 @@ function Pane({
 	readonly offered?: PickerEntries;
 	/** The fixture kernel "Open project…" asks; absent, the pane offers no such row. */
 	readonly opener?: ProjectOpener | null;
+	/** The open projects' labels, as the projects frame hands them to the desk. */
+	readonly projects?: ProjectLabels;
 }) {
 	// The slot the desk would hold, at the desk's own type: `WindowView` reads it back through the
 	// real `asPickerView`, so the page proves the round trip rather than a narrowed object.
@@ -214,6 +259,7 @@ function Pane({
 				reducedMotion={false}
 				processRemove={processRemove}
 				opener={opener}
+				projects={projects}
 			/>
 		</div>
 	);
@@ -341,6 +387,14 @@ createRoot(host).render(
 				focused={false}
 				offered={twoOpen}
 				opener={withRecent}
+			/>
+			{/* #9987: the rows of two projects that share a folder name, each read by its label. */}
+			<Pane
+				name="picker-scoped-ids"
+				start={mountPicker()}
+				focused={false}
+				offered={scopedEntries}
+				projects={clashingProjects}
 			/>
 		</div>
 	</StrictMode>,

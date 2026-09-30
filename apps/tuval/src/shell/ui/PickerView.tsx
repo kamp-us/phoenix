@@ -30,6 +30,7 @@ import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {useForwardedKey} from "@kampus/tuval-ui/forwarded-key";
 import type {KeyboardEvent, ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {ProjectLabels} from "../../projects/labels.ts";
 import type {ShellMsg} from "../core/index.ts";
 import {
 	openProjectFrame,
@@ -88,6 +89,8 @@ export interface PickerViewProps {
 	 * project…"; absent — a page with no kernel to ask — it offers nothing it could not do.
 	 */
 	readonly opener?: ProjectOpener | null;
+	/** The open projects' labels, which the rows show scoped ids under (#9987). */
+	readonly projects?: ProjectLabels;
 }
 
 export function PickerView({
@@ -99,6 +102,7 @@ export function PickerView({
 	focused,
 	processRemove = false,
 	opener = null,
+	projects = ProjectLabels.none,
 }: PickerViewProps): ReactElement {
 	const features = useMemo<PickerKeyFeatures>(
 		() => ({processRemove, openProject: opener !== null}),
@@ -108,7 +112,7 @@ export function PickerView({
 	const step = opener === null ? null : view.step;
 	const frame: PickerFrame<unknown> =
 		step === null
-			? pickerFrame(windowId, entries, view, {reducedMotion, ...features})
+			? pickerFrame(windowId, entries, view, {reducedMotion, ...features, projects})
 			: openProjectFrame(windowId, step, steps.data, view, {reducedMotion, opening: steps.opening});
 	const listbox = useRef<HTMLDivElement>(null);
 	const filterInput = useRef<HTMLInputElement>(null);

@@ -29,6 +29,7 @@ import {renderAdoption} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Cause, Console, Context, Effect, Exit, Layer, Option, Runtime, Stream} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {boot, defaultGlobalConfig} from "./boot.ts";
+import {renderRow} from "./boot-line.ts";
 import {watchConfig} from "./config-watch.ts";
 import {type DeskAction, type DeskRequest, decide} from "./discovery/decide.ts";
 import {DeskWindow, openInDesk, renderOpenReply} from "./discovery/reach.ts";
@@ -36,10 +37,11 @@ import {advertiseDesk, removeDeskRecord} from "./discovery/record.ts";
 import {DeskProbe, sightDesk} from "./discovery/sighting.ts";
 import {servePage} from "./page/dev-server.ts";
 import {displayHost} from "./page/loopback.ts";
+import {ProjectLabels} from "./projects/labels.ts";
+import {projectLabels} from "./projects/open-projects.ts";
 import {Projects} from "./projects/Projects.ts";
 import {serveDesk} from "./shell/host/index.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
-import type {TableRow} from "./table/row.ts";
 
 /** The app's own directory — `index.html`'s home, and so the page server's root. */
 const appRoot = dirname(import.meta.dirname);
@@ -49,15 +51,6 @@ const appRoot = dirname(import.meta.dirname);
  * `BootOptions.home` is required rather than defaulted.
  */
 const home = homedir();
-
-/** One table row as the terminal shows it: the port's row, nothing program-specific. */
-export const renderRow = (row: TableRow): string => {
-	const parent = Option.getOrElse(row.parentId, () => "-");
-	const ports = Object.entries(row.ports)
-		.map(([name, port]) => `${name}:${port.direction}(${port.kind})`)
-		.join(",");
-	return `tuval: process ${row.id} program=${row.programId} parent=${parent} ports=${ports || "-"} state=${row.stateSummary.lifecycle}@${row.stateSummary.revision}`;
-};
 
 /** Already printed as one line on stderr; the runner must neither log it again nor exit 0. */
 class BootRefused extends Error {
@@ -112,14 +105,15 @@ const runDesk = Effect.fn("Tuval.runDesk")(function* (flags: DeskFlags, project:
 	for (const folder of report.reopened) yield* Console.log(`tuval: reopened the project ${folder}`);
 	for (const skip of report.skipped) yield* Console.log(`tuval: ${skip.message}`);
 	const rows = yield* ProcessTablePort.use((port) => port.rows).pipe(Effect.provideContext(kernel));
-	for (const row of rows) yield* Console.log(renderRow(row));
+	const projects = Context.get(kernel, Projects);
+	const labels = ProjectLabels.of(projectLabels(yield* projects.list));
+	for (const row of rows) yield* Console.log(renderRow(row, labels));
 	if (rows.length === 0) return;
 
 	// The socket first: the page is handed its URL, so the transport has to be bound before the
 	// dev server that will answer with it.
 	const transport = yield* serveDesk({kernel, port: 0, table: keyTable});
 	yield* Console.log(`tuval: transport on 127.0.0.1:${transport.port}`);
-	const projects = Context.get(kernel, Projects);
 	// Opening or closing a project adds or removes registry rows, and a page's picker lists them.
 	yield* projects.changes.pipe(
 		Stream.drop(1),
