@@ -185,7 +185,12 @@ Lane-entering work (an epic, or a parentless feature) additionally carries a `##
 *is* that home — inside your rewrite for a feature, on stdin for an epic. **The founder approves a
 pitch, never triage**: by a `pitch-approved:` comment, or by setting the issue's betting-table row to
 Stage `bet` — his own write or an agent's on his instruction, with the row's Size matching the
-pitch's Appetite. Take an existing
+pitch's Appetite.
+**A founder ruling that names a parentless feature by its number discharges that feature's pitch**,
+when the feature is homed in the ruling's own arc — the same milestone or the same epic. Link the
+ruling in a comment on the feature, and leave the body as it is: the comment is the pitch's whole
+trace, so a discharge without one is a missing pitch. A feature a ruling only implies, however
+plainly, still owes its pitch. Take an existing
 home: **triage never creates a milestone**, and `wayfinder:backlog` is bounded to genuine fog rather
 than work you would rather not decide about.
 **A board-wide homing breach is swept by a verb, never by raw `gh`.** When `guard homing-guard check`
