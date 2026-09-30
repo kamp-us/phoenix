@@ -254,7 +254,8 @@ prover as well as recorded on the line, because the closure is judged off exactl
 that declares `parkCause.uncaused: "refuse"` refuses a cause-less BLOCKED at `52` rather than
 recording one.
 
-These fields land on the line too, and each is the prover's, never a flag:
+These fields land on the line too, and none is a flag. Each is the prover's, except `issueClose`,
+which records what this verb did with the prover's issue read:
 
 - `deferred` names the namespaces the proof subtracted from this cell's bar and handed to a later
   one, such as the routed `review-ui` an epic child owes its epic's tail. It is absent wherever the
@@ -1466,7 +1467,9 @@ whole path (token map, served-leaf check, proof gate, floor and ledger lock), be
 `EJECTED` are that verb's tokens and `lane transition` refuses them.
 
 - `landed` records `LANDED --pr <url>`, which folds the task to `shipped`, or back to `queued` on a
-  merge that carried `Part of #N` and closed nothing.
+  merge that carried `Part of #N` and closed nothing. A closing merge also reads the issue back, and
+  an issue that stayed open is commented on and closed exactly as `lane report` does it (see
+  `issueClose` under [`lane report`](#lane-report)). So this sweep can write to an issue.
 - `ejected` records `EJECTED`, which spends one retry back into `build`.
 - `unresolved` and `parked` record nothing, so a sweep never spends a wait, never meets the `55`
   floor, and never parks a lane. `unresolved` is a `waiting` row carrying `answer`.
@@ -1483,8 +1486,9 @@ whole path (token map, served-leaf check, proof gate, floor and ledger lock), be
 **Budget.** Budget a recoverable lane at TWO board reads: this sweep asks what the proof says, and
 `lane transition` asks again under its own gate before appending, which is that gate declining to
 take this sweep's word for it. A queued task costs its one `ship reconcile` read, and a `landed`
-answer adds one more: `lane report`'s own proof read of the `DONE`, which reads the PR's closure.
-Every other judged task costs one. `--check` pays the first read alone and appends nothing.
+answer adds more: `lane report`'s own proof read of the `DONE`, which reads the PR's closure, and on
+a closing merge one more read of the issue. An issue that read open adds two writes, the comment and
+the close. Every other judged task costs one. `--check` pays the first read alone and appends nothing.
 
 Each row carries one verdict:
 

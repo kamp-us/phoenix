@@ -22,14 +22,14 @@ import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "./store.ts";
 
 /** A queue read for a sweep with no lane in `ship:queued`: asking it at all is the defect. */
 
-/** No recover case here reaches a closing merge, so a close is never owed. */
-const noClose = () => Effect.succeed({_tag: "Failed" as const, reason: "no close expected"});
-
 const unaskedQueue = (pr: number): Effect.Effect<QueueRead> =>
 	Effect.succeed({
 		_tag: "Unknown",
 		reason: `the queue was asked about #${pr}, which no fixture queued`,
 	});
+
+/** No recover case here reaches a closing merge, so a close is never owed. */
+const noClose = () => Effect.succeed({_tag: "Failed" as const, reason: "no close expected"});
 
 const at = (n: number): string => `2026-09-15T18:1${n}:00.000Z`;
 
