@@ -175,9 +175,8 @@ function Block({
 			) : (
 				<CodeBlock token={token} />
 			);
-		// A task marker stays the text it was written as. A real `<input type="checkbox">` would be
-		// an unlabelled control in a read-only block, and its state would reach a screen reader only
-		// by duplicating the item's own text as a name.
+		// Still the literal marker: ADR 0440 rules a decorative glyph plus a hidden state word, and
+		// #10284 builds it.
 		case "checkbox":
 			return token.raw;
 		case "list": {
