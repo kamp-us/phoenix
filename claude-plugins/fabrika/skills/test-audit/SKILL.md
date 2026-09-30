@@ -11,19 +11,24 @@ Changes: the description is narrowed and names its non-scopes; the whole-
 subsystem mode is renamed "subsystem sweep" (SWEEP.md); Discovery, Validation
 and Landing are made repository-neutral and bounded to one ticket and one
 pull request, with outside work routed to fabrika's report skill; Discovery
-first reads open pull requests and sets aside in-flight candidates.
+first reads open pull requests and sets aside in-flight candidates; a repo-wide
+audit mode (REPO-WIDE.md) files one ranked ticket, Discovery's in-flight read
+opens it too, and Discovery's cross-cutting pass follows its exclusion rule.
 -->
 
 # Test Audit
 
-Three modes, one value bar. Authoring mode gates a new test at write time.
+Four modes, one value bar. Authoring mode gates a new test at write time.
 Audit mode runs a focused sweep of tests that re-assert source, duplicate
 stronger proof, couple behavior to implementation, or keep test-only production
 seams alive; optimize for confidence, not deletion count. A **subsystem sweep**
 prunes one whole subsystem's test surface (every test file a plugin or core area
-owns); before starting one, read [SWEEP.md](SWEEP.md).
+owns); before starting one, read [SWEEP.md](SWEEP.md). A **repo-wide audit**
+reads every test in a repository; it is read-only, edits no test or source file,
+and lands as one ranked ticket filed through [`report`](../report/SKILL.md);
+before starting one, read [REPO-WIDE.md](REPO-WIDE.md).
 
-Every mode works inside the current ticket and lands as at most one pull
+Every other mode works inside the current ticket and lands as at most one pull
 request. Candidates, defects or cleanups found outside that ticket leave
 through [`report`](../report/SKILL.md) as follow-up issues, never as more
 edits here.
@@ -99,14 +104,17 @@ Keep discovery read-only and report evidence before editing.
 
 Before any pass, read the **in-flight set**: the repository's open pull
 requests and the files each one changes. Hand that set to every pass. This read
-opens discovery in audit mode and in a subsystem sweep alike.
+opens discovery in audit mode, in a subsystem sweep and in a repo-wide audit
+alike.
 
 For a broad scope the ticket names, run parallel read-only passes when
 available:
 
 - one pass per top-level source area the repository's `AGENTS.md` names;
 - UI, apps, scripts, and tooling;
-- a cross-cutting pattern sweep.
+- a cross-cutting pattern sweep, reporting only candidates no single area pass
+  owns, under the repo-wide audit's
+  [exclusion rule](REPO-WIDE.md#3-area-and-cross-cutting-passes).
 
 Outside a subsystem sweep, prefer a few high-confidence candidates over a large
 speculative inventory. Hunt for the [junk patterns](#junk-patterns).
