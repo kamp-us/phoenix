@@ -1949,7 +1949,8 @@ nothing and is novel.
   tracking the render axis the rendered review could not reach, which the park line names as
   `axisIssue`. Its read is that issue's state. `closed` clears back into `review:ui` with a
   `mechanism` of `axis-closed:#<issue>`, so the reviewer renders again with the axis built. Open is
-  `13` with nothing written, an issue proven absent is `7`, and a read that fails is `11`.
+  `13` with nothing written, a park naming no axis issue or an axis issue proven absent is `7`, and
+  a read that fails is `11`.
 - The `queue-stall` park is the one row whose clear also GRANTS. Its read is `ship reconcile`'s
   answer relayed, where `landed` and `ejected` clear and `unresolved` is exit `13`. Because the park
   IS a spent wait budget, the clear records the waits it buys on the very same `UNBLOCKED` — one
@@ -1983,7 +1984,7 @@ a clear that granted and `rationale` on one the driver named. `clearance` is the
 | Code | Trigger |
 |---|---|
 | `4` | a lane record was read in full and is not the shape |
-| `7` | no lane there; the PR the park waits on is proven absent, or closed where the row needs it open — the `queue-stall` row nominates at open-or-merged scope, since a landed PR is closed; or the lane's issue is absent, homed on no milestone, or homed on one no `## Campaigns` row pins |
+| `7` | no lane there; the PR the park waits on is proven absent, or closed where the row needs it open — the `queue-stall` row nominates at open-or-merged scope, since a landed PR is closed; or the lane's issue is absent, homed on no milestone, or homed on one no `## Campaigns` row pins; or a `render-axis-missing` park names no axis issue, or the one it names is proven absent |
 | `8` | the `UNBLOCKED` or `FAIL` append did not land — it is NOT recorded |
 | `9` | the append landed and the re-fold does not prove the clear or the repair route — the lane needs a human |
 | `11` | a precondition could not be read — UNKNOWN, never cleared. `parkCause` itself is one, and so is the repository identity its owning root is derived from, since a cwd whose repository will not read leaves the declaration unresolved rather than guessed at the cwd |
