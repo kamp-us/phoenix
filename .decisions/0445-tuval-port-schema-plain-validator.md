@@ -85,5 +85,6 @@ decode needs no service, and its decode completes synchronously.**
 - `testProgram` still runs `Schema.decodeUnknownResult` over an arrival
   (`packages/tuval/src/authoring/test-program.ts`). Under this rule that decode is the identity, so
   the helper and the kernel agree. If #10296 lands, the two must change together.
-- The epic's closed issue body keeps its original wording. This record is where the corrected
-  reading of R13.1 lives.
+- Epic [#8716](https://github.com/kamp-us/phoenix/issues/8716)'s body now says "admitted payload"
+  where its plan said "decoded payload", and each correction links here. The verbatim original
+  brief keeps its wording, with a correction note beside the sentence.
