@@ -200,12 +200,17 @@ in the body. Four endpoints, all REST ([skill conventions
 Writes: `POST repos/<repo>/issues/<n>/dependencies/blocked_by` and
 `POST repos/<repo>/issues/<map>/sub_issues`.
 
-**The edges this group writes are read as blockedness by the build seams.**
-[`src/build/blockedness.ts`](../../../../packages/fabrika-cli/src/build/blockedness.ts) is the one
-reader, and `build claim`, `build pick` and `build eligible` all gate on it — so a destination
-carrying an open frontier ticket is answered blocked until that ticket closes. No edge is carved out
-by who wrote it: the native dependency graph is the one carrier of blockedness, and a map edge is a
-real edge on it like any other.
+**The edges this group writes run ticket-to-ticket, and the build seams read them as
+blockedness.** `map ticket` is the group's only edge writer, and every `--blocks` / `--blocked-by`
+target must be a frontier ticket of the same map (exit `13` otherwise). Neither the map issue itself
+nor any issue outside the map is a legal target, so no verb here writes an edge onto a destination
+issue. [`src/build/blockedness.ts`](../../../../packages/fabrika-cli/src/build/blockedness.ts) is the
+one reader, and `build claim`, `build pick` and `build eligible` all gate on it. No edge is carved
+out by who wrote it: the native dependency graph is the one carrier of blockedness, and a map edge
+is a real edge on it like any other. So a map edge holds back the frontier ticket at its gated end.
+When a destination issue should wait on a frontier ticket, that edge is written outside this group:
+`fabrika triage apply <destination> --blocked-by <ticket>`, `fabrika ledger edges` when the
+destination is an epic child, or a person calling the dependency endpoint above.
 
 <!-- anchor: EDGE-BODY-TAKES-AN-INTERNAL-ID --> **Both POST bodies take the target's internal `id`,
 not its issue number**, and the sub-issue key is the singular `sub_issue_id`. Passing a number

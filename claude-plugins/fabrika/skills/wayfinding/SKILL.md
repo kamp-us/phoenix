@@ -168,10 +168,13 @@ already settled — record it as a decision instead. Build work is not fog and d
 map at all.
 
 **The edges are map topology and real blockedness both.** A native `blocked_by` edge gates pipeline
-eligibility whoever wrote it, so a destination stays unpickable until its frontier tickets close —
-`build claim`, `build pick` and `build eligible` all read this graph. That gating is intended, not a
-side effect: the native dependency graph is the one carrier of blockedness, and a map edge is a
-real edge on it like any other.
+eligibility whoever wrote it — `build claim`, `build pick` and `build eligible` all read this graph.
+That gating is intended, not a side effect: the native dependency graph is the one carrier of
+blockedness, and a map edge is a real edge on it like any other. But `map ticket` only joins
+frontier tickets of one map, so the ticket it holds back is always another frontier ticket; the map
+issue and any issue outside the map are refused as targets. To hold a destination issue until a
+ticket closes, write that edge with `fabrika triage apply <destination> --blocked-by <ticket>` (or
+`fabrika ledger edges` for an epic child).
 
 **Done when** every open question you named is a ticket, `map read` shows the frontier you
 intended, and the frontier's `STATUS-BETWEEN-WRITES` update is posted.
