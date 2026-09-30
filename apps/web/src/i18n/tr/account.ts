@@ -150,10 +150,6 @@ export const account = {
 	"profile.email.changeUnavailable": "e-posta değiştirme henüz kullanılamıyor",
 
 	"profile.section.appearance": "görünüm",
-	"profile.field.theme": "tema",
-	"profile.theme.light": "açık",
-	"profile.theme.dark": "koyu",
-	"profile.theme.auto": "otomatik",
 	"profile.field.density": "yoğunluk",
 	"profile.density.compact": "sıkı",
 	"profile.density.normal": "normal",

@@ -28,18 +28,15 @@ test.describe("Topbar (signed out)", () => {
 		);
 	});
 
-	// The three-way picker is the sole theme control (#2612) — a signed-out visitor reaches
-	// it in the topbar's utility zone (a signed-in one gets it in the user menu instead).
-	test("theme picker sets <html data-theme>", async ({page}) => {
+	// Signed out there is no theme control; the page follows the OS (ADR 0437).
+	test("no theme picker, and <html data-theme> follows the OS", async ({page}) => {
+		await expect(page.getByTestId("topbar-theme-picker")).toHaveCount(0);
+
 		const html = page.locator("html");
-		const picker = page.getByTestId("topbar-theme-picker");
-		await expect(picker).toBeVisible();
-
-		await picker.getByRole("radio", {name: /^koyu$/i}).click();
-		await expect(html).toHaveAttribute("data-theme", "dark");
-
-		await picker.getByRole("radio", {name: /^açık$/i}).click();
+		await page.emulateMedia({colorScheme: "light"});
 		await expect(html).toHaveAttribute("data-theme", "light");
+		await page.emulateMedia({colorScheme: "dark"});
+		await expect(html).toHaveAttribute("data-theme", "dark");
 	});
 
 	test("search trigger has the ⌘K hint and opens the palette by click and by shortcut", async ({

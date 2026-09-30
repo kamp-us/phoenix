@@ -63,7 +63,6 @@ vi.mock("../components/profile/ProfileHeader", () => ({ProfileHeader: () => null
 // Flag ON so the contribution signal renders and its `username` prop is observable.
 vi.mock("../flags/useFlag", () => ({useFlag: () => ({value: true, loading: false})}));
 
-vi.mock("../lib/theme", () => ({useTheme: () => ({choice: "auto", setChoice: vi.fn()})}));
 vi.mock("../lib/density", () => ({useDensity: () => ({choice: "normal", setChoice: vi.fn()})}));
 
 // Keep react-fate's real `view` — `SetDisplayNameView` calls it at module load — while
@@ -154,17 +153,24 @@ describe("ProfilePage appearance controls", () => {
 
 		renderProfile();
 
-		const themeGroup = screen
-			.getByRole("radio", {name: "koyu"})
-			.closest('[data-scope="toggle-group"][data-part="root"]');
 		const densityGroup = screen
 			.getByRole("radio", {name: "normal"})
 			.closest('[data-scope="toggle-group"][data-part="root"]');
 
-		for (const group of [themeGroup, densityGroup]) {
-			expect(group?.classList).toContain("kp-toggle-group--outline");
-			expect(group?.classList).not.toContain("kp-profile__theme-toggle");
+		expect(densityGroup?.classList).toContain("kp-toggle-group--outline");
+	});
+
+	// A signed-in user's one theme control is the user menu's (ADR 0437).
+	it("renders no theme control of its own", () => {
+		sessionUsername = "session-uname";
+		meUsername = "session-uname";
+
+		renderProfile();
+
+		for (const label of ["açık", "koyu", "otomatik"]) {
+			expect(screen.queryByRole("radio", {name: label})).toBeNull();
 		}
+		expect(screen.queryByText("tema")).toBeNull();
 	});
 
 	it("promotes account deletion as the dangerous area's primary action", () => {

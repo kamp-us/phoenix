@@ -9,6 +9,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {PHOENIX_LOCALE} from "../../flags/keys";
 import {LocaleProvider} from "../../i18n";
 import {LOCALE_STORAGE_KEY} from "../../lib/localeStorage";
+import {ThemeProvider} from "../../lib/theme";
 import {AppShell} from "./AppShell";
 import {Subnav} from "./Subnav";
 import {Topbar} from "./Topbar";
@@ -33,13 +34,10 @@ function mountMenu(children?: ReactNode) {
 	return render(
 		<MemoryRouter>
 			<LocaleProvider>
-				{children}
-				<UserMenu
-					user={{name: "Elif", username: "elif"}}
-					themeChoice="dark"
-					onThemeChange={() => {}}
-					onLogout={() => {}}
-				/>
+				<ThemeProvider>
+					{children}
+					<UserMenu user={{name: "Elif", username: "elif"}} onLogout={() => {}} />
+				</ThemeProvider>
 			</LocaleProvider>
 		</MemoryRouter>,
 	);
