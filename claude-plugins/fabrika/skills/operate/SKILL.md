@@ -1166,10 +1166,19 @@ this order:
   one that reads the tree, having no board statement to lean on: it retires a tree whose removal
   would strand nothing and refuses `33` naming the uncommitted paths, or the commits no branch,
   remote-tracking ref or tag reaches, that block it. Commits on the tree's own lane branch do not
-  block it — the removal leaves the branch behind. **Run it from wherever
+  block it — the removal leaves the branch behind. **Run the verb from wherever
   you are.** The harness rule that refuses a *typed* cross-worktree `git` reads the command you
-  type, so it does not bind the verb's own child process — which is why this obligation is no longer
-  the primary checkout's alone.
+  type, so it does not bind the verb's own child process — which is why the verb's half of this
+  obligation is no longer the primary checkout's alone.
+  **A detached-HEAD tree is yours by hand, because the verb never sees it**: it holds no branch, so
+  it is no lane's subject. **This arm is the primary checkout's only.** Every step below is a typed
+  command against another worktree, which that same harness rule refuses to a worktree-isolated
+  shell; from one, leave the tree standing and name it in your report for the primary checkout's
+  session. If it is dirty, commit its contents onto a fresh, never-pushed
+  `salvage/<worktree-id>` branch, `<worktree-id>` being the tree's directory name, then remove it
+  without `--force`. A tree whose dirty state is a mass deletion may skip the salvage: file it
+  through [`report`](../report/SKILL.md) naming the tree and what it deleted, restore it to its
+  HEAD, then remove it without `--force`.
 
 **Name that failure `spawn-dead`.** A shell its provider killed before it recorded a terminal — a
 session limit, a transport drop, a `network_error` on every completion — is one class with one
