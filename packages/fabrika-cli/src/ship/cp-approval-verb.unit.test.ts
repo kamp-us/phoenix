@@ -53,7 +53,8 @@ const reviewPage = (
 			: undefined,
 });
 
-const options = {pr: 4321, sha: HEAD, repo: null, json: false, env: ENV};
+/** The shipped mergeability window is 60s of real backoff, so every test scripts a short one. */
+const options = {pr: 4321, sha: HEAD, repo: null, json: false, mergeabilitySeconds: 4, env: ENV};
 
 /** A canned `ExecResult` fixture as the body of a 200 — the same payload, off the served seam. */
 const served = (result: ExecResult): HttpReply => ({status: 200, body: result.stdout});
@@ -320,6 +321,122 @@ describe("runCpApproval", () => {
 		expect(
 			out.stderr.some((line) => line.includes("base-drift: head is 7 commits behind main")),
 		).toBe(true);
+	});
+
+	// A conflicting head is a builder's, so asking a person to approve it spends an approval the
+	// rebase destroys.
+	describe("a conflicting base (#9990)", () => {
+		const conflicted = (shape: {mergeable: boolean | null; mergeableState: string}) =>
+			served(pull({author: "usirin", ...shape}));
+
+		it("answers base-conflicted, never stop, on a dirty head with no approval", async () => {
+			const out = await run(
+				[
+					[PULL, conflicted({mergeable: false, mergeableState: "dirty"})],
+					[FILES, CP_FILES],
+				],
+				[
+					[OWNERS, OWNED],
+					[COMPARE, behind(120)],
+					[ROSTER, members("usirin", "cansirin")],
+					[REVIEWS, reviewPage([])],
+				],
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toBe("cp-approval\tbase-conflicted\tmergeable-state:dirty\n");
+		});
+
+		it("says the same in --json", async () => {
+			const out = await run(
+				[
+					[PULL, conflicted({mergeable: false, mergeableState: "dirty"})],
+					[FILES, CP_FILES],
+				],
+				[
+					[OWNERS, OWNED],
+					[COMPARE, behind(120)],
+					[ROSTER, members("usirin", "cansirin")],
+					[REVIEWS, reviewPage([])],
+				],
+				{json: true},
+			);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toEqual({
+				outcome: "base-conflicted",
+				mechanism: "mergeable-state:dirty",
+				sha: HEAD,
+				roster: 2,
+				baseDrift: 120,
+			});
+		});
+
+		it("keeps stop plus the base-drift notice on a head that is behind but merges clean", async () => {
+			const out = await run(
+				[
+					[PULL, conflicted({mergeable: true, mergeableState: "behind"})],
+					[FILES, CP_FILES],
+				],
+				[
+					[OWNERS, OWNED],
+					[COMPARE, behind(7)],
+					[ROSTER, members("usirin", "cansirin")],
+					[REVIEWS, reviewPage([])],
+				],
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toBe("cp-approval\tstop\tawaiting-approval\n");
+			expect(out.stderr.join("\n")).toContain("base-drift: head is 7 commits behind main");
+		});
+
+		it("still discharges a dirty head that already has its approval — ship enqueue catches the conflict", async () => {
+			const out = await run(
+				[
+					[PULL, conflicted({mergeable: false, mergeableState: "dirty"})],
+					[FILES, CP_FILES],
+				],
+				[
+					[OWNERS, OWNED],
+					[COMPARE, behind(120)],
+					[ROSTER, members("usirin", "cansirin")],
+					[REVIEWS, reviewPage([{login: "cansirin", state: "APPROVED", commit: HEAD}])],
+				],
+			);
+			expect(out.stdout).toBe(`cp-approval\tdischarge\tmember-approval:cansirin@${HEAD}\n`);
+		});
+
+		it("still answers n/a on a dirty non-control-plane PR", async () => {
+			const out = await run(
+				[
+					[PULL, conflicted({mergeable: false, mergeableState: "dirty"})],
+					[FILES, served(files("apps/site/src/App.tsx", "README.md"))],
+				],
+				[
+					[OWNERS, OWNED],
+					[COMPARE, behind(120)],
+				],
+			);
+			expect(out.stdout).toBe("cp-approval\tn/a\tnot-control-plane\n");
+		});
+
+		it("refuses on 11 when mergeability stays indefinite — an unknown read never answers base-conflicted", async () => {
+			const out = await run(
+				[
+					[PULL, conflicted({mergeable: null, mergeableState: "unknown"})],
+					[FILES, CP_FILES],
+				],
+				[
+					[OWNERS, OWNED],
+					[COMPARE, behind(120)],
+					[ROSTER, members("usirin", "cansirin")],
+					[REVIEWS, reviewPage([])],
+				],
+			);
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stdout).toBe("");
+			expect(out.stderr.at(-1)).toBe(
+				"ship cp-approval: #4321's mergeable_state is still indefinite after 2 polls over 4s — whether the head conflicts with main is UNKNOWN, so neither `stop` nor `base-conflicted` is proven.",
+			);
+		});
 	});
 
 	// The declared count is GitHub's own, computed against a base cached at the last push, so a list

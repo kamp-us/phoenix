@@ -264,6 +264,30 @@ describe("recipe unpark — the known recipe clears", () => {
 
 		expect(JSON.parse(out.stdout).mechanism).toMatch(/member-approval:reviewer/);
 	});
+
+	// A conflicting head waits on a builder, not the approval this recipe re-reads.
+	it("is PARK_NOVEL on a conflicting head with no approval, never 'not control-plane'", async () => {
+		const fs = lane(PARKED_AT_CP);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull({author: "owner", mergeable: false, mergeableState: "dirty"}))],
+				[FILES, CP_FILES],
+			],
+			[
+				[OWNERS, {status: 200, body: CODEOWNERS}],
+				[COMPARE, {status: 200, body: '{"behind_by":120}'}],
+				[ROSTER, members("owner", "reviewer")],
+				[REVIEWS, reviewPage()],
+			],
+		);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(out.stderr.at(-1)).toContain("conflicts with its base");
+		expect(fs.written.get(LOG) ?? "").not.toMatch(/ISSUE\.UNBLOCKED/);
+	});
 });
 
 /** A head-bound verdict marker with no content binding — the shape `ship gate` reads as a marker. */
