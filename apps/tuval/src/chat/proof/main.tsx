@@ -66,7 +66,10 @@ const state: AiAgentSessionState = withTranscript(
 			resultLimit: 40,
 			status: "error",
 		}),
-		assistantItem("a2", "Done — the guard is per-window now."),
+		assistantItem(
+			"a2",
+			"Done — the guard is per-window now.\n\n- [x] Rename the guard\n- [x] Show the diff\n- [ ] Run the full suite",
+		),
 	],
 	{
 		permissions: {"req-1": pendingPermission()},

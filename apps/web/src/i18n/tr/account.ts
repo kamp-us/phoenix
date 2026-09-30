@@ -201,6 +201,8 @@ export const account = {
 	"ui.markdown.diagram": "diyagram",
 	"ui.markdown.diagram.source": "diyagram kaynağı",
 	"ui.markdown.diagram.error": "diyagram çizilemedi: {reason}",
+	"ui.markdown.task.done": "tamamlandı",
+	"ui.markdown.task.open": "tamamlanmadı",
 };
 
 /** `tr` is the source of truth for the key set; `en/account.ts` is checked against this. */

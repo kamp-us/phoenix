@@ -198,4 +198,6 @@ export const account = {
 	"ui.markdown.diagram": "diagram",
 	"ui.markdown.diagram.source": "diagram source",
 	"ui.markdown.diagram.error": "the diagram could not be drawn: {reason}",
+	"ui.markdown.task.done": "done",
+	"ui.markdown.task.open": "not done",
 } satisfies Record<AccountKey, string>;
