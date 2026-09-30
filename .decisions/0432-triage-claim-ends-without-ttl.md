@@ -82,10 +82,30 @@ namespace:
   counted and reported, and is never a succession.
 - The successor then releases: the stranded marker and the adopt marker are deleted together, and a
   fresh `triage claim` races normally.
-- An adopt naming the caller's own session is refused. Deleting the adopt marker reverses it.
+- An adopt naming the caller's own session is admitted, as ADR 0325 admits it in the `lane`
+  namespace. Deleting the adopt marker reverses it.
+- An adopt fences and confers only over a triage marker posted after it, ordered by `created_at`
+  with the comment id breaking a same-second tie. An authorized adopt whose claim is already gone
+  stays retractable by the lane its `by <token>` names. Both are ADR 0325's 2026-09-15 amendment,
+  carried over whole.
 
-As in 0295, an adopt does not prove the stranded session is dead. The guard is disclosure plus the
-ACL, which is why the reason is required and the marker stays readable on the issue.
+**Why the same-session adopt is admitted here.** The triage keyspace is nonce-keyed the way the
+`lane` namespace is: `triage/claim.ts` matches a marker to its caller on the lane nonce as well as
+the session, so a marker left by a dead sibling lane of the caller's own session reads as foreign,
+and the owner's release cannot reach it. ADR 0295's same-session refusal rests on plain release
+covering that case, and here it does not. Refusing the adopt would leave that claim with no TTL, no
+release and no adopt, so it would end only by a person deleting the comment. That is the park the
+ruling's adopt marker exists to remove. ADR 0325 took the same departure for the same reason. Its
+amendment's two fences come with it, because without them a stray self-session adopt fences every
+marker that session later posts on the issue, and the adopt, release, claim loop never ends.
+
+As in 0295 and 0325, an adopt does not prove the stranded session or lane is dead. A driver may adopt
+a live sibling lane's triage claim on its own session. The guard is disclosure plus the ACL, which is
+why the reason is required and the marker stays readable on the issue.
+
+**ADR 0373 does not reach this keyspace.** 0373 narrows 0295's and 0215 §5's age ban for one
+population: build claims left by a dead shell under a `spawn-dead` park. That is the only narrowing
+of the ban, and triage claim markers are outside it. It is not to be carried over by analogy.
 
 **Binding constraints.**
 - A triage marker ends only by a positive act: its owner's release, an ADR 0215 §5 ending, or a
