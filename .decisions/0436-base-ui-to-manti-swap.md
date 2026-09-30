@@ -49,7 +49,7 @@ emphasis, and product-specific behavior". Components with phoenix domain behavio
 than forced onto a Manti primitive, "to avoid creating wrappers that only imitate an API Manti does
 not currently need to own".
 
-On 2026-09-03, [#7647](https://github.com/kamp-us/phoenix/pull/7647) moved the wrapper layer out of
+On 2026-09-04, [#7647](https://github.com/kamp-us/phoenix/pull/7647) moved the wrapper layer out of
 `apps/web/src/components/ui/` into the shared `@kampus/design` package at `packages/design/src/`.
 The rule below applies to that layer wherever it lives.
 
@@ -58,7 +58,9 @@ The rule below applies to that layer wherever it lives.
 **Manti, driven by Zag, is phoenix's UI primitive layer, and Base UI is the approach it
 superseded.**
 
-New primitives come from `@manti-ui/react` through a file in `packages/design/src/`. Nothing imports
+New primitives come from `@manti-ui/react` through a file in `packages/design/src/`, until ADR
+0361's third-shortfall trigger sends one straight to its Zag machine (see Binding constraints). A
+wrapper that drives Zag directly is still part of this layer. Nothing imports
 `@base-ui/react`. No `package.json` in the workspace names it and no `.patterns/` doc teaches it, so
 the founder's "replace any base ui patterns with manti ones" asks for nothing more today. Manti
 patterns live in [`.patterns/manti-accessibility.md`](../.patterns/manti-accessibility.md) and
@@ -66,9 +68,10 @@ patterns live in [`.patterns/manti-accessibility.md`](../.patterns/manti-accessi
 
 **What the wrapper layer is for.** Each file in `packages/design/src/` that fronts a Manti
 primitive is where callers import it. It carries the `@component` docblock that says when to use it
-and imports the primitive's phoenix CSS. By default it is a bare re-export and nothing more:
-`Menu.tsx`, `Collapsible.tsx`, `Popover.tsx`, `ToggleGroup.tsx`, `Tabs.tsx`, `Select.tsx`,
-`ScrollArea.tsx` and `NumberInput.tsx` are that shape today.
+and, when phoenix styles the primitive, imports its phoenix CSS. By default it is a bare re-export
+and nothing more: `Menu.tsx`, `Collapsible.tsx`, `Popover.tsx`, `ToggleGroup.tsx`, `Tabs.tsx`,
+`Select.tsx`, `ScrollArea.tsx` and `NumberInput.tsx` are that shape today. The first four import a
+CSS file; the other four have none.
 
 **When a wrapper earns more than a re-export.** A wrapper adds code only when one of these holds:
 
@@ -92,10 +95,15 @@ translated name, so the wrappers supply one through `useDesignT`.
 **Binding constraints.**
 
 - A primitive with neither a correction nor a phoenix-owned addition stays a bare re-export. Its
-  file carries the docblock and CSS import, and no pass-through props.
+  file carries the docblock, the CSS import when phoenix styles the primitive, and no
+  pass-through props.
 - A correction cites the upstream source it works around, with a version, in the comment beside it.
 - A Manti defect that can only be fixed inside the package is carried as a local patch and offered
-  upstream, as [ADR 0361](0361-manti-menu-highlighted-value-patch.md) does for `Menu`.
+  upstream, as [ADR 0361](0361-manti-menu-highlighted-value-patch.md) does for `Menu`. That holds
+  until ADR 0361's third-shortfall trigger fires: when Manti's surface comes up short a third time,
+  the wrapper drives the Zag machine directly from `@kampus/design` instead. This record does not
+  change that count. ADR 0361 counts [#6776](https://github.com/kamp-us/phoenix/issues/6776) and its
+  own `Menu` patch as the two shortfalls so far, and owns the count.
 
 ## Consequences
 
