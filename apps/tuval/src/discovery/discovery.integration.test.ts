@@ -16,7 +16,7 @@ import {boot, projectConfig, projectDir} from "../boot.ts";
 import {servePage} from "../page/dev-server.ts";
 import {Projects} from "../projects/Projects.ts";
 import {TrustPrompts} from "../projects/TrustPrompts.ts";
-import {scratchHome} from "../scratch-home.ts";
+import {scratchHome, trustFolders} from "../scratch-home.ts";
 import {serveDesk} from "../shell/host/index.ts";
 import {decide} from "./decide.ts";
 import {openInDesk, renderOpenReply} from "./reach.ts";
@@ -39,6 +39,8 @@ const projectWith = (name: string): string => {
 /** A desk booted under `home` on `first`, serving its socket and page and advertising itself. */
 const runningDesk = (home: string, first: string) =>
 	Effect.gen(function* () {
+		// Trusted by a desk that ran before, so the boot opens it with no question (#9977).
+		trustFolders(home, [first]);
 		const booted = yield* boot({global: fixture("log-global"), project: first, home});
 		const transport = yield* serveDesk({kernel: booted.kernel, port: 0, table: booted.keyTable});
 		const page = yield* servePage({

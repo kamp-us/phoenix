@@ -165,9 +165,12 @@ global row.**
   that `pnpm dev` passes as `--config`, because a harness row names no folder any more (#9694).
 - Opening a folder runs its code once the user says yes, and the desk has no sandbox for it.
   Programs stay in the desk process (#9663); isolating outside code is not part of this record.
-- Known gap: the folder the desk boots with (`--project`, or the folder `tuval open` starts a new
-  desk with) is imported without the trust question. That breaks rule 5, and
-  [#9977](https://github.com/kamp-us/phoenix/issues/9977) tracks closing it.
+- The folder the desk boots with (`--project`, or the folder `tuval open` starts a new desk with)
+  is asked about like any first open
+  ([#9977](https://github.com/kamp-us/phoenix/issues/9977)). A trusted folder, or one with no
+  config, opens at boot. One holding an untrusted config is asked through the page, and the desk
+  runs on its own and the global layers until the person answers. The desk keeps its own state
+  under the home folder's key, so a desk whose boot folder was refused still saves.
 
 ## Records
 

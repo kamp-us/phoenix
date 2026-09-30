@@ -107,10 +107,10 @@ or model execution; the in-memory host records UI dispatches without executing t
 `pnpm dev` runs `node src/bin.ts --config global/tuval.config.ts`, an Effect CLI
 (`effect/unstable/cli`) over the pure `boot`. Node strips the TypeScript itself, so the kernel has
 no build step. Boot loads your config layers (see "Your config"), registers their programs,
-launches the processes the graph plans, restores any other checkpointed process from this project's
-state dir, prints the process table, binds the page socket, serves the desk, and stays up until
-Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints every process and exits 0; a config that
-plans no process exits right after the report.
+launches the processes the graph plans, restores any other checkpointed process from the desk's and
+the first project's state dirs, prints the process table, binds the page socket, serves the desk,
+and stays up until Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints every process and exits
+0; a config that plans no process exits right after the report.
 
 ```
 tuval [flags]            Start a desk, or bring the running one forward
@@ -187,10 +187,12 @@ have stopped. The saved list
 leaves subprojects out, so after a restart one comes back only when its opener calls
 `openSubproject` again. `@kampus/tuval-worktree` opens each lane this way.
 
-Known gap: the `--project` folder, which defaults to the working directory, is imported at boot
-without the question, so running `tuval` inside a freshly cloned repo runs that repo's config
-unasked. So is the folder `tuval open <folder>` starts a new desk with. Ruling #9668 R2.1 exempts
-only the home config; #9977 tracks moving the boot folder onto the trust prompt.
+The `--project` folder, which defaults to the working directory, is asked about the same way, and
+so is the folder `tuval open <folder>` starts a new desk with (#9977). A trusted folder, or one with
+no config, opens at boot as the first project. One holding a config nobody has trusted is not
+imported: the desk boots on its own and the global layers, says so on the terminal, and asks
+"Trust this folder?" on the page. Yes opens it and remembers it; no leaves the desk running without
+it. So running `tuval` inside a freshly cloned repo runs none of that repo's code until you say yes.
 
 Nothing Tuval saves goes into the project. The process manifest, the checkpoints and the Pi session
 files live under `~/.tuval/projects/<key>`, where the key is that checkout's absolute path written
@@ -205,8 +207,15 @@ the next boot, once, and the boot line says what it moved. A second line names w
 an entry the home-dir key already holds under that name is never written over, so the copy in the
 project stays there, read by nothing, for you to delete.
 
+The desk's own checkpoints — the shell and every global program — and the Pi session files live
+under the home folder's key, `~/.tuval/projects/<key of your home folder>`, because the desk runs in
+the home folder (#9977). Before that the desk shared its boot folder's directory. A boot that opens
+a folder still holding the desk's state from then moves it into the desk's directory once and says
+so; an entry the desk's directory already holds is left where it was and named on every boot until
+you delete it.
+
 ```
-tuval: booted — 3 program(s), 6 spell(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 3 process(es) live, 0 restored from ~/.tuval/projects/-Users-you-code-phoenix-apps-tuval
+tuval: booted — 3 program(s), 6 spell(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 3 process(es) live, 0 restored; desk state in ~/.tuval/projects/-Users-you
 tuval: process shell program=shell parent=- ports=- state=running@0
 tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0
 tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0
@@ -329,7 +338,7 @@ When `<dir>/.tuval/tuval.config.ts` is absent, the project layer is empty and th
 supplies the shell, so the desk attaches (#9375). The boot line names only the file layers it read:
 
 ```
-tuval: booted — 1 program(s), … spell(s) registered from no config module; 1 process(es) live, 0 restored from ~/.tuval/projects/-Users-you-code-your-repo
+tuval: booted — 1 program(s), … spell(s) registered from no config module; 1 process(es) live, 0 restored; desk state in ~/.tuval/projects/-Users-you
 ```
 
 Writing a project module adds that project's rows beside the shell and never removes it. If a
@@ -1003,12 +1012,13 @@ An author outside phoenix writes a program in their own folder and runs it on th
    folder.
 4. `tuval open .` opens the folder as a project: in the running desk, or in a new desk when none is
    running.
-5. Answer "Trust this folder?" with yes. A folder is asked once; the answer is kept per path. A
-   folder that starts a new desk is not asked yet; #9977 tracks that gap.
+5. Answer "Trust this folder?" with yes, on the page. A folder is asked once; the answer is kept
+   per path. A folder that starts a new desk is asked too, before anything from it runs (#9977).
 6. Edit the program. Saving the config, or any file it imports by path, reloads it in the running
    desk (see "Spells"), and the process switches to the edited code while keeping the state it had.
-   One limit holds today: only the folder a desk booted with is watched, so a project opened into a
-   desk that was already running does not reload (#9869).
+   One limit holds today: only a folder the desk opened at boot is watched, so a project opened
+   into a desk that was already running does not reload (#9869). A folder you trusted on its first
+   `tuval open` opened after boot, so it is watched from the desk's next start.
 
 `pnpm proof:outside` runs these steps from packed tarballs in CI (see "The packed desk").
 

@@ -14,7 +14,8 @@
  * A folder with a `.tuval` config is asked about before any of that: importing its config module
  * runs its code, so an open that needs trust waits on the person's answer first, and a no imports
  * nothing (#9693, ruling #9668 R2.1). The wait holds no lock, so a question left unanswered never
- * stops another project opening or closing.
+ * stops another project opening or closing. The folder a desk boots with is asked the same way
+ * (#9977).
  *
  * A trusted project that opens with `recommends` asks about each package nobody has answered for it
  * yet, and never installs anything (#9695, ruling #9668 R6.2). The open does not wait on those
@@ -97,6 +98,7 @@ import type {FolderListing} from "./open-project-wire.ts";
 import {
 	type OpenProject,
 	OpenProjects,
+	type OpenProjectsRecord,
 	ProjectAlreadyOpen,
 	type ProjectNotOpen,
 	ProjectNotReopened,
@@ -245,7 +247,27 @@ export interface ProjectsOptions {
 	/** The finished kernel, which a launched process's handlers are handed; filled once it is built. */
 	readonly kernel: Deferred.Deferred<Context.Context<ProjectsKernel>>;
 	readonly fs: FileSystem.FileSystem;
+	/** The saved list the desk starts over (`readSavedProjects`). */
+	readonly saved: OpenProjectsRecord | null;
 }
+
+/**
+ * The saved list under `home`. One that cannot be read costs the remembered trust and the reopen:
+ * the folders are asked about again, and opened again by hand.
+ */
+export const readSavedProjects = (home: string) =>
+	readOpenProjects(home).pipe(
+		Effect.catch((error) =>
+			Effect.as(
+				Effect.logWarning(`tuval: could not read the open projects list — ${error.message}`),
+				null,
+			),
+		),
+	);
+
+/** Whether `folder` holds a `.tuval` config. One that cannot be checked for is asked about. */
+export const holdsConfig = (fs: FileSystem.FileSystem, folder: string) =>
+	fs.exists(projectConfig(folder)).pipe(Effect.orElseSucceed(() => true));
 
 /** A project's state directory prepared, and anything an older build left moved onto it. */
 export const prepareProjectState = Effect.fn("Tuval.prepareProjectState")(function* (
@@ -279,26 +301,11 @@ interface Renderers {
 const allRenderers = (renderers: Renderers): ReadonlyArray<ModuleRendererRef> =>
 	firstPerRef([...renderers.desk, ...[...renderers.byProject.values()].flat()]);
 
-/**
- * The service, beside the step `boot` opens its first project with: that project's config is
- * already read and its state already prepared, because the desk's own checkpoints share its state
- * directory and have to be moved before the desk restores anything.
- */
+/** The service, beside the two steps `boot` opens its first folder with. */
 export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: ProjectsOptions) {
 	const {home, desk, routes, rows, reloader, prompts, fs} = options;
 	const lock = yield* Semaphore.make(1);
-	// A list that cannot be read costs the remembered trust and the reopen: the folders are asked
-	// about again, and opened again by hand.
-	const saved = yield* readOpenProjects(home).pipe(
-		Effect.provideService(FileSystem.FileSystem, fs),
-		Effect.catch((error) =>
-			Effect.as(
-				Effect.logWarning(`tuval: could not read the open projects list — ${error.message}`),
-				null,
-			),
-		),
-	);
-	const openRef = yield* SubscriptionRef.make(OpenProjects.restoring(saved));
+	const openRef = yield* SubscriptionRef.make(OpenProjects.restoring(options.saved));
 	const scopes = new Map<string, Scope.Closeable>();
 	const renderers = yield* SubscriptionRef.make<Renderers>({
 		desk: options.deskRenderers,
@@ -536,11 +543,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 		if (!isFolder) {
 			return yield* new ProjectOpenRefused({folder, reason: "no folder is there"});
 		}
-		// A config that cannot be checked for is asked about, never assumed away.
-		const hasConfig = yield* fs
-			.exists(projectConfig(folder))
-			.pipe(Effect.orElseSucceed(() => true));
-		return current.trusted.gate(folder, hasConfig);
+		return current.trusted.gate(folder, yield* holdsConfig(fs, folder));
 	});
 
 	/**
@@ -562,10 +565,7 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 			new ProjectOpenRefused({folder: project.folder, reason: reasonOf(cause)});
 		// Checked again under the lock and just before the import: a config written into the folder
 		// after `admit` found none must not be imported on a question nobody was asked.
-		const hasConfig = yield* fs
-			.exists(projectConfig(folder))
-			.pipe(Effect.orElseSucceed(() => true));
-		if (current.trusted.gate(folder, hasConfig) === "ask") {
+		if (current.trusted.gate(folder, yield* holdsConfig(fs, folder)) === "ask") {
 			return yield* refuse("a .tuval config appeared after the folder was checked; open it again");
 		}
 		const layer = {id: project.id, module: projectConfig(folder)};
@@ -822,10 +822,9 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 	});
 
 	/**
-	 * `boot`'s first open: the project at `folder`, already read and prepared. Known gap: its config
-	 * was imported before any page existed to ask from, so it skips the trust prompt, and `--project`
-	 * defaults to the working directory, so nobody has to name it. Ruling #9668 R2.1 exempts only the
-	 * home config; moving this open onto the trust gate is #9977.
+	 * `boot`'s first open of a folder that needs no question: trusted, or holding no config. `boot`
+	 * read its config beside the global layer's and prepared its state, lifting the desk's own
+	 * checkpoints out of it before the desk restored anything.
 	 */
 	const openFirst = (folder: string, loaded: LoadedProjectConfig, state: ProjectState) =>
 		Effect.gen(function* () {
@@ -833,5 +832,30 @@ export const makeProjects = Effect.fn("Tuval.makeProjects")(function* (options: 
 			return yield* commitOpen(project, loaded, state);
 		}).pipe(lock.withPermits(1));
 
-	return {service, openFirst, reopen, boundary};
+	/**
+	 * `boot`'s first open of a folder holding a config nobody has trusted (#9977). It is the open any
+	 * other folder gets, question and all, forked onto the desk's scope: the page that answers is
+	 * served only once `boot` has returned. The folder leaves the list a restart still has to reopen,
+	 * so the reopen that follows never skips it while its question is up.
+	 */
+	const askFirst = Effect.fn("Tuval.Projects.askFirst")(function* (folder: string) {
+		yield* settle(folder);
+		yield* Effect.forkIn(
+			openFolder(folder).pipe(
+				Effect.flatMap((opened) =>
+					Effect.forEach(
+						opened.refused,
+						(refusal) => Effect.logWarning(`tuval: ${refusal.message}`),
+						{concurrency: 1, discard: true},
+					),
+				),
+				Effect.catch((error) =>
+					Effect.logWarning(`tuval: did not open the project ${folder} — ${error.message}`),
+				),
+			),
+			options.scope,
+		);
+	});
+
+	return {service, openFirst, askFirst, reopen, boundary};
 });
