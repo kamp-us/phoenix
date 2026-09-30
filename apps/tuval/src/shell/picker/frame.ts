@@ -282,9 +282,7 @@ export const pickerFrame = (
 						id: `picker-${windowId}-programs`,
 						label: "Programs",
 						options: [],
-						emptyMessage: filtering
-							? "No program matches this filter."
-							: "No registered program can fill a window.",
+						emptyMessage: "No registered program can fill a window.",
 					},
 				]
 			: runsOf(visible.programs).map(({entries: run, offset}, index) => {
@@ -302,7 +300,7 @@ export const pickerFrame = (
 						emptyMessage: null,
 					};
 				});
-	const groups: ReadonlyArray<PickerGroup> = [
+	const listed: ReadonlyArray<PickerGroup> = [
 		...programGroups,
 		{
 			role: "group",
@@ -310,12 +308,7 @@ export const pickerFrame = (
 			id: `picker-${windowId}-processes`,
 			label: "Running processes",
 			options: optionsFrom(visible.processes, visible.programs.length),
-			emptyMessage:
-				visible.processes.length > 0
-					? null
-					: filtering
-						? "No running process matches this filter."
-						: "Nothing is running to attach to.",
+			emptyMessage: visible.processes.length > 0 ? null : "Nothing is running to attach to.",
 		},
 		// "Open project…" is the one row after the entries (`rowsFor`), in a group of its own.
 		...(rows.length > entryCount
@@ -331,6 +324,9 @@ export const pickerFrame = (
 				]
 			: []),
 	];
+	// Under a filter a group the filter emptied is dropped, not labelled: "nothing matches" speaks for
+	// the whole list, and the status line already says it once (#9985, the rule #9981 set).
+	const groups = filtering ? listed.filter((group) => group.options.length > 0) : listed;
 
 	const total = flatten(entries).length;
 	const counts = `${entries.programs.length} program${
