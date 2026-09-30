@@ -22,7 +22,8 @@ publish blocker". It is not one.
 
 **The hand-merge of a release PR is the designed release flip, not a stranded PR, and no sweep
 files it as a publish blocker.** The `ship` skill scopes itself as "not the human release flip",
-and its §8 says "Deploy is yours; release is a human's", which is ADR
+and its `## 7 — Release queue (dark ships only)` section says "Deploy is yours; release is a
+human's", which is ADR
 [0083](0083-agents-deploy-humans-release.md)'s split. The publish path that hangs off that merge is
 ADR [0239](0239-release-please-manifest-mode-version-derivation.md) and ADR
 [0292](0292-dispatched-publish-path-tag-bound.md).
