@@ -1,5 +1,5 @@
 import {Console, Effect, FileSystem, Path} from "effect";
-import {collectCodex, readCodexInventory} from "./codex-collector.ts";
+import {collectCodexFrom, readCodexInventory} from "./codex-collector.ts";
 import type {CodexWork} from "./codex-records.ts";
 
 export interface CodexDispatchCollection {
@@ -27,7 +27,7 @@ export const collectCodexDispatch = Effect.fn("spend.collectCodexDispatch")(
 		];
 		const notices = [...inventory.notices];
 		for (const rootThread of roots.length ? roots : [`dispatch:${options.worktree}`]) {
-			const result = yield* collectCodex({...options, rootThread});
+			const result = yield* collectCodexFrom(inventory, {...options, rootThread});
 			notices.push(...result.notices);
 		}
 		for (const notice of new Set(notices)) yield* Console.warn(`Fabrika usage: ${notice}`);
