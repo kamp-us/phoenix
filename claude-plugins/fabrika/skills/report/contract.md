@@ -160,11 +160,13 @@ shipped default declares none, so no repo, person or number is refused by defaul
    path alias takes, which no tool expands to a home folder: a **module specifier** — the path is
    the whole content of a matching `"` or `'` pair that opens in code context, optional whitespace
    before it: after the `from` of an `import`/`export` clause or after a side-effect `import`, where
-   the statement begins the line or follows a `;` or an inline-code backtick; after a `} from`
+   the statement begins the line or follows a `;` or a backtick that opens an inline-code span
+   (one with an even number of backticks before it on the line); after a `} from`
    closing a multi-line clause; or inside an `import(` or `require(` call — and a
    **path-mapping key** — a quoted path whose last segment is `*`, followed by optional whitespace
    and `:`, the shape of a tsconfig or jsconfig `paths` key. The bare word `from` or `import` in a
-   sentence is not code context, so a quoted path after it refuses. A tilde-slash path anywhere
+   sentence is not code context, so a quoted path after it refuses, including after a closing
+   inline-code backtick. A tilde-slash path anywhere
    else refuses, bare or backticked prose included, since nothing there tells an alias from a real
    home path; a filer quotes the alias inside an import line instead.
 2. **Absolute home root** — an absolute path under an OS home root: `/Users/<account>` on macOS,

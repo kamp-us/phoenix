@@ -60,8 +60,13 @@ const NAMED = String.raw`\{[^{}'"\x60]*\}`;
 const NAMESPACE = String.raw`\*(?:\s+as\s+${IDENT})?`;
 /** The bindings between `import`/`export` and `from`: a default, a `{…}` list, `* as x`, or a pair. */
 const CLAUSE = String.raw`(?:type\s+)?(?:${IDENT}(?:\s*,\s*(?:${NAMED}|${NAMESPACE}))?|${NAMED}|${NAMESPACE})`;
-/** Where a statement can begin on a line: its start, after a `;`, or after an inline-code backtick. */
-const STATEMENT = String.raw`(?:^|[;\x60])\s*`;
+/**
+ * A backtick that opens an inline-code span: an even number of backticks precede it on the line.
+ * A closing one is followed by prose, so it cannot begin a statement.
+ */
+const OPENING_BACKTICK = String.raw`(?<=^[^\x60]*(?:\x60[^\x60]*\x60[^\x60]*)*)\x60`;
+/** Where a statement can begin on a line: its start, after a `;`, or after an opening backtick. */
+const STATEMENT = String.raw`(?:^|;|${OPENING_BACKTICK})\s*`;
 
 /**
  * A quote opening a module specifier, ending the text before a match: an `import`/`export … from`

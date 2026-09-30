@@ -109,6 +109,10 @@ describe("scanBody's tilde-slash path-alias shapes", () => {
 		["a default-plus-named `from` specifier", `import React, {useState} from "~/lib/react";`],
 		["a `from` closing a multi-line clause", `} from "~/components/Button";`],
 		["a backticked import line in prose", "the repro is `import {cn} from '~/lib/utils'` there"],
+		[
+			"a backticked import line after an earlier inline-code span",
+			"run `make`, then `import {cn} from '~/lib/utils'` resolves",
+		],
 		["a double-quoted `paths` key", `    "~/*": ["./src/*"],`],
 		["a single-quoted `paths` key", "{'~/components/*' : ['./src/components/*']}"],
 	])("passes %s", (_name, body) => {
@@ -132,6 +136,14 @@ describe("scanBody's tilde-slash path-alias shapes", () => {
 		[
 			"a quoted path after a prose clause opening on `import`",
 			`import the file from "~/Documents/x.txt"`,
+		],
+		[
+			"a quoted path after prose `import` following a closing backtick",
+			'run `make` import "~/Documents/a.txt"',
+		],
+		[
+			"a quoted path after prose `} from` following a closing backtick",
+			'the `x` } from "~/Documents/x.txt"',
 		],
 	])("still refuses %s", (_name, body) => {
 		expect(scanBody(body).leaks).toEqual([
