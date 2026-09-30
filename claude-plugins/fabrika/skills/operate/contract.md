@@ -96,6 +96,19 @@ A lane whose task reached a `done:diagnosis` arm's final answers that leaf as th
 `diagnosed` on the coder machine, rather than the workflow's `complete`. A finished investigation
 reads as itself and never as the shipped lane's word.
 
+Beside the fold, `inFlight` names each task a shell stands on, read off the lane's
+`in-flight.jsonl`: `{<task>: {dispatched: {state, shell, at} | null, working: {token, worktree, at}
+| null}}`, never both `null`. `dispatched` is the task's latest [`lane dispatched`](#lane-dispatched)
+record and `working` its latest [`lane working`](#lane-working) one. Each stands until an event the
+task's machine takes is recorded after it; a `CLEARED`, a `CORRECTED` or an `AMENDED` moves no task
+and supersedes nothing. A `working` recorded before the standing `dispatched` belonged to the shell
+that dispatch replaced, so it does not stand. `inFlight` is absent where nothing stands. An
+`in-flight.jsonl` that cannot be read or is not the shape leaves the fold's answer whole: `inFlight`
+is absent, `inFlightUnread` names why, and stderr says the record is UNKNOWN. No fold reads these
+records, so `stateValue` and `context` are the same with or without them, and no claim release,
+worktree retire or reap reads them either. They live apart from `facts.jsonl` because that file's
+reader refuses a kind it does not know.
+
 ### Exit status
 
 `4`, `7`, `11` and `21` are the [shared read exits](#the-shared-read-and-record-exits); `11` means
@@ -1836,6 +1849,54 @@ stdout is `{answer: "waiting", lane, on, until}`.
 - `40` — another writer holds the ledger lock. Retry.
 - `70` — `--on` is not one non-blank line, or `--until` is not an ISO date still to come. Nothing
   was appended.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane dispatched`
+
+### Output
+
+Appends a `dispatched` record to the lane's `<root>/<key>/in-flight.jsonl`, run by the driver before
+it spawns a stage shell: `{kind: "dispatched", task, state, at}`. The state is the task's leaf off a
+fresh fold, never a caller's word, and it must route to a shell; the shell is derived from it by the
+table `lane brief` routes on. It is never an event, so `events.jsonl` and the fold are untouched. The
+append takes the lane's ledger lock. `lane status` names it under `inFlight`.
+
+stdout is `{answer: "dispatched", lane, task, state, shell, at}`.
+
+### Exit status
+
+- `4`, `7`, `11`, `13`, `21` — the [shared read and record exits](#the-shared-read-and-record-exits),
+  over `workflow.json`, `events.jsonl` and `in-flight.jsonl`.
+- `8` — the append did not land, so the dispatch is NOT recorded.
+- `18` — the task's state routes to no shell. Nothing was appended.
+- `40` — another writer holds the ledger lock. Retry.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane working`
+
+### Output
+
+Appends a `working` record to the lane's `<root>/<key>/in-flight.jsonl`, run by a builder once its
+build claim wins: `{kind: "working", task, token, worktree, at}`. `token` is `--token`, which must
+parse as a build claim token. `worktree` is the absolute root of the git tree the verb runs in, read
+off git rather than passed, so it names the tree the builder stands in. The task's leaf off a fresh
+fold must be a build state. It is never an event, so `events.jsonl` and the fold are untouched. The
+append takes the lane's ledger lock. `lane status` names it under `inFlight`; `lane record` never
+reads `in-flight.jsonl`, so the path stays on this machine.
+
+stdout is `{answer: "working", lane, task, token, worktree, at}`.
+
+### Exit status
+
+- `4`, `7`, `13`, `21` — the [shared read and record exits](#the-shared-read-and-record-exits),
+  over `workflow.json`, `events.jsonl` and `in-flight.jsonl`.
+- `8` — the append did not land, so the seat is NOT recorded.
+- `11` — the lane, its in-flight record, or which git tree this runs in could not be read.
+- `18` — the task's state is not a build state, so no builder is in flight there. Nothing was
+  appended.
+- `40` — another writer holds the ledger lock. Retry.
+- `70` — `--token` is not a build claim token, or the tree root is not an absolute path. Nothing was
+  appended.
 - `39`, `65` — [the lanes root](#the-lanes-root).
 
 ## `lane record`

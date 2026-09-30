@@ -22,7 +22,7 @@ import {readKey} from "../config/read-key.ts";
 import {resolveEntrypoint} from "../delegate/entrypoint.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
-import {localBranches} from "../io/git.ts";
+import {localBranches, repoRoot} from "../io/git.ts";
 import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {runReconcile as runShipReconcile} from "../ship/reconcile-verb.ts";
@@ -58,6 +58,7 @@ import {
 } from "./ground.ts";
 import {laneHelp, ROOT_EXITS} from "./help.ts";
 import {runHistory} from "./history-verb.ts";
+import {runDispatched, runWorking} from "./in-flight-verb.ts";
 import {runIntegrate} from "./integrate-verb.ts";
 import {
 	archivedRoot,
@@ -2279,6 +2280,96 @@ const wait = leafCommand(
 	]),
 );
 
+const dispatched = leafCommand(
+	"dispatched",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the task a shell is about to be spawned for; omittable on a single-task lane",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, task}) {
+		yield* emit(
+			yield* onKey("dispatched", lane, root, (_key, ref) =>
+				runDispatched({...ref, task: Option.getOrNull(task)}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Record that a stage shell is about to be spawned for a task."),
+	Command.withDescription(
+		laneHelp(
+			"dispatched",
+			'Records a dispatch fact before a spawn; prints {"answer":"dispatched",lane,task,state,shell,at}.',
+			{
+				4: "bad lane record or facts",
+				7: "no lane",
+				8: "the append did not land",
+				11: "read failed, UNKNOWN",
+				13: "task unknown or omitted",
+				18: "the task's state routes to no shell",
+				21: "bad key",
+				40: "the ledger lock is held; retry",
+				...ROOT_EXITS,
+			},
+		),
+	),
+	Command.withExamples([{command: "fabrika lane dispatched 5673"}]),
+);
+
+const working = leafCommand(
+	"working",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("the task this builder serves; omittable on a single-task lane"),
+		),
+		token: Flag.string("token").pipe(
+			Flag.withDescription("the build claim token `build claim` answered `won` with"),
+		),
+	},
+	Effect.fn(function* ({lane, root, task, token}) {
+		const worktree = yield* repoRoot;
+		yield* emit(
+			yield* onKey("working", lane, root, (_key, ref) =>
+				runWorking({...ref, task: Option.getOrNull(task), token, worktree}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Record the claim token and worktree of the builder on a task."),
+	Command.withDescription(
+		laneHelp(
+			"working",
+			'Records a builder\'s claim token and this tree\'s root; prints {"answer":"working",…}.',
+			{
+				4: "bad lane record or facts",
+				7: "no lane",
+				8: "the append did not land",
+				11: "read failed, UNKNOWN",
+				13: "task unknown or omitted",
+				18: "the task's state is not a build state",
+				21: "bad key",
+				40: "the ledger lock is held; retry",
+				70: "not a build claim token, or no absolute tree",
+				...ROOT_EXITS,
+			},
+		),
+	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika lane working 5673 --root /repo/.fabrika/lanes --token build:<session>:<uuid>",
+		},
+	]),
+);
+
 const record = leafCommand(
 	"record",
 	{
@@ -2370,6 +2461,8 @@ export const laneCommand = Command.make("lane").pipe(
 		adopt,
 		scratch,
 		wait,
+		dispatched,
+		working,
 		record,
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),

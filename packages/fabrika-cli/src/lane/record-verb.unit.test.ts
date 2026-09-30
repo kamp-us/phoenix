@@ -205,6 +205,42 @@ describe("lane record", () => {
 		expect(out.stderr.join("\n")).toContain("scrubbed 1 machine-local path");
 	});
 
+	it("posts no worktree path from the in-flight record", async () => {
+		const tree = "/Users/someone/repo/.claude/worktrees/agent-a1b2";
+		const records = [
+			JSON.stringify({
+				kind: "dispatched",
+				task: "issue",
+				state: "build",
+				at: "2026-09-26T06:00:30.000Z",
+			}),
+			JSON.stringify({
+				kind: "working",
+				task: "issue",
+				token: "build:session-a:11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+				worktree: tree,
+				at: "2026-09-26T06:00:40.000Z",
+			}),
+		].join("\n");
+		const fs = fakeFs({
+			files: {
+				[WORKFLOW]: coderTemplateText(),
+				[LOG]: shipped(),
+				[`${ROOT}/${LANE}/in-flight.jsonl`]: records,
+			},
+			dirs: {[ROOT]: [LANE]},
+			directories: [ROOT],
+		});
+		const {board, posted} = thread();
+
+		const out = await record(fs, board);
+
+		expect(out.code).toBe(0);
+		expect(posted).toHaveLength(1);
+		expect(posted[0]).not.toContain("worktrees/agent-a1b2");
+		expect(posted[0]).not.toContain("/Users/");
+	});
+
 	it("posts nothing for a lane that has not ended", async () => {
 		tick = 0;
 		const {board, posted} = thread();

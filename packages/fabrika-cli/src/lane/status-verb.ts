@@ -14,11 +14,17 @@
  * ever planned read identically, and "deferred" would be indistinguishable from "done" to a reader
  * that only checks the lane reached its terminal. Absent rather than empty where the lane deferred
  * nothing, so every other lane's status is byte for byte what it always was.
+ *
+ * An `inFlight` object rides beside it on the same terms: each task a shell is standing on — the
+ * driver's dispatch and the builder's claim token and worktree ([`in-flight.ts`](in-flight.ts)) —
+ * read off a file no fold reads. It is absent where nothing stands, and a file that does not read
+ * never costs the fold its answer: it is named in `inFlightUnread` instead.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import {answer, type VerbOutcome} from "../verb.ts";
 import {resolveDeferrals} from "./deferral.ts";
 import {deriveStatus, foldLog, standingCauses, standingRationales} from "./fold.ts";
+import {inFlight, loadInFlight} from "./in-flight.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -40,8 +46,23 @@ export const runStatus = (
 		);
 		const deferrals = resolveDeferrals(loaded.entries);
 		const deferred = deferrals._tag === "Resolved" ? deferrals.deferrals : [];
-		return answer(JSON.stringify(deferred.length === 0 ? status : {...status, deferred}, null, 2), [
+		const records = yield* loadInFlight(loaded.dir);
+		const standing = records._tag === "Loaded" ? inFlight(records.records, loaded.entries) : {};
+		const unread =
+			records._tag === "Unreadable"
+				? `cannot read ${records.path}: ${records.reason}`
+				: records._tag === "Malformed"
+					? `${records.path} is not the shape: ${records.defects.join("; ")}`
+					: null;
+		const answered = {
+			...status,
+			...(deferred.length === 0 ? {} : {deferred}),
+			...(Object.keys(standing).length === 0 ? {} : {inFlight: standing}),
+			...(unread === null ? {} : {inFlightUnread: unread}),
+		};
+		return answer(JSON.stringify(answered, null, 2), [
 			`${VERB}: folded ${loaded.entries.length} event(s) from ${loaded.logPath}.`,
+			...(unread === null ? [] : [`${VERB}: which shell is in flight is UNKNOWN — ${unread}.`]),
 			...(deferred.length === 0
 				? []
 				: [
