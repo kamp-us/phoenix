@@ -40,7 +40,7 @@ export function UserMenu({
 	const close = () => setOpen(false);
 	const t = useT();
 	// Both settings read their app-level provider rather than props drilled through Topbar, so
-	// this menu is the one source for the signed-in theme control (ADR 0176 verdict 2).
+	// this menu is the one source for the signed-in theme control (ADR 0437).
 	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const {locale, setLocale} = useLocale();
 

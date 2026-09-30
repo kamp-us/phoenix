@@ -216,7 +216,7 @@ export function Topbar({
 			<div className="kp-topbar__zone kp-topbar__zone--utility" data-testid="topbar-zone-utility">
 				{searchTrigger}
 				{/* No theme control here in any state: signed in it rides the user menu, signed out
-				    there is none and the page follows the OS (ADR 0176 verdict 2, #6791). */}
+				    there is none and the page follows the OS (ADR 0437). */}
 			</div>
 			<div
 				className="kp-topbar__zone kp-topbar__zone--status-signal"

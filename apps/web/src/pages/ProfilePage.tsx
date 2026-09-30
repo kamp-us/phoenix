@@ -228,8 +228,7 @@ export function ProfilePage() {
 
 				<section className="kp-profile__section">
 					<h3>{t("profile.section.appearance")}</h3>
-					{/* No theme row: the signed-in user's one theme control is the user menu's
-					    (ADR 0176 verdict 2, #6791). */}
+					{/* No theme row: the signed-in user's one theme control is the user menu's (ADR 0437). */}
 					<div className="kp-profile__row">
 						<span className="label">{t("profile.field.density")}</span>
 						<span className="value">

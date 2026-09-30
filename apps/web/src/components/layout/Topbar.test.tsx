@@ -262,8 +262,8 @@ describe("Topbar status/signal zone (#2613)", () => {
 	});
 });
 
-// ADR 0176 verdict 2, as amended by #6791: signed in, the one theme control rides the user
-// menu; signed out, there is none and the page follows the OS.
+// ADR 0437: signed in, the one theme control rides the user menu; signed out, there is none
+// and the page follows the OS.
 function expectNoThemeControl(container: HTMLElement) {
 	expect(screen.queryByTestId("topbar-theme-picker")).toBeNull();
 	expect(screen.queryByTestId("topbar-theme-row")).toBeNull();
@@ -272,7 +272,7 @@ function expectNoThemeControl(container: HTMLElement) {
 	expect(container.querySelector(".kp-theme-picker")).toBeNull();
 }
 
-describe("Topbar theme control placement (ADR 0176 verdict 2, #6791)", () => {
+describe("Topbar theme control placement (ADR 0437)", () => {
 	afterEach(() => window.localStorage.clear());
 
 	it("signed out: no theme control renders anywhere", () => {

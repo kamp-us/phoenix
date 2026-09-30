@@ -28,7 +28,7 @@ test.describe("Topbar (signed out)", () => {
 		);
 	});
 
-	// Signed out there is no theme control; the page follows the OS (ADR 0176 verdict 2, #6791).
+	// Signed out there is no theme control; the page follows the OS (ADR 0437).
 	test("no theme picker, and <html data-theme> follows the OS", async ({page}) => {
 		await expect(page.getByTestId("topbar-theme-picker")).toHaveCount(0);
 

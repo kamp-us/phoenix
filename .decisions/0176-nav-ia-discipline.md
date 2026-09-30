@@ -1,7 +1,7 @@
 ---
 id: 0176
 title: Nav IA discipline — element taxonomy + placement law, encoded in the design manifest
-status: accepted
+status: amended-in-part by [0437](0437-theme-control-user-menu-only.md)
 date: 2026-07-11
 tags: [design, frontend, navigation, information-architecture, manifest]
 ---
@@ -71,7 +71,7 @@ Ratified on #2586. Every nav element is assigned to exactly one of four classes.
 |---|---|---|
 | **destination** | A place you go — a product noun or a top-level feed. | sözlük, pano, mecmua |
 | **primary action** | The one verb the surface promotes. Exactly one per surface. | the global `+` create menu |
-| **utility** | An ambient control the user reaches for on demand. | search (`⌘K`), theme (in the user menu) |
+| **utility** | An ambient control the user reaches for on demand. | search (`⌘K`), theme (user menu, per [ADR 0437](0437-theme-control-user-menu-only.md)) |
 | **signal** | Read-only state that reports "what needs your attention". | bildirim (bell + count), divan access, karma |
 
 Two notes on the ratification: the candidate fourth class "status" was **sharpened to
@@ -120,14 +120,10 @@ verdicts — the concrete restructure the discipline demands:
    the single theme control; no user-menu item. `DEFAULT_CHOICE` flips to **auto** so
    signed-out visitors follow the OS.
 
-   > **Amendment (2026-09-02, [#6791](https://github.com/kamp-us/phoenix/issues/6791)).** The
-   > founder ruled the theme control's placement at
-   > https://github.com/kamp-us/phoenix/issues/6791#issuecomment-5519864859. **Signed in**,
-   > exactly one theme control renders, and it rides the **user menu**. **Signed out**, there
-   > is **no theme picker at all**: the visitor follows the OS theme through the `auto`
-   > default above. This replaces the profile-page placement and the "no user-menu item"
-   > clause, and it also removes the signed-out topbar picker that #2612 introduced. The
-   > user-menu zone already admits account-scoped utilities, so the zone grammar is unchanged.
+   > **Amended in part by [ADR 0437](0437-theme-control-user-menu-only.md) (ruled 2026-09-02,
+   > https://github.com/kamp-us/phoenix/issues/6791#issuecomment-5519864859).** This verdict's
+   > theme placement, the profile-page picker and "no user-menu item", no longer holds; ADR 0437
+   > records where the theme control lives. The `DEFAULT_CHOICE` → **auto** clause still holds.
 3. **bildirim badge → a standalone bell** (Lucide, per the icon idiom) with a count, opening a
    dropdown of the last 10 notifications + "tüm bildirimleri gör" → `/bildirim`. The
    user-menu "bildirimler" item dies.

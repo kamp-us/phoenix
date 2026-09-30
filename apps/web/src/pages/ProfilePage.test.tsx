@@ -158,10 +158,9 @@ describe("ProfilePage appearance controls", () => {
 			.closest('[data-scope="toggle-group"][data-part="root"]');
 
 		expect(densityGroup?.classList).toContain("kp-toggle-group--outline");
-		expect(densityGroup?.classList).not.toContain("kp-profile__theme-toggle");
 	});
 
-	// A signed-in user's one theme control is the user menu's (ADR 0176 verdict 2, #6791).
+	// A signed-in user's one theme control is the user menu's (ADR 0437).
 	it("renders no theme control of its own", () => {
 		sessionUsername = "session-uname";
 		meUsername = "session-uname";

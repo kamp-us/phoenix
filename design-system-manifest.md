@@ -366,7 +366,7 @@ lives as a contextual CTA in *that product's* Subnav — never as a global topba
 | the global `+` create menu | primary action | Topbar (the one promoted action) |
 | a product-scoped create CTA (e.g. pano "new post") | primary action (contextual) | that product's Subnav |
 | search (`⌘K`) | utility | Topbar |
-| theme (light/dark/auto) | utility | User menu, signed in only (no topbar toggle; signed out there is no control and the page follows the OS — ADR 0176 verdict 2 as amended by #6791) |
+| theme (light/dark/auto) | utility | User menu, signed in only (no topbar toggle; signed out there is no control and the page follows the OS — [ADR 0437](.decisions/0437-theme-control-user-menu-only.md)) |
 | bildirim (bell + count → dropdown) | signal | Topbar (signals zone) |
 | divan (gated glyph + tooltip) | signal | Topbar (signals zone) |
 | karma | signal | Folded into the user-menu trigger as `name (karma)` |
