@@ -201,11 +201,15 @@ jobs:
       # — or an EMPTY one — instead routes to `getChangesSinceMergeBase`, a THREE-DOT merge-base
       # search with depth-limited incremental fetching against a MOVING `main`, whose result
       # drifts run to run. So this step emits a SHA per event:
-      #   - pull_request: the true merge base of `base.sha..HEAD`, so dorny's two-dot diff
-      #     equals the PR's own three-dot diff. `base.sha` is the base BRANCH TIP at event time
-      #     while the checked-out `refs/pull/N/merge` is built on an older tip, so diffing raw
-      #     `base.sha` reports every file main changed since, in reverse — the 22 phantom `e2e:`
-      #     hits that wedged PR #3713 (10-min preview poll on a deploy that correctly skipped).
+      #   - pull_request: the checked-out `refs/pull/N/merge` commit's first parent (`HEAD^1`),
+      #     the exact base tip GitHub merged the PR onto, so dorny's two-dot `HEAD^1..HEAD` is
+      #     the PR's own change against its merge target (#10060). `base.sha` is recorded at event
+      #     time and can sit on either side of that parent, and both directions leak main's drift
+      #     into the diff. NEWER than the parent: diffing raw `base.sha` reports every file main
+      #     changed since, in reverse — the 22 phantom `e2e:` hits that wedged PR #3713 (#3722).
+      #     OLDER than the parent: the merge base of `base.sha` and HEAD is `base.sha` itself, so
+      #     every file main took in between counts as the PR's — nine `.decisions/` files sent
+      #     PR #10027's `packages unit tests` full. The first parent is right in both cases.
       #   - merge_group: the batch's own `base_sha`. An empty `base` here defaulted dorny to
       #     `base = defaultBranch` ('main', a BRANCH NAME — not a SHA) ⇒ the unstable
       #     merge-base-against-moving-main path, so the IDENTICAL docs-only PR #3747 got
@@ -217,13 +221,15 @@ jobs:
       #     scope decision every batch.
       # deploy.yml's filter reads the same globs off this same `base:` input, so both stay
       # anchored to one basis or they classify the same PR differently (`path-filter-guard`
-      # fails closed on that drift). Fail-safe: on any failure the output is empty, dorny falls
+      # fails closed on that drift). Fail-safe: on any failure, including a `pull_request` HEAD
+      # that is not a two-parent merge commit, the output is empty, dorny falls
       # back to its default-branch merge-base basis, and detection stays WIDE (it over-reports,
       # never under-reports) — a doubt always RUNS a gate, never skips one.
       - id: mergebase
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         env:
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -uo pipefail
           if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then
@@ -233,11 +239,12 @@ jobs:
             else
               echo "::warning::merge_group base_sha empty — falling back to dorny's default-branch merge-base basis (detection stays wide, never narrower)"
             fi
-          elif sha=$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD 2>/dev/null); then
+          elif git rev-parse --verify --quiet 'HEAD^2^{commit}' >/dev/null \
+            && sha=$(git rev-parse --verify --quiet 'HEAD^1^{commit}'); then
             echo "sha=$sha" >> "$GITHUB_OUTPUT"
-            echo "::notice::change-detection diff basis = merge base $sha (base.sha ${{ github.event.pull_request.base.sha }})"
+            echo "::notice::change-detection diff basis = merge ref first parent $sha (base.sha $PR_BASE_SHA)"
           else
-            echo "::warning::could not resolve a merge base — falling back to dorny's base.sha basis (detection stays wide, never narrower)"
+            echo "::warning::HEAD is not a merge commit with a resolvable first parent — falling back to dorny's base.sha basis (detection stays wide, never narrower)"
           fi
 
       # API-free git-mode change detection (#3245). dorny/paths-filter reads the changed
@@ -263,8 +270,8 @@ jobs:
         id: filter
         with:
           token: ''
-          # The explicit diff basis the `mergebase` step above pins: the PR merge base on
-          # `pull_request`, the batch `base_sha` on `merge_group` (#3797), and empty on `push`
+          # The explicit diff basis the `mergebase` step above pins: the merge ref's first
+          # parent on `pull_request`, the batch `base_sha` on `merge_group` (#3797), and empty on `push`
           # (dorny keeps its default-branch merge-base backstop there). `path-filter-guard`
           # fails closed if this `token`/`base` pairing ever drifts from deploy.yml's.
           base: ${{ steps.mergebase.outputs.sha }}
@@ -499,7 +506,7 @@ jobs:
     # docs-only PR).
     #
     # On a PR or a queue batch both halves read only what the diff since the `changes` job's
-    # merge base reaches (#10074): biome checks the changed files, and turbo `--affected`
+    # diff base reaches (#10074): biome checks the changed files, and turbo `--affected`
     # typechecks the changed packages and their dependents. `push` to main and
     # `workflow_dispatch` carry no base and check everything, with turbo's cache unread.
     if: needs.changes.outputs.check_required == 'true'
@@ -581,7 +588,7 @@ jobs:
     # Same gate as `check`: skip (→ green, non-blocking) on a docs/skills-only PR.
     #
     # On a PR or a queue batch the app suites run through turbo `--affected` against the
-    # `changes` job's merge base, so an app neither the diff nor any of its dependencies touched
+    # `changes` job's diff base, so an app neither the diff nor any of its dependencies touched
     # is not run at all, and each selected app runs vitest `--changed <base>`, only the tests
     # whose import graph reaches a changed file (#10074). A file a test reads from disk instead
     # of importing is a `forceRerunTriggers` entry in that app's `vitest.config.ts`, which runs
