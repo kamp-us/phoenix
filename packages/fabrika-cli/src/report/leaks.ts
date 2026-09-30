@@ -55,12 +55,24 @@ interface Site {
 	readonly end: number;
 }
 
+const IDENT = String.raw`[\w$]+`;
+const NAMED = String.raw`\{[^{}'"\x60]*\}`;
+const NAMESPACE = String.raw`\*(?:\s+as\s+${IDENT})?`;
+/** The bindings between `import`/`export` and `from`: a default, a `{…}` list, `* as x`, or a pair. */
+const CLAUSE = String.raw`(?:type\s+)?(?:${IDENT}(?:\s*,\s*(?:${NAMED}|${NAMESPACE}))?|${NAMED}|${NAMESPACE})`;
+/** Where a statement can begin on a line: its start, after a `;`, or after an inline-code backtick. */
+const STATEMENT = String.raw`(?:^|[;\x60])\s*`;
+
 /**
- * A quote directly after `from`, `import`, `import(` or `require(`, ending the text before a match.
- * Node and bundlers never expand `~` in a module specifier, so a path filling that quote pair is a
- * path alias, not a home path.
+ * A quote opening a module specifier, ending the text before a match: an `import`/`export … from`
+ * clause or a side-effect `import` beginning a statement, a `} from` closing a multi-line clause,
+ * or an `import(`/`require(` call. The word `from` or `import` in a sentence is none of these, so a
+ * quoted path after it still refuses. Node and bundlers never expand `~` in a module specifier, so
+ * a path filling that quote pair is a path alias, not a home path.
  */
-const SPECIFIER_OPENER = /\b(?:from|import|(?:import|require)\s*\()\s*(["'])$/;
+const SPECIFIER_OPENER = new RegExp(
+	String.raw`(?:${STATEMENT}(?:(?:import|export)\s+${CLAUSE}\s*from|import|\}\s*from)|\b(?:import|require)\s*\()\s*(["'])$`,
+);
 
 /** A quote ending the text before a match — the opener of a path-mapping key. */
 const KEY_OPENER = /(["'])$/;

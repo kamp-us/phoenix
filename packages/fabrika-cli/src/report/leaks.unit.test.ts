@@ -105,6 +105,10 @@ describe("scanBody's tilde-slash path-alias shapes", () => {
 		["a side-effect `import` specifier", `import "~/styles/globals.css";`],
 		["an `import(` specifier", "const Page = await import( '~/app/page' );"],
 		["a `require(` specifier", `const cfg = require("~/config");`],
+		["a type-only `from` specifier", `import type {Props} from "~/types";`],
+		["a default-plus-named `from` specifier", `import React, {useState} from "~/lib/react";`],
+		["a `from` closing a multi-line clause", `} from "~/components/Button";`],
+		["a backticked import line in prose", "the repro is `import {cn} from '~/lib/utils'` there"],
 		["a double-quoted `paths` key", `    "~/*": ["./src/*"],`],
 		["a single-quoted `paths` key", "{'~/components/*' : ['./src/components/*']}"],
 	])("passes %s", (_name, body) => {
@@ -116,6 +120,19 @@ describe("scanBody's tilde-slash path-alias shapes", () => {
 		["a backticked path in prose", "the alias `~/lib/utils` resolves to src"],
 		["a quoted home path after no import keyword", `open "~/Documents/notes.txt" first`],
 		["a quoted `/*` string with no following colon", `glob "~/src/*" matched nothing`],
+		[
+			"a double-quoted path after prose `from`",
+			`I loaded the config from "~/.config/app/settings.json"`,
+		],
+		[
+			"a single-quoted path after prose `from`",
+			"copied it from '~/Documents/client-acme/notes.txt'",
+		],
+		["a quoted path after prose `import`", `then I import "~/Downloads/data.csv" by hand`],
+		[
+			"a quoted path after a prose clause opening on `import`",
+			`import the file from "~/Documents/x.txt"`,
+		],
 	])("still refuses %s", (_name, body) => {
 		expect(scanBody(body).leaks).toEqual([
 			expect.objectContaining({line: 1, class: "home-relative"}),
