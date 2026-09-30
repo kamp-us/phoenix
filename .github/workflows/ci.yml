@@ -78,21 +78,24 @@ jobs:
       # predicate, so both read `check_required`. The integration/e2e author+event
       # guards are reproduced EXACTLY so a fork/non-author PR's legitimate
       # secret-less skip stays legitimate (required=false ⇒ skip is a PASS).
-      # On the merge queue's batched `merge_group` ref there is no PR base for
-      # `paths-filter` to diff, so every `*_required` output ORs in `merge_group` to run
-      # the FULL gate on the batch (fail-safe to running — the same stance the
-      # worker-relevance classifier takes). The batch ref is the prospective merge of all
-      # queued PRs, so cost-optimization path-filtering doesn't apply there (ADR 0132).
-      # `workflow_dispatch` rides beside `merge_group` in every required-ness expression
-      # below, for the same reason and with the same stance: neither event carries a PR base,
-      # so neither gets to narrow the gate on a path filter, and both FAIL SAFE TO RUNNING.
-      # On a dispatched run the `mergebase` step is skipped, dorny falls back to its
-      # default-branch merge-base basis, and the filter outputs stay wide — but the Release PR
-      # is the one PR nobody re-reads before merging, so the full gate is what it gets (#5718).
+      # On the merge queue's batched `merge_group` ref the path filter decides required-ness
+      # exactly as it does on a PR: the `mergebase` step below pins dorny's `base` to
+      # `merge_group.base_sha` (#3797), so the filter diffs the batch's two-dot
+      # `base_sha..head` — the cumulative diff of every queued PR, on a stable basis. A batch
+      # holding one code-touching PR still matches `code` and runs the gate; only a batch in
+      # which nothing matched skips. `integration_required` below already trusts that same
+      # batch diff, so a docs-only batch skips on PR head and batch alike (#3514). ADR 0132
+      # mandates the `merge_group` trigger, not a full gate on the batch. Fail-safe: an empty
+      # `base_sha` leaves the `mergebase` output empty, dorny falls back to its default-branch
+      # merge-base basis, and detection stays wide (it over-reports, never under-reports).
+      # `workflow_dispatch` still ORs in to every required-ness expression below and FAILS
+      # SAFE TO RUNNING: a dispatched run carries no base, the `mergebase` step is skipped,
+      # and the Release PR is the one PR nobody re-reads before merging, so the full gate is
+      # what it gets (#5718).
       # `e2e_required` is the one expression where a dispatch still reads the path filter
       # rather than ORing past it; its own block says why, and it is a widening there too —
       # no event may make that gate not-required on its own.
-      check_required: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.code == 'true' }}
+      check_required: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.code == 'true' }}
       # `worker_relevant != 'false'` (issue #1014) is ANDed in LAST so it can only
       # REMOVE an integration run, never add one: a PR whose diff is provably confined
       # to worker-irrelevant packages skips the tier even though the lockfile delta
@@ -138,10 +141,9 @@ jobs:
             (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
             (github.event_name == 'push' ||
              contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))) }}
-      # e2e is DELIBERATELY the ONE gating job NOT ORed-in on `merge_group` — it is
-      # the opposite stance of check/integration/packages/workflows above (which DO
-      # OR in `merge_group` to run the full gate on the batch, because they need no
-      # deploy). e2e alone awaits a live preview URL + D1 id from deploy.yml, and
+      # e2e is DELIBERATELY the ONE gating job that never runs on `merge_group` — unlike
+      # check/integration/packages/workflows above, which read the batch diff's path
+      # filter there and run whenever it matches, because they need no deploy. e2e alone awaits a live preview URL + D1 id from deploy.yml, and
       # deploy.yml has NO `merge_group` trigger,
       # so a batch can't produce a preview — e2e would await one forever, time out,
       # and red `ci-required`, ejecting the whole batch (ADR 0132; run 28645439324).
@@ -177,13 +179,13 @@ jobs:
       # integration/e2e), so a fork PR that touches `packages/**` MUST still run +
       # pass them. A non-packages PR has `packages_required == false`, so the job's
       # skip is a legitimate not-applicable PASS.
-      packages_required: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.packages == 'true' }}
+      packages_required: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.packages == 'true' }}
       # `actionlint` lints `.github/workflows/**` (issue #568). Its single-sourced
       # required-ness is JUST the `workflows` path filter — actionlint is creds-free
       # and fast (no author/fork guard), so any PR (incl. a fork) that touches a
       # workflow MUST run + pass it. A non-workflow PR has `workflows_required ==
       # false`, so the job's skip is a legitimate not-applicable PASS.
-      workflows_required: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.workflows == 'true' }}
+      workflows_required: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.workflows == 'true' }}
     steps:
       # Full history so the worker-relevance step's base...head diff resolves; the
       # default shallow checkout has no merge-base for the comparison (issue #1014).
