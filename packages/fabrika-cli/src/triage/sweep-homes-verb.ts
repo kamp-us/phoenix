@@ -11,8 +11,9 @@
  * citation read from stdin.
  *
  * **Per issue, the trail lands before the clear.** The issue is re-read first and skipped as `moved`
- * when the breach it was planned from is gone. Its comments are read, and the trail is posted unless
- * one carrying this milestone's marker is already there. Then the milestone is cleared and read back.
+ * when the breach it was planned from is gone. Its comments are read reconciled against the count the
+ * issue declares, so a trail this verb posted moments earlier cannot be missed by a short list, and
+ * the trail is posted unless one carrying this milestone's marker is already there. Then the milestone is cleared and read back.
  * That order lets a run that died between the two writes be re-run: the breach is still on the
  * board, and the trail is found rather than posted twice.
  */
@@ -24,7 +25,7 @@ import {
 	clearMilestone,
 	createComment,
 	getIssue,
-	listComments,
+	listCommentsReconciled,
 	openIssuesWithLabelRecords,
 	resolveRepo,
 } from "../io/issues.ts";
@@ -128,7 +129,7 @@ const sweepOne = (
 			};
 		}
 
-		const comments = yield* listComments(repo, n);
+		const comments = yield* listCommentsReconciled(repo, n);
 		if (comments._tag === "Failure") {
 			return {
 				code: PRECONDITION_UNKNOWN,
@@ -138,7 +139,7 @@ const sweepOne = (
 		let trailUrl = "trail-existing";
 		if (
 			!hasTrail(
-				comments.value.map((comment) => comment.body),
+				comments.value.comments.map((comment) => comment.body),
 				breach.milestone,
 			)
 		) {

@@ -4,7 +4,7 @@
  * that fails lands as UNKNOWN.
  */
 import {Effect} from "effect";
-import {describe, expect, it} from "vitest";
+import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
@@ -32,6 +32,8 @@ interface Shape {
 	readonly number: number;
 	readonly milestone?: number | null;
 	readonly lanes?: ReadonlyArray<string>;
+	/** The `comments` count the issue payload declares for itself. */
+	readonly comments?: number;
 }
 
 const body = (shape: Shape) => ({
@@ -42,6 +44,7 @@ const body = (shape: Shape) => ({
 	labels: ["status:triaged", ...(shape.lanes ?? [])].map((name) => ({name})),
 	html_url: `https://example.test/issues/${shape.number}`,
 	milestone: shape.milestone == null ? null : {number: shape.milestone},
+	...(shape.comments === undefined ? {} : {comments: shape.comments}),
 });
 
 const board = (...shapes: ReadonlyArray<Shape>): HttpReply => ({
@@ -193,6 +196,55 @@ describe("runSweepHomes — the apply", () => {
 			"apply",
 		);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
+	});
+});
+
+describe("runSweepHomes — a comment list short of the declared count", () => {
+	const saved = process.env.FABRIKA_COMMENT_SCAN_DELAY_MS;
+	const DECLARING_ONE: Shape = {...DOUBLE, comments: 1};
+
+	beforeEach(() => {
+		process.env.FABRIKA_COMMENT_SCAN_DELAY_MS = "0";
+	});
+
+	afterEach(() => {
+		if (saved === undefined) delete process.env.FABRIKA_COMMENT_SCAN_DELAY_MS;
+		else process.env.FABRIKA_COMMENT_SCAN_DELAY_MS = saved;
+	});
+
+	it("re-reads past a list that missed the trail it just posted, and posts no second one", async () => {
+		const {outcome, requests} = await run(
+			[
+				[BACKLOG, board(DOUBLE)],
+				[once(ISSUE), one(DOUBLE)],
+				// the stale page a re-run right after a halt can read: the trail is not on it yet
+				[once(COMMENTS), comments()],
+				[once(ISSUE), one(DECLARING_ONE)],
+				[once(COMMENTS), comments(`earlier\n\n${trailMarker(17)}`)],
+				[once(ISSUE), one(DECLARING_ONE)],
+				[PATCH, ACCEPTED],
+				[ISSUE, one(SWEPT)],
+			],
+			"apply",
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toContain("trail-existing");
+		expect(writes(requests).map((line) => line.split(" ")[0])).toEqual(["PATCH"]);
+	});
+
+	it("halts UNKNOWN and writes nothing when the shortfall survives every re-read", async () => {
+		const {outcome, requests} = await run(
+			[
+				[BACKLOG, board(DOUBLE)],
+				[once(ISSUE), one(DOUBLE)],
+				[COMMENTS, comments()],
+				[ISSUE, one(DECLARING_ONE)],
+			],
+			"apply",
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("received 0 of 1 declared comment(s)");
+		expect(writes(requests)).toEqual([]);
 	});
 });
 

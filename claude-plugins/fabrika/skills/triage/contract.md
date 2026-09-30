@@ -2583,12 +2583,20 @@ on stderr as `unhomed\t<number>\t<title>`, with the guard's three-way remedy, wr
 and exits `27`. The double-marked clears in the same run still land first.
 
 **Write order, per issue.** Re-read the issue, and answer `moved` without writing when it is no
-longer open or no longer carries the planned milestone beside a standing lane. Read its comments.
-Post the trail unless one carrying this milestone's marker (`<!-- fabrika:sweep-homes milestone=<m> -->`)
+longer open or no longer carries the planned milestone beside a standing lane. Read its comments
+reconciled against the count the issue declares for itself, so a trail posted moments earlier is not
+missed by a short list; a list still short after its re-reads is `11`, never a missing trail. Post
+the trail unless one carrying this milestone's marker (`<!-- fabrika:sweep-homes milestone=<m> -->`)
 is already there. Clear the milestone. Read the issue back and require it milestone-less with every
 planned lane kept. The trail lands before the clear so a run that died between the two can be
 re-run: the breach is still on the board, and the trail is found rather than posted twice. A second
 run over a fully swept board plans nothing and writes nothing.
+
+**It takes no claim.** Unlike `enrich`, `apply`, `park`, `kill` and `split`, this verb reads no
+per-issue claim marker and has no `--token` flag. A sweep spans the whole triaged board, so it
+cannot hold one claim per issue, and it has no need to: it makes no triage judgment on any issue.
+Its only writes are the guard's mechanical remedy and the trail naming it, applied to an issue
+re-read just before the write and skipped as `moved` when that re-read shows the breach changed.
 
 **The trail comment** states the milestone removed and the lane kept, then carries the stdin
 citation, then the marker. Which decision and ruling govern homing is the adopting repository's
