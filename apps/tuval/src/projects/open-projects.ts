@@ -415,6 +415,13 @@ const RecordFile = Schema.fromJsonString(OpenProjectsRecord, {space: "\t"});
 const encodeRecord = Schema.encodeSync(RecordFile);
 const decodeRecord = Schema.decodeUnknownEffect(RecordFile);
 
+/** The saved list's file contents for `projects`. */
+export const openProjectsText = (projects: OpenProjects): string =>
+	`${encodeRecord(projects.record)}\n`;
+
+/** A saved list's file contents read back, throwing on anything that is not one. */
+export const decodeOpenProjectsText = Schema.decodeUnknownSync(RecordFile);
+
 /**
  * Write the list whole, through a sibling temp file and a rename, so a reader never sees half of
  * one and a crash mid-write leaves the previous list.
@@ -427,7 +434,7 @@ export const saveOpenProjects = Effect.fn("Tuval.saveOpenProjects")(function* (
 	const file = openProjectsFile(home);
 	yield* fs.makeDirectory(homeTuvalDir(home), {recursive: true});
 	const temp = `${file}.${process.pid}.tmp`;
-	yield* fs.writeFileString(temp, `${encodeRecord(projects.record)}\n`);
+	yield* fs.writeFileString(temp, openProjectsText(projects));
 	yield* fs.rename(temp, file);
 });
 

@@ -16,6 +16,7 @@ import {localId} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 import {Effect, Option} from "effect";
 import {type Booted, boot} from "./boot.ts";
 import {ProjectId} from "./project-id.ts";
+import {trustFolders} from "./scratch-home.ts";
 
 const [project, home] = process.argv.slice(2);
 if (project === undefined || home === undefined) {
@@ -160,6 +161,8 @@ const reloaded = (booted: Booted) =>
 	);
 
 const probe = Effect.gen(function* () {
+	// The project is the probe's own, trusted up front: this is not about its trust question (#9977).
+	trustFolders(home, [project]);
 	const booted = yield* boot({global: join(project, "no-global-layer.ts"), project, home});
 	const tally = yield* handleOf(booted, "tally");
 	const steady = yield* handleOf(booted, "steady");
