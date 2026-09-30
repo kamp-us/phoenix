@@ -2,9 +2,10 @@ import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
-import {describe, expect, it, vi} from "vitest";
+import {afterEach, describe, expect, it} from "vitest";
 import {promotionBarFor, VOUCH_PROMOTION_KARMA_BAR} from "../../../worker/features/kunye/standing";
 import {trCatalog} from "../../i18n";
+import {ThemeProvider} from "../../lib/theme";
 import {VOUCH_NEEDED_KEYS} from "../profile/CaylakStatusBlock";
 import {caylakMeter} from "./caylakMeter";
 import {Topbar} from "./Topbar";
@@ -17,13 +18,15 @@ const NAV = [
 function renderTopbar() {
 	return render(
 		<MemoryRouter>
-			<Topbar
-				nav={NAV}
-				divanTo="/divan"
-				karma={42}
-				reserveSignedInSlots
-				user={{name: "Elif", username: "elif"}}
-			/>
+			<ThemeProvider>
+				<Topbar
+					nav={NAV}
+					divanTo="/divan"
+					karma={42}
+					reserveSignedInSlots
+					user={{name: "Elif", username: "elif"}}
+				/>
+			</ThemeProvider>
 		</MemoryRouter>,
 	);
 }
@@ -60,13 +63,15 @@ describe("Topbar nav-IA zone grammar (#2611)", () => {
 		// destination zone ties the CSS-source guard to a real DOM occupant.
 		render(
 			<MemoryRouter initialEntries={["/pano"]}>
-				<Topbar
-					nav={NAV}
-					divanTo="/divan"
-					karma={42}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-				/>
+				<ThemeProvider>
+					<Topbar
+						nav={NAV}
+						divanTo="/divan"
+						karma={42}
+						reserveSignedInSlots
+						user={{name: "Elif", username: "elif"}}
+					/>
+				</ThemeProvider>
 			</MemoryRouter>,
 		);
 		const activePano = screen.getByRole("link", {name: "pano"});
@@ -180,14 +185,16 @@ describe("Topbar status/signal zone (#2613)", () => {
 	function renderStatus(props: Partial<Parameters<typeof Topbar>[0]>) {
 		return render(
 			<MemoryRouter>
-				<Topbar
-					nav={NAV}
-					divanTo="/divan"
-					karma={42}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-					{...props}
-				/>
+				<ThemeProvider>
+					<Topbar
+						nav={NAV}
+						divanTo="/divan"
+						karma={42}
+						reserveSignedInSlots
+						user={{name: "Elif", username: "elif"}}
+						{...props}
+					/>
+				</ThemeProvider>
 			</MemoryRouter>,
 		);
 	}
@@ -255,116 +262,49 @@ describe("Topbar status/signal zone (#2613)", () => {
 	});
 });
 
-describe("Topbar tema toggle → theme picker (#2612)", () => {
-	it("no tema toggle renders, in either auth state", () => {
-		const {rerender} = render(
+// ADR 0176 verdict 2, as amended by #6791: signed in, the one theme control rides the user
+// menu; signed out, there is none and the page follows the OS.
+function expectNoThemeControl(container: HTMLElement) {
+	expect(screen.queryByTestId("topbar-theme-picker")).toBeNull();
+	expect(screen.queryByTestId("topbar-theme-row")).toBeNull();
+	expect(screen.queryByRole("radiogroup")).toBeNull();
+	expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
+	expect(container.querySelector(".kp-theme-picker")).toBeNull();
+}
+
+describe("Topbar theme control placement (ADR 0176 verdict 2, #6791)", () => {
+	afterEach(() => window.localStorage.clear());
+
+	it("signed out: no theme control renders anywhere", () => {
+		const {container} = render(
 			<MemoryRouter>
-				<Topbar
-					nav={NAV}
-					themeChoice="auto"
-					onThemeChange={() => {}}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-				/>
+				<ThemeProvider>
+					<Topbar nav={NAV} />
+				</ThemeProvider>
 			</MemoryRouter>,
 		);
-		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
-		rerender(
-			<MemoryRouter>
-				<Topbar nav={NAV} themeChoice="auto" onThemeChange={() => {}} />
-			</MemoryRouter>,
-		);
-		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
+		expectNoThemeControl(container);
 	});
 
-	it("signed in: the same picker lives in the account popover next to ayarlar", async () => {
-		const onThemeChange = vi.fn();
-		render(
-			<MemoryRouter>
-				<Topbar
-					nav={NAV}
-					themeChoice="dark"
-					onThemeChange={onThemeChange}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-				/>
-			</MemoryRouter>,
-		);
+	it("signed in: the bar carries no theme control until the user menu opens", () => {
+		const {container} = renderTopbar();
+		expectNoThemeControl(container);
+	});
+
+	it("signed in: exactly one picker, in the user menu, and it sets the theme", async () => {
+		renderTopbar();
 		fireEvent.click(screen.getByText("Elif"));
-		expect(await screen.findByRole("link", {name: "ayarlar"})).toBeTruthy();
 		const row = await screen.findByTestId("topbar-theme-row");
 		expect(row.textContent).toContain("tema");
+		expect(screen.getAllByTestId("topbar-theme-picker")).toHaveLength(1);
 		const picker = within(row).getByTestId("topbar-theme-picker");
+		expect(picker.closest(".kp-user-menu__popup")).not.toBeNull();
+		expect(picker.closest(".kp-topbar")).toBeNull();
 		for (const label of ["açık", "koyu", "otomatik"]) {
 			expect(within(picker).getByRole("radio", {name: label})).toBeTruthy();
 		}
-		expect(within(picker).getByRole("radio", {name: "koyu"}).getAttribute("aria-checked")).toBe(
-			"true",
-		);
-		fireEvent.click(within(picker).getByRole("radio", {name: "otomatik"}));
-		await waitFor(() => expect(onThemeChange).toHaveBeenLastCalledWith("auto"));
-	});
-
-	// The picker's segmented track would otherwise stand 42px (its items' --tap-min floor +
-	// the track's 2px pad + 1px border) — taller than the 38px compact topbar it must sit
-	// inside, and taller than the popover's rows. It sizes itself down, in its own sheet, so
-	// BOTH homes get it; the two homes are portal-separated, so neither can style the other.
-	it("the picker sizes itself to a density token, in both of its homes", async () => {
-		const rule = cssRules(readSource("./ThemeChoicePicker.css")).find((r) =>
-			/kp-theme-picker/.test(r.selector),
-		);
-		expect(rule).toBeDefined();
-		expect(rule?.body).toMatch(/min-height:\s*var\(--letter-size\)/);
-		// Unscoped to either host (no .kp-topbar / .kp-user-menu prefix), and specific enough
-		// to beat ToggleGroup.css's own 0-2-0 item rule without depending on import order.
-		expect(rule?.selector).not.toMatch(/kp-topbar|kp-user-menu/);
-		// ToggleGroup.css's `.kp-toggle-group [data-part="item"]` is 0-2-0; carrying BOTH
-		// classes puts this at 0-3-0, so the tie is decided by weight, not import order.
-		expect(rule?.selector).toMatch(/\.kp-theme-picker\b/);
-		expect(rule?.selector).toMatch(/\.kp-toggle-group\b/);
-		// Signed out the picker sits in the bar; signed in it rides the portaled popover,
-		// OUT of the bar — so the host-scoped sheets never reach it.
-		const {unmount} = render(
-			<MemoryRouter>
-				<Topbar nav={NAV} themeChoice="light" onThemeChange={() => {}} />
-			</MemoryRouter>,
-		);
-		expect(screen.getByTestId("topbar-theme-picker").closest(".kp-topbar")).not.toBeNull();
-		unmount();
-		render(
-			<MemoryRouter>
-				<Topbar
-					nav={NAV}
-					themeChoice="light"
-					onThemeChange={() => {}}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-				/>
-			</MemoryRouter>,
-		);
-		fireEvent.click(screen.getByText("Elif"));
-		const inPopover = await screen.findByTestId("topbar-theme-picker");
-		expect(inPopover.closest(".kp-user-menu__popup")).not.toBeNull();
-		expect(inPopover.closest(".kp-topbar")).toBeNull();
-	});
-
-	it("signed out: the same light/dark/auto picker is reachable in the topbar utility zone", async () => {
-		const onThemeChange = vi.fn();
-		render(
-			<MemoryRouter>
-				<Topbar nav={NAV} themeChoice="light" onThemeChange={onThemeChange} />
-			</MemoryRouter>,
-		);
-		const utility = screen.getByTestId("topbar-zone-utility");
-		const picker = within(utility).getByTestId("topbar-theme-picker");
-		for (const label of ["açık", "koyu", "otomatik"]) {
-			expect(within(picker).getByRole("radio", {name: label})).toBeTruthy();
-		}
-		expect(within(picker).getByRole("radio", {name: "açık"}).getAttribute("aria-checked")).toBe(
-			"true",
-		);
 		fireEvent.click(within(picker).getByRole("radio", {name: "koyu"}));
-		await waitFor(() => expect(onThemeChange).toHaveBeenLastCalledWith("dark"));
+		await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
 	});
 });
 
@@ -373,7 +313,9 @@ describe("Topbar reserved signed-in account slot (#2933)", () => {
 	function renderReserved(props: Partial<Parameters<typeof Topbar>[0]>) {
 		return render(
 			<MemoryRouter>
-				<Topbar nav={NAV} {...props} />
+				<ThemeProvider>
+					<Topbar nav={NAV} {...props} />
+				</ThemeProvider>
 			</MemoryRouter>,
 		);
 	}
@@ -396,7 +338,9 @@ describe("Topbar reserved signed-in account slot (#2933)", () => {
 
 		rerender(
 			<MemoryRouter>
-				<Topbar nav={NAV} reserveSignedInSlots user={{name: "Elif", username: "elif"}} />
+				<ThemeProvider>
+					<Topbar nav={NAV} reserveSignedInSlots user={{name: "Elif", username: "elif"}} />
+				</ThemeProvider>
 			</MemoryRouter>,
 		);
 		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
@@ -424,28 +368,20 @@ describe("Topbar reserved signed-in account slot (#2933)", () => {
 		expect(container.querySelector(".kp-topbar__user")).toBeNull();
 	});
 
-	// #2612 says exactly one theme control renders in every state, and the account gate is what
-	// decides which one. These two cases are the states where the gate and a bare `user` disagree.
-	it("reserve off, user supplied: the utility picker still renders — no menu means no menu picker", () => {
-		renderReserved({
+	// The two states where the account gate and a bare `user` disagree (#6660). Under ADR 0176
+	// verdict 2 neither may show a theme control: no menu renders, and signed out there is none.
+	it("reserve off, user supplied: no theme control anywhere", () => {
+		const {container} = renderReserved({
 			reserveSignedInSlots: false,
 			user: {name: "Elif", username: "elif"},
-			themeChoice: "light",
-			onThemeChange: () => {},
 		});
-		const utility = screen.getByTestId("topbar-zone-utility");
-		expect(within(utility).getByTestId("topbar-theme-picker")).toBeTruthy();
+		expectNoThemeControl(container);
 	});
 
-	it("reserve on, no user: the utility picker renders beside the placeholder", () => {
-		renderReserved({
-			reserveSignedInSlots: true,
-			themeChoice: "light",
-			onThemeChange: () => {},
-		});
-		const utility = screen.getByTestId("topbar-zone-utility");
-		expect(within(utility).getByTestId("topbar-theme-picker")).toBeTruthy();
+	it("reserve on, no user: no theme control beside the placeholder", () => {
+		const {container} = renderReserved({reserveSignedInSlots: true});
 		expect(screen.getByTestId("topbar-user-placeholder")).toBeTruthy();
+		expectNoThemeControl(container);
 	});
 });
 
@@ -456,14 +392,16 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 	function renderMeter(props: Partial<Parameters<typeof Topbar>[0]>) {
 		return render(
 			<MemoryRouter>
-				<Topbar
-					nav={NAV}
-					divanTo="/divan"
-					karma={42}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-					{...props}
-				/>
+				<ThemeProvider>
+					<Topbar
+						nav={NAV}
+						divanTo="/divan"
+						karma={42}
+						reserveSignedInSlots
+						user={{name: "Elif", username: "elif"}}
+						{...props}
+					/>
+				</ThemeProvider>
 			</MemoryRouter>,
 		);
 	}

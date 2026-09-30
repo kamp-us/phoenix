@@ -5,13 +5,11 @@ import {useEffect} from "react";
 import {Link, NavLink} from "react-router";
 import {useT} from "../../i18n";
 import {isSearchShortcut} from "../../lib/searchShortcut";
-import type {ThemeChoice} from "../../lib/theme";
 import {BildirimPopover} from "../bildirim/BildirimPopover";
 import {formatUnreadBadge, showUnreadBadge} from "../bildirim/bildirim";
 import {Icon} from "../Icon";
 import {Karma} from "../karma/Karma";
 import type {CaylakMeter} from "./caylakMeter";
-import {ThemeChoicePicker} from "./ThemeChoicePicker";
 import {UserMenu} from "./UserMenu";
 import "./Topbar.css";
 
@@ -30,8 +28,6 @@ export function Topbar({
 	actions,
 	searchQuery = "",
 	onSearchOpen,
-	themeChoice,
-	onThemeChange,
 	onLogout,
 	reserveSignedInSlots = false,
 }: {
@@ -54,8 +50,6 @@ export function Topbar({
 	searchQuery?: string;
 	/** Opens the ⌘K palette. Absent ⇒ the trigger and the shortcut are inert. */
 	onSearchOpen?: () => void;
-	themeChoice?: ThemeChoice;
-	onThemeChange?: (choice: ThemeChoice) => void;
 	onLogout?: () => void;
 	// The account side is claimed — gates the pill as well as its placeholder, so a caller that
 	// also renders a sign-in CTA must derive that CTA from this flag's negation (#6660).
@@ -149,14 +143,6 @@ export function Topbar({
 			</Button>
 		</div>
 	);
-	const themePicker =
-		themeChoice && onThemeChange ? (
-			<ThemeChoicePicker
-				choice={themeChoice}
-				onChange={onThemeChange}
-				testId="topbar-theme-picker"
-			/>
-		) : null;
 	// The meter wins over the bare chip only where it exists — a yazar (and every flag-off
 	// çaylak) reaches the same `<Karma>` call this file has always rendered.
 	const karmaChip = caylakMeter ? (
@@ -189,13 +175,7 @@ export function Topbar({
 		) : null;
 	const userMenu =
 		reserveSignedInSlots && user ? (
-			<UserMenu
-				user={user}
-				bildirim={bildirim}
-				themeChoice={themeChoice}
-				onThemeChange={onThemeChange}
-				onLogout={onLogout}
-			/>
+			<UserMenu user={user} bildirim={bildirim} onLogout={onLogout} />
 		) : null;
 	// `reserveSignedInSlots` gates the whole account side, pill included. The caller derives its
 	// sign-in CTA from the negation of this same flag, so gating only the placeholder left the
@@ -235,11 +215,8 @@ export function Topbar({
 			<span className="kp-topbar__spacer" />
 			<div className="kp-topbar__zone kp-topbar__zone--utility" data-testid="topbar-zone-utility">
 				{searchTrigger}
-				{/* The picker rides the user menu when one renders, and sits here when none does, so
-				    exactly one theme control renders in every state (#2612). It reads `userMenu`
-				    itself, not `user` — `user` alone can be truthy with the account side gated shut,
-				    and gating this on it left that state with no theme control at all (#6660). */}
-				{userMenu ? null : themePicker}
+				{/* No theme control here in any state: signed in it rides the user menu, signed out
+				    there is none and the page follows the OS (ADR 0176 verdict 2, #6791). */}
 			</div>
 			<div
 				className="kp-topbar__zone kp-topbar__zone--status-signal"

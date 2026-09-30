@@ -71,7 +71,7 @@ Ratified on #2586. Every nav element is assigned to exactly one of four classes.
 |---|---|---|
 | **destination** | A place you go — a product noun or a top-level feed. | sözlük, pano, mecmua |
 | **primary action** | The one verb the surface promotes. Exactly one per surface. | the global `+` create menu |
-| **utility** | An ambient control the user reaches for on demand. | search (`⌘K`), theme (on the profile page) |
+| **utility** | An ambient control the user reaches for on demand. | search (`⌘K`), theme (in the user menu) |
 | **signal** | Read-only state that reports "what needs your attention". | bildirim (bell + count), divan access, karma |
 
 Two notes on the ratification: the candidate fourth class "status" was **sharpened to
@@ -119,6 +119,15 @@ verdicts — the concrete restructure the discipline demands:
 2. **`tema` — KILLED from the topbar** (#2588). The profile page's light/dark/auto picker is
    the single theme control; no user-menu item. `DEFAULT_CHOICE` flips to **auto** so
    signed-out visitors follow the OS.
+
+   > **Amendment (2026-09-02, [#6791](https://github.com/kamp-us/phoenix/issues/6791)).** The
+   > founder ruled the theme control's placement at
+   > https://github.com/kamp-us/phoenix/issues/6791#issuecomment-5519864859. **Signed in**,
+   > exactly one theme control renders, and it rides the **user menu**. **Signed out**, there
+   > is **no theme picker at all**: the visitor follows the OS theme through the `auto`
+   > default above. This replaces the profile-page placement and the "no user-menu item"
+   > clause, and it also removes the signed-out topbar picker that #2612 introduced. The
+   > user-menu zone already admits account-scoped utilities, so the zone grammar is unchanged.
 3. **bildirim badge → a standalone bell** (Lucide, per the icon idiom) with a count, opening a
    dropdown of the last 10 notifications + "tüm bildirimleri gör" → `/bildirim`. The
    user-menu "bildirimler" item dies.

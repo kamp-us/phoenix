@@ -147,10 +147,6 @@ export const account = {
 	"profile.email.changeUnavailable": "changing your email is not available yet",
 
 	"profile.section.appearance": "appearance",
-	"profile.field.theme": "theme",
-	"profile.theme.light": "light",
-	"profile.theme.dark": "dark",
-	"profile.theme.auto": "auto",
 	"profile.field.density": "density",
 	"profile.density.compact": "compact",
 	"profile.density.normal": "normal",

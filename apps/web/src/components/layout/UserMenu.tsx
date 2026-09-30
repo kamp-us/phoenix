@@ -22,7 +22,7 @@ import {Link} from "react-router";
 import {FlagGate} from "../../flags/FlagGate";
 import {PHOENIX_LOCALE} from "../../flags/keys";
 import {useLocale, useT} from "../../i18n";
-import type {ThemeChoice} from "../../lib/theme";
+import {useTheme} from "../../lib/theme";
 import {LocaleChoicePicker} from "./LocaleChoicePicker";
 import {ThemeChoicePicker} from "./ThemeChoicePicker";
 import "./UserMenu.css";
@@ -30,21 +30,18 @@ import "./UserMenu.css";
 export function UserMenu({
 	user,
 	bildirim,
-	themeChoice,
-	onThemeChange,
 	onLogout,
 }: {
 	user: {name: string; src?: string; username?: string | null};
 	bildirim?: {to: string};
-	themeChoice?: ThemeChoice;
-	onThemeChange?: (choice: ThemeChoice) => void;
 	onLogout?: () => void;
 }) {
 	const [open, setOpen] = useState(false);
 	const close = () => setOpen(false);
 	const t = useT();
-	// Read off the context rather than drilled through Topbar like `themeChoice`: the locale
-	// already has an app-level provider, so a prop pair would be a second source for one value.
+	// Both settings read their app-level provider rather than props drilled through Topbar, so
+	// this menu is the one source for the signed-in theme control (ADR 0176 verdict 2).
+	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const {locale, setLocale} = useLocale();
 
 	return (
@@ -85,16 +82,14 @@ export function UserMenu({
 					{t("layout.userMenu.settings")}
 				</Link>
 			</nav>
-			{themeChoice && onThemeChange ? (
-				<div className="kp-user-menu__setting-row" data-testid="topbar-theme-row">
-					<span className="kp-user-menu__setting-label">{t("layout.userMenu.theme")}</span>
-					<ThemeChoicePicker
-						choice={themeChoice}
-						onChange={onThemeChange}
-						testId="topbar-theme-picker"
-					/>
-				</div>
-			) : null}
+			<div className="kp-user-menu__setting-row" data-testid="topbar-theme-row">
+				<span className="kp-user-menu__setting-label">{t("layout.userMenu.theme")}</span>
+				<ThemeChoicePicker
+					choice={themeChoice}
+					onChange={setThemeChoice}
+					testId="topbar-theme-picker"
+				/>
+			</div>
 			{/* Dark until the human release flip (ADR 0083): with the flag off no toggle renders
 			    and every reader stays on the `tr` default, which is today's copy exactly. */}
 			<FlagGate flag={PHOENIX_LOCALE}>

@@ -341,7 +341,7 @@ nav element without first assigning its class.
 |---|---|---|
 | **destination** | A place you go — a product noun or top-level feed. | sözlük, pano, mecmua |
 | **primary action** | The one verb the surface promotes (exactly one per surface). | the global `+` create menu |
-| **utility** | An ambient control reached for on demand. | search (`⌘K`), theme (profile page) |
+| **utility** | An ambient control reached for on demand. | search (`⌘K`), theme (user menu) |
 | **signal** | Read-only state reporting "what needs your attention". | bildirim (bell + count), divan, karma |
 
 ### The placement law — zone grammar (each class lives in one tier)
@@ -366,7 +366,7 @@ lives as a contextual CTA in *that product's* Subnav — never as a global topba
 | the global `+` create menu | primary action | Topbar (the one promoted action) |
 | a product-scoped create CTA (e.g. pano "new post") | primary action (contextual) | that product's Subnav |
 | search (`⌘K`) | utility | Topbar |
-| theme (light/dark/auto) | utility | Profile page only (no topbar toggle) |
+| theme (light/dark/auto) | utility | User menu, signed in only (no topbar toggle; signed out there is no control and the page follows the OS — ADR 0176 verdict 2 as amended by #6791) |
 | bildirim (bell + count → dropdown) | signal | Topbar (signals zone) |
 | divan (gated glyph + tooltip) | signal | Topbar (signals zone) |
 | karma | signal | Folded into the user-menu trigger as `name (karma)` |

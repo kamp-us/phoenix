@@ -15,7 +15,6 @@ import {PHOENIX_CAYLAK_VISIBILITY} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {type CatalogKey, useT} from "../i18n";
 import {type Density, useDensity} from "../lib/density";
-import {type ThemeChoice, useTheme} from "../lib/theme";
 import {CAYLAK_VISIBILITY_PATH} from "./CaylakVisibilityPage";
 import {useProfileStats} from "./useProfileStats";
 import "./ProfilePage.css";
@@ -58,7 +57,6 @@ export function ProfilePage() {
 			: statsState.status === "ok"
 				? {status: "ready", stats: statsState.stats}
 				: {status: "loading"};
-	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const {choice: densityChoice, setChoice: setDensityChoice} = useDensity();
 	// The entry point into /caylak-gorunurlugu (#6426): shown only when the feature is live AND
 	// the viewer is a yazar, so a dark route and a route the server would refuse are both
@@ -230,25 +228,8 @@ export function ProfilePage() {
 
 				<section className="kp-profile__section">
 					<h3>{t("profile.section.appearance")}</h3>
-					<div className="kp-profile__row">
-						<span className="label">{t("profile.field.theme")}</span>
-						<span className="value">
-							<ToggleGroup
-								className="kp-toggle-group kp-toggle-group--outline"
-								size="sm"
-								items={[
-									{value: "light", label: t("profile.theme.light")},
-									{value: "dark", label: t("profile.theme.dark")},
-									{value: "auto", label: t("profile.theme.auto")},
-								]}
-								value={[themeChoice]}
-								onValueChange={([next]) => {
-									if (next) setThemeChoice(next as ThemeChoice);
-								}}
-							/>
-						</span>
-						<span />
-					</div>
+					{/* No theme row: the signed-in user's one theme control is the user menu's
+					    (ADR 0176 verdict 2, #6791). */}
 					<div className="kp-profile__row">
 						<span className="label">{t("profile.field.density")}</span>
 						<span className="value">
