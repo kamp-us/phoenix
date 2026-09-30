@@ -542,7 +542,7 @@ hardcoded. **The union is not a fabrika policy — it is GitHub's own any-listed
 GitHub discharges a CODEOWNERS row when *any* listed owner approves, so a roster
 narrower than the union would refuse approvals the merge gate accepts, and fabrika mirrors the
 platform here rather than adding a rule of its own.
-N=0 → `stop` `zero-owners` (an empty roster is a proven
+N=0 → `stop` `zero-owners`, or `base-conflicted` on a dirty head (an empty roster is a proven
 stop; an *unreadable* roster for **any** named team is the `11` refusal, never a stop — a union
 missing one arm is not a smaller union, it is an unknown one). A CODEOWNERS parse yielding
 no control-plane owner of either shape at all is N=0 — `stop` `zero-owners`, and a **proven-absent**
@@ -585,7 +585,9 @@ approval scan.
 
 **Scope** — the control-plane roster (the union over every named team and every individual owner), the PR's changed
 files (paginated to exhaustion) and comments (paginated, count-checked) and its reviews (paginated
-to exhaustion), and the live head. The boundary is classified over the enumerated file list rather
+to exhaustion), the live head, and — only where the answer would otherwise be `stop` — the PR's
+`mergeable`/`mergeable_state`, re-read on a backoff for up to `--mergeability-seconds` while
+GitHub still computes it. The boundary is classified over the enumerated file list rather
 than over the pull-request record's `changed_files`, whose count GitHub computes against a base it
 cached at the PR's last push — the disagreement is reported, an empty list refuses at `7`, and that
 list at GitHub's own 3000-file ceiling refuses at `13`. `n/a` is a proven answer computed from the
