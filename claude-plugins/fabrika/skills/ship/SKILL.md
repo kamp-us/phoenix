@@ -297,7 +297,9 @@ and why an ejection costs the ticket no repair round.
 armed and unqueued but younger than reconcile's floor, is neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. Your horizon
 is fixed: you never poll past it, and a lane that needs longer gets it from the driver's re-reads at
 `ship:queued`, not from a wider watch in here. A driver settles every lane left there with one
-`lane recover` sweep rather than an operator spawn per lane (operate's `ship:queued` section).
+`lane recover` sweep rather than an operator spawn per lane (operate's `ship:queued` section). The
+sweep runs no disarm: a `parked` answer comes back as a `disarm-owed` row, and the driver owes
+`ship disarm <pr> --site post-enqueue` on it now.
 `parked` →
 the arm waited past reconcile's floor and never entered the queue, so the enqueue did not take
 effect (a younger unqueued arm reads `unresolved`): run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a

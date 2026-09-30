@@ -814,19 +814,36 @@ describe("runRecover — the ship:queued arm", () => {
 		expect(refolded(fs, "9455")).toMatchObject({type: "build", retries: 1});
 	});
 
-	it.each([
-		"unresolved",
-		"parked",
-	] as const)("appends nothing on `%s` and reports a row naming the answer, so no wait is spent", async (said) => {
-		const {outcome, asked, fs} = await queueSweep({_tag: "Read", answer: said});
+	it("appends nothing on `unresolved` and reports a waiting row naming the answer, so no wait is spent", async () => {
+		const {outcome, asked, fs} = await queueSweep({_tag: "Read", answer: "unresolved"});
 		expect(outcome.code).toBe(0);
 		const [row] = rows(outcome.stdout);
-		expect(row).toMatchObject({verdict: "waiting", answer: said, pr: QUEUED_PR});
-		expect(String(row?.reason)).toContain(`"${said}"`);
+		expect(row).toMatchObject({verdict: "waiting", answer: "unresolved", pr: QUEUED_PR});
+		expect(String(row?.reason)).toContain('"unresolved"');
 		expect(row).not.toHaveProperty("token");
+		expect(row).not.toHaveProperty("owes");
 		expect(asked).toHaveLength(0);
 		expect(logOf(fs, "9455")).toBeUndefined();
-		expect(outcome.stderr.join("\n")).toContain(`"${said}"`);
+		expect(outcome.stderr.join("\n")).toContain('"unresolved"');
+	});
+
+	it("appends nothing on `parked` and reports a disarm-owed row naming the post-enqueue disarm, never a wait", async () => {
+		const {outcome, asked, fs} = await queueSweep({_tag: "Read", answer: "parked"});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({
+			verdict: "disarm-owed",
+			answer: "parked",
+			pr: QUEUED_PR,
+			owes: "ship disarm 9877 --site post-enqueue",
+		});
+		expect(String(row?.reason)).toContain("`ship disarm 9877 --site post-enqueue`");
+		expect(String(row?.reason)).toContain("not a wait");
+		expect(row).not.toHaveProperty("token");
+		expect(JSON.parse(outcome.stdout).summary).toMatchObject({"disarm-owed": 1, waiting: 0});
+		expect(asked).toHaveLength(0);
+		expect(logOf(fs, "9455")).toBeUndefined();
+		expect(outcome.stderr.join("\n")).toContain("ship disarm 9877 --site post-enqueue");
 	});
 
 	it("is its own row and appends nothing when the reconcile read did not answer", async () => {

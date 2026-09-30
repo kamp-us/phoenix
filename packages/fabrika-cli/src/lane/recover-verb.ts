@@ -63,7 +63,9 @@
  * `ship reconcile <pr> --polls 1` read, with its answer relayed through `lane report`'s own path —
  * `landed` records `LANDED` and `ejected` records `EJECTED`, the `DONE` and `FAIL` out of
  * `ship:queued` that only `lane report` maps. `unresolved`, `parked` and an unreadable read record
- * nothing, so the sweep never spends a wait. It is on by default, unlike `--spawns`, because what it
+ * nothing, so the sweep never spends a wait. `parked` is not a wait, though: it lands as a
+ * `disarm-owed` row naming the `ship disarm <pr> --site post-enqueue` the driver owes now, because
+ * a live arm left standing enqueues ungated later. It is on by default, unlike `--spawns`, because what it
  * records is an answer and never a park, and it reads only the lanes standing in `ship:queued`, which
  * is a handful and not the whole building population.
  *
@@ -217,6 +219,7 @@ type Verdict =
 	| "settled"
 	| "settleable"
 	| "waiting"
+	| "disarm-owed"
 	| "working"
 	| "unproven"
 	| "contended"
@@ -234,6 +237,7 @@ const VERDICTS: ReadonlyArray<Verdict> = [
 	"settled",
 	"settleable",
 	"waiting",
+	"disarm-owed",
 	"working",
 	"unproven",
 	"contended",
@@ -266,6 +270,8 @@ interface LaneRow {
 	readonly pr?: string;
 	readonly answer?: Reconciled;
 	readonly token?: string;
+	/** A `disarm-owed` row alone: the disarm the driver owes before it records anything. */
+	readonly owes?: string;
 	/**
 	 * Which of `lane prove`'s answers came back, and at which exit — `proof` is `null` on a refusal,
 	 * where the code carries the whole answer, and the two together are what tells a `not-required`
@@ -686,6 +692,18 @@ const recoverLane = <R>(
 				});
 				continue;
 			}
+			if (settlement._tag === "DisarmOwed") {
+				const owes = `ship disarm ${pull.number} --site post-enqueue`;
+				rows.push({
+					...base,
+					pr: pull.url,
+					answer: read.answer,
+					owes,
+					verdict: "disarm-owed",
+					reason: `#${pull.number} reconciles "${read.answer}": ${settlement.why}. Run \`${owes}\` now, then record off its answer per operate's \`ship:queued\` table — nothing appended`,
+				});
+				continue;
+			}
 			const mapped = eventForToken(settlement.token);
 			// The table's two tokens are `lane report`'s own, so this arm is unreachable; it stays a row
 			// rather than a throw so a renamed token reads as a refusal instead of a crashed sweep.
@@ -796,6 +814,7 @@ export const runRecover = <R = never>(
 				),
 			),
 			...[
+				...named("disarm-owed"),
 				...named("waiting"),
 				...named("working"),
 				...named("refused"),

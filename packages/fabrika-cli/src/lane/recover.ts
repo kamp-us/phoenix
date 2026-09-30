@@ -49,7 +49,9 @@
  * after the shipper's watch ended, and then all that is missing is the one read a driver pass makes.
  * {@link queuedBy} finds those tasks, {@link queuedPullOf} names the PR their own ledger recorded, and
  * {@link QUEUE_SETTLEMENTS} is the operate skill's `ship:queued` table minus the rows that spend a
- * wait or park: the sweep relays a landing or an ejection and records nothing else.
+ * wait or park: the sweep relays a landing or an ejection and records nothing else. A `parked`
+ * answer records nothing either, but it is not a wait: per that table it owes
+ * `ship disarm <pr> --site post-enqueue` now, so it is its own settlement and its own row.
  */
 
 import type {Reconciled} from "../ship/reconcile-verb.ts";
@@ -211,15 +213,23 @@ export const queuedPullOf = (entries: ReadonlyArray<LogEntry>, task: string): Qu
 export type Settlement =
 	/** The queue finished with the PR, so this `lane report` token records its answer. */
 	| {readonly _tag: "Record"; readonly token: "LANDED" | "EJECTED"}
-	/** An answer the sweep may not record: the row names it, and nothing lands. */
-	| {readonly _tag: "Hold"; readonly why: string};
+	/** The PR is still queued: the row names it, nothing lands, and a later pass re-reads it. */
+	| {readonly _tag: "Hold"; readonly why: string}
+	/**
+	 * The `--auto` arm never took effect and still stands, so a disarm is owed now, before any record.
+	 * The sweep runs no disarm and records nothing: clearing merge intent is the driver's act, and the
+	 * record that follows turns on what that disarm answers.
+	 */
+	| {readonly _tag: "DisarmOwed"; readonly why: string};
 
 /**
  * The queue arm's relay table, keyed on every answer `ship reconcile` can give.
  *
- * A driver pass records `unresolved` as `UNRESOLVED` and `parked` as `UNKNOWN`. The sweep records
- * neither: the first spends a wait on the sweep's clock rather than the queue's, and the second is a
- * park, which a driver decides and a sweep only reports.
+ * A driver pass records `unresolved` as `UNRESOLVED`, and on `parked` runs
+ * `ship disarm <pr> --site post-enqueue` first, then records off the disarm's answer. The sweep
+ * records neither: the first would spend a wait on the sweep's clock rather than the queue's, and the
+ * second turns on a disarm the driver runs. `parked` is never a wait, because a live arm left
+ * standing enqueues ungated later.
  */
 export const QUEUE_SETTLEMENTS: Readonly<Record<Reconciled, Settlement>> = {
 	landed: {_tag: "Record", token: "LANDED"},
@@ -229,7 +239,7 @@ export const QUEUE_SETTLEMENTS: Readonly<Record<Reconciled, Settlement>> = {
 		why: "the PR is still in the queue, and a sweep records no wait, so the lane's wait budget is untouched",
 	},
 	parked: {
-		_tag: "Hold",
-		why: "the timeline shows the PR neither queued, ejected nor merged; that park is a driver pass's `--token UNKNOWN` to record, never a sweep's",
+		_tag: "DisarmOwed",
+		why: "the `--auto` arm sat unqueued past `ship reconcile`'s floor, so the enqueue never took effect and a live arm left standing enqueues ungated later. This is not a wait",
 	},
 };

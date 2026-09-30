@@ -926,10 +926,12 @@ node <fabrika> lane recover           # record what the queue already answered
 For each task standing in `ship:queued` it takes the PR its own ledger names, makes this same
 `ship reconcile <pr> --polls 1` read, and relays the answer through `lane report`'s own path. A
 `landed` row records `LANDED --pr <url>`, and an `ejected` one records `EJECTED`, exactly as the
-table above does. It records neither `unresolved` nor `parked`. Each lands as a `waiting` row naming
-the answer, so the sweep never spends a wait and never meets the floor below. A lane on a `waiting`
-row is still yours to re-read on a later pass. A failed read is an `unreadable` row that appended
-nothing. The sweep's other arms are described under `lane recover` in §4.
+table above does. It records neither `unresolved` nor `parked`, so the sweep never spends a wait
+and never meets the floor below. An `unresolved` answer lands as a `waiting` row, and a lane on one
+is still yours to re-read on a later pass. **A `parked` answer is not a wait.** It lands as a
+`disarm-owed` row whose `owes` field is `ship disarm <pr> --site post-enqueue`: run that disarm now,
+then record off its answer exactly as the table's `parked` row says. The sweep runs no disarm
+itself. A failed read is an `unreadable` row that appended nothing. The sweep's other arms are described under `lane recover` in §4.
 
 **`lane report` may answer "too soon", and that is the wait working.** A queue re-fold is floored on
 elapsed time as well as counted: exit `55` says the shipper's own ~480s horizon has not run since
@@ -2027,8 +2029,9 @@ append is `lane transition`'s whole path. The queue arm settles every lane waiti
 path, so `landed` records `LANDED` and `ejected` records `EJECTED`, under the rows `settled` and
 `settleable`. The `## ship:queued` section above says what it records there. Every other answer is
 a row that changed nothing: `unproven` (which carries `not-required` and every refusal code alike,
-told apart by the row's own `proof` and `proofCode`), `waiting` (a queue answer of `unresolved` or
-`parked`), `refused`, `contended`, `current`, `terminal`, `unreadable`. With `--spawns` the row set
+told apart by the row's own `proof` and `proofCode`), `waiting` (a queue answer of `unresolved`),
+`disarm-owed` (a queue answer of `parked`, which still owes you `ship disarm <pr> --site
+post-enqueue` now, per `## ship:queued`), `refused`, `contended`, `current`, `terminal`, `unreadable`. With `--spawns` the row set
 gains `parked`, `parkable` and `working`, which are that arm's own and are described below.
 
 **Two events a live shell also satisfies are not in this sweep**, and that is what keeps it from

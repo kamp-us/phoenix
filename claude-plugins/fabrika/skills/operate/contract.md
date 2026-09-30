@@ -1437,12 +1437,16 @@ whole path (token map, served-leaf check, proof gate, floor and ledger lock), be
 - `landed` records `LANDED --pr <url>`, which folds the task to `shipped`, or back to `queued` on a
   merge that carried `Part of #N` and closed nothing.
 - `ejected` records `EJECTED`, which spends one retry back into `build`.
-- `unresolved` and `parked` record nothing. Each is a `waiting` row carrying `answer`, so a sweep
-  never spends a wait and never meets the `55` floor, and it never parks a lane.
+- `unresolved` and `parked` record nothing, so a sweep never spends a wait, never meets the `55`
+  floor, and never parks a lane. `unresolved` is a `waiting` row carrying `answer`.
+- `parked` is never a wait. It is a `disarm-owed` row carrying `answer` and `owes`, the literal
+  `ship disarm <pr> --site post-enqueue` the driver owes NOW, because a live arm left standing
+  enqueues ungated later. The sweep runs no disarm; the driver runs it and records off its answer
+  per operate's `ship:queued` table.
 - A task whose ledger names no PR URL, or a read that exited non-zero or named no known outcome, is an
   `unreadable` row that appended nothing.
-- Its rows are `settled` (appended) and `settleable` (`--check` ran the read and withheld the
-  append). Each carries `pr`, `answer` and `token`. The arm is ON by default, because it records an
+- Its recording rows are `settled` (appended) and `settleable` (`--check` ran the read and withheld
+  the append). Each carries `pr`, `answer` and `token`. The arm is ON by default, because it records an
   answer and never a park, and it costs one read per lane in `ship:queued`.
 
 **Budget.** Budget a recoverable lane at TWO board reads: this sweep asks what the proof says, and
@@ -1465,7 +1469,7 @@ Each row carries one verdict:
 - `contended` — `40`: another writer held this lane's ledger lock for the whole wait budget, so
   nothing was validated and nothing appended. The same event is still the right one and the sweep
   says so on stderr, which is why this is not bucketed with `refused`;
-- `settled` / `settleable` / `waiting` — the queue arm's rows, described above. A `settled` row's
+- `settled` / `settleable` / `waiting` / `disarm-owed` — the queue arm's rows, described above. A `settled` row's
   `to` is `lane report`'s own answer, the same way a `recovered` row's is `lane transition`'s;
 - `current` — the lane is non-terminal, no active task stands in a leaf that owes a provable
   event, and none waits in `ship:queued`;
