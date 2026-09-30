@@ -7,6 +7,10 @@ import {defineExhibit} from "../exhibit";
  * glance — bold, a link, inline code, a table, a list, a fenced block — because the stage is the
  * only place this component is judged rendered rather than through jsdom.
  *
+ * The task lists come in both of marked's shapes (#10284): a tight one, where the checkbox is a
+ * block of the item, and a loose one, where it sits inside the item's first paragraph. A paragraph
+ * leads each one in, because adjacent lists sharing a bullet merge into one loose list.
+ *
  * The two mermaid fences are both of that block's outcomes (#8128): the first draws, so the stage
  * shows the diagram, its token-themed palette and the `<details>` source disclosure; the second is
  * an author's typo, so it shows the fence still readable under mermaid's own parse reason. jsdom
@@ -26,6 +30,18 @@ paragrafta.
 - Listenin ilk maddesi
 - İkinci madde, içinde \`inline\` kod
 - Üçüncü madde
+
+Sıkı bir görev listesi:
+
+- [x] Kapıyı pencere başına ayır
+- [x] Farkı göster
+- [ ] Tüm testleri koş
+
+Gevşek bir görev listesi, maddeleri arasında boş satırla:
+
+- [x] Yeniden adlandırmayı bitir
+
+- [ ] Sürüm notunu yaz
 
 \`\`\`ts
 export const greet = (name: string): string => {
