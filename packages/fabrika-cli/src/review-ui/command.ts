@@ -52,7 +52,7 @@ const render = leafCommand(
 		surface: Flag.string("surface").pipe(
 			Flag.atLeast(1),
 			Flag.withDescription(
-				"a surface id to capture — a route such as /pano, or a route plus a tier state (/pano:auth renders as the yazar test account, /pano:auth-caylak as the çaylak one), each proved signed in AND at the named tier against the preview's session endpoint before the shot is recorded; repeatable, and zero operands is refused (no tool guesses surfaces from a diff)",
+				"a surface id to capture — a route such as /pano, or a route plus a tier state (/pano:auth renders as the yazar test account, /pano:auth-caylak as the çaylak one, /pano:auth-caylak-unverified as the email-unverified çaylak), each proved signed in AND at the named tier and email verification against the preview's session endpoint before the shot is recorded; repeatable, and zero operands is refused (no tool guesses surfaces from a diff)",
 			),
 		),
 		// `atLeast(0)` is the repeatable form with no floor: omitting it renders at desktop alone,

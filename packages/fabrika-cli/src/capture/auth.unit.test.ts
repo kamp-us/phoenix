@@ -212,6 +212,32 @@ describe("readIdentity", () => {
 		});
 		expect(readIdentity(env, [], usable)).toEqual({_tag: "Identity", tokens: {}, secret: SECRET});
 	});
+
+	/**
+	 * The email-unverified çaylak shares its tier with the verified one, so the tier's token
+	 * standing in for it would render the write it is refused. Its own variable, or a refusal.
+	 */
+	it("names the unverified çaylak's own token and never falls back to the verified çaylak's", () => {
+		const env = {
+			PREVIEW_TEST_SESSION_TOKEN: TOKEN,
+			PREVIEW_TEST_CAYLAK_SESSION_TOKEN: `${TOKEN}-caylak`,
+		};
+		expect(readIdentity(env, ["çaylak-unverified"], usable)).toEqual({
+			_tag: "Missing",
+			names: ["PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN"],
+		});
+		expect(
+			readIdentity(
+				{...env, PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN: `${TOKEN}-unverified`},
+				["çaylak-unverified"],
+				usable,
+			),
+		).toEqual({
+			_tag: "Identity",
+			tokens: {"çaylak-unverified": `${TOKEN}-unverified`},
+			secret: SECRET,
+		});
+	});
 });
 
 /**
@@ -225,13 +251,37 @@ describe("readSessionProof", () => {
 		expect(readSessionProof(200, "null")).toEqual({_tag: "Anonymous"});
 	});
 
-	it("reads a session payload as signed in, naming the user and its tier", () => {
+	it("reads a session payload as signed in, naming the user, its tier and its verification", () => {
 		expect(
 			readSessionProof(
 				200,
-				JSON.stringify({session: {id: "s1"}, user: {id: "u1", tier: "çaylak"}}),
+				JSON.stringify({
+					session: {id: "s1"},
+					user: {id: "u1", tier: "çaylak", emailVerified: false},
+				}),
 			),
-		).toEqual({_tag: "SignedIn", userId: "u1", tier: "çaylak"});
+		).toEqual({_tag: "SignedIn", userId: "u1", tier: "çaylak", emailVerified: false});
+		expect(
+			readSessionProof(200, JSON.stringify({user: {id: "u1", tier: "yazar", emailVerified: true}})),
+		).toEqual({_tag: "SignedIn", userId: "u1", tier: "yazar", emailVerified: true});
+	});
+
+	/**
+	 * Same reason as the tier: a signed-in answer whose `emailVerified` is absent or not a boolean
+	 * leaves the audience unknown, and reading it as either value would hand the caller a fact
+	 * nobody read.
+	 */
+	it("reads a user with no boolean emailVerified as unreadable, never as either value", () => {
+		for (const user of [
+			{id: "u1", tier: "çaylak"},
+			{id: "u1", tier: "çaylak", emailVerified: null},
+			{id: "u1", tier: "çaylak", emailVerified: 0},
+		]) {
+			expect(readSessionProof(200, JSON.stringify({user}))).toEqual({
+				_tag: "Unreadable",
+				reason: "probe named a user with no emailVerified",
+			});
+		}
 	});
 
 	/**

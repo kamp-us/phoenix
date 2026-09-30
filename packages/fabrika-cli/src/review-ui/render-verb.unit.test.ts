@@ -460,6 +460,61 @@ describe("runRender", () => {
 		expect(written.size).toBe(0);
 	});
 
+	// The unverified çaylak shares its tier with the verified one, so the verified çaylak's
+	// token is exactly the fallback that would shoot the write it is refused under its name.
+	it("refuses an unverified-çaylak surface whose own token is unset, never falling back", async () => {
+		const {outcome} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth-caylak-unverified"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				PREVIEW_TEST_CAYLAK_SESSION_TOKEN: "c".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN");
+	});
+
+	it("signs the unverified-çaylak surface with its own token, not the verified çaylak's", async () => {
+		const seen = new Map<string, string | undefined>();
+		const {outcome} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth-caylak", "/hosgeldin:auth-caylak-unverified"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_CAYLAK_SESSION_TOKEN: "c".repeat(32),
+				PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN: "u".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: (request) => {
+				seen.set(request.surface, request.cookies[0]?.value);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen.get("/hosgeldin:auth-caylak-unverified")).toMatch(/^u{32}/);
+		expect(seen.get("/hosgeldin:auth-caylak")).toMatch(/^c{32}/);
+	});
+
+	it("refuses a verified shot under the unverified name on 11, recording no capture", async () => {
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth-caylak-unverified"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN: "u".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: legOf({
+				"/hosgeldin:auth-caylak-unverified": {_tag: "WrongVerification", wanted: false},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain(
+			"named an email-unverified identity and rendered as an email-verified one",
+		);
+		expect(written.size).toBe(0);
+	});
+
 	// The credential check only proves the pair was SET. Whether the cookie actually authenticated is
 	// the shot's own answer, and a shot that came back a visitor's is UNKNOWN — never a red surface,
 	// because the page rendered fine, and never a Rendered entry under the `:auth` id.
@@ -1286,7 +1341,7 @@ describe("runRender — the interaction operand", () => {
 					pngBytes: pngHeader(shot.viewport.width),
 					pageErrors: [],
 					status: 200,
-					sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar"},
+					sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar", emailVerified: true},
 					overrideProof: {_tag: "Forced"},
 					localeProof: {_tag: "Seeded"},
 					accentProof: {_tag: "Proven", accent: "amber"},
