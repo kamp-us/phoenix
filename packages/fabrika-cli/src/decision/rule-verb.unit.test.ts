@@ -234,19 +234,57 @@ describe("runRule", () => {
 	});
 
 	/**
-	 * The case the widened subject put at risk: `audienceWrites` is unconditional in both
-	 * directions, so a flip that widened with the recording would strip a human park off a bug and
-	 * hand it to `build claim` as pickable. Fixturing the issue as already `ready-for:agent` would
-	 * pass for the wrong reason — `add` is false whenever that label is merely present.
+	 * The ruled route back: triage parks a bug on `ready-for:human` for a founder call, and the
+	 * ruling recorded here hands it back exactly as it hands back a decision. Fixturing the issue as
+	 * already `ready-for:agent` would pass for the wrong reason — `add` is false whenever that label
+	 * is merely present.
 	 */
-	it("leaves a type:bug's ready-for:human park exactly as it found it", async () => {
-		const parked = ["type:bug", "ready-for:human"];
+	it("flips a type:bug's ready-for:human park once the marker reads back", async () => {
+		const body = await marker();
+		const {outcome, calls} = await run([
+			[once(ISSUE_READ), issueRead(["type:bug", "ready-for:human"])],
+			[COMMENTS, RULING_ONLY],
+			...acl,
+			[LABELS, taxonomy],
+			[POST, POSTED],
+			[GET_MARKER, {status: 200, body: JSON.stringify({body})}],
+			[ADD_LABEL, LABEL_WRITTEN],
+			[REMOVE_LABEL, LABEL_WRITTEN],
+			[ISSUE_READ, issueRead(["type:bug", "ready-for:agent"])],
+		]);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			answer: "ruled",
+			audience: "ready-for:agent",
+			observed: ["type:bug", "ready-for:agent"],
+		});
+		expect(calls.findIndex((line) => POST.test(line))).toBeLessThan(
+			calls.findIndex((line) => ADD_LABEL.test(line)),
+		);
+	});
+
+	it("keeps a bug's marker and its park when the body carries no acceptance-criteria block", async () => {
+		const body = await marker(BODY_NO_CRITERIA);
+		const {outcome, calls} = await run([
+			[once(ISSUE_READ), issueRead(["type:bug", "ready-for:human"], BODY_NO_CRITERIA)],
+			[COMMENTS, RULING_ONLY],
+			...acl,
+			[POST, POSTED],
+			[GET_MARKER, {status: 200, body: JSON.stringify({body})}],
+		]);
+		expect(outcome.code).toBe(4);
+		expect(calls.some((line) => POST.test(line))).toBe(true);
+		expect(wroteLabels(calls)).toBe(false);
+	});
+
+	/** An epic's agent audience is `check-epic-plan`'s flip alone, so a ruling there moves no label. */
+	it("records a ruling on a type:epic and leaves its labels exactly as it found them", async () => {
+		const parked = ["type:epic", "ready-for:human"];
 		const body = await marker();
 		const {outcome, calls} = await run([
 			[once(ISSUE_READ), issueRead(parked)],
 			[COMMENTS, RULING_ONLY],
 			...acl,
-			[LABELS, taxonomy],
 			[POST, POSTED],
 			[GET_MARKER, {status: 200, body: JSON.stringify({body})}],
 		]);
@@ -259,23 +297,6 @@ describe("runRule", () => {
 		expect(wroteLabels(calls)).toBe(false);
 		// No taxonomy read either: that read exists to guard the POST this run never makes.
 		expect(calls.some((line) => LABELS.test(line))).toBe(false);
-	});
-
-	/**
-	 * The criteria guard sits on the flip, so off the decision path there is nothing for it to
-	 * guard: the founder's judgement is recorded whatever the bug's body looks like.
-	 */
-	it("records a ruling on a bug whose body carries no acceptance-criteria block", async () => {
-		const body = await marker(BODY_NO_CRITERIA);
-		const {outcome, calls} = await run([
-			[once(ISSUE_READ), issueRead(["type:bug", "ready-for:human"], BODY_NO_CRITERIA)],
-			[COMMENTS, RULING_ONLY],
-			...acl,
-			[POST, POSTED],
-			[GET_MARKER, {status: 200, body: JSON.stringify({body})}],
-		]);
-		expect(outcome.code).toBe(0);
-		expect(wroteLabels(calls)).toBe(false);
 	});
 
 	it("refuses a --cites naming another repository or another issue, before any read", async () => {
