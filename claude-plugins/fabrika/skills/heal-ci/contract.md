@@ -1073,6 +1073,12 @@ An implementer ships exactly these ten rows in this order; the table grows by ad
 branching inside the verb. Row 4 preceding row 6 is what makes a failure to reach **this PR's own
 preview target** a warmup rather than generic network trouble.
 
+**A committed-secret finding is deliberately not a row.** A secret scanner's red (gitleaks'
+`leaks found: <n>`) classifies `unclassified` and leaves through intake to a person. No row may
+route it to repair: a `logic` row would hand an agent builder a pull request carrying a live
+secret, and the fix is to remove the secret and rotate the credential, which stays a human call
+every time. A new row must not match that shape.
+
 **Empty stdin is `3`, not `unclassified`.** A verb that classified nothing and a verb that read
 nothing must not answer the same way.
 

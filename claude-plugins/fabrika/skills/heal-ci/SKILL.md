@@ -164,6 +164,8 @@ flake. There is no path from an ambiguous log to "safe to rerun". Each token lic
 - **`unclassified`** — no signature matched. It leaves through the intake seam as an observation:
   fire the `fabrika:report` skill, whose verb owns the write and returns the number your
   `FILED — #N` terminal carries. Guessing "probably a flake" is how a rerun loop starts.
+  A secret-scan red lands here on purpose, never as `logic`: the report names it a committed
+  secret for a person to remove and rotate the credential, not a gap in the classifier.
 
 Only reds the base branch declares **required** reach this lane. Anything else is red without
 blocking, and treating one as healable is how a non-failure stalled a mergeable PR — which is the
