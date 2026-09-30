@@ -30,7 +30,7 @@ import {Effect} from "effect";
 import {branchProtectionContexts, rulesetContexts} from "../heal-ci/github.ts";
 import {isPlanGated, type ServedStatus} from "../io/gh-api.ts";
 import type {Shell} from "../io/git.ts";
-import {isInformational, type Rollup} from "./rollup.ts";
+import {isFailing, isInformational, type Rollup, type RollupRun} from "./rollup.ts";
 
 export type DeclaredRead =
 	/** The declared set is known, however many members it has. */
@@ -230,10 +230,23 @@ export const reportingNote = (
 	];
 };
 
-/** The names failing outside the blocking set: real reds a caller reports rather than routes. */
-export const reportedLine = (verb: string, names: ReadonlyArray<string>): ReadonlyArray<string> =>
-	names.length === 0
+/**
+ * The runs failing outside the blocking set, by name: real reds a caller reports rather than routes.
+ *
+ * The selection lives here rather than at each caller so every verb that reads a head names the same
+ * reds as non-blocking; a caller that filtered for itself could drift from `set.blocks`.
+ */
+export const reportedLine = (
+	verb: string,
+	set: BlockingSet,
+	runs: ReadonlyArray<RollupRun & {readonly name: string}>,
+): ReadonlyArray<string> => {
+	const names = runs
+		.filter((run) => !set.blocks(run.name) && isFailing(run))
+		.map((run) => run.name);
+	return names.length === 0
 		? []
 		: [
-				`${verb}: failing outside the required set: ${[...names].sort().join(", ")} — reported, never blocking.`,
+				`${verb}: failing outside the required set: ${names.sort().join(", ")} — reported, never blocking.`,
 			];
+};

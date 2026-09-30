@@ -358,25 +358,36 @@ the rollup. Each token routes on its own:
   `heal-ci` is the lane that moves a stalled PR.
 - `head-moved` — the PR left the head you are judging. Re-read at the new head; a verdict binds only
   what was inspected.
-- `governance-owed` — the only unfinished check is `governance floor at head`, and its workflow run
-  has already completed, so what the floor is waiting for is **your** governance verdict — the floor
-  reports through a check run, which stays unconcluded until a verdict binds at that head. This is
-  not a park: fire §6's governance skill, then call `review ci --wait` again and judge on the
-  `settled` it returns. Reaching it means §6 was run late, not that anything is wrong with the PR.
+- `governance-owed` — the only unfinished required check is `governance floor at head`, and its
+  workflow run has already completed, so what the floor is waiting for is **your** governance
+  verdict — the floor reports through a check run, which stays unconcluded until a verdict binds at
+  that head. This is not a park: fire §6's governance skill, then call `review ci --wait` again and
+  judge on the `settled` it returns. Reaching it means §6 was run late, not that anything is wrong
+  with the PR.
 - `governance-stale` — the same floor on its other rollup, and **the red beside it is not a FAIL you
   may act on**. On a repair round the governance verdict is bound to the previous head, so the floor
-  concludes `failure` rather than staying pending: the rollup is `red`, and the only failing check is
-  a floor whose verdict is **yours** to re-post. Route it exactly like `governance-owed` —
+  concludes `failure` rather than staying pending: the rollup is `red`, and the only failing required
+  check is a floor whose verdict is **yours** to re-post. Route it exactly like `governance-owed` —
   fire §6's governance skill, re-read, and judge on what comes back. The verb reaches this token only
-  when nothing else at the head is failing, so a `settled` red is still the execution evidence it
-  always was.
+  when nothing else in the required set is failing, so a `settled` red is still the execution
+  evidence it always was.
 
 The refusals reach you unchanged and on the first read — `--wait` polls a `pending` and nothing else,
 so a `16` head, a repo with no producer, or a floor waiting on you never burns the budget.
 
+**The wait judges only the checks the base branch declares required, not every check at the head.**
+The first stderr line names that set. A branch that declares none falls back to every check outside
+the informational denylist, and a set the token cannot read is a refusal, never a colour. A red
+outside the required set does not settle the wait: the verb names it on stderr as
+`failing outside the required set: <names> — reported, never blocking.` and keeps polling while any
+required check is still running. So a red beside a still-pending required check tells you nothing
+about this diff. Wait for the `settle` line and judge on the rollup beside it. Quote a named
+non-required red in your findings if it bears on the diff, but never fail the class on it and never
+end `UNKNOWN` over it. A required red still settles on the first read, however much else is queued.
+
 **Give the call a caller-side deadline above `--budget-seconds`, or the budget decides nothing.**
 The verb owns the loop only for as long as its process lives: a shell that wraps this call in a
-timeout shorter than the budget kills the CLI mid-poll, so none of the four `settle` tokens comes
+timeout shorter than the budget kills the CLI mid-poll, so none of the five `settle` tokens comes
 back and the class ends `UNKNOWN` with the head unread. One reviewer shell did exactly that with a
 120-second timeout over the 600-second default, and was killed at 120s with CI still running.
 

@@ -550,12 +550,18 @@ describe("the park terminals whose token names their own cause", () => {
 		expect(tokenCause(" base-drifted ")).toBe("head-behind-base");
 	});
 
-	// `ship`'s other parks fold to `human:cp-approval` for other reasons, so none may inherit the
-	// approval wait's cause and match its recipe row.
-	it("names no cause for a ship park that is not an approval wait", () => {
-		for (const token of ["REFUSED", "UNKNOWN", "ROUTED-REVIEW", "ROUTED-HEAL-CI"]) {
+	// `ship`'s other parks fold to `human:cp-approval` for other reasons, so none may inherit a
+	// token's cause and match a recipe row keyed on it.
+	it("names no cause for a ship park whose token has more than one reason", () => {
+		for (const token of ["REFUSED", "UNKNOWN", "ROUTED-HEAL-CI"]) {
 			expect(tokenCause(token)).toBeNull();
 		}
+	});
+
+	it("routes a verdict owed at the head to the driver and names no remedy", () => {
+		expect(tokenCause("ROUTED-REVIEW")).toBe("verdict-owed");
+		expect(routeForCause("verdict-owed")).toBe("driver");
+		expect(remedyForCause("verdict-owed")).toBeNull();
 	});
 
 	it("routes the approval wait to the founder and names no remedy", () => {

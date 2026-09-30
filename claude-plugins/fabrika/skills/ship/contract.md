@@ -1913,10 +1913,15 @@ fabrika ship reconcile 4321 [--polls 16] [--cadence-seconds 30] [--repo <owner/n
 are proven answers at exit `0` — **`ejected` is an answer, not an error**, so no loop shape
 around this verb can launder it into a success or a crash — v1's healthy KEPT path
 exited 1 off a trailing conditional, and its reconcile loop's predicate could not see the
-ejection marker. `unresolved` means still-queued at the horizon — neither a landing nor a
-failure; the honest words are the contract, and "auto-merges on green" is not in the
-vocabulary. `parked` means the arm never entered a queue on a queue-governed base —
-the enqueue did not take effect.
+ejection marker. `unresolved` means the PR is still in the queue at the horizon, or armed and
+not yet queued but younger than the floor below — neither a landing nor a failure; the honest words are the contract, and "auto-merges on green" is not in the
+vocabulary. `parked` means the arm never entered a queue on a queue-governed base and has
+waited past the floor: its latest `auto_merge_enabled` timeline event is at least
+`ARM_SETTLE_FLOOR_SECONDS` (1200 s) old — the enqueue did not take effect. GitHub can hold a
+live arm for minutes before it queues the PR (514 s has been seen), so a never-queued arm younger
+than the floor reads `unresolved` at any `--polls`, `1` included, and the driver's
+`ship:queued` re-reads carry it past the floor. An arm with no readable `auto_merge_enabled`
+time is not held back by the floor.
 
 With `--json`: `{"outcome":…,"polls":<n>,"horizonSeconds":<n>}`.
 
@@ -1941,14 +1946,16 @@ that needs longer waits in the driver's `ship:queued` cell, which re-reads this 
 `--polls 1` once a pass, rather than in a wider watch inside one shipper run. The verb never disarms
 — it is a read; the skill fires `ship disarm --site ejected` / `--site post-enqueue` on the
 `ejected` / `parked` answers (the sites exist precisely for these two answers, and the skill
-text carries the pairing).
+text carries the pairing). Because the floor outlasts the default horizon, a readable arm's first
+`parked` normally comes from the driver's `ship:queued` re-read, not the shipper's watch, so that
+cell runs the same `--site post-enqueue` disarm before it records.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) |
-| `11` | every poll in the budget failed to read — the outcome is UNKNOWN, distinct from `unresolved` (which is a *successful* observation of a still-queued PR) |
+| `11` | every poll in the budget failed to read — the outcome is UNKNOWN, distinct from `unresolved` (which is a *successful* observation of a PR still queued, or of an unqueued arm still younger than the floor) |
 | `13` | the timeline read — for which the platform declares no count — never reached a terminal page, and the classification would rest on it |
 
 **Errors**

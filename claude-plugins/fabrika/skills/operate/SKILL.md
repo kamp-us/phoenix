@@ -27,7 +27,8 @@ on stderr.
 Writes used — lane-ledger appends, a booted lane's own machine document brought up to the committed
 template through `lane migrate <lane>`, which is the form that writes that lane and no other,
 comments on the driven issue, the driven issue's row fields on the Projects table that `lane record`
-writes through `table sync`, whatever a recipe verb writes on
+writes through `table sync`, the `ship disarm --site post-enqueue` a `parked` read at
+`ship:queued` owes, whatever a recipe verb writes on
 its own account (step 3's chore row), and, **on an epic lane only**, that run's assembly branch: you
 merge a passing child into it, push it, and open the one draft PR (step 2's `integrate`). Never a
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
@@ -878,8 +879,9 @@ on its own clock, and one PR took ~1.7x the shipper's ~480s horizon to do it. So
 horizon stays exactly where it is and the waiting happens out here, one re-read per driver pass, in
 `ship:queued` — a queue dwell is a wait, not a park.
 
-You spawn nothing. One read answers the whole cell — `--polls 1` makes it a single look rather than
-another watch, so this costs a driver pass, not a horizon:
+You spawn nothing. One read answers the whole cell (only a `parked` answer adds a write, the
+disarm in the table below). `--polls 1` makes it a single look rather than another watch, so this
+costs a driver pass, not a horizon:
 
 ```bash
 node <fabrika> ship reconcile <pr> --polls 1
@@ -908,9 +910,9 @@ alone.
 | `reconcile` says | Record — `lane report … --token` |
 | --- | --- |
 | `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped`, unless the merge carried `Part of #N` and closed nothing, and then it lands back in `queued` (below). **On an epic lane's tail there is no such arm and none is wanted**: a tail body that does not close its epic is refused where it is written, so the tail's `DONE` folds to `shipped` either way |
-| `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own. This is the one record the floor below can refuse |
+| `unresolved` | `--token UNRESOLVED` — still queued, or armed and not yet past `ship reconcile`'s floor; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own. This is the one record the floor below can refuse |
 | `ejected` | `--token EJECTED` — the PR left the queue un-merged, which is repair work: the machine spends a retry back into `build` |
-| `parked` | `--token UNKNOWN` — the timeline shows a PR neither queued, ejected nor merged, and an unread queue state is UNKNOWN, never a wait to keep sitting in |
+| `parked` | disarm first, then record — the arm has sat unqueued past `ship reconcile`'s floor, so the enqueue did not take effect, and a live arm left standing enqueues ungated later. Run `node <fabrika> ship disarm <pr> --site post-enqueue` before `lane report`. On `kept live-queued` the PR entered the queue between the two reads: `--token UNRESOLVED`. On any other answer, `--token UNKNOWN`. A disarm exit `8` or `11` also records `UNKNOWN`, and your terminal line carries `merge intent: NOT cleared` |
 
 **`lane report` may answer "too soon", and that is the wait working.** A queue re-fold is floored on
 elapsed time as well as counted: exit `55` says the shipper's own ~480s horizon has not run since
@@ -1618,9 +1620,33 @@ what is never right is reaching for a token because it is nearby rather than bec
 happened.
 
 A shipper's `AWAITING-CP-APPROVAL` lands `awaiting-cp-approval` with nothing typed, because that
-token has one reason. When you park an owner-approval wait yourself, name it:
+token has one reason. Its `ROUTED-REVIEW` lands `verdict-owed` the same way (below). When you park
+an owner-approval wait yourself, name it:
 `lane transition <lane> BLOCKED --task <task> --cause awaiting-cp-approval`. A `ship` park with no
 cause matches no `human:cp-approval` row, so it never clears by reading an approval nobody asked for.
+
+**A `verdict-owed` park needs a verdict before it needs a clear.** A namespace the ship gate
+requires has no binding verdict at the PR's head, usually because the head moved after review. The
+fold reads `human:cp-approval`, and no cell out of it reaches `review`: `UNBLOCKED` returns to
+history, which is `ship`, and `lane brief` briefs a reviewer only from the `review` state. So a
+clear taken first hands a shipper the same missing verdict, and it parks the lane again. Run the
+owing gate first, then clear, in this order:
+
+1. Read the owed namespace off the parking shipper's report, which names each `blocked` line.
+2. Spawn the gate that owns it, `isolation: worktree`, with no lane. The whole prompt is the skill's
+   invocation and the PR number: `/fabrika:review <pr>` for a `review-*` namespace,
+   `/fabrika:review-ui <pr>` for `review-ui`, `/fabrika:governance <pr>` for `governance`. No brief
+   exists for a park, so this is the one spawn without `lane brief` output. The invocation is the
+   whole prompt, so you still compose nothing. With no lane named, the gate posts its verdict on
+   the PR and records nothing on the ledger.
+3. When the spawn returns, run `node <fabrika> build verdicts --pr <pr>`. Go on only when each owed
+   gate has a row with `"current": true`. `PASS` or `FAIL` makes no difference here: the shipper
+   routes a `FAIL` to repair itself. No current row means the verdict is still owed, so do not
+   clear. The gate's own terminal names why; park on that.
+4. Clear it: `recipe unpark <lane-key> --task <task>`. `verdict-owed` routes to the driver and has
+   no recipe row, so where this repo lets a driver clear, it answers `23`. Re-run it with
+   `--rationale` naming the verdict the gate posted at the head. Any other answer is read as below.
+   The lane returns to `ship`, and the next shipper merges or routes the `FAIL`.
 
 **So try `recipe unpark` before you post a park comment**, whenever the fold reads `blocked` or
 `human:*` — a park comment is the founder-routed answer, and you do not know the route until this

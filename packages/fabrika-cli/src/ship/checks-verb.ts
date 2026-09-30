@@ -273,15 +273,12 @@ export const runChecks = (
 				)
 				.map((run) => run.name)
 				.sort();
-			const reported = read.runs
-				.filter((run) => !blocking.blocks(run.name) && isFailing(run))
-				.map((run) => run.name);
 			const replaced = supersededGating(read, blocking)
 				.map((run) => run.name)
 				.sort();
 			const scope = [
 				...diagnostics,
-				...reportedLine(VERB, reported),
+				...reportedLine(VERB, blocking, read.runs),
 				// An empty head is `no-runs` or `no-producer`, which say why nothing reported themselves.
 				...(read.runs.length === 0
 					? []

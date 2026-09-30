@@ -516,12 +516,22 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 		expect(JSON.parse(appendedLine(fs)).cause).toBe("head-behind-base");
 	});
 
-	// The other `ship` parks fold to the same leaf for other reasons, so none inherits the cause.
-	it.each([
-		"REFUSED",
-		"UNKNOWN",
-		"ROUTED-REVIEW",
-	])("still refuses a shipper's bare %s", async (token) => {
+	// A route back to review on stale or absent verdicts has one reason too, so it leaves `ship`
+	// caused rather than refusing and leaving the lane reading `ship` with nothing recorded.
+	it("records a shipper's bare ROUTED-REVIEW under the verdict-owed cause", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "ROUTED-REVIEW", {parkCause: strict});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "verdict-owed",
+		});
+	});
+
+	// The other `ship` parks fold to the same leaf for other reasons, so none inherits a cause.
+	it.each(["REFUSED", "UNKNOWN"])("still refuses a shipper's bare %s", async (token) => {
 		const fs = laneAt(LOG_AT.ship);
 
 		const out = await run(fs, token, {parkCause: strict});
