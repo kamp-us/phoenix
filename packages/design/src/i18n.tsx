@@ -23,6 +23,8 @@ export const designTrMessages = {
 	"ui.markdown.diagram": "diyagram",
 	"ui.markdown.diagram.source": "diyagram kaynağı",
 	"ui.markdown.diagram.error": "diyagram çizilemedi: {reason}",
+	"ui.markdown.task.done": "tamamlandı",
+	"ui.markdown.task.open": "tamamlanmadı",
 	"admin.agent.label": "Agent chat input",
 	"admin.agent.scope": "yalnızca yerel atölye",
 	"admin.agent.compose.label": "Pi'ye mesaj yaz",

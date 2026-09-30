@@ -343,15 +343,15 @@ nothing here and admitting one would let a single comment unlock every decision 
 
 The marker's subject widened because a ruling that reaches no gate is prose: `review criteria` folds
 every standing one into the set a reviewer grades, and `lane prove` reads a verdict written before
-the newest ruling as no longer current. **The audience flip did not widen with it.** On a
-`type:decision` the marker is still what `decision rule` proves before it flips the issue from
-`ready-for:human` to `ready-for:agent` — that ordering is the point, since a flip written ahead of a
-proven marker leaves a decision reading pickable with no recorded ruling behind it — and even there
-the proven marker earns the flip without compelling it: a ruled decision whose body carries no
-readable `### Acceptance criteria` block keeps its marker and stays on `ready-for:human`, because
-`ready-for:agent` promises a builder can grade the issue cold. On every other issue type the marker
-lands and both `ready-for:` labels are left exactly as they were found, so recording a ruling never
-makes a human-parked issue agent-pickable.
+the newest ruling as no longer current. **The audience flip widened with it, to every type but
+`type:epic`**.
+The marker is what `decision rule` proves before it flips the issue from `ready-for:human` to
+`ready-for:agent` — that ordering is the point, since a flip written ahead of a proven marker leaves
+an issue reading pickable with no recorded ruling behind it — and the proven marker earns the flip
+without compelling it: a ruled issue whose body carries no readable `### Acceptance criteria` block
+keeps its marker and stays on `ready-for:human`, because `ready-for:agent` promises a builder can
+grade the issue cold. On a `type:epic` the marker lands and both `ready-for:` labels are left exactly
+as they were found, because an epic's agent audience is `check-epic-plan`'s flip alone.
 
 `fabrika decision rule` is the only writer, and it runs in this order: derive the digest over the
 issue body itself, post the marker, read it back, and only then flip the audience, reporting the
@@ -360,9 +360,8 @@ when it is already a comment on the issue, or `--authorization <file>` when it w
 conversation. That file is posted verbatim as a dated comment first and the marker cites it, the
 same shape as `grill rule`, so a ruling already made costs no comment to type. The answer is
 `{"answer":"ruled","issue":n,"digest":"…","ruling":"…","supersedes":k|null,"by":"…","at":"…","comment":n,"audience":"ready-for:agent"|null,"observed":[…]}`.
-`audience` is null wherever no flip was written — every issue that is not a `type:decision`, and a
-decision whose body has no readable criteria block — and `observed` then lists the labels as they
-were found.
+`audience` is null wherever no flip was written — an epic, and an issue whose body has no readable
+criteria block — and `observed` then lists the labels as they were found.
 
 `fabrika decision ruling` is the reader. It answers
 `{"answer":"ruling","issue":n,"state":"current|stale|absent","by":…,"markerDigest":…,"derivedDigest":"…","ruling":…,"at":…,"comment":…,"audience":…,"disregarded":n,"unauthorized":n}`,

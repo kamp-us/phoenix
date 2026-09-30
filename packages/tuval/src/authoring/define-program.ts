@@ -5,7 +5,8 @@
  * reload, pick and window. It is a compiler, not a runtime: nothing here runs a program.
  *
  * Two things it exists to hide (#8716 R12.1). An in-port arrival is an `update` event carrying the
- * decoded payload, which is the row's `receive` map written for the author. A returned effect list
+ * payload the port's `accepts` admitted, unchanged (ADR 0445), which is the row's `receive` map
+ * written for the author. A returned effect list
  * (`./effect.ts`) is the row's Cmd union, and the `handlers` that run those Cmds against
  * `ProcessPorts` and the process spells are written once here rather than by every author.
  *
@@ -142,7 +143,7 @@ export type Answer<S, X = never> = readonly [S, ReadonlyArray<ProgramEffect | X>
 export type EventHandler<S, E, X = never> = (state: S, event: E) => Answer<S, X>;
 
 /**
- * An in-port arrival as the author's `update` sees it: the port's name, its decoded payload.
+ * An in-port arrival as the author's `update` sees it: the port's name, its admitted payload.
  *
  * **A type alias, and it may not become an `interface` (#9543).** A module window types its
  * `WindowHost` dispatch at its program's `ProgramEvent` union (`./view.ts`), whose Msg parameter is
@@ -182,7 +183,7 @@ export type ArrivingPortNames<D extends PortDecls> = {
 
 /**
  * The author's `update`: a cell per event, keyed by the event's type. Every arriving port owes one
- * and gets that port's decoded payload; the author's own events take the cells beside them, and a
+ * and gets that port's admitted payload; the author's own events take the cells beside them, and a
  * `key` cell — optional, and the whole keyboard opt-in (`./keys.ts`) — gets the forwarded keystroke.
  *
  * One mapped type over `keyof U | <arriving ports>` rather than an intersection of the two halves,
