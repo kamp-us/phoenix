@@ -1,4 +1,5 @@
 import {expect, type Page, test} from "@playwright/test";
+import {wire} from "../../src/i18n/tr/wire";
 import {signOut, signUp} from "./_helpers/auth";
 import {promoteToYazar} from "./_helpers/promote";
 import {randomSuffix} from "./_helpers/rand";
@@ -121,8 +122,10 @@ test.describe("çaylak write gate @journey:phoenix-email-verified-writes", () =>
 		await page.locator('[data-testid="pano-comment-input"]').fill(`çaylak yorumu ${suffix}`);
 		await page.locator('[data-testid="pano-comment-submit"]').click();
 		await expect(page.getByTestId("pano-comment-error")).toContainText(
-			"yazabilmek için önce e-posta adresini doğrulaman gerekiyor",
-			{timeout: 10_000},
+			wire["wire.EMAIL_UNVERIFIED"],
+			{
+				timeout: 10_000,
+			},
 		);
 		await expect(page.getByRole("heading", {name: /1 yorum/i})).toBeVisible();
 	});

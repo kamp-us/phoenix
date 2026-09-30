@@ -7,7 +7,12 @@ import {describe, expect, it} from "vitest";
 import {en} from "../i18n/en";
 import type {Translate} from "../i18n/LocaleProvider";
 import {tr} from "../i18n/tr";
-import {FATE_WIRE_CODES, messageForCode, wireMessageKey} from "./wireMessages";
+import {
+	FATE_WIRE_CODES,
+	messageForCode,
+	messageForThrownCode,
+	wireMessageKey,
+} from "./wireMessages";
 
 const CATALOGS: ReadonlyArray<readonly [string, Readonly<Record<string, string>>]> = [
 	["tr", tr],
@@ -54,6 +59,27 @@ describe.each(CATALOGS)("messageForCode in %s — override wins over the catalog
 		for (const code of FATE_WIRE_CODES) {
 			expect(messageForCode(t, code)).toBeTruthy();
 		}
+	});
+});
+
+describe.each(CATALOGS)("messageForThrownCode in %s", (_l, cat) => {
+	const t = translateWith(cat);
+
+	it("renders an actionable refusal's catalog copy instead of the fallback", () => {
+		expect(messageForThrownCode(t, "EMAIL_UNVERIFIED", "fallback")).toBe(
+			cat["wire.EMAIL_UNVERIFIED"],
+		);
+	});
+
+	it("falls any other thrown code back to the surface's failure line", () => {
+		expect(messageForThrownCode(t, "INTERNAL_SERVER_ERROR", "fallback")).toBe("fallback");
+	});
+
+	it("lets a named override win over both", () => {
+		expect(messageForThrownCode(t, "EMAIL_UNVERIFIED", "fallback", {EMAIL_UNVERIFIED: "x"})).toBe(
+			"x",
+		);
+		expect(messageForThrownCode(t, "BODY_REQUIRED", "fallback", {BODY_REQUIRED: "y"})).toBe("y");
 	});
 });
 

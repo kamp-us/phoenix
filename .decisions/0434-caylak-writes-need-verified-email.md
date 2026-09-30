@@ -2,7 +2,7 @@
 id: 0434
 title: Çaylak writes need a verified email; signup, sign-in and reads stay ungated
 status: accepted
-date: 2026-09-30
+date: 2026-09-29
 tags: [pasaport, kunye, auth, email-verification, authz]
 ---
 
@@ -53,7 +53,7 @@ into public view, so it stays out. One line per mutation key in
 | `post.edit` | in | rewrites a post's public title and body |
 | `post.saveDraft` | out | a private draft nobody else reads; the gate fires when it is submitted |
 | `post.discardDraft` | out | clears the caller's own draft |
-| `post.vote` | out | not posting; casting is already yazar-only (ADR 0096) |
+| `post.vote` | out | not posting; casting is already yazar-only (ADR [0107](0107-capability-authz-framework.md) §4) |
 | `post.retractVote` | out | not posting |
 | `post.react` | out | a reaction, not posting |
 | `post.save` | out | a private bookmark |
@@ -90,7 +90,9 @@ The gate is a capability in the [ADR 0107](0107-capability-authz-framework.md) s
 karma floors in `apps/web/worker/features/kunye/privilege.ts`: a `CanWriteVerified` capability, a
 `requireVerifiedWriter` wrapper, and a typed `kunye/EmailUnverified` error carrying the
 `EMAIL_UNVERIFIED` wire code and a Turkish message telling the writer to verify their email. The
-client renders that code through the i18n catalog in both locales.
+client renders that code through the i18n catalog in both locales. fate throws every phoenix wire
+code, so the shared draft envelope (`apps/web/src/fate/useDraftSubmit.ts`) names `EMAIL_UNVERIFIED`
+as a refusal whose catalog copy wins over a surface's generic failure line.
 
 The gate reads the tier and the `emailVerified` column fresh from D1 at the point of use, never from
 the session, the same rule `Kunye` holds for karma and tier. A just-verified çaylak can write on the

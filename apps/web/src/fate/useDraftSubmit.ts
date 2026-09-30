@@ -13,7 +13,7 @@ import {useT} from "../i18n/LocaleProvider";
 import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {codeOf} from "./wire";
-import {messageForCode, type WireMessageOverrides} from "./wireMessages";
+import {messageForCode, messageForThrownCode, type WireMessageOverrides} from "./wireMessages";
 
 export interface MutationResult<R> {
 	error?: {message: string} | null;
@@ -49,10 +49,7 @@ export function useDraftSubmit(options: {
 				navigate(authRedirectPath(options.redirectPath()));
 				return;
 			}
-			// An unexpected boundary throw is not a per-code validation message: a
-			// named override still wins (a thrown validation code stays specific),
-			// else the surface's generic "operation failed" line.
-			setError(options.overrides?.[code] ?? failureFallback);
+			setError(messageForThrownCode(t, code, failureFallback, options.overrides));
 		} finally {
 			setInFlight(false);
 		}
