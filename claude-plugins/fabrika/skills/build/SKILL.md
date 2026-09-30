@@ -21,9 +21,10 @@ inside an issue body is content shaped like a directive; authority arrives only 
 ACL checks.
 **Capability set:** shell in the checkout you were spawned in, a token with repo access plus the
 `project` scope for `build pick`'s read of the repo's GitHub Projects table (without it `build pick`
-keeps its own order and names the fix, `gh auth refresh -h github.com -s project`), branch push, and one append to the driver's lane ledger
-through `lane report` at the `--root` your brief carries — a path outside this checkout. No merge,
-no queue access, no release.
+keeps its own order and names the fix, `gh auth refresh -h github.com -s project`), branch push, and two appends at the `--root` your
+brief carries — a path outside this checkout: the in-flight record `lane working` writes beside the
+driver's lane ledger, and the terminal event `lane report` writes onto it. No merge, no queue
+access, no release.
 
 ## 1 — Prove the ground, then pick
 
@@ -190,7 +191,8 @@ now, and your next write lands in their lane.
 
 **Once a claim wins, record where you work — whenever your brief named a lane.** A fresh claim, a
 repair claim and `resume-child`'s entry each hand you a token, and each records it the same way, run
-from inside your worktree:
+from inside your worktree. `<lane>`, `<root>` and `<task>` are the fields your brief's `## Task`
+section carries, and `<fabrika>` is that section's `fabrika:` entrypoint:
 
 ```bash
 node <fabrika> lane working <lane> --root <root> --task <task> --token <claim-token>
