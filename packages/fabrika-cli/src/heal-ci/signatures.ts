@@ -10,6 +10,12 @@
  *
  * The table grows by adding a row, never by branching inside a verb: it is data, under unit test
  * against fixture logs.
+ *
+ * A secret scanner's committed-secret finding is deliberately not a row. It stays `unclassified`
+ * so it reaches a person who removes the secret and rotates the credential; a `logic` row would
+ * hand a repair lane a pull request carrying a live secret.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/7288#issuecomment-5519663185
  */
 
 export type SignatureClass = "transient" | "logic";

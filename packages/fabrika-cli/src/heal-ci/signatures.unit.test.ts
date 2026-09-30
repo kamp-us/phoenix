@@ -58,6 +58,18 @@ describe("default-deny", () => {
 		expect(found._tag).toBe("Unclassified");
 	});
 
+	it("leaves a committed-secret finding unclassified, so it reaches a person and never a repair lane", () => {
+		const found = classifyLog(
+			[
+				"5:32AM INF 2 commits scanned.",
+				"5:32AM WRN leaks found: 1",
+				"##[error]gitleaks found a secret in a file this PR adds or edits. Remove it at HEAD, rotate it, and (if a real credential) treat the leak as an incident — do NOT allowlist a real secret.",
+				"##[error]Process completed with exit code 1.",
+			].join("\n"),
+		);
+		expect(found._tag).toBe("Unclassified");
+	});
+
 	it("names only its own ids as signatures", () => {
 		expect(isSignatureId("preview-warmup")).toBe(true);
 		expect(isSignatureId("flaky")).toBe(false);
