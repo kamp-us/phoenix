@@ -1632,8 +1632,9 @@ const readOpenHeadCi = (
  * which is a red nobody has classified yet. So does a `logic` red on a PR the pipeline does not own,
  * because that repair is its author's (`heal-ci` §2's ownership rule, read through the same gate
  * `build claim` puts in front of a repair). And so does every red on a lane whose own machine gives
- * the park no `FAIL` arm, read before any log: an epic tail's emitted region declares none, and a
- * generated machine is never migrated, so there a `FAIL` could only be refused.
+ * the park no `FAIL` arm, read before any log: a coder lane booted on a template older than the arm,
+ * or an epic lane emitted before its tail's park carried one — a generated machine is never
+ * migrated, so there a `FAIL` could only be refused.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9946
  */
@@ -1669,7 +1670,7 @@ const repairOrHold = (
 		}
 		if (arm._tag === "Armless") {
 			return holds(
-				`this lane's machine gives "${recipe.park}" no FAIL arm, so the red has no repair route and waits on green as before; \`fabrika lane migrate\` adds the arm to a lane booted on an older template, and a generated machine (an epic tail) never gains it`,
+				`this lane's machine gives "${recipe.park}" no FAIL arm, so the red has no repair route and waits on green as before; \`fabrika lane migrate\` adds the arm to a lane booted on an older template, and an epic lane emitted before its tail's park carried the arm keeps the machine it booted on`,
 			);
 		}
 

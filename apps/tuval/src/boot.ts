@@ -33,7 +33,12 @@ import {WorkingFolder} from "@kampus/tuval-sdk/kernel/process/working-folder";
 import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry, RegistryRows} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
-import {homeTuvalDir, type StateAdoption, StateDir} from "@kampus/tuval-sdk/kernel/state-dir";
+import {
+	homeStateDir,
+	homeTuvalDir,
+	prepareStateDir,
+	StateDir,
+} from "@kampus/tuval-sdk/kernel/state-dir";
 import type {PrefixTable} from "@kampus/tuval-ui/keys";
 import {Context, Deferred, Effect, FileSystem, Layer} from "effect";
 import {AuthoredModules} from "./authored-modules.ts";
@@ -48,13 +53,18 @@ import {
 } from "./config.ts";
 import {ConfigGeneration} from "./config-generation.ts";
 import {deskLayer} from "./desk-layer.ts";
-import type {CheckpointScoping} from "./durability/scope-checkpoints.ts";
+import {type DeskStateLifted, liftDeskState} from "./durability/desk-state.ts";
 import {LiveKeyBindings} from "./keys/live.ts";
 import {type LaunchedProcess, launch} from "./launch/launch.ts";
 import {ProjectId, processScope, projectConfig, type ScopedProcess} from "./project-id.ts";
 import {checkpointRoutes, ownedView} from "./projects/checkpoint-routes.ts";
-import type {ProjectNotReopened} from "./projects/open-projects.ts";
 import {
+	OpenProjects,
+	type OpenProjectsRecord,
+	type ProjectNotReopened,
+} from "./projects/open-projects.ts";
+import {
+	holdsConfig,
 	makeProjects,
 	type ProjectOpened,
 	type ProjectState,
@@ -62,10 +72,12 @@ import {
 	type ProjectsKernel,
 	type ProjectsReopened,
 	prepareProjectState,
+	readSavedProjects,
 } from "./projects/Projects.ts";
 import {makeRecommendPrompts, RecommendPrompts} from "./projects/RecommendPrompts.ts";
 import {projectSpells} from "./projects/spells.ts";
 import {makeTrustPrompts, TrustPrompts} from "./projects/TrustPrompts.ts";
+import type {TrustGate} from "./projects/trust.ts";
 import {ConfigReloader, type ReloadRefused, type ReloadReport} from "./reload.ts";
 import type {RowRefused, SdkRemoved} from "./sdk-admission.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
@@ -130,12 +142,22 @@ export const coreSpells: ReadonlyArray<AnySpell> = [
 /** How long `process read` waits on a port that has said nothing yet before answering none. */
 const READ_TIMEOUT = "1 second";
 
-/** The project a desk boots with, its config already read and its state already prepared. */
-export interface FirstProject {
-	readonly folder: string;
-	readonly loaded: LoadedProjectConfig;
-	readonly state: ProjectState;
-}
+/**
+ * The folder a desk boots with, as `boot` found it before importing anything from it (#9977). A
+ * folder that is trusted, or holds no config, is read beside the global layer and opened before
+ * `start` answers; one holding a config nobody has trusted is asked about, and nothing from it is
+ * imported until the person says yes.
+ */
+export type FirstFolder =
+	| {
+			readonly _tag: "Admitted";
+			readonly folder: string;
+			readonly loaded: LoadedProjectConfig;
+			readonly state: ProjectState;
+			/** What of the desk's own state an older desk left in the folder's, moved out (`liftDeskState`). */
+			readonly lifted: DeskStateLifted;
+	  }
+	| {readonly _tag: "Asking"; readonly folder: string};
 
 /** The desk a kernel opens projects into (`./projects/Projects.ts`). */
 export interface DeskProjects {
@@ -146,7 +168,9 @@ export interface DeskProjects {
 	readonly renderers: ReadonlyArray<ModuleRendererRef>;
 	/** What the global layer's SDK refusals took out of the graph this kernel runs (#9686). */
 	readonly removed: SdkRemoved;
-	readonly first?: FirstProject;
+	readonly first?: FirstFolder;
+	/** The saved list the desk starts over. */
+	readonly saved: OpenProjectsRecord | null;
 	/** What a project's config and state are read through. */
 	readonly fs: FileSystem.FileSystem;
 }
@@ -198,7 +222,7 @@ export interface Started {
 	readonly launched: ReadonlyArray<LaunchedProcess>;
 	/** Checkpointed processes the graph did not plan, spawned back by `restore`. */
 	readonly restored: ReadonlyArray<ProcessHandle>;
-	/** The first project, opened once the desk's own processes were up. */
+	/** The first project, opened once the desk's own processes were up, unless it is being asked about. */
 	readonly first?: ProjectOpened;
 	/** What the saved list had open, reopened after the first project, and what was skipped. */
 	readonly reopened: ProjectsReopened;
@@ -307,6 +331,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 					scope: yield* Effect.scope,
 					kernel: filled,
 					fs: projects.fs,
+					saved: projects.saved,
 				});
 	// Added to the context it reads rather than layered into it: the session list builds every
 	// registered backend's layer, and those layers need the kernel this call is closing over — a
@@ -359,10 +384,12 @@ export const start = Effect.fn("Tuval.start")(function* ({
 		Effect.provideService(Checkpoints, ownedView(deskStore, deskOwned)),
 		Effect.provideContext(spawnerNeeds),
 	);
+	const boot = projects?.first;
 	const first =
-		desk === undefined || projects?.first === undefined
+		desk === undefined || boot?._tag !== "Admitted"
 			? undefined
-			: yield* desk.openFirst(projects.first.folder, projects.first.loaded, projects.first.state);
+			: yield* desk.openFirst(boot.folder, boot.loaded, boot.state);
+	if (desk !== undefined && boot?._tag === "Asking") yield* desk.askFirst(boot.folder);
 	// The boot project counts as one of the open ones: the saved list's others open beside it.
 	const reopened = desk === undefined ? {opened: [], skipped: []} : yield* desk.reopen();
 	return {
@@ -411,15 +438,29 @@ export interface BootReport {
 	readonly reopened: ReadonlyArray<string>;
 	/** One per saved open folder this boot skipped, naming it and why; the rest still opened. */
 	readonly skipped: ReadonlyArray<ProjectNotReopened>;
-	/** The home-dir directory this desk's state lives in, keyed by the project's absolute path. */
-	readonly stateDir: string;
-	/** What ADR 0402 rule 7's one-time move lifted out of `<project>/.tuval` on this boot. */
-	readonly adopted: StateAdoption;
-	/** What the one-time move onto project-scoped ids moved on this boot (#9684). */
-	readonly scoped: CheckpointScoping;
+	/**
+	 * The desk's own state directory: its checkpoints, its manifest and the `StateDir` its rows are
+	 * handed. The desk runs in the home folder (#9694), so this is that folder's home-dir key, and no
+	 * boot folder's (#9977).
+	 */
+	readonly deskStateDir: string;
+	/** The folder this desk booted with: opened, or waiting on "Trust this folder?". */
+	readonly first: BootFolder;
 	readonly processCount: number;
 	readonly restoredCount: number;
 }
+
+/** The boot folder as a boot report states it. */
+export type BootFolder =
+	/** Opened before `boot` answered, with where its state lives and what preparing it moved. */
+	| {
+			readonly _tag: "Opened";
+			readonly folder: string;
+			readonly state: ProjectState;
+			readonly lifted: DeskStateLifted;
+	  }
+	/** Holding a config nobody has trusted; it opens only once the page says yes (#9977). */
+	| {readonly _tag: "Asking"; readonly folder: string};
 
 export interface Booted {
 	readonly report: BootReport;
@@ -477,25 +518,34 @@ const generationOf = (config: LoadedConfig, keyBindings: LiveKeyBindings): Confi
 	);
 };
 
-/** `start` from the layered config: the `pnpm dev` path. The `--project` folder is the first open. */
+/**
+ * `start` from the layered config: the `pnpm dev` path. The `--project` folder is the first open, and
+ * its config is read beside the global layer only when it is trusted or there is none; otherwise the
+ * desk boots on its own and global layers and the folder is asked about (#9977).
+ */
 export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	const folder = resolve(options.project);
 	const desk = options.desk ?? deskLayer;
-	const firstLayer: ProjectLayer = {id: ProjectId.of(folder), module: projectConfig(folder)};
-	const config = yield* loadLayeredConfig({desk, global: options.global, projects: [firstLayer]});
 	const fs = yield* FileSystem.FileSystem;
+	const saved = yield* readSavedProjects(options.home);
+	const gate = OpenProjects.restoring(saved).trusted.gate(folder, yield* holdsConfig(fs, folder));
+	const firstLayer: ProjectLayer = {id: ProjectId.of(folder), module: projectConfig(folder)};
+	const config = yield* loadLayeredConfig({
+		desk,
+		global: options.global,
+		projects: gate === "ask" ? [] : [firstLayer],
+	});
 	const keyBindings = new LiveKeyBindings();
 	const reread = (projects: ReadonlyArray<ProjectLayer>) =>
 		loadLayeredConfig({desk, global: options.global, projects}).pipe(
 			Effect.map((reread) => generationOf(reread, keyBindings)),
 			Effect.provideService(FileSystem.FileSystem, fs),
 		);
-	const [read] = config.projects;
-	if (read === undefined) return yield* Effect.die("the boot project's layer was not read");
-	const loaded: LoadedProjectConfig = {...read, files: config.files, modules: config.modules};
-	// The desk's own checkpoints share the first project's state directory, so its state is prepared
-	// — adopted and moved onto scoped ids — before the desk restores anything from it.
-	const state = yield* prepareProjectState(folder, options.home, loaded);
+	const deskStateDir = yield* prepareStateDir(
+		options.home,
+		homeStateDir(options.home, options.home),
+	);
+	const first = yield* firstFolder({folder, gate, config, home: options.home, deskStateDir});
 	const deskRows = withShellFeatures(
 		config.desk.programs as ReadonlyArray<AnyProgram>,
 		config.features,
@@ -504,7 +554,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	const started = yield* start({
 		programs: deskRows,
 		graph: config.desk.graph,
-		stateDir: state.stateDir,
+		stateDir: deskStateDir,
 		keys: config.desk.keys,
 		features: config.features,
 		reread,
@@ -513,7 +563,8 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 			desk,
 			renderers: config.desk.moduleRenderers,
 			removed: config.desk.removed,
-			first: {folder, loaded, state},
+			first,
+			saved,
 			fs,
 		},
 		modules: config.modules,
@@ -538,9 +589,11 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		refused: [...config.refused, ...started.reopened.opened.flatMap((opened) => opened.refused)],
 		reopened: started.reopened.opened.map((opened) => opened.project.folder),
 		skipped: started.reopened.skipped,
-		stateDir: state.stateDir,
-		adopted: state.adopted,
-		scoped: state.scoped,
+		deskStateDir,
+		first:
+			first._tag === "Asking"
+				? first
+				: {_tag: "Opened", folder, state: first.state, lifted: first.lifted},
 		processCount: live.length,
 		restoredCount:
 			restoredBy(started.launched, started.restored) +
@@ -561,4 +614,29 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 			Effect.provideContext(started.kernel),
 		),
 	} satisfies Booted;
+});
+
+/**
+ * What `start` opens the boot folder with: the question, or its layer as `config` read it with its
+ * state prepared and the desk's own checkpoints lifted out of it, before the desk restores anything.
+ */
+const firstFolder = Effect.fn("Tuval.firstFolder")(function* (options: {
+	readonly folder: string;
+	readonly gate: TrustGate;
+	readonly config: LoadedConfig;
+	readonly home: string;
+	readonly deskStateDir: string;
+}) {
+	const {folder, config} = options;
+	if (options.gate === "ask") {
+		const asking: FirstFolder = {_tag: "Asking", folder};
+		return asking;
+	}
+	const [read] = config.projects;
+	if (read === undefined) return yield* Effect.die("the boot project's layer was not read");
+	const loaded: LoadedProjectConfig = {...read, files: config.files, modules: config.modules};
+	const state = yield* prepareProjectState(folder, options.home, loaded);
+	const lifted = yield* liftDeskState(state.stateDir, options.deskStateDir);
+	const admitted: FirstFolder = {_tag: "Admitted", folder, loaded, state, lifted};
+	return admitted;
 });

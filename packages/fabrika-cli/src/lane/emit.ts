@@ -290,6 +290,10 @@ const region = (
  * child's is: an epic review that spent its budget is a park its driver resumes, not the end of the
  * run, and one leaf for one fact means one route to read it by.
  *
+ * `human:cp-approval` carries the coder template's guarded `FAIL` pair, so `recipe unpark` can send a
+ * head `heal-ci` classes `logic` red out of the park into repair. It retries into `build`, not
+ * `review`, for the reason `review`'s does: a red head is a builder's to fix.
+ *
  * `review:ui` is the tail's second review cell, and the tail is the ONE region of this machine that
  * carries it. Every child hands its rendered namespace on unconditionally, so the whole run's
  * `review-ui` debt arrives here; with no cell to route into, `prove.ts` left the tail owing the set
@@ -367,7 +371,15 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 			},
 		},
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
-		"human:cp-approval": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		"human:cp-approval": {
+			on: {
+				[`${ns}.UNBLOCKED`]: "hist",
+				[`${ns}.FAIL`]: [
+					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+					{target: "human:budget-spent"},
+				],
+			},
+		},
 		"human:queue-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
 		hist: {type: "history"},

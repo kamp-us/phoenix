@@ -331,17 +331,18 @@ export const CI_SEATS: SharedSeats = {
 };
 
 /**
- * `guard`'s seats: two, the narrowest claim any group makes besides `hook`'s one.
+ * `guard`'s seats: three, all read-shaped.
  *
  * A guard establishes almost nothing the base's table speaks about — it writes nothing, composes no
- * body, reads no stdin. What it does establish is the base's two read-shaped facts: the scope it was
- * pointed at is proven empty (`ZERO_SCOPE`, the fail-closed floor every guard sits on), and a read
- * the verdict rests on failed
- * so nothing is proven (`PRECONDITION_UNKNOWN`). Its one private seat, `12` `VIOLATION`, is the
- * verdict the whole group exists for and the base has no word for at all.
+ * body, reads no stdin. What it does establish is the base's read-shaped facts: the scope it was
+ * pointed at is proven empty (`ZERO_SCOPE`, the fail-closed floor every guard sits on), a flag names
+ * no subject it can scan (`OFF_VOCABULARY`, the base's `CLASSIFIED`), and a read the verdict rests on
+ * failed so nothing is proven (`PRECONDITION_UNKNOWN`). Its one private seat, `12` `VIOLATION`, is
+ * the verdict the whole group exists for and the base has no word for at all.
  */
 export const GUARD_SEATS: SharedSeats = {
 	ZERO_SCOPE: "NO_TARGET",
+	OFF_VOCABULARY: "CLASSIFIED",
 	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
 };
 

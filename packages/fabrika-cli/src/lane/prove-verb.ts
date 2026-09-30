@@ -231,9 +231,9 @@ export interface ProofOutcome extends VerbOutcome {
 	 * An exit of `0` is two different facts here and a caller acting on the proof has to tell them
 	 * apart: `proven` says the artifact says so, `not-required` says nothing was claimed and the
 	 * event may simply be recorded, and `uncontradicted` says a negative claim met no contradiction.
-	 * `lane recover` records only on the first, so collapsing them would have it append a `DONE` out
-	 * of a cell that asserts nothing. The label is derived here, in the module that writes that
-	 * stdout, so no other module has to know the shape of this verb's answer.
+	 * `lane recover`'s proven arm records only on the first, so collapsing them would have it append
+	 * a `DONE` out of a cell that asserts nothing. The label is derived here, in the module that
+	 * writes that stdout, so no other module has to know the shape of this verb's answer.
 	 */
 	readonly proof: ProofLabel | null;
 }

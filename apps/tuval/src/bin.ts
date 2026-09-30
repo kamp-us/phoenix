@@ -13,8 +13,9 @@
  * page writes no record, since its page is how a caller reaches it.
  *
  * The desk's saved state is not in the project: it lives under `~/.tuval/projects/<key>`, keyed by
- * the project checkout's absolute path (ADR 0402). The boot line names the directory it used, and
- * a boot that found state left in a project by an older build says what it moved.
+ * the absolute path of the folder it belongs to (ADR 0402) — the home folder for the desk's own. The
+ * boot line names the desk's directory, and a boot that found state left in a project by an older
+ * build says what it moved.
  *
  * Ctrl-C is `NodeRuntime.runMain`'s interrupt: it interrupts the main fiber, whose Scope closing
  * stops and checkpoints every process. That stop is the documented way out, so it exits 0 rather
@@ -34,6 +35,7 @@ import {type DeskAction, type DeskRequest, decide} from "./discovery/decide.ts";
 import {DeskWindow, openInDesk, renderOpenReply} from "./discovery/reach.ts";
 import {advertiseDesk, removeDeskRecord} from "./discovery/record.ts";
 import {DeskProbe, sightDesk} from "./discovery/sighting.ts";
+import {renderDeskStateLift} from "./durability/desk-state.ts";
 import {servePage} from "./page/dev-server.ts";
 import {displayHost} from "./page/loopback.ts";
 import {Projects} from "./projects/Projects.ts";
@@ -87,18 +89,33 @@ const runDesk = Effect.fn("Tuval.runDesk")(function* (flags: DeskFlags, project:
 	);
 	const from = report.sources.length === 0 ? "no config module" : report.sources.join(" + ");
 	yield* Console.log(
-		`tuval: booted — ${report.programCount} program(s), ${report.spellCount} spell(s) registered from ${from}; ${report.processCount} process(es) live, ${report.restoredCount} restored from ${report.stateDir}`,
+		`tuval: booted — ${report.programCount} program(s), ${report.spellCount} spell(s) registered from ${from}; ${report.processCount} process(es) live, ${report.restoredCount} restored; desk state in ${report.deskStateDir}`,
 	);
-	// The one-time move of state an older build left in the project (ADR 0402 rule 7).
-	// `renderAdoption` owns which lines a given adoption earns.
-	for (const line of renderAdoption(report.adopted, report.stateDir)) {
-		yield* Console.log(`tuval: ${line}`);
-	}
-	// The one-time move of checkpoints onto project-scoped ids (#9684), said once, on the boot that ran it.
-	if (report.scoped.moved.length > 0) {
+	const {first} = report;
+	if (first._tag === "Asking") {
 		yield* Console.log(
-			`tuval: moved ${report.scoped.moved.length} checkpoint(s) onto project-scoped ids in ${report.stateDir}`,
+			`tuval: ${first.folder} holds a .tuval config nobody has trusted; nothing from it runs until the page answers "Trust this folder?"`,
 		);
+	} else {
+		// The one-time move of state an older build left in the project (ADR 0402 rule 7).
+		// `renderAdoption` owns which lines a given adoption earns.
+		for (const line of renderAdoption(first.state.adopted, first.state.stateDir)) {
+			yield* Console.log(`tuval: ${line}`);
+		}
+		// The one-time move of the desk's own state out of the folder it used to share (#9977).
+		for (const line of renderDeskStateLift(
+			first.lifted,
+			first.state.stateDir,
+			report.deskStateDir,
+		)) {
+			yield* Console.log(`tuval: ${line}`);
+		}
+		// The one-time move of checkpoints onto project-scoped ids (#9684), said once, on the boot that ran it.
+		if (first.state.scoped.moved.length > 0) {
+			yield* Console.log(
+				`tuval: moved ${first.state.scoped.moved.length} checkpoint(s) onto project-scoped ids in ${first.state.stateDir}`,
+			);
+		}
 	}
 	// A binding that did not compile costs its own key and nothing else, so this is a report and
 	// not a refusal: boot goes on with the bindings that did compile.

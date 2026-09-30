@@ -20,19 +20,21 @@
  * reads no artifact, `lane reconcile` reads an artifact and corrects an already-recorded line, and
  * this reads an artifact and records a line nobody wrote.
  *
- * **It adds no trust and no proof path.** The claim's bar is `lane prove`'s, unchanged, and the
- * append is `lane transition`'s, unchanged — the same machine validation, the same proof gate and the
- * same ledger lock a driver's own record goes through. What moves is only who runs them: a sweep
- * rather than a person who happened to think of it.
+ * **It adds no trust and no proof path.** Every append is an existing verb's whole path, unchanged:
+ * the proven and spawn arms append through `lane transition`, and the queue arm through `lane
+ * report` — the same machine validation, the same proof gate and the same ledger lock a driver's own
+ * record goes through. What moves is only who runs them: a sweep rather than a person who happened
+ * to think of it.
  *
- * **It records on the literal `proven` and on nothing else.** `not-required` and every refusal code
- * leave the lane exactly where it was and land as their own row, so an unreadable board is a row to
- * re-run rather than a lane moved on a read nobody made.
+ * **The proven arm records on the literal `proven` and on nothing else.** Its bar is `lane prove`'s
+ * read, unchanged. `not-required` and every refusal code leave the lane exactly where it was and land
+ * as their own row, so an unreadable board is a row to re-run rather than a lane moved on a read
+ * nobody made.
  *
- * **And it asks only about the events a finished shell alone can have earned.** A `PASS` out of
- * either review cell is the whole owed set; the `BLOCKED` a reviewer's park claims and the `DONE` a
- * builder's open PR claims are both out of scope, because a shell that is merely still working
- * satisfies each of them too. `./recover.ts` carries the argument for both arms.
+ * **And the proven arm asks only about the events a finished shell alone can have earned.** A `PASS`
+ * out of either review cell is its whole owed set; the `BLOCKED` a reviewer's park claims and the
+ * `DONE` a builder's open PR claims are both out of scope, because a shell that is merely still
+ * working satisfies each of them too. `./recover.ts` carries the argument for both arms.
  *
  * **`--spawns` adds the second arm: the builder that died leaving nothing behind at all.** The arm
  * above recovers a shell that finished and could not say so; this one parks a lane whose shell never
@@ -56,18 +58,30 @@
  * It is off unless a caller hands in the reads, because it costs board reads per building lane and
  * because recording a **park** is a different act from recording the verdict a finished shell earned.
  *
- * **A `recovered` row reports where the append says the lane landed, not where this sweep predicted
- * it would.** The prediction is taken off a fold nothing holds a lock over, and `lane transition`
- * re-reads and re-folds the log inside the ledger lock before it applies anything, so a writer
- * landing between the two makes them disagree — and the row a driver reads and acts on would name a
- * state the lane is not in, on an exit-0 sweep. A `--check` row keeps the prediction, which is the
- * only ground a run that appends nothing has.
+ * **The queue arm settles a lane whose PR left the merge queue after the shipper stopped watching.**
+ * It is the operate skill's `ship:queued` driver pass, run for every queued lane at once: the same
+ * `ship reconcile <pr> --polls 1` read, with its answer relayed through `lane report`'s own path —
+ * `landed` records `LANDED` and `ejected` records `EJECTED`, the `DONE` and `FAIL` out of
+ * `ship:queued` that only `lane report` maps. `unresolved`, `parked` and an unreadable read record
+ * nothing, so the sweep never spends a wait. `parked` is not a wait, though: it lands as a
+ * `disarm-owed` row naming the `ship disarm <pr> --site post-enqueue` the driver owes now, because
+ * a live arm left standing enqueues ungated later. It is on by default, unlike `--spawns`, because what it
+ * records is an answer and never a park, and it reads only the lanes standing in `ship:queued`, which
+ * is a handful and not the whole building population.
+ *
+ * **A `recovered` or `settled` row reports where the append says the lane landed, not where this
+ * sweep predicted it would.** The prediction is taken off a fold nothing holds a lock over, and the
+ * appending verb re-reads and re-folds the log inside the ledger lock before it applies anything, so
+ * a writer landing between the two makes them disagree — and the row a driver reads and acts on would
+ * name a state the lane is not in, on an exit-0 sweep. A `--check` row keeps the prediction, which is
+ * the only ground a run that appends nothing has.
  *
  * Each recoverable lane costs two board reads rather than one: this sweep asks the proof what the
  * answer is, and `lane transition` asks it again under its own gate before it appends. That second
  * read is the gate refusing to take this sweep's word for it, which is the property worth the read —
  * and it is paid only by a lane that is actually recoverable, which is a killed shell's lane and not
- * a busy one. `--check` pays the first read alone and appends nothing.
+ * a busy one. A queued task costs its one `ship reconcile` read, plus `lane report`'s own proof read
+ * of the `DONE` when that answer is `landed`. `--check` pays the first read alone and appends nothing.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9241#issuecomment-5687141320
  */
@@ -77,6 +91,7 @@ import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {exists} from "../io/fs.ts";
 import {isRecord, parseJson} from "../io/json.ts";
+import type {Reconciled} from "../ship/reconcile-verb.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {APPEND_UNKNOWN, CONCURRENT_WRITE, LANE_UNREADABLE} from "./codes.ts";
 import {applyEvent, deriveStatus, foldLog, standingCauses} from "./fold.ts";
@@ -84,7 +99,18 @@ import {CHORE_PREFIX} from "./key.ts";
 import type {PullTrace} from "./prove.ts";
 import {epicOf, issueOf, roleOf} from "./prove.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
-import {buildingBy, DEAD_SPAWN_CAUSE, DEAD_SPAWN_EVENT, owedBy, publicationOf} from "./recover.ts";
+import {
+	buildingBy,
+	DEAD_SPAWN_CAUSE,
+	DEAD_SPAWN_EVENT,
+	owedBy,
+	publicationOf,
+	QUEUE_SETTLEMENTS,
+	queuedBy,
+	queuedPullOf,
+} from "./recover.ts";
+import {eventForToken} from "./report.ts";
+import {runReport} from "./report-verb.ts";
 import {DEFAULT_CHORES_ROOT, listLanes, loadLane} from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
 
@@ -125,8 +151,39 @@ export interface SpawnReads<R = never> {
 	readonly pulls: (issue: number) => Effect.Effect<PullsRead, never, R>;
 }
 
+/** One `ship reconcile --polls 1` answer, or why it could not be read. */
+export type QueueRead =
+	| {readonly _tag: "Read"; readonly answer: Reconciled}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+const RECONCILED: ReadonlyArray<Reconciled> = ["landed", "ejected", "unresolved", "parked"];
+
+/**
+ * `ship reconcile --json`'s outcome, read the way `recipe unpark` reads it: a non-zero exit, a
+ * stdout that is no JSON object, or an outcome outside the four is `Unknown`, never a wait.
+ */
+export const queueReadOf = (outcome: VerbOutcome): QueueRead => {
+	if (outcome.code !== ANSWER) {
+		return {
+			_tag: "Unknown",
+			reason: `ship reconcile exited ${outcome.code}: ${outcome.stderr[outcome.stderr.length - 1] ?? "no reason given"}`,
+		};
+	}
+	const parsed = parseJson(outcome.stdout);
+	const named = isRecord(parsed) ? parsed.outcome : undefined;
+	const answer = RECONCILED.find((known) => known === named);
+	return answer === undefined
+		? {_tag: "Unknown", reason: "ship reconcile exited 0 and named no outcome this sweep knows"}
+		: {_tag: "Read", answer};
+};
+
 export interface RecoverOptions<R = never> {
 	readonly roots: ReadonlyArray<string>;
+	/**
+	 * One `ship reconcile <pr> --polls 1` read, for the queue arm. A parameter for `prove`'s reason:
+	 * the unit tier stays offline and scripts the four answers and the unreadable one.
+	 */
+	readonly queue: (pr: number) => Effect.Effect<QueueRead, never, R>;
 	/** Judge every lane and report what would be appended, appending nothing. */
 	readonly check: boolean;
 	/**
@@ -143,11 +200,9 @@ export interface RecoverOptions<R = never> {
 	 */
 	readonly prove: (options: ProveOptions) => Effect.Effect<ProofOutcome, never, R>;
 	/**
-	 * The repo's `parkCause`, passed through to the append untouched.
-	 *
-	 * Inert here by construction — this sweep records a `PASS` and never a park — but it
-	 * rides along so the append is byte-for-byte the path a driver's own `lane transition` takes,
-	 * rather than a second path that happens to agree today.
+	 * The repo's `parkCause`, passed through to the append untouched, so each append is byte-for-byte
+	 * the path a driver's own `lane transition` or `lane report` takes rather than a second path that
+	 * happens to agree today. The spawn arm's park is the only record here it can decide.
 	 */
 	readonly parkCause: Read<ParkCauseSurface>;
 	readonly repo: string | null;
@@ -161,6 +216,10 @@ type Verdict =
 	| "recoverable"
 	| "parked"
 	| "parkable"
+	| "settled"
+	| "settleable"
+	| "waiting"
+	| "disarm-owed"
 	| "working"
 	| "unproven"
 	| "contended"
@@ -175,6 +234,10 @@ const VERDICTS: ReadonlyArray<Verdict> = [
 	"recoverable",
 	"parked",
 	"parkable",
+	"settled",
+	"settleable",
+	"waiting",
+	"disarm-owed",
 	"working",
 	"unproven",
 	"contended",
@@ -185,9 +248,9 @@ const VERDICTS: ReadonlyArray<Verdict> = [
 	"unappended",
 ];
 
-/** The two verdicts an append landed, and the two a `--check` withheld — one pairing, read twice. */
-const APPENDED: ReadonlyArray<Verdict> = ["recovered", "parked"];
-const WITHHELD: ReadonlyArray<Verdict> = ["recoverable", "parkable"];
+/** The verdicts an append landed, and the ones a `--check` withheld — one pairing, read twice. */
+const APPENDED: ReadonlyArray<Verdict> = ["recovered", "parked", "settled"];
+const WITHHELD: ReadonlyArray<Verdict> = ["recoverable", "parkable", "settleable"];
 
 interface LaneRow {
 	readonly key: string;
@@ -200,6 +263,15 @@ interface LaneRow {
 	readonly event?: string;
 	/** The park cause the event carries — the spawn arm's rows alone, which are the only parks here. */
 	readonly cause?: string;
+	/**
+	 * The queue arm's rows alone: the PR its ledger names, what `ship reconcile` answered for it, and
+	 * the `lane report` token that answer records (absent where it records none).
+	 */
+	readonly pr?: string;
+	readonly answer?: Reconciled;
+	readonly token?: string;
+	/** A `disarm-owed` row alone: the disarm the driver owes before it records anything. */
+	readonly owes?: string;
 	/**
 	 * Which of `lane prove`'s answers came back, and at which exit — `proof` is `null` on a refusal,
 	 * where the code carries the whole answer, and the two together are what tells a `not-required`
@@ -278,7 +350,8 @@ const recoverLane = <R>(
 		const owed = owedBy(status);
 		const spawns = options.spawns;
 		const building = spawns === null ? [] : buildingBy(status);
-		if (owed.length === 0 && building.length === 0) {
+		const queued = queuedBy(status);
+		if (owed.length === 0 && building.length === 0 && queued.length === 0) {
 			return [{key, root, verdict: "current" as const, from: printable(status.stateValue)}];
 		}
 
@@ -289,13 +362,37 @@ const recoverLane = <R>(
 
 		const rows: LaneRow[] = [];
 
+		/** `lane transition`'s whole path for one event — the append the proven and spawn arms take. */
+		const viaTransition =
+			(task: string, event: string, cause: string | null) =>
+			(): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> =>
+				runTransition(
+					{
+						root,
+						lane: name,
+						event,
+						task,
+						cause,
+						axisIssue: null,
+						parkCause: options.parkCause,
+						classes: [],
+						waitGrant: null,
+						rationale: null,
+						repo: options.repo,
+						cwd: options.cwd,
+						env: options.env,
+					},
+					options.prove,
+				);
+
 		/**
 		 * Preview the event offline, append it unless `--check` withheld the append, and push the row.
 		 *
-		 * The one tail both arms take, so the spawn arm is not a second way onto a lane's log: the
-		 * preview is `applyEvent`'s and the append is `lane transition`'s whole path — machine
-		 * validation, proof gate and ledger lock included. An arm supplies the event, the park cause it
-		 * carries, and the two verdict names its landed and its withheld row read under.
+		 * The one tail every arm takes, so no arm is a second way onto a lane's log: the preview is
+		 * `applyEvent`'s and the append is an existing verb's whole path — `lane transition`'s, or
+		 * `lane report`'s for the queue tokens only it maps — machine validation, proof gate and ledger
+		 * lock included. An arm supplies the event, the park cause it carries, the append, and the two
+		 * verdict names its landed and its withheld row read under.
 		 */
 		const record = (
 			base: Omit<LaneRow, "verdict"> & {readonly task: string},
@@ -305,6 +402,7 @@ const recoverLane = <R>(
 			withheld: Verdict,
 			partial: boolean | null,
 			diagnosis: boolean | null,
+			append: () => Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path>,
 		): Effect.Effect<void, never, R | FileSystem.FileSystem | Path.Path> =>
 			Effect.gen(function* () {
 				// The preview is taken offline off the same applier the append runs. It is a prediction
@@ -347,26 +445,7 @@ const recoverLane = <R>(
 					return;
 				}
 
-				// The append is `lane transition`'s whole path — its machine validation, its proof gate and
-				// its ledger lock — so nothing here is a second way onto a lane's log.
-				const recorded = yield* runTransition(
-					{
-						root,
-						lane: name,
-						event,
-						task: base.task,
-						cause,
-						axisIssue: null,
-						parkCause: options.parkCause,
-						classes: [],
-						waitGrant: null,
-						rationale: null,
-						repo: options.repo,
-						cwd: options.cwd,
-						env: options.env,
-					},
-					options.prove,
-				);
+				const recorded = yield* append();
 				if (recorded.code === ANSWER) {
 					// The append answered where the lane landed, and that answer is the fact: it comes off
 					// the fresh fold `lane transition` takes inside the ledger lock, so it accounts for any
@@ -450,6 +529,7 @@ const recoverLane = <R>(
 				"recoverable",
 				proof.partial,
 				proof.diagnosis ? true : null,
+				viaTransition(task, event, null),
 			);
 		}
 
@@ -537,6 +617,7 @@ const recoverLane = <R>(
 					"parkable",
 					null,
 					null,
+					viaTransition(task, DEAD_SPAWN_EVENT, DEAD_SPAWN_CAUSE),
 				);
 
 			// An epic child opens no pull request — one epic run is one branch and one PR, and the tail
@@ -577,6 +658,95 @@ const recoverLane = <R>(
 
 			yield* park(
 				`with no lane branch in this clone and no open PR: ${published.trace.why} (${published.scanned} candidate(s) read)`,
+			);
+		}
+
+		for (const {task, leaf} of queued) {
+			const base = {key, root, task, state: leaf, from};
+			const pull = queuedPullOf(loaded.entries, task);
+			if (pull === null) {
+				rows.push({
+					...base,
+					verdict: "unreadable",
+					reason: `task "${task}" waits in ${leaf} and no line of its ledger names a pull request URL, so there is no PR to ask the queue about — nothing appended`,
+				});
+				continue;
+			}
+			const read = yield* options.queue(pull.number);
+			if (read._tag === "Unknown") {
+				rows.push({
+					...base,
+					pr: pull.url,
+					verdict: "unreadable",
+					reason: `\`ship reconcile ${pull.number} --polls 1\` did not answer: ${read.reason} — whether the queue finished with it is UNKNOWN, nothing appended`,
+				});
+				continue;
+			}
+			const settlement = QUEUE_SETTLEMENTS[read.answer];
+			if (settlement._tag === "Hold") {
+				rows.push({
+					...base,
+					pr: pull.url,
+					answer: read.answer,
+					verdict: "waiting",
+					reason: `#${pull.number} reconciles "${read.answer}": ${settlement.why} — nothing appended`,
+				});
+				continue;
+			}
+			if (settlement._tag === "DisarmOwed") {
+				const owes = `ship disarm ${pull.number} --site post-enqueue`;
+				rows.push({
+					...base,
+					pr: pull.url,
+					answer: read.answer,
+					owes,
+					verdict: "disarm-owed",
+					reason: `#${pull.number} reconciles "${read.answer}": ${settlement.why}. Run \`${owes}\` now, then record off its answer per operate's \`ship:queued\` table — nothing appended`,
+				});
+				continue;
+			}
+			const mapped = eventForToken(settlement.token);
+			// The table's two tokens are `lane report`'s own, so this arm is unreachable; it stays a row
+			// rather than a throw so a renamed token reads as a refusal instead of a crashed sweep.
+			if (mapped._tag === "Unrecognised") {
+				rows.push({
+					...base,
+					pr: pull.url,
+					answer: read.answer,
+					verdict: "refused",
+					reason: mapped.reason,
+				});
+				continue;
+			}
+			yield* record(
+				{...base, pr: pull.url, answer: read.answer, token: settlement.token, event: mapped.event},
+				mapped.event,
+				null,
+				"settled",
+				"settleable",
+				null,
+				null,
+				() =>
+					runReport(
+						{
+							root,
+							lane: name,
+							token: settlement.token,
+							task,
+							pr: pull.url,
+							comment: null,
+							cause: null,
+							axisIssue: null,
+							integrateExit: null,
+							assemblyHead: null,
+							parkCause: options.parkCause,
+							classes: [],
+							repo: options.repo,
+							cwd: options.cwd,
+							env: options.env,
+						},
+						options.prove,
+					),
 			);
 		}
 		return rows;
@@ -639,12 +809,15 @@ export const runRecover = <R = never>(
 		const stderr = [
 			`${VERB}: swept ${scanned.map((entry) => `${entry.root} (${entry.present ? `${entry.lanes} lane(s)` : "absent"})`).join(", ")}${options.spawns === null ? "" : " — spawn arm on"}${options.check ? " — check only, nothing appended" : ""}.`,
 			...[...APPENDED, ...WITHHELD].flatMap((verdict) =>
-				named(verdict).map(
-					(row) =>
-						`${VERB}: ${row.key}: ${row.event}${row.cause === undefined ? "" : ` --cause ${row.cause}`} on ${row.task} ${options.check ? "is proven and would move" : "was proven and moved"} the lane ${row.from} → ${row.to}.`,
+				named(verdict).map((row) =>
+					row.token === undefined
+						? `${VERB}: ${row.key}: ${row.event}${row.cause === undefined ? "" : ` --cause ${row.cause}`} on ${row.task} ${options.check ? "is proven and would move" : "was proven and moved"} the lane ${row.from} → ${row.to}.`
+						: `${VERB}: ${row.key}: ${row.pr} reconciles "${row.answer}", so ${row.token} on ${row.task} ${options.check ? "would move" : "moved"} the lane ${row.from} → ${row.to}.`,
 				),
 			),
 			...[
+				...named("disarm-owed"),
+				...named("waiting"),
 				...named("working"),
 				...named("refused"),
 				...contended,

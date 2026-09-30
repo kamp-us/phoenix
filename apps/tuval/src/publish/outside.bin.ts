@@ -4,7 +4,8 @@
  * writes a program there and adds it to that folder's `.tuval/tuval.config.ts`, and runs the author
  * loop against a scratch home:
  *
- * 1. `tuval open .` starts a desk with the folder as its first project, and the program runs.
+ * 1. `tuval open .` starts a desk with the folder, trusted up front in the scratch home, as its
+ *    first project, and the program runs.
  * 2. `tuval open` of a second folder asks the running desk's "Trust this folder?", which is
  *    answered over the desk's own transport as its page would answer it, and that folder's program
  *    runs too.
@@ -37,6 +38,7 @@ import {Duration, Effect, Option, Schema, type Scope, Stream, SubscriptionRef} f
 import {ChildProcess, type ChildProcessSpawner} from "effect/unstable/process";
 import {Socket} from "effect/unstable/socket";
 import {ProjectId} from "../project-id.ts";
+import {trustFolders} from "../scratch-home.ts";
 import {attach} from "../shell/transport/client.ts";
 import type {TableRow} from "../table/row.ts";
 import {BIN_NAME, SDK_PACKAGE} from "./manifest.ts";
@@ -355,6 +357,9 @@ const authorLoop = (work: string) =>
 			join(dirs.second, ".tuval", "tuval.config.ts"),
 			configSource("../../author/hello.ts", "helloRow", "hello"),
 		);
+		// The author's folder is trusted up front, as a desk that ran before would have left it, so
+		// `tuval open .` opens it at boot and watches its files; the second folder is asked about.
+		trustFolders(dirs.home, [dirs.author]);
 		for (const opener of OPENERS) {
 			writeFileSync(join(dirs.bin, opener), "#!/bin/sh\nexit 0\n", {mode: 0o755});
 		}
