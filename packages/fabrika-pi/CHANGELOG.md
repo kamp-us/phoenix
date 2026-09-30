@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0](https://github.com/kamp-us/phoenix/compare/fabrika-pi-v0.2.0...fabrika-pi-v0.3.0) (2026-09-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **epic:** build pick answers "bets" in place of "campaigns", exit 20 is retired, and campaignAuthors / capClearAuthors no longer grant.
+
+### Features
+
+* **epic:** A weekly table decides what fabrika bets on, tracked in GitHub Projects ([#9947](https://github.com/kamp-us/phoenix/issues/9947)) ([ad28c84](https://github.com/kamp-us/phoenix/commit/ad28c847c924a217b63302b0b527e58ea2ffaf10))
+
 ## [0.2.0](https://github.com/kamp-us/phoenix/compare/fabrika-pi-v0.1.0...fabrika-pi-v0.2.0) (2026-09-07)
 
 
