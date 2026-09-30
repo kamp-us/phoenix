@@ -64,6 +64,7 @@ import {ownershipGate} from "../ownership/gate.ts";
 import {runChecks} from "../ship/checks-verb.ts";
 import {runCpApproval} from "../ship/cp-approval-verb.ts";
 import {runGate} from "../ship/gate-verb.ts";
+import {MERGEABILITY_WINDOW_SECONDS} from "../ship/mergeability.ts";
 import {runReconcile} from "../ship/reconcile-verb.ts";
 import {runScope} from "../ship/scope-verb.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -564,6 +565,7 @@ const clearCpApproval = (
 			sha: head,
 			repo,
 			json: true,
+			mergeabilitySeconds: MERGEABILITY_WINDOW_SECONDS,
 			env: options.env,
 		});
 		if (discharge.code !== 0) {
@@ -597,6 +599,14 @@ const clearCpApproval = (
 					refuse(
 						PARK_HOLDS,
 						`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — PR #${pr} is not discharged at ${head}; nothing was written.`,
+						[scope],
+					),
+				);
+			case "base-conflicted":
+				return no(
+					refuse(
+						PARK_NOVEL,
+						`${VERB}: PR #${pr} conflicts with its base at ${head}, so "${recipe.park}" waits on an approval nobody should give — the head goes to a builder, which this recipe does not route; refusing with the ledger untouched; route this to a human.`,
 						[scope],
 					),
 				);

@@ -14,7 +14,7 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Cause, Context, Effect, Layer} from "effect";
+import {Cause, Context, Effect, Layer, Option} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
@@ -144,5 +144,54 @@ describe("a handler's services are its spawn set", () => {
 					{path: "follow-up", saw: "the spawn set's"},
 				]);
 			}),
+	);
+});
+
+type MemoProbe = {readonly type: "probe"};
+
+/** A row whose one handler records whether a layer memo map is in reach. */
+const memoProbeProgram = (seen: Array<boolean>): AnyProgram =>
+	({
+		id: ProgramId.make("memo-probe"),
+		core: defineMachine<State, MemoProbe, MemoProbe, never, unknown>({
+			init: (loaded) => [loaded ?? {probes: 0}, []],
+			update: {probe: (state) => [{probes: state.probes + 1}, [{type: "probe"}]]},
+		}),
+		ports: {},
+		handlers: {
+			probe: () =>
+				Effect.map(Effect.serviceOption(Layer.CurrentMemoMap), (memo): ReadonlyArray<MemoProbe> => {
+					seen.push(Option.isSome(memo));
+					return [];
+				}),
+		},
+		capabilities: [],
+		identity: {
+			package: "@kampus/tuval",
+			program: "memo-probe",
+			version: "1.0.0",
+			digest: "sha256:memo-probe",
+		},
+		placement: {host: "local"},
+	}) satisfies Program<State, MemoProbe, MemoProbe, never, unknown, never, never>;
+
+describe("a handler never resolves its spawner's layer memo map", () => {
+	it.effect("from the spawn set or from the spawning fiber (#10025)", () =>
+		Effect.gen(function* () {
+			const seen: Array<boolean> = [];
+			const memo = yield* Layer.makeMemoMap;
+			yield* withKernel(
+				[memoProbeProgram(seen)],
+				Effect.gen(function* () {
+					const processes = yield* Processes;
+					const handle = yield* processes.spawn(ProgramId.make("memo-probe"), {
+						services: Context.make(Layer.CurrentMemoMap, memo),
+					});
+					yield* handle.dispatch({type: "probe"});
+				}),
+			).pipe(Effect.provideService(Layer.CurrentMemoMap, memo), Effect.scoped);
+
+			assert.deepStrictEqual(seen, [false]);
+		}),
 	);
 });

@@ -106,6 +106,7 @@ export const TOPOLOGY_CYCLE = 17;
  * The task's leaf state routes to no shell — `queued`, `blocked`, a `human:*` park, a final, or a
  * name this machine does not recognise. Its own seat because there is nothing to fix in the lane:
  * the remedy is the driver acting on that state (record an event, clear the park), not a re-run.
+ * `lane working` seats it on a state that routes to a shell other than a builder.
  */
 export const NO_SHELL = 18;
 
@@ -688,9 +689,10 @@ export const INTEGRATE_EVIDENCE = 68;
 export const LANE_NOT_TERMINAL = 69;
 
 /**
- * A lane fact was refused before it was written: an origin outside the closed set on `lane open`
- * or `lane emit`, or a `lane wait` whose `--on` is not one non-blank line or whose `--until` is not a date still to
- * come. Nothing was booted or appended.
+ * A lane fact or in-flight record was refused before it was written: an origin outside the closed set on `lane open`
+ * or `lane emit`, a `lane wait` whose `--on` is not one non-blank line or whose `--until` is not a date still to
+ * come, or a `lane working` whose `--token` is no build claim or whose tree is not absolute. Nothing
+ * was booted or appended.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9855
  */

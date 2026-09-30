@@ -26,13 +26,11 @@ export interface NativeSession {
 	readonly rows: ReadonlyArray<Record<string, unknown>>;
 	readonly malformed: boolean;
 }
-export const readCodexSession = (text: string): NativeSession | null => {
-	const lines = text.split("\n").filter((line) => line.trim() !== "");
-	const rows = lines.map((line) => object(json(line)));
-	const first = rows[0];
-	const meta = object(first?.payload);
+type SessionHeader = Omit<NativeSession, "rows" | "malformed">;
+const sessionHeader = (row: Record<string, unknown>): SessionHeader | null => {
+	const meta = object(row.payload);
 	const thread = id(meta.id);
-	if (first?.type !== "session_meta" || thread === null) return null;
+	if (row.type !== "session_meta" || thread === null) return null;
 	return {
 		thread,
 		root: id(meta.session_id) ?? thread,
@@ -40,9 +38,50 @@ export const readCodexSession = (text: string): NativeSession | null => {
 		version: id(meta.cli_version) ?? "unknown",
 		provider: id(meta.model_provider),
 		cwd: id(meta.cwd),
-		rows,
-		malformed: rows.some((row) => Object.keys(row).length === 0),
 	};
+};
+
+/** The only row types `codexRecords` reads; every other row is conversation body. */
+export const isAccountingRow = (row: Record<string, unknown>): boolean =>
+	row.type === "turn_context" || row.type === "token_usage_record";
+
+/**
+ * Folds a transcript fed in arbitrary text chunks, splitting on "\n" exactly as
+ * `readCodexSession` does, and retains only the rows `keep` admits.
+ */
+export class CodexSessionReader {
+	#pending = "";
+	#header: SessionHeader | null | undefined = undefined;
+	#rows: Array<Record<string, unknown>> = [];
+	#malformed = false;
+	readonly #keep: (row: Record<string, unknown>) => boolean;
+	constructor(keep: (row: Record<string, unknown>) => boolean) {
+		this.#keep = keep;
+	}
+	feed(text: string): void {
+		const lines = (this.#pending + text).split("\n");
+		this.#pending = lines.pop() ?? "";
+		for (const line of lines) this.#line(line);
+	}
+	finish(): NativeSession | null {
+		this.#line(this.#pending);
+		this.#pending = "";
+		if (!this.#header) return null;
+		return {...this.#header, rows: this.#rows, malformed: this.#malformed};
+	}
+	#line(line: string): void {
+		if (line.trim() === "" || this.#header === null) return;
+		const row = object(json(line));
+		if (this.#header === undefined) this.#header = sessionHeader(row);
+		if (Object.keys(row).length === 0) this.#malformed = true;
+		if (this.#keep(row)) this.#rows.push(row);
+	}
+}
+
+export const readCodexSession = (text: string): NativeSession | null => {
+	const reader = new CodexSessionReader(() => true);
+	reader.feed(text);
+	return reader.finish();
 };
 
 const definitions: ReadonlyArray<

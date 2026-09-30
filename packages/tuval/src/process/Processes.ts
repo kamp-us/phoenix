@@ -221,6 +221,12 @@ const EFFECT_RUNTIME_PREFIX = "effect/";
  * `src/internal/effect.ts:709`): dropping those would silently reset a handler's clock and logger
  * to the process defaults, and would take the process `Scope` that `run` stops on with them.
  * Everything the runtime does not own is the spawn set's alone.
+ *
+ * One `effect/` key is not the runtime's and is dropped from both sides: `Layer.CurrentMemoMap`,
+ * the memo map of whatever layer build the spawner was running inside. A kernel tool's handler runs
+ * on a runtime its agent layer captured mid-build, so without this a child of the spawner's own row
+ * resolves every layer its handlers build out of the spawner's memo map, and gets the spawner's
+ * built agent rather than one of its own (#10025).
  */
 const sealed =
 	(services: Context.Context<never>) =>
@@ -228,9 +234,14 @@ const sealed =
 		Effect.updateContext(self, (ambient: Context.Context<R>) => {
 			const runtime = new Map<string, unknown>();
 			for (const [key, value] of ambient.mapUnsafe) {
-				if (key.startsWith(EFFECT_RUNTIME_PREFIX)) runtime.set(key, value);
+				if (key.startsWith(EFFECT_RUNTIME_PREFIX) && key !== Layer.CurrentMemoMap.key) {
+					runtime.set(key, value);
+				}
 			}
-			return Context.merge(Context.makeUnsafe<R>(runtime), services);
+			return Context.merge(
+				Context.makeUnsafe<R>(runtime),
+				Context.omit(Layer.CurrentMemoMap)(services),
+			);
 		});
 
 /**
