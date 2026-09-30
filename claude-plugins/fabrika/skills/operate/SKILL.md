@@ -483,6 +483,17 @@ never restatements, and the brief's own `fabrika:` entrypoint for every verb rat
 binstub (now in the spawned tree). They are in the brief because a prompt written per
 dispatch is a prompt two drivers write differently.
 
+**Record the dispatch, then spawn.** With the brief in hand, and before either spawn below:
+
+```bash
+node <fabrika> lane dispatched $lane_key --task <name>
+```
+
+It writes the task's state and the shell that state routes to beside the ledger, so the lane names
+the shell you started for as long as it works — the builder adds its claim token and worktree once
+its claim wins. It records no event, so the fold does not move. A refusal here does not hold the
+spawn: `40` is a held ledger lock, so run it again, and name any other code in your dispatch line.
+
 On Claude, the spawn flag is still yours: **`isolation: worktree`, no exceptions** — a non-isolated subagent
 shares the primary checkout and can mutate its git state, and no bytes in a prompt can enforce that
 from the inside.
@@ -590,6 +601,17 @@ verb, so it is banned on the same terms as a bare `sleep`. So dispatch every tas
 say in one line what you dispatched, and end the turn. Your next move is
 [§3](#3--verify-the-record-landed-and-record-what-no-shell-can)'s fresh `lane status`, once a spawn
 has returned.
+
+**"Is a shell working on this lane, and where?" is `lane status`'s `inFlight`.** Per task it
+names the standing `dispatched` record (state, shell, time) and the builder's `working` record
+(claim token and absolute worktree), `null` until that builder's claim wins. Both stand until the
+task's next event — a terminal, a lap or a park — so after a `SHELL-DEAD` lap and a re-dispatch it
+names the new shell and never the dead one. Read it before stopping an operator whose lane has gone
+quiet: a silent log beside a named shell is what a working re-spawn looks like, so the silence alone
+proves nothing stuck. **It records who said they were working, never proof that they still are.**
+No claim release, worktree retire or reap reads it, and nothing reads its age or its absence as a
+death: a dead spawn is proven only by the reads step 3 names. `inFlightUnread` in its place means
+the record could not be read, which says nothing about the lane.
 
 **An `integrate` state is the one thing you do with your own hands.** It routes to no shell —
 `lane brief` refuses it with exit `18` — because the merge *is* the assembly the run exists to

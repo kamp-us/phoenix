@@ -58,7 +58,9 @@ rendered surface is `review-ui`'s. **When in doubt, the work is not yours.** Gat
 $issue_or_pr_number`. Keep the token it prints — it is `<claim-token>` below, this LANE's name, and
 every later verb takes it as `--token`: a session runs several lanes at once, so without it a verb
 can only tell that *some* lane of this session holds the number, which is how two lanes both ran one
-repair. Re-confirm before every later mutation.
+repair. Re-confirm before every later mutation. When your brief named a lane, record where you work
+once the claim wins, from inside your worktree, exactly as `build`'s step 2 does:
+`node <fabrika> lane working <lane> --root <root> --task <task> --token <claim-token>`.
 
 **Composition — what holds when `build` is loaded beside this skill.** A shell's `skills:` list is
 its capability set, so a shell preloading both carries both construction laws and a mixed-deliverable
