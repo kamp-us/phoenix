@@ -414,11 +414,12 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token CANT-SEE -
 ```
 
 **A `CANT-SEE` over a preview that stood takes `render-axis-missing` instead.** That is the case
-where the preview rendered but the changed pixels only show in a state `review-ui render` has no
-way to reach: a colour scheme, an accent, a hover or other interaction state. A retry cannot fix
-that, so the park waits on the open issue that tracks the missing axis and clears when it closes.
-Name that issue on the same line. If no open issue tracks the axis, file one through `report`
-first, then name it:
+where the preview rendered but the changed pixels only show in a state none of `--scheme`,
+`--accent`, `--interact`, `--flag`, `--viewport` or the tier states can reach, such as a scroll
+position or a pane no route opens. Try those operands first (§3): a scheme, an accent, a hover or
+an open menu is a state you render, not a gap. A retry cannot fix a real gap, so the park waits on
+the open issue that tracks the missing axis and clears when it closes. Name that issue on the same
+line. If no open issue tracks the axis, file one through `report` first, then name it:
 
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token CANT-SEE --cause render-axis-missing --axis-issue <axis-issue-number> --pr <pr-url>

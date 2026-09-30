@@ -561,8 +561,8 @@ export const PARK_CAUSES = {
 	},
 	/**
 	 * The rendered gate's `CANT-SEE` over a preview that stood: the changed pixels only show in a state
-	 * `review-ui render` has no way to reach — a colour scheme, an accent, a hover — so no re-render
-	 * and no driver retry can shoot them. Only building that render axis ends it.
+	 * none of `review-ui render`'s operands can reach — a scroll position, a pane no route opens — so no
+	 * re-render and no driver retry can shoot them. Only building that render axis ends it.
 	 *
 	 * Distinct from `no-preview-render`, whose preview a later deploy or a re-seed fixes: a retry there
 	 * is a real move, and here it spends a review round hitting the same wall. So this cause carries
