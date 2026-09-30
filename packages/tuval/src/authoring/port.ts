@@ -12,10 +12,16 @@ import {Schema} from "effect";
 import type {InPort, OutPort, PortBound, PortSchema, ProgramId} from "../registry/program.ts";
 
 /**
- * What a port may be declared over: a schema whose decode needs no services and whose encoded
- * form is its decoded form. Both halves are load-bearing — the row's `accepts` is a synchronous
- * total predicate over the raw wire payload, so a schema that wanted a service to decode, or that
- * transformed the payload into something else, could not be answered by one.
+ * What a port may be declared over: a plain validator. Its encoded form is its decoded form, its
+ * decode needs no service, and its decode is synchronous. A type error on this parameter means the
+ * schema breaks one of those. `Schema.DateFromString`, `Schema.NumberFromString` or any
+ * `Schema.decodeTo` transform is refused: declare the wire form and convert inside `update`.
+ *
+ * The row's `accepts` is `Schema.is` over the raw wire payload, and `update` receives that payload
+ * unchanged once it passes, so nothing on the arrival path could run a transform or answer a
+ * service. An asynchronous decode also breaks the rule even though this type cannot see it:
+ * `Schema.is` throws on it instead of answering `false` (#8749). The rule and the deferred
+ * decode-on-arrival alternative (#10296) are ADR 0445.
  */
 export type PortCodec<T> = Schema.Codec<T, T, never, unknown>;
 
