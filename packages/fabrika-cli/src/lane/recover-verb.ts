@@ -110,7 +110,7 @@ import {
 	queuedPullOf,
 } from "./recover.ts";
 import {eventForToken} from "./report.ts";
-import {runReport} from "./report-verb.ts";
+import {type IssueCloser, runReport} from "./report-verb.ts";
 import {DEFAULT_CHORES_ROOT, listLanes, loadLane} from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
 
@@ -199,6 +199,8 @@ export interface RecoverOptions<R = never> {
 	 * shape `lane transition` established, and this hands the very same prover on to it.
 	 */
 	readonly prove: (options: ProveOptions) => Effect.Effect<ProofOutcome, never, R>;
+	/** `lane report`'s closer, handed on so a settled `LANDED` closes an open issue the same way. */
+	readonly closeIssue: IssueCloser<R>;
 	/**
 	 * The repo's `parkCause`, passed through to the append untouched, so each append is byte-for-byte
 	 * the path a driver's own `lane transition` or `lane report` takes rather than a second path that
@@ -746,6 +748,7 @@ const recoverLane = <R>(
 							env: options.env,
 						},
 						options.prove,
+						options.closeIssue,
 					),
 			);
 		}

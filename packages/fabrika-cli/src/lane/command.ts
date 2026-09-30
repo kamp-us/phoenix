@@ -84,7 +84,7 @@ import {queueReadOf, runRecover} from "./recover-verb.ts";
 import {runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {AXIS_ISSUE_CAUSES, classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
-import {runReport} from "./report-verb.ts";
+import {issueCloser, runReport} from "./report-verb.ts";
 import {runRetrigger} from "./retrigger-verb.ts";
 import {runLaneScratch} from "./scratch-verb.ts";
 import {runSeats} from "./seats-verb.ts";
@@ -604,6 +604,7 @@ const report = leafCommand(
 						env: process.env,
 					},
 					runProve,
+					issueCloser(Option.getOrNull(repo), process.env),
 				),
 			),
 		);
@@ -2232,6 +2233,7 @@ const recover = leafCommand(
 						}).pipe(Effect.map(queueReadOf)),
 					spawns: spawnReads,
 					prove: runProve,
+					closeIssue: issueCloser(Option.getOrNull(repo), process.env),
 					parkCause,
 					repo: Option.getOrNull(repo),
 					cwd: process.cwd(),
@@ -2443,6 +2445,7 @@ const record = leafCommand(
 				11: "read failed, UNKNOWN",
 				19: "the key names no issue",
 				21: "bad key",
+				49: "complete, and the issue is still open",
 				69: "the lane is not terminal",
 				...ROOT_EXITS,
 			},

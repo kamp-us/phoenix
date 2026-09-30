@@ -416,6 +416,9 @@ export const LANE_IS_CHILD = 48;
  * Settling records the terminal a closed issue owes, and an open issue's closure has said nothing
  * yet. Its own seat because the remedy is to drive the lane, not to fix the record.
  *
+ * `lane record` answers here too, on the mirror case: a lane folded to `complete` whose issue is
+ * still open, so a `complete` record would say work is done over an issue the board says is not.
+ *
  * `lane archive` used to answer here too, on a closed-issue gate since retired: a lane whose log
  * will never replay is one nobody can drive whatever its issue says, and refusing the archive left a
  * bricked ledger holding a cap seat with no route out at all.

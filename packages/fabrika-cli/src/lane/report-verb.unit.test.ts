@@ -5,6 +5,7 @@ import type {Read} from "../config/read-key.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import {answer, refuse} from "../verb.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
+import type {CloseAct, ClosingMerge, OpenMerge} from "./closing-merge.ts";
 import {
 	CAUSE_UNRECOGNISED,
 	EVENT_REFUSED,
@@ -49,6 +50,19 @@ const LOG_AT: Readonly<Record<"build" | "review" | "review:ui" | "ship", string>
 	ship: logLine("WIP") + logLine("DONE") + logLine("PASS"),
 };
 
+/** A closer the test drives: it records every issue it was asked to close and answers `act`. */
+const fakeCloser = (act: CloseAct = {_tag: "Closed"}) => {
+	const asked: OpenMerge[] = [];
+	return {
+		asked,
+		close: (open: OpenMerge) =>
+			Effect.sync(() => {
+				asked.push(open);
+				return act;
+			}),
+	};
+};
+
 const run = (
 	fs: ReturnType<typeof fakeFs>,
 	token: string,
@@ -64,6 +78,7 @@ const run = (
 		lane?: string;
 		integrateExit?: number | null;
 		assemblyHead?: string | null;
+		closer?: ReturnType<typeof fakeCloser>;
 	} = {},
 ) =>
 	Effect.runPromise(
@@ -87,6 +102,7 @@ const run = (
 					env: {},
 				},
 				(extra.prover ?? fakeProver()).prove,
+				(extra.closer ?? fakeCloser()).close,
 			),
 			fs.layer,
 		),
@@ -755,6 +771,99 @@ describe("lane report — the partial merge a shipped lane discloses", () => {
 		expect(Object.hasOwn(line, "partial")).toBe(false);
 		expect(Object.hasOwn(line, "landed")).toBe(false);
 		expect(JSON.parse(out.stdout).current).toBe("complete");
+	});
+});
+
+/**
+ * A merged `Fixes #N` does not prove #N closed — merge-queue merges have left it open. The prover
+ * reads the issue back (stubbed here as its `closingMerge` answer), and only an `Open` answer
+ * reaches the closer.
+ */
+describe("lane report — the issue a closing merge left open", () => {
+	const closing = (merge: ClosingMerge) =>
+		fakeProver(
+			answer(JSON.stringify({proof: "not-required"})),
+			[],
+			false,
+			[7329],
+			false,
+			[],
+			merge,
+		);
+
+	it("closes a still-open issue through the closer and records `issueClose: closed-by-lane`", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const closer = fakeCloser();
+
+		const out = await run(fs, "LANDED", {
+			prover: closing({_tag: "Open", issue: 42, merged: [7329]}),
+			closer,
+			pr: "https://forge.test/o/r/pull/7329",
+		});
+
+		expect(out.code).toBe(0);
+		expect(closer.asked).toEqual([{_tag: "Open", issue: 42, merged: [7329]}]);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.DONE",
+			partial: false,
+			landed: [7329],
+			issueClose: "closed-by-lane",
+		});
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			issueClose: "closed-by-lane",
+			current: "complete",
+		});
+	});
+
+	it("records a failed close as `close-failed`, never as a plain complete", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const closer = fakeCloser({_tag: "Failed", reason: "HTTP 403"});
+
+		const out = await run(fs, "LANDED", {
+			prover: closing({_tag: "Open", issue: 42, merged: [7329]}),
+			closer,
+		});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({issueClose: "close-failed"});
+		expect(out.stderr.join("\n")).toContain("HTTP 403");
+	});
+
+	it("writes nothing to an issue that already reads closed", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const closer = fakeCloser();
+
+		const out = await run(fs, "LANDED", {prover: closing({_tag: "Closed", issue: 42}), closer});
+
+		expect(out.code).toBe(0);
+		expect(closer.asked).toEqual([]);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({issueClose: "already-closed"});
+	});
+
+	it("names an unread issue on the line and never reaches the closer", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const closer = fakeCloser();
+
+		const out = await run(fs, "LANDED", {
+			prover: closing({_tag: "Unread", issue: 42, reason: "cannot read #42: HTTP 502"}),
+			closer,
+		});
+
+		expect(out.code).toBe(0);
+		expect(closer.asked).toEqual([]);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({issueClose: "unread"});
+		expect(JSON.parse(out.stdout)).toMatchObject({issueClose: "unread"});
+		expect(out.stderr.join("\n")).toContain("UNKNOWN");
+	});
+
+	it("carries no `issueClose` where the closure read was not a closing merge", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const closer = fakeCloser();
+
+		await run(fs, "LANDED", {closer});
+
+		expect(closer.asked).toEqual([]);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "issueClose")).toBe(false);
 	});
 });
 

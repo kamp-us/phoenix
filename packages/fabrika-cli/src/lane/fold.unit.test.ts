@@ -837,6 +837,20 @@ describe("the partial merge a ship DONE carries", () => {
 	});
 });
 
+describe("the issueClose a ship DONE carries", () => {
+	const line = (event: string, fields: string) =>
+		`{"task":"issue","event":"ISSUE.${event}","at":"t"${fields}}\n`;
+
+	it("carries the answer back off the line, and refuses one outside the set or off a DONE", () => {
+		expect(parseLog(line("DONE", `,"issueClose":"closed-by-lane"`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.DONE", at: "t", issueClose: "closed-by-lane"}],
+		});
+		expect(parseLog(line("DONE", `,"issueClose":"closed"`))).toMatchObject({_tag: "Malformed"});
+		expect(parseLog(line("PASS", `,"issueClose":"unread"`))).toMatchObject({_tag: "Malformed"});
+	});
+});
+
 describe("the diagnosis a build DONE carries", () => {
 	const line = (fields: string) => `{"task":"issue","event":"ISSUE.DONE","at":"t"${fields}}\n`;
 
