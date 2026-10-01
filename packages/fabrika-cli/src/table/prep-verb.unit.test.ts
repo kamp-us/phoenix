@@ -1053,6 +1053,23 @@ describe("table prep with a boards block", () => {
 		]);
 	});
 
+	it("prep leaves an Origin-routed issue's table row, so the next route puts it on the on-call board", async () => {
+		const split = world(
+			{...issues, 95: {labels: TRIAGED, title: "Export drops rows"}},
+			{...rows, 95: {Stage: "in lane", Section: "Outside the bets", Origin: "customer"}},
+		);
+		await prep(split.board, SPLIT);
+
+		expect(split.items.has(95)).toBe(true);
+		expect(split.onCallItems.has(95)).toBe(false);
+
+		const routed = JSON.parse((await route(split.board, SPLIT)).stdout);
+
+		expect(routed.routed).toContain(95);
+		expect(split.onCallItems.has(95)).toBe(true);
+		expect(split.items.has(95)).toBe(false);
+	});
+
 	it("covers both boards in one status update, on-call as one section, and flags its spend over its share", async () => {
 		const split = world(issues, rows);
 		const answer = JSON.parse((await prep(split.board, SPLIT)).stdout);

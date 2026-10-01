@@ -506,8 +506,9 @@ export interface PrepInput {
 	/** Shipped rows coming back as checks, each already a row whatever its issue's state. */
 	readonly checks: ReadonlyArray<CheckRow>;
 	/**
-	 * Issues the on-call board holds. Each leaves the table: its row is taken off, it is never added,
-	 * not even as a group member, and no agenda row is written for it. Empty with one board.
+	 * Issues the on-call board holds or `table route` sends there. Each is never added, not even as a
+	 * group member, and no agenda row is written for it. Its row stays for route to take off once the
+	 * on-call board holds it. Empty with one board.
 	 */
 	readonly onCall: ReadonlySet<number>;
 }
@@ -538,9 +539,10 @@ export interface PrepPlan {
  * Every write that puts the agenda, the rollover and the removals in step with the rows. An issue
  * that is not a row yet plans an `Add` and nothing else; its cells follow once it has an item id.
  *
- * **An issue is on one board.** An issue in `onCall` is never added and its row is taken off, so
- * the table and the on-call board never both hold it. A bet carried over or a row coming back as a
- * check is a person's answer and stays.
+ * **An issue leaves the table through `table route`.** An issue in `onCall` is never added and
+ * gets no agenda write, and prep leaves its row standing: route takes the row off once it has
+ * placed the issue, so an issue routed by its row's Origin is never on neither board. A bet carried
+ * over or a row coming back as a check is a person's answer and stays.
  *
  * **Prep writes Rec only into an empty cell.** The board cannot say whose text a Rec holds, so a
  * non-empty one is never cleared or replaced; it is named in `kept` instead.
@@ -662,8 +664,7 @@ export const prepPlan = (input: PrepInput): PrepPlan => {
 		}
 	}
 
-	const offTable = new Set([...input.removals, ...[...input.onCall].filter(leaving)]);
-	for (const issue of [...offTable].sort((a, b) => a - b)) {
+	for (const issue of input.removals) {
 		const row = rows.get(issue);
 		if (row !== undefined) writes.push({_tag: "Delete", issue, itemId: row.itemId});
 	}

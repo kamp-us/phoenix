@@ -291,14 +291,14 @@ const cells = {size: "S" as const, rec: "yes.", plainWords: "Issue 1"};
 describe("planPrep with an on-call board", () => {
 	const plan = (over: Partial<PrepInput>) => planPrep(input(over));
 
-	it("takes a routed issue's table row off, so it is on the on-call board only", () => {
+	it("leaves a routed issue's table row for route to take off once it has placed the issue", () => {
 		const writes = plan({
 			rows: new Map([[4, stageRow(4, "proposed")]]),
 			open: new Set([4]),
 			onCall: new Set([4]),
 		});
 
-		expect(writes).toEqual([{_tag: "Delete", issue: 4, itemId: "PVTI_4"}]);
+		expect(writes).toEqual([]);
 	});
 
 	it("never adds a routed chain member to the table", () => {

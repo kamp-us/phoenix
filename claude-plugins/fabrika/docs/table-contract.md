@@ -240,7 +240,8 @@ board:
   than `boards.onCall.spendShare` percent.
 
 A check it could not answer — a lane unmeasured, a set, roadmap or label that would not read, an
-on-call board or open-issue list that would not read — is named under `unread`, never passed. A check the config turns off is neither.
+on-call board or open-issue list that would not read — is named under `unread`, never passed. A
+check the config turns off is neither.
 
 stdout is `{"answer":"flagged"|"clear","repo":"…","project":{"number":n,"title":"…","url":"…"},"scope":"table"|"issues","rows":[n…],"flags":[{"flag":"over-size"|"asks"|"stuck"|"unknown-decider"|"not-rendered"|"campaigns"|"fabrika-share"|"past-target"|"on-call-share",…,"rec":"…"}],"unread":[{"check":"…","issue":n|null,"reason":"…"}]}`;
 row flags carry `head`, `group` (`epic`|`chain`|`null`) and `covers`.
@@ -336,9 +337,10 @@ adds no row, carries nothing and posts nothing, and only takes closed `proposed`
 already dated that day is left as it reads, so a re-run writes no Table day.
 
 **On-call.** With a `boards.onCall` block, every open issue [`table route`](#table-route) sends to
-on-call is never proposed at the table, and its table row is taken off, whether or not route has
-placed it yet. Prep writes nothing to the on-call board: it reads it, and placing the issues is
-route's. Those issues are left out of the Outside the bets tally, and the status update gains one
+on-call is never proposed at the table, and its table row stays as it reads. Prep writes nothing
+to the on-call board and takes no routed row off: it reads the board, and placing the issues and
+taking their rows off is route's, so an issue routed by its row's Origin is never on neither board.
+Those issues are left out of the Outside the bets tally, and the status update gains one
 On-call section: the open items (those on the board and those route has yet to place), how many are
 past their target, timed the way [`past-target`](#table-flags) times them, and the share of the
 spend that week that went to on-call, against `boards.onCall.spendShare`. An item past its target or
@@ -357,7 +359,7 @@ a check's `comment` reads `planned`, and `planned` lists every write: sync's thr
 `{"_tag":"Post","project":n,"status":"…","body":"…"}`. The exit is `0` once the plan is built; a read
 that fails keeps its code.
 
-stdout is `{"answer":"prepped"|"unchanged"|"dry-run","repo":"…","project":{…},"tableDay":"YYYY-MM-DD","agenda":[{"issue":n,"section":"…","kind":"epic"|"chain"|null,"members":[n…],"size":"…","rec":"…","plainWords":"…"}],"overflow":[n…],"rollover":{"continuing":[n…],"flagged":[n…]},"removed":[n…],"checks":[{"issue":n,"shippedAt":"…","success":"…"|null,"signals":{"prs":[n…],"mentions":[…],"reverts":[…],"reopened":[n…],"followUps":[n…]},"fabrika":{…}|null,"sources":[…],"rec":"…","comment":"posted"|"standing"|"planned"}],"triageFirst":[{"issue":n,"waitingOnFiler":bool}],"outside":{"count":n,"kinds":{…},"spentUsd":n,"unmeasured":n},"health":{"posted":bool,"alreadyPosted":bool,…},"recsKept":[{"issue":n,"rec":"…","wanted":"…"|null}],"changes":[…],"onCall":{"project":{…},"items":[{"issue":n,"target":"…"|null}],"pastTarget":[n…],"spend":{"_tag":"Measured","percent":n,"onCallUsd":n,"totalUsd":n}|{"_tag":"Unmeasured","lanes":n}|{"_tag":"Nothing"},"share":n}}`,
+stdout is `{"answer":"prepped"|"unchanged"|"dry-run","repo":"…","project":{…},"tableDay":"YYYY-MM-DD","agenda":[{"issue":n,"section":"…","kind":"epic"|"chain"|null,"members":[n…],"size":"…","rec":"…","plainWords":"…"}],"overflow":[n…],"rollover":{"continuing":[n…],"flagged":[n…]},"removed":[n…],"checks":[{"issue":n,"shippedAt":"…","success":"…"|null,"signals":{"prs":[n…],"mentions":[…],"reverts":[…],"reopened":[n…],"followUps":[n…]},"fabrika":{…}|null,"sources":[…],"rec":"…","comment":"posted"|"standing"|"planned"}],"triageFirst":[{"issue":n,"waitingOnFiler":bool}],"outside":{"count":n,"kinds":{…},"spentUsd":n,"unmeasured":n},"health":{"posted":bool,"alreadyPosted":bool,…},"recsKept":[{"issue":n,"rec":"…","wanted":"…"|null}],"changes":[…],"onCall":{"project":{…},"items":[{"issue":n,"target":"…"}],"pastTarget":[n…],"spend":{"_tag":"Measured","percent":n,"onCallUsd":n,"totalUsd":n}|{"_tag":"Unmeasured","lanes":n}|{"_tag":"Nothing"},"share":n}}`,
 with `onCall` only under a `boards` block and `planned` only under `--dry-run`. An agenda row's
 `rec` is the Rec the row holds after prep, a kept one included.
 

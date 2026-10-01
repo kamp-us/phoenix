@@ -7,7 +7,7 @@
  * `bet`, `not now` or `check` stays on the product board whatever the routing rule says, and so do
  * the members of a group whose head reads one, so a split never pulls decided work out from under
  * the table. Every other open issue the rule routes to on-call goes there and leaves the table:
- * the agenda does not propose it and prep takes its table row off (see `planPrep`).
+ * the agenda does not propose it, and route takes its table row off once it has placed it.
  *
  * **The Response target cell is a projection, never a source.** The target an item waits against is
  * the one its labels pick now, and the wait runs from the issue's filing, so a relabel moves the

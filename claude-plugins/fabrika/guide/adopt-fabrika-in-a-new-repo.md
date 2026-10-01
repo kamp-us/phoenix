@@ -306,7 +306,8 @@ with `/fabrika:report`, triage it with `/fabrika:triage`, and you are running.
 The table is a GitHub project where your control-plane owners decide what fabrika bets on each week.
 It is optional. The steps below set it up and keep it running. What each verb reads and writes is
 in [`table-contract.md`](../docs/table-contract.md); its `--help` (`fabrika table setup --help`, and
-the same for `sync`, `flags` and `prep`) carries only the answer it prints and its exit codes.
+the same for `sync`, `flags`, `prep`, `route` and `migrate-week`) carries only the answer it prints
+and its exit codes.
 
 ### 11.1 Give the token the `project` scope
 

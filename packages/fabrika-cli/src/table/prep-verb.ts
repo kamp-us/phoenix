@@ -14,9 +14,10 @@
  * closed: a second run adds no row, carries no bet and posts nothing. It still takes a `proposed`
  * row whose issue closed off the table, since that row must not reach the table.
  *
- * **Prep never writes the on-call board.** It reads it to leave routed issues off the agenda and to
- * report on-call as one section of the update; placing them is `table route`'s, which runs on any
- * schedule without closing an agenda.
+ * **Prep never routes.** It reads the on-call board to leave routed issues off the agenda and to
+ * report on-call as one section of the update, and it leaves their table rows standing. Placing
+ * them and taking their rows off is `table route`'s, which runs on any schedule without closing an
+ * agenda, so an issue routed by its row's Origin is never on neither board.
  *
  * `--dry-run` runs this same path over a board that records its writes (`dry-run.ts`).
  *
@@ -607,7 +608,9 @@ export const runPrep = <R>(
 
 		const rowsOut = prepped
 			? [...heads.table.values()]
-					.filter((row) => openSet.has(row.issue) && onAgenda(row, target))
+					.filter(
+						(row) => openSet.has(row.issue) && !routedSet.has(row.issue) && onAgenda(row, target),
+					)
 					.sort((a, b) => a.issue - b.issue)
 					.map((row) => ({
 						issue: row.issue,
