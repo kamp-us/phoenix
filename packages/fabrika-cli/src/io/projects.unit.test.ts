@@ -56,6 +56,7 @@ const RECORDED_PROJECT = {
 	number: 20,
 	url: "https://github.com/orgs/acme/projects/20",
 	title: "Example table",
+	createdAt: "2026-01-01T00:00:00Z",
 	owner: {__typename: "Organization", login: "acme"},
 	shortDescription: "Example weekly betting table",
 	readme: "# How to use this table",

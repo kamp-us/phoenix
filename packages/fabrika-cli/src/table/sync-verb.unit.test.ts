@@ -56,6 +56,7 @@ const PROJECT: ProjectSnapshot = {
 	owner: {kind: "Organization", login: "acme"},
 	url: "https://github.com/orgs/acme/projects/3",
 	title: "widgets table",
+	createdAt: "2026-01-01T00:00:00.000Z",
 	shortDescription: null,
 	readme: null,
 	fields: [

@@ -119,6 +119,8 @@ export interface ProjectSnapshot {
 	readonly owner: ProjectOwner;
 	readonly url: string;
 	readonly title: string;
+	/** When the project was made: the earliest an on-call item's wait can start. */
+	readonly createdAt: string;
 	readonly shortDescription: string | null;
 	readonly readme: string | null;
 	readonly fields: ReadonlyArray<ProjectField>;
@@ -275,7 +277,7 @@ const str = (value: unknown): value is string => typeof value === "string";
 
 const PROJECT_FRAGMENT = `
 fragment TableProject on ProjectV2 {
-  id number url title shortDescription readme
+  id number url title createdAt shortDescription readme
   owner { __typename ... on Organization { login } ... on User { login } }
   fields(first: 100) {
     pageInfo { hasNextPage }
@@ -372,7 +374,9 @@ export const readSnapshot = (node: unknown): Attempt<ProjectSnapshot> => {
 		!str(node.id) ||
 		typeof node.number !== "number" ||
 		!str(node.url) ||
-		!str(node.title)
+		!str(node.title) ||
+		!str(node.createdAt) ||
+		Number.isNaN(Date.parse(node.createdAt))
 	) {
 		return fail("GitHub answered 200 but its output is not a project");
 	}
@@ -408,6 +412,7 @@ export const readSnapshot = (node: unknown): Attempt<ProjectSnapshot> => {
 		owner,
 		url: node.url,
 		title: node.title,
+		createdAt: node.createdAt,
 		shortDescription: str(node.shortDescription) ? node.shortDescription : null,
 		readme: str(node.readme) ? node.readme : null,
 		fields,

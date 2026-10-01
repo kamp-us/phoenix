@@ -26,7 +26,7 @@ import type {LaneRecord} from "../wire/lane-record.ts";
 import {type RouteBasis, readRoutedBasis} from "../wire/routed-elsewhere.ts";
 import {BET_STAGE} from "./bets.ts";
 import {type Group, type GroupKind, issuesOf, kindOf} from "./group.ts";
-import {ON_CALL_FIELD, targetsOf} from "./on-call.ts";
+import {responseTargetOf} from "./on-call.ts";
 import {tallyOver} from "./sync.ts";
 import {latestPerLane, latestRecord, measuredUsd} from "./tally.ts";
 
@@ -98,10 +98,11 @@ export type ShareWeek =
 	| {readonly _tag: "Unread"; readonly reason: string}
 	| NotAsked;
 
-/** An open on-call item and the Response target it waits against, set at `since`; `null` when unset. */
+/** An open on-call item: its labels pick the target it waits against, and its filing starts the wait. */
 export interface OnCallItem {
 	readonly issue: number;
-	readonly target: {readonly name: string; readonly since: string} | null;
+	readonly labels: ReadonlyArray<string>;
+	readonly createdAt: string;
 }
 
 /** The on-call board as the flags read it; asked only when a `boards` block splits the work. */
@@ -109,6 +110,8 @@ export type OnCallRead =
 	| {
 			readonly _tag: "OnCall";
 			readonly settings: OnCallBoard;
+			/** When the on-call board was made: no item's wait starts before it. */
+			readonly boardCreatedAt: string;
 			/** Every issue on the on-call board, open or closed: the lanes its share counts. */
 			readonly issues: ReadonlySet<number>;
 			readonly open: ReadonlyArray<OnCallItem>;
@@ -201,7 +204,7 @@ export interface PastTarget {
 	readonly issue: number;
 	readonly target: string;
 	readonly hours: number;
-	/** When the target was set: when the item arrived on the on-call board. */
+	/** When the wait started: the issue's filing, or the on-call board's making when that is later. */
 	readonly since: string;
 	readonly waitedHours: number;
 }
@@ -527,41 +530,32 @@ export const flagsOf = (input: FlagInput): FlagReport => {
 
 const HOUR_MS = 3_600_000;
 
-/** One open on-call item against its target: flagged once it has waited longer than the target. */
+/**
+ * One open on-call item against the target its labels pick now, waited from its filing, or from the
+ * board's making for an issue filed before the board stood: `null` while it is within that target.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10302
+ */
 export const pastTargetOf = (
 	item: OnCallItem,
 	targets: ResponseTargets,
+	boardCreatedAt: string,
 	now: Date,
-):
-	| {readonly _tag: "Past"; readonly flag: PastTarget}
-	| {readonly _tag: "Within"}
-	| {readonly _tag: "Unread"; readonly unread: Unread} => {
-	const unread = (reason: string) =>
-		({_tag: "Unread", unread: {check: "past-target", issue: item.issue, reason}}) as const;
-	if (item.target === null) {
-		return unread(
-			`it carries no ${ON_CALL_FIELD.responseTarget} yet — \`fabrika table prep\` sets one`,
-		);
-	}
-	const {name, since} = item.target;
-	const target = targetsOf(targets).find((one) => one.name === name);
-	if (target === undefined) {
-		return unread(`its target "${name}" is not one \`boards.onCall.responseTargets\` names`);
-	}
+): PastTarget | null => {
+	const target = responseTargetOf(item.labels, targets);
+	const since =
+		Date.parse(item.createdAt) >= Date.parse(boardCreatedAt) ? item.createdAt : boardCreatedAt;
 	const waited = (now.getTime() - Date.parse(since)) / HOUR_MS;
 	return waited > target.hours
 		? {
-				_tag: "Past",
-				flag: {
-					_tag: "PastTarget",
-					issue: item.issue,
-					target: name,
-					hours: target.hours,
-					since,
-					waitedHours: Math.floor(waited),
-				},
+				_tag: "PastTarget",
+				issue: item.issue,
+				target: target.name,
+				hours: target.hours,
+				since,
+				waitedHours: Math.floor(waited),
 			}
-		: {_tag: "Within"};
+		: null;
 };
 
 /** What the week's lanes spent on on-call work, against everything they spent. */
@@ -615,9 +609,13 @@ const onCallFlags = (input: FlagInput, unread: Unread[]): ReadonlyArray<Flag> =>
 	}
 	const flags: Flag[] = [];
 	for (const item of [...board.open].sort((a, b) => a.issue - b.issue)) {
-		const read = pastTargetOf(item, board.settings.responseTargets, input.now);
-		if (read._tag === "Unread") unread.push(read.unread);
-		if (read._tag === "Past") flags.push(read.flag);
+		const past = pastTargetOf(
+			item,
+			board.settings.responseTargets,
+			board.boardCreatedAt,
+			input.now,
+		);
+		if (past !== null) flags.push(past);
 	}
 	if (board.week._tag === "Unread") {
 		unread.push({check: "on-call-share", issue: null, reason: board.week.reason});

@@ -987,13 +987,15 @@ export const openUnlabeledIssues = (repo: string): Shell<Attempt<ReadonlyArray<Q
 export const listOpenIssues = (repo: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
 	openIssueRecords(`repos/${repo}/issues?state=open`);
 
-/** An open issue as the table's agenda reads it: its words, its labels, and who filed it. */
+/** An open issue as the table's agenda reads it: its words, its labels, who filed it and when. */
 export interface ListedIssue {
 	readonly number: number;
 	readonly title: string;
 	readonly body: string;
 	readonly labels: ReadonlyArray<string>;
 	readonly author: string;
+	/** When it was filed: where an on-call item's wait starts. */
+	readonly createdAt: string;
 	/**
 	 * GitHub's `author_association`: `OWNER`, `MEMBER` or `COLLABORATOR` for someone who works on the
 	 * repository, anything else for someone who only uses it. `""` when the payload carried none.
@@ -1015,12 +1017,17 @@ export const listOpenIssueFacts = (repo: string): Shell<Attempt<ReadonlyArray<Li
 					if (record === null || !isRecord(value)) {
 						return fail("GitHub answered 200 but one entry is not an issue");
 					}
+					const createdAt = value.created_at;
+					if (typeof createdAt !== "string" || Number.isNaN(Date.parse(createdAt))) {
+						return fail(`GitHub answered 200 but #${record.number} carries no creation time`);
+					}
 					out.push({
 						number: record.number,
 						title: record.title,
 						body: record.body,
 						labels: record.labels,
 						author: record.author,
+						createdAt,
 						association:
 							typeof value.author_association === "string" ? value.author_association : "",
 					});

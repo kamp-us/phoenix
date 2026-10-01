@@ -1,5 +1,5 @@
 /**
- * The `table` verb group — `fabrika table <setup|sync|flags|prep|migrate-week>`.
+ * The `table` verb group — `fabrika table <setup|sync|flags|prep|route|migrate-week>`.
  *
  * The adapter and nothing else: flags, the pure verb, and its emitted outcome. Every leaf is a
  * `leafCommand`, never a bare `Command.make`, so the excess-operand guard covers it.
@@ -12,6 +12,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {flagsBoard, runFlags} from "./flags-verb.ts";
 import {migrateBoard, runMigrate} from "./migrate-verb.ts";
 import {prepBoard, runPrep} from "./prep-verb.ts";
+import {routeBoard, runRoute} from "./route-verb.ts";
 import {runSetup} from "./setup-verb.ts";
 import {runSync, syncBoard} from "./sync-verb.ts";
 
@@ -192,6 +193,39 @@ const prep = leafCommand(
 	]),
 );
 
+const route = leafCommand(
+	"route",
+	{repo: repoFlag},
+	Effect.fn(function* ({repo}) {
+		yield* emit(
+			yield* runRoute({
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+				now: new Date(),
+				board: routeBoard,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Move routed issues onto the on-call board and off the table."),
+	Command.withDescription(
+		tableHelp("table route", [
+			'Moves routed issues to the on-call board, off the table; prints {"answer","routed","changes",…}.',
+			"  7: no table or on-call project; run table setup",
+			"  8: a write did not land (UNKNOWN); re-run",
+			"  9: the rows do not read back in step",
+			"  11: a read failed (UNKNOWN)",
+			"  12: a .fabrika.jsonc block does not decode",
+			"  20: the token lacks the project scope",
+			"  22: two open projects carry the table's title",
+			"  23: the on-call board lacks a field or option; run table setup",
+			"  24: a lane record does not read",
+		]),
+	),
+	Command.withExamples([{command: "fabrika table route"}]),
+);
+
 const migrateWeek = leafCommand(
 	"migrate-week",
 	{repo: repoFlag},
@@ -224,7 +258,7 @@ const migrateWeek = leafCommand(
 );
 
 export const tableCommand = Command.make("table").pipe(
-	Command.withSubcommands([setup, sync, flags, prep, migrateWeek]),
+	Command.withSubcommands([setup, sync, flags, prep, route, migrateWeek]),
 	Command.withShortDescription("Set up and fill the weekly betting table on GitHub Projects."),
 	Command.withDescription(
 		"The weekly betting table: a GitHub project per repository where control-plane owners decide what gets bet on. Its verbs need the token's `project` scope. `lane brief`, `lane record`, `build pick` and the pitch guard read the table too; with no `table` block they carry on when that read fails.",

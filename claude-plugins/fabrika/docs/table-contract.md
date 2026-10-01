@@ -229,15 +229,19 @@ named under `unread` as `not-rendered`.
 **The on-call board.** With a `boards.onCall` block the whole-table run also reads the on-call
 board:
 
-- `past-target` — per open on-call item whose Response target was set longer ago than the `hours` of
-  that target (the target is set when the item arrives, so the wait counts from arrival), carrying
-  `issue`.
+- `past-target` — per open on-call item that has waited longer than the `hours` of the target its
+  labels pick now (the first `responseTargets.byLabel` target whose labels it carries, else
+  `otherwise`), carrying `issue`, `target`, `hours`, `since` and `waitedHours`. The wait counts from
+  the issue's creation, or from the on-call board's creation for an issue filed before the board
+  existed, so a new board does not open with its whole backlog late. Neither fact is read off the
+  Response target cell: a relabel moves the target on the next run, and no verb's schedule moves the
+  clock.
 - `on-call-share` — lanes on issues on the on-call board took more of the spend in the same 7 days
   than `boards.onCall.spendShare` percent.
 
 A check it could not answer — a lane unmeasured, a set, roadmap or label that would not read, an
-on-call board that would not read, an item with no target or one the config no longer names — is
-named under `unread`, never passed. A check the config turns off is neither.
+on-call board or open-issue list that would not read — is named under `unread`, never passed. A
+check the config turns off is neither.
 
 stdout is `{"answer":"flagged"|"clear","repo":"…","project":{"number":n,"title":"…","url":"…"},"scope":"table"|"issues","rows":[n…],"flags":[{"flag":"over-size"|"asks"|"stuck"|"unknown-decider"|"not-rendered"|"campaigns"|"fabrika-share"|"past-target"|"on-call-share",…,"rec":"…"}],"unread":[{"check":"…","issue":n|null,"reason":"…"}]}`;
 row flags carry `head`, `group` (`epic`|`chain`|`null`) and `covers`.
@@ -332,17 +336,15 @@ share check off everywhere. The update names its table day in a
 adds no row, carries nothing and posts nothing, and only takes closed `proposed` rows off. A row
 already dated that day is left as it reads, so a re-run writes no Table day.
 
-**On-call.** With a `boards.onCall` block, every open issue `boards.onCall.route` sends to on-call
-(the Origin on its table row, else `customer` when its filer only uses the product; any `type:` in
-`route.types`; any label in `route.labels`) — except one whose table row reads `bet`, `not now` or
-`check`, or a shipped bet this run brings back as a check — is never proposed at the table. It is
-added to the on-call board (`table setup` must have made it) in issue order, with its Response target
-set once, while unset, to the first `responseTargets.byLabel` target whose labels it carries, else
-`otherwise`, and its In plain words line. This runs on every prep, the second one for a table
-included. Its issues are left out of the Outside the bets tally, and the status update gains one
-On-call section: open items, how many are past their target, and the share of the spend that week
-that went to on-call, against `boards.onCall.spendShare`. An item past its target or spend over the
-share makes the update `AT_RISK`.
+**On-call.** With a `boards.onCall` block, every open issue [`table route`](#table-route) sends to
+on-call is never proposed at the table, and its table row stays as it reads. Prep writes nothing
+to the on-call board and takes no routed row off: it reads the board, and placing the issues and
+taking their rows off is route's, so an issue routed by its row's Origin is never on neither board.
+Those issues are left out of the Outside the bets tally, and the status update gains one
+On-call section: the open items (those on the board and those route has yet to place), how many are
+past their target, timed the way [`past-target`](#table-flags) times them, and the share of the
+spend that week that went to on-call, against `boards.onCall.spendShare`. An item past its target or
+spend over the share makes the update `AT_RISK`.
 
 The Agenda view shows the rows dated today through six days on (`table-day:@today..@today+6d`),
 which is the next table's, with a Section and a Rec, open or closed so a check shows. `@current`
@@ -357,7 +359,7 @@ a check's `comment` reads `planned`, and `planned` lists every write: sync's thr
 `{"_tag":"Post","project":n,"status":"…","body":"…"}`. The exit is `0` once the plan is built; a read
 that fails keeps its code.
 
-stdout is `{"answer":"prepped"|"unchanged"|"dry-run","repo":"…","project":{…},"tableDay":"YYYY-MM-DD","agenda":[{"issue":n,"section":"…","kind":"epic"|"chain"|null,"members":[n…],"size":"…","rec":"…","plainWords":"…"}],"overflow":[n…],"rollover":{"continuing":[n…],"flagged":[n…]},"removed":[n…],"checks":[{"issue":n,"shippedAt":"…","success":"…"|null,"signals":{"prs":[n…],"mentions":[…],"reverts":[…],"reopened":[n…],"followUps":[n…]},"fabrika":{…}|null,"sources":[…],"rec":"…","comment":"posted"|"standing"|"planned"}],"triageFirst":[{"issue":n,"waitingOnFiler":bool}],"outside":{"count":n,"kinds":{…},"spentUsd":n,"unmeasured":n},"health":{"posted":bool,"alreadyPosted":bool,…},"recsKept":[{"issue":n,"rec":"…","wanted":"…"|null}],"changes":[…],"onCall":{"project":{…},"items":[{"issue":n,"target":"…"|null}],"pastTarget":[n…],"spend":{"_tag":"Measured","percent":n,"onCallUsd":n,"totalUsd":n}|{"_tag":"Unmeasured","lanes":n}|{"_tag":"Nothing"},"share":n,"changes":[…]}}`,
+stdout is `{"answer":"prepped"|"unchanged"|"dry-run","repo":"…","project":{…},"tableDay":"YYYY-MM-DD","agenda":[{"issue":n,"section":"…","kind":"epic"|"chain"|null,"members":[n…],"size":"…","rec":"…","plainWords":"…"}],"overflow":[n…],"rollover":{"continuing":[n…],"flagged":[n…]},"removed":[n…],"checks":[{"issue":n,"shippedAt":"…","success":"…"|null,"signals":{"prs":[n…],"mentions":[…],"reverts":[…],"reopened":[n…],"followUps":[n…]},"fabrika":{…}|null,"sources":[…],"rec":"…","comment":"posted"|"standing"|"planned"}],"triageFirst":[{"issue":n,"waitingOnFiler":bool}],"outside":{"count":n,"kinds":{…},"spentUsd":n,"unmeasured":n},"health":{"posted":bool,"alreadyPosted":bool,…},"recsKept":[{"issue":n,"rec":"…","wanted":"…"|null}],"changes":[…],"onCall":{"project":{…},"items":[{"issue":n,"target":"…"}],"pastTarget":[n…],"spend":{"_tag":"Measured","percent":n,"onCallUsd":n,"totalUsd":n}|{"_tag":"Unmeasured","lanes":n}|{"_tag":"Nothing"},"share":n}}`,
 with `onCall` only under a `boards` block and `planned` only under `--dry-run`. An agenda row's
 `rec` is the Rec the row holds after prep, a kept one included.
 
@@ -371,8 +373,45 @@ with `onCall` only under a `boards` block and `planned` only under `--dry-run`. 
 - `12` — the `table`, `appetiteSizes` or `boards` block in `.fabrika.jsonc` does not decode.
 - `20` — the token lacks the `project` scope.
 - `22` — two open projects carry the table's title. Set `table.project.number`.
-- `23` — the table or the on-call board lacks a field or option prep writes, the Table day field
-  included. Run `table setup`.
+- `23` — the table lacks a field or option prep writes, the Table day field included. Run
+  `table setup`.
+- `24` — an issue carries a lane record that does not read.
+
+## table route
+
+Run as often as on-call needs: it closes no agenda, dates no row and posts no update, so a daily or
+hourly run never moves the table. With a `boards.onCall` block, every open issue
+`boards.onCall.route` sends to on-call (the Origin on its table row, else `customer` when its filer
+only uses the product; any `type:` in `route.types`; any label in `route.labels`) goes to the
+on-call board, except one whose table row reads `bet`, `not now` or `check`, a member of a group
+whose head reads one, or a bet shipped long enough ago that prep brings it back as a check. These
+are the same issues prep leaves off the agenda, read by the same rule.
+
+Each one is added to the on-call board (`table setup` must have made it) in issue order, with the
+Response target its labels pick now (the first `responseTargets.byLabel` target whose labels it
+carries, else `otherwise`) and its In plain words line. A relabel rewrites the target on the next
+run. The cell shows the target; [`past-target`](#table-flags) never reads it. The on-call board is
+written first and the table second: each routed issue's table row is taken off, so a run that stops
+between the two leaves an issue on both boards, never on neither.
+
+The writes run like prep's: adds, a re-read, the cells, and a last read whose plan must be empty, so
+a second run over the same issues writes nothing and answers `unchanged`. With no `boards` block
+there is no on-call board: it reads nothing from GitHub and answers `unchanged` with `onCall`
+`null`.
+
+stdout is `{"answer":"routed"|"unchanged","repo":"…","onCall":{"number":n,"title":"…","url":"…"}|null,"routed":[n…],"changes":[…]}`.
+
+### Exit status
+
+- `7` — no table project, or no on-call board with a `boards` block. Run `table setup`.
+- `8` — a write did not land. UNKNOWN; re-run to finish.
+- `9` — the rows do not read back in step after the writes.
+- `11` — the project, the open issues, an issue or its comments or edges could not be read. UNKNOWN.
+- `12` — the `table` or `boards` block in `.fabrika.jsonc` does not decode.
+- `20` — the token lacks the `project` scope.
+- `22` — two open projects carry the table's title. Set `table.project.number`.
+- `23` — the on-call board lacks the Response target field, one of its options, or the In plain
+  words field. Run `table setup`.
 - `24` — an issue carries a lane record that does not read.
 
 ## table migrate-week

@@ -14,6 +14,7 @@ const listed = (number: number, labels: ReadonlyArray<string>): ListedIssue => (
 	labels,
 	author: RULER,
 	association: "OWNER",
+	createdAt: "2026-09-01T00:00:00Z",
 });
 
 describe("ruledSuspects", () => {

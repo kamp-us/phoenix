@@ -19,6 +19,7 @@ const issue = (number: number, over: Partial<ListedIssue> = {}): ListedIssue => 
 	labels: [],
 	author: "someone",
 	association: "MEMBER",
+	createdAt: "2026-09-01T00:00:00Z",
 	...over,
 });
 
@@ -137,7 +138,7 @@ const FIELDS = {
 };
 
 describe("planOnCall", () => {
-	it("adds an issue with no item, then sets its target once and its plain words", () => {
+	it("adds an issue with no item, then sets its target and its plain words", () => {
 		const bug = issue(3, {labels: ["type:bug", "p0"], title: "Login fails"});
 		const first = planOnCall({
 			fields: FIELDS,
@@ -159,45 +160,48 @@ describe("planOnCall", () => {
 		]);
 	});
 
-	it("never moves a target already set, so the wait stays timed from arrival", () => {
+	it("moves the target to the one a relabel picks, and plans nothing once it reads so", () => {
 		const bug = issue(3, {labels: ["p0"], title: "Login fails"});
-		const standing = row(3, [
-			option("Response target", "this week"),
-			{
-				fieldId: "F_plain",
-				fieldName: "In plain words",
-				value: {_tag: "Text", text: "Login fails"},
-				creator: "owner",
-				updatedAt: "2026-09-26T00:00:00.000Z",
-			},
-		]);
-
-		expect(
+		const standing = (target: string) =>
+			row(3, [
+				option("Response target", target),
+				{
+					fieldId: "F_plain",
+					fieldName: "In plain words",
+					value: {_tag: "Text", text: "Login fails"},
+					creator: "owner",
+					updatedAt: "2026-09-26T00:00:00.000Z",
+				},
+			]);
+		const plan = (target: string) =>
 			planOnCall({
 				fields: FIELDS,
 				settings: SHIPPED_ON_CALL,
-				rows: new Map([[3, standing]]),
+				rows: new Map([[3, standing(target)]]),
 				issues: [bug],
-			}),
-		).toEqual([]);
+			});
+
+		expect(plan("this week").map((write) => (write._tag === "Set" ? write.shown : null))).toEqual([
+			"same day",
+		]);
+		expect(plan("same day")).toEqual([]);
 	});
 });
 
 describe("onCallItemsOf", () => {
-	it("reads each open item's target and arrival, and times a target set now from now", () => {
+	it("reads each open item and each routed issue off the issue, never off its cell", () => {
 		const rows = new Map([
-			[1, row(1, [option("Response target", "this week", "2026-09-20T00:00:00.000Z")])],
+			[1, row(1, [option("Response target", "same day", "2026-09-20T00:00:00.000Z")])],
 			[2, row(2, [])],
 			[3, row(3, [option("Response target", "same day")])],
 		]);
-		const open = byNumber([issue(1), issue(2, {labels: ["p0"]}), issue(4)]);
+		const filed = "2026-09-10T00:00:00Z";
+		const open = byNumber([issue(1, {createdAt: filed}), issue(2, {labels: ["p0"]}), issue(4)]);
 
-		expect(
-			onCallItemsOf(rows, open, [issue(2, {labels: ["p0"]}), issue(4)], SHIPPED_ON_CALL, NOW),
-		).toEqual([
-			{issue: 1, target: {name: "this week", since: "2026-09-20T00:00:00.000Z"}},
-			{issue: 2, target: {name: "same day", since: NOW.toISOString()}},
-			{issue: 4, target: {name: "this week", since: NOW.toISOString()}},
+		expect(onCallItemsOf(rows, open, [issue(4)])).toEqual([
+			{issue: 1, labels: [], createdAt: filed},
+			{issue: 2, labels: ["p0"], createdAt: "2026-09-01T00:00:00Z"},
+			{issue: 4, labels: [], createdAt: "2026-09-01T00:00:00Z"},
 		]);
 	});
 });
