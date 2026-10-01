@@ -1,5 +1,5 @@
 /**
- * `--dry-run` for `table sync` and `table prep`: the verb runs over a board whose reads go through
+ * `--dry-run` for `table sync`, `table prep` and `table route`: the verb runs over a board whose reads go through
  * and whose writes are recorded and never sent.
  *
  * **The recorder folds each write into its own view of the board**, so the verb's later phases read
@@ -24,6 +24,7 @@ import type {
 	StatusUpdateStatus,
 } from "../io/projects.ts";
 import type {PrepBoard} from "./prep-verb.ts";
+import type {RouteBoard} from "./route-verb.ts";
 import type {SyncBoard} from "./sync-verb.ts";
 
 /** One write a dry run planned and did not send. `project` is the project's number. */
@@ -288,6 +289,23 @@ export const dryRunPrep = <R>(board: PrepBoard<R>, at: string): DryRun<PrepBoard
 				Effect.map(board.statusUpdates(projectId), (read) =>
 					read._tag === "Ok" ? {_tag: "Ok", value: [...read.value, ...r.postsOn(projectId)]} : read,
 				),
+		},
+		planned: r.planned,
+	};
+};
+
+/** `board` with every write recorded and folded into what its reads answer; `at` stamps a set cell. */
+export const dryRunRoute = <R>(board: RouteBoard<R>, at: string): DryRun<RouteBoard<R>> => {
+	const r = recorder(board, at);
+	return {
+		board: {
+			...board,
+			locate: r.locate,
+			items: r.items,
+			add: r.add,
+			set: r.set,
+			clear: r.clear,
+			remove: r.remove,
 		},
 		planned: r.planned,
 	};

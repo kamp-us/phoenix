@@ -29,6 +29,7 @@ import type {
 import {emit, type Instant, type LaneRecord} from "../wire/lane-record.ts";
 import {checkMarker} from "./check.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
+import type {PlannedWrite} from "./dry-run.ts";
 import {type PrepBoard, runPrep} from "./prep-verb.ts";
 import {runRoute} from "./route-verb.ts";
 import {rulingComment} from "./ruled.test-support.ts";
@@ -477,10 +478,10 @@ const prep = (
 		),
 	);
 
-const route = (board: PrepBoard<never>, config = unconfigured) =>
+const route = (board: PrepBoard<never>, config = unconfigured, dryRun = false) =>
 	Effect.runPromise(
 		Effect.provide(
-			runRoute({repo: REPO, cwd: "/repo", env: {}, now: NOW, board}),
+			runRoute({repo: REPO, cwd: "/repo", env: {}, now: NOW, board, dryRun}),
 			Layer.mergeAll(config, fakeShell([]).layer),
 		),
 	);
@@ -1034,6 +1035,115 @@ describe("table prep with a boards block", () => {
 
 		expect(answer).toMatchObject({answer: "unchanged", onCall: null, routed: []});
 		expect(split.onCallItems.size).toBe(0);
+	});
+
+	/** `fake`'s board with every write it sends logged in the shape a dry run plans it. */
+	const sent = (fake: ReturnType<typeof world>) => {
+		const writes: PlannedWrite[] = [];
+		const projectOf = (projectId: string) => (projectId === ON_CALL.id ? ON_CALL : PROJECT).number;
+		const issueOf = (itemId: string): number | null =>
+			[...fake.items, ...fake.onCallItems].find(([, item]) => item.itemId === itemId)?.[0] ?? null;
+		const fieldOf = (fieldId: string) => fieldById.get(fieldId);
+		const board: PrepBoard<never> = {
+			...fake.board,
+			add: (projectId, repo, issue) => {
+				writes.push({_tag: "Add", project: projectOf(projectId), issue});
+				return fake.board.add(projectId, repo, issue);
+			},
+			set: (target, value) => {
+				const field = fieldOf(target.fieldId);
+				writes.push({
+					_tag: "Set",
+					project: projectOf(target.projectId),
+					issue: issueOf(target.itemId),
+					field: field?.name ?? target.fieldId,
+					value:
+						value._tag === "Option" && field?._tag === "SingleSelect"
+							? (field.options.find((one) => one.id === value.optionId)?.name ?? value.optionId)
+							: value._tag === "Text"
+								? value.text
+								: value._tag === "Number"
+									? value.number
+									: value._tag === "Date"
+										? value.date
+										: value._tag === "Option"
+											? value.optionId
+											: value.iterationId,
+				});
+				return fake.board.set(target, value);
+			},
+			clear: (target) => {
+				writes.push({
+					_tag: "Clear",
+					project: projectOf(target.projectId),
+					issue: issueOf(target.itemId),
+					field: fieldOf(target.fieldId)?.name ?? target.fieldId,
+				});
+				return fake.board.clear(target);
+			},
+			remove: (projectId, itemId) => {
+				writes.push({_tag: "Delete", project: projectOf(projectId), issue: issueOf(itemId)});
+				return fake.board.remove(projectId, itemId);
+			},
+		};
+		return {board, writes};
+	};
+
+	it("route --dry-run plans exactly the writes a live run then sends on the same board, and sends none", async () => {
+		const split = world(issues, rows);
+		const dry = spy(split.board);
+		const out = await route(dry.board, SPLIT, true);
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		expect(dry.calls.filter((call) => ["add", "set", "clear", "remove"].includes(call))).toEqual(
+			[],
+		);
+		expect(split.onCallItems.size).toBe(0);
+		expect(split.items.has(50)).toBe(true);
+		const answer = JSON.parse(out.stdout);
+		expect(answer).toMatchObject({answer: "dry-run", routed: [30, 40, 41, 50], changes: []});
+		const planned = answer.planned as ReadonlyArray<PlannedWrite>;
+
+		const live = sent(split);
+		expect((await route(live.board, SPLIT)).code).toBe(0);
+		expect(planned).toEqual(live.writes);
+		expect(planned.map((write) => write._tag)).toEqual([
+			"Add",
+			"Add",
+			"Add",
+			"Add",
+			...Array.from({length: 8}, () => "Set"),
+			"Delete",
+		]);
+		expect(planned).toContainEqual({
+			_tag: "Set",
+			project: 4,
+			issue: 30,
+			field: "Response target",
+			value: "same day",
+		});
+		expect(planned.at(-1)).toEqual({_tag: "Delete", project: 3, issue: 50});
+		expect(out.stderr).toContain("table route: would add #30 to project #4.");
+		expect(out.stderr).toContain("table route: would take #50 off project #3.");
+		expect(out.stderr.at(-1)).toBe("table route: --dry-run: nothing was written.");
+	});
+
+	it("route --dry-run keeps a failed read's exit code", async () => {
+		const failing = (fake: ReturnType<typeof world>): PrepBoard<never> => ({
+			...fake.board,
+			openIssues: () => Effect.succeed({_tag: "Failure" as const, reason: "rate limited"}),
+		});
+		const live = await route(failing(world(issues, rows)), SPLIT);
+		const dry = await route(failing(world(issues, rows)), SPLIT, true);
+
+		expect(live.code).toBe(PRECONDITION_UNKNOWN);
+		expect(dry.code).toBe(live.code);
+	});
+
+	it("route --dry-run with no boards block plans nothing", async () => {
+		const answer = JSON.parse((await route(world(issues, rows).board, unconfigured, true)).stdout);
+
+		expect(answer).toMatchObject({answer: "dry-run", onCall: null, routed: [], planned: []});
 	});
 
 	it("prep writes nothing to the on-call board and never proposes on-call work at the table", async () => {
