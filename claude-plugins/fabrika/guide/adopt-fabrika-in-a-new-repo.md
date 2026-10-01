@@ -408,8 +408,8 @@ Then act on what it printed:
   not check" line names each check it could not read; it never reads `ON_TRACK` over one.
 - **`triageFirst`:** customer reports nobody triaged yet. Triage them; the next prep proposes them.
 - **A second run for the same table** adds no row, carries no bet and posts nothing. It still takes a
-  `proposed` row whose issue closed off the table, and with an on-call board it still routes new
-  issues there ([the `table prep` contract](../docs/table-contract.md#table-prep)).
+  `proposed` row whose issue closed off the table
+  ([the `table prep` contract](../docs/table-contract.md#table-prep)).
 
 ### 11.7 Answer the checks
 
@@ -469,5 +469,8 @@ own board, declare `boards.onCall`, then re-run `fabrika table setup` to create 
 
 `route` decides what leaves the table for on-call. Each issue lands on exactly one board: a match on
 any one origin, type or label sends it to on-call. A row the table already reads as `bet`,
-`not now` or `check` stays put. From then on prep fills the on-call board and flags reads it. Set
+`not now` or `check` stays put. From then on `fabrika table route` fills the on-call board and flags
+reads it. Route touches no agenda, so run it as often as you want new reports placed
+([the `table route` contract](../docs/table-contract.md#table-route)). An item's wait counts from
+when its issue was filed, against the target its labels pick now. Set
 `boards.onCall.project.number` to point setup at a project you already have.

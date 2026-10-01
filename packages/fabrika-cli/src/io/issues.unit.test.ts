@@ -431,7 +431,8 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 		expect(refused._tag).toBe("Failure");
 	});
 
-	it("listOpenIssueFacts carries who filed each issue and how they relate to the repository", async () => {
+	it("listOpenIssueFacts carries who filed each issue, when, and how they relate to the repository", async () => {
+		const filed = "2026-09-20T08:00:00Z";
 		const read = await against(
 			listOpenIssueFacts("o/r"),
 			scripted([
@@ -440,9 +441,9 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 					{
 						status: 200,
 						body: [
-							issue({number: 1, author_association: "NONE"}),
+							issue({number: 1, author_association: "NONE", created_at: filed}),
 							issue({number: 2, pull_request: {}}),
-							issue({number: 3}),
+							issue({number: 3, created_at: filed}),
 						],
 					},
 				],
@@ -451,10 +452,18 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 		expect(read).toMatchObject({
 			_tag: "Ok",
 			value: [
-				{number: 1, association: "NONE"},
-				{number: 3, association: ""},
+				{number: 1, association: "NONE", createdAt: filed},
+				{number: 3, association: "", createdAt: filed},
 			],
 		});
+	});
+
+	it("listOpenIssueFacts refuses an issue that carries no creation time", async () => {
+		const read = await against(
+			listOpenIssueFacts("o/r"),
+			scripted([[/issues/, {status: 200, body: [issue({number: 1})]}]]),
+		);
+		expect(read).toMatchObject({_tag: "Failure"});
 	});
 
 	it("closedIssuesWithLabel reads a settled sub-issue summary as no open child, and a missing one as maybe", async () => {

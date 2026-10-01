@@ -481,20 +481,23 @@ describe("the on-call board", () => {
 		open: ReadonlyArray<OnCallItem>,
 		issues: ReadonlyArray<number> = [],
 		over: Partial<OnCallBoard> = {},
+		boardCreatedAt = hoursAgo(1000),
 	): OnCallRead => ({
 		_tag: "OnCall",
 		settings: {...SHIPPED_ON_CALL, ...over},
+		boardCreatedAt,
 		issues: new Set(issues),
 		open,
 		week: {_tag: "Week", start: daysAgo(3), end: daysAgo(-4)},
 	});
-	const item = (issue: number, name: string | null, since = hoursAgo(1)): OnCallItem => ({
-		issue,
-		target: name === null ? null : {name, since},
-	});
+	const item = (
+		issue: number,
+		labels: ReadonlyArray<string>,
+		createdAt = hoursAgo(1),
+	): OnCallItem => ({issue, labels, createdAt});
 
 	it("flags an open item that waited past its response target, and not one within it", () => {
-		const waiting = [item(5, "same day", hoursAgo(30)), item(6, "this week", hoursAgo(30))];
+		const waiting = [item(5, ["p0"], hoursAgo(30)), item(6, [], hoursAgo(30))];
 		const report = flagsOf(input([], {}, {onCall: board(waiting)}));
 
 		expect(report.flags).toEqual([
@@ -515,7 +518,7 @@ describe("the on-call board", () => {
 			byLabel: [{name: "4h", hours: 4, labels: ["p0"]}],
 			otherwise: {name: "1 day", hours: 24},
 		};
-		const waiting = [item(5, "4h", hoursAgo(5)), item(6, "1 day", hoursAgo(30))];
+		const waiting = [item(5, ["p0"], hoursAgo(5)), item(6, [], hoursAgo(30))];
 		const report = flagsOf(input([], {}, {onCall: board(waiting, [], {responseTargets: targets})}));
 		const recs = report.flags.map((flag) => recOf(flag, SHIPPED_TABLE));
 
@@ -526,13 +529,22 @@ describe("the on-call board", () => {
 		expect(recs.join("\n")).not.toContain("target of");
 	});
 
-	it("names an item with no target, or one the config no longer names, unread rather than clear", () => {
-		const report = flagsOf(input([], {}, {onCall: board([item(5, null), item(6, "someday")])}));
+	it("judges a relabelled item against the target its labels pick now, from its filing", () => {
+		const before = flagsOf(input([], {}, {onCall: board([item(5, [], hoursAgo(30))])}));
+		const after = flagsOf(input([], {}, {onCall: board([item(5, ["p0"], hoursAgo(30))])}));
 
-		expect(report.flags).toEqual([]);
-		expect(report.unread.map((one) => [one.check, one.issue])).toEqual([
-			["past-target", 5],
-			["past-target", 6],
+		expect(before.flags).toEqual([]);
+		expect(after.flags).toEqual([
+			expect.objectContaining({issue: 5, target: "same day", since: hoursAgo(30)}),
+		]);
+	});
+
+	it("times an issue filed before the board stood from the board's making", () => {
+		const old = [item(5, ["p0"], hoursAgo(100))];
+
+		expect(flagsOf(input([], {}, {onCall: board(old, [], {}, hoursAgo(10))})).flags).toEqual([]);
+		expect(flagsOf(input([], {}, {onCall: board(old, [], {}, hoursAgo(30))})).flags).toEqual([
+			expect.objectContaining({issue: 5, since: hoursAgo(30), waitedHours: 30}),
 		]);
 	});
 

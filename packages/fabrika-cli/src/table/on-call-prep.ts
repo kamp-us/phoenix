@@ -1,6 +1,7 @@
 /**
- * What `table prep` and `table flags` do with the on-call board a `boards` block adds: read it, route
- * the open issues onto it, and plan the writes that put each routed issue there with its target.
+ * What `table route`, `table prep` and `table flags` do with the on-call board a `boards` block adds:
+ * read it, route the open issues onto it, and plan the writes that put each routed issue there with
+ * its target.
  *
  * **A person's answer at the table keeps an issue on the table.** An issue whose table row reads
  * `bet`, `not now` or `check` stays on the product board whatever the routing rule says, and so do
@@ -8,10 +9,12 @@
  * the table. Every other open issue the rule routes to on-call goes there and leaves the table:
  * the agenda does not propose it and prep takes its table row off (see `planPrep`).
  *
- * **The target is set once, on arrival.** Prep sets an item's Response target only while it is
- * unset, so the value's own `updatedAt` is when the item arrived and the wait is timed from there.
+ * **The Response target cell is a projection, never a source.** The target an item waits against is
+ * the one its labels pick now, and the wait runs from the issue's filing, so a relabel moves the
+ * target and no run's timing moves the clock. Route rewrites the cell to match; flags never read it.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9914
+ * @ruling https://github.com/kamp-us/phoenix/issues/10302
  */
 
 import {Effect} from "effect";
@@ -98,7 +101,7 @@ interface Select {
 	readonly options: ReadonlyMap<string, string>;
 }
 
-/** The on-call fields prep writes, resolved to their ids. */
+/** The on-call fields route writes, resolved to their ids. */
 export interface OnCallFields {
 	readonly responseTarget: Select;
 	readonly plainWords: string;
@@ -157,7 +160,7 @@ export interface OnCallPlanInput {
 
 /**
  * Every write that puts the routed issues on the on-call board: an add for an issue with no item,
- * then its Response target while unset and its In plain words line.
+ * then the Response target its labels pick now and its In plain words line.
  */
 export const planOnCall = (input: OnCallPlanInput): ReadonlyArray<PrepWrite> => {
 	const {fields, rows} = input;
@@ -178,8 +181,8 @@ export const planOnCall = (input: OnCallPlanInput): ReadonlyArray<PrepWrite> => 
 				value,
 				shown,
 			});
-		if (optionOf(row, ON_CALL_FIELD.responseTarget) === null) {
-			const target = responseTargetOf(issue.labels, input.settings.responseTargets);
+		const target = responseTargetOf(issue.labels, input.settings.responseTargets);
+		if (optionOf(row, ON_CALL_FIELD.responseTarget) !== target.name) {
 			set(
 				ON_CALL_FIELD.responseTarget,
 				fields.responseTarget.id,
@@ -196,34 +199,26 @@ export const planOnCall = (input: OnCallPlanInput): ReadonlyArray<PrepWrite> => 
 };
 
 /**
- * The open on-call items as the flags judge them, as the board will read once `placed` lands: a
- * target already set keeps its name and time, and one prep sets now arrives at `now`.
+ * The open on-call items as the flags judge them: every open issue on the board, and every one in
+ * `routed` that route has yet to place, each read off the issue itself.
  */
 export const onCallItemsOf = (
 	rows: ReadonlyMap<number, Row>,
 	open: ReadonlyMap<number, ListedIssue>,
-	placed: ReadonlyArray<ListedIssue>,
-	settings: OnCallBoard,
-	now: Date,
+	routed: ReadonlyArray<ListedIssue>,
 ): ReadonlyArray<OnCallItem> => {
 	const items = new Map<number, OnCallItem>();
-	for (const row of rows.values()) {
-		if (!open.has(row.issue)) continue;
-		const cell = row.values.find((value) => value.fieldName === ON_CALL_FIELD.responseTarget);
-		items.set(row.issue, {
-			issue: row.issue,
-			target: cell?.value._tag === "Option" ? {name: cell.value.name, since: cell.updatedAt} : null,
-		});
-	}
-	for (const issue of placed) {
-		const known = items.get(issue.number);
-		if (known !== undefined && known.target !== null) continue;
-		const target = responseTargetOf(issue.labels, settings.responseTargets);
+	const item = (issue: ListedIssue) =>
 		items.set(issue.number, {
 			issue: issue.number,
-			target: {name: target.name, since: now.toISOString()},
+			labels: issue.labels,
+			createdAt: issue.createdAt,
 		});
+	for (const row of rows.values()) {
+		const issue = open.get(row.issue);
+		if (issue !== undefined) item(issue);
 	}
+	for (const issue of routed) item(issue);
 	return [...items.values()].sort((a, b) => a.issue - b.issue);
 };
 

@@ -36,6 +36,7 @@ const issue = (number: number, over: Partial<ListedIssue> = {}): ListedIssue => 
 	labels: ["status:triaged"],
 	author: "worker",
 	association: "MEMBER",
+	createdAt: "2026-09-01T00:00:00Z",
 	...over,
 });
 

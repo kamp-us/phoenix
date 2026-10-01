@@ -163,8 +163,9 @@ const readOnCallFlags = <R>(
 		return {
 			_tag: "OnCall",
 			settings: read.settings,
+			boardCreatedAt: read.project.createdAt,
 			issues: new Set(read.rows.keys()),
-			open: onCallItemsOf(read.rows, open, [], read.settings, now),
+			open: onCallItemsOf(read.rows, open, []),
 			week: {_tag: "Week", start, end},
 		};
 	});

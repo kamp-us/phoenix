@@ -30,6 +30,7 @@ import {emit, type Instant, type LaneRecord} from "../wire/lane-record.ts";
 import {checkMarker} from "./check.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {type PrepBoard, runPrep} from "./prep-verb.ts";
+import {runRoute} from "./route-verb.ts";
 import {rulingComment} from "./ruled.test-support.ts";
 import {ORIGINS, OUTCOMES, STAGES} from "./shape.ts";
 import {spy} from "./spy.test-support.ts";
@@ -57,6 +58,7 @@ const PROJECT: ProjectSnapshot = {
 	owner: {kind: "Organization", login: "acme"},
 	url: "https://github.com/orgs/acme/projects/3",
 	title: "widgets table",
+	createdAt: "2026-01-01T00:00:00.000Z",
 	shortDescription: null,
 	readme: null,
 	fields: [
@@ -92,6 +94,7 @@ const ON_CALL: ProjectSnapshot = {
 	owner: {kind: "Organization", login: "acme"},
 	url: "https://github.com/orgs/acme/projects/4",
 	title: "widgets on-call",
+	createdAt: "2026-09-27T00:00:00.000Z",
 	shortDescription: null,
 	readme: null,
 	fields: [
@@ -112,6 +115,7 @@ interface IssueSpec {
 	readonly labels?: ReadonlyArray<string>;
 	readonly association?: string;
 	readonly author?: string;
+	readonly createdAt?: string;
 	readonly subIssues?: ReadonlyArray<number>;
 	readonly blockedBy?: ReadonlyArray<number>;
 	readonly records?: ReadonlyArray<LaneRecord>;
@@ -294,6 +298,7 @@ const world = (
 				labels: spec.labels ?? [],
 				author: spec.author ?? OWNER,
 				association: spec.association ?? "MEMBER",
+				createdAt: spec.createdAt ?? "2026-09-01T00:00:00.000Z",
 			}));
 	const board: PrepBoard<never> = {
 		locate: (_repo, target) =>
@@ -468,6 +473,14 @@ const prep = (
 	Effect.runPromise(
 		Effect.provide(
 			runPrep({repo: REPO, cwd: "/repo", env, now, board, dryRun}),
+			Layer.mergeAll(config, fakeShell([]).layer),
+		),
+	);
+
+const route = (board: PrepBoard<never>, config = unconfigured) =>
+	Effect.runPromise(
+		Effect.provide(
+			runRoute({repo: REPO, cwd: "/repo", env: {}, now: NOW, board}),
 			Layer.mergeAll(config, fakeShell([]).layer),
 		),
 	);
@@ -973,12 +986,14 @@ describe("table prep with a boards block", () => {
 		return value?._tag === "Option" ? value.name : null;
 	};
 
-	it("puts routed issues on the on-call board in arrival order, each with a response target", async () => {
+	it("route puts routed issues on the on-call board in arrival order with their targets, and off the table", async () => {
 		const split = world(issues, rows);
-		const out = await prep(split.board, SPLIT);
+		const out = await route(split.board, SPLIT);
 
 		expect(out.code, out.stderr.join("\n")).toBe(0);
 		const answer = JSON.parse(out.stdout);
+		expect(answer.answer).toBe("routed");
+		expect(answer.routed).toEqual([30, 40, 41, 50]);
 		expect([...split.onCallItems.keys()]).toEqual([30, 40, 41, 50]);
 		expect([30, 40, 41, 50].map((issue) => targetOf(split, issue))).toEqual([
 			"same day",
@@ -986,21 +1001,56 @@ describe("table prep with a boards block", () => {
 			"this week",
 			"same day",
 		]);
+		expect(split.items.has(50)).toBe(false);
+		expect([...split.items.keys()]).toEqual([70, 71, 80, 90]);
+	});
+
+	it("route answers unchanged and writes nothing on a second run", async () => {
+		const split = world(issues, rows);
+		await route(split.board, SPLIT);
+		const writes = spy(split.board);
+		const again = await route(writes.board, SPLIT);
+
+		expect(JSON.parse(again.stdout)).toMatchObject({answer: "unchanged", changes: []});
+		expect(writes.calls.filter((call) => ["add", "set", "clear", "remove"].includes(call))).toEqual(
+			[],
+		);
+	});
+
+	it("route moves an item's Response target to the one a relabel picks", async () => {
+		const live: Record<number, IssueSpec> = {...issues};
+		const split = world(live, rows);
+		await route(split.board, SPLIT);
+		live[40] = {...live[40], labels: ["p0"]};
+		const again = JSON.parse((await route(split.board, SPLIT)).stdout);
+
+		expect(again.changes).toEqual(["set #40 Response target to same day"]);
+		expect(targetOf(split, 40)).toBe("same day");
+	});
+
+	it("route routes nothing with no boards block", async () => {
+		const split = world(issues, rows);
+		const answer = JSON.parse((await route(split.board)).stdout);
+
+		expect(answer).toMatchObject({answer: "unchanged", onCall: null, routed: []});
+		expect(split.onCallItems.size).toBe(0);
+	});
+
+	it("prep writes nothing to the on-call board and never proposes on-call work at the table", async () => {
+		const split = world(issues, rows);
+		const answer = JSON.parse((await prep(split.board, SPLIT)).stdout);
+
+		expect(split.onCallItems.size).toBe(0);
+		expect((answer.agenda as ReadonlyArray<AgendaOut>).map((row) => row.issue)).toEqual([
+			70, 11, 20, 60,
+		]);
+		expect(answer.triageFirst).toEqual([]);
 		expect(answer.onCall.items).toEqual([
 			{issue: 30, target: "same day"},
 			{issue: 40, target: "this week"},
 			{issue: 41, target: "this week"},
 			{issue: 50, target: "same day"},
 		]);
-	});
-
-	it("never proposes on-call work at the table", async () => {
-		const answer = JSON.parse((await prep(world(issues, rows).board, SPLIT)).stdout);
-
-		expect((answer.agenda as ReadonlyArray<AgendaOut>).map((row) => row.issue)).toEqual([
-			70, 11, 20, 60,
-		]);
-		expect(answer.triageFirst).toEqual([]);
 	});
 
 	it("covers both boards in one status update, on-call as one section, and flags its spend over its share", async () => {
@@ -1020,15 +1070,6 @@ describe("table prep with a boards block", () => {
 			share: 20,
 			pastTarget: [],
 		});
-	});
-
-	it("writes nothing to the on-call board on a second run", async () => {
-		const split = world(issues, rows);
-		await prep(split.board, SPLIT);
-		const again = JSON.parse((await prep(split.board, SPLIT)).stdout);
-
-		expect(again.onCall.changes).toEqual([]);
-		expect(again.answer).toBe("unchanged");
 	});
 
 	it("proposes a Customers row and reads no on-call board with no boards block", async () => {

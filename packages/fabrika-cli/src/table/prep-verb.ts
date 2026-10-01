@@ -14,12 +14,17 @@
  * closed: a second run adds no row, carries no bet and posts nothing. It still takes a `proposed`
  * row whose issue closed off the table, since that row must not reach the table.
  *
+ * **Prep never writes the on-call board.** It reads it to leave routed issues off the agenda and to
+ * report on-call as one section of the update; placing them is `table route`'s, which runs on any
+ * schedule without closing an agenda.
+ *
  * `--dry-run` runs this same path over a board that records its writes (`dry-run.ts`).
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  * @ruling https://github.com/kamp-us/phoenix/issues/9989
  * @ruling https://github.com/kamp-us/phoenix/issues/10086
  * @ruling https://github.com/kamp-us/phoenix/issues/9872#issuecomment-5852556900
+ * @ruling https://github.com/kamp-us/phoenix/issues/10302
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -62,7 +67,6 @@ import {
 	candidatesOf,
 	cellsOf,
 	closedProposals,
-	describePrepWrite,
 	EMPTY_SELECTION,
 	type FollowUp,
 	onAgenda,
@@ -70,7 +74,6 @@ import {
 	PROPOSED,
 	type PrepFields,
 	type PrepInput,
-	type PrepWrite,
 	planPrep,
 	prepPlan,
 	type Selection,
@@ -85,9 +88,9 @@ import {
 	NOT_SET_UP,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
-	SCOPE_MISSING,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {type ConvergeBoard, converge, stopOnWrite} from "./converge.ts";
 import {describePlanned, dryRunPrep} from "./dry-run.ts";
 import {
 	type Deciders,
@@ -109,14 +112,8 @@ import {
 	postedFor,
 	renderHealth,
 } from "./health.ts";
-import {
-	type OnCallFields,
-	onCallFields,
-	onCallIssuesOf,
-	onCallItemsOf,
-	planOnCall,
-	readOnCall,
-} from "./on-call-prep.ts";
+import {responseTargetOf} from "./on-call.ts";
+import {onCallIssuesOf, onCallItemsOf, readOnCall} from "./on-call-prep.ts";
 import {type RuledUnbuilt, ruledSuspects, ruledUnbuiltOf} from "./ruled.ts";
 import {FIELD} from "./shape.ts";
 import type {Row, SyncNode} from "./sync.ts";
@@ -127,8 +124,6 @@ import {
 	type Refusal,
 	readEach,
 	readNodes,
-	rowsOf,
-	type SyncBoard,
 	syncBoard,
 } from "./sync-verb.ts";
 import {nextTableDay, weekBefore} from "./table-day.ts";
@@ -138,7 +133,7 @@ const VERB = "table prep";
 /** Every board act the verb takes, passed in so the verb stays provable offline. */
 export interface PrepBoard<R>
 	extends Pick<FlagsBoard<R>, "locate" | "items" | "node" | "comments" | "wave" | "deciders">,
-		Pick<SyncBoard<R>, "add" | "set" | "clear">,
+		ConvergeBoard<R>,
 		CheckBoard<R> {
 	/** Post a comment on the issue: a check's evidence. */
 	readonly comment: (
@@ -160,10 +155,6 @@ export interface PrepBoard<R>
 		repo: string,
 		issue: number,
 	) => Effect.Effect<Attempt<ReadonlyArray<CommentRecord>>, never, R>;
-	readonly remove: (
-		projectId: string,
-		itemId: string,
-	) => Effect.Effect<ProjectsAnswer<string>, never, R>;
 	readonly post: (
 		projectId: string,
 		update: StatusUpdateInput,
@@ -304,130 +295,6 @@ const groupFor = <R>(
 		}
 	});
 
-const stop = (
-	failed: Exclude<ProjectsAnswer<unknown>, {_tag: "Ok"}>,
-	onFailure: number,
-	what: string,
-): Refusal =>
-	failed._tag === "MissingScope"
-		? refused(SCOPE_MISSING, `${VERB}: ${failed.reason}.`)
-		: refused(onFailure, `${VERB}: ${what}: ${failed.reason}.`);
-
-const applyAll = <R>(
-	board: PrepBoard<R>,
-	project: ProjectSnapshot,
-	repo: string,
-	writes: ReadonlyArray<PrepWrite>,
-	landed: string[],
-	describe: (write: PrepWrite) => string,
-): Effect.Effect<Refusal | null, never, R> =>
-	Effect.gen(function* () {
-		for (const write of writes) {
-			let done: ProjectsAnswer<string>;
-			switch (write._tag) {
-				case "Add":
-					done = yield* board.add(project.id, repo, write.issue);
-					break;
-				case "Set":
-					done = yield* board.set(
-						{projectId: project.id, itemId: write.itemId, fieldId: write.fieldId},
-						write.value,
-					);
-					break;
-				case "Clear":
-					done = yield* board.clear({
-						projectId: project.id,
-						itemId: write.itemId,
-						fieldId: write.fieldId,
-					});
-					break;
-				case "Delete":
-					done = yield* board.remove(project.id, write.itemId);
-					break;
-			}
-			if (done._tag !== "Ok") {
-				const so = landed.length > 0 ? ` after: ${landed.join("; ")}` : "";
-				return stop(
-					done,
-					WRITE_UNKNOWN,
-					`${describe(write)} did not land — UNKNOWN${so}; re-run prep to finish`,
-				);
-			}
-			landed.push(describe(write));
-		}
-		return null;
-	});
-
-type Converged = {readonly _tag: "Converged"; readonly changes: ReadonlyArray<string>};
-
-/**
- * Apply `plan` until the rows read in step: adds, a re-read, the cells, and an empty last plan.
- * `where` names the board in what the run reports.
- */
-const converge = <R>(
-	board: PrepBoard<R>,
-	project: ProjectSnapshot,
-	repo: string,
-	first: ReadonlyMap<number, Row>,
-	plan: (rows: ReadonlyMap<number, Row>) => ReadonlyArray<PrepWrite>,
-	where = "the table",
-): Effect.Effect<Converged | Refusal, never, R> =>
-	Effect.gen(function* () {
-		const describe = (write: PrepWrite): string => describePrepWrite(write, where);
-		const landed: string[] = [];
-		const readRows = Effect.map(
-			board.items(project.id),
-			(items): ProjectsAnswer<ReadonlyMap<number, Row>> =>
-				items._tag === "Ok" ? {_tag: "Ok", value: rowsOf(items.value, repo)} : items,
-		);
-
-		const adds = plan(first).filter((write) => write._tag === "Add");
-		const addFailed = yield* applyAll(board, project, repo, adds, landed, describe);
-		if (addFailed !== null) return addFailed;
-
-		let rows: ReadonlyMap<number, Row> = first;
-		if (adds.length > 0) {
-			const read = yield* readRows;
-			if (read._tag !== "Ok") {
-				return stop(
-					read,
-					READBACK_MISMATCH,
-					`wrote ${landed.join("; ")} and could not re-read the rows`,
-				);
-			}
-			rows = read.value;
-		}
-		const values = plan(rows);
-		const stray = values.filter((write) => write._tag === "Add");
-		if (stray.length > 0) {
-			return refused(
-				READBACK_MISMATCH,
-				`${VERB}: wrote ${landed.join("; ")} and ${stray.map((write) => `#${write.issue}`).join(", ")} still does not read as a row — re-read the project before retrying.`,
-			);
-		}
-		const valuesFailed = yield* applyAll(board, project, repo, values, landed, describe);
-		if (valuesFailed !== null) return valuesFailed;
-
-		if (landed.length > 0) {
-			const read = yield* readRows;
-			if (read._tag !== "Ok") {
-				return stop(
-					read,
-					READBACK_MISMATCH,
-					`wrote ${landed.join("; ")} and could not re-read the rows`,
-				);
-			}
-			const settled = plan(read.value);
-			if (settled.length > 0) {
-				return refused(
-					READBACK_MISMATCH,
-					`${VERB}: wrote ${landed.join("; ")} and the rows still do not read in step: ${settled.map(describe).join("; ")} — re-read the project before retrying.`,
-				);
-			}
-		}
-		return {_tag: "Converged", changes: landed};
-	});
-
 const numbers = (issues: ReadonlyArray<number>): string =>
 	issues.map((issue) => `#${issue}`).join(", ");
 
@@ -534,27 +401,15 @@ export const runPrep = <R>(
 		const onCallRead = yield* readOnCall(board, VERB, repo, boards.value);
 		if (onCallRead._tag === "Refused") return refuse(onCallRead.code, onCallRead.reason);
 		const split = onCallRead._tag === "Split" ? onCallRead : null;
-		let onCallWrite: OnCallFields | null = null;
-		let routed: ReadonlyArray<ListedIssue> = [];
-		if (split !== null) {
-			const resolvedOnCall = onCallFields(split.project, split.settings);
-			if (resolvedOnCall._tag === "Missing") {
-				return refuse(
-					NOT_SET_UP,
-					`${VERB}: the on-call board #${split.project.number} lacks ${resolvedOnCall.what.join(", ")} — run \`fabrika table setup\` first. Nothing was written.`,
-				);
-			}
-			onCallWrite = resolvedOnCall.fields;
-			routed = onCallIssuesOf(open, heads.table, heads.rows, split.settings, due);
-		}
+		const routed =
+			split === null ? [] : onCallIssuesOf(open, heads.table, heads.rows, split.settings, due);
 		const routedSet: ReadonlySet<number> = new Set(routed.map((issue) => issue.number));
 		const onCallIssues: ReadonlySet<number> = new Set([
 			...(split?.rows.keys() ?? []),
 			...routedSet,
 		]);
 		const window = weekBefore(target, table.timeZone);
-		const onCallOpen =
-			split === null ? [] : onCallItemsOf(split.rows, open, routed, split.settings, now);
+		const onCallOpen = split === null ? [] : onCallItemsOf(split.rows, open, routed);
 
 		const suspects = prepped ? [] : ruledSuspects(open);
 		const deciders: Deciders =
@@ -576,6 +431,7 @@ export const runPrep = <R>(
 					: {
 							_tag: "OnCall",
 							settings: split.settings,
+							boardCreatedAt: split.project.createdAt,
 							issues: onCallIssues,
 							open: onCallOpen,
 							week: {_tag: "Week", ...window},
@@ -694,32 +550,21 @@ export const runPrep = <R>(
 			onCall: routedSet,
 		});
 		const {kept} = prepPlan(planInput(heads.table));
-		const converged = yield* converge(board, project, repo, heads.table, (rows) =>
+		const converged = yield* converge(VERB, board, project, repo, heads.table, (rows) =>
 			planPrep(planInput(rows)),
 		);
 		if (converged._tag === "Refused") return refuse(converged.code, converged.reason);
 		const {changes} = converged;
 
-		let onCallChanges: ReadonlyArray<string> = [];
-		let onCallHealth: OnCallHealth | null = null;
-		if (split !== null && onCallWrite !== null) {
-			const placed = yield* converge(
-				board,
-				split.project,
-				repo,
-				split.rows,
-				(rows) => planOnCall({fields: onCallWrite, settings: split.settings, rows, issues: routed}),
-				"the on-call board",
-			);
-			if (placed._tag === "Refused") return refuse(placed.code, placed.reason);
-			onCallChanges = placed.changes;
-			onCallHealth = {
-				open: onCallOpen.length,
-				pastTarget: flagCount(report, "PastTarget", "past-target"),
-				spend: onCallSpendOf(heads.records, window, onCallIssues),
-				share: split.settings.spendShare,
-			};
-		}
+		const onCallHealth: OnCallHealth | null =
+			split === null
+				? null
+				: {
+						open: onCallOpen.length,
+						pastTarget: flagCount(report, "PastTarget", "past-target"),
+						spend: onCallSpendOf(heads.records, window, onCallIssues),
+						share: split.settings.spendShare,
+					};
 
 		const flaggedBets = agenda.filter((row) => row.flaggedBet).length;
 		const health = healthOf({
@@ -742,7 +587,8 @@ export const runPrep = <R>(
 			);
 			const sent = yield* board.post(project.id, update);
 			if (sent._tag !== "Ok") {
-				const failed = stop(
+				const failed = stopOnWrite(
+					VERB,
 					sent,
 					WRITE_UNKNOWN,
 					`the status update did not post — UNKNOWN${changes.length > 0 ? ` after: ${changes.join("; ")}` : ""}; re-run prep to finish`,
@@ -781,7 +627,7 @@ export const runPrep = <R>(
 					rec: textOf(heads.table.get(row.issue), FIELD.rec) ?? row.cells?.rec ?? null,
 					plainWords: row.cells?.plainWords ?? textOf(heads.table.get(row.issue), FIELD.plainWords),
 				}));
-		const wrote = changes.length > 0 || onCallChanges.length > 0 || commented.length > 0 || posted;
+		const wrote = changes.length > 0 || commented.length > 0 || posted;
 		const planned = dry?.planned() ?? null;
 		const notes = [
 			...(planned === null
@@ -855,7 +701,6 @@ export const runPrep = <R>(
 			...(planned === null
 				? [
 						...changes.map((change) => `${VERB}: ${change}.`),
-						...onCallChanges.map((change) => `${VERB}: ${change}.`),
 						...(posted ? [`${VERB}: posted the status update for the ${target} table.`] : []),
 						...(wrote ? [] : [`${VERB}: nothing was written.`]),
 					]
@@ -899,14 +744,13 @@ export const runPrep = <R>(
 								},
 								items: onCallOpen.map((item) => ({
 									issue: item.issue,
-									target: item.target?.name ?? null,
+									target: responseTargetOf(item.labels, split.settings.responseTargets).name,
 								})),
 								pastTarget: onCallFlagged.flatMap((flag) =>
 									flag._tag === "PastTarget" ? [flag.issue] : [],
 								),
 								spend: onCallHealth.spend,
 								share: onCallHealth.share,
-								changes: planned === null ? onCallChanges : [],
 							},
 						}),
 			})}\n`,

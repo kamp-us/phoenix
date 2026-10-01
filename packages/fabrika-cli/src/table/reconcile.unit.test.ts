@@ -40,6 +40,7 @@ const projectWith = (options: ReadonlyArray<SelectOption>): ProjectSnapshot => (
 	owner: {kind: "Organization", login: "acme"},
 	url: "https://github.com/orgs/acme/projects/20",
 	title: "widgets table",
+	createdAt: "2026-01-01T00:00:00.000Z",
 	shortDescription: "",
 	readme: markedSection(SHAPE.readme),
 	fields: [{_tag: "SingleSelect", id: "F_origin", databaseId: 1, name: "Origin", options}],
