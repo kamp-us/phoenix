@@ -38,7 +38,7 @@ import {HARNESS_BUILD_READ, PRETOOLUSE_BLOCKING_EXIT} from "./harness-exit.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
 const SRC_DIR = fileURLToPath(new URL("..", import.meta.url));
-const HOOKS_JSON = "../../../../claude-plugins/fabrika/hooks.json";
+const HOOKS_JSON = "../../../../claude-plugins/fabrika/hooks/hooks.json";
 
 /**
  * Every file that can end the process before a verb runs. The list is explicit because the claim is

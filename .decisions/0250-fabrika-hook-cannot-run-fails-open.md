@@ -71,7 +71,7 @@ one failing hook aborts worktree creation for the whole crew
 (`../claude-plugins/kampus-pipeline/hooks/create-worktree.sh`
 L52–55 states exactly that). fabrika ships **no git hook**: a repo-wide grep for `.git/hooks` finds
 zero hits under `claude-plugins/fabrika/`, and everything fabrika declares lives in
-[`../claude-plugins/fabrika/hooks.json`](../claude-plugins/fabrika/hooks.json) as **Claude Code
+[`../claude-plugins/fabrika/hooks/hooks.json`](../claude-plugins/fabrika/hooks/hooks.json) as **Claude Code
 harness** hooks — one `SessionStart` and one `PreToolUse`, per-session, not per-worktree. v1's own
 `guard.sh` header cites the `.git/hooks` radius for what is likewise a harness hook, so the v1
 rationale conflated the two surfaces; fabrika does not inherit that premise.

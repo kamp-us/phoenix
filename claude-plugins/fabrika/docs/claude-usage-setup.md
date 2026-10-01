@@ -2,7 +2,7 @@
 
 1. Install the Fabrika CLI using [the repository setup guide](../../../packages/fabrika-cli/docs/running-fabrika-in-a-repo.md), and enable the Fabrika plugin in Claude Code.
 2. Confirm `fabrika hook claude-spend --help` resolves in the checkout where work runs.
-   The plugin's [hooks.json](../hooks.json) installs collection for both interactive sessions
+   The plugin's [hooks.json](../hooks/hooks.json) installs collection for both interactive sessions
    and native dispatched subagents. Keep native model and permission settings as they are.
 3. Start or resume work normally. Hooks save response measurements and child expectations under
    the checkout's `.fabrika/` directory. Read them with `fabrika spend read --ledger .fabrika/spend-ledger.jsonl`.

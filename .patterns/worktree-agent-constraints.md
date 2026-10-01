@@ -173,7 +173,7 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   the collision window is routine, not rare.
 
   **The rule is enforced mechanically, for every shell.** `fabrika hook stash-guard`, declared on
-  `PreToolUse`/`Bash` in the plugin's [`hooks.json`](../claude-plugins/fabrika/hooks.json), denies
+  `PreToolUse`/`Bash` in the plugin's [`hooks.json`](../claude-plugins/fabrika/hooks/hooks.json), denies
   any `git stash` whose `cwd` reports a `--git-dir` different from its `--git-common-dir` — a linked
   worktree — whichever skill the shell runs and however the command is addressed. It lets the
   command through in a checkout where the two agree, and fails open, saying so on stderr, when it

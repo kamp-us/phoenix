@@ -2,10 +2,10 @@
  * Read a hook declaration and judge it against the two rules that fix the surface.
  *
  * Two documents declare fabrika hooks and both are read here, because rule 5 binds a declared
- * command wherever it is written: `claude-plugins/fabrika/hooks.json` is the **plugin** surface,
- * which travels to every adopting repo, and a repo's own `.claude/settings.json` carries the one
- * event the plugin surface may not — that event is declared only where the repo guarantees the
- * toolchain it needs. They share this shape exactly, so one reader serves both — what differs is
+ * command wherever it is written: `claude-plugins/fabrika/hooks/hooks.json` is the **plugin**
+ * surface, which travels to every adopting repo, and a repo's own `.claude/settings.json` carries
+ * the one event the plugin surface may not — that event is declared only where the repo guarantees
+ * the toolchain it needs. They share this shape exactly, so one reader serves both — what differs is
  * which events each may declare, which the golden test asserts per document.
  *
  * This exists so the declaration is checked as *data* rather than by a reviewer's eye. The rules are

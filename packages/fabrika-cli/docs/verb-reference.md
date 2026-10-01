@@ -150,7 +150,7 @@ Read Claude Code hook envelopes and provision worktrees. Use `hook --help` and t
 
 Captured envelopes and their capture methods live under
 [hook fixtures](../src/hook/__fixtures__/). Repository-specific worktree provisioning is declared
-by the consuming repository; the plugin's [hook declarations](../../../claude-plugins/fabrika/hooks.json)
+by the consuming repository; the plugin's [hook declarations](../../../claude-plugins/fabrika/hooks/hooks.json)
 are a separate installation concern.
 
 Model-selection history is recorded in the

@@ -5,8 +5,9 @@
  * Every decision lives in `envelope.ts` / `check-verb.ts` beside it, which is what makes each refusal
  * testable without spawning a process.
  *
- * This group is what `claude-plugins/fabrika/hooks.json` declares against, so its verb names are part
- * of a committed hook declaration: renaming one is a change to the hook surface, not a refactor.
+ * This group is what `claude-plugins/fabrika/hooks/hooks.json` declares against, so its verb names
+ * are part of a committed hook declaration: renaming one is a change to the hook surface, not a
+ * refactor.
  */
 import {Effect, FileSystem} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
