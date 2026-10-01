@@ -399,7 +399,17 @@ a second run over the same issues writes nothing and answers `unchanged`. With n
 there is no on-call board: it reads nothing from GitHub and answers `unchanged` with `onCall`
 `null`.
 
-stdout is `{"answer":"routed"|"unchanged","repo":"…","onCall":{"number":n,"title":"…","url":"…"}|null,"routed":[n…],"changes":[…]}`.
+**Dry run.** `--dry-run` runs both boards over a board that records its writes, the same way
+[`table sync --dry-run`](#table-sync) does, so the cells of an issue added to the on-call board in
+the run still plan and the table's last read folds the rows it planned to take off. The answer is
+`dry-run`; `changes` are empty, and `planned` lists every write in the order a live run would send
+it: the on-call `{"_tag":"Add","project":n,"issue":n}`s, then the Response target and In plain words
+`{"_tag":"Set","project":n,"issue":n,"field":"…","value":"…"}`s, then the table's
+`{"_tag":"Delete","project":n,"issue":n}`s. With no `boards` block `planned` is empty. The exit is
+`0` once the plan is built; a read that fails keeps its code.
+
+stdout is `{"answer":"routed"|"unchanged"|"dry-run","repo":"…","onCall":{"number":n,"title":"…","url":"…"}|null,"routed":[n…],"changes":[…]}`,
+plus `planned` under `--dry-run`.
 
 ### Exit status
 

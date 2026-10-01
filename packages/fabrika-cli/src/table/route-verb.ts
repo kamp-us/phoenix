@@ -8,7 +8,10 @@
  * on-call board is written first and the table after, so a run that stops between them leaves an
  * issue on both boards, never on neither. A second run over the same issues writes nothing.
  *
+ * `--dry-run` runs this same path over a board that records its writes (`dry-run.ts`).
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/10302
+ * @ruling https://github.com/kamp-us/phoenix/issues/10086
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -24,6 +27,7 @@ import type {PrepWrite} from "./agenda.ts";
 import {dueChecks} from "./check.ts";
 import {CONFIG_MALFORMED, NOT_SET_UP, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {type ConvergeBoard, converge} from "./converge.ts";
+import {describePlanned, dryRunRoute} from "./dry-run.ts";
 import {readHeads} from "./flags-read.ts";
 import {onCallFields, onCallIssuesOf, planOnCall, readOnCall} from "./on-call-prep.ts";
 import type {Row} from "./sync.ts";
@@ -45,6 +49,8 @@ export interface RouteOptions<R> {
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly now: Date;
 	readonly board: RouteBoard<R>;
+	/** Run over a board that records every write and sends none, and print the plan. */
+	readonly dryRun: boolean;
 }
 
 /** The table rows of the routed issues: each one the run takes off. */
@@ -81,15 +87,24 @@ export const runRoute = <R>(
 			);
 		}
 		const repo = resolved.value;
-		const {board, now} = options;
+		const {now} = options;
+		const dry = options.dryRun ? dryRunRoute(options.board, now.toISOString()) : null;
+		const board = dry?.board ?? options.board;
 		const split = yield* readOnCall(board, VERB, repo, boards.value);
 		if (split._tag === "Refused") return refuse(split.code, split.reason);
 		if (split._tag === "One") {
 			return answer(
-				`${JSON.stringify({answer: "unchanged", repo, onCall: null, routed: [], changes: []})}\n`,
+				`${JSON.stringify({
+					answer: dry === null ? "unchanged" : "dry-run",
+					repo,
+					onCall: null,
+					routed: [],
+					changes: [],
+					...(dry === null ? {} : {planned: []}),
+				})}\n`,
 				[
 					`${VERB}: no \`boards\` block splits the work, so there is no on-call board to route to.`,
-					`${VERB}: nothing was written.`,
+					`${VERB}: ${dry === null ? "" : "--dry-run: "}nothing was written.`,
 				],
 			);
 		}
@@ -129,25 +144,35 @@ export const runRoute = <R>(
 		);
 		if (left._tag === "Refused") {
 			const so =
-				placed.changes.length > 0 ? ` The on-call board took: ${placed.changes.join("; ")}.` : "";
+				placed.changes.length > 0 && dry === null
+					? ` The on-call board took: ${placed.changes.join("; ")}.`
+					: "";
 			return refuse(left.code, `${left.reason}${so}`);
 		}
 
-		const changes = [...placed.changes, ...left.changes];
+		const planned = dry?.planned() ?? null;
+		const changes = planned === null ? [...placed.changes, ...left.changes] : [];
 		const {project} = split;
 		return answer(
 			`${JSON.stringify({
-				answer: changes.length > 0 ? "routed" : "unchanged",
+				answer: planned !== null ? "dry-run" : changes.length > 0 ? "routed" : "unchanged",
 				repo,
 				onCall: {number: project.number, title: project.title, url: project.url},
 				routed: routed.map((issue) => issue.number),
 				changes,
+				...(planned === null ? {} : {planned}),
 			})}\n`,
 			[
 				`${VERB}: read ${settings.note}; ${boards.note}.`,
 				`${VERB}: on-call board #${project.number} "${project.title}" (${project.url}); ${routed.length} open issue(s) route there.`,
-				...changes.map((change) => `${VERB}: ${change}.`),
-				...(changes.length > 0 ? [] : [`${VERB}: nothing was written.`]),
+				...(planned !== null
+					? [
+							...planned.map((write) => `${VERB}: would ${describePlanned(write)}.`),
+							`${VERB}: --dry-run: nothing was written.`,
+						]
+					: changes.length > 0
+						? changes.map((change) => `${VERB}: ${change}.`)
+						: [`${VERB}: nothing was written.`]),
 			],
 		);
 	});

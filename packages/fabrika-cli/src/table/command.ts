@@ -195,8 +195,8 @@ const prep = leafCommand(
 
 const route = leafCommand(
 	"route",
-	{repo: repoFlag},
-	Effect.fn(function* ({repo}) {
+	{repo: repoFlag, dryRun: dryRunFlag},
+	Effect.fn(function* ({repo, dryRun}) {
 		yield* emit(
 			yield* runRoute({
 				repo: Option.getOrNull(repo),
@@ -204,6 +204,7 @@ const route = leafCommand(
 				env: process.env,
 				now: new Date(),
 				board: routeBoard,
+				dryRun,
 			}),
 		);
 	}),
@@ -223,7 +224,10 @@ const route = leafCommand(
 			"  24: a lane record does not read",
 		]),
 	),
-	Command.withExamples([{command: "fabrika table route"}]),
+	Command.withExamples([
+		{command: "fabrika table route --dry-run"},
+		{command: "fabrika table route"},
+	]),
 );
 
 const migrateWeek = leafCommand(

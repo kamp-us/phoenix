@@ -472,6 +472,7 @@ own board, declare `boards.onCall`, then re-run `fabrika table setup` to create 
 any one origin, type or label sends it to on-call. A row the table already reads as `bet`,
 `not now` or `check` stays put. From then on `fabrika table route` fills the on-call board and flags
 reads it. Route touches no agenda, so run it as often as you want new reports placed
-([the `table route` contract](../docs/table-contract.md#table-route)). An item's wait counts from
+([the `table route` contract](../docs/table-contract.md#table-route)). Its first run moves every
+routed open issue at once, so read that plan with `fabrika table route --dry-run` before it lands. An item's wait counts from
 when its issue was filed, against the target its labels pick now. Set
 `boards.onCall.project.number` to point setup at a project you already have.
