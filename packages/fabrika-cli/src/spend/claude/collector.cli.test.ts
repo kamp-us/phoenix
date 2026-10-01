@@ -195,7 +195,7 @@ describe("Claude collector CLI", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 		const declarations = declaredHooks(
 			JSON.parse(
 				readFileSync(
-					new URL("../../../../../claude-plugins/fabrika/hooks.json", import.meta.url),
+					new URL("../../../../../claude-plugins/fabrika/hooks/hooks.json", import.meta.url),
 					"utf8",
 				),
 			),

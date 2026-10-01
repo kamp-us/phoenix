@@ -5,9 +5,9 @@
  * one of them be assumed:
  *
  *   1. The **committed declaration** is what gets run. The argv comes out of
- *      `claude-plugins/fabrika/hooks.json` for the plugin surface and `.claude/settings.json` for
- *      this repo's own, never out of a literal here — so a test that passes cannot be exercising a
- *      verb the declaration does not name (the false-green this campaign keeps paying for). Which
+ *      `claude-plugins/fabrika/hooks/hooks.json` for the plugin surface and `.claude/settings.json`
+ *      for this repo's own, never out of a literal here — so a test that passes cannot be exercising
+ *      a verb the declaration does not name (the false-green this campaign keeps paying for). Which
  *      events each document may carry is asserted per document, because that split is a decision
  *      and not a filing convenience.
  *   2. The **bytes** are the captured ones. `__fixtures__/*.golden.json` are what Claude Code
@@ -31,7 +31,7 @@ import {GROUND_UNKNOWN, MALFORMED_ENVELOPE, WRONG_EVENT} from "./codes.ts";
 import {argvOf, declaredHooks, violations} from "./declaration.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
-const HOOKS_JSON = "../../../../claude-plugins/fabrika/hooks.json";
+const HOOKS_JSON = "../../../../claude-plugins/fabrika/hooks/hooks.json";
 const SETTINGS_JSON = "../../../../.claude/settings.json";
 
 const surface = declaredHooks(JSON.parse(readGoldenFixture(import.meta.url, HOOKS_JSON)));
