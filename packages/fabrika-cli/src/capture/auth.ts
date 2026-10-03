@@ -31,6 +31,8 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/9533#issuecomment-5754589033
  */
 import {createHmac} from "node:crypto";
+import {Redacted} from "effect";
+import {isRecord, parseJsonOrReason} from "../io/json.ts";
 import type {CaptureCookie} from "./capture.ts";
 import {CAPTURE_IDENTITIES, type CaptureIdentity} from "./states.ts";
 
@@ -45,14 +47,15 @@ export const signSessionToken = (token: string, secret: string): string =>
 
 /**
  * The session cookies to seed for a preview base URL — the prefixed and unprefixed names, both
- * carrying the same signed value.
+ * carrying the same signed value. This is the one place a token is unwrapped: the cookie the
+ * browser context presents.
  */
 export const sessionCookies = (
 	previewUrl: string,
-	token: string,
+	token: Redacted.Redacted<string>,
 	secret: string,
 ): readonly CaptureCookie[] => {
-	const value = signSessionToken(token, secret);
+	const value = signSessionToken(Redacted.value(token), secret);
 	const secure = new URL(previewUrl).protocol === "https:";
 	const names = secure
 		? [SESSION_COOKIE_BASENAME, `${SECURE_COOKIE_PREFIX}${SESSION_COOKIE_BASENAME}`]
@@ -62,15 +65,54 @@ export const sessionCookies = (
 
 /**
  * The environment variable carrying each identity's session token. One variable per identity,
- * because the token IS the identity: an unset one means `preview-seed test-account` did not seed
- * that identity on this preview, so the refusal below is what stops a surface naming it from
- * falling back to a seeded one and shooting the wrong audience clean. `preview-seed`'s bin reads
- * the same names on the provisioning side — the two lists move together.
+ * because the token IS the identity: an unset one is fetched from the repository variable, and one
+ * found in neither place is refused, which is what stops a surface naming it from falling back to
+ * a seeded one and shooting the wrong audience clean. `preview-seed`'s `logins.ts` holds the same
+ * names on the provisioning side — the two lists move together.
  */
 export const IDENTITY_TOKEN_ENV: Readonly<Record<CaptureIdentity, string>> = {
 	yazar: "PREVIEW_TEST_SESSION_TOKEN",
 	çaylak: "PREVIEW_TEST_CAYLAK_SESSION_TOKEN",
 	"çaylak-unverified": "PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN",
+};
+
+/**
+ * The repository variable that carries every identity's token as one JSON object keyed by the
+ * names in {@link IDENTITY_TOKEN_ENV}. It is where a seat with no token in its environment gets
+ * one: reading it takes repository access and nothing else. `preview-seed`'s `logins.ts` writes
+ * the same shape — the two move together.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10330
+ */
+export const LOGINS_VARIABLE = "PREVIEW_TEST_LOGINS";
+
+/** One token per identity, each held `Redacted` so nothing that prints this value prints a login. */
+export type IdentityTokens = Readonly<Partial<Record<CaptureIdentity, Redacted.Redacted<string>>>>;
+
+export type LoginsRead =
+	| {readonly _tag: "Parsed"; readonly tokens: IdentityTokens}
+	| {readonly _tag: "Malformed"; readonly reason: string};
+
+/**
+ * Read the {@link LOGINS_VARIABLE} value. Every `reason` is composed here and never quotes the
+ * input: the runtime's own `JSON.parse` message carries a slice of the text it failed on, which
+ * for this value is a slice of a login.
+ */
+export const parseLogins = (raw: Redacted.Redacted<string>): LoginsRead => {
+	const read = parseJsonOrReason(Redacted.value(raw));
+	if (read._tag === "Failed") return {_tag: "Malformed", reason: "it is not JSON"};
+	const parsed = read.value;
+	if (!isRecord(parsed)) return {_tag: "Malformed", reason: "it is not a JSON object"};
+	const tokens: Partial<Record<CaptureIdentity, Redacted.Redacted<string>>> = {};
+	for (const identity of Object.keys(CAPTURE_IDENTITIES) as CaptureIdentity[]) {
+		const value = parsed[IDENTITY_TOKEN_ENV[identity]];
+		if (value === undefined) continue;
+		if (typeof value !== "string") {
+			return {_tag: "Malformed", reason: `its ${IDENTITY_TOKEN_ENV[identity]} is not a string`};
+		}
+		if (value.length > 0) tokens[identity] = Redacted.make(value);
+	}
+	return {_tag: "Parsed", tokens};
 };
 
 /** The ambient variable a seat carries the signing secret in when no file source is named. */
@@ -157,14 +199,16 @@ export const classifyAuthSecret = (raw: string, source: AuthSecretSource): AuthS
 export type IdentityRead =
 	| {
 			readonly _tag: "Identity";
-			readonly tokens: Readonly<Partial<Record<CaptureIdentity, string>>>;
+			readonly tokens: IdentityTokens;
 			readonly secret: string;
 	  }
 	| {readonly _tag: "Missing"; readonly names: readonly string[]}
 	| {readonly _tag: "Unusable"; readonly reason: string};
 
 /**
- * Fold the identity tokens read off `env` together with an already-resolved secret.
+ * Fold the identity tokens together with an already-resolved secret. A token set in `env` wins;
+ * `fetched` — the {@link LOGINS_VARIABLE} tokens, when the caller went and read them — fills only
+ * the identities `env` leaves unset.
  *
  * The secret arrives as an argument rather than off `env` because its source is the caller's
  * decision — a named export of the deployed value, or the ambient variable — and a
@@ -176,13 +220,18 @@ export const readIdentity = (
 	env: Readonly<Record<string, string | undefined>>,
 	identities: readonly CaptureIdentity[],
 	secret: AuthSecretRead,
+	fetched: IdentityTokens = {},
 ): IdentityRead => {
 	const wanted = (Object.keys(CAPTURE_IDENTITIES) as CaptureIdentity[]).filter((identity) =>
 		identities.includes(identity),
 	);
-	const found = wanted.map(
-		(identity) => [identity, env[IDENTITY_TOKEN_ENV[identity]] ?? ""] as const,
-	);
+	const found = wanted.map((identity) => {
+		const ambient = env[IDENTITY_TOKEN_ENV[identity]] ?? "";
+		return [
+			identity,
+			ambient.length > 0 ? Redacted.make(ambient) : (fetched[identity] ?? null),
+		] as const;
+	});
 	if (secret._tag === "Placeholder") {
 		return {
 			_tag: "Unusable",
@@ -196,7 +245,7 @@ export const readIdentity = (
 		};
 	}
 	const names = found.flatMap(([identity, token]) =>
-		token.length === 0 ? [IDENTITY_TOKEN_ENV[identity]] : [],
+		token === null ? [IDENTITY_TOKEN_ENV[identity]] : [],
 	);
 	return names.length === 0
 		? {_tag: "Identity", tokens: Object.fromEntries(found), secret: secret.value}
@@ -230,6 +279,9 @@ export const SESSION_PROBE_PATH = "/api/auth/get-session";
  * "anonymous", because both would refuse but only one of them is a fact about the session. A signed
  * in user whose tier or verification the answer does not carry is Unreadable for the same reason —
  * the audience is unknown, not wrong.
+ *
+ * `Anonymous` carries which of the two visitor answers it was ({@link VisitorCause}), because the
+ * fix for each is in a different place.
  */
 export type SessionProof =
 	| {
@@ -238,23 +290,54 @@ export type SessionProof =
 			readonly tier: string;
 			readonly emailVerified: boolean;
 	  }
-	| {readonly _tag: "Anonymous"}
+	| {readonly _tag: "Anonymous"; readonly cause: VisitorCause}
 	| {readonly _tag: "Unreadable"; readonly reason: string};
 
-export const readSessionProof = (status: number, body: string): SessionProof => {
+/**
+ * Why the preview answered a seeded cookie as a visitor. The body is the same bare `null` either
+ * way, and the response headers are what tell the two apart. In better-auth's `getSession`
+ * (`dist/api/routes/session.mjs` at the `1.6.23` pin) a cookie whose signature does not verify
+ * returns before anything else runs, setting no cookie. A cookie that verifies but names no live
+ * session row calls `deleteSessionCookie`, which answers with a `Set-Cookie` expiring the session
+ * cookie (`Max-Age=0`, `dist/cookies/index.mjs`).
+ *
+ * `BadSignature` means the signing key this run used is not the one the worker verifies with.
+ * `NoSessionRow` means the key is right and the preview's database holds no unexpired session for
+ * this token: the preview was not seeded with it, or was seeded with a different one.
+ */
+export type VisitorCause = "BadSignature" | "NoSessionRow";
+
+/** Whether a `Set-Cookie` header expires the session cookie, under either of its two names. */
+const expiresSessionCookie = (setCookie: string): boolean => {
+	const [pair = "", ...attributes] = setCookie.split(";").map((part) => part.trim());
+	const name = pair.slice(0, pair.indexOf("="));
+	return (
+		(name === SESSION_COOKIE_BASENAME ||
+			name === `${SECURE_COOKIE_PREFIX}${SESSION_COOKIE_BASENAME}`) &&
+		attributes.some((attribute) => /^max-age=0$/i.test(attribute))
+	);
+};
+
+export const visitorCauseOf = (setCookies: readonly string[]): VisitorCause =>
+	setCookies.some(expiresSessionCookie) ? "NoSessionRow" : "BadSignature";
+
+/** `setCookies` is every `Set-Cookie` header the probe's response carried, one string per header. */
+export const readSessionProof = (
+	status: number,
+	body: string,
+	setCookies: readonly string[],
+): SessionProof => {
 	if (status !== 200) return {_tag: "Unreadable", reason: `probe answered ${status}`};
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(body);
-	} catch {
-		return {_tag: "Unreadable", reason: "probe body is not JSON"};
-	}
-	if (parsed === null) return {_tag: "Anonymous"};
+	const read = parseJsonOrReason(body);
+	if (read._tag === "Failed") return {_tag: "Unreadable", reason: "probe body is not JSON"};
+	const parsed = read.value;
+	const visitor: SessionProof = {_tag: "Anonymous", cause: visitorCauseOf(setCookies)};
+	if (parsed === null) return visitor;
 	if (typeof parsed !== "object") {
 		return {_tag: "Unreadable", reason: "probe body is not a session object"};
 	}
 	const user = (parsed as {user?: unknown}).user;
-	if (user === null || user === undefined) return {_tag: "Anonymous"};
+	if (user === null || user === undefined) return visitor;
 	const id = (user as {id?: unknown}).id;
 	if (typeof id !== "string" || id.length === 0) {
 		return {_tag: "Unreadable", reason: "probe named a user with no id"};

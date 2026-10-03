@@ -205,7 +205,18 @@ export interface CaptureOptions {
 const proveSession = (context: BrowserContext, probeUrl: string): Promise<SessionProof> =>
 	context.request
 		.get(probeUrl)
-		.then(async (response) => readSessionProof(response.status(), await response.text()))
+		.then(async (response) =>
+			readSessionProof(
+				response.status(),
+				await response.text(),
+				// `headersArray` and not `headers`: the latter folds repeated headers into one string,
+				// and a `Set-Cookie` cannot be split back apart on the commas its dates carry.
+				response
+					.headersArray()
+					.filter((header) => header.name.toLowerCase() === "set-cookie")
+					.map((header) => header.value),
+			),
+		)
 		// Total on purpose, and not the enclosing `tryPromise`'s job: a rejected probe is a fact about
 		// the PROBE, and letting it throw would classify the surface `Unreachable` — an accusation
 		// against a page that may render perfectly well.

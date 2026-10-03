@@ -8,7 +8,7 @@
 import {fromApiToken} from "@distilled.cloud/cloudflare/Credentials";
 import {assert, describe, it} from "@effect/vitest";
 import {type ResolvedDatabaseName, resolveDatabaseName, toRestParams} from "@kampus/d1-rest";
-import {Layer} from "effect";
+import {Layer, Redacted} from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {
 	type CaylakStanding,
@@ -93,24 +93,29 @@ const fakeD1 = (users: ReadonlyArray<{id: string}>) => {
 	return {d1: client as unknown as D1Database, batched, selected};
 };
 
-const TOKEN = parseSessionToken("t".repeat(MIN_SESSION_TOKEN_LEN));
+const token = (raw: string) => parseSessionToken(Redacted.make(raw));
+
+const TOKEN = token("t".repeat(MIN_SESSION_TOKEN_LEN));
 
 describe("parseSessionToken", () => {
 	it("refuses a token below the minimum length", () => {
-		assert.isNull(parseSessionToken("t".repeat(MIN_SESSION_TOKEN_LEN - 1)));
+		assert.isNull(token("t".repeat(MIN_SESSION_TOKEN_LEN - 1)));
 	});
 
 	it("refuses a token carrying a cookie-illegal character", () => {
-		assert.isNull(parseSessionToken(`${"t".repeat(MIN_SESSION_TOKEN_LEN)};evil=1`));
-		assert.isNull(parseSessionToken(`${"t".repeat(MIN_SESSION_TOKEN_LEN)} spaced`));
+		assert.isNull(token(`${"t".repeat(MIN_SESSION_TOKEN_LEN)};evil=1`));
+		assert.isNull(token(`${"t".repeat(MIN_SESSION_TOKEN_LEN)} spaced`));
 	});
 
-	it("accepts a long token and trims it", () => {
-		assert.strictEqual(parseSessionToken(`  ${"t".repeat(40)}  `), "t".repeat(40));
+	it("accepts a long token, trims it, and prints it redacted", () => {
+		const parsed = token(`  ${"t".repeat(40)}  `);
+		assert.isNotNull(parsed);
+		assert.strictEqual(Redacted.value(parsed), "t".repeat(40));
+		assert.notInclude(`${String(parsed)} ${JSON.stringify({parsed})}`, "t".repeat(40));
 	});
 });
 
-const CAYLAK_TOKEN = parseSessionToken("c".repeat(MIN_SESSION_TOKEN_LEN));
+const CAYLAK_TOKEN = token("c".repeat(MIN_SESSION_TOKEN_LEN));
 
 /** The two forks of the promotion path, the pair a reviewer re-seeds between to capture both. */
 const VOUCHED = parseStanding(`15${KEFIL_SUFFIX}`) as CaylakStanding;
@@ -218,7 +223,7 @@ describe("provisionTestAccounts", () => {
 		assert.include(batched[1]?.sql ?? "", '"session"');
 		assert.include(batched[2]?.sql ?? "", "user_profile");
 		assert.include(batched[3]?.sql ?? "", "relation_tuple");
-		assert.include(batched[1]?.params ?? [], TOKEN);
+		assert.include(batched[1]?.params ?? [], Redacted.value(TOKEN));
 		assert.include(batched[3]?.params ?? [], TEST_ACCOUNTS.yazar.id);
 	});
 
@@ -239,7 +244,7 @@ describe("provisionTestAccounts", () => {
 		assert.deepStrictEqual(outcome.report.identities, ["yazar", "çaylak"]);
 		assert.lengthOf(batched, 7);
 		assert.include(batched[3]?.params ?? [], TEST_ACCOUNTS.çaylak.id);
-		assert.include(batched[4]?.params ?? [], CAYLAK_TOKEN);
+		assert.include(batched[4]?.params ?? [], Redacted.value(CAYLAK_TOKEN));
 		assert.include(batched[6]?.sql ?? "", "relation_tuple");
 		assert.include(batched[6]?.params ?? [], TEST_ACCOUNTS.yazar.id);
 		assert.notInclude(
@@ -518,7 +523,7 @@ describe("provisionTestAccounts — base profile rows", () => {
  * binds its own `email_verified` value and a run seeds exactly the identities it holds tokens for.
  */
 describe("provisionTestAccounts — email-unverified çaylak", () => {
-	const UNVERIFIED_TOKEN = parseSessionToken("u".repeat(MIN_SESSION_TOKEN_LEN));
+	const UNVERIFIED_TOKEN = token("u".repeat(MIN_SESSION_TOKEN_LEN));
 
 	/** The value one `user` upsert binds for `column`, read off the statement's own column list. */
 	const userColumn = (stmt: Recorded, column: string): unknown => {
@@ -586,7 +591,7 @@ describe("provisionTestAccounts — email-unverified çaylak", () => {
 		assert.include(batched[0]?.sql ?? "", '"user"');
 		assert.include(batched[1]?.sql ?? "", '"session"');
 		assert.include(batched[1]?.params ?? [], account.sessionId);
-		assert.include(batched[1]?.params ?? [], UNVERIFIED_TOKEN);
+		assert.include(batched[1]?.params ?? [], Redacted.value(UNVERIFIED_TOKEN));
 		assert.include(batched[2]?.sql ?? "", "user_profile");
 		assert.include(batched[2]?.params ?? [], account.username);
 		const params = batched.flatMap((stmt) => stmt.params);

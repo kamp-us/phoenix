@@ -37,7 +37,10 @@ A pure, unit-tested core + a thin Effect bin (the repo tooling idiom):
   test fake or REST adapter) and also emits `{sql, params}` for the REST batch.
 - `src/test-account.ts` — the review-ui test accounts, one per audience, + their session
   and profile rows and the çaylak's optional standing (karma + kefil).
-- `src/bin.ts` — the `preview-seed run` and `preview-seed test-account` CLI.
+- `src/logins.ts` — the test logins as one JSON value: reading it, resolving the tokens a
+  run provisions, minting a fresh set, and scrubbing tokens out of a failure.
+- `src/bin.ts` — the `preview-seed run`, `preview-seed test-account` and
+  `preview-seed rotate-logins` CLI.
 
 ## Running it
 
@@ -91,6 +94,55 @@ cookie. Before it records the shot it asks the preview's own
 the tier and email verification the surface named, so a token that is wrong, expired
 or missing from this D1 — or a shot that came back as another audience — refuses the
 render as UNKNOWN instead of filing somebody else's pixels under that surface id.
+
+### Where the logins live — every preview is seeded on deploy
+
+Nobody runs the command above by hand in the ordinary case. The deploy workflow
+(`.github/workflows/deploy.yml`, step "Seed preview test users") runs `test-account`
+against every pull request's preview right after it resolves the preview's D1 id, so
+a preview can sign in as soon as it is deployed (issue #9281, rulings in #10330).
+
+The three tokens are one JSON object, keyed by the three variable names above, and
+GitHub holds it twice under the name `PREVIEW_TEST_LOGINS`:
+
+| Copy | Who reads it | How |
+| --- | --- | --- |
+| Actions secret | the deploy workflow, to seed each preview | `$PREVIEW_TEST_LOGINS` in the seed step's environment |
+| Repository variable | an agent that needs to sign in, never a workflow | `review-ui render` fetches it when its environment holds no token |
+
+Access to the logins is access to the repository, and nothing is committed.
+`test-account` reads `$PREVIEW_TEST_LOGINS` and an identity's own variable; the
+identity's own variable wins, so a hand run can still seed one identity with a token
+of its choosing.
+
+One command sets both copies, and it is also the rotation:
+
+```bash
+node packages/preview-seed/src/bin.ts rotate-logins
+```
+
+It generates a fresh random token per identity and hands the object to
+`gh secret set` and `gh variable set` on stdin, so the value is in no argument list
+and is never printed. It needs a `gh` login that may write the repository's secrets
+and variables, so a person holding the repo's keys runs it. Until it has been run
+once the seed step skips with a notice and the deploy stays green. After a rotation
+a preview already deployed keeps its old logins until its next deploy re-seeds it;
+`review-ui render` reports that state as `missing session row`. If the secret is set
+and the variable write fails, the command says the two disagree; re-running it
+replaces both.
+
+Every token is held in Effect's `Redacted` from the read to the one row that stores
+it. GitHub masks a secret's whole value in a log and not the tokens inside the
+object: its
+[secure use reference](https://docs.github.com/en/actions/reference/security/secure-use#use-secrets-for-sensitive-information)
+says redaction "largely relies on finding an exact match for the specific secret
+value" and that a JSON blob "significantly reduces the probability the secrets will
+be properly redacted". So `test-account` never prints one, words every refusal
+without quoting what it read, and reports a failed write with the tokens scrubbed
+out, because the database driver reports a failed statement together with its bound
+parameters: `drizzle-orm` at this repo's pin (`1.0.0-rc.5-ab785fc`) builds
+`DrizzleQueryError`'s message in `errors.js` as `Failed query: <query>` followed by
+`params: <params>`.
 
 ### The tier axis — one identity per audience
 
@@ -264,8 +316,8 @@ answers a question about text; where the text has to have come from Cloudflare i
 fence's own signature.
 
 **Each token is a live credential on a running preview.** Every one is read only
-from its own environment variable (never a flag, so it stays out of process
-listings), must be at least 32 characters, and is refused if it carries whitespace,
-`;` or `,`. Give each tier a different one — sharing a value across two identities
-makes a leak of either a leak of both. Treat them like any other CI secret: scope
-them to preview, rotate one by re-running the verb.
+from the environment — its own variable or `$PREVIEW_TEST_LOGINS` — and never from
+a flag, so it stays out of process listings. It must be at least 32 characters and
+is refused if it carries whitespace, `;` or `,`. Give each tier a different one —
+sharing a value across two identities makes a leak of either a leak of both.
+`rotate-logins` does all of that and replaces the whole set.

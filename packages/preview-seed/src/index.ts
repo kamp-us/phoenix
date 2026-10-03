@@ -7,6 +7,24 @@ export {
 	SEED_TERM_SLUG,
 	SEED_TERM_TITLE,
 } from "./fixtures.ts";
+export type {
+	CredentialsRead,
+	LoginBundleRead,
+	LoginStore,
+	RotateOutcome,
+	StoreWrite,
+	WriteLogins,
+} from "./logins.ts";
+export {
+	describeFailure,
+	IDENTITY_TOKEN_ENV,
+	LOGINS_NAME,
+	mintLoginBundle,
+	parseLoginBundle,
+	resolveCredentials,
+	rotateLogins,
+	scrub,
+} from "./logins.ts";
 export type {SeedSchema} from "./schema.ts";
 export {seedSchema} from "./schema.ts";
 export type {SeedDb, SeedReport} from "./seed.ts";

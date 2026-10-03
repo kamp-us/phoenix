@@ -204,7 +204,9 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
 - Chrome output never enters `review-ui post --evidence`: evidence comes from `review-ui render`
   capture sets only, so the attach path has one validated producer.
 - **A tier-naming surface needs the preview worker's signing secret plus its identity's own
-  session token.** The tokens are unset by default; the secret is not, since it resolves off the checkout.
+  session token.** Neither needs a credential beyond repository access: the secret resolves off the
+  checkout, and a token the environment does not hold is fetched from the repository's
+  `PREVIEW_TEST_LOGINS` variable.
   The secret is the one the *preview worker deployed with*, so the
   cookie signature verifies, and it needs no credential: every `pr-<n>` preview deploys with the key
   committed at `infra/preview-auth-key/key.txt`, deliberately public, which the verb resolves off
@@ -220,14 +222,29 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   token is the one `preview-seed test-account` wrote onto the preview D1 for that identity —
   `PREVIEW_TEST_SESSION_TOKEN` for `:auth` (yazar), `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for
   `:auth-caylak` (çaylak), `PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN` for
-  `:auth-caylak-unverified` (the email-unverified çaylak). **One variable per identity, and an
-  unset one is never satisfied by another's**: an unset token means that identity was not seeded on
-  this preview, and falling back to a seeded one would render the audience the surface said it was
-  not — the verified çaylak's token standing in for the unverified one would shoot the write the
-  surface exists to show refused. With any of them unset the request refuses `11` rather than
+  `:auth-caylak-unverified` (the email-unverified çaylak). **One token per identity, and a
+  missing one is never satisfied by another's**: a token found in neither place below means the run
+  cannot sign in as that identity, and falling back to one it does hold would render the audience
+  the surface said it was not — the verified çaylak's token standing in for the unverified one
+  would shoot the write the surface exists to show refused. **Each token is read from its own environment variable first, and
+  only an identity the environment leaves unset is looked up in the repository variable
+  `PREVIEW_TEST_LOGINS`**: one JSON object keyed by those same three variable names, read through
+  `GET /repos/{repo}/actions/variables/PREVIEW_TEST_LOGINS` under the run's GitHub credential. The
+  deploy workflow seeds every preview from the Actions secret of the same name, and
+  `preview-seed rotate-logins` writes the secret and the variable together, so the two hold one
+  value. A run whose environment already holds every requested token makes no such request, and a
+  run that names no tier reads neither. Every token is held `Redacted` from the read to the cookie
+  it signs, and no refusal quotes one. A 404 on the variable is "nobody has set it" and any other
+  failed read is UNKNOWN; the two are separate refusals. With a requested identity's token in
+  neither place the request refuses `11` rather than
   substituting; with no tier-naming surface asked for, every surface renders anonymously as before.
-  Setting them is necessary and not sufficient — whether the cookie authenticated, at which tier and
-  with which email verification, is the per-shot session proof's answer, also an `11`.
+  Holding them is necessary and not sufficient — whether the cookie authenticated, at which tier and
+  with which email verification, is the per-shot session proof's answer, also an `11`. **A visitor
+  answer names which of two failures it was**, read off whether the probe's response expired the
+  session cookie: better-auth's `getSession` returns before touching any cookie when the signature
+  does not verify, and expires the session cookie (`Max-Age=0`) when the signature verifies and no
+  live session row carries the token. So `bad signature` is a wrong signing key and
+  `missing session row` is a preview whose database does not hold this token.
 - **`--flag` needs those same values plus one grant on the preview D1.** The override cookie is
   honored only for a platform admin, per the repo's own override authorization, and
   `preview-seed test-account` provisions moderation authority to the yazar identity and nothing at
@@ -575,7 +592,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
 | `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`, `auth-caylak-unverified`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; `--flag` was passed beside an anonymous surface; `--locale` was passed with no `uiCapture.locale` declared, or with a value outside its declared list; a `--scheme` names a scheme outside the closed set (`light`, `dark`), is passed twice, or is passed with no `uiCapture.scheme` declared; `--accent` was passed with no `uiCapture.accent` declared, or with a value outside its declared list; or an `--interact` operand names an unknown step verb, an empty locator, key or label, a non-kebab label or no steps, names a surface no `--surface` asked for, would write the same PNG as another `--interact`, or ends on `click` or `press` |
-| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale`, `--scheme` or `--accent` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while its identity's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, came back at a tier the surface did not name, or came back with an email verification the surface did not name; a forced flag evaluated at its default anyway; a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value; a scheme-crossed shot's declared root attribute did not read back as its `--scheme` value; an accented shot's declared root attribute did not read back as the `--accent` value; or an interacted shot's step found zero or several elements, timed out, or its `:hover`, `:focus-visible` or visible-match proof did not hold — no capture is written for it |
+| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale`, `--scheme` or `--accent` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while its identity's session token is in neither the environment nor the `PREVIEW_TEST_LOGINS` repository variable, while that variable could not be read or is set but malformed, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, came back at a tier the surface did not name, or came back with an email verification the surface did not name; a forced flag evaluated at its default anyway; a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value; a scheme-crossed shot's declared root attribute did not read back as its `--scheme` value; an accented shot's declared root attribute did not read back as the `--accent` value; or an interacted shot's step found zero or several elements, timed out, or its `:hover`, `:focus-visible` or visible-match proof did not hold — no capture is written for it |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -590,7 +607,10 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review-ui render: PR #<n> is closed — nothing to judge.` | 7 | refusal |
 | `review-ui render: --surface "<id>" names a :state nothing renders — the realized states are auth, auth-caylak, auth-caylak-unverified; render the bare route.` | 10 | refusal |
-| `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
+| `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>; <repo> has no PREVIEW_TEST_LOGINS repository variable to fetch them from) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
+| `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>; <repo>'s PREVIEW_TEST_LOGINS repository variable does not carry them) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
+| `review-ui render: a tier-naming surface was requested, its session token is not in the environment, and <repo>'s PREVIEW_TEST_LOGINS repository variable could not be read (<reason>) — the named tier's render is UNKNOWN.` | 11 | refusal |
+| `review-ui render: a tier-naming surface was requested, its session token is not in the environment, and <repo>'s PREVIEW_TEST_LOGINS repository variable is set but <what is wrong with it>; its contents were not printed — the named tier's render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: a tier-naming surface was requested but <the source> carries the insecure_ placeholder prefix — a cookie signed with it is one the preview worker answers as a visitor — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
 | `review-ui render: a tier-naming surface was requested but <the source> is empty — there is no key to sign the tier cookie with — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
 | `review-ui render: cannot read the session-signing secret at <path>: <reason> — the named tier's render is UNKNOWN.` | 11 | refusal |
@@ -689,7 +709,14 @@ review-ui render: surface "/welcome:auth-caylak" captured: 1280x1640, 0 page err
 
 ```
 $ fabrika review-ui render --pr 4321 --out caylak --surface /welcome:auth-caylak
-review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: PREVIEW_TEST_CAYLAK_SESSION_TOKEN) — the named tier's render is UNKNOWN, never a seeded substitute.
+review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: PREVIEW_TEST_CAYLAK_SESSION_TOKEN; acme/app has no PREVIEW_TEST_LOGINS repository variable to fetch them from) — the named tier's render is UNKNOWN, never a seeded substitute.
+$ echo $?
+11
+```
+
+```
+$ fabrika review-ui render --pr 4321 --out caylak --surface /welcome:auth-caylak
+review-ui render: surface "/welcome:auth-caylak" at desktop did not render signed in (the preview answered the seeded cookie as a visitor: missing session row — its answer expired the session cookie, which is how the worker answers a signature it accepts for a token with no live session, so this preview's database was not seeded with this token, or the seeded session has expired) — the authenticated render is UNKNOWN, never the anonymous one.
 $ echo $?
 11
 ```

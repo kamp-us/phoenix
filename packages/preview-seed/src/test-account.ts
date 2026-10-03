@@ -45,6 +45,7 @@ import {eq} from "drizzle-orm";
 import type {BatchItem} from "drizzle-orm/batch";
 import {drizzle} from "drizzle-orm/d1";
 import {defineRelations} from "drizzle-orm/relations";
+import {Redacted} from "effect";
 import {authorshipVouch, relationTuple, seedSchema, session, user, userProfile} from "./schema.ts";
 
 const relations = defineRelations(seedSchema);
@@ -131,8 +132,12 @@ export const TEST_ACCOUNTS = {
 } as const satisfies Record<PreviewIdentity, TestAccount>;
 
 declare const SessionTokenBrand: unique symbol;
-/** A session token that has passed {@link parseSessionToken} — the only thing provisioning accepts. */
-export type SessionToken = string & {readonly [SessionTokenBrand]: true};
+/**
+ * A session token that has passed {@link parseSessionToken} — the only thing provisioning accepts.
+ * It stays `Redacted` from the read to the one row that stores it, so a log line, an error or a
+ * `JSON.stringify` of anything holding it prints `<redacted>` rather than a live login.
+ */
+export type SessionToken = Redacted.Redacted<string> & {readonly [SessionTokenBrand]: true};
 
 /**
  * better-auth mints a 32-byte session token, and each one here is the whole credential for a live
@@ -140,10 +145,12 @@ export type SessionToken = string & {readonly [SessionTokenBrand]: true};
  */
 export const MIN_SESSION_TOKEN_LEN = 32;
 
-export const parseSessionToken = (raw: string): SessionToken | null =>
-	raw.trim().length >= MIN_SESSION_TOKEN_LEN && !/[\s;,]/.test(raw.trim())
-		? (raw.trim() as SessionToken)
+export const parseSessionToken = (raw: Redacted.Redacted<string>): SessionToken | null => {
+	const trimmed = Redacted.value(raw).trim();
+	return trimmed.length >= MIN_SESSION_TOKEN_LEN && !/[\s;,]/.test(trimmed)
+		? (Redacted.make(trimmed) as SessionToken)
 		: null;
+};
 
 /**
  * One token per identity to provision. An identity absent here is one this run does not seed — the
@@ -276,7 +283,8 @@ const accountRows = (
 	const sessionRow = {
 		id: account.sessionId,
 		userId: account.id,
-		token,
+		// The one place a token is unwrapped: the row that stores it.
+		token: Redacted.value(token),
 		expiresAt,
 		createdAt: now,
 		updatedAt: now,

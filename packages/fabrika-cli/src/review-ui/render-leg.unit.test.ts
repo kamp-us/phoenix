@@ -202,11 +202,20 @@ describe("captureRenderLeg — the :auth session proof", () => {
 		).toBe("Rendered");
 	});
 
-	it("refuses a visitor's render under the :auth name", () => {
-		expect(runAuth(authShot({sessionProof: {_tag: "Anonymous"}}))).toEqual({
-			_tag: "Unauthenticated",
-			reason: "the preview answered the seeded cookie as a visitor",
-		});
+	/**
+	 * The two visitor answers send a reader to two different places — the signing key, or the
+	 * preview's database — so the refusal says which one the probe's own answer named.
+	 */
+	it("refuses a visitor's render under the :auth name, saying which visitor answer it was", () => {
+		const reasonOf = (cause: "BadSignature" | "NoSessionRow"): string => {
+			const render = runAuth(authShot({sessionProof: {_tag: "Anonymous", cause}}));
+			return render._tag === "Unauthenticated" ? render.reason : `not refused: ${render._tag}`;
+		};
+		const visitor = "the preview answered the seeded cookie as a visitor: ";
+		expect(reasonOf("BadSignature")).toContain(`${visitor}bad signature`);
+		expect(reasonOf("BadSignature")).toContain("signing key");
+		expect(reasonOf("NoSessionRow")).toContain(`${visitor}missing session row`);
+		expect(reasonOf("NoSessionRow")).toContain("was not seeded with this token");
 	});
 
 	it("refuses an unreadable probe too — a proof nobody could read is not a proof", () => {
@@ -396,8 +405,12 @@ describe("captureRenderLeg — the forced-flag proof", () => {
 
 	it("keeps the session refusal ahead of the override one — a visitor's page proves no flag", () => {
 		expect(
-			runForced(authShot({sessionProof: {_tag: "Anonymous"}, overrideProof: {_tag: "Forced"}}))
-				._tag,
+			runForced(
+				authShot({
+					sessionProof: {_tag: "Anonymous", cause: "NoSessionRow"},
+					overrideProof: {_tag: "Forced"},
+				}),
+			)._tag,
 		).toBe("Unauthenticated");
 	});
 });
