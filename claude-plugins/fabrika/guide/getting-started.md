@@ -18,7 +18,8 @@ Run every command from the root of that clone. A command that starts with `/` is
 Code, opened in that clone, not into a shell.
 
 The samples below come from one run of this lesson. Yours will show your own repo in place of
-`you/your-repo`, and your own times.
+`you/your-repo`, and your own times. The skill count on the `menu` row will differ too: it is the
+number of skills in the plugin version you install, and this run's plugin had 28.
 
 ## 1. Install the command-line tool
 
@@ -375,7 +376,9 @@ Where to go next:
 - [`adopt-fabrika-in-a-new-repo.md`](adopt-fabrika-in-a-new-repo.md): the same setup as a
   checklist for a repo that already has a board, a history and its own conventions. Its
   [step 2](adopt-fabrika-in-a-new-repo.md#2-find-out-what-your-repo-is-missing) shows what your
-  repo still lacks, and its last setup step says how to read each `status open` field.
+  repo still lacks, and
+  [Read the fields](adopt-fabrika-in-a-new-repo.md#read-the-fields) says how to read each
+  `status open` field.
 - [`how-fabrika-works.md`](how-fabrika-works.md): why the stages are separate actors, and why a
   run's state lives on disk.
 - [`delegation.md`](delegation.md): which copy of `fabrika` served a command, and what each refusal
