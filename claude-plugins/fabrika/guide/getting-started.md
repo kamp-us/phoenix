@@ -1,26 +1,30 @@
 # Getting started with fabrika
 
-In this lesson you stand fabrika up on a GitHub repo you own, then drive one issue from filing to an
-open pull request. It takes about half an hour. Nothing here is throwaway — the repo you set up is
-the repo you keep using.
+In this lesson you stand fabrika up on a GitHub repo you own, then take one issue from a sentence
+you type to a merged pull request. It takes about half an hour.
 
-Use a repo you are happy to add labels and a milestone to. This lesson creates twenty-four labels and
-one milestone on its board.
+Use a repo you are happy to experiment on. The lesson adds labels, one milestone, one issue and one
+pull request to it, and pushes one small commit to its default branch.
 
 You need:
 
 - Claude Code, signed in.
-- Node 24 or newer.
-- `gh` logged in to an account with write access to the repo.
-- A clone of that repo on disk, with an `origin` remote pointing at it.
+- Node 22.12 or newer, and pnpm.
+- `gh` logged in to the account that owns the repo.
+- A clone of the repo on disk, with an `origin` remote pointing at it and a `README.md` in it.
+- GitHub Actions switched on for the repo, which is how a new repo starts.
 
-Every command below is run from the root of that clone unless it starts with `/`, which means you
-type it into Claude Code rather than a shell.
+Run every command from the root of that clone. A command that starts with `/` is typed into Claude
+Code, opened in that clone, not into a shell.
+
+The samples below come from one run of this lesson. Yours will show your own repo in place of
+`you/your-repo`, and your own times. The skill count on the `menu` row will differ too: it is the
+number of skills in the plugin version you install, and this run's plugin had 28.
 
 ## 1. Install the command-line tool
 
 fabrika's skills call a command-line tool for everything they read and write. Install it once, on
-your machine, not in the repo:
+your machine:
 
 ```bash
 pnpm add --global @kampus/fabrika-cli
@@ -33,55 +37,83 @@ fabrika --version
 ```
 
 ```
-fabrika v0.3.0
+fabrika v0.9.0
 ```
 
-Your version may be higher. Anything that prints a version is fine.
+Yours may be higher. It must not be lower than the `minimum` in
+[`cli-floor.json`](../cli-floor.json), the oldest version the skills run against.
 
 ## 2. Install the plugin
 
-The skills arrive as a Claude Code plugin. In Claude Code, type:
+The skills arrive as a Claude Code plugin. Tell Claude Code where the plugin lives, then install it:
+
+```bash
+claude plugin marketplace add kamp-us/phoenix
+```
 
 ```
-/plugin marketplace update kampus
-/plugin install fabrika@kampus
+✔ Successfully added marketplace: kampus (declared in user settings)
 ```
 
-Update first. The install reads a cached catalog, and a stale cache refuses by name rather than
-saying it is out of date.
+```bash
+claude plugin install fabrika@kampus
+```
+
+```
+✔ Successfully installed plugin: fabrika@kampus (scope: user)
+```
+
+If the install says `Plugin "fabrika" not found in marketplace "kampus"`, the first command did not
+run. The plugin's [install notes](../README.md#install) cover a machine that already has the
+marketplace.
 
 ## 3. Look at the front door
-
-Back in your shell, at the root of your clone:
 
 ```bash
 fabrika status open
 ```
 
 ```
-status open: roster claude-plugins/fabrika/skills (repo); repo acme/storefront; 6 field(s) rendered, 0 unknown.
-open	6
-field	menu	ready	25 skills	claude-plugins/fabrika/skills	2026-08-19T03:23:01Z
-field	settings	resolved	15 keys, 4 declared	.fabrika.jsonc	2026-08-19T03:23:01Z
-field	wiring	wired	fabrika@kampus is enabled — sessions in this repo load fabrika's skills	.claude/settings.json	2026-08-19T03:23:01Z
-field	board	counted	3 needs-triage, 367 triaged	acme/storefront	2026-08-19T03:23:02Z
-field	readout	absent	no digest block in acme/storefront#9412	acme/storefront#9412	unknown
-field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-08-19T03:23:01Z
+status open: roster fabrika/skills (cache); repo you/your-repo; 7 field(s) rendered, 0 unknown.
+open	7
+field	menu	ready	28 skills	fabrika/skills	2026-10-03T21:14:56Z
+field	settings	resolved	35 keys, 0 declared	.fabrika.jsonc	2026-10-03T21:14:56Z
+field	wiring	unwired	no .claude/settings.json — no fabrika skill can load in a session here	.claude/settings.json	2026-10-03T21:14:56Z
+field	board	absent	missing status:needs-triage,status:triaged,p0,p1,p2 — create them with fabrika status bootstrap label-taxonomy	you/your-repo	2026-10-03T21:14:58Z
+field	readout	absent	no readout artifact	you/your-repo	unknown
+field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-10-03T21:14:56Z
+field	trunk	agrees	origin/main; origin/HEAD agrees	you/your-repo	2026-10-03T21:14:56Z
 ```
 
-That output is from a repo already set up, so yours will differ — the `board` row will say `absent`
-and name the fabrika labels your board does not have yet, pointing at the command in step 4, and the
-`readout` row will say `absent` too. `absent` means fabrika read the repo and found the thing
-missing; only `unknown` means it could not read it. Read the six
-fields as: which skills are installed, what this repo declares, whether the plugin carrying the
-skills is switched on here, what is on the board, whether the decision digest exists, and which runs
-are in flight on this machine.
+Seven fields: `menu`, `settings`, `wiring`, `board`, `readout`, `lanes` and `trunk`. Two of them
+need you now. `wiring` says `unwired`, which step 4 fixes, and `board` says `absent`, which step 5
+fixes. The `readout` row stays `absent` for this whole lesson.
 
-**Watch the `wiring` row first.** `unwired` means the CLI works and no fabrika skill can load in a
-session in this repo — every other row can read green while that one does, which is how a repo ran
-half-adopted for two days.
+Inside Claude Code the `front-door` skill gives you this same readout: type `/fabrika:front-door`.
 
-## 4. Create the labels
+## 4. Switch the plugin on in this repo
+
+```bash
+fabrika status bootstrap settings-patch
+```
+
+```
+status bootstrap: created .claude/settings.json for settings-patch, read-back conformed.
+bootstrap	created	settings-patch	.claude/settings.json	ok
+```
+
+Check the row changed:
+
+```bash
+fabrika status wiring
+```
+
+```
+status wiring: read .claude/settings.json; plugin fabrika is wired.
+wiring	wired	fabrika@kampus	kampus	fabrika@kampus is enabled — sessions in this repo load fabrika's skills	2026-10-03T21:15:48Z
+```
+
+## 5. Create the labels
 
 fabrika's stages write their state onto issues as labels, so the labels have to exist before
 anything can move. Create them:
@@ -90,24 +122,26 @@ anything can move. Create them:
 fabrika status bootstrap label-taxonomy
 ```
 
-On a fresh board that reports `created` and names all twenty-one. On a board that already has them it
-reports `exists` and writes nothing:
-
 ```
-status bootstrap: status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage is already present for label-taxonomy — nothing written.
-bootstrap	exists	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage	-
+status bootstrap: created status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage for label-taxonomy, read-back conformed.
+bootstrap	created	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage	ok
 ```
 
-Three more labels mark what an issue *is* rather than where it sits:
+A second set marks what kind of thing an issue is:
 
 ```bash
 fabrika status bootstrap issue-shape-markers
 ```
 
-## 5. Keep fabrika's run state out of git
+```
+status bootstrap: created wayfinding:map,prototyping:spike,grilling:session for issue-shape-markers, read-back conformed.
+bootstrap	created	issue-shape-markers	wayfinding:map,prototyping:spike,grilling:session	ok
+```
 
-fabrika writes a per-run ledger under `.fabrika/` in your clone. That is one machine's log, not
-shared history, so it is ignored rather than committed:
+## 6. Keep fabrika's run state out of git
+
+fabrika keeps a log of each run under `.fabrika/` in your clone. It belongs to this machine, so git
+should ignore it:
 
 ```bash
 fabrika status bootstrap gitignore-row
@@ -118,18 +152,21 @@ status bootstrap: appended /.fabrika/ to .gitignore for gitignore-row, read-back
 bootstrap	created	gitignore-row	.gitignore	ok
 ```
 
-Commit that `.gitignore` change now, before anything writes a lane.
+## 7. Give the board a home to put work in
 
-## 6. Give the board a home to put work in
-
-Triage refuses to classify an issue with nowhere to put it, so the repo needs one open milestone and
-a `ROADMAP.md` that pins it. Create the milestone:
+Triage puts every issue somewhere, so the repo needs one open milestone and a `ROADMAP.md` that
+names it. Create the milestone:
 
 ```bash
 gh api repos/:owner/:repo/milestones -f title='First arc' --jq '.number'
 ```
 
-It prints the milestone's number. Write a roadmap pinning it — substitute that number for `1`:
+```
+1
+```
+
+That is the milestone's number. Write a roadmap that names it. If your number is not `1`, put yours
+after the `#`:
 
 ```bash
 fabrika status bootstrap roadmap-focus <<'EOF'
@@ -143,115 +180,208 @@ EOF
 
 ```
 status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 1 arc, 0 campaigns.
+status bootstrap: pin check — every arc pin is an open milestone in you/your-repo (scanned 1 open milestone).
 bootstrap	created	roadmap-focus	ROADMAP.md	ok
 ```
 
-The `1 arc` on the end is the file's own parser reporting what it joined out of the bytes just
-written. If it says `0 arcs`, the table did not parse and nothing downstream will see your
-milestone. Check the homes:
+Look for `1 arc` and the `pin check` line. Then ask triage where it can put work:
 
 ```bash
 fabrika triage homes
 ```
 
 ```
-triage homes: scanned 5 open milestones in acme/storefront.
-triage homes: standing lanes: 2 of 2 declared carry a label in acme/storefront.
-triage homes: campaigns: 2 active — checkout rebuild (#9512), search everywhere (#9513).
+triage homes: scanned 1 open milestone in you/your-repo.
+triage homes: standing lanes: 0 of 2 declared carry a label in you/your-repo — not offered: wayfinder:backlog, axis:pipeline-hardening.
+triage homes: campaigns: none active.
 homes
-milestone	9501	Storefront v2
-milestone	9502	Reader — PARKED (reading-experience arc, unstarted)
-milestone	9505	Design tokens
-milestone	9512	checkout rebuild	running: p0/p1 or blocker
-milestone	9513	search everywhere	running: p0/p1 or blocker
-lane	wayfinder:backlog	fog — uncharted work upstream of any arc
-lane	axis:pipeline-hardening	the standing pipeline and reliability lane
+milestone	1	First arc
 ```
 
-That output is from a repo already set up, so yours will differ: one `milestone` row, the one you
-just created, and a line reading `campaigns: none active.` because your roadmap has no campaigns
-table. You get no `lane` rows either — those are the standing lanes that repo
-declared, and a lane is offered only where your board carries its label
-([the how-to](adopt-fabrika-in-a-new-repo.md) covers them).
+Your milestone is the `milestone` row. The `standing lanes` line is expected on a new repo; the
+adoption guide says [what a standing lane is](adopt-fabrika-in-a-new-repo.md#8-the-lane-rows-if-you-get-any).
 
-Your milestone should be in that list. Commit `ROADMAP.md`.
+## 8. Name an owner and add a CI check
 
-## 7. See what is still missing
+The merge step needs two things from the repo: an owners file, and one CI run on the pull request.
+
+Make the directories:
 
 ```bash
-fabrika status settings --surfaces
+mkdir -p .github/workflows
 ```
 
-One row per config key, with its resolved value and whether that value is yours or the shipped
-default. `--surfaces` is what you want here: it expands `surfaceDispositions` into one row per repo
-surface, each naming what the surface is and what happens when it is absent — `fail-loud`, `degrade`
-or `bootstrap`. Without the flag that key prints as one raw id-to-word value and none of the notes. A `created` from
-step 4 says one surface landed, not that the repo is ready.
+Create `.github/CODEOWNERS` with these nine rows, with your GitHub login in place of `your-login`:
 
-Plenty of surfaces will still be absent. That is fine for now — every one of them belongs to a skill
-this lesson does not use.
+```
+/.github/ @your-login
+/.claude/ @your-login
+/.claude-plugin/ @your-login
+/packages/ci-required/ @your-login
+/packages/fabrika-cli/src/ci/ @your-login
+/biome.jsonc @your-login
+/biome-plugins/ @your-login
+**/lefthook* @your-login
+**/.lefthook* @your-login
+```
 
-## 8. File your first issue
+Some of those rows name paths your repo does not have. Keep them anyway: the builder's check in
+step 11 reads this file and stops unless all nine are there.
 
-Now leave the shell. In Claude Code, in this repo:
+Check the file:
+
+```bash
+fabrika guard codeowners-cp check --root .
+```
+
+```
+guard codeowners-cp check: all 9 §CP path(s) are covered by .github/CODEOWNERS (9 owned rows)
+```
+
+Create `.github/workflows/ci.yml`:
+
+```yaml
+name: ci
+on:
+  pull_request:
+jobs:
+  readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: test -s README.md
+```
+
+The adoption guide covers
+[what each of these files is for](adopt-fabrika-in-a-new-repo.md#9-add-the-config-file).
+
+## 9. Commit the setup
+
+```bash
+git add .gitignore ROADMAP.md .claude/settings.json .github
+git commit -m "Set up fabrika"
+```
+
+Push that commit to your default branch with `git push`. The builder starts from what is on GitHub,
+so the setup has to be there first.
+
+Now look at the front door again:
+
+```bash
+fabrika status open
+```
+
+```
+status open: roster fabrika/skills (cache); repo you/your-repo; 7 field(s) rendered, 0 unknown.
+open	7
+field	menu	ready	28 skills	fabrika/skills	2026-10-03T21:17:14Z
+field	settings	resolved	35 keys, 0 declared	.fabrika.jsonc	2026-10-03T21:17:14Z
+field	wiring	wired	fabrika@kampus is enabled — sessions in this repo load fabrika's skills	.claude/settings.json	2026-10-03T21:17:14Z
+field	board	counted	0 needs-triage, 0 triaged	you/your-repo	2026-10-03T21:17:14Z
+field	readout	absent	no readout artifact	you/your-repo	unknown
+field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-10-03T21:17:14Z
+field	trunk	agrees	origin/main; origin/HEAD agrees	you/your-repo	2026-10-03T21:17:14Z
+```
+
+`wiring` reads `wired` and `board` reads `counted`. The repo is ready for work.
+
+## 10. File your first issue
+
+Open Claude Code in the clone and type:
 
 ```
 /fabrika:report the README has no install section
 ```
 
-It files one issue labelled `status:needs-triage` and prints its number. That label is the intake
-queue, and it is the only way work enters the pipeline.
-
-## 9. Triage it
-
 ```
-/fabrika:triage <the number it printed>
+Filed: #1 https://github.com/you/your-repo/issues/1
 ```
 
-Triage reads the issue, gives it a type, a priority and a home, rewrites the body into something a
-builder can pick up cold, and stamps it `status:triaged` plus `ready-for:agent`. Read what it wrote
-on the issue before you go on — the acceptance criteria it left there are the contract everything
-after this is graded against.
+The issue carries the label `status:needs-triage`, which puts it in the queue triage reads. Use the
+number it printed in the next step.
 
-## 10. Build it
+## 11. Triage it, then build it
 
 ```
-/fabrika:build <the same number>
+/fabrika:triage 1
 ```
 
-This is the long one. The builder claims the issue, cuts a branch, writes the change, validates it
-in your tree, commits, pushes and opens a pull request. When it finishes it prints one word:
-`SHIPPED-PR`, and the pull request's URL.
+Triage reads the issue, gives it a type, a priority and your milestone, and rewrites the body so a
+builder can pick it up cold. In this run the issue ended with the labels `status:triaged`,
+`type:chore`, `p2`, `ready-for:agent` and `class:doc`. Yours may get a different type or priority.
 
-## 11. Review and merge it
-
-```
-/fabrika:review <the pull request number>
-```
-
-The reviewer judges the pull request against the acceptance criteria triage wrote, and lands a
-PASS or FAIL verdict on the pull request itself. On a PASS:
+Open the issue on GitHub and read the acceptance criteria triage wrote. Everything after this is
+graded against them.
 
 ```
-/fabrika:ship <the pull request number>
+/fabrika:build 1
 ```
 
-The shipper walks the merge guards and merges. On a FAIL, hand the pull request back to the builder
-— `/fabrika:build <the pull request number>` enters repair mode on the same branch, fixes what the
-verdict named, and answers it.
+This is the long step, about two minutes. The builder claims the issue, cuts a branch, writes the
+change, checks it in your clone, commits, pushes and opens a pull request. Its last line is one
+word:
+
+```
+SHIPPED-PR
+```
+
+Above that word it prints the pull request's URL. Use the pull request's number in the next step.
+
+## 12. Review it, then merge it
+
+```
+/fabrika:review 2
+```
+
+The reviewer waits for your CI check, judges the pull request against the acceptance criteria, and
+posts its verdict as a comment on the pull request. In this run its answer began:
+
+```
+**Terminal: verdict PASS**
+```
+
+If it says FAIL instead, type `/fabrika:build 2`. Given a pull request's number, the builder fixes
+what the verdict named on the same branch. Then review again.
+
+On a PASS, merge it:
+
+```
+/fabrika:ship 2
+```
+
+In this run it answered:
+
+```
+**LANDED.** PR #2 is merged: https://github.com/you/your-repo/pull/2
+```
+
+The shipper mentions an exit `33` and restarts itself on the way. It needs nothing from you.
+
+The builder left your clone on its own branch. Go back to yours and pull the merge:
+
+```bash
+git switch main
+git pull
+```
+
+Open `README.md`. The install section is there.
 
 ## You are done
 
-You have a repo with fabrika's labels on it, a roadmap the pipeline can read, and one issue that
-went from a sentence you typed to a merged pull request without you editing a file.
+You set up a repo with fabrika's labels, a roadmap, an owners file and a CI check. Then one issue
+went from a sentence you typed to a merged pull request, and the pipeline wrote that change.
 
 Where to go next:
 
-- [`adopt-fabrika-in-a-new-repo.md`](adopt-fabrika-in-a-new-repo.md) — the same setup as a checklist
-  for a repo that already has a board, a history and its own conventions.
-- [`how-fabrika-works.md`](how-fabrika-works.md) — why the stages are separate actors, and why a run's
-  state lives on disk.
-- [`delegation.md`](delegation.md) — which copy of `fabrika` served a command, and what each refusal
+- [`adopt-fabrika-in-a-new-repo.md`](adopt-fabrika-in-a-new-repo.md): the same setup as a
+  checklist for a repo that already has a board, a history and its own conventions. Its
+  [step 2](adopt-fabrika-in-a-new-repo.md#2-find-out-what-your-repo-is-missing) shows what your
+  repo still lacks, and
+  [Read the fields](adopt-fabrika-in-a-new-repo.md#read-the-fields) says how to read each
+  `status open` field.
+- [`how-fabrika-works.md`](how-fabrika-works.md): why the stages are separate actors, and why a
+  run's state lives on disk.
+- [`delegation.md`](delegation.md): which copy of `fabrika` served a command, and what each refusal
   means.
-- `fabrika --help` — every command group. `fabrika <group> --help` lists that group's verbs, and
+- `fabrika --help`: every command group. `fabrika <group> --help` lists that group's verbs, and
   `fabrika <group> <verb> --help` gives one verb's flags and exit meanings.

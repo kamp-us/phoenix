@@ -268,6 +268,8 @@ verdict by hand. The rules for each route, and their exit codes, are in
 `status bootstrap readout-artifact` creates an issue, `/fabrika:report` files one, and
 `/fabrika:triage` labels it.
 
+### Read the fields
+
 ```bash
 fabrika status open
 ```
