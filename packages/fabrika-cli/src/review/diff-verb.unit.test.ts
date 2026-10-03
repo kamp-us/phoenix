@@ -1,6 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
+	configAtCommit,
 	errOut,
 	fakeFs,
 	fakeSeams,
@@ -423,7 +424,7 @@ diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
  * slips past both while still carving governed content out of the served diff. What closes the
  * rest of the contract is the exclusion itself: when the split actually excluded a path under a
  * governed root, the verb refuses instead of serving a diff that no longer holds everything. The
- * governed roots ride options.governedRoots, read by the adapter exactly as the verb reads them.
+ * governed roots are the ones `.fabrika.jsonc` declares, read the way every filtering run reads them.
  */
 describe("runDiff refuses a filter that excludes governed content", () => {
 	const GOVERNED_DIFF = `diff --git a/governed/cart.ts b/governed/cart.ts
@@ -437,9 +438,9 @@ diff --git a/src/cart.ts b/src/cart.ts
 @@ -1,1 +1,2 @@
 +const extra = 1;
 `;
-	const governedRoots = ["governed/"];
+	const governedRoots = ["governed/", ".fabrika.jsonc"];
 
-	/** The layer a governed-roots case runs over — the adapter hands the verb these roots. */
+	/** The layer a governed-roots case runs over: the config at the range's commits declares these roots. */
 	const runOverRoots = (
 		script: ReadonlyArray<Scripted>,
 		roots: ReadonlyArray<string>,
@@ -447,8 +448,11 @@ diff --git a/src/cart.ts b/src/cart.ts
 	) =>
 		Effect.runPromise(
 			Effect.provide(
-				runDiff({...options, ...overrides, governedRoots: roots}),
-				Layer.merge(fakeSeams(script).layer, unconfigured),
+				runDiff({...options, ...overrides}),
+				Layer.merge(
+					fakeSeams([...configAtCommit(JSON.stringify({governedRoots: roots})), ...script]).layer,
+					unconfigured,
+				),
 			),
 		);
 

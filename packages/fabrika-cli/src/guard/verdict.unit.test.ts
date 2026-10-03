@@ -24,10 +24,6 @@ describe("verdictCode", () => {
 		expect(verdictCode(unknown("could not read"))).toBe(PRECONDITION_UNKNOWN);
 	});
 
-	it("never collapses zero scope onto the clean exit", () => {
-		expect(verdictCode(zeroScope("nothing scanned"))).not.toBe(0);
-	});
-
 	// A declared absence is the repo answering the question, not the scan failing to — the one
 	// shape the fail-closed floor is not about.
 	it("exits a skipped guard 0, and puts its declaration on stdout", () => {

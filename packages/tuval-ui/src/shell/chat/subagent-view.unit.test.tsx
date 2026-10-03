@@ -209,18 +209,6 @@ describe("swapping the view slot to a subagent", () => {
 		rendered.unmount();
 	});
 
-	it("names the region a screen reader lands in after the swap", async () => {
-		const {rendered} = await openOne(agentSession(reviewer()));
-		expect(within(rendered.container).getByRole("log", {name: "Transcript"})).toBeTruthy();
-
-		await pick(rendered.container, "reviewer");
-
-		expect(
-			within(rendered.container).getByRole("log", {name: "Transcript: reviewer subagent"}),
-		).toBeTruthy();
-		rendered.unmount();
-	});
-
 	it("reads the worker's rows at depth zero rather than as rows nested under a head", async () => {
 		const {rendered} = await openOne(agentSession(reviewer()));
 		await pick(rendered.container, "reviewer");

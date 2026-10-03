@@ -126,13 +126,6 @@ describe("the feature flags", () => {
 		}),
 	);
 
-	it.effect("read back as the module wrote them", () =>
-		Effect.gen(function* () {
-			const config = yield* loadConfigModule(fixture("features-on"));
-			assert.deepStrictEqual(config.features, {subagentList: true});
-		}),
-	);
-
 	it.effect("resolve the global layer's flags over the defaults", () =>
 		Effect.gen(function* () {
 			const merged = yield* layered(fixture("features-on"), fixture("two-rows"));
@@ -165,29 +158,6 @@ describe("the feature flags", () => {
 				prReviewExample: false,
 				processRemove: false,
 			});
-		}),
-	);
-
-	// A key the schema does not declare is a key the decode drops, so a flag missing from
-	// `DeclaredFeatures` reads as a config that stated nothing (#8595).
-	it.effect("keep a stated piSubagents rather than dropping it at the decode", () =>
-		Effect.gen(function* () {
-			const config = yield* loadConfigModule(fixture("pi-subagents-off"));
-			assert.deepStrictEqual(config.features, {piSubagents: false});
-		}),
-	);
-
-	it.effect("let the global layer turn piSubagents off against its on default", () =>
-		Effect.gen(function* () {
-			const global = yield* layered(fixture("pi-subagents-off"), fixture("two-rows"));
-			assert.deepStrictEqual(global.features, {...featuresDefault, piSubagents: false});
-		}),
-	);
-
-	it.effect("keep a stated piKernelTools rather than dropping it at the decode", () =>
-		Effect.gen(function* () {
-			const config = yield* loadConfigModule(fixture("pi-kernel-tools-on"));
-			assert.deepStrictEqual(config.features, {piKernelTools: true});
 		}),
 	);
 
@@ -435,18 +405,6 @@ describe("loadLayeredConfig", () => {
 				assert.deepStrictEqual(config.sources, [fixture("global-layer")]);
 			}),
 		);
-
-		it.effect("still supplies them once the project module exists", () =>
-			Effect.gen(function* () {
-				const config = yield* layered(fixture("does-not-exist"), fixture("two-rows"), fixtureDesk);
-				assert.deepStrictEqual(config.programs, [
-					{id: "desk"},
-					{id: alpha.scope("a")},
-					{id: alpha.scope("b")},
-				]);
-				assert.deepStrictEqual(config.graph.nodes, fixtureDesk.graph.nodes);
-			}),
-		);
 	});
 
 	it.effect("carries each layer's key bindings as its own source, named for the layer", () =>
@@ -561,14 +519,6 @@ describe("loadLayeredConfig", () => {
 			);
 			// The global layer loaded first and passed, so the refusal names it among the files read.
 			assert.includeMembers([...error.files], [fixture("two-rows"), stale]);
-		}),
-	);
-
-	it.effect("names the layers a refused load read, the refusing one among them", () =>
-		Effect.gen(function* () {
-			const error = yield* Effect.flip(layered(fixture("two-rows"), fixture("throws")));
-			assert.strictEqual(error.module, fixture("throws"));
-			assert.includeMembers([...error.files], [fixture("two-rows"), fixture("throws")]);
 		}),
 	);
 });

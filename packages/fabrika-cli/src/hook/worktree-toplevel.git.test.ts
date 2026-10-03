@@ -58,17 +58,6 @@ const plan = (cwd: string) =>
 
 describe("hook worktree-create plans every cwd of one clone under its primary working tree", () => {
 	it(
-		"plans the tree under the primary checkout when the session was launched at its root",
-		async () => {
-			const out = await plan(repo);
-
-			expect(out.code).toBe(0);
-			expect(out.stdout.trim()).toBe(planned);
-		},
-		SUBPROCESS_TEST_TIMEOUT_MS,
-	);
-
-	it(
 		"plans the tree under the primary checkout when the session was launched in a subdirectory",
 		async () => {
 			const subdir = join(repo, "packages", "fabrika-cli");

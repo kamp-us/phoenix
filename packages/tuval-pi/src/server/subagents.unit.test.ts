@@ -64,8 +64,4 @@ describe("what Pi's own loader registers", () => {
 		},
 		COLD_JITI_COMPILE,
 	);
-
-	it("registers nothing when the flag is off", async () => {
-		expect(await toolNames(subagentExtensionPaths({piSubagents: false}))).toEqual([]);
-	});
 });

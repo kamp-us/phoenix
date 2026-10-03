@@ -142,8 +142,8 @@ Retry policy is the handlers' and stays declared data (#7371).
 
 `fixtures.ts`'s `startProtocolServer` is an in-process `ws` listener speaking the real codec, which
 is what lets the transport and the no-retry-loop proof run in the unit tier; the lock, the
-not-found and the reacquire run against the loopback server on Pi's faux provider in
-`pi-client.integration.test.ts`.
+not-found and the reacquire run through this client against the loopback server on Pi's faux
+provider in `src/ai-agent/pi-ai-agent.integration.test.ts`.
 
 ## The AI agent layer
 

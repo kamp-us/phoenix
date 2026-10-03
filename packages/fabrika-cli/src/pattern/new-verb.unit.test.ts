@@ -1,6 +1,12 @@
+import {execFileSync} from "node:child_process";
+import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {NodeServices} from "@effect/platform-node";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {type FakeFsOptions, fakeFs, fakeShell} from "../fakes.test-support.ts";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {
 	ALREADY_EXISTS,
 	PRECONDITION_UNKNOWN,
@@ -87,6 +93,7 @@ describe("runNew", () => {
 		const {outcome} = await run({slug: "Worker Queue"});
 		expect(outcome.code).toBe(1);
 		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.at(-1)).toContain("is not kebab-case");
 	});
 
 	// A failed write is UNKNOWN, deliberately not 1: whether anything landed is exactly what a caller
@@ -134,5 +141,75 @@ describe("runNew", () => {
 		expect(outcome.code).toBe(SOURCE_REPOSITORY_REFUSED);
 		expect(outcome.stdout).toBe("");
 		expect(fake.written.size).toBe(0);
+	});
+});
+
+/**
+ * Only real `git` can prove the evidence is read off HEAD: a scripted shell answers whatever it is
+ * told, so it cannot tell a tree read from an index read.
+ */
+describe("runNew against a real source checkout", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
+	it("derives portable prospective evidence from HEAD despite a staged index addition", async () => {
+		const root = mkdtempSync(join(tmpdir(), "fabrika-pattern-source-"));
+		const upstream = join(root, "xyflow");
+		const git = (...args: ReadonlyArray<string>) => execFileSync("git", ["-C", upstream, ...args]);
+		try {
+			mkdirSync(join(upstream, "packages/react/src"), {recursive: true});
+			writeFileSync(
+				join(upstream, "package.json"),
+				'{"name":"@xyflow/monorepo","version":"0.0.0","private":true}\n',
+			);
+			writeFileSync(
+				join(upstream, "packages/react/package.json"),
+				'{"name":"@xyflow/react","version":"12.11.5"}\n',
+			);
+			writeFileSync(join(upstream, "packages/react/src/index.ts"), "export {};\n");
+			writeFileSync(join(upstream, "packages/react/src/index.test.ts"), "export {};\n");
+			writeFileSync(join(upstream, "packages/react/README.md"), "# React\n");
+			execFileSync("git", ["init", "-q", upstream]);
+			git("remote", "add", "origin", "git@github.com:xyflow/xyflow.git");
+			git("add", ".");
+			git(
+				"-c",
+				"user.name=Pattern Test",
+				"-c",
+				"user.email=pattern@example.invalid",
+				"commit",
+				"-qm",
+				"fixture",
+			);
+			mkdirSync(join(upstream, "packages/index-only"), {recursive: true});
+			writeFileSync(
+				join(upstream, "packages/index-only/package.json"),
+				'{"name":"@xyflow/react","version":"99.0.0"}\n',
+			);
+			git("add", "packages/index-only/package.json");
+
+			const outcome = await Effect.runPromise(
+				Effect.provide(
+					runNew({
+						...options,
+						slug: "react-flow-shape",
+						dir: join(root, ".patterns"),
+						decision: "https://forge.example/acme/repo/issues/1",
+						sourceRepo: upstream,
+						sourcePackage: "@xyflow/react",
+						json: true,
+					}),
+					NodeServices.layer,
+				),
+			);
+			expect(outcome.code).toBe(0);
+			expect(outcome.stdout).toContain('"origin":"https://github.com/xyflow/xyflow"');
+			expect(outcome.stdout).toContain('"package":"@xyflow/react","version":"12.11.5"');
+			expect(outcome.stdout).not.toContain(upstream);
+			const scaffold = readFileSync(join(root, ".patterns/react-flow-shape.md"), "utf8");
+			expect(scaffold).toContain("## Prospective scope");
+			expect(scaffold).toContain("https://github.com/xyflow/xyflow");
+			expect(scaffold).toContain("`@xyflow/react@12.11.5`");
+			expect(scaffold).not.toContain(upstream);
+		} finally {
+			rmSync(root, {recursive: true, force: true});
+		}
 	});
 });

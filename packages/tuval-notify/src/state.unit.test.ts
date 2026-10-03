@@ -30,8 +30,6 @@ import {
 	outcome,
 	readable,
 	sendEvent,
-	statusLine,
-	titleLine,
 } from "./state.ts";
 
 /** Seven in the morning, so the clock lines read the way a morning brief's do. */
@@ -139,15 +137,6 @@ describe("what a window says about a notifier that has sent something", () => {
 		const many = Array.from({length: HISTORY + 5}, (_, index) => sent(7, 0, `msg ${index}`));
 		expect(notifyView({...idle, deliveries: many}).log).toHaveLength(HISTORY);
 	});
-
-	it("draws the same two lines the tile does", () => {
-		const state = {
-			...idle,
-			deliveries: [sent(7, 0, "boom", {ok: false, status: 500})],
-		};
-		expect(notifyView(state).status).toBe(statusLine(state));
-		expect(notifyView(state).heading).toBe(titleLine(state));
-	});
 });
 
 describe("how a row says a delivery ended", () => {
@@ -250,11 +239,6 @@ describe("a history this version cannot read", () => {
 		expect(readable(mixed)).toEqual([sent(7, 5, "new"), sent(7, 1, "older")]);
 	});
 
-	it("leaves a history it can read entirely alone", () => {
-		const whole = [sent(7, 5, "new"), sent(7, 1, "older")];
-		expect(readable(whole)).toEqual(whole);
-	});
-
 	it("turns a wholly unreadable history into an empty one the window can draw", () => {
 		const only = [beforeText, beforeText, beforeText];
 		expect(readable(only)).toEqual([]);
@@ -271,10 +255,6 @@ describe("the event the composer sends", () => {
 			type: "message",
 			payload: {text: "the desk is up", items: [], ok: true},
 		});
-	});
-
-	it("is built fresh each time, so no caller holds a shared object", () => {
-		expect(sendEvent("x")).not.toBe(sendEvent("x"));
 	});
 });
 

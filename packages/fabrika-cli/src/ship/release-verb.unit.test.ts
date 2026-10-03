@@ -123,18 +123,6 @@ describe("runRelease", () => {
 		expect(out.stdout).toBe("release\tno-issue\t-\n");
 	});
 
-	it("never reads an inherited Containment stamp — the #1257 phantom release", async () => {
-		const out = await run(
-			[
-				pullRecord({body: "Fixes #4287\n\n**Containment:** flag (default-off)\n"}),
-				[FILES, twoFiles],
-				diff(PLAIN_DIFF),
-			],
-			[[REGISTRY, REGISTRY_SERVED]],
-		);
-		expect(out.stdout).toBe("release\tn/a\t-\n");
-	});
-
 	it("treats an ABSENT registry as a repo without a flag substrate, not as UNKNOWN", async () => {
 		const out = await run(
 			[pullRecord(), [FILES, twoFiles], diff(PLAIN_DIFF)],

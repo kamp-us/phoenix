@@ -14,7 +14,7 @@ const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
 
 // Edits within this window of createdAt count as the initial submission, not an
 // edit — defends against sub-second server-side updatedAt drift after insert.
-export const EDITED_GRACE_MS = 60 * 1000;
+const EDITED_GRACE_MS = 60 * 1000;
 
 const UNITS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
 	["year", 365 * 24 * 3600 * 1000],

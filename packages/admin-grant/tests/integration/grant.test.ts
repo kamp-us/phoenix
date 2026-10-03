@@ -14,8 +14,8 @@
  *
  * These are integration, not unit: each is only-wrong-if-the-DB-differs (does the
  * INSERT actually land the tuple, does the username resolve, does the read round-trip)
- * — the exact class a faked engine could only fake. The pure statement-building +
- * key-encoding contract stay in the unit tier (`src/grant.unit.test.ts`).
+ * — the exact class a faked engine could only fake. The key-encoding contract stays
+ * in the unit tier (`src/grant.unit.test.ts`).
  *
  * Locally (no Cloudflare creds) the `beforeAll` deploy stops at `Unauthorized` —
  * expected; this tier proves itself on CI's integration job.

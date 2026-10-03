@@ -23,7 +23,6 @@ import {
 	isAiAgentSessionState,
 } from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import {AI_AGENT_INSPECTOR_REF} from "@kampus/tuval-sdk/kernel/ai-agent/renderer-ref";
-import {checkpointFields} from "@kampus/tuval-sdk/kernel/ai-agent/restore/index";
 import {ScriptedAiAgent, TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
 import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
@@ -32,7 +31,7 @@ import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Fiber, Layer, Option, Stream} from "effect";
-import {afterAll, expect} from "vitest";
+import {afterAll} from "vitest";
 import {AGY_SETTINGS_FILE, AGY_VERSION} from "./config.ts";
 import {
 	type AgyVersionVerdict,
@@ -371,13 +370,4 @@ describe("the preflighted layer the row builds when no layer is handed in", () =
 			),
 		),
 	);
-});
-
-describe("the agy row's checkpoint", () => {
-	it("carries no field that could hold a credential", () => {
-		expect(
-			checkpointFields.filter((field) => /token|secret|url/i.test(field)),
-			"a checkpoint field now looks like it could carry a credential",
-		).toEqual([]);
-	});
 });

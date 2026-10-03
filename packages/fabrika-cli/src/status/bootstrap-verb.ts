@@ -67,7 +67,7 @@ export interface LabelSpec {
 }
 
 /** The description every created taxonomy label carries, so its creator is on the record. */
-export const LABEL_DESCRIPTION = "created by fabrika status bootstrap label-taxonomy";
+const LABEL_DESCRIPTION = "created by fabrika status bootstrap label-taxonomy";
 
 /**
  * The board label taxonomy this verb creates, in the order it reports it.
@@ -390,7 +390,7 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	},
 ];
 
-export const findSurface = (id: string): BuildableSurface | undefined =>
+const findSurface = (id: string): BuildableSurface | undefined =>
 	BUILDABLE_SURFACES.find((surface) => surface.id === id);
 
 /**

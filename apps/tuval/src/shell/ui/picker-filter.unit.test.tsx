@@ -201,14 +201,4 @@ describe("the picker's `/` filter", () => {
 			"picker-window-1-option-1",
 		);
 	});
-
-	it("a fresh mount starts with no filter and the whole list, whatever the last one held", () => {
-		const filtering = mount(withFilter(mountPicker(), "pi"));
-		expect(filtering.rows()).toHaveLength(1);
-
-		// What `mountPicker()` produces is what the next `<c-b> w` renders — nothing carries over.
-		const reopened = mount(mountPicker());
-		expect(reopened.input()).toBeNull();
-		expect(reopened.rows()).toHaveLength(3);
-	});
 });

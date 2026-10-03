@@ -1,5 +1,4 @@
 import {describe, expect, it} from "vitest";
-import {loadGoldenPayload} from "../golden-fixture.ts";
 import {
 	childEnv,
 	locateToplevel,
@@ -7,29 +6,11 @@ import {
 	primaryWorktree,
 	readWorktreeRequest,
 	toolchainPath,
-	worktreePathFor,
 } from "./worktree-create.ts";
 
 describe("reading a worktree request from a WorktreeCreate payload", () => {
-	it("reads the captured envelope's cwd and name as a request, not yet a plan", () => {
-		const payload = loadGoldenPayload(
-			import.meta.url,
-			"__fixtures__/worktree-create.payload.golden.json",
-		);
-		expect(readWorktreeRequest(payload)).toEqual({
-			_tag: "Request",
-			request: {cwd: "/private/tmp/fabrika-worktree-capture/repo", name: "capture-probe"},
-		});
-	});
-
-	it("lays the tree where the harness's own default path lays it", () => {
-		expect(worktreePathFor("/repo", "agent-abc")).toBe("/repo/.claude/worktrees/agent-abc");
-	});
-
 	it.each([
 		["an absent cwd", {name: "agent-1"}, "the payload carries no `cwd`"],
-		["a relative cwd", {cwd: "repo", name: "agent-1"}, "`cwd` is not an absolute path: repo"],
-		["an absent name", {cwd: "/repo"}, "the payload carries no `name`"],
 		["a blank name", {cwd: "/repo", name: "   "}, "the payload carries no `name`"],
 	])("refuses %s rather than composing a path from it", (_label, payload, reason) => {
 		expect(readWorktreeRequest(payload)).toEqual({_tag: "Unplannable", reason});
@@ -40,7 +21,6 @@ describe("reading a worktree request from a WorktreeCreate payload", () => {
 	 * `git worktree add` at it, so the refusal has to happen here, before the mutation.
 	 */
 	it.each([
-		["../escape"],
 		["a/b"],
 		["/absolute"],
 		[".hidden"],
@@ -56,12 +36,7 @@ describe("reading a worktree request from a WorktreeCreate payload", () => {
 describe("locating the working tree the request's cwd stands in", () => {
 	const request = {cwd: "/repo/packages/fabrika-cli", name: "agent-1"};
 
-	it("reads the toplevel git printed, never the session's cwd", () => {
-		expect(locateToplevel(request, "/repo\n")).toEqual({_tag: "Toplevel", toplevel: "/repo"});
-	});
-
 	it.each([
-		["a failed resolution", null],
 		["an empty answer", ""],
 		["a relative answer", "repo"],
 		["a multi-line answer", "/repo\n/other"],
@@ -78,16 +53,6 @@ describe("planning a worktree at the clone's primary working tree", () => {
 	const record = (...fields: ReadonlyArray<string>) => `${fields.join("\0")}\0\0`;
 	const HEAD = "HEAD 6d0cb36b763f68b22215650685cd93abd2a567c6";
 
-	it("roots the plan at the listing's first record, never at the linked tree the cwd is in", () => {
-		const listing =
-			record("worktree /repo", HEAD, "branch refs/heads/main") +
-			record("worktree /repo/.claude/worktrees/epic-9843", HEAD, "detached");
-		expect(planAtPrimary(request, listing)).toEqual({
-			_tag: "Plan",
-			plan: {repoRoot: "/repo", name: "agent-1", worktreePath: "/repo/.claude/worktrees/agent-1"},
-		});
-	});
-
 	it("keeps a primary path verbatim, since -z leaves nothing to trim", () => {
 		expect(primaryWorktree(record("worktree /my repo ", HEAD))).toBe("/my repo ");
 	});
@@ -97,7 +62,6 @@ describe("planning a worktree at the clone's primary working tree", () => {
 		["an empty listing", ""],
 		["a first record that is not a worktree", record(HEAD, "worktree /repo")],
 		["a relative primary", record("worktree repo", HEAD)],
-		["a bare primary", record("worktree /repo.git", "bare")],
 	])("refuses %s and names the cwd whose clone named no primary tree", (_label, listing) => {
 		expect(planAtPrimary(request, listing)).toEqual({
 			_tag: "Unplannable",

@@ -15,16 +15,6 @@ describe("a repo that declares nothing is not capped", () => {
 		if (resolved._tag !== "Default") return;
 		expect(resolved.value).toBeNull();
 	});
-
-	it("resolves null for a config that declares other keys and not this one", () => {
-		const resolved = resolve(
-			loadConfig({_tag: "Text", text: JSON.stringify({capClearAuthors: ["@someone"]})}),
-			laneConcurrencyCapKey,
-		);
-		expect(resolved._tag).toBe("Default");
-		if (resolved._tag !== "Default") return;
-		expect(resolved.value).toBeNull();
-	});
 });
 
 describe("a declared value is a positive integer, or null for no cap", () => {

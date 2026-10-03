@@ -9,8 +9,8 @@
  *
  * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
  * shared across every migrated file. Isolation is by `NS` (this file's deterministic
- * `nsToken`): every seeded identifier — sign-up emails, every term SLUG, every `seedTerm`
- * slug — is `${NS}-…`-prefixed, so this file's rows are uniquely its own on the shared D1.
+ * `nsToken`): every seeded identifier — sign-up emails and every term SLUG — is
+ * `${NS}-…`-prefixed, so this file's rows are uniquely its own on the shared D1.
  * Every assertion reads back by THIS file's own NS-prefixed term slug (a by-slug `term(slug)`
  * read is naturally scoped once the slug is NS-prefixed) or off a mutation's re-resolved
  * return — there is no global `terms`-LIST read here, so no assertion can observe another
@@ -663,28 +663,7 @@ describe("sozluk mutations — definition.delete", () => {
 	});
 });
 
-describe("sozluk mutations — seed idempotency / emptying a term", () => {
-	it("seedTerm is idempotent: re-seeding the same definition skips it", async () => {
-		const slug = `${NS}-outbox`;
-		const def = {
-			authorName: "anka",
-			body: "Atomic durability primitive in the producer-consumer outbox pattern.",
-		};
-
-		const first = await h.seedTerm({slug, title: "Outbox", definitions: [def]});
-		expect(first.insertedDefinitions).toBe(1);
-		expect(first.skippedDefinitions).toBe(0);
-
-		const second = await h.seedTerm({slug, title: "Outbox", definitions: [def]});
-		expect(second.insertedDefinitions).toBe(0);
-		expect(second.skippedDefinitions).toBe(1);
-
-		const term = await h.fate({kind: "query", name: "term", args: {slug}, select: ["count"]});
-		expect(term.ok).toBe(true);
-		if (!term.ok) return;
-		expect((term.data as TermNode).count).toBe(1);
-	});
-
+describe("sozluk mutations — emptying a term", () => {
 	// The old admin `clear` route is gone (it was a fail-open security hole). The
 	// public surface has no term-wipe, so the equivalent observable behavior is:
 	// soft-deleting every definition empties the term — `count` → 0 and the

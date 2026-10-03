@@ -13,49 +13,14 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {type FlagEvaluateResult, parseFlagEvaluateRequest} from "./evaluate-contract.ts";
 import {Flags} from "./Flags.ts";
-import {FlagsContext, makeRequestFlagsContext} from "./FlagsContext.ts";
-import {contextFromSession, resolveRequestFlagsContext} from "./request-flags-context.ts";
+import {FlagsContext} from "./FlagsContext.ts";
+import {resolveRequestFlagsContext} from "./request-flags-context.ts";
 
 /** A malformed request body — mapped then recovered to the empty-keys default below. */
 class FlagEvaluateBodyError extends Schema.TaggedError<FlagEvaluateBodyError>()(
 	"flagship/FlagEvaluateBodyError",
 	{cause: Schema.Defect()},
 ) {}
-
-/** The dark-ship flag this probe gates on — undeclared, so it reads its default. */
-const PROBE_FLAG = "phoenix-flags-probe";
-
-/** Demonstrates the non-boolean reads (#509). */
-const PROBE_VARIANT_FLAG = "phoenix-flags-probe-variant";
-
-export const handleFlagsProbe = Effect.gen(function* () {
-	const raw = yield* Cloudflare.Request;
-	const pasaport = yield* Pasaport;
-	const flags = yield* Flags;
-
-	const session = yield* pasaport.validateSession(raw.headers);
-	// The cookie carries any dev-only local override (#622), which
-	// `makeRequestFlagsContext` applies ONLY under `development`.
-	const context = yield* makeRequestFlagsContext(
-		contextFromSession(session),
-		raw.headers.get("cookie"),
-	);
-
-	const {enabled, variant} = yield* Effect.gen(function* () {
-		const enabled = yield* flags.getBoolean(PROBE_FLAG, false);
-		const variant = yield* flags.getString(PROBE_VARIANT_FLAG, "control");
-		return {enabled, variant};
-	}).pipe(Effect.provideService(FlagsContext, context));
-
-	return HttpServerResponse.jsonUnsafe({
-		flag: PROBE_FLAG,
-		enabled,
-		branch: enabled ? "on" : "off",
-		variant,
-	});
-});
-
-export const flagsProbeRoute = HttpRouter.add("GET", "/api/flags/probe", handleFlagsProbe);
 
 export const handleFlagsEvaluate = Effect.gen(function* () {
 	const raw = yield* Cloudflare.Request;

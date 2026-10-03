@@ -5,18 +5,13 @@
  * `worker/features/fate/sozluk-keyset.test.ts`.
  *
  * What stays here is the genuinely system-level claim that fate-op test cannot make: the
- * DEPLOYED worker serves sozluk reads end-to-end over HTTP — the `/fate` route is
- * wired, a `terms` list + a `term` detail + the nested `Term.definitions`
- * connection resolve over the wire, and the session-derived Definition scalar
- * surface (author/authorId/myVote) round-trips. One small seed, single page, no
- * ordering walk.
+ * DEPLOYED worker serves the nested `Term.definitions` connection over the wire, and the
+ * session-derived Definition scalar surface (author/authorId/myVote) round-trips. One
+ * small seed, single page, no ordering walk.
  *
  * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027): its one D1
  * is shared with every migrated file, so the seeded term's slug carries the deterministic
- * `NS` prefix (`${NS}-detail`) and the `terms` list read is scoped to that NS slug by
- * id-membership (find the row whose slug is this file's) — never an exact list/count,
- * which another file's terms would now break. The `term(slug)` detail + unknown-slug
- * reads are already keyed to the NS slug.
+ * `NS` prefix (`${NS}-detail`) and every read is keyed to that NS slug.
  */
 import {beforeAll, describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";
@@ -27,12 +22,6 @@ const h = sharedStack();
 const NS = nsToken(import.meta.url);
 const SLUG = `${NS}-detail`;
 
-interface TermNode {
-	slug: string;
-	title: string;
-	count: number;
-	totalScore: number;
-}
 interface DefNode {
 	id: string;
 	body: string;
@@ -63,41 +52,9 @@ beforeAll(async () => {
 	seeded = result.definitions;
 });
 
+// The `terms` list with its slug cursor and the `term(slug)` detail row are proven, with their
+// ordering, by `sozluk-keyset.test.ts`.
 describe("sozluk reads — deployed worker /fate (system smoke)", () => {
-	it("terms(recent) serves the seeded row with its slug cursor", async () => {
-		const result = await h.fate({
-			kind: "list",
-			name: "terms",
-			args: {sort: "recent", first: 100},
-			select: ["slug", "title", "count", "totalScore"],
-		});
-		expect(result.ok).toBe(true);
-		if (!result.ok) return;
-		const data = result.data as Connection<TermNode>;
-		const row = data.items.find((e) => e.node.slug === SLUG);
-		expect(row).toBeDefined();
-		expect(row!.cursor).toBe(SLUG); // cursor is the slug keyset
-		expect(row!.node.title).toBe("Fate Read");
-		expect(row!.node.count).toBe(2);
-		expect(data.pagination.hasPrevious).toBe(false);
-	});
-
-	it("term(slug) serves the detail row", async () => {
-		const result = await h.fate({
-			kind: "query",
-			name: "term",
-			args: {slug: SLUG},
-			select: ["slug", "title", "count", "totalScore"],
-		});
-		expect(result.ok).toBe(true);
-		if (!result.ok) return;
-		const data = result.data as TermNode;
-		expect(data.slug).toBe(SLUG);
-		expect(data.title).toBe("Fate Read");
-		expect(data.count).toBe(2);
-		expect(data.totalScore).toBe(3);
-	});
-
 	it("term(slug) serves null for an unknown slug", async () => {
 		const result = await h.fate({
 			kind: "query",

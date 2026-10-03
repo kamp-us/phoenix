@@ -8,10 +8,6 @@ import {getExhibit} from "../registry";
 describe("Markdown exhibit — the stage shows every block a reviewer has to see", () => {
 	const exhibit = getExhibit("markdown");
 
-	it("is registered under the markdown slug", () => {
-		expect(exhibit).toBeDefined();
-	});
-
 	it("renders bold, a link, inline code, a table, a list, both task-list shapes and a fenced block", () => {
 		const {container} = render(<ExhibitStage exhibit={exhibit!} />);
 		const stage = screen.getByTestId("exhibit-stage");

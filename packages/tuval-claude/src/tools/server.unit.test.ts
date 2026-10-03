@@ -12,7 +12,6 @@ import {assert, describe, it} from "@effect/vitest";
 import {mode, permission, prompt, transcriptPage} from "@kampus/tuval-sdk/ai-agent/ports";
 import {aiAgentPortNames} from "@kampus/tuval-sdk/kernel/ai-agent/handlers/index";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {CallToolResult} from "@modelcontextprotocol/sdk/types.js";
 import {type Context, Effect, Schema} from "effect";
 import {KernelBridge, type ScriptedKernel} from "./KernelBridge.ts";
@@ -174,16 +173,6 @@ describe("the tuval tool server", () => {
 				assert.deepStrictEqual(JSON.parse(textOf(held)), {empty: true});
 			}),
 		{timeout: 1000},
-	);
-
-	it.effect("the scripted bridge takes whatever program id it is handed", () =>
-		Effect.gen(function* () {
-			const spawned = yield* Effect.gen(function* () {
-				const bridge = yield* KernelBridge;
-				return yield* bridge.spawn(ProgramId.make(scriptedProgram));
-			}).pipe(Effect.provide(KernelBridge.scripted(table)));
-			assert.strictEqual(spawned, scriptedProcess);
-		}),
 	);
 });
 

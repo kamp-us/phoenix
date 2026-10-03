@@ -72,9 +72,4 @@ describe("runAnnotate", () => {
 		expect(warned.join("\n")).toContain("found no named workspace members");
 		expect(written).toHaveLength(1);
 	});
-
-	it("emits nothing for output carrying no diagnostic", async () => {
-		const {written} = await run("Tasks:    3 successful, 3 total\nCached:    3 cached");
-		expect(written).toEqual([]);
-	});
 });

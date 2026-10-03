@@ -60,16 +60,12 @@ describe("fetchAndResolve — fetched before it is read", () => {
 	const run = (s: FakeShell, base: string) =>
 		Effect.runPromise(Effect.provide(fetchAndResolve(base), s.layer));
 
-	it("fetches, then resolves to a sha", async () => {
-		await expect(run(shell(), "origin/main")).resolves.toEqual({
+	it("fetches BEFORE resolving to a sha — a stale local ref is never what gets read", async () => {
+		const s = shell();
+		await expect(run(s, "origin/main")).resolves.toEqual({
 			_tag: "Ok",
 			value: "49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82",
 		});
-	});
-
-	it("fetches BEFORE resolving — a stale local ref is never what gets read", async () => {
-		const s = shell();
-		await run(s, "origin/main");
 		const fetchAt = s.calls.findIndex((c) => c.includes(" fetch"));
 		const resolveAt = s.calls.findIndex((c) => c.includes("rev-parse"));
 		expect(fetchAt).toBeGreaterThanOrEqual(0);

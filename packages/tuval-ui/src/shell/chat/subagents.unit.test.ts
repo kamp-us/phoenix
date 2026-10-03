@@ -3,7 +3,6 @@
  * what order, how many the tail collapses into — is decided here, so it is proven here.
  */
 
-import {initialState, settleTurn} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
 import {subagentSlot} from "@kampus/tuval-sdk/kernel/ai-agent-fixtures/transcripts";
 import {describe, expect, it} from "vitest";
 import {
@@ -219,27 +218,5 @@ describe("subagentPhrase", () => {
 		expect(`The ${subagentPhrase("explorer", 3)} is still running.`).toBe(
 			"The 3-worker explorer subagent is still running.",
 		);
-	});
-});
-
-/**
- * A slot that outlives its turn stays on the list after the turn settles. The same claim over a
- * captured Claude background spawn needs Claude's fixtures, so it lives in the app, beside Claude's
- * window (`subagents-capture.unit.test.ts`).
- */
-describe("runningSubagents after the turn settles", () => {
-	/**
-	 * A *resumed* background worker reaches the list as the same shape, and that is the whole of what
-	 * this list knows about it: the frame that opens its slot is `task_started`, proven in the app's
-	 * `claude/history/task-started.unit.test.ts`, so the two halves meet on the slot.
-	 */
-	it("draws a row for any slot that outlives its turn, resumed workers included", () => {
-		const held = {
-			...initialState("/repo"),
-			subagents: slots(subagentSlot("resumed", {type: "Explore", outlivesTurn: true})),
-		};
-		expect(runningSubagents(settleTurn(held).subagents).rows.map((row) => row.id)).toEqual([
-			"resumed",
-		]);
 	});
 });

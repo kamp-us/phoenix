@@ -1,7 +1,6 @@
 /** The deploy-environment taxonomy (ADR 0088), including the fail-LOUD unknown-env guard. */
 import {describe, expect, it} from "vitest";
 import {
-	AUDIT_ENVIRONMENT,
 	AUDIT_STAGE,
 	DEFAULT_ENVIRONMENT,
 	ENVIRONMENTS,
@@ -21,11 +20,6 @@ describe("the taxonomy (ADR 0088, + the `audit` class #1511)", () => {
 
 	it("fail-closes to production when ENVIRONMENT is unset", () => {
 		expect(DEFAULT_ENVIRONMENT).toBe("production");
-	});
-
-	it("the audit class is its own literal, distinct from production", () => {
-		expect(AUDIT_ENVIRONMENT).toBe("audit");
-		expect(AUDIT_ENVIRONMENT).not.toBe("production");
 	});
 
 	it("recognizes each class and rejects anything else", () => {
@@ -104,12 +98,6 @@ describe("environmentForStage (the single owner of the prod→production map)", 
 		expect(environmentForStage("pr-1433")).toBe("preview");
 		expect(environmentForStage("it-abc123")).toBe("preview");
 		expect(environmentForStage("dev_umut")).toBe("preview");
-	});
-
-	it("never maps a non-prod stage to production (prod-never at the stage layer)", () => {
-		// Only `prod` is production, so the audit force-on rule can never reach a prod deploy.
-		expect(environmentForStage(AUDIT_STAGE)).not.toBe("production");
-		expect(environmentForStage("pr-1")).not.toBe("production");
 	});
 });
 

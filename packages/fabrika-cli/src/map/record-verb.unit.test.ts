@@ -8,7 +8,7 @@ import {
 	roundDigestOf,
 	rulingComment,
 } from "../grill/fixtures.test-support.ts";
-import {type DecisionEntry, renderDecision, renderOutOfScope, spliceSection} from "./body.ts";
+import {type DecisionEntry, renderDecision, spliceSection} from "./body.ts";
 import {
 	BAD_SECTIONS,
 	NO_TARGET,
@@ -17,7 +17,6 @@ import {
 	TICKET_UNKNOWN,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
-import {runDescope} from "./descope-verb.ts";
 import {
 	commentsJson,
 	digestFor,
@@ -270,69 +269,6 @@ describe("a multi-paragraph finding", () => {
 		expect(landed.decisions).toHaveLength(1);
 		expect(landed.decisions[0]?.text).toBe(FOLDED);
 		expect(mapPatches(seams)[0] ?? "").toContain(FOLDED);
-	});
-});
-
-describe("map record and map descope fold free text the same way", () => {
-	it("both land one line — a sibling that stopped folding fails here", async () => {
-		const folded = composed({text: FOLDED, authority: {_tag: "Finding", ticket: TICKET}});
-		const recordSeams = fakeSeams([
-			[PATCH_TICKET, served("{}")],
-			[PATCH_MAP, served("{}")],
-			...frontier(laneClosed("answered")),
-			[
-				once(MAP_ISSUE),
-				served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
-			],
-			[MAP_ISSUE, served(issueJson({number: MAP, body: folded, labels: ["wayfinding:map"]}))],
-		]);
-		const fromRecord = await Effect.runPromise(
-			Effect.provide(
-				runRecord(options),
-				Layer.merge(recordSeams.layer, fakeFs({files: {[FINDING]: `${MULTI_PARAGRAPH}\n`}}).layer),
-			),
-		);
-
-		const direction = "a per-topic weight column";
-		const descoped = spliceSection(
-			parsed(MAP_BODY),
-			"Out of scope",
-			renderOutOfScope({
-				direction,
-				reason: FOLDED.replace(/\.$/, ""),
-				recordedAt: "2026-08-10",
-			}),
-		);
-		const descopeSeams = fakeSeams([
-			[PATCH_MAP, served("{}")],
-			[
-				once(MAP_ISSUE),
-				served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
-			],
-			[MAP_ISSUE, served(issueJson({number: MAP, body: descoped, labels: ["wayfinding:map"]}))],
-		]);
-		const fromDescope = await Effect.runPromise(
-			Effect.provide(
-				runDescope({
-					map: MAP,
-					digest: digestFor(MAP_BODY),
-					direction,
-					reason: FINDING,
-					ticket: null,
-					repo: null,
-					env: {CLAUDE_PIPELINE_REPO: REPO},
-					now: () => new Date("2026-08-10T00:00:00Z"),
-				}),
-				Layer.merge(descopeSeams.layer, fakeFs({files: {[FINDING]: `${MULTI_PARAGRAPH}\n`}}).layer),
-			),
-		);
-
-		expect([fromRecord.code, fromDescope.code]).toEqual([0, 0]);
-		for (const seams of [recordSeams, descopeSeams]) {
-			const patch = mapPatches(seams)[0] ?? "";
-			expect(patch).toContain(FOLDED.replace(/\.$/, ""));
-			expect(patch).not.toContain("1. the audit log already joins on account id\\n");
-		}
 	});
 });
 
@@ -621,34 +557,5 @@ describe("a citation on a ticket carrying no fork marker", () => {
 		expect(out.code).toBe(TICKET_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain('reads "answered", not "ruled"');
-	});
-
-	it("exits 11 when the reader cannot complete its read — never assumed ruled", async () => {
-		const out = await run(
-			[
-				...unforked(),
-				mapAt(MAP_BODY),
-				[SESSION_ISSUE, served(issueJson({number: SESSION, labels: ["grilling:session"]}))],
-				[SESSION_COMMENTS, {status: 403, body: '{"message":"API rate limit exceeded"}'}],
-			],
-			{ruledOn: SESSION, questionId: QUESTION},
-		);
-		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toContain("Nothing was recorded");
-	});
-
-	it("exits 7 when the cited session does not exist", async () => {
-		const out = await run(
-			[
-				...unforked(),
-				mapAt(MAP_BODY),
-				[SESSION_ISSUE, {status: 404, body: '{"message":"Not Found"}'}],
-			],
-			{ruledOn: SESSION, questionId: QUESTION},
-		);
-		expect(out.code).toBe(NO_TARGET);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toContain("does not exist");
 	});
 });

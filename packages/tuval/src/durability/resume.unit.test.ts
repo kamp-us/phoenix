@@ -3,8 +3,9 @@
  *
  * The two callers are proven where they run — `launch` by the restore proofs under
  * `src/ai-agent/restore/` and `apps/tuval/src/pi-desk/restore/`, `durability/restore.ts` by
- * `restore-services.unit.test.ts`. What is proven here is the step itself, including the case with
- * no test above it: a row that declares no `resume` is sent nothing at all.
+ * `restore-services.unit.test.ts`, and the step folding a row's Msgs into a restored process by
+ * `../process/tea-engine.unit.test.ts`. What is proven here are the two arms that send nothing: a row
+ * that declares no `resume`, and one whose answer is empty.
  */
 
 import {defineMachine} from "@demlik/tea";
@@ -38,14 +39,12 @@ const row = (id: string, resume?: (state: State) => ReadonlyArray<Msg>): AnyProg
 		placement: {host: "local"},
 	}) satisfies Program<State, Msg, never, never, unknown, never, never>;
 
-const WAKING = "waking";
+const QUIET = "quiet";
 const SILENT = "silent";
 
 const kernel = Processes.layer.pipe(
 	Layer.provideMerge(Checkpoints.layer(memoryStores())),
-	Layer.provideMerge(
-		Registry.layer([row(WAKING, (state) => (state.saved ? [{type: "wake"}] : [])), row(SILENT)]),
-	),
+	Layer.provideMerge(Registry.layer([row(QUIET, () => []), row(SILENT)])),
 );
 
 const spawn = (program: string, id: string) =>
@@ -57,15 +56,6 @@ const spawn = (program: string, id: string) =>
 	);
 
 describe("the resume a spawner dispatches into a restored process", () => {
-	it.effect("sends the row's own Msgs, folded into the state the caller then reads", () =>
-		Effect.gen(function* () {
-			const handle = yield* spawn(WAKING, "waking-one");
-			const registry = yield* Registry;
-			yield* dispatchResume(yield* registry.resolve(ProgramId.make(WAKING)), handle);
-			assert.deepStrictEqual(handle.getState(), {woke: 1, saved: true});
-		}).pipe(Effect.scoped, Effect.provide(kernel)),
-	);
-
 	it.effect("sends nothing to a row that declares no resume", () =>
 		Effect.gen(function* () {
 			const handle = yield* spawn(SILENT, "silent-one");
@@ -77,12 +67,10 @@ describe("the resume a spawner dispatches into a restored process", () => {
 
 	it.effect("sends nothing when the row's own answer is empty", () =>
 		Effect.gen(function* () {
-			const handle = yield* spawn(WAKING, "waking-two");
+			const handle = yield* spawn(QUIET, "quiet-one");
 			const registry = yield* Registry;
-			const waking = yield* registry.resolve(ProgramId.make(WAKING));
-			assert.deepStrictEqual(waking.resume?.({woke: 0, saved: false}), []);
-			yield* dispatchResume(waking, handle);
-			assert.deepStrictEqual(handle.getState(), {woke: 1, saved: true});
+			yield* dispatchResume(yield* registry.resolve(ProgramId.make(QUIET)), handle);
+			assert.deepStrictEqual(handle.getState(), {woke: 0, saved: true});
 		}).pipe(Effect.scoped, Effect.provide(kernel)),
 	);
 });

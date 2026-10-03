@@ -10,7 +10,7 @@ import {expect, test} from "@playwright/test";
  * The authed-only affordances: the `.kp-topbar__user` pill in the global topbar, and
  * pano's `yeni gönderi` composer CTA in the pano Subnav's primary-action zone (placement
  * law #2587) — both rendered only when a session is present (a signed-out visitor sees
- * neither — see 02-topbar.spec.ts).
+ * neither — see 08-auth.spec.ts).
  */
 test.describe("Authed session (storageState)", () => {
 	test("the injected session renders authed-only affordances", async ({page}) => {

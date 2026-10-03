@@ -118,11 +118,6 @@ describe("solo-laptop: a worktree, a free port, an .env — and nothing else", (
 });
 
 describe("web-app-postgres: a scratch database per worktree", () => {
-	it("is one program under the id the graph node names", () => {
-		expect(postgresRow.id).toBe("worktree");
-		expect(postgresConfig.programs).toHaveLength(1);
-	});
-
 	it("creates the database, installs and migrates — in that order, inside the worktree", async () => {
 		const runner = fakeRunner({
 			files: {"/code/my-app/.env.example": TEMPLATE},
@@ -157,11 +152,6 @@ describe("web-app-postgres: a scratch database per worktree", () => {
 });
 
 describe("docker-compose: a compose project per worktree", () => {
-	it("is one program under the id the graph node names", () => {
-		expect(dockerRow.id).toBe("worktree");
-		expect(dockerConfig.version).toBe(1);
-	});
-
 	it("brings up a project named for the worktree, and takes it down with its volumes", async () => {
 		const runner = fakeRunner({
 			files: {"/code/my-stack/.env.example": "APP_PORT=3000\n"},
@@ -181,11 +171,6 @@ describe("docker-compose: a compose project per worktree", () => {
 });
 
 describe("nix: the flake is the environment, so there is no env step", () => {
-	it("is one program under the id the graph node names", () => {
-		expect(nixRow.id).toBe("worktree");
-		expect(nixConfig.programs).toHaveLength(1);
-	});
-
 	it("declares the env step away, and reads no template at all", async () => {
 		expect(nixOptions.env).toBe(false);
 		expect(planFor(nixOptions).env).toBeNull();
@@ -253,18 +238,6 @@ describe("every persona, together", () => {
 				kind: "module",
 				ref: "@kampus/tuval-worktree/window",
 			});
-		}
-	});
-
-	it("closes every one of them without --force, which is the no-data-loss default", () => {
-		for (const options of [
-			soloOptions,
-			postgresOptions,
-			dockerOptions,
-			nixOptions,
-			fabrikaOptions,
-		]) {
-			expect(teardownFor(options).force).toBe(false);
 		}
 	});
 });

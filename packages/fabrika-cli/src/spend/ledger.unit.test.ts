@@ -1,28 +1,17 @@
 /**
- * The spend ledger's two halves, driven against a temp directory with no model call.
- *
- * The append tier runs on the real Node filesystem on purpose: append-only-ness is a property of the
- * open flag, and a scripted `FileSystem` double would assert the call rather than the behaviour.
+ * The legacy spend ledger's line format, read back the way the roll-up reads it: no filesystem and
+ * no model call. Nothing writes this format any more; the reader still has to take every line an
+ * older run left behind.
  */
-import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
-import {tmpdir} from "node:os";
-import {join} from "node:path";
-import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect} from "effect";
 import {
-	appendSpendLedger,
 	DEFAULT_SPEND_LEDGER_PATH,
 	encodeSpendRows,
 	LEDGER_ROW_VERSION,
 	type LedgerRow,
-	persistSpendRows,
 	readSpendLedger,
 } from "./ledger.ts";
 import type {RunSpend} from "./token-spend.ts";
-
-const live = <A, E>(effect: Effect.Effect<A, E, NodeServices.NodeServices>): Promise<A> =>
-	Effect.runPromise(Effect.provide(effect, NodeServices.layer));
 
 const reconstructed: RunSpend = {
 	_tag: "Reconstructed",
@@ -58,15 +47,6 @@ const row = (overrides: Partial<LedgerRow> = {}): LedgerRow => ({
  * a runtime comparison, so the bump lands as a red test carrying its instructions.
  */
 const CURRENT_VERSION: number = LEDGER_ROW_VERSION;
-
-const withTempDir = async (body: (dir: string) => Promise<void>): Promise<void> => {
-	const dir = mkdtempSync(join(tmpdir(), "fabrika-spend-ledger-"));
-	try {
-		await body(dir);
-	} finally {
-		rmSync(dir, {recursive: true, force: true});
-	}
-};
 
 describe("the default ledger path", () => {
 	it("is repo-relative, so no machine-local literal reaches a source file", () => {
@@ -162,13 +142,6 @@ describe("readSpendLedger — tolerant of anything a partial write can leave beh
 		assert.strictEqual(read.skipped, 1);
 	});
 
-	it("skips a row written by a version it does not know, and counts it", () => {
-		const line = JSON.stringify({...JSON.parse(encodeSpendRows([row()]).trim()), v: 99});
-		const read = readSpendLedger(`${line}\n`);
-		assert.strictEqual(read.rows.length, 0);
-		assert.strictEqual(read.skipped, 1);
-	});
-
 	it("keeps damage and a newer row version apart — they ask the operator for opposite things", () => {
 		const newer = JSON.stringify({...JSON.parse(encodeSpendRows([row()]).trim()), v: 99});
 		const read = readSpendLedger(`not json at all\n${newer}\n${encodeSpendRows([row()])}`);
@@ -209,77 +182,6 @@ describe("readSpendLedger — tolerant of anything a partial write can leave beh
 			rows: [],
 			skipped: 0,
 			skips: {malformed: 0, newerVersion: 0},
-		});
-	});
-});
-
-describe("appendSpendLedger — append-only against a real temp directory", () => {
-	it("creates the ledger and its parent directory on the first suite", async () => {
-		await withTempDir(async (dir) => {
-			const path = join(dir, "nested", "spend-ledger.jsonl");
-			await live(appendSpendLedger(path, [row({caseId: 1})]));
-			assert.strictEqual(readSpendLedger(readFileSync(path, "utf8")).rows.length, 1);
-		});
-	});
-
-	it("leaves the first suite's bytes unchanged when a second suite appends", async () => {
-		await withTempDir(async (dir) => {
-			const path = join(dir, "spend-ledger.jsonl");
-			await live(appendSpendLedger(path, [row({caseId: 1})]));
-			const first = readFileSync(path, "utf8");
-			await live(appendSpendLedger(path, [row({caseId: 2}), row({caseId: 3})]));
-			const second = readFileSync(path, "utf8");
-			assert.strictEqual(second.slice(0, first.length), first);
-			assert.deepStrictEqual(
-				readSpendLedger(second).rows.map((r) => r.caseId),
-				[1, 2, 3],
-			);
-		});
-	});
-
-	it("appends after a malformed line without rewriting it — the reader skips, the writer does not repair", async () => {
-		await withTempDir(async (dir) => {
-			const path = join(dir, "spend-ledger.jsonl");
-			writeFileSync(path, "half a row, no newline");
-			await live(appendSpendLedger(path, [row({caseId: 7})]));
-			const read = readSpendLedger(readFileSync(path, "utf8"));
-			assert.deepStrictEqual(
-				read.rows.map((r) => r.caseId),
-				[7],
-			);
-			assert.strictEqual(read.skipped, 1);
-		});
-	});
-
-	it("writes nothing at all when the suite produced no rows — not even an empty file", async () => {
-		await withTempDir(async (dir) => {
-			const path = join(dir, "spend-ledger.jsonl");
-			await live(appendSpendLedger(path, []));
-			assert.strictEqual(existsSync(path), false);
-		});
-	});
-
-	it("persists with nothing to say, and says exactly one thing when it could not", async () => {
-		await withTempDir(async (dir) => {
-			const path = join(dir, "spend-ledger.jsonl");
-			assert.deepStrictEqual(await live(persistSpendRows(path, [row()])), []);
-
-			const occupied = join(dir, "occupied");
-			writeFileSync(occupied, "");
-			const notes = await live(persistSpendRows(join(occupied, "spend-ledger.jsonl"), [row()]));
-			assert.strictEqual(notes.length, 1);
-			assert.strictEqual(notes[0]?.includes(occupied), true);
-		});
-	});
-
-	it("fails rather than reporting a write that did not land", async () => {
-		await withTempDir(async (dir) => {
-			const path = join(dir, "occupied");
-			writeFileSync(path, "");
-			const outcome = await live(
-				Effect.result(appendSpendLedger(join(path, "spend-ledger.jsonl"), [row()])),
-			);
-			assert.strictEqual(outcome._tag, "Failure");
 		});
 	});
 });

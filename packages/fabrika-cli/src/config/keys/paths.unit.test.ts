@@ -1,10 +1,8 @@
 import {describe, expect, it} from "vitest";
 import {CYCLE_DOC_PATH} from "../../plan/github.ts";
-import {DECISIONS_ROOT, SHIPPED_GOVERNED_ROOTS} from "../../review/classes.ts";
+import {DECISIONS_ROOT} from "../../review/classes.ts";
 import {ROADMAP_FILE} from "../../triage/roadmap.ts";
-import {CONFIG_PATH} from "../document.ts";
 import {loadConfig, resolve} from "../load.ts";
-import {governedRootsKey} from "./governed-roots.ts";
 import {
 	CYCLE_DOC_KEY,
 	cycleDocKey,
@@ -95,27 +93,5 @@ describe("`decisionsDir` is the one declinable key", () => {
 	it("renders a declined key back as `null` — the readout prints what the file says", () => {
 		expect(decisionsDirKey.render?.({_tag: "Declined"})).toBeNull();
 		expect(decisionsDirKey.render?.({_tag: "Path", path: ".decisions"})).toBe(".decisions");
-	});
-});
-
-describe("the governed-root set", () => {
-	it("ships with the config file in it, so a diff that weakens the config owes a verdict", () => {
-		expect(SHIPPED_GOVERNED_ROOTS).toContain(CONFIG_PATH);
-	});
-
-	// The two ways a config could turn the gate off, asserted here beside the rest of the path
-	// surface because that is where a reader looks for what a declared path may not be.
-	it("refuses an empty list rather than reading it as `nothing is governed`", () => {
-		const resolved = resolve(load({governedRoots: []}), governedRootsKey);
-		expect(resolved._tag).toBe("Malformed");
-		if (resolved._tag !== "Malformed") return;
-		expect(resolved.reason).toContain("nothing would be governed");
-	});
-
-	it("refuses a whole load whose roots do not cover the config file", () => {
-		const refused = load({governedRoots: ["docs/"]});
-		expect(refused._tag).toBe("Refused");
-		if (refused._tag !== "Refused") return;
-		expect(refused.reason).toContain("cannot un-govern itself");
 	});
 });

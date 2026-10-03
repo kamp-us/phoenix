@@ -196,8 +196,9 @@ interface SecondRun {
 	readonly restored: AiAgentSessionState;
 	readonly restoredCount: number;
 	readonly afterReconnect: ReadonlyArray<string>;
+	/** The operator's own lines on the tail once the reconnect settled, before anything was sent. */
+	readonly promptsAfterReconnect: ReadonlyArray<string>;
 	readonly pageItems: ReadonlyArray<string>;
-	readonly pageAskedBeforeAnyNewPrompt: boolean;
 	readonly afterNewPrompt: ReadonlyArray<string>;
 	readonly newPromptTexts: ReadonlyArray<string>;
 }
@@ -295,6 +296,9 @@ const runFromTheCheckpoint = (
 		);
 		yield* quiet(window);
 		const afterReconnect = rendered(window);
+		const promptsAfterReconnect = tailOf(window).flatMap((item) =>
+			item.kind === "user" ? [item.text] : [],
+		);
 
 		yield* askForPage(window, 10);
 		yield* until(
@@ -310,7 +314,6 @@ const runFromTheCheckpoint = (
 				? page.items.flatMap((item) => (item.kind === "user" ? [item.text] : []))
 				: [];
 
-		const before = new Set(rendered(window));
 		yield* say(window, "and once more", "k3");
 		yield* until("the new turn to be answered", () => answered(window, "and once more"), seen);
 		yield* quiet(window);
@@ -323,8 +326,8 @@ const runFromTheCheckpoint = (
 			restored,
 			restoredCount: booted.report.restoredCount,
 			afterReconnect,
+			promptsAfterReconnect,
 			pageItems,
-			pageAskedBeforeAnyNewPrompt: !before.has("user:and once more"),
 			afterNewPrompt: rendered(window),
 			newPromptTexts: textsIn(window),
 		} satisfies SecondRun;
@@ -409,9 +412,9 @@ describe("a Pi session, stopped and booted back over its checkpoints", () => {
 
 	it("replays no prompt: the reload adds no turn until one is asked for", () => {
 		expect(
-			outcome.second.pageAskedBeforeAnyNewPrompt,
-			"the reload re-sent the last prompt instead of waiting to be asked",
-		).toBe(true);
+			outcome.second.promptsAfterReconnect,
+			"the reload re-sent a prompt instead of waiting to be asked",
+		).toEqual(["read the readme", "now run the tool"]);
 	});
 
 	it("pages the pre-restart history out of the JSONL", () => {

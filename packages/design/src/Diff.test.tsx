@@ -1,9 +1,7 @@
 import {readFileSync} from "node:fs";
 import {join} from "node:path";
 import {render, screen} from "@testing-library/react";
-import fc from "fast-check";
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {runEnforcedInvariants} from "./a11y/check";
 import {Diff} from "./Diff";
 
 // The layout is a prop the library reads inside its shadow root, and jsdom neither lays out nor
@@ -24,8 +22,8 @@ vi.mock("@pierre/diffs/react", async (importOriginal) => {
 /**
  * The rows themselves are drawn by `@pierre/diffs` inside a shadow root, and jsdom applies no CSS
  * and runs no layout — so what a test here can hold is the contract this package owns: the scroller
- * is focusable and named, the layout prop reaches the library, and the markup this component adds
- * carries no axe violation.
+ * is focusable and named and the layout prop reaches the library. That the markup this component
+ * adds carries no enforced a11y violation is the property-based suite's (`a11y/registry.tsx`).
  */
 const BEFORE = "const a = 1;\nconst b = 2;\n";
 const AFTER = "const a = 1;\nconst b = 3;\n";
@@ -100,15 +98,5 @@ describe("Diff", () => {
 		expect(getComputedStyle(light).colorScheme).toBe("light");
 
 		style.remove();
-	});
-
-	it("has no axe violations", async () => {
-		const {container} = render(<Diff before={BEFORE} after={AFTER} path="src/count.ts" />);
-
-		const violations = await runEnforcedInvariants(container, {
-			kind: "presentational",
-			arb: fc.constant(<div />),
-		});
-		expect(violations).toEqual([]);
 	});
 });

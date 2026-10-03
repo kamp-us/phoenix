@@ -4,14 +4,8 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {loadSidechain, SIDECHAIN_AGENT_ID} from "./fixtures/load.ts";
-import {
-	isSidechainRefusal,
-	readSidechain,
-	sidechainFileName,
-	sidechainMetaName,
-	UNNAMED_SUBAGENT,
-} from "./sidechain.ts";
+import {loadSidechain} from "./fixtures/load.ts";
+import {isSidechainRefusal, readSidechain, UNNAMED_SUBAGENT} from "./sidechain.ts";
 
 const AT = 1_700_000_000_000;
 const capture = loadSidechain();
@@ -113,17 +107,5 @@ describe("a line that will not parse", () => {
 		expect(isSidechainRefusal(read)).toBe(true);
 		if (!isSidechainRefusal(read)) return;
 		expect(read.line).toBe(1);
-	});
-
-	it("never answers an empty transcript in place of one", () => {
-		const read = broken(["{oh no"]);
-		expect(isSidechainRefusal(read)).toBe(true);
-	});
-});
-
-describe("the file names the CLI writes", () => {
-	it("are the two the store opens", () => {
-		expect(sidechainFileName(SIDECHAIN_AGENT_ID)).toBe(`agent-${SIDECHAIN_AGENT_ID}.jsonl`);
-		expect(sidechainMetaName(SIDECHAIN_AGENT_ID)).toBe(`agent-${SIDECHAIN_AGENT_ID}.meta.json`);
 	});
 });

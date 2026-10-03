@@ -16,7 +16,7 @@ import {describe, expect, it} from "vitest";
 import {fakeHttp, fakeShell, type HttpReply} from "../fakes.test-support.ts";
 import {NO_TOKEN} from "../io/gh-api.ts";
 import type {UploadTarget} from "./evidence-verb.ts";
-import {attachmentUpload, forgetCredentials, ghAttachmentUpload} from "./http.ts";
+import {attachmentUpload, ghAttachmentUpload} from "./http.ts";
 
 const target = (surface: string): UploadTarget => ({
 	surface,
@@ -114,12 +114,6 @@ describe("attachmentUpload's read-back through GitHub's renderer", () => {
 		expect(http.headers[2]?.authorization).toBeUndefined();
 	});
 
-	it("never fetches the fresh URL itself — it reads 404 until something posted embeds it", async () => {
-		const http = scripted();
-		await upload(http);
-		expect(http.calls.some((call) => call.startsWith(`GET ${HOSTED}`))).toBe(false);
-	});
-
 	it("sends the token to the GitHub API only, never to the served-asset host", async () => {
 		const http = scripted();
 		await upload(http);
@@ -206,7 +200,6 @@ describe("attachmentUpload's read-back through GitHub's renderer", () => {
 
 describe("ghAttachmentUpload's credentials", () => {
 	it("resolves nothing until an upload asks for them", () => {
-		forgetCredentials();
 		const http = fakeHttp([]);
 		const noGh = fakeShell([], undefined, [/^gh /]);
 		const leg = ghAttachmentUpload(withToken);
@@ -216,7 +209,6 @@ describe("ghAttachmentUpload's credentials", () => {
 	});
 
 	it("resolves one repo once, and each repo on its own — never once per surface", async () => {
-		forgetCredentials();
 		const http = fakeHttp([[/repos\//, {status: 500, body: "{}"}]]);
 		const noGh = fakeShell([], undefined, [/^gh /]);
 		await run("o/r", "one", withToken, http, noGh);
@@ -230,15 +222,16 @@ describe("ghAttachmentUpload's credentials", () => {
 	});
 
 	it("refuses naming both env vars when nothing resolves a token, and reads nothing", async () => {
-		forgetCredentials();
 		const http = fakeHttp([]);
 		const noGh = fakeShell([], undefined, [/^gh /]);
-		expect(await run("o/r", "one", {}, http, noGh)).toEqual({_tag: "Failed", reason: NO_TOKEN});
+		expect(await run("o/tokenless", "one", {}, http, noGh)).toEqual({
+			_tag: "Failed",
+			reason: NO_TOKEN,
+		});
 		expect(http.calls).toEqual([]);
 	});
 
 	it("tells a repo that is absent from one whose id could not be read", async () => {
-		forgetCredentials();
 		const noGh = fakeShell([], undefined, [/^gh /]);
 		const gone = await run(
 			"o/gone",
@@ -265,26 +258,28 @@ describe("ghAttachmentUpload's credentials", () => {
 	});
 
 	it("refuses a 200 that names no numeric id rather than uploading against one it invented", async () => {
-		forgetCredentials();
 		const http = fakeHttp([[/repos\//, {status: 200, body: JSON.stringify({id: "918"})}]]);
 		const noGh = fakeShell([], undefined, [/^gh /]);
-		const result = await run("o/r", "one", withToken, http, noGh);
+		const result = await run("o/idless", "one", withToken, http, noGh);
 		expect(result).toEqual({
 			_tag: "Failed",
-			reason: "cannot resolve o/r's numeric id: GitHub answered 200 but named no repository id",
+			reason:
+				"cannot resolve o/idless's numeric id: GitHub answered 200 but named no repository id",
 		});
 	});
 
 	it("reads the resolved repo's upload back in that repo's rendering context", async () => {
-		forgetCredentials();
 		const http = fakeHttp([
-			[/^GET https:\/\/api\.github\.com\/repos\/o\/r$/, {status: 200, body: '{"id":918}'}],
+			[/^GET https:\/\/api\.github\.com\/repos\/o\/readback$/, {status: 200, body: '{"id":918}'}],
 			[UPLOAD, uploaded()],
 			[RENDER, {status: 200, body: rendered()}],
 			[SERVED, {status: 200, body: BYTES_BODY}],
 		]);
 		const noGh = fakeShell([], undefined, [/^gh /]);
-		expect(await run("o/r", "one", withToken, http, noGh)).toEqual({_tag: "Ok", url: HOSTED});
-		expect(JSON.parse(http.bodies[2] ?? "")).toMatchObject({context: "o/r"});
+		expect(await run("o/readback", "one", withToken, http, noGh)).toEqual({
+			_tag: "Ok",
+			url: HOSTED,
+		});
+		expect(JSON.parse(http.bodies[2] ?? "")).toMatchObject({context: "o/readback"});
 	});
 });

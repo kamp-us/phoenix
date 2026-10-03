@@ -13,7 +13,7 @@
 import {frontmatterBlock, idSortKey, isLive, statusOf, titleOf} from "./records.ts";
 
 /** Below this many live-accepted records, rarity is not measurable and the run carries no information. */
-export const RARITY_FLOOR = 10;
+const RARITY_FLOOR = 10;
 
 /** The default shortlist cap. */
 export const DEFAULT_LIMIT = 8;

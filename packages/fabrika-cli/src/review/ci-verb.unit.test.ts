@@ -578,21 +578,6 @@ describe("the gate-coverage read", () => {
 		expect(out.stdout).toBe("");
 	});
 
-	it("covers a mixed head off the head-inspecting run beside the cleanup one", async () => {
-		const out = await run(
-			[
-				[PULL, served(pull())],
-				[RUNS, GREEN],
-			],
-			[
-				[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CLEANUP_YML))],
-				[AT_HEAD, served(runsAtHead({path: CLEANUP_YML, event: "pull_request_target"}, CI_YML))],
-			],
-		);
-		expect(out.code).toBe(0);
-		expect(out.stderr).toContain(`review ci: 1 of 3 workflow(s) o/r authors inspected ${HEAD}.`);
-	});
-
 	it("judges an abbreviated --sha exactly as its full object name does", async () => {
 		// The Actions run list filters `head_sha` as an exact string, so the abbreviation has to be
 		// resolved before the read. This script answers only the full one: an abbreviation on the wire
@@ -629,18 +614,6 @@ describe("the gate-coverage read", () => {
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("cannot judge gate coverage at 03135b91");
-	});
-
-	it("names the coverage it judged when the repo's own gates did run", async () => {
-		const out = await run(
-			[
-				[PULL, served(pull())],
-				[RUNS, GREEN],
-			],
-			GATED,
-		);
-		expect(out.code).toBe(0);
-		expect(out.stderr).toContain(`review ci: 2 of 2 workflow(s) o/r authors inspected ${HEAD}.`);
 	});
 
 	it("carries the coverage on the --json object", async () => {

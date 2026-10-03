@@ -54,7 +54,4 @@ describe("promotionOutcomeMessage — lowercase Turkish, state as words", () => 
 			expect(msg).toBe(msg.toLowerCase());
 		}
 	});
-	it("a denial tells the user they lack authority, not that the target doesn't exist", () => {
-		expect(promotionOutcomeMessage("denied")).toContain("yetkin yok");
-	});
 });

@@ -20,6 +20,13 @@ describe("the Tuval design catalog", () => {
 		expect(entries.filter(([, value]) => turkish.test(value))).toEqual([]);
 	});
 
+	// The package's Turkish "diyagram" carries no Turkish letter, so the scan above cannot see a
+	// fallback on this key.
+	it("reads the diagram's copy in English", () => {
+		expect(tuvalDesignMessages["ui.markdown.diagram"]).toBe("diagram");
+		expect(tuvalDesignMessages["ui.markdown.diagram.source"]).toBe("diagram source");
+	});
+
 	it("names no backend, because one window renders every agent", () => {
 		const backend = /\b(Pi|Claude|Anthropic)\b/;
 		expect(entries.filter(([, value]) => backend.test(value))).toEqual([]);

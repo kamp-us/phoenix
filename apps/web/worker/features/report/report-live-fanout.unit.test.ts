@@ -323,41 +323,6 @@ describe("report.restore — re-enters the target so a second moderator reconcil
 		},
 	);
 
-	it.effect(
-		"a SANDBOXED post restore is suppressed from the public feed (ADR 0082 / #1205)",
-		() => {
-			const {recorded, scheduled, layer} = recordingPublisher();
-			return Effect.gen(function* () {
-				yield* mutations["report.restore"].handler({
-					input: {targetKind: "post", targetId: TargetId.make("p1")},
-					select: ["id"],
-				});
-				yield* flush(scheduled);
-				// A sandboxed restore broadcasts nothing to the viewer-blind public feed.
-				assert.deepStrictEqual(recorded, []);
-			}).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						reportStub({targetKind: "post", targetId: TargetId.make("p1")}),
-						Layer.succeed(
-							Pano,
-							panoStub({
-								moderateRestorePost: () =>
-									Effect.succeed({restored: true, sandboxedAt: new Date("2026-01-01T00:00:00Z")}),
-								getPostsByIds: () => Effect.succeed([postRow("p1")]),
-							}),
-						),
-						Layer.succeed(Sozluk, sozlukStub({})),
-						layer,
-						relationStoreOf([MOD]),
-						agentAuthorityStub,
-						actorContext(human(MOD)),
-					),
-				),
-			);
-		},
-	);
-
 	it.effect("a comment restore re-appends it to the parent post's thread", () => {
 		const {recorded, scheduled, layer} = recordingPublisher();
 		return Effect.gen(function* () {

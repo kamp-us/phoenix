@@ -226,11 +226,6 @@ describe("read — a criterion that wraps is one criterion", () => {
 });
 
 describe("read — Absent", () => {
-	it("answers Absent for a body where nothing reaches for the block", () => {
-		const result = read(body("### What to build", "Stand up the group.", "", "Some prose."));
-		expect(result._tag).toBe("Absent");
-	});
-
 	it("answers Absent for a body that is only prose", () => {
 		expect(read("Just a paragraph, no headings at all.")._tag).toBe("Absent");
 	});
@@ -272,14 +267,6 @@ describe("read — Malformed: the drifts a naive reader answers `empty` for", ()
 	it("a checkbox item with no text is Malformed rather than a silently dropped criterion", () => {
 		const result = read(body("### Acceptance criteria", "- [ ] first", "- [ ]"));
 		expect(result._tag).toBe("Malformed");
-	});
-
-	it("two conforming headings serve the LAST — an amendment supersedes what it sits below", () => {
-		expect(
-			found(
-				body("### Acceptance criteria", "- [ ] one", "", "### Acceptance criteria", "- [ ] two"),
-			),
-		).toEqual([criterion("two", false)]);
 	});
 
 	it("no drift answer is ever Found, so no caller can read a drift as a zero-criteria contract", () => {

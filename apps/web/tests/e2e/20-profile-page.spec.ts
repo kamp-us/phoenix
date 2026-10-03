@@ -87,10 +87,5 @@ test.describe("Profile page", () => {
 		).toBeVisible();
 	});
 
-	test("/u/<unknown> renders the 404 page", async ({page}) => {
-		const bogus = `nobody-${Date.now().toString(36)}`;
-		await page.goto(`/u/${bogus}`);
-		await expect(page.getByTestId("not-found-page")).toBeVisible({timeout: 10_000});
-		await expect(page.getByRole("heading")).toContainText(/bulunamadı/i);
-	});
+	// `/u/<unknown>` rendering the 404 page is proven by `23-auth-redirect.spec.ts`.
 });

@@ -236,8 +236,8 @@ node packages/fabrika-cli/src/bin.ts spend rollup --ledger .fabrika/example-usag
 ```
 
 These are independent processes. [record.cli.test.ts](../src/spend/record.cli.test.ts) exercises
-that journey, copied history and competing processes. [usage-ledger.unit.test.ts](../src/spend/usage-ledger.unit.test.ts)
-uses actual files for interrupted appends, replay, legacy reads and recording failure recovery.
+competing recorder processes and a read in a fresh one. [usage-ledger.unit.test.ts](../src/spend/usage-ledger.unit.test.ts)
+uses actual files for copied history, interrupted appends, replay, legacy reads and recording failure recovery.
 [usage-journey.cli.test.ts](../src/spend/usage-journey.cli.test.ts) drives Claude and Codex callback
 boundaries in fresh processes through interruption, delayed descendants, retries, model switches
 and repeated reads. Its eight-response example expects Codex input/output 40/20 and Claude

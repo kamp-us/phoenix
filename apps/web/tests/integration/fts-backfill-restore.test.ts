@@ -1,11 +1,12 @@
 /**
- * fts-backfill as the D1-restore FTS rebuild path (#2754) — the restore-scenario
- * complement to `fts-backfill.test.ts` (#645). That test proves ONE deleted FTS
- * row is re-findable; this one proves the whole D1-restore condition: BOTH FTS
- * virtual tables emptied (a restore drops the virtual tables and recreates them
- * bare — D1 can't export them, ADR 0080), base `term_record` / `post_record` rows
- * intact, then a single `fts-backfill run` reconstructs the entire index from
- * those base rows alone.
+ * fts-backfill as the D1-restore FTS rebuild path (#2754), and the real-D1 proof of the
+ * backfill → FTS5 MATCH loop (#645): the pure core is unit-tested (`buildBackfillStatements`,
+ * #534), which proves what the backfill writes, never that a backfilled row is findable by a
+ * query that folds the same way on D1's FTS5. This runs the shipped bin against the whole
+ * D1-restore condition: BOTH FTS virtual tables emptied (a restore drops the virtual tables and
+ * recreates them bare — D1 can't export them, ADR 0080), base `term_record` / `post_record` rows
+ * intact, then a single `fts-backfill run` reconstructs the entire index from those base rows
+ * alone, findable by a diacritic-folded query.
  *
  * Why this scenario needs its own dedicated stage: it truncates `term_search` /
  * `post_search` wholesale, which would clobber a sibling file's corpus on a shared

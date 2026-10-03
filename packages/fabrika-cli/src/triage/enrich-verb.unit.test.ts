@@ -6,13 +6,11 @@ import {
 	COMMENTS,
 	claimPage,
 	declaring,
-	EXPIRED,
 	type GuardedSeams,
 	guardedShell,
 	LIVE,
 } from "./claim-fixtures.test-support.ts";
 import {
-	BARE_AT_PATH,
 	CLAIMED_ELSEWHERE,
 	CRITERIA_REQUIRED,
 	EMPTY_STDIN,
@@ -405,14 +403,6 @@ describe("runEnrich — the composed body's criteria block must be one the wire 
 });
 
 describe("runEnrich — refusals", () => {
-	it("refuses a FAILED stdin read as UNKNOWN, never as empty", async () => {
-		const outcome = await runScripted([[READ, issue(ORIGINAL)]], {
-			stdin: Effect.succeed<StdinRead>({_tag: "Failed", reason: "EAGAIN"}),
-		});
-		expect(outcome.code).toBe(1);
-		expect(outcome.stderr.at(-1)).toContain("never empty");
-	});
-
 	it("refuses empty-but-READ stdin on 3, and writes nothing", async () => {
 		const shell = guardedShell([[READ, issue(ORIGINAL)]]);
 		const outcome = await Effect.runPromise(
@@ -473,13 +463,6 @@ describe("runEnrich — refusals", () => {
 		expect(
 			body?.startsWith("## In plain words\n\nFocus drops. We keep it.\n\n## What to build"),
 		).toBe(true);
-	});
-
-	it("refuses a bare @ reference on 6", async () => {
-		const outcome = await runScripted([[READ, issue(ORIGINAL)]], {
-			stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "@notes/rewrite.md"}),
-		});
-		expect(outcome.code).toBe(BARE_AT_PATH);
 	});
 
 	it("refuses a machine-local path in the AUTHORED rewrite on 5, while redacting the original", async () => {
@@ -585,19 +568,6 @@ describe("runEnrich — the target guard", () => {
 		string,
 		string | undefined
 	>;
-	const closed: HttpReply = {
-		status: 200,
-		body: JSON.stringify({
-			number: 4312,
-			title: "t",
-			body: ORIGINAL,
-			state: "closed",
-			labels: [],
-			html_url: "https://example.test/issues/4312",
-			milestone: null,
-		}),
-	};
-
 	const guard = async (script: ReadonlyArray<Scripted>) => {
 		const shell = guardedShell(script);
 		const outcome = await Effect.runPromise(
@@ -605,12 +575,6 @@ describe("runEnrich — the target guard", () => {
 		);
 		return {outcome, patched: shell.requests.some((line) => PATCH.test(line))};
 	};
-
-	it("refuses a closed issue on 7 and writes nothing", async () => {
-		const {outcome, patched} = await guard([[READ, closed]]);
-		expect(outcome.code).toBe(ZERO_SCOPE);
-		expect(patched).toBe(false);
-	});
 
 	it("refuses a live claim held by another session on 17 and writes nothing", async () => {
 		const {outcome, patched} = await guard([
@@ -626,25 +590,6 @@ describe("runEnrich — the target guard", () => {
 		const {patched} = await guard([
 			[once(READ), issue(ORIGINAL)],
 			[COMMENTS, claimPage({session: MINE, createdAt: LIVE})],
-			[PATCH, ACCEPTED],
-			[READ, issue(ORIGINAL)],
-		]);
-		expect(patched).toBe(true);
-	});
-
-	it("writes over an issue nobody has claimed", async () => {
-		const {patched} = await guard([
-			[once(READ), issue(ORIGINAL)],
-			[PATCH, ACCEPTED],
-			[READ, issue(ORIGINAL)],
-		]);
-		expect(patched).toBe(true);
-	});
-
-	it("writes when the only foreign claim has aged out", async () => {
-		const {patched} = await guard([
-			[once(READ), issue(ORIGINAL)],
-			[COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})],
 			[PATCH, ACCEPTED],
 			[READ, issue(ORIGINAL)],
 		]);

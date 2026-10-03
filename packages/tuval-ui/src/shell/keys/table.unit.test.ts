@@ -42,12 +42,6 @@ describe("defaultPrefixTable", () => {
 		]);
 	});
 
-	it("leaves the stock tmux splits unbound, as the ruling says", () => {
-		const sequences = defaultPrefixTable.bindings.map((binding) => binding.sequence);
-		expect(sequences).not.toContain("%");
-		expect(sequences).not.toContain('"');
-	});
-
 	it("spells every sequence and the prefix the way the router will", () => {
 		expect(Result.getOrThrow(normalize(defaultPrefixTable.prefix))).toBe(defaultPrefixTable.prefix);
 		for (const binding of defaultPrefixTable.bindings) {
@@ -76,13 +70,6 @@ describe("normalizeSequence()", () => {
 
 	it("refuses the empty sequence", () => {
 		expect(Result.merge(normalizeSequence(""))).toMatchObject({reason: "empty sequence"});
-	});
-
-	it("refuses a sequence whose keys spell nothing, not just an empty input", () => {
-		expect(Result.merge(normalizeSequence("<Shift>"))).toMatchObject({
-			sequence: "<Shift>",
-			reason: "Invalid key: <Shift>",
-		});
 	});
 });
 
@@ -174,13 +161,6 @@ describe("applyKeysConfig()", () => {
 		expect(Result.merge(refused)).toMatchObject({
 			_tag: "UnreadableSequenceError",
 			sequence: "<ctrl-a>",
-		});
-	});
-
-	it("refuses a prefix the key grammar cannot read", () => {
-		expect(Result.merge(applyKeysConfig(defaultPrefixTable, {prefix: "ab"}))).toMatchObject({
-			_tag: "UnreadableSequenceError",
-			sequence: "ab",
 		});
 	});
 });

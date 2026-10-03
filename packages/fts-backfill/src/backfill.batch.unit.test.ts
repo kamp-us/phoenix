@@ -5,10 +5,8 @@
  * `backfill()` drives the FTS write as drizzle's real d1 `batch()` over a fake
  * `D1Database` — which `prepare(sql).bind(...params)` per statement and issues ONE
  * `D1Database.batch([...])`, in source order with bound params. The statements are
- * ADR-0080 drizzle BUILDERS now (ADR 0080 / #863), so what the fake records is the
- * drizzle-rendered SQL; re-wrapping a builder through `db.run(sql)` would yield a
- * `SQLiteRaw` with no `.stmt` and 500 the batch (issue #893) — exactly the regression
- * this path guards. The REST transport's own `prepare`/`bind`/`batch` single-POST
+ * ADR-0080 drizzle BUILDERS (ADR 0080 / #863), so what the fake records is the
+ * drizzle-rendered SQL. The REST transport's own `prepare`/`bind`/`batch` single-POST
  * contract is tested once in `@kampus/d1-rest`, not re-driven here.
  */
 import {createDrizzle, type DrizzleDb} from "@kampus/web/db/Drizzle";

@@ -130,13 +130,17 @@ describe("renderCandidateSet", () => {
 
 	it("wraps a plan-build failure (unfilled term slug) as a CaptureError in-channel", async () => {
 		const {leg} = fakeCapture();
-		const exit = await Effect.runPromiseExit(
-			renderCandidateSet(
-				// empty termSlug ⇒ resolvePrioritySurfaces throws on the :slug route
-				{previewUrl: "https://pr-1.workers.dev", params: {termSlug: ""}, outDir: "/out"},
-				{capture: leg, store: fakeStore()},
+		// A defect would reject this promise; only a failure in the error channel flips to a value.
+		const error = await Effect.runPromise(
+			Effect.flip(
+				renderCandidateSet(
+					// empty termSlug ⇒ resolvePrioritySurfaces throws on the :slug route
+					{previewUrl: "https://pr-1.workers.dev", params: {termSlug: ""}, outDir: "/out"},
+					{capture: leg, store: fakeStore()},
+				),
 			),
 		);
-		assert.isTrue(exit._tag === "Failure");
+		assert.instanceOf(error, CaptureError);
+		assert.strictEqual(error.message, "failed to build candidate-render plan");
 	});
 });

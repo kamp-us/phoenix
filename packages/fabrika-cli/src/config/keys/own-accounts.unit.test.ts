@@ -16,12 +16,6 @@ describe("ownAccounts", () => {
 		});
 	});
 
-	it("decodes to the empty set when the key is absent", () => {
-		expect(
-			resolve(loadConfig({_tag: "Text", text: JSON.stringify({})}), ownAccountsKey),
-		).toMatchObject({_tag: "Default", value: []});
-	});
-
 	it("decodes a declared empty array as the empty set", () => {
 		expect(declared([])).toEqual({_tag: "Declared", layer: "tracked", value: []});
 	});

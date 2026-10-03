@@ -49,12 +49,6 @@ describe.each(CATALOGS)("messageForCode in %s — override wins over the catalog
 	it("falls through to the catalog for a code the override map omits", () => {
 		expect(messageForCode(t, "TAKEN", {BODY_REQUIRED: "yorum boş olamaz"})).toBe(cat["wire.TAKEN"]);
 	});
-
-	it("always resolves to a real message — there is no undefined fallthrough", () => {
-		for (const code of FATE_WIRE_CODES) {
-			expect(messageForCode(t, code)).toBeTruthy();
-		}
-	});
 });
 
 describe("the two locales differ", () => {

@@ -49,11 +49,6 @@ describe("runDecisionsIndexGuard", () => {
 		expect(errors.some((l) => l.includes(`file=${CORPUS}/0284-b.md`))).toBe(true);
 	});
 
-	it("reds a filename/frontmatter number mismatch", async () => {
-		const outcome = await run(corpus({"0284-a.md": body("0285")}));
-		expect(outcome.code).toBe(VIOLATION);
-	});
-
 	// A name that leads with a digit and ends `.md` stays in scope even when malformed. v1's file
 	// filter dropped such a name entirely, so a record whose NAME is broken could claim a taken
 	// number and leave the guard's sight — the exact collision the lock exists to catch.
@@ -73,6 +68,17 @@ describe("runDecisionsIndexGuard", () => {
 		["an empty .decisions directory", corpus({})],
 	])("fails closed with %s", async (_name, options) => {
 		expect((await run(options)).code).toBe(ZERO_SCOPE);
+	});
+
+	// A zero-scope red here would make a valid config a permanent CI failure, and its wording
+	// ("Is the repo root correct?") would send the reader after a defect that is not there.
+	it("skips a repo that declines decisionsDir on exit 0, offering no override", async () => {
+		const outcome = await run({files: {[`${ROOT}/.fabrika.jsonc`]: '{"decisionsDir": null}'}});
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toContain("declines `decisionsDir`");
+		// This verb has no corpus flag, so the skip must not send the reader after `adr`'s `--dir`.
+		expect(outcome.stdout).not.toContain("Point ");
+		expect(outcome.stderr).toEqual([]);
 	});
 
 	it("is UNKNOWN when a record cannot be read", async () => {

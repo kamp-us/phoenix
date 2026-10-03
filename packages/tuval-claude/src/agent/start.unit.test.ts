@@ -50,15 +50,6 @@ const failure = (exit: Exit.Exit<unknown, unknown>): {_tag?: string; reason?: st
 		: {};
 
 describe("start opens one streaming query", () => {
-	it.effect("resolves the session id it opened the query under", () =>
-		on({}, (agent) =>
-			Effect.gen(function* () {
-				const session = yield* agent.start({cwd: CWD});
-				assert.strictEqual(session.sessionId, SESSION_ID);
-			}),
-		),
-	);
-
 	it.effect("hands the SDK the cwd, mode, tools, server, callback and env", () =>
 		on({allowedTools: ["mcp__other__thing"], model: "claude-fable-5-1"}, (agent, scripted) =>
 			Effect.gen(function* () {

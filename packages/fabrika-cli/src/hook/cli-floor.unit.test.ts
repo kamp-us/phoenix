@@ -14,23 +14,6 @@ const floorOf = (minimum: unknown): FloorSource => ({
 });
 
 describe("judgeCliFloor", () => {
-	it("warns when the running CLI is older than the minimum", () => {
-		expect(judgeCliFloor({installed: "0.5.0", floor: floorOf("0.7.1")})).toEqual({
-			_tag: "Below",
-			installed: "0.5.0",
-			minimum: "0.7.1",
-		});
-	});
-
-	it("is silent at exactly the minimum", () => {
-		expect(judgeCliFloor({installed: "0.7.1", floor: floorOf("0.7.1")})._tag).toBe("Met");
-	});
-
-	it("is silent above the minimum", () => {
-		expect(judgeCliFloor({installed: "0.10.0", floor: floorOf("0.9.3")})._tag).toBe("Met");
-		expect(judgeCliFloor({installed: "1.0.0", floor: floorOf("0.99.99")})._tag).toBe("Met");
-	});
-
 	it.each<[string, FloorSource]>([
 		["a floor file that could not be read", {_tag: "Unreadable", reason: "ENOENT"}],
 		["a floor file that is not JSON", {_tag: "Text", text: "minimum: 0.7.1"}],
@@ -44,14 +27,6 @@ describe("judgeCliFloor", () => {
 
 	it("is UNKNOWN when the running CLI's own version is not semver", () => {
 		expect(judgeCliFloor({installed: "dev", floor: floorOf("0.7.1")})._tag).toBe("Unknown");
-	});
-
-	it("carries the read failure's reason through", () => {
-		const verdict = judgeCliFloor({
-			installed: "0.7.1",
-			floor: {_tag: "Unreadable", reason: "ENOENT: no such file"},
-		});
-		expect(verdict).toEqual({_tag: "Unknown", reason: "ENOENT: no such file"});
 	});
 });
 

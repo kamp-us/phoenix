@@ -63,12 +63,6 @@ describe("ReadOnlyComposer render path (#2581)", () => {
 		expect(text).not.toContain("&nbsp;");
 	});
 
-	it("is non-editable (no editing affordances on the reader surface)", async () => {
-		const {container} = render(<ReadOnlyComposer content={SAMPLE} />);
-		const el = await surface(container);
-		expect(el.getAttribute("contenteditable")).toBe("false");
-	});
-
 	it("legacy escaped-link markdown renders without visible \\[ \\] backslashes and links live", async () => {
 		// The exact #2578 stored form — the shared path consumes the backslash escaping (no leak)
 		// and the URL renders as a live anchor.

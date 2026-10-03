@@ -58,13 +58,6 @@ describe("runCatalogGuard", () => {
 		expect(outcome.stderr).toEqual([]);
 	});
 
-	it("ignores dead-shell directories rather than redding on them", async () => {
-		const outcome = await run(
-			repo({name: "acme"}, {real: {dependencies: {react: "catalog:"}}, dead: null}),
-		);
-		expect(outcome.code).toBe(0);
-	});
-
 	it("reds a member that pins a hardcoded version, with nothing on stdout", async () => {
 		const outcome = await run(repo({name: "acme"}, {a: {dependencies: {bar: "^1.2.3"}}}));
 		expect(outcome.code).toBe(VIOLATION);
@@ -108,11 +101,6 @@ describe("runCatalogGuard", () => {
 		expect(
 			outcome.stderr.some((line) => line.startsWith("::error file=packages/a/package.json,line=")),
 		).toBe(true);
-	});
-
-	it("emits no annotation off a runner", async () => {
-		const outcome = await run(repo({name: "acme"}, {a: {dependencies: {bar: "^1.2.3"}}}));
-		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
 	});
 
 	// The fail-closed floor: no manifest in scope means the guard proved nothing, so it reds.

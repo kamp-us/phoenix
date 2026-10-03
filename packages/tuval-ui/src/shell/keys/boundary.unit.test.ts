@@ -27,20 +27,19 @@ describe("keys boundary", () => {
 		expectTypeOf<Binding["command"]>().not.toBeFunction();
 		expectTypeOf<Binding>().not.toBeFunction();
 
-		const handler: Binding = {
+		const _handler: Binding = {
 			sequence: "x",
 			// @ts-expect-error a handler cannot stand in for a command name
 			command: () => "window:close",
 			repeatable: false,
 		};
-		const smuggled: Binding = {
+		const _smuggled: Binding = {
 			sequence: "x",
 			command: "window:close" as CommandName,
 			repeatable: false,
 			// @ts-expect-error and no extra field can smuggle one in beside the name
 			run: () => {},
 		};
-		expect([handler, smuggled]).toHaveLength(2);
 	});
 
 	// The key set is the fence: an armed prefix waits indefinitely (#7842), so a table with nowhere

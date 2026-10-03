@@ -43,7 +43,7 @@ export type CaylakMeter =
 	  };
 
 /** `kefil: var` / `kefil: yok` — the next unmet condition named beside the karma delta. */
-export function vouchFactKey(vouchExists: boolean): CatalogKey {
+function vouchFactKey(vouchExists: boolean): CatalogKey {
 	return vouchExists ? "layout.caylakMeter.vouchFact.yes" : "layout.caylakMeter.vouchFact.no";
 }
 

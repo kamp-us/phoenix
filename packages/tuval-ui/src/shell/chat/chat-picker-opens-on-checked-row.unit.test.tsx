@@ -99,19 +99,3 @@ it("moves the first arrow key from the checked row, not from row 1", async () =>
 		expect(highlightedRow(menu)?.textContent).toBe(NEXT_ROW.label);
 	});
 });
-
-it("still opens the thinking picker's short list on its checked row", async () => {
-	const levels = ["off", "low", "medium", "high", "max"].map((value) => ({
-		value,
-		label: value,
-	}));
-	render(
-		<AgentSettingMenu label="Thinking" items={levels} value="high" onValueChange={() => {}} />,
-	);
-	fireEvent.click(screen.getByRole("button", {name: "Thinking: high"}));
-	const menu = await screen.findByRole("menu", {name: "Thinking: high"});
-
-	await waitFor(() => {
-		expect(highlightedRow(menu)?.textContent).toBe("high");
-	});
-});

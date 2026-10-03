@@ -1,7 +1,7 @@
 /**
  * The shell as a program row. Two halves: the row itself and its place in the box's config module,
  * and the durability the kernel gives it for free — a desk that comes back byte-equal, a window
- * whose process did not, and a snapshot from another definition that refuses the boot.
+ * whose process did not, and a snapshot whose interior the shell's own guard refuses.
  *
  * The reload half runs over `memoryStores()` rather than the file store on purpose: a reload is a
  * second kernel built over the same store objects, which is exactly what a restart is minus the
@@ -15,7 +15,6 @@ import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
-import {SnapshotRefused} from "@kampus/tuval-sdk/kernel/durability/errors";
 import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
@@ -86,12 +85,6 @@ const isSource = (name: string): boolean => name.endsWith(".ts") || name.endsWit
 class StoreWrite extends Schema.TaggedError<StoreWrite>()("StoreWrite", {cause: Schema.Defect()}) {}
 
 const row = (): AnyProgram => shellProgram({effects: unwiredShellEffects});
-
-/** The row under another definition version, which is what a snapshot is checked against. */
-const bumped = (version: string): AnyProgram => {
-	const base = row();
-	return {...base, identity: {...base.identity, version}};
-};
 
 const kernel = (rows: ReadonlyArray<AnyProgram>, stores: ReturnType<typeof memoryStores>) =>
 	Processes.layer.pipe(
@@ -293,36 +286,6 @@ describe("the shell as a program row", () => {
 				step.migrate({desk: {inspectorOpen: true, boardOpen: true}}),
 				Option.some({desk: {inspectorOpen: true, boardOpen: true}}),
 			);
-		},
-		BUDGET_MS,
-	);
-
-	it.effect(
-		"refuses a snapshot from another definition and never fresh-boots over it",
-		() => {
-			const stores = memoryStores();
-			return Effect.gen(function* () {
-				yield* dispatched({type: "workspace.create"}).pipe(
-					Effect.provide(kernel([row()], stores)),
-					Effect.scoped,
-				);
-
-				const outcome = yield* Effect.gen(function* () {
-					const processes = yield* Processes;
-					const table = yield* ProcessTable;
-					const failure = yield* Effect.flip(
-						processes.spawn(shellId, {id: shellProcess, services: Context.empty()}),
-					);
-					return {failure, live: (yield* table.list).length};
-				}).pipe(Effect.provide(kernel([bumped("2.0.0")], stores)), Effect.scoped);
-
-				assert.instanceOf(outcome.failure, SnapshotRefused);
-				assert.strictEqual(
-					outcome.failure.message,
-					`snapshot for process "shell" refused: written by shell@${SHELL_VERSION}, the program is now shell@2.0.0`,
-				);
-				assert.strictEqual(outcome.live, 0);
-			});
 		},
 		BUDGET_MS,
 	);

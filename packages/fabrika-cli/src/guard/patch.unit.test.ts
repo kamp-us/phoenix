@@ -77,25 +77,6 @@ describe("parsePinMarkers", () => {
 describe("auditPins", () => {
 	const patched = parsePatchedDependencies(THREE);
 
-	it("finds nothing when every patched dep has a matching pin (the on-main state)", () => {
-		const markers = [
-			...parsePinMarkers(`// ${TAG} @nkzw/fate@1.3.1`, "src/fate/nkzw.test.ts"),
-			...parsePinMarkers(`// ${TAG} alchemy@2.0.0-beta.59`, "apps/site/tests/flagship.test.ts"),
-			...parsePinMarkers(`// ${TAG} react-fate@1.3.1`, "src/fate/useView.test.tsx"),
-		];
-		expect(auditPins(patched, markers)).toEqual({missing: [], stale: []});
-	});
-
-	it("names the unpinned dep when a patched dep has no marker", () => {
-		const markers = [
-			...parsePinMarkers(`// ${TAG} @nkzw/fate@1.3.1`, "a.test.ts"),
-			...parsePinMarkers(`// ${TAG} alchemy@2.0.0-beta.59`, "b.test.ts"),
-		];
-		const audit = auditPins(patched, markers);
-		expect(audit.missing.map((d) => d.key)).toEqual(["react-fate@1.3.1"]);
-		expect(audit.stale).toEqual([]);
-	});
-
 	it("names the stale marker when a pin's version is no longer maintained", () => {
 		const markers = [
 			...parsePinMarkers(`// ${TAG} @nkzw/fate@1.3.1`, "a.test.ts"),

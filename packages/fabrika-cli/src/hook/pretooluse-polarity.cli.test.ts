@@ -125,12 +125,9 @@ describe("a hook the surface declares, run from a checkout it refuses to answer 
 		});
 	};
 
-	it("refuses, and says so on stderr — fail open and loud", () => {
-		expect(run().stderr).toContain("different repositories");
-	});
-
-	it("does not exit on the blocking code, so the tool call proceeds", () => {
-		const {status} = run();
+	it("refuses loudly on stderr and not on the blocking code, so the tool call proceeds", () => {
+		const {status, stderr} = run();
+		expect(stderr).toContain("different repositories");
 		expect(status).not.toBe(PRETOOLUSE_BLOCKING_EXIT);
 		expect(status).toBe(NO_IMPLEMENTATION);
 	});

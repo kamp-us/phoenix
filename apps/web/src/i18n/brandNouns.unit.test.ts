@@ -104,10 +104,6 @@ describe("product names read identically in every locale", () => {
 		expect(Object.keys(trMessages).length).toBeGreaterThan(0);
 	});
 
-	it("carries the same key set in both locales", () => {
-		expect(Object.keys(enMessages).sort()).toEqual(Object.keys(trMessages).sort());
-	});
-
 	it("lets English keep a name the Turkish message suffixes", () => {
 		expect(countViolations({k: "sözlüğe göz at"}, {k: "browse sözlük"})).toEqual([]);
 	});

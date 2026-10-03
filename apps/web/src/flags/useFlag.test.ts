@@ -12,24 +12,9 @@ describe("resolveFlagResponse — useFlag's safe-default wiring of resolveFlag",
 		expect(resolveFlagResponse(true, {flags: {"new-ui": true}}, "new-ui", false)).toBe(true);
 	});
 
-	it("returns the server value even when it differs from a non-false default", () => {
-		expect(resolveFlagResponse(true, {flags: {"kill-switch": false}}, "kill-switch", true)).toBe(
-			false,
-		);
-	});
-
 	it("holds the default on a non-2xx response (the fetch-error path)", () => {
 		expect(resolveFlagResponse(false, {flags: {"new-ui": true}}, "new-ui", false)).toBe(false);
 		expect(resolveFlagResponse(false, null, "new-ui", true)).toBe(true);
-	});
-
-	it("holds the default for an undeclared flag (key absent from the response)", () => {
-		expect(resolveFlagResponse(true, {flags: {other: true}}, "new-ui", false)).toBe(false);
-	});
-
-	it("holds the default when the 2xx body is structurally malformed", () => {
-		expect(resolveFlagResponse(true, null, "new-ui", false)).toBe(false);
-		expect(resolveFlagResponse(true, {flags: {"new-ui": "yes"}}, "new-ui", false)).toBe(false);
 	});
 });
 

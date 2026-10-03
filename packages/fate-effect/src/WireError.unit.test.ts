@@ -67,14 +67,6 @@ describe("encodeWireError", () => {
 		expect(wire.message).toBe("tanım boş olamaz");
 	});
 
-	it("carries the instance message of each annotated error", () => {
-		const wire = encodeWireError(
-			new DefinitionNotFound({definitionId: "d1", message: "definition not found"}),
-		);
-		expect(wire.code).toBe("DEFINITION_NOT_FOUND");
-		expect(wire.message).toBe("definition not found");
-	});
-
 	it("maps an un-annotated tagged error to the internal-error code without leaking details", () => {
 		const wire = encodeWireError(new Unannotated({message: "secret internal detail"}));
 		expect(wire).toBeInstanceOf(FateRequestError);

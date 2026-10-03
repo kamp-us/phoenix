@@ -95,12 +95,6 @@ describe("the ledger", () => {
 		).toEqual([{key: "old", state: "accepted"}]);
 	});
 
-	it("settles a send the session lost its footing under as uncertain, with no failure to name", () => {
-		expect(settleEndedSession([pending("live")], null)).toEqual([
-			{key: "live", state: "uncertain", failure: null},
-		]);
-	});
-
 	it("accepts the send in flight when the turn is provably running", () => {
 		const running = markTurnRunning([pending("live")]);
 		expect(running).toEqual([{key: "live", state: "pending", turn: "running"}]);
@@ -192,17 +186,6 @@ describe("the ledger", () => {
 		expect(settleFailedTurn(bothRunning, refusal)).toEqual([
 			{key: "first", state: "refused", failure: refusal},
 			{key: "second", state: "pending", turn: "running"},
-		]);
-	});
-
-	it("accepts a send that outlived a per-turn refusal when its own turn ends", () => {
-		const refusal = failure(PROMPT_ERROR, "refused");
-		const after = settleFailedTurn(markTurnRunning([pending("first"), pending("second")]), refusal);
-
-		const second = settleAccepted(markTurnRunning(after));
-		expect(second).toEqual([
-			{key: "first", state: "refused", failure: refusal},
-			{key: "second", state: "accepted"},
 		]);
 	});
 

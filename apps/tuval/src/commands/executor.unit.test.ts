@@ -1,5 +1,4 @@
-import {assert, describe, expect, expectTypeOf, it} from "@effect/vitest";
-import {SpellFailed} from "@kampus/tuval-sdk/kernel/commands/errors";
+import {assert, describe, expectTypeOf, it} from "@effect/vitest";
 import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
 import {SpellRegistry} from "@kampus/tuval-sdk/kernel/commands/registry";
 import {
@@ -266,13 +265,6 @@ describe("SpellExecutor", () => {
 			assert.notStrictEqual(error.message, `the call failed with ${error.tag}`);
 		}),
 	);
-
-	it("keeps the untagged value on the error rather than dropping it", () => {
-		const original = {reason: "the disk is full"};
-		const failed = new SpellFailed({path: "window.mutter", original});
-		expect(failed.original).toBe(original);
-		expect(failed._tag).toBe("tuval/commands/SpellFailed");
-	});
 
 	it.effect("falls back to the tag only when a named error carries no message", () =>
 		Effect.gen(function* () {

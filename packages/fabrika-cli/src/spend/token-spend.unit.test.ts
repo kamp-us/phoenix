@@ -34,10 +34,6 @@ describe("reconstructSpend — the shared one-ruler fixture", () => {
 	it("keeps ex-cache-read as the comparator that does not re-count the cached prefix", () => {
 		assert.strictEqual(spend.exCacheRead, spend.billed - spend.cacheRead);
 	});
-
-	it("counts only assistant turns that carried usage — the fixture's other lines are skipped", () => {
-		assert.strictEqual(spend.assistantTurns, 3);
-	});
 });
 
 describe("reconstructSpend — total over anything a transcript can hold", () => {

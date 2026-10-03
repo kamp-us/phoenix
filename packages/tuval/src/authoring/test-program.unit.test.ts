@@ -134,24 +134,11 @@ describe("authoring.testProgram", () => {
 		expect(two.state.queue).toEqual([2]);
 	});
 
+	// `spawn` and `emit` are read off the answers two cases above already assert exactly.
 	describe("every effect kind is readable off the answer", () => {
-		it("spawn", () => {
-			const [effect] = testProgram(prReview).send("pr", 1).effects;
-			expect(effect).toEqual({
-				type: "spawn",
-				program: args.reviewer.programId,
-				on: {result: "result"},
-			});
-		});
-
 		it("send", () => {
 			const run = testProgram(prReview).send("pr", 1).event(spawned(CHILD, "reviewer"));
 			expect(run.effects).toContainEqual(send({process: CHILD, port: "prompt"}, "review it"));
-		});
-
-		it("emit", () => {
-			const run = testProgram(prReview).send("check", 1);
-			expect(run.effects).toContainEqual(emit("verdict", {pr: 1, ok: true}));
 		});
 
 		it("ask", () => {

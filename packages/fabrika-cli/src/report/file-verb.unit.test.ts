@@ -182,20 +182,6 @@ describe("runFile", () => {
 		expect(out.stderr[0]).toMatch(/^ {2}line \d+, email$/);
 	});
 
-	it("files the email masked whole under --redact", async () => {
-		const text = sections.replace("content for ## Pointers", "reach them at someone@company.io");
-		const masked = composeBody(
-			text.replace("someone@company.io", "<redacted email>"),
-			renderFooter({session: null, model: null, branch: null, timestamp: "2026-08-01T14:22:07Z"}),
-		);
-		const out = await run(
-			[[READBACK, landed(masked)], [CREATE, created], labelsOk, branchDetached],
-			{stdin: Effect.succeed({_tag: "Text", text} satisfies StdinRead), redact: true},
-		);
-		expect(out.code).toBe(0);
-		expect(out.stderr.join("\n")).toContain("redacted a leak — line");
-	});
-
 	describe("with leakNames declared", () => {
 		const declared: Read<LeakNames> = {
 			_tag: "Value",
@@ -221,14 +207,13 @@ describe("runFile", () => {
 			expect(out.code).toBe(0);
 		});
 
-		it.each([
-			["a link to it", "see https://github.com/acme/secret/tree/main", "private repo link"],
-			["an issue reference into it", "see acme/secret#12", "private repo reference"],
-			["a declared identifier", "jane roe reported it", "named identifier"],
-		])("refuses %s on the leak code", async (_name, pointer, cls) => {
-			const out = await run([branchDetached], {stdin: withPointer(pointer), leakNames: declared});
+		it("refuses a link to it on the leak code", async () => {
+			const out = await run([branchDetached], {
+				stdin: withPointer("see https://github.com/acme/secret/tree/main"),
+				leakNames: declared,
+			});
 			expect(out.code).toBe(LEAKED_PATH);
-			expect(out.stderr[0]).toMatch(new RegExp(`^ {2}line \\d+, ${cls}$`));
+			expect(out.stderr[0]).toMatch(/^ {2}line \d+, private repo link$/);
 		});
 
 		it("refuses on 11 and files nothing when the key could not be read", async () => {

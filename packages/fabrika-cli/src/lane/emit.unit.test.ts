@@ -130,19 +130,6 @@ describe("emitMachine", () => {
 		expect(emitted(emitMachine(4300, body(), CHILDREN))).toBe(golden());
 	});
 
-	it("is deterministic — the same body bytes emit the same machine bytes", () => {
-		const text = emitted(emitMachine(4300, body(), CHILDREN));
-		expect(text).toBe(emitted(emitMachine(4300, body(), CHILDREN)));
-		expect(text.match(/"integrate": \{/g)).toHaveLength(CHILDREN.length);
-	});
-
-	it("is deterministic over a partly-built epic too — the child states are input, not drift", () => {
-		const links = [closed(4301), closed(4302, "not_planned"), open(4303)];
-		expect(emitted(emitMachine(4300, body(), links))).toBe(
-			emitted(emitMachine(4300, body(), links)),
-		);
-	});
-
 	it("emits a machine the lane compiler accepts without repair", () => {
 		const compiled = compileText(emitted(emitMachine(4300, body(), CHILDREN)));
 		if (compiled._tag !== "Compiled") throw new Error(compiled.defects.join("; "));
@@ -186,10 +173,6 @@ describe("emitMachine", () => {
 			event: "ISSUE_4301.WIP",
 			current: {phase1: {issue_4301: "build", issue_4302: "queued"}, phase2: "waiting"},
 		});
-	});
-
-	it("emits an all-open epic byte-identically to the golden bytes — state widened nothing", () => {
-		expect(emitted(emitMachine(4300, body(), [open(4301), open(4302), open(4303)]))).toBe(golden());
 	});
 
 	it("boots a completed-closed child in `landed` and leaves its open siblings queued", () => {

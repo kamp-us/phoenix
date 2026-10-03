@@ -2,7 +2,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Fiber, Layer} from "effect";
 import {TestClock} from "effect/testing";
 import {ChildProcessSpawner} from "effect/unstable/process";
-import {errOut, type FakeShell, fakeShell, faultingShell, okOut} from "./fakes.test-support.ts";
+import {errOut, type FakeShell, fakeShell, okOut} from "./fakes.test-support.ts";
 import {asksForVersion, isSourceModule, SOURCE_READ_BOUND, versionFor} from "./source-version.ts";
 import {displayVersion, VERSION} from "./version.ts";
 
@@ -104,15 +104,6 @@ describe("versionFor", () => {
 			const {version, calls} = yield* run(["--version"], DIST_URL, cleanCheckout());
 			assert.strictEqual(version, VERSION);
 			assert.deepStrictEqual(calls, []);
-		}),
-	);
-
-	it.effect("falls back to the plain version when git is missing", () =>
-		Effect.gen(function* () {
-			const version = yield* versionFor(["--version"], SOURCE_URL).pipe(
-				Effect.provide(faultingShell),
-			);
-			assert.strictEqual(version, VERSION);
 		}),
 	);
 

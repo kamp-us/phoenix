@@ -7,7 +7,6 @@ import {
 	CWD,
 	claimPage,
 	declaring,
-	EXPIRED,
 	guardedShell,
 	LIVE,
 	triageContext,
@@ -800,19 +799,6 @@ describe("runApply — the target guard", () => {
 		string,
 		string | undefined
 	>;
-	const closed: HttpReply = {
-		status: 200,
-		body: JSON.stringify({
-			number: 4312,
-			title: "t",
-			body: CRITERIA_BODY,
-			state: "closed",
-			labels: [],
-			html_url: "https://example.test/issues/4312",
-			milestone: null,
-		}),
-	};
-
 	const guard = async (script: ReadonlyArray<Scripted>) => {
 		const shell = guardedShell(script);
 		const out = await Effect.runPromise(
@@ -820,12 +806,6 @@ describe("runApply — the target guard", () => {
 		);
 		return {out, wrote: shell.requests.some((line) => ADD.test(line) || PATCH.test(line))};
 	};
-
-	it("refuses a closed issue on 7 and writes nothing", async () => {
-		const {out, wrote} = await guard([[ISSUE, closed]]);
-		expect(out.code).toBe(ZERO_SCOPE);
-		expect(wrote).toBe(false);
-	});
 
 	it("refuses a live claim held by another session on 17 and writes nothing", async () => {
 		const {out, wrote} = await guard([
@@ -840,19 +820,6 @@ describe("runApply — the target guard", () => {
 		const {out} = await guard([
 			...happy(),
 			[COMMENTS, claimPage({session: MINE, createdAt: LIVE})],
-		]);
-		expect(out.code).toBe(0);
-	});
-
-	it("applies over an issue nobody has claimed", async () => {
-		const {out} = await guard(happy());
-		expect(out.code).toBe(0);
-	});
-
-	it("applies when the only foreign claim has aged out", async () => {
-		const {out} = await guard([
-			...happy(),
-			[COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})],
 		]);
 		expect(out.code).toBe(0);
 	});

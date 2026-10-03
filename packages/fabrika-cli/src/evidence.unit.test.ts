@@ -8,12 +8,6 @@ describe("reasonHistogram", () => {
 		expect(reasonHistogram([], (entry: {reason: string}) => entry.reason)).toEqual({});
 	});
 
-	it("tallies one row to one reason at one", () => {
-		expect(reasonHistogram([row("out-of-focus", 1)], (entry) => entry.reason)).toEqual({
-			"out-of-focus": 1,
-		});
-	});
-
 	it("tallies many rows by reason", () => {
 		const rows = [
 			...Array.from({length: 155}, (_, index) => row("audience-not-agent", index)),

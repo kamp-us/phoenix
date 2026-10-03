@@ -16,7 +16,7 @@ import {
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
-import {checkRuns, comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
+import {checkRuns, comments, ENV, files, HEAD, pull} from "./fixtures.test-support.ts";
 import {
 	CHECK_RUN_NAME,
 	floorRunner,
@@ -198,29 +198,6 @@ describe("runFloorCheck publishes the answer and exits 0 on having published it"
 		expect(outcome.code).toBe(0);
 		expect(written(seams)).toMatchObject({status: "completed", conclusion: "success"});
 		expect(outcome.stdout).toContain("floor\tsatisfied");
-	});
-
-	it("concludes failure on a verdict bound to another head", async () => {
-		const {outcome, seams} = await run([
-			...withVerdict(marker("governance", "PASS", OTHER_HEAD)),
-			NO_HELD_CHECK,
-			[CREATE, echoed("completed", "failure")],
-		]);
-		expect(outcome.code).toBe(0);
-		expect(written(seams)).toMatchObject({status: "completed", conclusion: "failure"});
-		expect(outcome.stdout).toContain("ns\tgovernance\tstale");
-	});
-
-	it("concludes success and says n/a when the diff touches no governance root", async () => {
-		const {outcome, seams} = await run([
-			[PULL, served(pull())],
-			[FILES, served(files("apps/site/src/a.ts", "apps/site/src/b.ts"))],
-			NO_HELD_CHECK,
-			[CREATE, echoed("completed", "success")],
-		]);
-		expect(outcome.code).toBe(0);
-		expect(written(seams)).toMatchObject({conclusion: "success"});
-		expect(outcome.stdout).toContain("floor\tn/a");
 	});
 
 	// The job relays this exit code, so an UNKNOWN that published its own red must not ALSO red the

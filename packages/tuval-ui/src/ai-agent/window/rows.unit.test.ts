@@ -68,19 +68,11 @@ describe("sessionItems", () => {
 		const items = sessionItems([bareSession], NOW);
 		expect(items[0]?.label).toBe(NO_FIRST_PROMPT);
 	});
-
-	it("labels a session the store did name with that prompt", () => {
-		expect(sessionItems([claudeSession], NOW)[0]?.label).toBe("Wire the session list window");
-	});
-
-	// #8135, founder ruling 2026-09-07: the name the operator chose beats the prompt he happened to
-	// open with. #8070 ruling 6 keeps the prompt everywhere he chose nothing.
-	it("labels a renamed session by its title, not by its first prompt", () => {
-		expect(sessionItems([renamedSession], NOW)[0]?.label).toBe("The picker rewrite");
-	});
 });
 
 describe("sessionLabel", () => {
+	// #8135, founder ruling 2026-09-07: the name the operator chose beats the prompt he happened to
+	// open with. #8070 ruling 6 keeps the prompt everywhere he chose nothing.
 	it("reads the three label states in order: title, first prompt, the absence said out loud", () => {
 		expect(sessionLabel(renamedSession)).toBe("The picker rewrite");
 		expect(sessionLabel(claudeSession)).toBe("Wire the session list window");

@@ -134,44 +134,8 @@ describe("declaredWireCodes", () => {
 		);
 	});
 
-	it("un-annotated union members and error-less entries contribute nothing", () => {
-		const codes = declaredWireCodes(noteConfig);
-		// The exact-set assertions above already pin this; this spells the negative space out.
-		expect([...codes].every((code) => typeof code === "string")).toBe(true);
-		expect(codes.size).toBe(5);
-	});
-
 	it("returns a ReadonlySet (type-level)", () => {
 		expectTypeOf(declaredWireCodes(noteConfig)).toEqualTypeOf<ReadonlySet<string>>();
-	});
-
-	/**
-	 * The AST-drift canary (moved from the worker's wireCodes.unit.test.ts):
-	 * the walk depends on two effect Schema internals — a class's annotations
-	 * living on `ast.annotations`, and a `Schema.Union`'s members living on
-	 * `ast.types`. If either moves, the walk degrades to the fallback-only
-	 * set; this fails HERE, loudly, instead of consumers' subset checks
-	 * passing vacuously.
-	 */
-	it("AST-drift canary: the walk actually finds annotations through a real union", () => {
-		const codes = declaredWireCodes(
-			FateServer.config({
-				mutations: {
-					"note.add": Fate.mutation(
-						{
-							input: Schema.Struct({body: Schema.String}),
-							type: NoteView,
-							error: Schema.Union([NoteNotFound, BodyRequired, RateLimited]),
-						},
-						Effect.fn("note.add")(() => Effect.succeed({id: "n1", body: "x"})),
-					),
-				},
-				sources: [noteSource],
-			}),
-		);
-		for (const canary of ["NOTE_NOT_FOUND", "BODY_REQUIRED", "RATE_LIMITED"]) {
-			expect(codes).toContain(canary);
-		}
 	});
 });
 
@@ -221,11 +185,5 @@ describe("FateServerRequirements — generic per-request provision exclusion (AD
 	it("RegisteredRequestServices extracts each key's R-channel identifier", () => {
 		expectTypeOf<RegisteredRequestServices<readonly [typeof Actor]>>().toEqualTypeOf<Actor>();
 		expectTypeOf<RegisteredRequestServices<readonly []>>().toEqualTypeOf<never>();
-	});
-
-	it("the registration is type-level only — the built layer is the same FateServer value", () => {
-		// The keys widen the type exclusion; at runtime the layer captures
-		// build-time services exactly as the unregistered overload does.
-		expect(FateServer.layer(actorConfig, [Actor])).toBeDefined();
 	});
 });

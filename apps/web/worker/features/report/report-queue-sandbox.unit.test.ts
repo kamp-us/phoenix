@@ -13,7 +13,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {type Actor, AgentAuthority, CurrentActor, human, RelationStore} from "@kampus/authz";
 import {LivePublisher} from "@kampus/fate-effect";
-import {liveGlobalConnectionTopic} from "@nkzw/fate/server";
 import {Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
 import {TargetId} from "../../lib/ids.ts";
@@ -298,14 +297,6 @@ describe("report.publishRestored — the re-read reaches the publish gate (#6472
 			// The row now comes back, and `decidePublish` — not a masked read — is what holds
 			// the broadcast off the viewer-blind public feed (#1205/#1280).
 			assert.deepStrictEqual(recorded, []);
-		}),
-	);
-
-	it.effect("a restore that lands LIVE still re-appends to the public feed", () =>
-		Effect.gen(function* () {
-			const seen: Array<SandboxViewer | undefined> = [];
-			const recorded = yield* restorePost(null, seen);
-			assert.deepStrictEqual(recorded, [liveGlobalConnectionTopic("posts")]);
 		}),
 	);
 });

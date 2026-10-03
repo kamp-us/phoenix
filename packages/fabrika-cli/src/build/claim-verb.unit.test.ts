@@ -196,41 +196,6 @@ describe("runClaim", () => {
 		});
 	});
 
-	/**
-	 * The two-lanes-one-session race. Lane B mints `SIBLING_UUID`, posts it, and re-reads a
-	 * thread where lane A's marker is earlier. Under the session-only rule it was told `won` and handed
-	 * back a nonce that held nothing, which `build branch` then cut a branch on.
-	 *
-	 * It holds no token yet, so it names none, and the run makes no pre-post read at all.
-	 */
-	it("loses to a SIBLING LANE of its own session, and never answers won on its behalf", async () => {
-		// The loser's own comment id is 9002, distinct from the winner's 9001, so the retraction
-		// assertion below discriminates "retracted its own marker" from "deleted the winner's".
-		const siblingMarker = marker("s-9f2e", SIBLING_UUID);
-		const shell = unblocked([
-			[ISSUE, CLAIMABLE],
-			[POST, served({id: 9002, html_url: "https://example.test/o/r/issues/4312#c"}, 201)],
-			[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: siblingMarker})],
-			[COMMENTS, comments({id: 9001, body: MINE}, {id: 9002, body: siblingMarker})],
-			[perm("agent"), WRITES],
-			[DELETE, NO_CONTENT],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runClaim({...options, uuid: SIBLING_UUID, token: null}),
-				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
-			),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
-		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
-			"DELETE https://api.github.com/repos/o/r/issues/comments/9002",
-		]);
-		expect(
-			shell.requests.some((line) => /DELETE \S+\/repos\/o\/r\/issues\/comments\/9001/.test(line)),
-		).toBe(false);
-	});
-
 	it("re-reads AFTER posting — the checkpoint is what resolves a staggered race", async () => {
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
@@ -284,29 +249,31 @@ describe("runClaim", () => {
 	});
 
 	/**
-	 * The same refusal against a SIBLING lane of this session, where the route it would name cannot
-	 * run: `build adopt` refuses a `--session` naming this very session. `build release`'s own
-	 * pointer is gated the same way, so the two refusals stay one sentence.
+	 * A loss to a SIBLING lane of this session: this run retracts only its own marker (9002, never the
+	 * winner's 9001), and names no adopt route — `build adopt` refuses a `--session` naming this very
+	 * session, and `build release`'s own pointer is gated the same way.
 	 */
-	it("withholds the adopt pointer when the winner is another lane of this same session", async () => {
+	it("loses to a sibling lane of its own session, retracts only its own marker, and names no adopt route", async () => {
 		const siblingMarker = marker("s-9f2e", SIBLING_UUID);
+		const shell = unblocked([
+			[ISSUE, CLAIMABLE],
+			[POST, served({id: 9002, html_url: "https://example.test/o/r/issues/4312#c"}, 201)],
+			[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: siblingMarker})],
+			[COMMENTS, comments({id: 9001, body: MINE}, {id: 9002, body: siblingMarker})],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
+		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runClaim({...options, uuid: SIBLING_UUID, token: null}),
-				Layer.merge(
-					unblocked([
-						[ISSUE, CLAIMABLE],
-						[POST, served({id: 9002, html_url: "https://example.test/o/r/issues/4312#c"}, 201)],
-						[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: siblingMarker})],
-						[COMMENTS, comments({id: 9001, body: MINE}, {id: 9002, body: siblingMarker})],
-						[perm("agent"), WRITES],
-						[DELETE, NO_CONTENT],
-					]).layer,
-					NO_CAMPAIGNS.layer,
-				),
+				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
 			),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
+		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
+			"DELETE https://api.github.com/repos/o/r/issues/comments/9002",
+		]);
 		expect(out.stderr.some((line) => line.includes("fabrika build adopt"))).toBe(false);
 	});
 
@@ -1130,22 +1097,6 @@ describe("runConfirm", () => {
 		expect(JSON.parse(out.stdout)).toEqual({answer: "mine", number: 4312, token: LANE_TOKEN});
 	});
 
-	it("refuses a SIBLING LANE OF THIS SESSION on 15, naming both tokens (#6037)", async () => {
-		const out = await run(
-			runConfirm,
-			[
-				[ISSUE, CLAIMABLE],
-				[COMMENTS, comments({id: 9001, body: MINE})],
-				[perm("agent"), WRITES],
-			],
-			{token: SIBLING_TOKEN},
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.at(-1)).toBe(
-			`build confirm: #4312 is held by ${LANE_TOKEN}, not by ${SIBLING_TOKEN} — another lane of this same session.`,
-		);
-	});
-
 	it("refuses a foreign holder on 15, naming the token", async () => {
 		const out = await run(runConfirm, [
 			[ISSUE, CLAIMABLE],
@@ -1285,6 +1236,9 @@ describe("runRelease", () => {
 		expect(out.stderr.at(-1)).toBe(
 			"build release: this lane holds no claim on #4312 — refusing to release another lane's.",
 		);
+		expect(out.stderr.some((line) => line.includes("fabrika build adopt 4312 --session"))).toBe(
+			true,
+		);
 		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
 	});
 
@@ -1321,9 +1275,9 @@ describe("runRelease", () => {
  * `requireClaim` read the earliest one, and each `release` peeled a single marker off the stack — so
  * `build branch --resume` cut its branch off a nonce the caller had never been shown. The first fix
  * held the fixed point per SESSION, which is the rule that told a sibling lane it owned its
- * neighbour's claim. Each property is asserted here per lane instead, and every one of them is paired
- * with the sibling case it must NOT swallow: idempotence short-circuits only for the lane that named
- * its own token, and release retracts only markers carrying that token.
+ * neighbour's claim. Each property is asserted here per lane instead: idempotence answers the lane
+ * that named its own token, and release retracts only markers carrying that token. Which lane a
+ * marker belongs to is `resolveOwnership`'s, and `claim.unit.test.ts` owns those cases.
  */
 describe("the claim protocol", () => {
 	const held = () => [
@@ -1349,45 +1303,6 @@ describe("the claim protocol", () => {
 		expect(JSON.parse(second.stdout)).toEqual(JSON.parse(first.stdout));
 		expect(second.stderr.at(-1)).toContain("already held by this lane");
 		expect(second.stderr.at(-1)).toContain("nothing was written");
-	});
-
-	/**
-	 * The narrowing itself. Under the session-scoped short-circuit, lane B naming its own token on a
-	 * number lane A holds was answered `won` with lane A's marker — the sibling-lane defect, arriving
-	 * through the fixed point's idempotence rather than through the race.
-	 */
-	it("does NOT short-circuit for a sibling lane's marker — it races it, and loses", async () => {
-		const shell = unblocked([
-			[ISSUE, CLAIMABLE],
-			...thread(
-				comments({id: 9001, body: MINE}),
-				comments({id: 9001, body: MINE}, {id: 9002, body: SIBLING_MARKER}),
-			),
-			[POST, served({id: 9002, html_url: "https://example.test/o/r/issues/4312#c"}, 201)],
-			[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: SIBLING_MARKER})],
-			[perm("agent"), WRITES],
-			[DELETE, NO_CONTENT],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runClaim({...options, uuid: SIBLING_UUID, token: SIBLING_TOKEN}),
-				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
-			),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
-		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
-			"DELETE https://api.github.com/repos/o/r/issues/comments/9002",
-		]);
-	});
-
-	it("answers claim and confirm with the SAME token — the two can never disagree", async () => {
-		const shell = unblocked(held());
-		const claimed = await on(shell, runClaim);
-		const confirmed = await on(shell, runConfirm);
-		expect(confirmed.code).toBe(0);
-		expect(JSON.parse(confirmed.stdout).token).toBe(JSON.parse(claimed.stdout).token);
-		expect(JSON.parse(claimed.stdout).token).toBe(LANE_TOKEN);
 	});
 
 	it("clears every duplicate of THIS LANE's token on release, and leaves a sibling's standing", async () => {
@@ -1521,43 +1436,6 @@ describe("runAdopt / succession", () => {
 		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
-	// A tokenless `claim` over an adopted number is the shape a real successor produces: `adopt` ran
-	// under its own nonce, this run mints another, and succession turns on the WHOLE token — so the
-	// adopt names a lane that is not this run and ownership resolves `Foreign`. The lose path retracts
-	// this run's own marker, which is what leaves no orphan behind the release (AC 9).
-	it("claim on an adopted number loses and retracts its own marker — release comes first", async () => {
-		const shell = unblocked([
-			[ISSUE, CLAIMABLE],
-			[POST, POSTED],
-			[GET_COMMENT, ECHO],
-			[
-				COMMENTS,
-				comments(
-					{id: 8000, body: THEIRS},
-					{
-						id: 8100,
-						body: adoptMarker(DEAD, "s-9f2e", SIBLING_UUID),
-						createdAt: "2026-08-10T00:00:00Z",
-					},
-					{id: 9001, body: MINE, createdAt: "2026-08-11T00:00:00Z"},
-				),
-			],
-			[perm("agent"), WRITES],
-			[DELETE, NO_CONTENT],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runClaim({...options, token: null}),
-				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
-			),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.some((line) => line.includes("lost to build:s-77aa:"))).toBe(true);
-		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
-			"DELETE https://api.github.com/repos/o/r/issues/comments/9001",
-		]);
-	});
-
 	it("claim --token over an adopted claim refuses before writing anything", async () => {
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
@@ -1577,22 +1455,6 @@ describe("runAdopt / succession", () => {
 		// The token named is the ADOPT's — the one `release` accepts — never the dead session's winner.
 		expect(out.stderr.some((line) => line.includes(`--token ${LANE_TOKEN}`))).toBe(true);
 		expect(shell.requests.some((line) => POST.test(line) || DELETE.test(line))).toBe(false);
-	});
-
-	it("release still refuses the dead session's claim while no adopt marker names it", async () => {
-		const shell = unblocked([
-			[ISSUE, CLAIMABLE],
-			[COMMENTS, comments({id: 8000, body: THEIRS})],
-			[perm("agent"), WRITES],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.some((line) => line.includes("fabrika build adopt 4312 --session"))).toBe(
-			true,
-		);
-		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
 	});
 
 	it("release retracts BOTH markers once an authorized adopt names the dead session", async () => {
@@ -1644,55 +1506,6 @@ describe("runAdopt / succession", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({answer: "mine", number: 4312, token: LANE_TOKEN});
-	});
-
-	it("ignores an adopt marker whose poster holds no write permission — content is not authority", async () => {
-		const shell = unblocked([
-			[ISSUE, CLAIMABLE],
-			[
-				COMMENTS,
-				comments(
-					{id: 8000, body: THEIRS},
-					{id: 8100, body: ADOPT, author: "drive-by", createdAt: "2026-08-10T00:00:00Z"},
-				),
-			],
-			[perm("agent"), WRITES],
-			[perm("drive-by"), READS],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.some((line) => line.includes("counted, never a succession"))).toBe(true);
-		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
-	});
-
-	// The adopt names ONE lane by its whole token, so succession confers exactly what an ordinary win
-	// confers and never re-widens ownership back to a session. A third session and a sibling
-	// lane of the successor's own session are refused by the same test, which is the point.
-	it.each([
-		["a third session", "s-3rd", `build:s-3rd:${LANE_UUID}`],
-		["a sibling lane of the successor's session", "s-9f2e", SIBLING_TOKEN],
-	])("confers the claim on the named lane only — %s reads Foreign", async (_who, session, token) => {
-		const shell = unblocked([
-			[ISSUE, CLAIMABLE],
-			[
-				COMMENTS,
-				comments(
-					{id: 8000, body: THEIRS},
-					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
-				),
-			],
-			[perm("agent"), WRITES],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runRelease({...options, token, env: {...options.env, CLAUDE_CODE_SESSION_ID: session}}),
-				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
-			),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
 	});
 });
 

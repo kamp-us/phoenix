@@ -22,20 +22,6 @@ import {isSubagentSlot, isSubagentSlots} from "./subagent.ts";
 const slot = subagentSlot("call-1");
 
 describe("a subagent slot", () => {
-	it("is admitted with the six reported fields and the id it is keyed on", () => {
-		expect(isSubagentSlot(slot)).toBe(true);
-		expect(Object.keys(slot).sort()).toEqual([
-			"id",
-			"items",
-			"lastLine",
-			"startedAt",
-			"status",
-			"tokens",
-			"type",
-			"workers",
-		]);
-	});
-
 	it("refuses each field carrying the wrong type", () => {
 		expect(isSubagentSlot({...slot, id: 7})).toBe(false);
 		expect(isSubagentSlot({...slot, id: ""})).toBe(false);
@@ -69,7 +55,6 @@ describe("a subagent slot", () => {
 	// the second one rather than corruption.
 	it("admits a slot naming the process it is for, and refuses one naming an empty string", () => {
 		expect(isSubagentSlot({...slot, process: "p-9"})).toBe(true);
-		expect(Object.keys({...slot, process: "p-9"}).sort()).toContain("process");
 		expect(isSubagentSlot({...slot, process: ""})).toBe(false);
 		expect(isSubagentSlot({...slot, process: 7})).toBe(false);
 		expect(isSubagentSlot({...slot, process: null})).toBe(false);

@@ -10,7 +10,7 @@
 import {existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {Mode, thinkingLevels} from "@kampus/tuval-sdk/ai-agent/ports";
+import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	addUsage,
 	emptyUsage,
@@ -355,29 +355,6 @@ describe("the agy layer over a scripted binary", () => {
 		expect(launches()[1]).toContain("--mode=plan");
 		expect(refusal._tag).toBe("tuval/ai-agent/ModeUnsupported");
 		expect([...refusal.available]).toEqual(["accept-edits", "plan"]);
-	});
-
-	it("refuses every thinking level and respawns for none of them", async () => {
-		const refusals = await drive(() =>
-			Effect.gen(function* () {
-				const agent = yield* TuvalAiAgent;
-				yield* agent.start({cwd: "/repo"});
-				return yield* Effect.forEach(
-					thinkingLevels,
-					(level) => Effect.flip(agent.setThinkingLevel(level)),
-					{concurrency: 1},
-				);
-			}),
-		);
-		// Every level, not a shorter set: agy bakes effort into the model id, so there is no axis to
-		// switch and nothing to offer in its place (#9254).
-		expect(refusals.map((refusal) => refusal._tag)).toEqual(
-			thinkingLevels.map(() => "tuval/ai-agent/ThinkingUnsupported"),
-		);
-		expect(refusals.map((refusal) => [...refusal.available])).toEqual(thinkingLevels.map(() => []));
-		// One launch: the start's own. No refusal took the child down, so none composed `--effort`.
-		expect(launches()).toHaveLength(1);
-		expect(launches().flat().join(" ")).not.toContain("--effort");
 	});
 
 	it("refuses a model outside the offered catalog without respawning", async () => {

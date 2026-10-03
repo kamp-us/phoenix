@@ -1,25 +1,19 @@
 /**
- * Claude restore on the generic rules: what the checkpoint is made of, what a restored process does
- * before anything reconnects it, and what a refused resume ends as.
+ * Claude restore on the generic rules, at the row: what the reconnect handler builds and calls, and
+ * what a refused resume ends as. The checkpoint's field set, the rehydrating `init` and the
+ * reconnect Msg's Cmds are the SDK's own and are proven in `@kampus/tuval-sdk`'s
+ * `ai-agent/restore/checkpoint.unit.test.ts` and `ai-agent/core/machine.unit.test.ts`.
  *
  * The layer under the row is `ScriptedAiAgent` wrapped in a recorder, because the fact under test is
- * the round trip — a restored state, the resume rule's Msg, the Cmd it emits, and the `start` call
- * the handler makes — and none of that is the Agent SDK's. The whole app doing this over a real
- * `fileStore` is `claude-restore-proof.unit.test.ts`.
+ * the `start` call the handler makes, and none of that is the Agent SDK's. The whole app doing this
+ * over a real `fileStore` is `claude-restore-proof.unit.test.ts`.
  */
 
-import {applyCellChecked} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Mode} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
-	type AiAgentSessionCmd,
-	type AiAgentSessionMsg,
 	type AiAgentSessionState,
-	aiAgentSessionMachine,
-	initialState,
 	isAiAgentSessionState,
 } from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
-import {checkpointFields, resumeMessages} from "@kampus/tuval-sdk/kernel/ai-agent/restore/index";
 import {
 	type AgentScript,
 	ScriptedAiAgent,
@@ -35,7 +29,6 @@ import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
 import type {ProcessHandle} from "@kampus/tuval-sdk/kernel/process/process";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {Context, Effect, Layer} from "effect";
-import {expect} from "vitest";
 import {claudeSession} from "../program.ts";
 
 const CWD = "/work";
@@ -130,65 +123,6 @@ const sessionOf = (handle: ProcessHandle): AiAgentSessionState => {
 	assert.isTrue(isAiAgentSessionState(state), "the process holds no ai-agent-session state");
 	return state as AiAgentSessionState;
 };
-
-const machine = aiAgentSessionMachine({cwd: CWD});
-
-const apply = (
-	state: AiAgentSessionState,
-	msg: AiAgentSessionMsg,
-): readonly [AiAgentSessionState, ReadonlyArray<AiAgentSessionCmd>] =>
-	applyCellChecked<AiAgentSessionState, AiAgentSessionMsg, AiAgentSessionCmd>(machine, state, msg);
-
-/** The mode the operator switched to before the app stopped, which the checkpoint carries. */
-const SWITCHED_TO = Mode.make("plan");
-
-/** A checkpoint as the store would hand one back: a session that was live when the app stopped. */
-const saved: AiAgentSessionState = {
-	...initialState(CWD),
-	phase: "prompting",
-	sessionId: SESSION,
-	modes: {current: SWITCHED_TO, available: [SWITCHED_TO]},
-};
-
-describe("what a claude-session checkpoint is made of", () => {
-	it("is the generic field set and nothing else", () => {
-		assert.deepStrictEqual(
-			Object.keys(saved).sort(),
-			[...checkpointFields].sort(),
-			"the row's state grew a field nobody decided survives a restart",
-		);
-	});
-
-	it("round-trips through JSON, so nothing SDK-shaped is in it", () => {
-		expect(JSON.parse(JSON.stringify(saved))).toEqual(saved);
-	});
-});
-
-describe("a restored claude session before anything reconnects it", () => {
-	it("rehydrates with no Cmd, so nothing has opened a transport", () => {
-		const [state, cmds] = machine.init(saved, {});
-		assert.deepStrictEqual(cmds, [], "the rehydrating init opened something on its own");
-		assert.strictEqual(state.phase, "idle");
-		assert.strictEqual(state.sessionId, SESSION);
-	});
-
-	it("asks for a reconnect rather than a fresh open, so no new session can be minted", () => {
-		const [state] = machine.init(saved, {});
-		assert.deepStrictEqual(resumeMessages(state), [{type: "reconnect"}]);
-	});
-
-	it("enters reconnecting and asks for a republish and a resume by id, on the saved mode", () => {
-		const [restored] = machine.init(saved, {});
-		const [state, cmds] = apply(restored, {type: "reconnect"});
-		assert.strictEqual(state.phase, "reconnecting");
-		assert.deepStrictEqual(cmds, [
-			{type: "aiAgent.republish"},
-			// The mode rides the Cmd rather than a later `setMode`: the rebuilt layer holds none, so
-			// it has to open on the operator's switch to announce it (#7953).
-			{type: "aiAgent.reconnect", cwd: CWD, sessionId: SESSION, mode: SWITCHED_TO},
-		]);
-	});
-});
 
 describe("the reconnect handler", () => {
 	it.live("rebuilds the layer and calls start with the cwd and the session id", () => {

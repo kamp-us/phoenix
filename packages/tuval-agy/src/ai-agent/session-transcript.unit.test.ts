@@ -118,6 +118,8 @@ describe("the agy layer's stored-transcript read", () => {
 					sessionId: CID,
 					detail: "cursor-not-found",
 				});
+				// The same store answers an ordinary page: the refusal is the cursor's, not the store's.
+				expect(yield* agent.sessionTranscript(query)).toMatchObject({hasMore: false});
 			}),
 		),
 	);
@@ -128,33 +130,5 @@ describe("the agy layer's stored-transcript read", () => {
 				expect(yield* agent.sessionTranscript(query)).toEqual({items: [], hasMore: false});
 			}),
 		),
-	);
-
-	/**
-	 * The cross-arm claim the three reasons exist for: collapse any two of them in `AgyAiAgent.ts`
-	 * and this reds, where each case above would still pass on its own.
-	 */
-	it.effect("keeps the three refusals and an ordinary page distinct from one another", () =>
-		Effect.gen(function* () {
-			const reasons = [
-				yield* onAgy(storeWithout(), (agent) =>
-					Effect.map(Effect.flip(agent.sessionTranscript(query)), (failure) => failure.reason),
-				),
-				yield* onAgy(unreadableStore(), (agent) =>
-					Effect.map(Effect.flip(agent.sessionTranscript(query)), (failure) => failure.reason),
-				),
-				yield* onAgy(storeHolding(conversation), (agent) =>
-					Effect.map(
-						Effect.flip(agent.sessionTranscript({...query, before: "no-such-item"})),
-						(failure) => failure.reason,
-					),
-				),
-			];
-			expect(reasons).toEqual(["session-not-found", "store-unreadable", "unknown-cursor"]);
-			expect(new Set(reasons).size).toBe(3);
-			expect(
-				yield* onAgy(storeHolding(conversation), (agent) => agent.sessionTranscript(query)),
-			).toMatchObject({hasMore: false});
-		}),
 	);
 });

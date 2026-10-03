@@ -2,6 +2,11 @@ import {describe, expect, it} from "@effect/vitest";
 import {Option} from "effect";
 import {startFolder} from "./start-folder.ts";
 
+/**
+ * The other three arms of the precedence — the row's own folder, the spawner's, and none — are
+ * proven on a real spawn in `./takes-folder-at-start.unit.test.ts`. This one is not: no spawn there
+ * carries both a picked session and a spawner folder.
+ */
 describe("the folder a fresh session starts in (#9694)", () => {
 	it("is the folder of the session the spawner named, over everything else", () => {
 		expect(
@@ -11,23 +16,5 @@ describe("the folder a fresh session starts in (#9694)", () => {
 				inherited: Option.some("/spawner"),
 			}),
 		).toEqual(Option.some("/picked"));
-	});
-
-	it("is the row's own folder when the row fixes one, whatever the spawner runs in", () => {
-		expect(
-			startFolder({opening: Option.none(), row: "/row", inherited: Option.some("/spawner")}),
-		).toEqual(Option.some("/row"));
-	});
-
-	it("is the spawner's folder for a row that takes its folder at start", () => {
-		expect(
-			startFolder({opening: Option.none(), row: null, inherited: Option.some("/spawner")}),
-		).toEqual(Option.some("/spawner"));
-	});
-
-	it("is none when nothing names a folder", () => {
-		expect(startFolder({opening: Option.none(), row: null, inherited: Option.none()})).toEqual(
-			Option.none(),
-		);
 	});
 });

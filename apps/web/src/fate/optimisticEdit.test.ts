@@ -15,10 +15,6 @@ describe("postEditOptimistic — the payload for post.edit", () => {
 			updatedAt: fixedNow(),
 		});
 	});
-
-	it("stamps updatedAt from the injected clock (drives the edited indicator)", () => {
-		expect(postEditOptimistic({title: "t", body: "b"}, fixedNow).updatedAt).toEqual(fixedNow());
-	});
 });
 
 describe("bodyEditOptimistic — the payload for comment.edit / definition.edit", () => {

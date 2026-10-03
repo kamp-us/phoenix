@@ -63,12 +63,6 @@ describe("MecmuaSubnavLayout — mecmua product Subnav zone (#2603)", () => {
 		vi.clearAllMocks();
 	});
 
-	it("renders the mecmua Subnav zone above the routed Outlet", () => {
-		const {container} = renderZone();
-		expect(container.querySelector(".kp-subnav")).toBeTruthy();
-		expect(screen.getByTestId("mecmua-index")).toBeTruthy();
-	});
-
 	it("keeps the Subnav zone mounted across a within-mecmua navigation — no remount", () => {
 		flags.feed = true;
 		const {container} = renderZone();

@@ -41,6 +41,7 @@ describe("runChangeDetectGuard", () => {
 		expect(outcome.code).toBe(VIOLATION);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.join("\n")).toContain("transient API-HTML blip");
+		expect(outcome.stderr.join("\n")).toContain("token: ''");
 	});
 
 	it("annotates ci.yml under Actions", async () => {
@@ -48,11 +49,6 @@ describe("runChangeDetectGuard", () => {
 		expect(
 			outcome.stderr.some((l) => l.startsWith("::error file=.github/workflows/ci.yml::")),
 		).toBe(true);
-	});
-
-	it("emits no annotation off a runner", async () => {
-		const outcome = await run({files: {[CI]: API_MODE}});
-		expect(outcome.stderr.some((l) => l.startsWith("::"))).toBe(false);
 	});
 
 	// The fail-closed floor: no ci.yml means nothing was compared, which cannot be reported clean.

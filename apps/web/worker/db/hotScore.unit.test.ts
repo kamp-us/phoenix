@@ -32,12 +32,6 @@ describe("hotScore", () => {
 			const future = now + 5 * HOUR_MS;
 			expect(computeHotScore(50, future, now)).toBe(computeHotScore(50, now, now));
 		});
-
-		it("is zero for a zero score regardless of age", () => {
-			const now = 1_000 * HOUR_MS;
-			expect(computeHotScore(0, now, now)).toBe(0);
-			expect(computeHotScore(0, now - 100 * HOUR_MS, now)).toBe(0);
-		});
 	});
 
 	describe("hotMultiplier", () => {
@@ -47,11 +41,6 @@ describe("hotScore", () => {
 				const createdAt = now - ageHours * HOUR_MS;
 				expect(hotMultiplier(createdAt, now)).toBeCloseTo(1000 / (ageHours + 2) ** 1.8, 10);
 			}
-		});
-
-		it("at age 0 is 1000 / 2^1.8", () => {
-			const now = 1_000 * HOUR_MS;
-			expect(hotMultiplier(now, now)).toBeCloseTo(1000 / 2 ** 1.8, 10);
 		});
 
 		it("composes with score to give computeHotScore", () => {

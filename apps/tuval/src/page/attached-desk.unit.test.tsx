@@ -9,7 +9,11 @@
 import {assert, describe, it} from "@effect/vitest";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
-import type {ProcessView} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {
+	type ProcessView,
+	type WindowHost,
+	windowRenderer,
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {defaultPrefixTable, type PrefixTable} from "@kampus/tuval-ui/keys";
 import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, fireEvent, render, screen} from "@testing-library/react";
@@ -33,6 +37,13 @@ const renderers = pageRenderers(
 	() => Effect.never,
 	() => undefined,
 );
+
+/** The counter's seat, answered by a renderer whose one control writes its window's view slot. */
+const scrollingRenderer = windowRenderer("host-native", (host: WindowHost) => (
+	<button type="button" onClick={() => Effect.runSync(host.setView({scroll: 42}))}>
+		Scroll {host.windowId}
+	</button>
+));
 
 installDomShims();
 
@@ -273,6 +284,18 @@ const settle = Effect.gen(function* () {
 	}
 });
 
+/**
+ * Let the shared `Dialog` arm itself. Zag registers its focus trap and its dismissable layer a frame
+ * after the dialog mounts, so an Escape or a focus read taken before that frame meets no layer.
+ */
+const dialogArmed = Effect.tryPromise({
+	try: () =>
+		act(async () => {
+			await new Promise((resolve) => globalThis.setTimeout(resolve, 50));
+		}),
+	catch: (cause) => new TestIo({cause}),
+}).pipe(Effect.orDie);
+
 describe("the attached desk", () => {
 	it.effect(
 		"opens one subscription for a process shown in two windows, and mounts its renderer in both",
@@ -506,23 +529,47 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={renderers}
+						renderers={{...renderers, "tuval/demo/counter": scrollingRenderer}}
 						reducedMotion={true}
 						refusal={null}
 					/>,
 				);
 				yield* settle;
 
-				assert.deepStrictEqual(app.sent, []);
-				// The desk's own listener is the page's only input path, and it goes to the kernel.
 				act(() => {
-					document.dispatchEvent(new KeyboardEvent("keydown", {key: "j", bubbles: true}));
+					fireEvent.click(screen.getByRole("button", {name: "Scroll window-2"}));
 				});
-				assert.lengthOf(app.sent, 1);
-				const press = app.sent.at(0);
-				assert.strictEqual(press?.type, "keys.press");
-				assert.include(press?.type === "keys.press" ? press.key : {}, {key: "j"});
+				assert.deepStrictEqual(
+					app.sent.filter((msg) => msg.type === "window.setView"),
+					[{type: "window.setView", windowId: "window-2", view: {scroll: 42}}],
+				);
 			}),
+	);
+
+	it.effect("sends a key the desk hears to the kernel as a key press, its only input path", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted();
+			render(
+				<AttachedDesk
+					page={app.page}
+					shell={app.shell}
+					renderers={renderers}
+					reducedMotion={true}
+					refusal={null}
+				/>,
+			);
+			yield* settle;
+
+			assert.deepStrictEqual(app.sent, []);
+			// The desk's own listener is the page's only input path, and it goes to the kernel.
+			act(() => {
+				document.dispatchEvent(new KeyboardEvent("keydown", {key: "j", bubbles: true}));
+			});
+			assert.lengthOf(app.sent, 1);
+			const press = app.sent.at(0);
+			assert.strictEqual(press?.type, "keys.press");
+			assert.include(press?.type === "keys.press" ? press.key : {}, {key: "j"});
+		}),
 	);
 
 	it.effect(
@@ -778,13 +825,7 @@ describe("the process board flag", () => {
 			// `Dialog`'s (`packages/design/src/Dialog.tsx` over Manti's zag machine), which is why they
 			// are asserted here rather than implemented anywhere in this app.
 			assert.strictEqual(dialog.getAttribute("aria-modal"), "true");
-			yield* Effect.tryPromise({
-				try: () =>
-					act(async () => {
-						await new Promise((resolve) => globalThis.setTimeout(resolve, 50));
-					}),
-				catch: (cause) => new TestIo({cause}),
-			}).pipe(Effect.orDie);
+			yield* dialogArmed;
 			assert.isTrue(dialog.contains(document.activeElement));
 		}),
 	);
@@ -832,6 +873,7 @@ describe("the process board flag", () => {
 			yield* settle;
 
 			const dialog = screen.getByRole("dialog", {name: "Processes"});
+			yield* dialogArmed;
 			yield* Effect.sync(() =>
 				act(() => {
 					fireEvent.keyDown(dialog, {key: "Escape"});
@@ -879,23 +921,6 @@ describe("the trust question", () => {
 			assert.deepStrictEqual(app.trustAnswers, [{question: "q-1", answer: "trust"}]);
 			// The next folder waiting is asked at once, before the kernel's next frame lands.
 			assert.include(screen.getByRole("alertdialog").textContent, "/code/tea");
-		}),
-	);
-
-	it.effect("asks nothing while no open is waiting", () =>
-		Effect.gen(function* () {
-			const app = yield* scripted();
-			render(
-				<AttachedDesk
-					page={app.page}
-					shell={app.shell}
-					renderers={renderers}
-					reducedMotion={true}
-					refusal={null}
-				/>,
-			);
-			yield* settle;
-			assert.isNull(screen.queryByRole("alertdialog"));
 		}),
 	);
 });

@@ -24,6 +24,7 @@ function cssFiles(dir: string): string[] {
 describe("shared focus layer (#2169)", () => {
 	it("defines one :where(...):focus-visible rule painting the token in global.css", () => {
 		const css = readFileSync(GLOBAL_CSS, "utf8");
+		expect(css).toMatch(/--focus-ring:/);
 		// zero-specificity :where() selector so component variants override without a fight
 		expect(css).toMatch(/:where\([^)]*\):focus-visible\s*\{[^}]*outline:\s*var\(--focus-ring\)/s);
 		expect(css).toMatch(

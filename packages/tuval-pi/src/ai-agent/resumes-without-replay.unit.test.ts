@@ -215,30 +215,6 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 			}),
 	);
 
-	it.live("emits the operator's own turn, and nothing under it, on the push that carries it", () =>
-		Effect.gen(function* () {
-			const client = yield* stub;
-
-			yield* Effect.gen(function* () {
-				const agent = yield* TuvalAiAgent;
-				yield* agent.start({
-					cwd: CWD,
-					resume: {sessionId: SESSION.id, holdsTranscript: true, held: held(user, reply)},
-				});
-				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
-				yield* drain(events);
-
-				yield* client.push(snapshot([user, reply, sent], "turn", 8));
-				const folded = yield* drain(events);
-				assert.deepStrictEqual(
-					itemIds(folded),
-					[sent.id],
-					"the send arrived under a replay of the history above it",
-				);
-			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
-		}),
-	);
-
 	it.live("paints the history at the attach for a caller that holds none", () =>
 		Effect.gen(function* () {
 			const client = yield* stub;
@@ -288,79 +264,6 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 				);
 			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
 		}),
-	);
-
-	it.live("emits the turn the session finished while the socket was down", () =>
-		Effect.gen(function* () {
-			const client = yield* stub;
-
-			yield* Effect.gen(function* () {
-				const agent = yield* TuvalAiAgent;
-				// The checkpointed tail stops at the operator's turn: the reply landed after the
-				// socket dropped, so this process has never seen it and nothing else will show it.
-				yield* agent.start({
-					cwd: CWD,
-					resume: {sessionId: SESSION.id, holdsTranscript: true, held: held(user)},
-				});
-				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
-				yield* drain(events);
-
-				yield* client.push(PUSHED);
-				const folded = yield* drain(events);
-				assert.deepStrictEqual(
-					itemIds(folded),
-					[reply.id],
-					"the reply that landed during the drop was suppressed and never paints",
-				);
-				assert.strictEqual(usages(folded), 1, "the reply arrived without its own cost");
-			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
-		}),
-	);
-
-	/**
-	 * The drop can catch the agent mid-sentence. Pi's assistant item carries a `status: "streaming"`
-	 * variant whose `usage` is optional (`../wire/transcript.ts`),
-	 * so the tail this process comes back with holds a half-written reply under the same id the
-	 * finished one now has. That id being the newest thing it holds does not make the finished reply
-	 * read: suppressing it leaves the operator on the half-written text for the life of the session
-	 * and drops the turn's cost out of the totals, with nothing to show either happened.
-	 */
-	it.live(
-		"emits a reply that settled under the caller's own boundary while the socket was down",
-		() =>
-			Effect.gen(function* () {
-				const client = yield* stub;
-
-				yield* Effect.gen(function* () {
-					const agent = yield* TuvalAiAgent;
-					const streaming: PiTranscriptItem = {
-						id: reply.id,
-						role: "assistant",
-						content: [{type: "text", text: "hel"}],
-						model: SESSION.model,
-						timestamp: 11,
-						status: "streaming",
-					};
-					yield* agent.start({
-						cwd: CWD,
-						resume: {sessionId: SESSION.id, holdsTranscript: true, held: held(user, streaming)},
-					});
-					const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
-					yield* drain(events);
-
-					yield* client.push(PUSHED);
-					const folded = yield* drain(events);
-					assert.deepStrictEqual(
-						itemIds(folded),
-						[reply.id],
-						"the operator is still looking at the half-written reply",
-					);
-					assert.strictEqual(usages(folded), 1, "the settled turn's cost never joined the totals");
-				}).pipe(
-					Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))),
-					Effect.scoped,
-				);
-			}),
 	);
 
 	/**

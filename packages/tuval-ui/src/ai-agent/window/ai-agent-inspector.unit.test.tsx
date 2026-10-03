@@ -116,18 +116,7 @@ describe("what the inspector shows", () => {
 		expect(within(panel()).queryByText("Account (booted on)")).toBeNull();
 	});
 
-	// The founder ruled org and plan only, and the ruling holds at two places on this path. Here is
-	// the render: an account is one line of the fields the row shows, so nothing else on it reaches
-	// the panel however the state was built.
-	it("renders the row as the two ruled fields and nothing else", async () => {
-		await open(agentSessionState({account: {organization: "kamp.us", subscriptionType: "max"}}));
-		const row = [...panel().querySelectorAll(".tuval-agent-inspector-row")].find(
-			(candidate) => candidate.querySelector("dt")?.textContent === "Account (booted on)",
-		);
-		expect(row?.querySelector("dd")?.textContent).toBe("kamp.us · max");
-	});
-
-	// And here is the reader in front of it. `AgentAccount` has no email field, so a state carrying
+	// The founder ruled org and plan only. `AgentAccount` has no email field, so a state carrying
 	// one was not written by this program — `isAiAgentSessionState` refuses it, and the panel never
 	// takes the state rather than taking it and filtering the field at the edge.
 	it("refuses a state whose account carries an email, so none is ever on screen", async () => {

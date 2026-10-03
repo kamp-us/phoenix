@@ -247,24 +247,6 @@ describe("the picker row and the command line are one handler", () => {
 		}),
 	);
 
-	it.effect("`open shell` is refused on the command line too, not just in the picker (#7946)", () =>
-		Effect.gen(function* () {
-			const typed = typedIntent("open shell");
-			assert.isNotNull(typed);
-			if (typed === null) return;
-
-			const answer = yield* run(typed, {rows: withShell});
-			assert.deepStrictEqual(answer.spawns, []);
-			assert.deepStrictEqual(answer.msgs, [
-				{
-					type: "window.setView",
-					windowId: window,
-					view: withRefusal(mountPicker(), {_tag: "ProgramHeadless", programId: "shell"}),
-				},
-			]);
-		}),
-	);
-
 	it.effect("`attach <id>` and choosing the process row both bind without spawning", () =>
 		Effect.gen(function* () {
 			const withProcess: PickerEntries = {

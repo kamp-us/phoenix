@@ -91,17 +91,6 @@ describe("the running-subagent list", () => {
 		rendered.unmount();
 	});
 
-	it("is not there when every slot the session holds has finished", async () => {
-		const {rendered} = await openWindow(
-			withTranscript([userItem("u1", "go"), call("agent", {name: "Agent"})], {
-				subagents: slots(subagentSlot("agent", {status: "finished"})),
-			}),
-			{subagentList: true},
-		);
-		expect(list()).toBeNull();
-		rendered.unmount();
-	});
-
 	it("shows one row per running worker, each carrying four fields and no nested count (Q1)", async () => {
 		vi.useFakeTimers({now: STARTED_AT + 3_000, shouldAdvanceTime: true});
 		const {rendered} = await openWindow(

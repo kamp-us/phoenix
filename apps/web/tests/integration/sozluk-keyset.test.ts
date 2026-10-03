@@ -4,8 +4,8 @@
  * The keyset predicate shape and the cursor-miss/page-envelope decision are pure
  * and unit-tested in `worker/db/keyset.unit.test.ts`, not re-proven here. What
  * stays is the irreducible real-D1 core (ADR 0082): how the real engine executes
- * the keyset across page boundaries, read-row shaping, the denormalized
- * term_record counters, and the write→read re-resolve loop.
+ * the keyset across page boundaries, read-row shaping and the denormalized
+ * term_record counters.
  *
  * Seeded through the PUBLIC fate seam (`h.seedTerm` → `definition.add` +
  * `definition.vote`), so `score` (vote-derived) and `slug` (caller-chosen) are
@@ -158,26 +158,10 @@ describe("sözlük keyset execution — real D1 (terms popular)", () => {
 			after = conn.pagination.nextCursor;
 			expect(after).toBeDefined();
 		}
+		// The score-3 c/d tie straddles the page-2 boundary, so the exact walk order above is the
+		// tie resolving slug-asc across the cursor.
 		expect(seen).toEqual(expected);
 		expect(new Set(seen).size).toBe(expected.length);
-	});
-
-	it("holds the (total_score) tie at a page boundary by slug asc", async () => {
-		const all = await h.fate({
-			kind: "list",
-			name: "terms",
-			args: {sort: "popular", first: 100},
-			select: ["slug", "totalScore"],
-		});
-		expect(all.ok).toBe(true);
-		if (!all.ok) return;
-		const ours = (all.data as Connection<TermNode>).items
-			.filter((e) => e.node.slug.startsWith(P))
-			.map((e) => e.node.slug);
-		const c = ours.indexOf(`${P}c`);
-		const d = ours.indexOf(`${P}d`);
-		expect(c).toBeGreaterThanOrEqual(0);
-		expect(d).toBe(c + 1); // the score-3 tie resolves c (slug asc) immediately before d
 	});
 });
 
@@ -251,21 +235,7 @@ describe("sözlük keyset execution — real D1 (terms recent)", () => {
 });
 
 describe("sözlük keyset execution — real D1 (Term.definitions)", () => {
-	it("orders definitions by score desc as the real engine executes the keyset", async () => {
-		const res = await h.fate({
-			kind: "query",
-			name: "term",
-			args: {slug: DEFS_SLUG, definitions: {first: 10}},
-			select: ["definitions.id", "definitions.body", "definitions.score"],
-		});
-		expect(res.ok).toBe(true);
-		if (!res.ok) return;
-		const conn = (res.data as {definitions: Connection<DefNode>}).definitions;
-		expect(conn.items.map((e) => e.node.body)).toEqual(["high", "mid", "low"]);
-		expect(conn.items.map((e) => e.node.score)).toEqual([5, 3, 1]);
-	});
-
-	it("paginates definitions across a boundary with no skips/dupes", async () => {
+	it("orders definitions by score desc and paginates across a boundary with no skips/dupes", async () => {
 		const p1 = await h.fate({
 			kind: "query",
 			name: "term",
@@ -313,64 +283,5 @@ describe("sözlük read-row shaping + denormalized counters — real D1", () => 
 	});
 });
 
-describe("sözlük write→read re-resolve — real D1", () => {
-	it("definition.add increments the count and the new row re-resolves on the term page", async () => {
-		// `-w` keeps this slug disjoint from the `-p`/`-r`/`-defs` fixture prefixes, so it
-		// can never satisfy a `.startsWith` filter and leak into a keyset-order assertion.
-		const slug = `${NS}-wrt`;
-		const author = await h.signUpYazar(`${NS}-wrt@seed.local`, "seedpass-seedpass", "writer");
-
-		// `definition.add` is identity-bearing and not auto-retried; it runs under
-		// the author's session cookie.
-		const add1 = await h.fate(
-			{
-				kind: "mutation",
-				name: "definition.add",
-				input: {termSlug: slug, termTitle: "Round Trip", body: "first definition"},
-				select: ["id", "body"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(add1.ok).toBe(true);
-		if (!add1.ok) return;
-
-		const t1 = await h.fate({
-			kind: "query",
-			name: "term",
-			args: {slug, definitions: {first: 10}},
-			select: ["count", "definitions.id", "definitions.body"],
-		});
-		expect(t1.ok).toBe(true);
-		if (!t1.ok) return;
-		const term1 = t1.data as {count: number; definitions: Connection<DefNode>};
-		const firstCount = term1.count;
-		expect(term1.definitions.items.some((e) => e.node.body === "first definition")).toBe(true);
-
-		const created = (add1.data as {id: string}).id;
-		const add2 = await h.fate(
-			{
-				kind: "mutation",
-				name: "definition.add",
-				input: {termSlug: slug, termTitle: "Round Trip", body: "second definition"},
-				select: ["id", "body"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(add2.ok).toBe(true);
-		if (!add2.ok) return;
-
-		const t2 = await h.fate({
-			kind: "query",
-			name: "term",
-			args: {slug, definitions: {first: 10}},
-			select: ["count", "definitions.id", "definitions.body"],
-		});
-		expect(t2.ok).toBe(true);
-		if (!t2.ok) return;
-		const term2 = t2.data as {count: number; definitions: Connection<DefNode>};
-		expect(term2.count).toBe(firstCount + 1);
-		const ids = term2.definitions.items.map((e) => e.node.id);
-		expect(ids).toContain(created);
-		expect(term2.definitions.items.some((e) => e.node.body === "second definition")).toBe(true);
-	});
-});
+// The definition.add → term re-resolve loop (the new row on the term page, the count moving) is
+// proven on the shared stage by `sozluk-mutations.test.ts`.

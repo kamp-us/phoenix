@@ -24,8 +24,7 @@ import {SLUG_MALFORMED} from "./codes.ts";
 
 const VERB = "report scratch";
 
-/** This allocation's directory, exported so a caller derives it rather than restating the formula. */
-export const allocationDir = (tmpRoot: string, allocation: string): string =>
+const allocationDir = (tmpRoot: string, allocation: string): string =>
 	`${tmpRoot.replace(/\/+$/, "")}/fabrika-report/${allocation}`;
 
 export interface ScratchOptions {

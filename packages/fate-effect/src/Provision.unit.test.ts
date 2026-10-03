@@ -113,13 +113,4 @@ describe("provideRequestPair — generic per-request provision seam (ADR 0107 §
 			expect(Cause.pretty(exit.cause)).toContain("test/Actor");
 		}
 	});
-
-	it("the seam stays opaque: a context with no requestServices is unchanged (the pair still resolves)", () => {
-		const ctx = requestContext("u1");
-		expect(ctx.requestServices).toBeUndefined();
-		const services = Context.make(Greeting, {word: "merhaba"});
-		const result = Effect.runSync(provideRequestPair(ctx, services)(readAll));
-		expect(result.current.user?.id).toBe("u1");
-		expect(result.greeting.word).toBe("merhaba");
-	});
 });

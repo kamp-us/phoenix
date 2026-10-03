@@ -1,5 +1,4 @@
 import {expect, test} from "@playwright/test";
-import {signOut, signUp} from "./_helpers/auth";
 
 test.describe("Topbar (signed out)", () => {
 	test.beforeEach(async ({page}) => {
@@ -61,21 +60,7 @@ test.describe("Topbar (signed out)", () => {
 		await expect(page.locator(".kp-topbar")).toBeVisible();
 		expect(errors).toHaveLength(0);
 	});
-
-	test("signed-out: + giriş yap visible, no user pill", async ({page}) => {
-		await expect(page.getByRole("button", {name: /giriş yap/i}).first()).toBeVisible();
-		await expect(page.locator(".kp-topbar__user")).toHaveCount(0);
-	});
 });
 
-test.describe("Topbar (signed in)", () => {
-	// `+ gönderi` is NOT a topbar affordance: it is pano's promoted verb, so it lives in the
-	// pano Subnav's primary-action zone (placement law #2587), reachable only under `/pano/*`.
-	test("user pill visible after sign-up", async ({page}) => {
-		const creds = await signUp(page);
-		const pill = page.locator(".kp-topbar__user");
-		await expect(pill).toBeVisible();
-		await expect(pill).toContainText(creds.name);
-		await signOut(page);
-	});
-});
+// The signed-in user pill and the signed-out `giriş yap` state are proven across a real sign-up
+// and sign-out by `08-auth.spec.ts`.

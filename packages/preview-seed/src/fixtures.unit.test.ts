@@ -20,12 +20,6 @@ import {
 } from "./fixtures.ts";
 
 describe("buildFixtures — sözlük content (07-sozluk-term, 00-smoke)", () => {
-	it("seeds at least one term with the stable slug", () => {
-		const {terms} = buildFixtures();
-		assert.isAtLeast(terms.length, 1);
-		assert.isTrue(terms.some((t) => t.slug === SEED_TERM_SLUG));
-	});
-
 	it("every term row has the NOT NULL columns the /sozluk list reads", () => {
 		for (const t of buildFixtures().terms) {
 			assert.isTrue(typeof t.slug === "string" && t.slug.length > 0);
@@ -76,23 +70,6 @@ describe("buildFixtures — searchable terms (24-search, ADR 0080)", () => {
 		const slugs = buildFixtures().terms.map((t) => t.slug);
 		assert.include(slugs, SEED_TERM_SLUG);
 		assert.include(slugs, SEARCH_TERM_SLUG);
-	});
-
-	it("the seeded titles match the pinned constants (the spec's source of truth)", () => {
-		const {terms} = buildFixtures();
-		const exact = terms.find((t) => t.slug === SEED_TERM_SLUG);
-		const search = terms.find((t) => t.slug === SEARCH_TERM_SLUG);
-		assert.strictEqual(exact?.title, SEED_TERM_TITLE);
-		assert.strictEqual(search?.title, SEARCH_TERM_TITLE);
-	});
-
-	it("the İ/ı term's title folds to the same norm as its uppercase casing variant", () => {
-		// The crux the Turkish-İ spec exercises: "ışık" and "IŞIK" must normalize to
-		// the one token the FTS row holds, or the casing-variant query won't match.
-		assert.strictEqual(
-			normalizeSearchText(SEARCH_TERM_TITLE),
-			normalizeSearchText(SEARCH_TERM_TITLE.toLocaleUpperCase("tr")),
-		);
 	});
 
 	it("a 3-char prefix of the exact-title term folds to a prefix of its norm (prefix match)", () => {

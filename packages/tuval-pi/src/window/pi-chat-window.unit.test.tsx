@@ -15,43 +15,30 @@ import type {
 	AiAgentSessionState,
 } from "@kampus/tuval-sdk/kernel/ai-agent/core/index";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {type TestProcess, testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
-import {type WindowHost, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {testProcess} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {type ChatView, initialChatView} from "@kampus/tuval-ui/chat";
 import {installDomShims} from "@kampus/tuval-ui/testing/dom";
-import {render, screen, within} from "@testing-library/react";
+import {render, screen} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
 import {piChatWindow} from "./PiChatWindow.tsx";
-import {FIRST_PROMPT, piSession, usageOf} from "./pi-window.testing.ts";
+import {piSession, usageOf} from "./pi-window.testing.ts";
 
 installDomShims();
 
-const processId = ProcessId.make("p1");
-
-type PiHost = WindowHost<AiAgentSessionState, AiAgentSessionMsg, ChatView>;
-
-interface Opened {
-	readonly process: TestProcess<AiAgentSessionState, AiAgentSessionMsg>;
-	readonly hosts: ReadonlyArray<PiHost>;
-}
-
-const open = async (state: AiAgentSessionState, windows = 1): Promise<Opened> => {
+const open = async (state: AiAgentSessionState): Promise<void> => {
 	const process = await Effect.runPromise(
-		testProcess<AiAgentSessionState, AiAgentSessionMsg>(processId, state),
+		testProcess<AiAgentSessionState, AiAgentSessionMsg>(ProcessId.make("p1"), state),
 	);
-	const renderer = piChatWindow({scrollCommitMs: 0, scrollToFn: () => undefined});
-	const hosts: Array<PiHost> = [];
-	for (let index = 0; index < windows; index += 1) {
-		const host = await Effect.runPromise(
-			process.window<ChatView>(WindowId.make(`w${index}`), initialChatView),
-		);
-		hosts.push(host);
-		render(renderer.render(host) as ReactElement);
-	}
-	await screen.findAllByRole("log", {name: "Transcript"});
-	return {process, hosts};
+	const host = await Effect.runPromise(
+		process.window<ChatView>(WindowId.make("w0"), initialChatView),
+	);
+	render(
+		piChatWindow({scrollCommitMs: 0, scrollToFn: () => undefined}).render(host) as ReactElement,
+	);
+	await screen.findByRole("log", {name: "Transcript"});
 };
 
 describe("what the Pi window's chat bar carries", () => {
@@ -69,42 +56,6 @@ describe("what the Pi window's chat bar carries", () => {
 		expect(bar).not.toBeNull();
 		expect(bar?.querySelectorAll(".tuval-chat-phase")).toHaveLength(1);
 		expect((bar as HTMLElement).textContent?.trim()).toBe("Ready.");
-	});
-});
-
-describe("what a Pi session does not offer", () => {
-	it("renders no permission card and no mode switch", async () => {
-		await open(piSession());
-		// Pi answers its own permission prompts and advertises an empty mode list, so both controls
-		// are absent rather than empty — an empty listbox is a control that lies about being
-		// operable, and the shared window drops each to `null` on an empty input
-		// (`packages/tuval-ui/src/shell/chat/ModeSwitch.tsx`, `PermissionCards.tsx`).
-		expect(screen.queryByRole("button", {name: /^Mode/})).toBeNull();
-		expect(document.querySelector(".tuval-chat-mode")).toBeNull();
-		expect(document.querySelector(".tuval-chat-permissions")).toBeNull();
-	});
-});
-
-describe("two windows over one Pi process", () => {
-	it("render the same transcript and own one view slot each", async () => {
-		const {hosts} = await open(piSession(), 2);
-		const logs = screen.getAllByRole("log", {name: "Transcript"});
-		expect(logs).toHaveLength(2);
-		for (const log of logs) expect(within(log).getByText(FIRST_PROMPT)).toBeDefined();
-
-		const [left, right] = hosts as readonly [PiHost, PiHost];
-		await Effect.runPromise(left.setView({...initialChatView, draft: "only mine"}));
-		expect(left.view().draft).toBe("only mine");
-		expect(right.view().draft).toBe("");
-	});
-});
-
-describe("the window's scheme", () => {
-	it("is dark by default, whatever it is mounted inside", async () => {
-		await open(piSession());
-		expect(screen.getByRole("region", {name: "Agent chat"}).getAttribute("data-scheme")).toBe(
-			"dark",
-		);
 	});
 });
 

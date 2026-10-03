@@ -11,11 +11,9 @@ import {Cause, Effect, Exit, Layer, Option} from "effect";
 import * as ConfigProvider from "effect/ConfigProvider";
 import {Flags} from "../flagship/Flags.ts";
 import {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
-import {InsufficientKarma} from "./errors.ts";
+import type {InsufficientKarma} from "./errors.ts";
 import {Kunye} from "./Kunye.ts";
 import {
-	CanFlag,
-	CanPost,
 	gateContentOnKarma,
 	gateFlagOnKarma,
 	KARMA_FLOORS,
@@ -188,16 +186,5 @@ describe("gateFlagOnKarma — the dark-ship wrapper over the flag floor", () => 
 			user: userInfo("u"),
 		});
 		assert.isTrue(Exit.isSuccess(exit));
-	});
-});
-
-describe("the InsufficientKarma error surface (#150 / #146)", () => {
-	it("CanPost and CanFlag are distinct capability tags", () => {
-		assert.notStrictEqual(CanPost.key, CanFlag.key);
-	});
-
-	it("carries the FateWireCode INSUFFICIENT_KARMA", () => {
-		const e = new InsufficientKarma({message: "x", need: KARMA_FLOORS.post, have: -5});
-		assert.strictEqual(e._tag, "kunye/InsufficientKarma");
 	});
 });

@@ -35,7 +35,7 @@ export function countClause(kind: CountKind, count: number): Message {
  * yet read) is the ambiguous case ⇒ `false`, so the server probe still runs and stays the
  * authority. The short-circuit is layered ON the server gate, never a replacement.
  */
-export function divanAccessDefinitelyDenied(
+function divanAccessDefinitelyDenied(
 	tier: Tier | undefined,
 	isModerator: boolean | undefined,
 ): boolean {

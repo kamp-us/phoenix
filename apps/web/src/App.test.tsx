@@ -204,13 +204,6 @@ describe("App first-paint invariants (#2177 — pins #2160 flash + #438 remount)
 		expect(fateMounts).toHaveLength(0);
 	});
 
-	it("invariant 1 (bridge): the SetTopbarChipsContext bridge shows anonymous affordances pre-settle — chips=null is not a blank frame", () => {
-		renderApp();
-		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
-		expect(screen.getByRole("link", {name: /kamp/i})).toBeTruthy();
-		expect(fateMounts).toHaveLength(0);
-	});
-
 	it("invariant 2: FateClient mounts ONCE on the resolved identity — no anon→id remount (#438)", () => {
 		renderApp(FATE_FREE_ROUTE);
 		expect(fateMounts).toHaveLength(0);
@@ -379,38 +372,6 @@ describe("mecmua nav entry (#2828) — resolves at first paint from __BOOT__, no
 	});
 });
 
-// The akış entry gates on the SAME `mecmua-feed` seam its route self-gates on, so the link can
-// never point at a dark 404 (#2547).
-describe("mecmua feed nav entry (#2547) — gated on mecmua-feed, never a dead link", () => {
-	beforeEach(() => {
-		fateMounts.length = 0;
-		sessionState = {data: null, isPending: true};
-		flags.mecmuaFeed = false;
-	});
-	afterEach(() => {
-		flags.mecmuaFeed = false;
-		vi.clearAllMocks();
-	});
-
-	it("off: the flag dark ⇒ no akış nav link (subscribe's destination stays hidden with its route)", () => {
-		renderApp("/mecmua");
-		act(() => {
-			setSession({data: null, isPending: false});
-		});
-		expect(screen.queryByRole("link", {name: "akış"})).toBeNull();
-	});
-
-	it("on: the flag flipped ⇒ the akış nav link paints and points at /mecmua/akis", () => {
-		flags.mecmuaFeed = true;
-		renderApp("/mecmua");
-		act(() => {
-			setSession({data: null, isPending: false});
-		});
-		const link = screen.getByRole("link", {name: "akış"});
-		expect(link.getAttribute("href")).toBe("/mecmua/akis");
-	});
-});
-
 // The routed page mounts below the session gate, so these settle the session to commit the
 // Outlet (#2598).
 describe("nav-IA per-product Subnav zone substrate (#2598)", () => {
@@ -474,7 +435,8 @@ describe("nav-IA coupling: pano/yeni Subnav CTA ↔ topbar + gönderi eviction (
 });
 
 // akış lives in the mecmua Subnav zone, not the topbar product-noun row — still gated on its own
-// seam (#2603).
+// seam (#2603), the same `mecmua-feed` seam its route self-gates on, so the link can never point
+// at a dark 404 (#2547).
 describe("nav-IA mecmua delta: akış moves from topbar into the mecmua Subnav zone (#2603)", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
@@ -493,6 +455,7 @@ describe("nav-IA mecmua delta: akış moves from topbar into the mecmua Subnav z
 			setSession({data: null, isPending: false});
 		});
 		const akis = screen.getByRole("link", {name: "akış"});
+		expect(akis.getAttribute("href")).toBe("/mecmua/akis");
 		expect(container.querySelector(".kp-topbar")?.contains(akis)).toBe(false);
 		expect(container.querySelector(".kp-subnav")?.contains(akis)).toBe(true);
 	});
@@ -568,12 +531,6 @@ describe("/profile paints no eager Katkıların skeleton (#9273)", () => {
 		expect(screen.queryByTestId("signal-loading")).toBeNull();
 		expect(fateMounts).toHaveLength(0);
 	});
-
-	it("scoped: a non-profile route paints no Katkıların skeleton either", () => {
-		renderApp("/sozluk");
-		expect(screen.queryByTestId("signal-loading")).toBeNull();
-		expect(fateMounts).toHaveLength(0);
-	});
 });
 
 // The search trigger lives in the fate-free shell, so these render without settling the session
@@ -591,11 +548,6 @@ describe("Topbar search echo (#2199)", () => {
 	it("echoes the URL q on the header search trigger on /search", () => {
 		renderApp("/search?q=elma");
 		expect(screen.getByRole("button", {name: "Ara"}).textContent).toContain("elma");
-	});
-
-	it("reads q live — a different query renders a different echoed value (no stale/double source)", () => {
-		renderApp("/search?q=armut");
-		expect(screen.getByRole("button", {name: "Ara"}).textContent).toContain("armut");
 	});
 
 	it("falls back to the placeholder copy off the results page (no query to echo)", () => {

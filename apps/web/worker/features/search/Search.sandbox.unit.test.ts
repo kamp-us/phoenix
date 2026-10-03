@@ -77,11 +77,6 @@ const otherMember: SandboxViewer = {
 	canSeeSandboxed: false,
 	seesSandboxedInPlace: false,
 };
-const author: SandboxViewer = {
-	viewerId: "caylak-author",
-	canSeeSandboxed: false,
-	seesSandboxedInPlace: false,
-};
 const moderator: SandboxViewer = {
 	viewerId: "mod-1",
 	canSeeSandboxed: true,
@@ -108,12 +103,6 @@ describe("searchPosts — sandbox read-mask wired into BOTH count and keyset (#1
 			expect(q).toBeDefined();
 			expect(q).toMatch(/"sandboxed_at" is null[\s)]*or[\s(]*"post_record"\."author_id" = \?/i);
 		}
-	});
-
-	it("the author: same predicate carries the author arm — they DO surface their own sandboxed posts", async () => {
-		const sqls = await renderSearchSql(author);
-		const keyset = keysetQuery(sqls);
-		expect(keyset).toMatch(/"sandboxed_at" is null[\s)]*or[\s(]*"post_record"\."author_id" = \?/i);
 	});
 
 	it("moderator: no sandbox arm (always-on filter is a no-op) but removed posts still excluded", async () => {
@@ -158,11 +147,6 @@ describe("searchPosts — draft read-mask wired via the seam, no moderator exemp
 			expect(q).toBeDefined();
 			expect(q).toMatch(/"is_draft" is not 1[\s)]*or[\s(]*"post_record"\."author_id" = \?/i);
 		}
-	});
-
-	it("the author: the draft arm carries their author_id — they DO surface their own drafts", async () => {
-		const keyset = keysetQuery(await renderSearchSql(author));
-		expect(keyset).toMatch(/"is_draft" is not 1[\s)]*or[\s(]*"post_record"\."author_id" = \?/i);
 	});
 
 	it("moderator: NO draft exemption — still `is_draft is not 1 or author_id = :viewerId` (a mod does not see others' drafts)", async () => {

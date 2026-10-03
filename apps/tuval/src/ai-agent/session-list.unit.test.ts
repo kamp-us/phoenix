@@ -179,7 +179,7 @@ describe("the session-list spell", () => {
 			);
 			assert.lengthOf(answer.unreadable, 1);
 			assert.strictEqual(answer.unreadable[0]?.programId, "pi");
-			assert.include(answer.unreadable[0]?.provenance ?? "", "@kampus/tuval/pi@");
+			assert.strictEqual(answer.unreadable[0]?.provenance, "@kampus/tuval/pi@1.0.0 (sha256:pi)");
 			assert.include(answer.unreadable[0]?.detail ?? "", "the sessions directory is gone");
 		}).pipe(
 			Effect.provide(

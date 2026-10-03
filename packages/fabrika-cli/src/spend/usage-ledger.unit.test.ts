@@ -38,6 +38,16 @@ it("serializes competing recorders and heals an interrupted append without losin
 	expect(await live(recordUsage(path, fixture))).toEqual({status: "duplicate"});
 });
 
+it("deduplicates copied history and keeps a genuine attempt separate", async () => {
+	const path = ledger();
+	expect((await live(recordUsage(path, fixture))).status).toBe("recorded");
+	const copy = {...fixture, recordId: "copied-parent-history"};
+	expect((await live(recordUsage(path, copy))).status).toBe("duplicate");
+	const retry = {...fixture, work: {...fixture.work, attempt: "attempt-2"}};
+	expect((await live(recordUsage(path, retry))).status).toBe("recorded");
+	expect(readUsageLedger(readFileSync(path, "utf8")).records).toHaveLength(2);
+});
+
 it("preserves cumulative counters separately from response deltas and model changes", async () => {
 	const path = ledger();
 	const cumulative: UsageRecord = {

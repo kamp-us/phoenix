@@ -43,8 +43,6 @@ export interface DiffOptions {
 	readonly filterPlacement?: FilterPlacement | null;
 	/** comma-separated extra exclusion patterns, refused on a guard-probe match. */
 	readonly exclude?: string | null;
-	/** Explicit roots for callers with a proven config read; otherwise read only when filtering. */
-	readonly governedRoots?: ReadonlyArray<string>;
 	/**
 	 * Where the exclusion set's own config arms are read, when the placement turns the filter on —
 	 * the checkout the caller stands in; omitted cwd falls to the process's;
@@ -137,17 +135,14 @@ export const runDiff = (
 		let servedDiff = diff;
 		if (options.filterPlacement != null) {
 			const root = options.cwd ?? process.cwd();
-			let roots = options.governedRoots;
-			if (roots === undefined) {
-				// The PR's own roots at the served range's two commits, as `review scope` reads them.
-				const loaded = yield* classConfigAtCommits(
-					VERB,
-					"the filter refusal union is UNKNOWN without the governed roots.",
-					{head: head.sha, base: head.mergeBase},
-				);
-				if (loaded._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, loaded.message);
-				roots = loaded.config.governedRoots;
-			}
+			// The PR's own roots at the served range's two commits, as `review scope` reads them.
+			const loaded = yield* classConfigAtCommits(
+				VERB,
+				"the filter refusal union is UNKNOWN without the governed roots.",
+				{head: head.sha, base: head.mergeBase},
+			);
+			if (loaded._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, loaded.message);
+			const roots = loaded.config.governedRoots;
 
 			const filterExclusions = yield* reviewFilterExclusionsOr(
 				VERB,

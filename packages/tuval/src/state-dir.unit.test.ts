@@ -43,21 +43,11 @@ afterEach(() => {
 });
 
 describe("the project key", () => {
-	it("keeps two paths apart that a plain separator substitution would collide", () => {
-		// The case Claude Code's encoding loses: a dash already in the path reads as a separator.
-		assert.notStrictEqual(projectKey("/a-b/c"), projectKey("/a/b/c"));
-	});
-
-	it("keeps a dash beside a separator apart from one on the other side of it", () => {
-		// The shape the first encoding lost: escaping a dash to a longer run of dashes leaves a run
-		// ambiguous between the two productions, and both of these collided on `-a---b`.
-		assert.notStrictEqual(projectKey("/a-/b"), projectKey("/a/-b"));
-		assert.notStrictEqual(projectKey("/x/-y"), projectKey("/x-/y"));
-	});
-
 	it("is injective over every short path built from a separator, a dash and an underscore", () => {
 		// An exhaustive proof of ADR 0402 rule 4 over the alphabet that can collide at all: the
 		// escape's own two characters, the separator, and one ordinary character to carry them.
+		// Both encodings that lost a pair are inside it: Claude Code's, where `/a-a/a` and `/a/a/a`
+		// meet, and the first escape here, where `/a-/a` and `/a/-a` met on `-a---a`.
 		const alphabet = ["a", "-", "_", "/"];
 		const paths: Array<string> = [];
 		const extend = (path: string, left: number) => {
@@ -165,26 +155,6 @@ describe("the one-time move of in-project state", () => {
 			assert.isTrue(existsSync(join(projectTuval, "scratch")));
 			assert.isFalse(existsSync(join(stateDir, "notes.md")));
 			assert.isFalse(existsSync(join(stateDir, "scratch")));
-		}).pipe(Effect.provide(NodeFileSystem.layer)),
-	);
-
-	it.effect("reports a collision and an unowned name under their own fields", () =>
-		Effect.gen(function* () {
-			const project = freshDir("tuval-state-project-");
-			const stateDir = join(freshDir("tuval-state-home-"), "state");
-			const projectTuval = join(project, ".tuval");
-			mkdirSync(projectTuval, {recursive: true});
-			mkdirSync(stateDir, {recursive: true});
-			writeFileSync(join(projectTuval, "manifest.json"), "the project's\n");
-			writeFileSync(join(stateDir, "manifest.json"), "the desk's\n");
-			writeFileSync(join(projectTuval, "notes.md"), "mine\n");
-
-			const adopted = yield* adoptInProjectState(projectTuval, stateDir);
-			assert.deepStrictEqual(adopted, {
-				moved: [],
-				kept: ["manifest.json"],
-				unowned: ["notes.md"],
-			});
 		}).pipe(Effect.provide(NodeFileSystem.layer)),
 	);
 

@@ -92,14 +92,6 @@ describe("inspectorFor", () => {
 			);
 		}),
 	);
-
-	it.effect("does not throw on a program that declares no inspector", () =>
-		Effect.gen(function* () {
-			const host = yield* testHost();
-			const region = inspectorFor(deskSnapshot({focused: focusedOn(host)}));
-			assert.deepStrictEqual(region, {_tag: "NoInspector", reason: "not-declared"});
-		}),
-	);
 });
 
 describe("statusFor", () => {

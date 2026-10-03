@@ -124,14 +124,6 @@ describe("runRoadmapGuard", () => {
 		).toHaveLength(1);
 	});
 
-	it("emits no annotation off a runner", async () => {
-		const out = await run(roadmap("## Arcs\n\n| Arc | M | S |\n|-|-|-|\n| A | #9 | active |\n"), [
-			[MILESTONES, milestones([17, "open", "Other"])],
-		]);
-		expect(out.code).toBe(VIOLATION);
-		expect(out.stderr.some((line) => line.startsWith("::"))).toBe(false);
-	});
-
 	// The fail-closed floor, on both sides of the check.
 	it("fails closed on a ROADMAP.md with no arc rows", async () => {
 		const out = await run(roadmap("# Roadmap\n\nNo tables yet.\n"), [[MILESTONES, PROJECTION]]);

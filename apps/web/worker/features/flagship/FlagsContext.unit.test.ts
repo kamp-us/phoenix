@@ -1,14 +1,14 @@
 /**
  * Unit coverage for the environment / per-app-stage mapping (#512): the per-request
- * `FlagsContext` sources its `environment` from the deploy stage (ADR 0057), and a
- * flag with an environment rule resolves per stage — degrading safe on error.
+ * `FlagsContext` sources its `environment` from the deploy stage (ADR 0057), and that
+ * environment reaches the Flagship client. The degrade-safe error path is
+ * `Flags.unit.test.ts`'s.
  *
  * The worker-scope `ConfigProvider` is mirrored here with `ConfigProvider.fromUnknown`
  * over a fixed `ENVIRONMENT`, so the stage source is the thing under test.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
-import {Flagship as CfFlagship} from "alchemy/Cloudflare";
 import {Effect, Layer} from "effect";
 import * as ConfigProvider from "effect/ConfigProvider";
 import {encodeOverrideCookieValue, FLAG_OVERRIDE_COOKIE} from "./dev-override.ts";
@@ -125,8 +125,8 @@ describe("makeRequestFlagsContext — dev-only override gate (#622)", () => {
 });
 
 describe("environment-targeting flag resolves per stage (no call-site change)", () => {
-	// One flag, one stub rule: ON only in development. The call-site is identical across
-	// stages — only the sourced `environment` differs.
+	// The stub serves ON only for the development environment, so an ON read proves the
+	// stage-sourced `environment` reached the Flagship client through `FlagsLive`.
 	const devOnlyFlag = (_key: string, defaultValue: boolean, context?: {environment?: string}) =>
 		Effect.succeed(context?.environment === "development" ? true : defaultValue);
 
@@ -144,36 +144,5 @@ describe("environment-targeting flag resolves per stage (no call-site change)", 
 			const enabled = yield* resolveInStage("development");
 			assert.strictEqual(enabled, true);
 		}),
-	);
-
-	it.effect("resolves OFF (the default) in the production stage — same call-site", () =>
-		Effect.gen(function* () {
-			const enabled = yield* resolveInStage("production");
-			assert.strictEqual(enabled, false);
-		}),
-	);
-});
-
-describe("environment-targeting degrades safe on error", () => {
-	it.effect("a FlagshipError collapses to the supplied default even with an environment rule", () =>
-		Effect.gen(function* () {
-			const flags = yield* Flags;
-			const context = yield* makeRequestFlagsContext(anonymousFlagsContext);
-			// An eval error must fall back to the supplied default regardless of the
-			// environment attribute carried in the context.
-			const enabled = yield* flags
-				.getBoolean("dev-only-feature", false)
-				.pipe(Effect.provideService(FlagsContext, context));
-			assert.strictEqual(enabled, false);
-		}).pipe(
-			withStage("development"),
-			Effect.provide(
-				flagsOver(() =>
-					Effect.fail(
-						new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined}),
-					),
-				),
-			),
-		),
 	);
 });

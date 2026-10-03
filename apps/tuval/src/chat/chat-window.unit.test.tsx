@@ -877,18 +877,6 @@ describe("paging", () => {
 		expect(scrolls[scrolls.length - 1] ?? -1).toBeLessThan(SCROLL_BOX - TEST_VIEWPORT.height);
 	});
 
-	it("records the page cursor in its own view slot", async () => {
-		const {scrolls, view, answerPage} = await openWindow(withTranscript(transcriptOf(20)));
-		await readerScrollsToTop(scrolls);
-		await act(async () => {
-			await answerPage(
-				withTranscript(transcriptOf(20), {lastPage: page, pageOutcome: {status: "success", page}}),
-			);
-		});
-		await waitFor(() => expect(view().cursor).toBe("p0"));
-		expect(view().atOldest).toBe(false);
-	});
-
 	/**
 	 * Criterion 8 of #8985: the call site itself, not its two halves. `remarkCutReplies` has its own
 	 * unit cases and `chatRows` is tested over a hand-re-marked array, so deleting the window's own
@@ -1802,14 +1790,15 @@ describe("two windows over one process", () => {
 		hasMore: true,
 	};
 
-	it("show the same transcript and keep their own scroll offset and page cursor", async () => {
+	it("show the same transcript and keep their own scroll offset", async () => {
 		const {left, right, scrollers} = await openPair(withTranscript(transcriptOf(20)));
+		expect(within(windowBox("left")).getByText("prompt 0")).toBeDefined();
+		expect(within(windowBox("right")).getByText("prompt 0")).toBeDefined();
 		await scrollWindowTo(scrollers[0], 400);
 		await scrollWindowTo(scrollers[1], 900);
 		await waitFor(() => expect(left.view().scroll).toBe(400));
 		expect(right.view().scroll).toBe(900);
 		expect(left.view()).not.toEqual(right.view());
-		expect(TEST_VIEWPORT.height).toBe(1_000);
 	});
 
 	it("merges the page only into the window that asked for it", async () => {

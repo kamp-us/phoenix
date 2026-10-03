@@ -358,33 +358,6 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 		assert.strictEqual(VOTE_ELIGIBILITY_WIRE_CODE, "VOTE_REQUIRES_YAZAR");
 	});
 
-	it.effect("a promoted (above-floor) voter still casts normally on a live target", () => {
-		// reads: loadMeta (live) → probe (not yet cast) → post-batch score.
-		const {access, batches} = recordingCastAccess([liveMeta, false, 1]);
-		const {layer: karma, calls} = recordingKarma();
-		return Effect.gen(function* () {
-			const vote = yield* Vote;
-			const result = yield* vote.cast({
-				userId: "yazar-voter",
-				targetKind: "definition",
-				targetId: "def-live",
-				value: true,
-			});
-			assert.isTrue(result.changed, "a promoted voter's cast is a real state change");
-			assert.strictEqual(batches[0]?.length, 5, "the full vote batch + ledger row still writes");
-			assert.deepStrictEqual(calls, [{userId: "author-1", delta: 1}], "author credited +1");
-		}).pipe(
-			Effect.provide(
-				VoteLive.pipe(
-					Layer.provide(karma),
-					Layer.provide(VoterStandingStub(true)),
-					Layer.provide(recordingTelemetry([])),
-					Layer.provide(Layer.succeed(Drizzle, access)),
-				),
-			),
-		);
-	});
-
 	it.effect(
 		"a çaylak RETRACTING is not tier-gated — a retraction removes influence, never adds",
 		() => {

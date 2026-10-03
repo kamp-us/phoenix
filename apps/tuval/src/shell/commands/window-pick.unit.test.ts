@@ -261,16 +261,6 @@ describe("window:pick returns a filled window to the picker", () => {
 		),
 	);
 
-	it("Escape on a picker no `window:pick` mounted stays the dismiss key (#8265)", () => {
-		const empty = initialState();
-		const window = WindowId.make(workspaceOf(empty).focused);
-		const view = asPickerView(empty.views[window]);
-		assert.strictEqual(view.previous, null);
-		assert.deepStrictEqual(pickerKey(window, {programs: [], processes: []}, view, "<escape>"), {
-			_tag: "Ignored",
-		});
-	});
-
 	it("does nothing to a window that is already on the picker", () => {
 		const empty = initialState();
 		const window = WindowId.make(workspaceOf(empty).focused);

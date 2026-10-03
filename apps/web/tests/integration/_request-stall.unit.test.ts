@@ -6,13 +6,7 @@
  */
 
 import {describe, expect, it, vi} from "vitest";
-import {
-	convergeAfterStall,
-	isSafeMethod,
-	isStall,
-	RequestStallError,
-	SAFE_STALL_REPLAYS,
-} from "./_request-stall.ts";
+import {convergeAfterStall, isSafeMethod, isStall, RequestStallError} from "./_request-stall.ts";
 
 const timeoutError = (): Error => {
 	const e = new Error("The operation was aborted due to timeout");
@@ -65,19 +59,18 @@ describe("isSafeMethod", () => {
 		expect(isSafeMethod("PUT")).toBe(false);
 		expect(isSafeMethod("DELETE")).toBe(false);
 	});
-
-	it("allows exactly one replay of a stalled safe request, bounded under the test budget", () => {
-		// Two 30s attempts = 60s, half the 120s testTimeout — the room the harness budgets.
-		expect(SAFE_STALL_REPLAYS).toBe(1);
-	});
 });
 
 describe("convergeAfterStall", () => {
 	it("returns the send result untouched when nothing stalls (no probe, no sleep)", async () => {
-		const send = vi.fn(async () => "sent");
-		const landed = vi.fn(async () => "adopted" as string | undefined);
+		// A domain-level `!ok` is an answer, not a transient: a resolved send is terminal whatever
+		// it carries, so the result is a rejected-mutation shape here.
+		const rejected = {ok: false, code: "DISPLAY_NAME_EMPTY"};
+		const send = vi.fn(async () => rejected);
+		const landed = vi.fn(async () => undefined as typeof rejected | undefined);
 		const sleep = vi.fn(noSleep);
-		await expect(convergeAfterStall(send, landed, {sleep})).resolves.toBe("sent");
+		await expect(convergeAfterStall(send, landed, {sleep})).resolves.toBe(rejected);
+		expect(send).toHaveBeenCalledTimes(1);
 		expect(landed).not.toHaveBeenCalled();
 		expect(sleep).not.toHaveBeenCalled();
 	});
@@ -113,16 +106,6 @@ describe("convergeAfterStall", () => {
 		);
 		expect(send).toHaveBeenCalledTimes(1);
 		expect(landed).not.toHaveBeenCalled();
-	});
-
-	it("treats a RESOLVED result as terminal — a domain-level `!ok` is an answer, not a transient", async () => {
-		const send = vi.fn(async () => ({ok: false, code: "DISPLAY_NAME_EMPTY"}));
-		const landed = vi.fn(async () => undefined);
-		await expect(convergeAfterStall(send, landed, {sleep: noSleep})).resolves.toEqual({
-			ok: false,
-			code: "DISPLAY_NAME_EMPTY",
-		});
-		expect(send).toHaveBeenCalledTimes(1);
 	});
 
 	it("surfaces the last stall once the budget is spent and the write never landed", async () => {

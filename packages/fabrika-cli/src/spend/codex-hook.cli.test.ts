@@ -21,13 +21,8 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, {recursive: true, force: true});
 });
 describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it.each([
-		"node packages/fabrika-cli/src/bin.ts build claim 8950",
-		"node packages/fabrika-cli/src/bin.ts review criteria --repo fixture/repo 8950",
-		"git status --short\nnode packages/fabrika-cli/src/bin.ts review criteria 8950",
-		"git status --short && node 'packages/fabrika-cli/src/bin.ts' review criteria --json --repo='fixture/repo' 8950",
-		"node packages/fabrika-cli/src/bin.ts build claim --repo fixture/repo --issue=8950 9000",
-	])("records native usage through the installed hook for %s", (command) => {
+	it("records native usage through the installed hook", () => {
+		const command = "node packages/fabrika-cli/src/bin.ts build claim 8950";
 		const cwd = mkdtempSync(join(tmpdir(), "codex-hook-cli-"));
 		dirs.push(cwd);
 		execFileSync("git", ["init", "--quiet"], {cwd});

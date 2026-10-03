@@ -5,6 +5,8 @@
  * refusal matrix at the bottom pins the subject vocabulary: two subjects refuse, a PR-subject
  * modifier beside a headless subject refuses, and a range validates through `readRangeFlags`.
  */
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
@@ -214,6 +216,79 @@ describe("runPreview takes exactly one subject", () => {
 		const out = await run([], {base: "HEAD~1", tip: RANGE_TIP});
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stderr.at(-1)).toContain("is not a revision — expected 7–40 lowercase hex");
+	});
+});
+
+/**
+ * The `--diff-file` subject over the committed golden diff: a code file beside a lockfile and a
+ * snapshot, the two sections the shipped defaults exclude.
+ */
+describe("runPreview reads a --diff-file", () => {
+	const GOLDEN = readFileSync(
+		fileURLToPath(new URL("./__fixtures__/preview-sample.diff", import.meta.url)),
+		"utf8",
+	);
+
+	it("keeps the full partition beside the excluded enumeration under --json", async () => {
+		const out = await run([], {diffFile: diffOnDisk(GOLDEN), json: true});
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			placement: "after",
+			matched_paths: ["src/feature.ts"],
+			excluded: {count: 2, paths: ["pnpm-lock.yaml", "src/__snapshots__/feature.snap"]},
+			active_classes: [{name: "code", files: 3}],
+			namespaces: ["review-code"],
+		});
+	});
+
+	it("serves the header plus kept sections under --emit-diff, never the excluded bytes", async () => {
+		const out = await run([], {diffFile: diffOnDisk(GOLDEN), emitDiff: true});
+		expect(out.code).toBe(0);
+		expect(out.stdout.startsWith("x-fabrika-filter: placement=after excluded=2 served=1\n")).toBe(
+			true,
+		);
+		expect(out.stdout).toContain("x-fabrika-excluded-path: pnpm-lock.yaml");
+		expect(out.stdout).toContain("x-fabrika-excluded-path: src/__snapshots__/feature.snap");
+		expect(out.stdout).toContain("+export const featureExtra = () => 2;");
+		expect(out.stdout).not.toContain("lockfileVersion");
+	});
+
+	it("accepts a guard-corpus glob — the refusal union is the governed roots alone", async () => {
+		const out = await run([], {
+			diffFile: diffOnDisk(GOLDEN),
+			exclude: "**/package.json",
+			json: true,
+		});
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).excluded.paths).toEqual([
+			"pnpm-lock.yaml",
+			"src/__snapshots__/feature.snap",
+		]);
+	});
+
+	it("refuses a missing placement on 10 — a preview exists to show the filter", async () => {
+		const out = await run([], {diffFile: diffOnDisk(GOLDEN), filterPlacement: null});
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toContain("--filter-placement is required");
+	});
+
+	it("refuses an off-vocabulary placement on 10", async () => {
+		const out = await run([], {diffFile: diffOnDisk(GOLDEN), filterPlacement: "middle"});
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toContain('--filter-placement must be `after`, got "middle"');
+	});
+
+	it("refuses --emit-diff beside --json on 10", async () => {
+		const out = await run([], {diffFile: diffOnDisk(GOLDEN), emitDiff: true, json: true});
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toContain("--emit-diff and --json are mutually exclusive");
+	});
+
+	it("refuses an unreadable --diff-file on 11 — never a permissive empty read", async () => {
+		const out = await run([], {diffFile: "/repo/absent.diff"});
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain('cannot read --diff-file "/repo/absent.diff"');
 	});
 });
 

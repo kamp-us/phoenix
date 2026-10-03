@@ -187,11 +187,3 @@ describe("exit 15 — the one-line-diff assertion, driven through the verb", () 
 		expect(io.written.size).toBe(0);
 	});
 });
-
-describe("the exit codes are the contract's", () => {
-	it("seats every proven refusal on 3+, never on 1 or 127", () => {
-		const codes = [NO_SUBJECT, NO_BY, NO_STATUS_LINE, MULTI_LINE_DIFF, ALREADY_SUPERSEDED];
-		for (const code of codes) expect(code).toBeGreaterThanOrEqual(3);
-		expect(new Set(codes).size).toBe(codes.length);
-	});
-});

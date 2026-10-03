@@ -1,7 +1,8 @@
 /**
  * The Claude vertical (#7625): one Claude chat opened in the real shell from the real picker,
  * chatted with, a card answered, the mode switched, Pi running beside it, the app stopped and
- * booted again, the page re-attached, and a child spawned through the three kernel tools.
+ * booted again, and a child spawned through the three kernel tools. The page re-attaching over a
+ * second socket is the Pi vertical's own case; the row under the page does not change that path.
  *
  * It is the Pi vertical (`../../pi-desk/proof/pi-vertical.integration.test.ts`) with a `claude-session`
  * where the `pi-session` was — same kernel, same `serveDesk` socket, same page `attach`, same
@@ -68,7 +69,6 @@ import {
 	PROMPT_3,
 	PROMPT_4,
 	REPLY_1,
-	REPLY_2,
 	REPLY_4,
 } from "./names.ts";
 import {
@@ -887,76 +887,6 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 						"the restart duplicated an item",
 					);
 					assert.strictEqual(replies(grown).at(-1), REPLY_4);
-				}),
-			),
-		TIMEOUT,
-	);
-
-	it.live(
-		"shows the same desk and the same transcript over a second socket after the page's own drops, and a prompt sent on it still reaches the session",
-		() =>
-			run(
-				Effect.gen(function* () {
-					const {result, calls} = yield* withNoLiveHttp(
-						Effect.gen(function* () {
-							const project = freshProject();
-							const app = yield* bootDesk(project);
-							let before: AiAgentSessionState | null = null;
-							let deskBefore = "";
-							let agentId = "";
-
-							yield* Effect.scopedWith(
-								Effect.fnUntraced(function* (scope) {
-									const {page, desk} = yield* Scope.provide(
-										attachDesk(app.server.launchUrl),
-										scope,
-									);
-									const fresh = yield* liveWhere(desk.seen, "the first snapshot", () => true);
-									const window = windowsOf(fresh)[0] as string;
-									const opened = yield* openFromThePicker(
-										desk,
-										app.entries,
-										window,
-										CLAUDE_SESSION_PROGRAM,
-									);
-									agentId = opened.processId;
-									const session = yield* Scope.provide(attachSession(page, agentId), scope);
-									const ready = yield* liveWhere(
-										session.seen,
-										"the session to open",
-										(s) => s.phase === "ready",
-									);
-									before = yield* chat(session, ready, PROMPT_1, PROMPT_1_KEY);
-									deskBefore = JSON.stringify(yield* settled(desk.seen, opened.desk));
-								}),
-							);
-							const left = before as AiAgentSessionState | null;
-							assert.isNotNull(left, "the first socket never saw a session");
-
-							const {page, desk} = yield* attachDesk(app.server.launchUrl);
-							const again = yield* liveWhere(desk.seen, "the first snapshot", () => true);
-							assert.strictEqual(
-								JSON.stringify(again),
-								deskBefore,
-								"the second socket showed a different desk",
-							);
-							const session = yield* attachSession(page, agentId);
-							const seenAgain = yield* liveWhere(session.seen, "the session's state", () => true);
-							assert.deepStrictEqual(
-								ids(seenAgain),
-								ids(left as AiAgentSessionState),
-								"the re-attached page saw a different transcript",
-							);
-							return yield* chat(session, seenAgain, PROMPT_2, PROMPT_2_KEY);
-						}),
-					);
-					noLiveHttp(calls);
-					assert.deepStrictEqual(
-						replies(result),
-						[REPLY_1, REPLY_2],
-						"the prompt sent over the second socket never reached the session",
-					);
-					assert.deepStrictEqual(ids(result), afterTheSecondTurn);
 				}),
 			),
 		TIMEOUT,

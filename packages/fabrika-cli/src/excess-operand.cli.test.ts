@@ -10,7 +10,7 @@
  * have printed anyway — so a test asserting on stdout *content* is exactly the test that passes
  * against the bug. Every case below asserts the exit code and stderr instead.
  *
- * **Five spawns, and none of them touch the network.** Each `it` costs one cold node+TS load of
+ * **Four spawns, and none of them touch the network.** Each `it` costs one cold node+TS load of
  * `bin.ts` — about 2.3s on a CI runner — so spawn count *is* this file's cost, and the matrix it
  * used to walk twelve times is covered in 19ms by `excess-operand.unit.test.ts`. What only a
  * subprocess can prove is the exit status, which needs a handful of representative invocations, not
@@ -66,21 +66,13 @@ const USAGE_ERROR = 1;
 describe("an operand no leaf verb declares is refused", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
-	it("refuses an excess operand, naming both the token and the verb path", () => {
-		const run = fabrika(["adr", "next", "extratoken"]);
-		expect(run.code).toBe(USAGE_ERROR);
-		expect(run.stderr).toContain('unexpected operand "extratoken"');
-		expect(run.stderr).toContain('for "fabrika adr next"');
-		expect(run.stdout).toBe("");
-	});
-
 	// The operand trails a flag *and* a satisfied arity, which is the shape a pre-runner argv walk
 	// gets wrong: only the parser knows `extra` is a positional rather than another `--dir` value.
 	it("refuses an operand past a fixed arity that follows a flag, and writes nothing", () => {
 		const dir = scratchDir();
 		const run = fabrika(["adr", "new", "0240", "some-slug", "--dir", dir, "extra"]);
 		expect(run.code).toBe(USAGE_ERROR);
-		expect(run.stderr).toContain('unexpected operand "extra"');
+		expect(run.stderr).toContain('unexpected operand "extra" for "fabrika adr new"');
 		expect(run.stdout).toBe("");
 		expect(readdirSync(dir)).toEqual([]);
 	});
@@ -112,8 +104,7 @@ describe("what already worked still works", {timeout: SUBPROCESS_TEST_TIMEOUT_MS
 		expect(run.stdout).not.toBe("");
 	});
 
-	// That help at every depth still exits 0 with USAGE is asserted four ways in
-	// `unknown-subcommand.cli.test.ts`; the half only this file owns is that the hidden catch-all
+	// That help still exits 0 with USAGE is `unknown-subcommand.cli.test.ts`'s; the half only this file owns is that the hidden catch-all
 	// stays out of it — help is the interface, and it must not offer an argument that does not exist.
 	it("a verb's help exits 0 and never advertises the catch-all", () => {
 		const run = fabrika(["adr", "next", "--help"]);

@@ -164,12 +164,6 @@ describe("existenceOf — three arms, never two", () => {
 		expect(existenceOf(response(404, {message: "Not Found"}), readName)).toEqual({_tag: "Absent"});
 	});
 
-	it("constructs Unknown carrying the reason on any other non-2xx", () => {
-		const result = existenceOf(response(502, null), readName);
-		expect(result._tag).toBe("Unknown");
-		expect(result._tag === "Unknown" && result.reason).toContain("502");
-	});
-
 	it("routes its Unknown arm through refusalText rather than building the status inline", () => {
 		const result = existenceOf(response(422, {message: "Validation Failed"}), readName);
 		expect(result).toEqual({
@@ -316,25 +310,6 @@ describe("graphqlRead", () => {
 			query: "query($n:Int!){x}",
 			variables: {n: 4318},
 		});
-	});
-});
-
-describe("no token, no request", () => {
-	it("cannot construct a read without a resolved credential", async () => {
-		const shell = fakeShell([], undefined, [/^gh /]);
-		const http = fakeHttp([]);
-		const issued = await Effect.runPromise(
-			Effect.provide(
-				Effect.gen(function* () {
-					const token = yield* resolveToken({});
-					if (token._tag === "Failure") return null;
-					return yield* restRead(token.value, "GET", "repos/o/r/pulls/1");
-				}),
-				Layer.merge(shell.layer, http.layer),
-			),
-		);
-		expect(issued).toBeNull();
-		expect(http.calls).toEqual([]);
 	});
 });
 

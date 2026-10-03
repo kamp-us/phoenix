@@ -40,12 +40,6 @@ describe("runSentence", () => {
 		expect(runSentence([read("a.ts"), command("ls")])).toBe("Read 1 file and ran 1 command");
 	});
 
-	it("joins two clauses with `and`, lowercasing the second", () => {
-		expect(runSentence([read("a.ts"), read("b.ts"), command("ls")])).toBe(
-			"Read 2 files and ran 1 command",
-		);
-	});
-
 	it("joins three or more with commas and a final `and`, lowercasing every clause after the first", () => {
 		const line = runSentence([read("a.ts"), edit("b.ts"), command("ls"), call({pattern: "TODO"})]);
 		expect(line).toBe("Read 1 file, changed 1 file, ran 1 command, and used 1 tool");

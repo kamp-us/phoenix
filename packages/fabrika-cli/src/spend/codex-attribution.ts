@@ -129,8 +129,3 @@ export const codexAttribution = (event: Record<string, unknown>): CodexAttributi
 	const issue = issues.values().next().value;
 	return issue !== undefined ? {kind: "issue", issue} : {kind: detected ? "continuation" : "none"};
 };
-
-export const codexIssue = (event: Record<string, unknown>): number | null => {
-	const association = codexAttribution(event);
-	return association.kind === "issue" ? association.issue : null;
-};

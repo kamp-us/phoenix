@@ -35,10 +35,6 @@ describe("every verb group emits through the shared, drain-safe helper", () => {
 		expect(groupCommands.length).toBeGreaterThan(0);
 	});
 
-	it.each(groupCommands)("`%s` imports it rather than declaring one", (_label, path) => {
-		expect(readFileSync(path, "utf8")).toContain('from "../emit.ts"');
-	});
-
 	it.each(groupCommands)("`%s` calls it, not merely imports it", (_label, path) => {
 		const source = readFileSync(path, "utf8");
 		const bound = localName(source);

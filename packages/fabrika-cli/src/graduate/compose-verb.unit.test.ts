@@ -63,6 +63,7 @@ describe("the authored half is validated before anything is rendered", () => {
 		const out = await compose({stdin: {_tag: "Text", text: "   \n"}});
 		expect(out.code).toBe(EMPTY_STDIN);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("graduate compose: stdin was read and held nothing");
 	});
 
 	it("refuses a fourth section rather than dropping it from the composed spec", async () => {

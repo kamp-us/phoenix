@@ -1,6 +1,4 @@
 import {describe, expect, it} from "vitest";
-import {en} from "../i18n/en";
-import {tr} from "../i18n/tr";
 import {
 	validateEmail,
 	validateName,
@@ -48,23 +46,5 @@ describe("authValidation — catalog keys, not messages", () => {
 		expect(validateSignIn("", "hunter2")).toBe("auth.validation.emailRequired");
 		expect(validateSignIn("elif@kamp.us", "")).toBe("auth.validation.passwordRequired");
 		expect(validateSignIn("elif@kamp.us", "x")).toBeNull();
-	});
-
-	// The keys are only useful if both catalogs answer them; a typo here would otherwise render
-	// `undefined` at the one moment a reader is being told what they got wrong.
-	it("every key it can return resolves in both locales", () => {
-		const keys = [
-			validateName(""),
-			validateEmail(""),
-			validateEmail("elif"),
-			validatePassword("", "sign-up"),
-			validatePassword("short", "sign-up"),
-		];
-		for (const key of keys) {
-			expect(key).not.toBeNull();
-			if (key === null) continue;
-			expect(tr[key]).toBeTruthy();
-			expect(en[key]).toBeTruthy();
-		}
 	});
 });

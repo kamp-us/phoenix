@@ -48,12 +48,9 @@ describe("asChatView", () => {
 		});
 	});
 
-	it("answers the initial view for a slot no window has written yet", () => {
+	it("answers the initial view for a slot no window has written yet, or one that is not a record", () => {
 		expect(asChatView(undefined)).toEqual(initialChatView);
 		expect(asChatView(null)).toEqual(initialChatView);
-	});
-
-	it("answers the initial view for a slot that is not a record", () => {
 		expect(asChatView(7)).toEqual(initialChatView);
 		expect(asChatView("scroll")).toEqual(initialChatView);
 		expect(asChatView([1, 2, 3])).toEqual(initialChatView);

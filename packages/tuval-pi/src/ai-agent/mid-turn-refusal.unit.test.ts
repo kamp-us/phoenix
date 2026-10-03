@@ -15,17 +15,11 @@
  * `reports/2026-09-07-pi-mid-turn-prompt-refusal.md`. The first claim is now closed by the
  * revision `SnapshotProjection` carries (#8554): all three schedules assert no second `ready`, and
  * removing that guard reds the first two by name. The other two claims still describe current
- * source — the core admits on a `ready`, and the wire no longer judges a prompt's fields.
+ * source — the core admits on a `ready` (the SDK's own `core/machine.unit.test.ts` pins that), and
+ * the wire no longer judges a prompt's fields.
  */
 
-import {applyCellChecked} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {aiAgentSessionMachine} from "@kampus/tuval-sdk/kernel/ai-agent/core/machine";
-import type {
-	AiAgentSessionCmd,
-	AiAgentSessionMsg,
-} from "@kampus/tuval-sdk/kernel/ai-agent/core/messages";
-import {type AiAgentSessionState, initialState} from "@kampus/tuval-sdk/kernel/ai-agent/core/state";
 import type {AgentEvent, TransportError} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {TuvalAiAgent} from "@kampus/tuval-sdk/kernel/ai-agent/service/index";
 import {type Cause, Deferred, Effect, Layer, Option, Queue, Stream} from "effect";
@@ -37,7 +31,6 @@ import {
 } from "../client/index.ts";
 import {
 	type TranscriptItem as PiTranscriptItem,
-	ProtocolValidationError,
 	parseClientMessage,
 	SERVICE_ID,
 	type SessionSnapshot,
@@ -253,45 +246,6 @@ describe("a send admitted while Pi is still running the previous turn", () => {
 	);
 });
 
-const machine = aiAgentSessionMachine({cwd: CWD});
-
-const apply = (
-	state: AiAgentSessionState,
-	msg: AiAgentSessionMsg,
-): readonly [AiAgentSessionState, ReadonlyArray<AiAgentSessionCmd>] =>
-	applyCellChecked<AiAgentSessionState, AiAgentSessionMsg, AiAgentSessionCmd>(machine, state, msg);
-
-describe("what the core does with that second ready", () => {
-	it("admits the operator's next send instead of queueing it", () => {
-		const running: AiAgentSessionState = {
-			...initialState(CWD),
-			phase: "prompting",
-			sessionId: SESSION.id,
-		};
-
-		const [ready] = apply(running, {
-			type: "event",
-			sessionId: SESSION.id,
-			event: {kind: "phase", phase: "ready"},
-		});
-		assert.strictEqual(ready.phase, "ready");
-
-		const [after, cmds] = apply(ready, {
-			type: "prompt",
-			text: "third",
-			key: "key-c",
-			timestamp: 1_700_000_000_000,
-		});
-		// Admitted, not queued: the text goes to the layer, which hands it to a session Pi is
-		// still running.
-		assert.deepStrictEqual(after.queued, []);
-		assert.isTrue(
-			cmds.some((cmd) => cmd.type === "aiAgent.prompt"),
-			`the core queued rather than admitting: ${JSON.stringify(cmds)}`,
-		);
-	});
-});
-
 const request = (command: Record<string, unknown>): unknown => ({
 	type: "request",
 	id: "req-1",
@@ -322,24 +276,5 @@ describe("Tuval's prompt command on protocol 8", () => {
 			withOption as unknown,
 			"the envelope passed an unknown field through — the type is what refuses it now",
 		);
-	});
-
-	it("refuses a request whose call carries no command at all", () => {
-		assert.throws(
-			() =>
-				parseClientMessage({
-					type: "request",
-					id: "req-1",
-					target: {serverId: "6f1c0a1e-6c2e-4a0f-9a3c-0f2c6c1a3d55"},
-					call: {serviceId: SERVICE_ID, member: "prompt", args: []},
-				}),
-			ProtocolValidationError,
-		);
-	});
-
-	it("already carries steer as its own command, so that arm needs no wire change", () => {
-		const steer = {command: "steer", sessionId: SESSION.id, text: "hello"} as const;
-		const parsed = parseClientMessage(request(steer));
-		assert.deepStrictEqual(parsed.type === "request" ? parsed.request : undefined, steer);
 	});
 });

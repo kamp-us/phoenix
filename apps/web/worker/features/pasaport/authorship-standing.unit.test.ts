@@ -86,29 +86,11 @@ describe("myAuthorshipStanding — the çaylak-self aggregate (#1316)", () => {
 		}),
 	);
 
-	it.effect("vouchExists=true ⇒ bar is the reduced tandem bar", () =>
-		Effect.gen(function* () {
-			const standing = (yield* standingOf({vouchExists: true})) as AuthorshipStanding;
-			assert.strictEqual(standing.vouchExists, true);
-			assert.strictEqual(standing.bar, VOUCH_PROMOTION_KARMA_BAR);
-		}),
-	);
-
 	it.effect("vouchExists=false ⇒ bar is the full unassisted yazar threshold", () =>
 		Effect.gen(function* () {
 			const standing = (yield* standingOf({vouchExists: false})) as AuthorshipStanding;
 			assert.strictEqual(standing.vouchExists, false);
 			assert.strictEqual(standing.bar, KARMA_THRESHOLDS.yazar);
-		}),
-	);
-
-	it.effect("inReviewCount reflects the reader's own sandboxed-not-removed count", () =>
-		Effect.gen(function* () {
-			const standing = (yield* standingOf({
-				vouchExists: false,
-				inReviewCount: 7,
-			})) as AuthorshipStanding;
-			assert.strictEqual(standing.inReviewCount, 7);
 		}),
 	);
 

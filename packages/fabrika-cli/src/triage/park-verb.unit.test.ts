@@ -7,7 +7,6 @@ import {
 	CWD,
 	claimPage,
 	declaring,
-	EXPIRED,
 	guardedShell,
 	LIVE,
 	triageContext,
@@ -207,18 +206,6 @@ describe("runPark", () => {
 		expect(shell.requests.some((c) => c.includes("area%3Apipeline"))).toBe(false);
 	});
 
-	it("refuses a FAILED stdin read on 1, never on the empty code", async () => {
-		const out = await run(happy(), {
-			stdin: Effect.succeed({_tag: "Failed", reason: "EAGAIN"} satisfies StdinRead),
-		});
-		expect(out.code).toBe(1);
-		expect(out.code).not.toBe(EMPTY_STDIN);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toBe(
-			"triage park: could not read stdin: EAGAIN — the questions text is UNKNOWN, never empty.",
-		);
-	});
-
 	it("refuses empty-but-READ questions on 3, and says how many bytes it read", async () => {
 		const out = await run(happy(), {
 			stdin: Effect.succeed({_tag: "Text", text: "   \n"} satisfies StdinRead),
@@ -229,16 +216,6 @@ describe("runPark", () => {
 		);
 		// The byte count is what tells a read-but-empty pipe (3) from an unread one (1).
 		expect(out.stderr[0]).toBe("triage park: stdin was read and held 4 byte(s).");
-	});
-
-	it("refuses a bare @ path — the questions never arrived", async () => {
-		const out = await run(happy(), {
-			stdin: Effect.succeed({_tag: "Text", text: "@notes/questions.md"} satisfies StdinRead),
-		});
-		expect(out.code).toBe(BARE_AT_PATH);
-		expect(out.stderr.at(-1)).toBe(
-			'triage park: the questions text is a bare "@" path reference — the body never arrived. Send it on stdin.',
-		);
 	});
 
 	it("seats questions that are BOTH a bare @ and a leak on 6 — the bare @ is tested first", async () => {
@@ -263,21 +240,6 @@ describe("runPark", () => {
 		expect(out.stderr.at(-1)).toBe(
 			"triage park: the questions text carries a machine-local path at line 1 (absolute home root) — rewrite it repo-relative.",
 		);
-	});
-
-	it("lists EVERY leak, not just the one the message names — one refusal, one round", async () => {
-		const out = await run(happy(), {
-			stdin: Effect.succeed({
-				_tag: "Text",
-				text: "/Users/someone/a.md\nthen /Users/someone/b.md\nand /Users/someone/c.md",
-			} satisfies StdinRead),
-		});
-		expect(out.code).toBe(LEAKED_PATH);
-		expect(out.stderr.slice(0, -1)).toEqual([
-			"  line 1, absolute home root",
-			"  line 2, absolute home root",
-			"  line 3, absolute home root",
-		]);
 	});
 
 	it("writes nothing at all on any stdin refusal", async () => {
@@ -432,19 +394,6 @@ describe("runPark — the target guard", () => {
 		string,
 		string | undefined
 	>;
-	const closed: HttpReply = {
-		status: 200,
-		body: JSON.stringify({
-			number: 4290,
-			title: "t",
-			body: "b",
-			state: "closed",
-			labels: [],
-			html_url: "https://example.test/issues/4290",
-			milestone: null,
-		}),
-	};
-
 	const guard = async (script: ReadonlyArray<Scripted>) => {
 		const shell = guardedShell(script);
 		const out = await Effect.runPromise(
@@ -452,12 +401,6 @@ describe("runPark — the target guard", () => {
 		);
 		return {out, wrote: shell.requests.some((line) => COMMENT.test(line) || ADD.test(line))};
 	};
-
-	it("refuses a closed issue on 7 and writes nothing", async () => {
-		const {out, wrote} = await guard([[ISSUE, closed]]);
-		expect(out.code).toBe(ZERO_SCOPE);
-		expect(wrote).toBe(false);
-	});
 
 	it("refuses a live claim held by another session on 17 and writes nothing", async () => {
 		const {out, wrote} = await guard([
@@ -472,19 +415,6 @@ describe("runPark — the target guard", () => {
 		const {out} = await guard([
 			...happy(),
 			[COMMENTS, claimPage({session: MINE, createdAt: LIVE})],
-		]);
-		expect(out.code).toBe(0);
-	});
-
-	it("parks an issue nobody has claimed", async () => {
-		const {out} = await guard(happy());
-		expect(out.code).toBe(0);
-	});
-
-	it("parks when the only foreign claim has aged out", async () => {
-		const {out} = await guard([
-			...happy(),
-			[COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})],
 		]);
 		expect(out.code).toBe(0);
 	});

@@ -71,8 +71,8 @@ const run = (
 };
 
 describe("hook worktree-create reaps before it provisions", () => {
-	it("runs the sweep, bounded, before the first git command of the provisioning", async () => {
-		const {out, calls} = await run([[REAP, okOut("")], ...PROVISIONS]);
+	it("runs the sweep, bounded, in the envelope's repository, before the provisioning's first git command", async () => {
+		const {out, calls, cwds} = await run([[REAP, okOut("")], ...PROVISIONS]);
 
 		expect(out.code).toBe(0);
 		const swept = calls.findIndex((line) => REAP.test(line));
@@ -83,23 +83,27 @@ describe("hook worktree-create reaps before it provisions", () => {
 		]);
 		expect(swept).toBe(2);
 		expect(calls[swept]).toContain(`build reap --execute --limit ${REAP_LIMIT}`);
-	});
-
-	it("runs it in the repository the envelope named, not in this process's own cwd", async () => {
-		const {calls, cwds} = await run([[REAP, okOut("")], ...PROVISIONS]);
-
-		expect(cwds[calls.findIndex((line) => REAP.test(line))]).toBe(REPO);
+		expect(cwds[swept]).toBe(REPO);
 	});
 
 	it("provisions anyway when the sweep fails — a reclaimer may not refuse a spawn", async () => {
 		const {out} = await run([
-			[REAP, {ok: false, stdout: "", reason: "cannot name this clone's trunk"} as never],
+			[
+				REAP,
+				{
+					ok: false,
+					stdout: "",
+					reason: "fabrika build reap: cannot name this clone's trunk",
+				} as never,
+			],
 			...PROVISIONS,
 		]);
 
 		expect(out.code).toBe(0);
 		expect(out.stdout.trim()).toBe(TREE);
-		expect(out.stderr.join("\n")).toMatch(/reap before provisioning did not finish/);
+		expect(out.stderr.join("\n")).toMatch(
+			/reap before provisioning did not finish — fabrika build reap: cannot name this clone's trunk/,
+		);
 	});
 
 	it("skips it and says so when this process cannot name its own entrypoint", async () => {
@@ -108,15 +112,6 @@ describe("hook worktree-create reaps before it provisions", () => {
 		expect(out.code).toBe(0);
 		expect(calls.some((line) => REAP.test(line))).toBe(false);
 		expect(out.stderr.join("\n")).toMatch(/reaped nothing before provisioning/);
-	});
-
-	it("reports the sweep's own summary line rather than re-deriving its verdicts", async () => {
-		const {out} = await run([
-			[REAP, {ok: false, stdout: "", reason: "fabrika build reap: 2 removed, 1 pruned"} as never],
-			...PROVISIONS,
-		]);
-
-		expect(out.stderr.join("\n")).toMatch(/2 removed, 1 pruned/);
 	});
 
 	it("describes the sweep in its own terms, never as the git children it is not", async () => {

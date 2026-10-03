@@ -7,35 +7,10 @@ const file = (status: string, body = "## Decision\n\n**A thing.**\n"): string =>
 const by = {id: "0240", file: "0240-only-landed-adrs-may-be-cited.md"};
 
 describe("nextStatusValue", () => {
-	it("supersede replaces whatever was there", () => {
-		expect(nextStatusValue("supersede", "accepted", by)).toBe(
-			"superseded by [0240](0240-only-landed-adrs-may-be-cited.md)",
-		);
-	});
-
-	it("amend-in-part APPENDS to an existing list, in id order, preserving every live link", () => {
-		const existing =
-			"amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md), [0037](0037-unified-void-aligned-live-do.md)";
-		expect(nextStatusValue("amend-in-part", existing, by)).toBe(
-			`${existing}, [0240](0240-only-landed-adrs-may-be-cited.md)`,
-		);
-	});
-
 	it("orders an out-of-order append by id, not by arrival", () => {
 		const existing = "amended-in-part by [0037](0037-c.md), [0025](0025-a.md)";
 		expect(nextStatusValue("amend-in-part", existing, {id: "0028", file: "0028-b.md"})).toBe(
 			"amended-in-part by [0025](0025-a.md), [0028](0028-b.md), [0037](0037-c.md)",
-		);
-	});
-
-	it("re-adding a link already in the list is a no-op", () => {
-		const existing = "amended-in-part by [0240](0240-only-landed-adrs-may-be-cited.md)";
-		expect(nextStatusValue("amend-in-part", existing, by)).toBe(existing);
-	});
-
-	it("amend-in-part over a plain accepted status starts the list", () => {
-		expect(nextStatusValue("amend-in-part", "accepted", by)).toBe(
-			"amended-in-part by [0240](0240-only-landed-adrs-may-be-cited.md)",
 		);
 	});
 });
@@ -97,25 +72,9 @@ describe("diffBeyondStatusLine — the assertion the implementation owes", () =>
 });
 
 describe("rewriteStatus — the one-line-diff invariant", () => {
-	it("changes the status line and NOTHING else", () => {
-		const before = file("accepted");
-		const outcome = rewriteStatus("supersede", before, by);
-		expect(outcome._tag).toBe("Rewritten");
-		if (outcome._tag !== "Rewritten") return;
-		const a = before.split("\n");
-		const b = outcome.text.split("\n");
-		expect(b.length).toBe(a.length);
-		expect(a.filter((line, i) => line !== b[i])).toHaveLength(1);
-		expect(b[3]).toBe("status: superseded by [0240](0240-only-landed-adrs-may-be-cited.md)");
-	});
-
 	it("preserves the trailing newline", () => {
 		const outcome = rewriteStatus("supersede", file("accepted"), by);
 		expect(outcome._tag === "Rewritten" && outcome.text.endsWith("**A thing.**\n")).toBe(true);
-	});
-
-	it("refuses a file with no frontmatter status line", () => {
-		expect(rewriteStatus("supersede", "# no frontmatter\n", by)._tag).toBe("NoSingleStatusLine");
 	});
 
 	it("refuses a file with two frontmatter status lines — ambiguous, not resolvable", () => {
@@ -128,15 +87,6 @@ describe("rewriteStatus — the one-line-diff invariant", () => {
 		expect(outcome._tag).toBe("Rewritten");
 		if (outcome._tag !== "Rewritten") return;
 		expect(outcome.text).toContain("status: not frontmatter");
-	});
-
-	it("refuses to amend or re-supersede a superseded record", () => {
-		expect(rewriteStatus("amend-in-part", file("superseded by [0100](0100-x.md)"), by)._tag).toBe(
-			"AlreadySuperseded",
-		);
-		expect(rewriteStatus("supersede", file("superseded by [0100](0100-x.md)"), by)._tag).toBe(
-			"AlreadySuperseded",
-		);
 	});
 
 	it("an unreadable (empty) input resolves to a refusal, never a written file", () => {

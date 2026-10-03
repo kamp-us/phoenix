@@ -20,7 +20,6 @@ import {
 	type ScriptedKernel,
 } from "@kampus/tuval-sdk/kernel/ai-agent/tools/KernelBridge";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
-import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {type Context, Effect, Schema} from "effect";
 import {customToolsOption} from "./server/AgentSessionHost.ts";
 import {piKernelToolHandlers, piKernelTools, type ToolRun} from "./tools.ts";
@@ -228,16 +227,6 @@ describe("Pi's kernel tools", () => {
 				port: "echoed",
 			});
 			assert.deepStrictEqual(JSON.parse(textOf(held)), {empty: false, value: "HI"});
-		}),
-	);
-
-	it.effect("the scripted bridge takes whatever program id it is handed", () =>
-		Effect.gen(function* () {
-			const spawned = yield* Effect.gen(function* () {
-				const bridge = yield* KernelBridge;
-				return yield* bridge.spawn(ProgramId.make(scriptedProgram));
-			}).pipe(Effect.provide(KernelBridge.scripted(table)));
-			assert.strictEqual(spawned, scriptedProcess);
 		}),
 	);
 });

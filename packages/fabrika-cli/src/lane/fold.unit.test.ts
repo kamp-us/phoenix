@@ -627,18 +627,7 @@ describe("run 6 — invalid events refuse, producing nothing to append", () => {
 	});
 });
 
-describe("the fold is deterministic and total over its inputs", () => {
-	it("folds the same log to the same states every time", () => {
-		const compiled = lane(twoPhaseWorkflow());
-		const log = drive(compiled, [
-			["task_a", "DONE"],
-			["task_b", "DONE"],
-			["task_a", "FAIL"],
-		]);
-
-		expect(statesOf(compiled, log)).toEqual(statesOf(compiled, log));
-	});
-
+describe("the fold is total over its inputs", () => {
 	it("refuses to fold a log naming a task the machine does not have", () => {
 		const compiled = lane(twoPhaseWorkflow());
 

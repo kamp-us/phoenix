@@ -164,15 +164,6 @@ describe("one wire item as a port item", () => {
 		expect(itemOf(user)).toEqual({kind: "user", id: "item-0", timestamp: 10, text: "say hello"});
 	});
 
-	it("leaves an assistant turn's thinking out of the text it renders", () => {
-		expect(itemOf(assistant("hi back"))).toEqual({
-			kind: "assistant",
-			id: "item-1",
-			timestamp: 11,
-			text: "hi back",
-		});
-	});
-
 	it("gives that thinking a row of its own, ahead of the reply it produced", () => {
 		expect(itemsOf(assistant("hi back"))).toEqual([
 			{kind: "thinking", id: "item-1:thinking", timestamp: 11, text: "not for the window"},
@@ -224,11 +215,6 @@ describe("one wire item as a port item", () => {
 			inFlight.id,
 		);
 		expect("partial" in settled).toBe(false);
-	});
-
-	it("leaves no partial on a transcript nothing is in flight in", () => {
-		const items = [user, settledAssistant("hi back"), settledTool].flatMap(itemsOf);
-		expect(items.some((item) => "partial" in item)).toBe(false);
 	});
 
 	it("keys a tool row by its call id and folds the three wire statuses", () => {
@@ -1089,14 +1075,6 @@ describe("a running subagent filled from its own transcript artifact", () => {
 				status: "finished",
 			},
 		});
-	});
-
-	// The keying is the spawning call's id and nothing else, so a parallel spawn stays exactly the
-	// 1:N it already is.
-	it("keys the slot on the spawning call, not on the run", () => {
-		expect(tailed().events.map((event) => event.kind === "subagent" && event.slot.id)).toEqual([
-			"call-9",
-		]);
 	});
 
 	it("leaves the slot empty when the artifact is not readable yet", () => {

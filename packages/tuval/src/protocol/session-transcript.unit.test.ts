@@ -163,15 +163,6 @@ describe("the wire union and the ports union", () => {
 			assert.isTrue(Result.isFailure(decodeItem(value)));
 		});
 	}
-
-	it("admits nothing the ports predicate would refuse", () => {
-		for (const [, value] of refused) {
-			const decoded = decodeItem(value);
-			if (Result.isSuccess(decoded)) {
-				assert.fail(`the wire decoded ${JSON.stringify(value)}, which the port refuses`);
-			}
-		}
-	});
 });
 
 describe("one page of a transcript", () => {

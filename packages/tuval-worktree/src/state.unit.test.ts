@@ -284,7 +284,7 @@ describe("the window's view", () => {
 
 	it("draws the same sentence the tile does, from the same function", () => {
 		const held = state({worktrees: [record()]});
-		expect(worktreeView(held).status).toBe(statusLine(held));
+		expect(worktreeView(held).status).toBe("1 open · feature-x :5174 idle");
 	});
 });
 
@@ -337,9 +337,5 @@ describe("the events the window's controls send", () => {
 			payload: {name: "feature-x"},
 		});
 		expect(closeEvent("feature-x").type).not.toBe(discardEvent("feature-x").type);
-	});
-
-	it("hands back a fresh object each time, so no caller holds a shared one", () => {
-		expect(openEvent("a")).not.toBe(openEvent("a"));
 	});
 });

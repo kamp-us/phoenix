@@ -7,12 +7,6 @@
 
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
-import type {AnyProgram} from "@kampus/tuval-sdk/kernel/registry/program";
-import {counterRow, noRendererRow} from "@kampus/tuval-sdk/kernel/shell/window/fixtures";
-import {
-	type DeclaredProgram,
-	moduleRendererRefs,
-} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {loadLayeredConfig} from "../config.ts";
@@ -102,36 +96,6 @@ describe("the feature-flag module", () => {
 		expect(featuresSource({subagentList: true, somethingLater: false} as never)).toBe(
 			'export default {\n\t"subagentList": true,\n\t"somethingLater": false,\n};\n',
 		);
-	});
-});
-
-describe("moduleRendererRefs", () => {
-	const declared = (row: AnyProgram, origin: string): DeclaredProgram => ({row, origin});
-
-	it("lists the module references only, each once, in row order, each with its own config", () => {
-		const module = {...counterRow, renderer: {kind: "module", ref: "@x/one/window"}} as const;
-		const again = {...counterRow, renderer: {kind: "module", ref: "@x/one/window"}} as const;
-		const other = {...counterRow, renderer: {kind: "module", ref: "@x/two/window"}} as const;
-		expect(
-			moduleRendererRefs([
-				declared(counterRow, GLOBAL_CONFIG),
-				declared(noRendererRow, GLOBAL_CONFIG),
-				declared(other, GLOBAL_CONFIG),
-				declared(module, PROJECT_CONFIG),
-				declared(again, PROJECT_CONFIG),
-			]),
-		).toEqual([
-			{ref: "@x/two/window", origin: GLOBAL_CONFIG},
-			{ref: "@x/one/window", origin: PROJECT_CONFIG},
-		]);
-	});
-
-	it("keeps the first row's config when two rows write one specifier, as the table has one seat", () => {
-		const first = {...counterRow, renderer: {kind: "module", ref: "@x/one/window"}} as const;
-		const second = {...counterRow, renderer: {kind: "module", ref: "@x/one/window"}} as const;
-		expect(
-			moduleRendererRefs([declared(first, GLOBAL_CONFIG), declared(second, PROJECT_CONFIG)]),
-		).toEqual([{ref: "@x/one/window", origin: GLOBAL_CONFIG}]);
 	});
 });
 

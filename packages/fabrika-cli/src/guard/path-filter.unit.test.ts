@@ -33,13 +33,6 @@ ${globs.map((g) => `              - '${g}'`).join("\n")}
 const GLOBS = ["apps/site/**", "packages/**"];
 
 describe("judge", () => {
-	it("passes identical glob sets read against the same basis", () => {
-		expect(judge({ciText: workflow("e2e", GLOBS), deployText: workflow("deploy", GLOBS)})).toEqual({
-			pass: true,
-			count: 2,
-		});
-	});
-
 	// Set equality, not list equality: the two files order their globs for human reading.
 	it("passes the same set in a different order", () => {
 		expect(

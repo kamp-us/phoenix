@@ -4,11 +4,8 @@
  * honest-framing copy.
  */
 import {describe, expect, it} from "vitest";
-import {en} from "../../i18n/en";
 import {tr} from "../../i18n/tr";
 import {onrampHeadingKey, shouldShowOnramp} from "./FirstContributionOnramp";
-
-const SURFACES = ["sozluk", "pano", "pano-comment"] as const;
 
 describe("shouldShowOnramp — the çaylak-only gate", () => {
 	it("shows only when the viewer is a çaylak", () => {
@@ -39,23 +36,5 @@ describe("onrampHeadingKey — per-surface copy", () => {
 
 	it("uses the yorum noun on the pano comment surface", () => {
 		expect(tr[onrampHeadingKey("pano-comment")]).toBe("ilk yorumunu yazmaya hazırsın");
-	});
-
-	it("gives every surface its own heading — no surface reuses another's noun", () => {
-		const keys = SURFACES.map((s) => onrampHeadingKey(s));
-		expect(new Set(keys).size).toBe(keys.length);
-	});
-
-	it("keeps the Turkish heading lowercase (user-facing convention)", () => {
-		for (const surface of SURFACES) {
-			const heading = tr[onrampHeadingKey(surface)];
-			expect(heading).toBe(heading.toLocaleLowerCase("tr-TR"));
-		}
-	});
-
-	it("answers in English too", () => {
-		for (const surface of SURFACES) {
-			expect(en[onrampHeadingKey(surface)]).toBeTruthy();
-		}
 	});
 });

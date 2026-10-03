@@ -57,7 +57,7 @@ export function caylakPromotionPath(vouchExists: boolean): CaylakPromotionPath {
  * structural on the backend type (#1316) and mirrored here, so widening this
  * selection is what would reintroduce the leak.
  */
-export const STANDING_FIELDS = {
+const STANDING_FIELDS = {
 	id: true,
 	karma: true,
 	bar: true,

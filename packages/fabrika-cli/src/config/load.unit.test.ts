@@ -151,6 +151,7 @@ describe("a config cannot un-govern itself", () => {
 		if (load._tag !== "Refused") return;
 		expect(load.reason).toContain("governedRoots");
 		expect(load.reason).toContain(CONFIG_PATH);
+		expect(load.reason).toContain("cannot un-govern itself");
 	});
 
 	it("refuses every key off that load, so no value is read out of a refused config", () => {
@@ -188,13 +189,6 @@ describe("a config cannot un-govern itself", () => {
 		if (load._tag !== "Refused") return;
 		expect(load.reason).toContain("triageFacets");
 		expect(load.reason).toContain("not an array");
-	});
-
-	it("refuses every key off a malformed-value load, the same as a too-narrow one", () => {
-		expect(
-			resolve(fromText('{"governedRoots": [], "capClearAuthors": ["@a"]}'), capClearAuthorsKey)
-				._tag,
-		).toBe("Malformed");
 	});
 
 	it("does not refuse on a document that is not a JSON object — every key is already malformed", () => {

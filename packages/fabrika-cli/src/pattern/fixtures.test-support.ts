@@ -25,9 +25,8 @@ export const FIXTURES = "packages/fabrika-cli/test-fixtures/write-pattern";
 /**
  * An empty read is a failed read, never fixture bytes — `""` scripted onto the seam satisfies every
  * assertion vacuously, and a clean pass over nothing is what a fail-closed check exists to forbid.
- * Kept separate from the read so the refusal is provable without an empty file in the tree.
  */
-export const nonEmptyFixture = (relativePath: string, bytes: string): string => {
+const nonEmptyFixture = (relativePath: string, bytes: string): string => {
 	if (bytes.trim() === "") {
 		throw new Error(
 			`fixture ${FIXTURES}/${relativePath} read as empty — refusing to script the git seam with nothing`,
@@ -41,7 +40,7 @@ export const nonEmptyFixture = (relativePath: string, bytes: string): string => 
  * committed index doc — the fixtures live in the checkout this file ships in, wherever vitest ran.
  * Four levels up from `src/pattern/` is the repo root, which is what `FIXTURES` is relative to.
  */
-export const fixtureBytes = (relativePath: string): string =>
+const fixtureBytes = (relativePath: string): string =>
 	nonEmptyFixture(
 		relativePath,
 		readFileSync(

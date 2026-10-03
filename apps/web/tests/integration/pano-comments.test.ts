@@ -357,29 +357,6 @@ describe("pano comments — vote idempotency / round-trip", () => {
 		expect((result.data as CommentNode).myVote).toBe(false);
 	});
 
-	it("retracting a vote then re-reading the comment shows score 0 / myVote false", async () => {
-		const postId = await seedPost(`${NS} comment retract roundtrip target`);
-		const id = await seedComment(postId, "a comment to vote then retract");
-
-		await h.fate(
-			{kind: "mutation", name: "comment.vote", input: {id}, select: ["id"]},
-			{cookie: voter.cookie},
-		);
-		const retracted = await h.fate(
-			{
-				kind: "mutation",
-				name: "comment.retractVote",
-				input: {id},
-				select: ["id", "score", "myVote"],
-			},
-			{cookie: voter.cookie},
-		);
-		expect(retracted.ok).toBe(true);
-		if (!retracted.ok) return;
-		expect((retracted.data as CommentNode).score).toBe(0);
-		expect((retracted.data as CommentNode).myVote).toBe(false);
-	});
-
 	it("retracting a missing comment surfaces COMMENT_NOT_FOUND", async () => {
 		const result = await h.fate(
 			{
@@ -397,35 +374,6 @@ describe("pano comments — vote idempotency / round-trip", () => {
 });
 
 describe("pano comments — connection edge cases", () => {
-	it("reply-aware feed: leaf-deleted is gone, parent-with-replies stays as a tombstone", async () => {
-		const postId = await seedPost(`${NS} reply-aware feed target`);
-		const c0 = await seedComment(postId, "comment 0 — will be parent of a reply");
-		const c1 = await seedComment(postId, "comment 1 — stays live");
-		const c2 = await seedComment(postId, "comment 2 — will be leaf-deleted");
-		const reply = await seedComment(postId, "child of comment 0", {parentId: c0});
-
-		await h.fate(
-			{kind: "mutation", name: "comment.delete", input: {id: c0}, select: ["id"]},
-			{cookie: author.cookie},
-		);
-		await h.fate(
-			{kind: "mutation", name: "comment.delete", input: {id: c2}, select: ["id"]},
-			{cookie: author.cookie},
-		);
-
-		const comments = await readComments(postId);
-		const ids = comments.map((c) => c.id);
-		expect(ids).toContain(c0);
-		expect(ids).toContain(c1);
-		expect(ids).toContain(reply);
-		expect(ids).not.toContain(c2);
-		expect(comments.find((c) => c.id === c0)!.body).toBe("[silindi]");
-		expect(comments.find((c) => c.id === c1)!.body).toBe("comment 1 — stays live");
-
-		// No totalCount on the wire — re-express "feed length" via the id-union size.
-		expect(new Set(ids).size).toBe(3);
-	});
-
 	it("a stale cursor (a never-existed comment id) yields an empty page", async () => {
 		const postId = await seedPost(`${NS} stale-cursor target`);
 		for (let i = 0; i < 3; i++) await seedComment(postId, `comment ${i} for stale cursor test`);
@@ -485,6 +433,6 @@ describe("pano comments — connection edge cases", () => {
 });
 
 // Elsewhere: keyset paging over comments is in pano-read.test.ts; comment.add /
-// vote / edit happy paths and their error codes are in pano-mutations.test.ts.
+// vote → retract / edit happy paths and their error codes are in pano-mutations.test.ts.
 // Not reachable black-box, so untested here: comment_vote / user_vote row counts,
 // total_karma read-backs, and the comment_record body_excerpt + deleted_at columns.

@@ -35,7 +35,6 @@ import {
 	Logger,
 	Option,
 	Queue,
-	Redacted,
 	Schema,
 	Scope,
 	Stream,
@@ -545,35 +544,6 @@ describe("the page-to-kernel transport", () => {
 	);
 
 	it.live(
-		"a kernel stop and boot followed by re-attach yields the restored state",
-		() =>
-			Effect.gen(function* () {
-				const stores = memoryStores();
-				let url = "";
-
-				yield* Effect.scopedWith(
-					Effect.fnUntraced(function* (scope) {
-						const app = yield* Scope.provide(served(stores), scope);
-						url = app.server.launchUrl;
-						const attached = yield* Scope.provide(page(app.server.launchUrl), scope);
-						const shell = yield* attached.attachProcess<DeskState, DeskMsg>(shellProcess);
-						yield* shell.dispatch({type: "split", window: "w2"});
-						const seen = yield* Scope.provide(watch(shell.readProcess), scope);
-						assert.deepStrictEqual(stateOf(yield* Queue.take(seen)), {windows: ["root", "w2"]});
-					}),
-				);
-
-				const rebooted = yield* served(stores);
-				assert.notStrictEqual(rebooted.server.launchUrl, url);
-				const attached = yield* page(rebooted.server.launchUrl);
-				const shell = yield* attached.attachProcess<DeskState, DeskMsg>(shellProcess);
-				const seen = yield* watch(shell.readProcess);
-				assert.deepStrictEqual(stateOf(yield* Queue.take(seen)), {windows: ["root", "w2"]});
-			}).pipe(Effect.scoped),
-		TIMEOUT,
-	);
-
-	it.live(
 		"a process whose placement is not the node host is refused with a typed error naming the placement",
 		() =>
 			Effect.gen(function* () {
@@ -796,7 +766,6 @@ describe("the page-to-kernel transport", () => {
 				// And the good token on the same server still opens, so the refusal is the token's.
 				const good = yield* rawSocket(app.server.launchUrl);
 				assert.isTrue(good.opened);
-				assert.strictEqual(Redacted.value(app.token).length, 64);
 			}).pipe(Effect.scoped),
 		TIMEOUT,
 	);

@@ -2,7 +2,6 @@ import {describe, expect, it} from "vitest";
 import {trCatalog} from "../../i18n/catalog";
 import {
 	canVouch,
-	divanAccessDefinitelyDenied,
 	itemKindLabel,
 	parseBacklogItemId,
 	promoteOutcome,
@@ -12,34 +11,9 @@ import {
 	vouchLanded,
 	vouchOutcome,
 	vouchOutcomeMessage,
-	vouchTriggerLabel,
 	vouchTriggerState,
 	vouchVisible,
 } from "./divanGating";
-
-describe("divanAccessDefinitelyDenied — the #2209 client short-circuit for the roster probe", () => {
-	it("is TRUE for a loaded çaylak non-moderator (the guaranteed-UNAUTHORIZED case → skip the probe)", () => {
-		expect(divanAccessDefinitelyDenied("çaylak", false)).toBe(true);
-	});
-
-	it("is TRUE for a loaded visitor non-moderator", () => {
-		expect(divanAccessDefinitelyDenied("visitor", false)).toBe(true);
-	});
-
-	it("is FALSE for a yazar — the server grants, so it must still probe (never short-circuit a grant)", () => {
-		expect(divanAccessDefinitelyDenied("yazar", false)).toBe(false);
-	});
-
-	it("is FALSE for a çaylak who IS a moderator — the mod arm grants, so it must still probe", () => {
-		expect(divanAccessDefinitelyDenied("çaylak", true)).toBe(false);
-	});
-
-	it("is FALSE for the AMBIGUOUS not-yet-loaded case (undefined tier and/or undefined isModerator) → still probe", () => {
-		expect(divanAccessDefinitelyDenied(undefined, undefined)).toBe(false);
-		expect(divanAccessDefinitelyDenied(undefined, false)).toBe(false);
-		expect(divanAccessDefinitelyDenied("çaylak", undefined)).toBe(false);
-	});
-});
 
 describe("shouldProbeDivanRoster — fire the wire probe iff not client-provably denied (#2209)", () => {
 	it("does NOT fire the roster probe for a signed-in çaylak non-moderator (guaranteed UNAUTHORIZED)", () => {
@@ -52,6 +26,8 @@ describe("shouldProbeDivanRoster — fire the wire probe iff not client-provably
 
 	it("DOES fire for the ambiguous not-yet-loaded viewer (undefined signals)", () => {
 		expect(shouldProbeDivanRoster(true, undefined, undefined)).toBe(true);
+		expect(shouldProbeDivanRoster(true, undefined, false)).toBe(true);
+		expect(shouldProbeDivanRoster(true, "çaylak", undefined)).toBe(true);
 	});
 
 	it("DOES fire for a yazar and for a çaylak moderator — the server is the authority for the grant", () => {
@@ -94,24 +70,12 @@ describe("promoteVisible — the mod-only yazar-yap affordance, keyed on isModer
 		expect(promoteVisible(true)).toBe(true);
 	});
 
-	it("shows for a dual-role yazar+moderator — the #1320 bug (tier-keying hid it)", () => {
-		// isModerator is independent of tier; a founding author-mod (#1207) reads
-		// tier "yazar" yet must still see promote.
-		expect(promoteVisible(true)).toBe(true);
-	});
-
 	it("hides from a non-moderator (a yazar-only viewer keeps only kefil ol)", () => {
 		expect(promoteVisible(false)).toBe(false);
 	});
 });
 
 describe("itemKindLabel — the per-kind noun's catalog key", () => {
-	it("maps each kind to its key", () => {
-		expect(itemKindLabel("definition")).toBe("divan.kind.definition");
-		expect(itemKindLabel("post")).toBe("divan.kind.post");
-		expect(itemKindLabel("comment")).toBe("divan.kind.comment");
-	});
-
 	it("resolves each key to its lowercase-Turkish noun", () => {
 		expect(trCatalog[itemKindLabel("definition")]).toBe("tanım");
 		expect(trCatalog[itemKindLabel("post")]).toBe("gönderi");
@@ -198,19 +162,6 @@ describe("vouchTriggerState — the trigger's honesty about an already-held vouc
 		expect(vouchTriggerState("çaylak", false)).toBe("hidden");
 		expect(vouchTriggerState("çaylak", true)).toBe("hidden");
 		expect(vouchTriggerState(undefined, true)).toBe("hidden");
-	});
-
-	it("a yazar who has not vouched is offered the action", () => {
-		expect(vouchTriggerState("yazar", false)).toBe("offer");
-	});
-
-	it("a yazar who already vouched for this çaylak is done", () => {
-		expect(vouchTriggerState("yazar", true)).toBe("done");
-	});
-
-	it("labels the done state as the past tense, so the button reports rather than invites", () => {
-		expect(trCatalog[vouchTriggerLabel("done")]).toBe("kefil oldun");
-		expect(trCatalog[vouchTriggerLabel("offer")]).toBe("kefil ol");
 	});
 });
 

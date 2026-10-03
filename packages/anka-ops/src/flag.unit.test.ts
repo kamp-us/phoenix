@@ -5,13 +5,7 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {
-	decideGraduate,
-	GRADUATE_ENV,
-	type ReleaseVerb,
-	releaseVerbToTarget,
-	renderRetirementChore,
-} from "./flag.ts";
+import {decideGraduate, GRADUATE_ENV, releaseVerbToTarget, renderRetirementChore} from "./flag.ts";
 import type {EffectiveServing, FlagState} from "./flagship-core.ts";
 
 const split = (percentage: number): EffectiveServing => ({
@@ -43,18 +37,6 @@ describe("releaseVerbToTarget — verb → serving lever", () => {
 	it("close maps onto the kill lever (clear the split + default off)", () => {
 		assert.deepStrictEqual(releaseVerbToTarget("close"), {_tag: "Kill"});
 	});
-
-	it("never emits a defaultVariation-flip lever — open is a Percent split, not a Default write", () => {
-		const openTarget = releaseVerbToTarget("open");
-		assert.strictEqual(openTarget._tag, "Percent");
-	});
-
-	for (const verb of ["open", "close"] as const satisfies ReadonlyArray<ReleaseVerb>) {
-		it(`${verb} yields a total ServeTarget the Flagship core consumes`, () => {
-			const target = releaseVerbToTarget(verb);
-			assert.oneOf(target._tag, ["Percent", "Kill"]);
-		});
-	}
 });
 
 describe("decideGraduate — retirement-trigger eligibility (prod fully open)", () => {

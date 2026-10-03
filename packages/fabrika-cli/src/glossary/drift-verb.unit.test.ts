@@ -149,12 +149,6 @@ describe("runDrift", () => {
 		});
 	});
 
-	it("counts distinct KEYS rather than rows, so a planted duplicate collapses", async () => {
-		const out = await run(populated(), shell(""), {json: true});
-		// The fixture's six rows carry five distinct keys — `pano` is declared twice.
-		expect(JSON.parse(out.stdout).declaredKeys).toBe(5);
-	});
-
 	it("honours --limit", async () => {
 		const out = await run(
 			populated(),

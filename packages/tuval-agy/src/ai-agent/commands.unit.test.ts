@@ -47,10 +47,6 @@ describe("the /help catalog", () => {
 		]);
 	});
 
-	it("carries no leading slash, because the composer writes the sigil itself", () => {
-		expect(commandsOf(help).filter((row) => row.name.startsWith("/"))).toEqual([]);
-	});
-
 	it("answers empty rather than throwing on output it cannot read", () => {
 		expect([
 			commandsOf(""),

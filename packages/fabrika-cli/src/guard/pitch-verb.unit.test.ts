@@ -170,6 +170,7 @@ describe("runPitchGuard — the backlog sweep", () => {
 		expect(report).toContain("#11 issue 11");
 		expect(report).toContain("has no `## Pitch` section");
 		expect(report).toContain("the FOUNDER approves it");
+		expect(report).toContain(".glossary/TERMS.md");
 	});
 
 	it("refuses an approval from below write+ — an unverifiable one never counts", async () => {
@@ -198,6 +199,7 @@ describe("runPitchGuard — the backlog sweep", () => {
 		const {outcome} = await run([[SWEEP, EMPTY]]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.join("\n")).toContain("ZERO lane-entering issues");
+		expect(outcome.stderr.join("\n")).toContain("fail-closed");
 	});
 
 	it("reds 11 when the board cannot be read — never clean, never a violation", async () => {
@@ -331,6 +333,7 @@ describe("runPitchGuard — pitch sizes and the config they are priced in", () =
 		);
 		expect(outcome.code).toBe(VIOLATION);
 		expect(outcome.stderr.join("\n")).toContain("S = $5, M = $9, L = $12 per epic child");
+		expect(outcome.stderr.join("\n")).toContain("pitch-approved: appetite <S|M|L>");
 	});
 
 	it("prices them at the shipped 15 / 35 / 40 when the repo declares nothing", async () => {

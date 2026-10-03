@@ -13,7 +13,8 @@ import {Result} from "effect";
 import type {ReactElement} from "react";
 import {useCallback} from "react";
 import {describe, expect, it} from "vitest";
-import {initialState} from "../core/index.ts";
+import {activeWorkspace, initialState, type ShellState} from "../core/index.ts";
+import {windows} from "../layout/index.ts";
 import {type AttachEvent, attachInitial, onAttachEvent, useDeskAttachment} from "./attach.ts";
 import {threeWindowDesk} from "./fixtures.ts";
 
@@ -77,6 +78,12 @@ describe("the attachment machine", () => {
 	});
 });
 
+/** The windows the desk's active workspace lays out: what a re-attach must not lose. */
+const windowCount = (state: ShellState): number => {
+	const workspace = activeWorkspace(state);
+	return workspace === undefined ? 0 : [...windows(workspace.layout.root)].length;
+};
+
 function Attachment({
 	emitter,
 }: {
@@ -95,7 +102,7 @@ function Attachment({
 	return (
 		<output>
 			{state.status} · attachments {state.attachments} · windows{" "}
-			{state.desk === null ? "none" : Object.keys(state.desk.views).length + 3}
+			{state.desk === null ? "none" : windowCount(state.desk)}
 		</output>
 	);
 }

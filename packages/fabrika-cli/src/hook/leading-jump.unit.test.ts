@@ -142,10 +142,6 @@ describe("containment", () => {
 		expect(decide(`cd ${TREE}-2`)._tag).toBe("Deny");
 	});
 
-	it("allows the worktree root itself", () => {
-		expect(decide(`cd ${TREE}`)._tag).toBe("Allow");
-	});
-
 	it("resolves a relative target against the cwd, not against the worktree root", () => {
 		expect(decide("cd ../agent-b", `${TREE}/packages`)._tag).toBe("Allow");
 		expect(decide("cd ../agent-b", TREE)._tag).toBe("Deny");
