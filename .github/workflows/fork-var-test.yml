@@ -1,0 +1,16 @@
+name: fork-var-test
+
+on: pull_request
+
+permissions: {}
+
+jobs:
+  fork-var-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print the dummy variable
+        env:
+          V: ${{ vars.FORK_TEST_DUMMY }}
+        run: |
+          echo "dummy=[${{ vars.FORK_TEST_DUMMY }}]"
+          echo "length=${#V}"
