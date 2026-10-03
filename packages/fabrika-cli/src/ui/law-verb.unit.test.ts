@@ -64,5 +64,9 @@ describe("runLaw", () => {
 	it("refuses a missing manifest on 12 — the law question does not arise", async () => {
 		const outcome = await run({files: {}});
 		expect(outcome.code).toBe(NO_MANIFEST);
+		expect(outcome.stderr.at(-1)).toContain("Type /fabrika:front-door in Claude Code");
+		expect(outcome.stderr.at(-1)).toContain(
+			"in a repo with no pages or styles yet it proposes a look in plain words",
+		);
 	});
 });

@@ -19,6 +19,7 @@ import {
 	GOLDEN_POINTER_PATHS,
 	INVENTORY_PATH,
 	MANIFEST_PATH,
+	MANIFEST_REMEDY,
 	REGISTRY_PATH,
 } from "./conventions.ts";
 import {resolveRoot} from "./lane.ts";
@@ -61,7 +62,7 @@ const unreadable = (found: Probe & {_tag: "Unknown"}, verb: string): VerbOutcome
 		`${verb}: cannot probe ${found.relative}: ${found.reason} — presence is UNKNOWN, never "absent".`,
 	);
 
-export const MISSING_MANIFEST = `${VERB}: no design manifest at ${MANIFEST_PATH} — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages. Never improvise a design language.`;
+export const MISSING_MANIFEST = `${VERB}: no design manifest at ${MANIFEST_PATH} — this repo is not set up for UI construction. ${MANIFEST_REMEDY} Never improvise a design language.`;
 
 export const runManifest = (): Effect.Effect<
 	VerbOutcome,
