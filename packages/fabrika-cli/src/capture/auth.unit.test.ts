@@ -236,8 +236,8 @@ describe("readIdentity", () => {
 	});
 
 	/**
-	 * A tier with no token of its own is a tier `preview-seed test-account` did not seed on this
-	 * preview. Reading it as satisfied by another tier's token is the exact fallback this refuses —
+	 * A tier with no token of its own, in the environment or fetched, is a tier this run cannot sign
+	 * in as. Reading it as satisfied by another tier's token is the exact fallback this refuses —
 	 * the shot would come back clean as the audience the surface said it was not.
 	 */
 	it("names the çaylak token when a çaylak surface is asked for and only the yazar's is set", () => {

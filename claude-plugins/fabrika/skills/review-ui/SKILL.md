@@ -224,9 +224,10 @@ credential for any identity your environment does not already carry a token for 
 the verb**: it holds the tokens redacted, and a token you read out yourself is a login in your
 transcript. **One identity's token never stands in for another's**: the verb refuses on `11` rather
 than shooting an identity it does hold. **An `11` on this path is a state you could not render**:
-`review-ui note` names it, and "What still owes disclosure" below decides the terminal. Only a
-`bad signature` under your own override is yours to fix. The refusal's own words say which stop it
-is:
+`review-ui note` names it, and "What still owes disclosure" below decides the terminal. **A refusal
+under your own override is yours to fix**, and there are two overrides: the signing key you passed or
+your environment supplied, and a session token your environment carries. The refusal's own words say
+which stop it is:
 
 - **the variable does not exist** — nobody has run `preview-seed rotate-logins` on this repository
   yet; that is a person's one-time step.
@@ -235,11 +236,15 @@ is:
   gives.
 - **the variable is set but malformed, or does not carry the identity you asked for** — the stored
   value is wrong; a person re-runs `preview-seed rotate-logins`, which replaces it.
-- **`missing session row`** — the key is right and this preview's database does not hold the token:
-  the preview deployed before the logins were set or rotated, so its next deploy re-seeds it.
+- **`missing session row`** — the key is right and this preview's database holds no live session for
+  the token that was sent. A token in your environment is sent ahead of the fetched one, and one kept
+  from before a rotation matches no preview seeded since. That override is yours: re-run with that
+  identity's variable unset, so the verb fetches the current token. If the refusal repeats, the
+  preview deployed before the logins were set or rotated, or its seeded session has expired; its next
+  deploy re-seeds it, and until then it is a state you could not render.
 - **`bad signature`** — the signing key is wrong. If you passed `--auth-secret-from` or the run read
   your ambient `$BETTER_AUTH_SECRET`, that override is yours: drop it and re-run. Otherwise it is a
-  state you could not render, like the four above.
+  state you could not render.
 
 A `--flag` run needs
 one thing more: the surface's identity holding platform admin on this preview's D1, granted offline
