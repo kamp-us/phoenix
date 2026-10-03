@@ -226,7 +226,7 @@ Create `.github/CODEOWNERS` with these nine rows, with your GitHub login in plac
 ```
 
 Some of those rows name paths your repo does not have. Keep them anyway: the builder's check in
-step 11 reads this file and stops unless all nine are there.
+step 12 reads this file and stops unless all nine are there.
 
 Check the file:
 
@@ -255,10 +255,60 @@ jobs:
 The adoption guide covers
 [what each of these files is for](adopt-fabrika-in-a-new-repo.md#9-add-the-config-file).
 
-## 9. Commit the setup
+## 9. Write the design rules, if your app has a screen
+
+`design-system-manifest.md` holds your app's design rules: the colours, type and spacing a builder
+must follow whenever an issue changes what a screen looks like. An app with no screen can skip this
+step.
+
+Open Claude Code in the clone and type:
+
+```
+/fabrika:front-door
+```
+
+Ask it for the design rules file. A new app has no pages or styles to read, so it proposes a look
+in plain words. Say yes, or say what to change. On your yes it writes the file with this command:
+
+```bash
+fabrika status bootstrap design-manifest <<'EOF'
+# Design system manifest
+…the look you agreed on…
+EOF
+```
+
+```
+status bootstrap: created design-system-manifest.md for design-manifest, read-back conformed.
+bootstrap	created	design-manifest	design-system-manifest.md	ok
+```
+
+Check that a builder can find it:
+
+```bash
+fabrika ui manifest
+```
+
+The last line it prints starts with the file's name:
+
+```
+{"manifest":"design-system-manifest.md","registry":null,"inventory":null,"goldenPointer":null,"uiSurfaces":[],"lawSource":"manifest-prose"}
+```
+
+## 10. Commit the setup
 
 ```bash
 git add .gitignore ROADMAP.md .claude/settings.json .github
+```
+
+If you wrote the design rules in step 9, add them too:
+
+```bash
+git add design-system-manifest.md
+```
+
+Then commit:
+
+```bash
 git commit -m "Set up fabrika"
 ```
 
@@ -285,7 +335,7 @@ field	trunk	agrees	origin/main; origin/HEAD agrees	you/your-repo	2026-10-03T21:1
 
 `wiring` reads `wired` and `board` reads `counted`. The repo is ready for work.
 
-## 10. File your first issue
+## 11. File your first issue
 
 Open Claude Code in the clone and type:
 
@@ -300,7 +350,7 @@ Filed: #1 https://github.com/you/your-repo/issues/1
 The issue carries the label `status:needs-triage`, which puts it in the queue triage reads. Use the
 number it printed in the next step.
 
-## 11. Triage it, then build it
+## 12. Triage it, then build it
 
 ```
 /fabrika:triage 1
@@ -330,7 +380,7 @@ Above that word it prints the pull request's URL. Use the pull request's number 
 This issue only changes text. An issue with a screen is built with `/fabrika:operate <n>` instead,
 where `<n>` is the issue's number: `/fabrika:build` builds text only and stops on a screen.
 
-## 12. Review it, then merge it
+## 13. Review it, then merge it
 
 ```
 /fabrika:review 2

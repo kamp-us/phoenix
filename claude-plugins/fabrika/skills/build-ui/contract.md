@@ -310,7 +310,7 @@ The manifest itself is the one surface whose absence refuses: without it there i
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages. Never improvise a design language.` | 12 | refusal |
+| `ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Type /fabrika:front-door in Claude Code: it drafts one from the repo's own pages and styles, and in a repo with no pages or styles yet it proposes a look in plain words and writes it on the owner's yes. Never improvise a design language.` | 12 | refusal |
 | `ui manifest: cannot probe <path>: <reason> — presence is UNKNOWN, never "absent".` | 11 | refusal |
 
 **Scope** — the four convention paths against the repo root, plus the declared `uiSurfaces` rows.
@@ -326,7 +326,7 @@ $ fabrika ui manifest
 
 ```
 $ fabrika ui manifest
-ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages. Never improvise a design language.
+ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Type /fabrika:front-door in Claude Code: it drafts one from the repo's own pages and styles, and in a repo with no pages or styles yet it proposes a look in plain words and writes it on the owner's yes. Never improvise a design language.
 $ echo $?
 12
 ```
@@ -371,7 +371,7 @@ registry with zero rows is `4` (a law file that names no law is malformed, not m
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ui law: design-prohibitions.json exists but does not satisfy the registry schema: <first violation> — refusing the whole file; half a law is not a law.` | 4 | refusal |
-| `ui law: no design manifest at design-system-manifest.md — run /fabrika: front-door's bootstrap drafts one.` | 12 | refusal |
+| `ui law: no design manifest at design-system-manifest.md — Type /fabrika:front-door in Claude Code: it drafts one from the repo's own pages and styles, and in a repo with no pages or styles yet it proposes a look in plain words and writes it on the owner's yes.` | 12 | refusal |
 | `ui law: the law is untyped — no design-prohibitions.json beside the manifest. The manifest's prose prohibitions are the law; note LAW-SOURCE: manifest-prose in the PR.` | 13 | refusal |
 | `ui law: cannot read design-prohibitions.json: <reason> — the law is UNKNOWN, never "untyped".` | 11 | refusal |
 

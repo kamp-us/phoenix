@@ -8,6 +8,9 @@
 
 /** The design manifest — the one surface whose absence refuses (`12`). */
 export const MANIFEST_PATH = "design-system-manifest.md";
+/** The way out of a missing manifest, shared so `ui manifest` and `ui law` name one route. */
+export const MANIFEST_REMEDY =
+	"Type /fabrika:front-door in Claude Code: it drafts one from the repo's own pages and styles, and in a repo with no pages or styles yet it proposes a look in plain words and writes it on the owner's yes.";
 /** The typed prohibition registry; absent means the law is untyped (`13`), never an error. */
 export const REGISTRY_PATH = "design-prohibitions.json";
 /** The component inventory; absent is a fact reported as `null`. */

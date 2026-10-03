@@ -62,6 +62,10 @@ describe("runManifest", () => {
 		expect(outcome.code).toBe(NO_MANIFEST);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.at(-1)).toContain("no design manifest at design-system-manifest.md");
+		expect(outcome.stderr.at(-1)).toContain("Type /fabrika:front-door in Claude Code");
+		expect(outcome.stderr.at(-1)).toContain(
+			"in a repo with no pages or styles yet it proposes a look in plain words",
+		);
 	});
 
 	/** Presence is UNKNOWN, never "absent" — the fail-open an existsSync would have taken. */
