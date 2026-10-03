@@ -89,7 +89,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build claims stale` | which claim markers stand on the board past a horizon, asked by a caller holding no token | the same ownership fold, run over an index-narrowed candidate set and filtered on the marker's own posted instant; *whether a session is gone* stays with the driver |
 | `build retire` | remove the worktrees of this clone holding one issue's lane branch, under a board-written or tree-proven license | positive board states plus, for an unheld lane, a clean-and-carried tree proof; *filing a refused removal* stays with the caller |
 | `build retire-branch` | rename an epic child's superseded lane branches out of `build/` so one carrying branch is left | the survivor is the branch an authorized claim marker's nonce names; no guess, no delete |
-| `build reap` | classify finished agent worktrees KEEP/REMOVE/PRUNE and, with `--execute`, remove and prune them | four positive proofs per removal, absence proved by one stat; *when to sweep* stays with the operator |
+| `build reap` | classify finished agent worktrees KEEP/REMOVE/PRUNE and, with `--execute`, remove and prune them | a fixed order of arms over git facts, one stat and a board read of the tree's branch; *when to sweep* stays with the operator |
 | `build issue` | the claimed issue's body + parsed acceptance criteria, through the content gate | fetch + parse via the wire module; *judging* the criteria stays in the skill |
 | `build branch` | cut (or resume) the lane's nonce branch off a freshly fetched base | fetch, derive, create — the nonce is a function of the claim token |
 | `build resume-child` | open an epic child's standing-`FAIL` repair lane: claim, confirm, clean tree, resume the branch, prove the armed lane — in that order | a fixed sequence of five verbs whose order is derivable from what each one needs; every refusal is the composed verb's own, and *fixing the FAIL* stays in the skill |
@@ -1730,46 +1730,65 @@ and the harness's own `pi-worktree-*`, which does not sit under the repository a
 the 78 removable trees on the clone this was measured against. Each is classified `KEEP`, `REMOVE` or
 `PRUNE`.
 
-**`REMOVE` needs four positive proofs together.** The tree holds nothing uncommitted; it carries no
-lock; its HEAD is already on the trunk — reachable from `origin/<the repo's GitHub default branch>`, or landed there as a squash,
-matched by comparing the patch id of what the HEAD adds against the trunk's own patches over exactly
-those paths; and the tree reads **quiet**, its directory untouched for 24h. The subject of the third
-is the HEAD commit, not a branch: the harness detaches the trees it registers, so a branch-keyed rule
-would judge almost none of them. The fourth is not a git fact and cannot be: an operator or reviewer
-seat drives its lane without ever committing or editing, so the three git proofs read a live seat as
-carrying nothing — the shape that removed one mid-drive. Any live signal, and any liveness read that
-failed, is `KEEP`, and the `KEEP` line names which signal held.
+**The arms run in one order, and the first that answers seats the tree.** A removal takes the
+checkout and leaves every ref, so it can lose two things only: a path nobody committed, and a commit
+no branch, remote-tracking ref or tag reaches. The rule is built on that.
 
-**Everything else is `KEEP`, per tree** — dirty, locked, unlanded, live, and every read that failed
-— so one unreadable directory costs its own row and not the sweep.
+1. **Kept before any git read.** The run's own tree; a tree that reads live, its directory written
+   inside the last 24h; a locked tree; and a tree whose directory or liveness could not be read. The
+   live arm is not a git fact and cannot be: an operator or reviewer seat drives its lane without
+   ever committing or editing, so git reads a live seat as carrying nothing, the shape that removed
+   one mid-drive. The `KEEP` line names which signal held.
+2. **Pruned.** A registration whose directory is gone is `PRUNE`, not `KEEP`: there is no checkout to
+   be unsafe about and only the record is left. Absence is proved by one stat's own `NotFound` and by
+   nothing else: never by a read that merely failed (a `PermissionDenied` keeps the tree), and never
+   by git's own `prunable` flag, whose condition is the worktree's `.git` file rather than its
+   directory, so it reports a checkout that still holds uncommitted work.
+3. **Removed: clean, and the trunk carries it.** Its HEAD is reachable from
+   `origin/<the repo's GitHub default branch>`, or landed there as a squash, matched by comparing the
+   patch id of what the HEAD adds against the trunk's own patches over exactly those paths, or adds
+   nothing the trunk lacks. Licenses `ancestor`, `squashed`, `no-change`.
+4. **Removed: clean, and a ref reaches every commit.** Whether or not the trunk carries its HEAD,
+   nothing in it goes with the checkout. License `ref-reached`. No board read.
+5. **Removed: its branch or pull request is proven merged or closed**, whatever it holds: uncommitted
+   paths, or commits no ref reaches. License `branch-ended`. The board is asked about the tree's
+   branch: an open pull request on it keeps the tree; otherwise a merged or closed one ends it, and a
+   pull request closed unmerged counts. With no pull request on the branch, the issue its name
+   carries a number for decides (`build/<n>-…`, `build/pr-<n>-…`, `epic/<n>`): closed ends it, open
+   keeps it.
+6. **Everything else is `KEEP`**, and the line names what the tree holds and what was not proven: a
+   live branch, a detached tree with no branch to ask about, a branch that names no issue or pull
+   request, or a board read that failed. An unreadable `git status` or ref count is a `KEEP` before
+   the board is asked. One unreadable tree costs its own row and not the sweep.
 
-**The one exception is absence.** A registration whose directory is gone is seated `PRUNE`, not
-`KEEP`, because there is no checkout to be unsafe about and only the record is left. Absence is
-proved by one stat's own `NotFound` and by nothing else: never by a read that merely failed — a
-`PermissionDenied` keeps the tree — and never by git's own `prunable` flag, whose condition is the
-worktree's `.git` file rather than its directory, so it reports a checkout that still holds
-uncommitted work. Only the arms answerable off the registration's own fields plus that one stat run
-for every tree; the git status and the containment scan are paid only by what those leave open,
-which is 13 trees of 243 on the clone this was measured against and the difference between a 42.8s
-scan and an 18.3s one.
+**Arm 5 never overrides arm 1.** A live, locked or unreadable tree stays whatever the board says
+about its branch.
 
-**The default run mutates nothing**: it prints the per-tree classification with its reason and
-stops; `--execute` is what removes. Each removal runs plain `git worktree remove` and never
-`--force`, which is banned on every path; a removal git refuses leaves the tree registered and is
+**Each read is paid only by the trees the arms before it left open.** One stat settles arms 1 and 2.
+What they leave open pays for the `git status`, the containment scan and the count of commits no ref
+reaches. Only a tree arms 3 and 4 leave open, one holding uncommitted paths or unreached commits,
+costs a board read, and a detached one costs none.
+
+**The default run mutates nothing**: it seats every tree in the population, prints each verdict with
+its reason, and stops; `--execute` is what removes. Each removal runs plain `git worktree remove` and
+never `--force`, which is banned on every path. A tree arm 5 releases while it holds uncommitted
+paths has them committed onto its own branch first, because git refuses to remove a dirty tree; a
+salvage that fails leaves the tree standing. A removal git refuses leaves the tree registered and is
 reported, and every removal is read back off a second worktree list. The removal takes the tree,
-never the branch. Both halves of the report — what went and what was deliberately kept — are on
-stderr on every path, so a survivor is visible without re-running.
+never the branch. What went and what was kept are both on stderr on every path.
+
+**`--execute` removes as it scans.** Trees are seated one at a time in registration order, and a
+tree seated `REMOVE` is removed before the next one is read. `--limit` bounds the removals attempted,
+and the scan stops the moment that bound is spent: the trees past it get no stat, no git read and no
+board read, and are reported as the `unscanned` count. A bounded pass costs what it takes to find
+that many removable trees, not a scan of the population.
 
 **Every removal is journalled as it happens.** The moment git reports one, a line naming this run,
-the trunk, the removed path and its license is appended to `.fabrika/reap.jsonl` under this run's
-tree root, before the next candidate is attempted. A sweep the harness kills mid-loop — which is what
-a large population does to the 600s no-progress watchdog — still leaves its executed set readable on
-disk, where the terminal JSON does not exist at all. A journal write that fails is reported and
-demotes nothing: a removal is proven by git and the read-back, never by the record.
-
-**`--limit` bounds the executed set** so that population is walked in watchdog-sized pieces: at most
-that many removals are attempted, and every removable tree past the bound stays registered, is
-reported `unattempted` and is removable on the next run.
+the trunk, the removed path, its license and how many paths were salvaged is appended to
+`.fabrika/reap.jsonl` under this run's tree root, before the next tree is read. A sweep killed
+mid-loop still leaves its executed set readable on disk, where the terminal JSON does not exist at
+all. A journal write that fails is reported and demotes nothing: a removal is proven by git and the
+read-back, never by the record.
 
 **The stale registrations go in the same `--execute` pass.** One `git worktree prune` clears the
 entries whose directory was already gone and the ones each removal just left behind, and it is
@@ -1782,13 +1801,16 @@ the prune is reported and does not red the sweep, and neither does an unlock git
 costs disk anything nor risks work.
 
 **Output** — machine, one JSON object:
-`{"answer": "planned" | "reaped" | "none", "executed": bool, "trunk": "origin/main", "scanned": n, "journal": "<path>", "removable" | "removed": […], "stale" | "pruned": […], "unpruned": […], "unattempted": […], "kept": […]}`.
+`{"answer": "planned" | "reaped" | "none", "executed": bool, "trunk": "origin/main", "scanned": n, "unscanned": n, "journal": "<path>", "removable" | "removed": […], "stale" | "pruned": […], "unpruned": […], "failed": […], "kept": […]}`.
+`scanned` counts the trees seated and `unscanned` the ones a spent `--limit` left unread; a dry run
+seats them all. A `removed` row is `{"path", "license", "salvaged"}`, where `salvaged` is the number
+of uncommitted paths committed onto the tree's branch before it went.
 
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
-| `8` | git refused a removal — the tree stays |
+| `8` | git refused a removal, or the salvage commit before one — the tree stays |
 | `9` | git reported a removal and the registration survives, or the read-back failed |
 | `11` | this run's own root, the registrations, or the trunk (GitHub's default branch for the repo) could not be read — nothing was removed |
 

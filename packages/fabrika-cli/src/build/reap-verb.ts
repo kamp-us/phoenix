@@ -9,10 +9,8 @@
  * `build retire` does not cover this: that verb targets the trees holding ONE number's lane branch
  * and needs a board statement about that number to release them. A finished agent tree usually holds
  * no lane branch at all — the harness detaches it — so there is no number to ask the board about.
- * This verb asks git instead, and reclaims only what git can prove — plus one non-git question on the
- * same fail-safe polarity: is the tree still in use? Git cannot answer it, because an operator or
- * reviewer seat drives its lane without committing or editing, so `./reap.ts`'s {@link Liveness}
- * carries the tree's own recency and any live or unreadable reading is a KEEP.
+ * This verb asks git first, and removes what git proves loses nothing. It asks the board only about
+ * a tree that holds something a removal would lose, and only when that tree stands on a branch.
  *
  * The order is the contract:
  *
@@ -21,21 +19,26 @@
  *      namings the harness provisions under, per `./reap.ts`'s `isAgentWorktree`.
  *   3. The trunk is resolved (`../io/trunk.ts`), never spelled — a wrong ref resolves to nothing
  *      and would make every tree look unlanded.
- *   4. Each tree gets one stat, and the arms answerable off that plus the registration's own fields
- *      run first ({@link classifyCheap}). Only what they leave open pays for the `git status` and
- *      the containment scan — 13 trees of 243 on the clone this was measured against, and reading
- *      those two for the other 230 anyway is the 42.8s a sweep used to cost. **Every read that
- *      fails is a KEEP**, per-tree: a sweep of seventy trees must not lose its whole answer to one
- *      unreadable directory.
- *   5. Nothing is removed at all without `--execute`. The default run prints classifications.
- *   6. `--limit` bounds the executed set to that many removals; everything past it stays planned and
- *      is reported unattempted, so a population too large for one watchdog window is walked in
- *      pieces instead of being all-or-nothing.
+ *   4. Trees are seated **one at a time, in registration order**. Each gets one stat, and the arms
+ *      answerable off that plus the registration's own fields run first ({@link classifyCheap}).
+ *      What they leave open pays for the `git status`, the containment scan and the count of
+ *      commits no ref reaches ({@link classifyGit}). Only a tree those leave open — one holding
+ *      uncommitted paths or unreached commits — costs a board read. **Every read that fails is a
+ *      KEEP**, per-tree: a sweep of seventy trees must not lose its whole answer to one unreadable
+ *      directory.
+ *   5. Nothing is removed at all without `--execute`. The default run seats the whole population and
+ *      prints every verdict.
+ *   6. Under `--execute` a tree seated `Remove` is removed **before the next tree is read**. `--limit`
+ *      bounds the removals attempted, and the scan stops the moment that bound is spent: the trees
+ *      past it are never read, and are reported as a count. So a bounded pass costs what it takes
+ *      to find that many removable trees, not a scan of the population.
  *   7. Each removal runs plain `git worktree remove` — never `--force`, which is banned on every
- *      path — and every one is read back off a second `worktree list`.
+ *      path. A tree the board released while it held uncommitted paths has them committed onto its
+ *      own branch first, because git refuses to remove a dirty tree. Every removal is read back off
+ *      a second `worktree list`.
  *   8. Each removal git reports is appended to {@link REAP_JOURNAL} under this run's tree root
- *      before the next candidate is attempted, so a sweep killed mid-loop still leaves its executed
- *      set readable on disk. The read-back at 7 proves the sweep; the journal is what survives a
+ *      before the next tree is read, so a sweep killed mid-loop still leaves its executed set
+ *      readable on disk. The read-back at 7 proves the sweep; the journal is what survives a
  *      process that never reaches it. A journal write that fails is reported and demotes nothing —
  *      the removal is the fact, the record is the convenience.
  *   9. Then the stale registrations go, in the same pass: the ones whose directory was already gone
@@ -46,31 +49,46 @@
  *
  * It removes the tree and leaves the branch, exactly as `build retire` does: a removal frees a
  * checkout, it does not delete a ref.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10342#issuecomment-5973709319
+ * @ruling https://github.com/kamp-us/phoenix/issues/10342#issuecomment-5973715141
  */
 import {Effect, FileSystem, Option, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {containmentOf} from "../io/containment.ts";
 import {appendText} from "../io/fs.ts";
+import {type Attempt, fail} from "../io/git.ts";
+import {getIssue, resolveRepo} from "../io/issues.ts";
+import {pullsForBranch} from "../io/pulls.ts";
 import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
 import {
+	commitsNoRefReaches,
 	pruneWorktrees,
 	removeWorktree,
+	salvageWorktree,
 	unlockWorktree,
+	type WorktreeRegistration,
 	worktreeRegistrations,
 	worktreeStatusPaths,
 } from "./git.ts";
 import {
+	type BranchFate,
 	type CheapFacts,
 	classify,
 	classifyCheap,
+	classifyGit,
+	fateOfPulls,
+	fateOfTicket,
 	isAgentWorktree,
 	type License,
 	type Liveness,
 	type Presence,
 	QUIET_WINDOW_SECONDS,
+	type Stranded,
 	type TreeFacts,
+	ticketOf,
 	type Uncommitted,
 	unprovenAmong,
 	type Verdict,
@@ -98,6 +116,27 @@ export interface ReapOptions {
 
 type Deps = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path;
 
+/** What every tree of one run is seated against. */
+interface Ground {
+	readonly trunk: string;
+	readonly repo: string;
+	readonly selfPaths: ReadonlySet<string>;
+}
+
+interface Seat {
+	readonly facts: CheapFacts;
+	readonly verdict: Verdict;
+}
+
+type Removing = Extract<Verdict, {readonly _tag: "Remove"}>;
+
+interface Removed {
+	readonly path: string;
+	readonly license: License;
+	/** Uncommitted paths committed onto the tree's branch before it went; `0` for a clean tree. */
+	readonly salvaged: number;
+}
+
 export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never, Deps> =>
 	Effect.gen(function* () {
 		if (options.limit !== null && (!Number.isInteger(options.limit) || options.limit <= 0)) {
@@ -111,7 +150,6 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				`${VERB}: cannot read this run's own tree root: ${self.reason} — a run that cannot recognise itself must remove nothing.`,
 			);
 		}
-		const selfPaths = new Set([self.value.root]);
 
 		const registrations = yield* worktreeRegistrations;
 		if (registrations._tag === "Failure") {
@@ -130,120 +168,90 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 		}
 
 		const resolved = yield* resolveTrunk(options.env, null);
-		if (resolved._tag === "Failure") {
+		const repo = yield* resolveRepo(null, options.env);
+		if (resolved._tag === "Failure" || repo._tag === "Failure") {
+			const reason =
+				resolved._tag === "Failure" ? resolved.reason : "the target repo is unresolvable";
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: ${trunkUnresolved(resolved.reason)}. Whether any tree's work landed is UNKNOWN, and an unnameable trunk must reap nothing.`,
+				`${VERB}: ${trunkUnresolved(reason)}. Whether any tree's work landed is UNKNOWN, and an unnameable trunk must reap nothing.`,
 				[scope],
 			);
 		}
 		const trunk = resolved.value.ref;
-
-		const seated: Array<{facts: CheapFacts; verdict: Verdict}> = [];
-		for (const tree of population) {
-			const observed = yield* observe(tree.path);
-			const cheap: CheapFacts = {
-				path: tree.path,
-				branch: tree.branch,
-				locked: tree.locked,
-				presence: observed.presence,
-				liveness: observed.liveness,
-			};
-			// The git reads are owed only by what the cheap arms leave open. On this clone that is 13
-			// trees of 243, and paying for the other 230 anyway is the whole 42.8s a sweep used to cost.
-			const settled = classifyCheap(cheap, selfPaths);
-			if (settled !== null) {
-				seated.push({facts: cheap, verdict: settled});
-				continue;
-			}
-			const facts: TreeFacts = {
-				...cheap,
-				uncommitted: yield* uncommittedIn(tree.path),
-				landing: yield* containmentOf(tree.head, trunk),
-			};
-			seated.push({facts, verdict: classify(facts, trunk, selfPaths)});
-		}
-
-		const removable = seated.flatMap(({facts, verdict}) =>
-			verdict._tag === "Remove" ? [{path: facts.path, license: verdict.license}] : [],
-		);
-		const kept = seated.flatMap(({facts, verdict}) =>
-			verdict._tag === "Keep"
-				? [{path: facts.path, branch: facts.branch, reason: verdict.because}]
-				: [],
-		);
-		const keptLines = seated.flatMap(({facts, verdict}) =>
-			verdict._tag === "Keep"
-				? [`${VERB}: KEEP ${facts.path}${branchOf(facts)} — ${verdict.because}.`]
-				: [],
-		);
-		const stale = seated.flatMap(({facts, verdict}) =>
-			verdict._tag === "Prune" ? [{path: facts.path, locked: facts.locked !== null}] : [],
-		);
-		const staleLines = seated.flatMap(({facts, verdict}) =>
-			verdict._tag === "Prune"
-				? [`${VERB}: PRUNE ${facts.path}${branchOf(facts)} — ${verdict.because}.`]
-				: [],
-		);
-
-		const attempted = options.limit === null ? removable : removable.slice(0, options.limit);
-		const unattempted = removable.slice(attempted.length);
-		const boundLine =
-			options.limit === null
-				? []
-				: [
-						`${VERB}: --limit ${options.limit} bounds this sweep to ${attempted.length} of ${removable.length} removable tree(s); the other ${unattempted.length} stay registered for a later run.`,
-					];
+		const ground: Ground = {trunk, repo: repo.value, selfPaths: new Set([self.value.root])};
 
 		if (!options.execute) {
-			const planned = seated.flatMap(({facts, verdict}) =>
-				verdict._tag === "Remove"
-					? [`${VERB}: REMOVE ${facts.path}${branchOf(facts)} — ${verdict.because}.`]
-					: [],
+			const seated: Array<Seat> = [];
+			for (const tree of population) seated.push(yield* seatOf(tree, ground));
+			const removable = seated.flatMap(({facts, verdict}) =>
+				verdict._tag === "Remove" ? [{path: facts.path, license: verdict.license}] : [],
 			);
+			const bounded =
+				options.limit === null ? removable.length : Math.min(options.limit, removable.length);
 			return answer(
 				JSON.stringify({
 					answer: "planned",
 					executed: false,
 					trunk,
-					scanned: population.length,
+					scanned: seated.length,
 					removable,
-					stale,
-					kept,
+					stale: staleAmong(seated),
+					kept: keptAmong(seated),
 				}),
 				[
 					scope,
-					...planned,
-					...staleLines,
-					...keptLines,
-					...boundLine,
-					`${VERB}: ${removable.length} removable, ${stale.length} stale, ${kept.length} kept — nothing was removed and nothing was pruned; re-run with --execute.`,
+					...seated.flatMap(({facts, verdict}) =>
+						verdict._tag === "Remove"
+							? [`${VERB}: REMOVE ${facts.path}${branchOf(facts)} — ${verdict.because}.`]
+							: [],
+					),
+					...staleLines(seated),
+					...keptLines(seated),
+					...(options.limit === null
+						? []
+						: [
+								`${VERB}: --limit ${options.limit} bounds this sweep to ${bounded} of ${removable.length} removable tree(s); the other ${removable.length - bounded} stay registered for a later run.`,
+							]),
+					`${VERB}: ${removable.length} removable, ${staleAmong(seated).length} stale, ${keptAmong(seated).length} kept — nothing was removed and nothing was pruned; re-run with --execute.`,
 				],
 			);
 		}
 
 		const journalPath = (yield* Path.Path).join(self.value.root, REAP_JOURNAL);
 		const run = new Date().toISOString();
-		const removed: Array<{path: string; license: License}> = [];
+		const seated: Array<Seat> = [];
+		const removed: Array<Removed> = [];
 		const failed: Array<{path: string; reason: string}> = [];
 		const unjournalled: Array<{path: string; reason: string}> = [];
-		for (const candidate of attempted) {
-			const gone = yield* removeWorktree(candidate.path);
+		for (const tree of population) {
+			// The bound is on removals attempted, and it is checked before the next tree is read: a
+			// tree past it pays for no stat, no git read and no board read.
+			if (options.limit !== null && removed.length + failed.length >= options.limit) break;
+			const seat = yield* seatOf(tree, ground);
+			seated.push(seat);
+			if (seat.verdict._tag !== "Remove") continue;
+			const gone = yield* take(tree.path, seat.verdict);
 			if (gone._tag === "Failure") {
-				failed.push({path: candidate.path, reason: gone.reason});
+				failed.push({path: tree.path, reason: gone.reason});
 				continue;
 			}
-			removed.push(candidate);
+			const row: Removed = {
+				path: tree.path,
+				license: seat.verdict.license,
+				salvaged: seat.verdict.salvage?.paths ?? 0,
+			};
+			removed.push(row);
 			const written = yield* Effect.result(
-				appendText(
-					journalPath,
-					`${JSON.stringify({run, trunk, path: candidate.path, license: candidate.license})}\n`,
-				),
+				appendText(journalPath, `${JSON.stringify({run, trunk, ...row})}\n`),
 			);
 			if (Result.isFailure(written)) {
-				unjournalled.push({path: candidate.path, reason: written.failure.reason});
+				unjournalled.push({path: tree.path, reason: written.failure.reason});
 			}
 		}
+		const unscanned = population.length - seated.length;
+		const stale = staleAmong(seated);
+		const kept = keptAmong(seated);
 
 		const journalLines = unjournalled.map(
 			(row) =>
@@ -276,7 +284,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				return refuse(
 					READBACK_MISMATCH,
 					`${VERB}: ${removed.length} tree(s) were removed and ${stale.length} stale registration(s) pruned, and the registrations could not be read back: ${after.reason} — neither is proven.`,
-					[scope, ...journalLines, ...keptLines],
+					[scope, ...journalLines, ...keptLines(seated)],
 				);
 			}
 			const registered = after.value.map((tree) => tree.path);
@@ -294,7 +302,10 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			scope,
 			...removed
 				.filter((row) => !unproven.includes(row.path))
-				.map((row) => `${VERB}: removed ${row.path} (${row.license}).`),
+				.map(
+					(row) =>
+						`${VERB}: removed ${row.path} (${row.license})${row.salvaged > 0 ? `; its ${row.salvaged} uncommitted path(s) were committed onto its branch first` : ""}.`,
+				),
 			...stale
 				.filter((row) => !unpruned.includes(row.path))
 				.map((row) => `${VERB}: pruned the stale registration ${row.path}.`),
@@ -320,11 +331,12 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 					`${VERB}: UNPRUNED — ${path} has no directory and is still registered after the prune.`,
 			),
 			...journalLines,
-			...unattempted.map(
-				(row) =>
-					`${VERB}: UNATTEMPTED ${row.path} (${row.license}) — past --limit ${options.limit}; it stays registered and is removable on the next run.`,
-			),
-			...keptLines,
+			...(unscanned === 0
+				? []
+				: [
+						`${VERB}: --limit ${options.limit} was spent after ${seated.length} of ${population.length} tree(s); the other ${unscanned} were not read and stay registered for a later run.`,
+					]),
+			...keptLines(seated),
 		];
 
 		if (unproven.length > 0) {
@@ -348,24 +360,155 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				answer: "reaped",
 				executed: true,
 				trunk,
-				scanned: population.length,
+				scanned: seated.length,
+				unscanned,
 				journal: journalPath,
 				removed,
 				pruned: stale.filter((row) => !unpruned.includes(row.path)).map((row) => row.path),
 				unpruned,
 				failed,
-				unattempted,
 				kept,
 			}),
 			[
 				...report,
-				`${VERB}: ${removed.length} removed, ${stale.length - unpruned.length} pruned, ${unattempted.length} unattempted, ${kept.length} kept.`,
+				`${VERB}: ${removed.length} removed, ${stale.length - unpruned.length} pruned, ${unscanned} not scanned, ${kept.length} kept.`,
 			],
 		);
 	});
 
 const branchOf = (facts: CheapFacts): string =>
 	facts.branch === null ? " (detached)" : ` (${facts.branch})`;
+
+const keptAmong = (seated: ReadonlyArray<Seat>) =>
+	seated.flatMap(({facts, verdict}) =>
+		verdict._tag === "Keep"
+			? [{path: facts.path, branch: facts.branch, reason: verdict.because}]
+			: [],
+	);
+
+const keptLines = (seated: ReadonlyArray<Seat>): ReadonlyArray<string> =>
+	seated.flatMap(({facts, verdict}) =>
+		verdict._tag === "Keep"
+			? [`${VERB}: KEEP ${facts.path}${branchOf(facts)} — ${verdict.because}.`]
+			: [],
+	);
+
+const staleAmong = (seated: ReadonlyArray<Seat>) =>
+	seated.flatMap(({facts, verdict}) =>
+		verdict._tag === "Prune" ? [{path: facts.path, locked: facts.locked !== null}] : [],
+	);
+
+const staleLines = (seated: ReadonlyArray<Seat>): ReadonlyArray<string> =>
+	seated.flatMap(({facts, verdict}) =>
+		verdict._tag === "Prune"
+			? [`${VERB}: PRUNE ${facts.path}${branchOf(facts)} — ${verdict.because}.`]
+			: [],
+	);
+
+/**
+ * Seat one tree, paying for each read only when the arms before it left the tree open.
+ *
+ * The stat settles most of a population. The three git reads are owed only by what it leaves open,
+ * and the board is asked only about a tree those three left open.
+ */
+const seatOf = (tree: WorktreeRegistration, ground: Ground): Effect.Effect<Seat, never, Deps> =>
+	Effect.gen(function* () {
+		const observed = yield* observe(tree.path);
+		const cheap: CheapFacts = {
+			path: tree.path,
+			branch: tree.branch,
+			locked: tree.locked,
+			presence: observed.presence,
+			liveness: observed.liveness,
+		};
+		const settled = classifyCheap(cheap, ground.selfPaths);
+		if (settled !== null) return {facts: cheap, verdict: settled};
+
+		const facts: TreeFacts = {
+			...cheap,
+			uncommitted: yield* uncommittedIn(tree.path),
+			landing: yield* containmentOf(tree.head, ground.trunk),
+			stranded: yield* strandedIn(tree.path),
+		};
+		const byGit = classifyGit(facts, ground.trunk, ground.selfPaths);
+		if (byGit !== null) return {facts, verdict: byGit};
+
+		const fate = yield* fateOf(ground.repo, tree.branch);
+		return {facts, verdict: classify({...facts, fate}, ground.trunk, ground.selfPaths)};
+	});
+
+/**
+ * Remove one tree by the route its verdict names.
+ *
+ * A salvage that fails leaves the tree standing: removing it then would need `--force`, and would
+ * destroy the only copy of what it holds.
+ */
+const take = (
+	path: string,
+	verdict: Removing,
+): Effect.Effect<Attempt<void>, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		if (verdict.salvage !== null) {
+			const {paths, onto} = verdict.salvage;
+			const committed = yield* salvageWorktree(
+				path,
+				`wip: salvage ${paths} uncommitted path(s) from a reaped worktree (${onto})\n`,
+			);
+			if (committed._tag === "Failure") {
+				return fail(
+					`its ${paths} uncommitted path(s) could not be committed onto ${onto} first: ${committed.reason}`,
+				);
+			}
+		}
+		return yield* removeWorktree(path);
+	});
+
+/**
+ * What the board proves about the branch a tree holds: its pull requests first, then the issue its
+ * name carries a number for.
+ *
+ * The pull requests are asked first because an open one keeps the tree whatever the issue says. A
+ * detached tree is never asked about by commit: a commit on the trunk belongs to a merged pull
+ * request, and that would read every long-lived detached checkout as finished.
+ */
+const fateOf = (
+	repo: string,
+	branch: string | null,
+): Effect.Effect<BranchFate, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const unproven = (reason: string): BranchFate => ({_tag: "Unproven", reason});
+		if (branch === null) {
+			return unproven("it holds no branch, so there is no issue or pull request to ask about");
+		}
+		const pulls = yield* pullsForBranch(repo, branch);
+		if (pulls._tag === "Failure") {
+			return unproven(`the pull requests on ${branch} could not be read: ${pulls.reason}`);
+		}
+		const byPulls = fateOfPulls(
+			branch,
+			pulls.value.map((pull) => ({
+				number: pull.number,
+				state: pull.state,
+				merged: pull.mergedAt !== null,
+			})),
+		);
+		if (byPulls !== null) return byPulls;
+
+		const number = ticketOf(branch);
+		if (number === null) {
+			return unproven(
+				`no pull request has ${branch} as its head, and its name carries no issue number`,
+			);
+		}
+		const ticket = yield* getIssue(repo, number);
+		if (ticket._tag === "Absent") {
+			return unproven(`no pull request has ${branch} as its head, and #${number} does not exist`);
+		}
+		if (ticket._tag === "Unknown") {
+			return unproven(`#${number} could not be read: ${ticket.reason}`);
+		}
+		return fateOfTicket(branch, ticket.value);
+	});
 
 /** A tree's uncommitted count, or the reason it is UNKNOWN. Asked only of a tree still on disk. */
 const uncommittedIn = (
@@ -376,6 +519,17 @@ const uncommittedIn = (
 		return dirty._tag === "Failure"
 			? {_tag: "Unknown" as const, reason: dirty.reason}
 			: {_tag: "Read" as const, paths: dirty.value};
+	});
+
+/** How many commits a tree holds that no ref reaches, or the reason that is UNKNOWN. */
+const strandedIn = (
+	path: string,
+): Effect.Effect<Stranded, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const count = yield* commitsNoRefReaches(path);
+		return count._tag === "Failure"
+			? {_tag: "Unknown" as const, reason: count.reason}
+			: {_tag: "Read" as const, commits: count.value};
 	});
 
 /**

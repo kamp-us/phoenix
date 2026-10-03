@@ -1,28 +1,51 @@
 import {describe, expect, it} from "vitest";
 import {
+	type BoardFacts,
+	type BranchFate,
 	classify,
 	classifyCheap,
+	classifyGit,
+	fateOfPulls,
+	fateOfTicket,
 	isAgentWorktree,
 	type Liveness,
 	QUIET_WINDOW_SECONDS,
-	type TreeFacts,
+	ticketOf,
 	unprovenAmong,
 } from "./reap.ts";
 
 const TRUNK = "origin/main";
 const PATH = "/repo/.claude/worktrees/agent-a9bd";
 const NOBODY: ReadonlySet<string> = new Set();
+const BRANCH = "build/8572-editor-focus-43cc4b51";
 
-const facts = (over: Partial<TreeFacts> = {}): TreeFacts => ({
+const NO_BRANCH: BranchFate = {
+	_tag: "Unproven",
+	reason: "it holds no branch, so there is no issue or pull request to ask about",
+};
+const ENDED: BranchFate = {
+	_tag: "Ended",
+	branch: BRANCH,
+	because: `pull request #8572 on its branch ${BRANCH} is merged`,
+};
+const OPEN: BranchFate = {_tag: "Live", because: `pull request #8572 on ${BRANCH} is open`};
+
+/** A clean, quiet, detached tree level with the trunk, which the board says nothing about. */
+const facts = (over: Partial<BoardFacts> = {}): BoardFacts => ({
 	path: PATH,
 	branch: null,
 	locked: null,
 	presence: {_tag: "Present"},
 	uncommitted: {_tag: "Read", paths: 0},
 	landing: {_tag: "Ancestor"},
+	stranded: {_tag: "Read", commits: 0},
 	liveness: {_tag: "Quiet"},
+	fate: NO_BRANCH,
 	...over,
 });
+
+const DIRTY = {uncommitted: {_tag: "Read", paths: 3}} as const;
+const ORPHANS = {landing: {_tag: "Unlanded"}, stranded: {_tag: "Read", commits: 2}} as const;
 
 /** The incident shape: a seat's tree, touched minutes ago, clean and level with the trunk. */
 const LIVE: Liveness = {
@@ -42,6 +65,7 @@ describe("isAgentWorktree", () => {
 
 	it("refuses a worktrees sibling that is not an agent tree", () => {
 		expect(isAgentWorktree("/repo/.claude/worktrees/manual-spike")).toBe(false);
+		expect(isAgentWorktree("/repo/.claude/worktrees/desk-5173")).toBe(false);
 	});
 
 	it("refuses a bare `agent-` with no name after it", () => {
@@ -107,24 +131,30 @@ describe("classify — everything short of a proof is KEEP", () => {
 		expect(classify(facts({locked: ""}), TRUNK, NOBODY)._tag).toBe("Keep");
 	});
 
-	it("keeps a dirty tree — a bulk sweep's strongest git-level use signal", () => {
-		const verdict = classify(facts({uncommitted: {_tag: "Read", paths: 3}}), TRUNK, NOBODY);
+	it("keeps a tree holding commits no ref reaches that the trunk does not carry", () => {
+		const verdict = classify(facts(ORPHANS), TRUNK, NOBODY);
 		expect(verdict._tag).toBe("Keep");
-		expect(verdict.because).toMatch(/3 uncommitted/);
+		expect(verdict.because).toMatch(/2 commit\(s\) no branch, remote-tracking ref or tag reaches/);
 	});
 
-	it("keeps a tree carrying work the trunk does not", () => {
-		expect(classify(facts({landing: {_tag: "Unlanded"}}), TRUNK, NOBODY)._tag).toBe("Keep");
-	});
-
-	it("keeps a tree whose landing could not be read — UNKNOWN is never 'landed'", () => {
+	it("keeps unreached commits whose landing could not be read — UNKNOWN is never 'landed'", () => {
 		const verdict = classify(
-			facts({landing: {_tag: "Unknown", reason: "no merge base"}}),
+			facts({...ORPHANS, landing: {_tag: "Unknown", reason: "no merge base"}}),
 			TRUNK,
 			NOBODY,
 		);
 		expect(verdict._tag).toBe("Keep");
 		expect(verdict.because).toMatch(/UNKNOWN: no merge base/);
+	});
+
+	it("keeps a tree whose ref reach could not be read — UNKNOWN is never 'reached'", () => {
+		const verdict = classify(
+			facts({landing: {_tag: "Unlanded"}, stranded: {_tag: "Unknown", reason: "bad object"}}),
+			TRUNK,
+			NOBODY,
+		);
+		expect(verdict._tag).toBe("Keep");
+		expect(verdict.because).toMatch(/UNKNOWN: bad object/);
 	});
 
 	it("keeps a tree whose dirtiness could not be read — UNKNOWN is never 'clean'", () => {
@@ -145,6 +175,132 @@ describe("classify — everything short of a proof is KEEP", () => {
 		);
 		expect(verdict._tag).toBe("Keep");
 		expect(verdict.because).toMatch(/still there is UNKNOWN: PermissionDenied/);
+	});
+});
+
+describe("classify — a clean tree whose commits all outlive it", () => {
+	it("removes it when the trunk does not carry its HEAD, under a license of its own", () => {
+		const verdict = classify(facts({landing: {_tag: "Unlanded"}, branch: BRANCH}), TRUNK, NOBODY);
+		expect(verdict).toMatchObject({_tag: "Remove", license: "ref-reached", salvage: null});
+		expect(verdict.because).toMatch(/a branch, remote-tracking ref or tag reaches every commit/);
+	});
+
+	it("removes it when the trunk's answer could not be read at all", () => {
+		expect(
+			classify(facts({landing: {_tag: "Unknown", reason: "no merge base"}}), TRUNK, NOBODY),
+		).toMatchObject({_tag: "Remove", license: "ref-reached"});
+	});
+
+	it("is settled by git alone, so the board is never owed for it", () => {
+		expect(classifyGit(facts({landing: {_tag: "Unlanded"}}), TRUNK, NOBODY)?._tag).toBe("Remove");
+		expect(classifyGit(facts(DIRTY), TRUNK, NOBODY)).toBeNull();
+		expect(classifyGit(facts(ORPHANS), TRUNK, NOBODY)).toBeNull();
+	});
+});
+
+describe("classify — a branch the board proves merged or closed", () => {
+	it("removes a tree holding uncommitted paths, and names the branch they are committed onto", () => {
+		const verdict = classify(facts({...DIRTY, branch: BRANCH, fate: ENDED}), TRUNK, NOBODY);
+		expect(verdict).toMatchObject({
+			_tag: "Remove",
+			license: "branch-ended",
+			salvage: {paths: 3, onto: BRANCH},
+		});
+		expect(verdict.because).toMatch(/is merged, so .*3 uncommitted path\(s\)/);
+	});
+
+	it("removes a tree holding commits no ref reaches", () => {
+		expect(classify(facts({...ORPHANS, fate: ENDED}), TRUNK, NOBODY)).toMatchObject({
+			_tag: "Remove",
+			license: "branch-ended",
+			salvage: null,
+		});
+	});
+
+	it("never overrides the self, live, locked or unreadable arms", () => {
+		const held = {...DIRTY, branch: BRANCH, fate: ENDED};
+		for (const [over, self] of [
+			[{}, new Set([PATH])],
+			[{liveness: LIVE}, NOBODY],
+			[{liveness: {_tag: "Unknown", reason: "denied"}}, NOBODY],
+			[{locked: ""}, NOBODY],
+			[{presence: {_tag: "Unknown", reason: "denied"}}, NOBODY],
+			[{uncommitted: {_tag: "Unknown", reason: "not a git repository"}}, NOBODY],
+		] as const) {
+			expect(classify(facts({...held, ...over}), TRUNK, self)._tag).toBe("Keep");
+		}
+	});
+});
+
+describe("classify — what a tree holds keeps it while its branch is not proven finished", () => {
+	it("keeps uncommitted paths on a live branch, naming the count and that it is live", () => {
+		const verdict = classify(facts({...DIRTY, branch: BRANCH, fate: OPEN}), TRUNK, NOBODY);
+		expect(verdict._tag).toBe("Keep");
+		expect(verdict.because).toMatch(
+			/3 uncommitted path\(s\), and its branch is live: pull request/,
+		);
+	});
+
+	it("keeps them when the board could not be read, naming what was not proven", () => {
+		const verdict = classify(
+			facts({
+				...DIRTY,
+				branch: BRANCH,
+				fate: {_tag: "Unproven", reason: "#8572 could not be read: HTTP 502"},
+			}),
+			TRUNK,
+			NOBODY,
+		);
+		expect(verdict._tag).toBe("Keep");
+		expect(verdict.because).toMatch(/merged or closed is not proven: \S+ could not be read/);
+	});
+
+	// The founder's long-running desk: detached, dirty, months old, made by no lane. It holds no
+	// branch, so there is nothing to ask the board, and nothing git says can release it.
+	it("keeps a detached, dirty, long-lived tree no lane made", () => {
+		const verdict = classify(facts({...DIRTY, branch: null, fate: NO_BRANCH}), TRUNK, NOBODY);
+		expect(verdict._tag).toBe("Keep");
+		expect(verdict.because).toMatch(/3 uncommitted path\(s\).*it holds no branch/);
+	});
+});
+
+describe("fateOfPulls — what the pull requests on a branch prove", () => {
+	const pull = (number: number, state: string, merged = false) => ({number, state, merged});
+
+	it("is live on one open pull request, whatever closed ones sit beside it", () => {
+		expect(fateOfPulls(BRANCH, [pull(8572, "closed", true), pull(8600, "open")])).toMatchObject({
+			_tag: "Live",
+		});
+	});
+
+	it("is ended by a merged one, and by one closed unmerged", () => {
+		expect(fateOfPulls(BRANCH, [pull(8572, "closed", true)])).toMatchObject({
+			_tag: "Ended",
+			branch: BRANCH,
+		});
+		expect(fateOfPulls(BRANCH, [pull(8572, "closed")])).toMatchObject({
+			_tag: "Ended",
+			because: expect.stringMatching(/closed unmerged/),
+		});
+	});
+
+	it("answers nothing for a branch with no pull request", () => {
+		expect(fateOfPulls(BRANCH, [])).toBeNull();
+	});
+});
+
+describe("ticketOf and fateOfTicket — the number a branch is named for", () => {
+	it("reads a lane branch and an epic branch, and nothing else", () => {
+		expect(ticketOf(BRANCH)).toBe(8572);
+		expect(ticketOf("build/pr-9001-43cc4b51")).toBe(9001);
+		expect(ticketOf("epic/8160")).toBe(8160);
+		expect(ticketOf("umut/spike")).toBeNull();
+		expect(ticketOf("main")).toBeNull();
+	});
+
+	it("ends the branch on a closed number and keeps it live on an open one", () => {
+		expect(fateOfTicket("epic/8160", {number: 8160, state: "closed"})._tag).toBe("Ended");
+		expect(fateOfTicket("epic/8160", {number: 8160, state: "open"})._tag).toBe("Live");
 	});
 });
 

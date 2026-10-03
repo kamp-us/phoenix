@@ -494,7 +494,7 @@ const reap = leafCommand(
 		limit: Flag.integer("limit").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"attempt at most this many removals, a positive integer; the rest stay registered, are reported UNATTEMPTED and are removable on the next run (default: every removable tree)",
+				"attempt at most this many removals, a positive integer; the scan stops once they are spent, and the trees past it are not read and are counted as unscanned (default: every removable tree)",
 			),
 		),
 	},
@@ -505,9 +505,10 @@ const reap = leafCommand(
 	Command.withShortDescription("Reclaim the finished agent worktrees this clone never removed."),
 	Command.withDescription(
 		[
-			"Prints each finished agent worktree as KEEP, REMOVE or PRUNE; --execute removes and prunes.",
-			'  {"answer":"planned"|"reaped"|"none","executed","trunk","scanned","journal",…,"kept":[…]}',
-			"  8: git refused a removal; the tree stays",
+			"Prints each finished agent worktree as KEEP, REMOVE or PRUNE; --execute removes as it scans, and prunes.",
+			"A tree goes when it is clean and the trunk or any ref reaches its commits, or when its branch or pull request is merged or closed.",
+			'  {"answer":"planned"|"reaped"|"none","executed","trunk","scanned","unscanned","journal",…,"kept":[…]}',
+			"  8: git refused a removal or the salvage commit before it; the tree stays",
 			"  9: a removal did not read back",
 			"  11: the tree root, the registrations or the trunk could not be read",
 			`  Derivation: the build skill's contract.md, "build reap"`,
