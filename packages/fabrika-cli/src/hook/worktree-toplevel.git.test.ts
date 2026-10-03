@@ -50,7 +50,6 @@ const plan = (cwd: string) =>
 				}),
 				dryRun: true,
 				env: {PATH: process.env.PATH, HOME: process.env.HOME},
-				cli: null,
 			}),
 			NodeServices.layer,
 		),

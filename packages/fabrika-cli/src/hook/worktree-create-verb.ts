@@ -10,7 +10,11 @@
  * A `WorktreeCreate` hook **replaces** that path, and that is the whole mechanism: this verb creates
  * the tree itself, under a `PATH` that resolves the toolchain and a 600s hook budget, so the repo's
  * own `post-checkout` install actually runs. The creating is `worktree-owner.ts`'s; this file reads
- * the envelope, reaps, and hands the plan over.
+ * the envelope and hands the plan over.
+ *
+ * It provisions and does nothing else: no sweep of other worktrees runs here, so a spawn never
+ * waits on a scan of every tree on disk.
+ * @ruling https://github.com/kamp-us/phoenix/issues/10342
  *
  * **Every failure arm refuses, and a refusal blocks the spawn.** That is deliberate: the harness
  * reads any non-zero exit as a creation failure and does not fall back to git, so a blocked spawn is
@@ -18,8 +22,7 @@
  */
 import {randomUUID} from "node:crypto";
 import {Effect} from "effect";
-import type {ChildProcessSpawner} from "effect/unstable/process";
-import {type ChildOutcome, execRecord} from "../io/exec.ts";
+import type {ChildOutcome} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -36,17 +39,12 @@ import {
 	listWorktreesArgs,
 	locateToplevel,
 	planAtPrimary,
-	REAP_LIMIT,
-	REAP_TIMEOUT_SECONDS,
 	readWorktreeRequest,
-	reapArgs,
 	showToplevelArgs,
 } from "./worktree-create.ts";
 import {
-	CAPTURE_BYTES,
 	createWorktree,
 	describeOutcome,
-	firstLine,
 	git,
 	type Requirements,
 	succeeded,
@@ -55,19 +53,11 @@ import {
 const VERB = "fabrika hook worktree-create";
 const EVENT = "WorktreeCreate";
 
-/** How to re-enter this CLI as a child — the node binary running now, and its own entry module. */
-export interface CliEntry {
-	readonly node: string;
-	readonly entry: string;
-}
-
 export interface WorktreeCreateOptions {
 	readonly stdin: Effect.Effect<StdinRead>;
 	/** Plan and report, mutate nothing. The declared hook can never pass it — rule 5 forbids flags. */
 	readonly dryRun: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
-	/** `null` skips the reap-before-provision sweep — a process that cannot name its own entrypoint. */
-	readonly cli: CliEntry | null;
 	/** This process's identity for the creation lock; a test states which pids are alive through it. */
 	readonly host?: LockHost;
 }
@@ -78,72 +68,10 @@ const readEnvelope = (piped: StdinRead): EnvelopeRead =>
 const stdoutIfSucceeded = (outcome: ChildOutcome): string | null =>
 	succeeded(outcome) && outcome._tag === "Ran" ? new TextDecoder().decode(outcome.stdout) : null;
 
-/**
- * Reclaim what this clone can before the tree is provisioned, and report what happened.
- *
- * The answer is a stderr line and never a refusal — see {@link REAP_LIMIT}'s note: a reclaimer that
- * could block a spawn would turn a housekeeping miss into the total stop it exists to prevent. So
- * every outcome, including a sweep the timeout cut off, folds into one line here.
- *
- * It runs before the creation lock is taken, so a sweep never holds a sibling spawn's fetch.
- *
- * The sweep's own verdicts are `build reap`'s and are not re-derived: what this reports is only
- * whether it ran.
- */
-const reapFirst = (
-	cli: CliEntry | null,
-	repoRoot: string,
-	env: Record<string, string>,
-): Effect.Effect<ReadonlyArray<string>, never, ChildProcessSpawner.ChildProcessSpawner> =>
-	Effect.gen(function* () {
-		if (cli === null) {
-			return [
-				`${VERB}: reaped nothing before provisioning — this process cannot name its own entrypoint.`,
-			];
-		}
-		const swept = yield* execRecord({
-			file: cli.node,
-			args: reapArgs(cli.entry),
-			cwd: repoRoot,
-			env,
-			timeoutSeconds: REAP_TIMEOUT_SECONDS,
-			captureBytes: CAPTURE_BYTES,
-		});
-		return succeeded(swept)
-			? [`${VERB}: reaped before provisioning — ${lastLine(swept)}`]
-			: [
-					`${VERB}: the reap before provisioning did not finish — ${describeSweep(swept)}. The spawn is unaffected and the sweep re-runs on the next one.`,
-				];
-	});
-
-/**
- * Why the sweep did not finish, in its own terms.
- *
- * Not the owner's `describeOutcome`: that one names git and quotes the git children's budget, and
- * this child is neither — a line saying `git did not finish within 540s` about a 120s node run sends
- * its reader to the wrong process and the wrong clock.
- */
-const describeSweep = (outcome: ChildOutcome): string => {
-	if (outcome._tag === "Unstartable") return `the sweep could not start — ${outcome.reason}`;
-	if (outcome.timedOut) return `it ran past its ${REAP_TIMEOUT_SECONDS}s bound and was cut off`;
-	return firstLine(outcome.stderr) || `it exited ${outcome.exitCode}`;
-};
-
-/** A child's last stderr line — for `build reap`, the sweep's own count of what it did. */
-const lastLine = (outcome: ChildOutcome): string => {
-	if (outcome._tag !== "Ran") return "the sweep reported nothing";
-	const lines = new TextDecoder()
-		.decode(outcome.stderr)
-		.split("\n")
-		.filter((line) => line.trim() !== "");
-	return lines.at(-1) ?? "the sweep reported nothing";
-};
-
 export const runWorktreeCreate = ({
 	stdin,
 	dryRun,
 	env,
-	cli,
 	host = thisProcess,
 }: WorktreeCreateOptions): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
@@ -193,8 +121,7 @@ export const runWorktreeCreate = ({
 		if (dryRun) return answer(planned.plan.worktreePath, [scope]);
 
 		const nonce = randomUUID().replaceAll("-", "").slice(0, 12);
-		const swept = yield* reapFirst(cli, planned.plan.repoRoot, child);
 		return yield* createWorktree(planned.plan, child, nonce, host).pipe(
-			Effect.map((outcome) => ({...outcome, stderr: [scope, ...swept, ...outcome.stderr]})),
+			Effect.map((outcome) => ({...outcome, stderr: [scope, ...outcome.stderr]})),
 		);
 	});

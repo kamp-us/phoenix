@@ -144,8 +144,7 @@ export type Presence =
  * They are separated from the rest because {@link classifyCheap} settles most of a population on
  * them alone, and paying for the dear facts anyway is what made a sweep of this clone cost 42.8s:
  * 230 of its 243 trees were seated by a cheap arm, and every one of them had a `git status` and a
- * containment scan read for it whose answer no arm ever consulted. That cost is charged per spawn
- * once `hook worktree-create` reaps before it provisions, which is what made it worth ending.
+ * containment scan read for it whose answer no arm ever consulted.
  */
 export interface CheapFacts {
 	readonly path: string;

@@ -1,7 +1,7 @@
 ---
 id: 0386
 title: Worktree accumulation is bounded at provisioning, by the sweep that creates one
-status: amended-in-part by [0427](0427-retire-unlocks-a-released-worktree.md)
+status: amended-in-part by [0427](0427-retire-unlocks-a-released-worktree.md), [0448](0448-worktree-create-hook-never-sweeps.md)
 date: 2026-09-10
 tags: [fabrika, pipeline-hardening, worktree, isolation]
 ---
@@ -49,6 +49,9 @@ proofs, and the live sweep kept six second-naming trees on exactly that ground (
 `origin/main` does not").
 
 ## 2. Reap before provision, not a schedule and not a cap
+
+> Amended by [0448](0448-worktree-create-hook-never-sweeps.md): `hook worktree-create` no longer
+> runs the sweep. This section is history for the hook; sections 1 and 3 still hold.
 
 Nothing ran `build reap`. It was invoked by hand, on no schedule, with no bound on how many trees
 could accumulate — which is the clause that made the failure recur: freeing the disk bought time, not

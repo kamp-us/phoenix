@@ -273,14 +273,8 @@ toplevel it names, under `--dry-run` too. The tree is `<primary>/.claude/worktre
 `<primary>` is the listing's first record. A `cwd` that resolves to no toplevel, or a clone whose
 primary tree is bare or unreadable, refuses at `15` naming the `cwd`, with no fallback to it.
 
-**It reaps before it provisions.** It runs `fabrika build reap --execute --limit 4` as a child in the
-repository the envelope named, before the fetch and the add, because whatever creates a worktree is
-what bounds how many accumulate. The failure it prevents is a full volume refusing the add, and
-freeing the disk after that refusal is a spawn too late. It is a child rather than a call so the
-sweep runs in that repository rather than in the hook's own cwd. It is bounded by `--limit` and by a
-120s timeout, so the fetch and the add still fit in the hook's 600s budget. **Nothing it answers can
-refuse the spawn**: a reclaimer that could block one would turn a housekeeping miss into the total
-stop it exists to end, so a failed or cut-off sweep is a stderr line and the provisioning proceeds.
+**It provisions and sweeps nothing.** No `fabrika build reap` runs here, so a spawn never waits on a
+scan of the clone's other worktrees. `build reap` is a verb someone runs on purpose.
 
 **It takes one repo-level lock around the fetch and the add, and nothing else.** The lock is
 `fabrika/worktree-create.lock` in the clone's common git dir, shared by every worktree of the clone,

@@ -135,7 +135,5 @@ describe("hook worktree-create under concurrent spawns", () => {
 
 		expect(created).toMatchObject({code: 0});
 		expect(registered(clone)).toContain(join(clone, ".claude", "worktrees", "after-the-dead"));
-		// The sweep ran for real first, and its own summary line is quoted rather than re-derived.
-		expect(created.stderr).toContain("reaped before provisioning — fabrika build reap: ");
 	}, 120_000);
 });
