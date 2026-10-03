@@ -12,10 +12,12 @@
 import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {LOGINS_VARIABLE} from "../capture/auth.ts";
 import {noPreviewRulesOr, uiCaptureOr, uiSurfacesOr} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
+import {getRepoVariable} from "../io/variables.ts";
 import {refuse} from "../verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runNote} from "./note-verb.ts";
@@ -175,6 +177,7 @@ const render = leafCommand(
 				env: process.env,
 				tmpRoot: tmpdir(),
 				render: captureRenderLeg,
+				fetchLogins: (target) => getRepoVariable(target, LOGINS_VARIABLE),
 			}),
 		);
 	}),

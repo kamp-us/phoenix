@@ -215,14 +215,24 @@ resolved value is empty or carries the `insecure_` placeholder** an example env 
 the source it read. That refusal is the whole point: a placeholder-signed cookie is well-formed, the
 worker answers it as a visitor, and at the shot that is indistinguishable from a preview nobody
 seeded — which parked two gates and cost a founder read to split.
-Each identity's session token is what an operator passed to
-`node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1>` —
+**You need no credential for the session tokens either: the verb fetches them.** The deploy workflow
+seeds every preview with the three test accounts from the `PREVIEW_TEST_LOGINS` Actions secret, and
+the same value sits in the repository variable of that name, which the verb reads under your GitHub
+credential for any identity your environment does not already carry a token for —
 `PREVIEW_TEST_SESSION_TOKEN` for yazar, `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for çaylak,
-`PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN` for the email-unverified çaylak — which is what puts
-that account and its session row on this PR's preview D1. **One identity's token never stands in for
-another's**: an unset one means that identity was not seeded here, and the verb refuses on `11`
-rather than shooting one it does hold. None of them is yours to mint — if you do not have them,
-you have not been handed the account, and `review-ui note` is the honest route. A `--flag` run needs
+`PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN` for the email-unverified çaylak. **Leave the fetch to
+the verb**: it holds the tokens redacted, and a token you read out yourself is a login in your
+transcript. **One identity's token never stands in for another's**: the verb refuses on `11` rather
+than shooting an identity it does hold. Three refusals name three different stops, and each is
+CANT-SEE with `review-ui note` as the honest route, since none of them is yours to fix:
+
+- **the variable does not exist** — nobody has run `preview-seed rotate-logins` on this repository
+  yet; that is a person's one-time step.
+- **`missing session row`** — the key is right and this preview's database does not hold the token:
+  the preview deployed before the logins were set or rotated, so its next deploy re-seeds it.
+- **`bad signature`** — the signing key is wrong; re-read the paragraph above before anything else.
+
+A `--flag` run needs
 one thing more: the surface's identity holding platform admin on this preview's D1, granted offline
 with `node packages/admin-grant/src/bin.ts grant --user-id <account id> --database-id <preview-d1>`,
 where the account id is `preview-test-moderator`, `preview-test-caylak` or

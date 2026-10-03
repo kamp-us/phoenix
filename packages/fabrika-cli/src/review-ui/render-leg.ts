@@ -13,7 +13,7 @@
  * unenumerated — the "judged nothing, found nothing wrong" shape in a different disguise.
  */
 import {Effect} from "effect";
-import {SESSION_PROBE_PATH} from "../capture/auth.ts";
+import {SESSION_PROBE_PATH, type VisitorCause} from "../capture/auth.ts";
 import {captureShots, isWritten} from "../capture/capture.ts";
 import {FLAG_PROBE_PATH, isForcing} from "../capture/flag-override.ts";
 import {stepToken} from "../capture/interaction.ts";
@@ -42,6 +42,17 @@ const UNREACHABLE_FLOOR = 400;
  * dark-flagged or routeless.
  */
 const NAVIGATION_FAILURE_PREFIX = "failed to capture ";
+
+/**
+ * What each visitor answer means and where its fix is. Each line states the evidence it rests on —
+ * what the probe's response did to the session cookie — so a reader can check the inference.
+ */
+const VISITOR_CAUSE: Readonly<Record<VisitorCause, string>> = {
+	BadSignature:
+		"bad signature — its answer left the session cookie alone, which is how the worker answers a cookie whose signature it rejects, so the signing key this run used is not the one this preview verifies with",
+	NoSessionRow:
+		"missing session row — its answer expired the session cookie, which is how the worker answers a signature it accepts for a token with no live session, so this preview's database was not seeded with this token, or the seeded session has expired",
+};
 
 /** The capture call, injectable so the classification below is testable without a browser. */
 export type CaptureShots = typeof captureShots;
@@ -114,7 +125,7 @@ export const makeCaptureRenderLeg =
 							proof === undefined
 								? "the capture returned no session proof"
 								: proof._tag === "Anonymous"
-									? "the preview answered the seeded cookie as a visitor"
+									? `the preview answered the seeded cookie as a visitor: ${VISITOR_CAUSE[proof.cause]}`
 									: proof.reason,
 					} satisfies SurfaceRender;
 				}

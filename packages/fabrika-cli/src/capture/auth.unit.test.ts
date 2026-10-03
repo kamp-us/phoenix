@@ -8,24 +8,43 @@
 import {webcrypto} from "node:crypto";
 import {readFileSync} from "node:fs";
 import {join} from "node:path";
+import {Redacted} from "effect";
 import {describe, expect, it} from "vitest";
 import {
 	AUTH_SECRET_ENV,
 	classifyAuthSecret,
 	describeAuthSecretSource,
+	IDENTITY_TOKEN_ENV,
+	type IdentityRead,
 	PLACEHOLDER_SECRET_PREFIX,
 	PREVIEW_AUTH_KEY_PATH,
+	parseLogins,
 	readIdentity,
 	readSessionProof,
 	SECURE_COOKIE_PREFIX,
 	SESSION_COOKIE_BASENAME,
 	sessionCookies,
 	signSessionToken,
+	visitorCauseOf,
 } from "./auth.ts";
 
 const SECRET = "a-preview-better-auth-secret";
 const TOKEN = "t".repeat(32);
 const PREVIEW = "https://app-pr-42.example.workers.dev";
+
+/**
+ * A read with its tokens unwrapped. `toEqual` sees every `Redacted` as the same empty object, so
+ * comparing two reads directly would pass whatever tokens they held.
+ */
+const plain = (read: IdentityRead) =>
+	read._tag === "Identity"
+		? {
+				...read,
+				tokens: Object.fromEntries(
+					Object.entries(read.tokens).map(([identity, token]) => [identity, Redacted.value(token)]),
+				),
+			}
+		: read;
 
 const verify = async (signed: string, secret: string = SECRET): Promise<boolean> => {
 	const decoded = decodeURIComponent(signed);
@@ -61,7 +80,7 @@ describe("signSessionToken", () => {
 
 describe("sessionCookies", () => {
 	it("seeds both the prefixed and unprefixed name on an https preview", () => {
-		const cookies = sessionCookies(PREVIEW, TOKEN, SECRET);
+		const cookies = sessionCookies(PREVIEW, Redacted.make(TOKEN), SECRET);
 		expect(cookies.map((c) => c.name)).toEqual([
 			SESSION_COOKIE_BASENAME,
 			`${SECURE_COOKIE_PREFIX}${SESSION_COOKIE_BASENAME}`,
@@ -71,7 +90,7 @@ describe("sessionCookies", () => {
 	});
 
 	it("omits the __Secure- name on http, where the browser would reject it", () => {
-		const cookies = sessionCookies("http://localhost:3000", TOKEN, SECRET);
+		const cookies = sessionCookies("http://localhost:3000", Redacted.make(TOKEN), SECRET);
 		expect(cookies.map((c) => c.name)).toEqual([SESSION_COOKIE_BASENAME]);
 		expect(cookies[0]?.secure).toBe(false);
 	});
@@ -125,7 +144,7 @@ describe("the committed preview key passes this module's own judgement", () => {
 	});
 
 	it("signs a cookie better-auth's own reader accepts", async () => {
-		const [cookie] = sessionCookies(PREVIEW, TOKEN, committed.trim());
+		const [cookie] = sessionCookies(PREVIEW, Redacted.make(TOKEN), committed.trim());
 		expect(await verify((cookie as {value: string}).value, committed.trim())).toBe(true);
 	});
 });
@@ -181,10 +200,38 @@ describe("readIdentity", () => {
 	});
 
 	it("reads the state-sourced secret through onto the identity it hands the signer", () => {
-		expect(readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN}, ["yazar"], usable)).toEqual({
+		const read = readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN}, ["yazar"], usable);
+		expect(plain(read)).toEqual({_tag: "Identity", tokens: {yazar: TOKEN}, secret: SECRET});
+		// Held redacted: printing the read must not print the login.
+		expect(JSON.stringify(read)).not.toContain(TOKEN);
+	});
+
+	/**
+	 * The fetched logins fill only what the environment leaves unset, so a seat that set a token on
+	 * purpose renders as that token and not as whatever the repository variable says.
+	 */
+	it("fills an identity the environment leaves unset from the fetched logins, env winning", () => {
+		const fetched = {
+			yazar: Redacted.make(`${TOKEN}-fetched`),
+			çaylak: Redacted.make(`${TOKEN}-fetched-caylak`),
+		};
+		const read = readIdentity(
+			{PREVIEW_TEST_SESSION_TOKEN: TOKEN},
+			["yazar", "çaylak"],
+			usable,
+			fetched,
+		);
+		expect(plain(read)).toEqual({
 			_tag: "Identity",
-			tokens: {yazar: TOKEN},
+			tokens: {yazar: TOKEN, çaylak: `${TOKEN}-fetched-caylak`},
 			secret: SECRET,
+		});
+	});
+
+	it("still names an identity neither the environment nor the fetched logins carry", () => {
+		expect(readIdentity({}, ["yazar", "çaylak"], usable, {yazar: Redacted.make(TOKEN)})).toEqual({
+			_tag: "Missing",
+			names: ["PREVIEW_TEST_CAYLAK_SESSION_TOKEN"],
 		});
 	});
 
@@ -205,7 +252,7 @@ describe("readIdentity", () => {
 			PREVIEW_TEST_SESSION_TOKEN: TOKEN,
 			PREVIEW_TEST_CAYLAK_SESSION_TOKEN: `${TOKEN}-caylak`,
 		};
-		expect(readIdentity(env, ["çaylak", "yazar"], usable)).toEqual({
+		expect(plain(readIdentity(env, ["çaylak", "yazar"], usable))).toEqual({
 			_tag: "Identity",
 			tokens: {yazar: TOKEN, çaylak: `${TOKEN}-caylak`},
 			secret: SECRET,
@@ -227,16 +274,80 @@ describe("readIdentity", () => {
 			names: ["PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN"],
 		});
 		expect(
-			readIdentity(
-				{...env, PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN: `${TOKEN}-unverified`},
-				["çaylak-unverified"],
-				usable,
+			plain(
+				readIdentity(
+					{...env, PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN: `${TOKEN}-unverified`},
+					["çaylak-unverified"],
+					usable,
+				),
 			),
 		).toEqual({
 			_tag: "Identity",
 			tokens: {"çaylak-unverified": `${TOKEN}-unverified`},
 			secret: SECRET,
 		});
+	});
+});
+
+describe("parseLogins", () => {
+	const logins = (entries: Record<string, unknown>) => Redacted.make(JSON.stringify(entries));
+
+	it("reads one redacted token per identity the object names", () => {
+		const read = parseLogins(
+			logins({
+				[IDENTITY_TOKEN_ENV.yazar]: TOKEN,
+				[IDENTITY_TOKEN_ENV["çaylak-unverified"]]: `${TOKEN}-unverified`,
+			}),
+		);
+		expect(read._tag).toBe("Parsed");
+		if (read._tag !== "Parsed") return;
+		expect(Object.keys(read.tokens)).toEqual(["yazar", "çaylak-unverified"]);
+		expect(Redacted.value(read.tokens.yazar as Redacted.Redacted<string>)).toBe(TOKEN);
+		expect(JSON.stringify(read)).not.toContain(TOKEN);
+	});
+
+	it("reads an empty entry as an identity the variable does not carry", () => {
+		const read = parseLogins(logins({[IDENTITY_TOKEN_ENV.yazar]: ""}));
+		expect(read).toEqual({_tag: "Parsed", tokens: {}});
+	});
+
+	/** The runtime's own JSON.parse message quotes the input, which here is a login. */
+	it("refuses a value that is not a JSON object without quoting it", () => {
+		for (const raw of [`${TOKEN} not json`, `"${TOKEN}"`, `["${TOKEN}"]`, "null"]) {
+			const read = parseLogins(Redacted.make(raw));
+			expect(read._tag).toBe("Malformed");
+			expect(JSON.stringify(read)).not.toContain(TOKEN);
+		}
+	});
+
+	it("refuses a token that is not a string", () => {
+		expect(parseLogins(logins({[IDENTITY_TOKEN_ENV.çaylak]: 7}))._tag).toBe("Malformed");
+	});
+});
+
+/**
+ * The two visitor answers carry the same `null` body. What differs is whether the answer expired
+ * the session cookie, which better-auth does only once the signature has verified.
+ */
+describe("visitorCauseOf", () => {
+	const expired = (name: string) => `${name}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`;
+
+	it("reads an answer that expired the session cookie as a missing session row", () => {
+		expect(visitorCauseOf([expired(SESSION_COOKIE_BASENAME)])).toBe("NoSessionRow");
+		expect(visitorCauseOf([expired(`${SECURE_COOKIE_PREFIX}${SESSION_COOKIE_BASENAME}`)])).toBe(
+			"NoSessionRow",
+		);
+	});
+
+	it("reads an answer that set no cookie as a rejected signature", () => {
+		expect(visitorCauseOf([])).toBe("BadSignature");
+	});
+
+	it("is not moved by another cookie expiring, or by the session cookie being set", () => {
+		expect(visitorCauseOf([expired("better-auth.session_data")])).toBe("BadSignature");
+		expect(visitorCauseOf([`${SESSION_COOKIE_BASENAME}=abc.def; Max-Age=604800; Path=/`])).toBe(
+			"BadSignature",
+		);
 	});
 });
 
@@ -247,8 +358,11 @@ describe("readIdentity", () => {
  * whole defect this proof exists to close.
  */
 describe("readSessionProof", () => {
-	it("reads better-auth's null answer as anonymous", () => {
-		expect(readSessionProof(200, "null")).toEqual({_tag: "Anonymous"});
+	it("reads better-auth's null answer as anonymous, with the cause its headers name", () => {
+		expect(readSessionProof(200, "null", [])).toEqual({_tag: "Anonymous", cause: "BadSignature"});
+		expect(
+			readSessionProof(200, "null", [`${SESSION_COOKIE_BASENAME}=; Max-Age=0; Path=/`]),
+		).toEqual({_tag: "Anonymous", cause: "NoSessionRow"});
 	});
 
 	it("reads a session payload as signed in, naming the user, its tier and its verification", () => {
@@ -259,10 +373,15 @@ describe("readSessionProof", () => {
 					session: {id: "s1"},
 					user: {id: "u1", tier: "çaylak", emailVerified: false},
 				}),
+				[],
 			),
 		).toEqual({_tag: "SignedIn", userId: "u1", tier: "çaylak", emailVerified: false});
 		expect(
-			readSessionProof(200, JSON.stringify({user: {id: "u1", tier: "yazar", emailVerified: true}})),
+			readSessionProof(
+				200,
+				JSON.stringify({user: {id: "u1", tier: "yazar", emailVerified: true}}),
+				[],
+			),
 		).toEqual({_tag: "SignedIn", userId: "u1", tier: "yazar", emailVerified: true});
 	});
 
@@ -277,7 +396,7 @@ describe("readSessionProof", () => {
 			{id: "u1", tier: "çaylak", emailVerified: null},
 			{id: "u1", tier: "çaylak", emailVerified: 0},
 		]) {
-			expect(readSessionProof(200, JSON.stringify({user}))).toEqual({
+			expect(readSessionProof(200, JSON.stringify({user}), [])).toEqual({
 				_tag: "Unreadable",
 				reason: "probe named a user with no emailVerified",
 			});
@@ -289,25 +408,26 @@ describe("readSessionProof", () => {
 	 * hand the caller a tier fact nobody read.
 	 */
 	it("reads a tier-less user as unreadable, never as a tier", () => {
-		expect(readSessionProof(200, JSON.stringify({user: {id: "u1"}}))).toEqual({
+		expect(readSessionProof(200, JSON.stringify({user: {id: "u1"}}), [])).toEqual({
 			_tag: "Unreadable",
 			reason: "probe named a user with no tier",
 		});
 	});
 
 	it("reads a non-200 as unreadable, never as anonymous", () => {
-		expect(readSessionProof(404, "null")._tag).toBe("Unreadable");
-		expect(readSessionProof(500, "")._tag).toBe("Unreadable");
+		expect(readSessionProof(404, "null", [])._tag).toBe("Unreadable");
+		expect(readSessionProof(500, "", [])._tag).toBe("Unreadable");
 	});
 
 	it("reads an unparseable or user-less body as unreadable", () => {
-		expect(readSessionProof(200, "<!doctype html>")._tag).toBe("Unreadable");
-		expect(readSessionProof(200, JSON.stringify({user: {}}))._tag).toBe("Unreadable");
+		expect(readSessionProof(200, "<!doctype html>", [])._tag).toBe("Unreadable");
+		expect(readSessionProof(200, JSON.stringify({user: {}}), [])._tag).toBe("Unreadable");
 	});
 
 	it("reads an explicitly null user as anonymous", () => {
-		expect(readSessionProof(200, JSON.stringify({session: null, user: null}))).toEqual({
+		expect(readSessionProof(200, JSON.stringify({session: null, user: null}), [])).toEqual({
 			_tag: "Anonymous",
+			cause: "BadSignature",
 		});
 	});
 });

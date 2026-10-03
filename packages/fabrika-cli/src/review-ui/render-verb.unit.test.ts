@@ -1,11 +1,12 @@
-import {Effect, Layer} from "effect";
+import {Effect, Layer, Redacted} from "effect";
 import {describe, expect, it} from "vitest";
 import type {AccentDeclaration} from "../capture/accent.ts";
-import {PREVIEW_AUTH_KEY_PATH, signSessionToken} from "../capture/auth.ts";
+import {LOGINS_VARIABLE, PREVIEW_AUTH_KEY_PATH, signSessionToken} from "../capture/auth.ts";
 import type {SchemeDeclaration} from "../capture/color-scheme.ts";
 import type {LocaleDeclaration} from "../capture/locale-seed.ts";
 import type {UiSurface} from "../config/keys/ui-surfaces.ts";
 import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {type Existence, present, unknown} from "../io/issues.ts";
 import {
 	INVALID_CAPTURE,
 	NO_PREVIEW,
@@ -19,7 +20,7 @@ import {
 } from "./codes.ts";
 import {parseManifest} from "./manifest.ts";
 import {type CaptureShots, makeCaptureRenderLeg} from "./render-leg.ts";
-import {type RenderLeg, runRender, type SurfaceRender} from "./render-verb.ts";
+import {type FetchLogins, type RenderLeg, runRender, type SurfaceRender} from "./render-verb.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const PREVIEW = "https://pr-4321-web.example.test";
@@ -80,6 +81,20 @@ const legOf =
 				rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
 		);
 
+/** A logins variable that answers one way, counting how often the verb went and asked. */
+const loginsOf = (answer: Existence<string>): FetchLogins & {readonly calls: string[]} => {
+	const calls: string[] = [];
+	const fetch: FetchLogins = (repo) =>
+		Effect.sync(() => {
+			calls.push(repo);
+			return answer._tag === "Present" ? present(Redacted.make(answer.value)) : answer;
+		});
+	return Object.assign(fetch, {calls});
+};
+
+const logins = (entries: Record<string, unknown>): Existence<string> =>
+	present(JSON.stringify(entries));
+
 const row = (name: string, mount: string): UiSurface => ({
 	name,
 	prefix: `apps/${name.split("-")[0]}/src/`,
@@ -120,6 +135,9 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	tmpRoot: "/tmp",
 	render: legOf({}),
+	// No logins variable on the repository, which is the state every case written before the
+	// variable existed ran under: an unset token stays unset.
+	fetchLogins: loginsOf({_tag: "Absent"}),
 };
 
 const run = (
@@ -419,6 +437,86 @@ describe("runRender", () => {
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toContain("PREVIEW_TEST_CAYLAK_SESSION_TOKEN");
+		expect(outcome.stderr.join("\n")).toContain(
+			`o/r has no ${LOGINS_VARIABLE} repository variable to fetch them from`,
+		);
+	});
+
+	describe("the logins repository variable", () => {
+		const secretOnly = {CLAUDE_PIPELINE_REPO: "o/r", BETTER_AUTH_SECRET: "s".repeat(32)};
+		const fetched = "f".repeat(32);
+
+		/** The seat holds no token at all: repository access is the whole credential. */
+		it("signs a tier's cookie with the token fetched from the variable", async () => {
+			const seen: (string | undefined)[] = [];
+			const fetchLogins = loginsOf(logins({PREVIEW_TEST_SESSION_TOKEN: fetched}));
+			const {outcome} = await run(happy(), {
+				surfaces: ["/pano:auth"],
+				env: secretOnly,
+				fetchLogins,
+				render: (request) => {
+					seen.push(request.cookies[0]?.value);
+					return legOf({})(request);
+				},
+			});
+			expect(outcome.code).toBe(0);
+			expect(fetchLogins.calls).toEqual(["o/r"]);
+			expect(seen).toEqual([signSessionToken(fetched, "s".repeat(32))]);
+			expect(`${outcome.stdout}\n${outcome.stderr.join("\n")}`).not.toContain(fetched);
+		});
+
+		it("never asks for the variable when the environment already holds the token", async () => {
+			const fetchLogins = loginsOf(unknown("the variable must not be read"));
+			const {outcome} = await run(happy(), {
+				surfaces: ["/pano:auth"],
+				env: {...secretOnly, PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+				fetchLogins,
+			});
+			expect(outcome.code).toBe(0);
+			expect(fetchLogins.calls).toEqual([]);
+		});
+
+		it("never asks for it on a run that names no tier", async () => {
+			const fetchLogins = loginsOf(unknown("the variable must not be read"));
+			const {outcome} = await run(happy(), {fetchLogins});
+			expect(outcome.code).toBe(0);
+			expect(fetchLogins.calls).toEqual([]);
+		});
+
+		it("refuses on 11 when the variable cannot be read, and never as an absent one", async () => {
+			const {outcome} = await run(happy(), {
+				surfaces: ["/pano:auth"],
+				env: secretOnly,
+				fetchLogins: loginsOf(unknown("HTTP 403: Resource not accessible")),
+			});
+			expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+			expect(outcome.stderr.at(-1)).toContain(
+				`o/r's ${LOGINS_VARIABLE} repository variable could not be read (HTTP 403: Resource not accessible)`,
+			);
+		});
+
+		it("refuses a variable that is not the logins object, without printing it", async () => {
+			const {outcome} = await run(happy(), {
+				surfaces: ["/pano:auth"],
+				env: secretOnly,
+				fetchLogins: loginsOf(present(`${fetched} is not json`)),
+			});
+			expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+			expect(outcome.stderr.at(-1)).toContain("is set but it is not JSON");
+			expect(outcome.stderr.join("\n")).not.toContain(fetched);
+		});
+
+		it("names the identity a set variable does not carry, apart from an absent variable", async () => {
+			const {outcome} = await run(happy(), {
+				surfaces: ["/hosgeldin:auth-caylak"],
+				env: secretOnly,
+				fetchLogins: loginsOf(logins({PREVIEW_TEST_SESSION_TOKEN: fetched})),
+			});
+			expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+			expect(outcome.stderr.at(-1)).toContain(
+				`unset: PREVIEW_TEST_CAYLAK_SESSION_TOKEN; o/r's ${LOGINS_VARIABLE} repository variable does not carry them`,
+			);
+		});
 	});
 
 	it("seeds each tier's own session, so two tiers are two identities and not one shot twice", async () => {

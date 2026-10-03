@@ -581,6 +581,53 @@ jobs:
           fi
           echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
 
+      # Create the review test users on this preview (#9281; rulings in #10330): the moderator,
+      # the newcomer and the email-unverified newcomer `fabrika review-ui render` signs in as to
+      # shoot a page behind login. Without them every `:auth` render answers as a visitor and a
+      # PR whose change is behind sign-in cannot be reviewed.
+      #
+      # WHY HERE and not beside `Seed preview D1` in ci.yml's e2e job: a reviewer looks at the
+      # preview deploy, not at the e2e run, so the deploy is what must leave the preview able
+      # to sign in. e2e can be skipped, retried or red on its own.
+      #
+      # WHY A SEPARATE COMMAND from `preview-seed run`: `run` writes the public read fixtures
+      # and needs no secret; `test-account` writes live session rows, takes the logins, and
+      # refuses any database whose Cloudflare name lacks `-pr-`. Whether `run` moves here too
+      # is not ruled and travels with the deploy-workflow split (#10339).
+      #
+      # THE LOGINS are one JSON object stored twice under the name PREVIEW_TEST_LOGINS. The
+      # Actions secret below is what seeds the preview. The repository variable of the same
+      # name is the capture side's copy: `review-ui render` fetches it when its environment
+      # holds no token (packages/fabrika-cli/src/capture/auth.ts, `LOGINS_VARIABLE` and
+      # `IDENTITY_TOKEN_ENV`), and no workflow reads it. `preview-seed rotate-logins` writes
+      # both in one run and is the rotation path.
+      #
+      # GitHub masks a secret's whole value in the log, not the tokens inside the object, so
+      # the secret goes to the command through its environment and nothing here echoes it;
+      # `preview-seed` holds the tokens redacted and scrubs them out of its own errors.
+      #
+      # UNSET SECRET ⇒ SKIP WITH A NOTICE, never a red deploy: until a person holding the
+      # repo's keys has run `rotate-logins` there is nothing to seed with, and the preview is
+      # as usable as it was before this step existed. A seeding FAILURE with the secret set
+      # reds the step: a preview that silently cannot sign in is the defect this step closes.
+      #
+      # Idempotent (upserts on fixed ids), so a re-run on a later push re-seeds the same rows.
+      # web-only and PR-only, like the D1 lookup above whose id it takes.
+      - name: Seed preview test users (${{ matrix.app }})
+        if: github.event_name == 'pull_request' && matrix.app == 'web'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIEW_TEST_LOGINS: ${{ secrets.PREVIEW_TEST_LOGINS }}
+          DB_ID: ${{ steps.d1.outputs.uuid }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PREVIEW_TEST_LOGINS" ]; then
+            echo "::notice::preview test users NOT seeded — the PREVIEW_TEST_LOGINS secret is not set, so signed-in review renders of this preview will answer as a visitor. A person holding the repo's keys sets it once with: node packages/preview-seed/src/bin.ts rotate-logins"
+            exit 0
+          fi
+          node packages/preview-seed/src/bin.ts test-account --database-id "$DB_ID"
+
       # Force per-PR preview flags ON from `preview-flag:<key>` PR labels — deploy-time
       # serving write (issue #2951; mechanism A2, decided in investigation #2946). A label
       # `preview-flag:<key>` forces that flag key ON in THIS PR's own `pr-<n>` Flagship app,

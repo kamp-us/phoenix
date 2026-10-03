@@ -10,7 +10,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/9288#issuecomment-5703250637
  * @ruling https://github.com/kamp-us/phoenix/issues/9533#issuecomment-5754589033
  */
-import {Effect, type FileSystem, Path, Result} from "effect";
+import {Effect, type FileSystem, Path, type Redacted, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type AccentDeclaration, type AccentRequest, parseAccentOperand} from "../capture/accent.ts";
 import {
@@ -18,7 +18,9 @@ import {
 	type AuthSecretRead,
 	classifyAuthSecret,
 	type IdentityRead,
+	LOGINS_VARIABLE,
 	PREVIEW_AUTH_KEY_PATH,
+	parseLogins,
 	readIdentity,
 	sessionCookies,
 } from "../capture/auth.ts";
@@ -69,7 +71,8 @@ import {
 import {previewAppOf, type UiSurface} from "../config/keys/ui-surfaces.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
 import {readFile, writeFile} from "../io/fs.ts";
-import {listComments} from "../io/issues.ts";
+import type {Shell} from "../io/git.ts";
+import {type Existence, listComments} from "../io/issues.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {appForSurface} from "../ui/surfaces.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -143,6 +146,12 @@ export type SurfaceRender =
 
 export type RenderLeg = (request: SurfaceRenderRequest) => Effect.Effect<SurfaceRender>;
 
+/**
+ * Read a repository's logins variable. A port so a test can answer for GitHub, and `Redacted` at
+ * the boundary so the fetched value is never a plain string in this module.
+ */
+export type FetchLogins = (repo: string) => Shell<Existence<Redacted.Redacted<string>>>;
+
 export interface RenderOptions {
 	readonly pr: number;
 	readonly out: string;
@@ -198,6 +207,8 @@ export interface RenderOptions {
 	/** The OS temp root the deterministic set path hangs off — a port so a test can pin it. */
 	readonly tmpRoot: string;
 	readonly render: RenderLeg;
+	/** Called only when a requested identity's token is not already in {@link env}. */
+	readonly fetchLogins: FetchLogins;
 }
 
 const unreadable = (what: string, pr: number, reason: string): VerbOutcome =>
@@ -350,18 +361,66 @@ const resolveAuthSecret = (
 	});
 
 /**
+ * The logins variable was needed and gave no tokens. `detail` says which way, worded for the
+ * refusal: it could not be read, or it was read and is not the logins object.
+ */
+type LoginsUnusable = {readonly _tag: "LoginsUnusable"; readonly detail: string};
+
+/**
+ * Tokens are still unset after the variable was consulted. `variable` keeps "nobody has set the
+ * variable" apart from "it is set and names no token for this identity", because the first is one
+ * person's one-time step and the second is a stale value.
+ */
+type StillMissing = {
+	readonly _tag: "StillMissing";
+	readonly names: readonly string[];
+	readonly variable: "Absent" | "Incomplete";
+};
+
+/**
  * The credentials an identity-naming run needs, or the one thing that stopped the read: an export
- * that could not be opened, a key that must not be signed with, or an unset session token. Only a
- * run that names a seeded identity calls this, so every arm here is about a session a surface
- * actually asked for.
+ * that could not be opened, a key that must not be signed with, or a session token nothing
+ * supplies. Only a run that names a seeded identity calls this, so every arm here is about a
+ * session a surface actually asked for.
+ *
+ * The tokens come from the environment first. The repository variable is fetched only when the
+ * environment leaves a requested identity unset, so a seat that already holds its tokens makes no
+ * extra request, and a seat that holds none needs repository access and nothing else.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10330
  */
 const resolveSeededIdentity = (
 	options: RenderOptions,
+	repo: string,
 	identities: readonly CaptureIdentity[],
-): Effect.Effect<IdentityRead | UnreadableSecret, never, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<
+	Exclude<IdentityRead, {_tag: "Missing"}> | UnreadableSecret | LoginsUnusable | StillMissing,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const secret = yield* resolveAuthSecret(options);
-		return secret._tag === "Unreadable" ? secret : readIdentity(options.env, identities, secret);
+		if (secret._tag === "Unreadable") return secret;
+		const ambient = readIdentity(options.env, identities, secret);
+		if (ambient._tag !== "Missing") return ambient;
+		const variable = yield* options.fetchLogins(repo);
+		if (variable._tag === "Unknown") {
+			return {_tag: "LoginsUnusable", detail: `could not be read (${variable.reason})`} as const;
+		}
+		if (variable._tag === "Absent") {
+			return {_tag: "StillMissing", names: ambient.names, variable: "Absent"} as const;
+		}
+		const logins = parseLogins(variable.value);
+		if (logins._tag === "Malformed") {
+			return {
+				_tag: "LoginsUnusable",
+				detail: `is set but ${logins.reason}; its contents were not printed`,
+			} as const;
+		}
+		const filled = readIdentity(options.env, identities, secret, logins.tokens);
+		return filled._tag === "Missing"
+			? ({_tag: "StillMissing", names: filled.names, variable: "Incomplete"} as const)
+			: filled;
 	});
 
 export const runRender = (
@@ -624,7 +683,7 @@ export const runRender = (
 		const identity =
 			wantedIdentities.length === 0
 				? null
-				: yield* resolveSeededIdentity(options, wantedIdentities);
+				: yield* resolveSeededIdentity(options, repo, wantedIdentities);
 		if (identity?._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -646,10 +705,21 @@ export const runRender = (
 				[scanned],
 			);
 		}
-		if (identity?._tag === "Missing") {
+		if (identity?._tag === "LoginsUnusable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: a tier-naming surface was requested but its credentials are incomplete (unset: ${identity.names.join(", ")}) — the named tier's render is UNKNOWN, never a seeded substitute.`,
+				`${VERB}: a tier-naming surface was requested, its session token is not in the environment, and ${repo}'s ${LOGINS_VARIABLE} repository variable ${identity.detail} — the named tier's render is UNKNOWN.`,
+				[scanned],
+			);
+		}
+		if (identity?._tag === "StillMissing") {
+			const variable =
+				identity.variable === "Absent"
+					? `${repo} has no ${LOGINS_VARIABLE} repository variable to fetch them from`
+					: `${repo}'s ${LOGINS_VARIABLE} repository variable does not carry them`;
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: a tier-naming surface was requested but its credentials are incomplete (unset: ${identity.names.join(", ")}; ${variable}) — the named tier's render is UNKNOWN, never a seeded substitute.`,
 				[scanned],
 			);
 		}
