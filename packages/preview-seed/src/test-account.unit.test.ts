@@ -594,6 +594,16 @@ describe("provisionTestAccounts — email-unverified çaylak", () => {
 		assert.notInclude(params, TEST_ACCOUNTS.çaylak.id);
 	});
 
+	it("is refused on a database whose name is not a preview's, writing nothing", async () => {
+		assert.isNotNull(UNVERIFIED_TOKEN);
+		const {d1, batched} = fakeD1([]);
+		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PROD_NAME, {
+			"çaylak-unverified": UNVERIFIED_TOKEN,
+		});
+		assert.strictEqual(outcome._tag, "NotThrowaway");
+		assert.lengthOf(batched, 0);
+	});
+
 	it("never stands in for the çaylak a standing is about", async () => {
 		assert.isNotNull(UNVERIFIED_TOKEN);
 		const {d1, batched} = fakeD1([]);
