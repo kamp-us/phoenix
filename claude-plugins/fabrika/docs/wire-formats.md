@@ -1,11 +1,5 @@
 # fabrika wire formats — the index
 
-### `audit-context`
-
-Audit research survives a conversation in the initial session body. The audit producer and the
-grilling reader share this format so retries can compare retained research without treating a
-recommendation as a ruling. Session creation and recovery belong to the grilling contract.
-
 A **wire format** is the byte-level agreement two fabrika skills meet through on a GitHub artifact.
 This page is the map of them: for each registered format, its owner module, who writes those bytes
 and who reads them, and why the two sides need an agreement at all.
@@ -23,6 +17,9 @@ one row per format — and `fabrika wire formats` projects it at runtime
 ([`wire/command.ts`](../../../packages/fabrika-cli/src/wire/command.ts)). Run that verb when you need
 the current inventory; read this page when you need to know what the agreement is *for*.
 
+`fabrika wire --help` lists the group's other verbs: `emit`, `read`, `check`, `doc-section` and
+`codes`.
+
 The two cannot quietly disagree any more. The table below is **generated from the registry** by
 `fabrika wire index --write`, and `fabrika wire index` reds when it has gone stale, when a registered
 format has no section here, or when a section here names no registered format. The narrative under
@@ -30,7 +27,7 @@ each heading is the hand-written half — it is the part no registry row holds.
 
 ## The staging rule
 
-A format lands **with its first consumer**, never in a batch: a format absent from the table above
+A format lands **with its first consumer**, never in a batch: a format absent from the table below
 is almost certainly *unwritten* — its consumer does not exist yet — rather than missing, and the
 registry is the place to check before assuming a gap. Building a format ahead of its first consumer
 is banned: with no reader to hold it honest, the shape is a guess, and the first real consumer
@@ -65,6 +62,12 @@ arrives owing a migration nobody planned.
 | `routed-elsewhere` | [`packages/fabrika-cli/src/wire/routed-elsewhere.ts`](../../../packages/fabrika-cli/src/wire/routed-elsewhere.ts) | `review-ui` | `ship`, `operate` |
 | `lane-record` | [`packages/fabrika-cli/src/wire/lane-record.ts`](../../../packages/fabrika-cli/src/wire/lane-record.ts) | `operate` | `operate` |
 <!-- fabrika:wire-index:end -->
+
+### `audit-context`
+
+Audit research survives a conversation in the initial session body. The audit producer and the
+grilling reader share this format so retries can compare retained research without treating a
+recommendation as a ruling. Session creation and recovery belong to the grilling contract.
 
 ### `acceptance-criteria`
 

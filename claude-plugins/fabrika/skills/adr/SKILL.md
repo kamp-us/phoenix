@@ -150,7 +150,7 @@ job that is not a required context does not hold the batch. Both records land, t
 goes red, and you renumber
 there instead — a second pull request, a second review, and the approval on this one already spent.
 
-**Whether this PR needs a control-plane approval is `cp-classify`'s answer, not yours** — it routes
+**Whether this PR needs a control-plane approval is `fabrika ship scope`'s answer, not yours** — it routes
 on CODEOWNERS, and how a repo owns its decision corpus decides it
 ([control-plane classification](../../docs/control-plane-classification.md)). **That gate is the
 authority: do not predict it, and never reword the ADR to change its verdict.** A wrong

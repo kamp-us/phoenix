@@ -129,7 +129,8 @@ homes to an arc, so writing it is a first-triage quality step, not a blocker.
 The grammar is a parse contract the CLI enforces, not a convention, and two facts carry this
 recipe: headings exactly `## Arcs` and `## Campaigns`, and each row's second
 cell naming the pinned milestone as `#<number>` — the arc's name is never matched on. Zero campaign
-rows is legal and zero arc rows refuses. A campaign row groups work under a theme and a milestone;
+rows is legal. Zero arc rows makes `triage homes` refuse; the bootstrap verb below accepts the table
+and reports `0 arcs`. A campaign row groups work under a theme and a milestone;
 its `State` cell says whether the theme is being worked. An `active` row marks its milestone
 `running` in `triage homes`, and triage then homes only `p0`, `p1` and blocker work there.
 
@@ -271,9 +272,9 @@ verdict by hand. The rules for each route, and their exit codes, are in
 fabrika status open
 ```
 
-Six fields: the installed skill roster, what this repo declares from step 2, whether the plugin
-carrying the skills is enabled here, your board's counts, the decision digest, and any lanes on this
-machine.
+Seven fields: the installed skill roster, what this repo declares from step 2, whether the plugin
+carrying the skills is enabled here, your board's counts, the decision digest, any lanes on this
+machine, and the trunk every verb resolved, with whether this clone's `origin/HEAD` agrees.
 
 **Read the `wiring` field first.** It is the only one that answers about the plugin rather than
 about something the CLI reads, so it is the only one that catches a repo where every verb answers

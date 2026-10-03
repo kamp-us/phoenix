@@ -3,7 +3,7 @@
 A **contract spec** is what an authoring session emits per skill: the verbs that skill needs, fully
 specified. It is the deliverable of the derivation an authoring session owes: the session works out
 which deterministic work belongs in the CLI and writes the contract the CLI implements, and that
-document is the input a `write-code` agent builds from.
+document is the input a `builder` shell running the `build` skill builds from.
 
 This page is the reference for that document's format: its required sections, the completeness test
 it must clear, and a worked example. The runtime discipline every verb the spec describes owes its
@@ -13,7 +13,7 @@ caller is the sibling page's subject: [the CLI interface convention](interface-c
 `claude-plugins/fabrika/skills/<skill>/contract.md` — landing in the same pull request as the
 `SKILL.md` the session authored. The implementing pull request links back to it.
 
-**The bar it must clear.** A fresh `write-code` agent implements every verb in the spec without
+**The bar it must clear.** A fresh `builder` implements every verb in the spec without
 reading the authoring transcript, without asking the session a question, and without opening a
 legacy script.
 
@@ -84,8 +84,8 @@ outcome it can reach.
 
 ## Worked example
 
-Illustration only. It is not a commissioned verb, and it does not pre-commit the `/adr` contract —
-that one is derived by its own authoring session. It is here to show a complete block at the
+Illustration only. `decisions next-id` is an invented verb: fabrika has no `decisions` group, and
+the shipped id allocator is `fabrika adr next`, whose contract is its own and differs from this one. It is here to show a complete block at the
 level of detail the completeness test demands.
 
 ---

@@ -6,7 +6,7 @@ loaded. It is not a UI `Shell` component — that word is usually already taken 
 prose, so this surface is always written **agent shell** in full.
 
 A shell holds three things and nothing else, over the `name:` that is its address: a `skills:`
-preload naming the one plugin-namespaced skill it exists to run, a `tools:` set scoped to what that
+preload naming the plugin-namespaced skill it exists to run, a `tools:` set scoped to what that
 skill actually calls, and a `description:` saying when to spawn it. `model:` is the one optional
 field (see below). All judgement — every step, rubric, acceptance test and terminal token — lives
 in the preloaded skill, which is the surface the eval bar gates.
@@ -17,6 +17,22 @@ inherits the spawning session's effort, which is what a human naming the run sho
 **A shell that grows opinions is a defect** — anything a shell should "always do" belongs in its
 skill, never in the shell body.
 
+## The eight shells
+
+| Shell | Preloads |
+|---|---|
+| `triager` | `fabrika:triage` |
+| `builder` | `fabrika:build` |
+| `ui-builder` | `fabrika:build-ui` |
+| `mixed-builder` | `fabrika:build` and `fabrika:build-ui` |
+| `reviewer` | `fabrika:review` |
+| `ui-reviewer` | `fabrika:review-ui` |
+| `shipper` | `fabrika:ship` |
+| `operator` | `fabrika:operate` |
+
+`mixed-builder` is the one shell that preloads two skills: it lands a ticket whose deliverable spans
+text and a rendered surface as one pull request.
+
 ## A shell's name is a noun
 
 **Name a shell for the thing that acts, never for the act**: `builder`, `reviewer`, `shipper`,
@@ -24,10 +40,15 @@ skill, never in the shell body.
 definition that performs it, and the collision is invisible until two definitions contend for one
 address.
 
-**The address is the bare noun.** A driver spawns `reviewer`, not `fabrika:reviewer` — the
-qualified spelling names the plugin's shell in prose. The platform mechanism is that a bare `name:`
-becomes the definition's `agentType` verbatim, and the plugin-qualified form does not resolve; the
-only proof of which form resolves in a given harness is spawning it.
+**On the Agent tool, the address is the plugin-qualified noun.** A driver spawns
+`fabrika:reviewer`; the bare `reviewer` names the shell in prose and in its own `name:` field.
+Observed on Claude Code 2.1.288: an Agent-tool spawn of `reviewer` was refused as not found, with
+the eight shells listed as `fabrika:builder` through `fabrika:ui-reviewer`, and the same spawn of
+`fabrika:reviewer` ran. The only proof of which form resolves in a given harness is spawning it.
+
+The `--agent` launch flag is a separate resolver, and this page states nothing current about it.
+The one record is from Claude Code 2.1.214, where `--agent plugin:name` did not resolve; it has not
+been re-run since.
 
 ## No `memory:`
 
@@ -50,9 +71,10 @@ is baseline: a new shell declares `Agent` at creation. Read `tools:` in
 [`../agents/`](../agents/) for what a shell carries, not this page — the definitions are the
 statement.
 
-The grant is not decorative for the operator: every route in the operate loop
-([`../skills/operate/SKILL.md`](../skills/operate/SKILL.md)) is itself a spawn of another shell, so
-an operator without it can dispatch nothing.
+The grant is not decorative for the operator: every stage the operate loop
+([`../skills/operate/SKILL.md`](../skills/operate/SKILL.md)) dispatches is a spawn of another shell,
+so an operator without it can dispatch nothing. The loop's other routes spawn nothing — on a chore
+lane it applies a recipe verb itself.
 
 A spawn tool is not a `Skill` grant: `shipper` holds none — the ship skill routes by writing a
 ship note and stopping.
@@ -66,4 +88,4 @@ is proven by spawning, not by the file parsing.
 
 `permissionMode:`, `hooks:` and `mcpServers:` are dropped for plugin-scope agent definitions with
 a load-time warning (`…, which is ignored for plugin agents. Use .claude/agents/ for this level of
-control.`, read out of Claude Code 2.1.233). None of the three appears on any shell.
+control.`, read out of Claude Code 2.1.288). None of the three appears on any shell.
