@@ -52,6 +52,14 @@ describe("classConfigOf", () => {
 		expect(out.config.notes.governedRoots).toContain(`at the head ${HEAD}, the shipped`);
 	});
 
+	it("refuses naming the commit whose config does not decode, whatever the other says", () => {
+		const out = read(text({}), text({governedRoots: []}));
+		expect(out).toMatchObject({
+			_tag: "Refused",
+			reason: expect.stringContaining(`.fabrika.jsonc at the base ${BASE} is refused`),
+		});
+	});
+
 	it("refuses naming the commit whose config could not be read", () => {
 		const out = read({_tag: "Unreadable", reason: "fatal: bad object"}, text({}));
 		expect(out._tag).toBe("Refused");

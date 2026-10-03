@@ -6,6 +6,7 @@ import {EPIC_RULES} from "../wire/lane-brief.ts";
 import {MACHINERY_EVENT} from "./machine.ts";
 import {REVIEW_UI_STATE} from "./prove.ts";
 import {
+	AXIS_ISSUE_CAUSES,
 	axisIssueForCause,
 	causeForEvent,
 	conditionalTerminal,
@@ -302,6 +303,11 @@ describe("a render-axis park names the issue it waits on", () => {
 	it("leaves every other cause without one exactly as it was", () => {
 		expect(axisIssueForCause(null, "no-preview-render")).toEqual({_tag: "Named", axisIssue: null});
 		expect(axisIssueForCause(null, null)).toEqual({_tag: "Named", axisIssue: null});
+	});
+
+	it("keys only the render-axis cause on an issue", () => {
+		expect([...AXIS_ISSUE_CAUSES]).toEqual(["render-axis-missing"]);
+		expect(PARK_CAUSE_TOKENS).toContain("render-axis-missing");
 	});
 });
 
