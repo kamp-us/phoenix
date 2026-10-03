@@ -26,8 +26,7 @@ export const asksForVersion = (argv: ReadonlyArray<string>): boolean => {
 };
 
 /** A source run loads `.ts` modules; the published build loads `dist/*.js`. */
-export const isSourceModule = (moduleUrl: string): boolean =>
-	new URL(moduleUrl).pathname.endsWith(".ts");
+const isSourceModule = (moduleUrl: string): boolean => new URL(moduleUrl).pathname.endsWith(".ts");
 
 const SHORT_SHA = /^[0-9a-f]{4,64}$/;
 

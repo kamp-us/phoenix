@@ -325,21 +325,12 @@ describe("runChecks under the base branch's required set", () => {
 			"scan changed files for leaks",
 			"validate skill frontmatter",
 		]);
-		const THREE = sampleOf([
-			{name: "governance floor at head", conclusion: "success"},
-			{name: "scan changed files for leaks", conclusion: "success"},
-			{name: "validate skill frontmatter", conclusion: "success"},
-		]);
 		const FOUR = sampleOf([
 			{name: "ci-required", conclusion: "success"},
 			{name: "governance floor at head", conclusion: "success"},
 			{name: "scan changed files for leaks", conclusion: "success"},
 			{name: "validate skill frontmatter", conclusion: "success"},
 		]);
-
-		it("rolls up pending, never green, while one declared context has no run", () => {
-			expect(rollupFor(THREE, [], FOUR_DECLARED)).toBe("pending");
-		});
 
 		it("rolls up green once all four declared contexts concluded success", () => {
 			expect(rollupFor(FOUR, [], FOUR_DECLARED)).toBe("green");

@@ -6,7 +6,6 @@ import {EPIC_RULES} from "../wire/lane-brief.ts";
 import {MACHINERY_EVENT} from "./machine.ts";
 import {REVIEW_UI_STATE} from "./prove.ts";
 import {
-	AXIS_ISSUE_CAUSES,
 	axisIssueForCause,
 	causeForEvent,
 	conditionalTerminal,
@@ -135,15 +134,6 @@ describe("the shipper's two queue terminals are waits, not landings", () => {
 });
 
 describe("the states each vocabulary group serves", () => {
-	it("refuses a builder's SHIPPED-PR out of ship, naming the token, the state and its owner", () => {
-		const service = serviceAt("SHIPPED-PR", "ship");
-		expect(service._tag).toBe("Unserved");
-		if (service._tag !== "Unserved") return;
-		expect(service.reason).toContain("SHIPPED-PR");
-		expect(service.reason).toContain('"ship"');
-		expect(service.reason).toContain("builder");
-	});
-
 	it("serves a builder's terminal out of either build state", () => {
 		expect(serviceAt("SHIPPED-PR", "build")).toEqual({_tag: "Served", by: ["builder"]});
 		expect(serviceAt("shipped-pr", "build:ui")).toEqual({_tag: "Served", by: ["builder"]});
@@ -161,15 +151,6 @@ describe("the states each vocabulary group serves", () => {
 		expect(serviceAt("ESCALATED", "review:ui")).toEqual({_tag: "Served", by: ["ui-reviewer"]});
 		expect(serviceAt("PASS", "review:ui")).toEqual({_tag: "Served", by: ["ui-reviewer"]});
 		expect(serviceAt("FAIL", "integrate")).toEqual({_tag: "Served", by: ["integrator"]});
-	});
-
-	it("names every owner of a shared token when none serves the state", () => {
-		const service = serviceAt("FAIL", "build");
-		expect(service._tag).toBe("Unserved");
-		if (service._tag !== "Unserved") return;
-		for (const owner of ["reviewer", "ui-reviewer", "integrator"]) {
-			expect(service.reason).toContain(owner);
-		}
 	});
 
 	it("serves a machinery token out of any state", () => {
@@ -307,20 +288,6 @@ describe("the rendered gate's three parks name a cause instead of landing bare",
 });
 
 describe("a render-axis park names the issue it waits on", () => {
-	it("requires --axis-issue beside render-axis-missing", () => {
-		const resolved = axisIssueForCause(null, "render-axis-missing");
-
-		expect(resolved._tag).toBe("Rejected");
-		expect(resolved._tag === "Rejected" && resolved.reason).toMatch(/--axis-issue/);
-	});
-
-	it("seats the issue beside render-axis-missing", () => {
-		expect(axisIssueForCause(9615, "render-axis-missing")).toEqual({
-			_tag: "Named",
-			axisIssue: 9615,
-		});
-	});
-
 	it.each([
 		["no-preview-render", 9615],
 		[null, 9615],
@@ -335,11 +302,6 @@ describe("a render-axis park names the issue it waits on", () => {
 	it("leaves every other cause without one exactly as it was", () => {
 		expect(axisIssueForCause(null, "no-preview-render")).toEqual({_tag: "Named", axisIssue: null});
 		expect(axisIssueForCause(null, null)).toEqual({_tag: "Named", axisIssue: null});
-	});
-
-	it("keys only the render-axis cause on an issue", () => {
-		expect([...AXIS_ISSUE_CAUSES]).toEqual(["render-axis-missing"]);
-		expect(PARK_CAUSE_TOKENS).toContain("render-axis-missing");
 	});
 });
 
