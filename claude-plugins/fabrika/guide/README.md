@@ -12,6 +12,7 @@ These pages are written for a person. Each holds one Diátaxis mode.
 | [`getting-started.md`](getting-started.md) | tutorial | Walk me from nothing to a first working fabrika run. |
 | [`adopt-fabrika-in-a-new-repo.md`](adopt-fabrika-in-a-new-repo.md) | how-to | Wire fabrika into a repo I already have. |
 | [`extend-the-wire-registry.md`](extend-the-wire-registry.md) | how-to | Register one new wire format, from an empty editor to a green conformance suite. |
+| [`choose-a-model-per-shell.md`](choose-a-model-per-shell.md) | how-to | Run one fabrika shell, such as `reviewer`, on a model I pick. |
 | [`delegation.md`](delegation.md) | reference | Which copy of fabrika serves this invocation, and why did it refuse? |
 | [`how-fabrika-works.md`](how-fabrika-works.md) | explanation | Why is fabrika shaped the way it is? |
 
@@ -20,8 +21,8 @@ These pages are written for a person. Each holds one Diátaxis mode.
 - **`guide/`** — this directory: the human pages, one Diátaxis mode each.
 - **[`../docs/`](../docs/README.md)** — the agent-facing convention and contract docs.
 - **the host repo's decision records** — the why, and the history including superseded approaches.
-- **[`packages/fabrika-cli/docs/verb-reference.md`](../../../packages/fabrika-cli/docs/verb-reference.md)**
-  — group overviews and routes to help and implementation contracts.
+- **`fabrika --help`** — every command group, one line each. `fabrika <group> --help` lists a
+  group's verbs, and `fabrika <group> <verb> --help` gives one verb's flags, answer and exit codes.
 - **[`../skills/`](../skills/)** — one `SKILL.md` per skill: the contracts agents execute.
 
 - [Use Fabrika in Codex](codex.md): install the shared plugin and dispatch isolated lane stages.

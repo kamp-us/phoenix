@@ -21,6 +21,7 @@ import {scannedLine} from "../build/target.ts";
 import {readTree} from "../build/tree.ts";
 import {cycleDocOr} from "../config/paths.ts";
 import {searchOpenIssues} from "../io/issues.ts";
+import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {probeCycleDoc} from "../plan/github.ts";
 import {sectionCount} from "../plan/ledger.ts";
 import {rank, searchTokens, tokenize} from "../report/dedup.ts";
@@ -77,18 +78,22 @@ export const runOpen = (
 		}
 		const mode = planAnchors === 0 ? "fresh" : "re-plan";
 
-		const behind = yield* commitsBehind();
+		const trunk = yield* resolveTrunk(options.env, repo);
+		if (trunk._tag === "Failure") {
+			return refuse(PRECONDITION_UNKNOWN, `${VERB}: ${trunkUnresolved(trunk.reason)}.`, notes);
+		}
+		const behind = yield* commitsBehind(trunk.value.ref);
 		if (behind._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				MESSAGES.unreadable("this tree's distance from origin/main", behind.reason),
+				MESSAGES.unreadable(`this tree's distance from ${trunk.value.ref}`, behind.reason),
 				notes,
 			);
 		}
 		if (behind.value > 0) {
 			return refuse(
 				STALE_GROUND,
-				`${VERB}: base is ${behind.value} commit(s) behind origin/main — a plan derived here is derived on stale ground.`,
+				`${VERB}: base is ${behind.value} commit(s) behind ${trunk.value.ref} — a plan derived here is derived on stale ground.`,
 				notes,
 			);
 		}

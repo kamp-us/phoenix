@@ -2,6 +2,8 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import type {HttpReply, Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {KILL_LABEL} from "../labels.ts";
+import {SHIPPED_BOARD} from "../status/board.test-support.ts";
 import {COMMENTS, claimPage, declaring, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
 import {
 	BARE_AT_PATH,
@@ -15,7 +17,7 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {KILL_LABEL, runKill} from "./kill-verb.ts";
+import {runKill} from "./kill-verb.ts";
 
 const ISSUE = /GET .*\/repos\/o\/r\/issues\/4312$/;
 const DUPLICATE = /GET .*\/repos\/o\/r\/issues\/4290$/;
@@ -123,6 +125,7 @@ const options = {
 	repo: null as string | null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	board: SHIPPED_BOARD,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: REASON}),
 };
 
@@ -396,6 +399,7 @@ describe("runKill", () => {
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("invisible to the audit");
+		expect(out.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 		expect(requests.some((c) => CLOSE.test(c))).toBe(false);
 	});
 

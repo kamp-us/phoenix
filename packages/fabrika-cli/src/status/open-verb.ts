@@ -1,5 +1,5 @@
 /**
- * `status open` — the composite front-door readout: six fields, each with its own state, source
+ * `status open` — the composite front-door readout: seven fields, each with its own state, source
  * and freshness.
  *
  * **This verb has no zero-scope seat and no failed-read seat at all.** It is the command the skill
@@ -18,9 +18,18 @@
  * a rule for "three fine, one unknown", and every such rule either hides the unknown or drowns the
  * three.
  */
+import type {Attempt} from "../io/git.ts";
+import {originHeadAgreement, SET_HEAD_FIX, type Trunk} from "../io/trunk.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
-import type {BoardRead} from "./board-verb.ts";
-import {boardState} from "./board-verb.ts";
+import {
+	absentLabels,
+	type BoardRead,
+	boardState,
+	bucketAsOf,
+	bucketCount,
+	bucketDetail,
+	LABEL_TAXONOMY_COMMAND,
+} from "./board-verb.ts";
 import {OFF_VOCABULARY} from "./codes.ts";
 import {type AsOf, asOfToken, detail, noAsOf, row} from "./fields.ts";
 import {menuState} from "./menu-verb.ts";
@@ -32,7 +41,7 @@ import {SETTINGS_PATH, type WiringRead} from "./wiring-verb.ts";
 const VERB = "status open";
 
 /** The closed `--field` vocabulary. Any other value is off-vocabulary. */
-export const FIELDS = ["menu", "settings", "wiring", "board", "readout", "lanes"] as const;
+export const FIELDS = ["menu", "settings", "wiring", "board", "readout", "lanes", "trunk"] as const;
 export type FieldName = (typeof FIELDS)[number];
 
 export interface Field {
@@ -125,24 +134,37 @@ export const boardField = (read: BoardRead): Field => {
 		};
 	}
 	const state = boardState(read.buckets);
-	const first = read.buckets.find((bucket) => bucket.name === "needs-triage");
-	const second = read.buckets.find((bucket) => bucket.name === "triaged");
+	const asOf = read.buckets[0] ? bucketAsOf(read.buckets[0].reading) : noAsOf;
 	if (state === "counted") {
+		const count = (name: string) => {
+			const reading = read.buckets.find((bucket) => bucket.name === name)?.reading;
+			return reading ? (bucketCount(reading) ?? 0) : 0;
+		};
 		return {
 			name: "board",
 			state,
-			detail: `${first?.count ?? 0} needs-triage, ${second?.count ?? 0} triaged`,
+			detail: `${count("needs-triage")} needs-triage, ${count("triaged")} triaged`,
 			source: read.repo,
-			asOf: read.buckets[0]?.asOf ?? noAsOf,
+			asOf,
 		};
 	}
-	const unknown = read.buckets.filter((bucket) => bucket.count === null);
+	if (state === "absent") {
+		return {
+			name: "board",
+			state,
+			detail: detail(
+				`missing ${absentLabels(read.buckets).join(",")} — create them with ${LABEL_TAXONOMY_COMMAND}`,
+			),
+			source: read.repo,
+			asOf,
+		};
+	}
+	const unknown = read.buckets.filter((bucket) => bucket.reading._tag === "Unknown");
+	const reason = unknown[0] ? bucketDetail(unknown[0].reading) : null;
 	return {
 		name: "board",
 		state: UNKNOWN,
-		detail: detail(
-			`${unknown.map((bucket) => bucket.name).join(",")}: ${unknown[0]?.detail ?? "unreadable"}`,
-		),
+		detail: detail(`${unknown.map((bucket) => bucket.name).join(",")}: ${reason ?? "unreadable"}`),
 		source: read.repo,
 		asOf: noAsOf,
 	};
@@ -182,6 +204,60 @@ export const readoutField = (read: ReadoutRead): Field => {
 					: read.repo,
 		asOf: noAsOf,
 	};
+};
+
+/** What the `trunk` field reads: the resolved trunk, and this clone's `origin/HEAD` beside it. */
+export type TrunkRead =
+	| {readonly _tag: "Failed"; readonly repo: string; readonly reason: string}
+	| {
+			readonly _tag: "Resolved";
+			readonly repo: string;
+			readonly trunk: Trunk;
+			readonly originHead: Attempt<string | null>;
+	  };
+
+/**
+ * Which trunk every verb resolved, and whether this clone's `origin/HEAD` agrees with it.
+ *
+ * The hooks branch off `origin/HEAD` because they cannot count on a GitHub credential, so a clone
+ * whose `origin/HEAD` names another branch provisions lanes off the wrong base. `drifted` and `unset`
+ * are proven facts about this clone, never `unknown`; only a failed read is.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10030
+ */
+export const trunkField = (read: TrunkRead, asOf: AsOf): Field => {
+	if (read._tag === "Failed") {
+		return {
+			name: "trunk",
+			state: UNKNOWN,
+			detail: detail(`${read.reason} — a failed read, not a missing trunk`),
+			source: read.repo,
+			asOf: noAsOf,
+		};
+	}
+	const {trunk, originHead} = read;
+	if (originHead._tag === "Failure") {
+		return {
+			name: "trunk",
+			state: UNKNOWN,
+			detail: detail(
+				`${trunk.ref}; this clone's origin/HEAD could not be read: ${originHead.reason}`,
+			),
+			source: read.repo,
+			asOf: noAsOf,
+		};
+	}
+	const agreement = originHeadAgreement(trunk, originHead.value);
+	const [state, said] =
+		agreement._tag === "Agrees"
+			? ["agrees", "origin/HEAD agrees"]
+			: agreement._tag === "Unset"
+				? ["unset", `this clone records no origin/HEAD — run \`${SET_HEAD_FIX}\``]
+				: [
+						"drifted",
+						`this clone's origin/HEAD names ${agreement.originHead} — run \`${SET_HEAD_FIX}\``,
+					];
+	return {name: "trunk", state, detail: detail(`${trunk.ref}; ${said}`), source: read.repo, asOf};
 };
 
 /** What `lanes` reads out of `fabrika lane stale`'s documented answer object. */

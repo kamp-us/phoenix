@@ -40,7 +40,7 @@ const options = {
 	base: null,
 	declareUnreachable: false,
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: REPO},
+	env: {CLAUDE_PIPELINE_REPO: REPO, GITHUB_TOKEN: "ghp_scripted"},
 	stdin: text(ASSERTED),
 	now: () => new Date("2026-08-09T18:36:48.000Z"),
 };

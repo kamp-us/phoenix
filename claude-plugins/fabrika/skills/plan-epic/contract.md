@@ -445,7 +445,7 @@ it, and the alignment checker is base-only by design (`occupied = allocatedCodes
 | `11` | a required read failed — nothing was written, no outcome is proven | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `13` | proven: the tree was dirty at a `--require-clean` open (`build`'s meaning, reserved — no `ledger` verb declares that flag) | — | — | — | — | — | — | — | — | — |
 | `15` | proven: this lane does not hold the epic's claim (imported from `build`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `20` | proven: the tree's base is behind `origin/main` | ✓ | — | — | — | — | — | — | — | — |
+| `20` | proven: the tree's base is behind the trunk | ✓ | — | — | — | — | — | — | — | — |
 | `21` | proven: the epic body moved — the recomputed digest differs from `--body-digest` | — | ✓ | — | — | — | ✓ | — | ✓ | — |
 | `22` | proven: the plan region is unresolvable — a duplicated anchor, or a mode the body contradicts | ✓ | — | — | — | — | ✓ | — | ✓ | — |
 | `23` | proven: the child exists — created, or adopted — and its sub-issue link could not be proven | — | — | ✓ | ✓ | — | — | — | — | — |
@@ -462,7 +462,7 @@ this skill cuts no branch, pushes nothing, and has no validation surface.
 
 **`7` versus `11` versus `20`:** a 404 or a closed epic is a fact about the repository (`7`); an
 unreachable GitHub or an unreadable probe is a fact about nothing (`11`); a base that is provably
-behind `origin/main` is a fact about the checkout (`20`). A freshness probe that *fails* is `11`,
+behind the trunk is a fact about the checkout (`20`). A freshness probe that *fails* is `11`,
 never `20` — "I could not tell" is not "it is stale", and it is certainly not "it is fresh".
 
 **`8` versus `9` versus `23`:** `8` is a write whose outcome is unknown; `9` is a write that landed
@@ -526,8 +526,9 @@ interruption is present exactly once, with its observed `linked` state) and **le
 silently discarding a staged document a caller has not replaced would lose authored work with no
 refusal to notice.
 
-**Freshness.** The verb resolves `origin/main` and compares the tree's merge base. Provably
-behind is `20`. A fetch or rev-parse that fails is `11`. There is no third arm: this verb never
+**Freshness.** The verb resolves the trunk — `origin/<the repo's GitHub default branch>`, never a
+spelled `main` — and compares the tree's merge base. Provably behind is `20`. A trunk read, fetch
+or rev-parse that fails is `11`. There is no third arm: this verb never
 answers "fresh" without having proven it, because the whole point is that v1 planned against
 stale checkouts and minted phantom children, and no repo is guaranteed a post-merge sync at any
 call site — so the tree is stale by default until shown otherwise.
@@ -540,7 +541,7 @@ call site — so the tree is stale by default until shown otherwise.
 | `10` | the issue is not a `type:epic` |
 | `11` | the epic, its sub-issue list, the backlog read, the cycle-doc probe, or the freshness probe could not be read |
 | `15` | this lane does not hold the epic's claim |
-| `20` | the tree's base is proven behind `origin/main` |
+| `20` | the tree's base is proven behind the trunk |
 | `22` | the body carries two or more `## Plan (plan-epic)` headings — the run's mode cannot be decided |
 
 **Errors**
@@ -853,7 +854,7 @@ link, deliberately** — see step 5.
 | `ledger child: --ready-for is required — a child must never inherit its audience by omission.` | 10 | refusal |
 | `ledger child: --ready-for human requires --assignee — a held child is born assigned.` | 10 | refusal |
 | `ledger child: --type type:decision with --ready-for agent is refused — a child minted now carries no ruling comment of its own, and the citation that opens a decision claim names a comment on the decision issue itself, so the first builder refuses it on the type axis. Mint it --ready-for human with --assignee, record the ruling on the child, then flip it with \`fabrika decision rule <n> --cites <child-comment-url>\`.` | 10 | refusal |
-| `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it.` | 10 | refusal |
+| `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 10 | refusal |
 | `ledger child: milestone "<title>" is not an open milestone of <repo>.` | 10 | refusal |
 | `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built.` | 10 | refusal |
 | `ledger child: --priority <v> is off the closed set (p0, p1, p2).` | 10 | refusal |
@@ -1056,7 +1057,7 @@ composed, and it needs a human eye.
 | `ledger adopt: #<c> is already a sub-issue of #<p> — an issue has one parent, and moving it out of another plan is that plan's decision.` | 10 | refusal |
 | `ledger adopt: #<c> cannot be adopted: it still carries status:needs-triage — an untriaged issue is not a plannable child.` | 10 | refusal |
 | `ledger adopt: #<c> cannot be adopted: it carries <status> — adoption parks a status:triaged issue on status:planned until the gate flips it back, and that flip would lose <status>.` | 10 | refusal |
-| `ledger adopt: label "status:planned" is absent from <repo>'s taxonomy — refusing to create it.` | 10 | refusal |
+| `ledger adopt: label "status:planned" is absent from <repo>'s taxonomy — refusing to create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 10 | refusal |
 | `ledger adopt: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
 | `ledger adopt: this lane does not hold #<n>'s claim.` | 15 | refusal |
 | `ledger adopt: #<c> is recorded in the run manifest as linked:false and its sub-issue link could not be proven; re-run the same \`ledger adopt\` — it re-reads the issue and repeats only what is missing.` | 23 | refusal |
@@ -1829,7 +1830,7 @@ fabrika ledger digest 3 --token <claim-token>
 ```
 
 **What it is for.** `--body-digest` had one source: `ledger open`, which allocates the run
-directory, seeds `children.jsonl` and refuses `20` on a tree behind `origin/main`. Inside a plan run
+directory, seeds `children.jsonl` and refuses `20` on a tree behind the trunk. Inside a plan run
 that is right — `draft` and `write` run in the run `open` allocated. For `ledger retopology` it was
 a contradiction: that verb's whole claim is that it needs no staged plan run, and the only way to
 obtain its required digest was to stage one, so the route `operate/SKILL.md` sanctions for a

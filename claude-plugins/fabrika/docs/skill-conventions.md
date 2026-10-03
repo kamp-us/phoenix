@@ -454,6 +454,14 @@ Neither skill's text asked for a sleep. The harness refuses a foreground one, so
 it — which makes the absence of this rule from a skill the defect, and copying the rule into each
 skill the wrong fix, because the copies drift.
 
+**Watching CI by hand is the same poll.** `gh run watch` re-reads the run and its jobs over REST
+every 3 seconds unless told otherwise (`gh run watch --help`: `-i, --interval int   Refresh interval
+in seconds (default 3)`), and a loop that re-runs `gh run view` or `gh api` on a timer is that poll
+written out by hand. Every lane spends the same account's 5,000 REST calls an hour, so a few
+default-interval watches can drain it, and then every fabrika verb refuses until the reset. Wait on
+CI through `review ci --wait` or `ship checks --wait`. When one run outside those verbs truly needs
+watching, the allowed raw watch is `gh run watch <run-id> --interval 60`, or slower.
+
 **The one legitimate `sleep` is inside a CLI verb.** `ship reconcile --wait` polls the merge queue
 on an `Effect.sleep` cadence
 ([`packages/fabrika-cli/src/ship/reconcile-verb.ts`](../../../packages/fabrika-cli/src/ship/reconcile-verb.ts)),

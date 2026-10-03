@@ -161,12 +161,33 @@ the verb. There are two, and only one of them is a defect:
 
 ## 3 — Judge each class by its rubric
 
+<!-- anchor: A-FENCE-READS-THE-HEAD-NOT-YOUR-TREE --> **On an ordinary pull request, no fence reads
+your working tree: it reads the head you scoped.** Your worktree was cut from the driver's checkout,
+and this skill never checks the PR's head out, so the files the PR adds are not in your tree at all.
+A fence that walks the tree you stand on answers a clean, plausible number over files your verdict
+does not name, and the verdict records the head, never the tree the fence ran in, so nothing
+afterwards tells it from a real one. So pass step 1's head as `--sha` to every fence that reads
+files:
+
+```bash
+fabrika guard portability-guard check --sha 03135b91
+```
+
+The guard reads that commit's files, allow-list and config out of the object database and names
+the commit on its answer; it never reads the tree. **Exit `11` is a stop, not a note**: the head is
+not in this clone, and nothing falls back to the tree in its place. Step 1's reads fetch the head, so
+you meet this only when that fetch did not land. Report it and end the class on `UNKNOWN`; grading
+in place is the one thing the flag exists to refuse. A fence with no `--sha` form does not run on a
+pull request at all: its evidence is CI's, read through `review ci` below. Reads that already take a
+commit are unchanged: `git show <rev>:<path>` and the `review` verbs read the object database, not
+the working tree.
+
 <!-- anchor: AN-EPIC-CHILD-SEATS-ITS-TREE-FIRST --> **On an epic child, seat your worktree at the
 range tip before you run anything that reads the working tree.** A child's build branch is local and
 unpushed by design — one epic run is one branch and one PR at the tail — so a reviewer worktree cut
 fresh from the driver's checkout stands on the assembly branch, or on whatever that checkout last
-held, and the range's tip commit is not in your tree at all. Every fence that reads files — a
-typecheck, a formatter, a test run, the guard below — then reads a tree your verdict never names, and
+held, and the range's tip commit is not in your tree at all. Every fence that reads the working
+tree — a typecheck, a formatter, a test run — then reads a tree your verdict never names, and
 the range verdict records base, tip and a content digest, never which tree the commands ran in, so a
 wrong verdict is indistinguishable afterwards from a right one. One reviewer stood on a third commit
 for its whole first pass, caught it itself, and retracted two posted verdicts; nothing forced that
@@ -185,7 +206,8 @@ in this clone — no lane branch of the child, no object for that tip, or no lan
 it — and the range was built in a tree this one cannot see, so there is nothing here to grade. Report
 it and end; grading in place is the one thing the verb exists to refuse. `8`, `9` and `11` are
 UNKNOWN in the same way: where the tree stands was not proven, so nothing below this line has run on
-a tree you can name.
+a tree you can name. Once seated, run the guard below with `--sha` set to the range tip, as a PR
+reviewer passes its head.
 
 The object-database reads further down are unaffected either way — `git show <rev>:<path>` reads a
 commit, not the working tree, so it is right before the seat and after it.
@@ -232,10 +254,11 @@ constraint; a class whose files match none is graded by its rubric alone.
 
 **A diff touching fabrika's own two trees owes the portability check, in the doc class and the skill
 class alike.** When any changed file sits under `claude-plugins/fabrika/` or
-`packages/fabrika-cli/src/`, run it and read the verdict into those classes:
+`packages/fabrika-cli/src/`, run it at the head, as the top of this step says, and read the verdict
+into those classes:
 
 ```bash
-fabrika guard portability-guard check
+fabrika guard portability-guard check --sha 03135b91
 ```
 
 A red is a FAIL finding, never a note. The text fabrika ships installs into repositories that are
@@ -349,32 +372,45 @@ enough: the verb owns the loop, bounds it by a wall-clock budget, and prints a `
 the rollup. Each token routes on its own:
 
 - `settled` — CI concluded inside the budget. The `green` or `red` beside it is the code class's
-  execution evidence; judge on it.
+  execution evidence; judge on it. A `green` means every required context the base branch declares
+  has a run at this head and each one concluded passing, not just that no check present failed. A
+  declared context that has posted nothing keeps the head `pending`, and the verb names it on stderr.
 - `budget-exhausted` — the budget ran out with the head still `pending`. Nothing about this head was
   proven, and a wait that long is a stuck queue rather than a race with one, so the class ends on
   `UNKNOWN — the artifact could not be read`, naming the token. That is a park a human should see;
   `heal-ci` is the lane that moves a stalled PR.
 - `head-moved` — the PR left the head you are judging. Re-read at the new head; a verdict binds only
   what was inspected.
-- `governance-owed` — the only unfinished check is `governance floor at head`, and its workflow run
-  has already completed, so what the floor is waiting for is **your** governance verdict — the floor
-  reports through a check run, which stays unconcluded until a verdict binds at that head. This is
-  not a park: fire §6's governance skill, then call `review ci --wait` again and judge on the
-  `settled` it returns. Reaching it means §6 was run late, not that anything is wrong with the PR.
+- `governance-owed` — the only unfinished required check is `governance floor at head`, and its
+  workflow run has already completed, so what the floor is waiting for is **your** governance
+  verdict — the floor reports through a check run, which stays unconcluded until a verdict binds at
+  that head. This is not a park: fire §6's governance skill, then call `review ci --wait` again and
+  judge on the `settled` it returns. Reaching it means §6 was run late, not that anything is wrong
+  with the PR.
 - `governance-stale` — the same floor on its other rollup, and **the red beside it is not a FAIL you
   may act on**. On a repair round the governance verdict is bound to the previous head, so the floor
-  concludes `failure` rather than staying pending: the rollup is `red`, and the only failing check is
-  a floor whose verdict is **yours** to re-post. Route it exactly like `governance-owed` —
+  concludes `failure` rather than staying pending: the rollup is `red`, and the only failing required
+  check is a floor whose verdict is **yours** to re-post. Route it exactly like `governance-owed` —
   fire §6's governance skill, re-read, and judge on what comes back. The verb reaches this token only
-  when nothing else at the head is failing, so a `settled` red is still the execution evidence it
-  always was.
+  when nothing else in the required set is failing, so a `settled` red is still the execution
+  evidence it always was.
 
 The refusals reach you unchanged and on the first read — `--wait` polls a `pending` and nothing else,
 so a `16` head, a repo with no producer, or a floor waiting on you never burns the budget.
 
+**The wait judges only the checks the base branch declares required, not every check at the head.**
+The first stderr line names that set. A branch that declares none falls back to every check outside
+the informational denylist, and a set the token cannot read is a refusal, never a colour. A red
+outside the required set does not settle the wait: the verb names it on stderr as
+`failing outside the required set: <names> — reported, never blocking.` and keeps polling while any
+required check is still running. So a red beside a still-pending required check tells you nothing
+about this diff. Wait for the `settle` line and judge on the rollup beside it. Quote a named
+non-required red in your findings if it bears on the diff, but never fail the class on it and never
+end `UNKNOWN` over it. A required red still settles on the first read, however much else is queued.
+
 **Give the call a caller-side deadline above `--budget-seconds`, or the budget decides nothing.**
 The verb owns the loop only for as long as its process lives: a shell that wraps this call in a
-timeout shorter than the budget kills the CLI mid-poll, so none of the four `settle` tokens comes
+timeout shorter than the budget kills the CLI mid-poll, so none of the five `settle` tokens comes
 back and the class ends `UNKNOWN` with the head unread. One reviewer shell did exactly that with a
 120-second timeout over the 600-second default, and was killed at 120s with CI still running.
 

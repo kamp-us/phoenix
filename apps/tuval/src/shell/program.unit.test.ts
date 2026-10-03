@@ -417,10 +417,12 @@ describe("the boot path's one prefix table", () => {
 		() =>
 			Effect.gen(function* () {
 				const project = freshProject();
+				// A home of its own: the desk's checkpoints live under the home (#9977), and this boot
+				// registers none of the box's rows the other boots here left checkpointed.
 				const booted = yield* boot({
 					global: join(project, "no-global-config.ts"),
 					project,
-					home,
+					home: scratchHome("shell-program-rebound"),
 					desk: reboundDesk,
 				});
 				// The one expression `src/bin.ts` builds around the reported table.

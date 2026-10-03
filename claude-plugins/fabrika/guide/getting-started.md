@@ -4,7 +4,7 @@ In this lesson you stand fabrika up on a GitHub repo you own, then drive one iss
 open pull request. It takes about half an hour. Nothing here is throwaway — the repo you set up is
 the repo you keep using.
 
-Use a repo you are happy to add labels and a milestone to. This lesson creates nineteen labels and
+Use a repo you are happy to add labels and a milestone to. This lesson creates twenty-four labels and
 one milestone on its board.
 
 You need:
@@ -69,8 +69,10 @@ field	readout	absent	no digest block in acme/storefront#9412	acme/storefront#941
 field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-08-19T03:23:01Z
 ```
 
-That output is from a repo already set up, so yours will differ — the `board` row will report a
-board with no fabrika labels on it yet, and the `readout` row will say `absent`. Read the six
+That output is from a repo already set up, so yours will differ — the `board` row will say `absent`
+and name the fabrika labels your board does not have yet, pointing at the command in step 4, and the
+`readout` row will say `absent` too. `absent` means fabrika read the repo and found the thing
+missing; only `unknown` means it could not read it. Read the six
 fields as: which skills are installed, what this repo declares, whether the plugin carrying the
 skills is switched on here, what is on the board, whether the decision digest exists, and which runs
 are in flight on this machine.
@@ -88,12 +90,12 @@ anything can move. Create them:
 fabrika status bootstrap label-taxonomy
 ```
 
-On a fresh board that reports `created` and names all twenty. On a board that already has them it
+On a fresh board that reports `created` and names all twenty-one. On a board that already has them it
 reports `exists` and writes nothing:
 
 ```
-status bootstrap: status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui is already present for label-taxonomy — nothing written.
-bootstrap	exists	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui	-
+status bootstrap: status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage is already present for label-taxonomy — nothing written.
+bootstrap	exists	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage	-
 ```
 
 Three more labels mark what an issue *is* rather than where it sits:
@@ -251,5 +253,5 @@ Where to go next:
   state lives on disk.
 - [`delegation.md`](delegation.md) — which copy of `fabrika` served a command, and what each refusal
   means.
-- [`../../../packages/fabrika-cli/docs/verb-reference.md`](../../../packages/fabrika-cli/docs/verb-reference.md)
-  — group overviews; follow each group's help route for verbs, flags and exit meanings.
+- `fabrika --help` — every command group. `fabrika <group> --help` lists that group's verbs, and
+  `fabrika <group> <verb> --help` gives one verb's flags and exit meanings.

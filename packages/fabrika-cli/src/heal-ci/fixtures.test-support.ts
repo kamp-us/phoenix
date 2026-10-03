@@ -20,6 +20,7 @@ export {
 	httpError,
 	OTHER_HEAD,
 	PROTECTION,
+	planGated,
 	protection,
 	pull,
 	RULES,

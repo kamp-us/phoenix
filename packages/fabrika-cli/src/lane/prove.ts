@@ -34,6 +34,7 @@ import type {ParentedCommit} from "../io/git.ts";
 import type {PullScope} from "../io/pulls.ts";
 import {type IssueRefs, ROUTED_NAMESPACES} from "../review/classes.ts";
 import {isBuildState, SHELL_STATES} from "../wire/lane-brief.ts";
+import type {RouteBasis, RoutedBasis} from "../wire/routed-elsewhere.ts";
 import {rawKeyIssue} from "./key.ts";
 
 /** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
@@ -71,6 +72,9 @@ export const REVIEW_STATE = "review";
  */
 export const REVIEW_UI_STATE = "review:ui";
 
+/** The queue dwell a shipper's `QUEUED` or `UNRESOLVED` leaves a task waiting in. */
+export const SHIP_QUEUED_STATE = "ship:queued";
+
 /**
  * The two leaves a shipper runs in — `ship` and the queue dwell it re-enters.
  *
@@ -79,7 +83,7 @@ export const REVIEW_UI_STATE = "review:ui";
  * beside the proof rather than folded into it. A refused proof would strand the shipper with no
  * legal terminal over a merge that really did land.
  */
-export const SHIP_STATES: ReadonlyArray<string> = ["ship", "ship:queued"];
+export const SHIP_STATES: ReadonlyArray<string> = ["ship", SHIP_QUEUED_STATE];
 
 /**
  * Which of the two shapes a task sits in — the union that makes "a child with no epic" unwritable.
@@ -540,6 +544,8 @@ export interface VerdictFact {
 	 */
 	readonly binding: "current" | "stale" | "unknown" | "unopened";
 	readonly commentId: number;
+	/** A `ROUTED` claim's basis, when it stood on an owner's hand-check or the repo's skip rule. */
+	readonly basis?: RouteBasis;
 }
 
 export type NamespaceState =
@@ -555,6 +561,11 @@ export interface NamespaceRow {
 	readonly namespace: string;
 	readonly state: NamespaceState;
 	readonly commentId: number | null;
+	/**
+	 * On a `routed` row whose route stood on the repo's `reviewUi.whenNoPreview` rules, which one —
+	 * so the proof the lane records says the namespace was hand-checked or skipped, not rendered.
+	 */
+	readonly basis?: RouteBasis;
 }
 
 const stateOf = (verdict: VerdictFact | undefined): NamespaceState => {
@@ -575,8 +586,20 @@ export const judgeVerdicts = (
 ): ReadonlyArray<NamespaceRow> =>
 	required.map((namespace) => {
 		const verdict = inForce.find((row) => row.namespace === namespace);
-		return {namespace, state: stateOf(verdict), commentId: verdict?.commentId ?? null};
+		const state = stateOf(verdict);
+		const row = {namespace, state, commentId: verdict?.commentId ?? null};
+		return state === "routed" && verdict?.basis !== undefined
+			? {...row, basis: verdict.basis}
+			: row;
 	});
+
+/** The basis each flagged `routed` row stood on, or `null` where no row carries one. */
+export const basisOfRows = (rows: ReadonlyArray<NamespaceRow>): RoutedBasis | null => {
+	const flagged = rows.flatMap((row) =>
+		row.state === "routed" && row.basis !== undefined ? [[row.namespace, row.basis] as const] : [],
+	);
+	return flagged.length === 0 ? null : Object.fromEntries(flagged);
+};
 
 export type Proof =
 	| {readonly _tag: "Proven"; readonly note: string}

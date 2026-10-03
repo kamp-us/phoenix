@@ -38,21 +38,17 @@
  *
  * The file list is read at the **bound commit** (`head.ts`), and the head this verb prints is that
  * same commit. The namespace set is documented as both floor and ceiling, so a list drawn from a
- * different commit than the printed head derives a namespace nobody judged — or drops one.
+ * different commit than the printed head derives a namespace nobody judged — or drops one. The
+ * config the classes derive over is read at that same commit and its merge base
+ * (`./class-config.ts`), for the same reason.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import type {ReviewSubsystem} from "../config/keys/review-subsystems.ts";
-import {
-	governedRootsOr,
-	noUiSurfaces,
-	reviewFilterExclusionsOr,
-	reviewFilterUnexcludeOr,
-	reviewSubsystemsOr,
-	uiSurfacesOr,
-} from "../config/paths.ts";
+import {noUiSurfaces, reviewFilterExclusionsOr, reviewFilterUnexcludeOr} from "../config/paths.ts";
 import {diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {classConfigAtCommits} from "./class-config.ts";
 import {
 	issueRefOf,
 	partition,
@@ -123,7 +119,10 @@ export interface ScopeOptions {
 	readonly filterPlacement?: FilterPlacement | null;
 	/** comma-separated extra exclusion patterns, refused on a guard-probe match. */
 	readonly exclude?: string | null;
-	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	/**
+	 * The checkout this run stands in, read for the filter keys alone. The class config is read at
+	 * the bound commits (`./class-config.ts`), never here.
+	 */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
@@ -140,29 +139,6 @@ export const runScope = (
 		const bad = badNumber(VERB, "a pull-request number", pr);
 		if (bad !== null) return bad;
 
-		// Ahead of the PR read: a config nobody can decode has no governance answer whatever the diff
-		// turns out to be, and reading the board first would spend an API call to reach that.
-		const roots = yield* governedRootsOr(
-			VERB,
-			options.cwd,
-			"the governance requirement is UNKNOWN and this partition would carry an answer nobody derived.",
-		);
-		if (roots._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, roots.message);
-
-		const surfaces = yield* uiSurfacesOr(
-			VERB,
-			options.cwd,
-			"which paths raise the ui class is UNKNOWN and this partition would carry an answer nobody derived.",
-		);
-		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
-
-		const subsystems = yield* reviewSubsystemsOr(
-			VERB,
-			options.cwd,
-			"which paths carry an additive subsystem constraint is UNKNOWN and this partition would carry an answer nobody derived.",
-		);
-		if (subsystems._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, subsystems.message);
-
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
@@ -174,6 +150,15 @@ export const runScope = (
 		const bound = yield* bindHead(VERB, repo, pr, pull, options.sha);
 		if (bound._tag === "Refused") return bound.outcome;
 		const head = bound.head;
+
+		// Read at the two commits the file list is read between, never off this checkout's tree.
+		const read = yield* classConfigAtCommits(
+			VERB,
+			"which paths raise the ui class, count as governed or carry a subsystem constraint is UNKNOWN and this partition would carry an answer nobody derived.",
+			{head: head.sha, base: head.mergeBase},
+		);
+		if (read._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, read.message);
+		const classConfig = read.config;
 
 		// This list IS the scope, so there is no second local count to prove it against — and
 		// GitHub's `changed_files` is not one, which is why `readLocalFileSet` reports that
@@ -196,15 +181,15 @@ export const runScope = (
 		const diagnostics = [
 			boundLine(VERB, head),
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared by GitHub`),
-			`${VERB}: governance derived over ${roots.roots.length} root(s) — ${roots.note}.`,
-			surfaces.prefixes.length === 0
+			`${VERB}: governance derived over ${classConfig.governedRoots.length} root(s) — ${classConfig.notes.governedRoots}.`,
+			classConfig.uiPrefixes.length === 0
 				? noUiSurfaces(VERB)
-				: `${VERB}: ui derived over ${surfaces.prefixes.length} prefix(es) — ${surfaces.note}.`,
+				: `${VERB}: ui derived over ${classConfig.uiPrefixes.length} prefix(es) — ${classConfig.notes.uiSurfaces}.`,
 			// Stated only when the key carries rows: an absent or empty list leaves this readout, and
 			// the whole emission below it, byte-identical to a repo that never declared the key.
-			...(subsystems.subsystems.length > 0
+			...(classConfig.subsystems.length > 0
 				? [
-						`${VERB}: subsystem constraints derived over ${subsystems.subsystems.length} row(s) — ${subsystems.note}.`,
+						`${VERB}: subsystem constraints derived over ${classConfig.subsystems.length} row(s) — ${classConfig.notes.reviewSubsystems}.`,
 					]
 				: []),
 		];
@@ -243,7 +228,7 @@ export const runScope = (
 				filterUnexclude.unexclude,
 				options.exclude ?? null,
 			);
-			const refused = refusalFor(effective.patterns, refusalProbes(roots.roots));
+			const refused = refusalFor(effective.patterns, refusalProbes(classConfig.governedRoots));
 			if (refused.length > 0) {
 				const detail = refused
 					.map((entry) =>
@@ -262,7 +247,7 @@ export const runScope = (
 			const governed = governedExcluded(
 				split.excluded,
 				effective.patterns,
-				refusalProbes(roots.roots),
+				refusalProbes(classConfig.governedRoots),
 			);
 			if (governed.length > 0) {
 				return refuse(
@@ -280,11 +265,13 @@ export const runScope = (
 		}
 
 		const flags = partition(files);
-		const result = partitionWithUi(files, roots.roots, surfaces.prefixes);
+		const result = partitionWithUi(files, classConfig.governedRoots, classConfig.uiPrefixes);
 		const namespaces = shipNamespacesOf(result);
 		const routed = routedNamespacesOf(namespaces);
-		const subsystemRows = subsystemRowsOf(files, subsystems.subsystems);
-		const governance = touchesGovernanceRoot(files, roots.roots) ? "required" : "not-required";
+		const subsystemRows = subsystemRowsOf(files, classConfig.subsystems);
+		const governance = touchesGovernanceRoot(files, classConfig.governedRoots)
+			? "required"
+			: "not-required";
 		const issue = issueRefOf(pull.body);
 		if (json) {
 			return answer(

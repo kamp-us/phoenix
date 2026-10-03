@@ -74,8 +74,8 @@ jobs:
     outputs:
       deploy: ${{ steps.decide.outputs.deploy }}
     steps:
-      # Full history so the merge-base below resolves; the default shallow checkout has no
-      # common ancestor to compute against.
+      # Full history so the merge ref's first parent below resolves and dorny can diff from it;
+      # the default shallow checkout carries only the merge commit itself.
       - uses: actions/checkout@v4.2.2
         if: github.event_name == 'pull_request'
         with:
@@ -92,20 +92,30 @@ jobs:
       #      `token: ''` also removes the transient GitHub-API-HTML blip that hard-failed the
       #      equivalent ci.yml step and redded a defect-free PR (#3244/#3245).
       #   2. BASIS. In git mode dorny diffs TWO-DOT from `pull_request.base.sha` — the base
-      #      BRANCH TIP at event time, not the common ancestor — so once main advances past
-      #      the PR's merge ref, main's own drift is reported as this PR's changes.
+      #      BRANCH TIP at event time — which can sit on either side of the main commit the
+      #      checked-out `refs/pull/N/merge` is built on. NEWER than it, main's drift after the
+      #      merge ref is reported as this PR's changes, in reverse (#3722). OLDER than it, main's
+      #      drift before the merge ref is (#10060); the merge base of `base.sha` and HEAD fixed
+      #      only the first case, since there it is `base.sha` itself.
       # Together those wedged PR #3713 (#3722): ci.yml saw 22 phantom `e2e:` hits from main's
       # drift → `e2e_required=true`, this job saw the real 4 files → `deploy=false`, and e2e
       # polled 10 min for a preview that structurally could never arrive.
+      # The basis both jobs pin is the merge ref's first parent (`HEAD^1`), the exact base tip
+      # GitHub merged the PR onto, so two-dot `HEAD^1..HEAD` is the PR's own change in both
+      # cases. A HEAD that is not a two-parent merge commit emits nothing, and dorny's wide
+      # fallback fails TOWARD deploying.
       - id: mergebase
         if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -uo pipefail
-          if sha=$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD 2>/dev/null); then
+          if git rev-parse --verify --quiet 'HEAD^2^{commit}' >/dev/null \
+            && sha=$(git rev-parse --verify --quiet 'HEAD^1^{commit}'); then
             echo "sha=$sha" >> "$GITHUB_OUTPUT"
-            echo "::notice::deploy-relevance diff basis = merge base $sha (base.sha ${{ github.event.pull_request.base.sha }})"
+            echo "::notice::deploy-relevance diff basis = merge ref first parent $sha (base.sha $PR_BASE_SHA)"
           else
-            echo "::warning::could not resolve a merge base — falling back to dorny's base.sha basis (detection stays wide, so this fails TOWARD deploying)"
+            echo "::warning::HEAD is not a merge commit with a resolvable first parent — falling back to dorny's base.sha basis (detection stays wide, so this fails TOWARD deploying)"
           fi
 
       # Run it only for a PR — `push` (prod) never consults it; the `decide` step below

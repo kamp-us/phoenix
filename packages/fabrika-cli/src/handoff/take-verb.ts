@@ -19,8 +19,9 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {createComment, getComment, listComments, repoDefaultBranch} from "../io/issues.ts";
+import {createComment, getComment, listComments} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference} from "../report/leaks.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -153,14 +154,14 @@ export const runTake = (
 
 		let base = options.base;
 		if (base === null) {
-			const named = yield* repoDefaultBranch(repo);
+			const named = yield* resolveTrunk(options.env, repo);
 			if (named._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot derive the ground state: ${named.reason} — nothing was written and the pack would have asserted a ground it could not prove.`,
+					`${VERB}: cannot derive the ground state: ${trunkUnresolved(named.reason)}. Nothing was written and the pack would have asserted a ground it could not prove.`,
 				);
 			}
-			base = named.value;
+			base = named.value.branch;
 		}
 
 		const derived = yield* deriveGround({

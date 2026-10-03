@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {
+	basisOfRows,
 	childLaneBranches,
 	claimOf,
 	epicOf,
@@ -625,6 +626,32 @@ describe("judgeVerdicts", () => {
 			],
 		);
 		expect(rows.map((row) => row.state)).toEqual(["stale", "unknown"]);
+	});
+
+	it("flags a routed row with the basis its route stood on, and a stale one not at all", () => {
+		const routed = {
+			namespace: "review-ui",
+			polarity: "ROUTED",
+			binding: "current",
+			commentId: 2,
+			basis: "hand-check",
+		} as const;
+		expect(judgeVerdicts(["review-ui"], [routed])).toEqual([
+			{namespace: "review-ui", state: "routed", commentId: 2, basis: "hand-check"},
+		]);
+		expect(judgeVerdicts(["review-ui"], [{...routed, binding: "stale"}])).toEqual([
+			{namespace: "review-ui", state: "stale", commentId: 2},
+		]);
+	});
+
+	it("collects each flagged routed row's basis for the event line, and nothing without one", () => {
+		expect(
+			basisOfRows([
+				{namespace: "review-code", state: "pass", commentId: 1},
+				{namespace: "review-ui", state: "routed", commentId: 2, basis: "skip"},
+			]),
+		).toEqual({"review-ui": "skip"});
+		expect(basisOfRows([{namespace: "review-ui", state: "routed", commentId: 2}])).toBeNull();
 	});
 });
 

@@ -156,9 +156,16 @@ flake. There is no path from an ambiguous log to "safe to rerun". Each token lic
   line for every `red`, so read it there: on anything but `ours` or `granted`, route it to its author
   instead (§2's
   [ownership rule](#2--the-green-stalls-nobody-is-holding-it)). You never edit code and never push.
+  When a lane parked on this red (`human:cp-approval`, cause `head-ci-red`), the move into `build`
+  is not yours either, and it is one verb for the lane's driver:
+  `node <fabrika> recipe unpark <lane-key> --task <task>`. It re-reads these same two verbs at the
+  live head and, on a `logic` context over a PR the pipeline owns, records the park's `FAIL`
+  (`"event": "FAIL"` in its answer), spending one repair retry.
 - **`unclassified`** — no signature matched. It leaves through the intake seam as an observation:
   fire the `fabrika:report` skill, whose verb owns the write and returns the number your
   `FILED — #N` terminal carries. Guessing "probably a flake" is how a rerun loop starts.
+  A secret-scan red lands here on purpose, never as `logic`: the report names it a committed
+  secret for a person to remove and rotate the credential, not a gap in the classifier.
 
 Only reds the base branch declares **required** reach this lane. Anything else is red without
 blocking, and treating one as healable is how a non-failure stalled a mergeable PR — which is the
@@ -184,6 +191,9 @@ fabrika heal-ci rerun $pr_number --run 9182736450 --sha 03135b91 --signature pre
 A transient gets **exactly one** rerun per head, ever. The verb re-derives that precondition itself
 and refuses `14` without touching anything — it does not trust the classification you hand it,
 because v1 kept this invariant in the model's memory, and a session-memory invariant is not one.
+
+The queued rerun is the end of your action. If you wait on it to finish, wait the way
+[skill-conventions §14](../../docs/skill-conventions.md) says.
 
 A `14` refusal is a success: the guard proved the state and declined. Report it and stop — a second
 rerun is escalation, not retry, and escalation is a human's.

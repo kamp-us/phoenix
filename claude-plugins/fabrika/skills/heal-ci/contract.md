@@ -490,7 +490,8 @@ where it is `unprobeable` (see `surface`) none of the three is derivable and the
 `11` naming that read as the cause. A lane then waits or parks on the read failure rather than on a
 check's colour, which is what it means for this definition to fail closed. Where the set reads fine
 and names **nothing**, the informational-name denylist answers instead: an undeclared branch is one
-nobody has said what gates, not one that gates nothing.
+nobody has said what gates, not one that gates nothing. A plan-gated base (see `surface`) takes the
+denylist too, because its branch cannot declare a required check.
 
 **A red outside the declared set is reported, never routed.** It is named on stderr as
 reported-never-blocking and reaches no arm. Making it block means adding its context to the base
@@ -543,6 +544,7 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | `heal-ci diagnose: claim-stale fired on <inactivity\|ground-drift> — last activity <ts>, behind base <k>.` | 0 | notice |
 | `heal-ci diagnose: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
 | `heal-ci diagnose: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `heal-ci diagnose: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `heal-ci diagnose: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `heal-ci diagnose: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `heal-ci diagnose: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
@@ -781,11 +783,19 @@ than assumed, never taken on trust**:
 
 So the rulesets read is what carries the answer, and the rules are:
 
-- **`no-requirements`** needs a **successful** rulesets read returning zero rules that require a
-  status context for this base, *and* the protection endpoint's 404. Both, never the 404 alone.
-- **`unprobeable`** is when the rulesets read itself is permission-denied, or when the protection
-  404 is the only signal and the rulesets read did not complete. The verb answers at exit `0`,
-  prints `required:-` on its facts line, and emits no `required` rows.
+- **`no-requirements`** has exactly two ways in:
+  - **The branch declares nothing.** A **successful** rulesets read returns zero rules that require
+    a status context for this base, *and* the protection endpoint answers 404. Both, never the 404
+    alone.
+  - **The repository's plan cannot declare anything.** On a private repository on the free plan,
+    rulesets and branch protection are paid features. Either read answers `403` with a `message`
+    beginning `Upgrade to GitHub Pro or make this repository public`, to every token, admin
+    included. That answer is the platform saying no required context can exist on this base, not a
+    read that failed. The verb answers `no-requirements` and names the plan gate on stderr.
+- **`unprobeable`** is when the rulesets read is permission-denied — any `401`/`403` except the plan
+  gate above — or when the protection 404 is the only signal and the rulesets read did not
+  complete. The verb answers at exit `0`, prints `required:-` on its facts line, and emits no
+  `required` rows.
 
 Collapsing `unprobeable` into `no-requirements` would tell an adopter their repo gates nothing when
 it may gate everything — the single most dangerous wrong answer this verb can give. Collapsing it
@@ -795,8 +805,9 @@ the whole skill inert on the common case.
 **`no-requirements` is a proven answer at exit `0`** — a base branch with no protection rule and
 no ruleset requiring a status context genuinely gates nothing, which is the ordinary state of a
 fresh or foreign repository. It is not a gap and not a failure. A protection surface that cannot be read **for any reason other
-than this token's permission** — a transport failure, a 5xx — is `11`; a permission denial is the
-`unprobeable` answer above, not a failed read.
+than this token's permission or the plan gate** — a transport failure, a 5xx — is `11`. A permission
+denial is the `unprobeable` answer above and a plan gate is the `no-requirements` answer above;
+neither is a failed read.
 
 **The comparison, precisely.** The declared set is the union of the base branch's
 `required_status_checks.contexts` and every `required_status_checks` rule in a repository ruleset
@@ -819,7 +830,7 @@ settings changes with a human's name on them.
 | Code | Trigger |
 |---|---|
 | `7` | the PR or the `--sha` commit is proven absent (404) |
-| `11` | the branch protection, the ruleset list, or the check runs could not be read — coverage is UNKNOWN, never `covered` and never `no-requirements` |
+| `11` | the branch protection, the ruleset list, or the check runs could not be read for a reason other than this token's permission or the plan gate — coverage is UNKNOWN, never `covered` and never `no-requirements` |
 | `13` | the ruleset or check-run enumeration is provably short of its declared count |
 
 **Errors**
@@ -831,6 +842,7 @@ settings changes with a human's name on them.
 | `heal-ci surface: cannot read <what> for <base>: <reason> — coverage is UNKNOWN, never "no-requirements".` | 11 | refusal |
 | `heal-ci surface: received <k> of <m> declared <rulesets\|check runs> — refusing to compare a truncated set.` | 13 | refusal |
 | `heal-ci surface: <base> declares no required status contexts — this repository gates nothing on <base>.` | 0 | notice |
+| `heal-ci surface: <base>'s plan offers no branch protection or rulesets — this repository cannot declare a required context on <base>.` | 0 | notice |
 | `heal-ci surface: cannot read <base>'s protection surface at this token's permission — the check-surface axis is UNPROBEABLE, never "no requirements".` | 0 | notice |
 
 **Scope** — the PR's base branch protection, the repository's rulesets filtered to those matching
@@ -945,6 +957,7 @@ bytes it never saw.
 | `heal-ci logs: read <k> of <m> failing gating contexts (--context narrowed the read).` | 0 | notice |
 | `heal-ci logs: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
 | `heal-ci logs: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `heal-ci logs: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `heal-ci logs: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `heal-ci logs: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `heal-ci logs: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
@@ -954,7 +967,8 @@ bytes it never saw.
 failing context, each read paginated and count-checked. The base branch's declared required set is
 read before anything is fetched, so a failure outside it never enters this lane — it leaves named on
 stderr instead. A base branch declaring nothing required falls back to the informational-name
-denylist; a required set that could not be read is `11` naming that read as the cause.
+denylist, and so does a plan-gated base (see `surface`), whose branch cannot declare a required
+check; a required set that could not be read is `11` naming that read as the cause.
 
 **Examples**
 
@@ -1058,6 +1072,12 @@ way down. Patterns are case-insensitive, applied per line.
 An implementer ships exactly these ten rows in this order; the table grows by adding rows, never by
 branching inside the verb. Row 4 preceding row 6 is what makes a failure to reach **this PR's own
 preview target** a warmup rather than generic network trouble.
+
+**A committed-secret finding is deliberately not a row.** A secret scanner's red (gitleaks'
+`leaks found: <n>`) classifies `unclassified` and leaves through intake to a person. No row may
+route it to repair: a `logic` row would hand an agent builder a pull request carrying a live
+secret, and the fix is to remove the secret and rotate the credential, which stays a human call
+every time. A new row must not match that shape.
 
 **Empty stdin is `3`, not `unclassified`.** A verb that classified nothing and a verb that read
 nothing must not answer the same way.

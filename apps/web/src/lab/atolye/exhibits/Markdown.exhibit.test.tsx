@@ -8,7 +8,7 @@ import {getExhibit} from "../registry";
 describe("Markdown exhibit — the stage shows every block a reviewer has to see", () => {
 	const exhibit = getExhibit("markdown");
 
-	it("renders bold, a link, inline code, a table, a list and a fenced block", () => {
+	it("renders bold, a link, inline code, a table, a list, both task-list shapes and a fenced block", () => {
 		const {container} = render(<ExhibitStage exhibit={exhibit!} />);
 		const stage = screen.getByTestId("exhibit-stage");
 
@@ -21,6 +21,15 @@ describe("Markdown exhibit — the stage shows every block a reviewer has to see
 		expect(within(table).getAllByRole("columnheader")).toHaveLength(3);
 
 		expect(container.querySelectorAll(".kp-markdown ul > li").length).toBeGreaterThan(2);
+
+		// A task list in both of marked's shapes: tight (no item paragraph) and loose (one per item).
+		const taskLists = [...container.querySelectorAll(".kp-markdown ul")].filter((list) =>
+			list.querySelector(":scope > .kp-markdown__task"),
+		);
+		expect(taskLists.map((list) => list.querySelector(":scope > li > p") !== null)).toEqual([
+			false,
+			true,
+		]);
 
 		const fenced = container.querySelector(".kp-markdown pre > code");
 		expect(fenced?.className).toContain("language-ts");

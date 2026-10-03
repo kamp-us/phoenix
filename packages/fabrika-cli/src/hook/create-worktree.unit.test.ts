@@ -168,6 +168,46 @@ describe("createWorktree", () => {
 		expect(existsSync(g.lockDir)).toBe(false);
 	});
 
+	it("asks the remote for its default branch when origin/HEAD is unset, and branches off it", async () => {
+		const g = ground();
+		let recorded = false;
+		const script: Script = [
+			[
+				/^git symbolic-ref /,
+				() =>
+					recorded ? {ok: true, stdout: "origin/dev\n"} : {ok: false, stderr: "not a symbolic ref"},
+			],
+			[
+				/^git remote set-head origin --auto$/,
+				() => {
+					recorded = true;
+					return {ok: true};
+				},
+			],
+			...healthy(g),
+		];
+		const {out, ran} = await create(g, script);
+
+		expect(out.code).toBe(0);
+		expect(find(ran, /^git fetch /).line).toContain("+refs/heads/dev:");
+		expect(ran.some((r) => /refs\/heads\/main/.test(r.line))).toBe(false);
+	});
+
+	it("refuses rather than guessing main when no read names a default branch", async () => {
+		const g = ground();
+		const script: Script = [
+			[/^git symbolic-ref /, fail("not a symbolic ref")],
+			[/^git remote set-head /, fail("fatal: Could not read from remote repository.")],
+			...healthy(g),
+		];
+		const {out, ran} = await create(g, script);
+
+		expect(out.code).toBe(BASE_FETCH_FAILED);
+		expect(out.stderr.join("\n")).toContain("git remote set-head origin --auto");
+		expect(ran.some((r) => /^git fetch /.test(r.line))).toBe(false);
+		expect(existsSync(g.lockDir)).toBe(false);
+	});
+
 	it("adds with hooks off, then fires post-checkout itself in the new tree with add's arguments", async () => {
 		const g = ground();
 		const {ran} = await create(g, healthy(g));

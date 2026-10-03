@@ -209,6 +209,7 @@ const projectJson = (project: FakeProject): Record<string, unknown> => ({
 	number: project.number,
 	url: `https://github.com/${project.ownerKind === "User" ? "users" : "orgs"}/${project.owner}/projects/${project.number}`,
 	title: project.title,
+	createdAt: "2026-01-01T00:00:00Z",
 	owner: {__typename: project.ownerKind ?? "Organization", login: project.owner},
 	shortDescription: project.shortDescription,
 	readme: project.readme,

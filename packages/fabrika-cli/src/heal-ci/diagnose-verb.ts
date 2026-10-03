@@ -31,7 +31,6 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type Producer, producerFor, resolveCi} from "../config/ci-producer.ts";
 import type {Resolution} from "../config/key-group.ts";
 import type {CiSurface} from "../config/keys/ci.ts";
-import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {ok} from "../io/git.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {
@@ -44,9 +43,10 @@ import {
 import {prOwnershipLine} from "../ownership/pr-ownership.ts";
 import {readPrOwnership} from "../ownership/read.ts";
 import {authorityNote, readBlockingSet, reportedLine, unreadableCause} from "../review/blocking.ts";
+import {classConfigOfPull} from "../review/class-config.ts";
 import {partitionWithUi, shipNamespacesOf, touchesGovernanceRoot} from "../review/classes.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
-import {isFailing, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
+import {isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {inForce, ROUTABLE} from "../ship/gate-verb.ts";
 import {
 	behindBase,
@@ -212,11 +212,7 @@ export const diagnoseOne = (
 	pr: number,
 	sha: string,
 	params: DiagnoseParams,
-	/** This repo's `governedRoots`, resolved once by the caller — a sweep reads the config once. */
-	governedRoots: ReadonlyArray<string>,
-	/** This repo's `uiSurfaces` prefixes, resolved once by the caller for the same reason. */
-	uiPrefixes: ReadonlyArray<string>,
-	/** This repo's `ci`, resolved once by the caller for the same reason. */
+	/** This repo's `ci`, resolved once by the caller — a sweep reads it once for the whole board. */
 	ci: Resolution<CiSurface>,
 ): Effect.Effect<
 	DiagnoseResult,
@@ -378,14 +374,7 @@ export const diagnoseOne = (
 		}
 		const blocking = latest.filter((run) => authority.set.blocks(run.name));
 		notices.push(authorityNote(VERB, pull.baseRef, authority.set));
-		notices.push(
-			...reportedLine(
-				VERB,
-				latest
-					.filter((run) => !authority.set.blocks(run.name) && isFailing(run))
-					.map((run) => run.name),
-			),
-		);
+		notices.push(...reportedLine(VERB, authority.set, latest));
 
 		const stranded = blocking.filter(isStalled).map((run) => run.name);
 		const wedged = stranded.length > 0 && headAgeMinutes >= params.wedgeDwellMinutes;
@@ -434,6 +423,18 @@ export const diagnoseOne = (
 			return refused(PRECONDITION_UNKNOWN, unreadable("the base comparison", pr, drift.reason));
 		}
 
+		// The PR's own config at the diagnosed head and its merge base — a per-PR read, since each PR
+		// carries its own, and never the checkout this run stands in.
+		const classConfig = yield* classConfigOfPull(
+			VERB,
+			'the required namespace set and the §CP flag are UNKNOWN, never "attended".',
+			repo,
+			{headSha: bound, baseRef: pull.baseRef},
+		);
+		if (classConfig._tag === "Refused") {
+			return refused(PRECONDITION_UNKNOWN, classConfig.message);
+		}
+		const {governedRoots, uiPrefixes} = classConfig.config;
 		const required = shipNamespacesOf(partitionWithUi(changed, governedRoots, uiPrefixes));
 		const authorized = new Map<string, boolean>();
 		const candidates: Array<{
@@ -660,27 +661,11 @@ export const runDiagnose = (
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 
-		const governed = yield* governedRootsOr(
-			VERB,
-			options.cwd,
-			'the required namespace set and the §CP flag are UNKNOWN, never "attended".',
-		);
-		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
-
-		const surfaces = yield* uiSurfacesOr(
-			VERB,
-			options.cwd,
-			'the required namespace set is UNKNOWN, never "attended".',
-		);
-		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
-
 		const result = yield* diagnoseOne(
 			resolved.repo,
 			options.pr,
 			options.sha,
 			options,
-			governed.roots,
-			surfaces.prefixes,
 			yield* resolveCi(options.cwd),
 		);
 		if (result._tag === "Refused") return result.outcome;

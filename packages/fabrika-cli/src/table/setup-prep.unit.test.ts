@@ -22,6 +22,7 @@ const REPORT: ListedIssue = {
 	labels: ["status:triaged", "ready-for:agent"],
 	author: "a-user",
 	association: "NONE",
+	createdAt: "2026-09-01T00:00:00Z",
 };
 
 const unexpected = (what: string) => () => Effect.die(`prep reached ${what}, which no check needs`);

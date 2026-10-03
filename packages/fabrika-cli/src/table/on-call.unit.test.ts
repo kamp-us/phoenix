@@ -64,8 +64,8 @@ describe("the on-call project", () => {
 			"this week",
 		]);
 		expect(shape.views.map((view) => view.name)).toEqual(["Queue"]);
-		expect(shape.readme).toContain("## Response target");
-		expect(shape.readme).toContain("20%");
+		expect(shape.readme.body).toContain("## Response target");
+		expect(shape.readme.body).toContain("20%");
 	});
 
 	it("is found by its own title and config key", () => {

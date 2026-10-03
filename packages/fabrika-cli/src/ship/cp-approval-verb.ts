@@ -29,7 +29,15 @@
  * unexhausted review and comment pagination are untouched — those are the platform's own exhaustion
  * proofs, not a count comparison.
  *
+ * **A `stop` over a head that conflicts with its base answers `base-conflicted` instead.** Nobody
+ * should be asked to approve bytes the rebase will replace, so a conflicting head is a builder's
+ * work, not a person's. Mergeability is read only where the answer would otherwise be `stop`: a
+ * discharge never reads it, because `ship enqueue` still refuses a `dirty` head after the approval,
+ * so no approval is spent here. An unread or still-indefinite mergeability is `11`, because whether
+ * the lane waits on a person or a builder is then unknown.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
+ * @ruling https://github.com/kamp-us/phoenix/issues/9990
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -41,6 +49,7 @@ import {readBoundary} from "./boundary.ts";
 import {classify, controlPlaneOwnersOf, splitTeam} from "./codeowners.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {behindBase, listReviews, listTeamMembers} from "./github.ts";
+import {isBaseConflict, readDefiniteMergeability} from "./mergeability.ts";
 import {
 	badNumber,
 	inspectedSha,
@@ -58,11 +67,16 @@ const VERB = "ship cp-approval";
  */
 const SELF_APPROVAL = /control-plane-self-approval[ \t]*@[ \t]*([0-9a-f]{7,40})\b/i;
 
+/** The verb's whole answer set; every other result is a refusal on a code. */
+export type CpApprovalOutcome = "discharge" | "stop" | "base-conflicted" | "n/a";
+
 export interface CpApprovalOptions {
 	readonly pr: number;
 	readonly sha: string;
 	readonly repo: string | null;
 	readonly json: boolean;
+	/** How long an indefinite `mergeable` is re-read before a `stop` refuses as UNKNOWN. */
+	readonly mergeabilitySeconds: number;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -158,13 +172,31 @@ export const runCpApproval = (
 			);
 		}
 
-		const emit = (outcome: string, mechanism: string, roster: number): VerbOutcome =>
+		const emit = (outcome: CpApprovalOutcome, mechanism: string, roster: number): VerbOutcome =>
 			json
 				? answer(
 						JSON.stringify({outcome, mechanism, sha: bound, roster, baseDrift: behind}),
 						diagnostics,
 					)
 				: answer(`cp-approval\t${outcome}\t${mechanism}`, diagnostics);
+
+		const stop = (mechanism: string, roster: number) =>
+			Effect.gen(function* () {
+				const read = yield* readDefiniteMergeability(repo, pr, options.mergeabilitySeconds);
+				if (read._tag === "Unreadable") {
+					return unknownRead(`#${pr}'s mergeability`, read.reason, diagnostics);
+				}
+				if (read._tag === "Indefinite") {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: #${pr}'s mergeable_state is still indefinite after ${read.polls} polls over ${read.seconds}s — whether the head conflicts with ${pull.baseRef} is UNKNOWN, so neither \`stop\` nor \`base-conflicted\` is proven.`,
+						diagnostics,
+					);
+				}
+				return isBaseConflict(read.value)
+					? emit("base-conflicted", "mergeable-state:dirty", roster)
+					: emit("stop", mechanism, roster);
+			});
 
 		if (classify(rows, files) === "not-control-plane") {
 			return emit("n/a", "not-control-plane", 0);
@@ -188,7 +220,7 @@ export const runCpApproval = (
 		diagnostics.push(scannedLine(VERB, roster.size, "control-plane owner"));
 		// An EMPTY roster is a fact — a proven stop. An UNREADABLE one refused above; the two never
 		// fold, and folding them is the collapse that reports a failed read as awaiting approval.
-		if (roster.size === 0) return emit("stop", "zero-owners", 0);
+		if (roster.size === 0) return yield* stop("zero-owners", 0);
 
 		const soleOwner = roster.size === 1 ? ([...roster][0] ?? null) : null;
 		if (soleOwner !== null && soleOwner === pull.authorLogin) {
@@ -213,7 +245,7 @@ export const runCpApproval = (
 			});
 			return marked
 				? emit("discharge", `self-approval-marker@${bound}`, roster.size)
-				: emit("stop", "awaiting-approval", roster.size);
+				: yield* stop("awaiting-approval", roster.size);
 		}
 
 		const reviewed = yield* listReviews(repo, pr);
@@ -243,6 +275,6 @@ export const runCpApproval = (
 				prefixMatch(review.commitId, bound),
 		);
 		return approver === undefined
-			? emit("stop", "awaiting-approval", roster.size)
+			? yield* stop("awaiting-approval", roster.size)
 			: emit("discharge", `member-approval:${approver.login}@${bound}`, roster.size);
 	});

@@ -16,6 +16,7 @@ import type {TimelineEvent} from "./github.ts";
 export const ADDED = "added_to_merge_queue";
 export const REMOVED = "removed_from_merge_queue";
 export const MERGED = "merged";
+export const ARMED = "auto_merge_enabled";
 
 export type QueueState = "queued" | "ejected" | "none";
 
@@ -41,6 +42,15 @@ export const queueStateOf = (events: ReadonlyArray<TimelineEvent>): QueueState =
 		);
 	});
 	return paired ? "none" : "ejected";
+};
+
+/** When the latest `--auto` arm landed, in epoch ms; `null` when no arm event carries a readable time. */
+export const armedAtOf = (events: ReadonlyArray<TimelineEvent>): number | null => {
+	const times = events
+		.filter((event) => event.event === ARMED)
+		.map((event) => Date.parse(event.createdAt))
+		.filter(Number.isFinite);
+	return times.length === 0 ? null : Math.max(...times);
 };
 
 /** A squash on the base branch whose subject ENDS with `(#<pr>)`. */

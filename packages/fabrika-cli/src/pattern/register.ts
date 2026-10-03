@@ -47,12 +47,10 @@ export const linesChangedBeyond = (before: string, after: string, insertedAt: nu
 	return beyond;
 };
 
-/** Where a section's insertion goes: after its last table row, before the next heading. */
+/** Where a section's insertion goes: directly below its last body row, or its `|---|` line. */
 const insertionPoint = (index: ParsedIndex, headingLine: number): number | null => {
-	const section = index.sections.find((s) => s.headingLine === headingLine);
-	return section?.lastRowLine === undefined || section.lastRowLine === null
-		? null
-		: section.lastRowLine + 1;
+	const tail = index.sections.find((s) => s.headingLine === headingLine)?.tailLine;
+	return tail === undefined || tail === null ? null : tail + 1;
 };
 
 /**

@@ -147,10 +147,6 @@ export const account = {
 	"profile.email.changeUnavailable": "changing your email is not available yet",
 
 	"profile.section.appearance": "appearance",
-	"profile.field.theme": "theme",
-	"profile.theme.light": "light",
-	"profile.theme.dark": "dark",
-	"profile.theme.auto": "auto",
 	"profile.field.density": "density",
 	"profile.density.compact": "compact",
 	"profile.density.normal": "normal",
@@ -202,4 +198,6 @@ export const account = {
 	"ui.markdown.diagram": "diagram",
 	"ui.markdown.diagram.source": "diagram source",
 	"ui.markdown.diagram.error": "the diagram could not be drawn: {reason}",
+	"ui.markdown.task.done": "done",
+	"ui.markdown.task.open": "not done",
 } satisfies Record<AccountKey, string>;

@@ -21,7 +21,9 @@
  *   the pool and the claim cannot state different facts about one edge. It runs last
  *   because it is the only axis that costs a network call, and an unreadable graph excludes the
  *   candidate with its reason on stderr — the whole pool is not refused for one edge list, but a
- *   candidate whose blockedness is UNKNOWN is never offered.
+ *   candidate whose blockedness is UNKNOWN is never offered. It runs in rank order and stops once
+ *   `--limit` candidates survive, so a candidate ranked past that point is never graph-read: it is
+ *   counted as `unread`, in neither the pool nor the `excluded` histogram.
  *
  * **Bets come first.** When the repository keeps a table project, the issues bet on at the table in
  * force lead the pool in agenda order (`../table/bets.ts`), and everything else follows in the
@@ -31,12 +33,16 @@
  * **Either every bucket was read in full, or the answer is `11`.** v1's pool printed nothing for a
  * failed bucket and kept going, so a `gh` 5xx on the p0 bucket read as "no p0s"
  * (`step1-candidate-pool.sh:12-13`); a bucket whose paginated output stops mid-page is the same fact
- * and lands on the same code. A table project that could not be read refuses the whole pool too — a
- * pool ranked as if nothing were bet on, when bets exist, is an order nobody chose. An empty pool is
+ * and lands on the same code. A table project the repository adopted and that could not be read
+ * refuses the whole pool too — a pool ranked as if nothing were bet on, when bets exist, is an order
+ * nobody chose. A token without the `project` scope is the one exception: the bet order is a
+ * preference, so the pool keeps its own order and one stderr line names the fix. An empty pool is
  * still a fact. No skill consumes individual excluded issues, so the evidence is bounded through
  * ../evidence.ts. See ./command.ts help for the pool answer.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ * @ruling https://github.com/kamp-us/phoenix/issues/10135
+ * @ruling https://github.com/kamp-us/phoenix/issues/10123
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -138,7 +144,7 @@ const rankWithinBucket = (a: PoolEntry, b: PoolEntry): number => {
 
 type TableBets = Exclude<BetsRead, {readonly _tag: "Unknown"}>;
 
-/** How many bets survived the filter — a bet the pool left out stays out, and says so here. */
+/** How many bets were graph-read and survived — a bet the pool left out stays out, and says so here. */
 const inPool = (bets: TableBets, pool: ReadonlyArray<PoolEntry>): number =>
 	bets._tag === "Read"
 		? pool.filter((entry) => bets.order.issues.includes(entry.number)).length
@@ -202,11 +208,8 @@ export const runPick = (
 		}
 
 		const scanned: Record<Bucket, number> = {p0: 0, p1: 0, p2: 0};
-		const pool: PoolEntry[] = [];
+		const admitted: PoolEntry[] = [];
 		const excluded: ExclusionEntry[] = [];
-		const blockedEdges: string[] = [];
-		const unreadableEdges: string[] = [];
-		const branchNotes: string[] = [];
 		for (const bucket of BUCKETS) {
 			const listed = yield* listLabelled(options.env, resolved.repo, [TRIAGED, bucket]);
 			if (listed._tag === "Failure") {
@@ -223,32 +226,6 @@ export const runPick = (
 					excluded.push({number: issue.number, home: homeOf(issue), reason});
 					continue;
 				}
-				// Last of the two, because it is the only one that costs a network call: every admission
-				// axis is answered off facts already in hand, so a candidate they refuse is never paid
-				// for here. The discharge read inside is lazier still: a candidate the graph already reads
-				// clear resolves no parent and reads no branch. An unreadable graph excludes with its reason
-				// stated rather than refusing the whole pool — the candidate is dropped, never kept.
-				const {gate, notes} = yield* readDischargedGate(
-					VERB,
-					options.env,
-					resolved.repo,
-					issue.number,
-				);
-				branchNotes.push(...notes);
-				if (gate._tag === "Unknown") {
-					unreadableEdges.push(
-						`${VERB}: cannot read the blocked_by edges of #${issue.number}: ${gate.reason} — excluded, because blockedness UNKNOWN is never "not blocked".`,
-					);
-					excluded.push({number: issue.number, home: homeOf(issue), reason: "unreadable"});
-					continue;
-				}
-				if (gate._tag === "Blocked") {
-					blockedEdges.push(
-						`${VERB}: #${issue.number} is blocked by ${gate.open.map((blocker) => `#${blocker}`).join(", ")}.`,
-					);
-					excluded.push({number: issue.number, home: homeOf(issue), reason: BLOCKED_REASON});
-					continue;
-				}
 				entries.push({
 					number: issue.number,
 					title: issue.title,
@@ -257,26 +234,63 @@ export const runPick = (
 					home: homeOf(issue),
 				});
 			}
-			pool.push(...entries.sort(rankWithinBucket));
+			admitted.push(...entries.sort(rankWithinBucket));
 		}
+
+		const betIssues = bets._tag === "Read" ? bets.order.issues : [];
+		const ranked = betsFirst(admitted, betIssues);
+		const betSet = new Set(betIssues);
+
+		// Every rank input is a listing fact, so the order is final before the one axis that costs a
+		// network call, and the walk stops once --limit candidates survive it: the cost tracks --limit,
+		// not the backlog. An unreadable graph excludes with its reason stated rather than refusing the
+		// whole pool — the candidate is dropped, never kept — and the walk moves on.
+		const pool: PoolEntry[] = [];
+		const blockedEdges: string[] = [];
+		const unreadableEdges: string[] = [];
+		const branchNotes: string[] = [];
+		let walked = 0;
+		for (const entry of ranked) {
+			if (pool.length === options.limit) break;
+			walked += 1;
+			const {gate, notes} = yield* readDischargedGate(
+				VERB,
+				options.env,
+				resolved.repo,
+				entry.number,
+			);
+			branchNotes.push(...notes);
+			if (gate._tag === "Unknown") {
+				unreadableEdges.push(
+					`${VERB}: cannot read the blocked_by edges of #${entry.number}: ${gate.reason} — excluded, because blockedness UNKNOWN is never "not blocked".`,
+				);
+				excluded.push({number: entry.number, home: entry.home, reason: "unreadable"});
+				continue;
+			}
+			if (gate._tag === "Blocked") {
+				blockedEdges.push(
+					`${VERB}: #${entry.number} is blocked by ${gate.open.map((blocker) => `#${blocker}`).join(", ")}.`,
+				);
+				excluded.push({number: entry.number, home: entry.home, reason: BLOCKED_REASON});
+				continue;
+			}
+			pool.push(entry);
+		}
+		const unread = ranked.length - walked;
 
 		const criteriaExcluded = excluded.filter((row) => row.reason === NO_CRITERIA_REASON).length;
 		const graphExcluded = blockedEdges.length + unreadableEdges.length;
-		const betIssues = bets._tag === "Read" ? bets.order.issues : [];
-		const ranked = betsFirst(pool, betIssues);
-		const betSet = new Set(betIssues);
 
 		return answer(
 			JSON.stringify({
-				pool: ranked
-					.slice(0, options.limit)
-					.map((entry) => ({...entry, bet: betSet.has(entry.number)})),
+				pool: pool.map((entry) => ({...entry, bet: betSet.has(entry.number)})),
 				excluded: reasonHistogram(excluded, (entry) => entry.reason),
+				unread,
 				scanned,
 				bets: betsReport(bets, pool),
 			}),
 			[
-				`${VERB}: scanned p0 ${scanned.p0}, p1 ${scanned.p1}, p2 ${scanned.p2} in ${resolved.repo}; ${pool.length} candidate(s) survived the filter, ${excluded.length} excluded — ${excluded.length - criteriaExcluded - graphExcluded} by the admission test, ${criteriaExcluded} for no acceptance-criteria block, ${graphExcluded} on the blocked_by graph.`,
+				`${VERB}: scanned p0 ${scanned.p0}, p1 ${scanned.p1}, p2 ${scanned.p2} in ${resolved.repo}; ${pool.length} candidate(s) survived the filter, ${excluded.length} excluded — ${excluded.length - criteriaExcluded - graphExcluded} by the admission test, ${criteriaExcluded} for no acceptance-criteria block, ${graphExcluded} on the blocked_by graph. ${unread} admitted candidate(s) left unread once --limit ${options.limit} filled.`,
 				betsLine(bets, pool),
 				...blockedEdges,
 				...unreadableEdges,

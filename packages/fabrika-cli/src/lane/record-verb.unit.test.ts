@@ -8,6 +8,7 @@ import {read} from "../wire/lane-record.ts";
 import {
 	APPEND_UNKNOWN,
 	FACT_REFUSED,
+	ISSUE_LIVE,
 	ISSUE_UNRESOLVED,
 	LANE_ABSENT,
 	LANE_NOT_TERMINAL,
@@ -53,6 +54,10 @@ const laneFs = (log: string, facts?: string) =>
 		directories: [ROOT],
 	});
 
+/** One issue read at `state`, as `getIssue` serves it. */
+const issueReads = (state: string) =>
+	({_tag: "Present", value: {state, isPullRequest: false}}) as const;
+
 /** An in-memory issue thread: what was posted, and what the read-back serves. */
 const thread = (
 	standing: ReadonlyArray<IssueComment> = [],
@@ -61,6 +66,7 @@ const thread = (
 	const posted: string[] = [];
 	const comments: IssueComment[] = [...standing];
 	const board: RecordBoard<never> = {
+		issue: () => Effect.succeed(issueReads("closed")),
 		comments: () => Effect.succeed(ok([...comments])),
 		post: (_issue, body) =>
 			Effect.sync(() => {
@@ -205,6 +211,42 @@ describe("lane record", () => {
 		expect(out.stderr.join("\n")).toContain("scrubbed 1 machine-local path");
 	});
 
+	it("posts no worktree path from the in-flight record", async () => {
+		const tree = "/Users/someone/repo/.claude/worktrees/agent-a1b2";
+		const records = [
+			JSON.stringify({
+				kind: "dispatched",
+				task: "issue",
+				state: "build",
+				at: "2026-09-26T06:00:30.000Z",
+			}),
+			JSON.stringify({
+				kind: "working",
+				task: "issue",
+				token: "build:session-a:11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+				worktree: tree,
+				at: "2026-09-26T06:00:40.000Z",
+			}),
+		].join("\n");
+		const fs = fakeFs({
+			files: {
+				[WORKFLOW]: coderTemplateText(),
+				[LOG]: shipped(),
+				[`${ROOT}/${LANE}/in-flight.jsonl`]: records,
+			},
+			dirs: {[ROOT]: [LANE]},
+			directories: [ROOT],
+		});
+		const {board, posted} = thread();
+
+		const out = await record(fs, board);
+
+		expect(out.code).toBe(0);
+		expect(posted).toHaveLength(1);
+		expect(posted[0]).not.toContain("worktrees/agent-a1b2");
+		expect(posted[0]).not.toContain("/Users/");
+	});
+
 	it("posts nothing for a lane that has not ended", async () => {
 		tick = 0;
 		const {board, posted} = thread();
@@ -287,5 +329,43 @@ describe("lane wait", () => {
 			expect(out.code).toBe(FACT_REFUSED);
 			expect(fs.written.size).toBe(0);
 		}
+	});
+});
+
+/**
+ * A merge-queue merge can leave a `Fixes #N` issue open under a lane that folded to `complete`, so
+ * a `complete` record is never posted over an issue that reads open or does not read.
+ */
+describe("lane record — a complete record over an open issue", () => {
+	it("refuses at ISSUE_LIVE naming the open issue, and posts nothing", async () => {
+		const {board, posted} = thread([], {issue: () => Effect.succeed(issueReads("open"))});
+
+		const out = await record(laneFs(shipped()), board);
+
+		expect(out.code).toBe(ISSUE_LIVE);
+		expect(out.stderr.join("\n")).toContain("#42 is still open");
+		expect(posted).toEqual([]);
+	});
+
+	it("refuses as UNKNOWN where the issue does not read, and posts nothing", async () => {
+		const {board, posted} = thread([], {
+			issue: () => Effect.succeed({_tag: "Unknown", reason: "HTTP 502"} as const),
+		});
+
+		const out = await record(laneFs(shipped()), board);
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stderr.join("\n")).toContain("cannot read #42: HTTP 502");
+		expect(posted).toEqual([]);
+	});
+
+	it("posts the complete record once the issue reads closed", async () => {
+		const {board, posted} = thread([], {issue: () => Effect.succeed(issueReads("closed"))});
+
+		const out = await record(laneFs(shipped()), board);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "posted", outcome: "complete"});
+		expect(posted).toHaveLength(1);
 	});
 });

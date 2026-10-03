@@ -22,10 +22,23 @@
  * three builder terminals that reach this verb all report one `DONE` and only the prover can tell
  * them apart.
  *
+ * **A closing merge's issue is read back, and closed here if it stayed open.** A merged `Fixes #N`
+ * has left #N open, so the ship `DONE`'s proof reads the issue after a `closes` answer. On `Open`
+ * this verb posts a comment naming the merge and closes the issue as completed — the one issue write
+ * it makes, and never `lane prove`'s. `issueClose` lands on the line saying which of
+ * [`closing-merge.ts`](closing-merge.ts)'s four answers happened, so a failed close or an unread
+ * issue is on the record rather than folded into a plain `complete`.
+ *
  * **A queue wait is floored as well as counted.** A `ship:queued` re-fold that arrives before
  * `WAIT_FLOOR_SECONDS` of elapsed time since the task's last line is refused at `WAIT_TOO_SOON` with
  * the log byte-identical, so the wait budget measures how long a PR has sat rather than how fast a
  * driver passes.
+ *
+ * **A token is accepted only from a state its shell serves.** [`report.ts`](report.ts)'s
+ * `GROUP_SERVES` names the leaves each vocabulary group reports out of, and a token none of its
+ * owners serves from the task's leaf is refused at `TOKEN_UNSERVED`, before the proof and again under
+ * the lock. A late builder's `SHIPPED-PR` out of `ship` otherwise maps to the same `DONE` a
+ * shipper's `LANDED` does, and folds a lane with an open PR to `complete`.
  *
  * **One token names two events, and the proof picks.** `ROUTED-ELSEWHERE` out of `review:ui` is
  * [`report.ts`](report.ts)'s one {@link PROOF_CONDITIONAL_TERMINALS} row: a published head-bound
@@ -47,11 +60,20 @@
  * offline; the CLI always hands it `runProve`, which is the only prover a shell ever invokes.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {appendText} from "../io/fs.ts";
+import {closeCompleted, createComment, resolveRepo} from "../io/issues.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
+import {
+	type CloseAct,
+	closeComment,
+	type OpenMerge,
+	type SettledClose,
+	settleClosingMerge,
+} from "./closing-merge.ts";
 import {
 	APPEND_UNKNOWN,
 	CAUSE_UNRECOGNISED,
@@ -62,6 +84,7 @@ import {
 	PARK_UNCAUSED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
+	TOKEN_UNSERVED,
 	WAIT_TOO_SOON,
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
@@ -72,12 +95,14 @@ import {gateOnProof} from "./proof-gate.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {
+	axisIssueForCause,
 	type ConditionalTerminal,
 	causeForEvent,
 	classesForEvent,
 	conditionalTerminal,
 	eventForToken,
 	floorQueueWait,
+	serviceAt,
 	tokenCause,
 } from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
@@ -95,6 +120,11 @@ export interface ReportOptions extends LaneRef {
 	readonly comment: string | null;
 	/** Why the lane parked, from the closed set in [`report.ts`](report.ts); `BLOCKED` only. */
 	readonly cause: string | null;
+	/**
+	 * The open issue a `render-axis-missing` park waits on; required with that cause and refused
+	 * with any other ([`report.ts`](report.ts)'s `axisIssueForCause`).
+	 */
+	readonly axisIssue: number | null;
 	/**
 	 * The `lane integrate` exit and the assembly head a `FAIL` out of an epic child's `integrate`
 	 * failed against — required there, refused on every other line
@@ -124,6 +154,40 @@ export interface ReportOptions extends LaneRef {
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
+
+/**
+ * The one write this verb makes to an issue: close an issue a closing merge left open, with a
+ * comment naming the merge. A parameter so the unit tier stays offline, like the prover.
+ */
+export type IssueCloser<R> = (open: OpenMerge) => Effect.Effect<CloseAct, never, R>;
+
+/**
+ * The shipped closer. The comment goes first, so an issue this closes always carries the pointer;
+ * a failed comment leaves the issue open and answers `Failed`.
+ */
+export const issueCloser = (
+	repo: string | null,
+	env: Readonly<Record<string, string | undefined>>,
+): IssueCloser<ChildProcessSpawner.ChildProcessSpawner> => {
+	return (open) =>
+		Effect.gen(function* () {
+			const target = yield* resolveRepo(repo, env);
+			if (target._tag === "Failure") return {_tag: "Failed", reason: target.reason};
+			const pulls = open.merged.map((pr) => `https://github.com/${target.value}/pull/${pr}`);
+			const commented = yield* createComment(
+				target.value,
+				open.issue,
+				closeComment(open.issue, pulls),
+			);
+			if (commented._tag === "Failure") {
+				return {_tag: "Failed", reason: `the pointer comment failed: ${commented.reason}`};
+			}
+			const closed = yield* closeCompleted(target.value, open.issue);
+			return closed._tag === "Failure"
+				? {_tag: "Failed", reason: `the close failed: ${closed.reason}`}
+				: {_tag: "Closed"};
+		});
+};
 
 /** The leaf a folded task stands in — `""` where the fold holds no state for it. */
 const freshLeafOf = (
@@ -207,6 +271,7 @@ const tryAdvance = <R>(input: AdvanceInput<R>): Effect.Effect<Advance, never, R>
 export const runReport = <R>(
 	options: ReportOptions,
 	prove: (options: ProveOptions) => Effect.Effect<ProofOutcome, never, R>,
+	closeIssue: IssueCloser<R>,
 ): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path | R> =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
@@ -228,6 +293,13 @@ export const runReport = <R>(
 		if (caused._tag === "Required") {
 			return refuse(PARK_UNCAUSED, `${VERB}: refused (log unappended): ${caused.reason}.`);
 		}
+		const axis = axisIssueForCause(
+			options.axisIssue,
+			caused._tag === "Caused" ? caused.cause : null,
+		);
+		if (axis._tag === "Rejected") {
+			return refuse(CAUSE_UNRECOGNISED, `${VERB}: refused (log unappended): ${axis.reason}.`);
+		}
 		const classed = classesForEvent(options.classes);
 		if (classed._tag === "Rejected") {
 			return refuse(CLASS_UNRECOGNISED, `${VERB}: refused (log unappended): ${classed.reason}.`);
@@ -247,6 +319,10 @@ export const runReport = <R>(
 		if (fold._tag !== "Folded") return replayRefusal(VERB, loaded.logPath, fold);
 
 		const leaf = fold.states[task.taskId]?.type ?? "";
+		const service = serviceAt(resolved.token, leaf);
+		if (service._tag === "Unserved") {
+			return refuse(TOKEN_UNSERVED, `${VERB}: refused (log unappended): ${service.reason}.`);
+		}
 		const conditional = conditionalTerminal(resolved.token, leaf);
 		const proveOptions = (event: OperatorEvent) => ({
 			root: options.root,
@@ -290,6 +366,7 @@ export const runReport = <R>(
 		// refused for having passed one, because at the moment it typed the flag the park was the only
 		// reading its token had. The line records the route instead.
 		const cause = advanced === null && caused._tag === "Caused" ? caused.cause : null;
+		const axisIssue = cause === null ? null : axis.axisIssue;
 		const misplaced = integrateEvidenceRefusal(leaf, event, integrate);
 		if (misplaced !== null) {
 			return refuse(INTEGRATE_EVIDENCE, `${VERB}: refused (log unappended): ${misplaced}.`);
@@ -326,6 +403,12 @@ export const runReport = <R>(
 		if (gated._tag === "Refused") return gated.outcome;
 		const proved = gated.proof;
 		const conditionalNotes = attempt === null ? [] : [attempt.note];
+		// Before the lock for the proof's reason: a board write held under the ledger lock buys
+		// nothing. The proof's issue read is fresh, and only an `Open` answer reaches the closer.
+		const settled: SettledClose | null =
+			proved.closingMerge === null
+				? null
+				: yield* settleClosingMerge(proved.closingMerge, closeIssue);
 
 		// Authoritative pass, inside the write lock: a fresh load → fold → validate → append against
 		// the bytes as they exist under the lock, so a shell recording its terminal cannot validate
@@ -354,6 +437,16 @@ export const runReport = <R>(
 					return refuse(
 						EVENT_REFUSED,
 						`${VERB}: refused (log unappended): task "${freshTask.taskId}" left "${leaf}" while ${resolved.token}'s ${advanced.event} was being proven — re-read the lane and report again.`,
+					);
+				}
+
+				// The late-shell race this check exists for is a writer moving the task between the
+				// pre-lock read and here, so the leaf is judged again against the bytes that decide.
+				const freshService = serviceAt(resolved.token, freshLeafOf(freshFold, freshTask.taskId));
+				if (freshService._tag === "Unserved") {
+					return refuse(
+						TOKEN_UNSERVED,
+						`${VERB}: refused (log unappended): ${freshService.reason}.`,
 					);
 				}
 
@@ -411,9 +504,12 @@ export const runReport = <R>(
 					...(options.pr === null ? {} : {pr: options.pr}),
 					...(options.comment === null ? {} : {comment: options.comment}),
 					...(cause === null ? {} : {cause}),
+					...(axisIssue === null ? {} : {axisIssue}),
 					...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 					...(proved.routed.length === 0 ? {} : {routed: proved.routed}),
+					...(proved.routedBasis === undefined ? {} : {routedBasis: proved.routedBasis}),
 					...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
+					...(settled === null ? {} : {issueClose: settled.close}),
 					...(integrate === null ? {} : {integrate}),
 				};
 				const wrote = yield* Effect.result(appendText(fresh.logPath, `${JSON.stringify(entry)}\n`));
@@ -434,11 +530,14 @@ export const runReport = <R>(
 							...(options.pr === null ? {} : {pr: options.pr}),
 							...(options.comment === null ? {} : {comment: options.comment}),
 							...(cause === null ? {} : {cause}),
+							...(axisIssue === null ? {} : {axisIssue}),
 							...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 							...(proved.routed.length === 0 ? {} : {routed: proved.routed}),
+							...(proved.routedBasis === undefined ? {} : {routedBasis: proved.routedBasis}),
 							...(proved.partial === null ? {} : {partial: proved.partial}),
 							...(proved.diagnosis ? {diagnosis: true} : {}),
 							...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
+							...(settled === null ? {} : {issueClose: settled.close}),
 							...(integrate === null ? {} : {integrate}),
 						},
 						null,
@@ -447,6 +546,7 @@ export const runReport = <R>(
 					[
 						...conditionalNotes,
 						...proved.stderr,
+						...(settled === null ? [] : [`${VERB}: ${settled.note}`]),
 						`${VERB}: appended ${entry.event} (token ${resolved.token}) to ${fresh.logPath}, proven first.`,
 					],
 				);

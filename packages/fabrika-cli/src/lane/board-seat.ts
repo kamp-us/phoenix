@@ -30,7 +30,6 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {newestRulingAt} from "../decision/ruling.ts";
 import {standingRulings} from "../decision/standing-rulings.ts";
 import {createComment, resolveRepo} from "../io/issues.ts";
@@ -38,8 +37,6 @@ import {isRecord, parseJson} from "../io/json.ts";
 import {getPullRequest} from "../io/pulls.ts";
 import {foldNamespaces, type Proof} from "./prove.ts";
 import {readNamespaceRows} from "./prove-verb.ts";
-
-const VERB = "fabrika lane open --from-board";
 
 export type BoardSeat =
 	/** The board proves this pull request is verified at `head` — the lane may be seated. */
@@ -195,7 +192,6 @@ export const strandedRecord = (record: string | null): ReadonlyArray<string> =>
 export const boardSeatReader =
 	(
 		repo: string | null,
-		cwd: string,
 		env: Readonly<Record<string, string | undefined>>,
 	): BoardSeatReader<
 		| ChildProcessSpawner.ChildProcessSpawner
@@ -232,23 +228,6 @@ export const boardSeatReader =
 				};
 			}
 
-			const governed = yield* governedRootsOr(
-				VERB,
-				cwd,
-				"the required namespace set is UNKNOWN, and a set short one namespace would seat a lane nobody gated.",
-			);
-			if (governed._tag === "Refused") {
-				return {_tag: "Unknown" as const, reason: governed.message};
-			}
-			const surfaces = yield* uiSurfacesOr(
-				VERB,
-				cwd,
-				"the required namespace set is UNKNOWN, and a set short one namespace would seat a lane nobody gated.",
-			);
-			if (surfaces._tag === "Refused") {
-				return {_tag: "Unknown" as const, reason: surfaces.message};
-			}
-
 			const ruled = yield* standingRulings(target, issue);
 			if (ruled._tag === "Unknown") {
 				return {
@@ -257,15 +236,7 @@ export const boardSeatReader =
 				};
 			}
 
-			const read = yield* readNamespaceRows(
-				target,
-				pr,
-				[],
-				governed.roots,
-				surfaces.prefixes,
-				[],
-				newestRulingAt(ruled.scan),
-			);
+			const read = yield* readNamespaceRows(target, pr, [], [], newestRulingAt(ruled.scan));
 			if (read._tag === "Unread") {
 				return {_tag: "Unknown" as const, reason: `cannot read ${read.what}: ${read.reason}`};
 			}

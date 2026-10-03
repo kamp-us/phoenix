@@ -19,8 +19,8 @@
  *   1. This run's own tree root is read, so no pass can remove the checkout it is standing in.
  *   2. Every registration is read whole (`./git.ts`) and narrowed to the agent population — both
  *      namings the harness provisions under, per `./reap.ts`'s `isAgentWorktree`.
- *   3. The trunk is derived from `origin/HEAD`, never spelled — a wrong ref resolves to nothing and
- *      would make every tree look unlanded.
+ *   3. The trunk is resolved (`../io/trunk.ts`), never spelled — a wrong ref resolves to nothing
+ *      and would make every tree look unlanded.
  *   4. Each tree gets one stat, and the arms answerable off that plus the registration's own fields
  *      run first ({@link classifyCheap}). Only what they leave open pays for the `git status` and
  *      the containment scan — 13 trees of 243 on the clone this was measured against, and reading
@@ -51,7 +51,7 @@ import {Effect, FileSystem, Option, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {containmentOf} from "../io/containment.ts";
 import {appendText} from "../io/fs.ts";
-import {originHeadRef} from "../io/git.ts";
+import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
 import {
@@ -92,6 +92,8 @@ export interface ReapOptions {
 	readonly execute: boolean;
 	/** At most this many removals are attempted; `null` attempts every removable tree. */
 	readonly limit: number | null;
+	/** Where the target repo and the credential for its trunk read resolve from. */
+	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
 type Deps = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path;
@@ -127,14 +129,15 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			);
 		}
 
-		const trunk = yield* originHeadRef;
-		if (trunk._tag === "Failure") {
+		const resolved = yield* resolveTrunk(options.env, null);
+		if (resolved._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot name this clone's trunk: ${trunk.reason} — whether any tree's work landed is UNKNOWN, and an unnameable trunk must reap nothing.`,
+				`${VERB}: ${trunkUnresolved(resolved.reason)}. Whether any tree's work landed is UNKNOWN, and an unnameable trunk must reap nothing.`,
 				[scope],
 			);
 		}
+		const trunk = resolved.value.ref;
 
 		const seated: Array<{facts: CheapFacts; verdict: Verdict}> = [];
 		for (const tree of population) {
@@ -156,9 +159,9 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			const facts: TreeFacts = {
 				...cheap,
 				uncommitted: yield* uncommittedIn(tree.path),
-				landing: yield* containmentOf(tree.head, trunk.value),
+				landing: yield* containmentOf(tree.head, trunk),
 			};
-			seated.push({facts, verdict: classify(facts, trunk.value, selfPaths)});
+			seated.push({facts, verdict: classify(facts, trunk, selfPaths)});
 		}
 
 		const removable = seated.flatMap(({facts, verdict}) =>
@@ -202,7 +205,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				JSON.stringify({
 					answer: "planned",
 					executed: false,
-					trunk: trunk.value,
+					trunk,
 					scanned: population.length,
 					removable,
 					stale,
@@ -234,7 +237,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			const written = yield* Effect.result(
 				appendText(
 					journalPath,
-					`${JSON.stringify({run, trunk: trunk.value, path: candidate.path, license: candidate.license})}\n`,
+					`${JSON.stringify({run, trunk, path: candidate.path, license: candidate.license})}\n`,
 				),
 			);
 			if (Result.isFailure(written)) {
@@ -344,7 +347,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			JSON.stringify({
 				answer: "reaped",
 				executed: true,
-				trunk: trunk.value,
+				trunk,
 				scanned: population.length,
 				journal: journalPath,
 				removed,

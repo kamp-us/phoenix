@@ -10,12 +10,14 @@ import {fileURLToPath} from "node:url";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
+	configAtCommit,
 	errOut,
 	fakeFs,
 	fakeSeams,
 	type HttpReply,
 	okOut,
 	type Scripted,
+	unconfiguredAtCommits,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
@@ -89,7 +91,10 @@ const runOverRoots = (
 	Effect.runPromise(
 		Effect.provide(
 			runPreview({...options, ...overrides}),
-			Layer.merge(fakeSeams(script).layer, overRoots(roots)),
+			Layer.merge(
+				fakeSeams([...configAtCommit(JSON.stringify({governedRoots: roots})), ...script]).layer,
+				overRoots(roots),
+			),
 		),
 	);
 
@@ -134,6 +139,7 @@ const rangeGreen = (
 	mergeBaseAt(),
 	[DIFF_AT(MB, RANGE_TIP), okOut(diff)],
 	[PATHS_AT(MB, RANGE_TIP), paths(...inRange)],
+	...unconfiguredAtCommits,
 ];
 
 /** The text rows `previewOf` derives over `DIFF` under the default exclusions — no path excluded. */
@@ -678,7 +684,7 @@ describe("preview requirement parity", () => {
 			Effect.provide(
 				runPreview({...options, pr: PR, json: true, exclude: "screens/**"}),
 				Layer.merge(
-					fakeSeams(prGreen(diff, changed)).layer,
+					fakeSeams([...configAtCommit(JSON.stringify(config)), ...prGreen(diff, changed)]).layer,
 					fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}}).layer,
 				),
 			),

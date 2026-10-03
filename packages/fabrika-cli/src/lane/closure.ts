@@ -19,9 +19,10 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {resolveRepo} from "../io/issues.ts";
+import {getIssue, resolveRepo} from "../io/issues.ts";
 import {getPullRequest} from "../io/pulls.ts";
 import {issueRefsOf} from "../review/classes.ts";
+import type {IssueRead} from "./closing-merge.ts";
 import {nominatePulls} from "./nominate.ts";
 import {type ClosureRead, provenClosure, pullNumberIn} from "./reconcile.ts";
 
@@ -77,3 +78,23 @@ export const closureReader = (
 			]);
 		});
 };
+
+/**
+ * One read of the served issue itself, taken after a closing merge — the fact the PR body cannot
+ * give. Judged by `./closing-merge.ts`; a repo that does not resolve reads as `Unknown`.
+ */
+export const issueStateReader =
+	(
+		repo: string | null,
+		env: Readonly<Record<string, string | undefined>>,
+	): ((
+		issue: number,
+	) => Effect.Effect<IssueRead, never, ChildProcessSpawner.ChildProcessSpawner>) =>
+	(issue) =>
+		Effect.gen(function* () {
+			const attempt = yield* resolveRepo(repo, env);
+			if (attempt._tag === "Failure") {
+				return {_tag: "Unknown" as const, reason: `no target repo resolves: ${attempt.reason}`};
+			}
+			return yield* getIssue(attempt.value, issue);
+		});

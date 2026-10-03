@@ -19,7 +19,10 @@
  *   the conversation's running total.** All three continue across a resume in the real binary
  *   (measured; ADR 0362), which is why they are carried in a sidecar beside `$AGY_FAKE_LOG` rather
  *   than in module state: a respawned child restarting its counters would alias the usage keys the
- *   ledger already holds, and a fake that did so would hide the defect #8695 was about.
+ *   ledger already holds, and a fake that did so would hide the defect #8695 was about. A respawn
+ *   kills the old child at any instruction, so the sidecar is saved *before* the event that reports
+ *   it — once the layer has seen a step, the next child continues past it (#9584) — and its reads
+ *   and writes are `fake-agy-state.mjs`'s.
  * - SIGINT emits a well-formed terminal `result` with `status: "ERROR"` and `error: "interrupted"`,
  *   then exits 1. There is no `INTERRUPTED` *status*, because the real binary never emits one either.
  * - **A reply streams as many `ACTIVE` `agent_response` deltas, not one.** The real binary emits one
@@ -37,7 +40,8 @@
  * asserts a composed argv against the thing that actually received it.
  */
 
-import {appendFileSync, readFileSync, writeFileSync} from "node:fs";
+import {appendFileSync} from "node:fs";
+import {firstLaunch, readConversationState, saveConversationState} from "./fake-agy-state.mjs";
 
 // First, so a test holding a launch deadline gets the pid as early as this process can give it.
 const pidLog = process.env.AGY_FAKE_PID_LOG;
@@ -108,6 +112,16 @@ const TURN_DELAY_MS = Number(process.env.AGY_FAKE_TURN_DELAY_MS ?? "300");
 const STREAM_DELTAS = Number(process.env.AGY_FAKE_STREAM_DELTAS ?? "0");
 const DELTA_MS = Number(process.env.AGY_FAKE_DELTA_MS ?? "25");
 
+/** Where this conversation's counters live between processes, so a resume continues them. */
+const statePath = log === undefined ? undefined : `${log}.${conversationId}.state`;
+
+// Read before `init`, so a child whose counters are unreadable fails without announcing a session.
+let state = statePath === undefined ? firstLaunch : readConversationState(statePath);
+
+const saveState = () => {
+	if (statePath !== undefined) saveConversationState(statePath, state);
+};
+
 write({
 	event: "init",
 	conversation_id: conversationId,
@@ -118,34 +132,6 @@ write({
 		permission_mode: argv.includes("--sandbox") ? "proceed-in-sandbox" : "request-review",
 	},
 });
-
-/** Where this conversation's counters live between processes, so a resume continues them. */
-const statePath = log === undefined ? undefined : `${log}.${conversationId}.state`;
-
-const readState = () => {
-	if (statePath === undefined) return {steps: 0, turns: 0, input: 0, output: 0};
-	try {
-		return JSON.parse(readFileSync(statePath, "utf8"));
-	} catch {
-		return {steps: 0, turns: 0, input: 0, output: 0};
-	}
-};
-
-let state = readState();
-
-const saveState = () => {
-	if (statePath !== undefined) writeFileSync(statePath, JSON.stringify(state));
-};
-
-/**
- * Count a finished turn and persist it before its usage-bearing `DONE` is written. A respawn tears the
- * child down with SIGTERM, which has no handler here, as soon as the layer has read that usage; a
- * save that followed the write could be killed first, and the next child would restart at step 0.
- */
-const settleTurn = () => {
-	state = {...state, turns: state.turns + 1, input: state.input + 7, output: state.output + 3};
-	saveState();
-};
 
 const cumulative = () => ({
 	input_tokens: state.input,
@@ -214,6 +200,7 @@ const runTurn = async (content) => {
 	if (content.startsWith("tools:")) return await runToolTurn();
 	const index = state.steps;
 	state = {...state, steps: index + 2};
+	saveState();
 	write({
 		event: "step_update",
 		step_update: {
@@ -247,7 +234,8 @@ const runTurn = async (content) => {
 		});
 	}
 	await sleep(20);
-	settleTurn();
+	state = {...state, turns: state.turns + 1, input: state.input + 7, output: state.output + 3};
+	saveState();
 	write({
 		event: "step_update",
 		step_update: {
@@ -280,6 +268,7 @@ const runTurn = async (content) => {
 const runToolTurn = async () => {
 	const index = state.steps;
 	state = {...state, steps: index + 4};
+	saveState();
 	write({
 		event: "step_update",
 		step_update: {
@@ -292,7 +281,8 @@ const runToolTurn = async () => {
 	await runCall(index + 1, CAPTURED_CALLS[0]);
 	await runCall(index + 2, CAPTURED_CALLS[1]);
 	const reply = "one.txt: 4 lines, two.txt: 6 lines";
-	settleTurn();
+	state = {...state, turns: state.turns + 1, input: state.input + 7, output: state.output + 3};
+	saveState();
 	write({
 		event: "step_update",
 		step_update: {

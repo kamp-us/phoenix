@@ -11,8 +11,9 @@
  * at all refuses it too, since an unusable root list un-governs the config just as effectively.
  *
  * This module ships the key, its default and that refusal, and every path surface that derives the
- * namespace reads it from here through `config/paths.ts`'s `governedRootsOr` — `review scope`,
- * `governance scope` and `post`, the three `ship` verbs, `heal-ci`, `lane prove`.
+ * namespace reads it from here — at the PR's head and merge base through `review/class-config.ts`
+ * (`review scope`, `review diff`, `governance scope` and `post`, the three `ship` verbs, `heal-ci`,
+ * `lane prove`), and off the working tree only for `review preview` over a diff file.
  */
 
 import {CONFIG_PATH} from "../document.ts";

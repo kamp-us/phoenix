@@ -71,8 +71,11 @@ append it, and refuse on the prover's own code with the log byte-identical. The 
   table on. Every cause also carries a route, `driver` or `founder`, saying whose failure the park
   is. A BLOCKED with no cause is the bare park it always was: it is novel and routes to a human, so
   it costs a human UNBLOCKED.
+- `--axis-issue <n>` names the open issue a `render-axis-missing` park waits on, and lands on the
+  same line as `axisIssue`. That cause requires it, and every other cause refuses it.
 - `35` — `--cause` is outside the closed park-cause set, or rides on an event that is neither
-  BLOCKED nor the machinery LAP.
+  BLOCKED nor the machinery LAP; or `--axis-issue` is missing beside `render-axis-missing`, present
+  beside any other cause, or no issue number.
 - `52` — a BLOCKED names no cause at all, under a repo declaring `parkCause.uncaused: "refuse"`.
   Name one from the closed set; the log is unappended.
 - A repeatable `--class` lands the lane classes standing at the event on the same line. It is the
@@ -95,6 +98,19 @@ no resident process and no snapshot. The status JSON carries:
 A lane whose task reached a `done:diagnosis` arm's final answers that leaf as the bare terminal,
 `diagnosed` on the coder machine, rather than the workflow's `complete`. A finished investigation
 reads as itself and never as the shipped lane's word.
+
+Beside the fold, `inFlight` names each task a shell stands on, read off the lane's
+`in-flight.jsonl`: `{<task>: {dispatched: {state, shell, at} | null, working: {token, worktree, at}
+| null}}`, never both `null`. `dispatched` is the task's latest [`lane dispatched`](#lane-dispatched)
+record and `working` its latest [`lane working`](#lane-working) one. Each stands until an event the
+task's machine takes is recorded after it; a `CLEARED`, a `CORRECTED` or an `AMENDED` moves no task
+and supersedes nothing. A `working` recorded before the standing `dispatched` belonged to the shell
+that dispatch replaced, so it does not stand. `inFlight` is absent where nothing stands. An
+`in-flight.jsonl` that cannot be read or is not the shape leaves the fold's answer whole: `inFlight`
+is absent, `inFlightUnread` names why, and stderr says the record is UNKNOWN. No fold reads these
+records, so `stateValue` and `context` are the same with or without them, and no claim release,
+worktree retire or reap reads them either. They live apart from `facts.jsonl` because that file's
+reader refuses a kind it does not know.
 
 ### Exit status
 
@@ -238,7 +254,8 @@ prover as well as recorded on the line, because the closure is judged off exactl
 that declares `parkCause.uncaused: "refuse"` refuses a cause-less BLOCKED at `52` rather than
 recording one.
 
-Four more fields land on the line, and each is the prover's, never a flag:
+These fields land on the line too, and none is a flag. Each is the prover's, except `issueClose`,
+which records what this verb did with the prover's issue read:
 
 - `deferred` names the namespaces the proof subtracted from this cell's bar and handed to a later
   one, such as the routed `review-ui` an epic child owes its epic's tail. It is absent wherever the
@@ -252,6 +269,14 @@ Four more fields land on the line, and each is the prover's, never a flag:
   judged, absent wherever `partial` is. So a recorded `false` says which reader wrote it and not
   only which way it fell, which is what `lane reconcile` reads to tell a real answer from the old
   nominator's fallthrough.
+- `issueClose` rides a ship DONE whose closure read answered `closes`. A merged `Fixes #N` does not
+  prove #N closed, so the prover reads the issue back, and this verb acts on what it read.
+  `already-closed` means the issue read closed and nothing was written to it. `closed-by-lane` means
+  it read open, so this verb posted one comment naming the merged PR by URL and closed it as
+  completed. `close-failed` means it read open and that comment or close failed. `unread` means the
+  issue read failed. The last two are never a plain `complete`: the line names them, stderr says
+  what to do, and `lane record` will not post a `complete` record while the issue reads open. The
+  field is absent wherever the closure read did not answer `closes`.
 - `diagnosis` rides a DONE out of `build`. It says the prover stood this terminal on a diagnosis
   comment rather than a pull request, which is what the machine's `done:diagnosis` arm carries a
   finished no-PR build to its own `diagnosed` terminal on, instead of the `review` it opened no PR
@@ -261,6 +286,10 @@ Four more fields land on the line, and each is the prover's, never a flag:
 - `routed` is `deferred`'s complement: the required namespaces the proof stood on a head-bound
   routed-elsewhere record for, rather than on a verdict. `deferred` says a verdict is still owed
   somewhere; `routed` says none is owed at all. It is absent wherever every namespace was judged.
+- `routedBasis` rides beside `routed` when a route stood on the repo's `reviewUi.whenNoPreview`
+  rules: an object naming each such routed namespace's basis, `hand-check` or `skip`. `table flags`
+  reads it to flag the row `not-rendered`. It is absent wherever no route carried a basis, and a
+  key `routed` does not name is a parse defect.
 
 One token is not a constant, and `routed` is what makes its line legible. `ROUTED-ELSEWHERE` maps
 flat to BLOCKED and, out of `review:ui` alone, also names PASS; the proof picks between them. A
@@ -276,16 +305,19 @@ unless 480s of elapsed time, the shipper's own watch horizon, have run since tha
 recorded line. So the wait budget measures how long a PR has sat rather than how fast a driver
 passes, and the refusal names the seconds still to run.
 
-One group of tokens belongs to no shell: the machinery group (`REPLAY-COLLIDED`, `BASE-DRIFTED`,
+Two groups of tokens belong to no shell. The integrator group is the one `FAIL` a driver relays
+from `lane integrate`'s `42`, `43` or `44` out of an epic child's `integrate`. The other is the
+machinery group (`REPLAY-COLLIDED`, `BASE-DRIFTED`,
 `BASE-CONFLICTED`, `QUEUE-EJECTED`, `SEAT-DIRTY`, `SHELL-DEAD`), which a driver records about the
 pipeline itself. Each maps to the machine's LAP event, spending the lap budget instead of the repair
 one. Each carries its own cause off the same closed set with no `--cause` typed; pass one to
 override it, and a cause outside the set still refuses at `35`.
 
 stdout is `{token, previous, event, current, taskAffected}` plus the refs, plus `deferred` when the
-proof deferred anything, `routed` when it stood on a route, `partial` at whichever polarity the
-closure read answered, `diagnosis` where the terminal stood on one, and `landed` where it answered
-at all.
+proof deferred anything, `routed` when it stood on a route, `routedBasis` when that route carried a
+basis, `partial` at whichever polarity the
+closure read answered, `diagnosis` where the terminal stood on one, `landed` where it answered
+at all, and `issueClose` where it answered `closes`.
 
 ### Exit status
 
@@ -305,6 +337,12 @@ at all.
   `integrate` cell, malformed, only half given, or given on any other line. The log is unappended.
   That pair is the only record a repair builder's `build claim --lane` reads an integrate FAIL off,
   and it lands on the line as `integrate`.
+- `72` — no group that owns the token serves the task's current leaf state: builder `build` /
+  `build:ui`, reviewer `review`, ui-reviewer `review:ui`, shipper `ship` / `ship:queued`,
+  integrator `integrate`, machinery any state. A token several groups share is accepted when any
+  owner serves the leaf. The refusal names the token, the leaf and the owners, and the log is
+  unappended. It is a late or misrouted terminal: the lane already moved past the state that shell
+  was sent to serve.
 - `39`, `65` — [the lanes root](#the-lanes-root).
 
 ## `lane attach-integrate`
@@ -414,6 +452,11 @@ about the merge and nothing about the board: no `--pr`, or a PR read that failed
 `unknown`, which records NO `partial` and leaves the line for `lane reconcile` to read again rather
 than stranding the shipper.
 
+A `closes` answer then reads the issue back, because a merged `Fixes #N` has left #N open. The
+answer is an `issueState` field reading `open`, `closed` or `unread`, absent on every other answer.
+It is a read and nothing more: this verb never writes to the issue. `lane report` acts on it and
+records `issueClose`.
+
 The refusals are artifact-independent, so the range arms take no new seat.
 
 ### Exit status
@@ -446,7 +489,9 @@ order. Each line also carries, where it applies:
   as the routed `review-ui` an epic child owes its epic's tail, absent wherever the bar was whole;
 - the `partial` a ship's DONE carries at either polarity once its closure was read: `true` where the
   merge left the issue open, `false` where it closed it, absent where nobody read it; and the
-  `landed` PRs that read stood on beside it.
+  `landed` PRs that read stood on beside it;
+- the `issueClose` a closing ship DONE carries: `already-closed`, `closed-by-lane`, `close-failed`
+  or `unread`, as [`lane report`](#lane-report) recorded it.
 
 The log IS the history. `from` and `to` are reconstructible by folding, never stored. A lane with no
 events yet answers `[]`.
@@ -752,10 +797,13 @@ standing for the issue (its own, its epic's, or a chain it blocks) that has spen
 `table.stopMultiple` times its size stops the brief at `71`. A repository that declares no
 `table.project.number` and has no table project is never stopped. A declared `table.project.number`
 that names no project is a failed read with a `table` block declared, so it refuses at `11`, as does
-any table that could not be read once `.fabrika.jsonc` declares a `table` block. With no `table` block, any failed read (a token without the `project` scope, a rate limit, an
-outage, a forbidden token, a malformed `lane-record` comment) briefs anyway and prints
-`size stop NOT checked` with the reason on stderr, since nothing says a table exists. Declare a
-`table` block to make that `11`.
+any table that could not be read once `.fabrika.jsonc` declares a `table` block — except on a token
+without the `project` scope, which briefs anyway and prints `size stop NOT checked` with the fix
+(`gh auth refresh -h github.com -s project`) on stderr. With no `table` block, any failed read (a
+token without the `project` scope, a rate limit, an outage, a forbidden token, a malformed
+`lane-record` comment) briefs anyway and prints `size stop NOT checked` with the reason on stderr,
+since nothing says a table exists. Declare a `table` block to make every one but the missing scope
+`11`.
 
 ### Exit status
 
@@ -823,8 +871,9 @@ It is idempotent in both directions:
 - a worktree whose directory is gone but whose record git still carries (`prunable`) is that same
   state: the registration is cleared and the branch placed again, never answered as a live path.
 
-**Every resume fetches first** and asks one question of the branch it found: does `origin/HEAD`
-already carry its content. A multi-phase epic that shipped an intermediate tail lands in exactly
+**Every resume resolves the trunk and fetches first** — the trunk is `origin/<the repo's GitHub
+default branch>`, never a spelled `main` — and asks one question of the branch it found: does the
+trunk already carry its content. A multi-phase epic that shipped an intermediate tail lands in exactly
 that state. The branch holds nothing the trunk lacks and conflicts with everything the trunk took
 since, and until this read the verb could not tell it from an ordinary unlanded resume.
 
@@ -834,7 +883,7 @@ against the patches the trunk took since their merge base, limited to the paths 
 (200 commits back). A match means it landed as a squash, and a branch that adds nothing to the
 trunk at all counts the same.
 
-A contained branch is re-cut off `origin/HEAD` in one `worktree add --no-track -B`, and the note
+A contained branch is re-cut off the trunk in one `worktree add --no-track -B`, and the note
 says it re-cut and which of the three proofs opened it. Its seat, if it still has one, is dropped
 first WITHOUT `--force`, so git refusing to drop uncommitted work is what keeps unlanded bytes out
 of a re-cut. Containment is the whole warrant: a branch that is not contained, including one whose
@@ -852,8 +901,8 @@ Every mode reads the outcome back off `git worktree list` before answering.
   machine first.
 - `8` — the placement or removal ran and did not read back, or a contained branch's seat would not
   drop. UNKNOWN.
-- `11` — the working trees, the branches, the fetch, `origin/HEAD` or the containment read could not
-  be read: a failed fetch, an `origin/HEAD` naming no commit, a diff or patch read that failed.
+- `11` — the working trees, the branches, the trunk, the fetch or the containment read could not
+  be read: an unresolvable trunk, a failed fetch, a trunk ref naming no commit, a diff or patch read that failed.
   Nothing was placed or removed, and the containment answer is never resolved either way.
 - `33` — `epic/<n>` is checked out in the main working tree. Switch that tree off it first.
 - `39`, `65` — [the lanes root](#the-lanes-root).
@@ -1006,11 +1055,13 @@ placed, both derived from the epic number and never taken from the caller, so th
 binds to a head the merge queue can take.
 
 Nothing else in this package touches trunk after the first cut. `lane assembly` cuts off
-`origin/HEAD` once, and a resume fetches only to judge whether the branch is already landed, merging
+the trunk once, and a resume fetches only to judge whether the branch is already landed, merging
 nothing. So the branch drifts behind trunk with nothing to notice, and `lane push` names "fetch and
 re-merge" as the remedy for its `29` without any verb performing it.
 
-The order is the verb: refuse a dirty seat, `git fetch origin`, resolve `--base` to a commit, answer
+The order is the verb: resolve the ref to merge — `--base` verbatim, else the trunk, whose read
+failing is `11` naming the fix and never a fall back to `main` — refuse a dirty seat, `git fetch
+origin`, resolve that ref to a commit, answer
 CURRENT when the branch already carries it, else `git merge --no-ff` and re-read HEAD. A clean merge
 is silent and parks nothing. A conflict aborts, resets through `ORIG_HEAD` and PROVES the reset by
 re-reading HEAD, and the refusal names `--cause assembly-conflict` as the park to record. A reset
@@ -1037,8 +1088,8 @@ the head. A DECLINED prints no head, because nothing was read.
   machine first.
 - `8` — the restore or a head read-back did not land, or the merge reported success and the head did
   not move. UNKNOWN, so nothing may be recorded.
-- `11` — the working trees, the head, the seat's cleanliness or the fetch could not be read.
-  UNKNOWN, never green.
+- `11` — the trunk (with no `--base`), the working trees, the head, the seat's cleanliness or the
+  fetch could not be read. UNKNOWN, never green; an unresolvable trunk names its fix.
 - `21` — `assemblyRefresh` is malformed in `.fabrika.jsonc`, so whether this repo refreshes its
   assembly branch is UNKNOWN.
 - `22` — `--base` names no commit after the fetch.
@@ -1179,7 +1230,10 @@ active AND whose issue carries a live `lane claim` marker, plus every lane no re
 record that will not load, a log that will not replay, or a claim the board would not answer for. An
 active lane nobody claims is IDLE and holds nothing; it is reported separately, never counted. An
 archived lane is under a sibling root and is already out of the count, and a chore lane is counted
-by nobody.
+by nobody. An entry under the root that is not a directory, or whose name starts with a dot (such as
+`.DS_Store`), is not a lane and holds no seat. An entry whose kind cannot be read is still read as a
+lane, so it counts as unaccountable when its record will not load. Every verb that sweeps a lanes root
+lists it the same way.
 
 stdout is `{answer, root, cap, held, retryAfter, free, claimed, unaccountable, idle}`. `answer` is
 one of:
@@ -1357,7 +1411,8 @@ Sweeps every lane on disk and records the event its own artifact already proves 
 learned. A shell posts its SHA-bound verdict on the artifact and then records the event. Killed
 between the two, it leaves the verdict standing and the ledger silent, and the lane sits non-terminal
 until a driver happens to run `lane prove` by hand: one lane sat in review for 448 minutes carrying
-a proven PASS on its PR.
+a proven PASS on its PR. The same run settles every task waiting in `ship:queued` whose PR the merge
+queue already answered for, described under the queue arm below.
 
 Each non-terminal lane's active tasks are read off the fold, and a task standing in a leaf that OWES
 a provable event is asked about: PASS out of `review`, PASS out of `review:ui`. Those are the arms of
@@ -1372,12 +1427,14 @@ out, for one reason: a shell that is merely still working satisfies each of them
   lane in a repair round carries exactly that PR for the whole round, so a sweep standing on it would
   move the lane to review under the live builder.
 
-It introduces NO proof path and NO second way onto a log. The bar is `lane prove`'s read, unchanged,
-and the append is `lane transition`'s whole path: the same machine validation, the same proof gate
-and the same ledger lock. What moves is only who runs them. It records on the literal `proven` and on
-nothing else. `not-required`, `uncontradicted` and every refusal code leave the lane byte-identical
-and land as their own row, so an unreadable board is a row to re-run rather than a lane moved on a
-read nobody made.
+It introduces NO proof path and NO second way onto a log. Every append is an existing verb's whole
+path, unchanged: the proven arm and the `--spawns` arm append through `lane transition`, and the
+queue arm through `lane report`. Each keeps its own machine validation, proof gate and ledger lock.
+What moves is only who runs them. The proven arm's bar is `lane prove`'s read, and it records on the
+literal `proven` and on nothing else. `not-required`, `uncontradicted` and every refusal code leave
+the lane byte-identical and land as their own row, so an unreadable board is a row to re-run rather
+than a lane moved on a read nobody made. The queue arm records on a `landed` or `ejected` answer from
+`ship reconcile` and on nothing else, as that arm's section says.
 
 **`--spawns` parks rather than finishes.** A lane standing in `build` or `build:ui` whose build claim
 has outlived the builder's own budget, with NO lane branch in this clone and NOTHING on the surface
@@ -1402,10 +1459,36 @@ that lane's role publishes to, is a lane whose shell is gone and which will neve
 - Its rows are `parked` (appended) and `parkable` (`--check` withheld it). It is OFF unless the flag
   is passed, because it spends a board read per lane standing in build.
 
+**The queue arm settles lanes whose PR already left the merge queue.** A task standing in
+`ship:queued` owes no proven event, but the queue can finish with its PR after the shipper's watch
+ended. For each such task the sweep takes the last PR URL the task's own ledger names and runs the
+driver's single read, `ship reconcile <pr> --polls 1`. It relays the answer through `lane report`'s
+whole path (token map, served-leaf check, proof gate, floor and ledger lock), because `LANDED` and
+`EJECTED` are that verb's tokens and `lane transition` refuses them.
+
+- `landed` records `LANDED --pr <url>`, which folds the task to `shipped`, or back to `queued` on a
+  merge that carried `Part of #N` and closed nothing. A closing merge also reads the issue back, and
+  an issue that stayed open is commented on and closed exactly as `lane report` does it (see
+  `issueClose` under [`lane report`](#lane-report)). So this sweep can write to an issue.
+- `ejected` records `EJECTED`, which spends one retry back into `build`.
+- `unresolved` and `parked` record nothing, so a sweep never spends a wait, never meets the `55`
+  floor, and never parks a lane. `unresolved` is a `waiting` row carrying `answer`.
+- `parked` is never a wait. It is a `disarm-owed` row carrying `answer` and `owes`, the literal
+  `ship disarm <pr> --site post-enqueue` the driver owes NOW, because a live arm left standing
+  enqueues ungated later. The sweep runs no disarm; the driver runs it and records off its answer
+  per operate's `ship:queued` table.
+- A task whose ledger names no PR URL, or a read that exited non-zero or named no known outcome, is an
+  `unreadable` row that appended nothing.
+- Its recording rows are `settled` (appended) and `settleable` (`--check` ran the read and withheld
+  the append). Each carries `pr`, `answer` and `token`. The arm is ON by default, because it records an
+  answer and never a park, and it costs one read per lane in `ship:queued`.
+
 **Budget.** Budget a recoverable lane at TWO board reads: this sweep asks what the proof says, and
 `lane transition` asks again under its own gate before appending, which is that gate declining to
-take this sweep's word for it. Every other judged task costs one. `--check` pays the first read alone
-and appends nothing.
+take this sweep's word for it. A queued task costs its one `ship reconcile` read, and a `landed`
+answer adds more: `lane report`'s own proof read of the `DONE`, which reads the PR's closure, and on
+a closing merge one more read of the issue. An issue that read open adds two writes, the comment and
+the close. Every other judged task costs one. `--check` pays the first read alone and appends nothing.
 
 Each row carries one verdict:
 
@@ -1421,11 +1504,13 @@ Each row carries one verdict:
 - `contended` — `40`: another writer held this lane's ledger lock for the whole wait budget, so
   nothing was validated and nothing appended. The same event is still the right one and the sweep
   says so on stderr, which is why this is not bucketed with `refused`;
-- `current` — the lane is non-terminal and no active task stands in a leaf that owes a provable
-  event;
+- `settled` / `settleable` / `waiting` / `disarm-owed` — the queue arm's rows, described above. A `settled` row's
+  `to` is `lane report`'s own answer, the same way a `recovered` row's is `lane transition`'s;
+- `current` — the lane is non-terminal, no active task stands in a leaf that owes a provable
+  event, and none waits in `ship:queued`;
 - `terminal` — the fold is done, so nothing is owed and no board read is spent;
-- `unreadable` — the lane record or its log could not be read, or the log does not replay. A row,
-  since nothing here caused it and nothing here can fix it;
+- `unreadable` — the lane record or its log could not be read, or the log does not replay, or a
+  queue-arm read did not answer. A row, since nothing here caused it and nothing here can fix it;
 - `unappended` — this run tried to append and could not.
 
 stdout is `{check, scanned, summary, lanes}`. Both default roots are swept unless `--root` names one;
@@ -1452,7 +1537,7 @@ may rewrite an append-only log to fix it: sealing writes a line for something th
 and widening `frozen` lets a lane at its retry cap ship with no unblock. So the record moves aside
 instead, and nothing in it is touched.
 
-**One gate decides the move.** The log must fail to replay under the same judgement `lane migrate`
+**Without `--retriaged`, one gate decides the move.** The log must fail to replay under the same judgement `lane migrate`
 makes: through the lane's own machine or through the committed template, and through the lane's own
 machine alone when that machine was generated by `lane emit` and binds no template. A replaying log
 is refused with the directory where it was, so a genuinely broken lane still shows up on every sweep.
@@ -1476,13 +1561,46 @@ lane where it was rather than a claim nothing can release.
 
 The archived root is a SIBLING of the lanes root, never a directory under it, which is why no sweep
 needs a skip rule: `reconcile` and `migrate` read the roots they are handed and are never handed this
-one. The record stays readable: `fabrika lane history <lane> --root <archived-root>` and
-`fabrika lane brief` read an archived lane when pointed at it.
+one. The record stays readable: `fabrika lane history <leaf> --root <archived-root>` and
+`fabrika lane brief` read an archived lane when pointed at it. `<leaf>` is the last segment of the
+answer's `to`: the lane key on this route, and the slot taken (`<lane>.archived-<n>`) under
+`--retriaged`. The verb's stderr prints the exact command.
 
-stdout is `{answer:"archived", lane, issue, from, to, through, defects, retracted}`. `through` is
-`current` or `candidate`, naming which machine refused the log, and `defects` names why.
-`retracted` lists the marker comment ids the claim retraction deleted: empty where the issue carried
-no claim, and on a chore key, which has no claim thread.
+stdout is `{answer:"archived", route:"unreplayable", lane, issue, from, to, through, defects,
+retracted}`. `through` is `current` or `candidate`, naming which machine refused the log, and
+`defects` names why. `retracted` lists the marker comment ids the claim retraction deleted: empty
+where the issue carried no claim, and on a chore key, which has no claim thread.
+
+### `--retriaged`
+
+A builder's no-PR finish folds the lane to `diagnosed`, which is final, so the key stays occupied.
+When triage then rewrites the issue, `lane open` has nothing to boot into. `--retriaged` is the one
+route for that lane, and it is a second gate rather than a widening of the first:
+
+- **The lane's own machine folds the log to a diagnosis final, no line of the log names a pull
+  request, and the log shows no spent round.** A line's `pr` is optional evidence (`lane transition`
+  never writes one), so its absence alone proves nothing. The fold is also read for spend: a retry or
+  a cleared round on any task, a `PASS`, `FAIL` or `CLEARED` line, or a `DONE` not proven off a
+  diagnosis. A fresh lane boots at zero retries, so moving a spent ledger aside would hand back a
+  budget no granted round restored.
+- **Anything else refuses at `73`** with nothing retracted or moved: another final (`shipped`,
+  `complete`, `tripped`, a board final), a lane still in flight, a `diagnosed` log carrying a `pr` or
+  a spent round, and a log that does not replay, which belongs to the route above.
+- **The claim goes with the lane exactly as above**: same `--token` guard, same retraction, same
+  order.
+- **A key re-triaged more than once does not collide.** The move takes the first free slot of
+  `<lane>`, then `<lane>.archived-2`, `<lane>.archived-3` and on, so an earlier archive is never
+  buried. The route above keeps its single slot and still refuses an occupied one at `14`.
+
+The move retracts the caller's lane claim, so a driver claims again before it boots: `fabrika lane
+claim <n>`, keeping the new token, then `fabrika lane open <n>`, which boots a fresh lane through the
+ordinary boot gates. `PRIOR_LANE` (`63`) still reads the board for a pull request that landed.
+Whether the issue was re-triaged is the caller's fact, not this verb's: it checks the log and
+nothing about the issue.
+
+stdout is `{answer:"archived", route:"retriaged", lane, issue, from, to, state, retracted}`, where
+`state` is the diagnosis final the log folded to and `to` names the slot taken. `--retriaged` and
+`--sweep` together refuse at `1`.
 
 ### `--sweep`
 
@@ -1517,10 +1635,14 @@ The rows reach stderr either way, so a partly-applied sweep is always enumerable
   never a move. A GENERATED machine binds no template and is not that case, so its own fold is the
   whole judgement.
 - `14` — the archived root already holds a lane by this key; a move onto it would bury a record.
+  Under `--retriaged`, every one of the key's numbered slots is taken.
 - `31` — the issue carries a live lane claim this caller did not name. Pass `--token`, or clear a
   dead seat with `fabrika lane adopt` THEN `fabrika lane release`, since adopt alone leaves the claim
   standing.
-- `50` — the log replays, so every sweep can judge it and there is nothing to move out of scope.
+- `50` — the log replays, so every sweep can judge it and there is nothing to move out of scope. A
+  `diagnosed` lane over a re-triaged issue moves with `--retriaged`.
+- `73` — `--retriaged` only: the lane did not end `diagnosed` with no pull request and no spent
+  round.
 - `39`, `65` — [the lanes root](#the-lanes-root); `39` here covers both default roots.
 
 ## `lane settle`
@@ -1751,6 +1873,54 @@ stdout is `{answer: "waiting", lane, on, until}`.
   was appended.
 - `39`, `65` — [the lanes root](#the-lanes-root).
 
+## `lane dispatched`
+
+### Output
+
+Appends a `dispatched` record to the lane's `<root>/<key>/in-flight.jsonl`, run by the driver before
+it spawns a stage shell: `{kind: "dispatched", task, state, at}`. The state is the task's leaf off a
+fresh fold, never a caller's word, and it must route to a shell; the shell is derived from it by the
+table `lane brief` routes on. It is never an event, so `events.jsonl` and the fold are untouched. The
+append takes the lane's ledger lock. `lane status` names it under `inFlight`.
+
+stdout is `{answer: "dispatched", lane, task, state, shell, at}`.
+
+### Exit status
+
+- `4`, `7`, `11`, `13`, `21` — the [shared read and record exits](#the-shared-read-and-record-exits),
+  over `workflow.json`, `events.jsonl` and `in-flight.jsonl`.
+- `8` — the append did not land, so the dispatch is NOT recorded.
+- `18` — the task's state routes to no shell. Nothing was appended.
+- `40` — another writer holds the ledger lock. Retry.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane working`
+
+### Output
+
+Appends a `working` record to the lane's `<root>/<key>/in-flight.jsonl`, run by a builder once its
+build claim wins: `{kind: "working", task, token, worktree, at}`. `token` is `--token`, which must
+parse as a build claim token. `worktree` is the absolute root of the git tree the verb runs in, read
+off git rather than passed, so it names the tree the builder stands in. The task's leaf off a fresh
+fold must be a build state. It is never an event, so `events.jsonl` and the fold are untouched. The
+append takes the lane's ledger lock. `lane status` names it under `inFlight`; `lane record` never
+reads `in-flight.jsonl`, so the path stays on this machine.
+
+stdout is `{answer: "working", lane, task, token, worktree, at}`.
+
+### Exit status
+
+- `4`, `7`, `13`, `21` — the [shared read and record exits](#the-shared-read-and-record-exits),
+  over `workflow.json`, `events.jsonl` and `in-flight.jsonl`.
+- `8` — the append did not land, so the seat is NOT recorded.
+- `11` — the lane, its in-flight record, or which git tree this runs in could not be read.
+- `18` — the task's state is not a build state, so no builder is in flight there. Nothing was
+  appended.
+- `40` — another writer holds the ledger lock. Retry.
+- `70` — `--token` is not a build claim token, or the tree root is not an absolute path. Nothing was
+  appended.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
 ## `lane record`
 
 ### Output
@@ -1770,7 +1940,9 @@ no rate card.
 The body is scrubbed of machine-local paths and must then pass the leak guard, or nothing is posted.
 The issue's comments are read whole first: a record already standing for the same terminal (same
 issue, outcome and terminal instant) answers `unchanged` and writes nothing, so re-running this
-after a terminal is safe. The posted comment is read back through the format's reader.
+after a terminal is safe. A `complete` record then reads the issue itself and posts nothing while
+it reads open (`49`) or does not read (`11`). The posted comment is read back through the format's
+reader.
 
 Once the record stands, posted now or already there, it runs `fabrika table sync <issue>`. A sync
 that refuses leaves the record standing, repeats the sync's reason and exit on stderr, and changes
@@ -1787,9 +1959,12 @@ reviews, parks, spent, prs, table: {code, answer}}`, plus `url` on a post.
 - `7` — no lane there.
 - `8` — the post failed. It may or may not have landed; re-run.
 - `9` — the posted comment does not read back as this terminal's record.
-- `11` — the lane, its facts or the issue's comments could not be read.
+- `11` — the lane, its facts, the issue's comments or, on a `complete` record, the issue itself could
+  not be read.
 - `19` — the key names no issue: a chore lane has nowhere to post a record.
 - `21` — the key is not a lane key.
+- `49` — the lane folded to `complete` and its issue is still open; nothing was posted. Close the
+  issue with a pointer to the merge the lane's terminal line names, then re-run.
 - `69` — the lane has not reached a terminal state; nothing was posted.
 - `39`, `65` — [the lanes root](#the-lanes-root).
 
@@ -1820,7 +1995,7 @@ nothing and is novel.
 - The `worktree-holds-branch` park: the same working-tree read `build branch --resume-lane` refuses
   on.
 - The `campaign-paused` park, which nothing records any more, since no campaign state gates a lane:
-  the lane milestone's `## Campaigns` State cell at `origin/main`. It clears only on `active`, and
+  the lane milestone's `## Campaigns` State cell at the trunk. It clears only on `active`, and
   the campaign is never resumed here.
 - The `spawn-dead` park is the one whose read is the lane rather than the cause. No verb can spawn an
   agent to ask whether the provider is back, so it proves only that the dead shell left nothing that
@@ -1851,13 +2026,44 @@ nothing and is novel.
   for the PR still being open and not a draft, and `ship gate` (with no `--cp`, which is the
   shipper's to discharge) for every namespace the diff derives still holding a binding verdict at
   that head. Any of those reads failing is `11`, never a clear.
-- The routed-UI park (`blocked` keyed `no-rendered-delta`) is that same floor minus CI, and it clears
+
+  A `red` rollup is read once more, because a real defect never goes green on its own. `heal-ci logs`
+  and `heal-ci classify` are relayed at the live head. When at least one failing required context
+  classes `logic`, and the PR is the pipeline's own (`ours`, or `granted` by a takeover grant), the
+  verb records the park's `FAIL` instead of an `UNBLOCKED`. The coder machine's `human:cp-approval`
+  cell carries the same guarded pair as `ship`'s `FAIL`, so the lane lands in `build` with one retry
+  spent, or falls to `human:budget-spent` when none is left. Every other red holds at `13` with
+  nothing written: all contexts `transient` or `unclassified`, a log that could not be read or
+  classified, or a `logic` red on a PR its author owns. An ownership read that fails is `11`.
+
+  Before any log is read, the lane's own `workflow.json` is asked whether the park holds a `FAIL`
+  arm. Where it holds none, every red holds at `13` naming the missing arm, exactly as before the arm
+  existed, so a `FAIL` is never sent to a machine that would refuse it. A coder lane booted on an
+  older template gains the arm through `lane migrate`. A generated machine, such as an epic tail's
+  emitted region, is never migrated and has no such arm, so there the park clears only on green. A
+  machine that cannot be read is `11`.
+- The reviewer's red-CI park is `blocked` keyed `head-ci-red`: a reviewer that read the head red
+  and parked before judging it. The leaf tells it apart from the shipper's row above. Its read is
+  that row's floor minus the gate: `ship scope` for the PR still being open and not a draft, and
+  `ship checks`'s rollup at the live head, where only `green` clears. There is no `ship gate` read,
+  because the verdicts it would ask for are the review this park interrupted. Every other rollup,
+  `red` included, is `13` with nothing written. No log is read and no `FAIL` is sent, since
+  `blocked` has no `FAIL` arm. The clear lands back in `review` with a `mechanism` of
+  `head-green:#<pr> at <head>`. Any read failing is `11`.
+- The routed-UI park (`blocked` keyed `no-rendered-delta`, or `no-preview-routed` where the route
+  stood on the repo's `reviewUi.whenNoPreview` rules) is that same floor minus CI, and it clears
   the lanes stranded before `lane report` learned to advance a satisfied route: `ship scope` for the
   PR still being open, and `ship gate` (no `--cp`) for the conjunction at the live head, which must
   read `satisfied` AND leave some required namespace still reading `routed` there. The second half is
   what keeps the clear the inverse of this cause rather than a generic everything-passed: a PR whose
   rendered gate came back and judged it is a different park, and it holds at `13` with the reason
   named.
+- The render-axis park (`blocked` keyed `render-axis-missing`) waits on another issue: the one
+  tracking the render axis the rendered review could not reach, which the park line names as
+  `axisIssue`. Its read is that issue's state. `closed` clears back into `review:ui` with a
+  `mechanism` of `axis-closed:#<issue>`, so the reviewer renders again with the axis built. Open is
+  `13` with nothing written, a park naming no axis issue or an axis issue proven absent is `7`, and
+  a read that fails is `11`.
 - The `queue-stall` park is the one row whose clear also GRANTS. Its read is `ship reconcile`'s
   answer relayed, where `landed` and `ejected` clear and `unresolved` is exit `13`. Because the park
   IS a spent wait budget, the clear records the waits it buys on the very same `UNBLOCKED` — one
@@ -1876,27 +2082,30 @@ route reaches none of that and refuses at `12`, and so does every park under the
 `parkCause.driverRouted: "refuse"`.
 
 **Recording.** The clear is recorded through `lane transition … UNBLOCKED`, and the answer is emitted
-only after a second fold reads the task out of the park. Respawning what the lane parked out of is the
-operator's, not this verb's.
+only after a second fold reads the task out of the park. The red-CI repair route is recorded through
+`lane transition … FAIL`, and its second fold must read the task off the park: on `build`, or on the
+spent-budget fallthrough, which on a single-task lane reads as the `tripped` terminal with the task
+among its errors. Respawning what the lane parked out of is the operator's, not this verb's.
 
-**Output.** stdout is `{lane, task, park, clearance, mechanism, current}`, plus `waitGrant` on a clear
-that granted and `rationale` on one the driver named. `clearance` is the recipe's read, else
-`driver-rationale`.
+**Output.** stdout is `{lane, task, park, clearance, event, mechanism, current}`, plus `waitGrant` on
+a clear that granted and `rationale` on one the driver named. `clearance` is the recipe's read, else
+`driver-rationale`. `event` is `UNBLOCKED` on a clear and `FAIL` on the red-CI repair route, whose
+`mechanism` reads `ci-logic:#<pr> at <head>, <context>=<signature>,…`.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
 | `4` | a lane record was read in full and is not the shape |
-| `7` | no lane there; the PR the park waits on is proven absent, or closed where the row needs it open — the `queue-stall` row nominates at open-or-merged scope, since a landed PR is closed; or the lane's issue is absent, homed on no milestone, or homed on one no `## Campaigns` row pins |
-| `8` | the `UNBLOCKED` append did not land — it is NOT recorded |
-| `9` | the append landed and the re-fold does not prove the clear — the lane needs a human |
+| `7` | no lane there; the PR the park waits on is proven absent, or closed where the row needs it open — the `queue-stall` row nominates at open-or-merged scope, since a landed PR is closed; or the lane's issue is absent, homed on no milestone, or homed on one no `## Campaigns` row pins; or a `render-axis-missing` park names no axis issue, or the one it names is proven absent |
+| `8` | the `UNBLOCKED` or `FAIL` append did not land — it is NOT recorded |
+| `9` | the append landed and the re-fold does not prove the clear or the repair route — the lane needs a human |
 | `11` | a precondition could not be read — UNKNOWN, never cleared. `parkCause` itself is one, and so is the repository identity its owning root is derived from, since a cwd whose repository will not read leaves the declaration unresolved rather than guessed at the cwd |
 | `12` | the park's cause is outside the recipe table and does not route to the driver here — nothing was written; route it to a human |
 | `13` | a known recipe whose clearing condition is not met yet — nothing was written |
 | `14` | the task is not parked |
 | `15` | the task is not in the active phase, `--task` was omitted where it is required, or no issue number can be resolved |
-| `20` | the machine refused the `UNBLOCKED`, log unappended |
+| `20` | the machine refused the `UNBLOCKED` or `FAIL`, log unappended. A machine with no `FAIL` arm at the park never reaches here: that red holds at `13` instead |
 | `23` | the park routes to the driver and this run named no `--rationale` — nothing was written; re-run naming one |
 | `39` | the lanes root resolves nowhere: `--root` is absent and no `.git` entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root, or a relative `--root` stands on a cwd holding neither `.fabrika` nor `.git`. The `parkCause` read ahead of it never exits here, since a cwd in no repository reads the shipped declaration at itself, and an unreadable repository identity is UNKNOWN at `11`. NOT "no lane here", so never a park |
 | `65` | the lanes root stands inside a linked worktree instead of the repository that owns it, so it is a second copy of that ledger frozen at whatever moment it was written — nothing was read and nothing was appended; pass a root under the owning repository, or drop `--root` |

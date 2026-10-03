@@ -54,7 +54,11 @@ the same tracked debt the sibling contracts carry.)
   and read the artifact out of the **object database**
   (`git diff <base>...<head>`), which writes objects and no working tree. Nothing is checked out,
   so no head instruction file is ever on disk to be loaded — a diff that adds a worktree or a
-  checkout is still the wrong fix and should be red at review.
+  checkout is still the wrong fix and should be red at review. The one fence a reviewer runs over
+  files holds the same line: `guard portability-guard check --sha <head>` reads the head's files
+  out of the object database rather than walking the reviewer's worktree, which was cut from
+  another checkout and never holds the head. It refuses on `11` when the head is not in the clone,
+  and never falls back to the tree.
 
   **`review seat` is the one checkout this group performs, and it is narrower than the posture it
   looks like it reverses.** It executes nothing and judges nothing: it moves the reviewer's *own*
@@ -363,6 +367,17 @@ pair a reviewer keying the governance obligation off `harness` gets wrong: a cle
 then the ship gate blocking on `ns governance absent` with nobody told to fill it. The token
 vocabulary matches `governance scope`'s on purpose — one word, read the same in both places.
 
+**The config the classes derive over is the PR's, never this checkout's.** `governedRoots`,
+`uiSurfaces` and `reviewSubsystems` are read out of git at the bound head and at its merge base, the
+same two commits the file list is read between. A path counts as governed, raises `ui`, or carries a
+subsystem constraint when **either** commit's `.fabrika.jsonc` says so: head alone would let a PR
+drop its own row and skip the gate, base alone would miss a PR that adds an app. A file absent at
+one commit is that commit's shipped defaults; one that does not decode, or a read that fails, is
+`11` naming the commit. Every verb that derives a PR's classes over a bound head — `ship scope`,
+`ship gate`, `ship floor`, `lane prove`, `heal-ci`, `governance scope` and `post`, `review preview`,
+`review-ui route` — reads through the same reader (`packages/fabrika-cli/src/review/class-config.ts`),
+so the tree a verb stands in cannot change its answer. The filter keys stay the checkout's.
+
 **The issue reference** is resolved from the PR body in two passes, and the kinds are reported
 apart rather than collapsed. First the closing keywords (`Fixes/Closes/Resolves #N`), first match
 ⇒ `fixes:<n>`; failing that, an explicit `Part of #N` ⇒ `part-of:<n>`; failing both, `-` /
@@ -382,7 +397,7 @@ the skill states it (`SKILL.md` step 2).
 |---|---|
 | `7` | the PR is proven absent (404), or closed, or has **zero changed files** — a review over nothing, refused fail-closed |
 | `10` | `--sha` is not a head SHA |
-| `11` | the PR could not be read, or the commit could not be bound — the scope is UNKNOWN |
+| `11` | the PR could not be read, the commit could not be bound, or `.fabrika.jsonc` at the head or the merge base could not be read or decoded — the scope is UNKNOWN |
 | `12` | `--sha` is not the PR's head — re-scope at the head, never partition a tree the PR has left |
 | `13` | git reports no changed files for the bound commit's range — an empty read, with nothing to partition |
 
@@ -583,8 +598,10 @@ given through the filesystem service. An unreadable input or config refuses on `
 head on `12`, a provably incomplete diff on `13`, and a governed exclusion on `21`.
 
 The answer starts `preview\tafter`, then `matched\t<count>`, raw-derived class and namespace
-rows, and excluded/removal rows in scope's grammar. Required namespaces use the same configured
-governed roots and UI prefixes as scope. `--json` returns `outcome: "previewed"`, `placement`,
+rows, and excluded/removal rows in scope's grammar. For a PR or range subject, required namespaces
+use the same governed roots and UI prefixes as scope, read at the subject's two commits. A
+`--diff-file` subject has no commit to read, so it takes them from the checkout's `.fabrika.jsonc`.
+`--json` returns `outcome: "previewed"`, `placement`,
 `matched_paths`, `excluded: {count, paths}`, optional `unexcluded: {count, paths}`, `active_classes`,
 `namespaces`, `filtered_diff_bytes` and `filtered_diff_lines`. `--emit-diff` returns the filtered
 bytes in `review diff`'s grammar instead. No review verdict or network write is produced.
@@ -808,8 +825,10 @@ head red; a still-running run outside it never makes it `pending` either. The `c
 `run` count stay the **whole** enumeration's: the rollup narrowed, the evidence did not, and the
 completeness proof still divides by what the platform declared. A base branch declaring **nothing**
 required falls back to the informational-name denylist in `src/review/rollup.ts`, so every
-non-informational check blocks there. A declared set that cannot be read at this token's permission
-is `11` naming that read as the cause — never a colour over it. Which definition answered is stated
+non-informational check blocks there. A plan-gated base takes the same denylist: GitHub's `403`
+beginning `Upgrade to GitHub Pro or make this repository public` says the branch cannot declare a
+required check, so it is not a permission failure. Any other declared set that cannot be read at
+this token's permission is `11` naming that read as the cause — never a colour over it. Which definition answered is stated
 on the notes channel on every run. The two governance-floor settle tokens read the blocking set too,
 so a non-required red beside a stale floor no longer hides it.
 
@@ -817,6 +836,14 @@ so a non-required red beside a stale floor no longer hides it.
 empty set is green by construction, and narrowing to the declared set opens that case wherever the
 required contexts have not posted yet. What is missing there is a report, so the answer is `pending`
 with the reason on the notes channel.
+
+**The same holds when only some declared contexts have posted.** A declared required context with no
+run at the head is not satisfied, so a head where three declared contexts passed and a fourth has
+posted nothing is `pending`, never `green`, and the notes channel names the contexts still owed.
+`--wait` keeps polling it and ends `settled` only once every declared context has a concluded run, or
+`budget-exhausted` when the budget runs out first. A `red` declared context still answers `red` at
+once, whatever else has not posted. `ship checks` reads the same rule from the same module
+(`src/review/blocking.ts`).
 
 **The rollup is total over the status vocabulary, fail-closed on the ambiguous rows:** `red`
 when any completed run concluded `failure`, `timed_out`, `action_required` or `cancelled` (a
@@ -878,7 +905,8 @@ a bound that ran out:
   it.
 - `head-moved` — the PR left the head this answer binds during the wait. The last read still binds
   what it inspected; the caller re-reads at the new head rather than trusting a stale `settled`.
-- `governance-owed` — the only unfinished check at this head is `governance floor at head`, and the
+- `governance-owed` — every declared required context has a run, the only unfinished check at this
+  head is `governance floor at head`, and the
   `governance-floor` workflow run at this head has completed. The floor reports through a check
   run, and that check-run stays `in_progress` while no governance verdict is bound at the head, so what the wait is
   waiting for is a verdict its own caller owes. Nothing was proven — the rollup still reads `pending`
@@ -936,8 +964,10 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `review ci: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 | `review ci: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
 | `review ci: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `review ci: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `review ci: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `review ci: no run at this head answers any context <base> declares required — pending, never green: the required checks have not reported.` | 0 | notice |
+| `review ci: no run at this head for <list>, which <base> declares required — pending, never green: a declared context that has not reported is not satisfied.` | 0 | notice |
 | `review ci: every run at this head is informational — pending, never green: nothing here gates.` | 0 | notice |
 | `review ci: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `review ci: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |

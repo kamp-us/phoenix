@@ -11,10 +11,13 @@
  *      makes the novel exit a proven no-op rather than a claim about one.
  *   3. The recipe's clearance is read from the verb that owns it — `ship cp-approval`'s own
  *      discharge table, never a second reading of §CP in this file; `ship checks`, `ship scope` and
- *      `ship gate` for the red-CI row, which is the shipper's own floor taken again rather than a
- *      rival reading of it. A driver-routed park with no
+ *      `ship gate` for the shipper's red-CI row, which is the shipper's own floor taken again rather
+ *      than a rival reading of it, and the first two alone for the reviewer's. A driver-routed park
+ *      with no
  *      recipe has no such read, and clears on the driver's rationale instead.
  *   4. `lane transition … UNBLOCKED` records the clear, carrying that rationale where there is one.
+ *      The one exception is a red head `heal-ci` classes a defect: no wait clears that, so it is
+ *      recorded as the park's `FAIL` into repair instead.
  *   5. `lane status` is folded **again**, and the answer is emitted only once that re-fold shows the
  *      task out of the park: no recipe reports a mutation it did not read back.
  *
@@ -27,6 +30,7 @@
  *
  * Respawning whatever the lane parked out of is the operator's, not this verb's.
  */
+import {acceptsOf} from "@demlik/tea";
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -41,21 +45,26 @@ import {CONFIG_PATH} from "../config/document.ts";
 import {PARK_CAUSE, type ParkCauseSurface} from "../config/keys/park-cause.ts";
 import {readRoadmapFile} from "../config/paths.ts";
 import type {Read} from "../config/read-key.ts";
+import {runClassify} from "../heal-ci/classify-verb.ts";
+import {runLogs} from "../heal-ci/logs-verb.ts";
 import {fetchAndResolve, localBranches, readFileAt} from "../io/git.ts";
-import {getIssue} from "../io/issues.ts";
+import {getIssue, listComments} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import type {PullScope} from "../io/pulls.ts";
+import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {nominatePulls, nominationScope} from "../lane/nominate.ts";
 import {tracePulls} from "../lane/prove.ts";
 import {runProve} from "../lane/prove-verb.ts";
 import {routeUnder} from "../lane/report.ts";
 import {BUILD_CLAIM_BUDGET_MINUTES} from "../lane/shell-budget.ts";
 import {runStatus} from "../lane/status-verb.ts";
+import {loadLane} from "../lane/store.ts";
 import {runTransition} from "../lane/transition-verb.ts";
-import {BASE_REF} from "../ledger/ground.ts";
+import {ownershipGate} from "../ownership/gate.ts";
 import {runChecks} from "../ship/checks-verb.ts";
 import {runCpApproval} from "../ship/cp-approval-verb.ts";
 import {runGate} from "../ship/gate-verb.ts";
+import {MERGEABILITY_WINDOW_SECONDS} from "../ship/mergeability.ts";
 import {runReconcile} from "../ship/reconcile-verb.ts";
 import {runScope} from "../ship/scope-verb.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -69,9 +78,9 @@ import {
 	TARGET_ABSENT,
 	TASK_UNRESOLVED,
 } from "./codes.ts";
-import {classifyPark, type ParkClass, type ParkRecipe, QUEUE_MOVED_GRANT} from "./parks.ts";
+import {classifyPark, isPark, type ParkClass, type ParkRecipe, QUEUE_MOVED_GRANT} from "./parks.ts";
 import {buildExit, laneExit, relayRefusal} from "./relay.ts";
-import {clearProof, issueOf, leafOf} from "./status-read.ts";
+import {clearProof, issueOf, leafOf, repairProof} from "./status-read.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "fabrika recipe unpark";
@@ -131,6 +140,11 @@ type Clearance =
 			 */
 			readonly waitGrant: number | null;
 	  }
+	/**
+	 * The park's cause is a defect no wait removes, so the lane leaves the park into repair: recorded
+	 * as the park's `FAIL`, never as an `UNBLOCKED` back into the state that parked it.
+	 */
+	| {readonly _tag: "Repair"; readonly mechanism: string}
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
 
 type Deps =
@@ -192,24 +206,29 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 
 		const clearance: Clearance =
 			routed._tag === "Recipe"
-				? yield* clear(options, task, routed.recipe)
+				? yield* clear(options, task, routed.recipe, read.axisIssue)
 				: {
 						_tag: "Cleared",
 						mechanism: `driver-rationale:${routed.cause}`,
 						waitGrant: null,
 					};
 		if (clearance._tag === "Refused") return clearance.outcome;
+		const repair = clearance._tag === "Repair";
+		const event = repair ? "FAIL" : "UNBLOCKED";
 
 		const recorded = yield* runTransition(
 			{
 				...ref,
-				event: "UNBLOCKED",
+				event,
 				task,
 				cause: null,
+				axisIssue: null,
 				parkCause: options.parkCause,
 				classes: [],
-				waitGrant: clearance.waitGrant,
-				rationale,
+				waitGrant: repair ? null : clearance.waitGrant,
+				// A rationale names why a park was cleared, and a repair clears nothing: its reason is the
+				// mechanism the answer reports, and `lane transition` refuses one on a FAIL.
+				rationale: repair ? null : rationale,
 				repo: options.repo,
 				cwd: options.cwd,
 				env: options.env,
@@ -221,21 +240,53 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 		}
 
 		const after = yield* runStatus(ref);
+		const clearanceName = routed._tag === "Recipe" ? routed.recipe.clearance : "driver-rationale";
+
+		if (clearance._tag === "Repair") {
+			const routedTo = repairProof(after.code, after.stdout, task, leaf);
+			if (routedTo._tag === "Unproven") {
+				return refuse(
+					READBACK_MISMATCH,
+					`${VERB}: ${event} was appended and ${routedTo.reason} — the repair route is NOT proven, and the lane needs a human.`,
+					[...after.stderr],
+				);
+			}
+			const current = routedTo._tag === "Repaired" ? routedTo.leaf : routedTo.terminal;
+			const spent = routedTo._tag === "Spent" || isPark(current);
+			return answer(
+				JSON.stringify({
+					lane: options.lane,
+					task,
+					park: leaf,
+					clearance: clearanceName,
+					event,
+					mechanism: clearance.mechanism,
+					current,
+				}),
+				[
+					`${VERB}: park "${leaf}" matched a known recipe whose cause needs a repair; recorded ${event} via ${clearance.mechanism}.`,
+					spent
+						? `${VERB}: re-fold reads "${current}" — the repair budget was spent, so "${task}" fell to its spent-budget park instead of reaching a builder.`
+						: `${VERB}: re-fold reads "${current}" — the repair route is proven, and one retry is spent.`,
+				],
+			);
+		}
+
 		const proof = clearProof(after.code, after.stdout, task);
 		if (proof._tag === "Unproven") {
 			return refuse(
 				READBACK_MISMATCH,
-				`${VERB}: UNBLOCKED was appended and ${proof.reason} — the clear is NOT proven, and the lane needs a human.`,
+				`${VERB}: ${event} was appended and ${proof.reason} — the clear is NOT proven, and the lane needs a human.`,
 				[...after.stderr],
 			);
 		}
-
 		return answer(
 			JSON.stringify({
 				lane: options.lane,
 				task,
 				park: leaf,
-				clearance: routed._tag === "Recipe" ? routed.recipe.clearance : "driver-rationale",
+				clearance: clearanceName,
+				event,
 				mechanism: clearance.mechanism,
 				current: proof.leaf,
 				...(clearance.waitGrant === null ? {} : {waitGrant: clearance.waitGrant}),
@@ -296,8 +347,11 @@ const clear = (
 	options: UnparkOptions,
 	task: string,
 	recipe: ParkRecipe,
+	axisIssue: number | null,
 ): Effect.Effect<Clearance, never, Deps> => {
 	switch (recipe.clearance) {
+		case "axis-closed":
+			return clearAxisClosed(options, recipe, axisIssue);
 		case "cp-approval":
 			return clearCpApproval(options, task, recipe);
 		case "branch-free":
@@ -314,6 +368,8 @@ const clear = (
 			return clearQueueMoved(options, task, recipe);
 		case "ci-green":
 			return clearCiGreen(options, task, recipe);
+		case "head-green":
+			return clearHeadGreen(options, task, recipe);
 		case "route-satisfied":
 			return clearRouteSatisfied(options, task, recipe);
 	}
@@ -373,7 +429,6 @@ const clearRouteSatisfied = (
 			pr,
 			repo,
 			json: true,
-			cwd: options.cwd,
 			env: options.env,
 			caller: "relay",
 		});
@@ -510,6 +565,7 @@ const clearCpApproval = (
 			sha: head,
 			repo,
 			json: true,
+			mergeabilitySeconds: MERGEABILITY_WINDOW_SECONDS,
 			env: options.env,
 		});
 		if (discharge.code !== 0) {
@@ -543,6 +599,14 @@ const clearCpApproval = (
 					refuse(
 						PARK_HOLDS,
 						`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — PR #${pr} is not discharged at ${head}; nothing was written.`,
+						[scope],
+					),
+				);
+			case "base-conflicted":
+				return no(
+					refuse(
+						PARK_NOVEL,
+						`${VERB}: PR #${pr} conflicts with its base at ${head}, so "${recipe.park}" waits on an approval nobody should give — the head goes to a builder, which this recipe does not route; refusing with the ledger untouched; route this to a human.`,
 						[scope],
 					),
 				);
@@ -1021,13 +1085,62 @@ const clearTreeReleased = (
 	});
 
 /**
+ * Read whether the render-axis park's cause is gone: the issue its park line named as tracking the
+ * missing render axis reads closed.
+ *
+ * Closed is the whole test, whatever its state reason: a reviewer sent back into `review:ui` over an
+ * axis nobody built hits the same wall and parks on a fresh issue, while one left parked over a
+ * closed issue would wait on nothing. Open holds; an unread issue is UNKNOWN, never a clear.
+ */
+const clearAxisClosed = (
+	options: UnparkOptions,
+	recipe: ParkRecipe,
+	axisIssue: number | null,
+): Effect.Effect<Clearance, never, Deps> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+		if (axisIssue === null) {
+			return no(
+				refuse(
+					TARGET_ABSENT,
+					`${VERB}: "${recipe.park}" parked on "${recipe.cause}" names no axis issue, so there is no issue to read for ${recipe.waitingOn}; nothing was written.`,
+				),
+			);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return no(resolved.outcome);
+
+		const found = yield* getIssue(resolved.repo, axisIssue);
+		if (found._tag === "Unknown") {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read axis issue #${axisIssue}: ${found.reason} — whether the render axis was built is UNKNOWN, never cleared.`,
+				),
+			);
+		}
+		if (found._tag === "Absent") {
+			return no(refuse(TARGET_ABSENT, `${VERB}: axis issue #${axisIssue} is proven absent.`));
+		}
+		if (found.value.state !== "closed") {
+			return no(
+				refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — axis issue #${axisIssue} reads ${found.value.state}; nothing was written.`,
+				),
+			);
+		}
+		return {_tag: "Cleared", mechanism: `axis-closed:#${axisIssue}`, waitGrant: null};
+	});
+
+/**
  * Read whether the campaign-paused park's cause is gone: the campaign homing this lane's milestone
  * reads `active` again.
  *
  * Two reads that both already exist, composed rather than re-derived — the lane issue's `milestone`
  * off `../io/issues.ts`, and the `## Campaigns` row off `../campaign/table.ts`, the one parse every
  * campaign reader shares. The row is
- * read at {@link BASE_REF} rather than in the working tree because a resume lands on the trunk and a
+ * read at the trunk (`../io/trunk.ts`) rather than in the working tree because a resume lands on the trunk and a
  * lane clone can be arbitrarily stale; the fetch is what makes that read current.
  *
  * Every arm below leaves the park standing, and each names which one it hit: a campaign that cannot
@@ -1083,21 +1196,19 @@ const clearCampaignActive = (
 		}
 		const roadmap = declared.value;
 
-		const trunk = yield* fetchAndResolve(BASE_REF);
-		if (trunk._tag === "Failure") return unknown(BASE_REF, trunk.reason);
+		const named = yield* resolveTrunk(options.env, resolved.repo);
+		if (named._tag === "Failure") return unknown("the trunk", trunkUnresolved(named.reason));
+		const at = named.value.ref;
+		const trunk = yield* fetchAndResolve(at);
+		if (trunk._tag === "Failure") return unknown(at, trunk.reason);
 		const text = yield* readFileAt(trunk.value, roadmap);
-		if (text._tag === "Failure") return unknown(`${roadmap} at ${BASE_REF}`, text.reason);
+		if (text._tag === "Failure") return unknown(`${roadmap} at ${at}`, text.reason);
 
 		const placed = placedRows(text.value);
 		if (placed._tag === "Malformed") {
-			return unknown(`the ## Campaigns table in ${roadmap} at ${BASE_REF}`, placed.reason);
+			return unknown(`the ## Campaigns table in ${roadmap} at ${at}`, placed.reason);
 		}
-		const scope = scannedLine(
-			VERB,
-			placed.rows.length,
-			"campaign row",
-			`${roadmap} at ${BASE_REF}`,
-		);
+		const scope = scannedLine(VERB, placed.rows.length, "campaign row", `${roadmap} at ${at}`);
 		const row = placed.rows.find((candidate) => selects(candidate, `#${milestone}`))?.row;
 		if (row === undefined) {
 			return no(
@@ -1285,8 +1396,9 @@ const soleParkedPull = (
  *
  * The rollup is `ship checks`'s answer relayed and never a second reading of the check list here, at
  * one poll because a recipe pass is a snapshot — waiting is what the shipper's `--wait` already did.
- * Only `green` clears. `red` and `pending` are the park standing correctly, and so is every other
- * rollup word, because none of them is the one this repo merges on.
+ * Only `green` clears. `pending` is the park standing correctly, and so is every other rollup word
+ * but `red`, because none of them is the one this repo merges on. A `red` is read once more, by
+ * {@link repairOrHold}: a defect leaves the park into repair, and every other red holds it.
  *
  * Three reads and not one, because the cause is what parked the lane and not what the lane needs to
  * leave it. A clear says the shipper can be dispatched again, so it re-proves what that shipper had
@@ -1306,14 +1418,132 @@ const clearCiGreen = (
 	recipe: ParkRecipe,
 ): Effect.Effect<Clearance, never, Deps> =>
 	Effect.gen(function* () {
-		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
-		const unknown = (what: string, reason: string): Clearance =>
-			no(
-				refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read ${what}: ${reason} — whether the head is green is UNKNOWN, never cleared.`,
-				),
+		const read = yield* readOpenHeadCi(options, task, recipe);
+		if (read._tag === "Refused") return read;
+		const {repo, pr, head, namespaces, rollup, scanned} = read;
+		if (rollup === "red") {
+			return yield* repairOrHold(options, repo, pr, head, task, recipe, scanned);
+		}
+		if (rollup !== "green") return holdOnRollup(recipe, read);
+
+		const gated = yield* runGate({
+			pr,
+			sha: head,
+			require: namespaces,
+			cp: false,
+			repo,
+			json: true,
+			cwd: options.cwd,
+			env: options.env,
+		});
+		if (gated.code !== 0) {
+			return headUnknown(
+				`#${pr}'s verdicts at ${head}`,
+				`fabrika ship gate refused at exit ${gated.code}`,
 			);
+		}
+		const conjunction = parseJson(gated.stdout);
+		if (!isRecord(conjunction) || typeof conjunction.outcome !== "string") {
+			return headUnknown(
+				`#${pr}'s verdicts at ${head}`,
+				"fabrika ship gate exited 0 and named no outcome",
+			);
+		}
+		if (conjunction.outcome !== "satisfied") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${pr}'s conjunction over ${namespaces.join(", ")} at ${head} reads "${conjunction.outcome}"; nothing was written.`,
+					[scanned],
+				),
+			};
+		}
+
+		return {
+			_tag: "Cleared",
+			mechanism: `ci-green:#${pr} at ${head}, ${namespaces.join(",")} bound`,
+			waitGrant: null,
+		};
+	});
+
+/**
+ * Read whether the reviewer's red-CI park is gone: the PR still open and its live head rolling up
+ * `green`, and nothing more.
+ *
+ * The same two reads {@link clearCiGreen} opens with, stopping before its `ship gate` read: the
+ * reviewer parked before giving the verdicts that read asks for, so requiring them would hold this
+ * park until the review it interrupted had run. Every rollup but `green` holds, `red` included —
+ * `blocked` has no `FAIL` arm to send a defect into repair through, so the heal-ci relay
+ * {@link repairOrHold} runs for the shipper's park has nowhere to land here.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9579
+ */
+const clearHeadGreen = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<Clearance, never, Deps> =>
+	Effect.gen(function* () {
+		const read = yield* readOpenHeadCi(options, task, recipe);
+		if (read._tag === "Refused") return read;
+		if (read.rollup !== "green") return holdOnRollup(recipe, read);
+		return {
+			_tag: "Cleared",
+			mechanism: `head-green:#${read.pr} at ${read.head}`,
+			waitGrant: null,
+		};
+	});
+
+/** The open PR a red-CI park hangs on and its CI rollup at the live head, or the refusal owed. */
+type OpenHeadCi =
+	| {
+			readonly _tag: "Read";
+			readonly repo: string;
+			readonly pr: number;
+			readonly head: string;
+			/** The namespaces `ship scope` derives off the diff at that head. */
+			readonly namespaces: ReadonlyArray<string>;
+			readonly rollup: string;
+			readonly scanned: string;
+	  }
+	| Refusal;
+
+type Refusal = {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+const headUnknown = (what: string, reason: string): Refusal => ({
+	_tag: "Refused",
+	outcome: refuse(
+		PRECONDITION_UNKNOWN,
+		`${VERB}: cannot read ${what}: ${reason} — whether the head is green is UNKNOWN, never cleared.`,
+	),
+});
+
+/** The park still standing on a rollup that is not `green`. */
+const holdOnRollup = (
+	recipe: ParkRecipe,
+	read: Extract<OpenHeadCi, {readonly _tag: "Read"}>,
+): Refusal => ({
+	_tag: "Refused",
+	outcome: refuse(
+		PARK_HOLDS,
+		`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${read.pr}'s CI at ${read.head} rolls up "${read.rollup}"; nothing was written.`,
+		[read.scanned],
+	),
+});
+
+/**
+ * The floor both red-CI rows stand on: the one PR the park hangs on, still open and not a draft
+ * through `ship scope`, and `ship checks`'s rollup at that PR's live head.
+ */
+const readOpenHeadCi = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<OpenHeadCi, never, Deps> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Refusal => ({_tag: "Refused", outcome});
+		const unknown = headUnknown;
 
 		const issue = issueOf(options.lane, task);
 		if (issue === null) {
@@ -1340,7 +1570,6 @@ const clearCiGreen = (
 			pr,
 			repo,
 			json: true,
-			cwd: options.cwd,
 			env: options.env,
 			caller: "relay",
 		});
@@ -1396,52 +1625,184 @@ const clearCiGreen = (
 		if (!isRecord(rolled) || typeof rolled.rollup !== "string") {
 			return unknown(`#${pr}'s CI at ${head}`, "fabrika ship checks exited 0 and named no rollup");
 		}
-		if (rolled.rollup !== "green") {
-			return no(
-				refuse(
-					PARK_HOLDS,
-					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${pr}'s CI at ${head} rolls up "${rolled.rollup}"; nothing was written.`,
+		return {_tag: "Read", repo, pr, head, namespaces, rollup: rolled.rollup, scanned};
+	});
+
+/**
+ * Decide whether a red head is a defect this lane repairs, or a red the park keeps waiting out.
+ *
+ * `heal-ci`'s own two verbs answer it, relayed rather than re-read: `heal-ci logs` takes every failing
+ * required context at the live head, and `heal-ci classify` seats each on its closed signature table.
+ * One `logic` context is enough, because a PR is only as healed as its worst context and no rerun or
+ * wait turns a deterministic failure green. The repair spends a retry through the park's own `FAIL`
+ * arm, the same guarded pair `ship` walks, so an exhausted budget falls to its park.
+ *
+ * Everything short of a `logic` context holds the park exactly as the red did before this arm
+ * existed: an all-`transient` or `unclassified` red, and a log that could not be read or classified,
+ * which is a red nobody has classified yet. So does a `logic` red on a PR the pipeline does not own,
+ * because that repair is its author's (`heal-ci` §2's ownership rule, read through the same gate
+ * `build claim` puts in front of a repair). And so does every red on a lane whose own machine gives
+ * the park no `FAIL` arm, read before any log: a coder lane booted on a template older than the arm,
+ * or an epic lane emitted before its tail's park carried one — a generated machine is never
+ * migrated, so there a `FAIL` could only be refused.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9946
+ */
+const repairOrHold = (
+	options: UnparkOptions,
+	repo: string,
+	pr: number,
+	head: string,
+	task: string,
+	recipe: ParkRecipe,
+	scanned: string,
+): Effect.Effect<Clearance, never, Deps> =>
+	Effect.gen(function* () {
+		const holds = (why: string, lines: ReadonlyArray<string> = []): Clearance => ({
+			_tag: "Refused",
+			outcome: refuse(
+				PARK_HOLDS,
+				`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${pr}'s CI at ${head} rolls up "red" and ${why}; nothing was written.`,
+				[scanned, ...lines],
+			),
+		});
+
+		const arm = yield* failArmAt(options, task, recipe.park);
+		if (arm._tag === "Unknown") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read lane ${options.lane}'s machine: ${arm.reason} — whether "${recipe.park}" has a repair arm is UNKNOWN, and nothing was written.`,
 					[scanned],
 				),
+			};
+		}
+		if (arm._tag === "Armless") {
+			return holds(
+				`this lane's machine gives "${recipe.park}" no FAIL arm, so the red has no repair route and waits on green as before; \`fabrika lane migrate\` adds the arm to a lane booted on an older template, and an epic lane emitted before its tail's park carried the arm keeps the machine it booted on`,
 			);
 		}
 
-		const gated = yield* runGate({
+		const logs = yield* runLogs({
 			pr,
 			sha: head,
-			require: namespaces,
-			cp: false,
+			context: "",
+			maxBytes: LOG_TAIL_BYTES,
 			repo,
-			json: true,
-			cwd: options.cwd,
+			json: false,
 			env: options.env,
 		});
-		if (gated.code !== 0) {
-			return unknown(
-				`#${pr}'s verdicts at ${head}`,
-				`fabrika ship gate refused at exit ${gated.code}`,
+		if (logs.code !== 0) {
+			return holds(
+				`fabrika heal-ci logs refused at exit ${logs.code}, so the red is unclassified`,
+				logs.stderr,
 			);
 		}
-		const conjunction = parseJson(gated.stdout);
-		if (!isRecord(conjunction) || typeof conjunction.outcome !== "string") {
-			return unknown(
-				`#${pr}'s verdicts at ${head}`,
-				"fabrika ship gate exited 0 and named no outcome",
+		const classified = yield* runClassify({
+			json: true,
+			stdin: Effect.succeed({_tag: "Text", text: logs.stdout}),
+		});
+		const rows = classifiedContexts(classified);
+		if (rows === null) {
+			return holds(
+				`fabrika heal-ci classify answered exit ${classified.code} with no context rows, so the red is unclassified`,
+				classified.stderr,
 			);
 		}
-		if (conjunction.outcome !== "satisfied") {
-			return no(
-				refuse(
-					PARK_HOLDS,
-					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${pr}'s conjunction over ${namespaces.join(", ")} at ${head} reads "${conjunction.outcome}"; nothing was written.`,
-					[scanned],
-				),
+		const logic = rows.filter((row) => row.class === "logic");
+		if (logic.length === 0) {
+			const seen = rows.map((row) => `${row.context}: ${row.class}`).join(", ");
+			return holds(
+				`heal-ci classes no failing context logic (${seen === "" ? "no failing required context" : seen}), so it is no repair`,
 			);
 		}
 
+		const target = yield* openPull(
+			VERB,
+			repo,
+			pr,
+			(reason) =>
+				`${VERB}: cannot read PR #${pr}: ${reason} — whose repair this red is is UNKNOWN, and nothing was written.`,
+		);
+		if (target._tag === "Refused") return {_tag: "Refused", outcome: target.outcome};
+		const owned = yield* ownershipGate(
+			VERB,
+			repo,
+			{number: pr, author: target.pull.authorLogin, baseRef: target.pull.baseRef},
+			listComments(repo, pr),
+			{notOurs: PARK_HOLDS, unknown: PRECONDITION_UNKNOWN},
+			"its logic red is its author's to repair, so the park holds and nothing was written.",
+		);
+		if (owned._tag === "Refused") return {_tag: "Refused", outcome: owned.outcome};
+
 		return {
-			_tag: "Cleared",
-			mechanism: `ci-green:#${pr} at ${head}, ${namespaces.join(",")} bound`,
-			waitGrant: null,
+			_tag: "Repair",
+			mechanism: `ci-logic:#${pr} at ${head}, ${logic.map((row) => `${row.context}=${row.signature}`).join(",")}`,
 		};
 	});
+
+type FailArm =
+	| {readonly _tag: "Armed"}
+	| {readonly _tag: "Armless"}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+/**
+ * Whether the lane's own machine lets `leaf` take a `FAIL`, read off the document the lane runs and
+ * never the committed template: a booted lane keeps the template it opened on until `lane migrate`,
+ * and a generated machine is never migrated, so a `FAIL` sent without the arm would be refused at
+ * `lane transition` with a remedy that may not exist.
+ */
+const failArmAt = (
+	options: UnparkOptions,
+	task: string,
+	leaf: string,
+): Effect.Effect<FailArm, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const loaded = yield* loadLane({root: options.root, lane: options.lane});
+		switch (loaded._tag) {
+			case "Absent":
+				return {_tag: "Unknown", reason: `no workflow.json under ${loaded.dir}`} as const;
+			case "Unreadable":
+				return {_tag: "Unknown", reason: `${loaded.path}: ${loaded.reason}`} as const;
+			case "Malformed":
+				return {_tag: "Unknown", reason: `${loaded.path}: ${loaded.defects.join("; ")}`} as const;
+			case "Loaded": {
+				const compiled = loaded.lane.tasks[task];
+				if (compiled === undefined) {
+					return {_tag: "Unknown", reason: `the machine declares no task "${task}"`} as const;
+				}
+				return acceptsOf(compiled.machine, leaf).includes("FAIL")
+					? ({_tag: "Armed"} as const)
+					: ({_tag: "Armless"} as const);
+			}
+		}
+	});
+
+/** `heal-ci logs`'s own default tail, so the relay classifies the bytes a hand run would. */
+const LOG_TAIL_BYTES = 65536;
+
+interface ClassifiedContext {
+	readonly context: string;
+	readonly class: string;
+	readonly signature: string;
+}
+
+/** `heal-ci classify --json`'s context rows, or `null` for an answer that carries none. */
+const classifiedContexts = (outcome: VerbOutcome): ReadonlyArray<ClassifiedContext> | null => {
+	if (outcome.code !== 0) return null;
+	const parsed = parseJson(outcome.stdout);
+	if (!isRecord(parsed) || !Array.isArray(parsed.contexts)) return null;
+	return parsed.contexts.flatMap(
+		(row): ReadonlyArray<ClassifiedContext> =>
+			isRecord(row) && typeof row.context === "string" && typeof row.class === "string"
+				? [
+						{
+							context: row.context,
+							class: row.class,
+							signature: typeof row.signature === "string" ? row.signature : "-",
+						},
+					]
+				: [],
+	);
+};

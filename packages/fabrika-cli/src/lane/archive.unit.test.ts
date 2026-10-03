@@ -4,7 +4,7 @@ import {describe, expect, it} from "vitest";
 import type {Claimant} from "../build/claim.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import type {VerbOutcome} from "../verb.ts";
-import {judgeArchive} from "./archive.ts";
+import {judgeArchive, judgeRetriage} from "./archive.ts";
 import {type ClaimRetractor, type ClaimsReader, runArchive} from "./archive-verb.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
 import {
@@ -16,6 +16,7 @@ import {
 	LOG_REPLAYS,
 	MARKER_READBACK,
 	MIGRATION_UNSAFE,
+	NOT_DIAGNOSED,
 } from "./codes.ts";
 import {seatsIn} from "./concurrency.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
@@ -23,6 +24,7 @@ import type {LogEntry} from "./fold.ts";
 import {runHistory} from "./history-verb.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 import {runMigrate} from "./migrate-verb.ts";
+import {runOpen} from "./open-verb.ts";
 import {runReconcile} from "./reconcile-verb.ts";
 import {DEFAULT_ARCHIVED_LANES_ROOT, DEFAULT_LANES_ROOT} from "./store.ts";
 
@@ -180,6 +182,7 @@ const recorder = (failOn: number | null = null) => {
 
 const OPTIONS = {
 	ref: {root: ROOT, lane: "6037"},
+	route: "unreplayable" as const,
 	archivedRoot: ARCHIVED,
 	templatePaths: [TEMPLATE],
 	issue: 6037,
@@ -544,5 +547,234 @@ describe("lane archive", () => {
 		const out = await run(fs, runArchive({...OPTIONS, templatePaths: [CHORE_TEMPLATE, TEMPLATE]}));
 
 		expect(out.code).toBe(0);
+	});
+});
+
+/** A builder's no-PR finish: the lane entered build and its `DONE` was proven off a diagnosis comment. */
+const DIAGNOSED_LOG: ReadonlyArray<LogEntry> = [
+	{task: "issue", event: "ISSUE.WIP", at: "2026-09-29T17:00:00.000Z"},
+	{
+		task: "issue",
+		event: "ISSUE.DONE",
+		at: "2026-09-29T18:00:00.000Z",
+		comment: "diagnosis-comment-1",
+		diagnosis: true,
+	},
+];
+
+const jsonl = (entries: ReadonlyArray<LogEntry>): string =>
+	`${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`;
+
+const RETRIAGED = {...OPTIONS, route: "retriaged" as const, templatePaths: []};
+
+/** A lane on disk under the lanes root holding `entries`, with room for whatever `extra` pre-seeds. */
+const laneOnDisk = (
+	entries: ReadonlyArray<LogEntry>,
+	extra: Record<string, string> = {},
+	directories: ReadonlyArray<string> = [],
+) =>
+	fakeFs({
+		files: {
+			[TEMPLATE]: coderTemplateText(),
+			[`${DIR}/workflow.json`]: coderTemplateText(),
+			[`${DIR}/events.jsonl`]: jsonl(entries),
+			...extra,
+		},
+		dirs: {[ROOT]: ["6037"], [ARCHIVED]: []},
+		directories: [ROOT, ARCHIVED, DIR, ...directories],
+	});
+
+describe("judgeRetriage", () => {
+	it("answers `Diagnosed` for a log that folds to the diagnosis final and names no pull request", () => {
+		expect(judgeRetriage(compiled(coderTemplateText()), DIAGNOSED_LOG)).toEqual({
+			_tag: "Diagnosed",
+			state: "diagnosed",
+		});
+	});
+
+	it("names the state for a lane that ended on another final", () => {
+		expect(
+			judgeRetriage(compiled(coderTemplateText()), log("WIP", "DONE", "PASS", "DONE")),
+		).toEqual({_tag: "NotDiagnosed", state: "complete"});
+	});
+
+	it("answers `Spent` for a diagnosed log that spent a repair round and names no pull request", () => {
+		const [, diagnosis] = DIAGNOSED_LOG;
+		if (diagnosis === undefined) throw new Error("fixture");
+		const verdict = judgeRetriage(compiled(coderTemplateText()), [
+			...log("WIP", "DONE", "FAIL"),
+			diagnosis,
+		]);
+
+		expect(verdict._tag).toBe("Spent");
+		expect(verdict._tag === "Spent" ? verdict.spend : []).toEqual([
+			'task "issue" spent 1 retry(s)',
+			"ISSUE.DONE at 2026-08-19T00:00:00.000Z, not proven off a diagnosis",
+			"ISSUE.FAIL at 2026-08-19T00:00:00.000Z",
+		]);
+	});
+});
+
+describe("lane archive --retriaged", () => {
+	it("moves a diagnosed no-PR lane that replays, keeping its log byte-identical", async () => {
+		const fs = laneOnDisk(DIAGNOSED_LOG);
+		const out = await run(fs, runArchive(RETRIAGED));
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			answer: "archived",
+			route: "retriaged",
+			lane: "6037",
+			issue: 6037,
+			from: DIR,
+			to: MOVED,
+			state: "diagnosed",
+			retracted: [],
+		});
+		expect(fs.written.get(`${MOVED}/events.jsonl`)).toBe(jsonl(DIAGNOSED_LOG));
+		expect(fs.written.has(`${DIR}/events.jsonl`)).toBe(false);
+	});
+
+	it("frees the key, so `lane open` boots a fresh lane on the same issue", async () => {
+		const fs = laneOnDisk(DIAGNOSED_LOG);
+		const open = () =>
+			runOpen({
+				root: ROOT,
+				lane: "6037",
+				templatePath: TEMPLATE,
+				issue: 6037,
+				expectation: () =>
+					Effect.succeed({
+						_tag: "Read" as const,
+						expectation: {_tag: "Single" as const},
+						classes: [],
+					}),
+				priorLane: () => Effect.succeed({_tag: "Fresh" as const}),
+				fromBoard: false,
+				boardSeat: null,
+				record: null,
+				cap: {_tag: "Value", value: null, note: "test"} as const,
+				claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
+			});
+
+		const before = await run(fs, open());
+		await run(fs, runArchive(RETRIAGED));
+		const after = await run(fs, open());
+
+		expect(before.code).toBe(LANE_EXISTS);
+		expect(after.code).toBe(0);
+		expect(JSON.parse(after.stdout)).toMatchObject({answer: "opened", lane: "6037"});
+		expect(fs.written.get(`${DIR}/workflow.json`)).toBe(coderTemplateText());
+		expect(fs.written.get(`${MOVED}/events.jsonl`)).toBe(jsonl(DIAGNOSED_LOG));
+	});
+
+	it("refuses a lane folded to any other final, touching nothing", async () => {
+		const fs = laneOnDisk(log("WIP", "DONE", "PASS", "DONE"));
+		const {deleted, retract} = recorder();
+		const out = await run(
+			fs,
+			runArchive({...RETRIAGED, claims: holds(claimant(11, TOKEN)), retract, token: TOKEN}),
+		);
+
+		expect(out.code).toBe(NOT_DIAGNOSED);
+		expect(out.stderr.join("\n")).toContain("folds to complete");
+		expect(deleted).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses a lane still in flight", async () => {
+		const fs = laneOnDisk(log("WIP"));
+		const out = await run(fs, runArchive(RETRIAGED));
+
+		expect(out.code).toBe(NOT_DIAGNOSED);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses a diagnosed lane whose log names a pull request", async () => {
+		const [wip, done] = DIAGNOSED_LOG;
+		if (wip === undefined || done === undefined) throw new Error("fixture");
+		const fs = laneOnDisk([wip, {...done, pr: "pull-request-1"}]);
+		const out = await run(fs, runArchive(RETRIAGED));
+
+		expect(out.code).toBe(NOT_DIAGNOSED);
+		expect(out.stderr.join("\n")).toContain("pull-request-1");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses a diagnosed lane that spent a repair round, though no line names a pull request", async () => {
+		const [, diagnosis] = DIAGNOSED_LOG;
+		if (diagnosis === undefined) throw new Error("fixture");
+		const fs = laneOnDisk([...log("WIP", "DONE", "FAIL"), diagnosis]);
+		const {deleted, retract} = recorder();
+		const out = await run(
+			fs,
+			runArchive({...RETRIAGED, claims: holds(claimant(11, TOKEN)), retract, token: TOKEN}),
+		);
+
+		expect(out.code).toBe(NOT_DIAGNOSED);
+		expect(out.stderr.join("\n")).toContain("spent 1 retry(s)");
+		expect(deleted).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses an unreplayable log, which is the other route's lane", async () => {
+		const fs = brokenLane();
+		const out = await run(fs, runArchive(RETRIAGED));
+
+		expect(out.code).toBe(NOT_DIAGNOSED);
+		expect(out.stderr.join("\n")).toContain("drop --retriaged");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("takes the next free slot when the key is already archived, burying nothing", async () => {
+		const first = `${MOVED}/events.jsonl`;
+		const second = `${ARCHIVED}/6037.archived-2`;
+		const fs = laneOnDisk(
+			DIAGNOSED_LOG,
+			{[`${MOVED}/workflow.json`]: coderTemplateText(), [first]: "earlier\n"},
+			[MOVED],
+		);
+		const out = await run(fs, runArchive(RETRIAGED));
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({to: second});
+		expect(fs.written.get(`${second}/events.jsonl`)).toBe(jsonl(DIAGNOSED_LOG));
+		// The earlier archive is never written over.
+		expect(fs.written.has(first)).toBe(false);
+		expect(out.stderr.join("\n")).toContain("lane history 6037.archived-2");
+	});
+
+	it("keeps the unreplayable route's refusal of an occupied key", async () => {
+		const fs = brokenLane({[`${MOVED}/workflow.json`]: coderTemplateText()}, [MOVED]);
+		const out = await run(fs, runArchive(OPTIONS));
+
+		expect(out.code).toBe(LANE_EXISTS);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("retracts the live lane claim under the caller's token before moving", async () => {
+		const fs = laneOnDisk(DIAGNOSED_LOG);
+		const {deleted, retract} = recorder();
+		const out = await run(
+			fs,
+			runArchive({...RETRIAGED, claims: holds(claimant(11, TOKEN)), retract, token: TOKEN}),
+		);
+
+		expect(out.code).toBe(0);
+		expect(deleted).toEqual([11]);
+		expect(JSON.parse(out.stdout).retracted).toEqual([11]);
+	});
+
+	it("refuses a live lane claim this caller did not name, leaving lane and marker", async () => {
+		const fs = laneOnDisk(DIAGNOSED_LOG);
+		const {deleted, retract} = recorder();
+		const out = await run(
+			fs,
+			runArchive({...RETRIAGED, claims: holds(claimant(11, TOKEN)), retract, token: null}),
+		);
+
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(deleted).toEqual([]);
+		expect(fs.written.size).toBe(0);
 	});
 });

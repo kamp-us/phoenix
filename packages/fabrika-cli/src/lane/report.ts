@@ -15,15 +15,17 @@
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
+import {INTEGRATE_STATE} from "./integrate-failure.ts";
 import {type CompiledLane, MACHINERY_EVENT, type OperatorEvent, type TaskState} from "./machine.ts";
-import {REVIEW_UI_STATE} from "./prove.ts";
+import {BUILD_STATES, REVIEW_STATE, REVIEW_UI_STATE, SHIP_STATES} from "./prove.ts";
 
 /**
  * Every recognised terminal token, grouped by the shell skill that owns its vocabulary — the
  * builder's (`build/SKILL.md`), the reviewer's (`review/SKILL.md`), the shipper's
- * (`ship/SKILL.md`), the UI reviewer's (`review-ui/SKILL.md`) — plus one group that belongs to no
- * shell: `machinery`, which a driver records about the pipeline itself. Documentation and test
- * surface; the lookup below flattens it.
+ * (`ship/SKILL.md`), the UI reviewer's (`review-ui/SKILL.md`) — plus two groups that belong to no
+ * shell: `machinery`, which a driver records about the pipeline itself, and `integrator`, the
+ * driver relaying `lane integrate`'s content verdict on an epic child. The lookup below flattens
+ * it, and {@link GROUP_SERVES} says which leaf states each group may report out of.
  */
 export const SHELL_VOCABULARIES = {
 	builder: {
@@ -107,7 +109,73 @@ export const SHELL_VOCABULARIES = {
 		EJECTED: "FAIL",
 		UNKNOWN: "BLOCKED",
 	},
+	// `lane integrate` exiting `42`, `43` or `44` judged the child's content, and the driver relays
+	// it as the one token that spends the child's repair budget. The integrate evidence pair
+	// (`./integrate-failure.ts`) is what pins the line to that exit.
+	integrator: {
+		FAIL: "FAIL",
+	},
 } as const satisfies Readonly<Record<string, Readonly<Record<string, OperatorEvent>>>>;
+
+export type VocabularyGroup = keyof typeof SHELL_VOCABULARIES;
+
+/** Where a group's reporter runs: a closed list of leaf states, or wherever the task stands. */
+export type Serves =
+	| {readonly _tag: "States"; readonly states: ReadonlyArray<string>}
+	| {readonly _tag: "Anywhere"};
+
+/**
+ * The leaf states each vocabulary group serves — the half of a report the token alone cannot say.
+ *
+ * A token is a self-report from whichever shell ran, and a shell can finish after the lane has moved
+ * on without it. Two groups map tokens to one event (`SHIPPED-PR` and `LANDED` are both `DONE`), so a
+ * builder's late `SHIPPED-PR` out of `ship` walked the shipper's merge arm and folded a lane with an
+ * open PR to `complete`. Only a group that serves the task's current leaf may report out of it.
+ *
+ * `machinery` serves every state because a pipeline failure happens wherever the pipeline is: the
+ * lane's own machine decides whether that state holds a `LAP` cell.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10120
+ */
+export const GROUP_SERVES: Readonly<Record<VocabularyGroup, Serves>> = {
+	builder: {_tag: "States", states: BUILD_STATES},
+	reviewer: {_tag: "States", states: [REVIEW_STATE]},
+	"ui-reviewer": {_tag: "States", states: [REVIEW_UI_STATE]},
+	machinery: {_tag: "Anywhere"},
+	shipper: {_tag: "States", states: SHIP_STATES},
+	integrator: {_tag: "States", states: [INTEGRATE_STATE]},
+};
+
+const servesLeaf = (serves: Serves, leaf: string): boolean =>
+	serves._tag === "Anywhere" || serves.states.includes(leaf);
+
+const describeServes = (serves: Serves): string =>
+	serves._tag === "Anywhere" ? "any state" : serves.states.map((s) => `"${s}"`).join(" / ");
+
+export type Service =
+	| {readonly _tag: "Served"; readonly by: ReadonlyArray<VocabularyGroup>}
+	| {readonly _tag: "Unserved"; readonly reason: string};
+
+/**
+ * Whether any group owning this token serves the task's leaf. A token several groups share (`PASS`,
+ * `FAIL`, `UNKNOWN`, `ESCALATED`) is served when at least one owner serves the leaf, because the
+ * token alone never says which of them sent it.
+ */
+export const serviceAt = (token: string, leaf: string): Service => {
+	const canonical = token.trim().toUpperCase();
+	const owners = (Object.keys(SHELL_VOCABULARIES) as ReadonlyArray<VocabularyGroup>).filter(
+		(group) => Object.hasOwn(SHELL_VOCABULARIES[group], canonical),
+	);
+	const by = owners.filter((group) => servesLeaf(GROUP_SERVES[group], leaf));
+	if (by.length > 0) return {_tag: "Served", by};
+	const named = owners
+		.map((group) => `${group} (serves ${describeServes(GROUP_SERVES[group])})`)
+		.join(", ");
+	return {
+		_tag: "Unserved",
+		reason: `${canonical} is owned by ${named}, and the task stands in "${leaf === "" ? "no state" : leaf}" — a report out of a state its shell does not serve is a late or misrouted terminal, not this state's answer`,
+	};
+};
 
 export type Flattening =
 	| {readonly _tag: "Flat"; readonly tokens: Readonly<Record<string, OperatorEvent>>}
@@ -492,6 +560,28 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
+	 * The rendered gate's `CANT-SEE` over a preview that stood: the changed pixels only show in a state
+	 * none of `review-ui render`'s operands can reach — a scroll position, a pane no route opens — so no
+	 * re-render and no driver retry can shoot them. Only building that render axis ends it.
+	 *
+	 * Distinct from `no-preview-render`, whose preview a later deploy or a re-seed fixes: a retry there
+	 * is a real move, and here it spends a review round hitting the same wall. So this cause carries
+	 * the number of the open issue tracking the missing axis ({@link AXIS_ISSUE_CAUSES}), and its
+	 * `KNOWN_PARKS` row clears when that issue closes.
+	 *
+	 * No remedy: building a render axis is its own issue's work, and no verb here removes the gap.
+	 *
+	 * Route `driver`: a missing render capability is machinery, and no product call is in it.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10007
+	 */
+	"render-axis-missing": {
+		meaning:
+			"the preview stood, but the changed pixels need a state `review-ui render` cannot reach, so the park waits on the issue that builds that render axis",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * The rendered gate's `BLOCKED-NO-MANIFEST`: the repo's design law covers no surface in
 	 * this diff, so the gate has nothing to judge against and routed to the front door.
 	 *
@@ -528,6 +618,22 @@ export const PARK_CAUSES = {
 	"no-rendered-delta": {
 		meaning:
 			"the diff raises no rendered delta, so the verdict is `review`'s to give and not the rendered gate's",
+		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * The rendered gate's `ROUTED-ELSEWHERE` over a PR with no preview, when the repo's
+	 * `reviewUi.whenNoPreview` rules routed it — a `skip`, or an owner's hand-check standing in for
+	 * the render — and the review it waits on is not finished. The diff may well render, which is why
+	 * this is not {@link no-rendered-delta}; the park is the same shape and clears the same way.
+	 *
+	 * Route `driver`: dispatching the other gate is the driver's own act.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10038#issuecomment-5860347862
+	 */
+	"no-preview-routed": {
+		meaning:
+			"the PR has no preview and the repo's reviewUi.whenNoPreview rules routed the rendered gate, so the verdict left to give is `review`'s",
 		route: "driver",
 		remedy: null,
 	},
@@ -603,6 +709,30 @@ export const PARK_CAUSES = {
 	 */
 	"head-ci-red": {
 		meaning: "the head's CI is red, so the shipper routed to heal-ci rather than enqueue",
+		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * `ship gate` answered `blocked` on a required namespace that holds no binding verdict at the
+	 * PR's head — absent, stale against moved content, or a `review-ui` verdict whose evidence does
+	 * not open — so the shipper routed back to the gate that owns it and reported `ROUTED-REVIEW`.
+	 * Nothing about the artifact was judged: the verdict the head owes has not been given yet. The
+	 * ordinary producer is a head that moved after review, which a long-lived epic branch re-merged
+	 * with its trunk hits on every merge.
+	 *
+	 * The shipper's `ROUTED-REVIEW` carries it without being typed ({@link TERMINAL_PARK_CAUSES}),
+	 * because the gate's absence arm is that token's one reason. Distinct from a `FAIL` routed to
+	 * repair: a verdict that exists and says no is `ROUTED-REPAIR`, never this.
+	 *
+	 * No remedy: giving the verdict is the owning gate's judgment, and a verb that "removed" this
+	 * cause would be making it.
+	 *
+	 * Route `driver`: dispatching the gate that owes the verdict is the driver's own act, and no
+	 * product call is in it.
+	 */
+	"verdict-owed": {
+		meaning:
+			"a namespace the ship gate requires holds no binding verdict at the PR's head, so the shipper routed back to the gate that owes it",
 		route: "driver",
 		remedy: null,
 	},
@@ -721,13 +851,16 @@ export const machineryCause = (token: string): ParkCause | null =>
  *
  * Only a token with exactly one reason belongs here. `AWAITING-CP-APPROVAL` is `ship cp-approval`'s
  * `stop`, which says the owners' approval is absent; a `--cause` still overrides it, which is how a
- * shipper standing on a head behind its base says `head-behind-base` instead. `REFUSED`, `UNKNOWN`
- * and the routing arms fold to the same leaf for other reasons, so they carry nothing here.
+ * shipper standing on a head behind its base says `head-behind-base` instead. `ROUTED-REVIEW` is
+ * `ship gate`'s absence arm and nothing else — a required namespace with no binding verdict at the
+ * head — so it carries `verdict-owed`. `REFUSED` and `UNKNOWN` fold to the same leaf for other
+ * reasons, so they carry nothing here, and a shipper names `ROUTED-HEAL-CI`'s cause by hand.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9180#issuecomment-5752464229
  */
 export const TERMINAL_PARK_CAUSES: Readonly<Record<string, ParkCause>> = {
 	"AWAITING-CP-APPROVAL": "awaiting-cp-approval",
+	"ROUTED-REVIEW": "verdict-owed",
 };
 
 /** The cause a terminal token carries on its own — a lap's or a park's — or `null`. */
@@ -766,6 +899,55 @@ export const structuralParkCause = (leaf: string): ParkCause | null =>
  * @ruling https://github.com/kamp-us/phoenix/issues/9852
  */
 export const RETIRED_PARK_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>(["campaign-paused"]);
+
+/**
+ * The causes whose park waits on another issue closing, so the park line names that issue as
+ * `axisIssue` — required with one of these causes and refused with any other.
+ *
+ * The number is what the `KNOWN_PARKS` row reads: without it the clear would have no issue to read.
+ */
+export const AXIS_ISSUE_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>([
+	"render-axis-missing",
+]);
+
+/** Whether a recorded cause makes its park line carry an `axisIssue`. */
+export const causeTakesAxisIssue = (cause: string | null): boolean =>
+	cause !== null && AXIS_ISSUE_CAUSES.has(cause as ParkCause);
+
+export type AxisIssueResolution =
+	| {readonly _tag: "Named"; readonly axisIssue: number | null}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+/**
+ * Resolve one `--axis-issue` against the cause the same line records.
+ *
+ * Both directions refuse. A cause in {@link AXIS_ISSUE_CAUSES} with no issue is a park nothing can
+ * clear, because the row has no issue to read. An issue beside any other cause is seated on a line
+ * no row reads, so it records a claim nothing will check.
+ */
+export const axisIssueForCause = (
+	raw: number | null,
+	cause: ParkCause | null,
+): AxisIssueResolution => {
+	const takes = causeTakesAxisIssue(cause);
+	if (raw === null) {
+		return takes
+			? {
+					_tag: "Rejected",
+					reason: `"${cause}" waits on the open issue that tracks the missing render axis — pass --axis-issue <number>, filing that issue first if none exists`,
+				}
+			: {_tag: "Named", axisIssue: null};
+	}
+	if (!takes) {
+		return {
+			_tag: "Rejected",
+			reason: `--axis-issue names the issue a ${[...AXIS_ISSUE_CAUSES].join("/")} park waits on, and this line records ${cause === null ? "no cause" : `"${cause}"`} — drop --axis-issue ${raw}`,
+		};
+	}
+	return Number.isInteger(raw) && raw > 0
+		? {_tag: "Named", axisIssue: raw}
+		: {_tag: "Rejected", reason: `--axis-issue ${raw} is no issue number`};
+};
 
 /** The causes a recorder may pass, for a refusal's listing — sorted so the listing is deterministic. */
 export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES)

@@ -184,9 +184,39 @@ describe("picker frame under a filter", () => {
 		const frame = filtered("pi");
 		expect(frame.groups.map((group) => group.options.map((option) => option.detail))).toEqual([
 			["pi"],
-			[],
 		]);
 		expect(frame.filter?.matches).toBe(1);
+	});
+
+	it("drops the Running processes group a program-only match emptied, and says nothing about it", () => {
+		const frame = filtered("pi");
+		expect(frame.groups.map((group) => [group.label, group.emptyMessage])).toEqual([
+			["Programs", null],
+		]);
+		expect(JSON.stringify(frame)).not.toContain("No running process matches this filter.");
+	});
+
+	it("drops the Programs group a process-only match emptied, and says nothing about it", () => {
+		const orphaned: PickerEntries = {
+			programs: entries.programs,
+			processes: [
+				{
+					_tag: "Process",
+					processId: processId("p-3"),
+					programId: programId("log"),
+					label: "Log viewer",
+					parentId: null,
+				},
+			],
+		};
+		const frame = pickerFrame(window, orphaned, withFilter(mountPicker(), "log"));
+		expect(frame.groups.map((group) => [group.label, group.emptyMessage])).toEqual([
+			["Running processes", null],
+		]);
+		expect(frame.groups.flatMap((group) => group.options.map((option) => option.detail))).toEqual([
+			"p-3",
+		]);
+		expect(JSON.stringify(frame)).not.toContain("No program matches this filter.");
 	});
 
 	it("carries the count as a polite, atomic status message and never as an alert", () => {
@@ -204,10 +234,7 @@ describe("picker frame under a filter", () => {
 		expect(frame.announcement.text).toBe("No windows match this filter.");
 		expect(frame.announcement.role).toBe("status");
 		expect(frame.activeDescendant).toBeNull();
-		expect(frame.groups.map((group) => group.emptyMessage)).toEqual([
-			"No program matches this filter.",
-			"No running process matches this filter.",
-		]);
+		expect(frame.groups).toEqual([]);
 	});
 
 	it("keeps the assertive channel for a refusal even while a filter is on", () => {

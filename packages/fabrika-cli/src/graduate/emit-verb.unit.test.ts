@@ -9,6 +9,7 @@ import {
 	roundDigestOf,
 	rulingComment,
 } from "../grill/fixtures.test-support.ts";
+import {SHIPPED_BOARD} from "../status/board.test-support.ts";
 import * as graduateEmitted from "../wire/graduate-emitted.ts";
 import {markerTime} from "../wire/grill-marker.ts";
 import {
@@ -76,6 +77,7 @@ const emit = (
 				title,
 				repo: null,
 				env: {CLAUDE_PIPELINE_REPO: REPO},
+				board: SHIPPED_BOARD,
 				now: () => NOW,
 			}),
 			seams.layer,
@@ -299,6 +301,7 @@ describe("the refusals that write nothing", () => {
 		]);
 		expect(outcome.code).toBe(NO_TARGET);
 		expect(outcome.stderr.join("\n")).toContain("no triage run can find");
+		expect(outcome.stderr.join("\n")).toContain("fabrika status bootstrap label-taxonomy");
 	});
 
 	it("refuses a --title that classifies the work — that is triage's seat", async () => {

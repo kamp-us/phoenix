@@ -20,6 +20,7 @@ import {readFloorFile, runCliFloor} from "./cli-floor-verb.ts";
 import {runCodes} from "./codes-verb.ts";
 import {runPluginSync} from "./plugin-sync-verb.ts";
 import {runPreBash} from "./pre-bash-verb.ts";
+import {runStashGuard} from "./stash-guard-verb.ts";
 import {type CliEntry, runWorktreeCreate} from "./worktree-create-verb.ts";
 
 const jsonFlag = Flag.boolean("json").pipe(
@@ -135,6 +136,32 @@ const preBash = leafCommand(
 	Command.withExamples([{command: "fabrika hook pre-bash"}]),
 );
 
+const stashGuard = leafCommand(
+	"stash-guard",
+	{},
+	Effect.fn(function* () {
+		yield* emitOutcome(
+			yield* runStashGuard({stdin: Effect.sync(readStdin), env: globalThis.process.env}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Refuse `git stash` in a linked worktree, whose stash is shared."),
+	Command.withDescription(
+		[
+			"Denies a Bash command that runs `git stash` where `--git-dir` and `--git-common-dir` differ.",
+			"  The verdict is hook-output JSON on stdout, never an exit code; an allow carries no decision.",
+			"  3: stdin held nothing",
+			"  12: not a hook envelope",
+			"  13: fd 0 could not be read (UNKNOWN)",
+			"  14: an event or tool this verb does not judge",
+			"  19: the cwd's git dirs could not be read; the stash was NOT judged",
+			"  Any non-zero exit shows stderr and lets the command through.",
+			'  Derivation: the fabrika plugin\'s docs/hook-surface.md, "hook stash-guard"',
+		].join("\n"),
+	),
+	Command.withExamples([{command: "fabrika hook stash-guard"}]),
+);
+
 /**
  * The way back into this same build of the CLI, for the sweep the provisioner runs as a child.
  *
@@ -232,6 +259,7 @@ export const hookCommand = Command.make("hook").pipe(
 		codes,
 		pluginSync,
 		preBash,
+		stashGuard,
 		worktreeCreate,
 	]),
 	Command.withShortDescription("Own fabrika's Claude Code hook surface."),

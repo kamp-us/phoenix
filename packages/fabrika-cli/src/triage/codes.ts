@@ -231,6 +231,19 @@ export const SET_MISMATCH = 25;
  */
 export const PLAIN_SUMMARY_REQUIRED = 26;
 
+/**
+ * Refused: `triage sweep-homes` left un-homed `status:triaged` issues untouched.
+ *
+ * An un-homed issue has three remedies (home it in an open milestone, label it a standing lane, or
+ * kill it), and choosing one is triage's judgment, so the sweep lists each and writes nothing to it.
+ * The double-marked clears in the same run still land; this code says the backlog is not yet
+ * home-xor-exempt, so the run cannot answer as if it were.
+ *
+ * Its own seat rather than {@link ZERO_SCOPE}'s: that one is a scan that found nothing, and this one
+ * is a scan that found work only a person or a triager can do.
+ */
+export const UNHOMED_REMAIN = 27;
+
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
 
@@ -338,6 +351,11 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		code: PLAIN_SUMMARY_REQUIRED,
 		meaning:
 			"refused: the enrich text carries no plain-language summary section, an empty one, or more than one",
+	},
+	{
+		code: UNHOMED_REMAIN,
+		meaning:
+			"refused: sweep-homes left un-homed triaged issues untouched — each needs triage's home, lane or kill",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

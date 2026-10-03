@@ -150,22 +150,6 @@ export const isPullRequest = (
 		);
 	});
 
-export const defaultBranch = (
-	env: Readonly<Record<string, string | undefined>>,
-	repo: string,
-): Called<Attempt<string>> =>
-	Effect.gen(function* () {
-		const token = yield* resolveToken(env);
-		if (token._tag === "Failure") return token;
-		const outcome = yield* restRead(token.value, "GET", `repos/${repo}`);
-		return attemptOf(outcome, (body) => {
-			const name = isRecord(body) ? body.default_branch : undefined;
-			return typeof name === "string" && name.trim() !== ""
-				? ok(name.trim())
-				: fail("GitHub answered 200 but named no default branch");
-		});
-	});
-
 export interface PullHead {
 	readonly ref: string;
 	readonly sha: string;

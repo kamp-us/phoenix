@@ -41,9 +41,9 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {governedRootsOr} from "../config/paths.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {listPullFiles} from "../io/pulls.ts";
+import {classConfigOfPull} from "../review/class-config.ts";
 import {touchesGovernanceRoot} from "../review/classes.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -148,15 +148,6 @@ export const resolveFloor = (
 		const bound = inspectedSha(VERB, options.sha);
 		if (typeof bound !== "string") return unresolved(bound);
 
-		const governed = yield* governedRootsOr(
-			VERB,
-			options.cwd,
-			'whether the floor binds is UNKNOWN, never "n/a".',
-		);
-		if (governed._tag === "Refused") {
-			return unresolved(refuse(PRECONDITION_UNKNOWN, governed.message));
-		}
-
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return unresolved(resolved.outcome);
 		const repo = resolved.repo;
@@ -220,7 +211,17 @@ export const resolveFloor = (
 			);
 		}
 
-		if (!touchesGovernanceRoot(changed, governed.roots)) {
+		// The PR's own governed roots, read where `runGate` below reads them, so the two cannot differ.
+		const classConfig = yield* classConfigOfPull(
+			VERB,
+			'whether the floor binds is UNKNOWN, never "n/a".',
+			repo,
+			pull,
+		);
+		if (classConfig._tag === "Refused") {
+			return unresolved(refuse(PRECONDITION_UNKNOWN, classConfig.message, scanned));
+		}
+		if (!touchesGovernanceRoot(changed, classConfig.config.governedRoots)) {
 			const clear = `${VERB}: #${pr}'s diff touches no governance root, so the floor does not bind — this is an answer about the diff, not a discharged verdict.`;
 			return {
 				_tag: "Unbound",

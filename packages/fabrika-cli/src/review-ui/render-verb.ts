@@ -57,13 +57,14 @@ import {
 	viewportOf,
 } from "../capture/plan.ts";
 import {
+	type CaptureIdentity,
 	type CaptureTier,
+	identityOf,
 	isRealizedState,
 	provesSession,
 	REALIZED_STATES,
 	routeOf,
 	stateOf,
-	tierOf,
 } from "../capture/states.ts";
 import {previewAppOf, type UiSurface} from "../config/keys/ui-surfaces.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
@@ -131,6 +132,7 @@ export type SurfaceRender =
 	| {readonly _tag: "Invalid"; readonly detail: string}
 	| {readonly _tag: "Unauthenticated"; readonly reason: string}
 	| {readonly _tag: "WrongTier"; readonly wanted: CaptureTier; readonly rendered: string}
+	| {readonly _tag: "WrongVerification"; readonly wanted: boolean}
 	| {readonly _tag: "WrongViewport"; readonly wanted: number; readonly rendered: number}
 	| {readonly _tag: "OverrideInert"; readonly reason: string}
 	| {readonly _tag: "WrongLocale"; readonly wanted: string; readonly reason: string}
@@ -260,6 +262,12 @@ const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 			return `${VERB}: ${subject} did not render signed in (${render.reason}) — the authenticated render is UNKNOWN, never the anonymous one.`;
 		case "WrongTier":
 			return `${VERB}: ${subject} named tier ${render.wanted} and rendered as ${render.rendered} — the named tier's render is UNKNOWN, never another tier's.`;
+		case "WrongVerification": {
+			const [named, rendered] = render.wanted
+				? ["verified", "unverified"]
+				: ["unverified", "verified"];
+			return `${VERB}: ${subject} named an email-${named} identity and rendered as an email-${rendered} one — the named identity's render is UNKNOWN, never another audience's.`;
+		}
 		case "WrongViewport":
 			return `${VERB}: ${subject} was asked for at ${render.wanted}px and its bytes read back ${render.rendered}px wide — the requested viewport's render is UNKNOWN, never another width's.`;
 		case "OverrideInert":
@@ -342,17 +350,18 @@ const resolveAuthSecret = (
 	});
 
 /**
- * The credentials a tier-naming run needs, or the one thing that stopped the read: an export that
- * could not be opened, a key that must not be signed with, or an unset session token. Only a run
- * that names a tier calls this, so every arm here is about a session a surface actually asked for.
+ * The credentials an identity-naming run needs, or the one thing that stopped the read: an export
+ * that could not be opened, a key that must not be signed with, or an unset session token. Only a
+ * run that names a seeded identity calls this, so every arm here is about a session a surface
+ * actually asked for.
  */
-const resolveTierIdentity = (
+const resolveSeededIdentity = (
 	options: RenderOptions,
-	tiers: readonly CaptureTier[],
+	identities: readonly CaptureIdentity[],
 ): Effect.Effect<IdentityRead | UnreadableSecret, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const secret = yield* resolveAuthSecret(options);
-		return secret._tag === "Unreadable" ? secret : readIdentity(options.env, tiers, secret);
+		return secret._tag === "Unreadable" ? secret : readIdentity(options.env, identities, secret);
 	});
 
 export const runRender = (
@@ -538,11 +547,15 @@ export const runRender = (
 		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
 		const scanned = scannedLine(VERB, comments.value.length, "comment");
 
-		const preview = resolvePreview(comments.value, options.app);
+		const preview = resolvePreview(comments.value, options.app, head);
 		if (preview._tag === "NoPreview") {
+			const why =
+				preview.markedAt === null
+					? `no preview-deploy comment on PR #${pr}`
+					: `PR #${pr}'s preview comment marks no preview deploy at ${shortSha(head)}`;
 			return refuse(
 				NO_PREVIEW,
-				`${VERB}: no preview-deploy comment on PR #${pr} — nothing to judge without running the PR's code; the run is CANT-SEE.`,
+				`${VERB}: ${why} — nothing to judge without running the PR's code; the run is CANT-SEE.`,
 				[scanned],
 			);
 		}
@@ -597,11 +610,11 @@ export const runRender = (
 		// A tier-naming surface rendered without that tier's credentials would come back as the
 		// visitor's page — or worse, as the one tier this preview did seed — under the named tier's
 		// name. That is the "unseen ground reading as clean" this whole axis exists to stop, so an
-		// incomplete credential set is UNKNOWN here, before a browser launches. A tier whose token is
-		// unset is a tier `preview-seed test-account` did not seed on this preview.
-		const wantedTiers = options.surfaces.flatMap((surface) => {
-			const tier = tierOf(stateOf(surface));
-			return tier === null ? [] : [tier];
+		// incomplete credential set is UNKNOWN here, before a browser launches. An identity whose token
+		// is unset is one `preview-seed test-account` did not seed on this preview.
+		const wantedIdentities = options.surfaces.flatMap((surface) => {
+			const identity = identityOf(stateOf(surface));
+			return identity === null ? [] : [identity];
 		});
 		// The signing key is read before the tokens and refused on its own terms: it is the deployed
 		// value, not the seat's, and a seat signing with `.env.example`'s placeholder produces a
@@ -609,7 +622,9 @@ export const runRender = (
 		// preview nobody seeded. An anonymous run reads no key at all: `null` here is "no surface
 		// asked for a session", which is why no unsigned cookie can be built out of it below.
 		const identity =
-			wantedTiers.length === 0 ? null : yield* resolveTierIdentity(options, wantedTiers);
+			wantedIdentities.length === 0
+				? null
+				: yield* resolveSeededIdentity(options, wantedIdentities);
 		if (identity?._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -638,9 +653,9 @@ export const runRender = (
 				[scanned],
 			);
 		}
-		const cookiesFor = (tier: CaptureTier): readonly CaptureCookie[] => {
+		const cookiesFor = (named: CaptureIdentity): readonly CaptureCookie[] => {
 			if (identity === null || identity._tag !== "Identity") return [];
-			const token = identity.tokens[tier];
+			const token = identity.tokens[named];
 			return token === undefined ? [] : sessionCookies(announced.url, token, identity.secret);
 		};
 		const forcedCookies = overrideCookies(announced.url, forcedFlags);
@@ -669,15 +684,15 @@ export const runRender = (
 			// Only a tier-naming variant carries a session and the override, and it carries ITS OWN
 			// tier's session: a bare route stays the visitor's render at every flag's default, so each
 			// is genuinely different pixels rather than one shot repeated.
-			const tier = tierOf(stateOf(shot.surface));
+			const named = identityOf(stateOf(shot.surface));
 			renders.push(
 				yield* options.render({
 					surface: shot.surface,
 					viewport: shot.viewport,
 					previewUrl: announced.url,
 					outDir: setDir,
-					cookies: tier === null ? [] : [...cookiesFor(tier), ...forcedCookies],
-					forcedFlags: tier === null ? NO_FORCED_FLAGS : forcedFlags,
+					cookies: named === null ? [] : [...cookiesFor(named), ...forcedCookies],
+					forcedFlags: named === null ? NO_FORCED_FLAGS : forcedFlags,
 					locale,
 					scheme: shot.scheme,
 					accent,
@@ -700,12 +715,14 @@ export const runRender = (
 		}
 		// Ahead of the proven-red codes below, and deliberately: the shot is a fine PNG of the wrong
 		// page, so routing it as a red surface would accuse the PR of a defect the render never saw.
-		// The seven arms are one class — wrong session, wrong tier, wrong flag state, wrong locale, wrong
-		// scheme, wrong accent, an interaction state never reached — and route alike.
+		// The eight arms are one class — wrong session, wrong tier, wrong email verification, wrong flag
+		// state, wrong locale, wrong scheme, wrong accent, an interaction state never reached — and
+		// route alike.
 		const wrongPage = renders.findIndex(
 			(render) =>
 				render._tag === "Unauthenticated" ||
 				render._tag === "WrongTier" ||
+				render._tag === "WrongVerification" ||
 				render._tag === "OverrideInert" ||
 				render._tag === "WrongLocale" ||
 				render._tag === "WrongScheme" ||

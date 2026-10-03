@@ -31,7 +31,7 @@ import {claudeSessionScope} from "../../global/tuval.config.ts";
 import {boot, projectConfig, projectDir} from "../boot.ts";
 import {counterId} from "../demo/counter.ts";
 import {ProjectId} from "../project-id.ts";
-import {scratchHome} from "../scratch-home.ts";
+import {scratchHome, trustFolders} from "../scratch-home.ts";
 import {programEntries} from "../shell/picker/entries.ts";
 
 /** The scratch home every boot in this file runs under. */
@@ -64,6 +64,7 @@ const freshProject = (): string => {
  */
 const bootTracked = Effect.fn("trackedConfig.boot")(function* () {
 	const project = freshProject();
+	trustFolders(home, [project]);
 	const booted = yield* boot({global: configModule, project, home});
 	return {...booted, project};
 });

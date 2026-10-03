@@ -52,7 +52,7 @@ import {DensityProvider} from "./lib/density";
 import {SAVED_HREF} from "./lib/panoNav";
 import {safeReturnTo} from "./lib/returnTo";
 import {ScrollRestorationMount} from "./lib/ScrollRestorationMount";
-import {ThemeProvider, useTheme} from "./lib/theme";
+import {ThemeProvider} from "./lib/theme";
 import {AuthPage} from "./pages/AuthPage";
 import {BildirimlerPage} from "./pages/BildirimlerPage";
 import {CAYLAK_VISIBILITY_PATH, CaylakVisibilityPage} from "./pages/CaylakVisibilityPage";
@@ -94,7 +94,7 @@ type TopbarChips = {
 const SetTopbarChipsContext = createContext<((chips: TopbarChips | null) => void) | null>(null);
 
 /**
- * The always-painting shell frame. It reads only `useSession`/`useTheme`/routing —
+ * The always-painting shell frame. It reads only `useSession`/routing —
  * NO fate client — so it renders on the first frame, before `/api/auth/get-session`
  * resolves, killing the blank first-paint flash (#2160). The fate-dependent chips
  * arrive later via the chip-state bridge, set by `LayoutContent` from below the
@@ -106,7 +106,6 @@ function Layout() {
 	const session = useSession();
 	const navigate = useNavigate();
 	const location = useLocation();
-	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const [chips, setChips] = useState<TopbarChips | null>(null);
 	// mecmua-public-read (#2512) resolves synchronously from `window.__BOOT__` so the nav paints
 	// its final geometry on the first frame; absent `__BOOT__` it falls back to the fetch. See ADR 0179.
@@ -200,10 +199,6 @@ function Layout() {
 							{...(chips?.bildirim ? {bildirim: chips.bildirim} : {})}
 							searchQuery={searchQuery}
 							onSearchOpen={() => setSearchOpen(true)}
-							// No `onToggleTheme`: the three-way theme picker is the sole theme control
-							// (#2612), so no tema button renders.
-							themeChoice={themeChoice}
-							onThemeChange={setThemeChoice}
 							onLogout={onSignOut}
 							actions={
 								// Suppressed from the first frame for a signed-in user so the CTA never flashes

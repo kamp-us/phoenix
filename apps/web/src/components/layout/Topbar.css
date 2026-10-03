@@ -267,16 +267,8 @@
 	color: var(--text-primary);
 }
 
-/* The three-way theme picker (#2612) that replaces the tema toggle. Here — the utility
-   zone, for a signed-out visitor — the label is absent and the segmented control sits
-   inline; the labeled settings row it becomes inside the account popover is styled in
-   UserMenu.css, next to the markup that builds it. Its height is the picker's own
-   concern (ThemeChoicePicker.css) — the default 42px track would overflow this 38px
-   bar, and both of the picker's homes are dense, so the fix belongs to the component
-   rather than to either host. */
-
-/* The desktop row cannot preserve nav, search, the three-way Manti theme control and
-   account affordance inside a narrow viewport. On mobile, keep every control reachable
+/* The desktop row cannot preserve nav, search, the status glyphs and the account
+   affordance inside a narrow viewport. On mobile, keep every control reachable
    and move only search to a full-width second row instead of overflowing the document. */
 @media (max-width: 640px) {
 	.kp-topbar {
@@ -299,10 +291,6 @@
 	.kp-topbar__signal-link {
 		min-width: 0;
 		padding-inline: var(--s-2);
-	}
-
-	.kp-topbar .kp-theme-picker {
-		flex-shrink: 0;
 	}
 
 	.kp-topbar__search {

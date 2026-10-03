@@ -22,9 +22,10 @@ import {readKey} from "../config/read-key.ts";
 import {resolveEntrypoint} from "../delegate/entrypoint.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
-import {localBranches} from "../io/git.ts";
+import {localBranches, repoRoot} from "../io/git.ts";
 import {readStdin} from "../io/stdin.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
+import {runReconcile as runShipReconcile} from "../ship/reconcile-verb.ts";
 import {sizeStopOnGitHub} from "../table/size-stop.ts";
 import {runSync, syncBoard} from "../table/sync-verb.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -57,6 +58,7 @@ import {
 } from "./ground.ts";
 import {laneHelp, ROOT_EXITS} from "./help.ts";
 import {runHistory} from "./history-verb.ts";
+import {runDispatched, runWorking} from "./in-flight-verb.ts";
 import {runIntegrate} from "./integrate-verb.ts";
 import {
 	archivedRoot,
@@ -78,11 +80,11 @@ import {runPush} from "./push-verb.ts";
 import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
 import {LEDGER_SPEND} from "./record.ts";
 import {recordBoard, runRecord} from "./record-verb.ts";
-import {runRecover} from "./recover-verb.ts";
-import {DEFAULT_TRUNK_REF, runRefresh} from "./refresh-verb.ts";
+import {queueReadOf, runRecover} from "./recover-verb.ts";
+import {runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
-import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
-import {runReport} from "./report-verb.ts";
+import {AXIS_ISSUE_CAUSES, classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
+import {issueCloser, runReport} from "./report-verb.ts";
 import {runRetrigger} from "./retrigger-verb.ts";
 import {runLaneScratch} from "./scratch-verb.ts";
 import {runSeats} from "./seats-verb.ts";
@@ -234,6 +236,14 @@ const causeFlag = Flag.string("cause").pipe(
 	),
 );
 
+/** The issue a `render-axis-missing` park waits on, on the same two verbs `--cause` rides. */
+const axisIssueFlag = Flag.integer("axis-issue").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		`the open issue tracking the render axis this park waits on — required with --cause ${[...AXIS_ISSUE_CAUSES].join("/")} and refused with any other cause, both at exit 35 with the log unappended. \`recipe unpark\` reads it and clears the park once that issue is closed.`,
+	),
+);
+
 /**
  * The lane classes standing at the event being recorded, on the same two appending verbs.
  *
@@ -284,6 +294,7 @@ const transition = leafCommand(
 			Flag.withDescription("the task the event addresses; omittable on a single-task lane"),
 		),
 		cause: causeFlag,
+		axisIssue: axisIssueFlag,
 		classes: classFlag,
 		grantWait: Flag.integer("grant-wait").pipe(
 			Flag.optional,
@@ -299,7 +310,18 @@ const transition = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, event, root, task, cause, classes, grantWait, rationale, repo}) {
+	Effect.fn(function* ({
+		lane,
+		event,
+		root,
+		task,
+		cause,
+		axisIssue,
+		classes,
+		grantWait,
+		rationale,
+		repo,
+	}) {
 		const configRoot = yield* configRootOrRefuse("fabrika lane transition", process.cwd());
 		if (typeof configRoot !== "string") {
 			yield* emit(configRoot);
@@ -314,6 +336,7 @@ const transition = leafCommand(
 						event,
 						task: Option.getOrNull(task),
 						cause: Option.getOrNull(cause),
+						axisIssue: Option.getOrNull(axisIssue),
 						parkCause,
 						classes,
 						waitGrant: Option.getOrNull(grantWait),
@@ -347,7 +370,7 @@ const transition = leafCommand(
 				23: "no binding verdict",
 				24: "FAIL or link stands",
 				25: "ambiguous",
-				35: "bad --cause",
+				35: "bad cause",
 				36: "unbudgeted resume",
 				38: "bad --class",
 				40: "ledger lock held",
@@ -520,6 +543,7 @@ const report = leafCommand(
 			Flag.withDescription("the comment URL the terminal names, recorded on the event line"),
 		),
 		cause: causeFlag,
+		axisIssue: axisIssueFlag,
 		classes: classFlag,
 		integrateExit: Flag.integer("integrate-exit").pipe(
 			Flag.optional,
@@ -548,6 +572,7 @@ const report = leafCommand(
 		pr,
 		comment,
 		cause,
+		axisIssue,
 		classes,
 		integrateExit,
 		assemblyHead,
@@ -569,6 +594,7 @@ const report = leafCommand(
 						pr: Option.getOrNull(pr),
 						comment: Option.getOrNull(comment),
 						cause: Option.getOrNull(cause),
+						axisIssue: Option.getOrNull(axisIssue),
 						integrateExit: Option.getOrNull(integrateExit),
 						assemblyHead: Option.getOrNull(assemblyHead),
 						parkCause,
@@ -578,6 +604,7 @@ const report = leafCommand(
 						env: process.env,
 					},
 					runProve,
+					issueCloser(Option.getOrNull(repo), process.env),
 				),
 			),
 		);
@@ -587,7 +614,7 @@ const report = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"report",
-			"Appends a terminal token's proven event; prints {token, previous, event, current, taskAffected}.",
+			"Appends a token's proven event; prints {token, previous, event, current, taskAffected}.",
 			{
 				4: "bad lane record",
 				7: "no lane",
@@ -601,13 +628,14 @@ const report = leafCommand(
 				24: "FAIL or link stands",
 				25: "ambiguous",
 				32: "unknown token",
-				35: "bad --cause",
+				35: "bad cause",
 				38: "bad --class",
-				40: "ledger lock held",
+				40: "lock held",
 				52: "uncaused BLOCKED",
-				55: "ship:queued floor unmet",
+				55: "queue floor unmet",
 				67: "head derives no route",
 				68: "bad integrate pair",
+				72: "token unserved",
 				...ROOT_EXITS,
 			},
 		),
@@ -781,7 +809,7 @@ const open = leafCommand(
 					expectation: expectationReader(Option.getOrNull(repo), process.env),
 					priorLane: priorLaneReader(Option.getOrNull(repo), process.env),
 					fromBoard,
-					boardSeat: boardSeatReader(Option.getOrNull(repo), process.cwd(), process.env),
+					boardSeat: boardSeatReader(Option.getOrNull(repo), process.env),
 					record: boardRecorder(Option.getOrNull(repo), process.env),
 					cap,
 					claimed: claimHoldReader(Option.getOrNull(repo), process.env),
@@ -1011,7 +1039,14 @@ const assembly = leafCommand(
 		}
 		yield* emit(
 			yield* onGround("assembly", [resolvedRoot], process.cwd(), () =>
-				runAssembly({epic, remove, root: resolvedRoot, lane: String(epic)}),
+				runAssembly({
+					epic,
+					remove,
+					root: resolvedRoot,
+					lane: String(epic),
+					repo: null,
+					env: process.env,
+				}),
 			),
 		);
 	}),
@@ -1182,9 +1217,15 @@ const refresh = leafCommand(
 			Argument.withDescription("the epic issue whose run owns the assembly branch"),
 		),
 		base: Flag.string("base").pipe(
-			Flag.withDefault(DEFAULT_TRUNK_REF),
+			Flag.optional,
 			Flag.withDescription(
-				`the trunk ref to merge in, resolved AFTER the fetch (default: ${DEFAULT_TRUNK_REF})`,
+				"the ref to merge in, resolved AFTER the fetch (default: the trunk, origin/<the repo's GitHub default branch>)",
+			),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name whose default branch is the trunk (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
 			),
 		),
 		onReview: Flag.boolean("on-review").pipe(
@@ -1195,7 +1236,7 @@ const refresh = leafCommand(
 		),
 		root: rootFlag,
 	},
-	Effect.fn(function* ({epic, base, onReview, root}) {
+	Effect.fn(function* ({epic, base, repo, onReview, root}) {
 		const resolvedRoot = yield* resolveRootOrRefuse(
 			"fabrika lane refresh",
 			root,
@@ -1216,7 +1257,9 @@ const refresh = leafCommand(
 			yield* onGround("refresh", [resolvedRoot], process.cwd(), () =>
 				runRefresh({
 					epic,
-					base,
+					base: Option.getOrNull(base),
+					repo: Option.getOrNull(repo),
+					env: process.env,
 					gate: onReview ? "onReview" : null,
 					assemblyRefresh,
 					root: resolvedRoot,
@@ -1237,7 +1280,7 @@ const refresh = leafCommand(
 				4: "bad lane record",
 				7: "no lane",
 				8: "reset or head read-back unlanded, UNKNOWN",
-				11: "read failed, UNKNOWN",
+				11: "read failed or the trunk is unresolvable, UNKNOWN",
 				21: "assemblyRefresh is malformed",
 				22: "--base names no commit",
 				33: "epic/<n> in the main tree",
@@ -1375,7 +1418,7 @@ const brief = leafCommand(
 			{
 				4: "bad lane record",
 				7: "no lane",
-				11: "read failed, UNKNOWN",
+				11: "UNKNOWN; a missing scope skips",
 				13: "task not in the machine, or --task missing",
 				18: "state routes to no shell",
 				19: "no issue, or the issue is absent",
@@ -1717,6 +1760,9 @@ const seats = leafCommand(
 				39: ROOT_EXITS[39],
 				65: ROOT_EXITS[65],
 			},
+			[
+				"Non-directory and dot-prefixed entries under the root are not lanes, so they hold no seat.",
+			],
 		),
 	),
 	Command.withExamples([
@@ -1820,6 +1866,12 @@ const archive = leafCommand(
 				"walk the lanes root and archive EVERY lane both gates already clear, reporting one row per lane examined. Takes no lane argument — a key and this flag together name two different jobs",
 			),
 		),
+		retriaged: Flag.boolean("retriaged").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"move a lane whose log replays to `diagnosed` with no pull request and no spent round, so a re-triaged issue can boot a fresh lane. Every other final refuses at 73; a later move of the same key takes the next free <lane>.archived-<n> slot",
+			),
+		),
 		root: rootFlag,
 		archivedRoot: Flag.string("archived-root").pipe(
 			Flag.optional,
@@ -1840,7 +1892,16 @@ const archive = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, sweep, root, archivedRoot: archived, token, repo}) {
+	Effect.fn(function* ({lane, sweep, retriaged, root, archivedRoot: archived, token, repo}) {
+		if (sweep && retriaged) {
+			yield* emit(
+				refuse(
+					FAILED,
+					"fabrika lane archive: --retriaged names one lane an operator judged re-triaged, and --sweep walks every lane on the unreplayable gate — the two are different jobs, so nothing was moved. Drop one.",
+				),
+			);
+			return;
+		}
 		if (sweep && Option.isSome(lane)) {
 			yield* emit(
 				refuse(
@@ -1905,6 +1966,7 @@ const archive = leafCommand(
 			yield* onGround("archive", [ref.root, destination], process.cwd(), () =>
 				runArchive({
 					ref,
+					route: retriaged ? "retriaged" : "unreplayable",
 					archivedRoot: destination,
 					templatePaths,
 					issue: keyIssue(parsed.key),
@@ -1917,12 +1979,12 @@ const archive = leafCommand(
 	}),
 ).pipe(
 	Command.withShortDescription(
-		"Move lanes whose logs never replay out of the swept root — one or all.",
+		"Move an unreplayable or re-triaged diagnosed lane out of the swept root.",
 	),
 	Command.withDescription(
 		laneHelp(
 			"archive",
-			"Moves a lane whose log never replays out of the lanes root, or sweeps them; prints JSON.",
+			"Moves an unreplayable lane aside, or sweeps; --retriaged moves a diagnosed no-PR one; prints JSON.",
 			{
 				4: "bad lane record",
 				7: "no lane",
@@ -1935,11 +1997,13 @@ const archive = leafCommand(
 				39: ROOT_EXITS[39],
 				50: "the log replays, nothing to move",
 				65: ROOT_EXITS[65],
+				73: "--retriaged: not diagnosed, or a PR or spent round",
 			},
 		),
 	),
 	Command.withExamples([
 		{command: "fabrika lane archive 6037"},
+		{command: "fabrika lane archive 10054 --retriaged --token <your lane-claim token>"},
 		{command: "fabrika lane archive 8810 --token <the token `fabrika lane claim` printed>"},
 		{command: "fabrika lane archive --sweep"},
 	]),
@@ -2157,8 +2221,19 @@ const recover = leafCommand(
 				runRecover({
 					roots,
 					check,
+					// The driver's own `ship:queued` read: one look, never the shipper's horizon.
+					queue: (pr: number) =>
+						runShipReconcile({
+							pr,
+							polls: 1,
+							cadenceSeconds: 0,
+							repo: Option.getOrNull(repo),
+							json: true,
+							env: process.env,
+						}).pipe(Effect.map(queueReadOf)),
 					spawns: spawnReads,
 					prove: runProve,
+					closeIssue: issueCloser(Option.getOrNull(repo), process.env),
 					parkCause,
 					repo: Option.getOrNull(repo),
 					cwd: process.cwd(),
@@ -2172,7 +2247,7 @@ const recover = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"recover",
-			"Records the event each lane's own artifact proves but its ledger never learned; prints JSON.",
+			"Records the events lane artifacts prove and settles tasks the merge queue left; prints JSON.",
 			{
 				8: "an append did not land, UNKNOWN",
 				11: "a root could not be listed, UNKNOWN",
@@ -2231,6 +2306,96 @@ const wait = leafCommand(
 	]),
 );
 
+const dispatched = leafCommand(
+	"dispatched",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the task a shell is about to be spawned for; omittable on a single-task lane",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, task}) {
+		yield* emit(
+			yield* onKey("dispatched", lane, root, (_key, ref) =>
+				runDispatched({...ref, task: Option.getOrNull(task)}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Record that a stage shell is about to be spawned for a task."),
+	Command.withDescription(
+		laneHelp(
+			"dispatched",
+			'Records a dispatch fact before a spawn; prints {"answer":"dispatched",lane,task,state,shell,at}.',
+			{
+				4: "bad lane record or facts",
+				7: "no lane",
+				8: "the append did not land",
+				11: "read failed, UNKNOWN",
+				13: "task unknown or omitted",
+				18: "the task's state routes to no shell",
+				21: "bad key",
+				40: "the ledger lock is held; retry",
+				...ROOT_EXITS,
+			},
+		),
+	),
+	Command.withExamples([{command: "fabrika lane dispatched 5673"}]),
+);
+
+const working = leafCommand(
+	"working",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("the task this builder serves; omittable on a single-task lane"),
+		),
+		token: Flag.string("token").pipe(
+			Flag.withDescription("the build claim token `build claim` answered `won` with"),
+		),
+	},
+	Effect.fn(function* ({lane, root, task, token}) {
+		const worktree = yield* repoRoot;
+		yield* emit(
+			yield* onKey("working", lane, root, (_key, ref) =>
+				runWorking({...ref, task: Option.getOrNull(task), token, worktree}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Record the claim token and worktree of the builder on a task."),
+	Command.withDescription(
+		laneHelp(
+			"working",
+			'Records a builder\'s claim token and this tree\'s root; prints {"answer":"working",…}.',
+			{
+				4: "bad lane record or facts",
+				7: "no lane",
+				8: "the append did not land",
+				11: "read failed, UNKNOWN",
+				13: "task unknown or omitted",
+				18: "the task's state is not a build state",
+				21: "bad key",
+				40: "the ledger lock is held; retry",
+				70: "not a build claim token, or no absolute tree",
+				...ROOT_EXITS,
+			},
+		),
+	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika lane working 5673 --root /repo/.fabrika/lanes --token build:<session>:<uuid>",
+		},
+	]),
+);
+
 const record = leafCommand(
 	"record",
 	{
@@ -2280,6 +2445,7 @@ const record = leafCommand(
 				11: "read failed, UNKNOWN",
 				19: "the key names no issue",
 				21: "bad key",
+				49: "complete, and the issue is still open",
 				69: "the lane is not terminal",
 				...ROOT_EXITS,
 			},
@@ -2322,6 +2488,8 @@ export const laneCommand = Command.make("lane").pipe(
 		adopt,
 		scratch,
 		wait,
+		dispatched,
+		working,
 		record,
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),

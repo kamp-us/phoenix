@@ -12,6 +12,7 @@
  * **This verb ranks nothing.** Tension and blast radius are the two ruled ranking dimensions and both
  * are judgment; a ranking verb would be a second judgement wearing a verb's clothes.
  */
+
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {idFromFile, isFourDigitId, statusOf, titleOf} from "../adr/records.ts";
@@ -25,6 +26,7 @@ import {
 	parentlessCommitDates,
 	readFileAt,
 } from "../io/git.ts";
+import {baseOrTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {scanAnchors} from "./anchors.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -37,7 +39,10 @@ export interface DigestOptions {
 	readonly since: string;
 	readonly until: string | null;
 	readonly dir: string;
-	readonly base: string;
+	/** The ref whose history is walked; `null` walks the trunk `../io/trunk.ts` resolves. */
+	readonly base: string | null;
+	/** Where the trunk read resolves its repo and credential from when `base` is `null`. */
+	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly json: boolean;
 	/** The wall clock `--until` defaults from — a port so a test can pin the window's open end. */
 	readonly now: Effect.Effect<number>;
@@ -79,11 +84,18 @@ export const runDigest = (
 
 		// The base is FETCHED before it is walked: a stale checkout is how withdrawn doctrine gets
 		// applied after its withdrawal, and how a landed decision record reads as nonexistent.
-		const base = yield* fetchAndResolve(options.base);
+		const at = yield* baseOrTrunk(options.base, options.env, null);
+		if (at._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${trunkUnresolved(at.reason)}. Pass --base to name the ref yourself.`,
+			);
+		}
+		const base = yield* fetchAndResolve(at.value);
 		if (base._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot fetch or resolve ${options.base}: ${base.reason} — what landed is UNKNOWN, never "none".`,
+				`${VERB}: cannot fetch or resolve ${at.value}: ${base.reason} — what landed is UNKNOWN, never "none".`,
 			);
 		}
 

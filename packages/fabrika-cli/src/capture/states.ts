@@ -8,12 +8,14 @@
  * was filed about. So a state enters this list only once something here makes the page render
  * differently, and every other token stays refused as reserved grammar.
  *
- * Every realized state today is a seeded session, and **the state names the tier it renders at**,
- * because a tier is an audience: a surface whose whole point is that it renders below yazar — a
- * çaylak nudge, a pre-promotion prompt — cannot be judged from a yazar's pixels, and the shot comes
- * back clean showing the state the PR did not add. Each identity is provisioned direct against the
- * database by `preview-seed test-account`, never by a worker route, and each shot proves the tier
- * it actually rendered at before it is recorded.
+ * Every realized state today is a seeded session, and **the state names the audience it renders
+ * as**: a surface whose whole point is that it renders below yazar — a çaylak nudge, a
+ * pre-promotion prompt — cannot be judged from a yazar's pixels, and the shot comes back clean
+ * showing the state the PR did not add. Tier is one axis of that audience and a verified email is
+ * another, because a çaylak whose address is unverified is refused a write a verified one is
+ * granted. Each identity is provisioned direct against the database by `preview-seed test-account`,
+ * never by a worker route, and each shot proves the audience it actually rendered as before it is
+ * recorded.
  *
  * `auth` keeps naming the top-tier identity it named when it shipped, so every invocation already
  * written against it still means what it said.
@@ -28,36 +30,54 @@ import {parseSurfaceSpec} from "./plan.ts";
 export const CAPTURE_TIERS = ["yazar", "çaylak"] as const;
 export type CaptureTier = (typeof CAPTURE_TIERS)[number];
 
+/** The audience one seeded identity renders as, both halves read back off the session probe. */
+export interface CaptureAudience {
+	readonly tier: CaptureTier;
+	readonly emailVerified: boolean;
+}
+
 /**
- * Each realized state and the tier its identity renders at. The state token is ASCII while the tier
+ * The seeded identities — `preview-seed`'s `PREVIEW_IDENTITIES`, keyed the same way — and the
+ * audience each renders as. The two lists move together.
+ */
+export const CAPTURE_IDENTITIES = {
+	yazar: {tier: "yazar", emailVerified: true},
+	çaylak: {tier: "çaylak", emailVerified: true},
+	"çaylak-unverified": {tier: "çaylak", emailVerified: false},
+} as const satisfies Readonly<Record<string, CaptureAudience>>;
+export type CaptureIdentity = keyof typeof CAPTURE_IDENTITIES;
+
+/**
+ * Each realized state and the identity it renders as. The state token is ASCII while the identity
  * it names is not: a `--surface` operand is typed at a shell by hand, and `çaylak` on the operand
  * would make the fence depend on the caller's keyboard.
  */
-export const STATE_TIERS = {
+export const STATE_IDENTITIES = {
 	auth: "yazar",
 	"auth-caylak": "çaylak",
-} as const satisfies Readonly<Record<string, CaptureTier>>;
+	"auth-caylak-unverified": "çaylak-unverified",
+} as const satisfies Readonly<Record<string, CaptureIdentity>>;
 
-export const REALIZED_STATES = Object.keys(STATE_TIERS) as ReadonlyArray<RealizedState>;
-export type RealizedState = keyof typeof STATE_TIERS;
+export const REALIZED_STATES = Object.keys(STATE_IDENTITIES) as ReadonlyArray<RealizedState>;
+export type RealizedState = keyof typeof STATE_IDENTITIES;
 
 export const isRealizedState = (state: string): state is RealizedState =>
-	Object.hasOwn(STATE_TIERS, state);
+	Object.hasOwn(STATE_IDENTITIES, state);
 
 /**
- * The tier a state renders at, or `null` when the state names no seeded identity — the default
+ * The identity a state renders as, or `null` when the state names no seeded identity — the default
  * (anonymous, visitor) render, or a token outside the vocabulary, which the caller refuses before
  * anything is shot.
  */
-export const tierOf = (state: string | null): CaptureTier | null =>
-	state !== null && isRealizedState(state) ? STATE_TIERS[state] : null;
+export const identityOf = (state: string | null): CaptureIdentity | null =>
+	state !== null && isRealizedState(state) ? STATE_IDENTITIES[state] : null;
 
 /**
  * Whether a state's mechanism is a seeded session, so its shot owes a proof the session took and
- * came back at the named tier. A future state realized some other way owes a different proof, not
- * this one.
+ * came back as the named audience. A future state realized some other way owes a different proof,
+ * not this one.
  */
-export const provesSession = (state: string | null): boolean => tierOf(state) !== null;
+export const provesSession = (state: string | null): boolean => identityOf(state) !== null;
 
 /**
  * The state a surface token names, or `null` for the default (anonymous, visitor) render. Read

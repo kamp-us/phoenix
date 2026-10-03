@@ -1,6 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
+	configAtCommit,
 	errOut,
 	fakeFs,
 	fakeSeams,
@@ -439,7 +440,7 @@ diff --git a/src/cart.ts b/src/cart.ts
 `;
 	const governedRoots = ["governed/", ".fabrika.jsonc"];
 
-	/** The layer a governed-roots case runs over: the checkout's config declares these roots. */
+	/** The layer a governed-roots case runs over: the config at the range's commits declares these roots. */
 	const runOverRoots = (
 		script: ReadonlyArray<Scripted>,
 		roots: ReadonlyArray<string>,
@@ -449,8 +450,8 @@ diff --git a/src/cart.ts b/src/cart.ts
 			Effect.provide(
 				runDiff({...options, ...overrides}),
 				Layer.merge(
-					fakeSeams(script).layer,
-					fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify({governedRoots: roots})}}).layer,
+					fakeSeams([...configAtCommit(JSON.stringify({governedRoots: roots})), ...script]).layer,
+					unconfigured,
 				),
 			),
 		);

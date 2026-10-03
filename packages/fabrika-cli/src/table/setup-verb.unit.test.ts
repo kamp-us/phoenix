@@ -442,6 +442,7 @@ describe("table setup with a boards block", () => {
 			"repo",
 			"project",
 			"changes",
+			"drift",
 			"legacy",
 			"manualSteps",
 		]);
@@ -542,7 +543,7 @@ describe("table setup reads the size dollars from appetiteSizes", () => {
 		expect(github.projects[0]?.readme ?? "").toContain("- **S**: about $20.");
 		const answered = JSON.parse(outcome.stdout);
 		expect(answered.answer).toBe("reconciled");
-		expect(answered).not.toHaveProperty("drift");
+		expect(answered.drift).toEqual([]);
 		expect(outcome.stderr.join("\n")).not.toContain("drift");
 		expect(mutations(github)).not.toContain("TableUpdateField");
 	});
@@ -698,5 +699,171 @@ describe("table setup on an on-call board a person described in their own words"
 		expect(again.stderr.join("\n")).not.toContain("Someone looks");
 		expect(mutations(github).length).toBe(writes);
 		expect(fourHours.description).toBe("Someone looks within 4 hours");
+	});
+});
+
+describe("table setup on a board whose README and short description a person wrote", () => {
+	const START = "<!-- fabrika:table:start -->";
+	const END = "<!-- fabrika:table:end -->";
+	const OWN = "# Our table\n\nWe meet on Mondays. Ask Deniz before betting on anything over M.\n";
+	const split = fakeFs({
+		files: {"/repo/.fabrika.jsonc": JSON.stringify({boards: {onCall: {}}})},
+	}).layer;
+	const withConfig = (config: unknown): Layer.Layer<FileSystem.FileSystem | Path.Path> =>
+		fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}}).layer;
+	const between = (readme: string, start = START, end = END): string =>
+		readme.slice(readme.indexOf(start) + start.length, readme.indexOf(end));
+	const updates = (github: ReturnType<typeof fakeProjects>) =>
+		github.operations.filter((operation) => operation === "TableUpdateProject");
+
+	it("keeps a hand-written README with no markers byte for byte and appends fabrika's marked section", async () => {
+		const {outcome, github} = await run({
+			projects: [blankProject({number: 20, title: "widgets table", readme: OWN})],
+		});
+
+		expect(outcome.code).toBe(0);
+		const readme = github.projects[0]?.readme ?? "";
+		expect(readme.startsWith(OWN)).toBe(true);
+		expect(readme.slice(OWN.length)).toMatch(/^\n<!-- fabrika:table:start -->\n# How to use/);
+		expect(readme.endsWith(END)).toBe(true);
+		expect(between(readme)).toContain("# What the columns mean");
+		const changes: ReadonlyArray<string> = JSON.parse(outcome.stdout).changes;
+		expect(changes).toContain(
+			"kept the project README's own text and added fabrika's section below it; wrote the empty project short description",
+		);
+		expect(outcome.stderr.join("\n")).not.toContain("wrote the project README");
+	});
+
+	it("replaces only the text between the markers when appetiteSizes changes, keeping the text around them", async () => {
+		const github = fakeProjects({
+			repo: REPO,
+			projects: [blankProject({number: 20, title: "widgets table", readme: OWN})],
+		});
+		expect((await setupOn(github)).code).toBe(0);
+		const project = github.projects[0];
+		if (project === undefined) throw new Error("no project");
+		const after = "\n\n## Our notes after fabrika's\nKeep the Friday retro.\n";
+		project.readme = `${project.readme}${after}`;
+
+		const outcome = await setupOn(github, withConfig({appetiteSizes: {S: 20, M: 50, L: 90}}));
+
+		expect(outcome.code).toBe(0);
+		const readme = project.readme ?? "";
+		expect(readme.startsWith(`${OWN}\n${START}`)).toBe(true);
+		expect(readme.endsWith(`${END}${after}`)).toBe(true);
+		expect(between(readme)).toContain("- **S**: about $20.");
+		expect(between(readme)).not.toContain("- **S**: about $15.");
+		expect(JSON.parse(outcome.stdout).changes).toEqual([
+			"rewrote fabrika's section of the project README, keeping the text around it",
+		]);
+	});
+
+	it("plans no README write on a second run over a merged README, on the table and the on-call board", async () => {
+		const onCallOwn = "# On-call\n\nPage the owner of the failing service first.";
+		const github = fakeProjects({
+			repo: REPO,
+			projects: [
+				blankProject({number: 20, title: "widgets table", readme: OWN}),
+				blankProject({number: 21, title: "widgets on-call", readme: onCallOwn}),
+			],
+		});
+		expect((await setupOn(github, split)).code).toBe(0);
+		const onCallReadme = github.projects[1]?.readme ?? "";
+		expect(onCallReadme.startsWith(`${onCallOwn}\n\n<!-- fabrika:on-call:start -->`)).toBe(true);
+		expect(
+			between(onCallReadme, "<!-- fabrika:on-call:start -->", "<!-- fabrika:on-call:end -->"),
+		).toContain("# How to use the on-call board");
+		const before = structuredClone(github.projects);
+		const writes = updates(github).length;
+
+		const again = await setupOn(github, split);
+
+		expect(again.code).toBe(0);
+		expect(JSON.parse(again.stdout)).toMatchObject({
+			answer: "unchanged",
+			changes: [],
+			onCall: {answer: "unchanged", changes: []},
+		});
+		expect(updates(github).length).toBe(writes);
+		expect(github.projects).toEqual(before);
+	});
+
+	it("writes the marked section alone into an empty README", async () => {
+		const {outcome, github} = await run({
+			projects: [blankProject({number: 20, title: "widgets table", readme: ""})],
+		});
+
+		expect(outcome.code).toBe(0);
+		const readme = github.projects[0]?.readme ?? "";
+		expect(readme.startsWith(`${START}\n# How to use this table`)).toBe(true);
+		expect(readme.endsWith(`\n${END}`)).toBe(true);
+		expect(JSON.parse(outcome.stdout).changes).toContain(
+			"wrote fabrika's section as the empty project README; wrote the empty project short description",
+		);
+	});
+
+	it("replaces an unmarked README fabrika wrote before sections with the marked form, not a second copy", async () => {
+		const github = fakeProjects({repo: REPO});
+		expect((await setupOn(github)).code).toBe(0);
+		const project = github.projects[0];
+		if (project === undefined) throw new Error("no project");
+		const marked = project.readme ?? "";
+		project.readme = between(marked).slice(1, -1);
+
+		const outcome = await setupOn(github);
+
+		expect(outcome.code).toBe(0);
+		expect(project.readme).toBe(marked);
+		expect(project.readme?.split("# What the columns mean")).toHaveLength(2);
+		expect(JSON.parse(outcome.stdout).changes).toEqual([
+			"marked the project README fabrika wrote earlier as fabrika's section",
+		]);
+	});
+
+	it("writes an empty short description", async () => {
+		const {outcome, github} = await run({
+			projects: [blankProject({number: 20, title: "widgets table", shortDescription: null})],
+		});
+
+		expect(outcome.code).toBe(0);
+		expect(github.projects[0]?.shortDescription).toBe(
+			"The betting table for acme/widgets: what gets bet on, and whether it worked.",
+		);
+		expect(JSON.parse(outcome.stdout).drift).toEqual([]);
+	});
+
+	it("reports a short description a person wrote as drift and never overwrites it", async () => {
+		const theirs = "Where the widgets team decides what to build.";
+		const {outcome, github} = await run({
+			projects: [blankProject({number: 20, title: "widgets table", shortDescription: theirs})],
+		});
+
+		expect(outcome.code).toBe(0);
+		expect(github.projects[0]?.shortDescription).toBe(theirs);
+		const answered = JSON.parse(outcome.stdout);
+		expect(answered.drift).toHaveLength(1);
+		expect(answered.drift[0]).toContain(`reads "${theirs}"`);
+		expect(answered.drift[0]).toContain("change it by hand");
+		expect(outcome.stderr.join("\n")).toContain(
+			"table setup: drift: the project short description",
+		);
+		expect(answered.changes.join("\n")).not.toContain("short description");
+		const written = github.variables.filter(
+			(_, index) => github.operations[index] === "TableUpdateProject",
+		);
+		expect(written.every((variables) => !("shortDescription" in variables))).toBe(true);
+	});
+
+	it("leaves a README with a broken marker pair alone and reports it as drift", async () => {
+		const broken = `${OWN}\n${START}\nhalf a section, its end marker deleted by hand\n`;
+		const {outcome, github} = await run({
+			projects: [blankProject({number: 20, title: "widgets table", readme: broken})],
+		});
+
+		expect(outcome.code).toBe(0);
+		expect(github.projects[0]?.readme).toBe(broken);
+		expect(JSON.parse(outcome.stdout).drift).toContainEqual(
+			expect.stringContaining("fabrika:table markers are not one start marker"),
+		);
 	});
 });

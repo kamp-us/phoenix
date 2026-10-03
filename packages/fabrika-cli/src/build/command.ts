@@ -162,8 +162,10 @@ const pick = leafCommand(
 	Command.withDescription(
 		[
 			"Prints the ranked pool of issues a lane may claim, with every exclusion counted by reason.",
-			'  {"pool":[{…,"bet"}],"excluded":{"<reason>":n},"scanned":{"p0","p1","p2"},"bets":{"state",…}}',
+			'  {"pool":[{…,"bet"}],"excluded":{"<reason>":n},"unread":n,"scanned":{"p0","p1","p2"},"bets":{…}}',
 			"  Stage-bet issues on the table project lead the pool; no campaign state excludes anything.",
+			"  blocked_by is read in rank order until --limit survive; unread counts the rest.",
+			"  A token without the project scope degrades to the pool's own order and names the fix.",
 			"  11: a bucket, or the table when .fabrika.jsonc declares one, was unreadable (UNKNOWN)",
 			`  Derivation: the build skill's contract.md, "build pick"`,
 		].join("\n"),
@@ -497,7 +499,7 @@ const reap = leafCommand(
 		),
 	},
 	Effect.fn(function* ({execute, limit}) {
-		yield* emit(yield* runReap({execute, limit: Option.getOrNull(limit)}));
+		yield* emit(yield* runReap({execute, limit: Option.getOrNull(limit), env: process.env}));
 	}),
 ).pipe(
 	Command.withShortDescription("Reclaim the finished agent worktrees this clone never removed."),
@@ -552,7 +554,7 @@ const branch = leafCommand(
 		base: Flag.string("base").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"the base ref, FETCHED from a remote before the branch is cut; honoured verbatim on every lane. A ref with no <remote>/ half is qualified against origin, never read locally. Omit it and create mode DERIVES the base: epic/<parent> for a child of an epic, origin/main for a proven-standalone issue",
+				"the base ref, FETCHED from a remote before the branch is cut; honoured verbatim on every lane. A ref with no <remote>/ half is qualified against origin, never read locally. Omit it and create mode DERIVES the base: epic/<parent> for a child of an epic, the trunk (origin/<the repo's GitHub default branch>) for a proven-standalone issue",
 			),
 		),
 		resume: Flag.integer("resume").pipe(
@@ -762,14 +764,21 @@ const check = leafCommand(
 			),
 		),
 		repo: repoFlag,
+		probe: Flag.boolean("probe").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				'outside a lane: start every declared codeValidators entry once in this tree, naming each result on stderr; no session, diff, guard or config validator, so 7, 14, 15 and 22 never arise; writes nothing; green is {"verdict":"green","mode":"probe","surface","tree","ran"} (--surface code only; default: false)',
+			),
+		),
 	},
-	Effect.fn(function* ({surface, repo}) {
+	Effect.fn(function* ({surface, repo, probe}) {
 		yield* emit(
 			yield* runCheck({
 				surface,
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				guards: localTreeGuards,
+				probe,
 			}),
 		);
 	}),
@@ -779,11 +788,11 @@ const check = leafCommand(
 	),
 	Command.withDescription(
 		[
-			"Runs this surface's validators and the local-tree guards in this tree and prints a green as JSON.",
+			"Runs this surface's validators and guards in this tree; --probe runs only codeValidators.",
 			'  {"verdict":"green","surface","tree","ran","skipped","unvalidated"}',
 			"  7: the diff is empty",
-			"  10: --surface is off-enum or contradicts the diff",
-			"  11: a validator, file, config or claim could not be read (UNKNOWN)",
+			"  10: --surface is off-enum, contradicts the diff, or is not code under --probe",
+			"  11: a validator cannot start, no codeValidators, or a read failed (UNKNOWN)",
 			"  14: the branch is not this lane's",
 			"  15: the claim is held by another lane",
 			"  18: red; the failing validator or guard is named on stderr",
@@ -791,7 +800,10 @@ const check = leafCommand(
 			`  Derivation: the build skill's contract.md, "build check"`,
 		].join("\n"),
 	),
-	Command.withExamples([{command: "fabrika build check --surface code"}]),
+	Command.withExamples([
+		{command: "fabrika build check --surface code"},
+		{command: "fabrika build check --surface code --probe"},
+	]),
 );
 
 /**
@@ -813,35 +825,47 @@ const push = leafCommand(
 				"publish a head that does NOT contain the published remote head, dropping its commits — a deliberate history rewrite (default: false)",
 			),
 		),
+		partial: Flag.boolean("partial").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				'the acceptance criteria are not all met: the PR body must say "Part of #<n>", not "Fixes #<n>"; a fresh lane only (default: false)',
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({dropRemoteCommits, forceWithLease, repo}) {
+	Effect.fn(function* ({dropRemoteCommits, forceWithLease, partial, repo}) {
 		yield* emit(
 			yield* runPush({
 				forceWithLease,
 				dropRemoteCommits,
+				partial,
 				repo: Option.getOrNull(repo),
 				env: process.env,
+				stdin: Effect.sync(readStdin),
 			}),
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Push the lane's branch and confirm the remote ref moved."),
+	Command.withShortDescription("Push the lane's branch, confirm the ref moved, and open its PR."),
 	Command.withDescription(
 		[
-			"Pushes this lane's branch, reads the remote ref back and ends stdout on PUSH-VERDICT: MOVED.",
-			"  8: pushed, and the remote ref could not be re-read (UNKNOWN)",
-			"  11: the claim or the remote head could not be read; nothing was pushed",
+			"Vets the PR body on stdin, pushes, proves the ref moved, then opens the lane's PR.",
+			"  3: a build pr guard refuses the body (so do 4, 5, 6, 10)",
+			"  7: the issue is absent or closed",
+			"  8: pushed, then the ref read-back or PR create failed (UNKNOWN); re-run",
+			"  9: the PR body does not read back",
+			"  11: a read failed",
 			"  14: the branch is not this lane's",
-			"  15: the claim is held by another lane",
+			"  15: another lane holds the claim",
 			"  17: the remote ref did not move",
-			"  19: detached HEAD, or non-fast-forward without --force-with-lease",
-			"  23: the push would drop the published head's commits",
+			"  19: detached HEAD, non-fast-forward without the lease flag, or --partial on repair",
+			"  23: the push would drop published commits",
 			`  Derivation: the build skill's contract.md, "build push"`,
 		].join("\n"),
 	),
 	Command.withExamples([
-		{command: "fabrika build push"},
+		{command: "fabrika build push < body.md"},
+		{command: "fabrika build push --partial < body.md"},
 		{command: "fabrika build push --force-with-lease"},
 	]),
 );
@@ -1074,8 +1098,9 @@ const verdicts = leafCommand(
 	Command.withDescription(
 		[
 			"Prints the latest gate verdict per namespace for a PR's head, or an epic child, as JSON.",
-			'  {"head","mergeability","rows","rounds","capReached","clearances","escalatedFindings",…}',
-			"  Empty rows is a proven no-verdict answer about the gates, never about mergeability",
+			'  {"head","mergeability","requiredChecks","rows","capReached","escalatedFindings",…}',
+			"  requiredChecks.state: green | red (.failing) | pending | unknown; only green is green",
+			"  Empty rows is a proven no-verdict answer about the gates, never about mergeability or CI",
 			"  7: the PR or issue is absent or closed, or --issue names a PR",
 			"  10: neither or both of --pr and --issue",
 			"  11: a page, the head or the linked issue could not be read (UNKNOWN)",

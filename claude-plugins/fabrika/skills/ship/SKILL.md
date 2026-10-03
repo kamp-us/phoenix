@@ -85,6 +85,16 @@ fabrika ship cp-approval $pr_number --sha 03135b91
 before it is solicited, a base-drift notice from the verb routes rebase → re-gate → re-bank first,
 so the approval is never spent on a head that must move.
 
+**`base-conflicted` → disarm and report `BASE-CONFLICTED`, never `AWAITING-CP-APPROVAL`.** The verb
+answers it instead of `stop` when no approval binds the head and GitHub definitely reads the head
+`dirty` against its base. Nobody should approve bytes the rebase will replace, so the lane goes to a
+builder, not a person. Record it exactly as step 6 records `ship enqueue`'s `21`, with the same
+`ROUTED-REPAIR` fallback on a `12`:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token BASE-CONFLICTED --pr <pr-url>
+```
+
 **On a `stop`, the terminal is `AWAITING-CP-APPROVAL` and a base-drift notice never changes that.**
 The notice says what has to happen before the approval is solicited; it is not a second outcome, and
 the verb's own emitted outcome stays `stop` on the `behind > 0` branch. So a base-drift diagnostic on
@@ -96,7 +106,9 @@ cause when you record it, so the park is one a sweep can read:
 node <fabrika> lane report <lane> --root <root> --task <task> --token AWAITING-CP-APPROVAL --cause head-behind-base --pr <pr-url>
 ```
 
-Pass it when the head is still behind at the moment you record. A `stop` with no drift needs no
+Pass it only on a `stop` whose head is still behind at the moment you record. A `stop` means the
+head merges clean, so `head-behind-base` never names a conflicting head; that one answered
+`base-conflicted` above. A `stop` with no drift needs no
 `--cause`: the token itself records `awaiting-cp-approval`, which is the park `recipe unpark` clears
 by re-reading the approval. <!-- anchor: NO-REBASE-AFTER-APPROVAL -->
 Once a control-plane approval exists, **never rebase or force-push the head**: a moved head means
@@ -132,6 +144,16 @@ other namespace can read that way. The polarity rules, the
 content-digest binding and the whole `blocked` taxonomy are the verb's section
 (`fabrika wire doc-section --heading "ship gate" < <skill-base>/contract.md`).
 
+**Every route to a gate is one terminal, `ROUTED-REVIEW`, and it needs no `--cause`.** Absent,
+stale and unopened all say the same thing: a namespace the gate requires has no binding verdict at
+this head. So the token records `verdict-owed` by itself, and the lane leaves `ship` as a named park
+the driver can act on. A head that moved after review is the usual way to get here. A `FAIL` is
+never this route: it goes to repair as `ROUTED-REPAIR`.
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token ROUTED-REVIEW --pr <pr-url>
+```
+
 **Your reading of `blocked` is not the only thing enforcing the governance floor.**
 `.github/workflows/governance-floor.yml` runs `fabrika ship floor --publish-check` on every PR and
 publishes the answer as the `governance floor at head` check-run: pending while no verdict has been
@@ -151,10 +173,15 @@ it refuses on WRONG and not only on MISSING, and the conclusion map are its sect
 fabrika ship checks $pr_number --sha 03135b91 --wait
 ```
 
+That `--wait` is your whole wait on CI; any other wait follows
+[skill-conventions §14](../../docs/skill-conventions.md).
+
 Terminals: `green` → continue. `red` → disarm, note, route the failing gating runs the notes channel
 names to `heal-ci`, stop. **Name the cause when you record that terminal**, so the park is one a
 recipe can clear rather than one that spends a person: a red head is the park class whose cause most
 often goes away with nobody acting, and `recipe unpark` clears it by re-reading this same rollup.
+You still never tell a flake from a defect here. A red that `heal-ci` classes `logic` leaves that
+park into repair through the driver's `recipe unpark`, never through a `ROUTED-REPAIR` of yours.
 
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token ROUTED-HEAL-CI --cause head-ci-red --pr <pr-url>
@@ -288,12 +315,18 @@ conflict nobody's code caused.
 repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts. The
 routing is to repair and the *charge* is not: see the ejection row below for which token records it,
 and why an ejection costs the ticket no repair round.
-`unresolved` → report it in those words with the horizon; still-queued at the horizon is
-neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. Your horizon
+`unresolved` → report it in those words with the horizon; a PR still queued at the horizon, or
+armed and unqueued but younger than reconcile's floor, is neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. Your horizon
 is fixed: you never poll past it, and a lane that needs longer gets it from the driver's re-reads at
-`ship:queued`, not from a wider watch in here. `parked` →
-the enqueue never took effect: run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a
-read and disarms nothing), note, and stop. The `mergeable_state` assertion and each terminal's proof
+`ship:queued`, not from a wider watch in here. A driver settles every lane left there with one
+`lane recover` sweep rather than an operator spawn per lane (operate's `ship:queued` section). The
+sweep runs no disarm: a `parked` answer comes back as a `disarm-owed` row, and the driver owes
+`ship disarm <pr> --site post-enqueue` on it now.
+`parked` →
+the arm waited past reconcile's floor and never entered the queue, so the enqueue did not take
+effect (a younger unqueued arm reads `unresolved`): run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a
+read and disarms nothing), note, and stop. The floor outlasts your default horizon, so a readable
+arm usually first reads `parked` at the driver's `ship:queued` re-read, which runs the same disarm. The `mergeable_state` assertion and each terminal's proof
 are the verbs' sections
 (`fabrika wire doc-section --heading "ship enqueue" < <skill-base>/contract.md`, then
 `--heading "ship reconcile"`, and `--heading "ship merge"` for the direct route).
@@ -320,7 +353,7 @@ ledger through `lane report` at the `--root` your brief carries, a path outside 
 push, no local git mutation, no
 implementation, no review verdict, no flag flip. Every run ends as exactly one of:
 **already-merged (idempotent success)** · **QUEUED — enqueued, awaiting the queue** and
-**UNRESOLVED at horizon — still queued, still clean** (the two queue waits: your run ends, the lane
+**UNRESOLVED at horizon — still queued, or armed and not yet past the floor; still clean** (the two queue waits: your run ends, the lane
 does not. Neither is a landing — no merge was observed — and neither is a park: both record `WIP`,
 which folds the lane to `ship:queued` for the driver to re-read) ·
 **landed** (the direct route's, and
@@ -334,7 +367,8 @@ budget** — report it as `QUEUE-EJECTED`, which records the machine's own lap a
 `queue-ejected` cause off the routed table. `EJECTED` is the pre-lap token, and it spends a retry;
 where the lap axis is off, the lane's machine holds no lap cell and `QUEUE-EJECTED` is refused on
 exit `12` with the log untouched, which is the one case that token is right) ·
-**BASE-CONFLICTED — routed to repair** (a `dirty` base at `ship enqueue`'s pre-arm read is
+**BASE-CONFLICTED — routed to repair** (a `dirty` base at `ship enqueue`'s pre-arm read, or
+`ship cp-approval`'s `base-conflicted` answer, is
 **machinery** on the same test an ejection is: main moved under the branch and nothing about this
 artifact was judged, so it **spends no repair budget** — report it as `BASE-CONFLICTED`, which
 records the machine's own lap, carries the `base-conflicted` cause, and folds the lane to `build`

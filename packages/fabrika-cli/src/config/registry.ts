@@ -32,6 +32,7 @@ import {parkCauseKey} from "./keys/park-cause.ts";
 import {cycleDocKey, decisionsDirKey, roadmapFileKey} from "./keys/paths.ts";
 import {portabilityKey} from "./keys/portability.ts";
 import {reviewSubsystemsKey} from "./keys/review-subsystems.ts";
+import {reviewUiKey} from "./keys/review-ui.ts";
 import {surfaceDispositionsKey} from "./keys/surface-dispositions.ts";
 import {tableKey} from "./keys/table.ts";
 import {triageFacetsKey} from "./keys/triage-facets.ts";
@@ -65,6 +66,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(reviewFilterExclusionsKey),
 	register(reviewFilterUnexcludeKey),
 	register(reviewSubsystemsKey),
+	register(reviewUiKey),
 	register(roadmapFileKey),
 	register(surfaceDispositionsKey),
 	register(tableKey),

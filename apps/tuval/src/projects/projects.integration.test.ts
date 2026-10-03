@@ -37,10 +37,10 @@ import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
 import {homeStateDir} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Context, Effect, Fiber, Option, Schedule, Schema, Stream} from "effect";
-import {boot, type Kernel, projectConfig, projectDir} from "../boot.ts";
+import {type BootOptions, boot, type Kernel, projectConfig, projectDir} from "../boot.ts";
 import {servePage} from "../page/dev-server.ts";
 import {ProjectId} from "../project-id.ts";
-import {scratchHome} from "../scratch-home.ts";
+import {scratchHome, trustFolders} from "../scratch-home.ts";
 import type {TransportServer} from "../shell/transport/server.ts";
 import type {BrowsedFolder} from "./open-project-wire.ts";
 import {OpenProjects, readOpenProjects, saveOpenProjects} from "./open-projects.ts";
@@ -106,6 +106,16 @@ const openAnswering = (kernel: Context.Context<Kernel>, folder: string, answer: 
 		const prompt = yield* questionFor(kernel, folder);
 		assert.isTrue(yield* Context.get(kernel, TrustPrompts).answer(prompt.question, answer));
 		return yield* Fiber.join(opening);
+	});
+
+/**
+ * `boot` on `options.project` with that folder trusted in the scratch home first, as a desk that
+ * ran before would have left it: these cases are not about the boot folder's trust question (#9977).
+ */
+const trustedBoot = (options: BootOptions) =>
+	Effect.suspend(() => {
+		trustFolders(options.home, [options.project]);
+		return boot(options);
 	});
 
 const pendingNow = (kernel: Context.Context<Kernel>) =>
@@ -219,8 +229,10 @@ describe("a project opened into a running desk", () => {
 				const second = projectWith("counter-into-global-log");
 				const alpha = ProjectId.of(first);
 				const beta = ProjectId.of(second);
-				const {kernel, report} = yield* boot({global: fixture("log-global"), project: first, home});
+				const {kernel} = yield* trustedBoot({global: fixture("log-global"), project: first, home});
 				const counter = beta.scope("counter");
+				// Trusted up front, so the boot folder opened with no question (#9977).
+				assert.deepStrictEqual(yield* pendingNow(kernel), []);
 
 				const opened = yield* openAnswering(kernel, second, "trust");
 				assert.isTrue(opened.ok, JSON.stringify(opened));
@@ -244,12 +256,12 @@ describe("a project opened into a running desk", () => {
 				// Each project checkpoints under its own state directory.
 				assert.include(manifestIds(homeStateDir(second, home)), counter);
 				assert.isTrue(existsSync(join(homeStateDir(second, home), "processes", `${counter}.json`)));
-				assert.notInclude(manifestIds(report.stateDir), counter);
-				assert.include(manifestIds(report.stateDir), alpha.scope("main"));
+				assert.notInclude(manifestIds(homeStateDir(first, home)), counter);
+				assert.include(manifestIds(homeStateDir(first, home)), alpha.scope("main"));
 				assert.deepStrictEqual(yield* readOpenProjects(home), {
 					version: 1,
 					projects: [{folder: first}, {folder: second}],
-					trusted: [second],
+					trusted: [first, second],
 					recommends: [],
 					recent: [second, first],
 				});
@@ -289,7 +301,7 @@ describe("a project opened into a running desk", () => {
 				assert.deepStrictEqual(yield* readOpenProjects(home), {
 					version: 1,
 					projects: [{folder: first}],
-					trusted: [second],
+					trusted: [first, second],
 					recommends: [],
 					recent: [second, first],
 				});
@@ -320,7 +332,11 @@ describe("a project opened into a running desk", () => {
 				const file = installRenderer(second);
 				// Trusted by a desk that ran before: the saved list is what this boot reads its trust from.
 				yield* saveOpenProjects(home, OpenProjects.none.trust(second));
-				const booted = yield* boot({global: fixture("does-not-exist"), project: first, home});
+				const booted = yield* trustedBoot({
+					global: fixture("does-not-exist"),
+					project: first,
+					home,
+				});
 				const projects = Context.get(booted.kernel, Projects);
 				const page = yield* servePage({
 					root: appRoot,
@@ -361,7 +377,7 @@ describe("the first open of a folder", () => {
 				const home = scratchHome("projects-trust-no");
 				const first = projectWith("planned-counter");
 				const {folder, marker} = projectMarking("counter-into-global-log");
-				const {kernel} = yield* boot({global: fixture("log-global"), project: first, home});
+				const {kernel} = yield* trustedBoot({global: fixture("log-global"), project: first, home});
 				const before = yield* liveIds(kernel);
 
 				const opening = yield* Effect.forkChild(spell(kernel, ["project", "open"], {folder}));
@@ -387,7 +403,7 @@ describe("the first open of a folder", () => {
 				assert.deepStrictEqual(yield* readOpenProjects(home), {
 					version: 1,
 					projects: [{folder: first}],
-					trusted: [],
+					trusted: [first],
 					recommends: [],
 					recent: [first],
 				});
@@ -402,14 +418,14 @@ describe("the first open of a folder", () => {
 				const home = scratchHome("projects-trust-yes");
 				const first = projectWith("planned-counter");
 				const {folder, marker} = projectMarking("counter-into-global-log");
-				const {kernel} = yield* boot({global: fixture("log-global"), project: first, home});
+				const {kernel} = yield* trustedBoot({global: fixture("log-global"), project: first, home});
 
 				const opened = yield* openAnswering(kernel, folder, "trust");
 				assert.isTrue(opened.ok, JSON.stringify(opened));
 				assert.isTrue(existsSync(marker));
 				assert.include(yield* liveIds(kernel), ProjectId.of(folder).scope("counter"));
 				const saved = yield* readOpenProjects(home);
-				assert.deepStrictEqual(saved?.trusted, [folder]);
+				assert.deepStrictEqual(saved?.trusted, [first, folder]);
 
 				const closed = yield* spell(kernel, ["project", "close"], {folder});
 				assert.isTrue(closed.ok, JSON.stringify(closed));
@@ -431,7 +447,7 @@ describe("the first open of a folder", () => {
 				const first = projectWith("planned-counter");
 				const bare = realpathSync(mkdtempSync(join(tmpdir(), "tuval-bare-")));
 				// The boot read the home config and the desk layer, and asked nothing to do it.
-				const {kernel} = yield* boot({global: fixture("log-global"), project: first, home});
+				const {kernel} = yield* trustedBoot({global: fixture("log-global"), project: first, home});
 				assert.deepStrictEqual(yield* pendingNow(kernel), []);
 
 				const opened = yield* spell(kernel, ["project", "open"], {folder: bare}).pipe(
@@ -439,7 +455,90 @@ describe("the first open of a folder", () => {
 				);
 				assert.isTrue(opened.ok, JSON.stringify(opened));
 				assert.deepStrictEqual(yield* pendingNow(kernel), []);
-				assert.deepStrictEqual((yield* readOpenProjects(home))?.trusted, []);
+				assert.deepStrictEqual((yield* readOpenProjects(home))?.trusted, [first]);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+});
+
+describe("the folder a desk boots with (#9977)", () => {
+	it.live(
+		"is asked about before its config is imported, and a yes opens it and remembers it",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("projects-boot-yes");
+				const {folder, marker} = projectMarking("planned-counter");
+				const {kernel, report} = yield* boot({
+					global: fixture("log-global"),
+					project: folder,
+					home,
+				});
+				assert.deepStrictEqual(report.first, {_tag: "Asking", folder});
+				assert.isFalse(
+					existsSync(marker),
+					"the boot folder's config ran before the person answered",
+				);
+				assert.deepStrictEqual(report.sources, [fixture("log-global")]);
+				assert.deepStrictEqual(yield* openFolders(kernel), []);
+				assert.includeMembers([...(yield* liveIds(kernel))], ["shell", "log"]);
+
+				// The question the page is sent is the one `project open` asks.
+				const prompt = yield* questionFor(kernel, folder);
+				assert.deepStrictEqual(prompt, {
+					question: prompt.question,
+					folder,
+					name: ProjectId.of(folder).name,
+				});
+				assert.isFalse(
+					existsSync(marker),
+					"the boot folder's config ran before the person answered",
+				);
+				assert.isTrue(yield* Context.get(kernel, TrustPrompts).answer(prompt.question, "trust"));
+
+				yield* eventually("the boot folder to open", openFolders(kernel), (open) =>
+					open.includes(folder),
+				);
+				assert.isTrue(existsSync(marker));
+				assert.include(yield* liveIds(kernel), ProjectId.of(folder).scope("main"));
+				const saved = yield* readOpenProjects(home);
+				assert.deepStrictEqual(saved?.trusted, [folder]);
+				assert.deepStrictEqual(
+					saved?.projects.map((project) => project.folder),
+					[folder],
+				);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+		TIMEOUT,
+	);
+
+	it.live(
+		"left untrusted on a no, keeps the desk running on the home and global layers with its own state",
+		() =>
+			Effect.gen(function* () {
+				const home = scratchHome("projects-boot-no");
+				const {folder, marker} = projectMarking("planned-counter");
+				const {kernel, report} = yield* boot({
+					global: fixture("log-global"),
+					project: folder,
+					home,
+				});
+				const before = yield* liveIds(kernel);
+
+				const prompt = yield* questionFor(kernel, folder);
+				assert.isTrue(yield* Context.get(kernel, TrustPrompts).answer(prompt.question, "refuse"));
+				yield* eventually(
+					"the question to leave the page",
+					pendingNow(kernel),
+					(pending) => (pending ?? []).length === 0,
+				);
+
+				assert.isFalse(existsSync(marker), "a refused boot folder's config module was imported");
+				assert.deepStrictEqual(yield* openFolders(kernel), []);
+				assert.deepStrictEqual([...(yield* liveIds(kernel))].sort(), [...before].sort());
+				assert.deepStrictEqual((yield* readOpenProjects(home))?.trusted ?? [], []);
+				// The desk saves into a state directory of its own, not the refused folder's.
+				assert.strictEqual(report.deskStateDir, homeStateDir(home, home));
+				assert.includeMembers([...manifestIds(report.deskStateDir)], ["shell", "log"]);
+				assert.isFalse(existsSync(homeStateDir(folder, home)));
 			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
 		TIMEOUT,
 	);
@@ -469,7 +568,7 @@ describe("a project's recommended packages (#9695)", () => {
 				const home = scratchHome("projects-recommends");
 				const first = projectWith("planned-counter");
 				const folder = projectWith("counter-recommending");
-				const {kernel} = yield* boot({global: fixture("log-global"), project: first, home});
+				const {kernel} = yield* trustedBoot({global: fixture("log-global"), project: first, home});
 
 				const opening = yield* Effect.forkChild(spell(kernel, ["project", "open"], {folder}));
 				const trust = yield* questionFor(kernel, folder);
@@ -519,7 +618,7 @@ describe("a project's recommended packages (#9695)", () => {
 				const home = scratchHome("projects-recommends-untrusted");
 				const first = projectWith("planned-counter");
 				const {folder, marker} = projectMarking("counter-recommending");
-				const {kernel} = yield* boot({global: fixture("log-global"), project: first, home});
+				const {kernel} = yield* trustedBoot({global: fixture("log-global"), project: first, home});
 
 				const opened = yield* openAnswering(kernel, folder, "refuse");
 				assert.isFalse(opened.ok, JSON.stringify(opened));
@@ -554,7 +653,11 @@ describe("the folder a process runs in (#9694)", () => {
 				const first = projectWith("folder-probe");
 				const second = projectWith("folder-probe");
 				yield* saveOpenProjects(home, OpenProjects.none.trust(second));
-				const {kernel} = yield* boot({global: fixture("folder-probe"), project: first, home});
+				const {kernel} = yield* trustedBoot({
+					global: fixture("folder-probe"),
+					project: first,
+					home,
+				});
 
 				assert.strictEqual(yield* folderOf(kernel, "probe"), home);
 				assert.strictEqual(yield* folderOf(kernel, ProjectId.of(first).scope("probe")), first);
@@ -585,7 +688,11 @@ describe("a desk restart", () => {
 				const counter = ProjectId.of(second).scope("counter");
 
 				yield* Effect.gen(function* () {
-					const {kernel} = yield* boot({global: fixture("log-global"), project: first, home});
+					const {kernel} = yield* trustedBoot({
+						global: fixture("log-global"),
+						project: first,
+						home,
+					});
 					assert.isTrue((yield* openAnswering(kernel, second, "trust")).ok);
 					assert.isTrue((yield* openAnswering(kernel, closed, "trust")).ok);
 					yield* tick(kernel, counter);
@@ -598,7 +705,11 @@ describe("a desk restart", () => {
 					assert.isTrue(closing.ok, JSON.stringify(closing));
 				}).pipe(Effect.scoped);
 
-				const {kernel, report} = yield* boot({global: fixture("log-global"), project: first, home});
+				const {kernel, report} = yield* trustedBoot({
+					global: fixture("log-global"),
+					project: first,
+					home,
+				});
 				assert.deepStrictEqual(yield* openFolders(kernel), [first, second]);
 				assert.deepStrictEqual(report.reopened, [second]);
 				assert.deepStrictEqual(report.skipped, []);
@@ -610,7 +721,7 @@ describe("a desk restart", () => {
 				assert.notInclude(live, ProjectId.of(closed).scope("counter"));
 				// The counter comes back at its checkpoint, read from its own project's state directory.
 				assert.include(manifestIds(homeStateDir(second, home)), counter);
-				assert.notInclude(manifestIds(report.stateDir), counter);
+				assert.notInclude(manifestIds(homeStateDir(first, home)), counter);
 				yield* tick(kernel, counter);
 				const lines = yield* eventually(
 					"the log records the restored counter's tick",
@@ -644,7 +755,11 @@ describe("a desk restart", () => {
 				yield* saveOpenProjects(home, stopped);
 				rmSync(gone, {recursive: true, force: true});
 
-				const {kernel, report} = yield* boot({global: fixture("log-global"), project: first, home});
+				const {kernel, report} = yield* trustedBoot({
+					global: fixture("log-global"),
+					project: first,
+					home,
+				});
 				assert.deepStrictEqual(yield* openFolders(kernel), [first, kept]);
 				assert.deepStrictEqual(report.reopened, [kept]);
 				assert.deepStrictEqual(
@@ -676,12 +791,12 @@ describe("a project node running a global program", () => {
 				const first = projectWith("planned-counter");
 				const second = projectWith("runs-global-log");
 				const watch = ProjectId.of(second).scope("watch");
-				const {kernel, report} = yield* boot({global: fixture("log-global"), project: first, home});
+				const {kernel} = yield* trustedBoot({global: fixture("log-global"), project: first, home});
 
 				assert.isTrue((yield* openAnswering(kernel, second, "trust")).ok);
 				assert.includeMembers([...(yield* liveIds(kernel))], ["log", watch]);
 				assert.include(manifestIds(homeStateDir(second, home)), watch);
-				assert.notInclude(manifestIds(report.stateDir), watch);
+				assert.notInclude(manifestIds(homeStateDir(first, home)), watch);
 
 				const closed = yield* spell(kernel, ["project", "close"], {folder: second});
 				assert.isTrue(closed.ok, JSON.stringify(closed));
@@ -719,7 +834,11 @@ describe("a project reopened on restart", () => {
 					}),
 				);
 
-				const {kernel, report} = yield* boot({global: fixture("log-global"), project: first, home});
+				const {kernel, report} = yield* trustedBoot({
+					global: fixture("log-global"),
+					project: first,
+					home,
+				});
 				assert.deepStrictEqual(report.reopened, [kept]);
 				const messages = report.refused.map((each) => each.message);
 				const refusal = messages.find((message) => message.includes("future-counter"));

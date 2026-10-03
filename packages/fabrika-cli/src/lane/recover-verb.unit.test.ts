@@ -7,10 +7,29 @@ import {appendText} from "../io/fs.ts";
 import {answer, refuse} from "../verb.ts";
 import {APPEND_UNKNOWN, LANE_UNREADABLE, PROOF_ABSENT} from "./codes.ts";
 import {coderTemplateText, parkCauseRead} from "./fixtures.test-support.ts";
+import {foldLog, parseLog} from "./fold.ts";
+import {compileText} from "./machine.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {proofLabelOf} from "./prove-verb.ts";
-import {type BranchRead, type PullsRead, runRecover} from "./recover-verb.ts";
+import {
+	type BranchRead,
+	type PullsRead,
+	type QueueRead,
+	queueReadOf,
+	runRecover,
+} from "./recover-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "./store.ts";
+
+/** A queue read for a sweep with no lane in `ship:queued`: asking it at all is the defect. */
+
+const unaskedQueue = (pr: number): Effect.Effect<QueueRead> =>
+	Effect.succeed({
+		_tag: "Unknown",
+		reason: `the queue was asked about #${pr}, which no fixture queued`,
+	});
+
+/** No recover case here reaches a closing merge, so a close is never owed. */
+const noClose = () => Effect.succeed({_tag: "Failed" as const, reason: "no close expected"});
 
 const at = (n: number): string => `2026-09-15T18:1${n}:00.000Z`;
 
@@ -63,8 +82,15 @@ const sweep = (
 	proofs: (options: ProveOptions) => ReturnType<typeof answer> | ReturnType<typeof refuse>,
 	check = false,
 	roots: ReadonlyArray<string> = [DEFAULT_LANES_ROOT],
+	queueRead: (pr: number) => QueueRead | null = () => null,
 ) => {
 	const asked: ProveOptions[] = [];
+	const queued: number[] = [];
+	const queue = (pr: number): Effect.Effect<QueueRead> => {
+		queued.push(pr);
+		const read = queueRead(pr);
+		return read === null ? unaskedQueue(pr) : Effect.succeed(read);
+	};
 	const prove = (options: ProveOptions): Effect.Effect<ProofOutcome> =>
 		Effect.sync(() => {
 			asked.push(options);
@@ -75,6 +101,7 @@ const sweep = (
 				routed: [],
 				partial: null,
 				landed: [],
+				closingMerge: null,
 				diagnosis: false,
 				proof: proofLabelOf(outcome),
 			};
@@ -84,8 +111,10 @@ const sweep = (
 			runRecover({
 				roots,
 				check,
+				queue,
 				spawns: null,
 				prove,
+				closeIssue: noClose,
 				parkCause: parkCauseRead(),
 				repo: "o/r",
 				cwd: "/checkout",
@@ -93,7 +122,7 @@ const sweep = (
 			}),
 			fs.layer,
 		),
-	).then((outcome) => ({outcome, asked, fs}));
+	).then((outcome) => ({outcome, asked, queued, fs}));
 };
 
 const proven = () =>
@@ -443,6 +472,7 @@ const spawnSweep = (
 				routed: [],
 				partial: null,
 				landed: [],
+				closingMerge: null,
 				diagnosis: false,
 				proof: proofLabelOf(outcome),
 			};
@@ -452,6 +482,7 @@ const spawnSweep = (
 			runRecover({
 				roots: [DEFAULT_LANES_ROOT],
 				check,
+				queue: unaskedQueue,
 				spawns: {
 					claim: (issue: number) =>
 						Effect.sync(() => {
@@ -466,6 +497,7 @@ const spawnSweep = (
 						}),
 				},
 				prove,
+				closeIssue: noClose,
 				parkCause: parkCauseRead(),
 				repo: "o/r",
 				cwd: "/checkout",
@@ -716,5 +748,173 @@ describe("runRecover --spawns — the populations beside a single lane's plain b
 		expect(row?.reason).toContain("build/9301-editor-focus-4f2a");
 		expect(asked).toEqual([]);
 		expect(logOf(fs, "9241")).toBeUndefined();
+	});
+});
+
+/** Lane 9455's shape: the shipper recorded `QUEUED` and its watch ended before the queue merged. */
+const QUEUED_PR = "https://forge.example/o/r/pull/9877";
+const prLine = (event: string, when: string, pr: string): string =>
+	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at: when, pr})}\n`;
+const QUEUED_LOG = `${line("WIP", at(0))}${prLine("DONE", at(1), QUEUED_PR)}${line("PASS", at(2))}${prLine("WIP", at(3), QUEUED_PR)}`;
+const QUEUED_FOLD = JSON.stringify({pipeline: {issue: "ship:queued"}});
+
+/** A prover answering `not-required`, which is what a ship-stage `DONE` or `FAIL` claims. */
+const notRequired = (options: ProveOptions) =>
+	answer(JSON.stringify({proof: "not-required", event: options.event, task: "issue"}));
+
+/** The task's state after the sweep's append, re-folded off the bytes it left. */
+const refolded = (fs: ReturnType<typeof fakeFs>, lane: string) => {
+	const compiled = compileText(coderTemplateText());
+	const parsed = parseLog(logOf(fs, lane) ?? "");
+	if (compiled._tag !== "Compiled" || parsed._tag !== "Parsed")
+		throw new Error("fixture unreadable");
+	const folded = foldLog(compiled.lane, parsed.entries);
+	if (folded._tag !== "Folded") throw new Error("log does not replay");
+	return folded.states.issue;
+};
+
+const queueSweep = (read: QueueRead, check = false) =>
+	sweep(
+		tree([{lane: "9455", log: QUEUED_LOG}]),
+		notRequired,
+		check,
+		[DEFAULT_LANES_ROOT],
+		() => read,
+	);
+
+describe("runRecover — the ship:queued arm", () => {
+	it("records LANDED through `lane report` when the queue merged the PR, folding the lane to shipped", async () => {
+		const {outcome, asked, queued, fs} = await queueSweep({_tag: "Read", answer: "landed"});
+		expect(outcome.code).toBe(0);
+		expect(queued).toEqual([9877]);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({
+			key: "9455",
+			verdict: "settled",
+			task: "issue",
+			state: "ship:queued",
+			pr: QUEUED_PR,
+			answer: "landed",
+			token: "LANDED",
+			event: "DONE",
+			from: QUEUED_FOLD,
+			to: "complete",
+		});
+		// `lane report`'s proof is asked about the DONE off this very PR, so its closure is read.
+		expect(asked).toEqual([expect.objectContaining({event: "DONE", task: "issue", pr: QUEUED_PR})]);
+		const last = (logOf(fs, "9455") ?? "").split("\n").filter(Boolean).at(-1) ?? "";
+		expect(last).toContain('"ISSUE.DONE"');
+		expect(last).toContain(QUEUED_PR);
+		expect(refolded(fs, "9455")?.type).toBe("shipped");
+	});
+
+	it("records EJECTED when the queue ejected the PR, and the lane spends one retry back into build", async () => {
+		const {outcome, fs} = await queueSweep({_tag: "Read", answer: "ejected"});
+		expect(outcome.code).toBe(0);
+		expect(rows(outcome.stdout)[0]).toMatchObject({
+			verdict: "settled",
+			answer: "ejected",
+			token: "EJECTED",
+			event: "FAIL",
+			to: JSON.stringify({pipeline: {issue: "build"}}),
+		});
+		expect(logOf(fs, "9455")).toContain('"ISSUE.FAIL"');
+		expect(refolded(fs, "9455")).toMatchObject({type: "build", retries: 1});
+	});
+
+	it("appends nothing on `unresolved` and reports a waiting row naming the answer, so no wait is spent", async () => {
+		const {outcome, asked, fs} = await queueSweep({_tag: "Read", answer: "unresolved"});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({verdict: "waiting", answer: "unresolved", pr: QUEUED_PR});
+		expect(String(row?.reason)).toContain('"unresolved"');
+		expect(row).not.toHaveProperty("token");
+		expect(row).not.toHaveProperty("owes");
+		expect(asked).toHaveLength(0);
+		expect(logOf(fs, "9455")).toBeUndefined();
+		expect(outcome.stderr.join("\n")).toContain('"unresolved"');
+	});
+
+	it("appends nothing on `parked` and reports a disarm-owed row naming the post-enqueue disarm, never a wait", async () => {
+		const {outcome, asked, fs} = await queueSweep({_tag: "Read", answer: "parked"});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({
+			verdict: "disarm-owed",
+			answer: "parked",
+			pr: QUEUED_PR,
+			owes: "ship disarm 9877 --site post-enqueue",
+		});
+		expect(String(row?.reason)).toContain("`ship disarm 9877 --site post-enqueue`");
+		expect(String(row?.reason)).toContain("not a wait");
+		expect(row).not.toHaveProperty("token");
+		expect(JSON.parse(outcome.stdout).summary).toMatchObject({"disarm-owed": 1, waiting: 0});
+		expect(asked).toHaveLength(0);
+		expect(logOf(fs, "9455")).toBeUndefined();
+		expect(outcome.stderr.join("\n")).toContain("ship disarm 9877 --site post-enqueue");
+	});
+
+	it("is its own row and appends nothing when the reconcile read did not answer", async () => {
+		const {outcome, asked, fs} = await queueSweep({
+			_tag: "Unknown",
+			reason: "ship reconcile exited 11: every poll failed to read #9877",
+		});
+		expect(outcome.code).toBe(0);
+		const [row] = rows(outcome.stdout);
+		expect(row).toMatchObject({verdict: "unreadable", pr: QUEUED_PR});
+		expect(String(row?.reason)).toContain("exited 11");
+		expect(asked).toHaveLength(0);
+		expect(logOf(fs, "9455")).toBeUndefined();
+	});
+
+	it("under --check runs the read and reports what would be recorded, appending nothing", async () => {
+		const {outcome, queued, asked, fs} = await queueSweep({_tag: "Read", answer: "landed"}, true);
+		expect(outcome.code).toBe(0);
+		expect(queued).toEqual([9877]);
+		expect(rows(outcome.stdout)[0]).toMatchObject({
+			verdict: "settleable",
+			token: "LANDED",
+			from: QUEUED_FOLD,
+			// The whole lane folds to its terminal once its one task is shipped.
+			to: "complete",
+		});
+		expect(asked).toHaveLength(0);
+		expect(logOf(fs, "9455")).toBeUndefined();
+	});
+
+	it("asks the queue nothing when the task's ledger names no PR URL", async () => {
+		const bare = `${line("WIP", at(0))}${line("DONE", at(1))}${line("PASS", at(2))}${line("WIP", at(3))}`;
+		const {outcome, queued, fs} = await sweep(
+			tree([{lane: "9455", log: bare}]),
+			notRequired,
+			false,
+			[DEFAULT_LANES_ROOT],
+			() => ({_tag: "Read", answer: "landed"}),
+		);
+		expect(queued).toEqual([]);
+		expect(rows(outcome.stdout)[0]).toMatchObject({verdict: "unreadable", state: "ship:queued"});
+		expect(logOf(fs, "9455")).toBeUndefined();
+	});
+});
+
+describe("queueReadOf — `ship reconcile --json` relayed", () => {
+	it("reads each of the four outcomes", () => {
+		for (const said of ["landed", "ejected", "unresolved", "parked"] as const) {
+			expect(queueReadOf(answer(JSON.stringify({outcome: said, polls: 1})))).toEqual({
+				_tag: "Read",
+				answer: said,
+			});
+		}
+	});
+
+	it("reads a non-zero exit as UNKNOWN, carrying the code", () => {
+		const read = queueReadOf(refuse(11, "ship reconcile: every poll failed to read #9877"));
+		expect(read).toMatchObject({_tag: "Unknown"});
+		expect(read._tag === "Unknown" ? read.reason : "").toContain("exited 11");
+	});
+
+	it("reads an answer naming no known outcome as UNKNOWN, never a wait", () => {
+		expect(queueReadOf(answer("reconcile\tlanded\t1\t0"))._tag).toBe("Unknown");
+		expect(queueReadOf(answer(JSON.stringify({outcome: "merged"})))._tag).toBe("Unknown");
 	});
 });

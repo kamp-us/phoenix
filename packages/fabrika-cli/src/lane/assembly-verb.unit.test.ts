@@ -1,7 +1,7 @@
 /** `lane assembly` — the run's own worktree is placed, resumed or removed, and never the driver's. */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeSeams, okOut, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runAssembly} from "./assembly-verb.ts";
 import {APPEND_UNKNOWN, LANE_ABSENT, LANE_UNREADABLE, PRIMARY_CHECKOUT} from "./codes.ts";
@@ -20,7 +20,10 @@ const REMOVE = /^git worktree remove /;
 const FETCH = /^git fetch /;
 const BRANCHES = /^git for-each-ref /;
 const SET_HEAD = /^git remote set-head /;
-const TRUNK = /^git rev-parse --verify origin\/HEAD/;
+const TRUNK = /^git rev-parse --verify origin\/main/;
+/** The trunk read — GitHub's default branch for `o/r` — every placement makes before its fetch. */
+const TRUNK_READ = /^GET \S+\/repos\/o\/r$/;
+const ENV = {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"};
 const ANCESTOR = /^git merge-base --is-ancestor /;
 const NAMES = /^git diff .*--name-only/;
 const DIFF = /^git diff .*bbbb222\.\.\./;
@@ -83,21 +86,25 @@ const CONSCRIPTED = listing([MAIN, BRANCH]);
 const STALE = listing([MAIN, "main"], [EXPECTED, BRANCH, "prunable"]);
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	remove = false,
 	files: Record<string, string> = LANE_FILES,
 ) => {
-	const shell = fakeShell(script);
+	// Appended, so a case that scripts its own trunk read shadows this one (the script is first-match).
+	const shell = fakeSeams([
+		...script,
+		[TRUNK_READ, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+	]);
 	return Effect.runPromise(
 		Effect.provide(
-			runAssembly({epic: EPIC, remove, root: ROOT, lane: String(EPIC)}),
+			runAssembly({epic: EPIC, remove, root: ROOT, lane: String(EPIC), repo: null, env: ENV}),
 			Layer.merge(shell.layer, fakeFs({files}).layer),
 		),
 	).then((outcome) => ({outcome, calls: shell.calls}));
 };
 
 describe("runAssembly", () => {
-	it("places the run's worktree off origin/HEAD and answers its path, switching no checkout", async () => {
+	it("places the run's worktree off the trunk and answers its path, switching no checkout", async () => {
 		const {outcome, calls} = await run([
 			[once(LIST), CLEAN],
 			[LIST, SEATED],
@@ -109,9 +116,9 @@ describe("runAssembly", () => {
 
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout.trim()).toBe(EXPECTED);
-		// `--no-track`: cut off `origin/HEAD` without it, the branch records `refs/heads/main` as its
+		// `--no-track`: cut off the trunk without it, the branch records `refs/heads/main` as its
 		// upstream and the run's pushes aim at the default branch.
-		expect(calls).toContain(`git worktree add --no-track -b ${BRANCH} ${EXPECTED} origin/HEAD`);
+		expect(calls).toContain(`git worktree add --no-track -b ${BRANCH} ${EXPECTED} origin/main`);
 		expect(calls.some((line) => line.startsWith("git switch"))).toBe(false);
 	});
 
@@ -226,7 +233,7 @@ describe("runAssembly", () => {
 		expect(calls).toContain(`git branch --unset-upstream ${BRANCH}`);
 	});
 
-	it("re-cuts a branch origin/HEAD already contains, and says so rather than answering a dead base", async () => {
+	it("re-cuts a branch the trunk already contains, and says so rather than answering a dead base", async () => {
 		const {outcome, calls} = await run([
 			[once(LIST), CLEAN],
 			[LIST, SEATED],
@@ -241,7 +248,7 @@ describe("runAssembly", () => {
 
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout.trim()).toBe(EXPECTED);
-		expect(calls).toContain(`git worktree add --no-track -B ${BRANCH} ${EXPECTED} origin/HEAD`);
+		expect(calls).toContain(`git worktree add --no-track -B ${BRANCH} ${EXPECTED} origin/main`);
 		expect(outcome.stderr.join("\n")).toContain("re-cut");
 		expect(calls.some((line) => line.includes("--force"))).toBe(false);
 		// `--no-track` does not clear a `-B` target's pre-existing upstream, so the re-cut arm needs
@@ -266,7 +273,7 @@ describe("runAssembly", () => {
 
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout.trim()).toBe(EXPECTED);
-		expect(calls).toContain(`git worktree add --no-track -B ${BRANCH} ${EXPECTED} origin/HEAD`);
+		expect(calls).toContain(`git worktree add --no-track -B ${BRANCH} ${EXPECTED} origin/main`);
 		expect(outcome.stderr.join("\n")).toContain("already landed on the default branch as 99ef1f6");
 		expect(calls.some((line) => line.includes("--force"))).toBe(false);
 	});
@@ -306,7 +313,7 @@ describe("runAssembly", () => {
 
 		expect(outcome.code).toBe(0);
 		expect(calls).toContain(`git worktree remove ${EXPECTED}`);
-		expect(calls).toContain(`git worktree add --no-track -B ${BRANCH} ${EXPECTED} origin/HEAD`);
+		expect(calls).toContain(`git worktree add --no-track -B ${BRANCH} ${EXPECTED} origin/main`);
 		expect(calls.some((line) => line.includes("--force"))).toBe(false);
 	});
 
@@ -326,7 +333,7 @@ describe("runAssembly", () => {
 		expect(calls.some((line) => line.startsWith("git worktree add"))).toBe(false);
 	});
 
-	it("is UNKNOWN, never a re-cut, when origin/HEAD names no commit after the fetch", async () => {
+	it("is UNKNOWN, never a re-cut, when the trunk names no commit after the fetch", async () => {
 		const {outcome, calls} = await run([
 			[LIST, CLEAN],
 			[BRANCHES, BRANCH_SURVIVED],
@@ -371,8 +378,7 @@ describe("runAssembly", () => {
 			"git worktree list --porcelain",
 			"git for-each-ref --format=%(refname:short) refs/heads",
 			"git fetch --quiet origin",
-			"git remote set-head origin --auto",
-			"git rev-parse --verify origin/HEAD^{commit}",
+			"git rev-parse --verify origin/main^{commit}",
 			`git merge-base --is-ancestor ${BRANCH} bbbb222`,
 			`git diff ${DIFF_FLAGS} bbbb222...${BRANCH}`,
 			"git patch-id --stable",

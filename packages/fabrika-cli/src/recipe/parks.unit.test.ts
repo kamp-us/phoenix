@@ -111,6 +111,28 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
 	});
 
+	it("clears a no-preview route's park the way it clears a no-rendered-delta one", () => {
+		const parked = classifyPark("blocked", "no-preview-routed");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("route-satisfied");
+	});
+
+	// A retry sends the lane back to the reviewer who hit the same wall, so this park clears on the
+	// axis issue closing and never on a driver's rationale.
+	it("is Known for a BLOCKED whose cause is the render-axis-missing shape", () => {
+		const parked = classifyPark("blocked", "render-axis-missing");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("axis-closed");
+		expect(parked._tag === "Known" && parked.recipe.route).toBe("driver");
+		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
+	});
+
+	it("keeps no-preview-render Novel beside it — a missing preview is not a missing axis", () => {
+		expect(classifyPark("blocked", "no-preview-render")._tag).toBe("Novel");
+	});
+
 	it("is Novel for a bare BLOCKED, and says the ledger records no cause", () => {
 		const parked = classifyPark("blocked", null);
 
@@ -133,6 +155,20 @@ describe("classifyPark", () => {
 		expect(approval._tag === "Known" && approval.recipe.clearance).toBe("cp-approval");
 		// Turning a red head green is `heal-ci`'s repair work, so this row runs no remedy first.
 		expect(red._tag === "Known" && red.recipe.remedy).toBeNull();
+	});
+
+	// A reviewer's red-head park folds to `blocked`, not the shipper's leaf, and stands on a floor
+	// with no verdicts yet — so it is its own row with its own clearance.
+	it("is Known for a BLOCKED carrying the red-CI cause, on the reviewer's head-green read", () => {
+		const reviewer = classifyPark("blocked", "head-ci-red");
+		const shipper = classifyPark("human:cp-approval", "head-ci-red");
+
+		expect(reviewer._tag).toBe("Known");
+		expect(reviewer._tag === "Known" && reviewer.recipe.park).toBe("blocked");
+		expect(reviewer._tag === "Known" && reviewer.recipe.clearance).toBe("head-green");
+		expect(reviewer._tag === "Known" && reviewer.recipe.route).toBe("driver");
+		expect(reviewer._tag === "Known" && reviewer.recipe.remedy).toBeNull();
+		expect(shipper._tag === "Known" && shipper.recipe.clearance).toBe("ci-green");
 	});
 
 	it("is Novel for the §CP park carrying a cause no row on that leaf names", () => {

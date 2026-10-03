@@ -11,6 +11,8 @@
  * discriminated union rather than throwing, so a verb's refusal is data it seats on an exit code.
  */
 import {acceptsOf, applyCell, foldMsgs, msgKeysOf, NoCellError} from "@demlik/tea";
+import {type RoutedBasis, readRoutedBasis} from "../wire/routed-elsewhere.ts";
+import {ISSUE_CLOSES, type IssueClose, isIssueClose} from "./closing-merge.ts";
 import {type Deferral, deferredTasks, resolveDeferrals} from "./deferral.ts";
 import {type IntegrateFailure, isIntegrateFailure} from "./integrate-failure.ts";
 import {
@@ -29,7 +31,7 @@ import {
 	OPERATOR_EVENTS,
 	type TaskState,
 } from "./machine.ts";
-import {ROUTED_MACHINERY_CAUSES} from "./report.ts";
+import {causeTakesAxisIssue, ROUTED_MACHINERY_CAUSES} from "./report.ts";
 
 /**
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
@@ -94,6 +96,12 @@ export interface LogEntry {
 	 * record an `UNBLOCKED` without it.
 	 */
 	readonly rationale?: string;
+	/**
+	 * The open issue a `render-axis-missing` park waits on — evidence beside `cause`, and the number
+	 * `recipe unpark` reads to clear the park once that issue closes. Present exactly when the line's
+	 * cause is one `report.ts`'s `AXIS_ISSUE_CAUSES` names.
+	 */
+	readonly axisIssue?: number;
 	readonly round?: number;
 	readonly classes?: ReadonlyArray<string>;
 	readonly deferred?: ReadonlyArray<string>;
@@ -111,9 +119,22 @@ export interface LogEntry {
 	 * that moves a state.
 	 */
 	readonly routed?: ReadonlyArray<string>;
+	/**
+	 * Each {@link routed} namespace whose route stood on the repo's `reviewUi.whenNoPreview` rules,
+	 * with its basis — evidence like `routed`, read by `table flags` so the row says the ui review
+	 * was a hand-check or a skip, never a render. Every key is one `routed` names.
+	 */
+	readonly routedBasis?: RoutedBasis;
 	readonly waitGrant?: number;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
+	/**
+	 * What the issue read back after a closing ship `DONE` said, and what the lane did about it —
+	 * evidence, never a payload the fold reads. It tells "the board closed it" from "the lane had to"
+	 * and names a failed close or an unread issue, so neither reads as a plain `complete`
+	 * ([`closing-merge.ts`](closing-merge.ts)).
+	 */
+	readonly issueClose?: IssueClose;
 	readonly diagnosis?: boolean;
 	readonly corrects?: string;
 	/** The task set an {@link AMENDED_EVENT} left the lane's machine holding. */
@@ -215,13 +236,16 @@ export const parseLog = (text: string): ParseLogResult => {
 			comment?: unknown;
 			cause?: unknown;
 			rationale?: unknown;
+			axisIssue?: unknown;
 			round?: unknown;
 			classes?: unknown;
 			deferred?: unknown;
 			routed?: unknown;
+			routedBasis?: unknown;
 			waitGrant?: unknown;
 			partial?: unknown;
 			landed?: unknown;
+			issueClose?: unknown;
 			diagnosis?: unknown;
 			corrects?: unknown;
 			tasks?: unknown;
@@ -256,6 +280,24 @@ export const parseLog = (text: string): ParseLogResult => {
 			!(typeof record.rationale === "string" && record.rationale.trim() !== "")
 		) {
 			defects.push(`line ${index + 1} carries a \`rationale\` field that says nothing`);
+			continue;
+		}
+		// The axis issue is what the park's clear reads, so a line whose cause takes one and carries
+		// none is a park nothing can clear, and one riding any other cause is a claim nothing checks.
+		const takesAxis = causeTakesAxisIssue(typeof record.cause === "string" ? record.cause : null);
+		if (
+			record.axisIssue !== undefined &&
+			!(Number.isInteger(record.axisIssue) && (record.axisIssue as number) > 0)
+		) {
+			defects.push(`line ${index + 1} carries an \`axisIssue\` that is no issue number`);
+			continue;
+		}
+		if (takesAxis !== (record.axisIssue !== undefined)) {
+			defects.push(
+				takesAxis
+					? `line ${index + 1} parks on "${String(record.cause)}" and names no \`axisIssue\` — the issue that park waits on`
+					: `line ${index + 1} carries \`axisIssue\` beside a cause that waits on no issue`,
+			);
 			continue;
 		}
 		if (record.round !== undefined && !Number.isInteger(record.round)) {
@@ -312,6 +354,20 @@ export const parseLog = (text: string): ParseLogResult => {
 			);
 			continue;
 		}
+		// A basis names a routed namespace or it flags a row for a route nobody recorded.
+		const routedBasis =
+			record.routedBasis === undefined
+				? undefined
+				: readRoutedBasis(
+						record.routedBasis,
+						Array.isArray(record.routed) ? (record.routed as ReadonlyArray<string>) : [],
+					);
+		if (routedBasis === null) {
+			defects.push(
+				`line ${index + 1} carries a \`routedBasis\` field that is not a basis per namespace \`routed\` names`,
+			);
+			continue;
+		}
 		// Only `true` is a routing fact; a `false` on the line says the merge closed, which is the
 		// absent field's own reading, so both spellings fold identically and neither is a defect.
 		if (record.partial !== undefined && typeof record.partial !== "boolean") {
@@ -330,6 +386,18 @@ export const parseLog = (text: string): ParseLogResult => {
 		) {
 			defects.push(
 				`line ${index + 1} carries a \`landed\` field that is not a non-empty list of pull request numbers`,
+			);
+			continue;
+		}
+		if (record.issueClose !== undefined && !isIssueClose(record.issueClose)) {
+			defects.push(
+				`line ${index + 1} carries an \`issueClose\` that is not one of ${ISSUE_CLOSES.join("/")}`,
+			);
+			continue;
+		}
+		if (record.issueClose !== undefined && bareEvent(record.event) !== "DONE") {
+			defects.push(
+				`line ${index + 1} carries \`issueClose\` on a "${bareEvent(record.event)}" event — only a ship's DONE reads its issue back`,
 			);
 			continue;
 		}
@@ -475,15 +543,18 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.comment === undefined ? {} : {comment: record.comment}),
 			...(record.cause === undefined ? {} : {cause: record.cause}),
 			...(record.rationale === undefined ? {} : {rationale: record.rationale as string}),
+			...(record.axisIssue === undefined ? {} : {axisIssue: record.axisIssue as number}),
 			...(record.round === undefined ? {} : {round: record.round as number}),
 			...(record.classes === undefined ? {} : {classes: record.classes as ReadonlyArray<string>}),
 			...(record.deferred === undefined
 				? {}
 				: {deferred: record.deferred as ReadonlyArray<string>}),
 			...(record.routed === undefined ? {} : {routed: record.routed as ReadonlyArray<string>}),
+			...(routedBasis === undefined ? {} : {routedBasis}),
 			...(record.waitGrant === undefined ? {} : {waitGrant: record.waitGrant as number}),
 			...(record.partial === undefined ? {} : {partial: record.partial as boolean}),
 			...(record.landed === undefined ? {} : {landed: record.landed as ReadonlyArray<number>}),
+			...(record.issueClose === undefined ? {} : {issueClose: record.issueClose as IssueClose}),
 			...(record.diagnosis === undefined ? {} : {diagnosis: record.diagnosis as boolean}),
 			...(record.corrects === undefined ? {} : {corrects: record.corrects as string}),
 			...(record.tasks === undefined ? {} : {tasks: record.tasks as ReadonlyArray<string>}),
@@ -676,20 +747,29 @@ export const standingRationales = (
 	entries: ReadonlyArray<LogEntry>,
 ): Readonly<Record<string, string>> => standingField(entries, "rationale");
 
-const standingField = (
+/**
+ * The axis issue standing over each task — the `axisIssue` on that task's latest entry, when it
+ * carries one. It stands exactly while the park that named it does, derived the way
+ * {@link standingCauses} is.
+ */
+export const standingAxisIssues = (
 	entries: ReadonlyArray<LogEntry>,
-	field: "cause" | "rationale",
-): Readonly<Record<string, string>> => {
+): Readonly<Record<string, number>> => standingField(entries, "axisIssue");
+
+const standingField = <K extends "cause" | "rationale" | "axisIssue">(
+	entries: ReadonlyArray<LogEntry>,
+	field: K,
+): Readonly<Record<string, NonNullable<LogEntry[K]>>> => {
 	const latest: Record<string, LogEntry> = {};
 	for (const entry of entries) {
 		const bare = bareEvent(entry.event);
 		if (bare === CLEARED_EVENT || bare === CORRECTED_EVENT || bare === AMENDED_EVENT) continue;
 		latest[entry.task] = entry;
 	}
-	const standing: Record<string, string> = {};
+	const standing: Record<string, NonNullable<LogEntry[K]>> = {};
 	for (const [task, entry] of Object.entries(latest)) {
 		const value = entry[field];
-		if (value !== undefined) standing[task] = value;
+		if (value !== undefined) standing[task] = value as NonNullable<LogEntry[K]>;
 	}
 	return standing;
 };
@@ -706,6 +786,7 @@ export const deriveStatus = (
 	states: Readonly<Record<string, TaskState>>,
 	causes: Readonly<Record<string, string>> = {},
 	rationales: Readonly<Record<string, string>> = {},
+	axisIssues: Readonly<Record<string, number>> = {},
 ): LaneStatus => {
 	const errors = Object.entries(states)
 		.filter(([taskId, state]) => taskIn(lane, taskId).errorFinals.has(state.type))
@@ -714,6 +795,7 @@ export const deriveStatus = (
 	for (const [taskId, state] of Object.entries(states)) {
 		const cause = causes[taskId];
 		const rationale = rationales[taskId];
+		const axisIssue = axisIssues[taskId];
 		context[taskId] = {
 			retries: state.retries,
 			maxRetries: state.maxRetries,
@@ -732,6 +814,7 @@ export const deriveStatus = (
 			...taskIn(lane, taskId).extras,
 			...(cause === undefined ? {} : {cause}),
 			...(rationale === undefined ? {} : {rationale}),
+			...(axisIssue === undefined ? {} : {axisIssue}),
 		};
 	}
 	context.errors = errors;

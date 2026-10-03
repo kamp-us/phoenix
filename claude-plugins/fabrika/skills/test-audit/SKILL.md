@@ -10,19 +10,25 @@ MIT License, Copyright (c) 2026 OpenClaw Foundation. See LICENSE-OPENCLAW.
 Changes: the description is narrowed and names its non-scopes; the whole-
 subsystem mode is renamed "subsystem sweep" (SWEEP.md); Discovery, Validation
 and Landing are made repository-neutral and bounded to one ticket and one
-pull request, with outside work routed to fabrika's report skill.
+pull request, with outside work routed to fabrika's report skill; Discovery
+first reads open pull requests and sets aside in-flight candidates; a repo-wide
+audit mode (REPO-WIDE.md) files one ranked ticket, Discovery's in-flight read
+opens it too, and Discovery's cross-cutting pass follows its exclusion rule.
 -->
 
 # Test Audit
 
-Three modes, one value bar. Authoring mode gates a new test at write time.
+Four modes, one value bar. Authoring mode gates a new test at write time.
 Audit mode runs a focused sweep of tests that re-assert source, duplicate
 stronger proof, couple behavior to implementation, or keep test-only production
 seams alive; optimize for confidence, not deletion count. A **subsystem sweep**
 prunes one whole subsystem's test surface (every test file a plugin or core area
-owns); before starting one, read [SWEEP.md](SWEEP.md).
+owns); before starting one, read [SWEEP.md](SWEEP.md). A **repo-wide audit**
+reads every test in a repository; it is read-only, edits no test or source file,
+and lands as one ranked ticket filed through [`report`](../report/SKILL.md);
+before starting one, read [REPO-WIDE.md](REPO-WIDE.md).
 
-Every mode works inside the current ticket and lands as at most one pull
+Every other mode works inside the current ticket and lands as at most one pull
 request. Candidates, defects or cleanups found outside that ticket leave
 through [`report`](../report/SKILL.md) as follow-up issues, never as more
 edits here.
@@ -94,18 +100,36 @@ or types directly.
 
 ## Discovery
 
-Keep discovery read-only and report evidence before editing. For a broad scope
-the ticket names, run parallel read-only passes when available:
+Keep discovery read-only and report evidence before editing.
+
+Before any pass, read the **in-flight set**: the repository's open pull
+requests and the files each one changes. Hand that set to every pass. This read
+opens discovery in audit mode, in a subsystem sweep and in a repo-wide audit
+alike.
+
+For a broad scope the ticket names, run parallel read-only passes when
+available:
 
 - one pass per top-level source area the repository's `AGENTS.md` names;
 - UI, apps, scripts, and tooling;
-- a cross-cutting pattern sweep.
+- a cross-cutting pattern sweep, reporting only candidates no single area pass
+  owns, under the repo-wide audit's
+  [exclusion rule](REPO-WIDE.md#3-area-and-cross-cutting-passes).
 
 Outside a subsystem sweep, prefer a few high-confidence candidates over a large
 speculative inventory. Hunt for the [junk patterns](#junk-patterns).
 
-Done when each candidate in scope has its [candidate evidence](#candidate-evidence)
-recorded, and candidates outside the ticket are filed through `report`.
+A candidate whose test file or production owner an open pull request deletes
+or modifies is **in flight**. Record it as `in flight: <pull request>`, leave
+its files to that pull request so this batch edits none of them, and list it in
+the [handoff](#handoff). When it still needs work after that pull request
+merges, file it through `report` as a follow-up naming the pull request it
+waits on.
+
+Done when the in-flight set was read before the first pass, each candidate in
+scope is either in flight with its pull request named or has its
+[candidate evidence](#candidate-evidence) recorded, and candidates outside the
+ticket are filed through `report`.
 
 ## Retention bar
 
@@ -135,6 +159,9 @@ not ready for deletion:
 - non-test callers of the covered production or support seam;
 - stronger remaining owner-boundary proof, or why no proof is needed;
 - relevant history and the reason the test or seam exists;
+- open pull requests touching the test or its production owner, or none; any
+  one that deletes or modifies them makes the candidate
+  [in flight](#discovery);
 - production or test-support deletion unlocked;
 - risk and the focused validation command.
 
@@ -181,6 +208,7 @@ Report:
 - root cause and removed low-value categories;
 - production owner simplifications;
 - retained false positives and why they remain valuable;
+- in-flight candidates, each with the pull request it waits on;
 - focused proof actually run;
 - production versus test LOC;
 - follow-ups filed through `report`.

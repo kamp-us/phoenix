@@ -11,7 +11,14 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import * as build from "../build/fixtures.test-support.ts";
 import {runVerdicts} from "../build/verdicts-verb.ts";
-import {errOut, fakeSeams, okOut, type Scripted, unconfigured} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeSeams,
+	okOut,
+	type Scripted,
+	unconfigured,
+	unconfiguredOnPlatform,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import * as ship from "../ship/fixtures.test-support.ts";
 import {runGate} from "../ship/gate-verb.ts";
@@ -108,6 +115,7 @@ const gateSaysCurrent = async (markerBody: string, raw: ExecResult): Promise<boo
 						{status: 200, body: "[]"},
 					],
 					...gitFor(PR, ship.HEAD, raw),
+					...unconfiguredOnPlatform(),
 				]).layer,
 				unconfigured,
 			),

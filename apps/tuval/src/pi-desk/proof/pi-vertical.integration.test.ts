@@ -64,8 +64,18 @@ import {
 	REPLY_2,
 } from "./names.ts";
 
-/** The scratch home every boot in this file runs under. */
-const home = scratchHome("pi-vertical");
+/**
+ * One scratch home per project root, so a restart boots the same desk and two cases never do: the
+ * desk's own checkpoints live under the home (#9977).
+ */
+const homes = new Map<string, string>();
+const homeOf = (project: string): string => {
+	const known = homes.get(project);
+	if (known !== undefined) return known;
+	const home = scratchHome("pi-vertical");
+	homes.set(project, home);
+	return home;
+};
 
 const TIMEOUT = 180_000;
 
@@ -89,7 +99,7 @@ const freshProject = (): string => {
  * app stopping, which is what the restart proof does.
  */
 const bootDesk = Effect.fn("piVertical.bootDesk")(function* (project: string) {
-	const booted = yield* boot({global: configModule, project, home});
+	const booted = yield* boot({global: configModule, project, home: homeOf(project)});
 	const server = yield* serveDesk({kernel: booted.kernel, port: 0, table: defaultPrefixTable});
 	const entries = yield* readEntries.pipe(Effect.provideContext(booted.kernel));
 	return {booted, server, entries};

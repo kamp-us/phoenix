@@ -1,0 +1,29 @@
+{
+	"name": "@kampus/release-watch",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Daily watch that files one issue when a first-party @demlik/* package publishes a release newer than its catalog pin (#10133)",
+	"type": "module",
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
+		"test": "vitest run",
+		"check": "node src/bin.ts check"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:",
+		"semver": "catalog:",
+		"yaml": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@types/semver": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}

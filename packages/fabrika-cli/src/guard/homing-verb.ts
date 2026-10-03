@@ -42,7 +42,8 @@ type Scan =
 
 const refused = (report: string): Scan => ({_tag: "Refused", verdict: unknown(report)});
 
-const toTriaged = (record: IssueRecord): TriagedIssue => ({
+/** One read issue as the decision reads it — shared with `triage sweep-homes`, so both judge one shape. */
+export const toTriaged = (record: IssueRecord): TriagedIssue => ({
 	number: record.number,
 	title: record.title,
 	milestone: record.milestone,

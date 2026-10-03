@@ -20,6 +20,8 @@ export type LeafRead =
 			readonly leaf: string;
 			/** Why the task parked, off the fold's `context.<task>.cause`; `null` on a causeless park. */
 			readonly cause: string | null;
+			/** The issue the park waits on, off `context.<task>.axisIssue`; `null` where none stands. */
+			readonly axisIssue: number | null;
 	  }
 	| {readonly _tag: "Finished"; readonly terminal: string}
 	| {readonly _tag: "Unreadable"; readonly reason: string};
@@ -41,11 +43,24 @@ const activeTasks = (stateValue: unknown): Readonly<Record<string, unknown>> | n
  * the bare one it was before the field existed and `classifyPark` answers Novel for it.
  */
 const causeOf = (parsed: Readonly<Record<string, unknown>>, task: string): string | null => {
+	const entry = contextOf(parsed, task);
+	return entry !== null && typeof entry.cause === "string" ? entry.cause : null;
+};
+
+/** The axis issue `lane status` folded onto one task, or `null`, read as {@link causeOf} reads. */
+const axisIssueOf = (parsed: Readonly<Record<string, unknown>>, task: string): number | null => {
+	const entry = contextOf(parsed, task);
+	return entry !== null && Number.isInteger(entry.axisIssue) ? (entry.axisIssue as number) : null;
+};
+
+const contextOf = (
+	parsed: Readonly<Record<string, unknown>>,
+	task: string,
+): Readonly<Record<string, unknown>> | null => {
 	const context = parsed.context;
 	if (!isRecord(context)) return null;
 	const entry = context[task];
-	if (!isRecord(entry)) return null;
-	return typeof entry.cause === "string" ? entry.cause : null;
+	return isRecord(entry) ? entry : null;
 };
 
 /** One task's leaf, off `lane status`'s stdout. `requested` is `null` on a single-task lane. */
@@ -77,7 +92,13 @@ export const leafOf = (stdout: string, requested: string | null): LeafRead => {
 	}
 	const leaf = tasks[task];
 	return typeof leaf === "string"
-		? {_tag: "Leaf", task, leaf, cause: causeOf(parsed, task)}
+		? {
+				_tag: "Leaf",
+				task,
+				leaf,
+				cause: causeOf(parsed, task),
+				axisIssue: axisIssueOf(parsed, task),
+			}
 		: {_tag: "Unreadable", reason: `task "${task}" carries no leaf state`};
 };
 
@@ -105,6 +126,55 @@ export const clearProof = (code: number, stdout: string, task: string): ClearPro
 	return isPark(read.leaf)
 		? {_tag: "Unproven", reason: `the re-fold still reads the park "${read.leaf}"`}
 		: {_tag: "Cleared", leaf: read.leaf};
+};
+
+export type RepairProof =
+	/** The task left the park for the leaf the machine's repair arm reached. */
+	| {readonly _tag: "Repaired"; readonly leaf: string}
+	/**
+	 * The repair arm's spent-budget fallthrough took the task to an error final, so the fold reads the
+	 * lane's own terminal with the task among its `errors` rather than a leaf.
+	 */
+	| {readonly _tag: "Spent"; readonly terminal: string}
+	| {readonly _tag: "Unproven"; readonly reason: string};
+
+/** Whether `lane status`'s `context.errors` names the task — the fold's own trip record. */
+const trippedOn = (stdout: string, task: string): boolean => {
+	const parsed = parseJson(stdout);
+	if (!isRecord(parsed) || !isRecord(parsed.context)) return false;
+	const errors = parsed.context.errors;
+	return Array.isArray(errors) && errors.includes(task);
+};
+
+/**
+ * Whether a re-fold proves a repair route left the park it was recorded out of.
+ *
+ * Unlike {@link clearProof}, a spent budget is a proven answer here: a repair spends a retry, and the
+ * guarded arm's fallthrough is an error final, which trips the lane with this task named among its
+ * errors. Which leaf a funded route reaches is the machine's to say, so that half proves only that
+ * the task is no longer on the park that recorded it.
+ */
+export const repairProof = (
+	code: number,
+	stdout: string,
+	task: string,
+	park: string,
+): RepairProof => {
+	if (code !== 0) {
+		return {_tag: "Unproven", reason: `the re-fold refused at exit ${code}`};
+	}
+	const read = leafOf(stdout, task);
+	if (read._tag === "Finished") {
+		return trippedOn(stdout, task)
+			? {_tag: "Spent", terminal: read.terminal}
+			: {_tag: "Unproven", reason: `the re-fold is "${read.terminal}" with no error on "${task}"`};
+	}
+	if (read._tag === "Unreadable") {
+		return {_tag: "Unproven", reason: `the re-fold ${read.reason}`};
+	}
+	return read.leaf === park
+		? {_tag: "Unproven", reason: `the re-fold still reads the park "${park}"`}
+		: {_tag: "Repaired", leaf: read.leaf};
 };
 
 /**

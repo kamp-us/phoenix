@@ -49,8 +49,8 @@ afterAll(() => {
 
 /**
  * One scratch home for all three boots. The desk's state — the checkpoints these reboots read and
- * the Pi JSONLs below — lives under the home dir keyed by the project path (ADR 0402), so a proof
- * that did not name one would write into the operator's own.
+ * the Pi JSONLs below — lives under the home dir, keyed by the home folder the desk runs in (ADR
+ * 0402, #9977), so a proof that did not name one would write into the operator's own.
  */
 const home = realpathSync(mkdtempSync(join(tmpdir(), "tuval-pi-restore-home-")));
 tempDirs.push(home);
@@ -179,8 +179,8 @@ const askForPage = (window: ProcessHandle, limit: number) =>
 		payload: {kind: "request", before: null, limit},
 	});
 
-const sessionFiles = (root: string): ReadonlyArray<string> => {
-	const dir = piSessionStore(homeStateDir(root, home));
+const sessionFiles = (): ReadonlyArray<string> => {
+	const dir = piSessionStore(homeStateDir(home, home));
 	return existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith(".jsonl")) : [];
 };
 
@@ -339,7 +339,7 @@ const runWithTheStoreGone = (
 ): Effect.Effect<ThirdRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		yield* Effect.sync(() =>
-			rmSync(piSessionStore(homeStateDir(project, home)), {recursive: true, force: true}),
+			rmSync(piSessionStore(homeStateDir(home, home)), {recursive: true, force: true}),
 		);
 		const booted = yield* boot({global: configModule, project, home});
 		const {agent} = yield* handlesOf(booted);
@@ -356,7 +356,7 @@ const runWithTheStoreGone = (
 			phase: state.phase,
 			sessionId: state.sessionId,
 			failure: state.failure,
-			sessionFilesAfter: sessionFiles(project),
+			sessionFilesAfter: sessionFiles(),
 		} satisfies ThirdRun;
 	}).pipe(Effect.scoped);
 

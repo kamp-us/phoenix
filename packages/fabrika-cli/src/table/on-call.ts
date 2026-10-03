@@ -85,7 +85,7 @@ export const renderOnCallReadme = (settings: OnCallBoard): string => {
 		"",
 		"Work here is continuous: nothing is bet on. It holds what cannot wait for the weekly table, such as customer reports, crashes and CI breakage.",
 		"",
-		"- `fabrika table prep` adds every open issue the routing rule sends here, in the order it arrives, and gives each a **Response target**.",
+		"- `fabrika table route` adds every open issue the routing rule sends here, in the order it arrives, and gives each the **Response target** its labels pick.",
 		"- Pull from the top of **Queue**.",
 		"- An item still open past its target is flagged by `fabrika table flags` and counted on the table's weekly status update.",
 		`- On-call has its own share of the week's spend: ${settings.spendShare}%. More than that is flagged at the table, never stopped.`,
@@ -107,7 +107,7 @@ export const renderOnCallReadme = (settings: OnCallBoard): string => {
 				`- **${target.name}**: within ${hoursWords(target.hours)}, for items labeled ${listed(target.labels)}.`,
 		),
 		`- **${settings.responseTargets.otherwise.name}**: within ${hoursWords(settings.responseTargets.otherwise.hours)}, for everything else.`,
-		"The wait counts from when prep set the target, which is when the item arrived here.",
+		"The wait counts from when the issue was filed, or from when this board was made for an issue filed before it. The target follows the issue's labels, so relabeling an item moves its target.",
 		"",
 		`## ${FIELD.plainWords}`,
 		"One line saying what the item is, written for a person.",
@@ -119,7 +119,7 @@ export const renderOnCallReadme = (settings: OnCallBoard): string => {
 export const onCallShape = (settings: OnCallBoard, repo: string, title: string): TableShape => ({
 	title,
 	shortDescription: `The on-call board for ${repo}: continuous work, each item with a response target.`,
-	readme: renderOnCallReadme(settings),
+	readme: {name: "on-call", body: renderOnCallReadme(settings)},
 	fields: [
 		{
 			_tag: "SingleSelect",

@@ -59,7 +59,7 @@ this contract (one registry-side enum addition; flagged in the implementation ti
 | `review-ui render` | capture named surfaces from the PR's preview deployment at the inspected head, one validated PNG per surface, each surface's outcome proven | preview resolution, head-binding, capture and per-surface outcome typing are mechanical; *choosing the surfaces and looking at the pixels* stays in the skill |
 | `review-ui post` | the single sanctioned `review-ui` verdict emit: verify-upload the evidence set, compose through the wire format, bind to the inspected head at post time, append into this namespace's one comment, read it back | upload-verify-compose-post-readback is a protocol; *the polarity and every finding behind it* are judgment |
 | `review-ui note` | the single sanctioned non-verdict write: post one plain comment naming a proven blocker state (can't-see, escalation), leak-scanned, read back — never a marker | compose-scan-post-readback is a protocol; *whether the state warrants a note* is judgment |
-| `review-ui route` | the single sanctioned way to resolve this namespace with no verdict: post one head-bound `routed-elsewhere` record stating that the PR renders nothing, leak-scanned, upserted, read back | binding, upsert and read-back are a protocol; *whether the diff renders anything* is judgment, and no verb may take it |
+| `review-ui route` | the single sanctioned way to resolve this namespace with no verdict: post one head-bound `routed-elsewhere` record stating that the PR renders nothing, or, on a PR with no preview, that the repo's `reviewUi.whenNoPreview` rules skip the render or an owner's hand-check stands in for it (its `basis:`), leak-scanned, upserted, read back | binding, upsert and read-back are a protocol; *whether the diff renders anything* is judgment, and no verb may take it |
 
 ### Considered and deliberately not derived
 
@@ -169,10 +169,13 @@ sibling's numerals is not a goal the doctrine sets.
 | `13` | proven: at least one surface threw an uncaught page error during render — the render is red |
 | `14` | proven: at least one surface is unreachable — status ≥ 400 or failed navigation (no route, dark flag, gated tier); each named on stderr |
 | `15` | proven: a capture was produced but is invalid — zero bytes, undecodable, zero area, or a set member fails its manifest sha |
-| `16` | proven: no preview deployment exists for this PR — the announced-preview convention resolves to nothing; the skill's CANT-SEE route |
+| `16` | proven: no preview deployment exists for this PR — the announced-preview convention resolves to nothing; where the skill tries its `--no-preview` route, and ends CANT-SEE only where that route refuses |
 | `17` | proven: at least one evidence upload or upload-verification failed — **nothing was posted** |
 | `18` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing posted |
 | `20` | refused, proven: the text review a `route` record rests on is not a standing PASS at the head it binds — the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on a hand-verification has no text verdict binding that head — nothing posted |
+| `21` | refused, proven: the repo's `reviewUi.whenNoPreview` rules do not admit a `--no-preview` route — the PR resolves `require-render`, or `hand-check` with no owner's hand-check at the head on the PR — nothing posted |
+| `22` | refused, proven: the named hand-check is not an owner's screenshots at this head — nothing posted |
+| `23` | refused, proven: a `--no-preview` route found a preview announced on the PR, so a render can run — nothing posted |
 | `127` | the verb never ran at all (unresolved binary) |
 
 **`7` versus `11`** is the package's spine: a 404 is a fact about the repository, an unreachable
@@ -181,8 +184,8 @@ GitHub is not a fact about anything; no message here reads "does not exist, or i
 would bind a tree that is not the PR* — because the caller's move is identical (re-render /
 re-review at the live head), where `13`/`14`/`15`/`16` each route differently and stay four codes.
 **`16` is not `7`**: the PR exists; what is proven absent is the repo's ability to show it — a
-routable can't-see state the skill acts on by name — a can't-see the reviewer declares out loud,
-made mechanical.
+routable state the skill acts on by name: it runs the `--no-preview` route there, and only where
+that route refuses is it a can't-see the reviewer declares out loud, made mechanical.
 
 ## Required environment — the two render paths
 
@@ -200,8 +203,8 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   verb changes behavior based on it. Chrome absent means the default path, silently.
 - Chrome output never enters `review-ui post --evidence`: evidence comes from `review-ui render`
   capture sets only, so the attach path has one validated producer.
-- **A tier-naming surface needs the preview worker's signing secret plus that tier's own session
-  token.** The tokens are unset by default; the secret is not, since it resolves off the checkout.
+- **A tier-naming surface needs the preview worker's signing secret plus its identity's own
+  session token.** The tokens are unset by default; the secret is not, since it resolves off the checkout.
   The secret is the one the *preview worker deployed with*, so the
   cookie signature verifies, and it needs no credential: every `pr-<n>` preview deploys with the key
   committed at `infra/preview-auth-key/key.txt`, deliberately public, which the verb resolves off
@@ -214,24 +217,27 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   A placeholder-signed cookie is perfectly well-formed and the worker answers it as a visitor, which
   at the shot is indistinguishable from a preview nobody seeded — two gate rounds were spent
   splitting exactly that by hand. The
-  token is the one `preview-seed test-account` wrote onto the preview D1 for that tier —
+  token is the one `preview-seed test-account` wrote onto the preview D1 for that identity —
   `PREVIEW_TEST_SESSION_TOKEN` for `:auth` (yazar), `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for
-  `:auth-caylak` (çaylak). **One variable per tier, and an unset one is never satisfied by
-  another's**: an unset tier token means that tier was not seeded on this preview, and falling back
-  to a seeded identity would render the audience the surface said it was not. With any of
-  them unset the request refuses `11` rather than substituting; with no tier-naming surface asked
-  for, every surface renders anonymously as before. Setting them is necessary and not sufficient —
-  whether the cookie authenticated, and at which tier, is the per-shot session proof's answer, also
-  an `11`.
+  `:auth-caylak` (çaylak), `PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN` for
+  `:auth-caylak-unverified` (the email-unverified çaylak). **One variable per identity, and an
+  unset one is never satisfied by another's**: an unset token means that identity was not seeded on
+  this preview, and falling back to a seeded one would render the audience the surface said it was
+  not — the verified çaylak's token standing in for the unverified one would shoot the write the
+  surface exists to show refused. With any of them unset the request refuses `11` rather than
+  substituting; with no tier-naming surface asked for, every surface renders anonymously as before.
+  Setting them is necessary and not sufficient — whether the cookie authenticated, at which tier and
+  with which email verification, is the per-shot session proof's answer, also an `11`.
 - **`--flag` needs those same values plus one grant on the preview D1.** The override cookie is
   honored only for a platform admin, per the repo's own override authorization, and
   `preview-seed test-account` provisions moderation authority to the yazar identity and nothing at
-  all to the çaylak one. So a forced run is preceded by `node packages/admin-grant/src/bin.ts grant
-  --user-id <the tier's account id> --database-id <preview-d1>` — offline and direct-D1, on a
+  all to either çaylak identity. So a forced run is preceded by `node packages/admin-grant/src/bin.ts grant
+  --user-id <the identity's account id> --database-id <preview-d1>` — offline and direct-D1, on a
   throwaway preview only, never against a database holding real accounts. Admin is a relation tuple,
-  not a tier, so granting it to `preview-test-caylak` leaves that identity a çaylak and the tier
-  proof still binds. The grant is what makes the forced capture an admin's view as well, which is
-  the trade the operand asks for and the reason it is not the default.
+  not a tier, so granting it to `preview-test-caylak` or `preview-test-caylak-unverified` leaves that
+  identity a çaylak with its own email verification, and the session proof still binds. The grant
+  is what makes the forced capture an admin's view as well, which is the trade the operand asks for
+  and the reason it is not the default.
 
 **The preview-deploy convention.** The repo announces each PR's preview as a sticky PR comment
 carrying the anchor `<!-- preview-deploy:<app> -->`, whose body names, per app: the deployed URL
@@ -243,6 +249,13 @@ list **paginated** (v1 read one page of 100; a busy PR's sticky comment silently
 comment that carries the anchor but no parseable URL + SHA for `--app` is malformed and refuses
 on `11` (a malformed announcement is an unreadable one, not a missing one); no comment with the
 anchor at all is the proven `16`.
+
+A PR that mints no preview is announced with the same prefix in its no-preview form,
+`<!-- preview-deploy:none head:<sha> -->`. When the newest announcement is that form, the SHA decides
+the answer. A SHA naming the head being judged (either side may be abbreviated) is the proven `16`,
+the same as no anchor, and `review-ui route --no-preview` routes on it. A SHA naming any other
+head refuses on `11`: the marker proves there was no preview at an earlier push, and the workflow
+may not have answered for this one yet. A no-preview marker beside an app block is malformed, `11`.
 
 ---
 
@@ -260,7 +273,7 @@ fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/
 |---|---|---|---|---|
 | `--pr` | integer | yes | — | the pull request whose preview is judged |
 | `--out` | string | yes | — | kebab-case capture-set name; captures land under `<OS temp>/fabrika-review-ui/<pr>-<head8>/<set>/` |
-| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/feed`), or a route plus a realized tier state (`/feed:auth`, `/feed:auth-caylak`); zero operands is `1` — no tool guesses surfaces from a diff |
+| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/feed`), or a route plus a realized tier state (`/feed:auth`, `/feed:auth-caylak`, `/feed:auth-caylak-unverified`); zero operands is `1` — no tool guesses surfaces from a diff |
 | `--viewport` | string, repeatable | no | `desktop` alone | a viewport to shoot every `--surface` at, over the closed set `desktop` (1280×800) and `mobile` (390×844); crossed with `--surface`, so two of each is four captures. A name outside the set, or one passed twice, is `10` |
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
 | `--locale` | string | no | the app's default locale, nothing seeded | render every shot in this locale — one of the values `.fabrika.jsonc`'s `uiCapture.locale` declares; with no declaration, or a value outside its list, it is `10` before a browser launches |
@@ -272,10 +285,12 @@ fabrika review-ui render --pr 4321 --out judged --surface /feed --surface /feed/
 | `--repo` | string | no | resolved | the repository |
 
 A `:state` suffix is admitted **only for a state something here actually puts on screen**, and
-refused on `10` otherwise. The realized set is `auth` and `auth-caylak`, and **each
-one names the tier it renders at**: `:auth` is the yazar+moderator identity, `:auth-caylak` the
-çaylak one. Each seeds that identity's own better-auth session cookie into the capture context, and
-each account is provisioned direct-D1 by `preview-seed test-account`, never by a worker route.
+refused on `10` otherwise. The realized set is `auth`, `auth-caylak` and
+`auth-caylak-unverified`, and **each one names the audience it renders as**: `:auth` is the
+yazar+moderator identity, `:auth-caylak` the email-verified çaylak, `:auth-caylak-unverified` a
+çaylak whose email is unverified. Each seeds that identity's own better-auth session cookie into the
+capture context, and each account is provisioned direct-D1 by `preview-seed test-account`, never by
+a worker route.
 
 The tier is an axis of the surface id because a tier is an audience. A surface whose whole point is
 that it renders *below* yazar — a çaylak nudge, a pre-promotion prompt, an onboarding ask — is
@@ -284,11 +299,15 @@ showing the state the PR did not add. That is the dangerous failure this axis cl
 capture of the wrong audience.
 
 Seeding a cookie is not the same as being signed in, and being signed in is not the same as being
-signed in *as that tier*, so the shot proves both rather than assuming either. From the same browser
-context, before the shot is classified, the verb reads the preview's own `/api/auth/get-session` and
-requires a user back **whose `tier` is the one the surface named**; anything else — a bare `null`, a
-non-200, an unreadable body, a user with no tier, a user at another tier — refuses the surface on
-`11` and records no capture under that surface id. A cookie that did not authenticate renders the
+signed in *as that identity*, so the shot proves both rather than assuming either. From the same
+browser context, before the shot is classified, the verb reads the preview's own
+`/api/auth/get-session` and requires a user back **whose `tier` is the one the surface named and
+whose boolean `emailVerified` is the one the surface's identity carries** — `false` for
+`:auth-caylak-unverified`, `true` for `:auth` and `:auth-caylak`. Anything else — a bare `null`, a
+non-200, an unreadable body, a user with no tier, a user with no boolean `emailVerified`, a user at
+another tier, a user with the other email verification — refuses the surface on `11` and records no
+capture under that surface id. The verification check is what tells the two çaylak identities apart:
+a verified çaylak on `:auth-caylak-unverified` clears the tier check and is still refused. A cookie that did not authenticate renders the
 visitor's page and one that authenticated as the wrong identity renders somebody else's, and both are
 perfectly valid PNGs no byte check can tell from the real one.
 
@@ -320,11 +339,13 @@ authorization is untouched — and that gate is why the operand carries a fence 
 own: on a deployed stage the cookie is honored only for a request whose actor holds platform
 `Admin`, so an anonymous surface would drop it and render the default state cleanly under the
 forced name. Every `--surface` in a forced run must therefore name a tier state, and a bare route
-beside a `--flag` is `10`. Neither preview test account holds admin, so a forced run also needs
-`admin-grant grant --user-id <that tier's account id> --database-id <preview-d1>` against that
+beside a `--flag` is `10`. No preview test account holds admin, so a forced run also needs
+`admin-grant grant --user-id <that identity's account id> --database-id <preview-d1>` against that
 throwaway preview D1 — offline, direct-D1, the same path the repo already sanctions for a grant. Admin is
 a relation tuple and not a tier, so a granted `preview-test-caylak` is still a çaylak and still
-passes the tier proof.
+passes the tier proof, and a granted `preview-test-caylak-unverified` is still unverified and still
+passes the verification proof — which is how a forced email-verification write gate renders its
+denial on `:auth-caylak-unverified`.
 
 Seeding an override is not the same as the override taking, so — like the session — the shot proves
 it. From the same context, before the shot is classified, the verb POSTs the preview's own
@@ -506,8 +527,9 @@ preview and no session, so it still refuses every `:state`.
 ```
 
 **The mechanism, in order — each step gates the next.** Resolve the PR and its live head (`7` /
-`11`). Resolve the preview comment for `--app` (paginated sweep; anchor absent → `16`, anchor
-present but unparseable → `11`). **Bind the preview to the head**: the comment's deployed SHA
+`11`). Resolve the preview comment for `--app` (paginated sweep; anchor absent, or a
+`none head:<sha>` marker naming the live head → `16`; anchor present but unparseable, or a `none`
+marker naming another head → `11`). **Bind the preview to the head**: the comment's deployed SHA
 must equal the live head — a preview that lags the push is `12`, because pixels of an old tree
 bound to a new SHA are the stale-verdict class at the capture seam. **Fence the app axis**: every
 surface resolves to its owning `uiSurfaces` row by longest claiming mount and that row to its app —
@@ -552,13 +574,13 @@ re-invocation without it, on the record; never the tool's tolerance.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; `--flag` was passed beside an anonymous surface; `--locale` was passed with no `uiCapture.locale` declared, or with a value outside its declared list; a `--scheme` names a scheme outside the closed set (`light`, `dark`), is passed twice, or is passed with no `uiCapture.scheme` declared; `--accent` was passed with no `uiCapture.accent` declared, or with a value outside its declared list; or an `--interact` operand names an unknown step verb, an empty locator, key or label, a non-kebab label or no steps, names a surface no `--surface` asked for, would write the same PNG as another `--interact`, or ends on `click` or `press` |
-| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale`, `--scheme` or `--accent` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; a forced flag evaluated at its default anyway; a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value; a scheme-crossed shot's declared root attribute did not read back as its `--scheme` value; an accented shot's declared root attribute did not read back as the `--accent` value; or an interacted shot's step found zero or several elements, timed out, or its `:hover`, `:focus-visible` or visible-match proof did not hold — no capture is written for it |
+| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`, `auth-caylak-unverified`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; `--flag` was passed beside an anonymous surface; `--locale` was passed with no `uiCapture.locale` declared, or with a value outside its declared list; a `--scheme` names a scheme outside the closed set (`light`, `dark`), is passed twice, or is passed with no `uiCapture.scheme` declared; `--accent` was passed with no `uiCapture.accent` declared, or with a value outside its declared list; or an `--interact` operand names an unknown step verb, an empty locator, key or label, a non-kebab label or no steps, names a surface no `--surface` asked for, would write the same PNG as another `--interact`, or ends on `click` or `press` |
+| `11` | the PR/head/comment read failed; the declared `uiSurfaces` cannot be read, or `--locale`, `--scheme` or `--accent` was passed and the declared `uiCapture` cannot be read; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; a `--surface` is served by an app this preview does not announce; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while its identity's session token is unset, while the resolved signing secret is empty or carries the `insecure_` placeholder, while `--auth-secret-from` names a file that could not be read, or while the repo root could not be located at all so the committed preview key was never looked for; a tier-naming surface's session proof did not come back signed in, came back at a tier the surface did not name, or came back with an email verification the surface did not name; a forced flag evaluated at its default anyway; a seeded shot's `document.documentElement.lang` did not read back as the `--locale` value; a scheme-crossed shot's declared root attribute did not read back as its `--scheme` value; an accented shot's declared root attribute did not read back as the `--accent` value; or an interacted shot's step found zero or several elements, timed out, or its `:hover`, `:focus-visible` or visible-match proof did not hold — no capture is written for it |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
 | `15` | proven: at least one capture is invalid (zero bytes, undecodable, zero area) |
-| `16` | proven: no comment carrying the preview anchor exists on the PR — this repo, or this PR, has no preview to judge |
+| `16` | proven: this repo, or this PR, has no preview to judge — no comment carries the preview anchor, or the newest announcement is a `none head:<sha>` marker naming the live head |
 | `19` | proven: a capture's PNG width, read back from its own bytes, is not the requested viewport's width — the requested viewport's render is UNKNOWN, and nothing was recorded under that label |
 
 **Errors**
@@ -567,15 +589,16 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|---|
 | `review-ui render: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review-ui render: PR #<n> is closed — nothing to judge.` | 7 | refusal |
-| `review-ui render: --surface "<id>" names a :state nothing renders — the realized states are auth, auth-caylak; render the bare route.` | 10 | refusal |
+| `review-ui render: --surface "<id>" names a :state nothing renders — the realized states are auth, auth-caylak, auth-caylak-unverified; render the bare route.` | 10 | refusal |
 | `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
 | `review-ui render: a tier-naming surface was requested but <the source> carries the insecure_ placeholder prefix — a cookie signed with it is one the preview worker answers as a visitor — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
 | `review-ui render: a tier-naming surface was requested but <the source> is empty — there is no key to sign the tier cookie with — the named tier's render is UNKNOWN, never a cookie the worker will reject; <the route out>` | 11 | refusal |
 | `review-ui render: cannot read the session-signing secret at <path>: <reason> — the named tier's render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
 | `review-ui render: surface "<id>" at <viewport> named tier <wanted> and rendered as <rendered> — the named tier's render is UNKNOWN, never another tier's.` | 11 | refusal |
+| `review-ui render: surface "<id>" at <viewport> named an email-<verified\|unverified> identity and rendered as an email-<unverified\|verified> one — the named identity's render is UNKNOWN, never another audience's.` | 11 | refusal |
 | `review-ui render: --flag "<token>" is not a <key>=<on\|off> pair (<reason>) — an operand nothing can force would shoot the default state under the forced name.` | 10 | refusal |
-| `review-ui render: --flag was passed with the anonymous surface "<id>" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak) on every surface.` | 10 | refusal |
+| `review-ui render: --flag was passed with the anonymous surface "<id>" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak, auth-caylak-unverified) on every surface.` | 10 | refusal |
 | `review-ui render: surface "<id>" at <viewport> did not render with its forced flags (<reason>) — the forced render is UNKNOWN, never the default one.` | 11 | refusal |
 | `review-ui render: --locale "<value>" cannot be seeded (<reason>) — an operand nothing seeds would shoot the default locale under the requested name.` | 10 | refusal |
 | `review-ui render: surface "<id>" at <viewport> in locale <value> did not render in its seeded locale (<reason>) — the seeded locale's render is UNKNOWN, never the default one.` | 11 | refusal |
@@ -603,6 +626,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: surface "<id>" at <viewport> is unreachable at the preview (<reason>) — judge what renders, and hold the gap against the PR's Deviations (#4305).` | 14 | refusal |
 | `review-ui render: surface "<id>" at <viewport> captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 15 | refusal |
 | `review-ui render: no preview-deploy comment on PR #<n> — nothing to judge without running the PR's code; the run is CANT-SEE.` | 16 | refusal |
+| `review-ui render: PR #<n>'s preview comment marks no preview deploy at <head7> — nothing to judge without running the PR's code; the run is CANT-SEE.` | 16 | refusal |
 
 **Scope** — exactly the `--surface` × `--viewport` × `--scheme` cross product against one PR's announced preview (no `--scheme` counts as one default-scheme column), every cell under the one `--accent` when it is passed, each surface's cell shot at rest and once per `--interact` on it. Zero operands
 is `1`, so "rendered nothing, found nothing wrong" is unrepresentable — this verb fails closed on
@@ -678,8 +702,15 @@ $ echo $?
 ```
 
 ```
+$ fabrika review-ui render --pr 4321 --out unverified --surface /welcome:auth-caylak-unverified
+review-ui render: surface "/welcome:auth-caylak-unverified" at desktop named an email-unverified identity and rendered as an email-verified one — the named identity's render is UNKNOWN, never another audience's.
+$ echo $?
+11
+```
+
+```
 $ fabrika review-ui render --pr 4321 --out forced --surface /welcome --flag welcome-banner=on
-review-ui render: --flag was passed with the anonymous surface "/welcome" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak) on every surface.
+review-ui render: --flag was passed with the anonymous surface "/welcome" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak, auth-caylak-unverified) on every surface.
 $ echo $?
 10
 ```
@@ -705,8 +736,9 @@ $ echo $?
   its own proof exists because an override the preview dropped is the same clean-but-wrong capture.
 - **One identity meant one audience.** A tier-only surface could not be rendered at all, and the
   yazar's shot of it came back `captured`, valid and decodable, showing the state the PR did not add.
-  The tier rides the surface id, one seeded identity per tier, and the session proof reads the tier
-  back — the third instance of the same class the two bullets above name.
+  The audience rides the surface id, one seeded identity per realized state, and the session proof
+  reads its tier and email verification back — the third instance of the same class the two bullets
+  above name.
 
 ---
 
@@ -995,7 +1027,7 @@ EOF
 **Invocation**
 
 ```
-fabrika review-ui route 6326 --sha <head> --clause "<why>" [--verified-at <head>] [--repo <owner/name>]
+fabrika review-ui route 6326 --sha <head> --clause "<why>" [--verified-at <head> | --no-preview [--hand-check <comment>]] [--repo <owner/name>]
 ```
 
 The reasoning arrives on **stdin only**, for the same reason as `post` and `note`.
@@ -1008,15 +1040,23 @@ The reasoning arrives on **stdin only**, for the same reason as `post` and `note
 | `--sha` | string | yes | — | the head whose diff was read, 7–40 lowercase hex |
 | `--clause` | string | yes | — | the one-line why, carried on the record's first line; blank is refused |
 | `--verified-at` | string | no | none | the head a hand-verification standing in for the render ran at, 7–40 lowercase hex; the range to `--sha` is then read and a `ui`-class file in it refuses the route, as does a range the platform could not read whole or at all |
+| `--no-preview` | boolean | no | `false` | the PR has no preview deploy: route under the repo's `reviewUi.whenNoPreview` rules instead of the diff; the verb checks the absence itself and refuses on `23` when a preview is announced; refused beside `--verified-at` |
+| `--hand-check` | string | no | none | pin the owner's hand-check comment on this PR, as an id or a URL ending `#issuecomment-<id>`, instead of letting the verb find the newest one; implies `--no-preview` |
 | `--repo` | string | no | resolved | the repository |
-| stdin | markdown | yes | — | which files changed and why none of them renders anything |
+| stdin | markdown | yes | — | which files changed and why none of them renders anything, or, on a `--no-preview` route, why the PR has no preview and what stands in for the render |
 
 **Output** — machine. One JSON object:
-`{"answer":"routed","namespace":"review-ui","sha":"6c6fe226…","uiFiles":2,"verifiedAt":null,"textReview":"absent","upsert":"created","commentUrl":"…"}`.
+`{"answer":"routed","namespace":"review-ui","sha":"6c6fe226…","uiFiles":2,"verifiedAt":null,"basis":null,"textReview":"absent","upsert":"created","commentUrl":"…"}`,
+or, where the diff raises no `ui` class and nothing is posted,
+`{"answer":"none","namespace":"review-ui","sha":"6c6fe226…","uiFiles":0}`. `answer` is the closed
+outcome token: `routed` or `none`.
 `verifiedAt` is the `--verified-at` head the range was cleared over, and `null` where the route
-rested on no hand-verification. `textReview` is the `review-code` verdict this record rests on:
+rested on no hand-verification. `basis` is `hand-check` or `skip` on a `--no-preview` route and
+`null` otherwise; it is the same token the record's first line carries. `handCheck` is the id of the
+owner's comment a `hand-check` route stood on, and is absent on every other route. `textReview` is the `review-code` verdict this record rests on:
 `pass` where one stands in force at `--sha`, `absent` where none binds that head — and `absent` is
-reachable only on a route carrying no `--verified-at`, because one that does is refused at `20`.
+reachable only on a prose-only or `skip` route, because a route carrying `--verified-at` or resting
+on a `hand-check` is refused at `20` without one.
 
 **Why it exists.** `ship scope` raises the `ui` class from a path test that cannot see whether
 pixels moved, so a PR whose only change under a declared `uiSurfaces` prefix is prose requires this namespace — and
@@ -1036,12 +1076,13 @@ diff was read, and is re-read rather than re-bound. Read the changed-file list t
 because that count is computed against a base cached at the last push and no caller can invalidate
 it. An **empty** list is `7` — the `ui` count would then be derived over a diff nobody read — and a
 list at GitHub's 3000-file ceiling is `11`, because that is the one truncation the enumeration
-cannot rule out on its own and it can only ever shrink the `ui` count. Refuse a diff that raises no
-`ui` class (`7`) — nothing required
-this namespace, so there is nothing to route; the predicate is `review/classes.ts`'s own
+cannot rule out on its own and it can only ever shrink the `ui` count. Answer `none` on exit `0` over a
+diff that raises no `ui` class, writing nothing — nothing required
+this namespace, so there is nothing to route, and that is a clean end rather than a refusal; the predicate is `review/classes.ts`'s own
 `isUiSurface`, over the same declared `uiSurfaces` prefixes the gate raised the class from, never a
 second copy. Read the PR's comments and resolve the `review-code` verdict in force at `--sha`; a
-standing FAIL is `20`, and so is an absent verdict on a route carrying `--verified-at`. That read
+standing FAIL is `20`, and so is an absent verdict on a route carrying `--verified-at` or resting on
+a `hand-check`. That read
 runs **before** the `--verified-at` comparison below, so a route that is both spent at
 `--verified-at` and standing-FAIL at `--sha` exits `20`, not `12` — a record asserting a text PASS
 that is not there is unpostable at any head, while a spent hand-verification is cleared by re-running
@@ -1051,7 +1092,11 @@ the range raises the `ui` class — the hand-verification is then spent and a fr
 `--sha`; a comparison that came back at GitHub's 300-file ceiling is `11`, because the compare
 declares no total and a capped list can only ever hide a `ui`-class file, and so is one whose two
 heads have diverged, because the platform's three-dot compare then answers from their merge base and
-the range was never read at all. Compose the record's first
+the range was never read at all. With `--no-preview`, the mode is resolved right after the `ui`
+class (`21` on `require-render`); the comments read then checks that no preview is announced
+(`23`, or `11` when the announcement does not read) and, under `hand-check`, admits the owner's
+hand-check (`21` with none found, `22` when a pinned one fails a fact), both before the text
+verdict. Compose the record's first
 line through the `routed-elsewhere` wire format, leak-scan the assembled comment (`5`/`6`), upsert
 one record for this namespace on the emitter's own comment, and read it back from live state (`9` on
 mismatch, `8` on an unproven write).
@@ -1078,10 +1123,43 @@ polarity by the one `advisoryPolarity` its sibling readers call, so no two reade
 rules. That last one was a copy before it was shared, and the copy diverged: a `[FAIL]` row inside an
 advisory is an invalid emission, and it cleared this route while `ship gate` refused on the same
 comment. A standing FAIL refuses on `20`. An **absent** verdict refuses on `20` only where
-`--verified-at` is passed: that route asserts the conjunction, while a prose-only route asserts
-nothing about the text lane and says so on stderr instead of blocking. The host's native review fold
+`--verified-at` is passed or the route rests on a `hand-check`: each asserts the conjunction, while
+a prose-only or `skip` route asserts nothing about the text lane and says so on stderr instead of
+blocking. The host's native review fold
 is `ship gate`'s widening and is not read here — the merge gate still reads it, and this verb only
 judges what its own clause claims.
+
+**A PR with no preview, under the repo's `reviewUi.whenNoPreview` rules.** A repo may say, by
+path, what this gate needs when a PR has no preview deploy (`.fabrika.jsonc`,
+`reviewUi.whenNoPreview`: a list of `{paths, mode}` rules). `--no-preview` resolves the mode over
+the PR's `ui`-class files: the first rule whose glob matches a file sets its mode, a file no rule
+matches is `require-render`, and the PR takes the strictest — `require-render`, then `hand-check`,
+then `skip`. The verb then acts on it:
+
+**The verb checks the "no preview" itself.** Before it routes, it reads the PR's preview
+announcement through the same resolver `review-ui render` uses for its exit `16`, and it routes only
+where `render` would refuse there for want of one. An announced preview, at this head, behind it or
+naming several apps, refuses on `23`: a render can run, so no rule may stand in for it. An
+announcement that does not read is `11`. So `--no-preview` is never the caller's word alone.
+
+- `require-render` refuses on `21`. A render is owed, so no preview is CANT-SEE, exactly as with no
+  rules at all.
+- `skip` posts the record with `basis:skip` on its first line. The standing `review-code` FAIL
+  refusal still holds; an absent text verdict does not refuse.
+- `hand-check` needs the owner's hand-check. **The owner's hand-check is admissible evidence here**:
+  a comment on this PR, by an account on the control-plane roster `.github/CODEOWNERS` names, that
+  names the PR's exact head (a 7–40 hex prefix of it) and carries at least one screenshot. The verb
+  reads the PR's comments and stands on the newest one that passes all four facts; with none, it
+  refuses on `21`. `--hand-check <comment>` pins one instead, and a pinned comment that fails a fact
+  refuses on `22`. It stands in for the render the way a desk run does, so it rests on a standing
+  `review-code` PASS at `--sha` too (`20` without one). The record carries `basis:hand-check` and a
+  closing line naming the comment and its author. Under a `skip` mode a pinned hand-check is checked
+  the same way and recorded as `hand-check`.
+
+Both flags ride the record's first line, so `ship gate` still reads the namespace as `routed` and
+flags the row with the basis, and `lane prove` carries it onto the namespace row it records. `lane
+report` writes it on the `PASS` line as `routedBasis`, and `table flags` raises `not-rendered` on the
+board row off it.
 
 **What this verb does not decide.** Whether the diff renders anything. That is the skill's judgment
 over `review diff`'s refusal-guarded bytes. Narrowing the `ui` path class instead was proposed and
@@ -1095,13 +1173,17 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `3` | stdin was read and held nothing |
 | `5` | the assembled comment carries a machine-local path |
 | `6` | the body is a bare `@` path reference |
-| `7` | the PR is proven absent (404), closed, has zero changed files, is served an empty changed-file list, or its diff raises no `ui` class |
+| `0` with `"answer":"none"` | the diff raises no `ui` class — nothing required this namespace, so nothing was posted |
+| `7` | the PR is proven absent (404), closed, has zero changed files, or is served an empty changed-file list |
 | `8` | the create/edit failed — UNKNOWN whether the record landed |
 | `9` | the record landed but does not read back as sent |
-| `10` | `--sha` or `--verified-at` is not a head SHA, or `--clause` is blank |
+| `10` | `--sha` or `--verified-at` is not a head SHA, `--clause` is blank, `--hand-check` names no comment, or `--verified-at` is passed beside `--no-preview` |
 | `11` | a precondition read failed, the changed-file list came back at GitHub's 3000-file ceiling, or the `--verified-at` comparison came back at the 300-file ceiling or between two diverged heads — nothing was posted |
 | `12` | the live head moved past `--sha` — the diff you read is gone; or a `ui`-class file changed between `--verified-at` and `--sha`, so the hand-verification is spent |
-| `20` | the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on `--verified-at` has no `review-code` verdict binding that head |
+| `20` | the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on `--verified-at` or an owner's hand-check has no `review-code` verdict binding that head |
+| `21` | a `--no-preview` route the repo's `reviewUi.whenNoPreview` rules do not admit: the PR resolves `require-render`, or `hand-check` with no owner's hand-check at the head on the PR |
+| `22` | the `--hand-check` comment is not an owner's hand-check: not on this PR, not by a control-plane account, naming no head this PR is at, or carrying no screenshot |
+| `23` | a `--no-preview` route over a PR that announces a preview, at the head, behind it, or for several apps |
 
 **Errors**
 
@@ -1113,12 +1195,13 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `review-ui route: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review-ui route: PR #<n> is closed — a route on a closed PR resolves nothing.` | 7 | refusal |
 | `review-ui route: GitHub served no changed files for #<n> against the <m> its own pull-request record declares — refusing to derive the ui class from a diff nobody read.` | 7 | refusal |
-| `review-ui route: #<n>'s diff raises no ui class, so ship gate requires no review-ui namespace — there is nothing to route.` | 7 | refusal |
 | `review-ui route: create/edit failed: <reason> — UNKNOWN whether the route landed; re-read the PR before retrying.` | 8 | refusal |
 | `review-ui route: posted, but the read-back does not yield this record (<why>) — inspect comment <id>.` | 9 | refusal |
 | `review-ui route: --sha "<value>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `review-ui route: --clause is blank — a route with no stated reason records nothing a reader can check.` | 10 | refusal |
 | `review-ui route: --verified-at "<value>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
+| `review-ui route: --verified-at and --no-preview name two different routes — a desk run at an earlier head, or the repo's no-preview rules at this one; pass one.` | 10 | refusal |
+| `review-ui route: --hand-check "<value>" is not a comment id or a comment URL ending in #issuecomment-<id>.` | 10 | refusal |
 | `review-ui route: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a ui-class file could sit in the part the platform never served.` | 11 | refusal |
 | `review-ui route: the comparison over <verified>..<sha> came back at GitHub's 300-file ceiling — refusing to clear the hand-verification against a capped read.` | 11 | refusal |
 | `review-ui route: <verified> is <status> of <sha>, not an ancestor — the comparison answers from their merge base, so <verified>..<sha> was never read. Re-run the hand-verification at <sha>.` | 11 | refusal |
@@ -1127,6 +1210,14 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `review-ui route: <files> raise the ui class in <verified>..<sha> — the hand-verification at <verified> is spent; re-run it at <sha>.` | 12 | refusal |
 | `review-ui route: review-code stands FAIL at <sha> (comment <id>) — this record would assert a text PASS that is not there; repair the finding and route at the head the text gate passes.` | 20 | refusal |
 | `review-ui route: no standing review-code verdict binds <sha>, and a route resting on a hand-verification asserts one — land the text verdict first, and read what stands with fabrika review verdicts <n>.` | 20 | refusal |
+| `review-ui route: reviewUi.whenNoPreview resolves require-render for #<n> (<files>) — a render is owed, so a PR with no preview is CANT-SEE, never routed.` | 21 | refusal |
+| `review-ui route: reviewUi.whenNoPreview resolves hand-check for #<n>, and no comment on it is an owner's hand-check at <head> — a control-plane account's screenshots naming this head; with none posted, the PR is CANT-SEE.` | 21 | refusal |
+| `review-ui route: cannot read <roster> — whether an owner's hand-check stands on #<n> is UNKNOWN; nothing was posted.` | 11 | refusal |
+| `review-ui route: comment <id> <why it is not an owner's hand-check at this head>; nothing was posted.` | 22 | refusal |
+| `review-ui route: #<n>'s preview comment carries the anchor but does not read (<reason>) — whether a preview exists is UNKNOWN; nothing was posted.` | 11 | refusal |
+| `review-ui route: #<n> announces a <app> preview at <sha> — a render can run, so a no-preview rule cannot stand in for it; run review-ui render.` | 23 | refusal |
+| `review-ui route: #<n> announces a <app> preview at <deployed>, not yet at <sha> — this PR deploys previews, so wait for it to redeploy and render; a no-preview rule cannot stand in for it.` | 23 | refusal |
+| `review-ui route: #<n> announces a preview for <apps> — a render can run, so a no-preview rule cannot stand in for it; run review-ui render --app <app>.` | 23 | refusal |
 
 **Scope** — one PR, one comment write, the caller's stdin.
 
@@ -1139,7 +1230,7 @@ $ fabrika review-ui route 6326 --sha 6c6fe226 \
 export or type changed. `design-token-lint.config.json` rewrites two note strings; the guard's
 data fields are byte-identical. No component, route, token or style is touched.
 EOF
-{"answer":"routed","namespace":"review-ui","sha":"6c6fe226","uiFiles":2,"verifiedAt":null,"textReview":"absent","upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/6326#issuecomment-5123990412"}
+{"answer":"routed","namespace":"review-ui","sha":"6c6fe226","uiFiles":2,"verifiedAt":null,"basis":null,"textReview":"absent","upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/6326#issuecomment-5123990412"}
 ```
 
 A route resting on a hand-verification names the head it ran at, and the range decides whether it
@@ -1151,7 +1242,7 @@ $ fabrika review-ui route 4471 --sha fb01065b --verified-at 8efd315a \
 The desk run at `8efd315a` drove every readout this diff touches. `8efd315a..fb01065b` is one
 commit under `packages/<cli>/`, so the composition is byte-identical.
 EOF
-{"answer":"routed","namespace":"review-ui","sha":"fb01065b","uiFiles":3,"verifiedAt":"8efd315a","textReview":"pass","upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/4471#issuecomment-5598041887"}
+{"answer":"routed","namespace":"review-ui","sha":"fb01065b","uiFiles":3,"verifiedAt":"8efd315a","basis":null,"textReview":"pass","upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/4471#issuecomment-5598041887"}
 
 $ fabrika review-ui route 4471 --sha fb01065b --verified-at 8efd315a --clause "…" < why.md
 review-ui route: scanned 2 files changed in 8efd315a..fb01065b; 2 raise the ui class.
@@ -1172,14 +1263,30 @@ assert a text PASS that is not there; repair the finding and route at the head t
 # exit 20
 ```
 
+A PR with no preview, in a repo whose `.fabrika.jsonc` declares
+`"reviewUi": {"whenNoPreview": [{"paths": ["apps/admin/**"], "mode": "hand-check"}]}`:
+
+```
+$ fabrika review-ui route 5210 --sha 3a9e41c0 --no-preview \
+    --clause "no preview; the owner hand-checked this head" <<'EOF'
+apps/admin deploys to no preview. The owner's screenshots of the two changed readouts at 3a9e41c0
+stand in for the render.
+EOF
+{"answer":"routed","namespace":"review-ui","sha":"3a9e41c0","uiFiles":2,"verifiedAt":null,"basis":"hand-check","handCheck":5870011234,"textReview":"pass","upsert":"created","commentUrl":"https://github.com/<owner>/<repo>/pull/5210#issuecomment-5870019876"}
+```
+
+With no owner's hand-check at `3a9e41c0` on the PR, the same route refuses on `21`. On a PR whose
+preview comment announces a deploy, it refuses on `23` and names the preview to render.
+
 **Grounding**
 
 - **Two rules that could not both hold.** The `ui` class is raised by a path test, and the gate
   demanded a namespace nothing legal could fill; recording the routed answer is the shape that
   keeps both, rather than narrowing the class.
-- **The zero-scope refusals this verb inherits rather than loosens**: `render` still refuses zero
-  surfaces, `post` still refuses without captures, and this verb refuses a diff that raises no `ui`
-  class.
+- **The zero-scope rules this verb inherits rather than loosens**: `render` still refuses zero
+  surfaces, `post` still refuses without captures, and this verb refuses a diff nobody read (an
+  empty changed-file list) — while a diff it did read that raises no `ui` class is not a refusal:
+  it answers `none` on exit `0` and writes nothing.
 - **The record is authored**, so the write+ ACL binds it at `ship gate` exactly as it binds a
   verdict marker.
 - **A hand-verification's currency is the verb's judgment, not the gate's**, and it binds the
@@ -1189,6 +1296,9 @@ assert a text PASS that is not there; repair the finding and route at the head t
   `review-code` FAIL at the record's head refuses the route, and the reader is `review verdicts`'
   own, so the two gates cannot answer one question differently.
 - **The head binding**, and why a moved head is re-read rather than re-bound.
+- **A repo decides, by path, what a PR with no preview needs.** The rules only loosen the gate
+  where a repo declared them, the strictest file decides, and both looser outcomes are flagged on
+  the record rather than read as a render.
 
 ---
 
@@ -1201,7 +1311,8 @@ live once in the shared matrix, which owns every code's single meaning); every e
 message, stream, and code; every verb states scope and zero-scope behavior (`render` refuses
 zero surfaces at `1`; `post` refuses an empty body at `3` and an unreadable evidence set at
 `4`/`11`; `note` refuses an empty body at `3` and a verdict-shaped body at `10`; `route` refuses an
-empty body at `3` and a diff raising no `ui` class at `7`); and no clause
+empty body at `3` and an empty changed-file list at `7`, and answers `none` on exit `0` over a diff
+raising no `ui` class); and no clause
 defers to a v1 script, another skill's prose, or the authoring session —
 the `review` and `build-ui` references are to sibling fabrika contracts, the sanctioned
 cross-contract shape, with the `build-ui` reference flagged as pre-merge in the authoring PR.

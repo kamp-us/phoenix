@@ -14,13 +14,10 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {
-	governedRootsOr,
-	reviewFilterExclusionsOr,
-	reviewFilterUnexcludeOr,
-} from "../config/paths.ts";
+import {reviewFilterExclusionsOr, reviewFilterUnexcludeOr} from "../config/paths.ts";
 import {diffRange, diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {classConfigAtCommits} from "./class-config.ts";
 import {GOVERNED_FILTER, INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {filesInDiff} from "./diff.ts";
 import {
@@ -138,12 +135,14 @@ export const runDiff = (
 		let servedDiff = diff;
 		if (options.filterPlacement != null) {
 			const root = options.cwd ?? process.cwd();
-			const roots = yield* governedRootsOr(
+			// The PR's own roots at the served range's two commits, as `review scope` reads them.
+			const loaded = yield* classConfigAtCommits(
 				VERB,
-				root,
 				"the filter refusal union is UNKNOWN without the governed roots.",
+				{head: head.sha, base: head.mergeBase},
 			);
-			if (roots._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, roots.message);
+			if (loaded._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, loaded.message);
+			const roots = loaded.config.governedRoots;
 
 			const filterExclusions = yield* reviewFilterExclusionsOr(
 				VERB,
@@ -166,7 +165,7 @@ export const runDiff = (
 				filterUnexclude.unexclude,
 				options.exclude ?? null,
 			);
-			const refused = refusalFor(effective.patterns, refusalProbes(roots.roots));
+			const refused = refusalFor(effective.patterns, refusalProbes(roots));
 			if (refused.length > 0) {
 				const detail = refused
 					.map((entry) =>
@@ -182,11 +181,7 @@ export const runDiff = (
 				);
 			}
 			const split = applyPlacement(listed.value, effective.patterns);
-			const governed = governedExcluded(
-				split.excluded,
-				effective.patterns,
-				refusalProbes(roots.roots),
-			);
+			const governed = governedExcluded(split.excluded, effective.patterns, refusalProbes(roots));
 			if (governed.length > 0) {
 				return refuse(
 					GOVERNED_FILTER,

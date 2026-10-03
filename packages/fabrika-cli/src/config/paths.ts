@@ -17,7 +17,7 @@ import {
 	type PathValue,
 	roadmapFileKey,
 } from "./keys/paths.ts";
-import {type ReviewSubsystem, reviewSubsystemsKey} from "./keys/review-subsystems.ts";
+import {type NoPreviewRule, reviewUiKey} from "./keys/review-ui.ts";
 import {
 	NO_UI_SURFACES,
 	prefixesOf,
@@ -37,12 +37,12 @@ export const readGovernedRoots = (
 	readKey(cwd, governedRootsKey);
 
 /**
- * The governed roots, or the one refusal sentence every reader of them prints.
+ * The governed roots in the checkout a verb stands in, or the one refusal sentence its readers print.
  *
- * Seven verbs ask this question and each owns a different exit code, so the code stays theirs and
- * only the sentence is shared. `consequence` is the clause that names what the caller cannot answer
- * without the set — the half a reader actually needs, and the half that would drift if seven verbs
- * each wrote their own.
+ * `review preview` over a diff file reads this, since that subject names no commit. Every verb that
+ * derives a PR's governance requirement over a bound head reads the PR's own roots at that head and
+ * its merge base instead (`../review/class-config.ts`). `consequence` is the clause that names what
+ * the caller cannot answer without the set; the exit code stays the caller's.
  */
 export const governedRootsOr = (
 	verb: string,
@@ -196,13 +196,14 @@ export const readUiCapture = (
 	readKey(cwd, uiCaptureKey);
 
 /**
- * The declared UI surfaces, or the one refusal sentence every reader of them prints.
+ * The declared UI surfaces in the checkout a verb stands in, or the one refusal sentence every
+ * reader of them prints.
  *
- * The single reader every `ui`-class derivation goes through — the two scope verbs, `heal-ci
- * diagnose`, both `lane prove` sites and `review-ui route` — so the prefixes that raise the class and
- * the apps `ui render` boots can never be two different lists. `prefixes` rides beside the
- * rows because a class derivation asks for exactly that, and deriving it at each call site is the
- * second copy this key exists to remove.
+ * The reader for the verbs that act on the local tree by design — `ui render`, `ui evidence`,
+ * `ui manifest`, `review-ui render` — and for `review preview` over a diff file, which names no
+ * commit. A verb deriving a PR's classes over a bound head reads the PR's own config at that head
+ * and its merge base instead (`../review/class-config.ts`), so the checkout it stands in cannot
+ * change its answer.
  */
 export type UiSurfacesRead =
 	| {
@@ -251,44 +252,31 @@ export const uiCaptureOr = (
 				},
 	);
 
-/** The one sentence a verb prints when the declared list is empty — stated, never silent. */
-export const noUiSurfaces = (verb: string): string => `${verb}: ${NO_UI_SURFACES}.`;
-
-/** The declared subsystem constraints a review scopes onto the class rubrics. */
-export const readReviewSubsystems = (
-	cwd: string,
-): Effect.Effect<Read<ReadonlyArray<ReviewSubsystem>>, never, FileSystem.FileSystem | Path.Path> =>
-	readKey(cwd, reviewSubsystemsKey);
-
-/**
- * The declared subsystem constraints, or the one refusal sentence its readers print.
- *
- * The same shape as {@link uiSurfacesOr} and for the same reason: the reader owns its exit code, so
- * only the sentence is shared. The empty list resolves through this too — it is a declaration, not
- * a refusal, and a reader that derives nothing from it says so itself rather than reading absence
- * here.
- */
-export type ReviewSubsystemsRead =
+export type NoPreviewRulesRead =
 	| {
-			readonly _tag: "Subsystems";
-			readonly subsystems: ReadonlyArray<ReviewSubsystem>;
+			readonly _tag: "Rules";
+			readonly rules: ReadonlyArray<NoPreviewRule>;
 			readonly note: string;
 	  }
 	| {readonly _tag: "Refused"; readonly message: string};
 
-export const reviewSubsystemsOr = (
+/** The `reviewUi.whenNoPreview` rules, or the refusal their readers print. */
+export const noPreviewRulesOr = (
 	verb: string,
 	cwd: string,
 	consequence: string,
-): Effect.Effect<ReviewSubsystemsRead, never, FileSystem.FileSystem | Path.Path> =>
-	Effect.map(readReviewSubsystems(cwd), (read) =>
+): Effect.Effect<NoPreviewRulesRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.map(readKey(cwd, reviewUiKey), (read) =>
 		read._tag === "Value"
-			? {_tag: "Subsystems" as const, subsystems: read.value, note: read.note}
+			? {_tag: "Rules" as const, rules: read.value.whenNoPreview, note: read.note}
 			: {
 					_tag: "Refused" as const,
 					message: `${verb}: ${CONFIG_PATH} is refused — ${read.reason.replace(/\.$/, "")}, so ${consequence}`,
 				},
 	);
+
+/** The one sentence a verb prints when the declared list is empty — stated, never silent. */
+export const noUiSurfaces = (verb: string): string => `${verb}: ${NO_UI_SURFACES}.`;
 
 /**
  * The two exclusion-set keys a filtering read assembles its set from, read the same way their

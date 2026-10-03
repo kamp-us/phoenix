@@ -22,9 +22,10 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {readBoundary} from "./boundary.ts";
 import {controlPlaneOwnersOf, splitTeam} from "./codeowners.ts";
-import {defaultBranch, listTeamMembers} from "./github.ts";
+import {listTeamMembers} from "./github.ts";
 
 export type RosterRead =
 	| {readonly _tag: "Unknown"; readonly reason: string}
@@ -48,11 +49,11 @@ export const controlPlaneRoster = (
 	repo: string,
 ): Effect.Effect<RosterRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const trunk = yield* defaultBranch(repo);
+		const trunk = yield* resolveTrunk(process.env, repo);
 		if (trunk._tag === "Failure") {
-			return {_tag: "Unknown" as const, reason: `the default branch: ${trunk.reason}`};
+			return {_tag: "Unknown" as const, reason: trunkUnresolved(trunk.reason)};
 		}
-		const boundary = yield* readBoundary(repo, trunk.value);
+		const boundary = yield* readBoundary(repo, trunk.value.branch);
 		if (boundary._tag === "Unreadable") {
 			return {_tag: "Unknown" as const, reason: `the §CP boundary: ${boundary.reason}`};
 		}
@@ -70,5 +71,5 @@ export const controlPlaneRoster = (
 			}
 			if (members._tag === "Present") for (const login of members.value) logins.add(login);
 		}
-		return {_tag: "Roster" as const, logins, owners, ref: trunk.value};
+		return {_tag: "Roster" as const, logins, owners, ref: trunk.value.branch};
 	});

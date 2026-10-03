@@ -154,6 +154,7 @@ describe("emitMachine", () => {
 						event: "WIP",
 						task: "issue_4301",
 						cause: null,
+						axisIssue: null,
 						parkCause: parkCauseRead(),
 						classes: [],
 						waitGrant: null,
@@ -201,6 +202,7 @@ describe("emitMachine", () => {
 						event: "WIP",
 						task: "issue_4303",
 						cause: null,
+						axisIssue: null,
 						parkCause: parkCauseRead(),
 						classes: [],
 						waitGrant: null,
@@ -434,6 +436,15 @@ describe("emitMachine", () => {
 					on: {
 						"EPIC_4300.FAIL": [
 							{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+							{target: "human:budget-spent"},
+						],
+					},
+				},
+				"human:cp-approval": {
+					on: {
+						"EPIC_4300.UNBLOCKED": "hist",
+						"EPIC_4300.FAIL": [
+							{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 							{target: "human:budget-spent"},
 						],
 					},

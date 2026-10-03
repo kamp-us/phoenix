@@ -9,7 +9,14 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeShell, unconfigured} from "../fakes.test-support.ts";
 import type {ChildOutcome, ChildRequest} from "../io/exec.ts";
-import {absent, type ListedIssue, present, type TimelineFacts, unknown} from "../io/issues.ts";
+import {
+	absent,
+	type CommentRecord,
+	type ListedIssue,
+	present,
+	type TimelineFacts,
+	unknown,
+} from "../io/issues.ts";
 import type {
 	FieldValue,
 	ItemFieldValue,
@@ -22,7 +29,10 @@ import type {
 import {emit, type Instant, type LaneRecord} from "../wire/lane-record.ts";
 import {checkMarker} from "./check.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
+import type {PlannedWrite} from "./dry-run.ts";
 import {type PrepBoard, runPrep} from "./prep-verb.ts";
+import {runRoute} from "./route-verb.ts";
+import {rulingComment} from "./ruled.test-support.ts";
 import {ORIGINS, OUTCOMES, STAGES} from "./shape.ts";
 import {spy} from "./spy.test-support.ts";
 import type {SyncNode} from "./sync.ts";
@@ -49,6 +59,7 @@ const PROJECT: ProjectSnapshot = {
 	owner: {kind: "Organization", login: "acme"},
 	url: "https://github.com/orgs/acme/projects/3",
 	title: "widgets table",
+	createdAt: "2026-01-01T00:00:00.000Z",
 	shortDescription: null,
 	readme: null,
 	fields: [
@@ -84,6 +95,7 @@ const ON_CALL: ProjectSnapshot = {
 	owner: {kind: "Organization", login: "acme"},
 	url: "https://github.com/orgs/acme/projects/4",
 	title: "widgets on-call",
+	createdAt: "2026-09-27T00:00:00.000Z",
 	shortDescription: null,
 	readme: null,
 	fields: [
@@ -104,10 +116,13 @@ interface IssueSpec {
 	readonly labels?: ReadonlyArray<string>;
 	readonly association?: string;
 	readonly author?: string;
+	readonly createdAt?: string;
 	readonly subIssues?: ReadonlyArray<number>;
 	readonly blockedBy?: ReadonlyArray<number>;
 	readonly records?: ReadonlyArray<LaneRecord>;
 	readonly timeline?: TimelineFacts;
+	/** The comments a ruling is read from, with their authors. */
+	readonly rulings?: ReadonlyArray<CommentRecord>;
 }
 
 type Cells = Readonly<Record<string, string | number>>;
@@ -284,6 +299,7 @@ const world = (
 				labels: spec.labels ?? [],
 				author: spec.author ?? OWNER,
 				association: spec.association ?? "MEMBER",
+				createdAt: spec.createdAt ?? "2026-09-01T00:00:00.000Z",
 			}));
 	const board: PrepBoard<never> = {
 		locate: (_repo, target) =>
@@ -368,6 +384,8 @@ const world = (
 				return source(request);
 			}),
 		deciders: () => Effect.succeed({_tag: "Roster" as const, logins: new Set([OWNER])}),
+		rulings: (_repo, number) =>
+			Effect.succeed({_tag: "Ok" as const, value: issues[number]?.rulings ?? []}),
 		statusUpdates: () => Effect.sync(() => ok([...updates])),
 		openIssues: () => Effect.succeed({_tag: "Ok" as const, value: listed()}),
 		followUps: () =>
@@ -456,6 +474,14 @@ const prep = (
 	Effect.runPromise(
 		Effect.provide(
 			runPrep({repo: REPO, cwd: "/repo", env, now, board, dryRun}),
+			Layer.mergeAll(config, fakeShell([]).layer),
+		),
+	);
+
+const route = (board: PrepBoard<never>, config = unconfigured, dryRun = false) =>
+	Effect.runPromise(
+		Effect.provide(
+			runRoute({repo: REPO, cwd: "/repo", env: {}, now: NOW, board, dryRun}),
 			Layer.mergeAll(config, fakeShell([]).layer),
 		),
 	);
@@ -767,6 +793,88 @@ describe("table prep with no .fabrika.jsonc", () => {
 	});
 });
 
+describe("table prep's ruled-unbuilt Tails", () => {
+	const DECISION = ["type:decision", "status:triaged", "ready-for:agent"];
+	const RULED: Readonly<Record<number, IssueSpec>> = {
+		...ISSUES,
+		100: {labels: DECISION, rulings: [rulingComment(REPO, 100, "2026-09-20T00:00:00Z", OWNER)]},
+		101: {labels: DECISION, rulings: [rulingComment(REPO, 101, "2026-09-02T00:00:00Z", OWNER)]},
+		102: {labels: DECISION},
+		103: {labels: DECISION, rulings: [rulingComment(REPO, 103, "2026-09-01T00:00:00Z", "a-bot")]},
+		104: {
+			open: false,
+			labels: DECISION,
+			rulings: [rulingComment(REPO, 104, "2026-08-01T00:00:00Z", OWNER)],
+		},
+	};
+
+	it("lists each open ruled issue under Tails, oldest ruling first, and names them in the update", async () => {
+		const {board, cell, posts} = world(RULED);
+		const out = await prep(board);
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		const agenda = JSON.parse(out.stdout).agenda as ReadonlyArray<AgendaOut>;
+		expect(agenda.map((row) => `${row.section} #${row.issue}`).slice(0, 4)).toEqual([
+			"Tails #70",
+			"Tails #101",
+			"Tails #100",
+			"Tails #11",
+		]);
+		expect(agenda.some((row) => [102, 103, 104].includes(row.issue))).toBe(false);
+		expect(cell(101, "Rec")).toBe("yes: you ruled on it 2026-09-02 and it is not built yet.");
+		expect(cell(101, "Stage")).toBe("proposed");
+		expect(posts[0]?.body).toContain(
+			"- Ruled, not built, oldest ruling first: #101 (2026-09-02), #100 (2026-09-20)",
+		);
+		expect(out.stderr).toContain(
+			"table prep: ruled and not built, oldest ruling first: #101, #100.",
+		);
+	});
+
+	it("never re-proposes a ruled issue someone already answered or put in a lane", async () => {
+		const {board} = world(RULED, {
+			...ROWS,
+			100: {Stage: "not now", Section: "Tails", "Table day": PREVIOUS, Rec: "yes."},
+			101: {Stage: "in lane", Section: "Outside the bets"},
+		});
+		const agenda = JSON.parse((await prep(board)).stdout).agenda as ReadonlyArray<AgendaOut>;
+
+		expect(agenda.some((row) => row.issue === 100 || row.issue === 101)).toBe(false);
+	});
+
+	it("refuses and writes nothing when a ruled issue's comments cannot be read", async () => {
+		const {board, posts, items} = world(RULED);
+		const out = await prep({
+			...board,
+			rulings: (repo, number) =>
+				number === 101
+					? Effect.succeed({_tag: "Failure" as const, reason: "gh timed out"})
+					: board.rulings(repo, number),
+		});
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain(
+			"cannot read #101's comments for a ruling: gh timed out",
+		);
+		expect(posts).toHaveLength(0);
+		expect([...items.keys()].sort((a, b) => a - b)).toEqual([70, 71, 80, 90]);
+	});
+
+	it("refuses when the control-plane roster that says whose ruling counts cannot be read", async () => {
+		const {board, posts} = world(RULED);
+		const out = await prep({
+			...board,
+			deciders: () => Effect.succeed({_tag: "Unread" as const, reason: "CODEOWNERS unreadable"}),
+		});
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain(
+			"cannot tell which rulings stand: CODEOWNERS unreadable",
+		);
+		expect(posts).toHaveLength(0);
+	});
+});
+
 const daysBefore = (days: number): string =>
 	new Date(NOW.getTime() - days * 86_400_000).toISOString();
 
@@ -879,12 +987,14 @@ describe("table prep with a boards block", () => {
 		return value?._tag === "Option" ? value.name : null;
 	};
 
-	it("puts routed issues on the on-call board in arrival order, each with a response target", async () => {
+	it("route puts routed issues on the on-call board in arrival order with their targets, and off the table", async () => {
 		const split = world(issues, rows);
-		const out = await prep(split.board, SPLIT);
+		const out = await route(split.board, SPLIT);
 
 		expect(out.code, out.stderr.join("\n")).toBe(0);
 		const answer = JSON.parse(out.stdout);
+		expect(answer.answer).toBe("routed");
+		expect(answer.routed).toEqual([30, 40, 41, 50]);
 		expect([...split.onCallItems.keys()]).toEqual([30, 40, 41, 50]);
 		expect([30, 40, 41, 50].map((issue) => targetOf(split, issue))).toEqual([
 			"same day",
@@ -892,6 +1002,159 @@ describe("table prep with a boards block", () => {
 			"this week",
 			"same day",
 		]);
+		expect(split.items.has(50)).toBe(false);
+		expect([...split.items.keys()]).toEqual([70, 71, 80, 90]);
+	});
+
+	it("route answers unchanged and writes nothing on a second run", async () => {
+		const split = world(issues, rows);
+		await route(split.board, SPLIT);
+		const writes = spy(split.board);
+		const again = await route(writes.board, SPLIT);
+
+		expect(JSON.parse(again.stdout)).toMatchObject({answer: "unchanged", changes: []});
+		expect(writes.calls.filter((call) => ["add", "set", "clear", "remove"].includes(call))).toEqual(
+			[],
+		);
+	});
+
+	it("route moves an item's Response target to the one a relabel picks", async () => {
+		const live: Record<number, IssueSpec> = {...issues};
+		const split = world(live, rows);
+		await route(split.board, SPLIT);
+		live[40] = {...live[40], labels: ["p0"]};
+		const again = JSON.parse((await route(split.board, SPLIT)).stdout);
+
+		expect(again.changes).toEqual(["set #40 Response target to same day"]);
+		expect(targetOf(split, 40)).toBe("same day");
+	});
+
+	it("route routes nothing with no boards block", async () => {
+		const split = world(issues, rows);
+		const answer = JSON.parse((await route(split.board)).stdout);
+
+		expect(answer).toMatchObject({answer: "unchanged", onCall: null, routed: []});
+		expect(split.onCallItems.size).toBe(0);
+	});
+
+	/** `fake`'s board with every write it sends logged in the shape a dry run plans it. */
+	const sent = (fake: ReturnType<typeof world>) => {
+		const writes: PlannedWrite[] = [];
+		const projectOf = (projectId: string) => (projectId === ON_CALL.id ? ON_CALL : PROJECT).number;
+		const issueOf = (itemId: string): number | null =>
+			[...fake.items, ...fake.onCallItems].find(([, item]) => item.itemId === itemId)?.[0] ?? null;
+		const fieldOf = (fieldId: string) => fieldById.get(fieldId);
+		const board: PrepBoard<never> = {
+			...fake.board,
+			add: (projectId, repo, issue) => {
+				writes.push({_tag: "Add", project: projectOf(projectId), issue});
+				return fake.board.add(projectId, repo, issue);
+			},
+			set: (target, value) => {
+				const field = fieldOf(target.fieldId);
+				writes.push({
+					_tag: "Set",
+					project: projectOf(target.projectId),
+					issue: issueOf(target.itemId),
+					field: field?.name ?? target.fieldId,
+					value:
+						value._tag === "Option" && field?._tag === "SingleSelect"
+							? (field.options.find((one) => one.id === value.optionId)?.name ?? value.optionId)
+							: value._tag === "Text"
+								? value.text
+								: value._tag === "Number"
+									? value.number
+									: value._tag === "Date"
+										? value.date
+										: value._tag === "Option"
+											? value.optionId
+											: value.iterationId,
+				});
+				return fake.board.set(target, value);
+			},
+			clear: (target) => {
+				writes.push({
+					_tag: "Clear",
+					project: projectOf(target.projectId),
+					issue: issueOf(target.itemId),
+					field: fieldOf(target.fieldId)?.name ?? target.fieldId,
+				});
+				return fake.board.clear(target);
+			},
+			remove: (projectId, itemId) => {
+				writes.push({_tag: "Delete", project: projectOf(projectId), issue: issueOf(itemId)});
+				return fake.board.remove(projectId, itemId);
+			},
+		};
+		return {board, writes};
+	};
+
+	it("route --dry-run plans exactly the writes a live run then sends on the same board, and sends none", async () => {
+		const split = world(issues, rows);
+		const dry = spy(split.board);
+		const out = await route(dry.board, SPLIT, true);
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		expect(dry.calls.filter((call) => ["add", "set", "clear", "remove"].includes(call))).toEqual(
+			[],
+		);
+		expect(split.onCallItems.size).toBe(0);
+		expect(split.items.has(50)).toBe(true);
+		const answer = JSON.parse(out.stdout);
+		expect(answer).toMatchObject({answer: "dry-run", routed: [30, 40, 41, 50], changes: []});
+		const planned = answer.planned as ReadonlyArray<PlannedWrite>;
+
+		const live = sent(split);
+		expect((await route(live.board, SPLIT)).code).toBe(0);
+		expect(planned).toEqual(live.writes);
+		expect(planned.map((write) => write._tag)).toEqual([
+			"Add",
+			"Add",
+			"Add",
+			"Add",
+			...Array.from({length: 8}, () => "Set"),
+			"Delete",
+		]);
+		expect(planned).toContainEqual({
+			_tag: "Set",
+			project: 4,
+			issue: 30,
+			field: "Response target",
+			value: "same day",
+		});
+		expect(planned.at(-1)).toEqual({_tag: "Delete", project: 3, issue: 50});
+		expect(out.stderr).toContain("table route: would add #30 to project #4.");
+		expect(out.stderr).toContain("table route: would take #50 off project #3.");
+		expect(out.stderr.at(-1)).toBe("table route: --dry-run: nothing was written.");
+	});
+
+	it("route --dry-run keeps a failed read's exit code", async () => {
+		const failing = (fake: ReturnType<typeof world>): PrepBoard<never> => ({
+			...fake.board,
+			openIssues: () => Effect.succeed({_tag: "Failure" as const, reason: "rate limited"}),
+		});
+		const live = await route(failing(world(issues, rows)), SPLIT);
+		const dry = await route(failing(world(issues, rows)), SPLIT, true);
+
+		expect(live.code).toBe(PRECONDITION_UNKNOWN);
+		expect(dry.code).toBe(live.code);
+	});
+
+	it("route --dry-run with no boards block plans nothing", async () => {
+		const answer = JSON.parse((await route(world(issues, rows).board, unconfigured, true)).stdout);
+
+		expect(answer).toMatchObject({answer: "dry-run", onCall: null, routed: [], planned: []});
+	});
+
+	it("prep writes nothing to the on-call board and never proposes on-call work at the table", async () => {
+		const split = world(issues, rows);
+		const answer = JSON.parse((await prep(split.board, SPLIT)).stdout);
+
+		expect(split.onCallItems.size).toBe(0);
+		expect((answer.agenda as ReadonlyArray<AgendaOut>).map((row) => row.issue)).toEqual([
+			70, 11, 20, 60,
+		]);
+		expect(answer.triageFirst).toEqual([]);
 		expect(answer.onCall.items).toEqual([
 			{issue: 30, target: "same day"},
 			{issue: 40, target: "this week"},
@@ -900,13 +1163,21 @@ describe("table prep with a boards block", () => {
 		]);
 	});
 
-	it("never proposes on-call work at the table", async () => {
-		const answer = JSON.parse((await prep(world(issues, rows).board, SPLIT)).stdout);
+	it("prep leaves an Origin-routed issue's table row, so the next route puts it on the on-call board", async () => {
+		const split = world(
+			{...issues, 95: {labels: TRIAGED, title: "Export drops rows"}},
+			{...rows, 95: {Stage: "in lane", Section: "Outside the bets", Origin: "customer"}},
+		);
+		await prep(split.board, SPLIT);
 
-		expect((answer.agenda as ReadonlyArray<AgendaOut>).map((row) => row.issue)).toEqual([
-			70, 11, 20, 60,
-		]);
-		expect(answer.triageFirst).toEqual([]);
+		expect(split.items.has(95)).toBe(true);
+		expect(split.onCallItems.has(95)).toBe(false);
+
+		const routed = JSON.parse((await route(split.board, SPLIT)).stdout);
+
+		expect(routed.routed).toContain(95);
+		expect(split.onCallItems.has(95)).toBe(true);
+		expect(split.items.has(95)).toBe(false);
 	});
 
 	it("covers both boards in one status update, on-call as one section, and flags its spend over its share", async () => {
@@ -926,15 +1197,6 @@ describe("table prep with a boards block", () => {
 			share: 20,
 			pastTarget: [],
 		});
-	});
-
-	it("writes nothing to the on-call board on a second run", async () => {
-		const split = world(issues, rows);
-		await prep(split.board, SPLIT);
-		const again = JSON.parse((await prep(split.board, SPLIT)).stdout);
-
-		expect(again.onCall.changes).toEqual([]);
-		expect(again.answer).toBe("unchanged");
 	});
 
 	it("proposes a Customers row and reads no on-call board with no boards block", async () => {

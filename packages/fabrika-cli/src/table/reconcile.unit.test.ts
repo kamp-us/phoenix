@@ -4,6 +4,7 @@
  */
 import {describe, expect, it} from "vitest";
 import type {ProjectField, ProjectSnapshot, SelectOption} from "../io/projects.ts";
+import {markedSection} from "./readme-section.ts";
 import {describeStep, plan, type Step} from "./reconcile.ts";
 import {ORIGINS, type TableShape} from "./shape.ts";
 
@@ -16,7 +17,7 @@ const originSpec = {
 const SHAPE: TableShape = {
 	title: "widgets table",
 	shortDescription: "",
-	readme: "",
+	readme: {name: "table", body: "# How to use this table"},
 	fields: [originSpec],
 	views: [],
 	legacy: [],
@@ -39,8 +40,9 @@ const projectWith = (options: ReadonlyArray<SelectOption>): ProjectSnapshot => (
 	owner: {kind: "Organization", login: "acme"},
 	url: "https://github.com/orgs/acme/projects/20",
 	title: "widgets table",
+	createdAt: "2026-01-01T00:00:00.000Z",
 	shortDescription: "",
-	readme: "",
+	readme: markedSection(SHAPE.readme),
 	fields: [{_tag: "SingleSelect", id: "F_origin", databaseId: 1, name: "Origin", options}],
 	views: [],
 });
@@ -71,7 +73,7 @@ describe("plan over a standing single-select field", () => {
 
 		const result = plan(SHAPE, project);
 
-		expect(Object.keys(result)).not.toContain("drift");
+		expect(result.drift).toEqual([]);
 		expect(result.steps).toEqual([
 			{
 				_tag: "UpdateOptions",

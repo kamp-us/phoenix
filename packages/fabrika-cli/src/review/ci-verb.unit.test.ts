@@ -5,6 +5,7 @@ import type {ExecResult} from "../io/exec.ts";
 import {
 	httpError,
 	PROTECTION,
+	planGated,
 	protection,
 	RULES,
 	rules,
@@ -181,6 +182,168 @@ describe("runCi under the base branch's required set", () => {
 		);
 	});
 
+	/**
+	 * The partial shape: three declared contexts posted and passed, the fourth has posted nothing. A
+	 * rollup over the runs that exist would call that green while the fourth's jobs have not started.
+	 */
+	describe("a declared context with no run beside ones that passed", () => {
+		const FOUR: ReadonlyArray<Scripted> = [
+			[
+				RULES,
+				rules(
+					"ci-required",
+					"governance floor at head",
+					"scan changed files for leaks",
+					"validate skill frontmatter",
+				),
+			],
+			[PROTECTION, protection()],
+		];
+		const posted = (
+			aggregator: ReadonlyArray<{name: string; status: string; conclusion: string | null}>,
+		) =>
+			runs(3 + aggregator.length, [
+				{name: "governance floor at head", status: "completed", conclusion: "success"},
+				{name: "scan changed files for leaks", status: "completed", conclusion: "success"},
+				{name: "validate skill frontmatter", status: "completed", conclusion: "success"},
+				...aggregator,
+			]);
+		const THREE = posted([]);
+		const FOUR_GREEN = posted([{name: "ci-required", status: "completed", conclusion: "success"}]);
+
+		it("pends, never greens, and names the declared context that has not reported", async () => {
+			const out = await run([...FOUR, [PULL, served(pull())], [RUNS, THREE]], GATED);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tpending`);
+			expect(out.stderr).toContain(
+				"review ci: no run at this head for ci-required, which main declares required — pending, never green: a declared context that has not reported is not satisfied.",
+			);
+		});
+
+		it("is green once all four declared contexts concluded success", async () => {
+			const out = await run([...FOUR, [PULL, served(pull())], [RUNS, FOUR_GREEN]], GATED);
+			expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
+			expect(out.stderr.join("\n")).not.toContain("has not reported");
+		});
+
+		it("--wait keeps polling and exhausts the budget, never settling over the missing context", async () => {
+			const out = await run([...FOUR, [PULL, served(pull())], [RUNS, THREE]], GATED, {
+				wait: true,
+				cadenceSeconds: 0,
+				budgetSeconds: 0,
+			});
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual([
+				"settle\tbudget-exhausted",
+				`ci\t${HEAD}\tpending`,
+			]);
+		});
+
+		it("--wait settles green once the missing context posts and passes", async () => {
+			const out = await run(
+				[...FOUR, [PULL, served(pull())], [once(RUNS), THREE], [RUNS, FOUR_GREEN]],
+				GATED,
+				{wait: true, cadenceSeconds: 0},
+			);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tgreen`]);
+		});
+
+		// A cadence no test could sit through proves the red is answered on the first read.
+		it("--wait still settles a red declared context at once, whatever else is missing", async () => {
+			const out = await run(
+				[
+					[
+						RULES,
+						rules("ci-required", "scan changed files for leaks", "validate skill frontmatter"),
+					],
+					[PROTECTION, protection()],
+					[PULL, served(pull())],
+					[
+						RUNS,
+						runs(1, [
+							{name: "scan changed files for leaks", status: "completed", conclusion: "failure"},
+						]),
+					],
+				],
+				[],
+				{wait: true, cadenceSeconds: 86_400},
+			);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tred`]);
+		});
+	});
+
+	/**
+	 * The reported shape: a repository-wide red (`Analyze (python)`, required by nothing) has
+	 * concluded while the jobs that prove the diff are still queued. The wait used to settle red on
+	 * the first poll.
+	 */
+	describe("--wait over a non-required red beside queued required runs", () => {
+		const TWO: ReadonlyArray<Scripted> = [
+			[RULES, rules("unit tests", "leak-guard")],
+			[PROTECTION, protection()],
+		];
+		const QUEUED = runs(3, [
+			{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+			{name: "unit tests", status: "queued", conclusion: null},
+			{name: "leak-guard", status: "queued", conclusion: null},
+		]);
+		const CONCLUDED = runs(3, [
+			{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+			{name: "unit tests", status: "completed", conclusion: "success"},
+			{name: "leak-guard", status: "completed", conclusion: "success"},
+		]);
+
+		it("does not settle on the first poll, and names the red on the notes", async () => {
+			const out = await run([...TWO, [PULL, served(pull())], [RUNS, QUEUED]], GATED, {
+				wait: true,
+				cadenceSeconds: 0,
+				budgetSeconds: 0,
+			});
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual([
+				"settle\tbudget-exhausted",
+				`ci\t${HEAD}\tpending`,
+			]);
+			expect(out.stderr).toContain(
+				"review ci: failing outside the required set: Analyze (python) — reported, never blocking.",
+			);
+		});
+
+		it("keeps polling until the required runs conclude, then settles on their verdict", async () => {
+			const out = await run(
+				[...TWO, [PULL, served(pull())], [once(RUNS), QUEUED], [RUNS, CONCLUDED]],
+				GATED,
+				{wait: true, cadenceSeconds: 0},
+			);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tgreen`]);
+			expect(out.stderr).toContain(
+				"review ci: failing outside the required set: Analyze (python) — reported, never blocking.",
+			);
+		});
+
+		// The inverse: a cadence no test could sit through proves a required red still ends the wait
+		// on the first read, so the narrowing never turns a real red into a spent budget.
+		it("still settles red at once when a required run has failed beside the queued one", async () => {
+			const out = await run(
+				[
+					...TWO,
+					[PULL, served(pull())],
+					[
+						RUNS,
+						runs(3, [
+							{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+							{name: "unit tests", status: "completed", conclusion: "failure"},
+							{name: "leak-guard", status: "queued", conclusion: null},
+						]),
+					],
+				],
+				[],
+				{wait: true, cadenceSeconds: 86_400},
+			);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tred`]);
+			expect(out.stderr).toContain("review ci: failing at this head: unit tests.");
+		});
+	});
+
 	it("refuses on 11 when the required set cannot be read, never a colour over it", async () => {
 		const out = await run([
 			[RULES, httpError(403, "Resource not accessible by integration")],
@@ -190,6 +353,19 @@ describe("runCi under the base branch's required set", () => {
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
 		expect(out.stderr.at(-1)).toContain("which checks block is UNKNOWN, never none.");
+	});
+
+	it("answers a colour over a plan-gated base, naming the plan gate as the authority", async () => {
+		const out = await run([
+			[RULES, planGated],
+			[PULL, served(pull())],
+			[RUNS, runs(1, [{name: "unit tests", status: "completed", conclusion: "failure"}])],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tred`);
+		expect(out.stderr.join("\n")).toContain(
+			"main's plan offers no branch protection or rulesets — every non-informational check blocks",
+		);
 	});
 
 	it("falls back to the denylist on a base branch that declares nothing required", async () => {

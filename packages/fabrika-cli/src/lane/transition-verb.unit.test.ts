@@ -20,6 +20,7 @@ import {coderTemplateText, fakeProver, parkCauseRead} from "./fixtures.test-supp
 import {foldLog, parseLog} from "./fold.ts";
 import {compileText} from "./machine.ts";
 import {PARK_CAUSE_TOKENS} from "./report.ts";
+import {runStatus} from "./status-verb.ts";
 import {runTransition} from "./transition-verb.ts";
 
 const ROOT = ".fabrika/lanes";
@@ -39,6 +40,7 @@ const run = (
 	parkCause: Read<ParkCauseSurface> = parkCauseRead(),
 	rationale: string | null = null,
 	prover: ReturnType<typeof fakeProver> = fakeProver(),
+	axisIssue: number | null = null,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
@@ -49,6 +51,7 @@ const run = (
 					event,
 					task,
 					cause,
+					axisIssue,
 					parkCause,
 					classes,
 					waitGrant,
@@ -198,6 +201,88 @@ describe("lane transition — the park cause a driver-originated BLOCKED carries
 
 		expect(out.code).toBe(CAUSE_UNRECOGNISED);
 		expect(fs.written.size).toBe(0);
+	});
+
+	it("records render-axis-missing with the axis issue it waits on, and the fold stands it", async () => {
+		const fs = freshLane(logLine("WIP"));
+		const park = (axisIssue: number | null) =>
+			run(
+				fs,
+				"BLOCKED",
+				null,
+				"render-axis-missing",
+				[],
+				null,
+				undefined,
+				null,
+				undefined,
+				axisIssue,
+			);
+
+		const out = await park(9615);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({cause: "render-axis-missing", axisIssue: 9615});
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "render-axis-missing",
+			axisIssue: 9615,
+		});
+		const status = await Effect.runPromise(
+			Effect.provide(runStatus({root: ROOT, lane: "42"}), fs.layer),
+		);
+		expect(JSON.parse(status.stdout).context.issue).toMatchObject({
+			cause: "render-axis-missing",
+			axisIssue: 9615,
+		});
+	});
+
+	it("refuses render-axis-missing naming no axis issue, log byte-identical", async () => {
+		const fs = freshLane(logLine("WIP"));
+
+		const out = await run(fs, "BLOCKED", null, "render-axis-missing");
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(out.stderr.join(" ")).toContain("--axis-issue");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses an axis issue beside a cause that waits on none, log byte-identical", async () => {
+		const fs = freshLane(logLine("WIP"));
+
+		const out = await run(
+			fs,
+			"BLOCKED",
+			null,
+			"no-preview-render",
+			[],
+			null,
+			undefined,
+			null,
+			undefined,
+			9615,
+		);
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it.each([
+		[{cause: "render-axis-missing"}, /names no `axisIssue`/],
+		[{cause: "no-preview-render", axisIssue: 9615}, /waits on no issue/],
+		[{cause: "render-axis-missing", axisIssue: 0}, /no issue number/],
+	])("reads %j as a malformed line, never a park", (fields, defect) => {
+		const line = JSON.stringify({
+			task: "issue",
+			event: "ISSUE.BLOCKED",
+			at: "2026-08-16T00:00:00.000Z",
+			...fields,
+		});
+		const parsed = parseLog(`${line}\n`);
+
+		expect(parsed._tag).toBe("Malformed");
+		expect(parsed._tag === "Malformed" && parsed.defects.join(" ")).toMatch(defect);
 	});
 
 	it("appends a causeless event with no cause key, exactly as it always did", async () => {

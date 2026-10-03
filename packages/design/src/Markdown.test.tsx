@@ -1,5 +1,6 @@
 import {render, screen, waitFor, within} from "@testing-library/react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
+import {designTrMessages} from "./i18n";
 import {Markdown} from "./Markdown";
 
 /**
@@ -75,12 +76,51 @@ describe("Markdown", () => {
 		expect(ordered?.getAttribute("start")).toBe("3");
 	});
 
-	it("keeps a task list's state as its source marker", () => {
-		render(<Markdown>{"- [x] done\n- [ ] todo"}</Markdown>);
+	describe.each([
+		["a tight task list", "- [x] ship it\n- [ ] test it"],
+		["a loose task list", "- [x] ship it\n\n- [ ] test it"],
+	])("%s", (_, source) => {
+		const items = () => {
+			render(<Markdown>{source}</Markdown>);
+			const [done, open] = screen.getAllByRole("listitem");
+			if (done === undefined || open === undefined) throw new Error("two task items expected");
+			return {done, open};
+		};
+		const glyph = (item: HTMLElement) => item.querySelector("[aria-hidden='true']");
+		/** What a screen reader gets: the item's text with every `aria-hidden` subtree removed. */
+		const accessibleText = (item: HTMLElement) => {
+			const copy = item.cloneNode(true) as HTMLElement;
+			for (const hidden of copy.querySelectorAll("[aria-hidden='true']")) hidden.remove();
+			return copy.textContent;
+		};
 
-		const [done, todo] = screen.getAllByRole("listitem");
-		expect(done?.textContent).toBe("[x] done");
-		expect(todo?.textContent).toBe("[ ] todo");
+		it("renders a glyph per state instead of the source marker", () => {
+			const {done, open} = items();
+
+			for (const item of [done, open]) {
+				expect(item.textContent).not.toMatch(/\[[x ]\]/);
+				expect(glyph(item)?.textContent).toBeTruthy();
+			}
+			expect(glyph(done)?.textContent).not.toBe(glyph(open)?.textContent);
+		});
+
+		it("speaks the state as a visually-hidden word", () => {
+			const {done, open} = items();
+
+			expect(done.querySelector(".kp-visually-hidden")?.textContent).toBe(
+				designTrMessages["ui.markdown.task.done"],
+			);
+			expect(open.querySelector(".kp-visually-hidden")?.textContent).toBe(
+				designTrMessages["ui.markdown.task.open"],
+			);
+		});
+
+		it("names each item by its state word and text once, with no glyph in it", () => {
+			const {done, open} = items();
+
+			expect(accessibleText(done)).toBe(`${designTrMessages["ui.markdown.task.done"]} ship it`);
+			expect(accessibleText(open)).toBe(`${designTrMessages["ui.markdown.task.open"]} test it`);
+		});
 	});
 
 	it("opens a link in the browser without leaking the referrer", () => {

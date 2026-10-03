@@ -15,6 +15,9 @@ answers is in [packaging](./packaging.md).
    pnpm add --global @kampus/fabrika-cli
    ```
 
+   pnpm 10 skips the package's `postinstall`, which downloads the headless browser `ui render`
+   needs, until you approve it. Run `pnpm approve-builds --global` and pick `@kampus/fabrika-cli`.
+
 2. Confirm the binary starts:
 
    ```bash
@@ -95,6 +98,10 @@ directory. If git is missing or does not answer, it prints the plain `fabrika v<
    ```bash
    pnpm add --save-dev @kampus/fabrika-cli
    ```
+
+   pnpm 10 skips the package's `postinstall`, which downloads the headless browser `ui render`
+   needs, until you approve it. Run `pnpm approve-builds` and pick `@kampus/fabrika-cli`, or add it
+   to `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`.
 
    From then on `fabrika` inside that repo runs the pinned copy, not the global.
 

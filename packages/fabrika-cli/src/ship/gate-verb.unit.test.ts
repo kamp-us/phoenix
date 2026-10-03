@@ -8,6 +8,7 @@ import {
 	okOut,
 	type Scripted,
 	unconfigured,
+	unconfiguredOnPlatform,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PULL_FILES_CAP} from "../io/pulls.ts";
@@ -97,7 +98,10 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runGate({...options, ...overrides}),
-			Layer.merge(fakeSeams([...script, ...http, ORDINARY, NO_REVIEWS]).layer, unconfigured),
+			Layer.merge(
+				fakeSeams([...script, ...http, ORDINARY, NO_REVIEWS, ...unconfiguredOnPlatform()]).layer,
+				unconfigured,
+			),
 		),
 	);
 
@@ -465,6 +469,32 @@ describe("runGate", () => {
 		expect(out.stdout).toBe(
 			[`gate\tsatisfied\t${HEAD}`, "ns\treview-ui\trouted\trouted-elsewhere", ""].join("\n"),
 		);
+	});
+
+	// A repo's `reviewUi.whenNoPreview` rules let a PR with no preview resolve the namespace on an
+	// owner's hand-check or a skip; the row and its stderr line flag which, so nobody reads a render.
+	it.each([
+		["hand-check", "hand-checked, not rendered"],
+		["skip", "skipped by config"],
+	] as const)("reads a basis:%s route as routed and flags it on the row", async (basis, said) => {
+		const flagged = route("review-ui", HEAD).replace(`@ ${HEAD} —`, `@ ${HEAD} basis:${basis} —`);
+		const script: ReadonlyArray<Scripted> = [
+			[PULL, served(pull({comments: 1}))],
+			[COMMENTS, commentsServed({id: 1, body: flagged})],
+			[ACL, permission("write")],
+		];
+		const out = await run(script, {require: ["review-ui"]});
+		expect(out.stdout).toBe(
+			[`gate\tsatisfied\t${HEAD}`, `ns\treview-ui\trouted\trouted-elsewhere\t${basis}`, ""].join(
+				"\n",
+			),
+		);
+		expect(out.stderr.join("\n")).toContain(said);
+		const json = await run(script, {require: ["review-ui"], json: true});
+		expect(JSON.parse(json.stdout)).toMatchObject({
+			outcome: "satisfied",
+			namespaces: [{name: "review-ui", state: "routed", basis}],
+		});
 	});
 
 	it("blocks when the route binds a head that has moved — a push re-opens the question", async () => {
@@ -856,6 +886,7 @@ describe("runGate — staleness is the content question", () => {
 			[ACL, permission("write")],
 			ORDINARY,
 			NO_REVIEWS,
+			...unconfiguredOnPlatform(),
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runGate(options), Layer.merge(seams.layer, unconfigured)),
@@ -878,6 +909,7 @@ describe("runGate — staleness is the content question", () => {
 			[ACL, permission("write")],
 			ORDINARY,
 			NO_REVIEWS,
+			...unconfiguredOnPlatform(),
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runGate(options), Layer.merge(seams.layer, unconfigured)),

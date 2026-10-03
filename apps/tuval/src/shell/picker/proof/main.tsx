@@ -25,20 +25,23 @@
  * The first pane keeps the flag off on purpose: the help row's absence is the containment #9447
  * states, and an on/off pair at one viewport is what makes that falsifiable by eye.
  *
- * The last three panes are #9694's: four harnesses in ten open projects, which is forty session
+ * The next three panes are #9694's: four harnesses in ten open projects, which is forty session
  * entries, one group per project. One pane is the list as `<c-b> w` leaves it after two Page Downs,
  * one is the same list narrowed to one harness across every project, and one is a desk with nothing
  * open, where each harness is offered once for home. The entries are built by the picker's own
  * `offerEntries` over labels `projectLabels` would give these folders — written out, because that
  * module reads Node's path separator and this is a browser page.
  *
- * The last eight panes are #9697's "Open project…", answered by a fixture kernel
+ * The eight panes after those are #9697's "Open project…", answered by a fixture kernel
  * (`./open-project-fixtures.ts`): the program list ending on the new row with the highlight on it,
  * the recent projects with two already open, a desk that has opened nothing yet, the folder browser,
  * the browser narrowed by its filter, the recent list narrowed to one project and the browser
  * narrowed to nothing (#9981), and the refusal a failed open leaves in the step. Each step is
  * reached the way the desk reaches it, through the window's view slot, so the pane reads its rows off
  * the fixture exactly as the page reads them off the kernel.
+ *
+ * The last three panes are #9985's: the program list under a filter that leaves only programs, only
+ * running processes, and nothing, where no group says it is empty and the status line says it once.
  */
 
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
@@ -169,6 +172,15 @@ const twoOpen: PickerEntries = {
 		{key: "-Users-ada-notes", label: "notes"},
 	]),
 	processes: [],
+};
+
+/**
+ * A process whose program the picker no longer offers, so a query can match it and no program:
+ * the one-sided filter #9985 drops the emptied Programs group for.
+ */
+const orphanedProcess: PickerEntries = {
+	programs: entries.programs.slice(0, 2),
+	processes: [process("p-log", "demo/log", "Log viewer")],
 };
 
 const withRecent = fixtureOpener(RECENT_PROJECTS);
@@ -341,6 +353,24 @@ createRoot(host).render(
 				focused={false}
 				offered={twoOpen}
 				opener={withRecent}
+			/>
+			{/* #9985, three panes: the program list under a filter that matches only a program, only a
+			    running process, and nothing. A group the filter emptied is dropped, not labelled. */}
+			<Pane
+				name="picker-filtered-programs-only"
+				start={withFilter(mountPicker(), "clock")}
+				focused={false}
+			/>
+			<Pane
+				name="picker-filtered-processes-only"
+				start={withFilter(mountPicker(), "log")}
+				focused={false}
+				offered={orphanedProcess}
+			/>
+			<Pane
+				name="picker-filtered-unmatched"
+				start={withFilter(mountPicker(), "zzz")}
+				focused={false}
 			/>
 		</div>
 	</StrictMode>,

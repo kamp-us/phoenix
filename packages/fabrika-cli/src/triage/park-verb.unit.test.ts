@@ -278,6 +278,7 @@ describe("runPark", () => {
 		const out = await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("label status:needs-info does not exist");
+		expect(out.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 		expect(shell.requests.some((c) => COMMENT.test(c))).toBe(false);
 	});
 

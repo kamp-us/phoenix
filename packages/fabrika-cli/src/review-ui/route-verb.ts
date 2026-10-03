@@ -16,11 +16,14 @@
  * requirement is reachable from here.
  *
  * The one mechanical precondition is that the PR actually raises the class: routing a namespace the
- * diff never derived resolves nothing and leaves a record claiming a question nobody asked.
+ * diff never derived resolves nothing and leaves a record claiming a question nobody asked. That case
+ * is a clean end, not a refusal, so it answers `none` on exit 0 and writes nothing — a caller tells it
+ * from an absent or closed PR by the exit code alone, without parsing a sentence.
  * Deriving it re-uses `review/classes.ts`'s own `isUiSurface`, over the same declared `uiSurfaces`
- * prefixes the gate raised the class from, rather than a second predicate — the refusal must bind
- * the exact rule that raised the class, or the two drift and this verb refuses on a PR the gate is
- * meanwhile blocking.
+ * prefixes the gate raised the class from, rather than a second predicate — the `none` answer must
+ * bind the exact rule that raised the class, or the two drift and this verb answers `none` on a PR
+ * the gate is meanwhile blocking, sending the reviewer to ROUTED-ELSEWHERE while `ship gate` still
+ * owes the namespace.
  *
  * The file set that runs over is the `pulls/<n>/files` enumeration read through
  * {@link platformFileSet}, so the `changed_files` the pull-request record declares is reported as a
@@ -49,11 +52,22 @@
  * nothing about the text lane, so an absent verdict there is stated on stderr rather than refused.
  * The reader is `review verdicts`'s and the ordering `ship gate`'s — see `./text-verdict.ts`.
  *
+ * **A PR with no preview routes only as far as the repo's `reviewUi.whenNoPreview` rules allow.**
+ * `--no-preview` resolves the mode over the PR's ui files (`./no-preview.ts`): `require-render`
+ * refuses, `skip` posts a record flagged `basis:skip`, and `hand-check` posts one flagged
+ * `basis:hand-check` only over an owner's comment that names this head and carries screenshots
+ * (`./hand-check.ts`). A hand-check stands in for the render exactly as a desk run does, so it rests
+ * on a standing text PASS too. Both flags ride the record's first line, so `ship gate` and the
+ * lane's proof say the namespace was not rendered. The verb does not take `--no-preview` on the
+ * caller's word: it reads the PR's preview announcement through `render`'s own resolver and routes
+ * only where `render` would refuse for want of one.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9196#issuecomment-5688739893
+ * @ruling https://github.com/kamp-us/phoenix/issues/10038#issuecomment-5860347862
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {createComment, getComment, listComments} from "../io/issues.ts";
+import {type CommentRecord, createComment, getComment, listComments} from "../io/issues.ts";
 import {
 	COMPARE_FILE_CAP,
 	compareFiles,
@@ -64,27 +78,36 @@ import {
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "../review/authored.ts";
+import {classConfigOfPull} from "../review/class-config.ts";
 import {isUiSurface} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
+import {controlPlaneRoster} from "../ship/roster.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	emit as emitRecord,
 	headSha,
+	type RouteBasis,
 	readNamespaced,
 	clause as toClause,
 } from "../wire/routed-elsewhere.ts";
 import {
+	HAND_CHECK_INADMISSIBLE,
+	NO_PREVIEW_MODE_UNMET,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
+	PREVIEW_EXISTS,
 	READBACK_MISMATCH,
 	STALE_TREE,
 	TEXT_REVIEW_UNMET,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
+import {admitHandCheck, findHandCheck, handCheckCommentId} from "./hand-check.ts";
+import {filesAtMode, type NoPreviewMode, type NoPreviewRule, noPreviewMode} from "./no-preview.ts";
 import {NAMESPACE} from "./post-verb.ts";
+import {resolvePreview} from "./preview.ts";
 import {standingTextVerdict, TEXT_NAMESPACE, textClaims} from "./text-verdict.ts";
 
 const VERB = "review-ui route";
@@ -110,12 +133,79 @@ export interface RouteOptions {
 	 * evidence is still evidence of the tree being attested.
 	 */
 	readonly verifiedAt: string | null;
-	/** This repo's `uiSurfaces` prefixes, resolved by the caller off the tree it stands in. */
-	readonly uiPrefixes: ReadonlyArray<string>;
+	/**
+	 * Set where the PR has no preview deploy and the route rests on the repo's
+	 * `reviewUi.whenNoPreview` rules instead of the diff. Absent is the route as it always was.
+	 */
+	readonly noPreview?: NoPreviewRequest;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
 }
+
+export interface NoPreviewRequest {
+	/** The repo's `reviewUi.whenNoPreview` rules, resolved by the caller off the tree it stands in. */
+	readonly rules: ReadonlyArray<NoPreviewRule>;
+	/**
+	 * The owner's hand-check comment, by id or URL, or `null` to let the verb find the newest
+	 * admissible one on the PR itself.
+	 */
+	readonly handCheck: string | null;
+}
+
+/** The basis a no-preview route posts under this mode, or the refusal the mode owes. */
+const basisUnder = (
+	mode: NoPreviewMode,
+	offered: boolean,
+	pr: number,
+	decisive: ReadonlyArray<string>,
+):
+	| {readonly _tag: "Basis"; readonly basis: RouteBasis}
+	| {readonly _tag: "Unmet"; readonly why: string} => {
+	const files = decisive.join(", ");
+	if (mode === "require-render") {
+		return {
+			_tag: "Unmet",
+			why: `reviewUi.whenNoPreview resolves require-render for #${pr} (${files}) — a render is owed, so a PR with no preview is CANT-SEE, never routed.`,
+		};
+	}
+	return offered || mode === "hand-check"
+		? {_tag: "Basis", basis: "hand-check"}
+		: {_tag: "Basis", basis: "skip"};
+};
+
+/**
+ * `null` exactly where `review-ui render` would refuse on its no-preview exit, over the same
+ * resolver; otherwise the refusal a no-preview route owes.
+ */
+const previewAbsence = (
+	pr: number,
+	sha: string,
+	comments: ReadonlyArray<CommentRecord>,
+): {readonly code: number; readonly message: string} | null => {
+	const preview = resolvePreview(comments, null, sha);
+	switch (preview._tag) {
+		case "NoPreview":
+			return null;
+		case "Malformed":
+			return {
+				code: PRECONDITION_UNKNOWN,
+				message: `${VERB}: #${pr}'s preview comment carries the anchor but does not read (${preview.reason}) — whether a preview exists is UNKNOWN; nothing was posted.`,
+			};
+		case "Ambiguous":
+			return {
+				code: PREVIEW_EXISTS,
+				message: `${VERB}: #${pr} announces a preview for ${preview.apps.join(", ")} — a render can run, so a no-preview rule cannot stand in for it; run review-ui render --app <app>.`,
+			};
+		case "Resolved":
+			return {
+				code: PREVIEW_EXISTS,
+				message: prefixMatch(preview.value.deployedSha, sha)
+					? `${VERB}: #${pr} announces a ${preview.value.app} preview at ${sha} — a render can run, so a no-preview rule cannot stand in for it; run review-ui render.`
+					: `${VERB}: #${pr} announces a ${preview.value.app} preview at ${preview.value.deployedSha}, not yet at ${sha} — this PR deploys previews, so wait for it to redeploy and render; a no-preview rule cannot stand in for it.`,
+			};
+	}
+};
 
 /** Either side may be abbreviated, so the match is a prefix in whichever direction is shorter. */
 const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.startsWith(a);
@@ -155,6 +245,23 @@ export const runRoute = (
 				`${VERB}: --verified-at "${options.verifiedAt}" is not a head SHA — expected 7–40 hex characters.`,
 			);
 		}
+		const noPreview = options.noPreview ?? null;
+		if (noPreview !== null && verified !== null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --verified-at and --no-preview name two different routes — a desk run at an earlier head, or the repo's no-preview rules at this one; pass one.`,
+			);
+		}
+		const handCheckId =
+			noPreview === null || noPreview.handCheck === null
+				? null
+				: handCheckCommentId(noPreview.handCheck);
+		if (noPreview !== null && noPreview.handCheck !== null && handCheckId === null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --hand-check "${noPreview.handCheck}" is not a comment id or a comment URL ending in #issuecomment-<id>.`,
+			);
+		}
 
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
@@ -188,7 +295,19 @@ export const runRoute = (
 		const listed = platformFileSet(VERB, `#${pr}`, declared, yield* listPullFiles(repo, pr));
 		if (listed._tag === "Unreadable") return unreadable("the changed-file list", pr, listed.reason);
 		const files = listed.set.files;
-		const ui = files.filter((file) => isUiSurface(file, options.uiPrefixes));
+		// The prefixes the PR's own config declares at its head and merge base — the ones `ship scope`
+		// raised the class from — never the checkout this run stands in.
+		const classConfig = yield* classConfigOfPull(
+			VERB,
+			"which paths raise the ui class is UNKNOWN; nothing was posted.",
+			repo,
+			target.pull,
+		);
+		if (classConfig._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, classConfig.message);
+		}
+		const uiPrefixes = classConfig.config.uiPrefixes;
+		const ui = files.filter((file) => isUiSurface(file, uiPrefixes));
 		const diagnostics = [
 			scannedLine(
 				VERB,
@@ -199,7 +318,7 @@ export const runRoute = (
 			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 		];
 		// Zero is the shortfall the enumeration alone establishes, and with the declared count no
-		// longer refusing it is the only seat left: the zero-class refusal below would then answer
+		// longer refusing it is the only seat left: the no-ui-class answer below would then say
 		// "nothing renders" over a diff nobody read.
 		if (files.length === 0) {
 			return refuse(
@@ -209,7 +328,7 @@ export const runRoute = (
 			);
 		}
 		// The ceiling is the one truncation the enumeration cannot rule out on its own, and a
-		// truncated list can only ever *shrink* the ui count, so the zero-class refusal below would
+		// truncated list can only ever *shrink* the ui count, so the no-ui-class answer below would
 		// fire on a PR whose class the gate is meanwhile raising. Seated at PRECONDITION_UNKNOWN
 		// rather than the `13` the `ship` verbs use: `13` is RENDER_CRASHED in this group's table,
 		// and this verb already answers UNKNOWN for its other capped platform read, the
@@ -226,11 +345,31 @@ export const runRoute = (
 			);
 		}
 		if (ui.length === 0) {
-			return refuse(
-				ZERO_SCOPE,
-				`${VERB}: #${pr}'s diff raises no ui class, so ship gate requires no ${NAMESPACE} namespace — there is nothing to route.`,
-				diagnostics,
+			return answer(
+				JSON.stringify({answer: "none", namespace: NAMESPACE, sha: inspected, uiFiles: 0}),
+				[
+					...diagnostics,
+					`${VERB}: #${pr}'s diff raises no ui class, so ship gate requires no ${NAMESPACE} namespace — there is nothing to route; nothing was posted.`,
+				],
 			);
+		}
+
+		let basis: RouteBasis | null = null;
+		if (noPreview !== null) {
+			const mode = noPreviewMode(noPreview.rules, ui);
+			diagnostics.push(
+				`${VERB}: reviewUi.whenNoPreview resolves ${mode} over #${pr}'s ${ui.length} ui file(s).`,
+			);
+			const under = basisUnder(
+				mode,
+				handCheckId !== null,
+				pr,
+				filesAtMode(noPreview.rules, ui, mode),
+			);
+			if (under._tag === "Unmet") {
+				return refuse(NO_PREVIEW_MODE_UNMET, `${VERB}: ${under.why}`, diagnostics);
+			}
+			basis = under.basis;
 		}
 
 		// The clause's other half. `ship gate` reads the two namespaces independently, so a route over
@@ -240,6 +379,50 @@ export const runRoute = (
 		const comments = yield* listComments(repo, pr);
 		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
 		diagnostics.push(scannedLine(VERB, comments.value.length, "comment"));
+		if (noPreview !== null) {
+			const absent = previewAbsence(pr, inspected, comments.value);
+			if (absent !== null) return refuse(absent.code, absent.message, diagnostics);
+		}
+		let handCheckLine = "";
+		let handCheckComment: number | null = null;
+		if (basis === "hand-check") {
+			const roster = yield* controlPlaneRoster(repo);
+			if (roster._tag === "Unknown") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read ${roster.reason} — whether an owner's hand-check stands on #${pr} is UNKNOWN; nothing was posted.`,
+					diagnostics,
+				);
+			}
+			let admitted: CommentRecord;
+			if (handCheckId === null) {
+				const found = findHandCheck(comments.value, live, roster.logins);
+				if (found === null) {
+					return refuse(
+						NO_PREVIEW_MODE_UNMET,
+						`${VERB}: reviewUi.whenNoPreview resolves hand-check for #${pr}, and no comment on it is an owner's hand-check at ${live} — a control-plane account's screenshots naming this head; with none posted, the PR is CANT-SEE.`,
+						diagnostics,
+					);
+				}
+				admitted = found;
+			} else {
+				const named = admitHandCheck(handCheckId, comments.value, live, roster.logins);
+				if (named._tag === "Inadmissible") {
+					return refuse(
+						HAND_CHECK_INADMISSIBLE,
+						`${VERB}: ${named.reason}; nothing was posted.`,
+						diagnostics,
+					);
+				}
+				admitted = named.comment;
+			}
+			diagnostics.push(
+				`${VERB}: stands on comment ${admitted.id} by ${admitted.author}, an owner's hand-check at ${live}.`,
+			);
+			handCheckComment = admitted.id;
+			handCheckLine = `\nHand-check: comment ${admitted.id} by ${admitted.author}, at ${live}.\n`;
+		}
+
 		const claims = textClaims(comments.value);
 		const headContent = yield* headContentFor(
 			VERB,
@@ -272,7 +455,7 @@ export const runRoute = (
 		// Absence refuses exactly where the record claims a PASS: a route resting on a
 		// hand-verification stands in for the render under an interim exception whose prescribed
 		// clause names both halves. A prose-only route claims neither, so it says so instead.
-		if (text === null && verified !== null) {
+		if (text === null && (verified !== null || basis === "hand-check")) {
 			return refuse(
 				TEXT_REVIEW_UNMET,
 				`${VERB}: no standing ${TEXT_NAMESPACE} verdict binds ${inspected}, and a route resting on a hand-verification asserts one — land the text verdict first, and read what stands with fabrika review verdicts ${pr}.`,
@@ -303,7 +486,7 @@ export const runRoute = (
 					diagnostics,
 				);
 			}
-			const spent = compared.value.files.filter((file) => isUiSurface(file, options.uiPrefixes));
+			const spent = compared.value.files.filter((file) => isUiSurface(file, uiPrefixes));
 			diagnostics.push(
 				scannedLine(
 					VERB,
@@ -331,7 +514,11 @@ export const runRoute = (
 			}
 		}
 
-		const composed = `${emitRecord({namespace: NAMESPACE, sha: inspected, clause})}\n${authored.text.replace(/\n+$/, "")}\n`;
+		const route =
+			basis === null
+				? {namespace: NAMESPACE, sha: inspected, clause}
+				: {namespace: NAMESPACE, sha: inspected, clause, basis};
+		const composed = `${emitRecord(route)}\n${authored.text.replace(/\n+$/, "")}\n${handCheckLine}`;
 		const leaked = leakRefusal(SURFACE, composed);
 		if (leaked !== null) return leaked;
 
@@ -390,9 +577,11 @@ export const runRoute = (
 					? `sha ${record.sha}, expected ${inspected}`
 					: record.clause !== clause
 						? `clause "${record.clause}", expected "${clause}"`
-						: normalizeForReadback(back.value) === normalizeForReadback(composed)
-							? null
-							: "the comment's bytes are not the ones that were sent";
+						: (record.basis ?? null) !== basis
+							? `basis ${record.basis ?? "none"}, expected ${basis ?? "none"}`
+							: normalizeForReadback(back.value) === normalizeForReadback(composed)
+								? null
+								: "the comment's bytes are not the ones that were sent";
 		if (mismatch !== null) {
 			return refuse(
 				READBACK_MISMATCH,
@@ -408,6 +597,8 @@ export const runRoute = (
 				sha: inspected,
 				uiFiles: ui.length,
 				verifiedAt: verified,
+				basis,
+				...(handCheckComment === null ? {} : {handCheck: handCheckComment}),
 				textReview: text === null ? "absent" : "pass",
 				upsert: mine === undefined ? "created" : "edited",
 				commentUrl: landed.url,

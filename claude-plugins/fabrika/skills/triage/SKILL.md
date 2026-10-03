@@ -31,8 +31,8 @@ claim, and never re-run without it — a tokenless re-run is a new lane racing y
 proves, and which refusal each exit code carries, is the verb's own section
 (`fabrika wire doc-section --heading "triage claim" < <skill-base>/contract.md`).
 
-**That rule has teeth now, and the token is what gives it them.** Every verb below that writes —
-`enrich`, `apply`, `park`, `kill`, `split` — re-reads the claim before its first write and refuses
+**That rule has teeth now, and the token is what gives it them.** Every per-issue verb below that
+writes — `enrich`, `apply`, `park`, `kill`, `split` — re-reads the claim before its first write and refuses
 on `17` when a live marker names another claimant, so proceeding on a `lost` no longer overwrites the
 winner's work; it just fails. **Pass `--token <claim-token>` to every one of those five.** Without it
 the verb can only tell that *some* lane of your session holds the claim, which is exactly the sibling
@@ -185,9 +185,19 @@ Lane-entering work (an epic, or a parentless feature) additionally carries a `##
 *is* that home — inside your rewrite for a feature, on stdin for an epic. **The founder approves a
 pitch, never triage**: by a `pitch-approved:` comment, or by setting the issue's betting-table row to
 Stage `bet` — his own write or an agent's on his instruction, with the row's Size matching the
-pitch's Appetite. Take an existing
+pitch's Appetite.
+**A founder ruling that names a parentless feature by its number discharges that feature's pitch**,
+when the feature is homed in the ruling's own arc — the same milestone or the same epic. Link the
+ruling in a comment on the feature, and leave the body as it is: the comment is the pitch's whole
+trace, so a discharge without one is a missing pitch. A feature a ruling only implies, however
+plainly, still owes its pitch. Take an existing
 home: **triage never creates a milestone**, and `wayfinder:backlog` is bounded to genuine fog rather
 than work you would rather not decide about.
+**A board-wide homing breach is swept by a verb, never by raw `gh`.** When `guard homing-guard check`
+reds on double-marked issues, `fabrika triage sweep-homes` drops the milestone and keeps the lane,
+dry run first, then `--apply` with the citation on stdin. It is the one writing verb here that takes
+no claim and no `--token`; its contract section says why. The un-homed issues it refuses on `27` are
+yours to home one at a time here.
 **An `active` campaign's milestone admits new intake only at `p0` or `p1`**, or when the work blocks
 one of that milestone's own in-flight lanes — `triage homes` marks those rows
 `running: p0/p1 or blocker`, and is where you read which milestones they are. This narrows
@@ -274,6 +284,10 @@ Run the value bar first — it is stated once, in step 8 on the `agent` kill rou
 fails it earns a kill rather than a price. Then price what survives, on the work's own
 merit: `p0` for ship-work and fires, `p1` for what you would genuinely pull next, **`p2` is the
 default** and most of a healthy backlog. A roadmap row confers no band either way.
+
+**A defect a signed-out visitor can see is priced `p1` or `p0`, never below, whatever the fix
+costs.** It overrides the `p2` default. Whether a visitor can see it is your judgment on this
+issue, so your `Triage note:` says why you judged the defect visible or not.
 
 ```bash
 fabrika triage apply $issue_number --type bug --priority p2 --ready-for agent --home 47 --token <claim-token>

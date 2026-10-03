@@ -164,7 +164,7 @@ describe("aboutSection", () => {
 	});
 
 	it("swaps every keyword `pr-body.ts` links on, so the guard's own read finds none", () => {
-		// The swap map is a copy of `CLOSING_RE`'s alternatives; this is what catches it drifting.
+		// The swap map is a copy of `wire/closing-keyword.ts`'s alternatives; this is what catches it drifting.
 		const every =
 			"Close #1 and closes #2 and closed #3, fix #4 and fixes #5 and fixed #6, resolve #7 and resolves #8 and resolved #9.";
 		const read = aboutSection(8201, pitched(every));

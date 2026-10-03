@@ -26,3 +26,8 @@ its `skipped`.
 - **Tests ride the change**: unit beside the module, integration where the seam is the subject.
   Deleting a failing test is never a fix — a red test is a claim about the code, and removing the
   claim leaves the defect.
+- **Run [`test-audit`](../../test-audit/SKILL.md)'s authoring gate before adding a new test**, in a
+  repair round exactly as in a first build: a FAIL row that asks for a test is still a new test.
+  Answer the gate's questions there and add the test only when every one has an answer. A
+  mechanical edit to an existing test — a timeout bump, a snapshot update, test config — adds no new
+  test and does not open the gate.

@@ -1,13 +1,23 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, linkNext, type Scripted} from "../fakes.test-support.ts";
-import {httpError, PROTECTION, protection, RULES, rules} from "../heal-ci/fixtures.test-support.ts";
+import {
+	httpError,
+	PROTECTION,
+	planGated,
+	protection,
+	RULES,
+	rules,
+} from "../heal-ci/fixtures.test-support.ts";
 import {
 	authorityNote,
 	blockingSet,
 	noBlockingRunNote,
+	owedRollup,
 	readBlockingSet,
 	reportedLine,
+	reportingAt,
+	reportingNote,
 	unreadableCause,
 } from "./blocking.ts";
 
@@ -84,6 +94,50 @@ describe("readBlockingSet over the three read outcomes", () => {
 		expect(answered._tag).toBe("Unprobeable");
 	});
 
+	// A private repository on the free plan: no token can read either surface, and no branch there
+	// can declare a required check, so the answer is the undeclared branch's, not an UNKNOWN.
+	it("answers no-requirements when the rules read is plan-gated", async () => {
+		const answered = await read([[RULES, planGated]]);
+		expect(answered._tag).toBe("Set");
+		if (answered._tag !== "Set") return;
+		expect(answered.set.token).toBe("no-requirements");
+		expect(answered.set.contexts).toEqual([]);
+		expect(answered.set.blocks("unit tests")).toBe(true);
+		expect(answered.set.blocks("deploy (web)")).toBe(false);
+	});
+
+	it("answers no-requirements when the rules read passes and protection is plan-gated", async () => {
+		const answered = await read([
+			[RULES, rules()],
+			[PROTECTION, planGated],
+		]);
+		expect(answered._tag).toBe("Set");
+		if (answered._tag !== "Set") return;
+		expect(answered.set.token).toBe("no-requirements");
+	});
+
+	it("keeps a 403 carrying any other message unprobeable on either read", async () => {
+		expect((await read([[RULES, httpError(403, "Must have admin rights")]]))._tag).toBe(
+			"Unprobeable",
+		);
+		expect(
+			(
+				await read([
+					[RULES, rules()],
+					[PROTECTION, httpError(403, "Upgrade your plan")],
+				])
+			)._tag,
+		).toBe("Unprobeable");
+	});
+
+	// The match reads GitHub's own `message`, so a plan-gate wording on any other status is no gate.
+	it("reads the plan-gate wording as a gate only on a 403", async () => {
+		const answered = await read([
+			[RULES, httpError(401, "Upgrade to GitHub Pro or make this repository public")],
+		]);
+		expect(answered._tag).toBe("Unprobeable");
+	});
+
 	it("is Unknown, never unprobeable, on a failure that is not this token's permission", async () => {
 		const answered = await read([[RULES, httpError(500, "server error")]]);
 		expect(answered._tag).toBe("Unknown");
@@ -117,6 +171,16 @@ describe("the lines a verb prints about its authority", () => {
 		);
 	});
 
+	it("names the plan gate, not an undeclared branch, when the plan offers no protection", async () => {
+		const answered = await read([[RULES, planGated]]);
+		if (answered._tag !== "Set") throw new Error(`expected a set, got ${answered._tag}`);
+		const note = authorityNote("review ci", "main", answered.set);
+		expect(note).toContain(
+			"main's plan offers no branch protection or rulesets — every non-informational check blocks",
+		);
+		expect(note).not.toContain("declares no required status checks");
+	});
+
 	it("says why a head with no blocking run may not read green", () => {
 		expect(noBlockingRunNote("ship checks", "main", blockingSet(["ci-required"]))).toContain(
 			"no run at this head answers any context main declares required — pending, never green",
@@ -127,9 +191,76 @@ describe("the lines a verb prints about its authority", () => {
 	});
 
 	it("names every non-required red, and says nothing when there is none", () => {
-		expect(reportedLine("ship checks", ["Analyze (python)", "deploy (web)"])).toEqual([
+		const set = blockingSet(["ci-required"]);
+		const red = (name: string) => ({name, status: "completed", conclusion: "failure"});
+		expect(
+			reportedLine("ship checks", set, [
+				red("deploy (web)"),
+				red("Analyze (python)"),
+				red("ci-required"),
+				{name: "e2e", status: "queued", conclusion: null},
+				{name: "lint", status: "completed", conclusion: "success"},
+			]),
+		).toEqual([
 			"ship checks: failing outside the required set: Analyze (python), deploy (web) — reported, never blocking.",
 		]);
-		expect(reportedLine("ship checks", [])).toEqual([]);
+		expect(reportedLine("ship checks", set, [red("ci-required")])).toEqual([]);
+	});
+});
+
+/**
+ * `rollupOf` sees only the runs that exist, so a declared context that has posted nothing would
+ * read as satisfied beside three passing ones. The reporting read is what keeps it owed.
+ */
+describe("the reports a declared set is still owed at a head", () => {
+	const FOUR = blockingSet([
+		"ci-required",
+		"governance floor at head",
+		"scan changed files for leaks",
+		"validate skill frontmatter",
+	]);
+	const THREE_POSTED = [
+		"governance floor at head",
+		"scan changed files for leaks",
+		"validate skill frontmatter",
+		"Analyze (python)",
+	];
+
+	it("names the declared context with no run while the others have posted", () => {
+		expect(reportingAt(FOUR, THREE_POSTED)).toEqual({
+			_tag: "Unreported",
+			contexts: ["ci-required"],
+		});
+	});
+
+	it("is reported once every declared context has a run", () => {
+		expect(reportingAt(FOUR, [...THREE_POSTED, "ci-required"])).toEqual({_tag: "Reported"});
+	});
+
+	it("is silent when no run blocks at all, whichever definition answered", () => {
+		expect(reportingAt(FOUR, ["Analyze (python)"])).toEqual({_tag: "Silent"});
+		expect(reportingAt(blockingSet([]), ["deploy (web)"])).toEqual({_tag: "Silent"});
+	});
+
+	it("owes nothing under the denylist once any run blocks — that branch declares no context", () => {
+		expect(reportingAt(blockingSet([]), ["unit tests"])).toEqual({_tag: "Reported"});
+	});
+
+	it("caps green at pending while a report is owed, and never softens a red", () => {
+		const owed = reportingAt(FOUR, THREE_POSTED);
+		expect(owedRollup("green", owed)).toBe("pending");
+		expect(owedRollup("red", owed)).toBe("red");
+		expect(owedRollup("green", {_tag: "Silent"})).toBe("pending");
+		expect(owedRollup("green", {_tag: "Reported"})).toBe("green");
+	});
+
+	it("names the owed contexts on the note, and keeps the silent head's own note", () => {
+		expect(reportingNote("review ci", "main", FOUR, reportingAt(FOUR, THREE_POSTED))).toEqual([
+			"review ci: no run at this head for ci-required, which main declares required — pending, never green: a declared context that has not reported is not satisfied.",
+		]);
+		expect(reportingNote("review ci", "main", FOUR, {_tag: "Silent"})).toEqual([
+			noBlockingRunNote("review ci", "main", FOUR),
+		]);
+		expect(reportingNote("review ci", "main", FOUR, {_tag: "Reported"})).toEqual([]);
 	});
 });

@@ -106,6 +106,7 @@ export const TOPOLOGY_CYCLE = 17;
  * The task's leaf state routes to no shell — `queued`, `blocked`, a `human:*` park, a final, or a
  * name this machine does not recognise. Its own seat because there is nothing to fix in the lane:
  * the remedy is the driver acting on that state (record an event, clear the park), not a re-run.
+ * `lane working` seats it on a state that routes to a shell other than a builder.
  */
 export const NO_SHELL = 18;
 
@@ -240,7 +241,9 @@ export const MISDIRECTED_PUSH = 34;
 
 /**
  * The `--cause` handed to `lane report` or `lane transition` is outside the closed park-cause set,
- * or rides on an event that is not `BLOCKED` — refused with the log unappended.
+ * or rides on an event that is not `BLOCKED` — refused with the log unappended. The same seat takes
+ * an `--axis-issue` that does not match its cause: missing beside `render-axis-missing`, present
+ * beside any other cause, or no issue number.
  *
  * Its own seat rather than {@link TOKEN_UNRECOGNISED}'s: that one says the terminal token is
  * unknown and the whole report is unreadable, this one says the event resolved fine and the reason
@@ -413,6 +416,9 @@ export const LANE_IS_CHILD = 48;
  * Settling records the terminal a closed issue owes, and an open issue's closure has said nothing
  * yet. Its own seat because the remedy is to drive the lane, not to fix the record.
  *
+ * `lane record` answers here too, on the mirror case: a lane folded to `complete` whose issue is
+ * still open, so a `complete` record would say work is done over an issue the board says is not.
+ *
  * `lane archive` used to answer here too, on a closed-issue gate since retired: a lane whose log
  * will never replay is one nobody can drive whatever its issue says, and refusing the archive left a
  * bricked ledger holding a cap seat with no route out at all.
@@ -512,7 +518,7 @@ export const NOT_AN_EPIC = 56;
  * keyword the swap did not reach, or a classification claim the block quote did not cover, each
  * named.
  *
- * Both should be impossible while the swap list matches that module's `CLOSING_RE` and the lifted
+ * Both should be impossible while the swap list matches `wire/closing-keyword.ts`'s shape and the lifted
  * text stays quoted, and this seat is what keeps it so: the section is read back through the guard's
  * own predicates, and the refusal is fail-closed rather than an assumption that the two still agree.
  * The remedy is a person's — reword the epic's Problem paragraph, or write the section by hand. The
@@ -686,9 +692,10 @@ export const INTEGRATE_EVIDENCE = 68;
 export const LANE_NOT_TERMINAL = 69;
 
 /**
- * A lane fact was refused before it was written: an origin outside the closed set on `lane open`
- * or `lane emit`, or a `lane wait` whose `--on` is not one non-blank line or whose `--until` is not a date still to
- * come. Nothing was booted or appended.
+ * A lane fact or in-flight record was refused before it was written: an origin outside the closed set on `lane open`
+ * or `lane emit`, a `lane wait` whose `--on` is not one non-blank line or whose `--until` is not a date still to
+ * come, or a `lane working` whose `--token` is no build claim or whose tree is not absolute. Nothing
+ * was booted or appended.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9855
  */
@@ -702,3 +709,24 @@ export const FACT_REFUSED = 70;
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  */
 export const SIZE_STOPPED = 71;
+
+/**
+ * `lane report` was handed a known token that no group owning it serves from the task's current
+ * leaf state — a builder's `SHIPPED-PR` out of `ship`, say. Refused with the log unappended: the
+ * shell that sent it finished after the lane moved on, and its terminal answers a state the lane
+ * has left.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10120
+ */
+export const TOKEN_UNSERVED = 72;
+
+/**
+ * `lane archive --retriaged` was pointed at a lane that did not end `diagnosed` with no pull request
+ * and no spent round: its fold stands on another final or none, a line of its log names a pull
+ * request, its log shows a retry, a review verdict or a grant, or its own machine cannot fold it.
+ * Nothing was retracted or moved. The route moves a builder's no-PR finish aside for a re-triaged
+ * issue and no other final, so the remedy is the lane's own route.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10190
+ */
+export const NOT_DIAGNOSED = 73;

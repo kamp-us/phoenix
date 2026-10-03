@@ -24,6 +24,7 @@
  * the guard's bound rather than an oversight.
  */
 import {isAbsolute, resolve, sep} from "node:path";
+import type {Decision} from "./pre-tool-use.ts";
 
 /** The two spellings of the act the ruling names. A jump is a jump whichever one is typed. */
 export const JUMP_KEYWORDS = ["cd", "pushd"] as const;
@@ -195,10 +196,6 @@ export const parseLeadingJump = (command: string): Jump => {
 	}
 	return {_tag: "Literal", keyword, target: bare};
 };
-
-export type Decision =
-	| {readonly _tag: "Allow"; readonly because: string}
-	| {readonly _tag: "Deny"; readonly reason: string};
 
 export interface JumpGround {
 	readonly command: string;

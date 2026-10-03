@@ -27,6 +27,7 @@ const PROJECT: ProjectSnapshot = {
 	owner: {kind: "Organization", login: "acme"},
 	url: "https://github.com/orgs/acme/projects/3",
 	title: "widgets table",
+	createdAt: "2026-01-01T00:00:00.000Z",
 	shortDescription: null,
 	readme: null,
 	fields: [],
@@ -39,6 +40,7 @@ const ON_CALL: ProjectSnapshot = {
 	number: 4,
 	url: "https://github.com/orgs/acme/projects/4",
 	title: "widgets on-call",
+	createdAt: "2026-09-25T00:00:00.000Z",
 };
 
 interface IssueSpec {
@@ -79,11 +81,12 @@ const table = (
 		located?: Located;
 		campaigns?: Campaigns;
 		scopeMissing?: boolean;
-		/** The on-call board's items: each issue with its target and when it was set. */
+		/** The on-call board's items: each issue's labels and filing, and the target its cell reads. */
 		onCall?: ReadonlyArray<{
 			readonly number: number;
-			readonly target: string;
-			readonly since: string;
+			readonly labels?: ReadonlyArray<string>;
+			readonly createdAt: string;
+			readonly cell: string;
 		}>;
 		closed?: ReadonlyArray<number>;
 	} = {},
@@ -142,7 +145,7 @@ const table = (
 			contentNumber: item.number,
 			contentType: "Issue",
 			repository: REPO,
-			values: [optionValue("Response target", item.target, OWNER, item.since)],
+			values: [optionValue("Response target", item.cell, OWNER, NOW.toISOString())],
 		}));
 	const board: FlagsBoard<never> = {
 		locate: (_repo, target) =>
@@ -160,14 +163,18 @@ const table = (
 				_tag: "Ok" as const,
 				value: [...Object.keys(issues).map(Number), ...(over.onCall ?? []).map((one) => one.number)]
 					.filter((number) => !(over.closed ?? []).includes(number))
-					.map((number) => ({
-						number,
-						title: `Issue ${number}`,
-						body: "",
-						labels: issues[number]?.labels ?? [],
-						author: OWNER,
-						association: "MEMBER",
-					})),
+					.map((number) => {
+						const onCall = (over.onCall ?? []).find((one) => one.number === number);
+						return {
+							number,
+							title: `Issue ${number}`,
+							body: "",
+							labels: onCall?.labels ?? issues[number]?.labels ?? [],
+							author: OWNER,
+							association: "MEMBER",
+							createdAt: onCall?.createdAt ?? "2026-09-01T00:00:00.000Z",
+						};
+					}),
 			}),
 		node: (_repo, number) => {
 			const found = nodeOf(number);
@@ -291,9 +298,10 @@ describe("table flags with a boards block", () => {
 			],
 			{
 				onCall: [
-					{number: 10, target: "same day", since: "2026-09-26T00:00:00.000Z"},
-					{number: 11, target: "this week", since: "2026-09-26T00:00:00.000Z"},
-					{number: 12, target: "same day", since: "2026-09-20T00:00:00.000Z"},
+					{number: 10, labels: ["p0"], createdAt: "2026-09-26T00:00:00.000Z", cell: "this week"},
+					{number: 11, createdAt: "2026-09-26T00:00:00.000Z", cell: "this week"},
+					{number: 12, labels: ["p0"], createdAt: "2026-09-20T00:00:00.000Z", cell: "same day"},
+					{number: 13, createdAt: "2026-08-01T00:00:00.000Z", cell: "this week"},
 				],
 				closed: [12],
 			},
@@ -309,6 +317,25 @@ describe("table flags with a boards block", () => {
 			["on-call-share", null],
 		]);
 		expect(answer.flags[1]).toMatchObject({percent: 60, target: 30, onCallUsd: 60, totalUsd: 100});
+		expect(answer.unread).toEqual([]);
+	});
+
+	it("judges an item by the target its labels pick and times it from the issue's filing", async () => {
+		const answer = JSON.parse((await flags(world().board, [], SPLIT)).stdout);
+
+		expect(answer.flags[0]).toMatchObject({
+			issue: 10,
+			target: "same day",
+			hours: 24,
+			since: "2026-09-26T00:00:00.000Z",
+			waitedHours: 36,
+		});
+	});
+
+	it("times an issue filed before the on-call board stood from the board's making", async () => {
+		const answer = JSON.parse((await flags(world().board, [], SPLIT)).stdout);
+
+		expect(answer.flags.map((flag: {issue?: number}) => flag.issue)).not.toContain(13);
 	});
 
 	it("asks no on-call check with one board", async () => {
@@ -443,6 +470,7 @@ describe("the size stop", () => {
 		expect(await stop(board, 10, unconfigured)).toEqual({
 			_tag: "Unchecked",
 			reason: "fabrika lane brief: the token lacks the `project` scope",
+			excuse: "Unadopted",
 		});
 	});
 
@@ -471,10 +499,14 @@ describe("the size stop", () => {
 		expect(await stop(malformed, 10)).toMatchObject({_tag: "Unknown"});
 	});
 
-	it("is UNKNOWN on a token without the project scope once a table block is declared", async () => {
+	it("is Unchecked, never UNKNOWN, on a token without the project scope once a table block is declared", async () => {
 		const {board} = table({}, [], {scopeMissing: true});
 
-		expect(await stop(board, 10)).toMatchObject({_tag: "Unknown"});
+		expect(await stop(board, 10)).toEqual({
+			_tag: "Unchecked",
+			reason: "fabrika lane brief: the token lacks the `project` scope",
+			excuse: "MissingScope",
+		});
 	});
 });
 

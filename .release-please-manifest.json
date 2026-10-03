@@ -1,7 +1,7 @@
 {
 	"packages/design": "0.0.0",
-	"packages/fabrika-cli": "0.8.0",
-	"packages/fabrika-pi": "0.2.0",
+	"packages/fabrika-cli": "0.9.0",
+	"packages/fabrika-pi": "0.3.0",
 	"packages/tuval": "0.0.0",
 	"packages/tuval-agy": "0.0.0",
 	"packages/tuval-claude": "0.0.0",

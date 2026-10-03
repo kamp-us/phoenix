@@ -3,9 +3,11 @@ import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {fakeHttp, fakeShell, type HttpReply, linkNext} from "../fakes.test-support.ts";
 import {forgetAmbientToken, NO_TOKEN, PAGE_CAP} from "../io/gh-api.ts";
 import type {Attempt, Shell} from "../io/git.ts";
+import {httpError, planGated} from "./fixtures.test-support.ts";
 import {
 	armAutoMerge,
 	disableAutoMerge,
+	isQueueGoverned,
 	listReviews,
 	listReviewThreads,
 	listRunsAtHead,
@@ -323,6 +325,20 @@ describe("setPullState", () => {
 	it("is a failure on a non-2xx — the caller re-reads, and must not read a refusal as done", async () => {
 		const http = fakeHttp([[/PATCH/, {status: 422, body: "{}"}]]);
 		expect(reason(await run(setPullState("o/r", 4321, "open"), http))).toContain("422");
+	});
+});
+
+describe("isQueueGoverned", () => {
+	const RULES = /rules\/branches\/main$/;
+
+	it("answers not governed on the plan-gated 403 — a plan with no rulesets has no queue", async () => {
+		const http = fakeHttp([[RULES, planGated]]);
+		expect(await run(isQueueGoverned("o/r", "main"), http)).toEqual({_tag: "Ok", value: false});
+	});
+
+	it("stays a failure on a permission 403 — an unread rule list is never `no queue`", async () => {
+		const http = fakeHttp([[RULES, httpError(403, "Resource not accessible by integration")]]);
+		expect(reason(await run(isQueueGoverned("o/r", "main"), http))).toContain("403");
 	});
 });
 

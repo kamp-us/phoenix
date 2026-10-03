@@ -21,7 +21,7 @@ import {afterEach, describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {MERGE_CONFLICT} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
-import {DEFAULT_TRUNK_REF, runRefresh} from "./refresh-verb.ts";
+import {runRefresh} from "./refresh-verb.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
 const EPIC = 8810;
@@ -95,7 +95,10 @@ const refresh = async ({root, lanes}: Fixture) => {
 		Effect.provide(
 			runRefresh({
 				epic: EPIC,
-				base: DEFAULT_TRUNK_REF,
+				// The fixture's origin lives on disk, so there is no GitHub default branch to read.
+				base: "origin/main",
+				repo: null,
+				env: process.env,
 				gate: null,
 				assemblyRefresh: {
 					_tag: "Value",

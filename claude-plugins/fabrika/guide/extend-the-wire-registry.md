@@ -12,32 +12,33 @@ settled and not repeated here: a format two skills meet through lives in typed c
 `Malformed` instead of coming back as "there was nothing there".
 
 Run the CLI from source — `node packages/fabrika-cli/src/bin.ts`. An installed copy answers from its
-own checkout's registry, which does not know your row until it ships.
+own checkout's registry, which does not know your row until it ships. Every path below is relative
+to the root of that source checkout; the installed plugin does not carry the CLI's source.
 
 ## 1. Write the schema module
 
 New file: `packages/fabrika-cli/src/wire/<key>.ts`, where `<key>` is the `--format` selector,
-kebab-case. Copy [`came-from.ts`](../../../packages/fabrika-cli/src/wire/came-from.ts) as the
+kebab-case. Copy `packages/fabrika-cli/src/wire/came-from.ts` as the
 template — one self-contained file carrying every piece listed below, from the branded value type to
 both byte-level adapters — and swap in your grammar. The module owns your format's bytes and nothing
 else:
 
 - the typed core: a branded value type with one field per thing the block carries
 - `read(artifact)` — total over three answers: `Found` / `Absent` / `Malformed`. The type is
-  [`WireRead`](../../../packages/fabrika-cli/src/wire/format.ts); "present but drifted" must land on
+  `WireRead`, in `packages/fabrika-cli/src/wire/format.ts`; "present but drifted" must land on
   `Malformed`, never read back as a clean absence
 - `emit(...)`, composing conforming bytes
 - the two byte-level adapters the registry row binds: `parseFields` → `emitFromFields`, and
   `readToLines`
 
 A law the shared suite cannot state about your grammar gets its own `<key>.unit.test.ts` beside the
-module — see [`routed-elsewhere.unit.test.ts`](../../../packages/fabrika-cli/src/wire/routed-elsewhere.unit.test.ts)
+module — see `packages/fabrika-cli/src/wire/routed-elsewhere.unit.test.ts`
 for the precedent. Everything else rides on the row's fixtures, next step.
 
 ## 2. Register the row
 
 One row in `registeredFormats` in
-[`registry.ts`](../../../packages/fabrika-cli/src/wire/registry.ts) — a format exists by being
+`packages/fabrika-cli/src/wire/registry.ts` — a format exists by being
 registered there and nowhere else. The row carries the key, a one-line purpose, the owner-module
 path, who produces the bytes and who consumes them, the two adapters, fixtures and brands.
 

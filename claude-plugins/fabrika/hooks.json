@@ -134,6 +134,11 @@
 						"type": "command",
 						"command": "fabrika hook pre-bash",
 						"timeout": 10
+					},
+					{
+						"type": "command",
+						"command": "fabrika hook stash-guard",
+						"timeout": 10
 					}
 				]
 			}

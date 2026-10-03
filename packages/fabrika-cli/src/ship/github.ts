@@ -27,7 +27,9 @@ import {
 	authed,
 	authedExistence,
 	pagedEnvelope as envelopeOverHttp,
+	githubMessage,
 	graphqlRead,
+	isPlanGated,
 	pagedWithLinkProof as linkProofOverHttp,
 	PAGE_CAP,
 	type Rest,
@@ -112,27 +114,6 @@ const pagedForExistence = (token: string, path: string): Api<Existence<ReadonlyA
 			`GitHub declared another page past ${PAGE_CAP} — the read is truncated`,
 		);
 	});
-
-/**
- * The repository's default branch, on the ambient credential.
- *
- * A second reading of `build/github.ts`'s `defaultBranch` only because that one publishes `env` and
- * `HttpClient` up into its callers; `../ship/roster.ts` is reached from a hundred `Shell<…>` sites
- * that thread neither. The two fold into one once a single convention wins.
- */
-export const defaultBranch = (repo: string): Shell<Attempt<string>> =>
-	authed((token) =>
-		Effect.map(restRead(token, "GET", `repos/${repo}`), (outcome) => {
-			if (outcome._tag === "Unreachable") return fail(outcome.reason);
-			if (outcome.status < 200 || outcome.status >= 300) {
-				return fail(refusalText(outcome));
-			}
-			const name = isRecord(outcome.body) ? outcome.body.default_branch : undefined;
-			return typeof name === "string" && name.trim() !== ""
-				? ok(name.trim())
-				: fail("GitHub answered 200 but named no default branch");
-		}),
-	);
 
 /** One team's members, paged. A 404 is proven — the team does not exist in this org. */
 export const listTeamMembers = (
@@ -338,6 +319,51 @@ export const latestPerContext = (
 	return [...byName.values()];
 };
 
+/** One active workflow: the `name:` its runs carry, and the `path` the platform addresses it by. */
+export interface ActiveWorkflow {
+	readonly name: string;
+	readonly path: string;
+}
+
+/**
+ * The repository's active workflows beside the envelope's completeness proof.
+ *
+ * `declared` and `received` count every workflow in any state, so a caller concluding that a
+ * workflow is absent can refuse a read that stopped short of the declared total. `malformed` counts
+ * the entries that are not a record or carry no string `name` or `state`: such an entry may be the
+ * workflow the caller looks for, so absence read beside a non-zero count is unproven.
+ */
+export interface WorkflowInventory {
+	readonly declared: number;
+	readonly received: number;
+	readonly malformed: number;
+	readonly active: ReadonlyArray<ActiveWorkflow>;
+}
+
+const isReadableWorkflow = (value: unknown): value is Record<string, unknown> =>
+	isRecord(value) && typeof value.name === "string" && typeof value.state === "string";
+
+export const listWorkflowInventory = (repo: string): Shell<Attempt<WorkflowInventory>> =>
+	authed((token) =>
+		Effect.map(
+			envelopeOverHttp(token, `repos/${repo}/actions/workflows`, "workflows"),
+			(enveloped) => {
+				if (enveloped._tag === "Failure") return enveloped;
+				const active = enveloped.value.entries.flatMap((value) =>
+					isRecord(value) && value.state === "active"
+						? [{name: str(value.name), path: str(value.path)}]
+						: [],
+				);
+				return ok({
+					declared: enveloped.value.declared,
+					received: enveloped.value.entries.length,
+					malformed: enveloped.value.entries.filter((value) => !isReadableWorkflow(value)).length,
+					active,
+				});
+			},
+		),
+	);
+
 /**
  * The repository's active workflow inventory, each entry as the platform addresses it: its `path`.
  *
@@ -346,17 +372,8 @@ export const latestPerContext = (
  * apart is what `../review/gate-coverage.ts` needs, and the path is the only field that says it.
  */
 export const listWorkflowPaths = (repo: string): Shell<Attempt<ReadonlyArray<string>>> =>
-	authed((token) =>
-		Effect.map(
-			envelopeOverHttp(token, `repos/${repo}/actions/workflows`, "workflows"),
-			(enveloped) => {
-				if (enveloped._tag === "Failure") return enveloped;
-				const active = enveloped.value.entries.filter(
-					(value) => isRecord(value) && value.state === "active",
-				);
-				return ok(active.map((value) => str((value as Record<string, unknown>).path)));
-			},
-		),
+	Effect.map(listWorkflowInventory(repo), (read) =>
+		read._tag === "Failure" ? read : ok(read.value.active.map((workflow) => workflow.path)),
 	);
 
 /**
@@ -582,10 +599,21 @@ export const commitDate = (repo: string, sha: string): Shell<Attempt<string>> =>
  *
  * Read off the **branch's** active rules, never this PR's queue history: a per-PR proxy exempts
  * exactly the parked intent `ship disarm` exists to clear.
+ *
+ * A plan-gated 403 is `false`: a plan with no rulesets has no merge queue. Any other 403 stays a
+ * failure, because a token that may not read the rules has not shown there is no queue.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10155#issuecomment-5886566592
  */
 export const isQueueGoverned = (repo: string, branch: string): Shell<Attempt<boolean>> =>
 	authed((token) =>
 		Effect.map(restRead(token, "GET", `repos/${repo}/rules/branches/${branch}`), (outcome) => {
+			if (
+				outcome._tag === "Response" &&
+				isPlanGated({status: outcome.status, message: githubMessage(outcome)})
+			) {
+				return ok(false);
+			}
 			const body = bodyOf(outcome);
 			if (body._tag === "Failure") return body;
 			if (!Array.isArray(body.value)) {

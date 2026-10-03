@@ -233,6 +233,7 @@ describe("the compiler — structural recognition", () => {
 		expect([...defined(lane.tasks.issue).errorFinals]).toEqual(["human:budget-spent"]);
 		expect([...defined(lane.tasks.issue).openFinals]).toEqual(["human:budget-spent"]);
 		expect([...defined(lane.tasks.issue).guardedStates].sort()).toEqual([
+			"human:cp-approval",
 			"review",
 			"review:ui",
 			"ship",
@@ -911,6 +912,42 @@ describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", (
 			cause: "repair-budget-spent",
 		});
 		expect(routeForCause("repair-budget-spent")).toBe("driver");
+	});
+
+	// A red head that heal-ci classes a defect never goes green on its own, so the park it folds to
+	// needs a repair route out of it, with no hand UNBLOCKED back into `ship` first.
+	it("routes a FAIL out of the red-CI park straight to `build`, spending one retry", () => {
+		const lane = compiled(coderWorkflow());
+		const parked = [...toShip, "BLOCKED"];
+
+		expect(leaves(lane, "issue", [...parked, "FAIL"])).toEqual([
+			...reached,
+			"human:cp-approval",
+			"build",
+		]);
+		expect(budgets(lane, "issue", [...parked, "FAIL"])).toMatchObject({
+			type: "build",
+			retries: 1,
+		});
+	});
+
+	it("falls from the red-CI park to `human:budget-spent` once the repair budget is spent", () => {
+		const lane = compiled(coderWorkflow());
+		const spent = [
+			...toShip,
+			...Array.from({length: RETRY_BUDGET}, () => ["FAIL", "DONE", "PASS"]).flat(),
+			"BLOCKED",
+			"FAIL",
+		];
+
+		expect(leaves(lane, "issue", spent).slice(-2)).toEqual([
+			"human:cp-approval",
+			"human:budget-spent",
+		]);
+		expect(budgets(lane, "issue", spent)).toMatchObject({
+			type: "human:budget-spent",
+			retries: RETRY_BUDGET,
+		});
 	});
 
 	it("maps the drift stop's terminal to BLOCKED and takes its cause", () => {

@@ -121,7 +121,16 @@ describe("the closed park-cause set --cause advertises", () => {
 		expect(flagHelp(leafNamed("transition"))).toContain(token);
 	});
 
-	it("offers the two spent-budget parks, the two base machinery causes, the queue ejection, the red head, the rendered gate's three, the unlanded write, the builder's two mechanical stops, the owner-approval wait and the size stop beside the six that predate them", () => {
+	it.each([
+		"transition",
+		"report",
+	])("lane %s offers --axis-issue for the render-axis park", (leaf) => {
+		expect(flagHelp(leafNamed(leaf))).toMatch(
+			/open issue tracking the render axis[^"]*required with --cause render-axis-missing/,
+		);
+	});
+
+	it("offers the two spent-budget parks, the two base machinery causes, the queue ejection, the red head, the rendered gate's five, the unlanded write, the builder's two mechanical stops, the owner-approval wait, the verdict the head owes and the size stop beside the six that predate them", () => {
 		expect([...PARK_CAUSE_TOKENS]).toEqual([
 			"assembly-conflict",
 			"awaiting-cp-approval",
@@ -131,14 +140,17 @@ describe("the closed park-cause set --cause advertises", () => {
 			"head-ci-red",
 			"no-design-manifest",
 			"no-preview-render",
+			"no-preview-routed",
 			"no-rendered-delta",
 			"queue-ejected",
+			"render-axis-missing",
 			"repair-budget-spent",
 			"replay-budget-spent",
 			"replay-conflict",
 			"size-stop",
 			"spawn-dead",
 			"tree-hijacked",
+			"verdict-owed",
 			"worktree-holds-branch",
 			"write-unlanded",
 		]);

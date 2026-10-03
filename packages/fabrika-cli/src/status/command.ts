@@ -13,6 +13,7 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import {CONFIG_PATH} from "../config/document.ts";
 import type {ConfigLayers} from "../config/load.ts";
 import {readConfigLayers} from "../config/source.ts";
@@ -23,6 +24,7 @@ import {leafCommand} from "../excess-operand.ts";
 import type {Attempt} from "../io/git.ts";
 import {resolveRepo} from "../io/issues.ts";
 import {readStdin} from "../io/stdin.ts";
+import {readOriginHead, resolveTrunk} from "../io/trunk.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import {readBoard, runBoard} from "./board-verb.ts";
@@ -40,6 +42,8 @@ import {
 	readoutField,
 	runOpen,
 	settingsField,
+	type TrunkRead,
+	trunkField,
 	wiringField,
 } from "./open-verb.ts";
 import {badIssueRefusal, issueNumberOf, readReadout, runReadout} from "./readout-verb.ts";
@@ -112,6 +116,21 @@ const configSurface = (
 	root === null ? repoConfigLayers(process.cwd()) : readConfigLayers(root);
 
 const resolveTarget = (explicit: string | null) => resolveRepo(explicit, process.env);
+
+/** The trunk `repo` resolves to, and this clone's `origin/HEAD` to hold it against. */
+const readTrunkState = (
+	repo: string,
+): Effect.Effect<TrunkRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const trunk = yield* resolveTrunk(process.env, repo);
+		if (trunk._tag === "Failure") return {_tag: "Failed" as const, repo, reason: trunk.reason};
+		return {
+			_tag: "Resolved" as const,
+			repo,
+			trunk: trunk.value,
+			originHead: yield* readOriginHead,
+		};
+	});
 
 const menu = leafCommand(
 	"menu",
@@ -235,7 +254,11 @@ const board = leafCommand(
 	Command.withDescription(
 		[
 			"Counts the board's decided buckets, each with its own freshness.",
-			"  stdout: `board\\t<counted|unknown>\\t<bucket-count>`, then one `bucket\\t…` line each",
+			"  stdout: `board\\t<counted|absent|unknown>\\t<bucket-count>`, then one",
+			"  `bucket\\t<name>\\t<count|absent|unknown>\\t<selector>\\t<detail>\\t<as-of>` line each",
+			"  A label missing from a readable label set is `absent` (a proven gap, never 0);",
+			"  stderr names the missing labels and `fabrika status bootstrap label-taxonomy`.",
+			"  A label set that could not be read leaves every label bucket `unknown`.",
 			"  11: the repository could not be read (every bucket UNKNOWN)",
 			'  Derivation: the front-door skill\'s contract.md, "status board"',
 		].join("\n"),
@@ -388,6 +411,16 @@ const open = leafCommand(
 					),
 				);
 			}
+			if (name === "trunk") {
+				fields.push(
+					trunkField(
+						target._tag === "Ok"
+							? yield* readTrunkState(target.value)
+							: {_tag: "Failed", repo: repoName, reason: target.reason},
+						asOf,
+					),
+				);
+			}
 			if (name === "lanes") {
 				const roots = [DEFAULT_LANES_ROOT, DEFAULT_CHORES_ROOT];
 				fields.push(
@@ -415,11 +448,11 @@ const open = leafCommand(
 	}),
 ).pipe(
 	Command.withShortDescription(
-		"The composite readout: menu, settings, wiring, board, readout, lanes.",
+		"Composite readout: menu, settings, wiring, board, readout, lanes, trunk.",
 	),
 	Command.withDescription(
 		[
-			"Prints the composite front-door readout: menu, settings, wiring, board, readout and lanes.",
+			"Prints the composite front-door readout: menu, settings, wiring, board, readout, lanes and trunk.",
 			"  stdout: `open\\t<field-count>`, then `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` each",
 			"  10: --field is off the closed vocabulary",
 			'  Derivation: the front-door skill\'s contract.md, "status open"',

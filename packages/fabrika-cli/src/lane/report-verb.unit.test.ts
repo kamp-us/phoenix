@@ -5,6 +5,7 @@ import type {Read} from "../config/read-key.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import {answer, refuse} from "../verb.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
+import type {CloseAct, ClosingMerge, OpenMerge} from "./closing-merge.ts";
 import {
 	CAUSE_UNRECOGNISED,
 	EVENT_REFUSED,
@@ -17,6 +18,7 @@ import {
 	PROOF_IN_FLIGHT,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
+	TOKEN_UNSERVED,
 	WAIT_TOO_SOON,
 } from "./codes.ts";
 import {emitMachine} from "./emit.ts";
@@ -48,6 +50,19 @@ const LOG_AT: Readonly<Record<"build" | "review" | "review:ui" | "ship", string>
 	ship: logLine("WIP") + logLine("DONE") + logLine("PASS"),
 };
 
+/** A closer the test drives: it records every issue it was asked to close and answers `act`. */
+const fakeCloser = (act: CloseAct = {_tag: "Closed"}) => {
+	const asked: OpenMerge[] = [];
+	return {
+		asked,
+		close: (open: OpenMerge) =>
+			Effect.sync(() => {
+				asked.push(open);
+				return act;
+			}),
+	};
+};
+
 const run = (
 	fs: ReturnType<typeof fakeFs>,
 	token: string,
@@ -56,12 +71,14 @@ const run = (
 		pr?: string | null;
 		comment?: string | null;
 		cause?: string | null;
+		axisIssue?: number | null;
 		parkCause?: Read<ParkCauseSurface>;
 		classes?: ReadonlyArray<string>;
 		prover?: ReturnType<typeof fakeProver> | ReturnType<typeof fakeProverByEvent>;
 		lane?: string;
 		integrateExit?: number | null;
 		assemblyHead?: string | null;
+		closer?: ReturnType<typeof fakeCloser>;
 	} = {},
 ) =>
 	Effect.runPromise(
@@ -75,6 +92,7 @@ const run = (
 					pr: extra.pr ?? null,
 					comment: extra.comment ?? null,
 					cause: extra.cause ?? null,
+					axisIssue: extra.axisIssue ?? null,
 					integrateExit: extra.integrateExit ?? null,
 					assemblyHead: extra.assemblyHead ?? null,
 					parkCause: extra.parkCause ?? parkCauseRead(),
@@ -84,6 +102,7 @@ const run = (
 					env: {},
 				},
 				(extra.prover ?? fakeProver()).prove,
+				(extra.closer ?? fakeCloser()).close,
 			),
 			fs.layer,
 		),
@@ -112,7 +131,11 @@ const earned = () =>
 	});
 
 describe("lane report — every shell terminal token maps to one operator event", () => {
-	const stateFor: Readonly<Record<keyof typeof SHELL_VOCABULARIES, keyof typeof LOG_AT>> = {
+	// The integrator group reports out of an epic child's `integrate`, which the coder lane has no
+	// cell for; its one token is proven in the integrate describe block below.
+	const stateFor: Readonly<
+		Record<Exclude<keyof typeof SHELL_VOCABULARIES, "integrator">, keyof typeof LOG_AT>
+	> = {
 		builder: "build",
 		reviewer: "review",
 		"ui-reviewer": "review:ui",
@@ -121,9 +144,10 @@ describe("lane report — every shell terminal token maps to one operator event"
 	};
 
 	for (const [shell, vocabulary] of Object.entries(SHELL_VOCABULARIES)) {
+		if (shell === "integrator") continue;
 		for (const [token, event] of Object.entries(vocabulary)) {
 			it(`${shell} ${token} records ${event}`, async () => {
-				const fs = laneAt(LOG_AT[stateFor[shell as keyof typeof SHELL_VOCABULARIES]]);
+				const fs = laneAt(LOG_AT[stateFor[shell as keyof typeof stateFor]]);
 
 				// The flat table is a floor for the one conditional token, so the run that proves the
 				// floor is the one whose advanced arm the board refuses. Its earned arm has its own
@@ -224,6 +248,83 @@ describe("lane report — refuse without append", () => {
 
 		const out = await run(fs, "SHIPPED-PR");
 		expect(out.code).toBe(LANE_ABSENT);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * Lane 10074's shape: `PASS` moved the task to `ship`, and a repair builder that was still running
+ * then reported `SHIPPED-PR`. Both it and the shipper's `LANDED` map to `DONE`, so the late builder
+ * walked the merge arm and folded a lane with an open PR to `complete`.
+ */
+describe("lane report — a token is accepted only from a state its shell serves", () => {
+	it("refuses a builder's SHIPPED-PR out of ship before any proof, log unappended", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const prover = fakeProver();
+
+		const out = await run(fs, "SHIPPED-PR", {prover, pr: "https://forge.example/o/r/pull/10080"});
+
+		expect(out.code).toBe(TOKEN_UNSERVED);
+		expect(out.stdout).toBe("");
+		const said = out.stderr.at(-1) ?? "";
+		expect(said).toContain("log unappended");
+		expect(said).toContain("SHIPPED-PR");
+		expect(said).toContain('"ship"');
+		expect(said).toContain("builder");
+		expect(prover.asked).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("records SHIPPED-PR out of build", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "SHIPPED-PR");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			event: "ISSUE.DONE",
+			current: {pipeline: {issue: "review"}},
+		});
+	});
+
+	it("records the shipper's LANDED out of ship", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "LANDED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.DONE"});
+	});
+
+	it("records UNKNOWN out of review and out of ship — the reviewer and shipper both own it", async () => {
+		for (const at of [LOG_AT.review, LOG_AT.ship]) {
+			const fs = laneAt(at);
+
+			const out = await run(fs, "UNKNOWN");
+
+			expect(out.code).toBe(0);
+			expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.BLOCKED"});
+		}
+	});
+
+	it("records a machinery token out of a state no builder serves", async () => {
+		const fs = laneAt(LOG_AT.review);
+
+		const out = await run(fs, "SHELL-DEAD");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.LAP", cause: "spawn-dead"});
+	});
+
+	it("refuses a reviewer's FAIL out of build, naming every owner of the shared token", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "FAIL");
+
+		expect(out.code).toBe(TOKEN_UNSERVED);
+		for (const owner of ["reviewer", "ui-reviewer", "integrator"]) {
+			expect(out.stderr.at(-1)).toContain(owner);
+		}
 		expect(fs.written.size).toBe(0);
 	});
 });
@@ -431,12 +532,22 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 		expect(JSON.parse(appendedLine(fs)).cause).toBe("head-behind-base");
 	});
 
-	// The other `ship` parks fold to the same leaf for other reasons, so none inherits the cause.
-	it.each([
-		"REFUSED",
-		"UNKNOWN",
-		"ROUTED-REVIEW",
-	])("still refuses a shipper's bare %s", async (token) => {
+	// A route back to review on stale or absent verdicts has one reason too, so it leaves `ship`
+	// caused rather than refusing and leaving the lane reading `ship` with nothing recorded.
+	it("records a shipper's bare ROUTED-REVIEW under the verdict-owed cause", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "ROUTED-REVIEW", {parkCause: strict});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "verdict-owed",
+		});
+	});
+
+	// The other `ship` parks fold to the same leaf for other reasons, so none inherits a cause.
+	it.each(["REFUSED", "UNKNOWN"])("still refuses a shipper's bare %s", async (token) => {
 		const fs = laneAt(LOG_AT.ship);
 
 		const out = await run(fs, token, {parkCause: strict});
@@ -466,6 +577,28 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 			event: "ISSUE.BLOCKED",
 			cause: "write-unlanded",
 		});
+	});
+
+	it("records a CANT-SEE on a missing render axis with the issue it waits on", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+
+		const out = await run(fs, "CANT-SEE", {cause: "render-axis-missing", axisIssue: 9615});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "render-axis-missing",
+			axisIssue: 9615,
+		});
+	});
+
+	it("refuses a CANT-SEE on a missing render axis that names no issue, log unappended", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+
+		const out = await run(fs, "CANT-SEE", {cause: "render-axis-missing"});
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(fs.written.size).toBe(0);
 	});
 
 	it("still refuses a ui-reviewer ESCALATED that names no cause", async () => {
@@ -638,6 +771,99 @@ describe("lane report — the partial merge a shipped lane discloses", () => {
 		expect(Object.hasOwn(line, "partial")).toBe(false);
 		expect(Object.hasOwn(line, "landed")).toBe(false);
 		expect(JSON.parse(out.stdout).current).toBe("complete");
+	});
+});
+
+/**
+ * A merged `Fixes #N` does not prove #N closed — merge-queue merges have left it open. The prover
+ * reads the issue back (stubbed here as its `closingMerge` answer), and only an `Open` answer
+ * reaches the closer.
+ */
+describe("lane report — the issue a closing merge left open", () => {
+	const closing = (merge: ClosingMerge) =>
+		fakeProver(
+			answer(JSON.stringify({proof: "not-required"})),
+			[],
+			false,
+			[7329],
+			false,
+			[],
+			merge,
+		);
+
+	it("closes a still-open issue through the closer and records `issueClose: closed-by-lane`", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const closer = fakeCloser();
+
+		const out = await run(fs, "LANDED", {
+			prover: closing({_tag: "Open", issue: 42, merged: [7329]}),
+			closer,
+			pr: "https://forge.test/o/r/pull/7329",
+		});
+
+		expect(out.code).toBe(0);
+		expect(closer.asked).toEqual([{_tag: "Open", issue: 42, merged: [7329]}]);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.DONE",
+			partial: false,
+			landed: [7329],
+			issueClose: "closed-by-lane",
+		});
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			issueClose: "closed-by-lane",
+			current: "complete",
+		});
+	});
+
+	it("records a failed close as `close-failed`, never as a plain complete", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const closer = fakeCloser({_tag: "Failed", reason: "HTTP 403"});
+
+		const out = await run(fs, "LANDED", {
+			prover: closing({_tag: "Open", issue: 42, merged: [7329]}),
+			closer,
+		});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({issueClose: "close-failed"});
+		expect(out.stderr.join("\n")).toContain("HTTP 403");
+	});
+
+	it("writes nothing to an issue that already reads closed", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const closer = fakeCloser();
+
+		const out = await run(fs, "LANDED", {prover: closing({_tag: "Closed", issue: 42}), closer});
+
+		expect(out.code).toBe(0);
+		expect(closer.asked).toEqual([]);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({issueClose: "already-closed"});
+	});
+
+	it("names an unread issue on the line and never reaches the closer", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const closer = fakeCloser();
+
+		const out = await run(fs, "LANDED", {
+			prover: closing({_tag: "Unread", issue: 42, reason: "cannot read #42: HTTP 502"}),
+			closer,
+		});
+
+		expect(out.code).toBe(0);
+		expect(closer.asked).toEqual([]);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({issueClose: "unread"});
+		expect(JSON.parse(out.stdout)).toMatchObject({issueClose: "unread"});
+		expect(out.stderr.join("\n")).toContain("UNKNOWN");
+	});
+
+	it("carries no `issueClose` where the closure read was not a closing merge", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const closer = fakeCloser();
+
+		await run(fs, "LANDED", {closer});
+
+		expect(closer.asked).toEqual([]);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "issueClose")).toBe(false);
 	});
 });
 
@@ -897,6 +1123,25 @@ describe("lane report — a satisfied UI route advances the task it used to stra
 		expect(JSON.parse(out.stdout).routed).toEqual(["review-ui"]);
 	});
 
+	it("records a flagged route's basis on the line, so the table can flag the row", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+		const prover = fakeProverByEvent({
+			PASS: {
+				outcome: answer(JSON.stringify({proof: "proven"})),
+				routed: ["review-ui"],
+				routedBasis: {"review-ui": "hand-check"},
+			},
+		});
+
+		const out = await run(fs, "ROUTED-ELSEWHERE", {prover});
+
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			routed: ["review-ui"],
+			routedBasis: {"review-ui": "hand-check"},
+		});
+		expect(JSON.parse(out.stdout).routedBasis).toEqual({"review-ui": "hand-check"});
+	});
+
 	it("drops the park's cause from the advanced line rather than refusing the caller for passing one", async () => {
 		const fs = laneAt(LOG_AT["review:ui"]);
 
@@ -959,7 +1204,9 @@ describe("lane report — a satisfied UI route advances the task it used to stra
 		expect(fs.written.has(LOG)).toBe(false);
 	});
 
-	it("reads flat out of any other cell — the leaf is half the key", async () => {
+	// The ui-reviewer serves `review:ui` alone, so out of any other cell the token is a late or
+	// misrouted terminal and neither arm is tried.
+	it("refuses out of any other cell before either arm is proven", async () => {
 		const fs = laneAt(LOG_AT.review);
 		const prover = fakeProverByEvent({
 			PASS: {outcome: answer(JSON.stringify({proof: "proven"}))},
@@ -968,13 +1215,10 @@ describe("lane report — a satisfied UI route advances the task it used to stra
 
 		const out = await run(fs, "ROUTED-ELSEWHERE", {prover, cause: "no-rendered-delta"});
 
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toMatchObject({
-			event: "ISSUE.BLOCKED",
-			current: {pipeline: {issue: "blocked"}},
-		});
-		// No advance was even tried: `review` is not this row's leaf, so the token is flat there.
-		expect(prover.asked.map((asked) => asked.event)).toEqual(["BLOCKED"]);
+		expect(out.code).toBe(TOKEN_UNSERVED);
+		expect(out.stderr.at(-1)).toContain("ui-reviewer");
+		expect(prover.asked).toEqual([]);
+		expect(fs.written.has(LOG)).toBe(false);
 	});
 });
 

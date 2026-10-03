@@ -1,10 +1,11 @@
-import {Effect, FileSystem, Path, Result} from "effect";
+import {Effect, FileSystem, Path, Result, Stream} from "effect";
 import {
+	CodexSessionReader,
 	type CodexWork,
 	codexCommon,
 	codexRecords,
+	isAccountingRow,
 	type NativeSession,
-	readCodexSession,
 } from "./codex-records.ts";
 import {recordUsage} from "./usage-ledger.ts";
 import type {UsageRecord} from "./usage-record.ts";
@@ -17,6 +18,10 @@ export interface CodexCollection {
 	readonly rootTurn?: string;
 	readonly transcripts?: ReadonlyArray<string>;
 	readonly expected?: ReadonlyArray<string>;
+}
+export interface CodexInventory {
+	readonly sessions: ReadonlyArray<NativeSession>;
+	readonly notices: ReadonlyArray<string>;
 }
 export const readCodexInventory = Effect.fn("spend.readCodexInventory")(function* (
 	root: string,
@@ -58,15 +63,38 @@ export const readCodexInventory = Effect.fn("spend.readCodexInventory")(function
 	}
 	const sessions: NativeSession[] = [];
 	for (const file of [...files].sort()) {
-		const read = yield* Effect.result(fs.readFileString(file));
-		const session = Result.isSuccess(read) ? readCodexSession(read.success) : null;
+		const reader = new CodexSessionReader(isAccountingRow);
+		// Flushed at the end so a truncated trailing sequence decodes as readFileString would.
+		const decoder = new TextDecoder();
+		const read = yield* Effect.result(
+			fs
+				.stream(file)
+				.pipe(
+					Stream.runForEach((bytes) =>
+						Effect.sync(() => reader.feed(decoder.decode(bytes, {stream: true}))),
+					),
+				),
+		);
+		if (Result.isSuccess(read)) reader.feed(decoder.decode());
+		const session = Result.isSuccess(read) ? reader.finish() : null;
 		if (session === null) notices.push(`Codex session unreadable or unsupported: ${file}`);
 		else sessions.push(session);
 	}
-	return {sessions, notices};
+	return {sessions, notices} satisfies CodexInventory;
 });
 export const collectCodex = Effect.fn("spend.collectCodex")(function* (options: CodexCollection) {
-	const {sessions, notices} = yield* readCodexInventory(options.sessions, options.transcripts);
+	return yield* collectCodexFrom(
+		yield* readCodexInventory(options.sessions, options.transcripts),
+		options,
+	);
+});
+/** Records one root's usage from an inventory already read, so several roots share one read. */
+export const collectCodexFrom = Effect.fn("spend.collectCodexFrom")(function* (
+	inventory: CodexInventory,
+	options: Omit<CodexCollection, "sessions" | "transcripts">,
+) {
+	const {sessions} = inventory;
+	const notices = [...inventory.notices];
 	const included = new Set([options.rootThread, ...(options.expected ?? [])]);
 	let changed = true;
 	while (changed) {

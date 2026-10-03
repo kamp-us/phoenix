@@ -38,7 +38,7 @@ Named because a spec that leaves the substrate open makes the implementer guess.
 | Verb | Purpose | Split test |
 |---|---|---|
 | `ship scope` | one PR's state, head, linked issue, class set with required namespaces, and §CP three-state classification | path partition against single-sourced maps, exhaustion-checked reads, and closing-keyword resolution are mechanical; what each state means for the run is judgment |
-| `ship cp-approval` | the roster-cardinality discharge: `discharge` / `stop` / `n/a` from head-bound signals only | the case split and the head-binding are a transcription of a ruled table; nothing in it is judgment, and a verb that judged here shipped an unapproved control-plane PR |
+| `ship cp-approval` | the roster-cardinality discharge: `discharge` / `stop` / `base-conflicted` / `n/a` from head-bound signals only | the case split and the head-binding are a transcription of a ruled table; nothing in it is judgment, and a verb that judged here shipped an unapproved control-plane PR |
 | `ship gate` | the verdict conjunction: every required namespace's in-force, current-head verdict, §CP advisory resolution and native-review fold included | in-force resolution (write-stamp ordering, staleness, authorization) is mechanical; what to do with `blocked` is judgment |
 | `ship floor` | whether the governance floor binds on this diff and is discharged at this head — `n/a` / `satisfied` / a refusal CI reds on | asking `ship gate` for the one `governance` namespace and seating the answer on an exit code is mechanical; nothing about the verdict itself is decided here |
 | `ship floor-batch` | the same required context on a merge queue's batched `merge_group` head, concluded success — the batch ref has no pull request to resolve a floor over | publishing a named row is mechanical; the verb decides nothing, and what the floor means was settled at each PR's own head |
@@ -342,6 +342,12 @@ an authorized author satisfies it at `ship gate` like any `review-*` marker. Req
 and readable move together — a required namespace no marker can carry blocks every
 governance-root PR permanently, which is the fail-**closed** half of that same gap.
 
+**The roots and the `ui` prefixes are the PR's own.** `ship scope`, `ship gate` and `ship floor`
+read `.fabrika.jsonc` at the PR's head and at the merge base the platform names for it, never off
+the checkout the shipper stands in, and take the union: a path either commit governs is governed,
+and a path under either commit's `uiSurfaces` raises `ui`. It is the reader `review scope` uses, so
+the two sides cannot answer differently about one head — see the review contract.
+
 **The `cp` line** is the three-state routing input (see "Considered and deliberately not
 derived"), and its source is the **enforced artifact itself**: `.github/CODEOWNERS`, read at run
 time from **the PR's base ref — the branch the PR targets**.
@@ -401,7 +407,7 @@ downstream verb consumes, and that verb guards itself.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404); or the enumerated changed-file list is empty; or its non-empty diff derives zero required namespaces — a vacuous conjunction |
-| `11` | the PR, its file list, the §CP boundary, or the worktree fact could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
+| `11` | the PR, its file list, the §CP boundary, the worktree fact, the merge base, or `.fabrika.jsonc` at the head or the merge base could not be read or decoded — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
 | `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a class, a namespace or a §CP path could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `33` | the verb is standing in the repository's main working tree — the driver's checkout, not the shipper's own worktree. Proven before anything is read, and only on a shipper's own run: `recipe unpark`'s in-process call is exempt |
 
@@ -420,14 +426,17 @@ downstream verb consumes, and that verb guards itself.
 | `ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. Nothing was read.` | 33 | refusal |
 
 **Scope** — on a shipper's own run, one `git rev-parse --git-dir --git-common-dir` in the checkout
-the verb runs in, then one PR's metadata and changed-file list, paginated to exhaustion, plus one boundary read from
-the PR's base ref and one `governedRoots` read from that same checkout. The partition is taken over
-that enumerated list rather than over the pull-request record's `changed_files`: GitHub computes the
-record's count against a base it cached at the PR's last push, so a disagreement is reported and
-never refused on. What still refuses is the list arriving at GitHub's own 3000-file ceiling, where
-the endpoint stops serving files and ends its Link chain normally. The worktree read is first
-and writes nothing; a boundary read that failed refuses `11` on the spot and reads no config. The
-partition is total over what was read.
+the verb runs in, then one PR's metadata; the class config, which is one
+`compare/<base>...<head>?per_page=1` for the merge base and `.fabrika.jsonc` through the contents
+API at the head and at that merge base; the changed-file list, paginated to exhaustion; and one
+boundary read from the PR's base ref. No `.fabrika.jsonc` is read from the checkout. The partition is
+taken over that enumerated list rather than over the pull-request record's `changed_files`: GitHub
+computes the record's count against a base it cached at the PR's last push, so a disagreement is
+reported and never refused on. What still refuses is the list arriving at GitHub's own 3000-file
+ceiling, where the endpoint stops serving files and ends its Link chain normally. The worktree read
+is first and writes nothing. A class-config read that fails refuses `11` naming the commit and reads
+no file list; a boundary read that fails refuses `11` on the spot. The partition is total over what
+was read.
 
 **Examples**
 
@@ -488,7 +497,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika ship cp-approval 4321 --sha 03135b91 [--repo <owner/name>] [--json]
+fabrika ship cp-approval 4321 --sha 03135b91 [--mergeability-seconds <n>] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -497,14 +506,24 @@ fabrika ship cp-approval 4321 --sha 03135b91 [--repo <owner/name>] [--json]
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | yes | — | the head the run is shipping; every discharge signal must bind to it |
+| `--mergeability-seconds` | integer | no | `60` | how long an indefinite `mergeable` is re-read before a would-be `stop` refuses as UNKNOWN |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. One line:
-`cp-approval\t<discharge|stop|n/a>\t<mechanism-or-reason>` where the third field is one of
+`cp-approval\t<discharge|stop|base-conflicted|n/a>\t<mechanism-or-reason>` where the third field is one of
 `member-approval:<login>@<sha>` / `self-approval-marker@<sha>` (discharge),
-`awaiting-approval` / `zero-owners` (stop), or `not-control-plane` (n/a — the PR is proven
-ordinary and there is nothing to discharge). A stderr notice
+`awaiting-approval` / `zero-owners` (stop), `mergeable-state:dirty` (base-conflicted), or
+`not-control-plane` (n/a — the PR is proven ordinary and there is nothing to discharge).
+
+`base-conflicted` replaces `stop` when no approval binds the head **and** a definite mergeability
+read, through `ship/mergeability.ts`'s `readDefiniteMergeability` and `isBaseConflict`, says
+`mergeable_state: dirty`. The shipper reports `BASE-CONFLICTED`, so the lane goes to a builder
+rather than parking on a person asked to approve a head the rebase will replace. Mergeability is read
+only where the answer would otherwise be `stop`: `discharge` and `n/a` never read it, and `ship
+enqueue`'s own `21` still catches a `dirty` head after its approval, so no approval is spent. A
+mergeability read that fails, or stays indefinite past the window, is `11` — whether the lane waits
+on a person or a builder is then unknown, so neither answer is given. A stderr notice
 `base-drift: head is <k> commits behind <base>` fires when the banked head is behind the live
 base — the skill routes rebase → re-gate → re-bank *before* an approval is solicited, so the
 approval is never spent on a head that must move.
@@ -523,7 +542,7 @@ hardcoded. **The union is not a fabrika policy — it is GitHub's own any-listed
 GitHub discharges a CODEOWNERS row when *any* listed owner approves, so a roster
 narrower than the union would refuse approvals the merge gate accepts, and fabrika mirrors the
 platform here rather than adding a rule of its own.
-N=0 → `stop` `zero-owners` (an empty roster is a proven
+N=0 → `stop` `zero-owners`, or `base-conflicted` on a dirty head (an empty roster is a proven
 stop; an *unreadable* roster for **any** named team is the `11` refusal, never a stop — a union
 missing one arm is not a smaller union, it is an unknown one). A CODEOWNERS parse yielding
 no control-plane owner of either shape at all is N=0 — `stop` `zero-owners`, and a **proven-absent**
@@ -547,7 +566,7 @@ approval scan.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — `classify` over no files answers `not-control-plane`, so a zero would render as a discharged boundary |
-| `11` | the CODEOWNERS boundary, the roster, the reviews, the marker comments, or the live head could not be read — the discharge is UNKNOWN, never `stop`, never `awaiting approval` |
+| `11` | the CODEOWNERS boundary, the roster, the reviews, the marker comments, or the live head could not be read — the discharge is UNKNOWN, never `stop`, never `awaiting approval`; or, where the answer would be `stop`, the mergeability could not be read or stayed indefinite, so `stop` and `base-conflicted` are both unproven |
 | `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
@@ -560,12 +579,15 @@ approval scan.
 | `ship cp-approval: PR #<n> has zero changed files — whether it crosses the §CP boundary is unanswerable.` | 7 | refusal |
 | `ship cp-approval: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
 | `ship cp-approval: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a control-plane path could sit in the part the platform never served.` | 13 | refusal |
+| ``ship cp-approval: #<n>'s mergeable_state is still indefinite after <k> polls over <s>s — whether the head conflicts with <base> is UNKNOWN, so neither `stop` nor `base-conflicted` is proven.`` | 11 | refusal |
 | `ship cp-approval: received <k> of <m> comments — refusing the partial sweep.` | 13 | refusal |
 | `ship cp-approval: the review read never reached a terminal page — pagination is unexhausted, so an approval could sit on a page nobody read; refusing the partial sweep.` | 13 | refusal |
 
 **Scope** — the control-plane roster (the union over every named team and every individual owner), the PR's changed
 files (paginated to exhaustion) and comments (paginated, count-checked) and its reviews (paginated
-to exhaustion), and the live head. The boundary is classified over the enumerated file list rather
+to exhaustion), the live head, and — only where the answer would otherwise be `stop` — the PR's
+`mergeable`/`mergeable_state`, re-read on a backoff for up to `--mergeability-seconds` while
+GitHub still computes it. The boundary is classified over the enumerated file list rather
 than over the pull-request record's `changed_files`, whose count GitHub computes against a base it
 cached at the PR's last push — the disagreement is reported, an empty list refuses at `7`, and that
 list at GitHub's own 3000-file ceiling refuses at `13`. `n/a` is a proven answer computed from the
@@ -581,6 +603,11 @@ cp-approval	discharge	member-approval:cansirin@03135b91
 ```
 $ fabrika ship cp-approval 4322 --sha 9fe12ab0
 cp-approval	stop	awaiting-approval
+```
+
+```
+$ fabrika ship cp-approval 4323 --sha 5c0ffee1
+cp-approval	base-conflicted	mergeable-state:dirty
 ```
 
 **Grounding**
@@ -620,10 +647,12 @@ fabrika ship gate 4321 --sha 03135b91 --require review-code [--require review-do
 **Output** — machine channel. First line: `gate\t<satisfied|blocked>\t<sha>`. Then one line
 per required namespace, in the order required:
 `ns\t<namespace>\t<pass|fail|absent|stale|routed|unopened>\t<marker|advisory|review-fold|routed-elsewhere|->`
-— the fourth field names which carrier produced the in-force verdict (`-` on `absent`).
+— the fourth field names which carrier produced the in-force verdict (`-` on `absent`). A
+`routed` row whose record carries a basis gains a fifth field, `hand-check` or `skip`, and a stderr
+line saying it was hand-checked or skipped by config, not rendered (see `routed` below).
 `satisfied` iff every required namespace reads `pass` or `routed`.
 
-With `--json`: `{"outcome":…,"sha":…,"namespaces":[{name,state,carrier,commentId}…],"required":<n>}`.
+With `--json`: `{"outcome":…,"sha":…,"namespaces":[{name,state,carrier,commentId[,basis]}…],"required":<n>}`.
 
 **The flag-collapse and coverage scars are designed out at two layers.** `--require` is a
 repeatable flag whose values accumulate — a single-valued parse that keeps the first and
@@ -685,6 +714,9 @@ refuses without captures, so the `ui` class — raised off a path test that cann
 moved — named a namespace nothing legal could fill, and a prose-only PR under the UI surface map
 was permanently unshippable. A record aimed at any other namespace is read and ignored; that
 namespace stays `absent`. `ship floor` is unaffected — it asks for `governance` and requires `pass`.
+A record `review-ui route --no-preview` posted under the repo's `reviewUi.whenNoPreview` rules
+carries a `basis:hand-check` or `basis:skip` token, and the row keeps it: still `routed`, flagged so
+a person can tell an owner's hand-check or a config skip from a render.
 
 **`unopened` is the sixth state: a `review-ui` verdict counts only while its evidence opens.**
 `review-ui post` never withdraws a verdict it has posted, so a verdict whose captures stopped
@@ -710,7 +742,7 @@ answer this contract bans.
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — a conjunction over an empty diff proves nothing |
 | `10` | a `--require` value is not a known gateable namespace |
-| `11` | the changed-file list, comments, reviews, ACL, or the in-force `review-ui` verdict's rendered comment could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
+| `11` | the changed-file list, comments, reviews, ACL, the in-force `review-ui` verdict's rendered comment, or `.fabrika.jsonc` at the head or its merge base could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
 | `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
@@ -735,7 +767,10 @@ answer this contract bans.
 **Scope** — one PR's changed-file list (paginated to exhaustion, and the floor is derived from that
 list rather than from the pull-request record's `changed_files`; a list at GitHub's 3000-file
 ceiling refuses at `13`, because exhaustion cannot tell that case from a complete read), its verdict comments (paginated,
-count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved, plus, for
+count-checked) and native reviews (paginated to exhaustion), each candidate ACL-resolved; the class
+config the floor's governed roots come from, which is one `compare/<base>...<head>?per_page=1` for
+the merge base and `.fabrika.jsonc` through the contents API at the head and at that merge base,
+never the checkout's; plus, for
 an in-force `review-ui` verdict, that comment's rendered HTML (`GET issues/comments/<id>`) and one
 anonymous fetch of each capture its gallery links. The verdict-marker and advisory grammars are the registered wire
 formats (`packages/fabrika-cli/src/wire/verdict-marker.ts`, `src/review/advisory.ts`) —
@@ -917,7 +952,7 @@ it is *present and wrong*. All four of these red on `18`, and each has a unit te
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or the enumerated changed-file list is empty — whether it touches a governance root is unanswerable |
-| `11` | the PR, its changed-file list, or the conjunction underneath could not be read — the floor is UNKNOWN, never `n/a`. Under `--publish-check`, also: the check-runs at the head could not be enumerated, so whether this head already carries the floor's row is unknown and nothing is published |
+| `11` | the PR, its changed-file list, `.fabrika.jsonc` at the head or its merge base, or the conjunction underneath could not be read — the floor is UNKNOWN, never `n/a`. Under `--publish-check`, also: the check-runs at the head could not be enumerated, so whether this head already carries the floor's row is unknown and nothing is published |
 | `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a governance root could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `18` | the diff touches a governance root and its `governance` verdict at this head is `absent`, `stale` or `fail` |
 | `8` | **`--publish-check` only** — the check-run could not be written, so the floor is resolved and nothing published it |
@@ -942,9 +977,11 @@ it is *present and wrong*. All four of these red on `18`, and each has a unit te
 | `ship floor --publish-check: posted check-run <id> — the job's own exit code no longer carries the floor.` | 0 | notice |
 | `ship floor --publish-check: rewrote check-run <id> — the job's own exit code no longer carries the floor.` | 0 | notice |
 
-**Scope** — one PR's changed-file list, paginated to exhaustion, plus whatever `ship gate` scans for
-the one required namespace (its own file list, the comments, the reviews and the comment authors'
-ACL). Both scanned counts reach stderr, this verb's first. Neither verb refuses on that list
+**Scope** — one PR's changed-file list, paginated to exhaustion; the class config that says whether
+the floor binds, which is one `compare/<base>...<head>?per_page=1` for the merge base and
+`.fabrika.jsonc` through the contents API at the head and at that merge base, never the checkout's;
+plus whatever `ship gate` scans for the one required namespace (its own file list, the same class
+config reads, the comments, the reviews and the comment authors' ACL). Both scanned counts reach stderr, this verb's first. Neither verb refuses on that list
 disagreeing with the pull-request record's `changed_files`: GitHub computes the record's count
 against a base it cached at the PR's last push, so the disagreement is reported and the enumerated
 list is the file set both derive from. What both still refuse on is that list arriving at GitHub's
@@ -1209,7 +1246,9 @@ the head, so a `--wait` poll never re-reads it. A failing check outside that set
 <name>, … — reported, never blocking.`, and does not red the head. A base branch that declares
 **nothing** falls back to the informational-name denylist, so every non-informational check gates
 there — an undeclared branch is one nobody has said what gates, not one that gates nothing. A
-declared set that cannot be read at this token's permission is `11` naming that read as the cause:
+plan-gated base takes the same denylist: GitHub's `403` beginning `Upgrade to GitHub Pro or make
+this repository public` says the branch cannot declare a required check, so it is not a permission
+failure. Any other declared set that cannot be read at this token's permission is `11` naming that read as the cause:
 this group is the merge authority, and no green here may be served over an authority nobody could
 name. Which definition answered is stated on the notes channel on every run.
 
@@ -1219,6 +1258,11 @@ none — and narrowing to the declared set opens that case wherever the required
 posted yet. What is missing there is a report, so the answer is `pending` with the reason on the
 notes channel. The same rule covers the fallback definition's version of it, a head whose every run
 is on the informational name list.
+
+**A declared required context with no run is not satisfied either, however many others passed.** A
+head where some declared contexts concluded `success` and one has posted nothing is `pending`, with
+the missing contexts named on the notes channel; a `red` declared context still answers `red`. The
+rule is read from `src/review/blocking.ts`, the same place `review ci` reads it.
 
 **Zero workflows is `no-producer`, and it no longer collapses into `pending`.** A repo with
 no CI and a repo whose CI has not reported yet are different facts, and printing the second over the
@@ -1283,8 +1327,10 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 | `ship checks: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
 | `ship checks: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `ship checks: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `ship checks: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `ship checks: no run at this head answers any context <base> declares required — pending, never green: the required checks have not reported.` | 0 | notice |
+| `ship checks: no run at this head for <list>, which <base> declares required — pending, never green: a declared context that has not reported is not satisfied.` | 0 | notice |
 | `ship checks: every run at this head is informational — pending, never green: nothing here gates.` | 0 | notice |
 | `ship checks: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `ship checks: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
@@ -1885,10 +1931,15 @@ fabrika ship reconcile 4321 [--polls 16] [--cadence-seconds 30] [--repo <owner/n
 are proven answers at exit `0` — **`ejected` is an answer, not an error**, so no loop shape
 around this verb can launder it into a success or a crash — v1's healthy KEPT path
 exited 1 off a trailing conditional, and its reconcile loop's predicate could not see the
-ejection marker. `unresolved` means still-queued at the horizon — neither a landing nor a
-failure; the honest words are the contract, and "auto-merges on green" is not in the
-vocabulary. `parked` means the arm never entered a queue on a queue-governed base —
-the enqueue did not take effect.
+ejection marker. `unresolved` means the PR is still in the queue at the horizon, or armed and
+not yet queued but younger than the floor below — neither a landing nor a failure; the honest words are the contract, and "auto-merges on green" is not in the
+vocabulary. `parked` means the arm never entered a queue on a queue-governed base and has
+waited past the floor: its latest `auto_merge_enabled` timeline event is at least
+`ARM_SETTLE_FLOOR_SECONDS` (1200 s) old — the enqueue did not take effect. GitHub can hold a
+live arm for minutes before it queues the PR (514 s has been seen), so a never-queued arm younger
+than the floor reads `unresolved` at any `--polls`, `1` included, and the driver's
+`ship:queued` re-reads carry it past the floor. An arm with no readable `auto_merge_enabled`
+time is not held back by the floor.
 
 With `--json`: `{"outcome":…,"polls":<n>,"horizonSeconds":<n>}`.
 
@@ -1913,14 +1964,16 @@ that needs longer waits in the driver's `ship:queued` cell, which re-reads this 
 `--polls 1` once a pass, rather than in a wider watch inside one shipper run. The verb never disarms
 — it is a read; the skill fires `ship disarm --site ejected` / `--site post-enqueue` on the
 `ejected` / `parked` answers (the sites exist precisely for these two answers, and the skill
-text carries the pairing).
+text carries the pairing). Because the floor outlasts the default horizon, a readable arm's first
+`parked` normally comes from the driver's `ship:queued` re-read, not the shipper's watch, so that
+cell runs the same `--site post-enqueue` disarm before it records.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) |
-| `11` | every poll in the budget failed to read — the outcome is UNKNOWN, distinct from `unresolved` (which is a *successful* observation of a still-queued PR) |
+| `11` | every poll in the budget failed to read — the outcome is UNKNOWN, distinct from `unresolved` (which is a *successful* observation of a PR still queued, or of an unqueued arm still younger than the floor) |
 | `13` | the timeline read — for which the platform declares no count — never reached a terminal page, and the classification would rest on it |
 
 **Errors**

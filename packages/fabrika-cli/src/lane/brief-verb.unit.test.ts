@@ -12,6 +12,7 @@ import {
 	type Scripted,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {PROJECT_SCOPE_FIX} from "../io/projects.ts";
 import type {OverSize} from "../table/flags.ts";
 import type {SizeStop} from "../table/size-stop.ts";
 import {
@@ -663,12 +664,28 @@ describe("lane brief at the size stop", () => {
 		const out = await briefWith({
 			_tag: "Unchecked",
 			reason: "fabrika lane brief: the token lacks the `project` scope",
+			excuse: "Unadopted",
 		}).outcome;
 
 		expect(out.code).toBe(0);
 		expect(readBrief(out.stdout)).toMatchObject({_tag: "Found", value: {shell: "builder"}});
 		expect(out.stderr.join("\n")).toContain("size stop NOT checked");
 		expect(out.stderr.join("\n")).not.toContain("size stop: ");
+	});
+
+	it("briefs past a table it could not read for a missing scope, naming the fix", async () => {
+		const out = await briefWith({
+			_tag: "Unchecked",
+			reason: `fabrika lane brief: the GitHub token lacks the \`project\` scope the table needs (x) — run \`${PROJECT_SCOPE_FIX}\` and re-run`,
+			excuse: "MissingScope",
+		}).outcome;
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({_tag: "Found", value: {shell: "builder"}});
+		const notes = out.stderr.filter((line) => line.includes("size stop NOT checked"));
+		expect(notes).toHaveLength(1);
+		expect(notes[0]).toContain(PROJECT_SCOPE_FIX);
+		expect(notes[0]).not.toContain("declares no `table` block");
 	});
 
 	it("refuses when the table could not be read — UNKNOWN, never a brief", async () => {

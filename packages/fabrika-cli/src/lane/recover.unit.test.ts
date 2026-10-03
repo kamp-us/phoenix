@@ -2,7 +2,7 @@
 import {describe, expect, it} from "vitest";
 import type {LaneStatus} from "./fold.ts";
 import {BUILD_STATES, REVIEW_STATE, REVIEW_UI_STATE} from "./prove.ts";
-import {activeTaskLeaves, owedBy, owedEvent} from "./recover.ts";
+import {activeTaskLeaves, owedBy, owedEvent, queuedBy, queuedPullOf} from "./recover.ts";
 
 const status = (
 	stateValue: LaneStatus["stateValue"],
@@ -76,5 +76,25 @@ describe("owedBy", () => {
 				status({phase1: {task_a: "review", task_b: "blocked", task_c: "queued", task_d: "build"}}),
 			),
 		).toEqual([{task: "task_a", leaf: "review", event: "PASS"}]);
+	});
+});
+
+describe("queuedBy and queuedPullOf", () => {
+	it("finds the tasks waiting in the queue dwell, and none on a done lane", () => {
+		const phase = {task_a: "ship:queued", task_b: "ship", task_c: "review"};
+		expect(queuedBy(status({phase1: phase}))).toEqual([{task: "task_a", leaf: "ship:queued"}]);
+		expect(queuedBy(status({phase1: phase}, "done"))).toEqual([]);
+	});
+
+	it("names the task's last PR URL, skipping other tasks and bare refs", () => {
+		const url = (n: number) => `https://forge.example/o/r/pull/${n}`;
+		const entries = [
+			{task: "task_a", event: "TASK_A.DONE", at: "t0", pr: url(1)},
+			{task: "task_a", event: "TASK_A.WIP", at: "t1", pr: url(2)},
+			{task: "task_b", event: "TASK_B.WIP", at: "t2", pr: url(3)},
+			{task: "task_a", event: "TASK_A.WIP", at: "t3", pr: "#4"},
+		];
+		expect(queuedPullOf(entries, "task_a")).toEqual({url: url(2), number: 2});
+		expect(queuedPullOf(entries, "task_c")).toBeNull();
 	});
 });

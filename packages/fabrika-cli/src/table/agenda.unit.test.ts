@@ -22,6 +22,8 @@ import {
 	sizeOfGroup,
 } from "./agenda.ts";
 import type {Group} from "./group.ts";
+import {rulingComment} from "./ruled.test-support.ts";
+import {ruledUnbuiltOf} from "./ruled.ts";
 import type {Row} from "./sync.ts";
 import {parseTableDay, type TableDay} from "./table-day.ts";
 
@@ -34,6 +36,7 @@ const issue = (number: number, over: Partial<ListedIssue> = {}): ListedIssue => 
 	labels: ["status:triaged"],
 	author: "worker",
 	association: "MEMBER",
+	createdAt: "2026-09-01T00:00:00Z",
 	...over,
 });
 
@@ -80,8 +83,41 @@ describe("candidatesOf", () => {
 		rows: new Map(rows.map((row) => [row.issue, row] as const)),
 		followUps: [],
 		flagged: new Map(),
+		ruled: [],
 		target: NEXT,
 		onCall: new Set<number>(),
+	});
+
+	it("puts an unanswered ruling under Tails, oldest first, after flagged bets and before follow-ups", () => {
+		const decision = (number: number) =>
+			issue(number, {labels: ["type:decision", "status:triaged", "ready-for:agent"]});
+		const ruled = ruledUnbuiltOf(
+			(
+				[
+					[5, "2026-09-20T00:00:00Z"],
+					[6, "2026-09-02T00:00:00Z"],
+					[7, "2026-09-05T00:00:00Z"],
+				] as const
+			).map(([n, at]) => [n, [rulingComment("acme/widgets", n, at, "founder")]] as const),
+			new Set(["founder"]),
+		);
+		const {candidates} = candidatesOf({
+			...input(
+				[decision(5), decision(6), decision(7), issue(8), issue(9)],
+				[stageRow(7, "not now"), stageRow(9, "bet")],
+			),
+			followUps: [{issue: 8, epic: 1}],
+			flagged: new Map([[9, []]]),
+			ruled,
+		});
+
+		expect(candidates.map((one) => `${one.reason._tag} #${one.issue}`)).toEqual([
+			"Flagged #9",
+			"Ruled #6",
+			"Ruled #5",
+			"FollowUp #8",
+		]);
+		expect(candidates.every((one) => one.section === "Tails")).toBe(true);
 	});
 
 	it("sorts a section p0 first, and never re-proposes an answered row", () => {
@@ -255,14 +291,14 @@ const cells = {size: "S" as const, rec: "yes.", plainWords: "Issue 1"};
 describe("planPrep with an on-call board", () => {
 	const plan = (over: Partial<PrepInput>) => planPrep(input(over));
 
-	it("takes a routed issue's table row off, so it is on the on-call board only", () => {
+	it("leaves a routed issue's table row for route to take off once it has placed the issue", () => {
 		const writes = plan({
 			rows: new Map([[4, stageRow(4, "proposed")]]),
 			open: new Set([4]),
 			onCall: new Set([4]),
 		});
 
-		expect(writes).toEqual([{_tag: "Delete", issue: 4, itemId: "PVTI_4"}]);
+		expect(writes).toEqual([]);
 	});
 
 	it("never adds a routed chain member to the table", () => {

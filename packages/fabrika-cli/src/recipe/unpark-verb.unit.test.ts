@@ -3,6 +3,7 @@ import {describe, expect, it} from "vitest";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {
+	configOnPlatform,
 	errOut,
 	fakeFs,
 	fakeSeams,
@@ -10,11 +11,16 @@ import {
 	okOut,
 	once,
 	type Scripted,
+	unconfiguredOnPlatform,
 } from "../fakes.test-support.ts";
+import {readGoldenFixture} from "../golden-fixture.ts";
+import {JOB_LOG, JOBS, jobs} from "../heal-ci/fixtures.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {emitMachine} from "../lane/emit.ts";
 import {parkCauseRead} from "../lane/fixtures.test-support.ts";
 import {foldLog, type LogEntry, parseLog} from "../lane/fold.ts";
 import {compileText} from "../lane/machine.ts";
+import {RETRY_BUDGET} from "../retry-budget.ts";
 import {evidenced, evidenceOpens} from "../review-ui/evidence.test-support.ts";
 import {
 	CODEOWNERS,
@@ -24,6 +30,7 @@ import {
 	files,
 	HEAD,
 	OTHER_HEAD,
+	OURS,
 	pull,
 	runsTotal,
 	UNDECLARED,
@@ -43,10 +50,12 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {
+	AXIS_ISSUE,
 	branchList,
 	campaignsTable,
 	closingPulls,
 	closingPullsIn,
+	eventLog,
 	httpError,
 	LANE,
 	LANE_BRANCH,
@@ -60,8 +69,10 @@ import {
 	PARKED_AT_CP_UNCAUSED,
 	PARKED_AT_QUEUE_STALL,
 	PARKED_BLOCKED,
+	PARKED_IN_REVIEW_ON_CI_RED,
 	PARKED_ON_CAMPAIGN,
 	PARKED_ON_CI_RED,
+	PARKED_ON_RENDER_AXIS,
 	PARKED_ON_ROUTED_UI,
 	PARKED_ON_SPAWN,
 	PARKED_ON_WORKTREE,
@@ -211,7 +222,11 @@ const run = (
 			// `UNDECLARED` is tailed too: this group calls `runChecks` in process, so the blocking
 			// authority's two reads happen here, and an unscripted one refuses at `11` before a case
 			// reaches the park arm it is about.
-			Layer.merge(fs.layer, fakeSeams([...script, ...http, NO_NOMINATIONS, ...UNDECLARED]).layer),
+			Layer.merge(
+				fs.layer,
+				fakeSeams([...script, ...http, NO_NOMINATIONS, ...UNDECLARED, ...unconfiguredOnPlatform()])
+					.layer,
+			),
 		),
 	);
 
@@ -251,6 +266,30 @@ describe("recipe unpark — the known recipe clears", () => {
 
 		expect(JSON.parse(out.stdout).mechanism).toMatch(/member-approval:reviewer/);
 	});
+
+	// A conflicting head waits on a builder, not the approval this recipe re-reads.
+	it("is PARK_NOVEL on a conflicting head with no approval, never 'not control-plane'", async () => {
+		const fs = lane(PARKED_AT_CP);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull({author: "owner", mergeable: false, mergeableState: "dirty"}))],
+				[FILES, CP_FILES],
+			],
+			[
+				[OWNERS, {status: 200, body: CODEOWNERS}],
+				[COMPARE, {status: 200, body: '{"behind_by":120}'}],
+				[ROSTER, members("owner", "reviewer")],
+				[REVIEWS, reviewPage()],
+			],
+		);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(out.stderr.at(-1)).toContain("conflicts with its base");
+		expect(fs.written.get(LOG) ?? "").not.toMatch(/ISSUE\.UNBLOCKED/);
+	});
 });
 
 /** A head-bound verdict marker with no content binding — the shape `ship gate` reads as a marker. */
@@ -285,6 +324,73 @@ const ciAt = (status: string, conclusion: string | null): ReadonlyArray<Scripted
 ];
 
 const GREEN_CI = ciAt("completed", "success");
+const RED_CI = ciAt("completed", "failure");
+
+/** The failing `ci` context's job and its log, as `heal-ci logs` reads them at the head. */
+const redLog = (text: string): ReadonlyArray<Scripted> => [
+	[JOBS, jobs(1, [{id: 441, name: "ci"}])],
+	[JOB_LOG, {status: 200, body: text}],
+];
+
+/** A log line `heal-ci classify` seats on its `assertion-failure` logic row. */
+const ASSERTION = "AssertionError: expected 87 to be 72";
+
+/** The coder template with `human:cp-approval`'s `FAIL` arm removed, as a lane booted before it reads. */
+const armlessTemplate = (): string => {
+	const strip = (node: unknown): void => {
+		if (typeof node !== "object" || node === null) return;
+		const record = node as Record<string, unknown>;
+		const park = record["human:cp-approval"] as {on?: Record<string, unknown>} | undefined;
+		if (park?.on !== undefined) delete park.on["ISSUE.FAIL"];
+		for (const child of Object.values(record)) strip(child);
+	};
+	const doc: unknown = JSON.parse(laneTemplate());
+	strip(doc);
+	return JSON.stringify(doc);
+};
+
+/** The lane's own issue as an epic, its machine emitted fresh from the committed epic fixture body. */
+const EPIC_TASK = `epic_${LANE}`;
+
+const emittedEpic = (): string => {
+	const body = readGoldenFixture(import.meta.url, "../lane/__fixtures__/epic-4300.body.txt");
+	const children = [4301, 4302, 4303].map((number) => ({
+		number,
+		state: "open" as const,
+		stateReason: null,
+		classes: [],
+	}));
+	const result = emitMachine(Number(LANE), body, children);
+	if (result._tag !== "Emitted") throw new Error(`expected Emitted, got ${result._tag}`);
+	return result.text;
+};
+
+/** Every child landed, then the tail reviewed and parked out of `ship` on a red head. */
+const EPIC_PARKED_ON_CI_RED = [
+	...[4301, 4302, 4303].flatMap((child) =>
+		["WIP", "DONE", "PASS", "DONE"].map((event) => ({
+			task: `issue_${child}`,
+			event: `ISSUE_${child}.${event}`,
+		})),
+	),
+	{task: EPIC_TASK, event: `EPIC_${LANE}.PASS`},
+	{task: EPIC_TASK, event: `EPIC_${LANE}.BLOCKED`, cause: "head-ci-red"},
+]
+	.map(
+		(entry, index) =>
+			`${JSON.stringify({...entry, at: new Date(Date.UTC(2026, 7, 16, 0, index)).toISOString()})}\n`,
+	)
+	.join("");
+
+/** The red-CI park reached with every repair retry already spent on earlier review FAILs. */
+const PARKED_ON_CI_RED_SPENT =
+	eventLog(
+		"WIP",
+		"DONE",
+		"PASS",
+		...Array.from({length: RETRY_BUDGET}, () => ["FAIL", "DONE", "PASS"]).flat(),
+	) +
+	`${JSON.stringify({task: "issue", event: "ISSUE.BLOCKED", at: "2026-08-16T01:00:00.000Z", cause: "head-ci-red"})}\n`;
 
 /** Both derived namespaces holding an authorized PASS at `sha`. */
 const boundAt = (sha: string): ReadonlyArray<Scripted> => [
@@ -317,13 +423,14 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	it("is PARK_HOLDS while a gating check at the head is still red", async () => {
+	// No job log is scripted, so `heal-ci logs` refuses and the red is one nobody has classified yet.
+	it("is PARK_HOLDS while a gating check at the head is still red and unclassified", async () => {
 		const fs = lane(PARKED_ON_CI_RED);
 
-		const out = await run(fs, [...RED_TARGET, ...ciAt("completed", "failure")], [...boundAt(HEAD)]);
+		const out = await run(fs, [...RED_TARGET, ...RED_CI], [...boundAt(HEAD)]);
 
 		expect(out.code).toBe(PARK_HOLDS);
-		expect(out.stderr.join("\n")).toMatch(/rolls up "red"/);
+		expect(out.stderr.join("\n")).toMatch(/rolls up "red" and fabrika heal-ci logs refused/);
 		expect(fs.written.size).toBe(0);
 	});
 
@@ -388,6 +495,104 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 		expect(fs.written.size).toBe(0);
 	});
 
+	it("is PARK_HOLDS on a red heal-ci classes transient — a flake waits for its rerun", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog("ETIMEDOUT")], OURS);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/ci: transient\), so it is no repair/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_HOLDS on a red no signature matched — unclassified is never a repair", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog("nothing recognisable")], OURS);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/ci: unclassified\), so it is no repair/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("records FAIL out of the park into `build` on a logic red, spending one retry", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog(ASSERTION)], OURS);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "human:cp-approval",
+			clearance: "ci-green",
+			event: "FAIL",
+			mechanism: `ci-logic:#4321 at ${HEAD}, ci=assertion-failure`,
+			current: "build",
+		});
+		const written = fs.written.get(LOG) ?? "";
+		expect(written).toMatch(/ISSUE\.FAIL/);
+		expect(written).not.toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("falls to `human:budget-spent` on a logic red once the repair budget is spent", async () => {
+		const fs = lane(PARKED_ON_CI_RED_SPENT);
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog(ASSERTION)], OURS);
+
+		// A single-task lane's spent-budget fallthrough is an error final, so the fold trips the lane.
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({event: "FAIL", current: "tripped"});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.FAIL/);
+		expect(out.stderr.join("\n")).toMatch(/the repair budget was spent/);
+	});
+
+	it("is PARK_HOLDS on a logic red when the lane's machine gives the park no FAIL arm", async () => {
+		const fs = fakeFs({files: {[WORKFLOW]: armlessTemplate(), [LOG]: PARKED_ON_CI_RED}});
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog(ASSERTION)], OURS);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/no FAIL arm, so the red has no repair route/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("records FAIL out of a freshly emitted epic tail's park into the tail's `build` on a logic red", async () => {
+		const fs = fakeFs({files: {[WORKFLOW]: emittedEpic(), [LOG]: EPIC_PARKED_ON_CI_RED}});
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog(ASSERTION)], OURS, EPIC_TASK);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "human:cp-approval",
+			event: "FAIL",
+			mechanism: `ci-logic:#4321 at ${HEAD}, ci=assertion-failure`,
+			current: "build",
+		});
+		const written = fs.written.get(LOG) ?? "";
+		expect(written).toMatch(new RegExp(`EPIC_${LANE}\\.FAIL`));
+		expect(written).not.toMatch(/UNBLOCKED/);
+	});
+
+	it("is PARK_HOLDS on a logic red over a PR the pipeline does not own — its author repairs it", async () => {
+		const fs = lane(PARKED_ON_CI_RED);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull({comments: 2, author: "ada"}))],
+				[FILES, reply(files("apps/site/src/App.tsx", "README.md"))],
+				[OWNERS, {status: 200, body: CODEOWNERS}],
+				...RED_CI,
+				...redLog(ASSERTION),
+			],
+			OURS,
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/ada's to finish/);
+		expect(fs.written.size).toBe(0);
+	});
+
 	// The two rows share the `human:cp-approval` leaf and are told apart by the cause alone, so the
 	// approval wait must still reach the §CP discharge it always did.
 	it("leaves the approval-wait §CP row unshadowed — it still reads the approval", async () => {
@@ -419,22 +624,85 @@ describe("recipe unpark — a red-CI park clears once the head reads green again
 });
 
 /**
- * The declaration `review-ui` is derived over — without it `uiSurfaces` is the shipped empty list
- * and no routed namespace is ever required, which is no ground for a test about one.
+ * A reviewer that read the head red parked before judging it, so no verdict stands at the head and
+ * none is scripted: the clear must not wait on the review it interrupted.
  */
-const UI_CONFIG = {
-	[`${CWD}/.fabrika.jsonc`]: JSON.stringify({
-		uiSurfaces: [
-			{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
-		],
-	}),
-};
+describe("recipe unpark — a reviewer's red-CI park clears on an open green head alone", () => {
+	it("clears into `review` when CI is green and the PR open, reading no verdict", async () => {
+		const fs = lane(PARKED_IN_REVIEW_ON_CI_RED);
 
-const laneWithUi = (log: string) =>
-	fakeFs({files: {[WORKFLOW]: laneTemplate(), [LOG]: log, ...UI_CONFIG}});
+		const out = await run(fs, [...RED_TARGET, ...GREEN_CI], []);
 
-/** The routed-UI park's target half: a diff under the declared prefix, so `review-ui` derives. */
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "head-green",
+			event: "UNBLOCKED",
+			mechanism: `head-green:#4321 at ${HEAD}`,
+			current: "review",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	// Before the row existed this park keyed on nothing and refused at PARK_NOVEL; an unmet condition
+	// is now the known park still standing.
+	it("holds at PARK_HOLDS on a red head, never PARK_NOVEL, and sends no repair FAIL", async () => {
+		const fs = lane(PARKED_IN_REVIEW_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...RED_CI, ...redLog(ASSERTION)], OURS);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/rolls up "red"; nothing was written/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("holds at PARK_HOLDS while a check at the head has not concluded", async () => {
+		const fs = lane(PARKED_IN_REVIEW_ON_CI_RED);
+
+		const out = await run(fs, [...RED_TARGET, ...ciAt("in_progress", null)], []);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/rolls up "pending"/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("holds at PARK_HOLDS on a green head whose PR is a draft", async () => {
+		const fs = lane(PARKED_IN_REVIEW_ON_CI_RED);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull({comments: 2, draft: true}))],
+				[FILES, reply(files("apps/site/src/App.tsx", "README.md"))],
+				[OWNERS, {status: 200, body: CODEOWNERS}],
+				...GREEN_CI,
+			],
+			[],
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/reads "draft"/);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+const laneWithUi = (log: string) => fakeFs({files: {[WORKFLOW]: laneTemplate(), [LOG]: log}});
+
+/**
+ * The routed-UI park's target half: a diff under the declared prefix, so `review-ui` derives.
+ *
+ * The PR's config declares that prefix — without it `uiSurfaces` is the shipped empty list and no
+ * routed namespace is ever required, which is no ground for a test about one.
+ */
 const ROUTED_TARGET: ReadonlyArray<Scripted> = [
+	...configOnPlatform(
+		JSON.stringify({
+			uiSurfaces: [
+				{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
+			],
+		}),
+	),
 	[CLOSERS, reply(closingPulls(4321))],
 	[PULL, reply(pull({comments: 2}))],
 	[FILES, reply(files("apps/site/src/routes/page.tsx", "README.md"))],
@@ -1208,6 +1476,7 @@ describe("recipe unpark — a campaign-paused park clears on the row it parked o
 
 	/** The trunk read: fetch the base, resolve it, show `ROADMAP.md` as of that commit. */
 	const trunkRoadmap = (text: string): ReadonlyArray<Scripted> => [
+		[/^GET \S+\/repos\/o\/r$/, {status: 200, body: JSON.stringify({default_branch: "main"})}],
 		[REMOTES, okOut("origin")],
 		[FETCH, okOut("")],
 		[RESOLVE, okOut(TRUNK_SHA)],
@@ -1259,6 +1528,7 @@ describe("recipe unpark — a campaign-paused park clears on the row it parked o
 		const out = await run(
 			fs,
 			[
+				[/^GET \S+\/repos\/o\/r$/, {status: 200, body: JSON.stringify({default_branch: "main"})}],
 				[REMOTES, okOut("origin")],
 				[FETCH, okOut("")],
 				[RESOLVE, okOut(TRUNK_SHA)],
@@ -1311,6 +1581,81 @@ describe("recipe unpark — a campaign-paused park clears on the row it parked o
 
 		expect(out.code).toBe(TARGET_ABSENT);
 		expect(out.stderr.join("\n")).toMatch(new RegExp(`pins milestone #${LANE_MILESTONE}`));
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("recipe unpark — a render-axis park clears once its axis issue closes", () => {
+	const AXIS = new RegExp(`^GET \\S+/repos/o/r/issues/${AXIS_ISSUE}$`);
+
+	const axis = (state: string): ReadonlyArray<Scripted> => [
+		[
+			AXIS,
+			{
+				status: 200,
+				body: JSON.stringify({...openIssue, number: AXIS_ISSUE, state}),
+			},
+		],
+	];
+
+	it("clears back into review:ui when the axis issue reads closed", async () => {
+		const fs = lane(PARKED_ON_RENDER_AXIS);
+
+		const out = await run(fs, [], axis("closed"));
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "axis-closed",
+			mechanism: `axis-closed:#${AXIS_ISSUE}`,
+			current: "review:ui",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("is PARK_HOLDS with the ledger untouched while the axis issue is open", async () => {
+		const fs = lane(PARKED_ON_RENDER_AXIS);
+
+		const out = await run(fs, [], axis("open"));
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(new RegExp(`#${AXIS_ISSUE} reads open`));
+		expect(fs.written.size).toBe(0);
+	});
+
+	// A driver-routed cause with a recipe row is the recipe's to clear, so a rationale buys nothing
+	// here: the open axis still holds the park.
+	it("holds on an open axis issue even under driverRouted clear with a rationale", async () => {
+		const fs = lane(PARKED_ON_RENDER_AXIS);
+
+		const out = await run(
+			fs,
+			[],
+			axis("open"),
+			null,
+			parkCauseRead("record", "clear"),
+			"retry the render",
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is TARGET_ABSENT when the axis issue is proven absent", async () => {
+		const fs = lane(PARKED_ON_RENDER_AXIS);
+
+		const out = await run(fs, [], [[AXIS, httpError(404, "Not Found")]]);
+
+		expect(out.code).toBe(TARGET_ABSENT);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is UNKNOWN when the axis issue cannot be read — never a cleared park", async () => {
+		const fs = lane(PARKED_ON_RENDER_AXIS);
+
+		const out = await run(fs, [], [[AXIS, httpError(500)]]);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(fs.written.size).toBe(0);
 	});
 });

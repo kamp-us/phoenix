@@ -26,7 +26,6 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {governedRootsOr} from "../config/paths.ts";
 import {
 	type ChangedPath,
 	type CommitRange,
@@ -34,6 +33,7 @@ import {
 	diffRangeStatuses,
 	listTreePaths,
 } from "../io/git.ts";
+import {classConfigAtCommits} from "../review/class-config.ts";
 import {readLocalFileSet} from "../review/local-file-set.ts";
 import {rangeMergeBase, readRangeFlags} from "../review/range-flags.ts";
 import {badNumber, openPull, resolveTargetRepo} from "../review/target.ts";
@@ -68,8 +68,6 @@ export interface ScopeOptions {
 	readonly tip: string | null;
 	readonly repo: string | null;
 	readonly json: boolean;
-	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
-	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -252,16 +250,6 @@ export const runScope = (
 		const flags = readRangeFlags(VERB, {base: options.base, tip: options.tip, sha: options.sha});
 		if (flags._tag === "Refused") return withNotice(flags.outcome);
 
-		const governed = yield* governedRootsOr(
-			VERB,
-			options.cwd,
-			'the root set is UNKNOWN and the derivation is never "not-required".',
-		);
-		if (governed._tag === "Refused") {
-			return withNotice(refuse(PRECONDITION_UNKNOWN, governed.message));
-		}
-		const governedRoots = governed.roots;
-
 		let resolved: Resolved;
 		if (flags._tag === "Ranged") {
 			if (pr !== null) {
@@ -289,6 +277,17 @@ export const runScope = (
 		if (resolved._tag === "Refused") return withNotice(resolved.outcome);
 		const {changed, treeSha, base, declared, named, bound, disagreement} = resolved.subject;
 
+		// The roots the subject's own two commits declare, never this checkout's.
+		const governed = yield* classConfigAtCommits(
+			VERB,
+			'the root set is UNKNOWN and the derivation is never "not-required".',
+			{head: treeSha, base},
+		);
+		if (governed._tag === "Refused") {
+			return withNotice(refuse(PRECONDITION_UNKNOWN, governed.message, [bound]));
+		}
+		const governedRoots = governed.config.governedRoots;
+
 		const tree = yield* listTreePaths(treeSha);
 		if (tree._tag === "Failure") {
 			return withNotice(
@@ -305,7 +304,7 @@ export const runScope = (
 		);
 		const diagnostics = [
 			bound,
-			`${VERB}: root set is ${governed.note}.`,
+			`${VERB}: root set is ${governed.config.notes.governedRoots}.`,
 			...governedRoots
 				.filter((root) => !present.includes(root))
 				.map(

@@ -4,27 +4,69 @@ Install the CLI and initialize the repository using [adopt Fabrika](adopt-fabrik
 The plugin supplies shared skills and references; the CLI supplies their deterministic verbs.
 GitHub credentials, Node, Git, and Codex CLI must already work in the environment.
 
-From this repository's root, install the existing marketplace entry:
+## Install the plugin
+
+From your own repository, register the `kampus` marketplace from GitHub and install the plugin.
+`<owner>/<repo>` is the GitHub repository that publishes the plugin, the `repository` field of
+its `plugin.json`:
+
+```bash
+codex plugin marketplace add <owner>/<repo> --ref main
+codex plugin add fabrika@kampus
+```
+
+Start a new session. Use `/plugins` to inspect the installed plugin. To pick up a newer plugin,
+run `codex plugin marketplace upgrade kampus`, then restart the session to use the updated cached
+skills.
+
+In the plugin's source checkout only, register the working tree instead, since `./` must hold
+`.claude-plugin/marketplace.json`:
 
 ```bash
 codex plugin marketplace add ./
 codex plugin add fabrika@kampus
 ```
 
-Start a new session. Use `/plugins` to inspect the installed plugin. Re-run the install command
-after updating the marketplace checkout and restart the session to use updated cached skills.
+`codex plugin add` copies the plugin into Codex's cache, so editing or pulling the checkout does
+not change what Codex runs. After updating the checkout, re-run `codex plugin add fabrika@kampus`
+and restart the session. `codex plugin marketplace upgrade` does not apply here: it refreshes Git
+marketplaces only and refuses one added from a local path.
+
+## Point Codex at the Fabrika section
+
+Codex reads `AGENTS.md`, while `fabrika status bootstrap claude-md-section` writes `CLAUDE.md`
+unless told otherwise. In a repository Codex works in, write the section to `AGENTS.md`:
+
+```bash
+fabrika status bootstrap claude-md-section --path AGENTS.md
+```
+
+When the repository also uses Claude Code, pick one of two setups:
+
+- Keep one file: write the section to `AGENTS.md` and make `CLAUDE.md` a symlink to it
+  (`ln -s AGENTS.md CLAUDE.md`). Both tools then read the same instructions.
+- Keep two files: run the verb once with `--path AGENTS.md` and once without `--path`, so each
+  file carries the section. Edit both when the instructions change.
 
 ## Enable interactive usage collection
 
-In a source checkout, merge the event entries from
-[codex-hooks.json](../../../packages/fabrika-cli/docs/codex-hooks.json) into the repository's
-`.codex/hooks.json`. Create that file if absent; retain any existing hooks. This uses Codex's
-supported repository hook path and writes no per-user configuration.
+In a source checkout, merge the event entries from the checkout's
+`packages/fabrika-cli/docs/codex-hooks.json` into the repository's `.codex/hooks.json`. Each of
+`PreToolUse`, `PostToolUse`, `SessionStart`, `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt`
+and `SessionEnd` gets one command hook running
+`node "$(git rev-parse --show-toplevel)/packages/fabrika-cli/src/spend/codex-hook.ts"`, with
+`"timeout": 3` on `Interrupt` and `SessionEnd`. Create the file if absent; retain any existing
+hooks. This uses Codex's supported repository hook path and writes no per-user configuration.
 
 Restart Codex, trust the repository, then review and trust these definitions with `/hooks`.
 Start Fabrika work normally. The hook binds the issue when Fabrika reads or claims it and replays
-usage at later callbacks. See [collection details](../../../packages/fabrika-cli/docs/codex-usage.md)
-for supported versions, missing coverage and recovery. Lane dispatch also collects without hooks.
+usage at later callbacks. Lane dispatch also collects without hooks.
+
+Collection reads Codex 0.153.4 and 0.154.0 session files; another version records incomplete
+coverage rather than guessing. Coverage is always `partial`, because readable files cannot prove
+that no unseen subagent ran. Usage lands in
+`.fabrika/spend-ledger.jsonl` in the primary checkout; `fabrika spend rollup` prints its totals
+with that coverage. A recording error prints a warning and never changes the task's result.
 
 ## Recover interrupted collection
 
@@ -51,14 +93,23 @@ The adapter creates a detached worktree, verifies its repository and commit, and
 repository's `dependencyReconciler` if declared. A repository requiring dependencies must declare
 that command in `.fabrika.jsonc`. Each child receives a fixed instruction to read the selected
 stage skills, followed by the emitted lane brief without changing its bytes. The child runs
-`codex exec --cd` there. Read the [dispatch contract](../../../packages/fabrika-cli/docs/codex-dispatch.md)
-for refusals, completion, and recovery.
+`codex exec --cd` there. `fabrika lane dispatch --help` lists its refusals by exit code.
+
+Exit zero from the child is not completion. Dispatch succeeds only when exactly one new terminal
+addresses the task and the lane's artifact proof confirms it; route from the lane state, not the
+dispatch exit code. Every worktree it creates stays on disk, and the child's output is kept beside
+the ledger as `dispatch-<task>.stdout` and `dispatch-<task>.stderr`. Read those and the worktree
+before retrying, and do not delete or reset a worktree just to retry. A killed dispatcher can leave
+its lock directory behind: confirm its process is gone before removing the lock.
 
 Codex's persistent model, reasoning, developer instructions, sandbox and approval configuration
-remain authoritative: the adapter overrides none of them. Parent-chat transient settings are
-not a CLI configuration export; configure the child policy in Codex before dispatch when such
-settings matter. Noninteractive approval failures remain failures. Never add an unrestricted
-execution flag to make a blocked stage continue.
+remain authoritative: the adapter overrides none of them. So a Codex-dispatched shell's model is
+the one Codex's own configuration resolves: the adapter runs `codex exec --cd <worktree> -`
+with no `--model`, `--profile` or `-c` flag. Every role gets that same command, so there is no
+per-role model pin on this route; `reviewer` and `builder` run on the same configured model.
+Parent-chat transient settings are not a CLI configuration export; configure the child policy in
+Codex before dispatch when such settings matter. Noninteractive approval failures remain failures.
+Never add an unrestricted execution flag to make a blocked stage continue.
 
 Session attribution preserves the existing precedence: `FABRIKA_SESSION_ID`, then
 `CLAUDE_CODE_SESSION_ID`, then `PI_SUBAGENT_PARENT_SESSION`, then `CODEX_THREAD_ID`, then

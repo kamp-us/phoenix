@@ -25,7 +25,7 @@ import {runMerge} from "./merge-verb.ts";
 import {MERGEABILITY_WINDOW_SECONDS} from "./mergeability.ts";
 import {runNote} from "./note-verb.ts";
 import {runNudge} from "./nudge-verb.ts";
-import {runReconcile} from "./reconcile-verb.ts";
+import {ARM_SETTLE_FLOOR_SECONDS, runReconcile} from "./reconcile-verb.ts";
 import {runRelease} from "./release-verb.ts";
 import {runResolve} from "./resolve-verb.ts";
 import {runScope} from "./scope-verb.ts";
@@ -54,9 +54,10 @@ const shaFlag = Flag.string("sha").pipe(
 );
 
 /**
- * The window the two landing verbs give GitHub's lazy `mergeable` job before calling it UNKNOWN.
+ * The window every mergeability-reading verb gives GitHub's lazy `mergeable` job before calling it
+ * UNKNOWN.
  *
- * Shared because both verbs read through one poll loop, and two defaults would be two poll policies.
+ * Shared because they read through one poll loop, and two defaults would be two poll policies.
  */
 const mergeabilitySecondsFlag = Flag.integer("mergeability-seconds").pipe(
 	Flag.withDefault(MERGEABILITY_WINDOW_SECONDS),
@@ -74,7 +75,6 @@ const scope = leafCommand(
 				pr,
 				repo: Option.getOrNull(repo),
 				json,
-				cwd: process.cwd(),
 				env: process.env,
 				caller: "shipper",
 			}),
@@ -95,18 +95,32 @@ const scope = leafCommand(
 
 const cpApproval = leafCommand(
 	"cp-approval",
-	{pr: prArg, sha: shaFlag, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, sha, repo, json}) {
+	{
+		pr: prArg,
+		sha: shaFlag,
+		mergeabilitySeconds: mergeabilitySecondsFlag,
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({pr, sha, mergeabilitySeconds, repo, json}) {
 		yield* emit(
-			yield* runCpApproval({pr, sha, repo: Option.getOrNull(repo), json, env: process.env}),
+			yield* runCpApproval({
+				pr,
+				sha,
+				mergeabilitySeconds,
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Whether the control-plane approval is discharged at a head."),
 	Command.withDescription(
-		"Prints whether one PR's §CP approval is discharged at a head: discharge, stop or n/a, and how." +
+		"Prints one PR's §CP approval answer at a head: discharge, stop, base-conflicted or n/a, and how." +
+			"\n  base-conflicted: no approval, and the head conflicts with its base; report BASE-CONFLICTED" +
 			"\n  7: the PR is absent or closed, or has no changed files" +
-			"\n  11: the boundary, roster, reviews, markers or live head could not be read" +
+			"\n  11: the boundary, roster, reviews, markers, live head or mergeability could not be read" +
 			"\n  13: a comment, review or changed-file read is provably incomplete" +
 			'\n  Derivation: the ship skill\'s contract.md, "ship cp-approval"',
 	),
@@ -458,6 +472,8 @@ const reconcile = leafCommand(
 	Command.withShortDescription("Watch a queued PR to a terminal classification."),
 	Command.withDescription(
 		"Watches a queued PR and prints landed, ejected, unresolved or parked, with the polls used." +
+			"\n  parked needs a never-queued arm on a queue-governed base that has waited past the floor" +
+			`\n  (its latest auto_merge_enabled event is ${ARM_SETTLE_FLOOR_SECONDS} s old or more); a younger one reads unresolved` +
 			"\n  7: the PR is absent" +
 			"\n  11: every poll failed to read; UNKNOWN, not unresolved" +
 			"\n  13: the timeline read never reached a terminal page" +

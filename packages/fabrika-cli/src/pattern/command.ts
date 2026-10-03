@@ -13,9 +13,13 @@
 
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
+import {baseOrTrunk, TRUNK_DEFAULT_HELP, trunkUnresolved} from "../io/trunk.ts";
+import {refuse, type VerbOutcome} from "../verb.ts";
 import {runAnchor} from "./anchor-verb.ts";
+import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runCorpus} from "./corpus-verb.ts";
 import {runDrift} from "./drift-verb.ts";
 import {runNew} from "./new-verb.ts";
@@ -27,11 +31,31 @@ const dirFlag = Flag.string("dir").pipe(
 );
 
 const baseFlag = Flag.string("base").pipe(
-	Flag.withDefault("origin/main"),
+	Flag.optional,
 	Flag.withDescription(
-		"the base ref the corpus is read at, fetched before it is read (default: origin/main)",
+		`the base ref the corpus is read at, fetched before it is read (default: ${TRUNK_DEFAULT_HELP})`,
 	),
 );
+
+/**
+ * Run `verb` at the `--base` the operator named, else at the trunk; an unresolvable trunk is the
+ * group's UNKNOWN, never a read at a spelled branch.
+ */
+const atBase = <R>(
+	verb: string,
+	named: Option.Option<string>,
+	run: (base: string) => Effect.Effect<VerbOutcome, never, R>,
+): Effect.Effect<VerbOutcome, never, R | ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.flatMap(baseOrTrunk(Option.getOrNull(named), process.env, null), (read) =>
+		read._tag === "Ok"
+			? run(read.value)
+			: Effect.succeed(
+					refuse(
+						PRECONDITION_UNKNOWN,
+						`${verb}: ${trunkUnresolved(read.reason)}. Pass --base to name the ref yourself.`,
+					),
+				),
+	);
 
 const jsonFlag = Flag.boolean("json").pipe(
 	Flag.withDefault(false),
@@ -46,7 +70,7 @@ const corpus = leafCommand(
 	"corpus",
 	{dir: dirFlag, base: baseFlag, json: jsonFlag},
 	Effect.fn(function* ({dir, base, json}) {
-		yield* emit(yield* runCorpus({dir, base, json}));
+		yield* emit(yield* atBase("pattern corpus", base, (at) => runCorpus({dir, base: at, json})));
 	}),
 ).pipe(
 	Command.withShortDescription("Every pattern doc at a base ref, with its registration."),
@@ -65,7 +89,9 @@ const drift = leafCommand(
 	"drift",
 	{slug: slugArgument, dir: dirFlag, base: baseFlag, json: jsonFlag},
 	Effect.fn(function* ({slug, dir, base, json}) {
-		yield* emit(yield* runDrift({slug, dir, base, json}));
+		yield* emit(
+			yield* atBase("pattern drift", base, (at) => runDrift({slug, dir, base: at, json})),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Whether the in-repo source a doc cites has moved."),
@@ -96,7 +122,11 @@ const anchor = leafCommand(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({slug, dir, manifest, base, json}) {
-		yield* emit(yield* runAnchor({slug, dir, manifest, base, json}));
+		yield* emit(
+			yield* atBase("pattern anchor", base, (at) =>
+				runAnchor({slug, dir, manifest, base: at, json}),
+			),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Whether the dependency version a doc declares still matches."),

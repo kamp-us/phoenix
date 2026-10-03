@@ -8,6 +8,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/9834
  */
 import {Effect} from "effect";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {openQueueIssues, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse} from "../verb.ts";
 import type {AuditIssue} from "./audit.ts";
@@ -22,6 +23,8 @@ export interface AuditSetOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The board a missing-label refusal reads its `status bootstrap` remedy against. */
+	readonly board: BoardRead;
 }
 
 export const runAuditSet = Effect.fn("runAuditSet")(function* (options: AuditSetOptions) {
@@ -37,7 +40,7 @@ export const runAuditSet = Effect.fn("runAuditSet")(function* (options: AuditSet
 	}
 	const repo = repoAttempt.value;
 
-	const absent = yield* labelPrecondition(VERB, "audit set", repo, label);
+	const absent = yield* labelPrecondition(VERB, "audit set", repo, label, options.board);
 	if (absent !== null) return absent;
 
 	const read = yield* openQueueIssues(repo, label);

@@ -71,6 +71,24 @@
 	margin-block: var(--s-1);
 }
 
+/* A task item's glyph is its marker (ADR 0441), so an unordered one drops the bullet rather than
+   carry two. An ordered one keeps its number, which says something the glyph does not. */
+.kp-markdown ul > .kp-markdown__task {
+	list-style-type: none;
+}
+
+/* One fixed column, so a check and an open ring line the item text up alike. */
+.kp-markdown__task-glyph {
+	display: inline-block;
+	inline-size: 1em;
+	text-align: center;
+	color: var(--text-secondary);
+}
+
+.kp-markdown__task-glyph[data-checked="false"] {
+	color: var(--text-muted);
+}
+
 /* A list item holds block children, so its paragraphs would otherwise open a gap per bullet. */
 .kp-markdown li > p {
 	margin-block: 0;

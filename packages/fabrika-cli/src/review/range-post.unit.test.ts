@@ -12,6 +12,7 @@ import {
 	okOut,
 	type Scripted,
 	unconfigured,
+	unconfiguredAtCommits,
 } from "../fakes.test-support.ts";
 import {NOT_HARNESS_TOUCHING} from "../governance/codes.ts";
 import {
@@ -123,6 +124,7 @@ const governanceHappy = (): ReadonlyArray<Scripted> => [
 	[COMMENTS, {status: 200, body: comments().stdout}],
 	[CREATE, created],
 	[READBACK, commentBody(`${GOV_MARKER}\n\n${BODY}`)],
+	...unconfiguredAtCommits,
 ];
 
 /**
@@ -146,6 +148,7 @@ const reposting = (
 		[COMMENTS, {status: 200, body: comments({id: 42, body: prior}).stdout}],
 		[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
 		[READBACK, commentBody(supersedeWith(prior, fresh, new Date(ON)))],
+		...unconfiguredAtCommits,
 	];
 };
 
@@ -167,7 +170,7 @@ const runGovernance = (
 	Effect.runPromise(
 		Effect.provide(
 			runGovernancePost({...governanceOptions, ...overrides}),
-			Layer.merge(fakeSeams(script).layer, unconfigured),
+			Layer.merge(fakeSeams([...script, ...unconfiguredAtCommits]).layer, unconfigured),
 		),
 	);
 

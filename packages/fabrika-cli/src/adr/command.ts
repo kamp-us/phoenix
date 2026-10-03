@@ -8,11 +8,13 @@
  */
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import {corpusOverride, decisionsDirOr} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
+import {baseOrTrunk, TRUNK_DEFAULT_HELP, trunkUnresolved} from "../io/trunk.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
-import {CORPUS_DECLINED, DIR_UNREADABLE} from "./codes.ts";
+import {BASE_UNFETCHABLE, CORPUS_DECLINED, DIR_UNREADABLE} from "./codes.ts";
 import {runMint} from "./mint-verb.ts";
 import {runNew} from "./new-verb.ts";
 import {runNext} from "./next-verb.ts";
@@ -62,11 +64,34 @@ const corpusFor = (
 	});
 
 const baseFlag = Flag.string("base").pipe(
-	Flag.withDefault("origin/main"),
+	Flag.optional,
 	Flag.withDescription(
-		"the base ref to fetch and read the merged set from — fetched before it is read (default: origin/main)",
+		`the base ref to fetch and read the merged set from — fetched before it is read (default: ${TRUNK_DEFAULT_HELP})`,
 	),
 );
+
+/** The `--base` a verb of this group reads at, or the refusal an unresolvable trunk is. */
+const baseFor = (
+	verb: string,
+	named: Option.Option<string>,
+	repo: Option.Option<string>,
+): Effect.Effect<
+	| {readonly _tag: "Base"; readonly base: string}
+	| {readonly _tag: "Stop"; readonly outcome: VerbOutcome},
+	never,
+	ChildProcessSpawner.ChildProcessSpawner
+> =>
+	Effect.map(baseOrTrunk(Option.getOrNull(named), process.env, Option.getOrNull(repo)), (read) =>
+		read._tag === "Ok"
+			? {_tag: "Base" as const, base: read.value}
+			: {
+					_tag: "Stop" as const,
+					outcome: refuse(
+						BASE_UNFETCHABLE,
+						`${verb}: ${trunkUnresolved(read.reason)}. Pass --base to name the ref yourself.`,
+					),
+				},
+	);
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,
@@ -88,7 +113,11 @@ const next = leafCommand(
 	Effect.fn(function* ({dir, base, repo, json}) {
 		const corpus = yield* corpusFor("adr next", dir);
 		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
-		yield* emit(yield* runNext({dir: corpus.dir, base, repo: Option.getOrNull(repo), json}));
+		const at = yield* baseFor("adr next", base, repo);
+		if (at._tag === "Stop") return yield* emit(at.outcome);
+		yield* emit(
+			yield* runNext({dir: corpus.dir, base: at.base, repo: Option.getOrNull(repo), json}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("The next unused ADR id: merged, open-PR and branch claims folded."),
@@ -96,7 +125,7 @@ const next = leafCommand(
 		[
 			"Prints the next unused ADR id, such as `0240`, or `0001` for an empty readable --dir.",
 			"  11: --dir unreadable",
-			"  17: --base could not be fetched",
+			"  17: --base could not be fetched, or no --base and the trunk is unresolvable",
 			"  18: the in-flight set is unknown",
 			"  19: a record filename has no readable id",
 			"  21: the origin remote is unresolvable",
@@ -187,11 +216,13 @@ const mint = leafCommand(
 	Effect.fn(function* ({slug, dir, base, repo, status, date, title, tags, json}) {
 		const corpus = yield* corpusFor("adr mint", dir);
 		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
+		const at = yield* baseFor("adr mint", base, repo);
+		if (at._tag === "Stop") return yield* emit(at.outcome);
 		yield* emit(
 			yield* runMint({
 				slug,
 				dir: corpus.dir,
-				base,
+				base: at.base,
 				repo: Option.getOrNull(repo),
 				status,
 				date: Option.getOrElse(date, today),
@@ -208,7 +239,7 @@ const mint = leafCommand(
 			"Allocates the next ADR id, scaffolds its record in the same call and prints the path written.",
 			"  11: --dir unreadable",
 			"  12: the path exists and is never overwritten",
-			"  17: --base could not be fetched",
+			"  17: --base could not be fetched, or no --base and the trunk is unresolvable",
 			"  18: the in-flight set is unknown",
 			"  19: a record filename has no readable id",
 			"  21: the origin remote is unresolvable",
@@ -231,8 +262,10 @@ const resolve = leafCommand(
 	Effect.fn(function* ({ids, dir, base, repo, json}) {
 		const corpus = yield* corpusFor("adr resolve", dir);
 		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
+		const at = yield* baseFor("adr resolve", base, repo);
+		if (at._tag === "Stop") return yield* emit(at.outcome);
 		yield* emit(
-			yield* runResolve({ids, dir: corpus.dir, base, repo: Option.getOrNull(repo), json}),
+			yield* runResolve({ids, dir: corpus.dir, base: at.base, repo: Option.getOrNull(repo), json}),
 		);
 	}),
 ).pipe(
@@ -241,7 +274,7 @@ const resolve = leafCommand(
 		[
 			"Prints one `<state>\\t<file>\\t<detail>` line per id, state live|landed|in-flight|absent.",
 			"  11: --dir or one of its records is unreadable",
-			"  17: --base could not be fetched",
+			"  17: --base could not be fetched, or no --base and the trunk is unresolvable",
 			"  18: the in-flight set is unknown",
 			"  19: a record filename has no readable id",
 			"  20: two records carry one id",

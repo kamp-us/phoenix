@@ -5,7 +5,9 @@ MIT License, Copyright (c) 2026 OpenClaw Foundation. See LICENSE-OPENCLAW.
 Changes: the mode is renamed "subsystem sweep"; OpenClaw's examples, runner
 APIs and review process are replaced with repository-neutral text; the sweep
 is bounded to one ticket and one pull request, with outside work routed to
-fabrika's report skill.
+fabrika's report skill; Baseline first reads SKILL.md's in-flight set; step 3
+adds the in-flight mark I, which steps 4 and 5 leave untouched and step 8 hands
+off.
 -->
 
 # Subsystem sweep
@@ -21,12 +23,17 @@ fix, leaves through [`report`](../report/SKILL.md) as a follow-up issue.
 
 ## 1. Baseline
 
+Read the in-flight set first, as [Discovery](SKILL.md#discovery) opens, and
+hand it to every read-only pass in steps 3 and 4; a candidate it touches is in
+flight under that section's rule and is marked `I` in step 3.
+
 Record the subsystem's test and support line counts and every test file's
 pass/fail state at a pinned default-branch commit. Keep baseline failures in
 their own list: a failing test is as likely to be a real product bug as a stale
 test.
 
-Done when every in-scope test file has a recorded baseline result.
+Done when the in-flight set is recorded and every in-scope test file has a
+recorded baseline result.
 
 ## 2. Slices and inventory
 
@@ -52,7 +59,10 @@ different marks; then mark each row.
   that passes when only one of several items is missing;
 - `C`: consolidate, naming the owner that absorbs the assertion first: a sibling
   table case, a stronger boundary suite, or the shared owner in another package;
-- `D`: delete, naming the proof that remains, or why no contract exists.
+- `D`: delete, naming the proof that remains, or why no contract exists;
+- `I`: in flight, given in place of the four marks above to a declaration whose
+  test file or production owner is in the in-flight set; its evidence line names
+  the pull request.
 
 Judge a test by its assertions, not its name: a test named for clearing some
 state may assert that the state was _not_ cleared.
@@ -62,22 +72,26 @@ Done when every declaration in the slice has a mark and an evidence line.
 ## 4. Layer plan per slice
 
 Treat the marks as input, not as the edit list. A second read-only pass,
-starting from the marks, looks for the redundant **layer**: for example several
-suites replaying one shared helper through the same mock, around a stronger
-suite that drives the real boundary. Name the **keeper** suite for each
-contract. Prefer the real transport boundary with a fake network over a mocked
-collaborator. Correct any marks this pass finds wrong.
+starting from the `R`, `F`, `C` and `D` marks, looks for the redundant
+**layer**: for example several suites replaying one shared helper through the
+same mock, around a stronger suite that drives the real boundary. Name the
+**keeper** suite for each contract. Prefer the real transport boundary with a
+fake network over a mocked collaborator. Correct any marks this pass finds
+wrong. An `I` declaration's test file and production owner belong to its pull
+request and enter no slice plan.
 
 Done when each slice plan names its retired files, its keeper per contract, the
 assertions to carry into keepers, and the test-only production seams unlocked.
 
 ## 5. Cutover
 
-Edit slice by slice. Serialize changes to shared harnesses and support files
-through one owner. With each slice, remove the test-only production seams it
-unlocks: injection parameters, getters, reset exports and indirection layers.
-Register moved suites wherever the repository routes tests to CI or keeps a test
-inventory or size baseline.
+Edit slice by slice, applying only the slice plan, which acts on `R`, `F`, `C`
+and `D` declarations alone; an `I` declaration's files stay untouched.
+Serialize changes to shared harnesses and support files through one owner.
+With each slice, remove the test-only production seams it unlocks: injection
+parameters, getters, reset exports and indirection layers. Register moved
+suites wherever the repository routes tests to CI or keeps a test inventory or
+size baseline.
 
 Done when every slice plan is applied and each slice's keepers pass.
 
@@ -114,7 +128,8 @@ modified a file the sweep deleted, keep the deletion, port the new contract
 into the keeper, and confirm every new regression the default branch added
 still has a home. Rerun the whole subsystem suite on the reconciled head.
 
-Hand off with the [SKILL.md](SKILL.md) report, plus:
+Hand off with the [SKILL.md](SKILL.md) report, whose in-flight list carries
+every `I` declaration with its pull request, plus:
 
 - baseline and final test/support line counts, with production counted separately;
 - slices, retired layers and keepers;

@@ -43,7 +43,7 @@ export {
 	ZERO_SCOPE,
 } from "../build/codes.ts";
 
-/** Proven: the tree's base is behind `origin/main` — a plan derived here is derived on stale ground. */
+/** Proven: the tree's base is behind the trunk — a plan derived here is derived on stale ground. */
 export const STALE_GROUND = 20;
 /** Proven: the epic body moved — the recomputed digest differs from `--body-digest`. */
 export const EPIC_MOVED = 21;

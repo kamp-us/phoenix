@@ -6,17 +6,40 @@
  * A poll that cannot read classifies `pending`. A miss can only keep polling; it can never mint
  * `landed` or `ejected`, which is the fail-safe direction.
  */
-import {Effect} from "effect";
+import {Clock, Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {branchSubjects, isQueueGoverned, pullTimeline} from "./github.ts";
-import {landedOnBase, queueStateOf} from "./queue.ts";
+import {armedAtOf, landedOnBase, queueStateOf} from "./queue.ts";
 import {badNumber, resolvePull, resolveTargetRepo} from "./target.ts";
 
 const VERB = "ship reconcile";
 
 export type Reconciled = "landed" | "ejected" | "unresolved" | "parked";
+
+/**
+ * How long an `--auto` arm may sit unqueued before `parked` may be said. GitHub has been seen
+ * holding a live arm 514 s before adding the PR to the queue, so the floor sits well past it.
+ */
+export const ARM_SETTLE_FLOOR_SECONDS = 1200;
+
+/**
+ * The verdict for a watch that saw no terminal. Off a queue the arm IS the merge mechanism, so a
+ * long dwell is ordinary. On a queue-governed base, a never-queued arm is `parked` only once it has
+ * waited past the floor; an arm with no readable time parks as it always did, never sooner.
+ */
+export const dwellOutcome = (watch: {
+	readonly everQueued: boolean;
+	readonly queueGoverned: boolean;
+	readonly armedAt: number | null;
+	readonly now: number;
+}): "unresolved" | "parked" => {
+	if (watch.everQueued || !watch.queueGoverned) return "unresolved";
+	const settling =
+		watch.armedAt !== null && watch.now - watch.armedAt < ARM_SETTLE_FLOOR_SECONDS * 1000;
+	return settling ? "unresolved" : "parked";
+};
 
 export interface ReconcileOptions {
 	readonly pr: number;
@@ -29,7 +52,7 @@ export interface ReconcileOptions {
 
 type Poll =
 	| {readonly _tag: "Terminal"; readonly outcome: Reconciled}
-	| {readonly _tag: "Watched"; readonly queued: boolean}
+	| {readonly _tag: "Watched"; readonly queued: boolean; readonly armedAt: number | null}
 	| {readonly _tag: "Unreadable"; readonly reason: string}
 	/** The timeline read never reached a terminal page — distinct from unreadable, and not pollable. */
 	| {readonly _tag: "Truncated"};
@@ -77,11 +100,16 @@ export const runReconcile = (
 			if (!events.value.exhausted) return {_tag: "Truncated"} satisfies Poll;
 			const state = queueStateOf(events.value.events);
 			if (state === "ejected") return {_tag: "Terminal", outcome: "ejected"} satisfies Poll;
-			return {_tag: "Watched", queued: state === "queued"} satisfies Poll;
+			return {
+				_tag: "Watched",
+				queued: state === "queued",
+				armedAt: armedAtOf(events.value.events),
+			} satisfies Poll;
 		});
 
 		const horizon = options.polls * options.cadenceSeconds;
 		let everQueued = false;
+		let armedAt: number | null = null;
 		let unreadable = 0;
 		let lastReason = "no poll ran";
 		for (let used = 1; used <= options.polls; used++) {
@@ -96,7 +124,10 @@ export const runReconcile = (
 			if (result._tag === "Unreadable") {
 				unreadable += 1;
 				lastReason = result.reason;
-			} else if (result.queued) everQueued = true;
+			} else {
+				if (result.queued) everQueued = true;
+				if (result.armedAt !== null) armedAt = Math.max(armedAt ?? result.armedAt, result.armedAt);
+			}
 			if (used < options.polls) yield* Effect.sleep(`${options.cadenceSeconds} seconds`);
 		}
 
@@ -106,12 +137,10 @@ export const runReconcile = (
 				`${VERB}: every poll failed to read #${pr}: ${lastReason} — the outcome is UNKNOWN, not "unresolved".`,
 			);
 		}
-		// Never queued on a queue-governed base means the arm did not take effect — `parked`, which
-		// the skill answers with `ship disarm --site post-enqueue`. Off a queue the arm IS the merge
-		// mechanism, so the same observation is an ordinary long dwell.
+		const now = yield* Clock.currentTimeMillis;
 		return emit(
 			json,
-			!everQueued && queueGoverned ? "parked" : "unresolved",
+			dwellOutcome({everQueued, queueGoverned, armedAt, now}),
 			options.polls,
 			horizon,
 		);

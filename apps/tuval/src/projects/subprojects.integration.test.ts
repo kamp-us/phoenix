@@ -19,10 +19,10 @@ import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {Context, Effect, Layer, Logger, Option, Schedule, Schema, Stream} from "effect";
-import {boot, type Kernel, projectConfig, projectDir} from "../boot.ts";
+import {type BootOptions, boot, type Kernel, projectConfig, projectDir} from "../boot.ts";
 import type {OpenerState} from "../config-fixtures/subproject-opener.ts";
 import {ProjectId} from "../project-id.ts";
-import {scratchHome} from "../scratch-home.ts";
+import {scratchHome, trustFolders} from "../scratch-home.ts";
 import {NESTING_SEPARATOR, OpenProjects, projectLabels, saveOpenProjects} from "./open-projects.ts";
 import {Projects} from "./Projects.ts";
 import {TrustPrompts} from "./TrustPrompts.ts";
@@ -83,6 +83,16 @@ const reach = (kernel: Context.Context<Kernel>, process: string, target: string)
 		return (yield* stateOf(kernel, process)).reach;
 	});
 
+/**
+ * `boot` on `options.project` with that folder trusted in the scratch home first, as a desk that
+ * ran before would have left it: these cases are not about the boot folder's trust question (#9977).
+ */
+const trustedBoot = (options: BootOptions) =>
+	Effect.suspend(() => {
+		trustFolders(options.home, [options.project]);
+		return boot(options);
+	});
+
 describe("a subproject a program opens", () => {
 	it.live(
 		"opens with no trust question under its parent's label, and only its opener reaches into it",
@@ -93,7 +103,11 @@ describe("a subproject a program opens", () => {
 				const sub = projectWith("subproject-child");
 				const p = ProjectId.of(parent);
 				const s = ProjectId.of(sub);
-				const {kernel} = yield* boot({global: fixture("does-not-exist"), project: parent, home});
+				const {kernel} = yield* trustedBoot({
+					global: fixture("does-not-exist"),
+					project: parent,
+					home,
+				});
 
 				yield* dispatch(kernel, p.scope("opener"), {type: "open", folder: sub});
 				yield* eventually("the subproject's processes run", liveIds(kernel), (ids) =>
@@ -143,7 +157,11 @@ describe("a subproject a program opens", () => {
 				const s = ProjectId.of(sub);
 				// Trusted by a desk that ran before, so opening it asks nothing.
 				yield* saveOpenProjects(home, OpenProjects.none.trust(parent));
-				const {kernel} = yield* boot({global: fixture("does-not-exist"), project: first, home});
+				const {kernel} = yield* trustedBoot({
+					global: fixture("does-not-exist"),
+					project: first,
+					home,
+				});
 				const projects = Context.get(kernel, Projects);
 				yield* projects.open(parent);
 
@@ -172,7 +190,11 @@ describe("a subproject a program opens", () => {
 				const p = ProjectId.of(parent);
 
 				yield* Effect.gen(function* () {
-					const {kernel} = yield* boot({global: fixture("does-not-exist"), project: parent, home});
+					const {kernel} = yield* trustedBoot({
+						global: fixture("does-not-exist"),
+						project: parent,
+						home,
+					});
 					yield* dispatch(kernel, p.scope("opener"), {type: "open", folder: kept});
 					yield* dispatch(kernel, p.scope("opener"), {type: "open", folder: closed});
 					yield* eventually(
@@ -187,7 +209,11 @@ describe("a subproject a program opens", () => {
 					assert.notInclude(yield* liveIds(kernel), ProjectId.of(closed).scope("main"));
 				}).pipe(Effect.scoped);
 
-				const {kernel} = yield* boot({global: fixture("does-not-exist"), project: parent, home});
+				const {kernel} = yield* trustedBoot({
+					global: fixture("does-not-exist"),
+					project: parent,
+					home,
+				});
 				const open = yield* eventually(
 					"the opener reopens its subproject",
 					openFolders(kernel),
@@ -231,7 +257,11 @@ describe("closing a subproject", () => {
 				const parent = projectWith("subproject-parent");
 				const sub = projectWith("subproject-child");
 				const p = ProjectId.of(parent);
-				const {kernel} = yield* boot({global: fixture("does-not-exist"), project: parent, home});
+				const {kernel} = yield* trustedBoot({
+					global: fixture("does-not-exist"),
+					project: parent,
+					home,
+				});
 				yield* dispatch(kernel, p.scope("opener"), {type: "open", folder: sub});
 				yield* eventually("the subproject opens", openFolders(kernel), (open) =>
 					open.includes(sub),
@@ -260,14 +290,24 @@ describe("a subproject's refused rows", () => {
 				const sub = projectWith("sdk-out-of-range-counter");
 				const p = ProjectId.of(parent);
 				const s = ProjectId.of(sub);
-				const {kernel} = yield* boot({global: fixture("does-not-exist"), project: parent, home});
+				const {kernel} = yield* trustedBoot({
+					global: fixture("does-not-exist"),
+					project: parent,
+					home,
+				});
 				yield* dispatch(kernel, p.scope("opener"), {type: "open", folder: sub});
 				yield* eventually("the subproject's processes run", liveIds(kernel), (ids) =>
 					ids.includes(s.scope("main")),
 				);
-				const said = logs.flat().filter((line): line is string => typeof line === "string");
-				const refusal = said.find((line) => line.includes(s.scope("future-counter")));
-				assert.isDefined(refusal, JSON.stringify(said));
+				const said = Effect.sync(() =>
+					logs.flat().filter((line): line is string => typeof line === "string"),
+				);
+				const namesRow = (line: string) => line.includes(s.scope("future-counter"));
+				const lines = yield* eventually("the refused row is logged", said, (lines) =>
+					lines.some(namesRow),
+				);
+				const refusal = lines.find(namesRow);
+				assert.isDefined(refusal, JSON.stringify(lines));
 				assert.include(refusal, sub);
 			}).pipe(
 				Effect.scoped,

@@ -15,6 +15,7 @@ import {
 	SET_MISMATCH,
 	TRIAGE_EXIT_TABLE,
 	UNCONFIRMED,
+	UNHOMED_REMAIN,
 	UNREPAIRABLE,
 	UNWIRED_ORDERING,
 	ZERO_SCOPE,
@@ -37,7 +38,7 @@ describe("TRIAGE_EXIT_TABLE", () => {
 	it("carries every allocated code exactly once", () => {
 		expect(codes).toEqual([
 			0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-			126, 127,
+			27, 126, 127,
 		]);
 	});
 
@@ -63,5 +64,6 @@ describe("TRIAGE_EXIT_TABLE", () => {
 		expect(meaningOf(DUPLICATE_VERDICT)).toContain("more than one verdict row");
 		expect(meaningOf(SET_MISMATCH)).toContain("audited input set");
 		expect(meaningOf(PLAIN_SUMMARY_REQUIRED)).toContain("plain-language summary");
+		expect(meaningOf(UNHOMED_REMAIN)).toContain("un-homed");
 	});
 });

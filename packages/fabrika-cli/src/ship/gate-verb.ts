@@ -31,7 +31,9 @@
  * `routed` is the fifth state. It is not a verdict and not a weaker pass: it is a
  * gate recording that this PR's diff holds nothing its rubric is about, which `review-ui`
  * alone needed because its emit path cannot produce a verdict over zero rendered surfaces. See
- * {@link ROUTABLE} for why exactly one namespace may resolve that way.
+ * {@link ROUTABLE} for why exactly one namespace may resolve that way. A route a repo's
+ * `reviewUi.whenNoPreview` rules admitted carries its basis — `hand-check` or `skip` — onto the
+ * row and its stderr line ({@link routedLine}), so nobody reads it as a render.
  *
  * `unopened` is the sixth. A `review-ui` verdict is the one whose proof lives outside the comment —
  * hosted captures a human must be able to open — so it counts only after its evidence is re-read
@@ -58,16 +60,16 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {governedRootsOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {listPullFiles, permissionFor} from "../io/pulls.ts";
 import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
+import {classConfigOfPull} from "../review/class-config.ts";
 import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {standingEvidence} from "../review-ui/standing-evidence.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {read as readRoute} from "../wire/routed-elsewhere.ts";
+import {type RouteBasis, read as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {listReviews, type ReviewRecord} from "./github.ts";
@@ -107,11 +109,33 @@ export type Carrier = "marker" | "advisory" | "review-fold" | "routed-elsewhere"
  */
 export const ROUTABLE = "review-ui";
 
+/**
+ * The stderr line a `routed` row prints. A route flagged by the repo's `reviewUi.whenNoPreview`
+ * rules says so in its own words, because "nothing here renders", "an owner hand-checked it" and
+ * "the repo's config skipped it" are three different facts behind one state.
+ */
+export const routedLine = (name: string, sha: string, basis: RouteBasis | undefined): string => {
+	switch (basis) {
+		case "hand-check":
+			return `${VERB}: ${name}: hand-checked, not rendered — a routed-elsewhere record at ${sha} rests on an owner's hand-check under reviewUi.whenNoPreview, and the namespace resolves routed.`;
+		case "skip":
+			return `${VERB}: ${name}: skipped by config — reviewUi.whenNoPreview skips the rendered review for this PR's ui files, and a routed-elsewhere record at ${sha} says so; the namespace resolves routed, and nothing was rendered.`;
+		case undefined:
+			return `${VERB}: ${name}: no verdict was formed — a routed-elsewhere record at ${sha} states this PR owes none, and the namespace resolves routed rather than absent.`;
+	}
+};
+
 export interface NamespaceVerdict {
 	readonly name: string;
 	readonly state: NamespaceState;
 	readonly carrier: Carrier;
 	readonly commentId: number | null;
+	/**
+	 * On a `routed` row, what the route stood on when it was not the diff: an owner's hand-check or
+	 * the repo's skip rule. Absent otherwise, so a person reading the row can tell those from a
+	 * render and from "nothing here renders".
+	 */
+	readonly basis?: RouteBasis;
 }
 
 /**
@@ -157,6 +181,7 @@ interface Candidate {
 	readonly carrier: Carrier;
 	readonly stamp: string;
 	readonly commentId: number;
+	readonly basis?: RouteBasis;
 }
 
 /**
@@ -190,6 +215,7 @@ const candidateOf = (comment: CommentRecord): Candidate | null => {
 					carrier: "routed-elsewhere",
 					stamp: comment.updatedAt,
 					commentId: comment.id,
+					...(route.value.basis === undefined ? {} : {basis: route.value.basis}),
 				};
 	}
 	const advisory = readAdvisory(comment.body);
@@ -294,13 +320,6 @@ export const runGate = (
 		const bound = inspectedSha(VERB, options.sha);
 		if (typeof bound !== "string") return bound;
 
-		const governed = yield* governedRootsOr(
-			VERB,
-			options.cwd,
-			"the floor cannot be raised and the conjunction is UNKNOWN, never satisfied.",
-		);
-		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
-
 		const requested = [...new Set(options.require)];
 		if (requested.length === 0) {
 			return refuse(
@@ -370,7 +389,22 @@ export const runGate = (
 				diagnostics,
 			);
 		}
-		const {required, floored} = requiredWithFloor(requested, changed, governed.roots);
+		// The governed roots are the PR's own, at the head its file list is read at and that head's
+		// merge base — never the checkout this run stands in.
+		const classConfig = yield* classConfigOfPull(
+			VERB,
+			"the floor cannot be raised and the conjunction is UNKNOWN, never satisfied.",
+			repo,
+			pull,
+		);
+		if (classConfig._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, classConfig.message, diagnostics);
+		}
+		const {required, floored} = requiredWithFloor(
+			requested,
+			changed,
+			classConfig.config.governedRoots,
+		);
 		if (floored.length > 0) {
 			diagnostics.push(
 				`${VERB}: #${pr}'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.`,
@@ -500,9 +534,7 @@ export const runGate = (
 				);
 			}
 			if (winner.polarity === "ROUTED") {
-				diagnostics.push(
-					`${VERB}: ${name}: no verdict was formed — a routed-elsewhere record at ${winner.sha} states this PR owes none, and the namespace resolves routed rather than absent.`,
-				);
+				diagnostics.push(routedLine(name, winner.sha, winner.basis));
 			}
 			return {
 				name,
@@ -510,6 +542,9 @@ export const runGate = (
 					winner.polarity === "ROUTED" ? "routed" : winner.polarity === "PASS" ? "pass" : "fail",
 				carrier: winner.carrier,
 				commentId,
+				...(winner.polarity === "ROUTED" && winner.basis !== undefined
+					? {basis: winner.basis}
+					: {}),
 			};
 		});
 
@@ -575,7 +610,7 @@ export const runGate = (
 						`gate\t${outcome}\t${bound}`,
 						...verdicts.map(
 							(verdict) =>
-								`ns\t${verdict.name}\t${verdict.state}\t${verdict.state === "absent" ? NULL_TOKEN : verdict.carrier}`,
+								`ns\t${verdict.name}\t${verdict.state}\t${verdict.state === "absent" ? NULL_TOKEN : verdict.carrier}${verdict.basis === undefined ? "" : `\t${verdict.basis}`}`,
 						),
 					].join("\n"),
 					diagnostics,

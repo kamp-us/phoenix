@@ -38,6 +38,7 @@ makes the implementer guess.
 | `triage kill` | close an agent-filed issue not-planned — or any issue being folded into a survivor with `--duplicate-of` — auditably, preserving a duplicate's content | the three-write envelope, the redacted fold and the human-filed refusal (which the fold lifts) are mechanical; the verdict is judgment |
 | `triage audit-set` | the whole open issue set under one caller-named label — the input of a read-only backlog audit | a paginated, untruncated label read that refuses an absent label is mechanical; which label to audit is judgment |
 | `triage audit-merge` | fold an audit's chunk results onto its input set, refusing a miscounted chunk, a doubled issue or a set that does not match | the row-shape decode and the three set checks are mechanical; each verdict is a reader's judgment |
+| `triage sweep-homes` | clear the milestone on every double-marked triaged issue, keep its standing lane, and leave a trail; list the un-homed ones untouched | the guard's own verdict and the one-remedy clear are mechanical; homing an un-homed issue is judgment |
 
 One existing verb gains one flag:
 
@@ -109,7 +110,8 @@ description discipline even with the collision gone. Two things follow, and neit
 
 Every question this group answers is ungated. The three that *are* enforced — homing, pitch, and
 control-plane membership — are listed above as deliberately underived, with the workflow file that
-owns each. This spec computes no second verdict on any of them.
+owns each. This spec computes no second verdict on any of them. `triage sweep-homes` acts on the
+homing verdict by calling the guard's own decision function, so it adds a write, not a verdict.
 
 ## Shared conventions
 
@@ -189,6 +191,10 @@ and its section below carries only the derivation moved out of its help. Writing
 be guessing at a spec nobody has written, so `15`
 takes the next free seat instead of compacting into `14`, and the gap is disclosed rather than
 silently filled.
+
+**`27` is `triage sweep-homes`'s, and it has no column above either.** That verb's section specifies
+it fully, exit table included; widening this matrix by a column for one verb's one private code is
+left to the pass that closes the `14` gap.
 
 **`4` is a deliberate gap, not a free slot.** It held *"the target issue does not exist, or is not
 readable"* — one code for a proven fact and an unknown at once, which is the exact fusion `7` and
@@ -318,7 +324,7 @@ so a PR could appear as a triageable row.
 |---|---|---|
 | `triage queue: cannot read the <label> queue in <repo>: <reason> — the outcome is UNKNOWN, never "empty".` | 11 | refusal |
 | `triage queue: cannot read the open issues in <repo> that carry no label: <reason> — the outcome is UNKNOWN, never "empty".` | 11 | refusal |
-| `triage queue: label <label> does not exist in <repo> — refusing to report an empty queue over zero scope.` | 7 | refusal |
+| `triage queue: label <label> does not exist in <repo> — refusing to report an empty queue over zero scope. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage queue: --limit must be 1 or greater.` | 1 | usage error |
 
 **Scope** — every open issue in `--repo` carrying `--label`, plus every open issue carrying no
@@ -357,7 +363,7 @@ $ echo $?
 
 ```
 $ fabrika triage queue --label status:needs-triage-typo
-triage queue: label status:needs-triage-typo does not exist in <owner>/<repo> — refusing to report an empty queue over zero scope.
+triage queue: label status:needs-triage-typo does not exist in <owner>/<repo> — refusing to report an empty queue over zero scope. No `fabrika status bootstrap` surface creates status:needs-triage-typo — create it by hand, then re-run.
 $ echo $?
 7
 ```
@@ -1149,7 +1155,7 @@ a silent lost split, in the one direction v1's own module says it refuses.
 | `triage split: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
-| `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing.` | 7 | refusal |
+| `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage split: the child body carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage split: the child body is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage split: cannot read <what> in <repo>: <reason> — UNKNOWN whether a child already exists; refusing to create a possible twin.` | 11 | refusal |
@@ -2067,7 +2073,7 @@ stamp.
 | `triage apply: --lane must be wayfinder:backlog or axis:pipeline-hardening — got "<v>".` | 10 | refusal |
 | `triage apply: milestone <n> is not an open milestone in <repo>.` | 10 | refusal |
 | `triage apply: give exactly one of --home or --lane; an issue cannot be both homed and lane-exempt.` | 1 | usage error |
-| `triage apply: label <name> does not exist in <repo> — refusing to write, because the API would create it.` | 7 | refusal |
+| `triage apply: label <name> does not exist in <repo> — refusing to write, because the API would create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage apply: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage apply: issue #<n> is already closed.` | 7 | refusal |
 | `triage apply: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
@@ -2267,7 +2273,7 @@ it.
 | `triage park: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage park: the questions text carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage park: the questions text is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
-| `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it.` | 7 | refusal |
+| `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage park: cannot read <what> in <repo>: <reason> — nothing was written; the park is UNKNOWN.` | 11 | refusal |
 | `triage park: the questions comment on #<n> failed: <reason> — nothing was labelled and #<n> is unchanged. Re-run.` | 8 | refusal |
 | `triage park: the questions landed but the label swap failed: <reason> — #<n> carries the questions and may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
@@ -2392,7 +2398,7 @@ location, with the leak matcher literally named for comments.
 | `triage kill: --duplicate-of #<m> is closed — refusing to fold this issue's content into a closed issue where nobody will read it.` | 7 | refusal |
 | `triage kill: the reason carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage kill: the reason is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
-| `triage kill: label closed-by-triage does not exist in <repo> — refusing a kill that would be invisible to the audit.` | 7 | refusal |
+| `triage kill: label closed-by-triage does not exist in <repo> — refusing a kill that would be invisible to the audit. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage kill: cannot read #<n> in <repo>: <reason> — the provenance test has no evidence; refusing to close on a body that was never read.` | 11 | refusal |
 | `triage kill: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
 | `triage kill: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
@@ -2527,6 +2533,108 @@ read-back.
 
 ---
 
+## `triage sweep-homes`
+
+The apply side of `guard homing-guard check`. It clears the milestone on every double-marked
+`status:triaged` issue, keeps its standing-lane label, and leaves one trail comment on it. It lists
+every un-homed issue and changes nothing on those.
+
+**Invocation**
+
+```
+fabrika triage sweep-homes [--dry-run | --apply] [--repo <owner/name>] [--json]
+```
+
+Under `--apply`, the trail citation arrives on **stdin**.
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--dry-run` | boolean | no | `false` | print the per-issue plan and write nothing; a run with neither flag does the same |
+| `--apply` | boolean | no | `false` | clear each double-marked issue's milestone and post its trail comment |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+| stdin | markdown | under `--apply` | — | the citation every trail comment carries: the decision and ruling the sweep runs under |
+
+Passing both `--dry-run` and `--apply` exits `1`. A dry run never reads stdin.
+
+**Output** — machine channel. A header line, then one row per double-marked issue, ascending:
+
+- dry run: `planned\t<n>`, then `would-clear\t<number>\t<milestone>\t<lanes>` rows;
+- apply: `swept\t<cleared>\t<moved>`, then `cleared\t<number>\t<milestone>\t<lanes>\t<trail-url>`
+  rows (`trail-existing` in place of the URL when an earlier trail was found) and
+  `moved\t<number>\t<milestone>\t<lanes>\t<reason>` rows.
+
+`<lanes>` is comma-joined. With `--json`, an object with keys `outcome` (`planned` or `swept`),
+`scanned`, and `issues` (each row's `outcome`, `number`, `milestone`, `lanes`, and `trail` or
+`reason` where the row has one). Stderr carries the scanned line and a tally line,
+`triage sweep-homes: <d> double-marked, <u> un-homed, <h> homed, <e> exempt.`
+
+**The decision is the guard's.** The verb reads the open `status:triaged` set with the guard's own
+read and record mapping, and judges it with `judge`/`resolve` from `guard/homing.ts`. It never parses
+the guard's report. So this verb computes no second homing verdict, and the refusal of a
+`triage homing-check` verb above still holds.
+
+**Which breach it applies.** A double-marked issue has one mechanical remedy: a standing lane is
+milestone-less by design, so the milestone goes and the lane stays. An un-homed issue has three
+(home it, lane it, kill it), and choosing is triage's judgment. The verb prints each un-homed issue
+on stderr as `unhomed\t<number>\t<title>`, with the guard's three-way remedy, writes nothing to it,
+and exits `27`. The double-marked clears in the same run still land first.
+
+**Write order, per issue.** Re-read the issue, and answer `moved` without writing when it is no
+longer open or no longer carries the planned milestone beside a standing lane. Read its comments
+reconciled against the count the issue declares for itself, so a trail posted moments earlier is not
+missed by a short list; a list still short after its re-reads is `11`, never a missing trail. Post
+the trail unless one carrying this milestone's marker (`<!-- fabrika:sweep-homes milestone=<m> -->`)
+is already there. Clear the milestone. Read the issue back and require it milestone-less with every
+planned lane kept. The trail lands before the clear so a run that died between the two can be
+re-run: the breach is still on the board, and the trail is found rather than posted twice. A second
+run over a fully swept board plans nothing and writes nothing.
+
+**It takes no claim.** Unlike `enrich`, `apply`, `park`, `kill` and `split`, this verb reads no
+per-issue claim marker and has no `--token` flag. A sweep spans the whole triaged board, so it
+cannot hold one claim per issue, and it has no need to: it makes no triage judgment on any issue.
+Its only writes are the guard's mechanical remedy and the trail naming it, applied to an issue
+re-read just before the write and skipped as `moved` when that re-read shows the breach changed.
+
+**The trail comment** states the milestone removed and the lane kept, then carries the stdin
+citation, then the marker. Which decision and ruling govern homing is the adopting repository's
+fact, so the citation is the caller's. Every trail is composed and leak-scanned before the first
+write.
+
+**Exit status**
+
+| Trigger | Code |
+|---|---|
+| `--apply` with an empty stdin | 3 |
+| the citation carries a machine-local path | 5 |
+| the citation is a bare `@` reference | 6 |
+| the open `status:triaged` set is empty — fail-closed, never a clean sweep | 7 |
+| a trail or milestone write failed; the message says which, and a re-run is safe | 8 |
+| the read-back after a clear is not milestone-less with the lanes kept | 9 |
+| the backlog, a re-read issue or its comments could not be read | 11 |
+| un-homed issues remain, listed on stderr and untouched | 27 |
+
+A halt on `8`, `9` or `11` mid-sweep prints each row already done on stderr, prefixed
+`before the halt:`, and touches no later issue.
+
+**Examples**
+
+```
+$ fabrika triage sweep-homes
+planned	1
+would-clear	8	47	axis:pipeline-hardening
+```
+
+```
+$ fabrika triage sweep-homes --apply < citation.md
+swept	1	0
+cleared	8	47	axis:pipeline-hardening	https://github.com/<owner>/<repo>/issues/8#issuecomment-1
+```
+
+---
+
 ## `triage audit-set`
 
 **Invocation**
@@ -2564,7 +2672,7 @@ Stderr carries the scanned count as a scope line in both modes.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `triage audit-set: label <label> does not exist in <repo> — refusing to report an empty audit set over zero scope.` | 7 | refusal |
+| `triage audit-set: label <label> does not exist in <repo> — refusing to report an empty audit set over zero scope. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage audit-set: cannot read the label set of <repo>: <reason> — whether the <label> audit set exists is UNKNOWN, and so is the outcome.` | 11 | refusal |
 | `triage audit-set: cannot read the open <label> issues in <repo>: <reason> — the audit set is UNKNOWN, never "empty".` | 11 | refusal |
 | `triage audit-set: --label must name a label.` | 1 | usage error |

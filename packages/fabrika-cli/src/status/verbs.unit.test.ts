@@ -13,8 +13,15 @@ import {describe, expect, it} from "vitest";
 import type {BoardVocabulary} from "../config/board.ts";
 import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
 import * as report from "../exit-codes.ts";
-import {fakeFs, fakeHttp, fakeSeams, fakeShell, type HttpReply} from "../fakes.test-support.ts";
-import {ok} from "../io/git.ts";
+import {
+	fakeFs,
+	fakeHttp,
+	fakeSeams,
+	fakeShell,
+	type HttpReply,
+	type Scripted,
+} from "../fakes.test-support.ts";
+import {type Attempt, ok} from "../io/git.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {AWAITING_RELEASE, PLANNED, STATUSES} from "../labels.ts";
@@ -30,7 +37,17 @@ import {
 	triagedFacets,
 } from "../triage/facets.ts";
 import {ANSWER} from "../verb.ts";
-import {type BoardRead, type Bucket, boardState, runBoard} from "./board-verb.ts";
+import {
+	absentLabels,
+	type BoardRead,
+	BUCKETS,
+	type Bucket,
+	boardState,
+	IN_FLIGHT,
+	LABEL_TAXONOMY_COMMAND,
+	readBoard,
+	runBoard,
+} from "./board-verb.ts";
 import {
 	BUILDABLE_SURFACES,
 	CLAUDE_MD_MARKER,
@@ -426,33 +443,41 @@ describe("status menu", () => {
 describe("status board", () => {
 	const counted = (name: string, count: number): Bucket => ({
 		name,
-		count,
 		selector: `labels=${name}`,
-		detail: null,
-		asOf: AS_OF,
+		reading: {_tag: "Counted", count, asOf: AS_OF},
 	});
 	const absentLabel = (name: string): Bucket => ({
 		name,
-		count: null,
 		selector: `labels=${name}`,
-		detail: "label absent",
-		asOf: noAsOf,
+		reading: {_tag: "Absent", label: name, asOf: AS_OF},
+	});
+	const unreadLabel = (name: string): Bucket => ({
+		name,
+		selector: `labels=${name}`,
+		reading: {_tag: "Unknown", reason: "EAI_AGAIN — the label set is UNKNOWN"},
 	});
 
 	/** A zero count means the label exists and nothing carries it; an absent label is unaskable. */
-	it("renders an absent label as `unknown`, never as 0", () => {
+	it("renders an absent label as `absent`, never as 0 and never as `unknown`", () => {
 		const read: BoardRead = {
 			_tag: "Read",
 			repo: "acme/storefront",
 			buckets: [absentLabel("needs-triage"), counted("in-flight", 0)],
 		};
-		expect(boardState(read.buckets)).toBe("unknown");
+		expect(boardState(read.buckets)).toBe("absent");
 		const out = runBoard({read, json: false});
 		expect(out.code).toBe(ANSWER);
+		expect(out.stdout.split("\n")[0]).toBe("board\tabsent\t2");
 		expect(out.stdout).toContain(
-			"bucket\tneeds-triage\tunknown\tlabels=needs-triage\tlabel absent\tunknown",
+			"bucket\tneeds-triage\tabsent\tlabels=needs-triage\tlabel needs-triage absent\t",
 		);
 		expect(out.stdout).toContain("bucket\tin-flight\t0\t");
+		expect(out.stderr.join("\n")).toContain(LABEL_TAXONOMY_COMMAND);
+	});
+
+	it("keeps an unread bucket `unknown` even beside absent ones", () => {
+		const buckets = [unreadLabel("needs-triage"), absentLabel("p0"), counted("in-flight", 3)];
+		expect(boardState(buckets)).toBe("unknown");
 	});
 
 	it("refuses on 11 when the repository could not be read at all", () => {
@@ -463,6 +488,67 @@ describe("status board", () => {
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("never 0");
+	});
+
+	describe("readBoard", () => {
+		const LABELS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/labels\?/;
+		const ISSUES = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\?state=open&labels=/;
+		const PULLS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\?state=open/;
+		const served = (body: unknown): HttpReply => ({status: 200, body: JSON.stringify(body)});
+		const BOARD_LABELS = BUCKETS.map((bucket) => bucket.label);
+
+		const read = (labels: HttpReply) => {
+			const seams = fakeSeams([
+				[LABELS, labels],
+				[ISSUES, served([{number: 1, title: "one"}])],
+				[PULLS, served([{number: 9}])],
+			]);
+			return Effect.runPromise(
+				Effect.provide(
+					readBoard("o/r", () => new Date("2026-08-09T14:22:03Z")),
+					seams.layer,
+				),
+			);
+		};
+		const states = (board: BoardRead) =>
+			board._tag === "Read"
+				? Object.fromEntries(board.buckets.map((bucket) => [bucket.name, bucket.reading._tag]))
+				: board._tag;
+
+		it("reads a partly-labelled board as counted buckets beside absent ones", async () => {
+			const board = await read(served(["status:needs-triage", "p1"].map((name) => ({name}))));
+			expect(states(board)).toEqual({
+				"needs-triage": "Counted",
+				triaged: "Absent",
+				"in-flight": "Counted",
+				p0: "Absent",
+				p1: "Counted",
+				p2: "Absent",
+			});
+			expect(board._tag === "Read" && boardState(board.buckets)).toBe("absent");
+		});
+
+		it("reads a fully unlabelled board as absent, and names every missing label with the fix", async () => {
+			const board = await read(served([{name: "bug"}]));
+			expect(board._tag).toBe("Read");
+			if (board._tag !== "Read") return;
+			expect(absentLabels(board.buckets)).toEqual(BOARD_LABELS);
+			const field = boardField(board);
+			expect(field.state).toBe("absent");
+			for (const label of BOARD_LABELS) expect(field.detail).toContain(label);
+			expect(field.detail).toContain(LABEL_TAXONOMY_COMMAND);
+		});
+
+		it("reads every label bucket as unknown when the label set could not be read", async () => {
+			const board = await read({status: 502, body: "{}"});
+			expect(board._tag).toBe("Read");
+			if (board._tag !== "Read") return;
+			const labelBuckets = board.buckets.filter((bucket) => bucket.name !== IN_FLIGHT.name);
+			expect(labelBuckets).toHaveLength(BUCKETS.length);
+			for (const bucket of labelBuckets) expect(bucket.reading._tag).toBe("Unknown");
+			expect(boardState(board.buckets)).toBe("unknown");
+			expect(boardField(board).state).toBe("unknown");
+		});
 	});
 });
 
@@ -899,6 +985,17 @@ describe("the dep-pin surface", () => {
 		);
 	});
 
+	it("names the install footprint and the pnpm 10 approval step the browser setup needs", async () => {
+		const {outcome} = await bootstrapWith({[MANIFEST]: '{"dependencies":{}}'});
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr).toContain(
+			"status bootstrap: the install brings in Playwright (@playwright/test) and its postinstall downloads a headless Chromium (~130MB) — the browser `fabrika ui render` drives.",
+		);
+		expect(outcome.stderr).toContain(
+			"status bootstrap: pnpm 10 skips that postinstall until you approve it — run `pnpm approve-builds` and pick @kampus/fabrika-cli, or add @kampus/fabrika-cli to `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`; approving it is what lets `ui render`'s browser setup run.",
+		);
+	});
+
 	it("creates the manifest whole when it is absent", async () => {
 		const {outcome, written} = await bootstrapWith({});
 		expect(outcome.code).toBe(ANSWER);
@@ -1037,6 +1134,37 @@ describe("the dep-pin surface", () => {
 	});
 });
 
+const MILESTONES = /GET .*\/repos\/o\/r\/milestones\?state=open/;
+
+const openMilestones = (...numbers: ReadonlyArray<number>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(numbers.map((number) => ({number, title: `M${number}`}))),
+});
+
+const writeRoadmap = (
+	content: string,
+	script: ReadonlyArray<Scripted> = [],
+	surfaceId = "roadmap-focus",
+	repo: Attempt<string> = ok("o/r"),
+) => {
+	const fs = fakeFs({files: {}});
+	const seams = fakeSeams(script);
+	return Effect.runPromise(
+		Effect.provide(
+			runBootstrap({
+				surfaceId,
+				path: null,
+				json: true,
+				repoRoot: "/repo",
+				configSource: {_tag: "Absent"},
+				repo,
+				stdin: Effect.succeed({_tag: "Text", text: content} as StdinRead),
+			}),
+			Layer.mergeAll(fs.layer, seams.layer),
+		),
+	).then((outcome) => ({outcome, requests: seams.requests}));
+};
+
 /**
  * `roadmap-focus` writes a machine-read file — `triage homes` joins milestones through its
  * `#<n>` cells — and a byte-match read-back reads the same over a roadmap that parses to nothing.
@@ -1044,23 +1172,10 @@ describe("the dep-pin surface", () => {
  * other file surface's bytes do not move.
  */
 describe("the roadmap-focus row count", () => {
-	const write = (content: string, surfaceId = "roadmap-focus") => {
-		const fs = fakeFs({files: {}});
-		return Effect.runPromise(
-			Effect.provide(
-				runBootstrap({
-					surfaceId,
-					path: null,
-					json: true,
-					repoRoot: "/repo",
-					configSource: {_tag: "Absent"},
-					repo: ok("o/r"),
-					stdin: Effect.succeed({_tag: "Text", text: content} as StdinRead),
-				}),
-				Layer.mergeAll(fs.layer, fakeShell([]).layer),
-			),
+	const write = (content: string, surfaceId = "roadmap-focus") =>
+		writeRoadmap(content, [[MILESTONES, openMilestones(46, 47)]], surfaceId).then(
+			({outcome}) => outcome,
 		);
-	};
 
 	const PARSING = [
 		"# Roadmap",
@@ -1111,9 +1226,9 @@ describe("the roadmap-focus row count", () => {
 	it("counts the rows a parsing roadmap joins, singular at one", async () => {
 		const outcome = await write(PARSING);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({arcs: 2, campaigns: 1});
-		expect(outcome.stderr).toEqual([
+		expect(outcome.stderr[0]).toBe(
 			"status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 2 arcs, 1 campaign.",
-		]);
+		);
 		expect(roadmapCount(PARSING).clause).toBe("2 arcs, 1 campaign");
 	});
 
@@ -1152,6 +1267,81 @@ describe("the roadmap-focus row count", () => {
 		expect(outcome.stderr).toEqual([
 			"status bootstrap: created design-system-manifest.md for design-manifest, read-back conformed.",
 		]);
+	});
+});
+
+/**
+ * An adopter wrote a roadmap pinning a milestone they had not opened yet, got `read-back conformed`
+ * at exit 0, and first heard of it when `triage homes` refused. The pin check warns at the write,
+ * and a failed milestone read is said to be unknown rather than left silent.
+ */
+describe("the roadmap-focus pin check", () => {
+	const ROADMAP = [
+		"## Arcs",
+		"",
+		"| Arc | Milestone | State |",
+		"|---|---|---|",
+		"| Search | #46 | active |",
+		"| Editor | #47 | next |",
+		"",
+		"## Campaigns",
+		"",
+		"| Campaign | Milestone | State |",
+		"|---|---|---|",
+		"| fabrika everywhere | #99 | paused |",
+		"",
+	].join("\n");
+
+	it("confirms every arc pin that is an open milestone", async () => {
+		const {outcome} = await writeRoadmap(ROADMAP, [[MILESTONES, openMilestones(46, 47, 50)]]);
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr.slice(1)).toEqual([
+			"status bootstrap: pin check — every arc pin is an open milestone in o/r (scanned 3 open milestones).",
+		]);
+	});
+
+	it("warns naming each arc pin that is not an open milestone, and still exits 0", async () => {
+		const {outcome} = await writeRoadmap(ROADMAP, [[MILESTONES, openMilestones(47)]]);
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({outcome: "created", arcs: 2});
+		expect(outcome.stderr.slice(1)).toEqual([
+			"status bootstrap: warning — an arc pins a milestone that is not open in o/r: #46 (Search). `triage homes` offers only open milestones; open it or fix the pin.",
+		]);
+	});
+
+	it("names every unopened arc pin in one warning, over a repo with no milestones", async () => {
+		const {outcome} = await writeRoadmap(ROADMAP, [[MILESTONES, openMilestones()]]);
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr.slice(1)).toEqual([
+			"status bootstrap: warning — arcs pin milestones that are not open in o/r: #46 (Search), #47 (Editor). `triage homes` offers only open milestones; open them or fix the pin.",
+		]);
+	});
+
+	it("says the check is unknown when the milestone read fails, never that the pins are fine", async () => {
+		const {outcome} = await writeRoadmap(ROADMAP, [[MILESTONES, {status: 502, body: "{}"}]]);
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr).toHaveLength(2);
+		expect(outcome.stderr[1]).toMatch(
+			/^status bootstrap: pin check unknown — cannot read o\/r's open milestones: .+; whether the arc pins are open milestones is unread\.$/,
+		);
+	});
+
+	it("says the check is unknown when no target repo resolved", async () => {
+		const {outcome, requests} = await writeRoadmap(ROADMAP, [], "roadmap-focus", {
+			_tag: "Failure",
+			reason: "no origin remote",
+		});
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr[1]).toBe(
+			"status bootstrap: pin check unknown — no target repo resolved (no origin remote); whether the arc pins are open milestones is unread.",
+		);
+		expect(requests).toHaveLength(0);
+	});
+
+	it("reads no milestones for a roadmap with no arc rows", async () => {
+		const {outcome, requests} = await writeRoadmap("## Arcs\n\n| Arc | Milestone |\n|---|---|\n");
+		expect(outcome.stderr).toHaveLength(1);
+		expect(requests).toHaveLength(0);
 	});
 });
 
@@ -1283,8 +1473,8 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 		expect(names.has(AWAITING_RELEASE)).toBe(true);
 	});
 
-	it("carries twenty labels, each named once", () => {
-		expect(TAXONOMY).toHaveLength(20);
+	it("carries twenty-one labels, each named once", () => {
+		expect(TAXONOMY).toHaveLength(21);
 		expect(names.size).toBe(TAXONOMY.length);
 	});
 
@@ -1318,6 +1508,7 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 			"class:doc",
 			"class:skill",
 			"class:ui",
+			"closed-by-triage",
 		]);
 	});
 });

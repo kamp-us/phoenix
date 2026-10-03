@@ -18,6 +18,34 @@ import {assertFloorAt, floorLine, floorToken, needsRefire} from "./floor-assert.
 /** The paged envelope read at the head — `&per_page=100&page=1` follows, so no `$` anchor. */
 const RUNS = /^GET .*\/repos\/o\/r\/actions\/runs\?head_sha=/;
 
+/** The repository's workflow inventory, paged like the run list. */
+const WORKFLOWS = /^GET .*\/repos\/o\/r\/actions\/workflows\?/;
+
+/** An inventory of the named workflows, active unless listed in `disabled`. */
+const inventory = (
+	names: ReadonlyArray<string>,
+	over: {declared?: number; disabled?: ReadonlyArray<string>} = {},
+): ReadonlyArray<Scripted> => [
+	[
+		WORKFLOWS,
+		{
+			status: 200,
+			body: JSON.stringify({
+				total_count: over.declared ?? names.length,
+				workflows: names.map((name, id) => ({
+					id,
+					name,
+					path: `.github/workflows/${name}.yml`,
+					state: over.disabled?.includes(name) ? "disabled_manually" : "active",
+				})),
+			}),
+		},
+	],
+];
+
+/** A repository that carries the floor workflow, beside CI. */
+const withFloor = inventory(["ci", "governance-floor"]);
+
 /** The floor's own check-run at the head, in whichever state the case is about. */
 const floorCheck = (
 	over: {status?: string; conclusion?: string | null} = {},
@@ -176,17 +204,47 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 	});
 
 	it("answers NoRun carrying how many runs the head did list", async () => {
-		expect(await assert(listed({id: 1, name: "ci"}, {id: 2, name: "leak-guard"}))).toEqual({
+		expect(
+			await assert([...withFloor, ...listed({id: 1, name: "ci"}, {id: 2, name: "leak-guard"})]),
+		).toEqual({
 			_tag: "NoRun",
 			runsAtHead: 2,
 		});
 	});
 
 	it("answers NoRun carrying zero when the head lists no run of any name", async () => {
-		expect(await assert([[RUNS, {status: 200, body: runsAtHead(0, []).stdout}]])).toEqual({
+		expect(
+			await assert([...withFloor, [RUNS, {status: 200, body: runsAtHead(0, []).stdout}]]),
+		).toEqual({
 			_tag: "NoRun",
 			runsAtHead: 0,
 		});
+	});
+
+	it("answers NoFloor when the repository carries no governance-floor workflow", async () => {
+		const {assertion, seams} = await withCalls([
+			...inventory(["ci", "leak-guard"]),
+			...listed({id: 1, name: "ci"}, {id: 2, name: "leak-guard"}),
+		]);
+		expect(assertion).toEqual({_tag: "NoFloor"});
+		expect(seams.requests.some((call) => RERUN.test(call))).toBe(false);
+	});
+
+	it("answers NoFloor when the governance-floor workflow is disabled", async () => {
+		expect(
+			await assert([
+				...inventory(["ci", "governance-floor"], {disabled: ["governance-floor"]}),
+				...listed({id: 1, name: "ci"}),
+			]),
+		).toEqual({_tag: "NoFloor"});
+	});
+
+	it("reads no inventory when the floor run is at the head", async () => {
+		const {seams} = await withCalls([
+			...floorCheck({conclusion: "success"}),
+			...listed({id: FLOOR, name: "governance-floor", conclusion: "success"}),
+		]);
+		expect(seams.requests.some((call) => WORKFLOWS.test(call))).toBe(false);
 	});
 });
 
@@ -221,6 +279,56 @@ describe("every unread state is UNKNOWN, never a re-fire nobody proved", () => {
 		]);
 		expect(assertion._tag).toBe("Unknown");
 		expect(assertion._tag === "Unknown" && assertion.reason).toContain("stayed at attempt 1");
+	});
+
+	// Absence is concluded only from a complete inventory: a failed or short read says nothing about
+	// whether the floor workflow exists.
+	it("reports an unreadable workflow inventory as UNKNOWN, never as NoFloor", async () => {
+		const assertion = await assert([
+			[WORKFLOWS, {status: 502, body: "{}"}],
+			...listed({id: 1, name: "ci"}),
+		]);
+		expect(assertion._tag).toBe("Unknown");
+		expect(assertion._tag === "Unknown" && assertion.reason).toContain("workflows of o/r");
+		expect(floorToken(assertion)).toBe("unknown");
+	});
+
+	it("refuses to read NoFloor out of a truncated workflow inventory", async () => {
+		const assertion = await assert([
+			...inventory(["ci"], {declared: 40}),
+			...listed({id: 1, name: "ci"}),
+		]);
+		expect(assertion._tag).toBe("Unknown");
+		expect(assertion._tag === "Unknown" && assertion.reason).toContain("of 40 declared workflows");
+	});
+
+	it.each([
+		["an entry with no name", {id: 9, path: ".github/workflows/x.yml", state: "active"}],
+		["an entry with a non-string name", {id: 9, name: 7, state: "active"}],
+		["an entry with no state", {id: 9, name: "governance-floor"}],
+		["an entry that is not a record", "governance-floor"],
+	])("refuses to read NoFloor out of an inventory holding %s", async (_label, entry) => {
+		const assertion = await assert([
+			[
+				WORKFLOWS,
+				{
+					status: 200,
+					body: JSON.stringify({
+						total_count: 2,
+						workflows: [
+							{id: 1, name: "ci", path: ".github/workflows/ci.yml", state: "active"},
+							entry,
+						],
+					}),
+				},
+			],
+			...listed({id: 1, name: "ci"}),
+		]);
+		expect(assertion._tag).toBe("Unknown");
+		expect(assertion._tag === "Unknown" && assertion.reason).toContain(
+			"1 workflow(s) in o/r arrived without a readable name or state",
+		);
+		expect(floorToken(assertion)).toBe("unknown");
 	});
 
 	it("reports an unreadable run list as UNKNOWN", async () => {
@@ -259,6 +367,15 @@ describe("floorLine says what the caller must do next", () => {
 		expect(line).not.toContain("did not fire");
 		expect(line).not.toContain("not installed");
 		expect(floorToken({_tag: "NoRun", runsAtHead: 30})).toBe("no-run");
+	});
+
+	it("states a repository without the floor workflow as a plain fact, with nothing to re-read", () => {
+		const line = floorLine("governance post", {_tag: "NoFloor"});
+		expect(line).toContain("runs no governance floor");
+		expect(line).toContain("nothing to re-fire");
+		expect(line).not.toContain("re-read");
+		expect(line).not.toContain("unproven");
+		expect(floorToken({_tag: "NoFloor"})).toBe("no-floor");
 	});
 
 	it("calls an empty run list unproven rather than an absent floor", () => {

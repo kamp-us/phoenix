@@ -16,6 +16,7 @@ import type {AuthorizationDocument} from "../authorization.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readFile} from "../io/fs.ts";
+import {readBoard} from "../status/label-remedy.ts";
 import {FAILED, refuse} from "../verb.ts";
 import {type RulingSource, runRule} from "./rule-verb.ts";
 import {runRuling} from "./ruling-verb.ts";
@@ -111,6 +112,7 @@ const rule = leafCommand(
 				supersedes: Option.getOrNull(supersedes),
 				repo: Option.getOrNull(repo),
 				env: process.env,
+				board: yield* readBoard(process.cwd()),
 				now: () => new Date(),
 			}),
 		);
@@ -121,7 +123,7 @@ const rule = leafCommand(
 	),
 	Command.withDescription(
 		[
-			'Posts a ruling marker, flips a type:decision to ready-for:agent and prints {"answer":"ruled",…}.',
+			"Posts a ruling marker and flips the issue to ready-for:agent; a type:epic is never flipped.",
 			"  4: marker posted, no criteria block, not flipped",
 			"  5: a machine-local path in the authorization",
 			"  6: the authorization is a bare @ reference",
@@ -160,8 +162,8 @@ const ruling = leafCommand(
 
 export const decisionCommand = Command.make("decision").pipe(
 	Command.withSubcommands([rule, ruling]),
-	Command.withShortDescription("Record and read founder rulings on type:decision issues."),
+	Command.withShortDescription("Record and read founder rulings on issues."),
 	Command.withDescription(
-		"Record and read founder rulings on issues: a control-plane human's ruling becomes a marker comment bound to the issue body it ruled on, and that proven marker — never intent — is what `review criteria` folds into the graded set, what `lane prove` dates a verdict against, and — on a type:decision alone — what flips a parked decision from ready-for:human to ready-for:agent so the normal build lane picks it up",
+		"Record and read founder rulings on issues: a control-plane human's ruling becomes a marker comment bound to the issue body it ruled on, and that proven marker — never intent — is what `review criteria` folds into the graded set, what `lane prove` dates a verdict against, and — on every type but an epic — what flips a parked issue from ready-for:human to ready-for:agent so the normal build lane picks it up",
 	),
 );

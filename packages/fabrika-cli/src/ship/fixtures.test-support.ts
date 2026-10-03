@@ -66,6 +66,15 @@ export const httpError = (status: number, message = "refused"): HttpReply => ({
 });
 
 /**
+ * GitHub's 403 on either authority endpoint of a private repository on the free plan, where rulesets
+ * and branch protection are paid features — served to every token, admin included.
+ */
+export const planGated: HttpReply = httpError(
+	403,
+	"Upgrade to GitHub Pro or make this repository public to enable this feature.",
+);
+
+/**
  * A base branch that declares nothing required, scripted **last** so a case about the required set
  * puts its own rows first and wins the first-match lookup. Under it the denylist definition answers.
  */

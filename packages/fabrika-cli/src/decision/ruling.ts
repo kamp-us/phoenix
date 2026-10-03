@@ -32,12 +32,11 @@ export type DecisionTarget =
  * **The `type:decision` fence used to sit here, and it is gone on purpose.** A founder ruling lands
  * on whatever issue the work is on — a bug, a feature, an investigation — and refusing to record one
  * there left the ruling as prose no gate reads, which is the whole defect `review criteria`'s fold
- * closes. What a decision issue keeps of its own is the *audience flip*: `ready-for:human` is how
- * triage parks a judgement call, and only a `type:decision` earns the flip back. The fence moved
- * from the target read to the flip in `rule-verb.ts` rather than lifting, because the widened
- * recording would otherwise un-park any human-parked bug that carries a criteria block.
+ * closes. The audience flip reaches every type too, except an epic, whose agent audience is the
+ * plan gate's — that one fence lives on the flip in `rule-verb.ts`, not on this target read.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9517#issuecomment-5752597880
+ * @ruling https://github.com/kamp-us/phoenix/issues/7753#issuecomment-5554842306
  */
 export const requireRulable = (
 	verb: string,

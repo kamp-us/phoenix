@@ -1,6 +1,11 @@
 /**
  * `review ci` — the live check-run rollup at a head, fail-closed on incomplete enumeration.
  *
+ * The rollup judges only the runs the base branch's declared required set names
+ * (`./blocking.ts`, the authority `ship checks` judges by too). A red outside that set is named on the
+ * notes channel and never settles `--wait`, so a repository-wide red cannot end the wait while the
+ * required checks are still queued behind it.
+ *
  * v1's CI-at-head read was dispatch-prompt-dependent: a gate ruled on a live RED check as a prose
  * question because one sentence was omitted. This verb is that read made structural, and its
  * refusals are what keep it honest — zero declared runs is a vacuous green, an enumeration short
@@ -23,6 +28,8 @@
  * return on the first read rather than burning the budget. The governance floor is such a state on
  * both of its rollups — `governance-owed` on the `pending` one, `governance-stale` on the `red`
  * (`./governance-owed.ts`).
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9570#issuecomment-5753839456
  */
 import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -38,9 +45,11 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	authorityNote,
 	type BlockingSet,
-	noBlockingRunNote,
+	owedRollup,
 	readBlockingSet,
 	reportedLine,
+	reportingAt,
+	reportingNote,
 	unreadableCause,
 } from "./blocking.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -293,18 +302,14 @@ export const runCi = (
 			// completeness proof above still divides by the whole enumeration, because a short read is a
 			// fact about the page rather than about what blocks.
 			const blocked = runs.filter((run) => blocking.blocks(run.name));
-			// `rollupOf` over an empty set is `green` by construction — every run it was given passed,
-			// there having been none — and the narrowing opens that case wherever the declared contexts
-			// have not posted yet. Runs exist and none of them blocks, so what is missing is a report.
-			const rollup: Rollup = blocked.length === 0 ? "pending" : rollupOf(blocked);
-			if (blocked.length === 0) notes.push(noBlockingRunNote(VERB, base, blocking));
-			notes.push(...namedLines(VERB, runs, blocking));
-			notes.push(
-				...reportedLine(
-					VERB,
-					runs.filter((run) => !blocking.blocks(run.name) && isFailing(run)).map((run) => run.name),
-				),
+			const reporting = reportingAt(
+				blocking,
+				runs.map((run) => run.name),
 			);
+			const rollup: Rollup = owedRollup(rollupOf(blocked), reporting);
+			notes.push(...reportingNote(VERB, base, blocking, reporting));
+			notes.push(...namedLines(VERB, runs, blocking));
+			notes.push(...reportedLine(VERB, blocking, runs));
 			// A red rollup is already the answer a caller must act on, so the coverage question is asked
 			// only where it changes one: `green` and `pending` are the two words that read as "nothing to
 			// do here", and both are wrong over bytes no gate inspected.
@@ -386,7 +391,10 @@ export const runCi = (
 						`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors inspected ${head}.`,
 					);
 				}
-				owedGovernance = governanceOwed(blocked, atHead.value.runs);
+				// A declared context that has not posted is unfinished too, so the floor is not the only
+				// thing left and the wait still has something external to wait for.
+				owedGovernance =
+					reporting._tag === "Reported" && governanceOwed(blocked, atHead.value.runs);
 				if (owedGovernance) {
 					notes.push(
 						`${VERB}: the only unfinished check at ${sha} is "${CHECK_RUN_NAME}", and its ${FLOOR_WORKFLOW_NAME} run has completed — what is still owed is a governance verdict bound at this head, which no wait produces. Fire the governance skill, then re-read.`,

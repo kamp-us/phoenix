@@ -481,20 +481,23 @@ describe("the on-call board", () => {
 		open: ReadonlyArray<OnCallItem>,
 		issues: ReadonlyArray<number> = [],
 		over: Partial<OnCallBoard> = {},
+		boardCreatedAt = hoursAgo(1000),
 	): OnCallRead => ({
 		_tag: "OnCall",
 		settings: {...SHIPPED_ON_CALL, ...over},
+		boardCreatedAt,
 		issues: new Set(issues),
 		open,
 		week: {_tag: "Week", start: daysAgo(3), end: daysAgo(-4)},
 	});
-	const item = (issue: number, name: string | null, since = hoursAgo(1)): OnCallItem => ({
-		issue,
-		target: name === null ? null : {name, since},
-	});
+	const item = (
+		issue: number,
+		labels: ReadonlyArray<string>,
+		createdAt = hoursAgo(1),
+	): OnCallItem => ({issue, labels, createdAt});
 
 	it("flags an open item that waited past its response target, and not one within it", () => {
-		const waiting = [item(5, "same day", hoursAgo(30)), item(6, "this week", hoursAgo(30))];
+		const waiting = [item(5, ["p0"], hoursAgo(30)), item(6, [], hoursAgo(30))];
 		const report = flagsOf(input([], {}, {onCall: board(waiting)}));
 
 		expect(report.flags).toEqual([
@@ -510,13 +513,38 @@ describe("the on-call board", () => {
 		expect(recOf(report.flags[0] as Flag, SHIPPED_TABLE)).toContain('past its "same day" target');
 	});
 
-	it("names an item with no target, or one the config no longer names, unread rather than clear", () => {
-		const report = flagsOf(input([], {}, {onCall: board([item(5, null), item(6, "someday")])}));
+	it("says a past target's length in hours with its unit", () => {
+		const targets = {
+			byLabel: [{name: "4h", hours: 4, labels: ["p0"]}],
+			otherwise: {name: "1 day", hours: 24},
+		};
+		const waiting = [item(5, ["p0"], hoursAgo(5)), item(6, [], hoursAgo(30))];
+		const report = flagsOf(input([], {}, {onCall: board(waiting, [], {responseTargets: targets})}));
+		const recs = report.flags.map((flag) => recOf(flag, SHIPPED_TABLE));
 
-		expect(report.flags).toEqual([]);
-		expect(report.unread.map((one) => [one.check, one.issue])).toEqual([
-			["past-target", 5],
-			["past-target", 6],
+		expect(recs).toEqual([
+			'Open on-call for 5 hours, past its "4h" target (4 hours). Pick it up now, or move it to the table?',
+			'Open on-call for 30 hours, past its "1 day" target (24 hours). Pick it up now, or move it to the table?',
+		]);
+		expect(recs.join("\n")).not.toContain("target of");
+	});
+
+	it("judges a relabelled item against the target its labels pick now, from its filing", () => {
+		const before = flagsOf(input([], {}, {onCall: board([item(5, [], hoursAgo(30))])}));
+		const after = flagsOf(input([], {}, {onCall: board([item(5, ["p0"], hoursAgo(30))])}));
+
+		expect(before.flags).toEqual([]);
+		expect(after.flags).toEqual([
+			expect.objectContaining({issue: 5, target: "same day", since: hoursAgo(30)}),
+		]);
+	});
+
+	it("times an issue filed before the board stood from the board's making", () => {
+		const old = [item(5, ["p0"], hoursAgo(100))];
+
+		expect(flagsOf(input([], {}, {onCall: board(old, [], {}, hoursAgo(10))})).flags).toEqual([]);
+		expect(flagsOf(input([], {}, {onCall: board(old, [], {}, hoursAgo(30))})).flags).toEqual([
+			expect.objectContaining({issue: 5, since: hoursAgo(30), waitedHours: 30}),
 		]);
 	});
 
@@ -543,5 +571,66 @@ describe("the on-call board", () => {
 
 		expect(report.flags).toEqual([]);
 		expect(report.unread).toEqual([]);
+	});
+});
+
+describe("not rendered", () => {
+	const line = (event: string, extra: Record<string, unknown> = {}) =>
+		JSON.stringify({task: "issue", event, at: daysAgo(1), ...extra});
+	const passed = (basis: "hand-check" | "skip") =>
+		line("PASS", {
+			pr: "https://forge.example/o/r/pull/12",
+			routed: ["review-ui"],
+			routedBasis: {"review-ui": basis},
+		});
+	const withLog = (issue: number, log: ReadonlyArray<string>): LaneRecord => ({
+		...record(issue),
+		log,
+	});
+	const unrendered = (report: ReturnType<typeof flagsOf>) =>
+		report.flags.filter((one) => one._tag === "NotRendered");
+
+	it("flags a row whose lane passed review-ui on a hand-check, naming the issue and the PR", () => {
+		const report = flagsOf(
+			input([row(single(10))], {10: [withLog(10, [line("DONE"), passed("hand-check")])]}),
+		);
+		const [flag] = unrendered(report);
+		expect(flag).toMatchObject({
+			head: 10,
+			issue: 10,
+			namespace: "review-ui",
+			basis: "hand-check",
+			pr: "https://forge.example/o/r/pull/12",
+		});
+		expect(recOf(flag as Flag, SHIPPED_TABLE)).toContain("an owner's hand-check, not a render");
+	});
+
+	it("flags a skip, and flags it on a row that is no longer live", () => {
+		const report = flagsOf(
+			input([row(single(11), {stage: null})], {11: [withLog(11, [passed("skip")])]}),
+		);
+		expect(named(report)).toEqual(["NotRendered #11"]);
+		expect(recOf(report.flags[0] as Flag, SHIPPED_TABLE)).toContain(
+			"skipped by reviewUi.whenNoPreview",
+		);
+	});
+
+	it("clears when a later PASS of the same task stood on a render", () => {
+		const log = [passed("hand-check"), line("PASS", {routed: ["review-ui"]})];
+		const report = flagsOf(input([row(single(12))], {12: [withLog(12, log)]}));
+		expect(unrendered(report)).toEqual([]);
+	});
+
+	it("raises nothing for a lane with no flagged route", () => {
+		const report = flagsOf(input([row(single(13))], {13: [withLog(13, [line("PASS")])]}));
+		expect(unrendered(report)).toEqual([]);
+		expect(report.unread).toEqual([]);
+	});
+
+	it("reads a log it cannot parse as unread, never clear", () => {
+		const report = flagsOf(input([row(single(14))], {14: [withLog(14, ["not json"])]}));
+		expect(report.unread).toContainEqual(
+			expect.objectContaining({check: "not-rendered", issue: 14}),
+		);
 	});
 });

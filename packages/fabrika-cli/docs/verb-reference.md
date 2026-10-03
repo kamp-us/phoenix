@@ -254,9 +254,9 @@ Read the board, settings and installed skill roster for a new session. Use `stat
 Set up the repository's weekly betting table on GitHub Projects (v2), fill its columns from lane
 records, read the flags that bring work back to it, and prepare each table's agenda, including the
 checks that bring shipped bets back with their evidence. A `boards` block adds an on-call board,
-which setup creates, prep fills and flags reads. Use
-`table --help`, `table setup --help`, `table sync --help`, `table flags --help` and
-`table prep --help`. The token needs the
+which setup creates, route fills and flags reads. Use
+`table --help`, `table setup --help`, `table sync --help`, `table flags --help`,
+`table prep --help`, `table route --help` and `table migrate-week --help`. The token needs the
 `project` scope; the
 [adopter guide](../../../claude-plugins/fabrika/guide/adopt-fabrika-in-a-new-repo.md#11-set-up-the-betting-table)
 covers the scope and the three manual steps setup prints.
@@ -268,6 +268,9 @@ Turn an intake issue into work with a clear scope, home and audience. Use `triag
 
 For an existing acceptance-criteria block with a damaged heading or list shape, see
 `triage repair-criteria --help`. Content changes belong to the triage authoring flow.
+
+To fix what `guard homing-guard check` reports, see `triage sweep-homes --help`. It clears a
+double-marked issue's milestone and leaves un-homed issues to triage.
 
 ## The `ui` group
 

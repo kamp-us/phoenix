@@ -90,6 +90,35 @@ export const worktreePathFor = (repoRoot: string, name: string): string =>
 export const baseRefFor = (name: string, nonce: string): string =>
 	`refs/fabrika/worktree-base-${name.replace(/[^A-Za-z0-9]+/g, "-")}-${nonce}`;
 
+/** Which branch this clone's `origin/HEAD` names. */
+export const originHeadArgs: ReadonlyArray<string> = [
+	"symbolic-ref",
+	"--short",
+	"refs/remotes/origin/HEAD",
+];
+
+/**
+ * Ask the remote which branch its HEAD names and record it as `origin/HEAD`. The recovery for a clone
+ * that never recorded one, so a hook reads the remote's answer instead of guessing a branch name.
+ */
+export const setOriginHeadArgs: ReadonlyArray<string> = ["remote", "set-head", "origin", "--auto"];
+
+/**
+ * The branch an `origin/HEAD` read names, or `null` when it names none.
+ *
+ * Hooks read this clone's `origin/HEAD` rather than the trunk resolver in `../io/trunk.ts`: they run
+ * under the harness's stripped environment, where no GitHub credential is promised, and a hook
+ * failure stops every spawn. `status open` flags an `origin/HEAD` that disagrees with the trunk.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10030
+ */
+export const originHeadBranch = (symbolicRef: string): string | null => {
+	const ref = symbolicRef.trim();
+	return ref.startsWith("origin/") && ref.length > "origin/".length
+		? ref.slice("origin/".length)
+		: null;
+};
+
 /** The fully-qualified source is deliberate: an unqualified `main` also matches a tag named `main`. */
 export const fetchBaseArgs = (base: string, baseRef: string): ReadonlyArray<string> => [
 	"fetch",
