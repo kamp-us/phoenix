@@ -247,10 +247,10 @@ failure to invoke it, or a caller reading `$?` cannot tell them apart.
 
 - **The code-for-code alignment to the shared registry is a deliberate, bounded courtesy — not a
   repo-wide namespace.** It began with `report`, `triage` and `review`, which one caller commonly
-  drives in a single sweep, and it now covers the 29 groups `ALIGNED_GROUPS` lists in
-  [`exit-code-alignment.ts`](../../../packages/fabrika-cli/src/exit-code-alignment.ts). The full
-  shared set is `3`, `5`, `6`, `7`, `8`, `9`, `10` and `11`, one meaning each; a group claims the
-  seats whose meaning it shares, which for some is a subset. Every aligning group *imports* the
+  drives in a single sweep, and it now covers every group `ALIGNED_GROUPS` lists in
+  [`exit-code-alignment.ts`](../../../packages/fabrika-cli/src/exit-code-alignment.ts). The shared
+  seats are the constants the shared registry exports, one meaning each, and a group claims only
+  the seats whose meaning it shares. Every aligning group *imports* the
   constants from the shared registry (`packages/fabrika-cli/src/exit-codes.ts`) rather than
   restating numerals, so a drift there is unrepresentable rather than merely detectable. The module
   mechanizes exactly that scope and no more: it checks each aligning group against the **base** and

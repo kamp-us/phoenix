@@ -7,16 +7,17 @@ behind a clause records it in its own decision corpus.
 ## The model
 
 1. **CODEOWNERS is the single source of truth.** A change is control-plane **iff** it touches paths
-   owned by a control-plane owner in [`.github/CODEOWNERS`](../../../.github/CODEOWNERS). The
-   classifier reads no second source. **An owner is either an `@org/team` or an individual `@login`, and the two count
+   owned by a control-plane owner in [`.github/CODEOWNERS`](../../../.github/CODEOWNERS). There is
+   no second source. **An owner is either an `@org/team` or an individual `@login`, and the two count
    the same**; an owner that is neither shape — a bare email — names no account an approval resolves
    against, so it bounds nothing.
 2. **A verb computes it, from two inputs and nothing else** — the CODEOWNERS file and the diff's
    changed paths. **No agent judgement, and no content regex.** A skill may state the expectation;
    it never asserts the answer. The classifier is `classify` in
    [`packages/fabrika-cli/src/ship/codeowners.ts`](../../../packages/fabrika-cli/src/ship/codeowners.ts),
-   and two verbs reach it: `fabrika ship scope` prints the state, and `fabrika ship cp-approval`
-   answers whether the approval it implies is discharged.
+   and three verbs reach it: `fabrika ship scope` prints the state, `fabrika ship cp-approval`
+   answers whether the approval it implies is discharged, and `fabrika lane prove` reads it to
+   decide whether a §CP advisory on the pull request counts as a verdict.
 3. **The output is three-valued**, and the third value is not a "no":
 
    | value | means |
@@ -30,7 +31,8 @@ behind a clause records it in its own decision corpus.
    `unknown` hold. *Present* is parsed and classified, and a file that reads fine but bounds nobody
    is the `unknown` hold too. *Unreadable* is neither, and §4 says what happens to it.
 
-   A pull request with no changed files never reaches the classifier: both verbs exit `7` on it.
+   `fabrika ship scope` and `fabrika ship cp-approval` exit `7` on a pull request with no changed
+   files, so neither asks the classifier about an empty path set.
 
 4. **`unknown` is treated as §CP — fail closed.** An unreadable CODEOWNERS is not that `unknown`
    either — it is exit `11`, in every repo: a failed read proves nothing, so the verb refuses rather
@@ -57,11 +59,13 @@ owns classifies `not-control-plane`, correctly per this model and by design.
 No content probe exists: classifying by what a change *says* would be a second answer to a
 merge-gating question, which clause 1 rules out.
 
-**One guard holds the path set complete.** `fabrika guard codeowners-cp check` reds when a path
-matching the boundary regex in
+**Source still carries a path regex, and clause 1 rules against it.**
 [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../../../packages/fabrika-cli/src/guard/control-plane-re.ts)
-has no covering CODEOWNERS row ([guard contract](guard-contract.md#codeowners-cp-check)). It judges
-the file's coverage and classifies no change, so it is not a second source for clause 1's answer.
+names the control-plane paths a second time, and `fabrika guard codeowners-cp check` reds when a
+path matching it has no covering CODEOWNERS row
+([guard contract](guard-contract.md#codeowners-cp-check)). That regex is a second source of the path
+set, and the guard has work only while both lists exist. The classifier reads CODEOWNERS and never
+the regex.
 
 ### A decision corpus may be deliberately left uncovered
 
@@ -86,8 +90,8 @@ review, not relocated it.
 
 ## Who reads this
 
-- **Authoring sessions and briefs** naming `fabrika ship scope`, `fabrika ship cp-approval` or
-  `fabrika guard codeowners-cp check` — this is the contract those verbs implement; the interface
-  they meet is [the CLI interface convention](interface-convention.md).
+- **Authoring sessions and briefs** naming `fabrika ship scope`, `fabrika ship cp-approval`,
+  `fabrika lane prove` or `fabrika guard codeowners-cp check` — this is the contract those verbs
+  implement; the interface they meet is [the CLI interface convention](interface-convention.md).
 - **Skills that mention §CP.** State the expectation; never compute a second answer to a
   merge-gating question.

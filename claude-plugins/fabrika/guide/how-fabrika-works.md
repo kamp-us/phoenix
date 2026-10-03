@@ -11,7 +11,7 @@ you look up a flag.
 The chain is `report` → `triage` → `plan-epic` → `build` → `review` → `ship`, with `heal-ci` off to
 the side for a pull request that has stopped moving. Each is its own skill. The stages a driver
 spawns run in an agent shell from [`../agents/`](../agents/); `report`, `plan-epic` and `heal-ci`
-have no shell and run in the session that invokes them.
+have no shell: a session invokes them directly.
 
 That chain is the text path, and the lane machine has more states than it names. A rendered surface
 is built by `build-ui` and judged by `review-ui`. `review` fires a separate `governance` gate and
