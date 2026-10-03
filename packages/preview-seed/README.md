@@ -133,9 +133,16 @@ replaces both.
 
 Every token is held in Effect's `Redacted` from the read to the one row that stores
 it. GitHub masks a secret's whole value in a log and not the tokens inside the
-object, so `test-account` never prints one, words every refusal without quoting what
-it read, and reports a failed write with the tokens scrubbed out, because a database
-driver reports a failed statement together with its bound parameters.
+object: its
+[secure use reference](https://docs.github.com/en/actions/reference/security/secure-use#use-secrets-for-sensitive-information)
+says redaction "largely relies on finding an exact match for the specific secret
+value" and that a JSON blob "significantly reduces the probability the secrets will
+be properly redacted". So `test-account` never prints one, words every refusal
+without quoting what it read, and reports a failed write with the tokens scrubbed
+out, because the database driver reports a failed statement together with its bound
+parameters: `drizzle-orm` at this repo's pin (`1.0.0-rc.5-ab785fc`) builds
+`DrizzleQueryError`'s message in `errors.js` as `Failed query: <query>` followed by
+`params: <params>`.
 
 ### The tier axis — one identity per audience
 

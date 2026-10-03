@@ -223,11 +223,17 @@ credential for any identity your environment does not already carry a token for 
 `PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN` for the email-unverified çaylak. **Leave the fetch to
 the verb**: it holds the tokens redacted, and a token you read out yourself is a login in your
 transcript. **One identity's token never stands in for another's**: the verb refuses on `11` rather
-than shooting an identity it does hold. Three refusals name three different stops, and each is
-CANT-SEE with `review-ui note` as the honest route, since none of them is yours to fix:
+than shooting an identity it does hold. **Every `11` on this path ends CANT-SEE with `review-ui note`
+as the honest route**, since none of them is yours to fix. The refusal's own words say which stop it
+is:
 
 - **the variable does not exist** — nobody has run `preview-seed rotate-logins` on this repository
   yet; that is a person's one-time step.
+- **the variable could not be read** — the read itself failed, for example under a credential that
+  may not read repository variables. That is UNKNOWN, never "not set": quote the reason the refusal
+  gives.
+- **the variable is set but malformed, or does not carry the identity you asked for** — the stored
+  value is wrong; a person re-runs `preview-seed rotate-logins`, which replaces it.
 - **`missing session row`** — the key is right and this preview's database does not hold the token:
   the preview deployed before the logins were set or rotated, so its next deploy re-seeds it.
 - **`bad signature`** — the signing key is wrong; re-read the paragraph above before anything else.
@@ -292,13 +298,12 @@ honors the override only for an authorized platform-admin actor — and each for
 against the preview's own evaluation before a shot is recorded, so an override that got dropped is `11`, never a flag-off capture under the flag-on name.
 Those two `10`/`11` refusals are the whole grammar; the rest is the verb's section.
 
-The credentials are the operator's, not yours (see below), and one more grant rides with them:
-platform admin on that throwaway preview D1, minted offline. Without it a `--flag` run refuses on
-`11` and the honest route is `review-ui note` — the same answer as any other credential you were
-not handed.
+The verb fetches the session tokens, and a forced run needs one thing the verb cannot fetch: platform
+admin on that throwaway preview D1, which is the operator's grant, minted offline. Without it a
+`--flag` run refuses on `11` and the honest route is `review-ui note`.
 
 **What still owes disclosure is a state you could not render.** Seeded data absent, a state with no
-mechanism, a preview you hold no credentials for: name each one in the verdict, with why, and judge
+mechanism, a preview the verb could not sign in to: name each one in the verdict, with why, and judge
 what did paint. When nothing the PR adds painted, that is CANT-SEE, on the same terms as an
 every-surface-unreachable render. When the preview stood and what blocked you is a state render has
 no mechanism for, that CANT-SEE takes cause `render-axis-missing` and names the issue tracking the

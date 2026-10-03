@@ -222,11 +222,11 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   token is the one `preview-seed test-account` wrote onto the preview D1 for that identity —
   `PREVIEW_TEST_SESSION_TOKEN` for `:auth` (yazar), `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for
   `:auth-caylak` (çaylak), `PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN` for
-  `:auth-caylak-unverified` (the email-unverified çaylak). **One variable per identity, and an
-  unset one is never satisfied by another's**: an unset token means that identity was not seeded on
-  this preview, and falling back to a seeded one would render the audience the surface said it was
-  not — the verified çaylak's token standing in for the unverified one would shoot the write the
-  surface exists to show refused. **Each token is read from its own environment variable first, and
+  `:auth-caylak-unverified` (the email-unverified çaylak). **One token per identity, and a
+  missing one is never satisfied by another's**: a token found in neither place below means the run
+  cannot sign in as that identity, and falling back to one it does hold would render the audience
+  the surface said it was not — the verified çaylak's token standing in for the unverified one
+  would shoot the write the surface exists to show refused. **Each token is read from its own environment variable first, and
   only an identity the environment leaves unset is looked up in the repository variable
   `PREVIEW_TEST_LOGINS`**: one JSON object keyed by those same three variable names, read through
   `GET /repos/{repo}/actions/variables/PREVIEW_TEST_LOGINS` under the run's GitHub credential. The
