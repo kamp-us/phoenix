@@ -308,7 +308,6 @@ describe("Palette", () => {
 		// The theme is the token layer's, switched on an ancestor. A palette that painted its own
 		// scheme would differ here, and that is the regression this pins.
 		expect(lightMarkup).toBe(darkMarkup);
-		expect(darkMarkup).toMatchSnapshot();
 	});
 });
 

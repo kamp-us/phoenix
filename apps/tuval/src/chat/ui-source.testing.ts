@@ -13,6 +13,3 @@ export const uiSrc = join(
 	dirname(createRequire(import.meta.url).resolve("@kampus/tuval-ui/package.json")),
 	"src",
 );
-
-/** The chat window's stylesheet. */
-export const chatSheetPath = join(uiSrc, "shell", "chat", "chat.css");

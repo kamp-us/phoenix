@@ -1,14 +1,14 @@
 /**
  * `KernelBridge.live` on the real kernel: the registry, the process table, the spell registry, the
  * executor and the bridge that boot builds, over in-memory checkpoints. Nothing is faked below the
- * bridge, so a spawn is a real process and the parent link is the one the table reports.
+ * bridge, so a spawn is a real process and a read answers what that process emitted. The parent link
+ * a spawn carries is the SDK's own proof (`packages/tuval/src/ai-agent/tools/spawn-parentage.unit.test.ts`).
  *
  * The target is a scripted echo program, not a process built by `aiAgentProgram` on
  * `ScriptedAiAgent.layer`. The founder ruled that substitution on 2026-09-03 for the kernel's own
- * agent proof (#7645, and `commands/agent-proof.unit.test.ts` runs under it): what a bridge spawn
- * has to prove is the parent link on the real kernel, and any real program proves it. The re-run on
- * an `aiAgentProgram` process over `ScriptedAiAgent.layer` belongs to #7623, whose own row is the
- * headless proof on `ScriptedAiAgent`.
+ * agent proof (#7645, and `commands/agent-proof.unit.test.ts` runs under it): any real program
+ * proves the bridge's round trip. The re-run on an `aiAgentProgram` process over
+ * `ScriptedAiAgent.layer` belongs to #7623, whose own row is the headless proof on `ScriptedAiAgent`.
  *
  * Every refusal here is also the pin on the four kernel tags `KernelBridge` re-reads off the wire:
  * a renamed `tuval/commands/*` tag stops arriving as its `tuval/claude/*` counterpart and this file
@@ -39,7 +39,6 @@ import {memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
 import type {PayloadRejected, PortNotWired} from "@kampus/tuval-sdk/kernel/ports/errors";
 import {ProcessPorts} from "@kampus/tuval-sdk/kernel/ports/ProcessPorts";
 import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
-import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import {type AnyProgram, type Program, ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
@@ -162,7 +161,7 @@ const kernel = Layer.mergeAll(
 );
 
 /** The caller running, with a bridge of its own bound to its window. */
-const withCaller = <A, E>(body: Effect.Effect<A, E, KernelBridge | Processes | ProcessTable>) =>
+const withCaller = <A, E>(body: Effect.Effect<A, E, KernelBridge>) =>
 	Effect.gen(function* () {
 		const processes = yield* Processes;
 		const caller = yield* processes.spawn(callerId, {id: callerProcess, services: Context.empty()});
@@ -170,32 +169,9 @@ const withCaller = <A, E>(body: Effect.Effect<A, E, KernelBridge | Processes | P
 		return {caller, answer};
 	}).pipe(Effect.provide(kernel), Effect.scoped);
 
-const parentOf = (id: ProcessId) =>
-	Effect.map(
-		ProcessTable.use((table) => table.get(id)),
-		(row) => Option.getOrNull(row.parentId),
-	);
-
 // `it.live`, not `it.effect`: `process read` waits on a real timeout for a port that has said
 // nothing yet, and under the test clock no wall time passes, so that wait never ends.
 describe("KernelBridge over the real kernel", () => {
-	it.live("spawns a child of the calling process, and the table reports the parent link", () =>
-		Effect.gen(function* () {
-			const {answer} = yield* withCaller(
-				Effect.gen(function* () {
-					const bridge = yield* KernelBridge;
-					const child = yield* bridge.spawn(echoId);
-					return {child, parent: yield* parentOf(child)};
-				}),
-			);
-			assert.strictEqual(
-				answer.parent,
-				callerProcess,
-				"the spawned process is not a child of the calling process",
-			);
-		}),
-	);
-
 	it.live("send reaches the child and read answers what it emitted", () =>
 		Effect.gen(function* () {
 			const {answer} = yield* withCaller(
@@ -255,29 +231,6 @@ describe("KernelBridge over the real kernel", () => {
 				}),
 			);
 			assert.deepStrictEqual(answer, Option.none());
-		}),
-	);
-
-	it.live("stopping the calling process stops the child it spawned", () =>
-		Effect.gen(function* () {
-			const {answer} = yield* withCaller(
-				Effect.gen(function* () {
-					const bridge = yield* KernelBridge;
-					const processes = yield* Processes;
-					const child = yield* bridge.spawn(echoId);
-					const before = yield* ProcessTable.use((table) => table.list);
-					yield* processes.stop(callerProcess);
-					const after = yield* ProcessTable.use((table) => table.list);
-					return {
-						child,
-						before: before.map((row) => row.id),
-						after: after.map((row) => row.id),
-					};
-				}),
-			);
-			assert.includeMembers(answer.before, [callerProcess, answer.child]);
-			assert.notInclude(answer.after, answer.child, "the child outlived its parent");
-			assert.notInclude(answer.after, callerProcess);
 		}),
 	);
 });

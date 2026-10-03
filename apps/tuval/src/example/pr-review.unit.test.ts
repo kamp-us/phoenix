@@ -1,7 +1,7 @@
 /**
- * The example's own tests, and the three that guard what makes it an example: its length, the door
- * it reaches the authoring layer through, and the packages it does not import. All three read the
- * module's source text, because none of the three facts survives compilation — a thirty-line
+ * The example's own tests, and the two that guard what makes it an example: its length, and the
+ * doors it imports through — the authoring layer's one specifier (#8943) and no program package.
+ * Both read the module's source text, because neither fact survives compilation — a thirty-line
  * program that grew to ninety still typechecks, and neither an abandoned barrel nor a cross-package
  * import is visible in the compiled row.
  */
@@ -56,18 +56,7 @@ describe("authoring.example.pr-review is short enough to copy", () => {
 		expect(written.length).toBeLessThanOrEqual(35);
 	});
 
-	it("reaches the authoring layer through the one door a third-party program uses (#8943)", () => {
-		// Six relative modules collapsed to one specifier is what paid for the `spawned` cell, so a
-		// later edit that reaches back past the door, into the SDK's kernel, takes the room away again.
-		const specifiers = [...source.matchAll(/from "([^"]+)"/g)].map((match) => match[1] ?? "");
-		expect(specifiers.filter((from) => from.startsWith("."))).toEqual([]);
-		expect(specifiers.filter((from) => from.startsWith("@kampus/tuval-sdk/authoring"))).toEqual([
-			"@kampus/tuval-sdk/authoring",
-			"@kampus/tuval-sdk/authoring",
-		]);
-	});
-
-	it("imports no program package, so no reviewer's SDK rides along", () => {
+	it("imports through the authoring door and no program package, so no reviewer's SDK rides along", () => {
 		const specifiers = [...source.matchAll(/from "([^"]+)"/g)].map((match) => match[1] ?? "");
 		expect(specifiers).not.toEqual([]);
 		// Matched whole, not by prefix: `@kampus/tuval-sdk/kernel/...` starts with the SDK's name too, and a

@@ -2,9 +2,9 @@
  * The tracked config's Claude row, booted: the repo's global layer, `../../global/tuval.config.ts`,
  * is the module under test, not a fixture written for it (#7958, moved there by #9694). It boots
  * over a project whose config is Tuval's own, so the demo counter is there to spawn. What it proves is that the row a user's own config can
- * write registers, shows in the picker, and that the kernel it is spawned into holds the
- * `SpellBridge` the row leaves open — and that a `spawn` through `KernelBridge` on that bridge
- * starts a process the process table shows.
+ * write registers and shows in the picker, and that a `spawn` through `KernelBridge` — which builds
+ * only over the `SpellBridge` the row leaves open for the kernel to hold — starts a process the
+ * process table shows.
  *
  * **It never spawns the `claude-session` process itself.** A fresh spawn emits the `aiAgent.boot`
  * Cmd (`../ai-agent/core/machine.ts`), which opens the session, which runs the real `claude` CLI on
@@ -22,7 +22,6 @@ import {assert, describe, it} from "@effect/vitest";
 import {CLAUDE_SESSION_PROGRAM} from "@kampus/tuval-claude";
 import {KernelBridge} from "@kampus/tuval-claude/tools";
 import {PI_SESSION_PROGRAM} from "@kampus/tuval-pi";
-import {SpellBridge} from "@kampus/tuval-sdk/kernel/commands/bridge/index";
 import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
 import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
@@ -86,19 +85,6 @@ describe("the Claude row the tracked config registers", () => {
 					"a row the picker leaves out is a Claude window nobody can open",
 				);
 				assert.include(offered, ProgramId.make(PI_SESSION_PROGRAM));
-			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
-		{timeout: 60_000},
-	);
-
-	it.effect(
-		"leaves SpellBridge open and is spawned into a kernel that holds one",
-		() =>
-			Effect.gen(function* () {
-				const booted = yield* bootTracked();
-				assert.isDefined(
-					Context.get(booted.kernel, SpellBridge),
-					"the row's layer asks for SpellBridge at spawn; a kernel without one dies at the first tool call",
-				);
 			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
 		{timeout: 60_000},
 	);
