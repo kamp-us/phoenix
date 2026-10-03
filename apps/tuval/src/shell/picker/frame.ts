@@ -12,6 +12,7 @@
 
 import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {ProjectLabels} from "../../projects/labels.ts";
 import {
 	flatten,
 	groupKeyOf,
@@ -147,6 +148,8 @@ export interface PickerFrameOptions {
 	readonly processRemove?: boolean;
 	/** The desk can open projects from here, so the list ends on "Open project…" (#9697). */
 	readonly openProject?: boolean;
+	/** The open projects' labels, which every scoped id is shown under (#9987). */
+	readonly projects?: ProjectLabels;
 }
 
 export const pickerTheme = (options: PickerFrameOptions | undefined): PickerTheme => ({
@@ -163,27 +166,31 @@ export const pickerTheme = (options: PickerFrameOptions | undefined): PickerThem
 	},
 });
 
-const shortId = (id: ProcessId): string => (id.length > 8 ? `${id.slice(0, 8)}…` : id);
+const shorten = (local: string): string => (local.length > 8 ? `${local.slice(0, 8)}…` : local);
 
-const nameOf = (entry: PickerRow): string => {
+const shortId = (projects: ProjectLabels, id: ProcessId): string => projects.displayId(id, shorten);
+
+const nameOf = (entry: PickerRow, projects: ProjectLabels): string => {
 	switch (entry._tag) {
 		case "Program":
-			return `${entry.label} — program ${entry.programId}`;
+			return `${entry.label} — program ${projects.displayId(entry.programId)}`;
 		case "Process":
-			return `${entry.label} — process ${shortId(entry.processId)}, ${
-				entry.parentId === null ? "no parent" : `child of ${shortId(entry.parentId)}`
+			return `${entry.label} — process ${shortId(projects, entry.processId)}, ${
+				entry.parentId === null ? "no parent" : `child of ${shortId(projects, entry.parentId)}`
 			}`;
 		case "OpenProject":
 			return `${entry.label} — a recent project, or a folder to browse for`;
 	}
 };
 
-const detailOf = (entry: PickerRow): string => {
+const detailOf = (entry: PickerRow, projects: ProjectLabels): string => {
 	switch (entry._tag) {
 		case "Program":
-			return entry.programId;
+			return projects.displayId(entry.programId);
 		case "Process":
-			return `${entry.processId}${entry.parentId === null ? "" : ` ← ${entry.parentId}`}`;
+			return `${projects.displayId(entry.processId)}${
+				entry.parentId === null ? "" : ` ← ${projects.displayId(entry.parentId)}`
+			}`;
 		case "OpenProject":
 			return "Recent projects, then a folder browser";
 	}
@@ -250,6 +257,7 @@ export const pickerFrame = (
 		processRemove: options?.processRemove === true,
 		openProject: options?.openProject === true,
 	};
+	const projects = options?.projects ?? ProjectLabels.none;
 	const visible = visibleFor(entries, view);
 	const rows = rowsFor(entries, view, features);
 	const at = cursorOf(entries, view, features);
@@ -263,8 +271,8 @@ export const pickerFrame = (
 			return {
 				role: "option",
 				id: optionId(absolute),
-				name: nameOf(entry),
-				detail: detailOf(entry),
+				name: nameOf(entry, projects),
+				detail: detailOf(entry, projects),
 				selected,
 				marker: selected ? "▸" : " ",
 				index: absolute,

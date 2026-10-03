@@ -5,7 +5,7 @@
  * nothing from Node, because the page imports it.
  */
 
-import {scopedIdParts} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
+import {scopedId, scopedIdParts} from "@kampus/tuval-sdk/kernel/registry/scoped-id";
 
 /** One open project's label, beside the key its program ids are scoped by (`../project-id.ts`). */
 export interface ProjectLabel {
@@ -48,5 +48,17 @@ export class ProjectLabels {
 	 */
 	programName(programId: string): string {
 		return this.labelOf(programId) === null ? programId : scopedIdParts(programId).local;
+	}
+
+	/**
+	 * A program or process id as a person reads it (#9987): `<label>/<local>` under a labelled
+	 * project, so the path key its storage is keyed by never reaches a row. `local` maps the local
+	 * part only, which is how a short form shortens the id's own name and never the scope in front.
+	 * A bare id, and a scope with no label (`programName`), keep the id as it stands.
+	 */
+	displayId(id: string, local: (part: string) => string = (part) => part): string {
+		const parts = scopedIdParts(id);
+		if (parts.scope === undefined) return local(parts.local);
+		return scopedId(this.byKey.get(parts.scope) ?? parts.scope, local(parts.local));
 	}
 }
