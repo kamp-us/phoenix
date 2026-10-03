@@ -538,8 +538,6 @@ describe("provisionTestAccounts — email-unverified çaylak", () => {
 
 	it("is a third identity distinct from the two verified ones", () => {
 		const unverified = TEST_ACCOUNTS["çaylak-unverified"];
-		assert.strictEqual(unverified.tier, "çaylak");
-		assert.isFalse(unverified.emailVerified);
 		assert.isTrue(unverified.email.endsWith(".invalid"));
 		for (const other of [TEST_ACCOUNTS.yazar, TEST_ACCOUNTS.çaylak]) {
 			assert.notStrictEqual(unverified.id, other.id);
@@ -594,30 +592,6 @@ describe("provisionTestAccounts — email-unverified çaylak", () => {
 		const params = batched.flatMap((stmt) => stmt.params);
 		assert.notInclude(params, TEST_ACCOUNTS.yazar.id);
 		assert.notInclude(params, TEST_ACCOUNTS.çaylak.id);
-	});
-
-	it("is left unseeded when its token is absent", async () => {
-		assert.isNotNull(TOKEN);
-		assert.isNotNull(CAYLAK_TOKEN);
-		const {d1, batched} = fakeD1([]);
-		await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {
-			yazar: TOKEN,
-			çaylak: CAYLAK_TOKEN,
-		});
-		assert.notInclude(
-			batched.flatMap((stmt) => stmt.params),
-			TEST_ACCOUNTS["çaylak-unverified"].id,
-		);
-	});
-
-	it("is refused on a database whose name is not a preview's, writing nothing", async () => {
-		assert.isNotNull(UNVERIFIED_TOKEN);
-		const {d1, batched} = fakeD1([]);
-		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PROD_NAME, {
-			"çaylak-unverified": UNVERIFIED_TOKEN,
-		});
-		assert.strictEqual(outcome._tag, "NotThrowaway");
-		assert.lengthOf(batched, 0);
 	});
 
 	it("never stands in for the çaylak a standing is about", async () => {

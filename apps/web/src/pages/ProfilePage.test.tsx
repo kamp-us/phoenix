@@ -147,7 +147,7 @@ describe("ProfilePage settings-before-contributions order (#9273)", () => {
 });
 
 describe("ProfilePage appearance controls", () => {
-	it("uses the shared Manti outline ToggleGroup without the retired page override", () => {
+	it("renders the density control as the shared Manti outline ToggleGroup", () => {
 		sessionUsername = "session-uname";
 		meUsername = "session-uname";
 
