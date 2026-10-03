@@ -490,8 +490,8 @@ time" into "it passed" is worse than the `sleep` it replaced.
 - **What a verb owes its caller** — `--help` discoverability, output contracts, usage examples —
   and the shape of a derived contract spec:
   [the CLI interface convention](interface-convention.md).
-- **The boot document a stateless authoring session works from**:
-  [the authoring-brief contract](authoring-brief-contract.md).
+- **Which stage and gate a skill change passes through, and the page that owns each rule**:
+  [fabrika skill authoring](authoring-brief-contract.md).
 
 ## What fabrika does not take from its reference material
 

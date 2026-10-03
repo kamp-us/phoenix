@@ -32,7 +32,7 @@ one nothing checked; the pointer-sizing side of the same split is
 
 A spec has a header and one block per verb.
 
-**Header** — the skill it serves, the authoring-brief issue, and the date. Nothing else.
+**Header** — the skill it serves and the date. Nothing else.
 
 **Verb inventory** — one row per verb: name, one-line purpose, and the split test that put it here
 (what makes this deterministic rather than judgment the wrapper keeps). A verb whose row cannot state
