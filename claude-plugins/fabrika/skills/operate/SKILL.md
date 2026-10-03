@@ -68,6 +68,13 @@ answer describes a tree you are not standing in. `lane brief` resolves the same 
 and puts the answer in every spawn prompt's `fabrika:` field, so you never write the path into a
 prompt by hand.
 
+**A command you write for a person is one they can paste.** A park comment, a stop note and your
+final message are read by someone at a prompt, so every command in one is printed with each
+placeholder filled in: the path you worked out above where this skill writes `<fabrika>`, and the
+real lane key, task name and PR number where it writes `<lane>`, `<task>` and `<pr>`. Read the note
+back before you post it; done when it holds no literal `<fabrika>` and no other angle-bracket
+placeholder.
+
 ## 1 — Read the seats, claim the lane, then boot or resume
 
 The lane you were invoked on is `$lane_key`, and every command below carries it — an issue number,
