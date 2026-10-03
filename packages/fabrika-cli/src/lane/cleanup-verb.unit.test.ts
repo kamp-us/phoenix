@@ -207,6 +207,70 @@ describe("runCleanup", () => {
 		expect(removals(calls)).toEqual([]);
 	});
 
+	const dispatched = (state: string, minute: number): string =>
+		`${JSON.stringify({kind: "dispatched", task: "issue", state, at: at(minute)})}\n`;
+	const moved = (minute: number): string =>
+		`${JSON.stringify({task: "issue", event: "ISSUE.WIP", at: at(minute)})}\n`;
+
+	it("keeps a reviewer's clean tree handed since the standing dispatch, and removes the returned builder's", async () => {
+		const {outcome, calls, written} = await run(
+			[
+				[once(LIST), listing(BUILDER, REVIEWER)],
+				[LIST, listing(REVIEWER)],
+				...clean(BUILDER),
+				[REMOVE, okOut("")],
+			],
+			{
+				records: handed(BUILDER, 1) + handed(REVIEWER, 5),
+				inFlight: dispatched("build", 0) + dispatched("review", 4),
+				log: moved(3),
+			},
+		);
+
+		expect(outcome.code).toBe(TREES_KEPT);
+		expect(outcome.stderr).toContain(
+			`fabrika lane cleanup: kept ${REVIEWER} — in-flight: it was handed at or after its task's standing dispatch, and that shell has recorded no terminal`,
+		);
+		expect(outcome.stderr).toContain(`fabrika lane cleanup: removed ${BUILDER}`);
+		expect(removals(calls)).toEqual([`git worktree remove ${BUILDER}`]);
+		expect(calls.some((line) => line.includes(`-C ${REVIEWER}`))).toBe(false);
+		expect(written.get(RECORDS)).not.toContain(`"removed","worktree":"${REVIEWER}"`);
+	});
+
+	it("removes that reviewer's tree once its terminal has moved the task", async () => {
+		const {outcome, calls} = await run(
+			[
+				[once(LIST), listing(BUILDER, REVIEWER)],
+				[LIST, listing()],
+				...clean(BUILDER),
+				...clean(REVIEWER),
+				[REMOVE, okOut("")],
+			],
+			{
+				records: handed(BUILDER, 1) + handed(REVIEWER, 5),
+				inFlight: dispatched("build", 0) + dispatched("review", 4),
+				log: moved(3) + moved(6),
+			},
+		);
+
+		expect(outcome.code).toBe(0);
+		expect(removals(calls)).toEqual([
+			`git worktree remove ${BUILDER}`,
+			`git worktree remove ${REVIEWER}`,
+		]);
+	});
+
+	it("keeps a tree handed in the same instant as its task's standing dispatch", async () => {
+		const {outcome, calls} = await run([[LIST, listing(REVIEWER)]], {
+			records: handed(REVIEWER, 4),
+			inFlight: dispatched("review", 4),
+		});
+
+		expect(outcome.code).toBe(TREES_KEPT);
+		expect(outcome.stderr[0]).toContain(`kept ${REVIEWER} — in-flight`);
+		expect(removals(calls)).toEqual([]);
+	});
+
 	it("leaves a driver's recorded tree when another shell runs the verb, and reads nothing in it", async () => {
 		const DRIVER = `${MAIN}/.claude/worktrees/agent-driver`;
 		const {outcome, calls, written} = await run(

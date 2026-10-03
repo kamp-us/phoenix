@@ -28,7 +28,7 @@ const runnerCwd = process.cwd();
 afterEach(() => process.chdir(runnerCwd));
 
 describe("lane cleanup over a real clone", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it("removes the clean and the pushed tree, keeps the dirty, local-only and stranded ones, and leaves its own and the driver's", async () => {
+	it("removes the clean and the pushed tree, keeps the dirty, local-only, stranded and in-flight ones, and leaves its own and the driver's", async () => {
 		const home = mkdtempSync(join(tmpdir(), "lane-cleanup-"));
 		const origin = join(home, "origin.git");
 		const root = join(home, "checkout");
@@ -42,7 +42,16 @@ describe("lane cleanup over a real clone", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 		git(root, "push", "-u", "origin", "HEAD:main");
 
 		const tree = (name: string) => join(root, ".claude", "worktrees", name);
-		const names = ["clean", "dirty", "local", "pushed", "stranded", "driver", "shipper"];
+		const names = [
+			"clean",
+			"dirty",
+			"local",
+			"pushed",
+			"stranded",
+			"reviewer",
+			"driver",
+			"shipper",
+		];
 		for (const name of names) {
 			git(root, "worktree", "add", "--detach", tree(name), "origin/main");
 		}
@@ -74,11 +83,17 @@ describe("lane cleanup over a real clone", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 						kind: "handed",
 						worktree: tree(name),
 						task: name === "driver" ? null : "issue",
-						at: "2026-10-03",
+						at: name === "reviewer" ? "2026-10-03T06:01:00.000Z" : "2026-10-03",
 					}),
 				)
 				.join("\n")
 				.concat("\n"),
+		);
+		// The reviewer's tree is as clean and as published as `clean`. Only the dispatch it was
+		// handed after, which no terminal has answered, says its shell is still running.
+		writeFileSync(
+			join(dir, "in-flight.jsonl"),
+			`${JSON.stringify({kind: "dispatched", task: "issue", state: "review", at: "2026-10-03T06:00:00.000Z"})}\n`,
 		);
 
 		process.chdir(tree("shipper"));
@@ -99,16 +114,18 @@ describe("lane cleanup over a real clone", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 			`fabrika lane cleanup: kept ${tree("dirty")} — uncommitted: 1 uncommitted path`,
 			`fabrika lane cleanup: kept ${tree("local")} — unpublished: 1 commit on no remote ref — the lane's log names no pull request`,
 			`fabrika lane cleanup: kept ${tree("stranded")} — unregistered: git marks its registration prunable and the directory still stands`,
+			`fabrika lane cleanup: kept ${tree("reviewer")} — in-flight: it was handed at or after its task's standing dispatch, and that shell has recorded no terminal`,
 			`fabrika lane cleanup: left ${tree("driver")} — a driver recorded it and nothing proves its shell returned; it is that driver's caller's to remove`,
 			`fabrika lane cleanup: left ${tree("shipper")} — this verb runs in it; it is the caller's to remove from outside`,
 			`fabrika lane cleanup: removed ${tree("clean")}`,
 			`fabrika lane cleanup: removed ${tree("pushed")}`,
-			expect.stringContaining("3 of 7 recorded worktree(s) kept"),
+			expect.stringContaining("4 of 8 recorded worktree(s) kept"),
 		]);
 		expect(names.filter((name) => existsSync(tree(name)))).toEqual([
 			"dirty",
 			"local",
 			"stranded",
+			"reviewer",
 			"driver",
 			"shipper",
 		]);

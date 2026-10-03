@@ -56,7 +56,7 @@ describe("runWorktree", () => {
 			recorded: true,
 		});
 		expect(JSON.parse(second.stdout)).toMatchObject({answer: "handed", recorded: false});
-		expect(held(fs)).toEqual([{worktree: TREE, task: "issue"}]);
+		expect(held(fs)).toEqual([{worktree: TREE, task: "issue", at: expect.any(String)}]);
 		expect(fs.written.get(RECORDS)?.trim().split("\n")).toHaveLength(1);
 	});
 
@@ -65,7 +65,7 @@ describe("runWorktree", () => {
 
 		await run(fs, {task: null});
 
-		expect(held(fs)).toEqual([{worktree: TREE, task: null}]);
+		expect(held(fs)).toEqual([{worktree: TREE, task: null, at: expect.any(String)}]);
 	});
 
 	it("answers the main working tree without recording it", async () => {
@@ -113,7 +113,7 @@ describe("handedTrees", () => {
 		);
 
 		expect(parsed._tag === "Parsed" && handedTrees(parsed.records)).toEqual([
-			{worktree: "/t/b", task: null},
+			{worktree: "/t/b", task: null, at: "2026-10-03T06:04:00.000Z"},
 		]);
 	});
 

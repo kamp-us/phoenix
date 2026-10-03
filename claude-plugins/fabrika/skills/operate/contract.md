@@ -110,7 +110,8 @@ that dispatch replaced, so it does not stand. `inFlight` is absent where nothing
 is absent, `inFlightUnread` names why, and stderr says the record is UNKNOWN. No fold reads these
 records, so `stateValue` and `context` are the same with or without them, and no claim release,
 worktree retire or reap reads them either. [`lane cleanup`](#lane-cleanup) reads a standing
-`working` record as a reason to keep the tree it names, and reads nothing into an absent one. They live apart from `facts.jsonl` because that file's
+`working` record as a reason to keep the tree it names, and a standing `dispatched` as a reason to
+keep every tree handed under its task since. It reads nothing into an absent one. They live apart from `facts.jsonl` because that file's
 reader refuses a kind it does not know.
 
 ### Exit status
@@ -1987,8 +1988,13 @@ Each recorded tree gets one answer, in this order:
    and it is not the tree this verb runs in. A driver outlives the shells it spawns, the shipper
    that runs this verb included, and nothing on this machine proves its shell returned. Nothing in
    the tree is read. It is that driver's caller's to remove.
-5. **kept, `in-flight`** — a builder's standing `working` record in `in-flight.jsonl` names the
-   tree, so its shell has not returned.
+5. **kept, `in-flight`** — a shell is still in flight in the tree, by either of two records in
+   `in-flight.jsonl`. A builder's standing `working` record names the tree. Or the tree's `handed`
+   line is dated at or after its task's standing `dispatched` record. A dispatch stands until an
+   event moves its task, so a tree handed since then is the one that dispatch's shell runs in,
+   whichever shell it is: a reviewer, a shipper, or a builder whose claim has not won yet. A tree
+   handed before the standing dispatch belongs to a shell that returned, and falls through to the
+   answers below. Nothing in the tree is read.
 6. **kept, `uncommitted`** — `git status --porcelain` in the tree printed a path. Ignored paths do
    not count, so installed packages never hold a tree.
 7. **kept, `unpublished`** — `git rev-list --count HEAD --not --remotes` in the tree is above zero,

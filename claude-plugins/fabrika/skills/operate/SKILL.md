@@ -621,8 +621,9 @@ names the new shell and never the dead one. Read it before stopping an operator 
 quiet: a silent log beside a named shell is what a working re-spawn looks like, so the silence alone
 proves nothing stuck. **It records who said they were working, never proof that they still are.**
 No claim release, worktree retire or reap reads it, and nothing reads its age or its absence as a
-death: a dead spawn is proven only by the reads step 3 names. `lane cleanup` reads it one way only:
-a standing `working` record keeps the tree it names. `inFlightUnread` in its place means
+death: a dead spawn is proven only by the reads step 3 names. `lane cleanup` reads it one way only,
+to keep a tree: the one a standing `working` record names, and every tree handed under a task since
+that task's standing `dispatched`. `inFlightUnread` in its place means
 the record could not be read, which says nothing about the lane.
 
 **An `integrate` state is the one thing you do with your own hands.** It routes to no shell —
@@ -1630,21 +1631,27 @@ it in your terminal line, and leave the tree. Neither a park nor a queue wait is
 resumes the lane.
 
 **Every run that holds the lane removes the worktrees its shells were handed before it releases**,
-whether the fold reads a terminal, a park or a wait. Each shell recorded its tree on the lane as its
-brief told it to, and every shell you spawned has returned by now:
+whether the run ends on a terminal, a park, a wait or `STOPPED`. Each shell recorded its tree on the
+lane as its brief told it to:
 
 ```bash
 node <fabrika> lane cleanup $lane_key
 ```
 
-Exit `0` removed every recorded tree it could reach. Exit `74` kept at least one because it still
-holds work, and removed the rest. Your own tree prints as `left`, because no process removes the
-tree it runs in. A tree an earlier driver of this lane recorded prints as `left` too: nothing here
+The verb removes the tree of a shell that has returned and keeps the tree of one still running. On
+an epic lane a `STOPPED` run can end with a sibling child's shell in flight: its tree prints as
+`kept`, reason `in-flight`, because it was handed since that task's standing dispatch and no
+terminal has moved the task. That tree is not yours to remove, and the run that next holds the lane
+removes it.
+
+Exit `0` removed every recorded tree it could reach. Exit `74` kept at least one, because it still
+holds work or its shell is still in flight, and removed the rest. Your own tree prints as `left`,
+because no process removes the tree it runs in. A tree an earlier driver of this lane recorded prints as `left` too: nothing here
 proves that driver's shell returned, so its own caller removes it. The epic assembly worktree is
 outside this verb and keeps the rule above.
 **Copy every `kept` and `left` line from stderr into your closing line**, path and reason, on either
 exit: a `left` tree is handed to your caller, who is outside it, and a `kept` one holds work
-somebody has to look at. A kept tree is neither a park nor a retry. **Every other non-zero exit is
+somebody has to look at or a shell that is still running. A kept tree is neither a park nor a retry. **Every other non-zero exit is
 named in your closing line and the release still runs**: `8` and `11` are UNKNOWN, `7` is a claim
 held over a lane that never booted (step 1's `lane open` exit `51`), which recorded no tree, and
 `4`, `21`, `39` and `65` removed nothing. The keep rule and the exits are the verb's

@@ -97,10 +97,11 @@ export const loadWorktrees = (
 			: ({_tag: "Loaded", records: parsed.records, path} as const);
 	});
 
-/** One tree the lane still holds: where it is and which task's shell it was handed to. */
+/** One tree the lane still holds: where it is, which task's shell it was handed to, and when. */
 export interface HandedTree {
 	readonly worktree: string;
 	readonly task: string | null;
+	readonly at: Instant;
 }
 
 /** The trees whose latest record is `handed`, in the order each was first recorded. */
@@ -108,6 +109,6 @@ export const handedTrees = (records: ReadonlyArray<WorktreeRecord>): ReadonlyArr
 	const latest = new Map<string, WorktreeRecord>();
 	for (const record of records) latest.set(record.worktree, record);
 	return [...latest.values()].flatMap((record) =>
-		record.kind === "handed" ? [{worktree: record.worktree, task: record.task}] : [],
+		record.kind === "handed" ? [{worktree: record.worktree, task: record.task, at: record.at}] : [],
 	);
 };

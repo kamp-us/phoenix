@@ -24,7 +24,7 @@ import {type Attempt, isAncestor, isObjectName} from "../io/git.ts";
 import {resolveRepo} from "../io/issues.ts";
 import {getPullRequest} from "../io/pulls.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {instant} from "../wire/lane-record.ts";
+import {type Instant, instant} from "../wire/lane-record.ts";
 import {withLedgerLock} from "./append-lock.ts";
 import {type WorkingTrees, worktrees} from "./assembly.ts";
 import {
@@ -232,7 +232,7 @@ export const runCleanup = <R>(
 		if (seated._tag !== "Loaded") {
 			return refuse(
 				seated._tag === "Malformed" ? MALFORMED_RECORD : LANE_UNREADABLE,
-				`${VERB}: cannot read ${seated.path} — whether a builder is still seated in one of these trees is UNKNOWN, so nothing was removed.`,
+				`${VERB}: cannot read ${seated.path} — whether a shell is still in flight in one of these trees is UNKNOWN, so nothing was removed.`,
 			);
 		}
 		if (options.caller._tag === "Failure") {
@@ -264,9 +264,12 @@ export const runCleanup = <R>(
 		const before = yield* resolve(listed.value);
 		const caller = yield* real(options.caller.value);
 		const working = new Set<string>();
-		for (const seat of Object.values(inFlight(seated.records, loaded.entries))) {
+		const dispatched = new Map<string, Instant>();
+		for (const [task, seat] of Object.entries(inFlight(seated.records, loaded.entries))) {
 			if (seat.working !== null) working.add(yield* real(seat.working.worktree));
+			if (seat.dispatched !== null) dispatched.set(task, seat.dispatched.at);
 		}
+		const flight = {working, dispatched};
 
 		const pulls = lanePulls(loaded.entries);
 		const judged: Judged[] = [];
@@ -274,7 +277,7 @@ export const runCleanup = <R>(
 			[];
 		for (const tree of handed) {
 			const resolved = yield* real(tree.worktree);
-			const seat = seatOf(resolved, tree.task, before, caller, working);
+			const seat = seatOf({...tree, worktree: resolved}, before, caller, flight);
 			const state: TreeState =
 				seat._tag === "Linked"
 					? yield* readTree(tree.worktree, pulls, options.pull)

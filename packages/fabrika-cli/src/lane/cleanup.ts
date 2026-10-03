@@ -4,9 +4,14 @@
  * Pure, and apart from the verb because the whole rule lives here. A tree goes only when every read
  * of it answered and none found something a removal would lose. Four things hold a tree: a path
  * git calls uncommitted, a commit that is neither reachable from a remote ref nor carried by one of
- * the lane's merged pull requests, a builder whose in-flight seat still stands on it, and a
- * directory that still stands where git holds no live registration. A read that failed holds it too,
- * because a tree nobody could read is a tree nobody proved empty.
+ * the lane's merged pull requests, a shell still in flight on it, and a directory that still stands
+ * where git holds no live registration. A read that failed holds it too, because a tree nobody could
+ * read is a tree nobody proved empty.
+ *
+ * A shell is in flight on a tree in two ways. A builder's standing `working` record names it. Or the
+ * tree was handed at or after its task's standing dispatch: a dispatch stands until that shell's
+ * terminal moves the task, so a tree recorded since then is the one that shell runs in, whichever
+ * shell it is. A tree handed before the standing dispatch belongs to a shell that already returned.
  *
  * A local branch does not count as a home for a commit. The removal would leave the branch, so the
  * commit would survive it, but a branch only this clone holds is still work that exists nowhere
@@ -22,8 +27,10 @@
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/10340
  */
+import type {Instant} from "../wire/lane-record.ts";
 import type {WorkingTrees} from "./assembly.ts";
 import type {LogEntry} from "./fold.ts";
+import type {HandedTree} from "./worktrees.ts";
 
 /** Where a tree's commits live, judged against the remote and the lane's merged pull requests. */
 export type Commits =
@@ -43,10 +50,18 @@ export type TreeState =
 	| {readonly _tag: "Caller"}
 	/** A driver recorded this tree and is not the one running the verb. */
 	| {readonly _tag: "Driver"}
-	/** A builder's in-flight seat still names this tree. */
-	| {readonly _tag: "InFlight"}
+	| {readonly _tag: "InFlight"; readonly by: FlightProof}
 	| {readonly _tag: "Unreadable"; readonly reason: string}
 	| {readonly _tag: "Read"; readonly uncommitted: number; readonly commits: Commits};
+
+/** What says a shell is still in the tree: a builder's seat, or a dispatch no terminal has answered. */
+export type FlightProof = "working" | "dispatch";
+
+const IN_FLIGHT_BECAUSE: Record<FlightProof, string> = {
+	working: "a builder's in-flight record still stands on it, so its shell has not returned",
+	dispatch:
+		"it was handed at or after its task's standing dispatch, and that shell has recorded no terminal",
+};
 
 export type KeptReason =
 	| "uncommitted"
@@ -85,11 +100,7 @@ export const dispose = (state: TreeState): Disposition => {
 					: "git lists no working tree there and the directory still stands",
 			};
 		case "InFlight":
-			return {
-				_tag: "Kept",
-				reason: "in-flight",
-				detail: "a builder's in-flight record still stands on it, so its shell has not returned",
-			};
+			return {_tag: "Kept", reason: "in-flight", detail: IN_FLIGHT_BECAUSE[state.by]};
 		case "Unreadable":
 			return {_tag: "Kept", reason: "unreadable", detail: state.reason};
 		case "Read": {
@@ -119,23 +130,33 @@ export type Seat =
 	| {readonly _tag: "Main"}
 	| {readonly _tag: "Caller"}
 	| {readonly _tag: "Driver"}
-	| {readonly _tag: "InFlight"}
+	| {readonly _tag: "InFlight"; readonly by: FlightProof}
 	/** A live linked worktree; `path` is the spelling git lists it under. */
 	| {readonly _tag: "Linked"; readonly path: string};
 
+/** The lane's standing in-flight records, as far as a tree's seat asks. */
+export interface Flight {
+	/** Every tree a builder's standing `working` record names. */
+	readonly working: ReadonlySet<string>;
+	/** When each task's standing dispatch was recorded. A task with none is absent. */
+	readonly dispatched: ReadonlyMap<string, Instant>;
+}
+
 /**
- * Seat one recorded path. Every path handed in is already resolved the same way, so two spellings
+ * Seat one recorded tree. Every path handed in is already resolved the same way, so two spellings
  * of one directory compare equal.
  *
- * The main tree is tested first: it outranks every other answer, the caller's included. `task` is
- * the one the tree was recorded under, and `null` is how a driver records its own.
+ * The main tree is tested first: it outranks every other answer, the caller's included. A tree's
+ * `task` is the one it was recorded under, and `null` is how a driver records its own.
+ *
+ * A tree handed in the same instant as its task's dispatch counts as in flight: the tie cannot be
+ * ordered, and keeping is the answer that loses nothing.
  */
 export const seatOf = (
-	worktree: string,
-	task: string | null,
+	{worktree, task, at}: HandedTree,
 	trees: WorkingTrees,
 	caller: string,
-	working: ReadonlySet<string>,
+	flight: Flight,
 ): Seat => {
 	if (worktree === trees.main.path) return {_tag: "Main"};
 	const entry = trees.linked.find((linked) => linked.path === worktree);
@@ -144,7 +165,11 @@ export const seatOf = (
 	}
 	if (worktree === caller) return {_tag: "Caller"};
 	if (task === null) return {_tag: "Driver"};
-	if (working.has(worktree)) return {_tag: "InFlight"};
+	if (flight.working.has(worktree)) return {_tag: "InFlight", by: "working"};
+	const dispatched = flight.dispatched.get(task);
+	if (dispatched !== undefined && Date.parse(at) >= Date.parse(dispatched)) {
+		return {_tag: "InFlight", by: "dispatch"};
+	}
 	return {_tag: "Linked", path: entry.path};
 };
 

@@ -18,7 +18,8 @@
  * reads a record's age or its absence as a death: no claim release, worktree retire or reap reads
  * this file, and a shell that dies without a terminal leaves its record standing until the driver
  * records the lap or park that death is owed. `lane cleanup` reads it in the one safe direction: a
- * standing `working` record keeps the tree it names.
+ * standing `working` record keeps the tree it names, and a standing `dispatched` keeps every tree
+ * handed under its task since.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/10232
  */

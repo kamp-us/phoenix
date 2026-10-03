@@ -352,9 +352,11 @@ this lane's builder and reviewers were handed hold nothing the merged pull reque
 node <fabrika> lane cleanup <lane> --root <root>
 ```
 
-`<lane>`, `<root>` and `<fabrika>` are your brief's `## Task` fields. Two trees print as `left` and
-stay: your own, which the driver's cleanup removes once you return, and the driver's, which is still
-running and waiting on you. Exit `74` means it kept a tree that still holds work and removed the rest.
+`<lane>`, `<root>` and `<fabrika>` are your brief's `## Task` fields. These print as `left` and
+stay: your own tree, which the driver's cleanup removes once you return, and any tree a driver
+recorded, since a driver is still running and waiting on you. A driver that stands in the main
+working tree recorded none. Exit `74` means it kept a tree, because it still holds work or its shell
+is still in flight, and removed the rest.
 **No exit here changes your terminal**: the landing is already proven. Copy every `kept` and `left`
 line from stderr into your report, and name any other non-zero code beside them. The keep rule is
 in [operate's contract](../operate/contract.md#lane-cleanup). A run whose caller named no lane skips
