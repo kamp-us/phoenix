@@ -730,3 +730,14 @@ export const TOKEN_UNSERVED = 72;
  * @ruling https://github.com/kamp-us/phoenix/issues/10190
  */
 export const NOT_DIAGNOSED = 73;
+
+/**
+ * `lane cleanup` kept at least one worktree the lane recorded: it holds uncommitted paths, commits
+ * that are on no remote ref and in no merged pull request of the lane, a builder's standing
+ * in-flight seat, a directory git holds no live registration for, a read that failed, or git
+ * declined the plain removal. Every kept tree is named on
+ * stderr with its reason, and every other recorded tree was still removed. Nothing was forced.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10340
+ */
+export const TREES_KEPT = 74;

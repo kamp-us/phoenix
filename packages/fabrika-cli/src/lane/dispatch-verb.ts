@@ -19,6 +19,7 @@ import type {ProveOptions} from "./prove-verb.ts";
 import type {RefreshOptions} from "./refresh-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LoadedLane, loadLane} from "./store.ts";
+import {handTree} from "./worktree-verb.ts";
 
 const VERB = "fabrika lane dispatch";
 type Services = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner;
@@ -216,6 +217,10 @@ export const runDispatch = Effect.fn("lane.dispatch")(function* (
 				`${VERB}: new worktree identity or cleanliness is unproven; retained ${actual}.`,
 			);
 		}
+		// Recorded as soon as the tree is proven, so a codex run that dies still leaves a tree
+		// `lane cleanup` can name. A refusal here costs the record, never the dispatch.
+		const handed = yield* handTree(VERB, options, task, actual);
+		const handedNotes = handed.code === 0 ? [] : handed.stderr;
 		const reconciler = yield* readKey(actual, dependencyReconcilerKey);
 		if (reconciler._tag === "Refused")
 			return refuse(LANE_UNREADABLE, `${VERB}: ${reconciler.reason}.`);
@@ -317,6 +322,7 @@ export const runDispatch = Effect.fn("lane.dispatch")(function* (
 		if (proof.code !== 0) return proof;
 		return answer(JSON.stringify({harness: "codex", task, event: report.event, worktree: actual}), [
 			...refreshNotes,
+			...handedNotes,
 			...proof.stderr,
 		]);
 	}).pipe(

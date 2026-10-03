@@ -217,7 +217,9 @@ export type LaneBriefRead = WireRead<LaneBrief>;
  * The `## Rules` text, byte-fixed and owned by the format.
  *
  * Each sentence is a rule a driver used to carry in their own prose: worktree isolation, URLs over
- * restatements, and the entrypoint with the reason it exists.
+ * restatements, and the entrypoint with the reason it exists. The last one has the shell record its
+ * worktree, because the brief is the one artifact every shell reads and no other seat knows which
+ * tree a shell was handed.
  *
  * The entrypoint is named by reference — `the `fabrika:` path in `## Task`` — and never interpolated,
  * because the reader recomputes this text from the ground alone.
@@ -229,7 +231,11 @@ Invoke every fabrika verb as \`node <fabrika> <group> <verb>\`, where \`<fabrika
 entrypoint in \`## Task\` above — never the bare \`fabrika\` binstub, which in a worktree resolves to
 another checkout's code, so its answer describes a tree you are not standing in. A relative
 entrypoint is this repo's own source and resolves inside your worktree; an absolute one is an
-installed copy your worktree carries no \`node_modules\` for.`;
+installed copy your worktree carries no \`node_modules\` for.
+Before anything else, record this worktree on the lane with
+\`node <fabrika> lane worktree <lane> --root <root> --task <task>\`, the three fields \`## Task\` carries.
+The lane removes the trees it recorded when its run ends, so one it never heard of stays on disk. A
+refusal there stops nothing: name its exit code in your final report and go on.`;
 
 /**
  * The rules an epic lane's child state adds, byte-fixed the same way and appended to {@link RULES}.
