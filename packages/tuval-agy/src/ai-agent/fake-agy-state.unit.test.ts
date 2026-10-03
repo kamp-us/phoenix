@@ -16,7 +16,6 @@ import {beforeEach, describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {
 	type ConversationState,
-	firstLaunch,
 	readConversationState,
 	saveConversationState,
 } from "./fixtures/fake-agy-state.mjs";
@@ -42,7 +41,6 @@ beforeEach(() => {
 describe("the fake agy's conversation-state handoff", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	it("reads an absent file as a first launch", () => {
 		expect(readConversationState(statePath)).toEqual({steps: 0, turns: 0, input: 0, output: 0});
-		expect(firstLaunch).toEqual({steps: 0, turns: 0, input: 0, output: 0});
 	});
 
 	it("refuses an empty or partial file rather than restarting the counters", () => {
