@@ -149,6 +149,10 @@ Then **converse** — you are human-typed, so a human is present. Take one gap a
   brand?"*), and shape the settled answer into the file. The user's first contact with fabrika is a
   real grilling and a real graduation: **setting fabrika up is the tutorial**, which is why no
   bespoke onboarding machinery exists to maintain.
+- **`design-manifest` in a repo with no pages or styles** has nothing to infer from, so the draft
+  starts with the owner. Propose one look in plain words — the mood, two or three colours, the
+  type, how dense a screen is — and ask for a yes. On the yes, shape that look into the file and
+  run the bootstrap below. Without a yes, write nothing: the gap stays reported.
 - **Everything else** you report with its disposition and what that surface is — a `surface` row
   carries both, so you relay them rather than opening a skill file to find out.
 

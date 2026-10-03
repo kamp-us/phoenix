@@ -85,8 +85,9 @@ fabrika ui manifest
 This resolves the **repo's** design surfaces by convention — the design manifest, the typed
 prohibition registry, the component inventory. A repo's own `design-system-manifest.md` is an
 instance, not the definition: whatever repo you run in, its manifest is the law you build to.
-**Exit 12 (no manifest) ends the session at `BLOCKED-NO-MANIFEST`**: tell the user to run
-`/fabrika` — front-door's bootstrap drafts a manifest from the repo's own CSS and pages.
+**Exit 12 (no manifest) ends the session at `BLOCKED-NO-MANIFEST`**: tell the user to type
+`/fabrika:front-door` — its bootstrap drafts a manifest from the repo's own pages and styles, and
+in a repo with none yet it proposes a look in plain words and writes it on the owner's yes.
 Fail loud, route to the bootstrap, **never improvise a design language**.
 
 ```bash
