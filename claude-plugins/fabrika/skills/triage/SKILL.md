@@ -360,7 +360,7 @@ is its only writer: the verb stamps the type, the priority, `status:triaged` and
 un-pickable until it is gated. Stamp it anyway — that is the correct triaged shape for an epic, and
 `--ready-for human` is what parks one for a person instead.
 
-**Do not assert control-plane scope.** `cp-classify` routes it and CODEOWNERS enforces it at merge;
+**Do not assert control-plane scope.** `fabrika ship scope` routes it and CODEOWNERS enforces it at merge;
 asserting it here routes a lane around an approval that never fires.
 
 Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, a `ready-for:` (none on

@@ -8,7 +8,7 @@ GitHub credentials, Node, Git, and Codex CLI must already work in the environmen
 
 From your own repository, register the `kampus` marketplace from GitHub and install the plugin.
 `<owner>/<repo>` is the GitHub repository that publishes the plugin, the `repository` field of
-its `plugin.json`:
+[`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json); the Codex manifest carries none:
 
 ```bash
 codex plugin marketplace add <owner>/<repo> --ref main

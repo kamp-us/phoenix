@@ -67,7 +67,7 @@ exists every fabrika skill's rejections live inline like these.
   case* — an unapproved pitch is the normal state of freshly-triaged work and resolves to
   `pass: false` → exit 1, so the happy path always looks like a failure. The skill drafts the pitch —
   into the body `triage enrich` writes — and lets the seam gate answer.
-- **A `triage classify-cp` verb.** `cp-classify` routes the control-plane question and CODEOWNERS
+- **A `triage classify-cp` verb.** `fabrika ship scope` routes the control-plane question and CODEOWNERS
   enforces it at merge. A triage-side second opinion has a measured cost: a routing note once
   asserted the opposite of a settled ruling and a lane was planned around an approval that never
   fires. The skill states the expectation and asserts nothing.

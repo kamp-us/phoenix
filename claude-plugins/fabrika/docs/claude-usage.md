@@ -59,7 +59,7 @@ Verified on 2026-09-10:
   pins the native transcript to Claude Code 2.1.217. It establishes repeated response fragments,
   ownership fields and counters. It does not claim that a live current Claude runtime was exercised.
 - [Effect LLMS.md, Writing Effect code](https://github.com/Effect-TS/effect/blob/main/LLMS.md#writing-effect-code)
-  grounds the named Effect functions; the repository's beta.92 module types are the API check.
+  grounds the named Effect functions; the module types of the `effect` version the repository pins are the API check.
 
 The [CLI tests](../../../packages/fabrika-cli/src/spend/claude/collector.cli.test.ts) execute the
 commands read from the installed declaration with synthetic native-shaped payloads and real

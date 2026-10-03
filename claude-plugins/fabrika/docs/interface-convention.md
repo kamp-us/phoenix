@@ -154,8 +154,8 @@ nine exit lines, one pointer line and two to spare.
 
 The mechanical checks are [`leaf-help.ts`](../../../packages/fabrika-cli/src/leaf-help.ts), and
 `leaf-help.unit.test.ts` holds every registered leaf to them. Every registered leaf verb passes the
-rule, and no group carries a `leaf-help-baseline.json`. The ratchet reds any verb that breaks the
-rule and is not in its group's baseline, so a new wall fails the unit suite.
+rule. A verb that breaks it is admitted only through a `leaf-help-baseline.json` in its group, and
+no group carries one, so a new wall fails the unit suite.
 
 The exit lines carry their own two-space indent, and that choice is also the renderer's. The pinned
 `formatHelpDocImpl` indents only the description's first line: an embedded `\n` passes through
@@ -235,8 +235,8 @@ failure to invoke it, or a caller reading `$?` cannot tell them apart.
 
   - **Per verb, no shared table** — the `3`+ row above read literally. Permitted; today shipped
     nowhere, which is what the shape costs when a group's verbs *do* share refusal meanings.
-  - **Per group, one shared table** — `report`, `triage`, `review`, `adr`, `spend` and `wire` each
-    ship a `<group>/codes.ts` that every verb in the group allocates from, so a code means one thing
+  - **Per group, one shared table** — every registered group ships a `<group>/codes.ts` that every
+    verb in the group allocates from, so a code means one thing
     across the group whichever verb produced it. That is a **tightening** a group chooses, not a
     further obligation this rule imposes.
 
@@ -245,21 +245,24 @@ failure to invoke it, or a caller reading `$?` cannot tell them apart.
   human-filed*; [`review/codes.ts`](../../../packages/fabrika-cli/src/review/codes.ts) seats `12` as
   *the live head moved past the inspected `--sha`*. Those are two namespaces, not one collision.
 
-- **The `report` ↔ `triage` ↔ `review` code-for-code alignment is a deliberate, bounded courtesy —
-  not a repo-wide namespace.** Those three groups hold `3`, `5`, `6`, `7`, `8`, `9`, `10` and `11` on
-  one meaning each, and every aligning group — the three included — *imports* the constants from
-  the shared registry (`packages/fabrika-cli/src/exit-codes.ts`) rather than
-  restating numerals, so a drift there is unrepresentable rather than merely detectable. The reason
-  is one caller commonly driving all three in a single sweep.
-  [`exit-code-alignment.ts`](../../../packages/fabrika-cli/src/exit-code-alignment.ts) mechanizes
-  exactly that scope and no more: it checks each aligning group against the **base** and never
-  pairwise against a sibling. Above the shared overlap each group's private band is its own —
-  `review`'s `12`–`16` and `triage`'s `12`–`13` are not required to clear each other, and do not.
+- **The code-for-code alignment to the shared registry is a deliberate, bounded courtesy — not a
+  repo-wide namespace.** It began with `report`, `triage` and `review`, which one caller commonly
+  drives in a single sweep, and it now covers the 29 groups `ALIGNED_GROUPS` lists in
+  [`exit-code-alignment.ts`](../../../packages/fabrika-cli/src/exit-code-alignment.ts). The full
+  shared set is `3`, `5`, `6`, `7`, `8`, `9`, `10` and `11`, one meaning each; a group claims the
+  seats whose meaning it shares, which for some is a subset. Every aligning group *imports* the
+  constants from the shared registry (`packages/fabrika-cli/src/exit-codes.ts`) rather than
+  restating numerals, so a drift there is unrepresentable rather than merely detectable. The module
+  mechanizes exactly that scope and no more: it checks each aligning group against the **base** and
+  never pairwise against a sibling. Above the shared overlap each group's private band is its own —
+  `review`'s `12`–`21` and `triage`'s `12`–`27` are not required to clear each other, and do not.
 
-  [`wire/codes.ts`](../../../packages/fabrika-cli/src/wire/codes.ts) is the shipped counter-example:
-  it aligns to nothing and is *registered* as unaligned with its reason, so the exemption carries
-  information instead of reading as an oversight. It legitimately reuses numerals that other groups
-  seat on different meanings — read its table there rather than here. Under a cross-group clearance
+  [`wire/codes.ts`](../../../packages/fabrika-cli/src/wire/codes.ts) and
+  [`config/codes.ts`](../../../packages/fabrika-cli/src/config/codes.ts) are the two shipped
+  counter-examples: each aligns to nothing and is *registered* in `UNALIGNED_GROUPS` with its
+  reason, so the exemption carries information instead of reading as an oversight. `wire`
+  legitimately reuses numerals that other groups seat on different meanings — read its table there
+  rather than here. Under a cross-group clearance
   rule `wire` would be the largest violation in the package; it is not a violation at all.
 
 - **One condition would turn a cross-group reuse into a defect: a reader that resolves an exit code

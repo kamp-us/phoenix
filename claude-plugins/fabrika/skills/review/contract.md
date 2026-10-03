@@ -75,7 +75,7 @@ the same tracked debt the sibling contracts carry.)
   fence, and a later narrowing may not cite one here.
 - **A dead-link / decision-index / skill-frontmatter checker.** The repo's own CI jobs already
   gate each. The rubrics state the expectation; the verdict stays where it is enforced.
-- **A control-plane classifier.** `cp-classify` routes §CP membership and CODEOWNERS enforces it
+- **A control-plane classifier.** `fabrika ship scope` routes §CP membership and CODEOWNERS enforces it
   at merge; a second opinion here has cost a round before. `review post` takes the carrier as an
   **input** (`--carrier advisory`); it never computes the §CP verdict.
 - **A `review trivial` verb or namespace.** Triviality is a *mode* of the skill by founder ruling:

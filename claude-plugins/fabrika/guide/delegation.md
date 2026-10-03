@@ -30,8 +30,9 @@ its workspace globs match that nearest package. The globs come from `pnpm-worksp
 
 `local` is resolved by Node's own resolver — `createRequire(<repoRoot>/package.json).resolve` on
 `@kampus/fabrika-cli/package.json` — so pnpm's symlinked layout, hoisting and unusual nesting all
-resolve correctly. `corrupt` covers a manifest that is not valid JSON, declares no `version`,
-declares no `fabrika` bin, cannot be read, or names a bin that is not on disk.
+resolve correctly. `corrupt` covers a manifest that resolves to a path not on disk, is not valid JSON, declares no
+`version`, declares no `fabrika` bin, cannot be read, or names a bin that is not on disk. An install
+that resolves outside the repo root is `absent`, however well-formed it is.
 
 ## Outcomes
 

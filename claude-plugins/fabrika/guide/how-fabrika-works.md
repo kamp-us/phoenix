@@ -9,8 +9,15 @@ you look up a flag.
 ## Stages are separate actors because a judgement needs someone who did not do the work
 
 The chain is `report` → `triage` → `plan-epic` → `build` → `review` → `ship`, with `heal-ci` off to
-the side for a pull request that has stopped moving. Each is its own skill, run by its own agent
-shell.
+the side for a pull request that has stopped moving. Each is its own skill. The stages a driver
+spawns run in an agent shell from [`../agents/`](../agents/); `report`, `plan-epic` and `heal-ci`
+have no shell and run in the session that invokes them.
+
+That chain is the text path, and the lane machine has more states than it names. A rendered surface
+is built by `build-ui` and judged by `review-ui`. `review` fires a separate `governance` gate and
+waits on its verdict. A pull request waiting in the merge queue and an epic child being folded into
+its epic's branch are states of their own. The
+[`operate` skill](../skills/operate/SKILL.md) holds the full state table.
 
 The obvious alternative is one long-running agent that does all six. It fails on judgement. An agent
 that just wrote a diff and then reviews it is answering "is this right?" holding every reason it
@@ -89,25 +96,24 @@ The guarantee is a state in the machine rather than a step a skill is trusted to
 convention written in prose gets skipped by an agent that forgot, and does not show up in the lane's
 status.
 
-## fabrika calls nothing outside fabrika, and the old pipeline stays frozen beside it
+## fabrika calls nothing outside fabrika, and the pipeline it replaced was deleted
 
-No fabrika skill and no fabrika verb runs any code from the v1 pipeline it replaced. Where v1
-already solved part of a problem, a fabrika session reads that code to learn how it behaves and what
-it got wrong, then writes fabrika's own version. That is duplicated work, knowingly paid for: a
-dependency edge into v1 is the thing that makes deleting v1 impossible later, and the whole point of
-the rewrite was to be able to delete it.
+fabrika replaced an earlier pipeline, v1. No fabrika skill and no fabrika verb ever ran v1 code.
+Where v1 had already solved part of a problem, a fabrika session read that code to learn how it
+behaved and what it got wrong, then wrote fabrika's own version. That was duplicated work, knowingly
+paid for: a dependency edge into v1 is the thing that would have made deleting v1 impossible, and
+the whole point of the rewrite was to be able to delete it.
 
-The rule is about **calls**, and the distinction matters more than it sounds. Byte-level formats
-are the exception: when two programs meet on a GitHub artifact, that format is not a call, it is a
-contract, and fabrika owns it. The other side conforms by pinning fabrika's golden fixture in its
-own test — a file read, not an import — so the dependency direction points *away* from fabrika and
-a v1 that goes away takes its own conformance test with it. Two hand-copied copies of a format drift
-silently; one fixture reds on whichever side reworded it.
+The price bought what it was paid for. v1 was deleted, not frozen: its plugin and its CLI are gone
+from the tree, and fabrika is the one pipeline. The repo that authors fabrika holds the record of
+that deletion in its decision corpus. The alternative on the table was keeping the old tree as a
+comparison baseline. It was refused because two skill rosters answering the same names is the
+two-answers failure again, one level up.
+
+The rule outlives v1, and it is about **calls**. A byte-level format is not a call. When two
+programs meet on a GitHub artifact, that format is a contract, and fabrika owns it: one schema
+module holds the shape and everything else cites it. Two hand-copied copies of a format drift
+silently.
 
 The one deferral that stays sanctioned is a CI gate. Where a gate is already the authority on its
 own question, fabrika expects that gate's answer and computes no second verdict.
-
-Beside all of it, v1 stays frozen rather than cleaned up. Its retirement keeps the old plugin
-suppressed, and the two skill rosters keep separate namespaces so nothing resolves ambiguously.
-Tidying a dead system is work that buys nothing and risks reviving a dependency the cut exists to
-prevent.
