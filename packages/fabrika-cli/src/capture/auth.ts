@@ -65,10 +65,10 @@ export const sessionCookies = (
 
 /**
  * The environment variable carrying each identity's session token. One variable per identity,
- * because the token IS the identity: an unset one means `preview-seed test-account` did not seed
- * that identity on this preview, so the refusal below is what stops a surface naming it from
- * falling back to a seeded one and shooting the wrong audience clean. `preview-seed`'s bin reads
- * the same names on the provisioning side — the two lists move together.
+ * because the token IS the identity: an unset one is fetched from the repository variable, and one
+ * found in neither place is refused, which is what stops a surface naming it from falling back to
+ * a seeded one and shooting the wrong audience clean. `preview-seed`'s `logins.ts` holds the same
+ * names on the provisioning side — the two lists move together.
  */
 export const IDENTITY_TOKEN_ENV: Readonly<Record<CaptureIdentity, string>> = {
 	yazar: "PREVIEW_TEST_SESSION_TOKEN",

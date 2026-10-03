@@ -670,7 +670,7 @@ export const runRender = (
 		// visitor's page — or worse, as the one tier this preview did seed — under the named tier's
 		// name. That is the "unseen ground reading as clean" this whole axis exists to stop, so an
 		// incomplete credential set is UNKNOWN here, before a browser launches. An identity whose token
-		// is unset is one `preview-seed test-account` did not seed on this preview.
+		// is unset is fetched from the repository variable before it is called incomplete.
 		const wantedIdentities = options.surfaces.flatMap((surface) => {
 			const identity = identityOf(stateOf(surface));
 			return identity === null ? [] : [identity];

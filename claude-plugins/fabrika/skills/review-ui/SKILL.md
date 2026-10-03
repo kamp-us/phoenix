@@ -223,8 +223,9 @@ credential for any identity your environment does not already carry a token for 
 `PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN` for the email-unverified çaylak. **Leave the fetch to
 the verb**: it holds the tokens redacted, and a token you read out yourself is a login in your
 transcript. **One identity's token never stands in for another's**: the verb refuses on `11` rather
-than shooting an identity it does hold. **Every `11` on this path ends CANT-SEE with `review-ui note`
-as the honest route**, since none of them is yours to fix. The refusal's own words say which stop it
+than shooting an identity it does hold. **An `11` on this path is a state you could not render**:
+`review-ui note` names it, and "What still owes disclosure" below decides the terminal. Only a
+`bad signature` under your own override is yours to fix. The refusal's own words say which stop it
 is:
 
 - **the variable does not exist** — nobody has run `preview-seed rotate-logins` on this repository
@@ -236,7 +237,9 @@ is:
   value is wrong; a person re-runs `preview-seed rotate-logins`, which replaces it.
 - **`missing session row`** — the key is right and this preview's database does not hold the token:
   the preview deployed before the logins were set or rotated, so its next deploy re-seeds it.
-- **`bad signature`** — the signing key is wrong; re-read the paragraph above before anything else.
+- **`bad signature`** — the signing key is wrong. If you passed `--auth-secret-from` or the run read
+  your ambient `$BETTER_AUTH_SECRET`, that override is yours: drop it and re-run. Otherwise it is a
+  state you could not render, like the four above.
 
 A `--flag` run needs
 one thing more: the surface's identity holding platform admin on this preview's D1, granted offline
