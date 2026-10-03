@@ -1,7 +1,7 @@
 ---
 id: 0270
 title: the calibration conjunct is discharged by a record written at the hand-off, and the criterion is reworded to the evidence class a reader can check
-status: accepted
+status: superseded by [0447](0447-authoring-brief-process-is-retired.md)
 date: 2026-08-10
 tags: [fabrika, skills, briefs, review]
 ---

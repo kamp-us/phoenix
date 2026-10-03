@@ -1,7 +1,7 @@
 ---
 id: 0248
 title: The authoring session mints a fabrika contract's implementation ticket at handoff, and review-skill checks it exists
-status: accepted
+status: superseded by [0447](0447-authoring-brief-process-is-retired.md)
 date: 2026-08-10
 tags: [fabrika, pipeline, process]
 ---
