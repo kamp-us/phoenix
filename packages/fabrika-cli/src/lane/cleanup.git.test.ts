@@ -3,11 +3,11 @@
  *
  * The unit tier pins which commands run. Here git decides: whether a plain `worktree remove` takes
  * a tree that holds ignored installs, whether `rev-list --not --remotes` tells a pushed commit from
- * a local one, and whether a recorded path still matches git's list when the temp directory sits
- * behind a symlinked prefix.
+ * a local one, whether a recorded path still matches git's list when the temp directory sits
+ * behind a symlinked prefix, and that git calls a tree prunable while its directory still stands.
  */
 import {execFileSync} from "node:child_process";
-import {existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync} from "node:fs";
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {NodeServices} from "@effect/platform-node";
@@ -28,7 +28,7 @@ const runnerCwd = process.cwd();
 afterEach(() => process.chdir(runnerCwd));
 
 describe("lane cleanup over a real clone", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it("removes the clean and the pushed tree, keeps the dirty and the local-only one, and leaves its own", async () => {
+	it("removes the clean and the pushed tree, keeps the dirty, local-only and stranded ones, and leaves its own and the driver's", async () => {
 		const home = mkdtempSync(join(tmpdir(), "lane-cleanup-"));
 		const origin = join(home, "origin.git");
 		const root = join(home, "checkout");
@@ -42,7 +42,8 @@ describe("lane cleanup over a real clone", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 		git(root, "push", "-u", "origin", "HEAD:main");
 
 		const tree = (name: string) => join(root, ".claude", "worktrees", name);
-		for (const name of ["clean", "dirty", "local", "pushed", "driver"]) {
+		const names = ["clean", "dirty", "local", "pushed", "stranded", "driver", "shipper"];
+		for (const name of names) {
 			git(root, "worktree", "add", "--detach", tree(name), "origin/main");
 		}
 		mkdirSync(join(tree("clean"), "node_modules"));
@@ -57,27 +58,36 @@ describe("lane cleanup over a real clone", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 		git(tree("pushed"), "switch", "-c", "build/42-pushed");
 		commit("pushed");
 		git(tree("pushed"), "push", "-u", "origin", "build/42-pushed");
+		// Git reads `prunable` off this file, so the tree's directory and its work outlive the flag.
+		writeFileSync(join(tree("stranded"), "notes.md"), "not committed\n");
+		rmSync(join(tree("stranded"), ".git"));
+		expect(git(root, "worktree", "list", "--porcelain")).toContain("prunable");
 
 		const dir = join(root, ".fabrika", "lanes", LANE);
 		mkdirSync(dir, {recursive: true});
 		writeFileSync(join(dir, "workflow.json"), coderTemplateText());
 		writeFileSync(
 			join(dir, "worktrees.jsonl"),
-			["clean", "dirty", "local", "pushed", "driver"]
+			names
 				.map((name) =>
-					JSON.stringify({kind: "handed", worktree: tree(name), task: "issue", at: "2026-10-03"}),
+					JSON.stringify({
+						kind: "handed",
+						worktree: tree(name),
+						task: name === "driver" ? null : "issue",
+						at: "2026-10-03",
+					}),
 				)
 				.join("\n")
 				.concat("\n"),
 		);
 
-		process.chdir(tree("driver"));
+		process.chdir(tree("shipper"));
 		const outcome = await Effect.runPromise(
 			Effect.provide(
 				runCleanup({
 					root: join(root, ".fabrika", "lanes"),
 					lane: LANE,
-					caller: ok(tree("driver")),
+					caller: ok(tree("shipper")),
 					pull: () => Effect.succeed({_tag: "Unmerged"} as const),
 				}),
 				NodeServices.layer,
@@ -88,14 +98,20 @@ describe("lane cleanup over a real clone", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 		expect(outcome.stderr).toEqual([
 			`fabrika lane cleanup: kept ${tree("dirty")} — uncommitted: 1 uncommitted path`,
 			`fabrika lane cleanup: kept ${tree("local")} — unpublished: 1 commit on no remote ref — the lane's log names no pull request`,
-			`fabrika lane cleanup: left ${tree("driver")} — this verb runs in it; it is the caller's to remove from outside`,
+			`fabrika lane cleanup: kept ${tree("stranded")} — unregistered: git marks its registration prunable and the directory still stands`,
+			`fabrika lane cleanup: left ${tree("driver")} — a driver recorded it and nothing proves its shell returned; it is that driver's caller's to remove`,
+			`fabrika lane cleanup: left ${tree("shipper")} — this verb runs in it; it is the caller's to remove from outside`,
 			`fabrika lane cleanup: removed ${tree("clean")}`,
 			`fabrika lane cleanup: removed ${tree("pushed")}`,
-			expect.stringContaining("2 of 5 recorded worktree(s) kept"),
+			expect.stringContaining("3 of 7 recorded worktree(s) kept"),
 		]);
-		expect(
-			["clean", "dirty", "local", "pushed", "driver"].filter((name) => existsSync(tree(name))),
-		).toEqual(["dirty", "local", "driver"]);
+		expect(names.filter((name) => existsSync(tree(name)))).toEqual([
+			"dirty",
+			"local",
+			"stranded",
+			"driver",
+			"shipper",
+		]);
 		// The removal takes the checkout and leaves the branch.
 		expect(git(root, "branch", "--list", "build/42-pushed")).toContain("build/42-pushed");
 		expect(

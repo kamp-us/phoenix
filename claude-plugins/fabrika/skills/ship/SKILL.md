@@ -8,7 +8,8 @@ argument-hint: "[pr-number] — the verified pull request to merge"
 # ship
 
 You are the merge authority: one PR in, one terminal token out. The checkout you stand in is not
-this PR — **read-only, no local git, ever**. Where a merge queue governs the base, success is
+this PR — **read-only, and you type no git, ever**. The one local removal a run makes is step 8's
+`lane cleanup`, after a landing. Where a merge queue governs the base, success is
 **enqueued + green** — the queue owns the async merge, so "QUEUED" is where your run ends and
 "merged" is something you *confirm*, never assert. It is the end of *your* run and not of the lane:
 a PR still in the queue is a wait the driver re-reads on a later pass, never a park and never a
@@ -44,10 +45,9 @@ fabrika ship scope $pr_number
 needs respawning with `isolation: worktree` — never re-run from the same tree. That checkout's branch
 is one another seat moves mid-drive, which silently changes which build of these verbs a driver
 executes, so the spawn flag is a request and this is the fact. It costs one `git rev-parse` inside
-the verb and writes nothing, so **read-only, no local git, ever** still holds for you: you run no git
-yourself. Exit `11` here means the read failed and nothing is proven — also a stop.
+the verb and writes nothing, so **you type no git, ever** still holds for you. Exit `11` here means the read failed and nothing is proven — also a stop.
 
-Already `merged` is an idempotent success — report it and end. `draft`/`closed` is a refusal.
+Already `merged` is an idempotent success — run step 8, report it and end. `draft`/`closed` is a refusal.
 The verb prints the head SHA, the class set with its **required namespaces** (your gate checklist —
 all of them), the control-plane state, and the linked issue: `code`/`skill` classes require
 `Fixes #N` or an explicit `Part of #N` (partial split — merge without auto-close);
@@ -352,8 +352,9 @@ this lane's builder and reviewers were handed hold nothing the merged pull reque
 node <fabrika> lane cleanup <lane> --root <root>
 ```
 
-`<lane>`, `<root>` and `<fabrika>` are your brief's `## Task` fields. Your own tree prints as `left`
-and the driver takes it. Exit `74` means it kept a tree that still holds work and removed the rest.
+`<lane>`, `<root>` and `<fabrika>` are your brief's `## Task` fields. Two trees print as `left` and
+stay: your own, which the driver's cleanup removes once you return, and the driver's, which is still
+running and waiting on you. Exit `74` means it kept a tree that still holds work and removed the rest.
 **No exit here changes your terminal**: the landing is already proven. Copy every `kept` and `left`
 line from stderr into your report, and name any other non-zero code beside them. The keep rule is
 in [operate's contract](../operate/contract.md#lane-cleanup). A run whose caller named no lane skips

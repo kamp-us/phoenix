@@ -21,8 +21,8 @@ const TOKEN = "build:session-a:11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 const at = (minute: number): string => new Date(Date.UTC(2026, 9, 3, 6, minute)).toISOString();
 
-const handed = (worktree: string, minute = 0): string =>
-	`${JSON.stringify({kind: "handed", worktree, task: "issue", at: at(minute)})}\n`;
+const handed = (worktree: string, minute = 0, task: string | null = "issue"): string =>
+	`${JSON.stringify({kind: "handed", worktree, task, at: at(minute)})}\n`;
 
 const LIST = /^git worktree list --porcelain$/;
 const REMOVE = /^git worktree remove /;
@@ -31,15 +31,16 @@ const ahead = (tree: string) =>
 	new RegExp(`^git -C ${tree} rev-list --count HEAD --not --remotes$`);
 const head = (tree: string) => new RegExp(`^git -C ${tree} rev-parse HEAD$`);
 
+const PRUNABLE = "prunable gitdir file points to non-existent location\n";
+
+const block = (path: string, prunable = false): string =>
+	`worktree ${path}\nHEAD aaaa111\n${path === MAIN ? "branch refs/heads/main" : "detached"}\n${prunable ? PRUNABLE : ""}`;
+
 const listing = (...linked: ReadonlyArray<string>) =>
-	okOut(
-		[MAIN, ...linked]
-			.map(
-				(path) =>
-					`worktree ${path}\nHEAD aaaa111\n${path === MAIN ? "branch refs/heads/main" : "detached"}\n`,
-			)
-			.join("\n"),
-	);
+	okOut([MAIN, ...linked].map((path) => block(path)).join("\n"));
+
+/** The main tree and one linked entry git marks prunable. */
+const staleListing = (path: string) => okOut([block(MAIN), block(path, true)].join("\n"));
 
 /** A tree with nothing uncommitted and every commit on a remote ref. */
 const clean = (tree: string): ReadonlyArray<Scripted> => [
@@ -52,6 +53,10 @@ interface Scene {
 	readonly log?: string;
 	readonly inFlight?: string;
 	readonly unreadable?: ReadonlyArray<string>;
+	/** Recorded paths a directory still stands at. */
+	readonly standing?: ReadonlyArray<string>;
+	/** Recorded paths whose existence cannot be probed. */
+	readonly unprobeable?: ReadonlyArray<string>;
 	readonly caller?: Attempt<string>;
 	readonly pull?: PullRead;
 }
@@ -66,7 +71,8 @@ const run = (script: ReadonlyArray<Scripted>, scene: Scene = {}) => {
 			...(scene.inFlight === undefined ? {} : {[`${DIR}/in-flight.jsonl`]: scene.inFlight}),
 		},
 		unreadable: scene.unreadable ?? [],
-		directories: [ROOT, DIR],
+		unprobeable: scene.unprobeable ?? [],
+		directories: [ROOT, DIR, ...(scene.standing ?? [])],
 	});
 	return Effect.runPromise(
 		Effect.provide(
@@ -199,6 +205,74 @@ describe("runCleanup", () => {
 		expect(outcome.code).toBe(TREES_KEPT);
 		expect(outcome.stderr[0]).toContain(`kept ${BUILDER} — in-flight`);
 		expect(removals(calls)).toEqual([]);
+	});
+
+	it("leaves a driver's recorded tree when another shell runs the verb, and reads nothing in it", async () => {
+		const DRIVER = `${MAIN}/.claude/worktrees/agent-driver`;
+		const {outcome, calls, written} = await run(
+			[
+				[once(LIST), listing(DRIVER, BUILDER, SHIPPER)],
+				[LIST, listing(DRIVER, SHIPPER)],
+				...clean(BUILDER),
+				[REMOVE, okOut("")],
+			],
+			{records: handed(DRIVER, 0, null) + handed(BUILDER, 1) + handed(SHIPPER, 2, "ship")},
+		);
+
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			removed: [BUILDER],
+			left: [
+				{worktree: DRIVER, reason: "driver"},
+				{worktree: SHIPPER, reason: "caller"},
+			],
+		});
+		expect(outcome.stderr[0]).toContain(`left ${DRIVER} — a driver recorded it`);
+		expect(removals(calls)).toEqual([`git worktree remove ${BUILDER}`]);
+		expect(calls.some((line) => line.includes(`-C ${DRIVER}`))).toBe(false);
+		expect(written.get(RECORDS)).not.toContain(`"removed","worktree":"${DRIVER}"`);
+	});
+
+	it("leaves a driver's own tree as the caller's when the driver runs the verb", async () => {
+		const {outcome} = await run([[LIST, listing(SHIPPER)]], {records: handed(SHIPPER, 0, null)});
+
+		expect(JSON.parse(outcome.stdout).left).toEqual([{worktree: SHIPPER, reason: "caller"}]);
+	});
+
+	it("keeps and names a tree git marks prunable while its directory still stands", async () => {
+		const {outcome, calls, written} = await run([[LIST, staleListing(BUILDER)]], {
+			records: handed(BUILDER),
+			standing: [BUILDER],
+		});
+
+		expect(outcome.code).toBe(TREES_KEPT);
+		expect(outcome.stderr[0]).toBe(
+			`fabrika lane cleanup: kept ${BUILDER} — unregistered: git marks its registration prunable and the directory still stands`,
+		);
+		expect(removals(calls)).toEqual([]);
+		expect(written.has(RECORDS)).toBe(false);
+	});
+
+	it("answers a prunable tree gone once its directory is proven absent", async () => {
+		const {outcome} = await run([[LIST, staleListing(BUILDER)]], {records: handed(BUILDER)});
+
+		expect(JSON.parse(outcome.stdout)).toMatchObject({gone: [BUILDER]});
+	});
+
+	it("keeps a tree git no longer lists when a directory stands there or the probe fails", async () => {
+		const {outcome, written} = await run([[LIST, listing()]], {
+			standing: [BUILDER],
+			unprobeable: [REVIEWER],
+		});
+
+		expect(outcome.code).toBe(TREES_KEPT);
+		expect(outcome.stderr[0]).toBe(
+			`fabrika lane cleanup: kept ${BUILDER} — unregistered: git lists no working tree there and the directory still stands`,
+		);
+		expect(outcome.stderr[1]).toContain(
+			`kept ${REVIEWER} — unreadable: whether its directory still stands could not be read`,
+		);
+		expect(written.has(RECORDS)).toBe(false);
 	});
 
 	it("keeps and names a tree git declined to remove", async () => {

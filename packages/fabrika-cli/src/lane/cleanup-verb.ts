@@ -19,7 +19,7 @@
 import {Effect, FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {execCapture} from "../io/exec.ts";
-import {appendText} from "../io/fs.ts";
+import {appendText, exists} from "../io/fs.ts";
 import {type Attempt, isAncestor, isObjectName} from "../io/git.ts";
 import {resolveRepo} from "../io/issues.ts";
 import {getPullRequest} from "../io/pulls.ts";
@@ -156,21 +156,44 @@ const readTree = <R>(
 		return {_tag: "Read", uncommitted, commits} as const;
 	});
 
+/**
+ * Whether a directory stands at a path git holds no live registration for. A probe that could not
+ * be made proves nothing, so the tree is kept.
+ */
+const probe = (
+	path: string,
+	prunable: boolean,
+): Effect.Effect<TreeState, never, FileSystem.FileSystem> =>
+	Effect.map(Effect.result(exists(path)), (stands) => {
+		if (Result.isFailure(stands)) {
+			return {
+				_tag: "Unreadable",
+				reason: `whether its directory still stands could not be read: ${stands.failure.reason}`,
+			} as const;
+		}
+		return stands.success ? ({_tag: "Stranded", prunable} as const) : ({_tag: "Gone"} as const);
+	});
+
 interface Judged {
 	readonly worktree: string;
 	readonly disposition: Disposition;
 }
+
+const LEFT_BECAUSE: Record<Extract<Disposition, {_tag: "Left"}>["reason"], string> = {
+	caller: "this verb runs in it; it is the caller's to remove from outside",
+	driver:
+		"a driver recorded it and nothing proves its shell returned; it is that driver's caller's to remove",
+	"main-working-tree": "the main working tree is no lane's to remove",
+};
 
 const lineOf = ({worktree, disposition}: Judged): string => {
 	switch (disposition._tag) {
 		case "Remove":
 			return `${VERB}: removed ${worktree}`;
 		case "Gone":
-			return `${VERB}: gone ${worktree} — no working tree stands there any more`;
+			return `${VERB}: gone ${worktree} — no directory stands there any more`;
 		case "Left":
-			return disposition.reason === "caller"
-				? `${VERB}: left ${worktree} — this verb runs in it; it is the caller's to remove from outside`
-				: `${VERB}: left ${worktree} — the main working tree is no lane's to remove`;
+			return `${VERB}: left ${worktree} — ${LEFT_BECAUSE[disposition.reason]}`;
 		case "Kept":
 			return `${VERB}: kept ${worktree} — ${disposition.reason}: ${disposition.detail}`;
 	}
@@ -251,9 +274,13 @@ export const runCleanup = <R>(
 			[];
 		for (const tree of handed) {
 			const resolved = yield* real(tree.worktree);
-			const seat = seatOf(resolved, before, caller, working);
+			const seat = seatOf(resolved, tree.task, before, caller, working);
 			const state: TreeState =
-				seat._tag === "Linked" ? yield* readTree(tree.worktree, pulls, options.pull) : seat;
+				seat._tag === "Linked"
+					? yield* readTree(tree.worktree, pulls, options.pull)
+					: seat._tag === "Unregistered"
+						? yield* probe(tree.worktree, seat.prunable)
+						: seat;
 			const disposition = dispose(state);
 			if (disposition._tag !== "Remove") {
 				judged.push({worktree: tree.worktree, disposition});
@@ -274,7 +301,8 @@ export const runCleanup = <R>(
 			}
 			const after = yield* resolve(relisted.value);
 			for (const {worktree, real: resolved, why} of asked) {
-				const survives = after.linked.some((entry) => entry.path === resolved && !entry.prunable);
+				const live = after.linked.some((entry) => entry.path === resolved && !entry.prunable);
+				const survives = live || (yield* probe(worktree, false))._tag !== "Gone";
 				judged.push({
 					worktree,
 					disposition: survives

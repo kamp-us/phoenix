@@ -1639,11 +1639,15 @@ node <fabrika> lane cleanup $lane_key
 
 Exit `0` removed every recorded tree it could reach. Exit `74` kept at least one because it still
 holds work, and removed the rest. Your own tree prints as `left`, because no process removes the
-tree it runs in, and the epic assembly worktree is outside this verb and keeps the rule above.
+tree it runs in. A tree an earlier driver of this lane recorded prints as `left` too: nothing here
+proves that driver's shell returned, so its own caller removes it. The epic assembly worktree is
+outside this verb and keeps the rule above.
 **Copy every `kept` and `left` line from stderr into your closing line**, path and reason, on either
 exit: a `left` tree is handed to your caller, who is outside it, and a `kept` one holds work
-somebody has to look at. A kept tree is neither a park nor a retry. `8` and `11` are UNKNOWN: name
-the code in your closing line and go on to the release. The keep rule and the exits are the verb's
+somebody has to look at. A kept tree is neither a park nor a retry. **Every other non-zero exit is
+named in your closing line and the release still runs**: `8` and `11` are UNKNOWN, `7` is a claim
+held over a lane that never booted (step 1's `lane open` exit `51`), which recorded no tree, and
+`4`, `21`, `39` and `65` removed nothing. The keep rule and the exits are the verb's
 section (`fabrika wire doc-section --heading "lane cleanup" < <skill-base>/contract.md`).
 
 Both ends of the loop release the claim, and it is the **last** thing the run does — after the park

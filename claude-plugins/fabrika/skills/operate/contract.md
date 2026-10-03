@@ -1976,26 +1976,35 @@ process. Nothing is forced, and no local branch is deleted.
 Each recorded tree gets one answer, in this order:
 
 1. **left, `main-working-tree`** — the path is the main working tree.
-2. **gone** — no working tree of this clone stands at the path, or git marks it prunable.
+2. **gone**, or **kept, `unregistered`**, or **kept, `unreadable`** — git lists no working tree at
+   the path, or marks the one it lists prunable. The path is then probed. `gone` is the answer only
+   when no directory stands there. A directory that still stands is kept: git reads `prunable` off
+   the tree's `.git` file, so the directory can still hold work. A probe that fails is kept as
+   `unreadable`.
 3. **left, `caller`** — the path is the tree this verb runs in. No process removes its own tree, so
    the caller hands it to whoever is outside it.
-4. **kept, `in-flight`** — a builder's standing `working` record in `in-flight.jsonl` names the
+4. **left, `driver`** — the tree was recorded with no task, which is how a driver records its own,
+   and it is not the tree this verb runs in. A driver outlives the shells it spawns, the shipper
+   that runs this verb included, and nothing on this machine proves its shell returned. Nothing in
+   the tree is read. It is that driver's caller's to remove.
+5. **kept, `in-flight`** — a builder's standing `working` record in `in-flight.jsonl` names the
    tree, so its shell has not returned.
-5. **kept, `uncommitted`** — `git status --porcelain` in the tree printed a path. Ignored paths do
+6. **kept, `uncommitted`** — `git status --porcelain` in the tree printed a path. Ignored paths do
    not count, so installed packages never hold a tree.
-6. **kept, `unpublished`** — `git rev-list --count HEAD --not --remotes` in the tree is above zero,
+7. **kept, `unpublished`** — `git rev-list --count HEAD --not --remotes` in the tree is above zero,
    and no merged pull request of the lane carries those commits. The lane's pull requests are the
    ones its `events.jsonl` names in a `pr` field. One carries the commits when it is merged and the
    tree's `HEAD` is its head commit or an ancestor of it. That is the squash case: the remote branch
    is gone after the merge, and the merged pull request is what says the commits are safe. A commit
    only a local branch holds is kept. A pull request that could not be read proves nothing, so the
    tree is kept and the reason names it.
-7. **kept, `unreadable`** — one of the reads above failed in that tree.
-8. **removed**, or **kept, `remove-refused`** — the removal ran, and the working trees were listed
-   again. A tree still listed is kept with git's own reason.
+8. **kept, `unreadable`** — one of the reads above failed in that tree.
+9. **removed**, or **kept, `remove-refused`** — the removal ran, and the working trees were listed
+   again. A tree still listed, or whose directory still stands, is kept with git's own reason.
 
 A tree answered `removed` or `gone` gets a `removed` line in `worktrees.jsonl`, appended under the
-ledger lock after the removals. A path reused later is then no longer this lane's. When that append
+ledger lock after the removals. A path reused later is then no longer this lane's. A `left` or
+`kept` tree keeps its `handed` line. When that append
 does not land, stderr says so and the exit is unchanged: the next run reads those trees as `gone` and
 records it then. The lock is not held while trees are read or removed.
 

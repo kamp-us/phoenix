@@ -2423,7 +2423,7 @@ const worktree = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"worktree",
-			'Records this tree for `lane cleanup`; prints {"answer":"handed"|"main",lane,task,worktree,recorded}.',
+			'Records this tree; prints {"answer":"handed"|"main",lane,task,worktree,recorded}.',
 			{
 				4: "bad lane record or worktree record",
 				7: "no lane",
@@ -2466,7 +2466,7 @@ const cleanup = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"cleanup",
-			'Removes the lane\'s recorded worktrees, never forced; prints {"answer":"cleaned",lane,removed,gone,left}.',
+			'Removes the recorded worktrees; prints {"answer":"cleaned",lane,removed,gone,left}.',
 			{
 				4: "bad lane record, worktree record or in-flight record",
 				7: "no lane",
@@ -2476,7 +2476,7 @@ const cleanup = leafCommand(
 				74: "trees were kept; each is on stderr with its reason",
 				...ROOT_EXITS,
 			},
-			["stderr names every tree: removed, gone, left (this tree, the main tree) or kept."],
+			["stderr names every tree: removed, gone, left (this, main or a driver's tree) or kept."],
 		),
 	),
 	Command.withExamples([{command: "fabrika lane cleanup 5673"}]),
