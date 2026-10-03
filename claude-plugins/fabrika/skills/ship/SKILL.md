@@ -242,7 +242,7 @@ fabrika ship merge $pr_number --sha 03135b91
 ```
 
 `merged\t<commit>\t<method>` at exit 0 is a landing proven by reading `merged` plus the merge
-commit back — go to step 7. `16` is a proven refusal: either a queue governs the base after all
+commit back — go to step 7, then step 8. `16` is a proven refusal: either a queue governs the base after all
 (run the queue route below) or the PR is not mergeable (disarm, note, route to repair). `19` means
 the repository permits no merge method — stop and escalate to a human with settings access; no verb
 can fix it. `8` means whether it landed is **UNKNOWN**: re-read the PR before you say anything, and
@@ -310,7 +310,7 @@ old lane may well hold the arm now. Reasoning from when the lane opened, or from
 skips the one `lane report` that would have settled it, and the lane pays a repair round for a
 conflict nobody's code caused.
 
-**`reconcile`'s terminals are the run's terminals.** `landed` → step 7. `ejected` →
+**`reconcile`'s terminals are the run's terminals.** `landed` → step 7, then step 8. `ejected` →
 `disarm --site ejected`, note, route to
 repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts. The
 routing is to repair and the *charge* is not: see the ejection row below for which token records it,
@@ -343,14 +343,31 @@ is a human's. **You never flip a flag, and never read an inherited containment s
 signal.** What counts as a dark-ship signal, and how the flag key is read off the body, are the
 verb's section (`fabrika wire doc-section --heading "ship release" < <skill-base>/contract.md`).
 
+## 8 — Remove the lane's worktrees (a landing you read back, and a brief that named a lane)
+
+Once the merge is confirmed landed — `landed` or `already-merged`, never a queue wait — the trees
+this lane's builder and reviewers were handed hold nothing the merged pull request does not:
+
+```bash
+node <fabrika> lane cleanup <lane> --root <root>
+```
+
+`<lane>`, `<root>` and `<fabrika>` are your brief's `## Task` fields. Your own tree prints as `left`
+and the driver takes it. Exit `74` means it kept a tree that still holds work and removed the rest.
+**No exit here changes your terminal**: the landing is already proven. Copy every `kept` and `left`
+line from stderr into your report, and name any other non-zero code beside them. The keep rule is
+in [operate's contract](../operate/contract.md#lane-cleanup). A run whose caller named no lane skips
+this step.
+
 ## Terminal vocabulary
 
 <!-- anchor: CAPABILITIES --> Capability set: a shell and a repo-scoped token; writes used —
 merge-queue enqueue/disarm, the direct merge on an unqueued base (`ship merge`, and only through
 that verb), PR comments (`note`, thread rationale), thread resolution, the
 close→reopen nudge, one label (`status:awaiting-release`), and one append to the driver's lane
-ledger through `lane report` at the `--root` your brief carries, a path outside this checkout. No
-push, no local git mutation, no
+ledger through `lane report` at the `--root` your brief carries, a path outside this checkout, and
+after a landing the removal of the lane's recorded worktrees through `lane cleanup`. No
+push, no other local git mutation, no
 implementation, no review verdict, no flag flip. Every run ends as exactly one of:
 **already-merged (idempotent success)** · **QUEUED — enqueued, awaiting the queue** and
 **UNRESOLVED at horizon — still queued, or armed and not yet past the floor; still clean** (the two queue waits: your run ends, the lane

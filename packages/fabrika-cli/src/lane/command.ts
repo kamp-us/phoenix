@@ -35,6 +35,7 @@ import {claimOwnership, runAmend} from "./amend-verb.ts";
 import {closedReader} from "./archive-move.ts";
 import {runArchiveSweep} from "./archive-sweep-verb.ts";
 import {boardClaimSeams, runArchive} from "./archive-verb.ts";
+import {standingInLinkedWorktree} from "./assembly.ts";
 import {runAssemblyBody} from "./assembly-body-verb.ts";
 import {FIELDS, runAssemblyPr} from "./assembly-pr-verb.ts";
 import {runAssembly} from "./assembly-verb.ts";
@@ -43,6 +44,7 @@ import {boardRecorder, boardSeatReader} from "./board-seat.ts";
 import {runBrief} from "./brief-verb.ts";
 import {claimHoldReader} from "./claim-hold.ts";
 import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
+import {boardPull, runCleanup} from "./cleanup-verb.ts";
 import {runClear} from "./clear-verb.ts";
 import {closureReader} from "./closure.ts";
 import {CLASS_UNRECOGNISED} from "./codes.ts";
@@ -100,6 +102,7 @@ import {
 } from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
 import {runWait} from "./wait-verb.ts";
+import {runWorktree} from "./worktree-verb.ts";
 
 const laneArgument = Argument.string("lane").pipe(
 	Argument.withDescription(
@@ -2396,6 +2399,89 @@ const working = leafCommand(
 	]),
 );
 
+const worktree = leafCommand(
+	"worktree",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("the task this shell serves; omit it for the lane's driver"),
+		),
+	},
+	Effect.fn(function* ({lane, root, task}) {
+		const tree = yield* repoRoot;
+		const linked = yield* standingInLinkedWorktree;
+		yield* emit(
+			yield* onKey("worktree", lane, root, (_key, ref) =>
+				runWorktree({...ref, task: Option.getOrNull(task), worktree: tree, linked}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Record the worktree this shell runs in on the lane it serves."),
+	Command.withDescription(
+		laneHelp(
+			"worktree",
+			'Records this tree for `lane cleanup`; prints {"answer":"handed"|"main",lane,task,worktree,recorded}.',
+			{
+				4: "bad lane record or worktree record",
+				7: "no lane",
+				8: "the append did not land",
+				11: "read failed, UNKNOWN",
+				13: "task unknown",
+				21: "bad key",
+				40: "the ledger lock is held; retry",
+				70: "no absolute tree",
+				...ROOT_EXITS,
+			},
+		),
+	),
+	Command.withExamples([
+		{command: "fabrika lane worktree 5673 --root /repo/.fabrika/lanes --task issue"},
+	]),
+);
+
+const cleanup = leafCommand(
+	"cleanup",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name the lane's pull requests are read on (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, repo}) {
+		const caller = yield* repoRoot;
+		const pull = boardPull(Option.getOrNull(repo), process.env);
+		yield* emit(
+			yield* onKey("cleanup", lane, root, (_key, ref) => runCleanup({...ref, caller, pull})),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Remove the worktrees a lane recorded, keeping any that hold work."),
+	Command.withDescription(
+		laneHelp(
+			"cleanup",
+			'Removes the lane\'s recorded worktrees, never forced; prints {"answer":"cleaned",lane,removed,gone,left}.',
+			{
+				4: "bad lane record, worktree record or in-flight record",
+				7: "no lane",
+				8: "removals ran and the trees cannot be re-read",
+				11: "read failed, UNKNOWN; nothing removed",
+				21: "bad key",
+				74: "trees were kept; each is on stderr with its reason",
+				...ROOT_EXITS,
+			},
+			["stderr names every tree: removed, gone, left (this tree, the main tree) or kept."],
+		),
+	),
+	Command.withExamples([{command: "fabrika lane cleanup 5673"}]),
+);
+
 const record = leafCommand(
 	"record",
 	{
@@ -2490,6 +2576,8 @@ export const laneCommand = Command.make("lane").pipe(
 		wait,
 		dispatched,
 		working,
+		worktree,
+		cleanup,
 		record,
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),

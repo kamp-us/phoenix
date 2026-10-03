@@ -109,7 +109,8 @@ that dispatch replaced, so it does not stand. `inFlight` is absent where nothing
 `in-flight.jsonl` that cannot be read or is not the shape leaves the fold's answer whole: `inFlight`
 is absent, `inFlightUnread` names why, and stderr says the record is UNKNOWN. No fold reads these
 records, so `stateValue` and `context` are the same with or without them, and no claim release,
-worktree retire or reap reads them either. They live apart from `facts.jsonl` because that file's
+worktree retire or reap reads them either. [`lane cleanup`](#lane-cleanup) reads a standing
+`working` record as a reason to keep the tree it names, and reads nothing into an absent one. They live apart from `facts.jsonl` because that file's
 reader refuses a kind it does not know.
 
 ### Exit status
@@ -837,7 +838,10 @@ reconciler and `codex exec` steps, what counts as success, and the retained work
 In short: it creates a dedicated detached git worktree and runs `codex exec` with a fixed skill
 preload envelope and the emitted lane brief unchanged. It preserves Codex model and policy
 configuration. Process exit zero alone is not completion: a new task terminal and fresh artifact
-proof are required. stdout is `{harness, task, event, worktree}`, and worktrees are retained.
+proof are required. stdout is `{harness, task, event, worktree}`, and worktrees are retained. The
+tree is recorded on the lane as [`lane worktree`](#lane-worktree) records one, once it is proven, so
+[`lane cleanup`](#lane-cleanup) can remove it when the run ends. A record that does not land is
+named on stderr and stops nothing.
 
 ### Exit status
 
@@ -1919,6 +1923,100 @@ stdout is `{answer: "working", lane, task, token, worktree, at}`.
 - `40` — another writer holds the ledger lock. Retry.
 - `70` — `--token` is not a build claim token, or the tree root is not an absolute path. Nothing was
   appended.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane worktree`
+
+### Output
+
+Appends a `handed` record to the lane's `<root>/<key>/worktrees.jsonl`: `{kind: "handed", worktree,
+task, at}`. Every shell of a lane runs it once, first thing, from inside its own worktree; the
+`lane-brief` rules tell it to. `worktree` is the absolute root of the git tree the verb runs in, read
+off git rather than passed. `task` is `--task`, which must be a task of the lane's machine, or `null`
+when it is omitted, which is how a driver records its own tree. No fold state is read, so a shell
+records whatever state its task stands in.
+
+The file is the set [`lane cleanup`](#lane-cleanup) removes, and it is separate from
+`in-flight.jsonl` on purpose: a `working` record stops standing at the task's next event, and these
+do not. A tree is in the set while its latest line is `handed`; `lane cleanup` appends a `removed`
+line when it takes one. It is never an event, so `events.jsonl` and the fold are untouched. The
+append takes the lane's ledger lock. `lane record` never reads the file, so the path stays on this
+machine.
+
+stdout is `{answer, lane, task, worktree, recorded}`:
+
+- `handed`, `recorded: true` — the line was appended.
+- `handed`, `recorded: false` — the lane already holds this tree. Nothing was appended.
+- `main`, `recorded: false` — the verb ran in the main working tree, which no lane removes. Nothing
+  was appended.
+
+`lane dispatch --harness codex` appends the same record for the tree it creates, as soon as that
+tree is proven.
+
+### Exit status
+
+- `4`, `7`, `21` — the [shared read and record exits](#the-shared-read-and-record-exits), over
+  `workflow.json`, `events.jsonl` and `worktrees.jsonl`.
+- `8` — the append did not land, so the tree is NOT recorded.
+- `11` — the lane, its worktree record, or which git tree this runs in could not be read.
+- `13` — `--task` names no task of the lane's machine. Nothing was appended.
+- `40` — another writer holds the ledger lock. Retry.
+- `70` — the tree root is not an absolute path. Nothing was appended.
+- `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane cleanup`
+
+### Output
+
+Removes the worktrees the lane recorded with [`lane worktree`](#lane-worktree). The set is the
+record and nothing else: no directory is listed and no tree is matched by name, so a tree the lane
+did not record cannot be reached. Each removal is a plain `git worktree remove <path>` run by this
+process. Nothing is forced, and no local branch is deleted.
+
+Each recorded tree gets one answer, in this order:
+
+1. **left, `main-working-tree`** — the path is the main working tree.
+2. **gone** — no working tree of this clone stands at the path, or git marks it prunable.
+3. **left, `caller`** — the path is the tree this verb runs in. No process removes its own tree, so
+   the caller hands it to whoever is outside it.
+4. **kept, `in-flight`** — a builder's standing `working` record in `in-flight.jsonl` names the
+   tree, so its shell has not returned.
+5. **kept, `uncommitted`** — `git status --porcelain` in the tree printed a path. Ignored paths do
+   not count, so installed packages never hold a tree.
+6. **kept, `unpublished`** — `git rev-list --count HEAD --not --remotes` in the tree is above zero,
+   and no merged pull request of the lane carries those commits. The lane's pull requests are the
+   ones its `events.jsonl` names in a `pr` field. One carries the commits when it is merged and the
+   tree's `HEAD` is its head commit or an ancestor of it. That is the squash case: the remote branch
+   is gone after the merge, and the merged pull request is what says the commits are safe. A commit
+   only a local branch holds is kept. A pull request that could not be read proves nothing, so the
+   tree is kept and the reason names it.
+7. **kept, `unreadable`** — one of the reads above failed in that tree.
+8. **removed**, or **kept, `remove-refused`** — the removal ran, and the working trees were listed
+   again. A tree still listed is kept with git's own reason.
+
+A tree answered `removed` or `gone` gets a `removed` line in `worktrees.jsonl`, appended under the
+ledger lock after the removals. A path reused later is then no longer this lane's. When that append
+does not land, stderr says so and the exit is unchanged: the next run reads those trees as `gone` and
+records it then. The lock is not held while trees are read or removed.
+
+stderr carries one line per recorded tree, `fabrika lane cleanup: <removed|gone|left|kept> <path>`,
+with the reason after it on a `left` or a `kept`. On exit `0`, stdout is
+`{answer: "cleaned", lane, removed, gone, left}`: `removed` and `gone` are path lists and `left` is
+`[{worktree, reason}]`. A lane that recorded no tree answers the same shape with three empty lists.
+
+The epic assembly worktree is never recorded here, so this verb never removes it.
+[`lane assembly --remove`](#lane-assembly) keeps that rule.
+
+### Exit status
+
+- `4`, `7`, `21` — the [shared read and record exits](#the-shared-read-and-record-exits), over
+  `workflow.json`, `events.jsonl`, `worktrees.jsonl` and `in-flight.jsonl`. Nothing was removed.
+- `8` — at least one removal ran and the working trees could not be listed again, so which removals
+  landed is UNKNOWN. stderr names each tree a removal was attempted on.
+- `11` — the lane, its worktree record, its in-flight record, the tree this runs in or the
+  repository's working trees could not be read. Nothing was removed.
+- `74` — at least one tree was kept. stdout is empty; stderr names every tree and each kept one's
+  reason. Every tree the rule allowed was still removed.
 - `39`, `65` — [the lanes root](#the-lanes-root).
 
 ## `lane record`

@@ -40,7 +40,9 @@ Exit `11` means an input, worktree, process, or lane read failed; `18` means no 
 refusals retain their own exit codes — including `lane brief`'s `59`, the assembly branch not
 carrying a lane verb the brief instructs the shell to run. Every refusal leaves stdout empty.
 
-All created worktrees remain on disk, including clean successful ones. Child output is captured
+All created worktrees remain on disk when the verb returns, including clean successful ones. Each
+is recorded on the lane once it is proven, so `fabrika lane cleanup <lane>` removes it when the run
+ends unless it holds uncommitted paths or commits found nowhere else. Child output is captured
 beside the ledger as `dispatch-<task>.stdout` and `dispatch-<task>.stderr`. Inspect those files and
 the worktree before recovery. The dispatch lock is removed when the process exits normally or is
 interrupted through Effect; a killed dispatcher may leave its lock directory. Confirm that its

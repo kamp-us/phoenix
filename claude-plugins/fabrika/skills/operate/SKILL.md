@@ -29,7 +29,8 @@ template through `lane migrate <lane>`, which is the form that writes that lane 
 comments on the driven issue, the driven issue's row fields on the Projects table that `lane record`
 writes through `table sync`, the `ship disarm --site post-enqueue` a `parked` read at
 `ship:queued` owes, whatever a recipe verb writes on
-its own account (step 3's chore row), and, **on an epic lane only**, that run's assembly branch: you
+its own account (step 3's chore row), the removal of the worktrees the lane recorded through
+`lane cleanup` (step 4), and, **on an epic lane only**, that run's assembly branch: you
 merge a passing child into it, push it, and open the one draft PR (step 2's `integrate`). Never a
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
 branch — that one is `ship`'s, once, at the tail.
@@ -442,6 +443,15 @@ the verb answers its path); `11` is working trees, an origin, or the containment
 could not be read. Placing it is not optional — without the branch `lane prove` reads every child's range as
 UNKNOWN (exit `11`), so a run driven without it proves nothing it records.
 
+**Record your own worktree once the lane folds**, so the run that ends it can name it:
+
+```bash
+node <fabrika> lane worktree $lane_key
+```
+
+No `--task`: a driver serves the lane, not one task. It answers `main` and records nothing when you
+stand in the main working tree. A refusal holds nothing up; name its code in your closing line.
+
 Done when `lane status` folds and prints a `stateValue`.
 
 ## 2 — Read the fold, route each active task
@@ -481,7 +491,8 @@ path that exists there, and its rules from byte-fixed text the `lane-brief` wire
 Those rules are the three a driver used to carry in their own prose — the isolated worktree, URLs
 never restatements, and the brief's own `fabrika:` entrypoint for every verb rather than the bare
 binstub (now in the spawned tree). They are in the brief because a prompt written per
-dispatch is a prompt two drivers write differently.
+dispatch is a prompt two drivers write differently. A fourth has the shell record its worktree on
+the lane with `lane worktree`, which is the set step 4's `lane cleanup` removes.
 
 **Record the dispatch, then spawn.** With the brief in hand, and before either spawn below:
 
@@ -610,7 +621,8 @@ names the new shell and never the dead one. Read it before stopping an operator 
 quiet: a silent log beside a named shell is what a working re-spawn looks like, so the silence alone
 proves nothing stuck. **It records who said they were working, never proof that they still are.**
 No claim release, worktree retire or reap reads it, and nothing reads its age or its absence as a
-death: a dead spawn is proven only by the reads step 3 names. `inFlightUnread` in its place means
+death: a dead spawn is proven only by the reads step 3 names. `lane cleanup` reads it one way only:
+a standing `working` record keeps the tree it names. `inFlightUnread` in its place means
 the record could not be read, which says nothing about the lane.
 
 **An `integrate` state is the one thing you do with your own hands.** It routes to no shell —
@@ -1616,6 +1628,23 @@ still standing inside the tree (the `cd` in §3 is one) is the other. Read the r
 it in your terminal line, and leave the tree. Neither a park nor a queue wait is a terminal, so a
 `LANE-PARKED` and a `LANE-WAITING` run both leave the worktree in place for the successor that
 resumes the lane.
+
+**Every run that holds the lane removes the worktrees its shells were handed before it releases**,
+whether the fold reads a terminal, a park or a wait. Each shell recorded its tree on the lane as its
+brief told it to, and every shell you spawned has returned by now:
+
+```bash
+node <fabrika> lane cleanup $lane_key
+```
+
+Exit `0` removed every recorded tree it could reach. Exit `74` kept at least one because it still
+holds work, and removed the rest. Your own tree prints as `left`, because no process removes the
+tree it runs in, and the epic assembly worktree is outside this verb and keeps the rule above.
+**Copy every `kept` and `left` line from stderr into your closing line**, path and reason, on either
+exit: a `left` tree is handed to your caller, who is outside it, and a `kept` one holds work
+somebody has to look at. A kept tree is neither a park nor a retry. `8` and `11` are UNKNOWN: name
+the code in your closing line and go on to the release. The keep rule and the exits are the verb's
+section (`fabrika wire doc-section --heading "lane cleanup" < <skill-base>/contract.md`).
 
 Both ends of the loop release the claim, and it is the **last** thing the run does — after the park
 comment or the record has landed, so a successor that wins the lane the moment you let go finds
