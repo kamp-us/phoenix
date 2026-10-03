@@ -25,9 +25,12 @@ the hand-off, which calibration inputs it gave the `skill-reviewer` agent.
 The pipeline stopped following both, and
 [#10333](https://github.com/kamp-us/phoenix/issues/10333) recorded the evidence on 2026-10-03:
 
-- 43 issues titled `Authoring brief:` exist and all are closed. The newest was created 2026-08-08
-  and the last closed 2026-08-23
-  (`gh issue list --state all --search '"Authoring brief:" in:title'`).
+- 31 issues have a title starting `Authoring brief:` and all are closed. The newest was created
+  2026-08-10 and the last closed 2026-08-19. The search matches words rather than the title prefix,
+  so the count keeps only the titles that start with it (`gh issue list --state all --limit 200
+  --search '"Authoring brief:" in:title' --json title,state,createdAt,closedAt --jq '[.[] |
+  select(.title | startswith("Authoring brief:"))]'`, run 2026-10-03). The issue's own body counts
+  43, which is every closed hit of the unfiltered search, tickets about briefs included.
 - Skills landed afterwards without one. `skill-doctor` came from an ordinary feature ticket
   ([#8048](https://github.com/kamp-us/phoenix/issues/8048), landed 2026-09-20) and `test-audit`
   landed 2026-09-26 (`git log --diff-filter=A` on each `SKILL.md`).
