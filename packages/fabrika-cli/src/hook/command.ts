@@ -21,7 +21,7 @@ import {runCodes} from "./codes-verb.ts";
 import {runPluginSync} from "./plugin-sync-verb.ts";
 import {runPreBash} from "./pre-bash-verb.ts";
 import {runStashGuard} from "./stash-guard-verb.ts";
-import {type CliEntry, runWorktreeCreate} from "./worktree-create-verb.ts";
+import {runWorktreeCreate} from "./worktree-create-verb.ts";
 
 const jsonFlag = Flag.boolean("json").pipe(
 	Flag.withDefault(false),
@@ -162,20 +162,6 @@ const stashGuard = leafCommand(
 	Command.withExamples([{command: "fabrika hook stash-guard"}]),
 );
 
-/**
- * The way back into this same build of the CLI, for the sweep the provisioner runs as a child.
- *
- * `argv[1]` rather than a resolved package path: it is the entry module this process was actually
- * started from, so a checkout and an installed copy each re-enter themselves. Absent it, the sweep
- * is skipped and said so — never guessed at.
- */
-const cliEntry = (): CliEntry | null => {
-	const entry = globalThis.process.argv[1];
-	return entry === undefined || entry.trim() === ""
-		? null
-		: {node: globalThis.process.execPath, entry};
-};
-
 const worktreeCreate = leafCommand(
 	"worktree-create",
 	{
@@ -190,7 +176,6 @@ const worktreeCreate = leafCommand(
 				stdin: Effect.sync(readStdin),
 				dryRun,
 				env: globalThis.process.env,
-				cli: cliEntry(),
 			}),
 		);
 	}),
@@ -199,7 +184,6 @@ const worktreeCreate = leafCommand(
 	Command.withDescription(
 		[
 			"Creates the worktree the WorktreeCreate envelope on stdin names and prints its absolute path.",
-			"  It first runs `fabrika build reap`; its answer never blocks the spawn.",
 			"  3: stdin held nothing",
 			"  12: not a hook envelope",
 			"  13: fd 0 unreadable (UNKNOWN)",

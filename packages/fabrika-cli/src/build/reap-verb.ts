@@ -24,9 +24,9 @@
  *   4. Each tree gets one stat, and the arms answerable off that plus the registration's own fields
  *      run first ({@link classifyCheap}). Only what they leave open pays for the `git status` and
  *      the containment scan — 13 trees of 243 on the clone this was measured against, and reading
- *      those two for the other 230 anyway is the 42.8s a sweep used to cost before a hook ran one
- *      per spawn. **Every read that fails is a KEEP**, per-tree: a sweep of seventy trees must not
- *      lose its whole answer to one unreadable directory.
+ *      those two for the other 230 anyway is the 42.8s a sweep used to cost. **Every read that
+ *      fails is a KEEP**, per-tree: a sweep of seventy trees must not lose its whole answer to one
+ *      unreadable directory.
  *   5. Nothing is removed at all without `--execute`. The default run prints classifications.
  *   6. `--limit` bounds the executed set to that many removals; everything past it stays planned and
  *      is reported unattempted, so a population too large for one watchdog window is walked in

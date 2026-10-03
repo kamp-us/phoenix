@@ -3,8 +3,8 @@
  * and nothing else.
  *
  * It lives in the clone's **common** git dir, so every worktree of the clone contends for the same
- * lock whichever tree the envelope's `cwd` names. The reap sweep before it and the dependency install
- * after it run outside, which is what keeps the hold short: a fetch and an add, measured in hundreds
+ * lock whichever tree the envelope's `cwd` names. The dependency install after it runs outside, which
+ * is what keeps the hold short: a fetch and an add, measured in hundreds
  * of milliseconds, never a ~10s install.
  * @ruling https://github.com/kamp-us/phoenix/issues/7057
  *

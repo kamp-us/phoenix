@@ -131,7 +131,7 @@ describe("a payload the verb cannot plan from", () => {
 		const shell = fakeShell([]);
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runWorktreeCreate({stdin: envelope(payload), dryRun: false, env: {}, cli: null}),
+				runWorktreeCreate({stdin: envelope(payload), dryRun: false, env: {}}),
 				Layer.merge(shell.layer, fakeFs({}).layer),
 			),
 		);
