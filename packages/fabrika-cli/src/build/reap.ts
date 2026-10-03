@@ -220,11 +220,17 @@ export interface Salvage {
 }
 
 export type Verdict =
+	/** A clean tree git alone released: there is nothing to salvage, so the arm carries none. */
 	| {
 			readonly _tag: "Remove";
-			readonly license: License;
+			readonly license: Exclude<License, "branch-ended">;
 			readonly because: string;
-			/** `null` under every license but `branch-ended`, the only one a dirty tree can hold. */
+	  }
+	/** The board's release, the only one a dirty tree can leave by. */
+	| {
+			readonly _tag: "Remove";
+			readonly license: "branch-ended";
+			readonly because: string;
 			readonly salvage: Salvage | null;
 	  }
 	/** No tree to remove — only the registration, which `git worktree prune` clears. */
@@ -304,7 +310,7 @@ export const classifyGit = (
 	const clean = facts.uncommitted.paths === 0;
 	const license = trunkLicense(facts.landing);
 	if (clean && license !== null) {
-		return {_tag: "Remove", license, because: whyLanded(facts.landing, trunk), salvage: null};
+		return {_tag: "Remove", license, because: whyLanded(facts.landing, trunk)};
 	}
 	if (facts.stranded._tag === "Unknown") {
 		return {
@@ -318,7 +324,6 @@ export const classifyGit = (
 			license: "ref-reached",
 			because:
 				"it is clean, unlocked, quiet, and a branch, remote-tracking ref or tag reaches every commit it holds, so removing the checkout loses nothing",
-			salvage: null,
 		};
 	}
 	return null;
@@ -454,7 +459,7 @@ const describeSignal = (signal: LiveSignal): string => {
 };
 
 /** The license the trunk gives for a HEAD, or `null` when it does not carry it. */
-const trunkLicense = (landing: Containment): License | null => {
+const trunkLicense = (landing: Containment): "ancestor" | "squashed" | "no-change" | null => {
 	switch (landing._tag) {
 		case "Ancestor":
 			return "ancestor";

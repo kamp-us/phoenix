@@ -1779,9 +1779,10 @@ never the branch. What went and what was kept are both on stderr on every path.
 
 **`--execute` removes as it scans.** Trees are seated one at a time in registration order, and a
 tree seated `REMOVE` is removed before the next one is read. `--limit` bounds the removals attempted,
-and the scan stops the moment that bound is spent: the trees past it get no stat, no git read and no
-board read, and are reported as the `unscanned` count. A bounded pass costs what it takes to find
-that many removable trees, not a scan of the population.
+and the judging stops the moment that bound is spent. A tree past it gets the one stat that proves a
+directory gone and nothing else: no git read and no board read. One whose directory is gone is
+still `PRUNE`; the rest are left unjudged and reported as the `unscanned` count. A bounded pass costs
+what it takes to find that many removable trees, plus one stat for each tree after them.
 
 **Every removal is journalled as it happens.** The moment git reports one, a line naming this run,
 the trunk, the removed path, its license and how many paths were salvaged is appended to
@@ -1794,17 +1795,24 @@ read-back, never by the record.
 entries whose directory was already gone and the ones each removal just left behind, and it is
 clone-wide, so it also reaches stale entries outside the swept population — the population filter
 bounds what is judged, not what is cleared. `--limit` does not bound it either, because a
-registration is a line in a file rather than a tree to delete. An entry locked by a dead process with
+registration is a line in a file rather than a tree to delete: the stat that proves absence runs
+for every tree in the population, past a spent bound too. An entry locked by a dead process with
 its directory gone is unlocked first — prune skips a locked entry, and a lock whose tree is gone
 guards nothing — and unlock runs only where absence is proved. A stale registration that survives
 the prune is reported and does not red the sweep, and neither does an unlock git refuses: neither
 costs disk anything nor risks work.
 
-**Output** — machine, one JSON object:
-`{"answer": "planned" | "reaped" | "none", "executed": bool, "trunk": "origin/main", "scanned": n, "unscanned": n, "journal": "<path>", "removable" | "removed": […], "stale" | "pruned": […], "unpruned": […], "failed": […], "kept": […]}`.
-`scanned` counts the trees seated and `unscanned` the ones a spent `--limit` left unread; a dry run
-seats them all. A `removed` row is `{"path", "license", "salvaged"}`, where `salvaged` is the number
-of uncommitted paths committed onto the tree's branch before it went.
+**Output** — machine, one JSON object, in one of three shapes:
+
+- A dry run: `{"answer": "planned", "executed": false, "trunk": "origin/main", "scanned": n, "removable": […], "stale": […], "kept": […]}`.
+  It seats every tree, so it carries no `unscanned`, and it writes no journal, so it carries no
+  `journal`.
+- An `--execute` run: `{"answer": "reaped", "executed": true, "trunk": "origin/main", "scanned": n, "unscanned": n, "journal": "<path>", "removed": […], "pruned": […], "unpruned": […], "failed": […], "kept": […]}`.
+- No agent worktree registered: `{"answer": "none", "executed": bool, "removed": [], "kept": []}`.
+
+`scanned` counts the trees seated, the stale registrations found past a spent `--limit` included, and
+`unscanned` the trees that bound left unjudged. A `removed` row is `{"path", "license", "salvaged"}`,
+where `salvaged` is the number of uncommitted paths committed onto the tree's branch before it went.
 
 **Exit status** (beyond the universal four)
 
@@ -1812,7 +1820,7 @@ of uncommitted paths committed onto the tree's branch before it went.
 |---|---|
 | `8` | git refused a removal, or the salvage commit before one — the tree stays |
 | `9` | git reported a removal and the registration survives, or the read-back failed |
-| `11` | this run's own root, the registrations, or the trunk (GitHub's default branch for the repo) could not be read — nothing was removed |
+| `11` | this run's own root, the registrations, or the trunk (GitHub's default branch for the repo) could not be read, or the target repo could not be resolved — nothing was removed |
 
 A `--limit` that is not a positive integer is a usage error, `1`: nothing was read and nothing was
 removed.

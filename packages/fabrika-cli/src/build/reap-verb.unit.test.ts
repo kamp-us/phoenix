@@ -1001,7 +1001,60 @@ describe("runReap — --limit bounds the sweep", () => {
 			calls.indexOf(`git -C ${OTHER} --no-optional-locks status --porcelain`),
 		);
 		expect(journalRows(journal)).toMatchObject([{path: DEAD}, {path: OTHER}]);
-		expect(out.stderr.join("\n")).toMatch(/--limit 2 was spent after 2 of 4 tree\(s\)/);
+		expect(out.stderr.join("\n")).toMatch(
+			/--limit 2 was spent with 2 of 4 tree\(s\) still unjudged/,
+		);
+	});
+
+	// Clearing a stale registration is not bounded: prune skips a locked entry, so one past the
+	// bound would outlive every bounded pass unless its absence is still read and its lock dropped.
+	it("still unlocks and prunes a locked, gone registration past a spent bound", async () => {
+		const GONE = "/repo/.claude/worktrees/agent-gone";
+		const LIVE = "/repo/.claude/worktrees/agent-live";
+		const lock = "claude agent (pid 84894)";
+		const {out, calls, requests} = await run(
+			[
+				...GROUND,
+				[
+					once(TREES),
+					trees(PRIMARY, {path: DEAD}, {path: OTHER}, {path: GONE, locked: lock}, {path: LIVE}),
+				],
+				[STATUS, okOut("")],
+				[ANCESTOR, okOut("")],
+				[REMOVE, okOut("")],
+				[UNLOCK, okOut("")],
+				[PRUNE, okOut("")],
+				[TREES, trees(PRIMARY, {path: OTHER}, {path: LIVE})],
+			],
+			true,
+			{
+				directories: [HERE, DEAD, OTHER, LIVE],
+				mtimes: Object.fromEntries([DEAD, OTHER, LIVE].map((p) => [p, ago(2_592_000)])),
+				unprobeable: [GONE],
+			},
+			1,
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			removed: [{path: DEAD}],
+			pruned: [GONE],
+			unpruned: [],
+			unscanned: 2,
+		});
+		expect(calls.indexOf(`git worktree unlock ${GONE}`)).toBeGreaterThan(-1);
+		expect(calls.indexOf(`git worktree unlock ${GONE}`)).toBeLessThan(
+			calls.indexOf("git worktree prune"),
+		);
+		// The stat is all a tree past the bound is given: no git read reaches the other two.
+		expect(calls.filter((line) => STATUS.test(line))).toEqual([
+			`git -C ${DEAD} --no-optional-locks status --porcelain`,
+		]);
+		expect(calls.filter((line) => ANCESTOR.test(line))).toHaveLength(1);
+		expect(calls.filter((line) => REVLIST.test(line)).every((line) => line.includes(DEAD))).toBe(
+			true,
+		);
+		expect(requests.some((line) => BOARD.test(line))).toBe(false);
 	});
 
 	it("names the bound on a dry run without narrowing what it calls removable", async () => {

@@ -29,9 +29,10 @@
  *   5. Nothing is removed at all without `--execute`. The default run seats the whole population and
  *      prints every verdict.
  *   6. Under `--execute` a tree seated `Remove` is removed **before the next tree is read**. `--limit`
- *      bounds the removals attempted, and the scan stops the moment that bound is spent: the trees
- *      past it are never read, and are reported as a count. So a bounded pass costs what it takes
- *      to find that many removable trees, not a scan of the population.
+ *      bounds the removals attempted, and the judging stops the moment that bound is spent: a tree
+ *      past it gets the one stat that proves its directory gone and nothing else — no git read and
+ *      no board read — and the ones still on disk are reported as a count. So a bounded pass costs
+ *      what it takes to find that many removable trees, plus one stat a tree after that.
  *   7. Each removal runs plain `git worktree remove` — never `--force`, which is banned on every
  *      path. A tree the board released while it held uncommitted paths has them committed onto its
  *      own branch first, because git refuses to remove a dirty tree. Every removal is read back off
@@ -44,8 +45,10 @@
  *   9. Then the stale registrations go, in the same pass: the ones whose directory was already gone
  *      and the ones each removal just left behind. `git worktree prune` clears the record and the
  *      same read-back proves it. `--limit` does not bound this — a registration is a line in a file,
- *      not a tree to delete — and a surviving one is reported without redding the sweep, because it
- *      costs disk nothing and risks no work.
+ *      not a tree to delete — which is why the stat at 6 still runs past a spent bound: a locked
+ *      registration is unlocked only where that stat proved its directory gone, and prune skips a
+ *      locked entry. A surviving one is reported without redding the sweep, because it costs disk
+ *      nothing and risks no work.
  *
  * It removes the tree and leaves the branch, exactly as `build retire` does: a removal frees a
  * checkout, it does not delete a ref.
@@ -86,6 +89,7 @@ import {
 	type Liveness,
 	type Presence,
 	QUIET_WINDOW_SECONDS,
+	type Salvage,
 	type Stranded,
 	type TreeFacts,
 	ticketOf,
@@ -168,13 +172,18 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 		}
 
 		const resolved = yield* resolveTrunk(options.env, null);
-		const repo = yield* resolveRepo(null, options.env);
-		if (resolved._tag === "Failure" || repo._tag === "Failure") {
-			const reason =
-				resolved._tag === "Failure" ? resolved.reason : "the target repo is unresolvable";
+		if (resolved._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: ${trunkUnresolved(reason)}. Whether any tree's work landed is UNKNOWN, and an unnameable trunk must reap nothing.`,
+				`${VERB}: ${trunkUnresolved(resolved.reason)}. Whether any tree's work landed is UNKNOWN, and an unnameable trunk must reap nothing.`,
+				[scope],
+			);
+		}
+		const repo = yield* resolveRepo(null, options.env);
+		if (repo._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: the target repo could not be resolved, so no branch's pull requests or issue can be read — whether any held work is finished is UNKNOWN, and nothing was removed.`,
 				[scope],
 			);
 		}
@@ -224,10 +233,20 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 		const removed: Array<Removed> = [];
 		const failed: Array<{path: string; reason: string}> = [];
 		const unjournalled: Array<{path: string; reason: string}> = [];
+		let unscanned = 0;
 		for (const tree of population) {
-			// The bound is on removals attempted, and it is checked before the next tree is read: a
-			// tree past it pays for no stat, no git read and no board read.
-			if (options.limit !== null && removed.length + failed.length >= options.limit) break;
+			// The bound is on removals attempted, and it is checked before the next tree is judged. A
+			// tree past it still gets the one stat, because clearing a stale registration is not
+			// bounded: a locked one is unlocked only where its directory is proved gone.
+			if (options.limit !== null && removed.length + failed.length >= options.limit) {
+				const beyond = yield* cheaplySeated(tree, ground);
+				if (beyond.verdict?._tag === "Prune") {
+					seated.push({facts: beyond.facts, verdict: beyond.verdict});
+				} else {
+					unscanned += 1;
+				}
+				continue;
+			}
 			const seat = yield* seatOf(tree, ground);
 			seated.push(seat);
 			if (seat.verdict._tag !== "Remove") continue;
@@ -239,7 +258,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			const row: Removed = {
 				path: tree.path,
 				license: seat.verdict.license,
-				salvaged: seat.verdict.salvage?.paths ?? 0,
+				salvaged: salvageOf(seat.verdict)?.paths ?? 0,
 			};
 			removed.push(row);
 			const written = yield* Effect.result(
@@ -249,7 +268,6 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 				unjournalled.push({path: tree.path, reason: written.failure.reason});
 			}
 		}
-		const unscanned = population.length - seated.length;
 		const stale = staleAmong(seated);
 		const kept = keptAmong(seated);
 
@@ -334,7 +352,7 @@ export const runReap = (options: ReapOptions): Effect.Effect<VerbOutcome, never,
 			...(unscanned === 0
 				? []
 				: [
-						`${VERB}: --limit ${options.limit} was spent after ${seated.length} of ${population.length} tree(s); the other ${unscanned} were not read and stay registered for a later run.`,
+						`${VERB}: --limit ${options.limit} was spent with ${unscanned} of ${population.length} tree(s) still unjudged; each got one stat for a missing directory, no git or board read, and stays registered for a later run.`,
 					]),
 			...keptLines(seated),
 		];
@@ -413,15 +431,7 @@ const staleLines = (seated: ReadonlyArray<Seat>): ReadonlyArray<string> =>
  */
 const seatOf = (tree: WorktreeRegistration, ground: Ground): Effect.Effect<Seat, never, Deps> =>
 	Effect.gen(function* () {
-		const observed = yield* observe(tree.path);
-		const cheap: CheapFacts = {
-			path: tree.path,
-			branch: tree.branch,
-			locked: tree.locked,
-			presence: observed.presence,
-			liveness: observed.liveness,
-		};
-		const settled = classifyCheap(cheap, ground.selfPaths);
+		const {facts: cheap, verdict: settled} = yield* cheaplySeated(tree, ground);
 		if (settled !== null) return {facts: cheap, verdict: settled};
 
 		const facts: TreeFacts = {
@@ -438,6 +448,34 @@ const seatOf = (tree: WorktreeRegistration, ground: Ground): Effect.Effect<Seat,
 	});
 
 /**
+ * What the one stat and the registration's own fields settle about a tree, with `null` for a tree
+ * the git reads are owed on. This is all a tree past a spent `--limit` is given.
+ */
+const cheaplySeated = (
+	tree: WorktreeRegistration,
+	ground: Ground,
+): Effect.Effect<
+	{readonly facts: CheapFacts; readonly verdict: Verdict | null},
+	never,
+	FileSystem.FileSystem
+> =>
+	Effect.gen(function* () {
+		const observed = yield* observe(tree.path);
+		const facts: CheapFacts = {
+			path: tree.path,
+			branch: tree.branch,
+			locked: tree.locked,
+			presence: observed.presence,
+			liveness: observed.liveness,
+		};
+		return {facts, verdict: classifyCheap(facts, ground.selfPaths)};
+	});
+
+/** The uncommitted paths a removal commits first, which only the board's license can carry. */
+const salvageOf = (verdict: Removing): Salvage | null =>
+	verdict.license === "branch-ended" ? verdict.salvage : null;
+
+/**
  * Remove one tree by the route its verdict names.
  *
  * A salvage that fails leaves the tree standing: removing it then would need `--force`, and would
@@ -448,8 +486,9 @@ const take = (
 	verdict: Removing,
 ): Effect.Effect<Attempt<void>, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		if (verdict.salvage !== null) {
-			const {paths, onto} = verdict.salvage;
+		const salvage = salvageOf(verdict);
+		if (salvage !== null) {
+			const {paths, onto} = salvage;
 			const committed = yield* salvageWorktree(
 				path,
 				`wip: salvage ${paths} uncommitted path(s) from a reaped worktree (${onto})\n`,

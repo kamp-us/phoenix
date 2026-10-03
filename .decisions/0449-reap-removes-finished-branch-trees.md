@@ -11,7 +11,8 @@ tags: [fabrika, pipeline-hardening, worktree, isolation]
 **What this decides:** `fabrika build reap` removes a clean worktree whenever a branch,
 remote-tracking ref or tag reaches every commit it holds, and removes any worktree whose branch or
 pull request is merged or closed, uncommitted edits included. Under `--execute` it removes each tree
-as it classifies it, so a bounded pass stops reading once its removals are spent.
+as it classifies it, so a bounded pass stops paying for git and board reads once its removals are
+spent.
 
 ## Context
 
@@ -99,8 +100,15 @@ so it is kept at arm 6.
 A dry run seats the whole population and prints every verdict, as before.
 
 Under `--execute` trees are seated one at a time in registration order, and a tree seated `Remove`
-is removed before the next one is read. `--limit` bounds the removals attempted. The scan stops when
-that bound is spent, and the trees past it are not read and are reported as a count, `unscanned`.
+is removed before the next one is read. `--limit` bounds the removals attempted. The judging stops
+when that bound is spent: a tree past it gets no `git status`, no containment scan, no ref count and
+no board read, and the ones left unjudged are reported as a count, `unscanned`.
+
+A spent bound does not bound the clearing of stale registrations. ADR 0386 section 3 stands as
+written: "`--limit` does not bound it either", and a lock whose tree is gone is dropped first. So
+the one stat that proves a directory gone still runs for every tree past the bound, and a
+registration it proves gone is unlocked and pruned in the same pass.
+
 The `unattempted` list is gone: the verb no longer knows which unread trees were removable.
 
 Each read is paid only by the trees the arms before it left open. The board is read only for a tree
@@ -138,8 +146,9 @@ a real sweep, the 4 trees the operator clone held with unreached commits stay ke
 carries what they add. Releasing them needs a way to tie a detached tree to a pull request without
 the desk hazard above, and that is not decided here.
 
-A bounded `--execute` pass costs what it takes to find its removals. It always starts at the head of
-the registration list, so trees kept there are read again on every pass.
+A bounded `--execute` pass costs what it takes to find its removals, plus one stat for each tree
+after them. It always starts at the head of the registration list, so trees kept there are read
+again on every pass.
 
 Each undecided tree on a branch costs one or two board reads.
 
@@ -167,7 +176,7 @@ reaches.
 
 The full dry run took 4m14s with the load average between 17 and 32. In that registration order the
 fourth removable tree is the 10th of the population, and 6 of those 10 pay for git reads, against
-296 for the whole scan. A timed `--execute --limit 4` pass was not run: removing trees on that clone
+296 for the whole scan. The other 426 get one stat each and no git read. A timed `--execute --limit 4` pass was not run: removing trees on that clone
 was out of this change's hands.
 
 This record does not decide when the sweep runs. ADR

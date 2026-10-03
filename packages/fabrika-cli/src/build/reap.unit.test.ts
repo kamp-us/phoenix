@@ -181,7 +181,8 @@ describe("classify — everything short of a proof is KEEP", () => {
 describe("classify — a clean tree whose commits all outlive it", () => {
 	it("removes it when the trunk does not carry its HEAD, under a license of its own", () => {
 		const verdict = classify(facts({landing: {_tag: "Unlanded"}, branch: BRANCH}), TRUNK, NOBODY);
-		expect(verdict).toMatchObject({_tag: "Remove", license: "ref-reached", salvage: null});
+		expect(verdict).toMatchObject({_tag: "Remove", license: "ref-reached"});
+		expect(verdict).not.toHaveProperty("salvage");
 		expect(verdict.because).toMatch(/a branch, remote-tracking ref or tag reaches every commit/);
 	});
 
