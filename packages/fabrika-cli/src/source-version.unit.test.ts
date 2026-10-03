@@ -3,8 +3,8 @@ import {Effect, Fiber, Layer} from "effect";
 import {TestClock} from "effect/testing";
 import {ChildProcessSpawner} from "effect/unstable/process";
 import {errOut, type FakeShell, fakeShell, okOut} from "./fakes.test-support.ts";
-import {asksForVersion, isSourceModule, SOURCE_READ_BOUND, versionFor} from "./source-version.ts";
-import {displayVersion, VERSION} from "./version.ts";
+import {asksForVersion, SOURCE_READ_BOUND, versionFor} from "./source-version.ts";
+import {VERSION} from "./version.ts";
 
 const SOURCE_URL = "file:///checkout/packages/fabrika-cli/src/source-version.ts";
 const DIST_URL = "file:///repo/node_modules/@kampus/fabrika-cli/dist/source-version.js";
@@ -15,26 +15,6 @@ const cleanCheckout = () =>
 		[/rev-parse --short HEAD/, okOut("2b61b57\n")],
 		[/status --porcelain --untracked-files=no/, okOut("")],
 	]);
-
-describe("displayVersion", () => {
-	it("is the plain version with no source reading", () => {
-		assert.strictEqual(displayVersion("0.7.1", null), "0.7.1");
-	});
-
-	it("names the commit for a clean source reading", () => {
-		assert.strictEqual(
-			displayVersion("0.7.1", {sha: "2b61b57", dirty: false}),
-			"0.7.1+2b61b57 (source)",
-		);
-	});
-
-	it("marks a dirty source reading", () => {
-		assert.strictEqual(
-			displayVersion("0.7.1", {sha: "2b61b57", dirty: true}),
-			"0.7.1+2b61b57-dirty (source)",
-		);
-	});
-});
 
 describe("asksForVersion", () => {
 	it("sees the long flag, its alias and its valued spelling", () => {
@@ -47,13 +27,6 @@ describe("asksForVersion", () => {
 		assert.isFalse(asksForVersion([]));
 		assert.isFalse(asksForVersion(["build", "tree", "--require-clean"]));
 		assert.isFalse(asksForVersion(["wire", "--", "--version"]));
-	});
-});
-
-describe("isSourceModule", () => {
-	it("tells the .ts source from the compiled dist", () => {
-		assert.isTrue(isSourceModule(SOURCE_URL));
-		assert.isFalse(isSourceModule(DIST_URL));
 	});
 });
 

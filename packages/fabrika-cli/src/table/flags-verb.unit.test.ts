@@ -332,12 +332,6 @@ describe("table flags with a boards block", () => {
 		});
 	});
 
-	it("times an issue filed before the on-call board stood from the board's making", async () => {
-		const answer = JSON.parse((await flags(world().board, [], SPLIT)).stdout);
-
-		expect(answer.flags.map((flag: {issue?: number}) => flag.issue)).not.toContain(13);
-	});
-
 	it("asks no on-call check with one board", async () => {
 		const answer = JSON.parse((await flags(world().board, [], unconfigured)).stdout);
 

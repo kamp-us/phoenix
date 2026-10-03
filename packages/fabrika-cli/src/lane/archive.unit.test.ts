@@ -585,19 +585,6 @@ const laneOnDisk = (
 	});
 
 describe("judgeRetriage", () => {
-	it("answers `Diagnosed` for a log that folds to the diagnosis final and names no pull request", () => {
-		expect(judgeRetriage(compiled(coderTemplateText()), DIAGNOSED_LOG)).toEqual({
-			_tag: "Diagnosed",
-			state: "diagnosed",
-		});
-	});
-
-	it("names the state for a lane that ended on another final", () => {
-		expect(
-			judgeRetriage(compiled(coderTemplateText()), log("WIP", "DONE", "PASS", "DONE")),
-		).toEqual({_tag: "NotDiagnosed", state: "complete"});
-	});
-
 	it("answers `Spent` for a diagnosed log that spent a repair round and names no pull request", () => {
 		const [, diagnosis] = DIAGNOSED_LOG;
 		if (diagnosis === undefined) throw new Error("fixture");

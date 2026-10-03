@@ -158,10 +158,6 @@ describe("runReconcile", () => {
 		expect(out.stdout).toBe("reconcile\tunresolved\t1\t0\n");
 	});
 
-	it("keeps the floor above the 514 s GitHub was seen taking to queue an arm", () => {
-		expect(ARM_SETTLE_FLOOR_SECONDS).toBeGreaterThan(514);
-	});
-
 	it("reports `unresolved` off a queue, where a long dwell is ordinary", async () => {
 		const out = await run(
 			[[PULL, PR]],

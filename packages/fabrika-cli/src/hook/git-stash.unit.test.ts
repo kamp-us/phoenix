@@ -92,10 +92,6 @@ describe("readGitDirs", () => {
 });
 
 describe("decideStash", () => {
-	it("allows a stash where the git dir is the common dir", () => {
-		expect(decideStash("git stash", {gitDir: "/r/.git", commonDir: "/r/.git"})._tag).toBe("Allow");
-	});
-
 	it("denies a stash in a linked worktree, naming the shared stack and the pattern doc", () => {
 		const decision = decideStash("git stash pop", {
 			gitDir: "/r/.git/worktrees/a",

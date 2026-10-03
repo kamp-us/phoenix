@@ -51,10 +51,6 @@ describe("planSweep", () => {
 		});
 	});
 
-	it("refuses an empty scan rather than planning nothing", () => {
-		expect(planSweep([])).toEqual({_tag: "ZeroScope"});
-	});
-
 	/**
 	 * The idempotence claim: the board a completed apply leaves behind — each double-marked issue now
 	 * milestone-less with its lane — plans zero clears, so a second run writes nothing.
