@@ -52,6 +52,7 @@ const flagsOffStub = Layer.succeed(Flags, {
 const kunyeStub = Layer.succeed(Kunye, {
 	tierOf: () => Effect.succeed("yazar" as const),
 	karmaOf: () => Effect.succeed(0),
+	emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 	rootOf: (id: string) => Effect.succeed(id),
 } as typeof Kunye.Service);
 

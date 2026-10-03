@@ -10,6 +10,7 @@ const codes: Record<WireCodeKey, string> = {
 	"wire.SELF_VOTE_NOT_ALLOWED": "you cannot vote on your own content",
 	"wire.VOUCH_LIMIT_REACHED": "you have reached your vouch limit",
 	"wire.INSUFFICIENT_KARMA": "your karma is too low for that",
+	"wire.EMAIL_UNVERIFIED": "verify your email address before you write",
 	"wire.RATE_LIMIT_EXCEEDED": "too fast, slow down a little",
 	"wire.DEFINITION_NOT_FOUND": "definition not found",
 	"wire.POST_NOT_FOUND": "post not found",

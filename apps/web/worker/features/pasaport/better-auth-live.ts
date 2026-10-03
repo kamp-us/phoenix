@@ -124,9 +124,9 @@ export const BetterAuthLive = Layer.effect(
 				secret: Redacted.value(secret),
 				...authUrlConfig,
 				emailVerification: {
-					// We deliberately do NOT set `requireEmailVerification`: the link goes out
-					// on signup, but sign-in is not gated on it and auto-sign-in still issues
-					// the session (#995).
+					// We deliberately do NOT set `requireEmailVerification`: it gates sign-in, and
+					// ADR 0434 keeps sign-in ungated. The çaylak write gate lives on the write
+					// paths (`kunye/verified-writer.ts`); auto-sign-in still issues the session (#995).
 					sendOnSignUp: true,
 					sendVerificationEmail: async ({user, url}) => {
 						await sendEmail(verificationEmail(user.email, url));

@@ -66,12 +66,14 @@ const bildirimContext = (notification = makeNotificationStub(), on = true) =>
 const kunyeKarma = (karma: number): Layer.Layer<Kunye> =>
 	Layer.succeed(Kunye, {
 		karmaOf: () => Effect.succeed(karma),
+		emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 		tierOf: () => Effect.die(new Error("resolveTandem must not read tier")),
 		rootOf: (id: string) => Effect.succeed(id),
 	});
 
 const kunyeUnreached: Layer.Layer<Kunye> = Layer.succeed(Kunye, {
 	karmaOf: () => Effect.die(new Error("resolveTandem must not read karma without an active vouch")),
+	emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 	tierOf: () => Effect.die(new Error("resolveTandem must not read tier")),
 	rootOf: (id: string) => Effect.succeed(id),
 });

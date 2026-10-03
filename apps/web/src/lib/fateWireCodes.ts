@@ -28,6 +28,8 @@ export const FATE_WIRE_CODES = [
 	// `kunye/InsufficientKarma` (#150): a raw karma-count anti-abuse floor — posting
 	// (≥ −4), flagging (≥ 50). A separate axis from the tier ladder, not double-gating.
 	"INSUFFICIENT_KARMA",
+	// `kunye/EmailUnverified` (ADR 0434): a çaylak wrote before verifying its email.
+	"EMAIL_UNVERIFIED",
 	// `throttle/RateLimitExceeded` (ADR 0177), injected at the mutation seam so ANY
 	// mutation can surface it. NOT in `declaredWireCodes` — the coverage guard unions
 	// `THROTTLE_WIRE_CODES`, which is the only reason this list still has to carry it.

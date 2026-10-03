@@ -1,6 +1,6 @@
 /**
  * The account-level earned-standing service (ADR 0107 §4): authorship tier, karma,
- * and the agent-attenuation root seam. Standing is read fresh from pasaport at the
+ * email verification and the agent-attenuation root seam. Standing is read fresh from pasaport at the
  * point of use and never trusted from session state, so a session user object cannot
  * smuggle a stale rank. It is the read side the `Capability.Level` instances
  * discharge against.
@@ -24,6 +24,8 @@ export class Kunye extends Context.Service<
 		// The rank on the `visitor < çaylak < yazar` ladder.
 		readonly tierOf: (id: string) => Effect.Effect<Tier>;
 		readonly karmaOf: (id: string) => Effect.Effect<number>;
+		// Whether the account's email is verified — the çaylak write gate's read (ADR 0434).
+		readonly emailVerifiedOf: (id: string) => Effect.Effect<boolean>;
 		// The human root an account's authority attenuates to. v1 is humans-only, so an
 		// account's root is itself; the signature is the dormant seam for agent ids.
 		readonly rootOf: (id: string) => Effect.Effect<string>;
@@ -41,6 +43,7 @@ export const KunyeLive = Layer.effect(Kunye)(
 
 		return {
 			karmaOf,
+			emailVerifiedOf: (id) => pasaport.isEmailVerified(id),
 			// No account row means `visitor`; an account carries its stored tier (#1203).
 			tierOf: (id) => Effect.map(pasaport.getUserById(id), (user): Tier => user?.tier ?? "visitor"),
 			rootOf: (id) => Effect.succeed(id),

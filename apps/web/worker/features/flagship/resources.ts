@@ -16,6 +16,7 @@ import {
 	PHOENIX_CAYLAK_VISIBILITY,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
 	PHOENIX_EMAIL_DELIVERY_NOTICE,
+	PHOENIX_EMAIL_VERIFIED_WRITES,
 	PHOENIX_FUNNEL_COHORT,
 	PHOENIX_KARMA_GATES,
 	PHOENIX_LOCALE,
@@ -137,6 +138,17 @@ export const KARMA_GATES_FLAG = {
 
 export const karmaGatesFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_karma_gates", {appId, ...KARMA_GATES_FLAG});
+
+export const EMAIL_VERIFIED_WRITES_FLAG = {
+	key: PHOENIX_EMAIL_VERIFIED_WRITES,
+	description:
+		"çaylak write gate on a verified email dark-ship (ADR 0434, #7485). owner: künye. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+export const emailVerifiedWritesFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_email_verified_writes", {appId, ...EMAIL_VERIFIED_WRITES_FLAG});
 
 export const USER_BAN_FLAG = {
 	key: PHOENIX_USER_BAN,

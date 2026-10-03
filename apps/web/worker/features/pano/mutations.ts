@@ -16,9 +16,10 @@ import {notifyContentVote} from "../bildirim/vote-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
-import {InsufficientKarma} from "../kunye/errors.ts";
+import {EmailUnverified, InsufficientKarma} from "../kunye/errors.ts";
 import {gateContentOnKarma} from "../kunye/privilege.ts";
 import {currentSandboxViewer, decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {gateWriteOnVerifiedEmail} from "../kunye/verified-writer.ts";
 import {ownSandboxed} from "../lifecycle/SandboxVisibility.ts";
 import {authorDisplayLabel} from "../pasaport/author-label.ts";
 import {SelfVoteNotAllowed, VoterNotEligible} from "../vote/errors.ts";
@@ -175,7 +176,12 @@ export const mutations = {
 		{
 			input: SubmitPostInput,
 			type: PostView,
-			error: Schema.Union([Unauthorized, InsufficientKarma, ...PostValidationErrors]),
+			error: Schema.Union([
+				Unauthorized,
+				EmailUnverified,
+				InsufficientKarma,
+				...PostValidationErrors,
+			]),
 		},
 		Effect.fn("post.submit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
@@ -200,8 +206,9 @@ export const mutations = {
 				return post;
 			});
 			// Karma floor (#150), dark behind default-off `phoenix-karma-gates`: ON ⇒ the author
-			// must be at ≥ −4. A separate axis from the sandbox tier above (reach vs abuse).
-			return yield* gateContentOnKarma(submit());
+			// must be at ≥ −4. A separate axis from the sandbox tier above (reach vs abuse). The
+			// çaylak write gate (ADR 0434) runs first, dark behind `phoenix-email-verified-writes`.
+			return yield* gateWriteOnVerifiedEmail(gateContentOnKarma(submit()));
 		}),
 	),
 	"post.saveDraft": Fate.mutation(
@@ -404,6 +411,7 @@ export const mutations = {
 			type: PostView,
 			error: Schema.Union([
 				Unauthorized,
+				EmailUnverified,
 				...PostValidationErrors,
 				PostNotFound,
 				UnauthorizedPostMutation,
@@ -411,21 +419,25 @@ export const mutations = {
 		},
 		Effect.fn("post.edit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
-			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-			const r = yield* pano.editPost({
-				postId: input.id,
-				actorId: UserId.make(user.id),
-				...(input.title != null ? {title: input.title} : {}),
-				...(input.body != null ? {body: input.body} : {}),
+			const edit = Effect.fn("post.editBody")(function* () {
+				const pano = yield* Pano;
+				const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
+				const r = yield* pano.editPost({
+					postId: input.id,
+					actorId: UserId.make(user.id),
+					...(input.title != null ? {title: input.title} : {}),
+					...(input.body != null ? {body: input.body} : {}),
+				});
+				// Re-read the viewer's vote so the edited entity carries an accurate
+				// `myVote` (edit doesn't touch vote state).
+				const sandboxViewer = yield* currentSandboxViewer;
+				const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id, sandboxViewer});
+				const post = shapePost({...r, myVote: fresh?.myVote ?? null});
+				yield* live.post.update(post.id, {changed: ["title", "body", "updatedAt"], data: post});
+				return post;
 			});
-			// Re-read the viewer's vote so the edited entity carries an accurate
-			// `myVote` (edit doesn't touch vote state).
-			const sandboxViewer = yield* currentSandboxViewer;
-			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id, sandboxViewer});
-			const post = shapePost({...r, myVote: fresh?.myVote ?? null});
-			yield* live.post.update(post.id, {changed: ["title", "body", "updatedAt"], data: post});
-			return post;
+			// The çaylak write gate (ADR 0434), dark behind `phoenix-email-verified-writes`.
+			return yield* gateWriteOnVerifiedEmail(edit());
 		}),
 	),
 	"post.delete": Fate.mutation(
@@ -491,6 +503,7 @@ export const mutations = {
 			type: CommentView,
 			error: Schema.Union([
 				Unauthorized,
+				EmailUnverified,
 				InsufficientKarma,
 				...CommentValidationErrors,
 				PostNotFound,
@@ -531,8 +544,9 @@ export const mutations = {
 				yield* notifyCaylakEntersDivan({authorId: user.id, sandboxedAt});
 				return comment;
 			});
-			// Karma floor (#150), dark behind `phoenix-karma-gates` — same as `post.submit`.
-			return yield* gateContentOnKarma(add());
+			// Karma floor (#150) and the çaylak write gate (ADR 0434), each dark behind its
+			// flag — same as `post.submit`.
+			return yield* gateWriteOnVerifiedEmail(gateContentOnKarma(add()));
 		}),
 	),
 	"comment.vote": Fate.mutation(
@@ -636,6 +650,7 @@ export const mutations = {
 			type: CommentView,
 			error: Schema.Union([
 				Unauthorized,
+				EmailUnverified,
 				...CommentValidationErrors,
 				CommentNotFound,
 				UnauthorizedCommentMutation,
@@ -643,32 +658,36 @@ export const mutations = {
 		},
 		Effect.fn("comment.edit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
-			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-			const r = yield* pano.editComment({
-				commentId: input.id,
-				actorId: UserId.make(user.id),
-				body: input.body,
+			const edit = Effect.fn("comment.editBody")(function* () {
+				const pano = yield* Pano;
+				const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
+				const r = yield* pano.editComment({
+					commentId: input.id,
+					actorId: UserId.make(user.id),
+					body: input.body,
+				});
+				const sandboxViewer = yield* currentSandboxViewer;
+				const [fresh] = yield* pano.getCommentsByIds([r.commentId], {
+					viewerId: user.id,
+					sandboxViewer,
+				});
+				const comment = shapeComment({
+					...r,
+					myVote: fresh?.myVote ?? null,
+					sandboxed: fresh?.sandboxed ?? false,
+				});
+				// The thread topic is viewer-blind, so the broadcast payload drops the owner-scoped
+				// `sandboxed` flag while the author's own returned node keeps it (#4282). Since
+				// #6585 `changed` trims it off the frame anyway; the explicit `false` stays as the
+				// belt to that brace.
+				yield* live.comment.update(comment.id, {
+					changed: ["body", "updatedAt"],
+					data: {...comment, sandboxed: false},
+				});
+				return comment;
 			});
-			const sandboxViewer = yield* currentSandboxViewer;
-			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {
-				viewerId: user.id,
-				sandboxViewer,
-			});
-			const comment = shapeComment({
-				...r,
-				myVote: fresh?.myVote ?? null,
-				sandboxed: fresh?.sandboxed ?? false,
-			});
-			// The thread topic is viewer-blind, so the broadcast payload drops the owner-scoped
-			// `sandboxed` flag while the author's own returned node keeps it (#4282). Since
-			// #6585 `changed` trims it off the frame anyway; the explicit `false` stays as the
-			// belt to that brace.
-			yield* live.comment.update(comment.id, {
-				changed: ["body", "updatedAt"],
-				data: {...comment, sandboxed: false},
-			});
-			return comment;
+			// The çaylak write gate (ADR 0434), dark behind `phoenix-email-verified-writes`.
+			return yield* gateWriteOnVerifiedEmail(edit());
 		}),
 	),
 	"comment.delete": Fate.mutation(

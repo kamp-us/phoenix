@@ -67,6 +67,7 @@ const bildirimOffStub = Layer.mergeAll(
 	// die on contact to prove they are never reached (#150).
 	Layer.succeed(Kunye, {
 		karmaOf: () => Effect.die("Kunye.karmaOf not exercised in report-live-fanout (flag off)"),
+		emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 		tierOf: () => Effect.die("Kunye.tierOf not exercised in report-live-fanout"),
 		rootOf: (id: string) => Effect.succeed(id),
 	} as typeof Kunye.Service),

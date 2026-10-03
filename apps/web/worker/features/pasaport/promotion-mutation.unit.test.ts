@@ -78,6 +78,7 @@ const kunyeOf = (
 	Layer.succeed(Kunye, {
 		tierOf: (id: string) => Effect.succeed(tierById[id] ?? "visitor"),
 		karmaOf: (id: string) => Effect.succeed(karmaById[id] ?? 0),
+		emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 		rootOf: (id: string) => Effect.succeed(id),
 	});
 

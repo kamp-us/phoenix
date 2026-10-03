@@ -27,6 +27,7 @@ import {
 const kunyeWithKarma = (karma: number): Layer.Layer<Kunye> =>
 	Layer.succeed(Kunye, {
 		karmaOf: () => Effect.succeed(karma),
+		emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 		tierOf: () => Effect.die(new Error("privilege gate must not read tier — separate axis")),
 		rootOf: (id: string) => Effect.succeed(id),
 	});

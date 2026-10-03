@@ -19,6 +19,7 @@ const codes: Record<WireCodeKey, string> = {
 	"wire.SELF_VOTE_NOT_ALLOWED": "kendi içeriğine oy veremezsin",
 	"wire.VOUCH_LIMIT_REACHED": "kefil olma sınırına ulaştın",
 	"wire.INSUFFICIENT_KARMA": "bunu yapmak için karman yetersiz",
+	"wire.EMAIL_UNVERIFIED": "yazabilmek için önce e-posta adresini doğrulaman gerekiyor",
 	"wire.RATE_LIMIT_EXCEEDED": "çok hızlısın, biraz yavaşla",
 	"wire.DEFINITION_NOT_FOUND": "tanım bulunamadı",
 	"wire.POST_NOT_FOUND": "başlık bulunamadı",

@@ -47,3 +47,13 @@ export class InsufficientKarma extends Schema.TaggedError<InsufficientKarma>()(
 	{message: Schema.String, need: Schema.Number, have: Schema.Number},
 	{[FateWireCode]: "INSUFFICIENT_KARMA"},
 ) {}
+
+/**
+ * The çaylak write gate failed (ADR 0434): a çaylak's email is not verified. Its own code, so the
+ * client can tell the writer what to do; visible, never the invisible {@link Denied}.
+ */
+export class EmailUnverified extends Schema.TaggedError<EmailUnverified>()(
+	"kunye/EmailUnverified",
+	{message: Schema.String},
+	{[FateWireCode]: "EMAIL_UNVERIFIED"},
+) {}

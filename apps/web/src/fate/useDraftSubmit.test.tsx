@@ -1,5 +1,6 @@
 import {act, renderHook} from "@testing-library/react";
 import {describe, expect, it, vi} from "vitest";
+import {tr} from "../i18n/tr";
 import {authRedirectPath} from "../lib/returnTo";
 import {useDraftSubmit} from "./useDraftSubmit";
 
@@ -57,6 +58,21 @@ describe("useDraftSubmit.run — the shared submit envelope", () => {
 			);
 		});
 		expect(result.current.error).toBe("gönderi paylaşılamadı");
+		expect(navigate).not.toHaveBeenCalled();
+	});
+
+	it("renders an actionable refusal's catalog copy on a throw, not the fallback", async () => {
+		const {result} = setup();
+		await act(async () => {
+			await result.current.run(
+				async () => {
+					throw {code: "EMAIL_UNVERIFIED"};
+				},
+				"yorum eklenemedi",
+				vi.fn(),
+			);
+		});
+		expect(result.current.error).toBe(tr["wire.EMAIL_UNVERIFIED"]);
 		expect(navigate).not.toHaveBeenCalled();
 	});
 

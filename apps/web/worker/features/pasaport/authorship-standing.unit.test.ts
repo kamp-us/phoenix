@@ -38,6 +38,7 @@ const runtimeContextStub: BaseRuntimeContext = {
 const kunyeWithKarma = (karmaById: Record<string, number>): Layer.Layer<Kunye> =>
 	Layer.succeed(Kunye, {
 		karmaOf: (id: string) => Effect.succeed(karmaById[id] ?? 0),
+		emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 		tierOf: () => Effect.die(new Error("Kunye.tierOf must not be reached")),
 		rootOf: (id: string) => Effect.succeed(id),
 	});

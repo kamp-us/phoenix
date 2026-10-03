@@ -1,7 +1,7 @@
 ---
 id: 0121
 title: Email verification stays non-gating under v1 — a sent-but-advisory signal, not an access gate
-status: accepted
+status: superseded by [0434](0434-caylak-writes-need-verified-email.md)
 date: 2026-06-28
 tags: [pasaport, auth, email-verification, v1]
 ---

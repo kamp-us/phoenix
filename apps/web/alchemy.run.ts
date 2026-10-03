@@ -49,6 +49,7 @@ import {
 	demoTargetingFlag,
 	emailDeliveryAdminFlag,
 	emailDeliveryNoticeFlag,
+	emailVerifiedWritesFlag,
 	Flagship,
 	funnelCohortFlag,
 	karmaGatesFlag,
@@ -96,6 +97,9 @@ export default Alchemy.Stack(
 		// single seam the post-floor (≥ −4) + flag-floor (≥ 50) karma gates ride behind
 		// until a human release.
 		yield* karmaGatesFlag(flagship.appId);
+		// The çaylak write gate on a verified email, default-off (ADR 0434, #7485) — the
+		// single seam the gated post/comment/definition writes ride behind until a human release.
+		yield* emailVerifiedWritesFlag(flagship.appId);
 		// The user ban/unban dark-ship flag, default-off (#970, epic #968) — the single
 		// seam the ban mutations + admin read + moderator-UI controls gate behind, so an
 		// unreleased ban can never refuse a real user's session until a human release.

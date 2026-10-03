@@ -68,6 +68,7 @@ export const inPlaceVisibilityStores = ({
 					? Effect.die("the tier was read on a short-circuit path")
 					: Effect.succeed(tier),
 			karmaOf: () => Effect.die("Kunye.karmaOf not exercised"),
+			emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 			rootOf: () => Effect.die("Kunye.rootOf not exercised"),
 		}),
 		Layer.succeed(CaylakVisibility, {

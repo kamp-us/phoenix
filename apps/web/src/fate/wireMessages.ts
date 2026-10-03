@@ -31,5 +31,27 @@ export function messageForCode(
 	return overrides?.[code] ?? t(wireMessageKey(code));
 }
 
+/**
+ * Refusals whose catalog copy tells the writer what to do next. fate throws every phoenix
+ * code, so these reach the draft envelope's boundary arm; they must still render their
+ * catalog message there rather than the surface's generic failure line (ADR 0434).
+ */
+const ACTIONABLE_REFUSALS: ReadonlySet<FateWireCode> = new Set<FateWireCode>(["EMAIL_UNVERIFIED"]);
+
+/**
+ * The message for a thrown wire error: a named override wins, an actionable refusal gets its
+ * catalog copy, and anything else is the surface's `failureFallback`.
+ */
+export function messageForThrownCode(
+	t: Translate,
+	code: FateWireCode,
+	failureFallback: string,
+	overrides?: WireMessageOverrides,
+): string {
+	return (
+		overrides?.[code] ?? (ACTIONABLE_REFUSALS.has(code) ? t(wireMessageKey(code)) : failureFallback)
+	);
+}
+
 /** The wire-code vocabulary, re-exported so coverage tests have one import site. */
 export {FATE_WIRE_CODES};

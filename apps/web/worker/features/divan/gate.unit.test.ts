@@ -31,6 +31,7 @@ const access = (
 			Effect.provideService(Kunye, {
 				tierOf: () => Effect.succeed(opts.tier ?? "visitor"),
 				karmaOf: () => Effect.die(new Error("divan gate must not read karma")),
+				emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 				rootOf: (id: string) => Effect.succeed(id),
 			}),
 			Effect.provideService(RelationStore, {
@@ -108,6 +109,7 @@ describe("divan gate — yazar OR mod, collapse-to-allow", () => {
 				Effect.provideService(Kunye, {
 					tierOf: () => Effect.succeed("yazar" as Tier),
 					karmaOf: () => Effect.die(new Error("x")),
+					emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 					rootOf: (id: string) => Effect.succeed(id),
 				}),
 				Effect.provideService(RelationStore, {
@@ -129,6 +131,7 @@ const standing = (actor: Actor, tier: Tier): Exit.Exit<Grant<DivanStanding>, Req
 			Effect.provideService(Kunye, {
 				tierOf: () => Effect.succeed(tier),
 				karmaOf: () => Effect.die(new Error("standing must not read karma")),
+				emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 				rootOf: (id: string) => Effect.succeed(id),
 			}),
 		),

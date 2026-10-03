@@ -200,6 +200,9 @@ export class Pasaport extends Context.Service<
 
 		readonly getUserById: (userId: string) => Effect.Effect<UserRow | null>;
 
+		// Fresh `user.email_verified` read (ADR 0434). No row, or a NULL column, is `false`.
+		readonly isEmailVerified: (userId: string) => Effect.Effect<boolean>;
+
 		// Single `WHERE id IN (...)`; order is not guaranteed (fate re-associates by id).
 		readonly getUsersByIds: (userIds: ReadonlyArray<string>) => Effect.Effect<UserRow[]>;
 
@@ -661,6 +664,17 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					const row = yield* run((db) => db.query.user.findFirst({where: {id: userId}}));
 					if (!row) return null;
 					return toUserRow(row);
+				}),
+
+				isEmailVerified: Effect.fn("Pasaport.isEmailVerified")(function* (userId: string) {
+					const rows = yield* run((db) =>
+						db
+							.select({emailVerified: schema.user.emailVerified})
+							.from(schema.user)
+							.where(eq(schema.user.id, userId))
+							.limit(1),
+					);
+					return rows[0]?.emailVerified === true;
 				}),
 
 				getUsersByIds: Effect.fn("Pasaport.getUsersByIds")(function* (

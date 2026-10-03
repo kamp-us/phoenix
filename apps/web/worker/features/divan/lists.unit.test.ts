@@ -81,6 +81,7 @@ const resolveAs = (
 			Effect.provideService(Kunye, {
 				tierOf: () => Effect.succeed(opts.tier ?? ("visitor" as const)),
 				karmaOf: (_id: string) => Effect.die(new Error("divan gate must not read karma")),
+				emailVerifiedOf: () => Effect.die(new Error("Kunye.emailVerifiedOf not exercised")),
 				rootOf: (id: string) => Effect.succeed(id),
 			}),
 			Effect.provideService(RelationStore, {

@@ -21,7 +21,13 @@ import {
 	wireCodeOfClass,
 } from "@kampus/fate-effect";
 import {describe, expect, it} from "vitest";
-import {Denied, InsufficientKarma, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
+import {
+	Denied,
+	EmailUnverified,
+	InsufficientKarma,
+	RequiresLevel,
+	VouchLimitReached,
+} from "../kunye/errors.ts";
 import {MecmuaDisabled, MecmuaPostNotFound, MecmuaTitleRequired} from "../mecmua/errors.ts";
 import {MuteDisabled, SelfMuteRejected} from "../mute/errors.ts";
 import {
@@ -93,6 +99,7 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	[DisplayNameEmpty, "DISPLAY_NAME_EMPTY"],
 	[BanReasonRequired, "BAN_REASON_REQUIRED"],
 	[EmailFailingReasonRequired, "EMAIL_FAILING_REASON_REQUIRED"],
+	[EmailUnverified, "EMAIL_UNVERIFIED"],
 	[Denied, "UNAUTHORIZED"],
 	[Unauthorized, "UNAUTHORIZED"],
 	// The five below carry extra required fields, so they are pinned here but cannot be
@@ -131,6 +138,7 @@ const ROUND_TRIP_CLASSES = [
 	DisplayNameEmpty,
 	BanReasonRequired,
 	EmailFailingReasonRequired,
+	EmailUnverified,
 	Denied,
 	Unauthorized,
 ] as const satisfies ReadonlyArray<new (props: {message: string}) => unknown>;
