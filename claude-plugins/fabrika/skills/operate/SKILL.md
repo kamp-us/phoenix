@@ -70,10 +70,13 @@ prompt by hand.
 
 **A command you write for a person is one they can paste.** A park comment, a stop note and your
 final message are read by someone at a prompt, so every command in one is printed with each
-placeholder filled in: the path you worked out above where this skill writes `<fabrika>`, and the
-real lane key, task name and PR number where it writes `<lane>`, `<task>` and `<pr>`. Read the note
-back before you post it; done when it holds no literal `<fabrika>` and no other angle-bracket
-placeholder.
+placeholder filled in: the real lane key, task name and PR number where this skill writes `<lane>`,
+`<task>` and `<pr>`, and the entrypoint where it writes `<fabrika>`. Write that entrypoint
+repo-relative, and say the command runs from the repo root: `packages/fabrika-cli/src/bin.ts` in
+fabrika's own repo, `node_modules/@kampus/fabrika-cli/dist/bin.js` in a repo that installs it.
+Repo-relative on purpose: a comment on an issue or pull request is public, and the absolute path you
+run your own verbs under carries a home directory. Read the note back before you post it; done when
+it holds no literal `<fabrika>`, no other angle-bracket placeholder and no absolute path.
 
 ## 1 — Read the seats, claim the lane, then boot or resume
 
