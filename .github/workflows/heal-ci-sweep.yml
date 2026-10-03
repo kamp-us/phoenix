@@ -173,6 +173,10 @@ jobs:
               continue
             fi
 
+            # `ROUTED` is right on every row, `red` → nobody and `wedged` / `check-surface` → human
+            # included: the sweep names the class and the owning lane and takes no other act, so the
+            # per-PR tokens (FILED, WEDGED, SURFACED) would claim work it never did. Founder ruling:
+            # https://github.com/kamp-us/phoenix/issues/7293#issuecomment-5519863018
             # The backticks in the printf formats below are markdown code spans, not command
             # substitution.
             # shellcheck disable=SC2016

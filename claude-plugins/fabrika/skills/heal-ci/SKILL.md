@@ -319,7 +319,7 @@ Every run ends as exactly one of:
 | `NOT-OPEN` | success — draft, closed or merged; no strand, nothing written |
 | `RERUN-QUEUED` | success — one transient rerun at this head, never a second |
 | `RERUN-QUEUED — record unverified` | the rerun **provably happened** and its durable marker did not land (`9`/`16`). Escalate at once: the next session sees no marker and is one read away from spending a second rerun |
-| `ROUTED — <build\|review\|ship\|author\|human\|nobody>` | success — the class was named and the owning lane told |
+| `ROUTED — <build\|review\|ship\|author\|human\|nobody>` | success — the class was named and the arrow says which lane owns the next move; `nobody` is a routed answer too, saying no lane owns it yet |
 | `SURFACED — check-config` | success — a repository-settings gap named for a human |
 | `FILED — #N` | success — an unclassified red or a defect entered intake |
 | `REFUSED — <reason>` | a successful decline: a verb proved the state, nothing mutated beyond the note |
@@ -359,6 +359,17 @@ appears in the note itself.
 Any cross-lane signal is closed-vocabulary: the note opens with the fixed first line
 `heal-ci: <terminal-token> — PR #<n> @ <sha> → <build|review|ship|author|human|nobody>` — kind,
 action, branded reference, no steering prose. The receiver re-fetches from the PR itself.
+
+**The scheduled workflow `.github/workflows/heal-ci-sweep.yml` writes `ROUTED` on every note it
+posts**, whatever the row's class: `red` (arrow `nobody`), `wedged` and `check-surface` (arrow
+`human`) alike, where a per-PR run would end `FILED`, `WEDGED` or `SURFACED`. That workflow posts a
+note per row without working the row, so each of those tokens would name an act it never took, while
+`ROUTED` names only what it did: it read the class and wrote the arrow's lane, `nobody` included. Its
+note body says the run was detection only, so the token claims no fix. Do not add a detection-only
+token for the workflow or filter `red` rows out of its notes; a red strand is the stall it exists to
+report. This rule binds that workflow alone: an agent in `## Sweep — the scheduled surface` mode
+still works each row through step 1 and ends on that row's own terminal (`FILED`, `WEDGED`,
+`SURFACED`, ...).
 
 ## Ingestion surface, declared
 
