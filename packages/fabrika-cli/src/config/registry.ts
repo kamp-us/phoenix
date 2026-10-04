@@ -21,6 +21,7 @@ import {configValidatorsKey} from "./keys/config-validators.ts";
 import {containmentVocabularyKey} from "./keys/containment-vocabulary.ts";
 import {unreadableCodeownersKey} from "./keys/control-plane.ts";
 import {dependencyReconcilerKey} from "./keys/dependency-reconciler.ts";
+import {digestKey} from "./keys/digest.ts";
 import {docLeakExemptKey} from "./keys/doc-leak-exempt.ts";
 import {reviewFilterExclusionsKey, reviewFilterUnexcludeKey} from "./keys/filter-exclusions.ts";
 import {governedRootsKey} from "./keys/governed-roots.ts";
@@ -55,6 +56,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(cycleDocKey),
 	register(decisionsDirKey),
 	register(dependencyReconcilerKey),
+	register(digestKey),
 	register(docLeakExemptKey),
 	register(governedRootsKey),
 	register(laneConcurrencyCapKey),

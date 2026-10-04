@@ -11,7 +11,8 @@ by its heading:
 
 The table is a GitHub project (Projects v2) per repository where control-plane owners decide what
 gets bet on. Every verb here needs the token's `project` scope; a token without it exits `20`, whose
-fix is `gh auth refresh -h github.com -s project`. `lane brief`, `lane record`, `build pick` and the
+fix is `gh auth refresh -h github.com -s project`. The one exception is `table digest` reporting the
+triage queue alone, which reads only open issues. `lane brief`, `lane record`, `build pick` and the
 pitch guard read the table too; with no `table` block in `.fabrika.jsonc` they carry on when that
 read fails.
 
@@ -449,3 +450,68 @@ stdout is `{"answer":"migrated"|"unchanged","repo":"…","project":{"number":n,"
 - `20` — the token lacks the `project` scope.
 - `22` — two open projects carry the table's title. Set `table.project.number`.
 - `23` — the project has no Table day date field. Run `table setup`.
+
+## table digest
+
+Posts the issues that have waited past a response target to a Slack or Discord webhook. It is built
+to run on a schedule, so a missed target reaches the team's channel without anyone opening a board.
+It reports and blocks nothing: no check reads it.
+
+**Off unless declared.** With no `digest` block in `.fabrika.jsonc` it reads nothing from GitHub,
+sends nothing and answers `off` at exit `0`. A block names `tool` (`slack` or `discord`) and may set
+`webhookEnv` (shipped `FABRIKA_DIGEST_WEBHOOK`), `sections` (shipped `triage` and `on-call`),
+`triageTargetHours` (shipped 24) and `allClear` (shipped `false`).
+
+**Sections.**
+
+- `triage` — every open issue that carries `status:needs-triage` or no label at all and was filed
+  more than `digest.triageTargetHours` ago, longest wait first.
+- `on-call` — the [`past-target`](#table-flags) list: every open item on the on-call board that has
+  waited longer than the target its labels pick, judged by the same function with the same start of
+  the wait, so the channel and `table flags` name the same items. It reads the on-call board, so it
+  needs a token that can read the project, which the default Actions token cannot do for an
+  organization's project. A read that fails refuses the whole run and names
+  `digest.sections` as the way to report the triage queue alone. With no `boards.onCall` block
+  there is no response target to miss: the section is named under `notAsked` and the rest is sent.
+
+**The message.** One line per issue naming its number, title, target and wait, then its URL, under a
+heading per section that carries the section's full count. The text is cut to 2000 characters,
+Discord's documented cap on `content` and the tighter of the two tools' limits; lines that do not
+fit are dropped from the end and counted in a last line. A title is cut to 80 characters.
+
+- Slack is sent `{"text":"…"}` with `&`, `<` and `>` escaped, so a title starts no link or mention
+  ([incoming webhooks](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks),
+  [escaping text](https://docs.slack.dev/messaging/formatting-message-text#escaping)).
+- Discord is sent `{"content":"…","allowed_mentions":{"parse":[]},"flags":4}` with `wait=true` on
+  the URL: no mention is parsed, the links unfurl into no previews (`SUPPRESS_EMBEDS`), and Discord
+  answers only once the message is saved
+  ([execute webhook](https://discord.com/developers/docs/resources/webhook#execute-webhook)).
+
+**Nothing late, nothing sent.** With no issue past a target it answers `quiet` and posts nothing,
+unless `digest.allClear` is `true`, and then it posts one line saying so.
+
+**The webhook URL is a credential.** It is read only from the environment variable
+`digest.webhookEnv` names. A `webhookEnv` that is not a variable name does not decode (`12`), and
+that refusal does not echo the value. A failed post names the HTTP status, a short error token when
+the tool answered with one, or the platform's error code, and never the URL.
+
+**A failure is never an empty report.** An issue list or on-call board that could not be read, and a
+post that did not land, each exit non-zero naming the read or the write that failed.
+
+**Dry run.** `--dry-run` makes every read, builds the message and prints it under answer `dry-run`
+without posting. It needs no webhook variable.
+
+stdout is `{"answer":"off"}`, or
+`{"answer":"sent"|"quiet"|"dry-run","repo":"…","tool":"slack"|"discord","late":n,"sections":[{"section":"triage"|"on-call","late":[{"issue":n,"target":"…","hours":n,"since":"…","waitedHours":n}]}],"notAsked":["on-call"],"text":"…"|null}`;
+`text` is the message, `null` under `quiet`.
+
+### Exit status
+
+- `7` — the `on-call` section is asked and there is no on-call board. Run `table setup`.
+- `8` — the post to the webhook did not land. UNKNOWN; the report was built and not delivered.
+- `11` — the repository, its open issues or the on-call board could not be read. UNKNOWN.
+- `12` — the `digest` or `boards` block in `.fabrika.jsonc` does not decode.
+- `20` — the `on-call` section is asked and the token lacks the `project` scope.
+- `22` — two open projects carry the on-call board's title. Set `boards.onCall.project.number`.
+- `25` — the environment variable `digest.webhookEnv` names is unset, empty or holds no http(s)
+  URL. Nothing was read from GitHub.

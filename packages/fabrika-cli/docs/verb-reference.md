@@ -254,10 +254,11 @@ Read the board, settings and installed skill roster for a new session. Use `stat
 Set up the repository's weekly betting table on GitHub Projects (v2), fill its columns from lane
 records, read the flags that bring work back to it, and prepare each table's agenda, including the
 checks that bring shipped bets back with their evidence. A `boards` block adds an on-call board,
-which setup creates, route fills and flags reads. Use
+which setup creates, route fills and flags reads. A `digest` block lets `table digest` post the
+issues past their response target to a Slack or Discord webhook from a scheduled run. Use
 `table --help`, `table setup --help`, `table sync --help`, `table flags --help`,
-`table prep --help`, `table route --help` and `table migrate-week --help`. The token needs the
-`project` scope; the
+`table prep --help`, `table route --help`, `table migrate-week --help` and `table digest --help`.
+The token needs the `project` scope; the
 [adopter guide](../../../claude-plugins/fabrika/guide/adopt-fabrika-in-a-new-repo.md#11-set-up-the-betting-table)
 covers the scope and the three manual steps setup prints.
 

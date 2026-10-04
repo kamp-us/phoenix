@@ -1,5 +1,5 @@
 /**
- * The `table` verb group — `fabrika table <setup|sync|flags|prep|route|migrate-week>`.
+ * The `table` verb group — `fabrika table <setup|sync|flags|prep|route|migrate-week|digest>`.
  *
  * The adapter and nothing else: flags, the pure verb, and its emitted outcome. Every leaf is a
  * `leafCommand`, never a bare `Command.make`, so the excess-operand guard covers it.
@@ -9,6 +9,7 @@ import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
+import {digestBoard, runDigest} from "./digest-verb.ts";
 import {flagsBoard, runFlags} from "./flags-verb.ts";
 import {migrateBoard, runMigrate} from "./migrate-verb.ts";
 import {prepBoard, runPrep} from "./prep-verb.ts";
@@ -261,10 +262,53 @@ const migrateWeek = leafCommand(
 	Command.withExamples([{command: "fabrika table migrate-week"}]),
 );
 
+const digest = leafCommand(
+	"digest",
+	{
+		repo: repoFlag,
+		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				'build the report, send nothing, and print it under answer "dry-run"; needs no webhook URL',
+			),
+		),
+	},
+	Effect.fn(function* ({repo, dryRun}) {
+		yield* emit(
+			yield* runDigest({
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+				now: new Date(),
+				board: digestBoard,
+				dryRun,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Post the issues past their response target to a chat webhook."),
+	Command.withDescription(
+		tableHelp("table digest", [
+			'Posts issues past their response target to a chat webhook; prints {"answer":"sent",…}.',
+			"  7: no on-call project; run table setup",
+			"  8: the post did not land (UNKNOWN)",
+			"  11: the open issues or the on-call board were unreadable (UNKNOWN)",
+			"  12: the digest or boards block does not decode",
+			"  20: the on-call section needs the token's project scope",
+			"  22: two open projects carry the on-call board's title",
+			"  25: the variable digest.webhookEnv names holds no URL",
+		]),
+	),
+	Command.withExamples([
+		{command: "fabrika table digest --dry-run"},
+		{command: "fabrika table digest"},
+	]),
+);
+
 export const tableCommand = Command.make("table").pipe(
-	Command.withSubcommands([setup, sync, flags, prep, route, migrateWeek]),
+	Command.withSubcommands([setup, sync, flags, prep, route, migrateWeek, digest]),
 	Command.withShortDescription("Set up and fill the weekly betting table on GitHub Projects."),
 	Command.withDescription(
-		"The weekly betting table: a GitHub project per repository where control-plane owners decide what gets bet on. Its verbs need the token's `project` scope. `lane brief`, `lane record`, `build pick` and the pitch guard read the table too; with no `table` block they carry on when that read fails.",
+		"The weekly betting table: a GitHub project per repository where control-plane owners decide what gets bet on. Its verbs need the token's `project` scope, except `digest` when it reports the triage queue alone. `lane brief`, `lane record`, `build pick` and the pitch guard read the table too; with no `table` block they carry on when that read fails.",
 	),
 );

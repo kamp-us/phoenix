@@ -1,0 +1,53 @@
+name: table-digest
+
+# Daily report of the issues past their response target, posted to the chat webhook the repository's
+# `digest` block names (#10357). `fabrika table digest` decides what is late and sends it; this file
+# only schedules it and hands it the two credentials.
+#
+# OFF UNTIL THE REPOSITORY OPTS IN. With no `digest` block in `.fabrika.jsonc` the verb reads
+# nothing, sends nothing and exits 0, so this job is a green no-op until a block is declared and the
+# webhook secret is set.
+#
+# It reports and never polices (ADR 0430): no pull-request trigger, so it is no required check and
+# can block no merge. A red run means the report could not be built or delivered, which is the one
+# thing a silent channel must never be mistaken for.
+on:
+  schedule:
+    # Daily at 15:23 UTC, the start of the Pacific working day, off the top of the hour and away
+    # from the other scheduled sweeps.
+    - cron: "23 15 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Two overlapping runs would post the same report twice.
+  group: table-digest
+  cancel-in-progress: false
+
+permissions:
+  contents: read # checkout
+  issues: read # the open issues the report is built from
+
+jobs:
+  digest:
+    name: post the issues past their response target
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The default Actions token cannot read an organization's projects, and the on-call section
+      # reads the on-call board. `FABRIKA_DIGEST_TOKEN` is a token that can read that project; with
+      # no such secret the default token serves a `digest.sections` of `triage` alone.
+      - name: Post the digest
+        env:
+          GH_TOKEN: ${{ secrets.FABRIKA_DIGEST_TOKEN || github.token }}
+          FABRIKA_DIGEST_WEBHOOK: ${{ secrets.FABRIKA_DIGEST_WEBHOOK }}
+        run: node packages/fabrika-cli/src/bin.ts table digest

@@ -233,7 +233,7 @@ export type OnCallBoardRead =
 	  };
 
 export const readOnCall = <R>(
-	board: TableBoard<R>,
+	board: Pick<TableBoard<R>, "locate" | "items">,
 	verb: string,
 	repo: string,
 	boards: Boards,

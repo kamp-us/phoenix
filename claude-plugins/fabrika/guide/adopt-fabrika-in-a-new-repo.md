@@ -505,3 +505,73 @@ reads it. Route touches no agenda, so run it as often as you want new reports pl
 routed open issue at once, so read that plan with `fabrika table route --dry-run` before it lands. An item's wait counts from
 when its issue was filed, against the target its labels pick now. Set
 `boards.onCall.project.number` to point setup at a project you already have.
+
+## 12. Send missed response targets to your chat
+
+`fabrika table digest` posts the issues that have waited too long to a Slack or Discord channel. It
+is optional and off until you declare it, and it needs no betting table: the triage section reads
+only your open issues. Three steps turn it on.
+
+**1. Declare the block** in `.fabrika.jsonc`. Only `tool` is required; the rest is shown at its
+shipped value:
+
+```jsonc
+{
+  "digest": {
+    "tool": "slack", // or "discord"
+    "webhookEnv": "FABRIKA_DIGEST_WEBHOOK",
+    "sections": ["triage", "on-call"],
+    "triageTargetHours": 24,
+    "allClear": false
+  }
+}
+```
+
+`triage` lists issues still labeled `status:needs-triage`, or carrying no label, after
+`triageTargetHours`. `on-call` lists the open items on the on-call board from step 11.9 that are
+past the target their labels pick; without a `boards.onCall` block it is left out. With nothing late
+no message is sent, unless `allClear` is `true`.
+
+**2. Store the webhook URL as a secret.** Create an incoming webhook for the channel in your chat
+tool, then save its URL as the repository secret `FABRIKA_DIGEST_WEBHOOK`. The URL is a credential:
+`webhookEnv` holds the *name* of the variable the URL is read from, and a URL written there is
+refused. Never put the URL in `.fabrika.jsonc`.
+
+**3. Copy this workflow** to `.github/workflows/table-digest.yml` and pick your own schedule: daily
+for a digest, hourly if a four-hour target should be heard within the hour.
+
+```yaml
+name: table-digest
+on:
+  schedule:
+    - cron: "23 15 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: read
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --global @kampus/fabrika-cli
+      - name: Post the digest
+        env:
+          GH_TOKEN: ${{ secrets.FABRIKA_DIGEST_TOKEN || github.token }}
+          FABRIKA_DIGEST_WEBHOOK: ${{ secrets.FABRIKA_DIGEST_WEBHOOK }}
+        run: fabrika table digest
+```
+
+It runs on a schedule and by hand, never on a pull request, so it cannot become a required check. A
+red run means the report could not be built or delivered.
+
+The `on-call` section reads the on-call project, and the token GitHub Actions provides cannot read
+an organization's projects. Either save a token that can read the project as the secret
+`FABRIKA_DIGEST_TOKEN`, or set `"sections": ["triage"]` and the provided token is enough.
+
+Try it before you schedule it: `fabrika table digest --dry-run` prints the message and sends
+nothing. What it reads, sends and refuses is the "table digest" section of
+[`table-contract.md`](../docs/table-contract.md#table-digest).

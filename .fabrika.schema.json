@@ -498,6 +498,51 @@
 			],
 			"additionalProperties": false
 		},
+		"digest": {
+			"type": "object",
+			"description": "Post a report of missed response targets to a chat webhook when `fabrika table digest` runs, usually from a scheduled workflow. Leave it out and nothing is sent.",
+			"properties": {
+				"tool": {
+					"type": "string",
+					"enum": [
+						"slack",
+						"discord"
+					],
+					"description": "The chat tool whose webhook receives the report."
+				},
+				"webhookEnv": {
+					"type": "string",
+					"pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+					"description": "The name of the environment variable that holds the webhook URL. The URL is a credential: keep it in a secret, never in this file. Default FABRIKA_DIGEST_WEBHOOK."
+				},
+				"sections": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": [
+							"triage",
+							"on-call"
+						]
+					},
+					"minItems": 1,
+					"uniqueItems": true,
+					"description": "The sections the report carries. `triage`: untriaged issues past `triageTargetHours`. `on-call`: open on-call items past the `boards.onCall` response target their labels pick. Default both."
+				},
+				"triageTargetHours": {
+					"type": "number",
+					"exclusiveMinimum": 0,
+					"description": "How many hours an untriaged issue may wait before the report lists it. Default 24."
+				},
+				"allClear": {
+					"type": "boolean",
+					"description": "Post a message when nothing is past its target. Default false: an empty report is not sent."
+				}
+			},
+			"required": [
+				"tool"
+			],
+			"additionalProperties": false
+		},
 		"docLeakExempt": {
 			"type": "array",
 			"description": "Docs whose subject IS path hygiene — `build check --surface prose` skips its leak scan on them. Repo-relative path suffixes. Empty (or absent) means nothing is exempt.",
