@@ -627,18 +627,7 @@ describe("run 6 — invalid events refuse, producing nothing to append", () => {
 	});
 });
 
-describe("the fold is deterministic and total over its inputs", () => {
-	it("folds the same log to the same states every time", () => {
-		const compiled = lane(twoPhaseWorkflow());
-		const log = drive(compiled, [
-			["task_a", "DONE"],
-			["task_b", "DONE"],
-			["task_a", "FAIL"],
-		]);
-
-		expect(statesOf(compiled, log)).toEqual(statesOf(compiled, log));
-	});
-
+describe("the fold is total over its inputs", () => {
 	it("refuses to fold a log naming a task the machine does not have", () => {
 		const compiled = lane(twoPhaseWorkflow());
 
@@ -768,6 +757,39 @@ describe("the deferral a proven PASS carries", () => {
 	});
 });
 
+describe("the basis a flagged route carries onto a proven PASS", () => {
+	const line = (fields: string) => `{"task":"issue","event":"ISSUE.PASS","at":"t"${fields}}\n`;
+
+	it("carries each routed namespace's basis back off the line", () => {
+		expect(
+			parseLog(line(`,"routed":["review-ui"],"routedBasis":{"review-ui":"hand-check"}`)),
+		).toEqual({
+			_tag: "Parsed",
+			entries: [
+				{
+					task: "issue",
+					event: "ISSUE.PASS",
+					at: "t",
+					routed: ["review-ui"],
+					routedBasis: {"review-ui": "hand-check"},
+				},
+			],
+		});
+	});
+
+	it("refuses a basis off the vocabulary, one for a namespace nobody routed, or an empty one", () => {
+		expect(
+			parseLog(line(`,"routed":["review-ui"],"routedBasis":{"review-ui":"eyeballed"}`)),
+		).toMatchObject({_tag: "Malformed"});
+		expect(parseLog(line(`,"routedBasis":{"review-ui":"skip"}`))).toMatchObject({
+			_tag: "Malformed",
+		});
+		expect(parseLog(line(`,"routed":["review-ui"],"routedBasis":{}`))).toMatchObject({
+			_tag: "Malformed",
+		});
+	});
+});
+
 /**
  * The routing payload a ship's `DONE` carries. Absent reads as a closing merge, so the
  * whole ledger written before the field existed folds byte-for-byte as it did.
@@ -801,6 +823,20 @@ describe("the partial merge a ship DONE carries", () => {
 		expect(parseLog(line(`,"landed":[]`))).toMatchObject({_tag: "Malformed"});
 		expect(parseLog(line(`,"landed":["7329"]`))).toMatchObject({_tag: "Malformed"});
 		expect(parseLog(line(`,"landed":7329`))).toMatchObject({_tag: "Malformed"});
+	});
+});
+
+describe("the issueClose a ship DONE carries", () => {
+	const line = (event: string, fields: string) =>
+		`{"task":"issue","event":"ISSUE.${event}","at":"t"${fields}}\n`;
+
+	it("carries the answer back off the line, and refuses one outside the set or off a DONE", () => {
+		expect(parseLog(line("DONE", `,"issueClose":"closed-by-lane"`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.DONE", at: "t", issueClose: "closed-by-lane"}],
+		});
+		expect(parseLog(line("DONE", `,"issueClose":"closed"`))).toMatchObject({_tag: "Malformed"});
+		expect(parseLog(line("PASS", `,"issueClose":"unread"`))).toMatchObject({_tag: "Malformed"});
 	});
 });
 

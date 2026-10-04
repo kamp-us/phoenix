@@ -79,6 +79,7 @@ describe("runHomingGuard — the backlog sweep", () => {
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout).toContain("scanned 2 triaged issue(s)");
 		expect(outcome.stdout).toContain("1 milestone-homed");
+		expect(outcome.stdout).toContain("1 standing-lane exempt");
 		expect(requests).toHaveLength(1);
 	});
 
@@ -94,7 +95,9 @@ describe("runHomingGuard — the backlog sweep", () => {
 		expect(outcome.stdout).toBe("");
 		const report = outcome.stderr.join("\n");
 		expect(report).toContain("#2 issue 2");
+		expect(report).not.toContain("#1 issue 1");
 		expect(report).toContain("home it in an EXISTING open arc/campaign milestone");
+		expect(report).toContain("wayfinder:backlog or axis:pipeline-hardening");
 		expect(report).toContain("kill it (close not-planned)");
 	});
 
@@ -104,7 +107,9 @@ describe("runHomingGuard — the backlog sweep", () => {
 		]);
 		expect(outcome.code).toBe(VIOLATION);
 		const report = outcome.stderr.join("\n");
+		expect(report).toContain("Carry BOTH a milestone and a standing-lane label");
 		expect(report).toContain("#2 issue 2 — milestone 24 + wayfinder:backlog");
+		expect(report).toContain("banned outright");
 		expect(report).toContain("drop the MILESTONE");
 		expect(report).toContain("drop the STANDING-LANE LABEL");
 	});
@@ -113,6 +118,7 @@ describe("runHomingGuard — the backlog sweep", () => {
 		const {outcome} = await run([[BACKLOG, {status: 200, body: "[]"}]]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.join("\n")).toContain("ZERO status:triaged issues");
+		expect(outcome.stderr.join("\n")).toContain("fail-closed");
 	});
 
 	it("reds 11 when the board cannot be read — never clean, never a violation", async () => {
@@ -164,7 +170,10 @@ describe("runHomingGuard — the --issue seam", () => {
 			{issue: 9},
 		);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
-		expect(outcome.stderr.join("\n")).toContain("do not exist in this repo at all: status:triaged");
+		const report = outcome.stderr.join("\n");
+		expect(report).toContain("do not exist in this repo at all: status:triaged");
+		expect(report).toContain("Create the missing label(s)");
+		expect(report).not.toContain("out of scope, nothing to check");
 	});
 
 	it("reds 11 when the label set itself cannot be read", async () => {

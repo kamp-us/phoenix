@@ -2,8 +2,9 @@ import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Term} from "../../../worker/features/fate/views";
 import {toIsoOrNull} from "../../fate/wire";
-import {useT, useTPlural} from "../../i18n";
-import {formatAgoTR, formatDateTR} from "../../lib/datetime";
+import {useDateFormatter, useT, useTPlural} from "../../i18n";
+import {sozlukLetterHref} from "../../lib/sozlukLetterHref";
+import {Breadcrumbs} from "../layout/Breadcrumbs";
 
 export const TermHeaderView = view<Term>()({
 	id: true,
@@ -23,6 +24,7 @@ export interface SozlukTermHeaderProps {
 export function SozlukTermHeader(props: SozlukTermHeaderProps) {
 	const term = useView(TermHeaderView, props.term);
 	const t = useT();
+	const formatDate = useDateFormatter();
 	const tp = useTPlural();
 	// The stored column, not a fourth private fold: ASCII lowercasing read `İŞÇİ` as `i` and
 	// `IŞIK` as `i` too, both wrong under Turkish casing (#9331). A headword starting outside
@@ -32,15 +34,21 @@ export function SozlukTermHeader(props: SozlukTermHeaderProps) {
 	const lastEdit = toIsoOrNull(term.lastEdit);
 	return (
 		<header className="kp-sozluk-term__head">
-			<p className="kp-sozluk-term__crumbs">
-				<Link to="/sozluk">{t("sozluk.term.crumbRoot")}</Link> /{" "}
-				{firstLetter ? (
-					<>
-						<Link to="/sozluk">{firstLetter}</Link> /{" "}
-					</>
-				) : null}
-				{term.title}
-			</p>
+			<Breadcrumbs
+				className="kp-sozluk-term__crumbs"
+				trail={[
+					{key: "root", label: <Link to="/sozluk">{t("sozluk.term.crumbRoot")}</Link>},
+					...(firstLetter
+						? [
+								{
+									key: "letter",
+									label: <Link to={sozlukLetterHref(firstLetter, false)}>{firstLetter}</Link>,
+								},
+							]
+						: []),
+				]}
+				current={{key: "term", label: term.title}}
+			/>
 			<h1 className="kp-sozluk-term__title">{term.title}</h1>
 			<div className="kp-sozluk-term__meta">
 				<span>
@@ -49,8 +57,10 @@ export function SozlukTermHeader(props: SozlukTermHeaderProps) {
 				<span>
 					{tp(term.totalScore, {one: "sozluk.voteCount.one", other: "sozluk.voteCount.other"})}
 				</span>
-				{firstAt ? <span>{t("sozluk.term.firstAt", {date: formatDateTR(firstAt)})}</span> : null}
-				{lastEdit ? <span>{t("sozluk.term.lastEdit", {ago: formatAgoTR(lastEdit)})}</span> : null}
+				{firstAt ? <span>{t("sozluk.term.firstAt", {date: formatDate.date(firstAt)})}</span> : null}
+				{lastEdit ? (
+					<span>{t("sozluk.term.lastEdit", {ago: formatDate.ago(lastEdit)})}</span>
+				) : null}
 			</div>
 		</header>
 	);

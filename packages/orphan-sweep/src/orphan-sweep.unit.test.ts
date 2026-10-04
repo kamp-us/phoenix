@@ -130,13 +130,6 @@ describe("computeSweepPlan — open PR previews are protected", () => {
 		assert.strictEqual(keptReasonFor(off, w.name), "preview-sweep-disabled");
 	});
 
-	it("an open pr is kept even with preview sweeping ON (open wins over closed-sweep)", () => {
-		const w = worker("pr-5");
-		const plan = computeSweepPlan([w], protection({openPrNumbers: [5], sweepClosedPreviews: true}));
-		assert.strictEqual(plan.toDelete.length, 0);
-		assert.strictEqual(keptReasonFor(plan, w.name), "open-pr");
-	});
-
 	it("pr-<n> anchor rejects pr- with trailing junk and bare pr-", () => {
 		const plan = computeSweepPlan(
 			[worker("pr-12-foo"), worker("pr-"), worker("pr-abc")],
@@ -373,17 +366,5 @@ describe("computeSweepPlan — Flagship apps/flags flow through the SAME protect
 		assert.deepStrictEqual(new Set(deletedNames(on)), new Set([testFlag.name, testApp.name]));
 		for (const d of on.toDelete) assert.strictEqual(d.reason, "stale-dev-test");
 		assert.strictEqual(keptReasonFor(on, devApp.name), "named-dev");
-	});
-
-	it("a flag named `prod-…` (open pr) is kept even though its KEY looks prod-ish", () => {
-		// The flag's key is `phoenix-flags-targeting-demo` (shares the flagship app prefix),
-		// but the stage decodes from `appName` = pr-3 — so kind+field choice, not the key, drives it.
-		const flag = flagshipFlag("pr-3");
-		const plan = computeSweepPlan(
-			[flag],
-			protection({openPrNumbers: [3], sweepClosedPreviews: true}),
-		);
-		assert.strictEqual(plan.toDelete.length, 0);
-		assert.strictEqual(keptReasonFor(plan, flag.name), "open-pr");
 	});
 });

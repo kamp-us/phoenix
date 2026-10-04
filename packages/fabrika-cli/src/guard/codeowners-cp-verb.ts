@@ -9,7 +9,7 @@
  * elsewhere.** v1 also read the `CONTROL_PLANE_RE='…'` line out of
  * `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` and redded if it had drifted
  * from the const, because the v1 shell gates re-resolved the boundary from that line on
- * `origin/main`. No fabrika verb reads that line, and `ci.yml`'s unconditional `skills` job
+ * the trunk. No fabrika verb reads that line, and `ci.yml`'s unconditional `skills` job
  * still runs `validate-gate-path-drift.sh`, which is the const↔formats-doc compare in full. Keeping
  * a duplicate here would have pinned a retired plugin's prose as a second merge-blocking source of
  * this boundary.
@@ -34,7 +34,7 @@ import {
 
 const VERB = "guard codeowners-cp check";
 
-const CODEOWNERS = ".github/CODEOWNERS";
+export const CODEOWNERS = ".github/CODEOWNERS";
 
 export interface CodeownersCpGuardOptions {
 	/** An explicit repo root, or `null` to walk up from `cwd` for one. */

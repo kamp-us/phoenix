@@ -138,38 +138,7 @@ describe("ban enforcement — session refused at the auth boundary (real D1)", (
 		expect(await waitForHonored(user.cookie, true)).toBe(true);
 	});
 
-	it("every ban/unban event persists its audit fields (actor, target, reason, time)", async () => {
-		const user = await h.signUp(`${NS}-audit@test.local`, "hunter2hunter2", "Audit Trail");
-		userIds.push(user.userId);
-
-		const at = nowSec();
-		await insertBanEvent({
-			userId: user.userId,
-			action: "ban",
-			actorId: `${NS}-admin`,
-			reason: "abuse",
-			expiresAtSec: at + 86400,
-			createdAtSec: at,
-		});
-
-		const audit = await d1
-			.prepare(
-				"SELECT action, actor_id, reason, expires_at, created_at FROM user_ban_event WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
-			)
-			.bind(user.userId)
-			.first<{
-				action: string;
-				actor_id: string;
-				reason: string | null;
-				expires_at: number | null;
-				created_at: number;
-			}>();
-
-		expect(audit).not.toBeNull();
-		expect(audit?.action).toBe("ban");
-		expect(audit?.actor_id).toBe(`${NS}-admin`);
-		expect(audit?.reason).toBe("abuse");
-		expect(audit?.expires_at).toBe(at + 86400);
-		expect(audit?.created_at).toBe(at);
-	});
+	// No audit read-back here: the rows are this file's own inserts, so reading them back would
+	// prove only that D1 stores what a test wrote. The ban mutation's write is unit-tested
+	// (`ban-mutation.unit.test.ts`).
 });

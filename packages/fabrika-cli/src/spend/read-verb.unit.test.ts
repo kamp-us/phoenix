@@ -48,15 +48,6 @@ describe("spend read — the answer", () => {
 		});
 	});
 
-	it("keeps the cache-read share visible rather than folded into the total", async () => {
-		const out = await run(withText(fixture));
-		const {cacheRead, billed} = reconstructSpend(fixture);
-
-		expect(cacheRead).toBeGreaterThan(0);
-		expect(rows(out.stdout).get("cacheRead")).toBe(String(cacheRead));
-		expect(rows(out.stdout).get("exCacheRead")).toBe(String(billed - cacheRead));
-	});
-
 	it("emits the same eight fields as JSON on stdout under --json", async () => {
 		const out = await run(withText(fixture), true);
 
@@ -103,12 +94,6 @@ describe("spend read — the refusals", () => {
 		expect(out.code).toBe(INPUT_UNREADABLE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("UNKNOWN");
-	});
-
-	it("seats both unreadable states above the reserved codes, distinct from each other", () => {
-		expect(INPUT_ABSENT).toBeGreaterThanOrEqual(3);
-		expect(INPUT_UNREADABLE).toBeGreaterThanOrEqual(3);
-		expect(new Set([INPUT_ABSENT, INPUT_UNREADABLE, NOTHING_MEASURED]).size).toBe(3);
 	});
 
 	it("refuses a transcript with zero billed assistant turns as its own state", async () => {

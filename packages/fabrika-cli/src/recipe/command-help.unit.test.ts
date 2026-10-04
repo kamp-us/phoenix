@@ -2,7 +2,11 @@
  * `--help` is the recipe adapter's public contract. `unpark` is the one verb here that takes a lanes
  * root, and it must tell the same derivation story `lane`'s flag tells — a flag advertising a bare
  * cwd-relative default is how an operator learns the wrong resolution rule.
+ *
+ * The derivation behind each exit lives in the operate skill's `contract.md`, which help points at;
+ * the assertions on that derivation read it there.
  */
+import {readFileSync} from "node:fs";
 import {describe, expect, it} from "vitest";
 import type {CommandNode} from "../unknown-subcommand.ts";
 import {recipeCommand} from "./command.ts";
@@ -34,6 +38,17 @@ const flagHelp = (leaf: DescribedCommand): string => {
 	return (leaf.config?.flags ?? []).map(text).join(" ");
 };
 
+const CONTRACT = "../../../../claude-plugins/fabrika/skills/operate/contract.md";
+
+/** The contract's `recipe unpark` section, whitespace-collapsed so a rewrap cannot red it. */
+const unparkContract = (): string => {
+	const text = readFileSync(new URL(CONTRACT, import.meta.url), "utf8");
+	const start = text.indexOf("## `recipe unpark`");
+	if (start < 0) throw new Error("the operate contract has no `recipe unpark` section");
+	const end = text.indexOf("\n## ", start + 1);
+	return text.slice(start, end < 0 ? undefined : end).replace(/\s+/g, " ");
+};
+
 describe("recipe unpark's repository-root help contract", () => {
 	it("advertises the repository-owned --root default the lane group's flag carries", () => {
 		const help = flagHelp(leafNamed("unpark"));
@@ -43,20 +58,33 @@ describe("recipe unpark's repository-root help contract", () => {
 		expect(help).not.toContain("(default: .fabrika/lanes)");
 	});
 
-	it("seats the no-owning-repository refusal on its own exit rather than a lane's absence", () => {
+	it("seats the no-owning-repository refusal on its own exit and points at the contract", () => {
 		const description = leafNamed("unpark").description ?? "";
 
-		expect(description).toContain("derive the default lanes root");
-		expect(description).toContain("unreadable repository identity is UNKNOWN at 11");
+		expect(description).toContain("\n  11: ");
+		expect(description).toContain("\n  39: no owning repository");
+		expect(description).toContain('the operate skill\'s contract.md, "recipe unpark"');
+		expect(unparkContract()).toContain("derive the default lanes root");
+		expect(unparkContract()).toContain("unreadable repository identity is UNKNOWN at `11`");
+	});
+
+	// The cause reaches two leaves with two floors, and an operator reading a 13 needs to tell which.
+	it("tells the two head-ci-red rows apart on one line, by leaf", () => {
+		const line = (leafNamed("unpark").description ?? "")
+			.split("\n")
+			.find((text) => text.includes("head-ci-red"));
+
+		expect(line).toContain("human:cp-approval clears on green+open+gate");
+		expect(line).toContain("blocked on green+open");
 	});
 
 	// The `parkCause` read is a second derivation off the owning repository, and it refuses on 11
-	// alone — a cwd in no repository reads the shipped declaration at itself. A description claiming
+	// alone — a cwd in no repository reads the shipped declaration at itself. A contract claiming
 	// 39 for it would send an operator to fix a root the read never touched.
 	it("names the owning-repository parkCause read and claims no exit it cannot produce", () => {
-		const description = leafNamed("unpark").description ?? "";
+		const contract = unparkContract();
 
-		expect(description).toContain("read from the `.fabrika.jsonc` of the repository that OWNS");
-		expect(description).toContain("`parkCause` read ahead of it never exits here");
+		expect(contract).toContain("read from the `.fabrika.jsonc` of the repository that OWNS");
+		expect(contract).toContain("`parkCause` read ahead of it never exits here");
 	});
 });

@@ -1,7 +1,7 @@
 ---
 id: 0386
 title: Worktree accumulation is bounded at provisioning, by the sweep that creates one
-status: accepted
+status: amended-in-part by [0427](0427-retire-unlocks-a-released-worktree.md), [0448](0448-worktree-create-hook-never-sweeps.md), [0449](0449-reap-removes-finished-branch-trees.md)
 date: 2026-09-10
 tags: [fabrika, pipeline-hardening, worktree, isolation]
 ---
@@ -49,6 +49,9 @@ proofs, and the live sweep kept six second-naming trees on exactly that ground (
 `origin/main` does not").
 
 ## 2. Reap before provision, not a schedule and not a cap
+
+> Amended by [0448](0448-worktree-create-hook-never-sweeps.md): `hook worktree-create` no longer
+> runs the sweep. This section is history for the hook; sections 1 and 3 still hold.
 
 Nothing ran `build reap`. It was invoked by hand, on no schedule, with no bound on how many trees
 could accumulate — which is the clause that made the failure recur: freeing the disk bought time, not
@@ -131,6 +134,11 @@ registration alone however often it runs, and that `prunable` tracks the `.git` 
 directory, so a registration reports prunable while its checkout still holds uncommitted work.
 
 ## What does not change
+
+> Amended by [0449](0449-reap-removes-finished-branch-trees.md): a clean tree goes when any ref
+> reaches its commits, and a tree whose branch or pull request is merged or closed goes whatever it
+> holds, uncommitted paths included. The `--force` ban, the lock arm and "a read that failed proves
+> nothing" stand.
 
 `build reap`'s fail-safe polarity, exactly as ADRs [0321](0321-dead-spawn-worktree-ownership.md) and
 [0323](0323-board-licensed-worktree-retirement.md) leave it: anything short of positive proof that a

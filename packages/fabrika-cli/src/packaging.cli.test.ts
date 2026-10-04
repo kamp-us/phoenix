@@ -114,17 +114,14 @@ describe("the packed package ships what it reads at run time (#6011)", {
 		expect(differing).toEqual([]);
 	});
 
-	it("carries those assets inside the tarball, past the `files` field", () => {
-		const absent = assetsUnder(SRC).filter(
-			(asset) => !existsSync(join(tarballRoot, "dist", asset)),
+	it("carries those assets inside the tarball, past the `files` field, byte for byte", () => {
+		const assets = assetsUnder(SRC);
+		expect(assets.filter((asset) => !existsSync(join(tarballRoot, "dist", asset)))).toEqual([]);
+		const differing = assets.filter(
+			(asset) =>
+				!readFileSync(join(SRC, asset)).equals(readFileSync(join(tarballRoot, "dist", asset))),
 		);
-		expect(absent).toEqual([]);
-	});
-
-	it("ships the coder template inside the tarball, byte-identical to the committed one", () => {
-		expect(
-			readFileSync(join(tarballRoot, "dist", "lane", "templates", "coder.workflow.json"), "utf8"),
-		).toBe(committedTemplate("coder.workflow.json"));
+		expect(differing).toEqual([]);
 	});
 
 	it("resolves the coder template's path from the tarball on an issue boot", () => {

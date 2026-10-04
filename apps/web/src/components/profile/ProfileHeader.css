@@ -59,6 +59,13 @@
 .kp-profile-header__stat .n {
 	font: 600 15px var(--font-body);
 	color: var(--text-primary);
+	/* Pins the number row to the rendered count's own line box — em, so it tracks the
+	   font above it — and the loading skeleton reserves exactly the height the count
+	   lands at instead of shifting the strip when it does (#9265). */
+	min-height: 1.2em;
+}
+.kp-profile-header__stat .n .kp-skeleton {
+	vertical-align: middle;
 }
 .kp-profile-header__stat .l {
 	font: var(--t-meta);

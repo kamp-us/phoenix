@@ -126,8 +126,18 @@ const diagnose = leafCommand(
 ).pipe(
 	Command.withShortDescription("One PR's stall class, with the evidence that proves it."),
 	Command.withDescription(
-		"Classify one PR through an ordered, total predicate chain and print the evidence. First stdout line is `stall\\t<token>\\t<head-sha>\\t<age-minutes>` where the token is one of attended, ungated, gated-unshipped, claim-stale, red, check-surface, conflicted, linkage-refused, blocked-human, wedged, not-open; then the fixed evidence lines owner, gates, ci, queue, link and facts, each present always. Every one of those tokens is an ANSWER at exit 0, including not-open. The conflicted arm fires above check-surface: a PR that conflicts with its base has no merge ref, so every required context reads absent for that reason rather than a settings gap, and its repair is a rebase. GitHub computes mergeable lazily, so an indefinite read is re-read across --mergeability-seconds and, still indefinite at the end of it, skips the conflict arm with a stderr notice rather than firing it. Where the protection surface is unprobeable the check-surface arm is skipped with a stderr notice rather than passed — a permission the token lacks never reads as a surface that is clean. The blocked-human arm is likewise narrowed and says so on stderr every run: its unresolved-thread clause has no REST form and this group takes no GraphQL carve, so blocked-human is derived from reviews alone and a PR blocked only by an unresolved thread reads as whatever the later arms make of it. The changed-file list is the one read that reports rather than refuses on a count disagreement: GitHub computes the pull-request record's `changed_files` against a base it cached at the last push, and this is the verb an operator reaches for when a PR is already stuck. Exits 7 (the PR is proven absent, --sha names no commit on it, or the enumerated changed-file list is empty), 11 (the PR, its mergeability, its comments, its check runs, its verdicts, its timeline or its base could not be read — the stall class is UNKNOWN, never attended), 13 (the changed-file list came back at GitHub's 3000-file ceiling, where the Link header ends as a complete read ends, so the classification would run over a provably partial diff; or the comment, check-run or timeline enumeration is provably short of its declared count; or the timeline read never reached a terminal page). Example: fabrika heal-ci diagnose 4321",
+		[
+			"Classifies one PR's stall; prints `stall\\t<token>\\t<head-sha>\\t<age-minutes>`, then evidence.",
+			"  Tokens: attended, ungated, gated-unshipped, claim-stale, red, check-surface, conflicted,",
+			"  linkage-refused, blocked-human, wedged, not-open; each one is an answer, not a refusal.",
+			"  Evidence lines, always present: owner, author, gates, ci, queue, link, facts.",
+			"  7: the PR or --sha commit is absent, or the changed-file list is empty",
+			"  11: a read failed (UNKNOWN, never attended)",
+			"  13: an enumeration is provably partial",
+			'  Derivation: the heal-ci skill\'s contract.md, "heal-ci diagnose"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika heal-ci diagnose 4321"}]),
 );
 
 const sweep = leafCommand(
@@ -185,8 +195,16 @@ const sweep = leafCommand(
 ).pipe(
 	Command.withShortDescription("Every open PR classified with its strand age."),
 	Command.withDescription(
-		"Classify every open pull request through `heal-ci diagnose`'s shared predicate chain and emit the stalled ones, ordered by strand age descending with ties broken by ascending PR number. First stdout line is `swept\\t<scanned>\\t<stalled>` — both counts always, so a zero-stall answer carries the scope it rests on rather than standing as a bare claim — then one `pr\\t<number>\\t<token>\\t<age>\\t<head>\\t<lane>` line per emitted PR, the lane being the note's arrow looked up off the class (build|review|ship|author|human|nobody) so a caller relays it instead of deriving one. Each classification re-reads an indefinite mergeability across --mergeability-seconds, so a board of PRs GitHub has not computed yet costs that window per PR; 0 reads once and skips the conflict arm instead. This verb writes nothing: it files no issue, assigns nobody and spawns nothing. A PR that closed between the list read and its classification stays in the scanned count and leaves the stalled one. Exits 11 (the open-PR list or a per-PR read failed, or the rate limit was exhausted mid-sweep — the sweep is UNKNOWN, never a shorter list), 13 (the enumeration never reached a terminal page, or the open-PR count exceeds --limit). Example: fabrika heal-ci sweep --min-age-minutes 30",
+		[
+			"Classifies every open PR; prints `swept\\t<scanned>\\t<stalled>`, then one row per stalled PR.",
+			"  Row: `pr\\t<number>\\t<token>\\t<age>\\t<head>\\t<build|review|ship|author|human|nobody>`",
+			"  Rows run oldest strand first, ties by PR number; this verb writes nothing.",
+			"  11: the PR list or a per-PR read failed, or the rate limit ran out (UNKNOWN)",
+			"  13: the enumeration never ended, or the open-PR count exceeds --limit",
+			'  Derivation: the heal-ci skill\'s contract.md, "heal-ci sweep"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika heal-ci sweep --min-age-minutes 30"}]),
 );
 
 const surface = leafCommand(
@@ -198,8 +216,17 @@ const surface = leafCommand(
 ).pipe(
 	Command.withShortDescription("Declared required contexts against the runs at a head."),
 	Command.withDescription(
-		"Compare the contexts a base branch declares required — branch protection unioned with the rulesets that match it — against the gating runs that actually post at a head. First stdout line is `surface\\t<covered|gap|no-requirements|unprobeable>\\t<sha>`, then one `required\\t<name>\\t<producing|absent>` line per declared context, one `extra\\t<name>` line per gating run answering no requirement, and a facts line whose `producing` counts declared contexts that have a producing run. `unprobeable` is the permission answer and is NOT `no-requirements`: the protection endpoint answers 404 both when a branch is unprotected and when the token cannot see it, so no-requirements needs a successful rules read returning nothing as well. This verb changes nothing — arming, renaming and disarming a required context are a human's act (claude-plugins/fabrika/skills/heal-ci/contract.md §heal-ci surface). Exits 7 (the PR or the --sha commit is proven absent), 11 (protection, rulesets or check runs could not be read — coverage is UNKNOWN, never covered and never no-requirements), 13 (an enumeration is provably incomplete). Example: fabrika heal-ci surface 4321",
+		[
+			"Compares a base's required contexts with a head's runs; prints `surface\\t<verdict>\\t<sha>` first.",
+			"  Verdicts: covered, gap, no-requirements, unprobeable (a permission answer).",
+			"  Then `required\\t<name>\\t<producing|absent>` and `extra\\t<name>` lines, and a facts line.",
+			"  7: the PR or --sha commit is absent",
+			"  11: protection, rulesets or check runs could not be read (UNKNOWN)",
+			"  13: an enumeration is provably incomplete",
+			'  Derivation: the heal-ci skill\'s contract.md, "heal-ci surface"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika heal-ci surface 4321"}]),
 );
 
 const logs = leafCommand(
@@ -236,8 +263,18 @@ const logs = leafCommand(
 ).pipe(
 	Command.withShortDescription("The failed-job log text for every failing gating context."),
 	Command.withDescription(
-		"Read the failed-job log for EVERY failing gating context at a head, not the first — an N-context red is N routed actions. First stdout line is `logs\\t<count>\\t<sha>`, then per context a `==== context <name> job <id> bytes <k> truncated <bool> ====` header, the log bytes, and an `==== end <name> ====` terminator, which is the framing `heal-ci classify` splits on. `logs 0 <sha>` is a proven answer: nothing gating is failing here. Informational contexts gate nothing and are excluded before anything is fetched, truncation is declared rather than silent, and a failing context with no workflow job behind it is emitted with an empty body rather than failing the whole read. Exits 7 (the PR or --sha commit is proven absent, or --context names no failing gating context here), 11 (the check runs, run list or a job log could not be read — UNKNOWN, never empty), 13 (an enumeration is provably short), 15 (the platform reports the run's logs expired, which no retry changes). Example: fabrika heal-ci logs 4322 --sha 9fe12ab0",
+		[
+			"Prints `logs\\t<count>\\t<sha>`, then the framed failed-job log of every failing gating context.",
+			"  Frame: `==== context <name> job <id> bytes <k> truncated <bool> ====`, the log bytes,",
+			"  then `==== end <name> ====`; `logs 0 <sha>` means nothing gating is failing.",
+			"  7: the PR or --sha commit is absent, or --context names no failing gating context",
+			"  11: a check-run, run, log or required-set read failed (UNKNOWN, never empty)",
+			"  13: an enumeration is provably short",
+			"  15: the platform expired the run's logs",
+			'  Derivation: the heal-ci skill\'s contract.md, "heal-ci logs"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika heal-ci logs 4322 --sha 9fe12ab0"}]),
 );
 
 const classify = leafCommand(
@@ -249,8 +286,15 @@ const classify = leafCommand(
 ).pipe(
 	Command.withShortDescription("Match log text against the closed failure-signature table."),
 	Command.withDescription(
-		"Classify log text arriving on STDIN against a closed, ordered ten-row signature table — the first row whose pattern matches wins, and the ordering is part of the contract because the classes genuinely overlap. Pure: no network, no state, no flags but --json, so a classification is reproducible from the bytes alone. First stdout line is `classified\\t<n>`, then one `class\\t<context>\\t<transient|logic|unclassified>\\t<signature-id>\\t<matched-line>` line per context, in the order received. It consumes `heal-ci logs`' framed multi-context stream directly, so nothing splits it by hand; a bare body with no framing is one block under context `-`. `unclassified` is a third token, distinct from `logic`, and there is no path from ambiguous input to `transient` (claude-plugins/fabrika/skills/heal-ci/contract.md §heal-ci classify). Exits 3 (stdin was read and held nothing — an empty read is not an unclassified failure). Example: fabrika heal-ci logs 4322 | fabrika heal-ci classify",
+		[
+			"Classifies log text on stdin; prints `classified\\t<n>`, then one `class` line per context.",
+			"  Line: `class\\t<context>\\t<transient|logic|unclassified>\\t<signature-id>\\t<matched-line>`",
+			"  Pure, and it reads `heal-ci logs` framing; an unframed body is one block under context `-`.",
+			"  3: stdin was empty",
+			'  Derivation: the heal-ci skill\'s contract.md, "heal-ci classify"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika heal-ci logs 4322 | fabrika heal-ci classify"}]),
 );
 
 const rerun = leafCommand(
@@ -289,8 +333,26 @@ const rerun = leafCommand(
 ).pipe(
 	Command.withShortDescription("Re-run a run's failed jobs once, guarded and verified."),
 	Command.withDescription(
-		"Re-run one workflow run's failed jobs AT MOST ONCE per head, re-deriving every precondition inside the verb and trusting nothing it was told: the live head must prefix-match --sha, the run must have concluded failure at that head, and the head must not already have been rerun — proven from two independent, fully paginated signals, the run's own run_attempt and a bound marker comment. The request is then read back and a new attempt REQUIRED before any marker is written, so a dispatch that never produced an attempt leaves no marker behind (claude-plugins/fabrika/skills/heal-ci/contract.md §heal-ci rerun). Stdout is one line: `rerun\\t<new-attempt>\\t<run-id>\\t<marker-url>`, where the attempt is the one read back and never the value the caller held. Exits 7 (the PR or run is proven absent), 8 (the request or its confirming read failed — UNKNOWN, and NO marker was written), 9 (the rerun landed and the marker read-back does not match), 10 (--signature is off the classify table), 11 (a precondition read failed — nothing was requested), 12 (the live head moved past --sha), 13 (the comment enumeration never proved complete), 14 (proven: not a failed run, already rerun, or the PR is not open — a refusal that is a success, since nothing was mutated), 16 (the rerun provably landed and its marker could not be written — spent and unrecorded, escalate first). Example: fabrika heal-ci rerun 4322 --run 9182736450 --sha 9fe12ab0 --signature preview-warmup",
+		[
+			"Re-runs failed jobs once per head; prints `rerun\\t<new-attempt>\\t<run-id>\\t<marker-url>`.",
+			"  7: the PR or run is absent",
+			"  8: the request or its re-read failed (UNKNOWN), no marker written",
+			"  9: the marker read-back does not match",
+			"  10: --signature is off the classify table",
+			"  11: a precondition read failed; nothing was requested",
+			"  12: the live head moved past --sha",
+			"  13: the comment enumeration never proved complete",
+			"  14: not a failed run, already rerun, or the PR is not open",
+			"  16: the rerun landed unrecorded; escalate",
+			'  Derivation: the heal-ci skill\'s contract.md, "heal-ci rerun"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika heal-ci rerun 4322 --run 9182736450 --sha 9fe12ab0 --signature preview-warmup",
+		},
+	]),
 );
 
 const note = leafCommand(
@@ -326,8 +388,27 @@ const note = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the durable stop-path note, once per class and head."),
 	Command.withDescription(
-		"Post the durable record of what this lane decided, as a NEW comment — a strand's history is a history, not a state, so each classification is its own record and a note on a closed or merged PR is legal. What is not its own record is the SAME classification of the same head by a second caller: --class and --sha, with the PR number, form the key `<pr>:<class>:<head>`, which the verb emits as the HTML-comment marker `<!-- heal-ci-note key=<pr>:<class>:<head> -->` on the note's last line and reads back over the pull request's WHOLE comment history before creating. A comment already carrying that exact key is exit 14 with nothing posted; a comment list that could not be read is 11, never an absent note. One key earns one note for as long as the PR is open, so a strand is re-noticed only when its class changes or a new commit lands. The body arrives on stdin only; there is no path flag (claude-plugins/fabrika/skills/heal-ci/contract.md §heal-ci note). Leak-scanned before the write and read back after it. Stdout is one line: `noted\\t<comment-url>`. A --sha that is not the live head is a stderr notice, never a refusal — the note records a classification at the head it was taken at. Exits 1 (--sha is not a full 40-hex sha), 3 (stdin held nothing), 5 (the body carries a machine-local path), 6 (the body is a bare @ path reference), 7 (the PR is proven absent), 8 (the create or its confirming re-read failed — UNKNOWN whether it landed), 9 (it landed and the read-back does not match), 10 (--class is off the stall vocabulary), 11 (the PR or its comments could not be read — nothing was posted), 13 (the comment enumeration is short of the declared count), 14 (proven: this key is already recorded — a refusal that is a success, since nothing was written). Example: fabrika heal-ci note 4321 --class gated-unshipped --sha 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c < note.md",
+		[
+			"Posts the stdin note once per PR, class and head; prints `noted\\t<comment-url>`.",
+			"  3: stdin was empty",
+			"  5: the body carries a machine-local path",
+			"  6: the body is a bare @ reference",
+			"  7: the PR is absent",
+			"  8: the create or its re-read failed (UNKNOWN)",
+			"  9: the read-back does not match",
+			"  10: --class is off the stall vocabulary",
+			"  11: the PR or its comments could not be read; nothing was posted",
+			"  13: the comment enumeration is short",
+			"  14: this key is already recorded; nothing was written",
+			'  Derivation: the heal-ci skill\'s contract.md, "heal-ci note"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika heal-ci note 4321 --class gated-unshipped --sha 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c < note.md",
+		},
+	]),
 );
 
 const scratch = leafCommand(
@@ -346,8 +427,14 @@ const scratch = leafCommand(
 ).pipe(
 	Command.withShortDescription("The per-lane scratch path a healer's note bodies go under."),
 	Command.withDescription(
-		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-heal-ci/<session-id>/<pr>/<slug>, one absolute path on stdout, the directory created if absent. The session id and the PR number key the namespace, so two concurrent healers cannot derive one path. There is no nonce and no --token, unlike `build scratch` and `triage scratch`: this group has no claim verb, and a heal-ci run is one forked shell (claude-plugins/fabrika/skills/heal-ci/contract.md §heal-ci scratch). The printed path is machine-local and must never reach a posted artifact — `heal-ci note` reds on one. Exits 1 (the directory could not be created, the positional is not a PR number, no session id is set (the FABRIKA_SESSION_ID → CLAUDE_CODE_SESSION_ID → PI_SUBAGENT_PARENT_SESSION chain), or the id is not one path segment), 10 (--slug carries a path separator or is not kebab-case). Example: fabrika heal-ci scratch 4321 --slug note",
+		[
+			"Prints this lane's absolute scratch path, creating the directory if absent.",
+			"  Path: <temp root>/fabrika-heal-ci/<session-id>/<pr>/<slug>; never post it.",
+			"  10: --slug carries a path separator or is not kebab-case",
+			'  Derivation: the heal-ci skill\'s contract.md, "heal-ci scratch"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika heal-ci scratch 4321 --slug note"}]),
 );
 
 export const healCiCommand = Command.make("heal-ci").pipe(

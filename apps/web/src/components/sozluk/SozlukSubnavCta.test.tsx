@@ -10,24 +10,20 @@ import {SozlukSubnavCta} from "./SozlukSubnavCta";
 /**
  * Renders the CTA under a `key`-flipping boundary. Calling the returned `remountSubtree`
  * flips the key, which React resolves as an unmount + remount of everything below it — the
- * ancestor-unmount #3600 pinned. `withHoist` wraps the boundary in the create-dialog provider
- * (mounted ABOVE the boundary, as `App.tsx` mounts it above `FateProvider`); without it the
- * CTA falls back to its own local state, reproducing the pre-fix fragility.
+ * ancestor-unmount #3600 pinned. The create-dialog provider sits ABOVE the boundary, as
+ * `App.tsx` mounts it above `FateProvider`.
  */
-function renderUnderUnmountingBoundary({withHoist}: {withHoist: boolean}) {
+function renderUnderUnmountingBoundary() {
 	let flip: () => void = () => {};
 	function Harness() {
 		const [key, setKey] = React.useState(0);
 		flip = () => setKey((k) => k + 1);
-		const boundary = (
-			<div key={key}>
-				<SozlukSubnavCta />
-			</div>
-		);
-		return withHoist ? (
-			<SozlukCreateDialogProvider>{boundary}</SozlukCreateDialogProvider>
-		) : (
-			boundary
+		return (
+			<SozlukCreateDialogProvider>
+				<div key={key}>
+					<SozlukSubnavCta />
+				</div>
+			</SozlukCreateDialogProvider>
 		);
 	}
 	render(
@@ -41,18 +37,8 @@ function renderUnderUnmountingBoundary({withHoist}: {withHoist: boolean}) {
 }
 
 describe("SozlukSubnavCta — #3840 open-state survives an ancestor unmount", () => {
-	it("reproduces the #3600 artifact WITHOUT the hoist: an ancestor unmount vanishes the open dialog", async () => {
-		const {remountSubtree} = renderUnderUnmountingBoundary({withHoist: false});
-		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
-		expect(await screen.findByLabelText(/Terim/)).toBeTruthy();
-
-		remountSubtree();
-
-		expect(screen.queryByLabelText(/Terim/)).toBeNull();
-	});
-
 	it("survives the same ancestor unmount WITH the hoist — the dialog stays open", async () => {
-		const {remountSubtree} = renderUnderUnmountingBoundary({withHoist: true});
+		const {remountSubtree} = renderUnderUnmountingBoundary();
 		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
 		expect(await screen.findByLabelText(/Terim/)).toBeTruthy();
 

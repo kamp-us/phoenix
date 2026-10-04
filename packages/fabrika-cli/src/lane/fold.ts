@@ -11,7 +11,10 @@
  * discriminated union rather than throwing, so a verb's refusal is data it seats on an exit code.
  */
 import {acceptsOf, applyCell, foldMsgs, msgKeysOf, NoCellError} from "@demlik/tea";
+import {type RoutedBasis, readRoutedBasis} from "../wire/routed-elsewhere.ts";
+import {ISSUE_CLOSES, type IssueClose, isIssueClose} from "./closing-merge.ts";
 import {type Deferral, deferredTasks, resolveDeferrals} from "./deferral.ts";
+import {type IntegrateFailure, isIntegrateFailure} from "./integrate-failure.ts";
 import {
 	AMENDED_EVENT,
 	BOARD_TERMINALS,
@@ -28,7 +31,13 @@ import {
 	OPERATOR_EVENTS,
 	type TaskState,
 } from "./machine.ts";
-import {ROUTED_MACHINERY_CAUSES} from "./report.ts";
+import {
+	causeTakesAxisIssue,
+	causeTakesFounderAct,
+	causeTakesRulingIssue,
+	type ParkEvidence,
+	ROUTED_MACHINERY_CAUSES,
+} from "./report.ts";
 
 /**
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
@@ -72,9 +81,10 @@ import {ROUTED_MACHINERY_CAUSES} from "./report.ts";
  * task set replaced which.
  *
  * `corrects` is the fifth and rides one line only, a {@link CORRECTED_EVENT}: the `at` of the
- * earlier entry of this same task whose `partial` payload this line supersedes. It is the
- * one field naming another line, and it is how a routing fact recorded before the field existed is
- * repaired without any recorded line changing — see {@link applyCorrections}.
+ * earlier entry of this same task whose `partial` or `integrate` payload this line supersedes — one
+ * of the two, never both. It is the one field naming another line, and it is how a fact recorded
+ * before its field existed is repaired without any recorded line changing — see
+ * {@link applyCorrections}.
  */
 export interface LogEntry {
 	readonly task: string;
@@ -92,6 +102,23 @@ export interface LogEntry {
 	 * record an `UNBLOCKED` without it.
 	 */
 	readonly rationale?: string;
+	/**
+	 * The open issue a `render-axis-missing` park waits on — evidence beside `cause`, and the number
+	 * `recipe unpark` reads to clear the park once that issue closes. Present exactly when the line's
+	 * cause is one `report.ts`'s `AXIS_ISSUE_CAUSES` names.
+	 */
+	readonly axisIssue?: number;
+	/**
+	 * The issue a `ruling-owed` park's ruling is owed on — the number `recipe unpark` reads a ruling
+	 * marker off. Present exactly when the line's cause is one `report.ts`'s `RULING_ISSUE_CAUSES`
+	 * names.
+	 */
+	readonly rulingIssue?: number;
+	/**
+	 * The step a `founder-act-owed` park waits on the founder to take, in the recorder's own words.
+	 * Present exactly when the line's cause is one `report.ts`'s `FOUNDER_ACT_CAUSES` names.
+	 */
+	readonly founderAct?: string;
 	readonly round?: number;
 	readonly classes?: ReadonlyArray<string>;
 	readonly deferred?: ReadonlyArray<string>;
@@ -109,9 +136,22 @@ export interface LogEntry {
 	 * that moves a state.
 	 */
 	readonly routed?: ReadonlyArray<string>;
+	/**
+	 * Each {@link routed} namespace whose route stood on the repo's `reviewUi.whenNoPreview` rules,
+	 * with its basis — evidence like `routed`, read by `table flags` so the row says the ui review
+	 * was a hand-check or a skip, never a render. Every key is one `routed` names.
+	 */
+	readonly routedBasis?: RoutedBasis;
 	readonly waitGrant?: number;
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
+	/**
+	 * What the issue read back after a closing ship `DONE` said, and what the lane did about it —
+	 * evidence, never a payload the fold reads. It tells "the board closed it" from "the lane had to"
+	 * and names a failed close or an unread issue, so neither reads as a plain `complete`
+	 * ([`closing-merge.ts`](closing-merge.ts)).
+	 */
+	readonly issueClose?: IssueClose;
 	readonly diagnosis?: boolean;
 	readonly corrects?: string;
 	/** The task set an {@link AMENDED_EVENT} left the lane's machine holding. */
@@ -155,6 +195,12 @@ export interface LogEntry {
 	 * [`settle.ts`](settle.ts)'s.
 	 */
 	readonly assertedBy?: string;
+	/**
+	 * The `lane integrate` exit and assembly head an epic child's integrate `FAIL` stands on —
+	 * evidence on that one line, read back by `build claim` as the repair round it opens
+	 * ([`integrate-failure.ts`](integrate-failure.ts)).
+	 */
+	readonly integrate?: IntegrateFailure;
 }
 
 /**
@@ -207,13 +253,18 @@ export const parseLog = (text: string): ParseLogResult => {
 			comment?: unknown;
 			cause?: unknown;
 			rationale?: unknown;
+			axisIssue?: unknown;
+			rulingIssue?: unknown;
+			founderAct?: unknown;
 			round?: unknown;
 			classes?: unknown;
 			deferred?: unknown;
 			routed?: unknown;
+			routedBasis?: unknown;
 			waitGrant?: unknown;
 			partial?: unknown;
 			landed?: unknown;
+			issueClose?: unknown;
 			diagnosis?: unknown;
 			corrects?: unknown;
 			tasks?: unknown;
@@ -221,6 +272,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			outcome?: unknown;
 			sha?: unknown;
 			assertedBy?: unknown;
+			integrate?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -247,6 +299,59 @@ export const parseLog = (text: string): ParseLogResult => {
 			!(typeof record.rationale === "string" && record.rationale.trim() !== "")
 		) {
 			defects.push(`line ${index + 1} carries a \`rationale\` field that says nothing`);
+			continue;
+		}
+		// The axis issue is what the park's clear reads, so a line whose cause takes one and carries
+		// none is a park nothing can clear, and one riding any other cause is a claim nothing checks.
+		const parkedOn = typeof record.cause === "string" ? record.cause : null;
+		const takesAxis = causeTakesAxisIssue(parkedOn);
+		if (
+			record.axisIssue !== undefined &&
+			!(Number.isInteger(record.axisIssue) && (record.axisIssue as number) > 0)
+		) {
+			defects.push(`line ${index + 1} carries an \`axisIssue\` that is no issue number`);
+			continue;
+		}
+		if (takesAxis !== (record.axisIssue !== undefined)) {
+			defects.push(
+				takesAxis
+					? `line ${index + 1} parks on "${String(record.cause)}" and names no \`axisIssue\` — the issue that park waits on`
+					: `line ${index + 1} carries \`axisIssue\` beside a cause that waits on no issue`,
+			);
+			continue;
+		}
+		// The ruling park's two fields hold to the axis issue's rule, for its reason: the row reads the
+		// issue, and a person reads the step.
+		const takesRuling = causeTakesRulingIssue(parkedOn);
+		if (
+			record.rulingIssue !== undefined &&
+			!(Number.isInteger(record.rulingIssue) && (record.rulingIssue as number) > 0)
+		) {
+			defects.push(`line ${index + 1} carries a \`rulingIssue\` that is no issue number`);
+			continue;
+		}
+		if (takesRuling !== (record.rulingIssue !== undefined)) {
+			defects.push(
+				takesRuling
+					? `line ${index + 1} parks on "${String(record.cause)}" and names no \`rulingIssue\` — the issue that ruling is owed on`
+					: `line ${index + 1} carries \`rulingIssue\` beside a cause that waits on no ruling`,
+			);
+			continue;
+		}
+		const takesAct = causeTakesFounderAct(parkedOn);
+		if (
+			record.founderAct !== undefined &&
+			!(typeof record.founderAct === "string" && record.founderAct.trim() !== "")
+		) {
+			defects.push(`line ${index + 1} carries a \`founderAct\` field that says nothing`);
+			continue;
+		}
+		if (takesAct !== (record.founderAct !== undefined)) {
+			defects.push(
+				takesAct
+					? `line ${index + 1} parks on "${String(record.cause)}" and names no \`founderAct\` — the step that park waits on`
+					: `line ${index + 1} carries \`founderAct\` beside a cause that waits on no founder's step`,
+			);
 			continue;
 		}
 		if (record.round !== undefined && !Number.isInteger(record.round)) {
@@ -303,6 +408,20 @@ export const parseLog = (text: string): ParseLogResult => {
 			);
 			continue;
 		}
+		// A basis names a routed namespace or it flags a row for a route nobody recorded.
+		const routedBasis =
+			record.routedBasis === undefined
+				? undefined
+				: readRoutedBasis(
+						record.routedBasis,
+						Array.isArray(record.routed) ? (record.routed as ReadonlyArray<string>) : [],
+					);
+		if (routedBasis === null) {
+			defects.push(
+				`line ${index + 1} carries a \`routedBasis\` field that is not a basis per namespace \`routed\` names`,
+			);
+			continue;
+		}
 		// Only `true` is a routing fact; a `false` on the line says the merge closed, which is the
 		// absent field's own reading, so both spellings fold identically and neither is a defect.
 		if (record.partial !== undefined && typeof record.partial !== "boolean") {
@@ -324,6 +443,18 @@ export const parseLog = (text: string): ParseLogResult => {
 			);
 			continue;
 		}
+		if (record.issueClose !== undefined && !isIssueClose(record.issueClose)) {
+			defects.push(
+				`line ${index + 1} carries an \`issueClose\` that is not one of ${ISSUE_CLOSES.join("/")}`,
+			);
+			continue;
+		}
+		if (record.issueClose !== undefined && bareEvent(record.event) !== "DONE") {
+			defects.push(
+				`line ${index + 1} carries \`issueClose\` on a "${bareEvent(record.event)}" event — only a ship's DONE reads its issue back`,
+			);
+			continue;
+		}
 		// Only `true` routes, exactly as `partial` does: a `false` says this DONE stood on a pull
 		// request, which is the absent field's own reading, so both fold identically.
 		if (record.diagnosis !== undefined && typeof record.diagnosis !== "boolean") {
@@ -338,9 +469,13 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} carries a non-string \`corrects\` field`);
 			continue;
 		}
-		if (corrected && (typeof record.corrects !== "string" || typeof record.partial !== "boolean")) {
+		if (
+			corrected &&
+			(typeof record.corrects !== "string" ||
+				(record.partial === undefined) === (record.integrate === undefined))
+		) {
 			defects.push(
-				`line ${index + 1} is a ${CORRECTED_EVENT} event that does not carry both a \`corrects\` timestamp and a \`partial\``,
+				`line ${index + 1} is a ${CORRECTED_EVENT} event that does not carry a \`corrects\` timestamp and exactly one of \`partial\` or \`integrate\``,
 			);
 			continue;
 		}
@@ -436,6 +571,18 @@ export const parseLog = (text: string): ParseLogResult => {
 			);
 			continue;
 		}
+		if (record.integrate !== undefined && !isIntegrateFailure(record.integrate)) {
+			defects.push(
+				`line ${index + 1} carries an \`integrate\` field that is not {exit: 42|43|44, head: <sha>}`,
+			);
+			continue;
+		}
+		if (record.integrate !== undefined && bareEvent(record.event) !== "FAIL" && !corrected) {
+			defects.push(
+				`line ${index + 1} carries \`integrate\` on a "${bareEvent(record.event)}" event — only an integrate FAIL names the exit and head it failed on, or a ${CORRECTED_EVENT} attaches them to one`,
+			);
+			continue;
+		}
 		if (!corrected && record.corrects !== undefined) {
 			defects.push(
 				`line ${index + 1} carries \`corrects\` on a "${bareEvent(record.event)}" event — only a ${CORRECTED_EVENT} supersedes another line`,
@@ -450,15 +597,20 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.comment === undefined ? {} : {comment: record.comment}),
 			...(record.cause === undefined ? {} : {cause: record.cause}),
 			...(record.rationale === undefined ? {} : {rationale: record.rationale as string}),
+			...(record.axisIssue === undefined ? {} : {axisIssue: record.axisIssue as number}),
+			...(record.rulingIssue === undefined ? {} : {rulingIssue: record.rulingIssue as number}),
+			...(record.founderAct === undefined ? {} : {founderAct: record.founderAct as string}),
 			...(record.round === undefined ? {} : {round: record.round as number}),
 			...(record.classes === undefined ? {} : {classes: record.classes as ReadonlyArray<string>}),
 			...(record.deferred === undefined
 				? {}
 				: {deferred: record.deferred as ReadonlyArray<string>}),
 			...(record.routed === undefined ? {} : {routed: record.routed as ReadonlyArray<string>}),
+			...(routedBasis === undefined ? {} : {routedBasis}),
 			...(record.waitGrant === undefined ? {} : {waitGrant: record.waitGrant as number}),
 			...(record.partial === undefined ? {} : {partial: record.partial as boolean}),
 			...(record.landed === undefined ? {} : {landed: record.landed as ReadonlyArray<number>}),
+			...(record.issueClose === undefined ? {} : {issueClose: record.issueClose as IssueClose}),
 			...(record.diagnosis === undefined ? {} : {diagnosis: record.diagnosis as boolean}),
 			...(record.corrects === undefined ? {} : {corrects: record.corrects as string}),
 			...(record.tasks === undefined ? {} : {tasks: record.tasks as ReadonlyArray<string>}),
@@ -466,6 +618,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.outcome === undefined ? {} : {outcome: record.outcome as string}),
 			...(record.sha === undefined ? {} : {sha: record.sha as string}),
 			...(record.assertedBy === undefined ? {} : {assertedBy: record.assertedBy as string}),
+			...(record.integrate === undefined ? {} : {integrate: record.integrate as IntegrateFailure}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
@@ -477,8 +630,9 @@ export type CorrectionResult =
 
 /**
  * Resolve every {@link CORRECTED_EVENT} line against the entry it names, producing the log the fold
- * replays: corrections removed, and each corrected entry carrying the `partial` its correction
- * states.
+ * replays: corrections removed, and each corrected entry carrying the `partial` or `integrate` its
+ * correction states. An `integrate` correction names a `FAIL` or nothing: the pair on any other
+ * event names a repair that was never owed.
  *
  * The log is append-only, so a routing fact recorded wrong can only be superseded, never edited —
  * and the supersession has to be resolvable offline, from the log alone, since the fold is total
@@ -504,6 +658,16 @@ export const applyCorrections = (entries: ReadonlyArray<LogEntry>): CorrectionRe
 			defects.push(
 				`the ${CORRECTED_EVENT} at ${correction.at} names ${targets.length === 0 ? "no" : `${targets.length}`} event of task "${correction.task}" recorded at ${correction.corrects}`,
 			);
+			continue;
+		}
+		if (correction.integrate !== undefined) {
+			if (bareEvent(only.entry.event) !== "FAIL") {
+				defects.push(
+					`the ${CORRECTED_EVENT} at ${correction.at} attaches \`integrate\` to a "${bareEvent(only.entry.event)}" event of task "${correction.task}" — only a FAIL carries it`,
+				);
+				continue;
+			}
+			patched[only.index] = {...only.entry, integrate: correction.integrate};
 			continue;
 		}
 		patched[only.index] = {...only.entry, partial: correction.partial === true};
@@ -639,20 +803,56 @@ export const standingRationales = (
 	entries: ReadonlyArray<LogEntry>,
 ): Readonly<Record<string, string>> => standingField(entries, "rationale");
 
-const standingField = (
+/**
+ * A standing park's evidence as the status carries it: the fields the park line recorded, and
+ * `parkedAt` beside a `rulingIssue`, because that park clears on a ruling newer than the park itself
+ * and the time it parked is the other half of that comparison.
+ */
+export interface StandingParkEvidence extends ParkEvidence {
+	readonly parkedAt?: string;
+}
+
+/**
+ * The park evidence standing over each task — what that task's latest entry recorded beside its
+ * cause. It stands exactly while the park that named it does, derived the way
+ * {@link standingCauses} is. A task whose latest entry carries none has no key here.
+ */
+export const standingParkEvidence = (
 	entries: ReadonlyArray<LogEntry>,
-	field: "cause" | "rationale",
-): Readonly<Record<string, string>> => {
+): Readonly<Record<string, StandingParkEvidence>> => {
+	const standing: Record<string, StandingParkEvidence> = {};
+	for (const [task, entry] of Object.entries(latestEntries(entries))) {
+		const evidence: StandingParkEvidence = {
+			...(entry.axisIssue === undefined ? {} : {axisIssue: entry.axisIssue}),
+			...(entry.rulingIssue === undefined
+				? {}
+				: {rulingIssue: entry.rulingIssue, parkedAt: entry.at}),
+			...(entry.founderAct === undefined ? {} : {founderAct: entry.founderAct}),
+		};
+		if (Object.keys(evidence).length > 0) standing[task] = evidence;
+	}
+	return standing;
+};
+
+/** Each task's latest entry that says something about the task itself. */
+const latestEntries = (entries: ReadonlyArray<LogEntry>): Readonly<Record<string, LogEntry>> => {
 	const latest: Record<string, LogEntry> = {};
 	for (const entry of entries) {
 		const bare = bareEvent(entry.event);
 		if (bare === CLEARED_EVENT || bare === CORRECTED_EVENT || bare === AMENDED_EVENT) continue;
 		latest[entry.task] = entry;
 	}
-	const standing: Record<string, string> = {};
-	for (const [task, entry] of Object.entries(latest)) {
+	return latest;
+};
+
+const standingField = <K extends "cause" | "rationale">(
+	entries: ReadonlyArray<LogEntry>,
+	field: K,
+): Readonly<Record<string, NonNullable<LogEntry[K]>>> => {
+	const standing: Record<string, NonNullable<LogEntry[K]>> = {};
+	for (const [task, entry] of Object.entries(latestEntries(entries))) {
 		const value = entry[field];
-		if (value !== undefined) standing[task] = value;
+		if (value !== undefined) standing[task] = value as NonNullable<LogEntry[K]>;
 	}
 	return standing;
 };
@@ -669,6 +869,7 @@ export const deriveStatus = (
 	states: Readonly<Record<string, TaskState>>,
 	causes: Readonly<Record<string, string>> = {},
 	rationales: Readonly<Record<string, string>> = {},
+	parkEvidence: Readonly<Record<string, StandingParkEvidence>> = {},
 ): LaneStatus => {
 	const errors = Object.entries(states)
 		.filter(([taskId, state]) => taskIn(lane, taskId).errorFinals.has(state.type))
@@ -695,6 +896,7 @@ export const deriveStatus = (
 			...taskIn(lane, taskId).extras,
 			...(cause === undefined ? {} : {cause}),
 			...(rationale === undefined ? {} : {rationale}),
+			...parkEvidence[taskId],
 		};
 	}
 	context.errors = errors;
@@ -939,7 +1141,7 @@ export const applyEvent = (
 		}
 		return refuseEvent(
 			event === CORRECTED_EVENT
-				? `"${event}" is not an operator event — a correction supersedes an already-recorded line's routing payload and is appended by \`lane reconcile\`, never transitioned`
+				? `"${event}" is not an operator event — a correction supersedes an already-recorded line's payload and is appended by \`lane reconcile\` or \`lane attach-integrate\`, never transitioned`
 				: `"${event}" is outside the operator's event set (${OPERATOR_EVENTS.join("/")})`,
 		);
 	}

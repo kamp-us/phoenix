@@ -1,17 +1,15 @@
-import {Badge, Input, Kbd} from "@kampus/design";
+import {Badge, Button, Kbd} from "@kampus/design";
 import {Gavel, Search} from "lucide-react";
 import type * as React from "react";
 import {useEffect} from "react";
 import {Link, NavLink} from "react-router";
 import {useT} from "../../i18n";
 import {isSearchShortcut} from "../../lib/searchShortcut";
-import type {ThemeChoice} from "../../lib/theme";
 import {BildirimPopover} from "../bildirim/BildirimPopover";
 import {formatUnreadBadge, showUnreadBadge} from "../bildirim/bildirim";
 import {Icon} from "../Icon";
 import {Karma} from "../karma/Karma";
 import type {CaylakMeter} from "./caylakMeter";
-import {ThemeChoicePicker} from "./ThemeChoicePicker";
 import {UserMenu} from "./UserMenu";
 import "./Topbar.css";
 
@@ -29,9 +27,7 @@ export function Topbar({
 	bildirim,
 	actions,
 	searchQuery = "",
-	onSearchSubmit,
-	themeChoice,
-	onThemeChange,
+	onSearchOpen,
 	onLogout,
 	reserveSignedInSlots = false,
 }: {
@@ -50,27 +46,30 @@ export function Topbar({
 	caylakMeter?: CaylakMeter;
 	bildirim?: {to: string; unread: number};
 	actions?: React.ReactNode;
+	/** The query the results page is showing, echoed on the trigger (#2199). */
 	searchQuery?: string;
-	onSearchSubmit?: (query: string) => void;
-	themeChoice?: ThemeChoice;
-	onThemeChange?: (choice: ThemeChoice) => void;
+	/** Opens the ⌘K palette. Absent ⇒ the trigger and the shortcut are inert. */
+	onSearchOpen?: () => void;
 	onLogout?: () => void;
 	// The account side is claimed — gates the pill as well as its placeholder, so a caller that
 	// also renders a sign-in CTA must derive that CTA from this flag's negation (#6660).
 	reserveSignedInSlots?: boolean;
 }) {
 	const t = useT();
-	// ⌘K (mac) / Ctrl+K (other) focuses search, backing the <Kbd>⌘K</Kbd> hint below.
-	// preventDefault overrides the browser's own ⌘/Ctrl+K (address-bar) binding.
+	// ⌘K (mac) / Ctrl+K (other) opens the one search surface (ADR 0186), backing the
+	// <Kbd>⌘K</Kbd> hint on the trigger below. preventDefault overrides the browser's own
+	// ⌘/Ctrl+K (address-bar) binding. The shortcut lives HERE rather than in the palette
+	// because this shell paints before the session settles, and the palette — which reads
+	// fate — does not: a shortcut owned there would be dead on the first frames.
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (!isSearchShortcut(e)) return;
 			e.preventDefault();
-			document.querySelector<HTMLInputElement>("#topbar-search")?.focus();
+			onSearchOpen?.();
 		};
 		document.addEventListener("keydown", onKeyDown);
 		return () => document.removeEventListener("keydown", onKeyDown);
-	}, []);
+	}, [onSearchOpen]);
 
 	const dotAt = brandName.indexOf(".");
 	const before = dotAt >= 0 ? brandName.slice(0, dotAt) : brandName;
@@ -111,45 +110,39 @@ export function Topbar({
 			) : null}
 		</NavLink>
 	) : null;
-	const searchForm = (
-		<form
-			className="kp-topbar__search"
-			onSubmit={(e) => {
-				e.preventDefault();
-				const input = e.currentTarget.elements.namedItem("q") as HTMLInputElement | null;
-				onSearchSubmit?.(input?.value ?? "");
-			}}
-		>
-			{/* key + defaultValue: uncontrolled so it stays editable, yet a query→query
-			    navigation re-seeds the echoed value by remounting with the new default. */}
-			{/* The magnifier and the keycap ride the field's own `left`/`right` slots rather than
-			    sitting beside it. They land inside [data-part="control"], which is the element
-			    global.css paints the focus ring on — hand-rolling the group put the ring on a box
-			    that was not the one drawing the border (#5660). Size 12 is below ADR 0166 §4's
-			    floor on purpose: ADR 0240's labelled-glyph tier names this exact call site, since
-			    the adjacent `ara…` placeholder already carries the meaning. */}
-			<Input
-				key={searchQuery}
+	// The topbar's search affordance is a TRIGGER, not a field: ADR 0186 makes the ⌘K palette
+	// the single search contract, so this cannot be a second place to type a query. It keeps the
+	// field's frame — magnifier, placeholder, keycap — because that is the shape a reader already
+	// reaches for; what changed is where the typing happens.
+	const searchTrigger = (
+		<div className="kp-topbar__search">
+			{/* Size 12 is below ADR 0166 §4's floor on purpose: ADR 0240's labelled-glyph tier
+			    names this exact call site, since the adjacent `ara…` copy already carries the
+			    meaning. */}
+			<Button
+				variant="tertiary"
 				id="topbar-search"
-				className="kp-topbar__search-field"
-				name="q"
-				defaultValue={searchQuery}
-				placeholder={t("layout.search.placeholder")}
+				className="kp-topbar__search-trigger"
 				aria-label={t("layout.search.label")}
-				fullWidth
-				left={<Icon icon={Search} size={12} />}
-				right={<Kbd>⌘K</Kbd>}
-			/>
-		</form>
+				aria-keyshortcuts="Meta+K Control+K"
+				onClick={() => onSearchOpen?.()}
+			>
+				<Icon icon={Search} size={12} />
+				{/* The active query, not a placeholder, whenever the results page is showing one —
+				    the header still echoes what is being searched (#2199). */}
+				<span
+					className={
+						searchQuery
+							? "kp-topbar__search-value"
+							: "kp-topbar__search-value kp-topbar__search-value--empty"
+					}
+				>
+					{searchQuery || t("layout.search.placeholder")}
+				</span>
+				<Kbd>⌘K</Kbd>
+			</Button>
+		</div>
 	);
-	const themePicker =
-		themeChoice && onThemeChange ? (
-			<ThemeChoicePicker
-				choice={themeChoice}
-				onChange={onThemeChange}
-				testId="topbar-theme-picker"
-			/>
-		) : null;
 	// The meter wins over the bare chip only where it exists — a yazar (and every flag-off
 	// çaylak) reaches the same `<Karma>` call this file has always rendered.
 	const karmaChip = caylakMeter ? (
@@ -182,13 +175,7 @@ export function Topbar({
 		) : null;
 	const userMenu =
 		reserveSignedInSlots && user ? (
-			<UserMenu
-				user={user}
-				bildirim={bildirim}
-				themeChoice={themeChoice}
-				onThemeChange={onThemeChange}
-				onLogout={onLogout}
-			/>
+			<UserMenu user={user} bildirim={bildirim} onLogout={onLogout} />
 		) : null;
 	// `reserveSignedInSlots` gates the whole account side, pill included. The caller derives its
 	// sign-in CTA from the negation of this same flag, so gating only the placeholder left the
@@ -227,12 +214,9 @@ export function Topbar({
 			/>
 			<span className="kp-topbar__spacer" />
 			<div className="kp-topbar__zone kp-topbar__zone--utility" data-testid="topbar-zone-utility">
-				{searchForm}
-				{/* The picker rides the user menu when one renders, and sits here when none does, so
-				    exactly one theme control renders in every state (#2612). It reads `userMenu`
-				    itself, not `user` — `user` alone can be truthy with the account side gated shut,
-				    and gating this on it left that state with no theme control at all (#6660). */}
-				{userMenu ? null : themePicker}
+				{searchTrigger}
+				{/* No theme control here in any state: signed in it rides the user menu, signed out
+				    there is none and the page follows the OS (ADR 0437). */}
 			</div>
 			<div
 				className="kp-topbar__zone kp-topbar__zone--status-signal"

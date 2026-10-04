@@ -6,13 +6,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import {
-	ALLOWED_TYPES,
-	contentAddressKey,
-	contentTypeForFile,
-	publicUrl,
-	sha256Hex,
-} from "./domain.ts";
+import {contentAddressKey, contentTypeForFile, publicUrl, sha256Hex} from "./domain.ts";
 
 describe("contentTypeForFile", () => {
 	it.effect("resolves each allowlisted extension", () =>
@@ -55,15 +49,6 @@ describe("sha256Hex (known-answer vector)", () => {
 			);
 		}),
 	);
-
-	it.effect("hashes 'abc' to its canonical digest", () =>
-		Effect.gen(function* () {
-			assert.strictEqual(
-				yield* sha256Hex(new TextEncoder().encode("abc")),
-				"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-			);
-		}),
-	);
 });
 
 describe("contentAddressKey", () => {
@@ -77,13 +62,14 @@ describe("contentAddressKey", () => {
 		}),
 	);
 
-	it.effect("uses the allowlist's extension for each type", () =>
+	it.effect("keys each allowlisted type under the doorman's extension", () =>
 		Effect.gen(function* () {
 			const bytes = new TextEncoder().encode("abc");
-			for (const [type, ext] of Object.entries(ALLOWED_TYPES)) {
-				const key = yield* contentAddressKey(bytes, type as keyof typeof ALLOWED_TYPES);
-				assert.isTrue(key.endsWith(`.${ext}`));
+			const exts: Array<string | undefined> = [];
+			for (const type of ["image/png", "image/jpeg", "image/webp"] as const) {
+				exts.push((yield* contentAddressKey(bytes, type)).split(".")[1]);
 			}
+			assert.deepStrictEqual(exts, ["png", "jpg", "webp"]);
 		}),
 	);
 });

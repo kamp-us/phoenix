@@ -7,7 +7,13 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
+import {
+	fakeSeams,
+	type HttpReply,
+	type Scripted,
+	unconfigured,
+	unconfiguredOnPlatform,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {
@@ -37,10 +43,10 @@ const permissionServed = (permission: string): HttpReply => ({
 	body: JSON.stringify({permission}),
 });
 
-/** A fabrika-tree diff — `claude-plugins/` is one of the shipped governance roots. */
+/** A skill diff under `.claude/`, one of the shipped governance roots. */
 const FABRIKA_TREE = [
 	FILES,
-	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/site/src/b.ts")),
+	served(files(".claude/skills/ship/SKILL.md", "apps/site/src/b.ts")),
 ] as const;
 
 const options = {pr: 4321, sha: HEAD, repo: null, json: false, cwd: "/repo", env: ENV};
@@ -49,7 +55,10 @@ const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options>
 	Effect.runPromise(
 		Effect.provide(
 			runFloor({...options, ...overrides}),
-			Layer.merge(fakeSeams([...script, NO_REVIEWS]).layer, unconfigured),
+			Layer.merge(
+				fakeSeams([...script, NO_REVIEWS, ...unconfiguredOnPlatform()]).layer,
+				unconfigured,
+			),
 		),
 	);
 

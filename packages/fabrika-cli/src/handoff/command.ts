@@ -10,8 +10,7 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  *
- * **The answer channel is machine, unconditionally, so there is no `--json` flag**, and there is no
- * `--body` or `--body-file`: `take` reads its asserted half from stdin so a machine-local path has no
+ * `take` reads its asserted half from stdin so a machine-local path has no
  * route into a posted artifact.
  */
 
@@ -66,8 +65,14 @@ const capture = leafCommand(
 ).pipe(
 	Command.withShortDescription("Derive the ground state: branch, head, tree, issue and PR."),
 	Command.withDescription(
-		'Derive the ground state — branch, head, reachability, tree, base, issue and pull-request state — as one JSON object, writing nothing and reading no comments. Prints {"issue":n,"repo":"…","capturedAt":"…","git":{…},"board":{…},"groundDigest":"…"}. Exits 7 (no such issue), 11 (a git or board read failed — the ground is UNKNOWN, never clean). Example: fabrika handoff capture --issue 5021',
+		[
+			"Prints the ground state of branch, head, tree, base, issue and PR as JSON, writing nothing.",
+			"  7: no such issue",
+			"  11: a git or board read failed, so the ground is UNKNOWN",
+			'  Derivation: the handoff skill\'s contract.md, "handoff capture"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika handoff capture --issue 5021"}]),
 );
 
 const take = leafCommand(
@@ -101,8 +106,26 @@ const take = leafCommand(
 ).pipe(
 	Command.withShortDescription("Compose, post and read back the sealed handoff pack."),
 	Command.withDescription(
-		'Compose the pack from the four asserted sections on STDIN plus a fresh capture, leak-scan it, post it as one marker-bearing comment, and read it back. Prints {"issue":n,"packComment":c,"packNonce":"…","sealedAt":"…","groundDigest":"…","reachable":"…","supersedes":c|null}. Exits 3 (stdin held nothing), 4 (a section is missing, out of order, empty, or content sits outside the closed set), 5/6 (machine-local path, bare @ reference), 7 (no such issue), 8/9 (the comment write failed, read-back differs), 11 (the capture or a precondition read failed — nothing written), 12 (the work is unreachable by a successor and --declare-unreachable was not given). Example: printf \'## Intent\\nWiden the fanout guard.\\n\\n## Established\\nA failing case is committed.\\n\\n## Next act\\nFollow one level of helper call.\\n\\n## Unsure\\nWhether one level is enough.\\n\' | fabrika handoff take --issue 5021 --nonce 7f3a9c21',
+		[
+			"Seals the stdin sections and a fresh capture into one posted pack and prints it as JSON.",
+			"  3: stdin held nothing",
+			"  4: a section is missing, misordered, empty or off the closed set",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: no such issue",
+			"  8: the comment write failed",
+			"  9: the read-back differs",
+			"  11: the capture or a precondition read failed; nothing was written",
+			"  12: the work is unreachable and --declare-unreachable was not given",
+			'  Derivation: the handoff skill\'s contract.md, "handoff take"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"printf '## Intent\\nWiden the fanout guard.\\n\\n## Established\\nA failing case is committed.\\n\\n## Next act\\nFollow one level of helper call.\\n\\n## Unsure\\nWhether one level is enough.\\n' | fabrika handoff take --issue 5021 --nonce 7f3a9c21",
+		},
+	]),
 );
 
 const read = leafCommand(
@@ -121,8 +144,16 @@ const read = leafCommand(
 ).pipe(
 	Command.withShortDescription("Resolve the latest sealed pack and report its drift."),
 	Command.withDescription(
-		'Resolve the latest sealed pack, parse its two halves, re-derive the ground against the PACKED branch, and report the drift field by field. Prints {"issue":n,"pack":"none|sealed|claimed","packComment":…,"packNonce":…,"sealedAt":…,"author":…,"asserted":…,"ground":{"packed":"…"},"drift":{"packedBranch":"resolves|gone|unknown","state":"none|moved|unknown","fields":[…]},"heldBy":…,"disregarded":[…],"scanned":{…}} — all three pack tokens exit 0. Exits 7 (no such issue), 11 (a comment read, a permission read or the live re-derivation failed), 14 (the latest sealed pack does not parse, or its groundDigest disagrees with the fields it labels). Example: fabrika handoff read --issue 5021',
+		[
+			"Prints the latest sealed pack and its drift from the ground re-derived on its branch, as JSON.",
+			"  none, sealed and claimed are all answers.",
+			"  7: no such issue",
+			"  11: a comment, permission or re-derivation read failed",
+			"  14: the latest pack does not parse, or its digest disagrees with it",
+			'  Derivation: the handoff skill\'s contract.md, "handoff read"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika handoff read --issue 5021"}]),
 );
 
 const claim = leafCommand(
@@ -142,8 +173,19 @@ const claim = leafCommand(
 ).pipe(
 	Command.withShortDescription("Claim the latest sealed pack for this run."),
 	Command.withDescription(
-		'Claim the latest sealed pack, keyed on the run nonce. Prints {"issue":n,"packComment":c,"claimNonce":"…","claim":"held|resumed","claimedAt":"…","claimComment":c}. Exits 7 (no such issue), 8/9 (the claim write failed, read-back differs), 11 (a comment or permission read failed — nothing written), 13 (no sealed pack to claim), 14 (the latest pack does not parse), 15 (another nonce holds it). Example: fabrika handoff claim --issue 5021 --nonce 4b8e2f01',
+		[
+			"Claims the latest sealed pack, keyed on the run nonce, and prints the claim as JSON.",
+			"  7: no such issue",
+			"  8: the claim write failed",
+			"  9: the read-back differs",
+			"  11: a comment or permission read failed; nothing was written",
+			"  13: no sealed pack to claim",
+			"  14: the latest pack does not parse",
+			"  15: another nonce holds it",
+			'  Derivation: the handoff skill\'s contract.md, "handoff claim"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika handoff claim --issue 5021 --nonce 4b8e2f01"}]),
 );
 
 export const handoffCommand = Command.make("handoff").pipe(

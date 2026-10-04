@@ -1,0 +1,28 @@
+/*
+ * The recommended-package question's body. The panel, backdrop, title, description and footer are
+ * `@kampus/design`'s `Dialog`, and the title names the package; what is left here is the notes under
+ * it, each painted from role tokens only (`design-system-manifest.md`, Pillar 2).
+ */
+
+/* The title carries the package name whole, so a long scoped name wraps rather than overflowing. */
+.tuval-recommend-dialog [data-scope="dialog"][data-part="title"] {
+	overflow-wrap: anywhere;
+}
+
+.tuval-recommend-body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+}
+
+.tuval-recommend-note {
+	margin: 0;
+	color: var(--text-secondary);
+	font: var(--t-body-sm);
+}
+
+.tuval-recommend-waiting {
+	margin: 0;
+	color: var(--text-muted);
+	font: var(--t-meta);
+}

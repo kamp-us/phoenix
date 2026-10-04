@@ -117,7 +117,31 @@ See worker-queue-retry.md for the retry shape.
 |---|---|---|
 | [a.md](./a.md) | see [worker-queue-retry.md](./worker-queue-retry.md) | x |
 `);
-		expect(parsed.rows.map((r) => r.member)).toEqual([null, "a.md"]);
+		expect(parsed.rows.map((r) => r.member)).toEqual(["a.md"]);
+	});
+
+	it("does not read a table's header line as a row, even when its first cell links a doc", () => {
+		const parsed = parseIndex(`## Index — services
+
+| [header.md](./header.md) | Topic | Read when |
+|---|---|---|
+`);
+		expect(parsed.rows).toEqual([]);
+		expect(parsed.sections[0]?.tailLine).toBe(3);
+		expect(tableSections(parsed)).toEqual(["Index — services"]);
+	});
+
+	it("ends a table body at the first line that is not a row", () => {
+		const parsed = parseIndex(`## Index — services
+
+| Doc | Topic | Read when |
+|---|---|---|
+| [a.md](./a.md) | x | y |
+
+| [prose-pipe.md](./prose-pipe.md) | not under a delimiter |
+`);
+		expect(parsed.rows.map((r) => r.member)).toEqual(["a.md"]);
+		expect(parsed.sections[0]?.tailLine).toBe(4);
 	});
 
 	it("reports no table for a document that holds none", () => {

@@ -18,6 +18,7 @@ import {
 	once,
 	type Scripted,
 } from "../fakes.test-support.ts";
+import {emitMachine} from "../lane/emit.ts";
 import {FAILED} from "../verb.ts";
 import {
 	CLAIM_NOT_MINE,
@@ -107,7 +108,7 @@ const HOLDS_THE_DECISION_CLAIM: ReadonlyArray<Scripted> = [
 	NO_BLOCKERS,
 ];
 
-/** No `ROADMAP.md`: the scope fence is inert, so this suite asks only about the sequence. */
+/** No `ROADMAP.md`: nothing the admission test reads, so this suite asks only about the sequence. */
 const NO_CAMPAIGNS = fakeFs({files: {}});
 
 /** The race, won: the pre-post verdict read, the marker write, and the checkpoint that resolves it. */
@@ -156,6 +157,8 @@ const options = {
 	issue: CHILD,
 	token: null as string | null,
 	cites: null as string | null,
+	lane: null as string | null,
+	laneRoot: null as string | null,
 	repo: null,
 	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e", ...GH_TOKEN_ENV} as Record<
@@ -168,13 +171,14 @@ const options = {
 
 const seams = (script: ReadonlyArray<Scripted>) => fakeSeams(script);
 
-const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
+const run = (
+	script: ReadonlyArray<Scripted>,
+	overrides: Partial<typeof options> = {},
+	fs = NO_CAMPAIGNS,
+) => {
 	const shell = seams(script);
 	return Effect.runPromise(
-		Effect.provide(
-			runResumeChild({...options, ...overrides}),
-			Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
-		),
+		Effect.provide(runResumeChild({...options, ...overrides}), Layer.merge(shell.layer, fs.layer)),
 	).then((outcome) => ({outcome, shell}));
 };
 
@@ -192,6 +196,79 @@ describe("runResumeChild — the sequenced repair entry", () => {
 		});
 		expect(shell.calls).toContain(`git branch -m ${PRIOR} ${RESUMED}`);
 		expect(shell.calls).toContain(`git switch ${RESUMED}`);
+	});
+
+	/**
+	 * A child that passed review and then failed `lane integrate` carries only PASS verdicts; the
+	 * integrate FAIL lives on its epic lane's ledger, and the entry carries the ledger to the claim.
+	 */
+	const TASK = `issue_${CHILD}`;
+	const ASSEMBLY = "03135b917283a4b5c6d7e8f90a1b2c3d4e5f6071";
+	const stamped = (event: string, minute: number, extra: Record<string, unknown> = {}) =>
+		`${JSON.stringify({task: TASK, event: `${TASK.toUpperCase()}.${event}`, at: `2026-09-26T00:0${minute}:00.000Z`, ...extra})}\n`;
+	/**
+	 * The same repair, reached two ways: `lane report` recorded the pair on the FAIL, or the FAIL
+	 * predates the pair and `lane attach-integrate` put it there with a CORRECTED line.
+	 */
+	it.each([
+		[
+			"recorded on the FAIL",
+			[
+				stamped("WIP", 0),
+				stamped("DONE", 1),
+				stamped("PASS", 2),
+				stamped("FAIL", 3, {integrate: {exit: 42, head: ASSEMBLY}}),
+			],
+		],
+		[
+			"attached to a FAIL recorded without it",
+			[
+				stamped("WIP", 0),
+				stamped("DONE", 1),
+				stamped("PASS", 2),
+				stamped("FAIL", 3),
+				stamped("CORRECTED", 4, {
+					corrects: "2026-09-26T00:03:00.000Z",
+					integrate: {exit: 42, head: ASSEMBLY},
+				}),
+			],
+		],
+	])("opens the repair of an integrate FAIL on a PASS-graded child, naming exit and head — pair %s", async (_how, events) => {
+		const emitted = emitMachine(900, `## Dependencies\n\n- phase 1: #${CHILD}\n`, [
+			{number: CHILD, state: "open", stateReason: null, classes: []},
+		]);
+		if (emitted._tag !== "Emitted") throw new Error("the epic fixture did not emit");
+		const ledger = fakeFs({
+			files: {
+				"/lanes/900/workflow.json": emitted.text,
+				"/lanes/900/events.jsonl": events.join(""),
+			},
+		});
+		const passedThread = comments(
+			{id: 8801, body: rangeVerdict("PASS")},
+			{id: 9001, body: MINE, createdAt: "2026-08-09T00:00:01Z"},
+		);
+		const {outcome} = await run(
+			[
+				[once(COMMENTS), graded("PASS")],
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, passedThread],
+				[ISSUE, CLAIMABLE],
+				[PERM, WRITES],
+				NO_BLOCKERS,
+				...GENERIC_CHECKOUT,
+			],
+			{lane: "900", laneRoot: "/lanes"},
+			ledger,
+		);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			answer: "resumed",
+			branch: RESUMED,
+			integrate: {exit: 42, head: ASSEMBLY},
+		});
+		expect(outcome.stderr.at(-1)).toContain("the integrate FAIL the claim step named");
 	});
 
 	/**

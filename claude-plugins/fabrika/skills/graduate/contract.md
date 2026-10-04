@@ -648,6 +648,9 @@ splices it between `## Solution` and `## Out of scope`, and leak-scans the whole
 `empty` (`16`) trail, so a spec can never be composed over an unmade decision even if the caller
 skipped the skill's own step 2.
 
+Each decision occupies one line. Runs of whitespace, including paragraph breaks, collapse to a
+single space; all words and bullet markers remain. The source trail retains the full text.
+
 **Errors**
 
 | Message (stderr) | Code | Kind |
@@ -739,12 +742,15 @@ fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per top
 body's rendered `## Decisions` section** — that list, not a flag, is what says which subset this
 spec covers; re-derives the trail from `<source>` (the same dispatch `graduate trail` performs);
 **checks each parsed ref against the re-derived trail and refuses at `18` if any ref is absent from
-it or its provenance or text has changed** (refs on the trail but *absent from the spec* are the
+it or its provenance or rendered text has changed** (refs on the trail but *absent from the spec* are the
 remainder and are legal); computes the **spec digest** over the re-derived entries for exactly those
 refs; reads the source's emission markers and refuses at `15` if one already binds that spec digest;
 **appends the footer** carrying that digest; leak-scans the **composed whole, footer included**;
 creates the issue; applies **exactly** `status:needs-triage`; reads the issue back; then posts the
 marker carrying the digest and the covered refs.
+
+The text comparison uses compose's one-line whitespace normalization. Digests still cover the
+original re-derived decision text, including its line breaks.
 
 The footer is appended **before** the leak scan, never after, for the reason `report file` does the
 same: bytes added after a scan are bytes nobody scanned, and this footer interpolates a source
@@ -807,7 +813,7 @@ positional, and everything else is re-derived from the source itself.
 | `graduate emit: the spec carries a machine-local path: <path> — refusing to file it.` | 5 | refusal |
 | `graduate emit: the spec is a bare @ path reference — not redactable, refusing to file it.` | 6 | refusal |
 | `graduate emit: #<n> does not exist.` | 7 | refusal |
-| `graduate emit: label "status:needs-triage" does not exist in <repo> — refusing to file a spec no triage run can find. Create it, or run the front-door bootstrap.` | 7 | refusal |
+| `graduate emit: label "status:needs-triage" does not exist in <repo> — refusing to file a spec no triage run can find. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `graduate emit: the create failed, so whether a spec issue exists is UNKNOWN — check <repo> before re-running.` | 8 | refusal |
 | `graduate emit: filed #<n> and the marker write failed — the spec EXISTS but #<source> does not record it, so a re-run would file a second. Post the marker or check #<source> before re-running.` | 8 | refusal |
 | `graduate emit: filed #<n> but the read-back does not match what was sent.` | 9 | refusal |

@@ -1,12 +1,14 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {SHIPPED_BOARD} from "../status/board.test-support.ts";
 import {ANSWER, FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {ageDays, runQueue, toRows} from "./queue-verb.ts";
 
 const LABELS = /GET .*\/repos\/o\/r\/labels\?/;
-const QUEUE = /GET .*\/repos\/o\/r\/issues\?state=open/;
+const QUEUE = /GET .*\/repos\/o\/r\/issues\?state=open&labels=/;
+const UNLABELED = /GET .*\/repos\/o\/r\/issues\?state=open&per_page=/;
 
 const NOW = new Date("2026-08-03T00:00:00Z");
 
@@ -16,11 +18,17 @@ const options = {
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	board: SHIPPED_BOARD,
 	now: () => NOW,
 };
 
+/** No bare issue unless a test scripts one first: the fake answers the first pattern that matches. */
+const noUnlabeled: Scripted = [UNLABELED, {status: 200, body: "[]"}];
+
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
-	Effect.runPromise(Effect.provide(runQueue({...options, ...overrides}), fakeSeams(script).layer));
+	Effect.runPromise(
+		Effect.provide(runQueue({...options, ...overrides}), fakeSeams([...script, noUnlabeled]).layer),
+	);
 
 const labels = (...names: ReadonlyArray<string>): HttpReply => ({
 	status: 200,
@@ -29,10 +37,16 @@ const labels = (...names: ReadonlyArray<string>): HttpReply => ({
 
 const labelsOk = [LABELS, labels("status:needs-triage", "type:bug", "p0")] as const;
 
-const row = (n: number, createdAt: string, title: string) => ({
+const row = (
+	n: number,
+	createdAt: string,
+	title: string,
+	labels: ReadonlyArray<string> = ["status:needs-triage"],
+) => ({
 	number: n,
 	created_at: createdAt,
 	title,
+	labels: labels.map((name) => ({name})),
 });
 
 const queued = (...rows: ReadonlyArray<unknown>): HttpReply => ({
@@ -118,6 +132,7 @@ describe("runQueue", () => {
 		const out = await run([[LABELS, labels("type:bug", "p0")]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 	});
 
 	it("never reads the queue once the label is proven absent", async () => {
@@ -151,9 +166,10 @@ describe("runQueue", () => {
 	});
 
 	it("pages the queue read — an unpaginated read truncates at GitHub's default page", async () => {
-		const seams = fakeSeams([labelsOk, [QUEUE, queued()]]);
+		const seams = fakeSeams([labelsOk, [QUEUE, queued()], noUnlabeled]);
 		await Effect.runPromise(Effect.provide(runQueue(options), seams.layer));
 		expect(seams.requests.find((c) => QUEUE.test(c))).toContain("per_page=100");
+		expect(seams.requests.find((c) => UNLABELED.test(c))).toContain("per_page=100");
 	});
 
 	it("puts the --json payload on stdout, carrying the outcome word and the scanned count", async () => {
@@ -171,6 +187,52 @@ describe("runQueue", () => {
 	it("carries the `empty` outcome word into the --json payload too", async () => {
 		const out = await run([labelsOk, [QUEUE, queued()]], {json: true});
 		expect(JSON.parse(out.stdout).outcome).toBe("empty");
+	});
+
+	it("lists an open issue with NO labels beside the labelled queue, oldest first", async () => {
+		const out = await run([
+			labelsOk,
+			[QUEUE, queued(row(20, "2026-08-01T00:00:00Z", "labelled"))],
+			[
+				UNLABELED,
+				queued(
+					row(20, "2026-08-01T00:00:00Z", "labelled"),
+					row(11, "2026-07-20T00:00:00Z", "bare", []),
+					row(30, "2026-07-01T00:00:00Z", "already triaged", ["status:triaged", "p2"]),
+				),
+			],
+		]);
+		expect(out.code).toBe(ANSWER);
+		expect(out.stdout).toBe("queued\n11\t14\tbare\n20\t2\tlabelled\n");
+		expect(out.stderr.join("\n")).toContain("scanned 1 unlabeled open issue in o/r");
+	});
+
+	it("never lists a pull request that carries no labels", async () => {
+		const pull = {...row(12, "2026-07-20T00:00:00Z", "a PR", []), pull_request: {url: "x"}};
+		const out = await run([labelsOk, [QUEUE, queued()], [UNLABELED, queued(pull)]]);
+		expect(out.stdout).toBe("empty\n");
+	});
+
+	it("refuses an UNREADABLE unlabeled set as UNKNOWN — never `empty`, and never the labelled half alone", async () => {
+		const out = await run([
+			labelsOk,
+			[QUEUE, queued(row(20, "2026-08-01T00:00:00Z", "labelled"))],
+			[UNLABELED, BAD_GATEWAY],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("carry no label");
+		expect(out.stderr.at(-1)).toContain('never "empty"');
+	});
+
+	it("refuses an open-issue row whose label list is missing, rather than reading it as bare", async () => {
+		const out = await run([
+			labelsOk,
+			[QUEUE, queued()],
+			[UNLABELED, queued({number: 5, created_at: "2026-08-01T00:00:00Z", title: "t"})],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
 	});
 
 	it("refuses a --limit below 1 as a usage error", async () => {

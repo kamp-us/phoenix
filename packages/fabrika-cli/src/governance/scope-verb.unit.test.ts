@@ -1,12 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
+	configAtCommit,
 	errOut,
-	fakeFs,
 	fakeSeams,
 	okOut,
 	type Scripted,
 	unconfigured,
+	unconfiguredAtCommits,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
@@ -51,7 +52,6 @@ const options = {
 	tip: null as string | null,
 	repo: null,
 	json: false,
-	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
@@ -72,38 +72,38 @@ const happy = (...rows: ReadonlyArray<readonly [string, string]>): ReadonlyArray
 
 const GOVERNING = happy(
 	["A", ".decisions/0240-only-landed-adrs-may-be-cited.md"],
-	["M", "claude-plugins/fabrika/skills/review/SKILL.md"],
+	["M", ".claude/skills/review/SKILL.md"],
 );
 
 describe("runScope over a foreign repo's declared roots", () => {
-	const declaring = (config: unknown) =>
-		fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}});
+	/** The config both of the PR's commits carry — read out of git, never off the tree. */
+	const declaring = (config: unknown) => configAtCommit(JSON.stringify(config));
 
 	// `review scope` derives the same requirement over the same key. Both verbs read one list.
 	it("tallies the roots the config declares, not the shipped defaults", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options}),
-				Layer.merge(
-					fakeSeams(happy(["M", "src/cart.ts"])).layer,
-					declaring({governedRoots: ["src/", ".fabrika.jsonc"]}).layer,
-				),
-			),
-		);
+		const out = await run([
+			...declaring({governedRoots: ["src/", ".fabrika.jsonc"]}),
+			...happy(["M", "src/cart.ts"]),
+		]);
 		expect(out.stdout).toContain(`governance\trequired\t${HEAD}`);
 		expect(out.stdout).toContain("root\tsrc/\t1");
 		expect(out.stderr).toContain(
-			"governance scope: root set is `governedRoots` as declared in .fabrika.jsonc.",
+			`governance scope: root set is at the head ${HEAD}, \`governedRoots\` as declared in .fabrika.jsonc; at the base ${BASE}, \`governedRoots\` as declared in .fabrika.jsonc.`,
 		);
 	});
 
+	it("tallies a root the merge base declares after the head drops it", async () => {
+		const out = await run([
+			...configAtCommit("{}", HEAD),
+			...configAtCommit(JSON.stringify({governedRoots: ["src/", ".fabrika.jsonc"]}), BASE),
+			...happy(["M", "src/cart.ts"]),
+		]);
+		expect(out.stdout).toContain(`governance\trequired\t${HEAD}`);
+		expect(out.stdout).toContain("root\tsrc/\t1");
+	});
+
 	it("refuses UNKNOWN on a config it cannot decode — never `not-required`", async () => {
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runScope({...options}),
-				Layer.merge(fakeSeams(GOVERNING).layer, declaring({governedRoots: 7}).layer),
-			),
-		);
+		const out = await run([...declaring({governedRoots: 7}), ...GOVERNING]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		// Nothing on stdout is the assertion: the answer line is where `not-required` would be, and
 		// the refusal below says in words that it is not one.
@@ -121,8 +121,8 @@ describe("runScope", () => {
 		expect(out.stdout).toBe(
 			[
 				`governance\trequired\t${HEAD}`,
+				"root\t.claude/\t1",
 				"root\t.decisions/\t1",
-				"root\tclaude-plugins/\t1",
 				"self\tfalse",
 				"record\t0240\tadded\t.decisions/0240-only-landed-adrs-may-be-cited.md",
 				"",
@@ -136,7 +136,7 @@ describe("runScope", () => {
 		expect(out.stdout.split("\n")[0]).toBe(`governance\tnot-required\t${HEAD}`);
 	});
 
-	it("sets `self` on this skill's own diff, which derives its own namespace by construction", async () => {
+	it("sets `self` on this skill's own diff", async () => {
 		const out = await run(happy(["M", "claude-plugins/fabrika/skills/governance/SKILL.md"]));
 		expect(out.stdout).toContain("self\ttrue");
 	});
@@ -148,7 +148,7 @@ describe("runScope", () => {
 		const record = JSON.parse(out.stdout);
 		// `roots` is a histogram object, not an array of `{name, files}` — the evidence collapse.
 		// `records` beside it stays whole: every `id` feeds `governance sweep --record`.
-		expect(record.roots).toEqual({".decisions/": 1, "claude-plugins/": 1});
+		expect(record.roots).toEqual({".decisions/": 1, ".claude/": 1});
 		expect(record).toMatchObject({
 			outcome: "required",
 			head: HEAD,
@@ -173,7 +173,7 @@ describe("runScope", () => {
 			`governance scope: bound to ${HEAD} (base ${BASE}) — read from the object database, nothing checked out.`,
 		);
 		expect(out.stderr).toContain(
-			`governance scope: partitioned 2 of the 2 declared changed files at ${HEAD} across 5 roots.`,
+			`governance scope: partitioned 2 of the 2 declared changed files at ${HEAD} across 4 roots.`,
 		);
 	});
 
@@ -185,7 +185,7 @@ describe("runScope", () => {
 			[TREE_AT(), treeOf(".decisions/0240-x.md", "src/cart.ts")],
 		]);
 		expect(out.stderr).toContain(
-			"governance scope: root .claude/ is absent in this repository — the derivation covered 1 of 5 roots.",
+			"governance scope: root .claude/ is absent in this repository — the derivation covered 1 of 4 roots.",
 		);
 	});
 
@@ -224,7 +224,7 @@ describe("runScope", () => {
 		const out = await run([
 			[PULL, served(pull({changedFiles: 9}))],
 			...binding(),
-			[STATUS_AT(), statuses(["M", "claude-plugins/fabrika/skills/review/SKILL.md"])],
+			[STATUS_AT(), statuses(["M", ".claude/skills/review/SKILL.md"])],
 			[TREE_AT(), treeOf(...FULL_TREE)],
 		]);
 		expect(out.code).toBe(0);
@@ -266,6 +266,7 @@ const overRange = (...rows: ReadonlyArray<StatusRow>): ReadonlyArray<Scripted> =
 	// `--name-only` gives a rename its destination alone, which is a record's last field either way.
 	[PATHS_AT(RANGE_BASE, RANGE_TIP), paths(...rows.map((row) => row[row.length - 1] as string))],
 	[TREE_AT(RANGE_TIP), treeOf(...FULL_TREE)],
+	...unconfiguredAtCommits,
 ];
 
 describe("runScope over a range", () => {
@@ -273,7 +274,7 @@ describe("runScope over a range", () => {
 		const out = await run(
 			overRange(
 				["A", ".decisions/0240-only-landed-adrs-may-be-cited.md"],
-				["M", "claude-plugins/fabrika/skills/review/SKILL.md"],
+				["M", ".claude/skills/review/SKILL.md"],
 			),
 			ranged,
 		);
@@ -281,8 +282,8 @@ describe("runScope over a range", () => {
 		expect(out.stdout).toBe(
 			[
 				`governance\trequired\t${RANGE_BASE}..${RANGE_TIP}`,
+				"root\t.claude/\t1",
 				"root\t.decisions/\t1",
-				"root\tclaude-plugins/\t1",
 				"self\tfalse",
 				"record\t0240\tadded\t.decisions/0240-only-landed-adrs-may-be-cited.md",
 				"",
@@ -323,7 +324,13 @@ describe("runScope over a range", () => {
 	// The self fence's own precondition: a child range editing this skill has to READ as self-editing
 	// before `governance base` can be asked for the base revision's bytes.
 	it("sets `self` on a range that edits this skill, and names merge-base(base, tip) as the base", async () => {
-		const out = await run(overRange(["M", `${SKILL_ROOT}SKILL.md`]), {...ranged, json: true});
+		const declared = configAtCommit(
+			JSON.stringify({governedRoots: ["claude-plugins/", ".fabrika.jsonc"]}),
+		);
+		const out = await run([...declared, ...overRange(["M", `${SKILL_ROOT}SKILL.md`])], {
+			...ranged,
+			json: true,
+		});
 		const record = JSON.parse(out.stdout);
 		expect(record).toMatchObject({
 			outcome: "required",

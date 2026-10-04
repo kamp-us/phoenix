@@ -12,15 +12,20 @@
  *
  * The overlay is pinned open, because that is the only state worth capturing: closed, this surface
  * is the desk and nothing else, which is the whole point of #8867.
+ *
+ * The rows come from two open projects whose folders share a name, plus one global program, so the
+ * capture shows both project labels, the parent folder that tells them apart, and the tile that
+ * carries none (#9692). `./windows.tsx` is the same desk's windows.
  */
 
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Option} from "effect";
 import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";
-import {ProcessId} from "../../../process/process.ts";
-import {ProgramId} from "../../../registry/program.ts";
 import type {PortDeclaration, TableRow} from "../../../table/row.ts";
 import {ProcessBoardOverlay} from "../ProcessBoardOverlay.tsx";
+import {kampUs, projects, usirin} from "./projects.ts";
 import "../../../page/styles.ts";
 import "./proof.css";
 
@@ -53,20 +58,26 @@ const row = (
 });
 
 const rows: ReadonlyArray<TableRow> = [
-	row("p-claude", "ai/claude", {
+	row("p-claude", kampUs("ai/claude"), {
 		title: "claude · fable · phoenix",
 		status: "writing the tile model · 4 tools · $0.14",
 		ports: selfReporting,
 	}),
-	row("p-child", "ai/claude", {
+	row("p-child", kampUs("ai/claude"), {
 		parent: "p-claude",
 		title: "claude · fable · phoenix/apps/tuval",
 		status:
 			"reading apps/tuval/src/shell/board and reporting back what the nesting rail does at three levels of depth",
 		ports: selfReporting,
 	}),
-	row("p-grandchild", "demo/log", {parent: "p-child", ports: {"lines@1": out("tuval/log/v1")}}),
-	row("p-counter", "demo/counter", {title: "count: 12", ports: {"title@1": out("tuval/title/v1")}}),
+	row("p-grandchild", kampUs("demo/log"), {
+		parent: "p-child",
+		ports: {"lines@1": out("tuval/log/v1")},
+	}),
+	row("p-counter", usirin("demo/counter"), {
+		title: "count: 12",
+		ports: {"title@1": out("tuval/title/v1")},
+	}),
 	row("p-shell", "tuval/shell", {lifecycle: "stopping"}),
 ];
 
@@ -89,6 +100,7 @@ createRoot(host).render(
 				globalThis.console.log(`open ${processId}`);
 			}}
 			reducedMotion={false}
+			projects={projects}
 		/>
 	</StrictMode>,
 );

@@ -6,6 +6,7 @@ import {fakeFs, fakeHttp, fakeShell, type HttpReply} from "../fakes.test-support
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {
 	CLASS_UNRECOGNISED,
+	FACT_REFUSED,
 	LANE_ABSENT,
 	LANE_EXISTS,
 	LANE_UNREADABLE,
@@ -77,7 +78,50 @@ const runWithChildren = (
 		),
 	).then((out) => ({out, fs}));
 
+/** The same run under a named `--origin`. */
+const runWithOrigin = (
+	origin: string,
+	script: ReadonlyArray<readonly [RegExp, HttpReply]>,
+	fs = fakeFs({files: {}}),
+) =>
+	Effect.runPromise(
+		Effect.provide(
+			runEmit({...OPTIONS, origin}),
+			Layer.mergeAll(fs.layer, fakeShell([]).layer, fakeHttp(script).layer),
+		),
+	).then((out) => ({out, fs}));
+
+const FACTS = ".fabrika/lanes/4300/facts.jsonl";
+
 describe("lane emit", () => {
+	it("records the epic lane's origin as its first fact, a driver pick unless told otherwise", async () => {
+		const script: ReadonlyArray<readonly [RegExp, HttpReply]> = [
+			[ISSUE, epic()],
+			[SUBS, children],
+		];
+		const defaulted = await run(script);
+		const named = await runWithOrigin("bet", script);
+
+		expect(JSON.parse(defaulted.out.stdout)).toMatchObject({origin: "driver-pick"});
+		expect(JSON.parse(defaulted.fs.written.get(FACTS) ?? "")).toMatchObject({
+			kind: "origin",
+			origin: "driver-pick",
+		});
+		expect(JSON.parse(named.out.stdout)).toMatchObject({origin: "bet"});
+		expect(JSON.parse(named.fs.written.get(FACTS) ?? "")).toMatchObject({
+			kind: "origin",
+			origin: "bet",
+		});
+	});
+
+	it("refuses an origin outside the closed set before anything is read or written", async () => {
+		const {out, fs} = await runWithOrigin("whim", []);
+
+		expect(out.code).toBe(FACT_REFUSED);
+		expect(out.stderr.join("\n")).toContain("founder-start");
+		expect(fs.written.size).toBe(0);
+	});
+
 	it("writes the golden machine bytes to the epic's lane dir", async () => {
 		const {out, fs} = await run([
 			[ISSUE, epic()],

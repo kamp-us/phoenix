@@ -34,6 +34,12 @@ describe("the closing keyword", () => {
 		expect(bodyDefect(body(""), 4312, false)).toBeNull();
 	});
 
+	it("counts a closing line below ## Deviations as this PR's own link (#10040)", () => {
+		expect(
+			bodyDefect("Summary.\n\n## Deviations\n\nNone.\n\nFixes #4312\n", 4312, false),
+		).toBeNull();
+	});
+
 	it("refuses a stray keyword aimed elsewhere — the #4471 auto-close", () => {
 		expect(bodyDefect(body("\nAlso closes #999.\n"), 4312, false)).toEqual({
 			_tag: "StrayClosing",
@@ -75,6 +81,24 @@ describe("the classification guard reads prose only", () => {
 	it("passes a body that merely quotes one inside a fence or a block quote", () => {
 		expect(classificationIn(proseOf("```\nnot control-plane\n```\nplain prose\n"))).toBeNull();
 		expect(classificationIn(proseOf("> the reviewer said type:bug\n\nplain prose\n"))).toBeNull();
+	});
+
+	it("passes a mention inside an inline-code span, for every pattern in the set (#6207)", () => {
+		expect(
+			classificationIn(proseOf("edits `tools/control-plane-paths/` and `@acme/control-plane`\n")),
+		).toBeNull();
+		expect(classificationIn(proseOf("the ``type:bug`` label and the `p0` token\n"))).toBeNull();
+	});
+
+	it("keeps the prose around a span, so an assertion beside one still reds", () => {
+		expect(
+			classificationIn(proseOf("touches `control-plane-paths/`; this is not control-plane\n")),
+		).toBe("control-plane");
+	});
+
+	it("leaves an unmatched backtick literal rather than swallowing the line", () => {
+		expect(proseOf("a stray ` then not control-plane")).toBe("a stray ` then not control-plane");
+		expect(proseOf("``a`b`` stays one span")).toBe(" stays one span");
 	});
 
 	it("passes an ordinary body", () => {

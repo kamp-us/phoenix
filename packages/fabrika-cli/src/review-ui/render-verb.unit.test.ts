@@ -1,8 +1,12 @@
-import {Effect, Layer} from "effect";
+import {Effect, Layer, Redacted} from "effect";
 import {describe, expect, it} from "vitest";
-import {signSessionToken} from "../capture/auth.ts";
+import type {AccentDeclaration} from "../capture/accent.ts";
+import {LOGINS_VARIABLE, PREVIEW_AUTH_KEY_PATH, signSessionToken} from "../capture/auth.ts";
+import type {SchemeDeclaration} from "../capture/color-scheme.ts";
+import type {LocaleDeclaration} from "../capture/locale-seed.ts";
 import type {UiSurface} from "../config/keys/ui-surfaces.ts";
 import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {type Existence, present, unknown} from "../io/issues.ts";
 import {
 	INVALID_CAPTURE,
 	NO_PREVIEW,
@@ -15,7 +19,8 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {parseManifest} from "./manifest.ts";
-import {type RenderLeg, runRender, type SurfaceRender} from "./render-verb.ts";
+import {type CaptureShots, makeCaptureRenderLeg} from "./render-leg.ts";
+import {type FetchLogins, type RenderLeg, runRender, type SurfaceRender} from "./render-verb.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const PREVIEW = "https://pr-4321-web.example.test";
@@ -76,6 +81,20 @@ const legOf =
 				rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
 		);
 
+/** A logins variable that answers one way, counting how often the verb went and asked. */
+const loginsOf = (answer: Existence<string>): FetchLogins & {readonly calls: string[]} => {
+	const calls: string[] = [];
+	const fetch: FetchLogins = (repo) =>
+		Effect.sync(() => {
+			calls.push(repo);
+			return answer._tag === "Present" ? present(Redacted.make(answer.value)) : answer;
+		});
+	return Object.assign(fetch, {calls});
+};
+
+const logins = (entries: Record<string, unknown>): Existence<string> =>
+	present(JSON.stringify(entries));
+
 const row = (name: string, mount: string): UiSurface => ({
 	name,
 	prefix: `apps/${name.split("-")[0]}/src/`,
@@ -98,21 +117,36 @@ const options = {
 	surfaces: ["/pano"],
 	viewports: [] as readonly string[],
 	flags: [] as readonly string[],
+	locale: null as string | null,
+	localeDeclaration: null as LocaleDeclaration | null,
+	schemes: [] as readonly string[],
+	schemeDeclaration: null as SchemeDeclaration | null,
+	accent: null as string | null,
+	accentDeclaration: null as AccentDeclaration | null,
+	interactions: [] as readonly string[],
 	app: null,
 	surfaceRows: ROWS,
 	authSecretFrom: null as string | null,
+	// A directory in no package tree, so the committed-preview-key source finds nothing and the
+	// ambient fallback is what these cases exercise. The cases that mean to read the committed key
+	// override this with `/repo`, whose fake tree carries the file.
+	cwd: "/work",
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	tmpRoot: "/tmp",
 	render: legOf({}),
+	// No logins variable on the repository, which is the state every case written before the
+	// variable existed ran under: an unset token stays unset.
+	fetchLogins: loginsOf({_tag: "Absent"}),
 };
 
 const run = (
 	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	files: Readonly<Record<string, string>> = {},
+	unreadable: ReadonlyArray<string> = [],
 ) => {
-	const fs = fakeFs({files});
+	const fs = fakeFs({files, unreadable: [...unreadable]});
 	return Effect.runPromise(
 		Effect.provide(
 			runRender({...options, ...overrides}),
@@ -216,7 +250,92 @@ describe("runRender", () => {
 		const said = outcome.stderr.join("\n");
 		expect(said).toContain("insecure_");
 		expect(said).toContain("$BETTER_AUTH_SECRET");
-		expect(said).toContain("--auth-secret-from");
+		// The route out is the committed preview key, never a credential the seat has to be handed
+		// — this checkout simply carries no such file.
+		expect(said).toContain(PREVIEW_AUTH_KEY_PATH);
+		expect(said).not.toContain("ALCHEMY_PASSWORD");
+	});
+
+	/**
+	 * The route the whole ruling exists to open: a seat holding no credential at all renders an
+	 * `:auth` surface, because the key its preview verifies against is committed in the repo.
+	 */
+	it("signs with the committed preview key, with no flag and no ambient secret", async () => {
+		const seen = new Map<string, readonly {name: string; value: string}[]>();
+		const {outcome} = await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				cwd: "/repo",
+				env: {CLAUDE_PIPELINE_REPO: "o/r", PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+				render: (request) => {
+					seen.set(request.surface, request.cookies);
+					return Effect.succeed(rendered(request.surface, request.outDir));
+				},
+			},
+			{
+				"/repo/package.json": "{}",
+				[`/repo/${PREVIEW_AUTH_KEY_PATH}`]: "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0\n",
+			},
+		);
+		expect(outcome.code).toBe(0);
+		expect(seen.get("/pano:auth")?.[0]?.value).toBe(
+			signSessionToken("t".repeat(32), "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0"),
+		);
+	});
+
+	it("prefers the committed preview key over a usable ambient secret", async () => {
+		const seen = new Map<string, readonly {name: string; value: string}[]>();
+		await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				cwd: "/repo",
+				env: {
+					CLAUDE_PIPELINE_REPO: "o/r",
+					PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+					BETTER_AUTH_SECRET: "a".repeat(32),
+				},
+				render: (request) => {
+					seen.set(request.surface, request.cookies);
+					return Effect.succeed(rendered(request.surface, request.outDir));
+				},
+			},
+			{
+				"/repo/package.json": "{}",
+				[`/repo/${PREVIEW_AUTH_KEY_PATH}`]: "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0\n",
+			},
+		);
+		// The ambient variable is a seat's guess at what some stage deploys with; the committed key
+		// is what this preview provably deploys with, so it wins.
+		expect(seen.get("/pano:auth")?.[0]?.value).toBe(
+			signSessionToken("t".repeat(32), "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0"),
+		);
+	});
+
+	it("lets --auth-secret-from override the committed preview key", async () => {
+		const seen = new Map<string, readonly {name: string; value: string}[]>();
+		await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				cwd: "/repo",
+				authSecretFrom: "/run/named-secret",
+				env: {CLAUDE_PIPELINE_REPO: "o/r", PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+				render: (request) => {
+					seen.set(request.surface, request.cookies);
+					return Effect.succeed(rendered(request.surface, request.outDir));
+				},
+			},
+			{
+				"/repo/package.json": "{}",
+				[`/repo/${PREVIEW_AUTH_KEY_PATH}`]: "preview_0f1e2d3c4b5a69788796a5b4c3d2e1f0\n",
+				"/run/named-secret": `${"d".repeat(32)}\n`,
+			},
+		);
+		expect(seen.get("/pano:auth")?.[0]?.value).toBe(
+			signSessionToken("t".repeat(32), "d".repeat(32)),
+		);
 	});
 
 	it("signs with the exported repo-wide secret when --auth-secret-from names it", async () => {
@@ -242,6 +361,29 @@ describe("runRender", () => {
 		// The named source wins over the ambient placeholder, which is the whole point of the flag.
 		const value = seen.get("/pano:auth")?.[0]?.value;
 		expect(value).toBe(signSessionToken("t".repeat(32), "d".repeat(32)));
+	});
+
+	/**
+	 * "I could not look" and "there is no repo here" are two facts, and only the second one is the
+	 * ambient fallback's case. An unreadable ancestor folded into that arm would refuse on the
+	 * ambient variable being empty and never mention the directory that actually stopped the read.
+	 */
+	it("refuses on 11 naming the unreadable ancestor when the repo root cannot be located", async () => {
+		const {outcome} = await run(
+			happy(),
+			{
+				surfaces: ["/pano:auth"],
+				cwd: "/repo",
+				env: {CLAUDE_PIPELINE_REPO: "o/r", PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+			},
+			{"/repo/package.json": "{}"},
+			["/repo/package.json"],
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		const said = outcome.stderr.join("\n");
+		expect(said).toContain("/repo/package.json");
+		expect(said).toContain("the repo root could not be located");
+		expect(said).not.toContain("$BETTER_AUTH_SECRET");
 	});
 
 	it("refuses an unreadable --auth-secret-from on 11, naming the path", async () => {
@@ -295,6 +437,86 @@ describe("runRender", () => {
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toContain("PREVIEW_TEST_CAYLAK_SESSION_TOKEN");
+		expect(outcome.stderr.join("\n")).toContain(
+			`o/r has no ${LOGINS_VARIABLE} repository variable to fetch them from`,
+		);
+	});
+
+	describe("the logins repository variable", () => {
+		const secretOnly = {CLAUDE_PIPELINE_REPO: "o/r", BETTER_AUTH_SECRET: "s".repeat(32)};
+		const fetched = "f".repeat(32);
+
+		/** The seat holds no token at all: repository access is the whole credential. */
+		it("signs a tier's cookie with the token fetched from the variable", async () => {
+			const seen: (string | undefined)[] = [];
+			const fetchLogins = loginsOf(logins({PREVIEW_TEST_SESSION_TOKEN: fetched}));
+			const {outcome} = await run(happy(), {
+				surfaces: ["/pano:auth"],
+				env: secretOnly,
+				fetchLogins,
+				render: (request) => {
+					seen.push(request.cookies[0]?.value);
+					return legOf({})(request);
+				},
+			});
+			expect(outcome.code).toBe(0);
+			expect(fetchLogins.calls).toEqual(["o/r"]);
+			expect(seen).toEqual([signSessionToken(fetched, "s".repeat(32))]);
+			expect(`${outcome.stdout}\n${outcome.stderr.join("\n")}`).not.toContain(fetched);
+		});
+
+		it("never asks for the variable when the environment already holds the token", async () => {
+			const fetchLogins = loginsOf(unknown("the variable must not be read"));
+			const {outcome} = await run(happy(), {
+				surfaces: ["/pano:auth"],
+				env: {...secretOnly, PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+				fetchLogins,
+			});
+			expect(outcome.code).toBe(0);
+			expect(fetchLogins.calls).toEqual([]);
+		});
+
+		it("never asks for it on a run that names no tier", async () => {
+			const fetchLogins = loginsOf(unknown("the variable must not be read"));
+			const {outcome} = await run(happy(), {fetchLogins});
+			expect(outcome.code).toBe(0);
+			expect(fetchLogins.calls).toEqual([]);
+		});
+
+		it("refuses on 11 when the variable cannot be read, and never as an absent one", async () => {
+			const {outcome} = await run(happy(), {
+				surfaces: ["/pano:auth"],
+				env: secretOnly,
+				fetchLogins: loginsOf(unknown("HTTP 403: Resource not accessible")),
+			});
+			expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+			expect(outcome.stderr.at(-1)).toContain(
+				`o/r's ${LOGINS_VARIABLE} repository variable could not be read (HTTP 403: Resource not accessible)`,
+			);
+		});
+
+		it("refuses a variable that is not the logins object, without printing it", async () => {
+			const {outcome} = await run(happy(), {
+				surfaces: ["/pano:auth"],
+				env: secretOnly,
+				fetchLogins: loginsOf(present(`${fetched} is not json`)),
+			});
+			expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+			expect(outcome.stderr.at(-1)).toContain("is set but it is not JSON");
+			expect(outcome.stderr.join("\n")).not.toContain(fetched);
+		});
+
+		it("names the identity a set variable does not carry, apart from an absent variable", async () => {
+			const {outcome} = await run(happy(), {
+				surfaces: ["/hosgeldin:auth-caylak"],
+				env: secretOnly,
+				fetchLogins: loginsOf(logins({PREVIEW_TEST_SESSION_TOKEN: fetched})),
+			});
+			expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+			expect(outcome.stderr.at(-1)).toContain(
+				`unset: PREVIEW_TEST_CAYLAK_SESSION_TOKEN; o/r's ${LOGINS_VARIABLE} repository variable does not carry them`,
+			);
+		});
 	});
 
 	it("seeds each tier's own session, so two tiers are two identities and not one shot twice", async () => {
@@ -333,6 +555,61 @@ describe("runRender", () => {
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toContain("named tier çaylak and rendered as yazar");
+		expect(written.size).toBe(0);
+	});
+
+	// The unverified çaylak shares its tier with the verified one, so the verified çaylak's
+	// token is exactly the fallback that would shoot the write it is refused under its name.
+	it("refuses an unverified-çaylak surface whose own token is unset, never falling back", async () => {
+		const {outcome} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth-caylak-unverified"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				PREVIEW_TEST_CAYLAK_SESSION_TOKEN: "c".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN");
+	});
+
+	it("signs the unverified-çaylak surface with its own token, not the verified çaylak's", async () => {
+		const seen = new Map<string, string | undefined>();
+		const {outcome} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth-caylak", "/hosgeldin:auth-caylak-unverified"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_CAYLAK_SESSION_TOKEN: "c".repeat(32),
+				PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN: "u".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: (request) => {
+				seen.set(request.surface, request.cookies[0]?.value);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen.get("/hosgeldin:auth-caylak-unverified")).toMatch(/^u{32}/);
+		expect(seen.get("/hosgeldin:auth-caylak")).toMatch(/^c{32}/);
+	});
+
+	it("refuses a verified shot under the unverified name on 11, recording no capture", async () => {
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth-caylak-unverified"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN: "u".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: legOf({
+				"/hosgeldin:auth-caylak-unverified": {_tag: "WrongVerification", wanted: false},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain(
+			"named an email-unverified identity and rendered as an email-verified one",
+		);
 		expect(written.size).toBe(0);
 	});
 
@@ -460,6 +737,339 @@ describe("runRender", () => {
 		expect(outcome.stderr.at(-1)).toMatch(/did not render with its forced flags/);
 	});
 
+	// The locale operand's own refusals, decided before any read or browser launch, on the same `10`
+	// a malformed --flag takes: both would shoot the default page under the requested name.
+	const LOCALES: LocaleDeclaration = {storageKey: "app.locale", values: ["tr", "en"]};
+
+	it("refuses --locale when the repo declares no locale, before anything is read", async () => {
+		const legCalls: string[] = [];
+		const {outcome} = await run([], {
+			locale: "en",
+			render: (request) => {
+				legCalls.push(request.surface);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain('--locale "en" cannot be seeded');
+		expect(outcome.stderr.join("\n")).toContain("declares no uiCapture.locale");
+		expect(legCalls).toEqual([]);
+	});
+
+	it("refuses a --locale value outside the declared list on 10, naming the list", async () => {
+		const {outcome} = await run([], {locale: "de", localeDeclaration: LOCALES});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain("the declared locales are tr, en");
+	});
+
+	it("seeds the declared key in every shot, anonymous and tier-naming alike", async () => {
+		const seen: unknown[] = [];
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			viewports: ["desktop", "mobile"],
+			locale: "en",
+			localeDeclaration: LOCALES,
+			render: (request) => {
+				seen.push(request.locale);
+				return Effect.succeed(
+					rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
+				);
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual(Array(4).fill({storageKey: "app.locale", value: "en"}));
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano" at desktop in locale en captured: 1280x2140, 0 page error(s)',
+		);
+	});
+
+	it("seeds nothing without --locale, even when the repo declares one", async () => {
+		const seen: unknown[] = [];
+		const {outcome} = await run(happy(), {
+			localeDeclaration: LOCALES,
+			render: (request) => {
+				seen.push(request.locale);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([null]);
+	});
+
+	it("refuses a shot whose lang did not come back as the seeded locale on 11, recording nothing", async () => {
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			locale: "en",
+			localeDeclaration: LOCALES,
+			render: legOf({
+				"/pano": {_tag: "WrongLocale", wanted: "en", reason: `the page's lang read back "tr"`},
+				"/b": {_tag: "Crashed", firstError: "TypeError: x is null"},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toBe(
+			`review-ui render: surface "/pano" at desktop in locale en did not render in its seeded locale (the page's lang read back "tr") — the seeded locale's render is UNKNOWN, never the default one.`,
+		);
+	});
+
+	// The scheme operand's refusals are decided before any read or browser launch, on the `10` a
+	// malformed --viewport takes: each would shoot the default scheme under the requested name, or
+	// overwrite one shot's file with another's.
+	const SCHEMES: SchemeDeclaration = {rootAttribute: "data-theme"};
+
+	it("refuses a --scheme outside light and dark on 10, before anything is read", async () => {
+		const legCalls: string[] = [];
+		const {outcome} = await run([], {
+			schemes: ["dim"],
+			schemeDeclaration: SCHEMES,
+			render: (request) => {
+				legCalls.push(request.surface);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toBe(
+			'review-ui render: --scheme "dim" is not a colour scheme this verb renders — the names are light, dark.',
+		);
+		expect(legCalls).toEqual([]);
+	});
+
+	it("refuses a --scheme passed twice on 10", async () => {
+		const {outcome} = await run([], {schemes: ["dark", "dark"], schemeDeclaration: SCHEMES});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toContain('--scheme "dark" was passed twice');
+	});
+
+	it("refuses --scheme when the repo declares no uiCapture.scheme — there is nothing to prove it against", async () => {
+		const {outcome} = await run([], {schemes: ["dark"]});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toContain('--scheme "dark" cannot be proved');
+		expect(outcome.stderr.at(-1)).toContain("declares no uiCapture.scheme");
+	});
+
+	it("crosses every requested scheme with every surface and viewport, never substituting the default", async () => {
+		const seen: string[] = [];
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			viewports: ["desktop", "mobile"],
+			schemes: ["light", "dark"],
+			schemeDeclaration: SCHEMES,
+			render: (request) => {
+				seen.push(
+					`${request.surface} ${request.viewport.label} ${request.scheme?.scheme} ${request.scheme?.rootAttribute}`,
+				);
+				return Effect.succeed(
+					rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
+				);
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([
+			"/pano desktop light data-theme",
+			"/pano desktop dark data-theme",
+			"/pano mobile light data-theme",
+			"/pano mobile dark data-theme",
+			"/b desktop light data-theme",
+			"/b desktop dark data-theme",
+			"/b mobile light data-theme",
+			"/b mobile dark data-theme",
+		]);
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano" at mobile in scheme dark captured: 390x2140, 0 page error(s)',
+		);
+	});
+
+	it("emulates nothing without --scheme, even when the repo declares one", async () => {
+		const seen: unknown[] = [];
+		const {outcome} = await run(happy(), {
+			schemeDeclaration: SCHEMES,
+			render: (request) => {
+				seen.push(request.scheme);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([null]);
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano" at desktop captured: 1280x2140, 0 page error(s)',
+		);
+	});
+
+	it("refuses a shot that did not resolve to its requested scheme on 11, recording nothing", async () => {
+		const {outcome, written} = await run(happy(), {
+			schemes: ["dark"],
+			schemeDeclaration: SCHEMES,
+			render: () =>
+				Effect.succeed({
+					_tag: "WrongScheme",
+					wanted: "dark",
+					reason: `the page's data-theme read back "light"`,
+				} satisfies SurfaceRender),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toBe(
+			`review-ui render: surface "/pano" at desktop in scheme dark did not resolve to the dark scheme (the page's data-theme read back "light") — the requested scheme's render is UNKNOWN, never the other one.`,
+		);
+	});
+
+	it("carries each shot's requested and proven scheme into the manifest it writes", async () => {
+		const {outcome, written} = await run(happy(), {
+			schemes: ["light", "dark"],
+			schemeDeclaration: SCHEMES,
+			render: (request) => {
+				const scheme = request.scheme?.scheme ?? "light";
+				return Effect.succeed({
+					_tag: "Rendered",
+					entry: {
+						surface: request.surface,
+						viewport: request.viewport.label,
+						scheme: {requested: scheme, proven: scheme},
+						path: `${request.outDir}/pano@desktop-${scheme}.png`,
+						width: 1280,
+						height: 2140,
+						sha256: "9c41",
+						pageErrors: {rows: [], more: 0},
+					},
+				} satisfies SurfaceRender);
+			},
+		});
+		expect(outcome.code).toBe(0);
+		const manifest = parseManifest(
+			written.get("/tmp/fabrika-review-ui/4321-03135b91/judged/manifest.json") ?? "",
+		);
+		expect(manifest._tag === "Manifest" && manifest.value.captures.map((c) => c.scheme)).toEqual([
+			{requested: "light", proven: "light"},
+			{requested: "dark", proven: "dark"},
+		]);
+	});
+
+	// The accent operand's refusals are decided before any read or browser launch, on the same `10`:
+	// each would shoot the default accent under the requested name.
+	const ACCENTS: AccentDeclaration = {
+		rootAttribute: "data-color-theme",
+		values: ["ember", "amber"],
+	};
+
+	it("refuses --accent when the repo declares no uiCapture.accent on 10, before anything is read", async () => {
+		const legCalls: string[] = [];
+		const {outcome} = await run([], {
+			accent: "amber",
+			render: (request) => {
+				legCalls.push(request.surface);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toBe(
+			'review-ui render: --accent "amber" cannot be set (this repo declares no uiCapture.accent, so there is no root attribute to set it on) — an operand nothing sets would shoot the default accent under the requested name.',
+		);
+		expect(legCalls).toEqual([]);
+	});
+
+	it("refuses an --accent outside the declared list on 10, naming the list", async () => {
+		const {outcome} = await run([], {accent: "jade", accentDeclaration: ACCENTS});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toBe(
+			'review-ui render: --accent "jade" is not an accent this repo declares — the declared accents are ember, amber.',
+		);
+	});
+
+	it("sets the accent on every surface, viewport and scheme, never substituting the default", async () => {
+		const seen: string[] = [];
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			viewports: ["desktop", "mobile"],
+			schemes: ["light", "dark"],
+			schemeDeclaration: SCHEMES,
+			accent: "amber",
+			accentDeclaration: ACCENTS,
+			render: (request) => {
+				seen.push(
+					`${request.surface} ${request.viewport.label} ${request.scheme?.scheme} ${request.accent?.rootAttribute}=${request.accent?.value}`,
+				);
+				return Effect.succeed(
+					rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
+				);
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toHaveLength(8);
+		expect(seen.every((line) => line.endsWith(" data-color-theme=amber"))).toBe(true);
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/b" at mobile in scheme dark in accent amber captured: 390x2140, 0 page error(s)',
+		);
+	});
+
+	it("sets nothing without --accent and keeps every line as before, even when the repo declares one", async () => {
+		const seen: unknown[] = [];
+		const {outcome} = await run(happy(), {
+			accentDeclaration: ACCENTS,
+			render: (request) => {
+				seen.push(request.accent);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([null]);
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano" at desktop captured: 1280x2140, 0 page error(s)',
+		);
+		expect(outcome.stdout).not.toContain("accent");
+	});
+
+	it("refuses a shot that did not render in its requested accent on 11, recording nothing", async () => {
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			accent: "amber",
+			accentDeclaration: ACCENTS,
+			render: legOf({
+				"/pano": {
+					_tag: "WrongAccent",
+					wanted: "amber",
+					reason: `the page's data-color-theme read back "ember"`,
+				},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toBe(
+			`review-ui render: surface "/pano" at desktop in accent amber did not render in the amber accent (the page's data-color-theme read back "ember") — the requested accent's render is UNKNOWN, never the default one.`,
+		);
+	});
+
+	it("carries each shot's requested and proven accent into the manifest it writes", async () => {
+		const {outcome, written} = await run(happy(), {
+			accent: "amber",
+			accentDeclaration: ACCENTS,
+			render: (request) =>
+				Effect.succeed({
+					_tag: "Rendered",
+					entry: {
+						surface: request.surface,
+						viewport: request.viewport.label,
+						accent: {requested: "amber", proven: "amber"},
+						path: `${request.outDir}/pano@desktop.png`,
+						width: 1280,
+						height: 2140,
+						sha256: "9c41",
+						pageErrors: {rows: [], more: 0},
+					},
+				} satisfies SurfaceRender),
+		});
+		expect(outcome.code).toBe(0);
+		const manifest = parseManifest(
+			written.get("/tmp/fabrika-review-ui/4321-03135b91/judged/manifest.json") ?? "",
+		);
+		expect(manifest._tag === "Manifest" && manifest.value.captures.map((c) => c.accent)).toEqual([
+			{requested: "amber", proven: "amber"},
+		]);
+	});
+
 	it("refuses a closed PR on 7 — a closed PR is provably not reviewable scope", async () => {
 		const {outcome} = await run([
 			[PULL, pull("closed")],
@@ -480,6 +1090,41 @@ describe("runRender", () => {
 			[COMMENTS, none],
 		]);
 		expect(outcome.code).toBe(NO_PREVIEW);
+	});
+
+	const noPreviewComment = (sha: string): HttpReply => ({
+		status: 200,
+		body: JSON.stringify([
+			{
+				id: 1,
+				user: {login: "github-actions[bot]"},
+				created_at: "2026-09-29T00:00:00Z",
+				updated_at: "2026-09-29T00:00:00Z",
+				body:
+					"<!-- preview-deploy -->\n### No preview deploy\n" +
+					`<!-- preview-deploy:none head:${sha} -->\n` +
+					"- No preview deploy for this PR — its diff touches no deploy-relevant path, " +
+					"so no preview stack was minted and `e2e` is not applicable. " +
+					`<sub>(${sha.slice(0, 7)})</sub>`,
+			},
+		]),
+	});
+
+	it("proves CANT-SEE (16) when the only announcement is the no-preview marker at the head", async () => {
+		const {outcome} = await run([
+			[PULL, pull()],
+			[COMMENTS, noPreviewComment(HEAD)],
+		]);
+		expect(outcome.code).toBe(NO_PREVIEW);
+		expect(outcome.stderr.at(-1)).toMatch(/marks no preview deploy at 03135b9/);
+	});
+
+	it("calls a no-preview marker for another head UNKNOWN (11), never absent", async () => {
+		const {outcome} = await run([
+			[PULL, pull()],
+			[COMMENTS, noPreviewComment("9fd5949747856d37a3604d628b5c16156b060fe8")],
+		]);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	it("calls a malformed announcement UNKNOWN (11), never absent", async () => {
@@ -657,5 +1302,200 @@ describe("runRender", () => {
 			render: legOf({"/pano": {_tag: "Failed", reason: "the browser provision is broken"}}),
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+	});
+});
+
+/**
+ * The interaction operand: every refusal is decided before anything is read or launched, every
+ * interacted shot rides beside its surface's at-rest one, and a state the page never reached is
+ * UNKNOWN with no manifest written.
+ */
+describe("runRender — the interaction operand", () => {
+	const MENU = '/pano#sil-highlighted=click:role=button[name="Aç"];hover:role=menuitem[name="Sil"]';
+
+	it.each([
+		["an unknown step verb", "/pano#x=tap:#b", "names no step verb"],
+		["an empty locator", "/pano#x=hover:", 'step "hover:" names no locator'],
+		["an empty label", "/pano#=hover:#b", "its label is empty"],
+		["steps ending on a click", "/pano#x=hover:#a;click:#b", 'end on "click:#b"'],
+		["steps ending on a key press", "/pano#x=press:Escape", 'end on "press:Escape"'],
+	])("refuses %s on 10 before anything is read", async (_what, operand, reason) => {
+		const {outcome} = await run([], {interactions: [operand]});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toContain(`--interact "${operand}" is not <surface>#<label>=`);
+		expect(outcome.stderr.at(-1)).toContain(reason);
+	});
+
+	it("refuses an operand on a surface the run did not ask for on 10", async () => {
+		const {outcome} = await run([], {interactions: ["/sozluk#x=hover:#b"]});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toBe(
+			'review-ui render: --interact "/sozluk#x=hover:#b" names surface "/sozluk", which no --surface asked for — an interaction runs on a surface of this run.',
+		);
+	});
+
+	it("refuses two operands that would write the same PNG on 10", async () => {
+		const {outcome} = await run([], {
+			interactions: ["/pano#x=hover:#a", "/pano#x=focus:#b"],
+		});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toBe(
+			'review-ui render: --interact "/pano#x=focus:#b" would write the same PNG as --interact "/pano#x=hover:#a" — the second shot would overwrite the first\'s file and evidence.',
+		);
+	});
+
+	it("shoots each interaction beside its surface at rest, in order, and names its label on stderr", async () => {
+		const seen: Array<string | null> = [];
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/b"],
+			interactions: [MENU, "/pano#focused=focus:#q"],
+			render: (request) => {
+				seen.push(`${request.surface} ${request.interaction?.label ?? "rest"}`);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual(["/pano rest", "/pano sil-highlighted", "/pano focused", "/b rest"]);
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano" at desktop with interaction sil-highlighted captured: 1280x2140, 0 page error(s)',
+		);
+	});
+
+	it("refuses a state the page never reached on 11, naming the label and writing no manifest", async () => {
+		const {outcome, written} = await run(happy(), {
+			interactions: [MENU],
+			render: (request) =>
+				Effect.succeed(
+					request.interaction === null
+						? rendered(request.surface, request.outDir)
+						: ({
+								_tag: "Uninteracted",
+								reason: `hover:role=menuitem[name="Sil"]: no element matched role=menuitem[name="Sil"] within 5000ms`,
+							} satisfies SurfaceRender),
+				),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toBe(
+			`review-ui render: surface "/pano" at desktop with interaction sil-highlighted did not reach its interaction state (hover:role=menuitem[name="Sil"]: no element matched role=menuitem[name="Sil"] within 5000ms) — the interacted render is UNKNOWN, never the at-rest one; no capture was written.`,
+		);
+	});
+
+	it("keeps a crashed shot on 13 — the crash outranks the interaction inside the shot", async () => {
+		const {outcome} = await run(happy(), {
+			interactions: [MENU],
+			render: (request) =>
+				Effect.succeed(
+					request.interaction === null
+						? rendered(request.surface, request.outDir)
+						: ({_tag: "Crashed", firstError: "TypeError: x is null"} satisfies SurfaceRender),
+				),
+		});
+		expect(outcome.code).toBe(RENDER_CRASHED);
+		expect(outcome.stderr.at(-1)).toContain("with interaction sil-highlighted threw during render");
+	});
+
+	it("keeps every name, entry and line of a run with no interaction as it was", async () => {
+		const seen: unknown[] = [];
+		const {outcome} = await run(happy(), {
+			render: (request) => {
+				seen.push(request.interaction);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([null]);
+		const manifest = parseManifest(outcome.stdout);
+		expect(
+			manifest._tag === "Manifest" && "interaction" in (manifest.value.captures[0] ?? {}),
+		).toBe(false);
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano" at desktop captured: 1280x2140, 0 page error(s)',
+		);
+	});
+
+	/**
+	 * Through the real leg, so the file name is the plan's own and not the fake's: a signed-in,
+	 * flag-forced, seeded-locale, dark, mobile shot of an open menu.
+	 */
+	it("composes with :auth, --flag, --locale, --scheme, --accent and --viewport — one pinned name and entry", async () => {
+		const pngHeader = (width: number): Uint8Array => {
+			const bytes = new Uint8Array(24);
+			bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+			bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+			new DataView(bytes.buffer).setUint32(16, width);
+			new DataView(bytes.buffer).setUint32(20, 2140);
+			return bytes;
+		};
+		const capture: CaptureShots = (plan, outDir) =>
+			Effect.succeed(
+				plan.map((shot) => ({
+					surface: shot.surface.surface,
+					route: shot.surface.route,
+					state: shot.surface.state,
+					fileName: shot.fileName,
+					localPath: `${outDir}/${shot.fileName}`,
+					pngBytes: pngHeader(shot.viewport.width),
+					pageErrors: [],
+					status: 200,
+					sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar", emailVerified: true},
+					overrideProof: {_tag: "Forced"},
+					localeProof: {_tag: "Seeded"},
+					accentProof: {_tag: "Proven", accent: "amber"},
+					...(shot.scheme === undefined
+						? {}
+						: {schemeProof: {_tag: "Proven", scheme: shot.scheme.scheme}}),
+					...(shot.interaction === undefined
+						? {}
+						: {
+								interactionProof: {
+									_tag: "Proven",
+									proven: ['role=menuitem[name="Sil"] matches :hover'],
+								},
+							}),
+				})),
+			);
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano:auth"],
+			viewports: ["mobile"],
+			flags: ["welcome-banner=on"],
+			locale: "en",
+			localeDeclaration: {storageKey: "app.locale", values: ["tr", "en"]},
+			schemes: ["dark"],
+			schemeDeclaration: {rootAttribute: "data-theme"},
+			accent: "amber",
+			accentDeclaration: {rootAttribute: "data-color-theme", values: ["ember", "amber"]},
+			interactions: [
+				'/pano:auth#sil-highlighted=click:role=button[name="Aç"];hover:role=menuitem[name="Sil"]',
+			],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: makeCaptureRenderLeg(capture),
+		});
+		expect(outcome.code).toBe(0);
+		const manifest = parseManifest(outcome.stdout);
+		expect(manifest._tag === "Manifest" && manifest.value.captures[1]).toEqual({
+			surface: "/pano:auth",
+			viewport: "mobile",
+			scheme: {requested: "dark", proven: "dark"},
+			accent: {requested: "amber", proven: "amber"},
+			interaction: {
+				label: "sil-highlighted",
+				steps: ['click:role=button[name="Aç"]', 'hover:role=menuitem[name="Sil"]'],
+				proven: ['role=menuitem[name="Sil"] matches :hover'],
+			},
+			path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano-auth~sil-highlighted@mobile-dark.png",
+			width: 390,
+			height: 2140,
+			sha256: expect.any(String),
+			pageErrors: {rows: [], more: 0},
+		});
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano:auth" at mobile in locale en in scheme dark in accent amber with interaction sil-highlighted captured: 390x2140, 0 page error(s)',
+		);
 	});
 });

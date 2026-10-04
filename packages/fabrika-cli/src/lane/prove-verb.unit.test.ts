@@ -1,10 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
+	configAtCommit,
+	configOnPlatform,
 	errOut,
 	fakeFs,
 	fakeSeams,
 	type HttpReply,
+	mergeBaseOnPlatform,
 	okOut,
 	type Scripted,
 } from "../fakes.test-support.ts";
@@ -12,6 +15,12 @@ import {readGoldenFixture} from "../golden-fixture.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {contentDigest, parseRaw} from "../review/content-binding.ts";
 import {compose as supersedeWith} from "../review/supersede.ts";
+import {
+	evidenceDoesNotOpen,
+	evidenced,
+	evidenceOpens,
+	evidenceUnreadable,
+} from "../review-ui/evidence.test-support.ts";
 import {
 	LANE_UNREADABLE,
 	PROOF_ABSENT,
@@ -36,10 +45,48 @@ const PULL = /^GET .*\/repos\/o\/r\/pulls\/4318$/;
 const FILES = /^GET .*\/repos\/o\/r\/pulls\/4318\/files\?/;
 const PR_COMMENTS = /^GET .*\/repos\/o\/r\/issues\/4318\/comments\?/;
 const ISSUE = /^GET .*\/repos\/o\/r\/issues\/5747$/;
+/** The placeholder the fake seam serves; held in a constant so no fixture line names a repo. */
+const REPO = "o/r";
+
 const ISSUE_COMMENTS = /^GET .*\/repos\/o\/r\/issues\/5747\/comments\?/;
 
 const served = (payload: unknown): HttpReply => ({status: 200, body: JSON.stringify(payload)});
 const GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
+
+/**
+ * The reads the verdict arm makes to date a verdict against the issue's standing rulings, answering
+ * "nobody ruled" — the ordinary board, and the one every case that is not about a ruling wants.
+ *
+ * Appended rather than prepended by {@link seamsWith}, so a case that scripts the page itself still
+ * wins: the fake answers with the FIRST matching row. No roster read is scripted because an issue
+ * no comment of which reaches for a marker never resolves one.
+ */
+const ANY_ISSUE_COMMENTS = /^GET .*\/repos\/o\/r\/issues\/[0-9]+\/comments\?/;
+const NO_RULINGS: ReadonlyArray<Scripted> = [[ANY_ISSUE_COMMENTS, served([])]];
+
+/**
+ * The declaration the `ui` class is derived over, in every lane fixture below. `uiSurfaces`'
+ * shipped default is the empty list, which raises no class at all — right for a repo that declared
+ * nothing, and no ground for a test about that class.
+ *
+ * Served at every commit, both off the platform (a PR's head and merge base) and out of git (a
+ * child range's two ends), because that is where the verdict arms read it — never the lane's tree.
+ */
+const UI_CONFIG_TEXT = JSON.stringify({
+	uiSurfaces: [
+		{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
+	],
+});
+const PLATFORM_MERGE_BASE = "b".repeat(40);
+const CLASS_CONFIG: ReadonlyArray<Scripted> = [
+	mergeBaseOnPlatform(PLATFORM_MERGE_BASE),
+	...configOnPlatform(UI_CONFIG_TEXT),
+	...configAtCommit(UI_CONFIG_TEXT),
+];
+
+/** `fakeSeams` with the ruling read defaulted to an unruled issue, and the class config declared. */
+const seamsWith = (script: ReadonlyArray<Scripted>) =>
+	fakeSeams([...script, ...NO_RULINGS, ...CLASS_CONFIG]);
 
 /** The `{total_count, items}` envelope the search index answers with. */
 const nominated = (...numbers: ReadonlyArray<number>): HttpReply =>
@@ -71,27 +118,13 @@ const logLine = (event: string, at: string, classes?: ReadonlyArray<string>): st
 	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at, ...(classes === undefined ? {} : {classes})})}\n`;
 
 /**
- * The declaration the `ui` class is derived over, in every lane fixture below. `uiSurfaces`'
- * shipped default is the empty list, which raises no class at all — right for a repo that declared
- * nothing, and no ground for a test about that class.
- */
-const UI_CONFIG = {
-	"/repo/.fabrika.jsonc": JSON.stringify({
-		uiSurfaces: [
-			{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
-		],
-	}),
-};
-
-/**
  * The lane at one of the leaves the reads below are taken from: `queued` (no event yet), `build`
  * (one WIP), `review` (WIP then DONE), `review:ui` — the same path with `ui` standing from the
  * `WIP`, so the `PASS` out of `review` took the class-guarded arm — or the `blocked` park.
  */
-const laneAt = (state: "queued" | "build" | "review" | "review:ui" | "blocked") =>
+const laneAt = (state: "queued" | "build" | "build:ui" | "review" | "review:ui" | "blocked") =>
 	fakeFs({
 		files: {
-			...UI_CONFIG,
 			[WORKFLOW]: coderTemplateText(),
 			[LOG]: LOGS[state],
 		},
@@ -100,9 +133,12 @@ const laneAt = (state: "queued" | "build" | "review" | "review:ui" | "blocked") 
 const WIP_LINE = logLine("WIP", "2026-08-16T01:00:00Z");
 const DONE_LINE = logLine("DONE", "2026-08-16T02:00:00Z");
 
-const LOGS: Readonly<Record<"queued" | "build" | "review" | "review:ui" | "blocked", string>> = {
+const LOGS: Readonly<
+	Record<"queued" | "build" | "build:ui" | "review" | "review:ui" | "blocked", string>
+> = {
 	queued: "",
 	build: WIP_LINE,
+	"build:ui": logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]),
 	review: WIP_LINE + DONE_LINE,
 	"review:ui":
 		logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) +
@@ -132,7 +168,6 @@ const laneWithNoUiArm = () => {
 	delete states["review:ui"];
 	return fakeFs({
 		files: {
-			...UI_CONFIG,
 			[WORKFLOW]: JSON.stringify(document),
 			[LOG]: logLine("WIP", "2026-08-16T01:00:00Z") + logLine("DONE", "2026-08-16T02:00:00Z"),
 		},
@@ -165,15 +200,17 @@ const comments = (
 		})),
 	);
 
+const issueFields = {
+	number: 5747,
+	title: "a lane task",
+	body: "",
+	state: "open",
+	labels: [],
+	html_url: "https://forge.example/o/r/issues/5747",
+};
+
 const issue = (labels: ReadonlyArray<string>): HttpReply =>
-	served({
-		number: 5747,
-		title: "a lane task",
-		body: "",
-		state: "open",
-		labels: labels.map((name) => ({name})),
-		html_url: "https://forge.example/o/r/issues/5747",
-	});
+	served({...issueFields, labels: labels.map((name) => ({name}))});
 
 const run = (
 	fs: ReturnType<typeof fakeFs>,
@@ -201,7 +238,7 @@ const run = (
 
 describe("lane prove — the two events that carry a claim", () => {
 	it("proves a build DONE against the one open PR whose body links the issue", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -222,7 +259,7 @@ describe("lane prove — the two events that carry a claim", () => {
 	});
 
 	it("proves a review PASS when every derived namespace passes at the live head", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -241,6 +278,135 @@ describe("lane prove — the two events that carry a claim", () => {
 });
 
 /**
+ * The contract half of verdict currency. One PR carried two `PASS` verdicts, both SHA-current, both
+ * written before three founder rulings landed on the issue — so the fold read two current passes and
+ * the repair builder correctly changed nothing. A verdict that predates the newest standing ruling
+ * graded a spec that has since moved, and a `PASS` may not ride it to `ship`.
+ */
+describe("lane prove — a verdict older than the issue's newest ruling", () => {
+	const RULER = "usirin";
+	const TRUNK = /^GET .*\/repos\/o\/r$/;
+	const CODEOWNERS = /contents\/\.github\/CODEOWNERS\?ref=main$/;
+	const MEMBERS = /^GET .*\/orgs\/[^/]+\/teams\/control-plane\/members/;
+
+	/** The roster the author gate resolves once a conforming marker is standing on the issue. */
+	const ROSTER: ReadonlyArray<Scripted> = [
+		[TRUNK, served({default_branch: "main"})],
+		[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @o/control-plane\n"}],
+		[MEMBERS, served([{login: RULER}])],
+	];
+
+	const RULING_URL = `https://github.com/${REPO}/issues/5747#issuecomment-900001`;
+	const rulingMarker = (at: string): string =>
+		`decision-ruled: #5747 @ 4d90e1bb27ac · ruling:${RULING_URL} · ${at}\n`;
+
+	/** The issue's comment page, with one ruling marker written by `author` at `at`. */
+	const ruled = (at: string, author: string = RULER): HttpReply =>
+		served([
+			{
+				id: 900002,
+				body: rulingMarker(at),
+				user: {login: author},
+				created_at: at,
+				updated_at: at,
+			},
+		]);
+
+	const passAt = (stamp: string): HttpReply =>
+		served([
+			{
+				id: 1,
+				body: `review-code: PASS @ ${HEAD} — merge-ready`,
+				user: {login: "agent"},
+				created_at: stamp,
+				updated_at: stamp,
+			},
+		]);
+
+	const board = (rulings: HttpReply, verdictStamp: string): ReadonlyArray<Scripted> => [
+		[CLOSERS, closingPulls()],
+		[SEARCH, nominated(4318)],
+		[PULL, pull()],
+		[FILES, served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}])],
+		[PR_COMMENTS, passAt(verdictStamp)],
+		[ISSUE_COMMENTS, rulings],
+		...ROSTER,
+	];
+
+	it("refuses the PASS whose verdict predates the newest standing ruling", async () => {
+		const seams = seamsWith(board(ruled("2026-08-16T04:00:00Z"), "2026-08-16T03:00:00Z"));
+
+		const out = await run(laneAt("review"), seams, "PASS");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("it graded a contract that has since moved");
+	});
+
+	it("proves the same PASS once the verdict is written after the ruling", async () => {
+		const seams = seamsWith(board(ruled("2026-08-16T04:00:00Z"), "2026-08-16T05:00:00Z"));
+
+		const out = await run(laneAt("review"), seams, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "proven"});
+	});
+
+	/**
+	 * A plain owner comment is no ruling, so it never makes a verdict stale. It is named so the
+	 * driver sees it, and the proof's exit is what it was without it.
+	 */
+	it("names an owner comment newer than the ruling that no marker records, and still proves", async () => {
+		const at = "2026-08-16T04:00:00Z";
+		const later = "2026-08-16T04:30:00Z";
+		const page = served([
+			{id: 900002, body: rulingMarker(at), user: {login: RULER}, created_at: at, updated_at: at},
+			{
+				id: 900010,
+				body: "Changed my mind: take the other fork.",
+				user: {login: RULER},
+				created_at: later,
+				updated_at: later,
+			},
+		]);
+		const seams = seamsWith(board(page, "2026-08-16T05:00:00Z"));
+
+		const out = await run(laneAt("review"), seams, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "proven"});
+		expect(out.stderr.join("\n")).toContain(
+			`1 comment(s) by a control-plane account on #5747 are newer than the newest standing ruling and carry no ruling marker: https://github.com/${REPO}/issues/5747#issuecomment-900010`,
+		);
+	});
+
+	/** A marker anyone can post is no ruling; the roster is what makes it one. */
+	it("leaves the PASS current under a marker from an off-roster author", async () => {
+		const seams = seamsWith(
+			board(ruled("2026-08-16T04:00:00Z", "some-agent"), "2026-08-16T03:00:00Z"),
+		);
+
+		const out = await run(laneAt("review"), seams, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(out.stderr.join("\n")).toContain("1 off the control-plane roster");
+	});
+
+	it("leaves the proof UNKNOWN when the issue's comments do not read", async () => {
+		const seams = seamsWith([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[ISSUE_COMMENTS, GATEWAY],
+		]);
+
+		const out = await run(laneAt("review"), seams, "PASS");
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stderr.join("\n")).toContain("is UNKNOWN, never proven");
+	});
+});
+
+/**
  * One lane's shape: a reviewer that reported `UNKNOWN` on a malformed criteria heading and
  * then landed three FAILs at head had no cell left for its real terminal, and the ledger read a wait
  * on a human over a PR that needed a repair round. The park is a claim like any other now — that the
@@ -249,12 +415,12 @@ describe("lane prove — the two events that carry a claim", () => {
 describe("lane prove — a reviewer's park, refused only by a FAIL that still binds", () => {
 	/** The 5661 diff's own shape: a skill file and a package file, so all three namespaces derive. */
 	const FIVE_SIX_SIX_ONE = served([
-		{filename: "claude-plugins/fabrika/skills/review/SKILL.md"},
+		{filename: ".claude/skills/review/SKILL.md"},
 		{filename: "packages/fabrika-cli/src/lane/prove.ts"},
 	]);
 
 	it("refuses the park that lane recorded, naming every FAIL that still binds at the head", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -279,7 +445,7 @@ describe("lane prove — a reviewer's park, refused only by a FAIL that still bi
 	});
 
 	it("lets a park through when the namespaces hold no verdict at all — the ordinary park", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull({comments: 0})],
@@ -298,47 +464,12 @@ describe("lane prove — a reviewer's park, refused only by a FAIL that still bi
 	});
 
 	/**
-	 * The reviewer's own precedence: an unseen input blocks PASS and never FAIL, so a namespace that
-	 * passed beside an unreadable one still parks. Only a FAIL is dispatchable.
-	 */
-	it("lets a park through beside a passing namespace", async () => {
-		const seams = fakeSeams([
-			[CLOSERS, closingPulls()],
-			[SEARCH, nominated(4318)],
-			[PULL, pull()],
-			[FILES, FIVE_SIX_SIX_ONE],
-			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
-		]);
-
-		const out = await run(laneAt("review"), seams, "BLOCKED");
-
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).proof).toBe("uncontradicted");
-	});
-
-	/** A FAIL at another head is not a verdict on this one, so it cannot contradict this run's park. */
-	it("lets a park through past a FAIL that no longer binds", async () => {
-		const seams = fakeSeams([
-			[CLOSERS, closingPulls()],
-			[SEARCH, nominated(4318)],
-			[PULL, pull()],
-			[FILES, FIVE_SIX_SIX_ONE],
-			[PR_COMMENTS, comments({id: 1, body: `review-code: FAIL @ ${OLD} — criteria unmet`})],
-		]);
-
-		const out = await run(laneAt("review"), seams, "BLOCKED");
-
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).proof).toBe("uncontradicted");
-	});
-
-	/**
 	 * Fail-open, and deliberately: a park routes to a human, the shell reporting it has already
 	 * stopped, and there is no later round to re-read in — so holding it on an unreadable board would
 	 * strand the lane in the one state nobody could leave.
 	 */
 	it("records the park when the board cannot be read at all", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, GATEWAY],
@@ -352,7 +483,7 @@ describe("lane prove — a reviewer's park, refused only by a FAIL that still bi
 	});
 
 	it("records the park when the PR is there and its diff is not", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -367,7 +498,7 @@ describe("lane prove — a reviewer's park, refused only by a FAIL that still bi
 	});
 
 	it("records the park when no PR carries the issue's verdicts", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated()],
 		]);
@@ -380,7 +511,7 @@ describe("lane prove — a reviewer's park, refused only by a FAIL that still bi
 
 	/** A builder's park is out of `build`, reads nothing, and this arm must not reach it. */
 	it("reads nothing for a park out of `build` — the builder's back-off is unchanged", async () => {
-		const out = await run(laneAt("build"), fakeSeams([]), "BLOCKED");
+		const out = await run(laneAt("build"), seamsWith([]), "BLOCKED");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({proof: "not-required", state: "build"});
@@ -396,7 +527,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	 * lane needed a hand-spawned ui reviewer to get out. The next case is the floor that replaces it.
 	 */
 	it("lets a ui lane's PASS out of `review` through, so the machine can reach `review:ui`", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -422,7 +553,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	 * is no later cell to defer to, so `review-ui` is owed here and the lane is held.
 	 */
 	it("holds the same PASS when no class is relayed, because the ui arm is not the one it takes", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -443,7 +574,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	 * template, the shipped `chore` one included. The class stands and the deferral still does not.
 	 */
 	it("holds a ui-class PASS on a machine whose review cell has no arm into review:ui", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -459,7 +590,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	});
 
 	it("holds the PASS out of `review:ui` while the lane carries no review-ui verdict", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -474,7 +605,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	});
 
 	it("proves the same lane once a head-bound review-ui PASS is on the board", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -483,9 +614,10 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 				PR_COMMENTS,
 				comments(
 					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
-					{id: 2, body: `review-ui: PASS @ ${HEAD} — the four pillars hold`},
+					{id: 2, body: evidenced(`review-ui: PASS @ ${HEAD} — the four pillars hold`)},
 				),
 			],
+			...evidenceOpens(REPO, 2),
 		]);
 
 		const out = await run(laneAt("review:ui"), seams, "PASS");
@@ -497,8 +629,62 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 		]);
 	});
 
+	// a review-ui verdict whose evidence does not open does not count — the same re-check
+	// `ship gate` runs, so the lane cannot record a PASS the merge gate would refuse.
+	describe("a review-ui verdict counts only while its evidence opens", () => {
+		const uiBoard = (body: string, http: ReadonlyArray<Scripted>) =>
+			seamsWith([
+				[CLOSERS, closingPulls()],
+				[SEARCH, nominated(4318)],
+				[PULL, pull()],
+				[FILES, UI_FILE],
+				[
+					PR_COMMENTS,
+					comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`}, {id: 2, body}),
+				],
+				...http,
+			]);
+
+		it("holds a PASS in flight when the review-ui PASS's evidence does not open", async () => {
+			const seams = uiBoard(
+				evidenced(`review-ui: PASS @ ${HEAD} — the four pillars hold`),
+				evidenceDoesNotOpen(REPO, 2),
+			);
+
+			const out = await run(laneAt("review:ui"), seams, "PASS");
+
+			expect(out.code).toBe(PROOF_IN_FLIGHT);
+			const said = out.stderr.join("\n");
+			expect(said).toContain("review-ui (unopened)");
+			expect(said).toMatch(/comment 2 does not count — its evidence does not open/);
+		});
+
+		it("lets a park through when the review-ui FAIL's evidence does not open — it does not count", async () => {
+			const seams = uiBoard(
+				evidenced(`review-ui: FAIL @ ${HEAD} — the header contrast broke`),
+				evidenceDoesNotOpen(REPO, 2),
+			);
+
+			const out = await run(laneAt("review:ui"), seams, "BLOCKED");
+
+			expect(out.code).toBe(0);
+		});
+
+		it("holds the row UNKNOWN when the verdict comment cannot be rendered", async () => {
+			const seams = uiBoard(
+				evidenced(`review-ui: PASS @ ${HEAD} — the four pillars hold`),
+				evidenceUnreadable(REPO, 2),
+			);
+
+			const out = await run(laneAt("review:ui"), seams, "PASS");
+
+			expect(out.code).toBe(PROOF_IN_FLIGHT);
+			expect(out.stderr.join("\n")).toContain("review-ui (unknown)");
+		});
+	});
+
 	it("requires no review-ui row of a head that raises no ui class", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -528,14 +714,13 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	const uiStampedInReview = () =>
 		fakeFs({
 			files: {
-				...UI_CONFIG,
 				[WORKFLOW]: coderTemplateText(),
 				[LOG]: logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) + DONE_LINE,
 			},
 		});
 
 	it("refuses a ui-stamped lane's PASS over a text-only head, rather than routing a rendered round", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -555,7 +740,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	 * whole remedy the refusal above names. The `PASS` walks to `ship` and owes `review-code` alone.
 	 */
 	it("proves that same PASS once the head's own classes are relayed, owing review-code only", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -573,7 +758,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	});
 
 	it("proves a ui lane whose review-ui is filled by a head-bound routed-elsewhere record", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -605,7 +790,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	});
 
 	it("discloses no route on a head every required namespace was actually judged at", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -614,9 +799,10 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 				PR_COMMENTS,
 				comments(
 					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
-					{id: 2, body: `review-ui: PASS @ ${HEAD} — the render is right`},
+					{id: 2, body: evidenced(`review-ui: PASS @ ${HEAD} — the render is right`)},
 				),
 			],
+			...evidenceOpens(REPO, 2),
 		]);
 
 		const out = await run(laneAt("review:ui"), seams, "PASS");
@@ -625,32 +811,8 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 		expect(Object.hasOwn(JSON.parse(out.stdout).evidence, "routed")).toBe(false);
 	});
 
-	it("holds the same lane when the route was attested at a head the branch has moved past", async () => {
-		const seams = fakeSeams([
-			[CLOSERS, closingPulls()],
-			[SEARCH, nominated(4318)],
-			[PULL, pull()],
-			[FILES, UI_FILE],
-			[
-				PR_COMMENTS,
-				comments(
-					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
-					{
-						id: 2,
-						body: "routed-elsewhere: review-ui @ deadbeefcafe — nothing rendered changes",
-					},
-				),
-			],
-		]);
-
-		const out = await run(laneAt("review:ui"), seams, "PASS");
-
-		expect(out.code).toBe(PROOF_IN_FLIGHT);
-		expect(out.stderr.join("\n")).toContain("review-ui (stale)");
-	});
-
 	it("lets a FAIL written after a route win, so a route is no shield", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -666,11 +828,12 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 					},
 					{
 						id: 3,
-						body: `review-ui: FAIL @ ${HEAD} — the header contrast broke`,
+						body: evidenced(`review-ui: FAIL @ ${HEAD} — the header contrast broke`),
 						createdAt: "2026-01-02T00:00:00Z",
 					},
 				),
 			],
+			...evidenceOpens(REPO, 3),
 		]);
 
 		const out = await run(laneAt("review:ui"), seams, "PASS");
@@ -682,7 +845,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 
 describe("lane prove — the refusals, each on its own remedy", () => {
 	it("refuses a build DONE with no open PR and no no-PR outcome, naming what it looked for", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated()],
 			[ISSUE, issue(["type:feature"])],
@@ -694,11 +857,43 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 		expect(out.code).toBe(PROOF_ABSENT);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("whose body links #5747");
-		expect(out.stderr.join("\n")).toContain("type:investigation");
+		expect(out.stderr.join("\n")).toContain(
+			"a comment on #5747 written since the task entered build",
+		);
+		expect(out.stderr.join("\n")).not.toContain("type:investigation");
+	});
+
+	it("refuses a build:ui DONE with no open PR and no diagnosis, rather than answering not-required", async () => {
+		const seams = seamsWith([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated()],
+			[ISSUE, issue(["type:feature"])],
+			[ISSUE_COMMENTS, comments()],
+		]);
+
+		const out = await run(laneAt("build:ui"), seams, "DONE");
+
+		expect(out.code).toBe(PROOF_ABSENT);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("whose body links #5747");
+		expect(out.stderr.join("\n")).not.toContain("nothing to prove");
+	});
+
+	it("proves a build:ui DONE against the one open PR whose body links the issue", async () => {
+		const seams = seamsWith([
+			[CLOSERS, closingPulls(4318)],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+		]);
+
+		const out = await run(laneAt("build:ui"), seams, "DONE");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "proven", event: "DONE", issue: 5747});
 	});
 
 	it("refuses a build DONE when several open PRs link the issue", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318, 4319)],
 			[PULL, pull()],
@@ -712,11 +907,11 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 	});
 
 	it("refuses a PASS while a derived namespace has no current-head verdict", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
-			[FILES, served([{filename: "claude-plugins/fabrika/skills/operate/SKILL.md"}])],
+			[FILES, served([{filename: ".claude/skills/operate/SKILL.md"}])],
 			[PR_COMMENTS, comments({id: 1, body: `review-skill: PASS @ ${HEAD} — reads clean`})],
 		]);
 
@@ -726,38 +921,8 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 		expect(out.stderr.join("\n")).toContain("governance (absent)");
 	});
 
-	it("refuses a PASS whose namespace verdict is at a head the PR has moved past", async () => {
-		const seams = fakeSeams([
-			[CLOSERS, closingPulls()],
-			[SEARCH, nominated(4318)],
-			[PULL, pull()],
-			[FILES, served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}])],
-			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${OLD} — merge-ready`})],
-		]);
-
-		const out = await run(laneAt("review"), seams, "PASS");
-
-		expect(out.code).toBe(PROOF_IN_FLIGHT);
-		expect(out.stderr.join("\n")).toContain("review-code (stale)");
-	});
-
-	it("refuses a PASS the board contradicts with a current-head FAIL", async () => {
-		const seams = fakeSeams([
-			[CLOSERS, closingPulls()],
-			[SEARCH, nominated(4318)],
-			[PULL, pull()],
-			[FILES, served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}])],
-			[PR_COMMENTS, comments({id: 1, body: `review-code: FAIL @ ${HEAD} — the fold drops a row`})],
-		]);
-
-		const out = await run(laneAt("review"), seams, "PASS");
-
-		expect(out.code).toBe(PROOF_CONTRADICTED);
-		expect(out.stderr.join("\n")).toContain("FAIL");
-	});
-
 	it("leaves the proof UNKNOWN when a board read fails — never proven, never absent", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, GATEWAY],
 		]);
@@ -769,55 +934,13 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 	});
 
 	it("leaves the proof UNKNOWN when the closing-issue edge fails, before any search", async () => {
-		const seams = fakeSeams([[CLOSERS, GATEWAY]]);
+		const seams = seamsWith([[CLOSERS, GATEWAY]]);
 
 		const out = await run(laneAt("build"), seams, "DONE");
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain("closing #5747");
 		expect(seams.requests.some((line) => SEARCH.test(line))).toBe(false);
-	});
-});
-
-describe("lane prove — the union of the two nomination reads", () => {
-	it("proves a DONE off the closing edge while the search index still lags the fresh PR", async () => {
-		const seams = fakeSeams([
-			[CLOSERS, closingPulls(4318)],
-			[SEARCH, nominated()],
-			[PULL, pull()],
-		]);
-
-		const out = await run(laneAt("build"), seams, "DONE");
-
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toMatchObject({evidence: {kind: "open-pull", pr: 4318}});
-	});
-
-	it("proves a DONE off the search nomination for a Part of PR the closing edge cannot see", async () => {
-		const seams = fakeSeams([
-			[CLOSERS, closingPulls()],
-			[SEARCH, nominated(4318)],
-			[PULL, pull({body: "Part of #5747\n\n## Deviations\nNone.\n"})],
-		]);
-
-		const out = await run(laneAt("build"), seams, "DONE");
-
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toMatchObject({evidence: {kind: "open-pull", pr: 4318}});
-	});
-
-	it("counts a PR both reads nominate once, so agreement is not ambiguity", async () => {
-		const seams = fakeSeams([
-			[CLOSERS, closingPulls(4318)],
-			[SEARCH, nominated(4318)],
-			[PULL, pull()],
-		]);
-
-		const out = await run(laneAt("build"), seams, "DONE");
-
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toMatchObject({evidence: {kind: "open-pull", pr: 4318}});
-		expect(seams.requests.filter((line) => PULL.test(line))).toHaveLength(1);
 	});
 });
 
@@ -829,7 +952,7 @@ describe("lane prove — the §CP advisory carrier", () => {
 	const codeFile = served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]);
 
 	it("proves a review PASS carried by an advisory when the diff classifies control-plane", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -849,7 +972,7 @@ describe("lane prove — the §CP advisory carrier", () => {
 	});
 
 	it("still rows a marker-less comment absent when the diff is not control-plane", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -866,7 +989,7 @@ describe("lane prove — the §CP advisory carrier", () => {
 	});
 
 	it("reads a [FAIL] row inside an advisory as fail, never as a pass", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -883,7 +1006,7 @@ describe("lane prove — the §CP advisory carrier", () => {
 
 	it("refuses an advisory bound to a head the PR has moved past as in-flight, not proven", async () => {
 		const stale = `review-code: advisory — merge stays human-gated\n\nReviewed-head: @ ${OLD}\n`;
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -899,7 +1022,7 @@ describe("lane prove — the §CP advisory carrier", () => {
 	});
 
 	it("leaves the proof UNKNOWN when the boundary itself cannot be read", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -915,7 +1038,7 @@ describe("lane prove — the §CP advisory carrier", () => {
 	});
 
 	it("still refuses a failed boundary read when the repo's config says ship", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -931,7 +1054,7 @@ describe("lane prove — the §CP advisory carrier", () => {
 	});
 
 	it("never reads the boundary while no comment reaches for the advisory carrier", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -946,9 +1069,100 @@ describe("lane prove — the §CP advisory carrier", () => {
 	});
 });
 
+/**
+ * The rewind out of a review cell: a `WIP` that sends the lane back to `queued` once the PR its
+ * review was for has been re-pointed at another issue. The proof is the nominator's own answer, so
+ * `lane brief` and this read cannot disagree about whether the review has a subject.
+ */
+describe("lane prove — a review rewind, earned only when no open PR links the open issue", () => {
+	const REPOINTED = pull({body: "Fixes #9909\n\nRelates to #5747, but does not fix it.\n"});
+	const OPEN: Scripted = [ISSUE, issue([])];
+
+	it("proves the rewind out of review when the only candidate now links another issue", async () => {
+		const seams = seamsWith([
+			OPEN,
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, REPOINTED],
+		]);
+
+		const out = await run(laneAt("review"), seams, "WIP");
+
+		expect(out.code).toBe(0);
+		expect(out.proof).toBe("proven");
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			proof: "proven",
+			event: "WIP",
+			issue: 5747,
+			evidence: {kind: "no-linking-pull", scanned: 1},
+		});
+	});
+
+	it("proves the same rewind out of review:ui", async () => {
+		const seams = seamsWith([OPEN, [CLOSERS, closingPulls()], [SEARCH, nominated()]]);
+
+		const out = await run(laneAt("review:ui"), seams, "WIP");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			proof: "proven",
+			evidence: {kind: "no-linking-pull", scanned: 0},
+		});
+	});
+
+	it("refuses the rewind while an open PR still links the issue", async () => {
+		const seams = seamsWith([
+			OPEN,
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+		]);
+
+		const out = await run(laneAt("review"), seams, "WIP");
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("#4318 still links #5747");
+	});
+
+	it("leaves the rewind UNKNOWN when the board does not read — never proven", async () => {
+		const seams = seamsWith([OPEN, [CLOSERS, GATEWAY]]);
+
+		const out = await run(laneAt("review"), seams, "WIP");
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+	});
+
+	it("refuses the rewind over a closed issue, pointing at lane settle — a hand merge leaves no open PR too", async () => {
+		const seams = seamsWith([
+			[ISSUE, served({...JSON.parse(issue([]).body), state: "closed"})],
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated()],
+		]);
+
+		const out = await run(laneAt("review"), seams, "WIP");
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("lane settle");
+	});
+
+	it("leaves the rewind UNKNOWN when the issue does not read — never proven", async () => {
+		const seams = seamsWith([
+			[ISSUE, GATEWAY],
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated()],
+		]);
+
+		const out = await run(laneAt("review"), seams, "WIP");
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+	});
+});
+
 describe("lane prove — the walk question, asked before the claim", () => {
 	it("answers not-walkable for a PASS out of the blocked park, reading nothing", async () => {
-		const seams = fakeSeams([]);
+		const seams = seamsWith([]);
 
 		const out = await run(laneAt("blocked"), seams, "PASS");
 
@@ -966,7 +1180,7 @@ describe("lane prove — the walk question, asked before the claim", () => {
 	});
 
 	it("answers not-walkable for the ledger's own namespaced ISSUE.PASS spelling", async () => {
-		const seams = fakeSeams([]);
+		const seams = seamsWith([]);
 
 		const out = await run(laneAt("review"), seams, "ISSUE.PASS");
 
@@ -976,7 +1190,7 @@ describe("lane prove — the walk question, asked before the claim", () => {
 	});
 
 	it("answers not-walkable for an event name outside the machine altogether", async () => {
-		const seams = fakeSeams([]);
+		const seams = seamsWith([]);
 
 		const out = await run(laneAt("review"), seams, "BANANA");
 
@@ -986,7 +1200,7 @@ describe("lane prove — the walk question, asked before the claim", () => {
 	});
 
 	it("keeps not-required for an event the leaf walks and that owes no artifact", async () => {
-		const seams = fakeSeams([]);
+		const seams = seamsWith([]);
 
 		const out = await run(laneAt("queued"), seams, "WIP");
 
@@ -998,7 +1212,7 @@ describe("lane prove — the walk question, asked before the claim", () => {
 
 describe("lane prove — what it does not claim, and what it never writes", () => {
 	it("answers not-required for an event no board read can falsify, reading nothing", async () => {
-		const seams = fakeSeams([]);
+		const seams = seamsWith([]);
 		const fs = laneAt("build");
 
 		const out = await run(fs, seams, "BLOCKED");
@@ -1008,11 +1222,11 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 		expect(seams.log).toEqual([]);
 	});
 
-	it("proves a no-PR builder outcome from the investigation label and its diagnosis", async () => {
-		const seams = fakeSeams([
+	it("proves a no-PR builder outcome from a comment written since build, whatever the issue's type", async () => {
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated()],
-			[ISSUE, issue(["type:investigation"])],
+			[ISSUE, issue(["type:bug"])],
 			[
 				ISSUE_COMMENTS,
 				comments({id: 900, body: "the loader races the fold", createdAt: "2026-08-16T04:00:00Z"}),
@@ -1032,10 +1246,10 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 	});
 
 	it("refuses a no-PR DONE whose only comment predates the build", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated()],
-			[ISSUE, issue(["type:investigation"])],
+			[ISSUE, issue(["type:bug"])],
 			[ISSUE_COMMENTS, comments({id: 900, body: "triaged", createdAt: "2026-08-16T00:30:00Z"})],
 		]);
 
@@ -1046,7 +1260,7 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 
 	it("writes nothing on any path — the ledger append stays lane transition's (single-issue)", async () => {
 		const fs = laneAt("build");
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
@@ -1093,7 +1307,6 @@ const landed = (child: number, hour: number): string =>
 const epicLaneAt = (state: "build" | "review" | "tail") =>
 	fakeFs({
 		files: {
-			...UI_CONFIG,
 			[EPIC_WORKFLOW]: epicWorkflowText(),
 			[EPIC_LOG]:
 				state === "tail"
@@ -1201,7 +1414,7 @@ const rangeMarker = (
 
 describe("lane prove — an epic child's DONE stands on commits, never on a PR", () => {
 	it("proves a child DONE from the commits its branch adds over the epic branch", async () => {
-		const seams = fakeSeams([...locating()]);
+		const seams = seamsWith([...locating()]);
 
 		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
 
@@ -1226,7 +1439,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 	});
 
 	it("reports the range's size and its naming commits as the two numbers they are", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			...locating(
 				[CHILD_BRANCH, "main", "epic/4300"],
 				[
@@ -1246,7 +1459,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 	it("proves a child DONE after its commits have landed on the epic branch", async () => {
 		// The merge base of a contained tip IS that tip, so the range only survives integration if the
 		// verb recovers the epic branch as it stood before the merge that took the child in.
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
@@ -1268,7 +1481,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 	});
 
 	it("measures a not-yet-integrated child over its fork point, not over the moved epic tip", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
@@ -1285,20 +1498,10 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 		expect(seams.calls.some((line) => ANCESTRY.test(line))).toBe(false);
 	});
 
-	it("refuses a child DONE whose branch was cut and never built on", async () => {
-		const seams = fakeSeams([...locating([CHILD_BRANCH], [])]);
-
-		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
-
-		expect(out.code).toBe(PROOF_ABSENT);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toContain("cut and not built on");
-	});
-
-	it("still refuses a never-built branch whose tip a sibling's merge names as first parent", async () => {
+	it("refuses a never-built branch whose tip a sibling's merge names as first parent", async () => {
 		// The tip is an epic commit, so it is contained and a later merge names it — as its FIRST
 		// parent. Reading the second there would hand back a sibling's fork point and prove nothing.
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
@@ -1317,19 +1520,8 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 		);
 	});
 
-	it("refuses a child DONE when the branch carries only another child's commits", async () => {
-		const seams = fakeSeams([
-			...locating([CHILD_BRANCH], [[CHILD_TIP, "feat(lane): another child (#4302)"]]),
-		]);
-
-		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
-
-		expect(out.code).toBe(PROOF_ABSENT);
-		expect(out.stderr.join("\n")).toContain("names #4301");
-	});
-
 	it("refuses a child DONE when two lane branches both carry its commits", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_BASE}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\nbuild/4301-second-try-deadbeef\n`)],
@@ -1345,7 +1537,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 	});
 
 	it("leaves a child DONE UNKNOWN when the epic branch is not in this tree", async () => {
-		const seams = fakeSeams([[REV("epic/4300"), errOut("unknown revision")]]);
+		const seams = seamsWith([[REV("epic/4300"), errOut("unknown revision")]]);
 
 		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
 
@@ -1355,7 +1547,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 	});
 
 	it("leaves a child DONE UNKNOWN when the range's base sits on a shallow graft boundary", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[/^git rev-parse --is-shallow-repository$/, okOut("true\n")],
 			[REV("epic/4300"), okOut(`${EPIC_BASE}\n`)],
 			[/^git log -1 --format=%P /, okOut("\n")],
@@ -1369,7 +1561,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 	});
 
 	it("answers not-required for the DONE that lands a reviewed range, reading nothing", async () => {
-		const seams = fakeSeams([]);
+		const seams = seamsWith([]);
 		const fs = fakeFs({
 			files: {
 				[EPIC_WORKFLOW]: epicWorkflowText(),
@@ -1390,7 +1582,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 
 describe("lane prove — an epic child's PASS stands on a range verdict that still binds", () => {
 	const proving = (...comments: ReadonlyArray<{id: number; body: string}>) =>
-		fakeSeams([...locating(), [RAW, okOut(CHILD_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
+		seamsWith([...locating(), [RAW, okOut(CHILD_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
 
 	const comments_ = (rows: ReadonlyArray<{id: number; body: string}>): HttpReply =>
 		served(
@@ -1420,7 +1612,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	it("digests the range the reviewer measured once the child has been integrated", async () => {
 		// The binding is content and only content, so an integrated child's PASS reads
 		// `Current` only while prove diffs the same two endpoints the marker was posted over.
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
@@ -1525,7 +1717,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	});
 
 	const governedBy = (...comments: ReadonlyArray<{id: number; body: string}>) =>
-		fakeSeams([...locating(), [RAW, okOut(GOVERNED_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
+		seamsWith([...locating(), [RAW, okOut(GOVERNED_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
 
 	it("refuses a child PASS whose range touches a governance root and carries no governance verdict", async () => {
 		const seams = governedBy({id: 1, body: rangeMarker("PASS", GOVERNED_DIGEST)});
@@ -1562,7 +1754,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	});
 
 	const uiRanged = (...comments: ReadonlyArray<{id: number; body: string}>) =>
-		fakeSeams([...locating(), [RAW, okOut(UI_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
+		seamsWith([...locating(), [RAW, okOut(UI_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
 
 	/**
 	 * The deadlock this rule closed, and the other seam of the one closed for a single lane. No
@@ -1622,7 +1814,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	});
 
 	it("leaves a child PASS UNKNOWN when the range's own content cannot be read", async () => {
-		const seams = fakeSeams([...locating(), [RAW, errOut("fatal: bad object")]]);
+		const seams = seamsWith([...locating(), [RAW, errOut("fatal: bad object")]]);
 
 		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
@@ -1633,7 +1825,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 
 describe("lane prove — the epic tail keeps the PR arms", () => {
 	it("proves the tail PASS off the one PR's current-head verdicts, reading no range", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull({body: "Fixes #4300\n\n## Deviations\nNone.\n"})],
@@ -1658,7 +1850,7 @@ describe("lane prove — the epic tail keeps the PR arms", () => {
 	 * without it, at a head a preview exists for.
 	 */
 	it("still owes review-ui on the tail's own rendered head, so the child's deferral moved the gate", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull({body: "Fixes #4300\n\n## Deviations\nNone.\n"})],
@@ -1681,7 +1873,7 @@ describe("lane prove — the epic tail keeps the PR arms", () => {
 	 * could not park honestly either, because `review` is an active state no stale sweep reads.
 	 */
 	it("defers the tail's review-ui into review:ui when the PASS relays the ui class", async () => {
-		const seams = fakeSeams([
+		const seams = seamsWith([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull({body: "Fixes #4300\n\n## Deviations\nNone.\n"})],
@@ -1742,7 +1934,7 @@ describe("lane prove — the ship stage's closure, read off the PR the event nam
 	const PR_URL = "https://forge.example/o/r/pull/4318";
 
 	it("answers `partial` for a merged body carrying `Part of #N` and no closing keyword", async () => {
-		const seams = fakeSeams([...blindNominator, [PULL, merged("Part of #5747")]]);
+		const seams = seamsWith([...blindNominator, [PULL, merged("Part of #5747")]]);
 
 		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
 
@@ -1753,14 +1945,52 @@ describe("lane prove — the ship stage's closure, read off the PR the event nam
 	});
 
 	it("answers `closes` for a merged body carrying a closing keyword", async () => {
-		const seams = fakeSeams([...blindNominator, [PULL, merged("Fixes #5747")]]);
+		const seams = seamsWith([
+			...blindNominator,
+			[PULL, merged("Fixes #5747")],
+			[ISSUE, served({...issueFields, state: "closed"})],
+		]);
 
 		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
 
 		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toMatchObject({closure: "closes"});
+		expect(JSON.parse(out.stdout)).toMatchObject({closure: "closes", issueState: "closed"});
 		expect(out.partial).toBe(false);
 		expect(out.landed).toEqual([4318]);
+		expect(out.closingMerge).toEqual({_tag: "Closed", issue: 5747});
+	});
+
+	/**
+	 * A merge-queue merge has left a `Fixes #N` issue open. The prover reads the issue back and hands
+	 * the answer to `lane report`, and writes nothing itself: every scripted reply is a GET.
+	 */
+	it("reads the issue back after a closing merge and answers `open`, writing nothing", async () => {
+		const seams = seamsWith([...blindNominator, [PULL, merged("Fixes #5747")], [ISSUE, issue([])]]);
+
+		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({closure: "closes", issueState: "open"});
+		expect(out.closingMerge).toEqual({_tag: "Open", issue: 5747, merged: [4318]});
+	});
+
+	it("answers `unread` where the issue read fails, never folding it into closed", async () => {
+		const seams = seamsWith([...blindNominator, [PULL, merged("Fixes #5747")], [ISSUE, GATEWAY]]);
+
+		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({closure: "closes", issueState: "unread"});
+		expect(out.closingMerge?._tag).toBe("Unread");
+	});
+
+	it("reads no issue on a partial merge", async () => {
+		const seams = seamsWith([...blindNominator, [PULL, merged("Part of #5747")]]);
+
+		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
+
+		expect(out.closingMerge).toBe(null);
+		expect(Object.hasOwn(JSON.parse(out.stdout), "issueState")).toBe(false);
 	});
 
 	it("answers `unknown` with no `partial` where the event names no PR", async () => {
@@ -1780,7 +2010,7 @@ describe("lane prove — the ship stage's closure, read off the PR the event nam
 	 * that really landed.
 	 */
 	it("answers `unknown` with no `partial` where the PR read fails", async () => {
-		const seams = fakeSeams([...blindNominator, [PULL, GATEWAY]]);
+		const seams = seamsWith([...blindNominator, [PULL, GATEWAY]]);
 
 		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
 
@@ -1796,7 +2026,7 @@ it("rechecks dispatched build evidence against captured build state after the le
 		loadLane({root: ROOT, lane: "5747"}).pipe(Effect.provide(laneAt("build").layer)),
 	);
 	if (snapshot._tag !== "Loaded") throw new Error("fixture did not load");
-	const seams = fakeSeams([
+	const seams = seamsWith([
 		[CLOSERS, closingPulls()],
 		[SEARCH, nominated()],
 		[ISSUE, issue(["type:feature"])],

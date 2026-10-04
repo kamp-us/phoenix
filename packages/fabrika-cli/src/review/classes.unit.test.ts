@@ -92,13 +92,7 @@ describe("SHIP_NAMESPACES", () => {
 
 describe("touchesGovernanceRoot", () => {
 	it("fires on each shipped root, at any depth — the config file among them", () => {
-		expect(GOVERNANCE_ROOTS).toEqual([
-			".decisions/",
-			".claude/",
-			".github/",
-			"claude-plugins/",
-			".fabrika.jsonc",
-		]);
+		expect(GOVERNANCE_ROOTS).toEqual([".decisions/", ".claude/", ".github/", ".fabrika.jsonc"]);
 		for (const root of GOVERNANCE_ROOTS) {
 			expect(touchesGovernanceRoot([`${root}deep/nested/file.txt`], GOVERNANCE_ROOTS)).toBe(true);
 		}
@@ -127,6 +121,14 @@ describe("isUiSurface", () => {
 	it("keeps the test/spec exclusion — a rendered surface's own tests render nothing", () => {
 		expect(isUiSurface("apps/site/src/App.test.tsx", UI_PREFIXES)).toBe(false);
 		expect(isUiSurface("apps/desk/src/ui/Chat.spec.tsx", UI_PREFIXES)).toBe(false);
+	});
+
+	it("matches a root with no trailing slash as one exact file, never as a leading-characters prefix", () => {
+		const roots = ["app/", "tailwind.config.ts"];
+		expect(isUiSurface("tailwind.config.ts", roots)).toBe(true);
+		expect(isUiSurface("tailwind.config.ts.bak", roots)).toBe(false);
+		expect(isUiSurface("tailwind.config.tsx", roots)).toBe(false);
+		expect(isUiSurface("apps/tailwind.config.ts", roots)).toBe(false);
 	});
 
 	it("raises nothing on an empty prefix list — a repo declaring no surface has no rendered gate", () => {
@@ -163,7 +165,7 @@ describe("shipNamespacesOf", () => {
 	it("appends governance — never replaces or reorders a review namespace", () => {
 		const result = partitionWithUi(
 			[
-				"claude-plugins/fabrika/skills/ship/contract.md",
+				".claude/skills/ship/contract.md",
 				"packages/fabrika-cli/src/ship/gate-verb.ts",
 				"apps/site/src/App.tsx",
 			],

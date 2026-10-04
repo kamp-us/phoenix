@@ -24,6 +24,7 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {
 	createComment,
 	createIssue,
@@ -36,6 +37,7 @@ import {
 } from "../io/issues.ts";
 import {classifyingPrefix, deriveVocabulary, normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
+import {missingLabelRemedy} from "../status/label-remedy.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import * as graduateEmitted from "../wire/graduate-emitted.ts";
 import {stampOf} from "../wire/grill-marker.ts";
@@ -59,6 +61,7 @@ import {scanEmissions} from "./read-verb.ts";
 import {deriveTrail, requireSource} from "./source.ts";
 import {
 	checkSections,
+	inlineDecisionText,
 	readDecisionsSection,
 	renderFooter,
 	SPEC_SECTIONS,
@@ -81,6 +84,8 @@ export interface EmitOptions<R = never> {
 	readonly title: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The board a missing-label refusal reads its `status bootstrap` remedy against. */
+	readonly board: BoardRead;
 	/** The footer's timestamp, injected so a filing is byte-reproducible in a test. */
 	readonly now: () => Date;
 }
@@ -230,7 +235,7 @@ export const runEmit = <R = never>(
 			const drifted =
 				onTrail.provenance !== claimed.provenance
 					? "provenance"
-					: onTrail.text !== claimed.text
+					: inlineDecisionText(onTrail.text) !== claimed.text
 						? "text"
 						: null;
 			if (drifted !== null) {
@@ -279,7 +284,7 @@ export const runEmit = <R = never>(
 		if (!labels.value.includes(INTAKE_LABEL)) {
 			return refuse(
 				NO_TARGET,
-				`${VERB}: label "${INTAKE_LABEL}" does not exist in ${repo} — refusing to file a spec no triage run can find. Create it, or run the front-door bootstrap.`,
+				`${VERB}: label "${INTAKE_LABEL}" does not exist in ${repo} — refusing to file a spec no triage run can find. ${missingLabelRemedy(INTAKE_LABEL, options.board)}`,
 				[scope],
 			);
 		}

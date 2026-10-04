@@ -32,7 +32,15 @@ replaces the default worktree-creation logic is declared and live (ADR
 [0337](../.decisions/0337-worktree-provisioning-rehomed-onto-repo-settings.md)), so the
 base path is now ours to choose; it deliberately keeps laying trees at
 `<repo>/.claude/worktrees/<name>`, because moving them is a separate decision from
-provisioning them. A base with no `.claude/` substring would dodge the protected-path
+provisioning them. That base is single by construction, not by assumption: `<repo>` is
+the clone's primary working tree, the first record `git worktree list --porcelain`
+prints, never the envelope's `cwd` and never that `cwd`'s `--show-toplevel`. So a
+session launched in a subdirectory, or inside a linked tree such as an epic assembly
+tree or another agent's tree, still gets its child under the primary checkout, where
+removing the linked tree cannot delete it. A `cwd` in no repository, or in a clone
+whose primary tree is bare or unreadable, refuses the spawn rather than falling back
+to itself ([`worktree-create.ts`](../packages/fabrika-cli/src/hook/worktree-create.ts),
+`planAtPrimary`). A base with no `.claude/` substring would dodge the protected-path
 guard entirely. Making that move
 is NOT free: the biome config and [ADR 0060](../.decisions/0060-worktree-lint-changed-paths.md)
 key on the literal base segment `/.claude/worktrees/`, so both would have to track a new base in
@@ -122,7 +130,8 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   and scoping is a real remedy. For `stash` the damage is that the stack itself is shared:
   `git -C "$WT" stash push` is textbook worktree-scoped and still writes the shared stack, so the
   guard waved through the exact command that caused #6701. Do not read this paragraph as licensing a
-  scoped `stash`; that rule is *never*, in any form. The prose-only rule alone did not hold (the
+  scoped `stash`; that rule is *never*, in any form, and `fabrika hook stash-guard` now refuses the
+  scoped form too (the stash bullet below). The prose-only rule alone did not hold (the
   detach recurred after it shipped), which is why the mechanical guard route was taken (#1571).
 
   **Keeping the primary current, by hand.** `pipeline-cli main-sync` retired with that package and
@@ -162,6 +171,16 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   [#6629](https://github.com/kamp-us/phoenix/issues/6629); the incident is reported in full on
   [#6701](https://github.com/kamp-us/phoenix/issues/6701). Epic runs fan several lanes on purpose, so
   the collision window is routine, not rare.
+
+  **The rule is enforced mechanically, for every shell.** `fabrika hook stash-guard`, declared on
+  `PreToolUse`/`Bash` in the plugin's [`hooks.json`](../claude-plugins/fabrika/hooks.json), denies
+  any `git stash` whose `cwd` reports a `--git-dir` different from its `--git-common-dir` — a linked
+  worktree — whichever skill the shell runs and however the command is addressed. It lets the
+  command through in a checkout where the two agree, and fails open, saying so on stderr, when it
+  cannot read them. What it reads and what it knowingly misses (an alias, a variable holding `git`,
+  `xargs`) is in [`hook-surface.md`](../claude-plugins/fabrika/docs/hook-surface.md#hook-stash-guard);
+  the decision is ADR [0439](../.decisions/0439-git-stash-in-a-linked-worktree-is-refused-by-fabrikas-own-hook.md).
+  A machine where `fabrika` does not resolve runs without it, so the rule above still binds.
 
   **What to do instead.** To get a clean tree for a baseline run, commit to your lane branch and
   `git -C "$WT" reset` back to it afterwards, or read the baseline from a second checkout. Both keep
@@ -244,10 +263,12 @@ turn and a lane that dies on its first verb.
 The provider is `fabrika hook worktree-create`, declared on `WorktreeCreate` in this repo's own
 [`.claude/settings.json`](../.claude/settings.json) with a 600s timeout (ADR
 [0337](../.decisions/0337-worktree-provisioning-rehomed-onto-repo-settings.md), restoring ADR
-[0178](../.decisions/0178-worktreecreate-hook-provisioning.md)'s mechanism). It runs `git worktree
-add` itself under a `PATH` that resolves the toolchain, which is what lets lefthook's
-`post-checkout` `bootstrap-deps` run the real, version-pinned install (ADR
-[0109](../.decisions/0109-worktree-deps-provision-not-share.md)) instead of clean-SKIPping. It
+[0178](../.decisions/0178-worktreecreate-hook-provisioning.md)'s mechanism). It takes a repo-level
+lock around its base fetch and a hookless `git worktree add`, releases it, then fires lefthook's
+`post-checkout` `bootstrap-deps` itself under a `PATH` that resolves the toolchain. So the real,
+version-pinned install (ADR [0109](../.decisions/0109-worktree-deps-provision-not-share.md)) runs
+instead of clean-SKIPping, and parallel spawns install at the same time (ADR
+[0420](../.decisions/0420-worktree-creation-locks-installs-outside.md)). It
 refuses unless `node_modules/.pnpm` actually landed, so a dep-less tree is never handed to an agent
 — and because a refusal blocks creation, you either get a usable tree or no tree at all. That work
 happens **out-of-band, before your first turn**, so it costs your metered run nothing
@@ -315,8 +336,12 @@ exists at every instant the entry does, and prune only drops an entry whose dire
 Neither the harness's internal path nor a hand-run `git worktree add` recovers from this — only
 `fabrika hook worktree-create` does it for you, by pruning and re-attempting, bounded.
 
-Do **not** reach for a lock. Serialising `git worktree add` serialises every parallel spawn behind
-one ~10s `bootstrap-deps` install, which is the whole reason the hook owns creation.
+The hook's own spawns no longer race each other here: its creation lock serializes their fetch and
+add. The lock holds nothing else, because a lock around the ~10s `bootstrap-deps` install would
+queue every parallel spawn behind it, so the hook adds with hooks off and installs after releasing
+the lock (ADR [0420](../.decisions/0420-worktree-creation-locks-installs-outside.md)). The
+prune-and-retry recovery stays for the adds the lock does not reach: a dead add's leftover, or a
+`git worktree add` run outside the hook.
 
 ## Sanctioned bulk-cleanup of accumulated worktrees
 

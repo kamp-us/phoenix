@@ -11,8 +11,8 @@ describe("sozlukLetterHref", () => {
 	});
 
 	it("percent-encodes Turkish letters in the path segment", () => {
-		expect(sozlukLetterHref("ç", false)).toBe(`/sozluk/harf/${encodeURIComponent("ç")}`);
-		expect(sozlukLetterHref("ş", false)).toBe(`/sozluk/harf/${encodeURIComponent("ş")}`);
-		expect(sozlukLetterHref("ı", false)).toBe(`/sozluk/harf/${encodeURIComponent("ı")}`);
+		expect(sozlukLetterHref("ç", false)).toBe("/sozluk/harf/%C3%A7");
+		expect(sozlukLetterHref("ş", false)).toBe("/sozluk/harf/%C5%9F");
+		expect(sozlukLetterHref("ı", false)).toBe("/sozluk/harf/%C4%B1");
 	});
 });

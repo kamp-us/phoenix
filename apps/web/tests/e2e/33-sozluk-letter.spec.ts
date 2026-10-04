@@ -79,8 +79,16 @@ test.describe("Sözlük letter page (/sozluk/harf/:letter)", () => {
 	});
 
 	test("a route value that names no letter goes back to the sözlük home", async ({page}) => {
-		await page.goto("/sozluk/harf/q");
+		// A digit names no letter. `q` used to sit here and no longer does: it is an indexed
+		// letter as of #9425, with a page of its own.
+		await page.goto("/sozluk/harf/3");
 		await expect(page).toHaveURL(/\/sozluk$/);
 		await expect(page.locator(".kp-sozluk-home__title")).toBeVisible({timeout: 10_000});
+	});
+
+	test("a foreign letter has its own page rather than a redirect (#9425)", async ({page}) => {
+		await page.goto("/sozluk/harf/q");
+		await expect(page).toHaveURL(/\/sozluk\/harf\/q$/);
+		await expect(page.locator(".kp-sozluk-letter__title")).toHaveText("Q harfi");
 	});
 });

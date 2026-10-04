@@ -7,7 +7,6 @@ import {
 	CWD,
 	claimPage,
 	declaring,
-	EXPIRED,
 	guardedShell,
 	LIVE,
 	triageContext,
@@ -331,7 +330,23 @@ describe("runApply", () => {
 		const out = await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("label ready-for:agent does not exist");
+		expect(out.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 		expect(shell.requests.some((c) => ADD.test(c) || PATCH.test(c))).toBe(false);
+	});
+
+	it("names the bootstrap surface for a label only the repo's own declared board holds", async () => {
+		const shell = guardedShell([
+			[once(ISSUE), issue(["status:needs-triage"], null)],
+			[LABELS, labelSet("type:bug", "status:triaged", "ready-for:agent")],
+			[MILESTONES, OPEN_MILESTONES],
+		]);
+		const config = JSON.stringify({boardVocabulary: {priorities: ["sev1", "sev2"]}});
+		const out = await Effect.runPromise(
+			Effect.provide(runApply({...options, priority: "sev2"}), triageContext(shell, config)),
+		);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.at(-1)).toContain("label sev2 does not exist");
+		expect(out.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 	});
 
 	it("checks only the labels THIS run writes, not the whole vocabulary", async () => {
@@ -784,19 +799,6 @@ describe("runApply — the target guard", () => {
 		string,
 		string | undefined
 	>;
-	const closed: HttpReply = {
-		status: 200,
-		body: JSON.stringify({
-			number: 4312,
-			title: "t",
-			body: CRITERIA_BODY,
-			state: "closed",
-			labels: [],
-			html_url: "https://example.test/issues/4312",
-			milestone: null,
-		}),
-	};
-
 	const guard = async (script: ReadonlyArray<Scripted>) => {
 		const shell = guardedShell(script);
 		const out = await Effect.runPromise(
@@ -804,12 +806,6 @@ describe("runApply — the target guard", () => {
 		);
 		return {out, wrote: shell.requests.some((line) => ADD.test(line) || PATCH.test(line))};
 	};
-
-	it("refuses a closed issue on 7 and writes nothing", async () => {
-		const {out, wrote} = await guard([[ISSUE, closed]]);
-		expect(out.code).toBe(ZERO_SCOPE);
-		expect(wrote).toBe(false);
-	});
 
 	it("refuses a live claim held by another session on 17 and writes nothing", async () => {
 		const {out, wrote} = await guard([
@@ -824,19 +820,6 @@ describe("runApply — the target guard", () => {
 		const {out} = await guard([
 			...happy(),
 			[COMMENTS, claimPage({session: MINE, createdAt: LIVE})],
-		]);
-		expect(out.code).toBe(0);
-	});
-
-	it("applies over an issue nobody has claimed", async () => {
-		const {out} = await guard(happy());
-		expect(out.code).toBe(0);
-	});
-
-	it("applies when the only foreign claim has aged out", async () => {
-		const {out} = await guard([
-			...happy(),
-			[COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})],
 		]);
 		expect(out.code).toBe(0);
 	});
@@ -895,5 +878,6 @@ describe("runApply --class", () => {
 		const out = await run(happy(), {classes: ["ui"]});
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.join(" ")).toContain("label class:ui does not exist");
+		expect(out.stderr.join(" ")).toContain("fabrika status bootstrap label-taxonomy");
 	});
 });

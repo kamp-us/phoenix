@@ -40,7 +40,7 @@ const options = {
 	base: null,
 	declareUnreachable: false,
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: REPO},
+	env: {CLAUDE_PIPELINE_REPO: REPO, GITHUB_TOKEN: "ghp_scripted"},
 	stdin: text(ASSERTED),
 	now: () => new Date("2026-08-09T18:36:48.000Z"),
 };
@@ -70,6 +70,7 @@ describe("runTake", () => {
 		const out = await run([], {stdin: text("")});
 		expect(out.code).toBe(EMPTY_STDIN);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("handoff take: stdin was read and held nothing");
 	});
 
 	it("exits 1, never 3, when the stdin read itself failed", async () => {

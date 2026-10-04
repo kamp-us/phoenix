@@ -41,10 +41,6 @@ export function noteSnapshotHydrated(): void {
 	snapshotHydrated = true;
 }
 
-export function wasSnapshotHydrated(): boolean {
-	return snapshotHydrated;
-}
-
 export const FEED_PAINT_MARK = "pano:feed-paint";
 
 export function feedPaintMeasureName(path: FeedPaintPath): string {

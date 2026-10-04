@@ -96,7 +96,7 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   `new` and `register` write the **working tree**. A doc created by `new` is therefore invisible to
   `corpus` until it is committed; that is correct and is why `register` never consults `corpus`.
 - **Common inputs.** `--dir <path>` (default `.patterns`) is the doc directory. `--base <ref>`
-  (default `origin/main`) is the base ref, **fetched before it is read**. `--json` swaps the line
+  (default: the trunk, `origin/<the repo's GitHub default branch>`) is the base ref, **fetched before it is read**. `--json` swaps the line
   grammar for one JSON object with the named keys given per verb, on **stdout**.
 - **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero exit.
   This is not merely a convention here: the shipped `refuse()` helper hardcodes an empty stdout and
@@ -189,7 +189,7 @@ fabrika pattern corpus [--dir <path>] [--base <ref>] [--json]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--dir` | string | no | `.patterns` | the directory of flat `<slug>.md` pattern docs to read |
-| `--base` | string | no | `origin/main` | the base ref to fetch and read the corpus from |
+| `--base` | string | no | the trunk | the base ref to fetch and read the corpus from; with none named, an unresolvable trunk is `11` |
 | `--json` | boolean | no | `false` | emit the corpus as one JSON object instead of the line grammar |
 
 **Output** — machine channel. The first line is the header; `doc` and `dangling` lines follow.
@@ -328,7 +328,7 @@ fabrika pattern drift worker-queue-retry [--dir <path>] [--base <ref>] [--json]
 |---|---|---|---|---|
 | `<slug>` | positional string | yes | — | the doc's basename without `.md` |
 | `--dir` | string | no | `.patterns` | the directory the doc lives in |
-| `--base` | string | no | `origin/main` | the base ref to fetch, resolve the anchor commit against, and diff to |
+| `--base` | string | no | the trunk | the base ref to fetch, resolve the anchor commit against, and diff to; with none named, an unresolvable trunk is `11` |
 | `--json` | boolean | no | `false` | emit the result as one JSON object instead of the line grammar |
 
 **Derivation** — the computation, in full. Two implementers who read this section follow the same
@@ -479,7 +479,7 @@ fabrika pattern anchor worker-queue-retry [--dir <path>] [--manifest <path>] [--
 | `<slug>` | positional string | yes | — | the doc's basename without `.md` |
 | `--dir` | string | no | `.patterns` | the directory the doc lives in |
 | `--manifest` | string | no | `pnpm-workspace.yaml` | the workspace manifest whose default and named catalog maps hold the live pins |
-| `--base` | string | no | `origin/main` | the base ref to fetch and read both the doc and the manifest from |
+| `--base` | string | no | the trunk | the base ref to fetch and read both the doc and the manifest from; with none named, an unresolvable trunk is `11` |
 | `--json` | boolean | no | `false` | emit the result as one JSON object instead of the line grammar |
 
 **Derivation** — in full.

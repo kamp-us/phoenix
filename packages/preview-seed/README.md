@@ -35,9 +35,12 @@ A pure, unit-tested core + a thin Effect bin (the repo tooling idiom):
   of the canonical `apps/web/worker/db/drizzle/migrations` columns).
 - `src/seed.ts` — idempotent upserts; runs against any `D1Database` (in-memory
   test fake or REST adapter) and also emits `{sql, params}` for the REST batch.
-- `src/test-account.ts` — the review-ui test accounts, one per tier, + their session
+- `src/test-account.ts` — the review-ui test accounts, one per audience, + their session
   and profile rows and the çaylak's optional standing (karma + kefil).
-- `src/bin.ts` — the `preview-seed run` and `preview-seed test-account` CLI.
+- `src/logins.ts` — the test logins as one JSON value: reading it, resolving the tokens a
+  run provisions, minting a fresh set, and scrubbing tokens out of a failure.
+- `src/bin.ts` — the `preview-seed run`, `preview-seed test-account` and
+  `preview-seed rotate-logins` CLI.
 
 ## Running it
 
@@ -72,13 +75,14 @@ render authenticates as.
 ```bash
 PREVIEW_TEST_SESSION_TOKEN=<32+ char secret> \
 PREVIEW_TEST_CAYLAK_SESSION_TOKEN=<a different 32+ char secret> \
+PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN=<a third 32+ char secret> \
   node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1-uuid>
 ```
 
 The target must be a per-PR preview: the verb resolves the id's name through the
 Cloudflare API first and refuses anything that is not `…-db-pr-<n>-…` (the guard
 boundary below). Every write lands in one atomic D1 `batch`: a `user` row and a
-`session` row per tier, plus the `(id, "moderates", "platform:platform")` tuple that is the real
+`session` row per identity, plus the `(id, "moderates", "platform:platform")` tuple that is the real
 moderation authority (ADR 0107 §4; `user.role` is vestigial and written only so a
 coarse read agrees). Re-running it upserts the same rows, so a token is rotated by
 re-running with a new one.
@@ -87,9 +91,58 @@ re-running with a new one.
 preview worker's `$BETTER_AUTH_SECRET` and seeds it as the better-auth session
 cookie. Before it records the shot it asks the preview's own
 `/api/auth/get-session` from that same browser context and requires a user back at
-the tier the surface named, so a token that is wrong, expired or missing from this
-D1 — or a shot that came back as another tier — refuses the render as UNKNOWN
-instead of filing somebody else's pixels under that surface id.
+the tier and email verification the surface named, so a token that is wrong, expired
+or missing from this D1 — or a shot that came back as another audience — refuses the
+render as UNKNOWN instead of filing somebody else's pixels under that surface id.
+
+### Where the logins live — every preview is seeded on deploy
+
+Nobody runs the command above by hand in the ordinary case. The deploy workflow
+(`.github/workflows/deploy.yml`, step "Seed preview test users") runs `test-account`
+against every pull request's preview right after it resolves the preview's D1 id, so
+a preview can sign in as soon as it is deployed (issue #9281, rulings in #10330).
+
+The three tokens are one JSON object, keyed by the three variable names above, and
+GitHub holds it twice under the name `PREVIEW_TEST_LOGINS`:
+
+| Copy | Who reads it | How |
+| --- | --- | --- |
+| Actions secret | the deploy workflow, to seed each preview | `$PREVIEW_TEST_LOGINS` in the seed step's environment |
+| Repository variable | an agent that needs to sign in, never a workflow | `review-ui render` fetches it when its environment holds no token |
+
+Access to the logins is access to the repository, and nothing is committed.
+`test-account` reads `$PREVIEW_TEST_LOGINS` and an identity's own variable; the
+identity's own variable wins, so a hand run can still seed one identity with a token
+of its choosing.
+
+One command sets both copies, and it is also the rotation:
+
+```bash
+node packages/preview-seed/src/bin.ts rotate-logins
+```
+
+It generates a fresh random token per identity and hands the object to
+`gh secret set` and `gh variable set` on stdin, so the value is in no argument list
+and is never printed. It needs a `gh` login that may write the repository's secrets
+and variables, so a person holding the repo's keys runs it. Until it has been run
+once the seed step skips with a notice and the deploy stays green. After a rotation
+a preview already deployed keeps its old logins until its next deploy re-seeds it;
+`review-ui render` reports that state as `missing session row`. If the secret is set
+and the variable write fails, the command says the two disagree; re-running it
+replaces both.
+
+Every token is held in Effect's `Redacted` from the read to the one row that stores
+it. GitHub masks a secret's whole value in a log and not the tokens inside the
+object: its
+[secure use reference](https://docs.github.com/en/actions/reference/security/secure-use#use-secrets-for-sensitive-information)
+says redaction "largely relies on finding an exact match for the specific secret
+value" and that a JSON blob "significantly reduces the probability the secrets will
+be properly redacted". So `test-account` never prints one, words every refusal
+without quoting what it read, and reports a failed write with the tokens scrubbed
+out, because the database driver reports a failed statement together with its bound
+parameters: `drizzle-orm` at this repo's pin (`1.0.0-rc.5-ab785fc`) builds
+`DrizzleQueryError`'s message in `errors.js` as `Failed query: <query>` followed by
+`params: <params>`.
 
 ### The tier axis — one identity per audience
 
@@ -100,22 +153,30 @@ yazar's capture of it comes back `captured`, valid and decodable, showing the
 state the PR did not add. That is the dangerous shape: a clean-looking capture of
 the wrong audience.
 
-| Tier | Account id | Username | `moderates` tuple | Token variable | Surface state |
-| --- | --- | --- | --- | --- | --- |
-| `yazar` | `preview-test-moderator` | `onizleme-mod` | yes | `$PREVIEW_TEST_SESSION_TOKEN` | `:auth` |
-| `çaylak` | `preview-test-caylak` | `onizleme-caylak` | no | `$PREVIEW_TEST_CAYLAK_SESSION_TOKEN` | `:auth-caylak` |
+| Identity | Tier | Email verified | Account id | Username | `moderates` tuple | Token variable | Surface state |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `yazar` | `yazar` | yes | `preview-test-moderator` | `onizleme-mod` | yes | `$PREVIEW_TEST_SESSION_TOKEN` | `:auth` |
+| `çaylak` | `çaylak` | yes | `preview-test-caylak` | `onizleme-caylak` | no | `$PREVIEW_TEST_CAYLAK_SESSION_TOKEN` | `:auth-caylak` |
+| `çaylak-unverified` | `çaylak` | no | `preview-test-caylak-unverified` | `onizleme-caylak-dogrulanmamis` | no | `$PREVIEW_TEST_CAYLAK_UNVERIFIED_SESSION_TOKEN` | `:auth-caylak-unverified` |
 
 The çaylak gets no moderation tuple, and that is the point of the tier: an identity
 holding moderation authority renders a moderator's affordances whatever its `tier`
 column says.
 
-Each provisioned tier gets three base rows, not two: `user`, `session` and
+A verified email is a second axis of the audience (issue #10264). With
+`phoenix-email-verified-writes` on, a çaylak whose `user.email_verified` is false is
+refused the write a verified çaylak is granted, so the composer denial line renders
+for that identity alone. It is a separate identity, not a flag that flips the
+çaylak: a flag would make `:auth-caylak` silently render the unverified state on a
+preview seeded that way.
+
+Each provisioned identity gets three base rows, not two: `user`, `session` and
 `user_profile`. The profile row is what every profile surface reads —
 `Pasaport.lookupProfile` and `Pasaport.lookupProfileById` in
 `apps/web/worker/features/pasaport/Pasaport.ts` both answer `null` without one, so
 `/u/onizleme-mod` renders the not-found composition and the yazar's own `/profile`
 has nothing to hydrate. That happens on a preview the verb reported as provisioned
-(issue #9286). The profile row carries the tier's `username` and `displayName` from
+(issue #9286). The profile row carries the identity's `username` and `displayName` from
 the table above; a re-run updates those two and leaves `total_karma` alone, so a
 standing already seeded on the preview survives a plain re-seed.
 
@@ -156,14 +217,15 @@ must not cascade-erase the historical act), so nothing in the database would cat
 `voucher_id` pointing at an identity this preview never seeded, and
 `features/kunye/VouchLedger.ts` reads back on the voucher. So the run is **refused**,
 not silently written, when `$PREVIEW_TEST_SESSION_TOKEN` is unset. A standing of any
-kind likewise needs the çaylak tier itself.
+kind likewise needs the verified çaylak itself; the unverified çaylak never stands in
+for it.
 
 **Re-seeding is the capture route, so a standing is set and not accumulated.** Karma
 is written, never incremented, and a run that drops the kefil deletes the vouch row
 the previous run wrote. A reviewer seeds one fork, captures, re-seeds the other, and
 captures again — which is why `review-ui`'s `:state` vocabulary
 (`packages/fabrika-cli/src/capture/states.ts`) is untouched by this: a state token
-names a *tier*, and a standing is not one.
+names an *identity*, and a standing is not one.
 
 The standing rows ride the same atomic `db.batch` as the account and session rows, so
 a half-written standing never reaches a capture. They change nothing about the fence
@@ -254,8 +316,8 @@ answers a question about text; where the text has to have come from Cloudflare i
 fence's own signature.
 
 **Each token is a live credential on a running preview.** Every one is read only
-from its own environment variable (never a flag, so it stays out of process
-listings), must be at least 32 characters, and is refused if it carries whitespace,
-`;` or `,`. Give each tier a different one — sharing a value across two identities
-makes a leak of either a leak of both. Treat them like any other CI secret: scope
-them to preview, rotate one by re-running the verb.
+from the environment — its own variable or `$PREVIEW_TEST_LOGINS` — and never from
+a flag, so it stays out of process listings. It must be at least 32 characters and
+is refused if it carries whitespace, `;` or `,`. Give each tier a different one —
+sharing a value across two identities makes a leak of either a leak of both.
+`rotate-logins` does all of that and replaces the whole set.

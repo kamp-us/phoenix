@@ -1,6 +1,24 @@
 /**
- * `decision rule` — record a control-plane human's ruling on one `type:decision` issue and hand the
- * issue back to the agent lane.
+ * `decision rule` — record a control-plane human's ruling on one issue, and hand a parked issue
+ * back to the agent lane.
+ *
+ * **The subject is any issue, and that is the newer half.** A founder ruling lands wherever the work
+ * is, and recorded as prose it changed nothing about what any gate graded — the defect
+ * `../review/graded-set.ts` tells. Recorded through this verb it is a marker `review criteria` folds
+ * into the graded set and `lane prove` dates a verdict against.
+ * `--supersedes <k>` is how the ruling says which body criterion it replaces — the only mechanical
+ * statement of contradiction there is, because no verb can read the prose and judge that itself.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9517#issuecomment-5752597880
+ *
+ * **The audience flip follows the subject to every type but `type:epic`.** Triage parks a bug or a
+ * feature on `ready-for:human` for a founder call as readily as a decision, and this verb is the one
+ * sanctioned flip back: the marker it proves first is the citation the flip carries, so a ruled
+ * issue reaches `ready-for:agent` with a ruling anyone can point at. An epic's agent audience is
+ * `check-epic-plan`'s flip alone, written when its plan floor comes back clean, so on an epic this
+ * verb writes the marker and leaves both audience labels exactly as it found them.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/7753#issuecomment-5554842306
  *
  * The gap this closes: triage routes a decision to `ready-for:human` because its deliverable is a
  * judgement, and once the founder has made that judgement in a comment there is no path back. The
@@ -52,6 +70,7 @@ import {
 } from "../authorization.ts";
 import {parseCitation} from "../build/scope-admission.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {
 	addLabels,
 	createComment,
@@ -64,15 +83,19 @@ import {
 import {viewerLogin} from "../io/pulls.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {controlPlaneRoster} from "../ship/roster.ts";
+import {missingLabelRemedy} from "../status/label-remedy.ts";
 import {
 	audienceSettled,
 	audienceWrites,
 	READY_FOR_AGENT,
 	READY_FOR_HUMAN,
 } from "../triage/audience.ts";
+import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {type AcceptanceCriteriaRead, read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {
+	type CriterionIndex,
+	criterionIndex,
 	emit,
 	markedIssue,
 	RULING_GRAMMAR,
@@ -93,7 +116,7 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {bodyDigest} from "./digest.ts";
-import {requireDecision} from "./ruling.ts";
+import {requireRulable} from "./ruling.ts";
 
 const VERB = "decision rule";
 
@@ -138,16 +161,25 @@ const citedRuling = (cites: string, repo: string, issue: number): CitedRuling =>
 	return {_tag: "Cited", url, commentId: read.citation.commentId};
 };
 
+/** Whether this verb may move the ruled issue's audience: any type but an epic, whose flip is the plan gate's. */
+export const flipsAudience = (labels: ReadonlyArray<string>): boolean =>
+	!labels.includes(EPIC_TYPE_LABEL);
+
 /**
- * The label writes this run owes. The audience's answer holds only over a body a builder could grade
- * cold: a body whose acceptance-criteria block does not read writes neither label, whatever the
- * issue carries today.
+ * The label writes this run owes.
+ *
+ * Two conditions, and neither is redundant. The epic read keeps `check-epic-plan` the sole writer of
+ * an epic's agent audience, so there the answer is both-false however the issue is labelled. The
+ * criteria read then holds the flip to a body a builder could grade cold — `ready-for:agent` over a
+ * body with no block parks the lane at `build claim` exit 32 instead.
  */
 const flipWrites = (
 	labels: ReadonlyArray<string>,
 	criteria: AcceptanceCriteriaRead,
 ): {readonly add: boolean; readonly remove: boolean} =>
-	criteria._tag === "Found" ? audienceWrites(labels) : {add: false, remove: false};
+	flipsAudience(labels) && criteria._tag === "Found"
+		? audienceWrites(labels)
+		: {add: false, remove: false};
 
 /** Why the flip was skipped, in the reader's own words plus the route that repairs the body. */
 const skippedFlip = (
@@ -178,8 +210,18 @@ export type RulingSource<R = never> =
 export interface RuleOptions<R = never> {
 	readonly number: number;
 	readonly ruling: RulingSource<R>;
+	/**
+	 * The 1-based body criterion this ruling replaces, or `null` where it replaces none.
+	 *
+	 * The position is the human's statement and the verb's only check is that the block has such a
+	 * row: no verb can read a founder's prose and judge which criterion it overturns, and one that
+	 * guessed would silently retire a row a reviewer still owes.
+	 */
+	readonly supersedes: number | null;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The board a missing-label refusal reads its `status bootstrap` remedy against. */
+	readonly board: BoardRead;
 	readonly now: () => Date;
 }
 
@@ -209,7 +251,7 @@ export const runRule = <R = never>(
 				: null;
 		if (quote?._tag === "Refused") return quote.outcome;
 
-		const target = yield* requireDecision(VERB, repo, options.number);
+		const target = yield* requireRulable(VERB, repo, options.number);
 		if (target._tag === "Refused") return target.outcome;
 
 		// Only the cited shape has a comment to locate: the quoted one posts its own, below.
@@ -280,6 +322,24 @@ export const runRule = <R = never>(
 		}
 
 		const criteria = readCriteria(target.issue.body);
+		let supersedes: CriterionIndex | null = null;
+		if (options.supersedes !== null) {
+			if (criteria._tag !== "Found") {
+				return refuse(
+					FAILED,
+					`${VERB}: --supersedes ${options.supersedes} names a row of #${options.number}'s acceptance-criteria block and that block does not read — a ruling cannot replace a criterion nobody can point at. Nothing was written.`,
+					notes,
+				);
+			}
+			supersedes = criterionIndex(options.supersedes);
+			if (supersedes === null || supersedes > criteria.value.length) {
+				return refuse(
+					FAILED,
+					`${VERB}: --supersedes ${options.supersedes} is not a row of #${options.number}'s block, which has ${criteria.value.length} — the position is 1-based. Nothing was written.`,
+					notes,
+				);
+			}
+		}
 		const audience = flipWrites(target.issue.labels, criteria);
 		if (audience.add) {
 			// Only the label this run would POST is guarded: it is the POST that mints an unknown
@@ -295,7 +355,7 @@ export const runRule = <R = never>(
 			if (!labels.value.includes(READY_FOR_AGENT)) {
 				return refuse(
 					NO_TARGET,
-					`${VERB}: label "${READY_FOR_AGENT}" is absent from ${repo}'s taxonomy — refusing to create it.`,
+					`${VERB}: label "${READY_FOR_AGENT}" is absent from ${repo}'s taxonomy — refusing to create it. ${missingLabelRemedy(READY_FOR_AGENT, options.board)}`,
 					notes,
 				);
 			}
@@ -328,7 +388,7 @@ export const runRule = <R = never>(
 			);
 		}
 
-		const body = emit({issue, digest, ruling: url, at});
+		const body = emit({issue, digest, ruling: url, supersedes, at});
 		const posted = yield* createComment(repo, options.number, body);
 		if (posted._tag === "Failure") {
 			return refuse(
@@ -349,6 +409,28 @@ export const runRule = <R = never>(
 			return refuse(
 				READBACK_MISMATCH,
 				`${VERB}: the marker posted but does not read back — the audience was not flipped, and the ruling needs a human eye.`,
+				notes,
+			);
+		}
+		// An epic is done at the marker: no flip to make, no criteria block to require, and both
+		// labels left as found.
+		if (!flipsAudience(target.issue.labels)) {
+			notes.push(
+				`${VERB}: marker ${posted.value.id} posted and read back; #${options.number} is ${EPIC_TYPE_LABEL}, whose agent audience is \`check-epic-plan\`'s flip alone, so the audience was left exactly as it was found.`,
+			);
+			return answer(
+				JSON.stringify({
+					answer: "ruled",
+					issue: options.number,
+					digest: derived,
+					ruling: url,
+					supersedes,
+					by: viewer.value,
+					at,
+					comment: posted.value.id,
+					audience: null,
+					observed: target.issue.labels,
+				}),
 				notes,
 			);
 		}
@@ -402,6 +484,7 @@ export const runRule = <R = never>(
 				issue: options.number,
 				digest: derived,
 				ruling: url,
+				supersedes,
 				by: viewer.value,
 				at,
 				comment: posted.value.id,

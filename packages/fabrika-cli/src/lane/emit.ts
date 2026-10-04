@@ -42,6 +42,7 @@
 import {findCycle, readDeclared} from "../ledger/topology-doc.ts";
 import type {SubIssueLink} from "../plan/github.ts";
 import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
+import {classStands, MIXED_CLASS} from "./routing-class.ts";
 
 export type EmitResult =
 	| {
@@ -97,6 +98,23 @@ const UI_CLASS = "ui";
 const UI_GUARD = `class:${UI_CLASS}`;
 
 /**
+ * The cells a classed child constructs in, in guard precedence — the same order the coder template
+ * declares them. A mixed child carries `build:mixed` above `build:ui`, because `ui` stands over it
+ * too and the first arm whose class stands wins; a rendered-only child carries `build:ui` alone,
+ * byte-for-byte what it was before the mixed cell existed.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/6900
+ */
+const classedBuilds = (
+	classes: ReadonlyArray<string>,
+): ReadonlyArray<{readonly target: string; readonly guard: string}> => [
+	...(classStands(classes, MIXED_CLASS)
+		? [{target: `build:${MIXED_CLASS}`, guard: `class:${MIXED_CLASS}`}]
+		: []),
+	...(classes.includes(UI_CLASS) ? [{target: "build:ui", guard: UI_GUARD}] : []),
+];
+
+/**
  * The machinery arm: go round again while laps remain, else park on `human:machinery-stall`, with
  * any `lap:<cause>` routes ahead of the pair for the causes that do not fold back where the rest do.
  *
@@ -144,8 +162,10 @@ const SHIP_LAP_ROUTES: Readonly<Record<string, string>> = {"base-conflicted": "b
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9147
  */
-const repairArm = (ui: boolean): ReadonlyArray<Record<string, unknown>> => [
-	...(ui ? [{target: "build:ui", guard: UI_GUARD}] : []),
+const repairArm = (
+	builds: ReadonlyArray<Record<string, unknown>>,
+): ReadonlyArray<Record<string, unknown>> => [
+	...builds,
 	{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 	{target: "human:budget-spent"},
 ];
@@ -195,7 +215,8 @@ const repairArm = (ui: boolean): ReadonlyArray<Record<string, unknown>> => [
  * reached an emitted child and turned nothing, the half of this axis a folded report named from the
  * other end. Its repair rounds run there too: both FAIL arms are {@link repairArm}, which leads the
  * retry pair with the class route, so a rendered child's every round is served by the rendered
- * shell and a spent one still parks at `human:budget-spent`. The template's `review:ui` cell has no
+ * shell and a spent one still parks at `human:budget-spent`. A mixed child — `ui` beside a text
+ * class — carries `build:mixed` above it on the same arms ({@link classedBuilds}). The template's `review:ui` cell has no
  * counterpart here, for the reason {@link UI_CLASS} carries — a child's rendered review is the
  * tail's, and the class on these arms picks the BUILDER, never a reviewer.
  */
@@ -205,13 +226,13 @@ const region = (
 	machinery: boolean,
 	classes: ReadonlyArray<string>,
 ): Record<string, unknown> => {
-	const ui = classes.includes(UI_CLASS);
+	const builds = classedBuilds(classes);
 	return {
 		initial,
 		states: {
 			queued: {
 				on: {
-					[`${ns}.WIP`]: ui ? [{target: "build:ui", guard: UI_GUARD}, {target: "build"}] : "build",
+					[`${ns}.WIP`]: builds.length > 0 ? [...builds, {target: "build"}] : "build",
 					[`${ns}.BLOCKED`]: "blocked",
 				},
 			},
@@ -222,22 +243,23 @@ const region = (
 					...(machinery ? {[`${ns}.LAP`]: lapArm("build")} : {}),
 				},
 			},
-			...(ui
-				? {
-						"build:ui": {
-							on: {
-								[`${ns}.DONE`]: "review",
-								[`${ns}.BLOCKED`]: "blocked",
-								...(machinery ? {[`${ns}.LAP`]: lapArm("build:ui")} : {}),
-							},
+			...Object.fromEntries(
+				builds.map(({target}) => [
+					target,
+					{
+						on: {
+							[`${ns}.DONE`]: "review",
+							[`${ns}.BLOCKED`]: "blocked",
+							...(machinery ? {[`${ns}.LAP`]: lapArm(target)} : {}),
 						},
-					}
-				: {}),
+					},
+				]),
+			),
 			review: {
 				on: {
 					[`${ns}.PASS`]: "integrate",
 					[`${ns}.BLOCKED`]: "blocked",
-					[`${ns}.FAIL`]: repairArm(ui),
+					[`${ns}.FAIL`]: repairArm(builds),
 					...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
 				},
 			},
@@ -249,7 +271,7 @@ const region = (
 						{target: "human:replay-stall"},
 					],
 					[`${ns}.BLOCKED`]: "blocked",
-					[`${ns}.FAIL`]: repairArm(ui),
+					[`${ns}.FAIL`]: repairArm(builds),
 					...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
 				},
 			},
@@ -277,9 +299,8 @@ const region = (
  * queue at all. The `WIP` out of it is a guarded array like the FAIL above, but it spends `waits`
  * rather than `retries`, so a queue dwell cannot eat the epic review's repair rounds. Its spent-
  * budget fallthrough is `human:queue-stall` and not `human:cp-approval` because a `WIP` carries no
- * park cause, and `recipe/parks.ts`'s §CP row keys on `cause: null` — a stall landing there would be
- * cleared by reading an approval nobody was waiting on. Its own leaf carries no row, so the table
- * reads it as novel and routes it to a human, which is what a spent wait actually needs.
+ * park cause, and `recipe/parks.ts`'s §CP row keys on the approval wait's cause — a stall landing
+ * there would seat on no row at all. Its own leaf is what seats it on the `queue-moved` recipe.
  *
  * `review` FAIL is a two-arm guarded array so the fallthrough final is an *error* final by the
  * compiler's own structural read; a plain target would leave a failed epic review folding to
@@ -290,6 +311,10 @@ const region = (
  * anyway (the 2026-08-20 amendment to the epic-machine decision record). The fallthrough is the same `human:budget-spent` a
  * child's is: an epic review that spent its budget is a park its driver resumes, not the end of the
  * run, and one leaf for one fact means one route to read it by.
+ *
+ * `human:cp-approval` carries the coder template's guarded `FAIL` pair, so `recipe unpark` can send a
+ * head `heal-ci` classes `logic` red out of the park into repair. It retries into `build`, not
+ * `review`, for the reason `review`'s does: a red head is a builder's to fix.
  *
  * `review:ui` is the tail's second review cell, and the tail is the ONE region of this machine that
  * carries it. Every child hands its rendered namespace on unconditionally, so the whole run's
@@ -368,7 +393,15 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 			},
 		},
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
-		"human:cp-approval": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		"human:cp-approval": {
+			on: {
+				[`${ns}.UNBLOCKED`]: "hist",
+				[`${ns}.FAIL`]: [
+					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+					{target: "human:budget-spent"},
+				],
+			},
+		},
 		"human:queue-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		...(machinery ? {"human:machinery-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}}} : {}),
 		hist: {type: "history"},

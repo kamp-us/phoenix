@@ -14,12 +14,13 @@
  */
 
 import {execFileSync} from "node:child_process";
-import {mkdtempSync, readFileSync, writeFileSync} from "node:fs";
+import {mkdirSync, mkdtempSync, readFileSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {NodeServices} from "@effect/platform-node";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import type {LockfileRegenerator} from "../config/keys/assembly-replay.ts";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {replayBranchName, replayChild} from "./replay.ts";
 
@@ -93,10 +94,10 @@ const collided = (theirs: string): Repo => {
 	return repo;
 };
 
-const replay = (repo: Repo, tip: string) =>
+const replay = (repo: Repo, tip: string, regenerator: LockfileRegenerator | null = null) =>
 	Effect.runPromise(
 		Effect.provide(
-			replayChild({path: repo.dir, branch: BRANCH, child: "child", tip}),
+			replayChild({path: repo.dir, branch: BRANCH, child: "child", tip, regenerator}),
 			NodeServices.layer,
 		),
 	);
@@ -226,6 +227,114 @@ describe("replayChild against real git", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, 
 		expect(repo.git("rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(BRANCH);
 		expect(repo.rev(BRANCH)).toBe(tip);
 		expect(repo.git("status", "--porcelain").trim()).toBe("");
+	});
+
+	describe("over a `merge=binary` lockfile", () => {
+		const LOCK = "deps.lock";
+		const NOTES = "NOTES.md";
+		// The lockfile is a pure function of the manifests, which is what makes it regenerable at all.
+		const REGENERATOR: LockfileRegenerator = {
+			argv: ["sh", "-c", `cat pkgs/*.txt > ${LOCK}`],
+			lockfiles: [LOCK],
+		};
+
+		/**
+		 * Two children each adding their own workspace manifest: the manifests merge clean, and the one
+		 * lockfile both rewrote cannot merge at all under `merge=binary`.
+		 */
+		const lockCollided = (childAlso?: (repo: Repo) => void): Repo => {
+			const repo = openRepo();
+			repo.write(".gitattributes", `${LOCK} merge=binary\n`);
+			mkdirSync(join(repo.dir, "pkgs"));
+			repo.write("pkgs/base.txt", "base\n");
+			repo.write(LOCK, "base\n");
+			repo.write(NOTES, "# notes\n");
+			repo.commit("base");
+			repo.git("branch", "child");
+
+			repo.write("pkgs/a.txt", "a\n");
+			repo.write(LOCK, "a\nbase\n");
+			repo.write(NOTES, "# notes\nthe first child\n");
+			repo.commit("the first child's package");
+
+			repo.git("checkout", "--quiet", "child");
+			repo.write("pkgs/b.txt", "b\n");
+			repo.write(LOCK, "b\nbase\n");
+			childAlso?.(repo);
+			repo.commit("the second child's package");
+			repo.git("checkout", "--quiet", BRANCH);
+			return repo;
+		};
+
+		it("regenerates the lockfile, commits it into the replayed range, and merges", async () => {
+			const repo = lockCollided();
+			const tip = repo.rev(BRANCH);
+			// The premise: git gives up on the lockfile and leaves no marker a keep-both could read.
+			expect(() => repo.git("merge", "--no-ff", "--no-edit", "child")).toThrow();
+			expect(repo.git("diff", "--name-only", "--diff-filter=U").trim()).toBe(LOCK);
+			expect(repo.read(LOCK)).not.toContain("<<<<<<<");
+			repo.git("merge", "--abort");
+
+			const outcome = await replay(repo, tip, REGENERATOR);
+
+			expect(outcome._tag).toBe("Replayed");
+			if (outcome._tag !== "Replayed") return;
+			expect(outcome.regenerated).toEqual([LOCK]);
+			expect(outcome.resolved).toEqual([]);
+			expect(repo.read(LOCK)).toBe("a\nb\nbase\n");
+			// The regenerated lockfile is in the child's replayed commit, not left beside it.
+			expect(repo.git("show", `${outcome.range.to}:${LOCK}`)).toBe("a\nb\nbase\n");
+			expect(repo.rev("child")).toBe(outcome.range.to);
+			expect(repo.git("rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(BRANCH);
+			expect(repo.git("status", "--porcelain").trim()).toBe("");
+		});
+
+		it("refuses as before when no regenerator is declared", async () => {
+			const repo = lockCollided();
+			const tip = repo.rev(BRANCH);
+
+			const outcome = await replay(repo, tip, null);
+
+			expect(outcome._tag).toBe("NotKeepBoth");
+			if (outcome._tag !== "NotKeepBoth") return;
+			expect(outcome.paths).toEqual([LOCK]);
+			expect(repo.rev(BRANCH)).toBe(tip);
+		});
+
+		it("refuses a collision on the lockfile and any other path, regenerator or not", async () => {
+			const repo = lockCollided((child) => child.write(NOTES, "# notes\nthe second child\n"));
+			const tip = repo.rev(BRANCH);
+
+			const outcome = await replay(repo, tip, REGENERATOR);
+
+			expect(outcome._tag).toBe("NotKeepBoth");
+			if (outcome._tag !== "NotKeepBoth") return;
+			expect([...outcome.paths].sort()).toEqual([LOCK, NOTES].sort());
+			expect(repo.read(LOCK)).toBe("a\nbase\n");
+			expect(repo.rev(BRANCH)).toBe(tip);
+			expect(repo.git("status", "--porcelain").trim()).toBe("");
+		});
+
+		it("abandons the replay and restores the seat when the regenerator fails", async () => {
+			const repo = lockCollided();
+			const tip = repo.rev(BRANCH);
+			const child = repo.rev("child");
+
+			const outcome = await replay(repo, tip, {
+				argv: ["sh", "-c", "echo registry unreachable >&2; exit 3"],
+				lockfiles: [LOCK],
+			});
+
+			expect(outcome._tag).toBe("NotRegenerated");
+			if (outcome._tag !== "NotRegenerated") return;
+			expect(outcome.reason).toContain(LOCK);
+			expect(outcome.reason).toContain("sh -c echo registry unreachable");
+			expect(outcome.reason).toContain("failed to regenerate them: registry unreachable");
+			expect(repo.git("rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(BRANCH);
+			expect(repo.rev(BRANCH)).toBe(tip);
+			expect(repo.rev("child")).toBe(child);
+			expect(repo.git("status", "--porcelain").trim()).toBe("");
+		});
 	});
 
 	it("is UNKNOWN when the child adds no commit the tip does not already carry", async () => {

@@ -115,9 +115,13 @@ export type ShipClassName = (typeof SHIP_CLASS_NAMES)[number];
  * source root was one consumer's layout standing in for every repo's — so a second
  * runnable app raised no `ui` class and its pixels passed every gate unrendered. An empty
  * list is a repo declaring no rendered surface, and its readers say so out loud.
+ *
+ * A root ending in `/` is a directory and matches by prefix; any other root names one file and
+ * matches only by equality, so `tailwind.config.ts` never covers `tailwind.config.ts.bak`.
  */
 export const isUiSurface = (path: string, prefixes: ReadonlyArray<string>): boolean =>
-	prefixes.some((prefix) => path.startsWith(prefix)) && !/\.(?:test|spec)\.tsx?$/.test(path);
+	prefixes.some((root) => (root.endsWith("/") ? path.startsWith(root) : path === root)) &&
+	!/\.(?:test|spec)\.tsx?$/.test(path);
 
 /**
  * The decision corpus's root as this package ships it, trailing slash included so it matches as a

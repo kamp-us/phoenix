@@ -6,12 +6,12 @@
  * each shortlisted issue is re-read singly for the parent link the list omits, and the ACL is
  * resolved per comment author, fail-closed.
  */
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
-import {runPitchGuard} from "./pitch-verb.ts";
+import {type BetRowsReader, runPitchGuard} from "./pitch-verb.ts";
 
 const SWEEP = /^GET .*\/repos\/o\/r\/issues\?state=open&labels=status%3Atriaged/;
 const ONE = (n: number) => new RegExp(`^GET .*/repos/o/r/issues/${n}$`);
@@ -94,19 +94,32 @@ const APPROVED = {
 	body: "pitch-approved: appetite 2 cycles · 2026-08-18T00:00:00Z",
 };
 
+const ROOT = "/repo";
+
 const run = (
 	script: ReadonlyArray<Scripted>,
-	options: {issue?: number; repo?: string | null; env?: Record<string, string | undefined>} = {},
+	options: {
+		issue?: number;
+		repo?: string | null;
+		env?: Record<string, string | undefined>;
+		config?: string;
+		betRows?: BetRowsReader;
+	} = {},
 ) => {
 	const seams = fakeSeams(script);
+	const fs = fakeFs(
+		options.config === undefined ? {} : {files: {[`${ROOT}/.fabrika.jsonc`]: options.config}},
+	);
 	return Effect.runPromise(
 		Effect.provide(
 			runPitchGuard({
 				issue: options.issue ?? null,
 				repo: options.repo ?? null,
+				cwd: ROOT,
 				env: options.env ?? ENV,
+				...(options.betRows === undefined ? {} : {betRows: options.betRows}),
 			}),
-			seams.layer,
+			Layer.merge(fs.layer, seams.layer),
 		),
 	).then((outcome) => ({outcome, requests: seams.requests}));
 };
@@ -157,6 +170,7 @@ describe("runPitchGuard — the backlog sweep", () => {
 		expect(report).toContain("#11 issue 11");
 		expect(report).toContain("has no `## Pitch` section");
 		expect(report).toContain("the FOUNDER approves it");
+		expect(report).toContain(".glossary/TERMS.md");
 	});
 
 	it("refuses an approval from below write+ — an unverifiable one never counts", async () => {
@@ -185,6 +199,7 @@ describe("runPitchGuard — the backlog sweep", () => {
 		const {outcome} = await run([[SWEEP, EMPTY]]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.join("\n")).toContain("ZERO lane-entering issues");
+		expect(outcome.stderr.join("\n")).toContain("fail-closed");
 	});
 
 	it("reds 11 when the board cannot be read — never clean, never a violation", async () => {
@@ -290,5 +305,210 @@ describe("runPitchGuard — repo resolution", () => {
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toContain("cannot resolve a target repo");
+	});
+});
+
+describe("runPitchGuard — pitch sizes and the config they are priced in", () => {
+	const SIZED = PITCH.replace("2 cycles", "M");
+
+	it("passes a size pitch approved as `appetite M`", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(9), one({number: 9, body: SIZED})],
+				[COMMENTS(9), comments({author: "founder", body: "pitch-approved: appetite M"})],
+				[PERM("founder"), permission("admin")],
+			],
+			{issue: 9},
+		);
+		expect(outcome.code).toBe(0);
+	});
+
+	it("prices the sizes in its remedy from the repo's declared appetiteSizes", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(9), one({number: 9, body: SIZED})],
+				[COMMENTS(9), EMPTY],
+			],
+			{issue: 9, config: JSON.stringify({appetiteSizes: {S: 5, M: 9, L: 12}})},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr.join("\n")).toContain("S = $5, M = $9, L = $12 per epic child");
+		expect(outcome.stderr.join("\n")).toContain("pitch-approved: appetite <S|M|L>");
+	});
+
+	it("prices them at the shipped 15 / 35 / 40 when the repo declares nothing", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(9), one({number: 9, body: SIZED})],
+				[COMMENTS(9), EMPTY],
+			],
+			{issue: 9},
+		);
+		expect(outcome.stderr.join("\n")).toContain("S = $15, M = $35, L = $40 per epic child");
+	});
+
+	it("reds 11 over a malformed appetiteSizes before it reads the board", async () => {
+		const {outcome, requests} = await run([], {
+			issue: 9,
+			config: JSON.stringify({appetiteSizes: {S: 40, M: 35, L: 15}}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("appetiteSizes");
+		expect(requests).toEqual([]);
+	});
+});
+
+describe("runPitchGuard — a `bet` on the table is the approval", () => {
+	const SIZED = PITCH.replace("2 cycles", "M");
+	/** A table whose only `bet` rows are these, each defaulting to Size M set by `founder`. */
+	const betsOn =
+		(
+			...rows: ReadonlyArray<{head: number; covers?: number[]; size?: string; setter?: string}>
+		): BetRowsReader =>
+		() =>
+			Effect.succeed({
+				_tag: "Read",
+				source: {owner: "o", number: 7},
+				value: rows.map((row) => ({
+					head: row.head,
+					covers: row.covers ?? [row.head],
+					kind: row.covers === undefined ? null : ("chain" as const),
+					size: row.size ?? "M",
+					setter: row.setter ?? "founder",
+				})),
+			});
+
+	it("passes a size pitch with no `pitch-approved:` comment once a write+ collaborator bet on it", async () => {
+		const {outcome, requests} = await run(
+			[
+				[ONE(9), one({number: 9, body: SIZED})],
+				[COMMENTS(9), EMPTY],
+				[PERM("founder"), permission("admin")],
+			],
+			{issue: 9, betRows: betsOn({head: 9})},
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stderr[0]).toContain("bet arm read the table o#7 — 1 `bet` row(s)");
+		expect(requests.some((request) => PERM("founder").test(request))).toBe(true);
+	});
+
+	it("refuses a `bet` whose Stage setter lacks write access, naming why", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(9), one({number: 9, body: SIZED})],
+				[COMMENTS(9), EMPTY],
+				[PERM("drive-by"), permission("triage")],
+			],
+			{issue: 9, betRows: betsOn({head: 9, setter: "drive-by"})},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr.join("\n")).toContain("set by drive-by, not a write+ collaborator");
+	});
+
+	it("approves the head and every member of a chain row with no comment on any of them", async () => {
+		const {outcome} = await run(
+			[
+				[SWEEP, sweep({number: 20}, {number: 21})],
+				[ONE(20), one({number: 20, body: SIZED})],
+				[ONE(21), one({number: 21, body: SIZED.replace("**Appetite:** M", "**Appetite:** S")})],
+				[COMMENTS(20), EMPTY],
+				[COMMENTS(21), EMPTY],
+				[PERM("founder"), permission("write")],
+			],
+			{betRows: betsOn({head: 20, covers: [20, 21]})},
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toContain("2 carrying a founder-approved pitch");
+	});
+
+	it("approves no chain member while the row's Size is not the size its head's pitch declares", async () => {
+		const {outcome, requests} = await run(
+			[
+				[ONE(21), one({number: 21, body: SIZED})],
+				[COMMENTS(21), EMPTY],
+				[PERM("founder"), permission("admin")],
+				[ONE(20), one({number: 20, body: SIZED.replace("**Appetite:** M", "**Appetite:** L")})],
+			],
+			{issue: 21, betRows: betsOn({head: 20, covers: [20, 21]})},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr.join("\n")).toContain(
+			"its group `bet` row #20 approves no member: it is sized M but its head #20 declares L",
+		);
+		expect(requests.some((request) => ONE(20).test(request))).toBe(true);
+	});
+
+	it("refuses a `bet` whose Size disagrees with the pitch's appetite, asking for re-approval", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(9), one({number: 9, body: SIZED})],
+				[COMMENTS(9), EMPTY],
+				[PERM("founder"), permission("admin")],
+			],
+			{issue: 9, betRows: betsOn({head: 9, size: "L"})},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr.join("\n")).toContain(
+			"sized L but the body declares M — re-approval needed",
+		);
+	});
+
+	it("decides from comments exactly as before when no table is configured, naming the unread arm", async () => {
+		const noTable: BetRowsReader = () =>
+			Effect.succeed({_tag: "NoTable", note: "no table project — none is configured"});
+		const approved = await run(
+			[
+				[ONE(9), one({number: 9, body: SIZED})],
+				[COMMENTS(9), comments({author: "founder", body: "pitch-approved: appetite M"})],
+				[PERM("founder"), permission("admin")],
+			],
+			{issue: 9, betRows: noTable},
+		);
+		expect(approved.outcome.code).toBe(0);
+		expect(approved.outcome.stderr[0]).toContain(
+			"bet arm unread — no table project — none is configured",
+		);
+		const bare = await run(
+			[
+				[ONE(9), one({number: 9, body: SIZED})],
+				[COMMENTS(9), EMPTY],
+			],
+			{issue: 9, betRows: noTable},
+		);
+		expect(bare.outcome.code).toBe(VIOLATION);
+		expect(bare.outcome.stderr.join("\n")).not.toContain("`bet` row");
+	});
+
+	it("reads a token without the `project` scope as an unread arm, never as approved", async () => {
+		const noScope: BetRowsReader = () =>
+			Effect.succeed({_tag: "Unknown", reason: "the GitHub token lacks the `project` scope"});
+		const {outcome} = await run(
+			[
+				[ONE(9), one({number: 9, body: SIZED})],
+				[COMMENTS(9), EMPTY],
+			],
+			{issue: 9, betRows: noScope},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr[0]).toContain(
+			"bet arm unread — the GitHub token lacks the `project` scope",
+		);
+	});
+
+	it("does not read the table for an issue that is not lane-entering work", async () => {
+		let read = false;
+		const watched: BetRowsReader = () =>
+			Effect.sync(() => {
+				read = true;
+				return {_tag: "NoTable", note: "unused"} as const;
+			});
+		await run(
+			[
+				[ONE(9), one({number: 9, labels: ["status:triaged", "type:chore"]})],
+				[LABELS, labelSet("status:triaged", "type:epic", "type:feature")],
+			],
+			{issue: 9, betRows: watched},
+		);
+		expect(read).toBe(false);
 	});
 });

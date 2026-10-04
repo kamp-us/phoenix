@@ -10,14 +10,10 @@ describe("audit context", () => {
 	it("round-trips every field of the complete research record", () => {
 		expect(read(emit(context))).toEqual({_tag: "Found", value: JSON.parse(AUDIT_FIELDS)});
 	});
-	it("recognizes ordinary sessions as absent", () => {
-		expect(read("A grilling session.\n")._tag).toBe("Absent");
-	});
 	it.each([
 		"## Audit Context\n{}",
 		"### Audit context\n{}",
 		"## Audit context\nno JSON",
-		"## Audit context\n\n```json\n{}\n```\n",
 		`${emit(context)}\n${emit(context)}`,
 	])("keeps drift distinct from absence", (input) => {
 		expect(read(input)._tag).toBe("Malformed");

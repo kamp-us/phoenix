@@ -1,5 +1,5 @@
 /**
- * The one exit table the ten `ledger` verbs allocate from.
+ * The one exit table the eleven `ledger` verbs allocate from.
  *
  * Three tiers, and the tier decides how a constant gets here rather than what it means:
  *
@@ -14,9 +14,9 @@
  *   `--require-clean` flag, holds no lane branch, pushes nothing, runs no validation and derives no
  *   readiness verdict — but carrying them keeps those seats occupied so a later verb here cannot
  *   re-seat one.
- * - `20`–`26` are this group's own. `build`'s `20`/`21` are deliberately **not** re-exported:
- *   re-exporting `OUT_OF_SCOPE`/`AUDIENCE_NOT_AGENT` alongside these would put two names on one code in
- *   one module, which `allocatedCodes` reports as drift. The rule this group follows, taken from
+ * - `20`–`26` are this group's own. `build`'s `21` is deliberately **not** re-exported (its `20` is
+ *   a retired seat): re-exporting `AUDIENCE_NOT_AGENT` alongside these would put two names on one
+ *   code in one module, which `allocatedCodes` reports as drift. The rule this group follows, taken from
  *   `plan/codes.ts` rather than re-derived: **import a code when two groups prove the same fact;
  *   allocate freely when they do not.** No `build`, `epic` or `plan` verb can prove a fact about a
  *   *plan being authored*, and an exit code is read off the command that produced it.
@@ -43,14 +43,14 @@ export {
 	ZERO_SCOPE,
 } from "../build/codes.ts";
 
-/** Proven: the tree's base is behind `origin/main` — a plan derived here is derived on stale ground. */
+/** Proven: the tree's base is behind the trunk — a plan derived here is derived on stale ground. */
 export const STALE_GROUND = 20;
 /** Proven: the epic body moved — the recomputed digest differs from `--body-digest`. */
 export const EPIC_MOVED = 21;
 /** Proven: the plan region is unresolvable — a duplicated anchor, or a mode the body contradicts. */
 export const REGION_UNRESOLVABLE = 22;
 /**
- * Proven: the child was created and its sub-issue link could not be proven.
+ * Proven: the child exists — created, or adopted — and its sub-issue link could not be proven.
  *
  * Narrower and more useful than {@link WRITE_UNKNOWN} or {@link READBACK_MISMATCH}: the create is
  * proven and the *link* is unknown, so a named child exists unlinked. Fusing it into `8` would leave a
@@ -61,5 +61,5 @@ export const LINK_UNPROVEN = 23;
 export const TOPOLOGY_INVALID = 24;
 /** Proven: a document this verb must splice was never staged in this run. */
 export const NOT_STAGED = 25;
-/** Proven: a child was created and the run manifest could not record it. */
+/** Proven: a child exists — created, or adopted — and the run manifest could not record it. */
 export const MANIFEST_UNWRITTEN = 26;

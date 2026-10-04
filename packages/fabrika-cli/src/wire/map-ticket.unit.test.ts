@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {emit, emitFromFields, parseFields, read, readToLines} from "./map-ticket.ts";
+import {emitFromFields, parseFields, read, readToLines} from "./map-ticket.ts";
 
 const marker = "map-ticket: #4 · research · 7f3a9c21";
 
@@ -11,18 +11,11 @@ describe("read", () => {
 		});
 	});
 
-	it("answers Absent for bytes that never reach for the format", () => {
-		expect(read("Picking this one up — will report back.\n")._tag).toBe("Absent");
-	});
-
 	it("answers Absent for an artifact with no non-blank line at all", () => {
 		expect(read("\n \n")._tag).toBe("Absent");
 	});
 
 	it.each([
-		["an off-vocabulary kind", "map-ticket: #4 · investigation · 7f3a9c21"],
-		["a lane key two runs would collide on", "map-ticket: #4 · research · run-1"],
-		["a missing map field", "map-ticket: research · 7f3a9c21"],
 		["a separator that drifted", "map-ticket: #4 - research - 7f3a9c21"],
 	])("answers Malformed, not Absent, on %s", (_drift, artifact) => {
 		const result = read(`${artifact}\n`);
@@ -33,13 +26,6 @@ describe("read", () => {
 
 	it("does not read a marker quoted further down the body", () => {
 		expect(read(`Someone wrote:\n\n${marker}\n`)._tag).toBe("Absent");
-	});
-});
-
-describe("emit", () => {
-	it("round-trips through read", () => {
-		const composed = emit({map: 4, kind: "decision", nonce: "0a1b2c3d" as never});
-		expect(read(composed)).toMatchObject({_tag: "Found"});
 	});
 });
 

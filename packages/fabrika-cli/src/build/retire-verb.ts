@@ -21,7 +21,10 @@
  *      still ask git nothing about the tree.
  *   5. Each released tree is **salvaged then removed**, in that order and never with `--force`:
  *      uncommitted work goes onto the tree's own branch first, so ignoring dirtiness
- *      costs nobody their only copy, and a removal that still refuses is reported for a human.
+ *      costs nobody their only copy. A tree the harness locked is unlocked just before its plain
+ *      remove, on the strength of that same `Release` verdict: the lock is a harness artifact, not
+ *      content, and a plain remove still refuses a tree holding anything unaccounted for. A removal
+ *      that still refuses is reported for a human.
  *   6. Every removal is read back off a second `worktree list` — a removal this verb reports is one
  *      it proved, never one `git` exited 0 on.
  *
@@ -51,6 +54,7 @@ import {
 	salvageWorktree,
 	worktreeCheckouts,
 	worktreeDirtyPaths,
+	worktreeRegistrations,
 } from "./git.ts";
 import {
 	type BoardState,
@@ -137,12 +141,13 @@ export const runRetire = (options: RetireOptions): Effect.Effect<VerbOutcome, ne
 			branch: string;
 			license: string;
 			salvaged: boolean;
+			unlocked: boolean;
 		}> = [];
 		for (const {subject, verdict} of verdicts) {
 			if (verdict._tag !== "Release") continue;
 			const salvaged = yield* salvage(subject);
 			if (salvaged._tag === "Refused") return salvaged.outcome;
-			const removed = yield* removeWorktree(subject.path);
+			const removed = yield* removeWorktree(subject.path, subject.locked ? verdict : undefined);
 			if (removed._tag === "Failure") {
 				return refuse(
 					WRITE_UNKNOWN,
@@ -155,6 +160,7 @@ export const runRetire = (options: RetireOptions): Effect.Effect<VerbOutcome, ne
 				branch: subject.branch,
 				license: verdict.license,
 				salvaged: salvaged.salvaged,
+				unlocked: subject.locked,
 			});
 		}
 
@@ -186,7 +192,7 @@ export const runRetire = (options: RetireOptions): Effect.Effect<VerbOutcome, ne
 			scope,
 			...retired.map(
 				(row) =>
-					`${VERB}: retired ${row.path} — it held ${row.branch} (${row.license})${row.salvaged ? `; its uncommitted work was salvaged onto ${row.branch} first` : ""}.`,
+					`${VERB}: retired ${row.path} — it held ${row.branch} (${row.license})${row.salvaged ? `; its uncommitted work was salvaged onto ${row.branch} first` : ""}${row.unlocked ? "; its lock was released under that license" : ""}.`,
 			),
 			...holding.map(
 				({subject, verdict}) =>
@@ -301,7 +307,7 @@ type Held =
 
 const subjects = (number: number): Effect.Effect<Held, never, Deps> =>
 	Effect.gen(function* () {
-		const checkouts = yield* worktreeCheckouts;
+		const checkouts = yield* worktreeRegistrations;
 		if (checkouts._tag === "Failure") {
 			return {
 				_tag: "Refused" as const,

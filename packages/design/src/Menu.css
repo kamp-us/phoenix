@@ -22,7 +22,7 @@
 }
 [data-scope="menu"][data-part="item"]:has(.kp-menu-danger)[data-highlighted] {
 	background: var(--danger);
-	color: var(--accent-fg);
+	color: var(--danger-fg);
 }
 
 [data-scope="menu"][data-part="separator"] {

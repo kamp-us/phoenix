@@ -148,7 +148,7 @@ describe("runOpen refuses before it writes anything", () => {
 			[LABELS, {status: 200, body: labelsPayload("type:bug")}],
 		]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
-		expect(outcome.stderr.join("\n")).toContain("front-door");
+		expect(outcome.stderr.join("\n")).toContain("fabrika status bootstrap issue-shape-markers");
 		expect(written.size).toBe(0);
 	});
 

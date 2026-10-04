@@ -1,70 +1,37 @@
 /**
- * `review-ui render` — capture named surfaces from the PR's preview deployment at the inspected
- * head, one validated PNG per surface, each surface's outcome proven.
+ * Captures named views at the inspected preview head. The injected RenderLeg keeps refusals
+ * testable without a browser. See ./command.ts help for inputs, results and refusal codes.
  *
- * The order is the contract's and every step gates the next: resolve the PR and its live head,
- * resolve the announced preview, **bind the preview to the head**, then render each surface and
- * classify what came back. Full success is the only `0` — v1's capture leg carried no status
- * assertion and no capture-count check, so a crashed helper meant zero surfaces judged, zero
- * violations, PASS.
- *
- * The renderer is an injected seam ({@link RenderLeg}) so every refusal below is testable without a
- * browser; `render-leg.ts` is the one that drives the capture machinery.
- *
- * A surface may name a state (`/pano:auth`), but only one this repo can actually put on screen —
- * the vocabulary and its mechanism live in `capture/states.ts`. Anything else is refused rather
- * than shot, because a state nothing renders captures the default pixels under a variant's name,
- * which is coverage claimed and not held. Every realized state names the **tier** it renders
- * at, and a tier-naming surface is refused three times over, all on `11`: before a browser launches
- * when that tier's credentials are incomplete — an unset tier token is a tier `preview-seed
- * test-account` did not seed, and falling back to the seeded one would shoot the wrong audience
- * clean; when the shot's own session proof does not come back signed in; and when that proof
- * comes back at a different tier than the surface named. Each produces a perfectly valid PNG of a
- * page nobody asked for, which no byte check can tell from the real thing.
- *
- * The **app** a surface belongs to is fenced on the same shape. One preview origin is resolved for
- * the run, so a surface whose `uiSurfaces` row belongs to another app is shot at that origin and
- * comes back as its not-found page: a clean PNG recorded as `captured`. Each surface resolves to its
- * owning row by longest claiming mount and that row to its app, and an app this preview did not
- * announce refuses on `11` before a browser launches, naming every such surface.
- *
+ * Valid PNG bytes alone cannot prove the requested page: a wrong account tier, ignored flag
+ * override or wrong viewport can all produce a valid image. Each needs its own proof.
+ * A foreign app can return a valid not-found PNG at this preview origin.
+ * A placeholder signing key can return visitor pixels despite a well-formed cookie.
  * @ruling https://github.com/kamp-us/phoenix/issues/8796
- *
- * `--auth-secret-from <file>` names where the tier cookie's signing key comes from: the
- * `BETTER_AUTH_SECRET` the preview worker deploys with, which is one repo-wide value rather than a
- * per-stage one — `infra/ci-credentials/github.ts` mints it into the ci-credentials stack's alchemy
- * state, its one readable copy, behind `$ALCHEMY_PASSWORD`. Omitted, the
- * ambient variable stands in — and is refused on `11` when it is empty or carries `.env.example`'s
- * `insecure_` placeholder, which is the fourth arm of the same class. A placeholder-signed cookie is
- * well-formed and the worker answers it as a visitor, so without this refusal the seat's own
- * environment reads at the shot exactly like a preview nobody seeded; two gate rounds were spent on
- * that, and neither could name which it was.
- *
  * @ruling https://github.com/kamp-us/phoenix/issues/9288#issuecomment-5703250637
- *
- * `--viewport <name>` picks the widths the surfaces are shot at, over `plan.ts`'s closed set, and
- * defaults to `desktop` alone so every caller written before it is unchanged. Viewports
- * cross the surfaces: two of each is four captures in one set, distinguished on disk and in the
- * manifest by the viewport label. Each shot then proves its own width off the PNG header — the
- * narrow half of the design law is only answerable from narrow pixels, and a desktop-width shot
- * filed under `mobile` would answer it from the wrong ones, on `19`.
- *
- * `--flag <key>=<on|off>` forces a dark-shipped flag for the run, and it is
- * refused twice over on the same shape: on `10` when an operand is unreadable or names an anonymous
- * surface — the preview honors the override cookie only for an authorized platform-admin actor — and
- * on `11` when the shot's own flag probe says the forced key evaluated at its default anyway.
+ * @ruling https://github.com/kamp-us/phoenix/issues/9533#issuecomment-5754589033
  */
-import {Effect, type FileSystem, type Path, Result} from "effect";
+import {Effect, type FileSystem, Path, type Redacted, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {type AccentDeclaration, type AccentRequest, parseAccentOperand} from "../capture/accent.ts";
 import {
 	AUTH_SECRET_ENV,
 	type AuthSecretRead,
 	classifyAuthSecret,
 	type IdentityRead,
+	LOGINS_VARIABLE,
+	PREVIEW_AUTH_KEY_PATH,
+	parseLogins,
 	readIdentity,
 	sessionCookies,
 } from "../capture/auth.ts";
 import type {CaptureCookie} from "../capture/capture.ts";
+import {
+	COLOR_SCHEMES,
+	type ColorScheme,
+	parseSchemeOperands,
+	type SchemeDeclaration,
+	type SchemeRequest,
+} from "../capture/color-scheme.ts";
 import {
 	FORCED_VALUES,
 	type ForcedFlags,
@@ -73,19 +40,39 @@ import {
 	overrideCookies,
 	parseFlagOperands,
 } from "../capture/flag-override.ts";
-import {DEFAULT_VIEWPORT, VIEWPORT_NAMES, type Viewport, viewportOf} from "../capture/plan.ts";
 import {
+	type Interaction,
+	type InteractionOperand,
+	parseInteractionOperands,
+	STEP_VERBS,
+} from "../capture/interaction.ts";
+import {
+	type LocaleDeclaration,
+	type LocaleSeed,
+	parseLocaleOperand,
+} from "../capture/locale-seed.ts";
+import {
+	DEFAULT_VIEWPORT,
+	surfaceFileName,
+	VIEWPORT_NAMES,
+	type Viewport,
+	viewportOf,
+} from "../capture/plan.ts";
+import {
+	type CaptureIdentity,
 	type CaptureTier,
+	identityOf,
 	isRealizedState,
 	provesSession,
 	REALIZED_STATES,
 	routeOf,
 	stateOf,
-	tierOf,
 } from "../capture/states.ts";
 import {previewAppOf, type UiSurface} from "../config/keys/ui-surfaces.ts";
+import {discoverRepoRoot} from "../delegate/root.ts";
 import {readFile, writeFile} from "../io/fs.ts";
-import {listComments} from "../io/issues.ts";
+import type {Shell} from "../io/git.ts";
+import {type Existence, listComments} from "../io/issues.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {appForSurface} from "../ui/surfaces.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -126,6 +113,14 @@ export interface SurfaceRenderRequest {
 	 * evaluated to. Empty ⇒ nothing was forced and no proof is owed.
 	 */
 	readonly forcedFlags: ForcedFlags;
+	/** The locale seeded into the capture context and proved against the page's `lang`; `null` ⇒ the app's default. */
+	readonly locale: LocaleSeed | null;
+	/** The colour scheme the context emulates and the page must publish; `null` ⇒ the browser's default. */
+	readonly scheme: SchemeRequest | null;
+	/** The accent set on the page's root and proved before the shot; `null` ⇒ the app's own accent. */
+	readonly accent: AccentRequest | null;
+	/** The steps run after navigation, each proved before the shot; `null` ⇒ the surface at rest. */
+	readonly interaction: Interaction | null;
 }
 
 /**
@@ -140,11 +135,22 @@ export type SurfaceRender =
 	| {readonly _tag: "Invalid"; readonly detail: string}
 	| {readonly _tag: "Unauthenticated"; readonly reason: string}
 	| {readonly _tag: "WrongTier"; readonly wanted: CaptureTier; readonly rendered: string}
+	| {readonly _tag: "WrongVerification"; readonly wanted: boolean}
 	| {readonly _tag: "WrongViewport"; readonly wanted: number; readonly rendered: number}
 	| {readonly _tag: "OverrideInert"; readonly reason: string}
+	| {readonly _tag: "WrongLocale"; readonly wanted: string; readonly reason: string}
+	| {readonly _tag: "WrongScheme"; readonly wanted: ColorScheme; readonly reason: string}
+	| {readonly _tag: "WrongAccent"; readonly wanted: string; readonly reason: string}
+	| {readonly _tag: "Uninteracted"; readonly reason: string}
 	| {readonly _tag: "Failed"; readonly reason: string};
 
 export type RenderLeg = (request: SurfaceRenderRequest) => Effect.Effect<SurfaceRender>;
+
+/**
+ * Read a repository's logins variable. A port so a test can answer for GitHub, and `Redacted` at
+ * the boundary so the fetched value is never a plain string in this module.
+ */
+export type FetchLogins = (repo: string) => Shell<Existence<Redacted.Redacted<string>>>;
 
 export interface RenderOptions {
 	readonly pr: number;
@@ -154,6 +160,33 @@ export interface RenderOptions {
 	readonly viewports: readonly string[];
 	/** Raw `--flag` operands, each a `<key>=<on|off>` pair. Empty ⇒ every flag at its default. */
 	readonly flags: readonly string[];
+	/** The raw `--locale` operand. `null` ⇒ every shot at the app's default locale. */
+	readonly locale: string | null;
+	/**
+	 * The repo's declared `uiCapture.locale`, the only source of a storage key to seed. `null` refuses
+	 * any `--locale`, because fabrika compiles no app's key in.
+	 */
+	readonly localeDeclaration: LocaleDeclaration | null;
+	/** Raw `--scheme` operands, each `light` or `dark`. Empty ⇒ the browser's default scheme, unproved. */
+	readonly schemes: readonly string[];
+	/**
+	 * The repo's declared `uiCapture.scheme`, the only source of the root attribute a scheme is proved
+	 * against. `null` refuses any `--scheme`, because fabrika compiles no app's attribute in.
+	 */
+	readonly schemeDeclaration: SchemeDeclaration | null;
+	/** The raw `--accent` operand. `null` ⇒ every shot in the app's own accent, nothing set. */
+	readonly accent: string | null;
+	/**
+	 * The repo's declared `uiCapture.accent`, the only source of the root attribute an accent is set
+	 * on and of the values it may name. `null` refuses any `--accent`, because fabrika compiles no
+	 * app's attribute in.
+	 */
+	readonly accentDeclaration: AccentDeclaration | null;
+	/**
+	 * Raw `--interact` operands, each `<surface>#<label>=<step>;…` on one of {@link surfaces}. Empty ⇒
+	 * every surface at rest alone.
+	 */
+	readonly interactions: readonly string[];
 	readonly app: string | null;
 	/**
 	 * The repo's declared `uiSurfaces` rows, read off the checkout this verb runs in — what says
@@ -161,17 +194,21 @@ export interface RenderOptions {
 	 */
 	readonly surfaceRows: ReadonlyArray<UiSurface>;
 	/**
-	 * A file holding the `BETTER_AUTH_SECRET` the preview worker deploys with, exported from the
-	 * ci-credentials stack's alchemy state — one repo-wide value, not a per-stage one.
-	 * `null` falls back to the ambient variable, which is accepted only when it is
-	 * neither empty nor the `.env.example` placeholder.
+	 * A file holding a signing secret to use instead of the repo's own. `null` — the ordinary run —
+	 * resolves the committed preview key at {@link PREVIEW_AUTH_KEY_PATH}, which is what the
+	 * preview worker deploys with, and falls back to the ambient variable only in a checkout that
+	 * carries no such file.
 	 */
 	readonly authSecretFrom: string | null;
+	/** Where the run stands, so the committed preview key resolves against this checkout's root. */
+	readonly cwd: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** The OS temp root the deterministic set path hangs off — a port so a test can pin it. */
 	readonly tmpRoot: string;
 	readonly render: RenderLeg;
+	/** Called only when a requested identity's token is not already in {@link env}. */
+	readonly fetchLogins: FetchLogins;
 }
 
 const unreadable = (what: string, pr: number, reason: string): VerbOutcome =>
@@ -186,10 +223,8 @@ const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.star
 const shortSha = (sha: string): string => sha.slice(0, 7);
 
 /**
- * The reported code when per-surface outcomes mix: the **smallest** applicable of `13`/`14`/`15`.
- *
- * The code routes and the stderr enumerates. Dropping a surface is the skill's explicit
- * re-invocation without it, on the record — never this verb's tolerance.
+ * A failed capture cannot be dropped to make the set pass. Only the caller can choose a smaller
+ * set on a later invocation. See ./command.ts help for the refusal codes.
  */
 const routeCode = (renders: readonly SurfaceRender[]): number | null => {
 	if (renders.some((r) => r._tag === "Crashed")) return RENDER_CRASHED;
@@ -205,11 +240,19 @@ const routeCode = (renders: readonly SurfaceRender[]): number | null => {
 interface PlannedShot {
 	readonly surface: string;
 	readonly viewport: Viewport;
+	/** The seeded locale, named so a line about an English shot never reads as the default one. */
+	readonly locale: string | null;
+	/** The requested scheme, named for the same reason: a dark shot's line must not read as the default. */
+	readonly scheme: SchemeRequest | null;
+	/** The requested accent, named so an amber shot's line never reads as the default accent's. */
+	readonly accent: string | null;
+	/** The interaction, named so a line about an open menu never reads as the closed one. */
+	readonly interaction: Interaction | null;
 }
 
 /** Every enumeration and every refusal names the shot, and a shot is a surface at a viewport. */
 const shotName = (shot: PlannedShot): string =>
-	`surface "${shot.surface}" at ${shot.viewport.label}`;
+	`surface "${shot.surface}" at ${shot.viewport.label}${shot.locale === null ? "" : ` in locale ${shot.locale}`}${shot.scheme === null ? "" : ` in scheme ${shot.scheme.scheme}`}${shot.accent === null ? "" : ` in accent ${shot.accent}`}${shot.interaction === null ? "" : ` with interaction ${shot.interaction.label}`}`;
 
 const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 	const subject = shotName(shot);
@@ -230,10 +273,24 @@ const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
 			return `${VERB}: ${subject} did not render signed in (${render.reason}) — the authenticated render is UNKNOWN, never the anonymous one.`;
 		case "WrongTier":
 			return `${VERB}: ${subject} named tier ${render.wanted} and rendered as ${render.rendered} — the named tier's render is UNKNOWN, never another tier's.`;
+		case "WrongVerification": {
+			const [named, rendered] = render.wanted
+				? ["verified", "unverified"]
+				: ["unverified", "verified"];
+			return `${VERB}: ${subject} named an email-${named} identity and rendered as an email-${rendered} one — the named identity's render is UNKNOWN, never another audience's.`;
+		}
 		case "WrongViewport":
 			return `${VERB}: ${subject} was asked for at ${render.wanted}px and its bytes read back ${render.rendered}px wide — the requested viewport's render is UNKNOWN, never another width's.`;
 		case "OverrideInert":
 			return `${VERB}: ${subject} did not render with its forced flags (${render.reason}) — the forced render is UNKNOWN, never the default one.`;
+		case "WrongLocale":
+			return `${VERB}: ${subject} did not render in its seeded locale (${render.reason}) — the seeded locale's render is UNKNOWN, never the default one.`;
+		case "WrongScheme":
+			return `${VERB}: ${subject} did not resolve to the ${render.wanted} scheme (${render.reason}) — the requested scheme's render is UNKNOWN, never the other one.`;
+		case "WrongAccent":
+			return `${VERB}: ${subject} did not render in the ${render.wanted} accent (${render.reason}) — the requested accent's render is UNKNOWN, never the default one.`;
+		case "Uninteracted":
+			return `${VERB}: ${subject} did not reach its interaction state (${render.reason}) — the interacted render is UNKNOWN, never the at-rest one; no capture was written.`;
 		case "Failed":
 			return `${VERB}: ${subject} could not be rendered: ${render.reason} — the outcome is UNKNOWN.`;
 	}
@@ -247,48 +304,123 @@ type UnreadableSecret = {
 };
 
 /**
- * The run's signing key, from the source the operator named.
+ * The run's signing key. Three sources, in this order, and the order is the whole design.
  *
- * `--auth-secret-from` is the only source that can be *known* to be the deployed one: the app
- * stack's `secret_text` binding does not read back and the GitHub Actions secret is write-only, so
- * the one readable copy is the ci-credentials stack's alchemy state, where
- * `infra/ci-credentials/github.ts` mints the single repo-wide value every auth-binding app's stages
- * deploy with, and an operator exports it from there. With no flag the ambient variable stands in,
- * and {@link classifyAuthSecret} is what keeps that fallback honest — a placeholder or empty value
- * refuses rather than signing.
+ * `--auth-secret-from` comes first because it is the operator overriding on purpose; a run that
+ * passed it and silently got something else would be a tool that did not listen.
+ *
+ * With no flag the source is the repo's own committed preview key — every `pr-<n>` preview worker
+ * deploys with it, it is public on purpose, and it is the reason a seat needs no credential to
+ * render an `:auth` surface at all. This verb only ever shoots a PR's preview, so that
+ * is always the right key for the origin it is shooting.
+ *
+ * The ambient variable is last and is now a fallback rather than a route: it stands in only where
+ * the checkout carries no committed key, which is a checkout predating that file. {@link
+ * classifyAuthSecret} keeps it honest — a placeholder or empty value refuses rather than signing.
+ *
+ * A root discovery that *failed* is not that fallback's case. It refuses instead, because
+ * {@link discoverRepoRoot} answers "no repo here" with `undefined` and "I could not look" on its `E`
+ * channel, and an unreadable ancestor handed to the ambient arm would report the second as the first.
  *
  * A run whose surfaces name no tier asks for no session, so nothing calls this: there is no key to
  * read and no cookie to sign.
  */
 const resolveAuthSecret = (
 	options: RenderOptions,
-): Effect.Effect<AuthSecretRead | UnreadableSecret, never, FileSystem.FileSystem> =>
+): Effect.Effect<AuthSecretRead | UnreadableSecret, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
-		const path = options.authSecretFrom;
-		if (path === null) {
-			return classifyAuthSecret(options.env[AUTH_SECRET_ENV] ?? "", {
-				_tag: "Ambient",
-				name: AUTH_SECRET_ENV,
-			});
+		const named = options.authSecretFrom;
+		if (named !== null) {
+			const read = yield* Effect.result(readFile(named));
+			return Result.isFailure(read)
+				? ({_tag: "Unreadable", path: named, reason: read.failure.reason} as const)
+				: classifyAuthSecret(read.success, {_tag: "RepoWideExport", path: named});
 		}
-		const read = yield* Effect.result(readFile(path));
-		return Result.isFailure(read)
-			? ({_tag: "Unreadable", path, reason: read.failure.reason} as const)
-			: classifyAuthSecret(read.success, {_tag: "RepoWideExport", path});
+		const root = yield* Effect.result(discoverRepoRoot(options.cwd));
+		// `discoverRepoRoot` keeps "I could not look" on its `E` channel and "there is no repo here"
+		// on `undefined`, so folding the failure into the ambient fallback would report an unreadable
+		// ancestor as a checkout that simply carries no committed key.
+		if (Result.isFailure(root)) {
+			return {
+				_tag: "Unreadable",
+				path: root.failure.path,
+				reason: `${root.failure.reason} — the repo root could not be located, so the committed preview key was never looked for`,
+			} as const;
+		}
+		if (root.success !== undefined) {
+			const path = (yield* Path.Path).join(root.success, PREVIEW_AUTH_KEY_PATH);
+			const committed = yield* Effect.result(readFile(path));
+			if (!Result.isFailure(committed)) {
+				return classifyAuthSecret(committed.success, {_tag: "CommittedPreviewKey", path});
+			}
+		}
+		return classifyAuthSecret(options.env[AUTH_SECRET_ENV] ?? "", {
+			_tag: "Ambient",
+			name: AUTH_SECRET_ENV,
+		});
 	});
 
 /**
- * The credentials a tier-naming run needs, or the one thing that stopped the read: an export that
- * could not be opened, a key that must not be signed with, or an unset session token. Only a run
- * that names a tier calls this, so every arm here is about a session a surface actually asked for.
+ * The logins variable was needed and gave no tokens. `detail` says which way, worded for the
+ * refusal: it could not be read, or it was read and is not the logins object.
  */
-const resolveTierIdentity = (
+type LoginsUnusable = {readonly _tag: "LoginsUnusable"; readonly detail: string};
+
+/**
+ * Tokens are still unset after the variable was consulted. `variable` keeps "nobody has set the
+ * variable" apart from "it is set and names no token for this identity", because the first is one
+ * person's one-time step and the second is a stale value.
+ */
+type StillMissing = {
+	readonly _tag: "StillMissing";
+	readonly names: readonly string[];
+	readonly variable: "Absent" | "Incomplete";
+};
+
+/**
+ * The credentials an identity-naming run needs, or the one thing that stopped the read: an export
+ * that could not be opened, a key that must not be signed with, or a session token nothing
+ * supplies. Only a run that names a seeded identity calls this, so every arm here is about a
+ * session a surface actually asked for.
+ *
+ * The tokens come from the environment first. The repository variable is fetched only when the
+ * environment leaves a requested identity unset, so a seat that already holds its tokens makes no
+ * extra request, and a seat that holds none needs repository access and nothing else.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10330
+ */
+const resolveSeededIdentity = (
 	options: RenderOptions,
-	tiers: readonly CaptureTier[],
-): Effect.Effect<IdentityRead | UnreadableSecret, never, FileSystem.FileSystem> =>
+	repo: string,
+	identities: readonly CaptureIdentity[],
+): Effect.Effect<
+	Exclude<IdentityRead, {_tag: "Missing"}> | UnreadableSecret | LoginsUnusable | StillMissing,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const secret = yield* resolveAuthSecret(options);
-		return secret._tag === "Unreadable" ? secret : readIdentity(options.env, tiers, secret);
+		if (secret._tag === "Unreadable") return secret;
+		const ambient = readIdentity(options.env, identities, secret);
+		if (ambient._tag !== "Missing") return ambient;
+		const variable = yield* options.fetchLogins(repo);
+		if (variable._tag === "Unknown") {
+			return {_tag: "LoginsUnusable", detail: `could not be read (${variable.reason})`} as const;
+		}
+		if (variable._tag === "Absent") {
+			return {_tag: "StillMissing", names: ambient.names, variable: "Absent"} as const;
+		}
+		const logins = parseLogins(variable.value);
+		if (logins._tag === "Malformed") {
+			return {
+				_tag: "LoginsUnusable",
+				detail: `is set but ${logins.reason}; its contents were not printed`,
+			} as const;
+		}
+		const filled = readIdentity(options.env, identities, secret, logins.tokens);
+		return filled._tag === "Missing"
+			? ({_tag: "StillMissing", names: filled.names, variable: "Incomplete"} as const)
+			: filled;
 	});
 
 export const runRender = (
@@ -359,6 +491,88 @@ export const runRender = (
 			);
 		}
 		const forcedFlags = operands.flags;
+		const localeRead = parseLocaleOperand(options.locale, options.localeDeclaration);
+		if (localeRead._tag === "Malformed") {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --locale "${localeRead.value}" cannot be seeded (${localeRead.reason}) — an operand nothing seeds would shoot the default locale under the requested name.`,
+			);
+		}
+		const locale = localeRead._tag === "Seeded" ? localeRead.seed : null;
+		const schemeRead = parseSchemeOperands(options.schemes, options.schemeDeclaration);
+		switch (schemeRead._tag) {
+			case "Unknown":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --scheme "${schemeRead.value}" is not a colour scheme this verb renders — the names are ${COLOR_SCHEMES.join(", ")}.`,
+				);
+			case "Repeated":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --scheme "${schemeRead.value}" was passed twice — the second shot would overwrite the first's file and evidence.`,
+				);
+			case "Undeclared":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --scheme "${schemeRead.value}" cannot be proved (this repo declares no uiCapture.scheme, so there is no root attribute to read the page's scheme from) — an unproved scheme would shoot the default one under the requested name.`,
+				);
+		}
+		const accentRead = parseAccentOperand(options.accent, options.accentDeclaration);
+		switch (accentRead._tag) {
+			case "Undeclared":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --accent "${accentRead.value}" cannot be set (this repo declares no uiCapture.accent, so there is no root attribute to set it on) — an operand nothing sets would shoot the default accent under the requested name.`,
+				);
+			case "Unknown":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --accent "${accentRead.value}" is not an accent this repo declares — the declared accents are ${accentRead.declared.join(", ")}.`,
+				);
+		}
+		const accent = accentRead._tag === "Requested" ? accentRead.request : null;
+		// Omitted is the browser's default scheme with no emulation and no proof, which is what every
+		// invocation written before this operand asked for implicitly.
+		const schemes: readonly (SchemeRequest | null)[] =
+			schemeRead._tag === "Requested" ? schemeRead.requests : [null];
+		// A collision is judged on the file name the shots would carry. Every operand is crossed with the
+		// same viewports and schemes, so the name at one of them decides for all.
+		const interactionRead = parseInteractionOperands(
+			options.interactions,
+			options.surfaces,
+			(operand) =>
+				surfaceFileName(
+					{
+						surface: operand.surface,
+						route: routeOf(operand.surface),
+						state: stateOf(operand.surface),
+					},
+					DEFAULT_VIEWPORT,
+					null,
+					operand.interaction.label,
+				),
+		);
+		switch (interactionRead._tag) {
+			case "Malformed":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --interact "${interactionRead.value}" is not <surface>#<label>=<step>;… over the steps ${STEP_VERBS.join(", ")} (${interactionRead.reason}) — an operand nothing can run or prove would shoot the at-rest surface under the interacted name.`,
+				);
+			case "UnknownSurface":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --interact "${interactionRead.value}" names surface "${interactionRead.surface}", which no --surface asked for — an interaction runs on a surface of this run.`,
+				);
+			case "Collision":
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --interact "${interactionRead.value}" would write the same PNG as --interact "${interactionRead.other}" — the second shot would overwrite the first's file and evidence.`,
+				);
+		}
+		const interactionsOf = (surface: string): readonly InteractionOperand[] =>
+			interactionRead._tag === "Requested"
+				? interactionRead.operands.filter((operand) => operand.surface === surface)
+				: [];
 		// The override rides the `phoenix_flag_overrides` cookie, which a deployed stage honors only
 		// for a request whose actor holds platform Admin (`flagship/override-authz.ts`, untouched).
 		// So an anonymous surface cannot carry a forced flag at all — it would render the default
@@ -392,11 +606,15 @@ export const runRender = (
 		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
 		const scanned = scannedLine(VERB, comments.value.length, "comment");
 
-		const preview = resolvePreview(comments.value, options.app);
+		const preview = resolvePreview(comments.value, options.app, head);
 		if (preview._tag === "NoPreview") {
+			const why =
+				preview.markedAt === null
+					? `no preview-deploy comment on PR #${pr}`
+					: `PR #${pr}'s preview comment marks no preview deploy at ${shortSha(head)}`;
 			return refuse(
 				NO_PREVIEW,
-				`${VERB}: no preview-deploy comment on PR #${pr} — nothing to judge without running the PR's code; the run is CANT-SEE.`,
+				`${VERB}: ${why} — nothing to judge without running the PR's code; the run is CANT-SEE.`,
 				[scanned],
 			);
 		}
@@ -451,11 +669,11 @@ export const runRender = (
 		// A tier-naming surface rendered without that tier's credentials would come back as the
 		// visitor's page — or worse, as the one tier this preview did seed — under the named tier's
 		// name. That is the "unseen ground reading as clean" this whole axis exists to stop, so an
-		// incomplete credential set is UNKNOWN here, before a browser launches. A tier whose token is
-		// unset is a tier `preview-seed test-account` did not seed on this preview.
-		const wantedTiers = options.surfaces.flatMap((surface) => {
-			const tier = tierOf(stateOf(surface));
-			return tier === null ? [] : [tier];
+		// incomplete credential set is UNKNOWN here, before a browser launches. An identity whose token
+		// is unset is fetched from the repository variable before it is called incomplete.
+		const wantedIdentities = options.surfaces.flatMap((surface) => {
+			const identity = identityOf(stateOf(surface));
+			return identity === null ? [] : [identity];
 		});
 		// The signing key is read before the tokens and refused on its own terms: it is the deployed
 		// value, not the seat's, and a seat signing with `.env.example`'s placeholder produces a
@@ -463,61 +681,92 @@ export const runRender = (
 		// preview nobody seeded. An anonymous run reads no key at all: `null` here is "no surface
 		// asked for a session", which is why no unsigned cookie can be built out of it below.
 		const identity =
-			wantedTiers.length === 0 ? null : yield* resolveTierIdentity(options, wantedTiers);
+			wantedIdentities.length === 0
+				? null
+				: yield* resolveSeededIdentity(options, repo, wantedIdentities);
 		if (identity?._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the exported repo-wide session-signing secret at ${identity.path}: ${identity.reason} — the named tier's render is UNKNOWN.`,
+				`${VERB}: cannot read the session-signing secret at ${identity.path}: ${identity.reason} — the named tier's render is UNKNOWN.`,
 				[scanned],
 			);
 		}
 		if (identity?._tag === "Unusable") {
-			// The route out differs by source: a named export that is unusable is the wrong export, and
-			// pointing the operator back at the flag they already passed reads as a tool that did not
-			// look.
+			// The route out differs by source. Neither arm sends a seat after a credential any more:
+			// the preview key is committed, so an unusable value is either a broken checkout or a flag
+			// the operator passed over it — never a secret they have to go and be given.
 			const route =
 				options.authSecretFrom === null
-					? " pass --auth-secret-from <file> holding the repo-wide BETTER_AUTH_SECRET, whose one readable copy is the ci-credentials stack's alchemy state (infra/ci-credentials/github.ts) behind $ALCHEMY_PASSWORD."
-					: " that file does not hold the deployed value: there is no preview-stage copy to export, so re-export the repo-wide BETTER_AUTH_SECRET from the ci-credentials stack's alchemy state (infra/ci-credentials/github.ts) behind $ALCHEMY_PASSWORD.";
+					? ` run from a checkout carrying ${PREVIEW_AUTH_KEY_PATH}, the committed preview key every pr-<n> worker deploys with — no flag, no credential and no environment variable are needed for it.`
+					: ` that file does not hold the value this preview verifies against; drop --auth-secret-from and the committed preview key at ${PREVIEW_AUTH_KEY_PATH} resolves on its own.`;
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: a tier-naming surface was requested but ${identity.reason} — the named tier's render is UNKNOWN, never a cookie the worker will reject;${route}`,
 				[scanned],
 			);
 		}
-		if (identity?._tag === "Missing") {
+		if (identity?._tag === "LoginsUnusable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: a tier-naming surface was requested but its credentials are incomplete (unset: ${identity.names.join(", ")}) — the named tier's render is UNKNOWN, never a seeded substitute.`,
+				`${VERB}: a tier-naming surface was requested, its session token is not in the environment, and ${repo}'s ${LOGINS_VARIABLE} repository variable ${identity.detail} — the named tier's render is UNKNOWN.`,
 				[scanned],
 			);
 		}
-		const cookiesFor = (tier: CaptureTier): readonly CaptureCookie[] => {
+		if (identity?._tag === "StillMissing") {
+			const variable =
+				identity.variable === "Absent"
+					? `${repo} has no ${LOGINS_VARIABLE} repository variable to fetch them from`
+					: `${repo}'s ${LOGINS_VARIABLE} repository variable does not carry them`;
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: a tier-naming surface was requested but its credentials are incomplete (unset: ${identity.names.join(", ")}; ${variable}) — the named tier's render is UNKNOWN, never a seeded substitute.`,
+				[scanned],
+			);
+		}
+		const cookiesFor = (named: CaptureIdentity): readonly CaptureCookie[] => {
 			if (identity === null || identity._tag !== "Identity") return [];
-			const token = identity.tokens[tier];
+			const token = identity.tokens[named];
 			return token === undefined ? [] : sessionCookies(announced.url, token, identity.secret);
 		};
 		const forcedCookies = overrideCookies(announced.url, forcedFlags);
 
 		const setDir = setDirectory(options.tmpRoot, pr, head, options.out);
-		// Surface-major so a mixed-viewport enumeration reads one surface's widths together.
+		// Surface-major so a mixed-viewport enumeration reads one surface's widths together, each
+		// width's schemes together under it, and each scheme's at-rest shot ahead of its interactions.
 		const shots: readonly PlannedShot[] = options.surfaces.flatMap((surface) =>
-			viewports.map((viewport) => ({surface, viewport})),
+			viewports.flatMap((viewport) =>
+				schemes.flatMap((scheme) =>
+					[null, ...interactionsOf(surface).map((operand) => operand.interaction)].map(
+						(interaction) => ({
+							surface,
+							viewport,
+							locale: locale?.value ?? null,
+							scheme,
+							accent: accent?.value ?? null,
+							interaction,
+						}),
+					),
+				),
+			),
 		);
 		const renders: SurfaceRender[] = [];
 		for (const shot of shots) {
 			// Only a tier-naming variant carries a session and the override, and it carries ITS OWN
 			// tier's session: a bare route stays the visitor's render at every flag's default, so each
 			// is genuinely different pixels rather than one shot repeated.
-			const tier = tierOf(stateOf(shot.surface));
+			const named = identityOf(stateOf(shot.surface));
 			renders.push(
 				yield* options.render({
 					surface: shot.surface,
 					viewport: shot.viewport,
 					previewUrl: announced.url,
 					outDir: setDir,
-					cookies: tier === null ? [] : [...cookiesFor(tier), ...forcedCookies],
-					forcedFlags: tier === null ? NO_FORCED_FLAGS : forcedFlags,
+					cookies: named === null ? [] : [...cookiesFor(named), ...forcedCookies],
+					forcedFlags: named === null ? NO_FORCED_FLAGS : forcedFlags,
+					locale,
+					scheme: shot.scheme,
+					accent,
+					interaction: shot.interaction,
 				}),
 			);
 		}
@@ -536,12 +785,19 @@ export const runRender = (
 		}
 		// Ahead of the proven-red codes below, and deliberately: the shot is a fine PNG of the wrong
 		// page, so routing it as a red surface would accuse the PR of a defect the render never saw.
-		// The three arms are one class — wrong session, wrong tier, wrong flag state — and route alike.
+		// The eight arms are one class — wrong session, wrong tier, wrong email verification, wrong flag
+		// state, wrong locale, wrong scheme, wrong accent, an interaction state never reached — and
+		// route alike.
 		const wrongPage = renders.findIndex(
 			(render) =>
 				render._tag === "Unauthenticated" ||
 				render._tag === "WrongTier" ||
-				render._tag === "OverrideInert",
+				render._tag === "WrongVerification" ||
+				render._tag === "OverrideInert" ||
+				render._tag === "WrongLocale" ||
+				render._tag === "WrongScheme" ||
+				render._tag === "WrongAccent" ||
+				render._tag === "Uninteracted",
 		);
 		if (wrongPage !== -1) {
 			return refuse(

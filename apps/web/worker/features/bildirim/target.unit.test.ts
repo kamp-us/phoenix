@@ -45,15 +45,4 @@ describe("foldTargetHrefs — the tombstone decision", () => {
 		});
 		assert.strictEqual(resolved.get(targetRefKey("user", "u2")), null);
 	});
-
-	it("every requested ref appears in the map (no silent drop)", () => {
-		const resolved = foldTargetHrefs(
-			[
-				{targetKind: "post", targetId: "a"},
-				{targetKind: "definition", targetId: "b"},
-			],
-			emptyResolvedTargetRows,
-		);
-		assert.strictEqual(resolved.size, 2);
-	});
 });

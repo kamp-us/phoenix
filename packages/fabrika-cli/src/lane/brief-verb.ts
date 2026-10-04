@@ -24,11 +24,17 @@
  * checkout, so it resolves inside the shell's worktree, and a branch cut before a lane verb landed
  * hands the shell a CLI that cannot execute the contract this brief states. `./briefed-verbs.ts`
  * reads the branch's own tree, and a missing verb refuses at {@link BRIEFED_VERB_ABSENT}.
+ *
+ * A build or review brief also names the comments a control-plane account left on the issue that no
+ * ruling marker records, read through the scan `review criteria` and `lane prove` answer from. That
+ * read never refuses a dispatch: a failure rides in the brief as `unknown`.
  */
 import {Effect, type FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {describeUnmarked, standingRulings} from "../decision/standing-rulings.ts";
 import type {EntrypointRead} from "../delegate/entrypoint.ts";
 import {getIssue, resolveRepo} from "../io/issues.ts";
+import type {SizeStop} from "../table/size-stop.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	type ArtifactUrl,
@@ -42,6 +48,7 @@ import {
 	type LaneBrief,
 	type LaneGround,
 	lanesRoot,
+	type OwnerComments,
 	type ShellState,
 	shellOf,
 	shellState,
@@ -56,6 +63,7 @@ import {
 	PR_AMBIGUOUS,
 	PROOF_ABSENT,
 	PROOF_AMBIGUOUS,
+	SIZE_STOPPED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {foldLog, resolveTask} from "./fold.ts";
@@ -78,7 +86,57 @@ export interface BriefOptions extends LaneRef {
 	 * rather than the developing repo's in-tree path.
 	 */
 	readonly entrypoint: EntrypointRead;
+	/**
+	 * Whether the issue's table row has spent its stop, read before any shell is briefed. Absent, no
+	 * table is read, which is how a caller with no table in reach asks for the brief alone.
+	 */
+	readonly sizeStop?: (
+		repo: string,
+		issue: number,
+	) => Effect.Effect<
+		SizeStop,
+		never,
+		FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+	>;
 }
+
+/**
+ * The refusal a lane at its size stop owes instead of a brief, `null` when it may go on. A table
+ * that could not be read is UNKNOWN, never a pass: the stop is the one guardrail behind the flags.
+ * `Unchecked` is the one pass without a read — in a repository that never adopted a table, or on a
+ * token that lacks the `project` scope — and it says so on stderr.
+ */
+const sizeStopRefusal = (
+	stop: SizeStop,
+	lane: string,
+	task: string,
+	notes: string[],
+): VerbOutcome | null => {
+	switch (stop._tag) {
+		case "Clear":
+			notes.push(`${VERB}: size stop: ${stop.note}.`);
+			return null;
+		case "Unchecked":
+			notes.push(
+				stop.excuse === "Unadopted"
+					? `${VERB}: size stop NOT checked: ${stop.reason} — .fabrika.jsonc declares no \`table\` block, so nothing says a table exists and the lane goes on. Declare a \`table\` block to make an unreadable table UNKNOWN (11).`
+					: `${VERB}: size stop NOT checked: ${stop.reason} — a missing \`project\` scope skips the table, so the lane goes on unchecked.`,
+			);
+			return null;
+		case "Unknown":
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot read the table for the size stop: ${stop.reason.replace(/\.$/, "")} — whether this lane has spent past its stop is UNKNOWN.`,
+				notes,
+			);
+		case "Stopped":
+			return refuse(
+				SIZE_STOPPED,
+				`${VERB}: #${stop.flag.head}'s row has spent $${stop.flag.spentUsd}, past the stop for its ${stop.flag.size} size of $${stop.flag.limitUsd} — the lane stops here and no shell is briefed. Park it: \`fabrika lane transition ${lane} BLOCKED --task ${task} --cause size-stop\`.`,
+				[...notes, `${VERB}: rec: ${stop.rec}`],
+			);
+	}
+};
 
 type UrlRead =
 	| {readonly _tag: "Url"; readonly url: ArtifactUrl}
@@ -239,6 +297,39 @@ const briefedVerbRefusal = (
 		);
 	});
 
+/**
+ * The unmarked owner comments a build or review shell is told to read, with the diagnostics the
+ * driver sees pushed onto `notes`.
+ *
+ * A warning and never a gate: an unreadable half is `Unknown` in the brief rather than a refusal,
+ * because holding a dispatch on it would stop a lane every time a comment page blipped.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10309#issuecomment-5974136525
+ */
+const ownerCommentsOf = (
+	repo: string,
+	issue: number,
+	state: ShellState,
+	notes: string[],
+): Effect.Effect<OwnerComments, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		if (!isBuildState(state) && !isReviewState(state)) return {_tag: "None"};
+		const ruled = yield* standingRulings(repo, issue);
+		if (ruled._tag === "Unknown") {
+			notes.push(
+				`${VERB}: ${ruled.reason} — whether a control-plane account commented on #${issue} without a ruling marker is UNKNOWN, never zero; the brief says so.`,
+			);
+			return {_tag: "Unknown"};
+		}
+		notes.push(...describeUnmarked(VERB, issue, ruled));
+		if (ruled.unmarked._tag === "Unknown") return {_tag: "Unknown"};
+		const [first, ...rest] = ruled.unmarked.comments.flatMap((comment) => {
+			const url = artifactUrl(comment.url);
+			return url === null ? [] : [url];
+		});
+		return first === undefined ? {_tag: "None"} : {_tag: "Unmarked", urls: [first, ...rest]};
+	});
+
 export const runBrief = (
 	options: BriefOptions,
 ): Effect.Effect<
@@ -309,6 +400,15 @@ export const runBrief = (
 		}
 		const read = yield* issueUrl(VERB, repo.value, issue, notes);
 		if (read._tag === "Refused") return read.outcome;
+		if (options.sizeStop !== undefined) {
+			const stopped = sizeStopRefusal(
+				yield* options.sizeStop(repo.value, issue),
+				options.lane,
+				task,
+				notes,
+			);
+			if (stopped !== null) return stopped;
+		}
 
 		const epic = epicOf(Object.keys(loaded.lane.tasks));
 		if (epic !== null && task !== `epic_${epic}`) {
@@ -336,6 +436,7 @@ export const runBrief = (
 				shell,
 				issue: read.url,
 				ground,
+				ownerComments: yield* ownerCommentsOf(repo.value, issue, state, notes),
 			};
 			return answer(emitBrief(brief), [
 				...notes,
@@ -409,6 +510,7 @@ export const runBrief = (
 			shell,
 			issue: read.url,
 			ground,
+			ownerComments: yield* ownerCommentsOf(repo.value, issue, state, notes),
 		};
 		return answer(emitBrief(brief), [
 			...notes,

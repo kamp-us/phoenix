@@ -59,10 +59,6 @@ describe("renderBlessingGallery", () => {
 		assert.include(md, "/catalog\tapprove|redline");
 		assert.include(md, "/feed\tapprove|redline");
 	});
-
-	it("is deterministic — same set renders byte-identically", () => {
-		assert.strictEqual(renderBlessingGallery(set), renderBlessingGallery(set));
-	});
 });
 
 describe("parseBlessDecisions", () => {

@@ -9,12 +9,13 @@
  * happens on a real desk, never here.
  *
  * The default export is `satisfies TuvalConfigInput` — the encoded shape the loader decodes, which
- * `@kampus/tuval/sessions` publishes (#9250). A config written outside the repo is therefore
+ * `@kampus/tuval-sdk/config` publishes (#9250). A config written outside the repo is therefore
  * checked against the real config schema here rather than only when a desk boots it.
  */
 
-import {ClientId, claudeSession, type TuvalConfigInput, WorkspaceId} from "@kampus/tuval/sessions";
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 import {cron} from "@kampus/tuval-cron";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
 
 /** One workspace, one client — the two branded ids `claudeSession` will not build a row without. */
 const scope = {

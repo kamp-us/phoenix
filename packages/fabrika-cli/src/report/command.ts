@@ -18,6 +18,8 @@ import {randomUUID} from "node:crypto";
 import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {leakNamesKey} from "../config/keys/leak-names.ts";
+import {readKey} from "../config/read-key.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
@@ -25,6 +27,7 @@ import {runAmend} from "./amend-verb.ts";
 import {DEFAULT_LIMIT} from "./dedup.ts";
 import {runDedup} from "./dedup-verb.ts";
 import {runFile} from "./file-verb.ts";
+import {DEFAULT_CLOSED_DAYS} from "./issue-index.ts";
 import {runNote} from "./note-verb.ts";
 import {runScratch} from "./scratch-verb.ts";
 
@@ -45,7 +48,7 @@ const jsonFlag = Flag.boolean("json").pipe(
 const redactFlag = Flag.boolean("redact").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription(
-		"mask each machine-local path down to its class root and post the masked body, instead of refusing",
+		"mask each leak — a path down to its class root, an email or a configured private name whole — and post the masked body, instead of refusing",
 	),
 );
 
@@ -53,7 +56,19 @@ const dedup = leafCommand(
 	"dedup",
 	{
 		query: Flag.string("query").pipe(
-			Flag.withDescription("the observation text to check for an already-open issue"),
+			Flag.withDescription("the observation text to compare with open and recently closed issues"),
+		),
+		closedDays: Flag.integer("closed-days").pipe(
+			Flag.withDefault(DEFAULT_CLOSED_DAYS),
+			Flag.withDescription(
+				"integer from 0 to 36500; include issues closed within this many days; 0 searches open only (default: 14)",
+			),
+		),
+		refresh: Flag.boolean("refresh").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"refresh the repository issue cache now; otherwise reuse it for up to five minutes",
+			),
 		),
 		label: Flag.string("label").pipe(
 			Flag.withDefault(DEFAULT_LABEL),
@@ -63,7 +78,9 @@ const dedup = leafCommand(
 		),
 		limit: Flag.integer("limit").pipe(
 			Flag.withDefault(DEFAULT_LIMIT),
-			Flag.withDescription(`the maximum number of candidates to print (default: ${DEFAULT_LIMIT})`),
+			Flag.withDescription(
+				`nonnegative safe integer; maximum candidates to print, 0 prints only the outcome (default: ${DEFAULT_LIMIT})`,
+			),
 		),
 		exclude: Flag.integer("exclude").pipe(
 			Flag.optional,
@@ -74,10 +91,12 @@ const dedup = leafCommand(
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({query, label, limit, exclude, repo, json}) {
+	Effect.fn(function* ({query, closedDays, refresh, label, limit, exclude, repo, json}) {
 		yield* emit(
 			yield* runDedup({
 				query,
+				closedDays,
+				refresh,
 				label,
 				limit,
 				exclude: Option.getOrNull(exclude),
@@ -88,10 +107,25 @@ const dedup = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Rank the open issues that may already cover an observation."),
-	Command.withDescription(
-		'Rank the open issues that may already cover an observation. First stdout line is the outcome token — candidates | none | indeterminate — and ALL THREE exit 0; a candidates list adds one `<number>\\t<source>\\t<score>\\t<title>` line per entry. Exits 7 (--label does not exist, so the queue half would scan nothing), 27 (queue unreadable), 28 (search index unreadable). Example: fabrika report dedup --query "retry helper swallows the abort reason" --exclude 4312',
+	Command.withShortDescription(
+		"Find open and recently closed issues that may cover an observation.",
 	),
+	Command.withDescription(
+		[
+			"Prints candidates, none or indeterminate, each an answer, then one line per candidate issue.",
+			"  Matches are advisory.",
+			"  7: --label does not exist, so the queue half would scan nothing",
+			"  27: the queue is unreadable",
+			"  28: the issue corpus is unreadable",
+			'  Derivation: the report skill\'s contract.md, "report dedup"',
+		].join("\n"),
+	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika report dedup --query "retry helper swallows the abort reason" --exclude 4312',
+		},
+	]),
 );
 
 const fileCmd = leafCommand(
@@ -113,6 +147,7 @@ const fileCmd = leafCommand(
 	Effect.fn(function* ({title, label, redact, repo, json}) {
 		yield* emit(
 			yield* runFile({
+				leakNames: yield* readKey(process.cwd(), leakNamesKey),
 				title,
 				label,
 				redact,
@@ -127,8 +162,23 @@ const fileCmd = leafCommand(
 ).pipe(
 	Command.withShortDescription("Compose and file the intake issue from the sections on stdin."),
 	Command.withDescription(
-		'Compose the intake issue from the six sections on STDIN, guard it, create it, and read back what landed. Prints `<number>\\t<url>`. Exits 3 (empty stdin), 4 (bad sections), 5 (machine-local path), 6 (bare @ reference), 7 (no such label), 8 (create failed — UNKNOWN), 9 (read-back mismatch), 10 (title or label classifies), 11 (label set unreadable). Example: fabrika report file --title "Retry helper swallows the abort reason" < body.md',
+		[
+			"Files the intake issue composed from the six stdin sections and prints `<number>\\t<url>`.",
+			"  3: empty stdin",
+			"  4: bad sections",
+			"  5: a leak: a machine-local path, an email address or a `leakNames` name",
+			"  6: a bare @ reference",
+			"  7: no such label",
+			"  8: the create failed (UNKNOWN)",
+			"  9: the read-back differs",
+			"  10: the title or label classifies",
+			"  11: the label set or `leakNames` is unreadable",
+			'  Derivation: the report skill\'s contract.md, "report file"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: 'fabrika report file --title "Retry helper swallows the abort reason" < body.md'},
+	]),
 );
 
 const note = leafCommand(
@@ -142,6 +192,7 @@ const note = leafCommand(
 	Effect.fn(function* ({issue, redact, repo, json}) {
 		yield* emit(
 			yield* runNote({
+				leakNames: yield* readKey(process.cwd(), leakNamesKey),
 				issue,
 				redact,
 				repo: Option.getOrNull(repo),
@@ -154,8 +205,19 @@ const note = leafCommand(
 ).pipe(
 	Command.withShortDescription("Add a note from stdin to an existing issue."),
 	Command.withDescription(
-		"Add a note from STDIN to an existing issue over the same guarded path, then read the comment back. Prints `<comment-id>\\t<url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue), 8 (post failed — UNKNOWN), 9 (read-back mismatch), 11 (issue unreadable). Example: fabrika report note --issue 4312 < note.md",
+		[
+			"Adds a stdin note to an existing issue, reads it back and prints `<comment-id>\\t<url>`.",
+			"  3: empty stdin",
+			"  5: a leak: a machine-local path, an email address or a `leakNames` name",
+			"  6: a bare @ reference",
+			"  7: no such issue",
+			"  8: the post failed (UNKNOWN)",
+			"  9: the read-back differs",
+			"  11: the issue or `leakNames` is unreadable",
+			'  Derivation: the report skill\'s contract.md, "report note"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika report note --issue 4312 < note.md"}]),
 );
 
 const scratch = leafCommand(
@@ -171,8 +233,14 @@ const scratch = leafCommand(
 ).pipe(
 	Command.withShortDescription("The staging path a body is written into before stdin carries it."),
 	Command.withDescription(
-		"Allocate one staging path for a body this group's writing verbs will read on stdin: <temp root>/fabrika-report/<allocation-id>/<slug>, one absolute path on stdout, the directory created if absent. A reporter holds no claim and no lane, so the key is a FRESH id per call rather than a claim nonce — the path is therefore not re-derivable, and a caller redirects from the literal path this verb printed. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created), 29 (--slug carries a path separator, is not kebab-case, or exceeds 5 hyphen-separated words). Example: fabrika report scratch --slug body",
+		[
+			"Allocates a fresh staging path for a stdin body, creates its directory and prints the path.",
+			"  The path is not re-derivable, and it is machine-local, so it never goes in a posted artifact.",
+			"  29: --slug has a separator, is not kebab-case or runs past 5 words",
+			'  Derivation: the report skill\'s contract.md, "report scratch"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika report scratch --slug body"}]),
 );
 
 const amend = leafCommand(
@@ -188,6 +256,7 @@ const amend = leafCommand(
 	Effect.fn(function* ({issue, redact, repo, json}) {
 		yield* emit(
 			yield* runAmend({
+				leakNames: yield* readKey(process.cwd(), leakNamesKey),
 				issue,
 				redact,
 				repo: Option.getOrNull(repo),
@@ -201,8 +270,20 @@ const amend = leafCommand(
 ).pipe(
 	Command.withShortDescription("Append a dated amendment from stdin to an existing issue's body."),
 	Command.withDescription(
-		"Append the section on STDIN to an existing issue's body under a separator and a dated `## Amendment` heading this verb composes, leaving the prior body verbatim above it, then read the body back. Never replaces a body; the why is in claude-plugins/fabrika/skills/report/contract.md. Prints `<issue>\\t<url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue), 8 (write failed — UNKNOWN), 9 (read-back mismatch), 11 (issue unreadable). Example: fabrika report amend --issue 4312 < correction.md",
+		[
+			"Appends a dated stdin amendment under an issue's body and prints `<issue>\\t<url>`.",
+			"  The prior body is kept verbatim, never replaced.",
+			"  3: empty stdin",
+			"  5: a leak: a machine-local path, an email address or a `leakNames` name",
+			"  6: a bare @ reference",
+			"  7: no such issue",
+			"  8: the write failed (UNKNOWN)",
+			"  9: the read-back differs",
+			"  11: the issue or `leakNames` is unreadable",
+			'  Derivation: the report skill\'s contract.md, "report amend"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika report amend --issue 4312 < correction.md"}]),
 );
 
 export const reportCommand = Command.make("report").pipe(

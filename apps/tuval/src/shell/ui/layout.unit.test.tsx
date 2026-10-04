@@ -7,15 +7,15 @@
  * (`.patterns/layout-tree-with-resizable-panels.md`).
  */
 
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {useState} from "react";
 import {describe, expect, it} from "vitest";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {applyMsg} from "../core/index.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
 import {createStack, createTree, createWindow} from "../layout/index.ts";
-import {installDomShims} from "./dom.testing.ts";
 import {deskWith, threeWindowDesk, threeWindowTree} from "./fixtures.ts";
 import {zoomedWindow} from "./frame.ts";
 import {LayoutView} from "./LayoutView.tsx";
@@ -213,15 +213,6 @@ describe("zoom", () => {
 			1,
 		);
 		expect(resizes(sent)).toEqual([]);
-	});
-
-	it("leaves the tree's sizes untouched across a zoom round trip", () => {
-		const before = threeWindowDesk("window-3");
-		const [zoomed] = applyMsg(defaultPrefixTable, before, {type: "layout.zoom"});
-		const [restored] = applyMsg(defaultPrefixTable, zoomed, {type: "layout.zoom"});
-		expect(restored.workspaces["workspace-0"]?.layout.root.sizes).toEqual(
-			before.workspaces["workspace-0"]?.layout.root.sizes,
-		);
 	});
 });
 

@@ -46,7 +46,7 @@ and with one there is an out-port belonging to somebody else.
 ## Decision
 
 1. **`emit` is not declarable in a `commands` cell.** `CommandEffect` in
-   [`apps/tuval/src/authoring/commands.ts`](../apps/tuval/src/authoring/commands.ts) is
+   [`packages/tuval/src/authoring/commands.ts`](../packages/tuval/src/authoring/commands.ts) is
    `Exclude<ProgramEffect, EmitEffect>`, and `CommandAnswer` is built over it — so the refusal lands
    on the author's `run` at the line that wrote it.
 2. **What an `emit` from a `commands` cell means: nothing, in either scope case.** With no `process`
@@ -55,7 +55,7 @@ and with one there is an out-port belonging to somebody else.
    reading under which the call is honest, which is why the answer is a refusal rather than a
    fallback.
 3. **The narrowing is carried by the handler table, not by a runtime check.** `COMMAND_HANDLERS` in
-   [`apps/tuval/src/authoring/define-program.ts`](../apps/tuval/src/authoring/define-program.ts) is
+   [`packages/tuval/src/authoring/define-program.ts`](../packages/tuval/src/authoring/define-program.ts) is
    the spine's five command-reachable handlers, typed
    `CommandHandlers<EffectFailure, CommandEffectServices>` where `CommandEffectServices` is
    `Exclude<EffectServices, ProcessPorts>`, so it stays in lockstep as the spine's service set
@@ -84,7 +84,7 @@ and with one there is an out-port belonging to somebody else.
   did then, and must not be widened to. `reply` spends a correlation a request-port arrival carried,
   and a spell call was asked nothing. `stop` ends a process the call was handed no claim on. The
   refusal is the checker's at the line that wrote it, and
-  [`apps/tuval/src/authoring/commands.unit.test.ts`](../apps/tuval/src/authoring/commands.unit.test.ts)
+  [`packages/tuval/src/authoring/commands.unit.test.ts`](../packages/tuval/src/authoring/commands.unit.test.ts)
   holds one `@ts-expect-error` case per refused effect.
 - **`COMMAND_HANDLERS` is one key.** It is `{send: sendHandler}`, typed over
   `CommandEffectServices = Extract<EffectServices, SpawnedProcesses>`. `ProcessPorts` and
@@ -94,7 +94,7 @@ and with one there is an out-port belonging to somebody else.
 - **The recorded route is "send to your own program", and it is now offered.** A command that should
   cause an announcement `send`s into its own program's in-port and lets the `update` cell that owns
   it emit. The bare form — `send("pr", pr)` — names a port and no process;
-  [`apps/tuval/src/authoring/own-process.ts`](../apps/tuval/src/authoring/own-process.ts) resolves it
+  [`packages/tuval/src/authoring/own-process.ts`](../packages/tuval/src/authoring/own-process.ts) resolves it
   at the call, against the declaring program, by the ruled three-case rule: exactly one live process,
   that one; several with the caller's own `Scope.process` among them, the caller's; anything else, a
   typed refusal (`NoLiveProcess`, `AmbiguousProcess`) naming the program and the ambiguity, which
@@ -105,7 +105,7 @@ and with one there is an out-port belonging to somebody else.
   the resolution widens what a compiled spell requires by one service the composition root was
   already providing, and by nothing else.
 - **The worked example is the thing to copy again.**
-  [`apps/tuval/src/authoring/example/pr-review.ts`](../apps/tuval/src/authoring/example/pr-review.ts)
+  [`apps/tuval/src/example/pr-review.ts`](../apps/tuval/src/example/pr-review.ts)
   declares `run: (pr) => send("pr", pr)` — the shape epic #8716 R16.1 and ticket #8734's criterion 7
   always specified. Those two live only in closed GitHub issues, so there is nothing in-tree left
   prescribing the old `send({process, port: "pr"}, …)` route.

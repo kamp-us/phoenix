@@ -282,7 +282,9 @@ export const PATTERN_SEATS: SharedSeats = {
  * (`MARKER_READBACK`). `lane assembly-body` adds the three authored-text seats: it is the group's
  * one verb taking a body on stdin, so it alone can establish the read-but-empty pipe
  * (`EMPTY_STDIN`), the machine-local path headed for a public PR (`LEAKED_PATH`), and the body that
- * is a pointer rather than a body (`BARE_AT_PATH`). The private band runs `12`-`39`, skipping `27`
+ * is a pointer rather than a body (`BARE_AT_PATH`). `lane scratch` adds the classification seat
+(`SLUG_OFF_VOCABULARY`): a `--slug` off the kebab-leaf vocabulary, the fact `build scratch` seats on
+the same number. The private band runs `12`-`39`, skipping `27`
  * and `28` because the base already speaks for both, and reaches `58` for the epic-tail body seat.
  */
 export const LANE_SEATS: SharedSeats = {
@@ -294,6 +296,7 @@ export const LANE_SEATS: SharedSeats = {
 	APPEND_UNKNOWN: "WRITE_UNKNOWN",
 	MARKER_READBACK: "READBACK_MISMATCH",
 	LANE_UNREADABLE: "PRECONDITION_UNKNOWN",
+	SLUG_OFF_VOCABULARY: "CLASSIFIED",
 };
 
 /**
@@ -317,8 +320,8 @@ export const RECIPE_SEATS: SharedSeats = {
  *
  * The group writes files and reads stdin, so unlike `guard` it claims the base's write-shaped
  * seats too. `MALFORMED_DOCUMENT` is `review-ui`'s widening of `BAD_SECTIONS` under the same name:
- * an entries JSON, a crabbox run-summary or an `--extra-checks` file that parsed and then violated
- * its schema is the same fact about a whole derived document.
+ * an entries JSON that parsed and then violated its schema is the same fact about a whole derived
+ * document.
  */
 export const CI_SEATS: SharedSeats = {
 	EMPTY_STDIN: "EMPTY_STDIN",
@@ -328,17 +331,18 @@ export const CI_SEATS: SharedSeats = {
 };
 
 /**
- * `guard`'s seats: two, the narrowest claim any group makes besides `hook`'s one.
+ * `guard`'s seats: three, all read-shaped.
  *
  * A guard establishes almost nothing the base's table speaks about — it writes nothing, composes no
- * body, reads no stdin. What it does establish is the base's two read-shaped facts: the scope it was
- * pointed at is proven empty (`ZERO_SCOPE`, the fail-closed floor every guard sits on), and a read
- * the verdict rests on failed
- * so nothing is proven (`PRECONDITION_UNKNOWN`). Its one private seat, `12` `VIOLATION`, is the
- * verdict the whole group exists for and the base has no word for at all.
+ * body, reads no stdin. What it does establish is the base's read-shaped facts: the scope it was
+ * pointed at is proven empty (`ZERO_SCOPE`, the fail-closed floor every guard sits on), a flag names
+ * no subject it can scan (`OFF_VOCABULARY`, the base's `CLASSIFIED`), and a read the verdict rests on
+ * failed so nothing is proven (`PRECONDITION_UNKNOWN`). Its one private seat, `12` `VIOLATION`, is
+ * the verdict the whole group exists for and the base has no word for at all.
  */
 export const GUARD_SEATS: SharedSeats = {
 	ZERO_SCOPE: "NO_TARGET",
+	OFF_VOCABULARY: "CLASSIFIED",
 	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
 };
 
@@ -375,6 +379,18 @@ export const DECISION_SEATS: SharedSeats = {
  * `6` and `10` stay unclaimed rather than seating a second meaning.
  */
 export const CAMPAIGN_SEATS: SharedSeats = {
+	NO_TARGET: "NO_TARGET",
+	WRITE_UNKNOWN: "WRITE_UNKNOWN",
+	READBACK_MISMATCH: "READBACK_MISMATCH",
+	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
+};
+
+/**
+ * `table`'s seats: `campaign`'s four, on the same reading. `table setup` addresses one project, so a
+ * configured number naming none is a target proven absent (`7`), and its writes and re-reads claim the
+ * write-shaped pair and the unreadable-precondition seat. It reads no stdin and composes no body.
+ */
+export const TABLE_SEATS: SharedSeats = {
 	NO_TARGET: "NO_TARGET",
 	WRITE_UNKNOWN: "WRITE_UNKNOWN",
 	READBACK_MISMATCH: "READBACK_MISMATCH",
@@ -429,6 +445,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	spend: SPEND_SEATS,
 	spike: SPIKE_SEATS,
 	status: SHARED_SEATS,
+	table: TABLE_SEATS,
 	ui: UI_SEATS,
 };
 

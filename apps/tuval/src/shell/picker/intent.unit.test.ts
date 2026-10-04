@@ -1,7 +1,7 @@
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {CommandName} from "@kampus/tuval-ui/keys";
 import {describe, expect, it} from "vitest";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
-import {CommandName} from "../keys/table.ts";
 import {windowId} from "./fixtures.ts";
 import {
 	ATTACH_COMMAND,
@@ -10,19 +10,11 @@ import {
 	OPEN_COMMAND,
 	openProgram,
 	pickerCommandFor,
-	pickerCommands,
 } from "./intent.ts";
 
 const window = windowId("window-1");
 
 describe("picker command rows", () => {
-	it("declares one row per intent, each naming the argument a completion surface offers", () => {
-		expect(pickerCommands.map((command) => [command.name, command.argument])).toEqual([
-			["window:open", "program-id"],
-			["window:attach", "process-id"],
-		]);
-	});
-
 	it("resolves both rows by name, and nothing else", () => {
 		expect(pickerCommandFor(OPEN_COMMAND)?.argument).toBe("program-id");
 		expect(pickerCommandFor(ATTACH_COMMAND)?.argument).toBe("process-id");

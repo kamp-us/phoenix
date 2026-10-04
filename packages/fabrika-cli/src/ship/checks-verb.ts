@@ -6,24 +6,34 @@
  * group adds two things on top — the wedge diagnosis and the informational-check carve-out — and
  * both live in that same module so a second copy cannot drift the way v1's two `jq` copies did.
  *
- * `no-runs` is a **positively evidenced** state, not an empty read: workflows ≥ 1 and zero runs at
- * this head means Actions exist and none fired, which is the dropped-trigger state `ship nudge`
- * re-derives for itself. Zero workflows is `no-producer` — a different fact from `pending`, never
- * collapsed into it: a repo with no CI is not a repo whose CI is still running, and
- * printing the second over the first tells an operator to wait for a run nothing will ever start.
+ * See the checks help in ./command.ts for rollup states and output fields.
  *
  * A `green` is served only over bytes a gate of this repo's own inspected: the coverage read is
  * `../review/gate-coverage.ts`, the same module `review ci` refuses on, and a head where every
  * repo-authored workflow was silent refuses on {@link NO_GATE_COVERAGE} rather than printing the
- * word this group merges on.
+ * word this group merges on. Silent means no run that opened *this* head: a repo-authored
+ * `pull_request_target` run carries the head and checks out the base, so the run's own event and
+ * head are what that module judges, never its workflow path alone.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8362
  */
 import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {producerFor, resolveCi} from "../config/ci-producer.ts";
+import {producerFor, producesCi, resolveCi} from "../config/ci-producer.ts";
 import {reasonHistogram} from "../evidence.ts";
 import {commitExists} from "../io/pulls.ts";
-import {gateCoverageOf} from "../review/gate-coverage.ts";
-import {isFailing, isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
+import {
+	authorityNote,
+	type BlockingSet,
+	owedRollup,
+	readBlockingSet,
+	reportedLine,
+	reportingAt,
+	reportingNote,
+	unreadableCause,
+} from "../review/blocking.ts";
+import {gateCoverageOf, type RunProvenance} from "../review/gate-coverage.ts";
+import {isFailing, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
@@ -73,10 +83,18 @@ export interface ChecksOptions {
  * `failure` is an informational run would tally identically, and the carve-out is exactly
  * what separates them. A superseded cancel says so in the key for the same reason — it pends where a
  * plain `cancelled` reds.
+ *
+ * The axis keeps its two words and changed its authority: `gating` is now a context the base branch
+ * declares required, and `informational` every other — the base branch answers it, not a name list
+ * in this package.
  */
-const checkClassOf = (run: ShipCheckRun, superseded: ReadonlySet<number>): string => {
+const checkClassOf = (
+	run: ShipCheckRun,
+	superseded: ReadonlySet<number>,
+	blocking: BlockingSet,
+): string => {
 	const status = isSuperseded(run, superseded) ? `${statusOf(run)}-superseded` : statusOf(run);
-	return `${status}/${isInformational(run.name) ? "informational" : "gating"}`;
+	return `${status}/${blocking.blocks(run.name) ? "gating" : "informational"}`;
 };
 
 export interface Sample {
@@ -84,20 +102,26 @@ export interface Sample {
 	/**
 	 * The repo's active workflow inventory, path-addressed.
 	 *
-	 * Paths rather than the count it used to be: the count is `no-producer`'s discriminator and the
-	 * paths are the gate-coverage read's left operand, and holding both would be one fact stored twice.
+	 * Paths rather than the count it used to be: whether any is repo-authored is `no-producer`'s
+	 * discriminator (`producesCi`) and the paths are the gate-coverage read's left operand, and
+	 * holding both would be one fact stored twice.
 	 */
 	readonly workflows: ReadonlyArray<string>;
 	readonly runCount: number;
-	/** The workflows that produced a run at this head — gate coverage's right operand. */
-	readonly ranAtHead: ReadonlyArray<string>;
+	/**
+	 * The runs at this head with the provenance coverage judges them by — its right operand.
+	 *
+	 * Rows rather than the paths it used to be: a path says which workflow file ran, and the event
+	 * and head beside it are what say the job opened these bytes rather than the base ref.
+	 */
+	readonly ranAtHead: ReadonlyArray<RunProvenance>;
 	/** The suites a newer run of their own workflow replaced at this head — see `./supersession.ts`. */
 	readonly superseded: ReadonlySet<number>;
 }
 
 /** The gating check runs a superseded suite cancelled — read as still in flight, never as failed. */
-const supersededGating = (sample: Sample): ReadonlyArray<ShipCheckRun> =>
-	sample.runs.filter((run) => !isInformational(run.name) && isSuperseded(run, sample.superseded));
+const supersededGating = (sample: Sample, blocking: BlockingSet): ReadonlyArray<ShipCheckRun> =>
+	sample.runs.filter((run) => blocking.blocks(run.name) && isSuperseded(run, sample.superseded));
 
 /**
  * The whole answer over one sample.
@@ -106,17 +130,29 @@ const supersededGating = (sample: Sample): ReadonlyArray<ShipCheckRun> =>
  * not of the sample: a single read cannot tell a check that queued a second ago from one wedged for
  * an hour.
  */
-export const rollupFor = (sample: Sample, wedged: ReadonlyArray<string>): ChecksRollup => {
+export const rollupFor = (
+	sample: Sample,
+	wedged: ReadonlyArray<string>,
+	blocking: BlockingSet,
+): ChecksRollup => {
 	if (wedged.length > 0) return "wedged";
 	if (sample.runs.length === 0) {
-		if (sample.workflows.length === 0) return "no-producer";
+		if (!producesCi(sample.workflows)) return "no-producer";
 		return sample.runCount === 0 ? "no-runs" : "pending";
 	}
-	const gating = sample.runs.filter((run) => !isInformational(run.name));
+	const gating = sample.runs.filter((run) => blocking.blocks(run.name));
 	const rollup = rollupOf(gating.filter((run) => !isSuperseded(run, sample.superseded)));
 	// A superseded cancel is exactly as unfinished as a running check, so it pends a green and loses
 	// to a red — the substitution `rollupOf` would make if the row were still in flight.
-	return rollup === "green" && supersededGating(sample).length > 0 ? "pending" : rollup;
+	const present =
+		rollup === "green" && supersededGating(sample, blocking).length > 0 ? "pending" : rollup;
+	return owedRollup(
+		present,
+		reportingAt(
+			blocking,
+			sample.runs.map((run) => run.name),
+		),
+	);
 };
 
 export const runChecks = (
@@ -152,8 +188,26 @@ export const runChecks = (
 		if (at._tag === "Unknown") {
 			return refuse(PRECONDITION_UNKNOWN, unreadable("the commit", at.reason));
 		}
+		// `bound` is what the caller asked and what every answer is spelled with; `head` is that
+		// commit's full object name. The Actions run list filters `head_sha` as an exact string, so an
+		// abbreviated `--sha` there reads as zero runs — a coverage answer the two must never differ on
+		// (`../review/gate-coverage.ts`).
+		const head = at.value;
 
-		const diagnostics: string[] = [];
+		// The base branch's declared required set, read once: it is a property of the branch this PR
+		// targets, not of the head, so a `--wait` poll re-reading it would spend a call per cadence on
+		// an answer that cannot move. Unreadable is a refusal, never a colour — with the authority
+		// unread, no green here could say which checks it was green over.
+		const authority = yield* readBlockingSet(repo, target.pull.baseRef);
+		if (authority._tag !== "Set") {
+			return refuse(
+				authority._tag === "Incomplete" ? INCOMPLETE_SCAN : PRECONDITION_UNKNOWN,
+				unreadableCause(VERB, target.pull.baseRef, authority),
+			);
+		}
+		const blocking = authority.set;
+
+		const diagnostics: string[] = [authorityNote(VERB, target.pull.baseRef, blocking)];
 		if (!prefixMatch(target.pull.headSha, bound)) {
 			diagnostics.push(
 				`${VERB}: the live head is ${target.pull.headSha}, you are enumerating ${bound} — the head moved.`,
@@ -188,7 +242,7 @@ export const runChecks = (
 			}
 			// Enumerated rather than counted: `total_count` is still the `no-runs` discriminator, and
 			// the rows beside it are the only place supersession can be read from.
-			const atHead = yield* listRunsAtHead(repo, bound);
+			const atHead = yield* listRunsAtHead(repo, head);
 			if (atHead._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
@@ -200,7 +254,7 @@ export const runChecks = (
 				runs: latestPerContext(runs),
 				workflows: workflows.value,
 				runCount: atHead.value.declared,
-				ranAtHead: atHead.value.runs.map((run) => run.path),
+				ranAtHead: atHead.value.runs,
 				superseded: supersededSuites(atHead.value.runs),
 			} satisfies Sample;
 		});
@@ -215,15 +269,28 @@ export const runChecks = (
 			const failing = read.runs
 				.filter(
 					(run) =>
-						!isInformational(run.name) && isFailing(run) && !isSuperseded(run, read.superseded),
+						blocking.blocks(run.name) && isFailing(run) && !isSuperseded(run, read.superseded),
 				)
 				.map((run) => run.name)
 				.sort();
-			const replaced = supersededGating(read)
+			const replaced = supersededGating(read, blocking)
 				.map((run) => run.name)
 				.sort();
 			const scope = [
 				...diagnostics,
+				...reportedLine(VERB, blocking, read.runs),
+				// An empty head is `no-runs` or `no-producer`, which say why nothing reported themselves.
+				...(read.runs.length === 0
+					? []
+					: reportingNote(
+							VERB,
+							target.pull.baseRef,
+							blocking,
+							reportingAt(
+								blocking,
+								read.runs.map((run) => run.name),
+							),
+						)),
 				scannedLine(
 					VERB,
 					read.runs.length,
@@ -245,7 +312,9 @@ export const runChecks = (
 					: [`${VERB}: failing gating checks: ${failing.join(", ")} — route these to heal-ci.`]),
 				...notes,
 			];
-			const checks = reasonHistogram(read.runs, (run) => checkClassOf(run, read.superseded));
+			const checks = reasonHistogram(read.runs, (run) =>
+				checkClassOf(run, read.superseded, blocking),
+			);
 			if (json) {
 				return answer(
 					JSON.stringify({
@@ -288,13 +357,25 @@ export const runChecks = (
 			| {readonly _tag: "Ungated"; readonly outcome: VerbOutcome}
 			| {readonly _tag: "Judged"; readonly notes: ReadonlyArray<string>} => {
 			if (rollup !== "green") return {_tag: "Judged", notes: []};
-			const coverage = gateCoverageOf(read.workflows, read.ranAtHead);
+			const coverage = gateCoverageOf(read.workflows, read.ranAtHead, head);
+			if (coverage._tag === "Unreadable") {
+				// Never the coverage refusal: that code says the repository's gates were silent, and an
+				// operand this verb could not resolve is a fact about the call instead.
+				return {
+					_tag: "Ungated",
+					outcome: refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot judge gate coverage at ${bound}: ${coverage.reason} — CI state is UNKNOWN, never green.`,
+						diagnostics,
+					),
+				};
+			}
 			if (coverage._tag === "Uncovered") {
 				return {
 					_tag: "Ungated",
 					outcome: refuse(
 						NO_GATE_COVERAGE,
-						`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${bound} — the ${read.runs.length} check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.`,
+						`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors inspected ${head} — the ${read.runs.length} check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.`,
 						diagnostics,
 					),
 				};
@@ -304,7 +385,7 @@ export const runChecks = (
 				notes: [
 					coverage._tag === "NoGates"
 						? `${VERB}: ${repo} authors no workflow of its own — every run at ${bound} is platform-provided, so there is no gate coverage to judge.`
-						: `${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors produced a run at ${bound}.`,
+						: `${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors inspected ${head}.`,
 				],
 			};
 		};
@@ -313,7 +394,7 @@ export const runChecks = (
 		 * `render`, behind the two doors every exit of this verb passes: gate coverage, and the repo's
 		 * own declaration on the no-producer case.
 		 *
-		 * The rollup already knows a repo has no workflows; what a *caller* gets for that is the
+		 * The rollup already knows a repo has no workflow of its own; what a *caller* gets for that is the
 		 * repo's call, and only here is it read — so every exit of this verb, waiting or not, passes
 		 * the same door.
 		 */
@@ -326,7 +407,7 @@ export const runChecks = (
 			const coverage = covered(read, rollup);
 			if (coverage._tag === "Ungated") return coverage.outcome;
 			if (rollup !== "no-producer") return render(read, rollup, wedged, settle, coverage.notes);
-			const producer = producerFor(VERB, repo, read.workflows.length, ci);
+			const producer = producerFor(VERB, repo, read.workflows, ci);
 			if (producer._tag === "Unknown") return refuse(PRECONDITION_UNKNOWN, producer.reason);
 			if (producer._tag === "Refused") return refuse(ZERO_SCOPE, producer.reason, diagnostics);
 			const rendered = render(read, rollup, wedged, settle);
@@ -337,7 +418,7 @@ export const runChecks = (
 
 		const first = yield* sample;
 		if ("code" in first) return first;
-		if (!options.wait) return settled(first, rollupFor(first, []), [], null);
+		if (!options.wait) return settled(first, rollupFor(first, [], blocking), [], null);
 
 		// The budget is WALL CLOCK, call latency included — v1 counted only its sleeps and silently
 		// overran the budget it claimed to hold.
@@ -354,7 +435,7 @@ export const runChecks = (
 			const wedged = [...stalledSince.entries()]
 				.filter(([, since]) => now - since >= options.wedgeDwellSeconds * 1000)
 				.map(([name]) => name);
-			const rollup = rollupFor(read, wedged);
+			const rollup = rollupFor(read, wedged, blocking);
 			if (rollup !== "pending") return settled(read, rollup, wedged, "settled");
 			if (now - startedAt >= options.budgetSeconds * 1000) {
 				return settled(read, rollup, wedged, "budget-exhausted");
@@ -367,7 +448,7 @@ export const runChecks = (
 			if (moved._tag === "Refused") return moved.outcome;
 			if (!prefixMatch(moved.pull.headSha, bound)) {
 				// The answer is about a tree the PR no longer is.
-				return settled(read, rollupFor(read, wedged), wedged, "head-moved");
+				return settled(read, rollupFor(read, wedged, blocking), wedged, "head-moved");
 			}
 			const next = yield* sample;
 			if ("code" in next) return next;

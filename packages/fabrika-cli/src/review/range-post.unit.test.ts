@@ -12,6 +12,7 @@ import {
 	okOut,
 	type Scripted,
 	unconfigured,
+	unconfiguredAtCommits,
 } from "../fakes.test-support.ts";
 import {NOT_HARNESS_TOUCHING} from "../governance/codes.ts";
 import {
@@ -40,8 +41,8 @@ const ON = Date.parse("2026-09-01T00:00:00Z");
 const MARKER = `review-doc: PASS range:${RANGE} content:${CONTENT} — guide matches shipped behavior`;
 
 /** One `--raw -z` record under a governance root, and the digest that record serializes to. */
-const GOV_RAW = `:100644 100644 ${"a".repeat(40)} ${"b".repeat(40)} M\0claude-plugins/fabrika/skills/operate/SKILL.md\0`;
-const GOV_CONTENT = "bb15e4131548";
+const GOV_RAW = `:100644 100644 ${"a".repeat(40)} ${"b".repeat(40)} M\0.claude/skills/operate/SKILL.md\0`;
+const GOV_CONTENT = "af45bfbe0a71";
 const GOV_MARKER = `governance: PASS range:${RANGE} content:${GOV_CONTENT} — no contradiction, no weakening`;
 
 const issue = (shape: {state?: string; pull?: boolean; body?: string} = {}): HttpReply => ({
@@ -123,6 +124,7 @@ const governanceHappy = (): ReadonlyArray<Scripted> => [
 	[COMMENTS, {status: 200, body: comments().stdout}],
 	[CREATE, created],
 	[READBACK, commentBody(`${GOV_MARKER}\n\n${BODY}`)],
+	...unconfiguredAtCommits,
 ];
 
 /**
@@ -146,6 +148,7 @@ const reposting = (
 		[COMMENTS, {status: 200, body: comments({id: 42, body: prior}).stdout}],
 		[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
 		[READBACK, commentBody(supersedeWith(prior, fresh, new Date(ON)))],
+		...unconfiguredAtCommits,
 	];
 };
 
@@ -167,7 +170,7 @@ const runGovernance = (
 	Effect.runPromise(
 		Effect.provide(
 			runGovernancePost({...governanceOptions, ...overrides}),
-			Layer.merge(fakeSeams(script).layer, unconfigured),
+			Layer.merge(fakeSeams([...script, ...unconfiguredAtCommits]).layer, unconfigured),
 		),
 	);
 

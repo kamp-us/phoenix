@@ -23,6 +23,7 @@ import {CodeBlock} from "./CodeBlock";
 import {useDesignT} from "./i18n";
 import {MermaidBlock} from "./MermaidBlock";
 import "./Markdown.css";
+import "./visually-hidden.css";
 
 /**
  * marked's `Token` union carries an open `Tokens.Generic` member whose `type` is `string`, so a
@@ -69,6 +70,26 @@ const Anchor = ({href, children}: {readonly href: string; readonly children: Rea
 	);
 };
 
+/**
+ * A task item's state (ADR 0441): a glyph for sighted readers and a word spoken once for assistive
+ * tech. The glyph is a state marker under ADR 0166 §8, so it pairs with the hidden word and stays
+ * out of the item's accessible name. The trailing space keeps the word apart from the item text,
+ * the job the source's own `[x] ` separator did before the marker stopped rendering.
+ */
+function TaskState({checked}: {readonly checked: boolean}): ReactElement {
+	const t = useDesignT();
+	return (
+		<>
+			<span className="kp-markdown__task-glyph" data-checked={checked} aria-hidden="true">
+				{checked ? "✓" : "○"}
+			</span>
+			<span className="kp-visually-hidden">
+				{t(checked ? "ui.markdown.task.done" : "ui.markdown.task.open")}
+			</span>{" "}
+		</>
+	);
+}
+
 const inlines = (tokens: readonly Token[]): ReactNode =>
 	keyed(tokens, (token) => <Inline token={closed(token)} />);
 
@@ -96,6 +117,9 @@ function Inline({token}: {readonly token: MarkedToken}): ReactNode {
 			return <Anchor href={token.href}>{token.text === "" ? token.href : token.text}</Anchor>;
 		case "html":
 			return token.text;
+		// A loose task item carries its marker inside its first paragraph; a tight one, as a block.
+		case "checkbox":
+			return <TaskState checked={token.checked} />;
 		default:
 			return token.raw;
 	}
@@ -175,17 +199,21 @@ function Block({
 			) : (
 				<CodeBlock token={token} />
 			);
-		// A task marker stays the text it was written as. A real `<input type="checkbox">` would be
-		// an unlabelled control in a read-only block, and its state would reach a screen reader only
-		// by duplicating the item's own text as a name.
 		case "checkbox":
-			return token.raw;
+			return <TaskState checked={token.checked} />;
 		case "list": {
-			const items = keyed(token.items, (item) => <li>{blocks(item.tokens, headingBase)}</li>);
+			const items = keyed(token.items, (item) => (
+				<li className={item.task ? "kp-markdown__task" : undefined}>
+					{blocks(item.tokens, headingBase)}
+				</li>
+			));
+			// A task item's glyph replaces its bullet (see `Markdown.css`), and WebKit stops exposing a
+			// `<ul>` as a list once its items draw no marker, so the role is restated for that case.
+			const markerless = token.items.some((item) => item.task);
 			return token.ordered ? (
 				<ol start={token.start === "" ? undefined : token.start}>{items}</ol>
 			) : (
-				<ul>{items}</ul>
+				<ul role={markerless ? "list" : undefined}>{items}</ul>
 			);
 		}
 		case "table":

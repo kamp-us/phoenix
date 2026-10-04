@@ -14,17 +14,18 @@
  * the process keeps running.
  */
 
-import {Effect, Fiber, Stream} from "effect";
-import type {ReactElement, ReactNode} from "react";
-import {useEffect, useState} from "react";
-import type {Message, ProcessId} from "../process/process.ts";
-import type {RendererKind} from "../registry/program.ts";
+import type {Message, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {RendererKind} from "@kampus/tuval-sdk/kernel/registry/program";
 import type {
 	AnyWindowHost,
 	AnyWindowRenderer,
 	ViewState,
+	WindowHost,
 	WindowRenderer,
-} from "../shell/window/index.ts";
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {Effect, Fiber, Stream} from "effect";
+import type {ReactElement, ReactNode} from "react";
+import {useEffect, useState} from "react";
 
 /**
  * The brand only `readsState` can set. It is a module-private `unique symbol`, so no other module
@@ -47,6 +48,31 @@ export interface ReadableRenderer {
 	/** The renderer this guards, so a table entry is still identifiable with the renderer it names. */
 	readonly renderer: AnyWindowRenderer;
 }
+
+/**
+ * One process's public state, live. The stream never fails and ends on `ProcessGone`, so the hook
+ * needs no error arm: `null` means "nothing yet", and a gone process simply stops updating.
+ *
+ * It lives beside the admission test because both halves read the one stream for their own reason:
+ * `ReadableWindow` below reads it to decide whether to mount at all, and a renderer that needs the
+ * state itself reads it again to render over. A second copy of this effect in the table's module is
+ * how the two would drift.
+ */
+export const useProcessState = <S,>(host: WindowHost<S>): S | null => {
+	const [state, setState] = useState<S | null>(null);
+	const read = host.readProcess;
+	useEffect(() => {
+		const fiber = Effect.runFork(
+			Stream.runForEach(read, (view) =>
+				Effect.sync(() => {
+					if (view._tag === "Live") setState(view.state);
+				}),
+			),
+		);
+		return () => void Effect.runFork(Fiber.interrupt(fiber));
+	}, [read]);
+	return state;
+};
 
 /** Before the first state arrives there is nothing to admit and nothing to render. */
 export const Pending = (): ReactElement => (

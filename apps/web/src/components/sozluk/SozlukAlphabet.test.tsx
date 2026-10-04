@@ -31,6 +31,28 @@ describe("SozlukAlphabet — A–Z index ARIA (#2169)", () => {
 		expect(a?.tagName.toLowerCase()).toBe("a");
 	});
 
+	it("ends the strip with Q, W and X — links like every other letter (#9425)", () => {
+		const {container} = renderAlphabet({});
+		const letters = Array.from(container.querySelectorAll(".kp-sozluk-alphabet__letter"));
+		const tail = letters.slice(-4);
+		expect(tail.map((el) => el.textContent)).toEqual(["z", "q", "w", "x"]);
+		// A link, an href to its own page and the same spelled-out name: the treatment every
+		// Turkish letter already gets, so nothing about the strip distinguishes the three.
+		expect(tail.map((el) => el.tagName.toLowerCase())).toEqual(["a", "a", "a", "a"]);
+		expect(tail.map((el) => el.getAttribute("href"))).toEqual([
+			"/sozluk/harf/z",
+			"/sozluk/harf/q",
+			"/sozluk/harf/w",
+			"/sozluk/harf/x",
+		]);
+		expect(tail.map((el) => el.getAttribute("aria-label"))).toEqual([
+			"Z harfi",
+			"Q harfi",
+			"W harfi",
+			"X harfi",
+		]);
+	});
+
 	it("uppercases the letter name in Turkish locale (i → İ, not I)", () => {
 		const {container} = renderAlphabet({});
 		const labels = Array.from(container.querySelectorAll(".kp-sozluk-alphabet__letter")).map((el) =>
@@ -62,5 +84,22 @@ describe("SozlukAlphabet — A–Z index ARIA (#2169)", () => {
 			/\.kp-subnav__filters\s+\.kp-sozluk-alphabet\s*\{[^}]*align-items:\s*center[^}]*height:\s*100%[^}]*padding-block:\s*0[^}]*border-bottom:\s*0/s,
 		);
 		expect(SOZLUK_CSS).toMatch(/\.kp-sozluk-alphabet__letter\s*\{[^}]*line-height:\s*1/s);
+	});
+
+	// The strip wraps to three rows at 390px and the bar's fixed `--subnav-h` box did not grow
+	// with it, so the page's first line painted through rows two and three and the CTA ran past
+	// the viewport edge (#9354). Pinning the selector too, not just the declarations: relaxing
+	// `.kp-subnav` itself would drag every other SubnavShell consumer along.
+	it("relaxes the bar's fixed height only for a Subnav that hosts the strip (#9354)", () => {
+		const phone = SOZLUK_CSS.match(/@media \(max-width: 640px\) \{[\s\S]*?\n\}/)?.[0];
+		expect(phone).toBeTruthy();
+		expect(phone).toMatch(
+			/\.kp-subnav:has\(\.kp-sozluk-alphabet\)\s*\{[^}]*height:\s*auto[^}]*min-height:\s*var\(--subnav-h\)[^}]*flex-wrap:\s*wrap/s,
+		);
+		expect(phone).toMatch(
+			/\.kp-subnav:has\(\.kp-sozluk-alphabet\)\s+\.kp-subnav__filters\s*\{[^}]*flex:\s*1 1 100%/s,
+		);
+		// An unscoped `.kp-subnav {` inside the phone block would relax the bar for /pano too.
+		expect(phone).not.toMatch(/(^|[^)\w-])\.kp-subnav\s*\{/m);
 	});
 });

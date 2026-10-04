@@ -1,16 +1,6 @@
 /**
- * The one exit table all five `ui` verbs allocate from, so a code means one thing across this group
- * whichever verb produced it (`claude-plugins/fabrika/skills/build-ui/contract.md`).
- *
- * The overlap with `report` is **re-exported, never re-typed** — the discipline `build/codes.ts`
- * states in full: an aligning group imports the base's constant, so a drift is unrepresentable
- * rather than merely detectable. This group shares eight seats over `4`-`11` and adds `12`-`19` for
- * facts about the visual modality — the manifest, the law, the render, the captures, and the lane.
- *
- * Seat `3` is the one seat this group deliberately leaves empty: no `ui` verb reads stdin, and an
- * unused seat is cheaper than a second meaning on a shared number.
- *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
+ * Exit allocations for `ui`; caller semantics are in `./command.ts` help.
+ * Shared meanings import `../exit-codes.ts`; allocation checks live in `../exit-code-alignment.ts`.
  */
 
 import {
@@ -28,19 +18,12 @@ import {
 /** The aligned stdin seat, held empty: no `ui` verb reads stdin, so nothing else may sit here. */
 export const DELIBERATE_GAP = SHARED_EMPTY_STDIN;
 
-/** A required section is missing, malformed, empty, or out of place — in a document a verb parses. */
 export const BAD_SECTIONS = SHARED_BAD_SECTIONS;
-/** The authored text carries a machine-local path, unredacted. */
 export const LEAKED_PATH = SHARED_LEAKED_PATH;
-/** The authored text is a bare `@` path reference — not redactable, so a second code. */
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
-/** Zero scope: the target is **proven** absent or closed, or there is nothing to judge. */
 export const ZERO_SCOPE = SHARED_NO_TARGET;
-/** A write was attempted and its outcome could not be proven — UNKNOWN, deliberately not `1`. */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
-/** The write landed but the read-back does not match; the artifact exists and needs a human. */
 export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
-/** A value off its closed vocabulary or naming grammar. A malformed *flag* stays `1`. */
 export const OFF_VOCABULARY = SHARED_CLASSIFIED;
 /**
  * A required read or execution failed — no outcome is proven.
@@ -51,17 +34,11 @@ export const OFF_VOCABULARY = SHARED_CLASSIFIED;
  */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
-/** Proven: no design manifest at the convention path — the repo is un-bootstrapped. */
 export const NO_MANIFEST = 12;
-/** Proven: the manifest exists but no typed prohibition registry does — the law is untyped. */
 export const UNTYPED_LAW = 13;
-/** Proven: a surface rendered with an uncaught page error — the render is red. */
 export const RENDER_CRASHED = 14;
-/** Proven: a surface is unreachable — the route resolved to nothing this tree can render. */
 export const SURFACE_UNREACHABLE = 15;
-/** Proven: a capture was produced but is invalid — zero bytes, undecodable, or zero area. */
 export const CAPTURE_INVALID = 16;
-/** Proven: at least one evidence upload failed — nothing was posted. */
 export const UPLOAD_FAILED = 17;
 /**
  * Proven: the lane precondition failed — this session does not hold the claim the checked-out lane
@@ -72,5 +49,4 @@ export const UPLOAD_FAILED = 17;
  * group's seat allocation to the other's.
  */
 export const LANE_NOT_MINE = 18;
-/** Proven: `.fabrika.jsonc` declares no `uiSurfaces` row — the repo cannot be rendered headlessly. */
 export const NO_UI_SURFACE = 19;

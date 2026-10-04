@@ -1,6 +1,6 @@
+import {registry, snapshot} from "@kampus/tuval-sdk/kernel/commands/parse/fixtures";
+import {CallId, WindowId} from "@kampus/tuval-sdk/kernel/protocol/ids";
 import {expect, it} from "vitest";
-import {registry, snapshot} from "../../commands/parse/fixtures.ts";
-import {CallId, WindowId} from "../../protocol/ids.ts";
 import {readCommandLine} from "./line.ts";
 
 const options = {registry, snapshot, id: CallId.make("call"), window: WindowId.make("focused")};

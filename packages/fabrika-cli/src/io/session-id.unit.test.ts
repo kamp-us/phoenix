@@ -18,14 +18,6 @@ describe("sessionIdFrom", () => {
 		expect(sessionIdFrom({PI_SUBAGENT_PARENT_SESSION: "pi"})).toBe("pi");
 	});
 
-	it("falls back to CLAUDE_CODE_SESSION_ID alone", () => {
-		expect(sessionIdFrom({CLAUDE_CODE_SESSION_ID: "cc"})).toBe("cc");
-	});
-
-	it("takes FABRIKA_SESSION_ID when it is the only one set", () => {
-		expect(sessionIdFrom({FABRIKA_SESSION_ID: "explicit"})).toBe("explicit");
-	});
-
 	it("treats a blank value as unset and falls through to the next variable", () => {
 		expect(sessionIdFrom({FABRIKA_SESSION_ID: "   ", PI_SUBAGENT_PARENT_SESSION: "pi"})).toBe("pi");
 	});

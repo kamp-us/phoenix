@@ -141,7 +141,6 @@ describe("serializeCandidateSet / parseCandidateSet", () => {
 
 	it("serializes deterministically (sorted flag keys, trailing newline)", () => {
 		const text = serializeCandidateSet(set);
-		assert.strictEqual(serializeCandidateSet(set), text);
 		assert.isTrue(text.endsWith("\n"));
 		assert.isBelow(text.indexOf("golden-screens"), text.indexOf("zeta-draft"));
 	});

@@ -44,6 +44,7 @@ const options = {
 	until: null as string | null,
 	dir: ".decisions",
 	base: "origin/main",
+	env: {},
 	json: false,
 	now: Effect.succeed(Date.parse("2026-08-10T00:00:00Z")),
 };
@@ -117,7 +118,12 @@ describe("runDigest", () => {
 	});
 
 	it("refuses a malformed date, and a window that runs backwards, on 10", async () => {
-		expect((await run(happy, {since: "08/02/2026"})).code).toBe(OFF_VOCABULARY);
+		const malformed = await run(happy, {since: "08/02/2026"});
+		expect(malformed.code).toBe(OFF_VOCABULARY);
+		expect(malformed.stdout).toBe("");
+		expect(malformed.stderr.join("\n")).toContain(
+			'governance digest: --since "08/02/2026" is not a YYYY-MM-DD date.',
+		);
 		expect((await run(happy, {until: "2026-08-01"})).code).toBe(OFF_VOCABULARY);
 	});
 

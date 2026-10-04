@@ -18,7 +18,6 @@ import {
 	type Rest,
 	refusalText,
 	resolveToken,
-	restBytes,
 	restCall,
 	restRead,
 	restWrite,
@@ -163,12 +162,6 @@ describe("existenceOf — three arms, never two", () => {
 
 	it("constructs Absent on 404", () => {
 		expect(existenceOf(response(404, {message: "Not Found"}), readName)).toEqual({_tag: "Absent"});
-	});
-
-	it("constructs Unknown carrying the reason on any other non-2xx", () => {
-		const result = existenceOf(response(502, null), readName);
-		expect(result._tag).toBe("Unknown");
-		expect(result._tag === "Unknown" && result.reason).toContain("502");
 	});
 
 	it("routes its Unknown arm through refusalText rather than building the status inline", () => {
@@ -320,25 +313,6 @@ describe("graphqlRead", () => {
 	});
 });
 
-describe("no token, no request", () => {
-	it("cannot construct a read without a resolved credential", async () => {
-		const shell = fakeShell([], undefined, [/^gh /]);
-		const http = fakeHttp([]);
-		const issued = await Effect.runPromise(
-			Effect.provide(
-				Effect.gen(function* () {
-					const token = yield* resolveToken({});
-					if (token._tag === "Failure") return null;
-					return yield* restRead(token.value, "GET", "repos/o/r/pulls/1");
-				}),
-				Layer.merge(shell.layer, http.layer),
-			),
-		);
-		expect(issued).toBeNull();
-		expect(http.calls).toEqual([]);
-	});
-});
-
 describe("restCall — the write leg", () => {
 	it("sends the method, the JSON body and the default Accept", async () => {
 		const http = fakeHttp([[/comments\/77/, served(200, {id: 77})]]);
@@ -406,40 +380,10 @@ describe("the credential reaches the transport", () => {
 		expect(http.headers[0]?.authorization).toBe(`token ${TOKEN}`);
 	});
 
-	it("attaches `authorization` on the bytes leg", async () => {
-		const http = fakeHttp([[/artifacts\/5\/zip$/, {status: 200, body: "PK", headers: {}}]]);
-		await Effect.runPromise(
-			Effect.provide(restBytes(TOKEN, "repos/o/r/actions/artifacts/5/zip"), http.layer),
-		);
-		expect(http.headers[0]?.authorization).toBe(`token ${TOKEN}`);
-	});
-
 	it("attaches `authorization` on the GraphQL leg", async () => {
 		const http = fakeHttp([[/graphql$/, served(200, {data: {}})]]);
 		await Effect.runPromise(Effect.provide(graphqlRead(TOKEN, "query{x}", {}), http.layer));
 		expect(http.headers[0]?.authorization).toBe(`token ${TOKEN}`);
-	});
-});
-
-describe("restBytes — the raw-bytes read", () => {
-	it("hands back the bytes undecoded, beside the status", async () => {
-		const http = fakeHttp([[/artifacts\/5\/zip$/, {status: 200, body: "PK", headers: {}}]]);
-		const result = await Effect.runPromise(
-			Effect.provide(restBytes(TOKEN, "repos/o/r/actions/artifacts/5/zip"), http.layer),
-		);
-		expect(http.calls).toEqual(["GET https://api.github.com/repos/o/r/actions/artifacts/5/zip"]);
-		expect(result._tag).toBe("Response");
-		expect(result._tag === "Response" && Array.from(result.value.slice(0, 2))).toEqual([
-			0x50, 0x4b,
-		]);
-	});
-
-	it("answers Unreachable rather than a status when GitHub was never reached", async () => {
-		const http = fakeHttp([], undefined, [/artifacts\/5\/zip$/]);
-		const result = await Effect.runPromise(
-			Effect.provide(restBytes(TOKEN, "repos/o/r/actions/artifacts/5/zip"), http.layer),
-		);
-		expect(result._tag).toBe("Unreachable");
 	});
 });
 

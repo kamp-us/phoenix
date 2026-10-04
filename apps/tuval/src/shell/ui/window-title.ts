@@ -10,7 +10,7 @@
  * they have always had.
  */
 
-import type {ProcessId} from "../../process/process.ts";
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
 import type {ProcessName, WindowMount} from "./mount.ts";
 
 /** The pre-#8721 title, and still what a window whose desk names no windows shows. */
@@ -21,7 +21,7 @@ const byId = (processId: ProcessId): string => `process ${processId}`;
  * line of spaces — has named nothing, and a blank title row is worse than the program's own id.
  */
 const named = (name: ProcessName): string =>
-	name.title !== null && name.title.trim() !== "" ? name.title : name.programId;
+	name.title !== null && name.title.trim() !== "" ? name.title : name.program;
 
 export const windowTitle = (mount: WindowMount): string => {
 	switch (mount._tag) {

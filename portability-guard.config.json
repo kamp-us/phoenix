@@ -1,6 +1,10 @@
 {
 	"$comment": "The bounded allow-list `fabrika guard portability-guard check` judges claude-plugins/fabrika/ and packages/fabrika-cli/src/ against. `exempt` is a permanent per-file cap for text that is not a portability defect. `unmigrated` is the sweep floor: one row per sweep unit, ceiling equal to that unit's reference count when the guard landed, each `why` naming the child that clears it. The floor only shrinks — a ceiling above the count reds as loudly as a count above the ceiling.",
 	"exempt": {
+		"claude-plugins/fabrika/skills/skill-doctor/assets/pierre-diffs.js": {
+			"ceiling": 138,
+			"why": "Byte-exact upstream asset under this skill's re-copy-never-edit rule: every hit is a CSS hex colour on the minified line, which the hex carve-out does not reach here. Editing the file is forbidden, so the cap is the only honest disposition."
+		},
 		"claude-plugins/fabrika/.claude-plugin/plugin.json": {
 			"ceiling": 6,
 			"why": "The plugin manifest's `homepage`/`repository` name where this plugin is published; a published package has to say where it lives."
@@ -65,12 +69,12 @@
 			"paths": ["packages/fabrika-cli/src/lane"]
 		},
 		"plugin-ship": {
-			"ceiling": 9,
-			"why": "The quoted stderr half is paid down: #8306 swept the ship verbs' own strings and mirrored every rewritten literal into this contract's Errors tables and worked examples, so 23 of the 32 are gone. What is left is a value rather than a sentence: 6 are the synthetic PR numbers a worked example echoes back and 2 are the placeholder owner/repo pull-request URLs those examples print, both cleared by #8350, the fixture-URL ticket; the ninth quotes `ship checks: <repo> has zero workflows … (ADR 0092)`, a literal of a string that lives in packages/fabrika-cli/src/config/ci-producer.ts and moves only when #8307, the wire sweep, moves it.",
+			"ceiling": 8,
+			"why": "The quoted stderr half is paid down: #8306 swept the ship verbs' own strings and mirrored every rewritten literal into this contract's Errors tables and worked examples, so 23 of the 32 are gone, and #6582 re-mirrored the no-producer refusal from packages/fabrika-cli/src/config/ci-producer.ts, which carried the last quoted reference. What is left is a value rather than a sentence: 6 are the synthetic PR numbers a worked example echoes back and 2 are the placeholder owner/repo pull-request URLs those examples print, both cleared by #8350, the fixture-URL ticket.",
 			"paths": ["claude-plugins/fabrika/skills/ship"]
 		},
 		"plugin-review": {
-			"ceiling": 18,
+			"ceiling": 16,
 			"why": "Verbatim pins of stderr lines the shipped `review` verbs print. The reference sits inside the quoted string, so it is a copy of behaviour that lives in packages/fabrika-cli/src/review/ — the source #8305 owns. It shrinks when that child rewrites the strings; changing the pin first would make the contract quote a line no verb prints.",
 			"paths": ["claude-plugins/fabrika/skills/review/contract.md"]
 		},
@@ -129,8 +133,8 @@
 			"paths": ["packages/fabrika-cli/src/ship", "packages/fabrika-cli/src/heal-ci"]
 		},
 		"cli-wire": {
-			"ceiling": 19,
-			"why": "Fixture URLs no prose rewrite reaches. Ten are `https://github.com/o/r/issues/<n>#issuecomment-<n>` values that `decision-ruling`'s own `RULING_URL_RE` pins to the github.com host, so a placeholder host would exercise nothing — the pin itself is the defect, parked behind #8359. Nine are the package's `o/r` placeholder issue and pull URLs, served by a fake HTTP layer and compared at runtime; `o/r` resolves in no repository, and the `url` matcher's missing test-data carve-out is #8350.",
+			"ceiling": 11,
+			"why": "Fixture URLs no prose rewrite reaches. Three are `https://github.com/o/r/issues/<n>#issuecomment-<n>` values that `decision-ruling`'s own `RULING_URL_RE` pins to the github.com host, so a placeholder host would exercise nothing — the pin itself is the defect, parked behind #8359; the registry's own copies collapsed to one `RULING_COMMENT_URL` constant when the ruling marker widened past decisions. Eight are the package's `o/r` placeholder issue and pull URLs, served by a fake HTTP layer and compared at runtime; `o/r` resolves in no repository, and the `url` matcher's missing test-data carve-out is #8350.",
 			"paths": [
 				"packages/fabrika-cli/src/wire",
 				"packages/fabrika-cli/src/io",

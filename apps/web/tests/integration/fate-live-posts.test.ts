@@ -1,7 +1,8 @@
 /**
  * Live views over SSE — the GLOBAL `topic:posts` half, on a DEDICATED per-file stage
  * (ADR 0104 step 7, #1027). Split from `fate-live.test.ts`: the args-scoped +
- * auth-only cases moved to the run-scoped SHARED stage (`fate-live-scoped.test.ts`).
+ * auth-only cases moved to the run-scoped SHARED stage (`fate-live-scoped.test.ts`,
+ * `fate-live-owner-fence.test.ts`).
  *
  * These cases MUST stay on a dedicated stage. Both subscribe to the GLOBAL `posts`
  * connection (no args), so `topicsForPublish` resolves the procedure-wide global

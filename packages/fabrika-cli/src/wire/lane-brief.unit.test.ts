@@ -19,6 +19,9 @@ import {
 	type LaneBrief,
 	type LaneGround,
 	lanesRoot,
+	OWNER_COMMENTS_RULES,
+	OWNER_COMMENTS_UNKNOWN_RULES,
+	type OwnerComments,
 	RULES,
 	read,
 	SHELL_STATES,
@@ -57,7 +60,12 @@ const PR = url("https://forge.example/o/r/pull/11");
 const INSTALLED = "/home/dev/repo/node_modules/@kampus/fabrika-cli/dist/bin.js";
 const IN_TREE = "packages/fabrika-cli/src/bin.ts";
 
-const brief = (ground: LaneGround, fabrika: string, state: LaneBrief["state"]): LaneBrief => ({
+const brief = (
+	ground: LaneGround,
+	fabrika: string,
+	state: LaneBrief["state"],
+	ownerComments: OwnerComments = {_tag: "None"},
+): LaneBrief => ({
 	lane: "4",
 	root: root("/home/dev/repo/.fabrika/lanes"),
 	fabrika: entry(fabrika),
@@ -66,11 +74,13 @@ const brief = (ground: LaneGround, fabrika: string, state: LaneBrief["state"]): 
 	shell: shellOf(state),
 	issue: ISSUE,
 	ground,
+	ownerComments,
 });
 
 const GROUNDS: ReadonlyArray<readonly [string, LaneGround, LaneBrief["state"]]> = [
 	["Pull, mid-construction", {_tag: "Pull", pr: null}, "build"],
 	["Pull, mid-UI-construction", {_tag: "Pull", pr: null}, "build:ui"],
+	["Pull, mid-mixed-construction", {_tag: "Pull", pr: null}, "build:mixed"],
 	["Pull, with the lane's PR", {_tag: "Pull", pr: PR}, "review"],
 	["Pull, at the rendered review", {_tag: "Pull", pr: PR}, "review:ui"],
 	["Tail", {_tag: "Tail", pr: PR, epic: EPIC}, "review"],
@@ -79,11 +89,12 @@ const GROUNDS: ReadonlyArray<readonly [string, LaneGround, LaneBrief["state"]]> 
 	["Epic child UI build", {_tag: "Epic", epic: EPIC, branch: ref("epic/40")}, "build:ui"],
 ];
 
-describe("the five shell states route through one table", () => {
+describe("the six shell states route through one table", () => {
 	it("routes every state the format admits, and nothing else", () => {
 		expect(SHELL_STATES.map((state) => [state, shellOf(state)])).toEqual([
 			["build", "builder"],
 			["build:ui", "ui-builder"],
+			["build:mixed", "mixed-builder"],
 			["review", "reviewer"],
 			["review:ui", "ui-reviewer"],
 			["ship", "shipper"],
@@ -157,6 +168,42 @@ describe("read(emit(brief)) round-trips on every ground, whatever the entrypoint
 		expect(rulesOf(emit(brief({_tag: "Pull", pr: PR}, INSTALLED, "review")))).toBe(
 			rulesOf(emit(brief({_tag: "Pull", pr: PR}, IN_TREE, "review"))),
 		);
+	});
+});
+
+/**
+ * The field is a warning the shell reads, so its two speaking states each carry their own rule and
+ * the silent one changes no byte of a brief.
+ */
+describe("the `owner-comments` field", () => {
+	const FIRST = url("https://forge.example/o/r/issues/4#issuecomment-71");
+	const SECOND = url("https://forge.example/o/r/issues/4#issuecomment-72");
+
+	it("round-trips the listed comments as URLs, under the rule that says to read them", () => {
+		const value = brief({_tag: "Pull", pr: PR}, IN_TREE, "review", {
+			_tag: "Unmarked",
+			urls: [FIRST, SECOND],
+		});
+		const bytes = emit(value);
+
+		expect(bytes).toContain(`owner-comments: ${FIRST} ${SECOND}\n## Rules`);
+		expect(bytes.endsWith(`${OWNER_COMMENTS_RULES}\n`)).toBe(true);
+		expect(read(bytes)).toEqual({_tag: "Found", value});
+	});
+
+	it("round-trips a failed read as `unknown`, never as an absent field", () => {
+		const value = brief({_tag: "Pull", pr: null}, IN_TREE, "build", {_tag: "Unknown"});
+		const bytes = emit(value);
+
+		expect(bytes).toContain("owner-comments: unknown\n## Rules");
+		expect(bytes.endsWith(`${OWNER_COMMENTS_UNKNOWN_RULES}\n`)).toBe(true);
+		expect(read(bytes)).toEqual({_tag: "Found", value});
+	});
+
+	it("refuses the field on a `ship` brief — a shipper neither builds nor judges", () => {
+		const artifact = `## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: ship\nshell: shipper\n## Ground\nissue: ${ISSUE}\npr: ${PR}\nowner-comments: ${FIRST}\n## Rules\n${RULES}\n${OWNER_COMMENTS_RULES}\n`;
+
+		expect(read(artifact)).toMatchObject({_tag: "Malformed", evidence: "owner-comments"});
 	});
 });
 

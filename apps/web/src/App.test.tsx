@@ -6,7 +6,7 @@
  * the REAL `FateProvider` gate through a mount-recording `FateClient` spy; see the two
  * `// REGRESSION:` notes on the assertions.
  */
-import {act, render, screen, within} from "@testing-library/react";
+import {act, render, screen} from "@testing-library/react";
 import type {ReactNode} from "react";
 import {MemoryRouter} from "react-router";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
@@ -204,13 +204,6 @@ describe("App first-paint invariants (#2177 — pins #2160 flash + #438 remount)
 		expect(fateMounts).toHaveLength(0);
 	});
 
-	it("invariant 1 (bridge): the SetTopbarChipsContext bridge shows anonymous affordances pre-settle — chips=null is not a blank frame", () => {
-		renderApp();
-		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
-		expect(screen.getByRole("link", {name: /kamp/i})).toBeTruthy();
-		expect(fateMounts).toHaveLength(0);
-	});
-
 	it("invariant 2: FateClient mounts ONCE on the resolved identity — no anon→id remount (#438)", () => {
 		renderApp(FATE_FREE_ROUTE);
 		expect(fateMounts).toHaveLength(0);
@@ -310,11 +303,11 @@ describe("signed-in cluster seeded from __BOOT__.user (ADR 0185)", () => {
 
 		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
 		expect(container.querySelector(".kp-topbar__user")).toBeNull();
-		// The gate that empties the account side also decides where the theme control lives: with
-		// no user menu to carry it, the utility-zone picker must render (#2612).
-		expect(
-			within(screen.getByTestId("topbar-zone-utility")).getByTestId("topbar-theme-picker"),
-		).toBeTruthy();
+		// With the account side gated shut there is no user menu, so no theme control renders
+		// anywhere and the page follows the OS (ADR 0437).
+		expect(screen.queryByTestId("topbar-theme-picker")).toBeNull();
+		expect(screen.queryByTestId("topbar-theme-row")).toBeNull();
+		expect(container.querySelector(".kp-theme-picker")).toBeNull();
 	});
 
 	// The other direction of the same gate: with no `__BOOT__` the claim comes from the settled
@@ -376,38 +369,6 @@ describe("mecmua nav entry (#2828) — resolves at first paint from __BOOT__, no
 		);
 		expect(order).toEqual([...order].sort((a, b) => a - b));
 		expect(fateMounts).toHaveLength(0);
-	});
-});
-
-// The akış entry gates on the SAME `mecmua-feed` seam its route self-gates on, so the link can
-// never point at a dark 404 (#2547).
-describe("mecmua feed nav entry (#2547) — gated on mecmua-feed, never a dead link", () => {
-	beforeEach(() => {
-		fateMounts.length = 0;
-		sessionState = {data: null, isPending: true};
-		flags.mecmuaFeed = false;
-	});
-	afterEach(() => {
-		flags.mecmuaFeed = false;
-		vi.clearAllMocks();
-	});
-
-	it("off: the flag dark ⇒ no akış nav link (subscribe's destination stays hidden with its route)", () => {
-		renderApp("/mecmua");
-		act(() => {
-			setSession({data: null, isPending: false});
-		});
-		expect(screen.queryByRole("link", {name: "akış"})).toBeNull();
-	});
-
-	it("on: the flag flipped ⇒ the akış nav link paints and points at /mecmua/akis", () => {
-		flags.mecmuaFeed = true;
-		renderApp("/mecmua");
-		act(() => {
-			setSession({data: null, isPending: false});
-		});
-		const link = screen.getByRole("link", {name: "akış"});
-		expect(link.getAttribute("href")).toBe("/mecmua/akis");
 	});
 });
 
@@ -474,7 +435,8 @@ describe("nav-IA coupling: pano/yeni Subnav CTA ↔ topbar + gönderi eviction (
 });
 
 // akış lives in the mecmua Subnav zone, not the topbar product-noun row — still gated on its own
-// seam (#2603).
+// seam (#2603), the same `mecmua-feed` seam its route self-gates on, so the link can never point
+// at a dark 404 (#2547).
 describe("nav-IA mecmua delta: akış moves from topbar into the mecmua Subnav zone (#2603)", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
@@ -493,6 +455,7 @@ describe("nav-IA mecmua delta: akış moves from topbar into the mecmua Subnav z
 			setSession({data: null, isPending: false});
 		});
 		const akis = screen.getByRole("link", {name: "akış"});
+		expect(akis.getAttribute("href")).toBe("/mecmua/akis");
 		expect(container.querySelector(".kp-topbar")?.contains(akis)).toBe(false);
 		expect(container.querySelector(".kp-subnav")?.contains(akis)).toBe(true);
 	});
@@ -549,9 +512,11 @@ describe("Two-tier fate provider — /pano public first paint (#2285)", () => {
 	});
 });
 
-// /profile's eager tier paints a SKELETON (the identity-scoped read can't show anon data) and,
-// unlike /pano's, mounts NO FateClient — so there is nothing above the gate to re-key (#2188).
-describe("Two-tier fate provider — /profile eager Katkıların skeleton (#2188)", () => {
+// #9273 moved the contribution block below every settings section on /profile, so a pre-session
+// skeleton at the top of <Main> would settle nowhere near where the block lands. /profile now
+// paints no eager tier at all. ADR 0167's public client is untouched: this skeleton never mounted
+// one (#2188), so dropping it decouples nothing from the session gate.
+describe("/profile paints no eager Katkıların skeleton (#9273)", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
 		sessionState = {data: null, isPending: true};
@@ -560,27 +525,17 @@ describe("Two-tier fate provider — /profile eager Katkıların skeleton (#2188
 		vi.clearAllMocks();
 	});
 
-	it("paints the Katkıların skeleton on /profile while the session isPending — before the authed gate commits", () => {
+	it("paints no Katkıların skeleton above the gate on /profile while the session isPending", () => {
 		renderApp("/profile");
 
-		expect(screen.getByTestId("signal-loading")).toBeTruthy();
-		expect(fateMounts).toHaveLength(0);
-	});
-
-	it("#438: the eager /profile skeleton mounts NO FateClient — nothing to re-key anon→id", () => {
-		renderApp("/profile");
-		expect(fateMounts).toHaveLength(0);
-		expect(screen.getByTestId("signal-loading")).toBeTruthy();
-	});
-
-	it("scoped: a non-profile route paints NO eager Katkıların skeleton", () => {
-		renderApp("/sozluk");
 		expect(screen.queryByTestId("signal-loading")).toBeNull();
 		expect(fateMounts).toHaveLength(0);
 	});
 });
 
-// The search box lives in the fate-free shell, so these render without settling the session (#2199).
+// The search trigger lives in the fate-free shell, so these render without settling the session
+// (#2199). It echoes the results page's query as its label — since ADR 0186 the typing itself
+// happens in the ⌘K palette, which mounts below the session gate.
 describe("Topbar search echo (#2199)", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
@@ -590,19 +545,14 @@ describe("Topbar search echo (#2199)", () => {
 		vi.clearAllMocks();
 	});
 
-	it("echoes the URL q in the header search input on /search", () => {
+	it("echoes the URL q on the header search trigger on /search", () => {
 		renderApp("/search?q=elma");
-		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("elma");
+		expect(screen.getByRole("button", {name: "Ara"}).textContent).toContain("elma");
 	});
 
-	it("reads q live — a different query renders a different echoed value (no stale/double source)", () => {
-		renderApp("/search?q=armut");
-		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("armut");
-	});
-
-	it("leaves the header input empty off the results page (unchanged behavior)", () => {
+	it("falls back to the placeholder copy off the results page (no query to echo)", () => {
 		renderApp("/pano");
-		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("");
+		expect(screen.getByRole("button", {name: "Ara"}).textContent).toContain("ara…");
 	});
 });
 

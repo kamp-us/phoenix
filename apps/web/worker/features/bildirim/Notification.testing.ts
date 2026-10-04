@@ -27,3 +27,33 @@ const failOnContact: NotificationShape = {
 export const makeNotificationStub = (
 	overrides: Partial<NotificationShape> = {},
 ): Layer.Layer<Notification> => Layer.succeed(Notification, {...failOnContact, ...overrides});
+
+/**
+ * {@link makeNotificationStub}'s fail-on-contact double, recording each method reached. Every
+ * bildirim emitter swallows its whole cause, so a dying method cannot show an emitter stayed
+ * silent; a silent arm asserts `touched` is empty instead.
+ */
+export const makeTouchRecordingNotificationStub = (): {
+	readonly layer: Layer.Layer<Notification>;
+	readonly touched: ReadonlyArray<keyof NotificationShape>;
+} => {
+	const touched: Array<keyof NotificationShape> = [];
+	const touching =
+		(method: keyof NotificationShape) =>
+		(..._args: ReadonlyArray<unknown>): Effect.Effect<never, never, never> =>
+			Effect.suspend(() => {
+				touched.push(method);
+				return die(method)();
+			});
+	const recording: NotificationShape = {
+		record: touching("record"),
+		recordAggregate: touching("recordAggregate"),
+		recordDigest: touching("recordDigest"),
+		listForRecipient: touching("listForRecipient"),
+		unreadCount: touching("unreadCount"),
+		markRead: touching("markRead"),
+		markAllRead: touching("markAllRead"),
+		resolveTargets: touching("resolveTargets"),
+	};
+	return {layer: Layer.succeed(Notification, recording), touched};
+};

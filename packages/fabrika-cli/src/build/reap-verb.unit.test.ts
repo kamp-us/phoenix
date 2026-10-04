@@ -4,7 +4,7 @@ import {
 	errOut,
 	type FakeFsOptions,
 	fakeFs,
-	fakeShell,
+	fakeSeams,
 	okOut,
 	once,
 	type Scripted,
@@ -12,11 +12,13 @@ import {
 import type {ExecResult} from "../io/exec.ts";
 import {FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
+import {issue} from "./fixtures.test-support.ts";
 import {REAP_JOURNAL, runReap} from "./reap-verb.ts";
 
 const SELF = /^git rev-parse --path-format=absolute/;
 const TREES = /^git worktree list --porcelain$/;
-const TRUNK = /^git symbolic-ref --short refs\/remotes\/origin\/HEAD$/;
+/** The one trunk read — GitHub's default branch for the repo the env names. */
+const TRUNK = /^GET \S+\/repos\/o\/r$/;
 const STATUS = /^git -C \S+ --no-optional-locks status --porcelain$/;
 const ANCESTOR = /^git merge-base --is-ancestor /;
 const DIFF = /^git diff .* origin\/main\.\.\./;
@@ -28,6 +30,39 @@ const SHALLOW = /^git rev-parse --is-shallow-repository$/;
 const REMOVE = /^git worktree remove /;
 const PRUNE = /^git worktree prune$/;
 const UNLOCK = /^git worktree unlock /;
+const REVLIST = /^git -C \S+ rev-list --count HEAD --not --branches --remotes --tags$/;
+const ADD = /^git -C \S+ add --all$/;
+const SALVAGE = /^git -C \S+ commit --no-verify/;
+/** Every board read the sweep can make: the pull requests on a branch, and one issue. */
+const PULLS = /^GET \S+\/repos\/o\/r\/pulls\?state=all&head=/;
+const ISSUE = /^GET \S+\/repos\/o\/r\/issues\/\d+$/;
+const BOARD = /\/repos\/o\/r\/(pulls|issues)/;
+
+/** What the trunk scan answers for a HEAD it does not carry, down to a patch that matches nothing. */
+const UNLANDED: ReadonlyArray<Scripted> = [
+	[ANCESTOR, errOut("exit 1")],
+	[NAMES, okOut("x\0")],
+	[DIFF, okOut("diff --git a/x b/x\n@@\n+x\n")],
+	[PATCH_ID, okOut("ffff 0000\n")],
+	[MERGE_BASE, okOut(`${"a".repeat(40)}\n`)],
+	[LOG, okOut("")],
+];
+
+const pullsOn = (...rows: ReadonlyArray<{number: number; state: string; merged?: boolean}>) => ({
+	status: 200,
+	body: JSON.stringify(
+		rows.map((row) => ({
+			number: row.number,
+			state: row.state,
+			merged_at: row.merged === true ? "2026-09-30T00:00:00Z" : null,
+			head: {sha: "b".repeat(40)},
+			created_at: "2026-09-29T00:00:00Z",
+		})),
+	),
+});
+
+/** The repo and credential the trunk read resolves against. */
+const ENV = {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"};
 
 const HERE = "/repo/.claude/worktrees/agent-self";
 const DEAD = "/repo/.claude/worktrees/agent-dead";
@@ -69,7 +104,7 @@ const here = okOut([`${HERE}/.git`, HERE].join("\n"));
 
 const GROUND: ReadonlyArray<Scripted> = [
 	[SELF, here],
-	[TRUNK, okOut("origin/main\n")],
+	[TRUNK, {status: 200, body: JSON.stringify({default_branch: "main"})}],
 ];
 
 const ago = (seconds: number): Date => new Date(Date.now() - seconds * 1000);
@@ -89,14 +124,17 @@ const run = (
 	fs: FakeFsOptions = QUIET_FS,
 	limit: number | null = null,
 ) => {
-	const shell = fakeShell(script as ReadonlyArray<readonly [RegExp, never]>);
+	const shell = fakeSeams(script);
 	const disk = fakeFs(fs);
 	const layer = Layer.merge(shell.layer, disk.layer);
-	return Effect.runPromise(Effect.provide(runReap({execute, limit}), layer)).then((out) => ({
-		out,
-		calls: shell.calls,
-		journal: disk.written.get(JOURNAL) ?? "",
-	}));
+	return Effect.runPromise(Effect.provide(runReap({execute, limit, env: ENV}), layer)).then(
+		(out) => ({
+			out,
+			calls: shell.calls,
+			requests: shell.requests,
+			journal: disk.written.get(JOURNAL) ?? "",
+		}),
+	);
 };
 
 describe("runReap — the dry run mutates nothing", () => {
@@ -138,12 +176,8 @@ describe("runReap — the dry run mutates nothing", () => {
 			[TREES, trees(PRIMARY, {path: DEAD}, {path: OTHER, head: AHEAD})],
 			[STATUS, okOut("")],
 			[new RegExp(`^git merge-base --is-ancestor ${LANDED} `), okOut("")],
-			[ANCESTOR, errOut("exit 1")],
-			[NAMES, okOut("x\0")],
-			[DIFF, okOut("diff --git a/x b/x\n@@\n+x\n")],
-			[PATCH_ID, okOut("ffff 0000\n")],
-			[MERGE_BASE, okOut(`${LANDED}\n`)],
-			[LOG, okOut("")],
+			...UNLANDED,
+			[REVLIST, okOut("2\n")],
 		]);
 
 		const report = out.stderr.join("\n");
@@ -177,12 +211,13 @@ describe("runReap — what the trunk proves", () => {
 		expect(JSON.parse(out.stdout).removed).toMatchObject([{path: DEAD, license: "squashed"}]);
 	});
 
-	it("keeps a tree whose patch matches nothing on the trunk", async () => {
+	it("keeps unreached commits whose patch matches nothing on the trunk", async () => {
 		const {out, calls} = await run(
 			[
 				...GROUND,
 				[TREES, trees(PRIMARY, {path: DEAD, head: AHEAD})],
 				[STATUS, okOut("")],
+				[REVLIST, okOut("1\n")],
 				[ANCESTOR, errOut("exit 1")],
 				[NAMES, okOut("x\0")],
 				[DIFF, okOut("diff --git a/x b/x\n@@\n+x\n")],
@@ -199,12 +234,13 @@ describe("runReap — what the trunk proves", () => {
 		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
 	});
 
-	it("keeps a tree whose landing read failed — UNKNOWN is never 'landed'", async () => {
+	it("keeps unreached commits whose landing read failed — UNKNOWN is never 'landed'", async () => {
 		const {out, calls} = await run(
 			[
 				...GROUND,
 				[TREES, trees(PRIMARY, {path: DEAD, head: AHEAD})],
 				[STATUS, okOut("")],
+				[REVLIST, okOut("1\n")],
 				[ANCESTOR, errOut("exit 1")],
 				[DIFF, errOut("bad object")],
 			],
@@ -227,6 +263,7 @@ describe("runReap — an unreachable merge base names its remedy when there is o
 		...GROUND,
 		[TREES, trees(PRIMARY, {path: DEAD, head: AHEAD})],
 		[STATUS, okOut("")],
+		[REVLIST, okOut("1\n")],
 		[ANCESTOR, errOut("exit 1")],
 		[DIFF, okOut("diff --git a/x b/x\n@@\n+x\n")],
 		[PATCH_ID, okOut("ffff 0000\n")],
@@ -234,6 +271,10 @@ describe("runReap — an unreachable merge base names its remedy when there is o
 		[MERGE_BASE, errOut("git merge-base exited 1")],
 		[SHALLOW, shallow],
 	];
+
+	/** git's own reason, closed by the bracket the KEEP reason quotes it in — no remedy after it. */
+	const BARE =
+		"(whether its work landed is UNKNOWN: it shares no merge base with origin/main: git merge-base exited 1)";
 
 	const keptReason = (out: {readonly stdout: string}): string =>
 		JSON.parse(out.stdout).kept[0]?.reason ?? "";
@@ -252,18 +293,14 @@ describe("runReap — an unreachable merge base names its remedy when there is o
 	it("carries git's reason alone when the clone is not shallow", async () => {
 		const {out} = await run(beyondBoundary(okOut("false\n")));
 
-		expect(keptReason(out)).toBe(
-			"whether its work landed is UNKNOWN: it shares no merge base with origin/main: git merge-base exited 1",
-		);
+		expect(keptReason(out)).toContain(BARE);
 	});
 
 	// A probe that cannot answer names an unreadable read no more precisely — and never less.
 	it("carries git's reason alone when the shallow probe itself fails", async () => {
 		const {out} = await run(beyondBoundary(errOut("rev-parse blew up")));
 
-		expect(keptReason(out)).toBe(
-			"whether its work landed is UNKNOWN: it shares no merge base with origin/main: git merge-base exited 1",
-		);
+		expect(keptReason(out)).toContain(BARE);
 	});
 });
 
@@ -647,11 +684,11 @@ describe("runReap — what it refuses to touch", () => {
 	});
 
 	it("answers none — never a refusal — when no agent tree is registered", async () => {
-		const {out, calls} = await run([...GROUND, [TREES, trees(PRIMARY)]]);
+		const {out, requests} = await run([...GROUND, [TREES, trees(PRIMARY)]]);
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({answer: "none", removed: [], kept: []});
-		expect(calls.some((line) => TRUNK.test(line))).toBe(false);
+		expect(requests.some((line) => TRUNK.test(line))).toBe(false);
 	});
 
 	it("is UNKNOWN when this run cannot recognise its own tree", async () => {
@@ -686,13 +723,13 @@ describe("runReap — what it refuses to touch", () => {
 			[
 				[SELF, here],
 				[TREES, trees(PRIMARY, {path: DEAD})],
-				[TRUNK, errOut("ref refs/remotes/origin/HEAD is not a symbolic ref")],
+				[TRUNK, {status: 502, body: '{"message":"Bad Gateway"}'}],
 			],
 			true,
 		);
 
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stderr.join("\n")).toMatch(/remote set-head/);
+		expect(out.stderr.join("\n")).toMatch(/cannot resolve the trunk/);
 		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
 	});
 });
@@ -755,24 +792,269 @@ describe("runReap — the journal is what survives a killed sweep", () => {
 	});
 });
 
-describe("runReap — --limit bounds the sweep", () => {
-	it("attempts exactly that many removals and reports the rest unattempted", async () => {
-		const {out, calls, journal} = await run(
-			twoRemovable([REMOVE, okOut("")], [TREES, trees(PRIMARY, {path: OTHER})]),
+describe("runReap — a clean tree a ref reaches goes on git's word alone", () => {
+	it("removes it with no board read, though the trunk does not carry its HEAD", async () => {
+		const {out, requests} = await run(
+			[
+				...GROUND,
+				[once(TREES), trees(PRIMARY, {path: DEAD, head: AHEAD, branch: "build/4082-x-43cc4b51"})],
+				[STATUS, okOut("")],
+				...UNLANDED,
+				[REVLIST, okOut("0\n")],
+				[REMOVE, okOut("")],
+				[TREES, trees(PRIMARY)],
+			],
 			true,
-			QUIET_FS,
-			1,
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).removed).toEqual([
+			{path: DEAD, license: "ref-reached", salvaged: 0},
+		]);
+		expect(requests.some((line) => BOARD.test(line))).toBe(false);
+	});
+});
+
+describe("runReap — the board releases what a tree still holds", () => {
+	const LANE = "build/8572-editor-focus-43cc4b51";
+	/** A quiet tree on a lane branch, holding three uncommitted paths. */
+	const dirty = (branch: string = LANE): ReadonlyArray<Scripted> => [
+		...GROUND,
+		[once(TREES), trees(PRIMARY, {path: DEAD, head: AHEAD, branch})],
+		[STATUS, okOut(" M a.ts\n M b.ts\n?? c.ts\n")],
+		...UNLANDED,
+		[REVLIST, okOut("0\n")],
+	];
+	const mutated = (calls: ReadonlyArray<string>): boolean =>
+		calls.some((line) => REMOVE.test(line) || ADD.test(line) || SALVAGE.test(line));
+
+	it("commits the uncommitted paths onto the branch, then removes plainly, when its pull request is merged", async () => {
+		const {out, calls, journal} = await run(
+			[
+				...dirty(),
+				[PULLS, pullsOn({number: 8580, state: "closed", merged: true})],
+				[ADD, okOut("")],
+				[SALVAGE, okOut("")],
+				[REMOVE, okOut("")],
+				[TREES, trees(PRIMARY)],
+			],
+			true,
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).removed).toEqual([
+			{path: DEAD, license: "branch-ended", salvaged: 3},
+		]);
+		expect(calls.findIndex((line) => SALVAGE.test(line))).toBeLessThan(
+			calls.indexOf(`git worktree remove ${DEAD}`),
+		);
+		expect(calls.some((line) => line.includes("--force"))).toBe(false);
+		expect(journalRows(journal)).toMatchObject([{license: "branch-ended", salvaged: 3}]);
+	});
+
+	it("removes it when its pull request is closed unmerged", async () => {
+		const {out} = await run(
+			[
+				...dirty(),
+				[PULLS, pullsOn({number: 8580, state: "closed"})],
+				[ADD, okOut("")],
+				[SALVAGE, okOut("")],
+				[REMOVE, okOut("")],
+				[TREES, trees(PRIMARY)],
+			],
+			true,
+		);
+
+		expect(JSON.parse(out.stdout).removed).toMatchObject([{license: "branch-ended"}]);
+	});
+
+	it("removes it when no pull request has the branch and the issue it is named for is closed", async () => {
+		const {out} = await run(
+			[
+				...dirty("epic/8160"),
+				[PULLS, pullsOn()],
+				[ISSUE, issue({number: 8160, state: "closed"})],
+				[ADD, okOut("")],
+				[SALVAGE, okOut("")],
+				[REMOVE, okOut("")],
+				[TREES, trees(PRIMARY)],
+			],
+			true,
+		);
+
+		expect(JSON.parse(out.stdout).removed).toMatchObject([{license: "branch-ended"}]);
+	});
+
+	it("keeps it while a pull request on the branch is open, naming the count and the live branch", async () => {
+		const {out, calls} = await run(
+			[...dirty(), [PULLS, pullsOn({number: 8580, state: "open"})]],
+			true,
+		);
+
+		expect(JSON.parse(out.stdout).kept[0].reason).toMatch(
+			/3 uncommitted path\(s\), and its branch is live: pull request \S+ on \S+ is open/,
+		);
+		expect(mutated(calls)).toBe(false);
+	});
+
+	it("keeps it when the board does not answer — a failed read proves nothing", async () => {
+		const {out, calls} = await run(
+			[...dirty(), [PULLS, {status: 502, body: '{"message":"Bad Gateway"}'}]],
+			true,
+		);
+
+		expect(JSON.parse(out.stdout).kept[0].reason).toMatch(
+			/merged or closed is not proven: the pull requests on \S+ could not be read/,
+		);
+		expect(mutated(calls)).toBe(false);
+	});
+
+	// The founder's long-running desk, were it ever named like an agent tree: detached, dirty,
+	// months old, made by no lane. There is no branch to ask about, so the board is never read.
+	it("keeps a detached, dirty, long-lived tree no lane made, and asks the board nothing", async () => {
+		const {out, calls, requests} = await run(
+			[
+				...GROUND,
+				[TREES, trees(PRIMARY, {path: DEAD})],
+				[STATUS, okOut(" M .fabrika.jsonc\n?? desk.log\n")],
+				[ANCESTOR, okOut("")],
+				[REVLIST, okOut("0\n")],
+			],
+			true,
+		);
+
+		expect(JSON.parse(out.stdout).kept[0].reason).toMatch(
+			/2 uncommitted path\(s\).*it holds no branch/,
+		);
+		expect(requests.some((line) => BOARD.test(line))).toBe(false);
+		expect(mutated(calls)).toBe(false);
+	});
+
+	it("leaves the tree standing when the salvage commit fails, and never removes it", async () => {
+		const {out, calls} = await run(
+			[
+				...dirty(),
+				[PULLS, pullsOn({number: 8580, state: "closed", merged: true})],
+				[ADD, okOut("")],
+				[SALVAGE, errOut("index.lock exists")],
+			],
+			true,
+		);
+
+		expect(out.code).toBe(WRITE_UNKNOWN);
+		expect(out.stderr.join("\n")).toMatch(/could not be committed onto \S+ first: index.lock/);
+		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
+	});
+
+	it("plans the removal on a dry run and touches nothing", async () => {
+		const {out, calls} = await run([
+			...dirty(),
+			[TREES, trees(PRIMARY, {path: DEAD, head: AHEAD, branch: LANE})],
+			[PULLS, pullsOn({number: 8580, state: "closed", merged: true})],
+		]);
+
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			answer: "planned",
+			removable: [{path: DEAD, license: "branch-ended"}],
+		});
+		expect(mutated(calls)).toBe(false);
+	});
+});
+
+describe("runReap — --limit bounds the sweep", () => {
+	it("stops reading trees the moment its removals are spent", async () => {
+		const THIRD = "/repo/.claude/worktrees/agent-third";
+		const FOURTH = "/repo/.claude/worktrees/agent-fourth";
+		const all = [DEAD, OTHER, THIRD, FOURTH];
+		const {out, calls, journal} = await run(
+			[
+				...GROUND,
+				[once(TREES), trees(PRIMARY, ...all.map((path) => ({path})))],
+				[STATUS, okOut("")],
+				[ANCESTOR, okOut("")],
+				[REMOVE, okOut("")],
+				[TREES, trees(PRIMARY, {path: THIRD}, {path: FOURTH})],
+			],
+			true,
+			{
+				directories: [HERE, ...all],
+				mtimes: Object.fromEntries(all.map((p) => [p, ago(2_592_000)])),
+			},
+			2,
 		);
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
 			answer: "reaped",
-			removed: [{path: DEAD, license: "ancestor"}],
-			unattempted: [{path: OTHER, license: "ancestor"}],
+			scanned: 2,
+			unscanned: 2,
+			removed: [{path: DEAD}, {path: OTHER}],
 		});
-		expect(calls.filter((line) => REMOVE.test(line))).toEqual([`git worktree remove ${DEAD}`]);
-		expect(journalRows(journal)).toMatchObject([{path: DEAD}]);
-		expect(out.stderr.join("\n")).toMatch(new RegExp(`UNATTEMPTED ${OTHER}`));
+		// The trees past the second removal were never given a git read of any kind.
+		expect(calls.filter((line) => STATUS.test(line))).toEqual([
+			`git -C ${DEAD} --no-optional-locks status --porcelain`,
+			`git -C ${OTHER} --no-optional-locks status --porcelain`,
+		]);
+		expect(calls.filter((line) => ANCESTOR.test(line))).toHaveLength(2);
+		// And the first tree went before the second was read.
+		expect(calls.indexOf(`git worktree remove ${DEAD}`)).toBeLessThan(
+			calls.indexOf(`git -C ${OTHER} --no-optional-locks status --porcelain`),
+		);
+		expect(journalRows(journal)).toMatchObject([{path: DEAD}, {path: OTHER}]);
+		expect(out.stderr.join("\n")).toMatch(
+			/--limit 2 was spent with 2 of 4 tree\(s\) still unjudged/,
+		);
+	});
+
+	// Clearing a stale registration is not bounded: prune skips a locked entry, so one past the
+	// bound would outlive every bounded pass unless its absence is still read and its lock dropped.
+	it("still unlocks and prunes a locked, gone registration past a spent bound", async () => {
+		const GONE = "/repo/.claude/worktrees/agent-gone";
+		const LIVE = "/repo/.claude/worktrees/agent-live";
+		const lock = "claude agent (pid 84894)";
+		const {out, calls, requests} = await run(
+			[
+				...GROUND,
+				[
+					once(TREES),
+					trees(PRIMARY, {path: DEAD}, {path: OTHER}, {path: GONE, locked: lock}, {path: LIVE}),
+				],
+				[STATUS, okOut("")],
+				[ANCESTOR, okOut("")],
+				[REMOVE, okOut("")],
+				[UNLOCK, okOut("")],
+				[PRUNE, okOut("")],
+				[TREES, trees(PRIMARY, {path: OTHER}, {path: LIVE})],
+			],
+			true,
+			{
+				directories: [HERE, DEAD, OTHER, LIVE],
+				mtimes: Object.fromEntries([DEAD, OTHER, LIVE].map((p) => [p, ago(2_592_000)])),
+				unprobeable: [GONE],
+			},
+			1,
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			removed: [{path: DEAD}],
+			pruned: [GONE],
+			unpruned: [],
+			unscanned: 2,
+		});
+		expect(calls.indexOf(`git worktree unlock ${GONE}`)).toBeGreaterThan(-1);
+		expect(calls.indexOf(`git worktree unlock ${GONE}`)).toBeLessThan(
+			calls.indexOf("git worktree prune"),
+		);
+		// The stat is all a tree past the bound is given: no git read reaches the other two.
+		expect(calls.filter((line) => STATUS.test(line))).toEqual([
+			`git -C ${DEAD} --no-optional-locks status --porcelain`,
+		]);
+		expect(calls.filter((line) => ANCESTOR.test(line))).toHaveLength(1);
+		expect(calls.filter((line) => REVLIST.test(line)).every((line) => line.includes(DEAD))).toBe(
+			true,
+		);
+		expect(requests.some((line) => BOARD.test(line))).toBe(false);
 	});
 
 	it("names the bound on a dry run without narrowing what it calls removable", async () => {

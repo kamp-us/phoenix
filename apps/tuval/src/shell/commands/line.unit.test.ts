@@ -4,13 +4,14 @@
  * handler" is only true if the Msg the line produces is the Msg whose cell emits the picker's Cmd.
  */
 
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {describe, expect, it} from "vitest";
 import {applyMsg, initialState, type ShellCmd} from "../core/machine.ts";
 import {activeWorkspace} from "../core/state.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
 import type {CommandRefusal} from "./errors.ts";
 import {refusalMessage} from "./errors.ts";
 import {readCommandLine} from "./line.ts";
+import {commandIndexFor} from "./table.ts";
 
 /** The refusal a line was refused with. A line that read is a test-setup error, not a skip. */
 const refusalOf = (line: string): CommandRefusal => {
@@ -43,6 +44,15 @@ describe("reading a command line", () => {
 		expect(attach._tag === "Msg" ? attach.msg : null).toEqual({
 			type: "window.attach",
 			processId: "p-1",
+		});
+	});
+
+	it("opens a fresh agent session in a quoted cwd", () => {
+		const opened = readCommandLine('open pi "/work/project with spaces"');
+		expect(opened._tag === "Msg" ? opened.msg : null).toEqual({
+			type: "window.open",
+			programId: "pi",
+			session: {cwd: "/work/project with spaces", resume: null},
 		});
 	});
 
@@ -161,5 +171,29 @@ describe("the Msg a line produces, run through the core", () => {
 	it("a window row that only moves the desk asks the host for nothing", () => {
 		expect(cmdsOf("window:split-vertical")).toEqual([]);
 		expect(cmdsOf("workspace:create")).toEqual([]);
+	});
+});
+
+/**
+ * `process:remove <id>` off the command line (#9447). The line is the route that names a process the
+ * picker's cursor is not on, and the gate is the same one the table applies: with the flag off the
+ * verb reads as a verb nobody wrote.
+ */
+describe("reading process:remove", () => {
+	const commands = commandIndexFor({processBoard: false, processRemove: true});
+
+	it("decodes the typed line to the removal Msg", () => {
+		const read = readCommandLine("process:remove p-1", {commands});
+		expect(read).toEqual({
+			_tag: "Msg",
+			command: expect.objectContaining({path: ["process", "remove"]}),
+			msg: {type: "process.remove", processId: "p-1"},
+		});
+	});
+
+	it("leaves `remove` ambiguous rather than guessing between the workspace and the process", () => {
+		// `workspace:remove` and `process:remove` both claim the bare segment, and neither is a window
+		// row, so the table resolves it to neither — the same rule that keeps `open` unguessable.
+		expect(commands.resolveVerb("remove")).toBeUndefined();
 	});
 });

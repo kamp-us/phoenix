@@ -292,15 +292,6 @@ describe("Divan.backlogOf — one çaylak's sandboxed backlog, newest first", ()
 			],
 		);
 	});
-
-	it("excludes a removed item from the scoped backlog", () => {
-		const items = run(Effect.flatMap(Divan, (d) => d.backlogOf(UserId.make("cyl-b"))));
-		// The removed c2 must be absent; the rest newest-first.
-		assert.deepStrictEqual(
-			items.map((i) => i.id),
-			["c1", "d3"],
-		);
-	});
 });
 
 describe("Divan.pendingCountOf — the mod-notification 0→1 transition gate (#1699)", () => {

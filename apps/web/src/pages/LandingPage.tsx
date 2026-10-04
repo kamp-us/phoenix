@@ -8,8 +8,7 @@ import {useMe} from "../auth/useMe";
 import {Icon} from "../components/Icon";
 import {Screen} from "../fate/Screen";
 import {toIso} from "../fate/wire";
-import {type CatalogKey, plural, useLocale, useT} from "../i18n";
-import {formatAgoTR} from "../lib/datetime";
+import {type CatalogKey, plural, useDateFormatter, useLocale, useT} from "../i18n";
 import {landingCtaPhase, showJoinCta} from "./landingGating";
 import "./LandingPage.css";
 
@@ -77,13 +76,9 @@ export function LandingPage() {
 					</h1>
 					<p className="kp-landing__tagline">{t("auth.landing.tagline")}</p>
 					<p className="kp-landing__manifesto">
-						<strong>
-							{t("auth.landing.manifesto.panoLead", {panoNoun: t("auth.brand.pano")})}
-						</strong>{" "}
+						<strong>{t("auth.landing.manifesto.panoLead")}</strong>{" "}
 						{t("auth.landing.manifesto.panoBody")}{" "}
-						<strong>
-							{t("auth.landing.manifesto.sozlukLead", {sozlukNoun: t("auth.brand.sozluk")})}
-						</strong>{" "}
+						<strong>{t("auth.landing.manifesto.sozlukLead")}</strong>{" "}
 						{t("auth.landing.manifesto.sozlukBody")} {t("auth.landing.manifesto.tail")}
 					</p>
 					{joinVisible ? (
@@ -171,7 +166,7 @@ function LandingBody() {
 			<div className="kp-landing__cols">
 				<section className="kp-landing__col">
 					<header className="kp-landing__col-head">
-						<h3>{t("auth.landing.col.pano", {panoNoun: t("auth.brand.pano")})}</h3>
+						<h3>{t("auth.landing.col.pano")}</h3>
 						<Link to="/pano">
 							{t("auth.landing.seeAll")}{" "}
 							<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
@@ -195,7 +190,7 @@ function LandingBody() {
 
 				<section className="kp-landing__col">
 					<header className="kp-landing__col-head">
-						<h3>{t("auth.landing.col.sozluk", {sozlukNoun: t("auth.brand.sozluk")})}</h3>
+						<h3>{t("auth.landing.col.sozluk")}</h3>
 						<Link to="/sozluk">
 							{t("auth.landing.seeAll")}{" "}
 							<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
@@ -231,6 +226,7 @@ function LandingBody() {
 function LandingPostRow({node, rank}: {node: ViewRef<"Post">; rank: number}) {
 	const p = useView(LandingPostView, node);
 	const countNoun = useCountNoun();
+	const formatDate = useDateFormatter();
 	return (
 		<li className="kp-landing-row">
 			<span className="kp-landing-row__rank">{String(rank).padStart(2, "0")}</span>
@@ -255,7 +251,7 @@ function LandingPostRow({node, rank}: {node: ViewRef<"Post">; rank: number}) {
 					<span className="dot">·</span>
 					<span className="author">@{p.author}</span>
 					<span className="dot">·</span>
-					<span>{formatAgoTR(toIso(p.createdAt))}</span>
+					<span>{formatDate.ago(toIso(p.createdAt))}</span>
 					<span className="dot">·</span>
 					<span>
 						{p.commentCount}{" "}
@@ -274,6 +270,7 @@ function LandingPostRow({node, rank}: {node: ViewRef<"Post">; rank: number}) {
 function LandingTermRow({node}: {node: ViewRef<"Term">}) {
 	const term = useView(LandingTermView, node);
 	const countNoun = useCountNoun();
+	const formatDate = useDateFormatter();
 	return (
 		<li className="kp-landing-row">
 			<span className="kp-landing-row__rank">·</span>
@@ -285,7 +282,7 @@ function LandingTermRow({node}: {node: ViewRef<"Term">}) {
 				<div className="kp-landing-row__meta">
 					{term.lastActivityAt ? (
 						<>
-							<span>{formatAgoTR(toIso(term.lastActivityAt))}</span>
+							<span>{formatDate.ago(toIso(term.lastActivityAt))}</span>
 							<span className="dot">·</span>
 						</>
 					) : null}
@@ -310,7 +307,7 @@ function LandingColsSkeleton({status}: {status: "loading" | "error"}) {
 		<div className="kp-landing__cols">
 			<section className="kp-landing__col">
 				<header className="kp-landing__col-head">
-					<h3>{t("auth.landing.col.pano", {panoNoun: t("auth.brand.pano")})}</h3>
+					<h3>{t("auth.landing.col.pano")}</h3>
 					<Link to="/pano">
 						{t("auth.landing.seeAll")}{" "}
 						<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
@@ -327,7 +324,7 @@ function LandingColsSkeleton({status}: {status: "loading" | "error"}) {
 			</section>
 			<section className="kp-landing__col">
 				<header className="kp-landing__col-head">
-					<h3>{t("auth.landing.col.sozluk", {sozlukNoun: t("auth.brand.sozluk")})}</h3>
+					<h3>{t("auth.landing.col.sozluk")}</h3>
 					<Link to="/sozluk">
 						{t("auth.landing.seeAll")}{" "}
 						<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />

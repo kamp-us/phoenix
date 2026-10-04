@@ -68,9 +68,13 @@ describe("judgeJob — per-job verdict (required ⇒ must succeed; not-required 
 	});
 });
 
-describe("judge — the 4 integration scenarios from the PR body (#782/#786)", () => {
-	// integration_required = (backend || feature-complete) && (push || author-allowed)
-
+/**
+ * The aggregator through its env adapter. `judge` never branches on a job's name, and the workflow,
+ * not this CLI, computes each `*_REQUIRED` flag, so one job's path through required-and-ran,
+ * required-and-skipped and not-required-and-skipped is every job's: a per-job battery here replays
+ * {@link judgeJob}'s matrix above under another name.
+ */
+describe("judge — required-ness through the env adapter (#782/#786)", () => {
 	it("Scenario 1: backend-changed push to main → integration required; ran+passed PASS, but a SKIP FAILs", () => {
 		// ran + passed
 		assert.isTrue(
@@ -82,118 +86,6 @@ describe("judge — the 4 integration scenarios from the PR body (#782/#786)", (
 		);
 		assert.isFalse(skipped.pass);
 		assert.strictEqual(skipped.jobs.find((j) => j.name === "integration")?.verdict, "FAIL");
-	});
-
-	it("Scenario 2: backend-changed PR, author allowed → integration required; skip FAILs", () => {
-		const e = env({INTEGRATION_REQUIRED: "true", INTEGRATION_RESULT: "skipped"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "integration"), "FAIL");
-		assert.isFalse(judge(inputFromEnv(e)).pass);
-	});
-
-	it("Scenario 3: feature-complete-labelled PR (backend=false), author allowed → integration required; skip FAILs", () => {
-		const e = env({INTEGRATION_REQUIRED: "true", INTEGRATION_RESULT: "skipped"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "integration"), "FAIL");
-		assert.isFalse(judge(inputFromEnv(e)).pass);
-	});
-
-	it("Scenario 4: non-backend, non-flagged PR → integration NOT required; skip is a legit-skip PASS", () => {
-		const e = env({INTEGRATION_REQUIRED: "false", INTEGRATION_RESULT: "skipped"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "integration"), "legit-skip");
-		assert.isTrue(judge(inputFromEnv(e)).pass);
-	});
-});
-
-describe("judge — packages-tests (#760): packages/** change required, others legit-skip", () => {
-	// packages_required = (packages path filter matched) — no fork/author guard.
-
-	it("packages-changed PR → packages-tests required; ran+passed PASS", () => {
-		const e = env({PACKAGES_TESTS_REQUIRED: "true", PACKAGES_TESTS_RESULT: "success"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "required-pass");
-		assert.isTrue(judge(inputFromEnv(e)).pass);
-	});
-
-	it("packages-changed PR but suites SKIPPED → FAIL (the should-have-run silent no-op)", () => {
-		const e = env({PACKAGES_TESTS_REQUIRED: "true", PACKAGES_TESTS_RESULT: "skipped"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "FAIL");
-		assert.isFalse(judge(inputFromEnv(e)).pass);
-	});
-
-	it("packages-changed PR with a FAILING guard test → overall FAIL (a real failure is never masked)", () => {
-		const e = env({PACKAGES_TESTS_REQUIRED: "true", PACKAGES_TESTS_RESULT: "failure"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "FAIL");
-		assert.isFalse(judge(inputFromEnv(e)).pass);
-	});
-
-	it("non-packages PR → packages-tests NOT required; skip is a legit-skip PASS", () => {
-		const e = env({PACKAGES_TESTS_REQUIRED: "false", PACKAGES_TESTS_RESULT: "skipped"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "legit-skip");
-		assert.isTrue(judge(inputFromEnv(e)).pass);
-	});
-
-	it("changes source job failed → packages-tests required-ness untrustworthy ⇒ fail closed", () => {
-		const e = env({
-			CHANGES_RESULT: "failure",
-			PACKAGES_TESTS_REQUIRED: "",
-			PACKAGES_TESTS_RESULT: "skipped",
-		});
-		const v = judge(inputFromEnv(e));
-		assert.isFalse(v.pass);
-		assert.isNotNull(v.changesReport);
-	});
-});
-
-describe("judge — actionlint (#568): workflow change required, non-workflow PR legit-skip", () => {
-	// workflows_required = (the `workflows` path filter only — creds-free, no author/fork guard)
-
-	it("workflow-changed PR → actionlint required; ran+passed PASS", () => {
-		const e = env({ACTIONLINT_REQUIRED: "true", ACTIONLINT_RESULT: "success"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "actionlint"), "required-pass");
-		assert.isTrue(judge(inputFromEnv(e)).pass);
-	});
-
-	it("workflow-changed PR but actionlint SKIPPED → FAIL (the should-have-run silent no-op)", () => {
-		const e = env({ACTIONLINT_REQUIRED: "true", ACTIONLINT_RESULT: "skipped"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "actionlint"), "FAIL");
-		assert.isFalse(judge(inputFromEnv(e)).pass);
-	});
-
-	it("malformed workflow → actionlint FAILED → overall FAIL (a real failure is never masked)", () => {
-		const e = env({ACTIONLINT_REQUIRED: "true", ACTIONLINT_RESULT: "failure"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "actionlint"), "FAIL");
-		assert.isFalse(judge(inputFromEnv(e)).pass);
-	});
-
-	it("non-workflow PR → actionlint NOT required; skip is a legit-skip PASS", () => {
-		const e = env({ACTIONLINT_REQUIRED: "false", ACTIONLINT_RESULT: "skipped"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "actionlint"), "legit-skip");
-		assert.isTrue(judge(inputFromEnv(e)).pass);
-	});
-
-	it("changes source job failed → workflows_required untrustworthy ⇒ overall fail closed", () => {
-		const e = env({
-			CHANGES_RESULT: "failure",
-			ACTIONLINT_REQUIRED: "",
-			ACTIONLINT_RESULT: "skipped",
-		});
-		const v = judge(inputFromEnv(e));
-		assert.isFalse(v.pass);
-		assert.isNotNull(v.changesReport);
-	});
-});
-
-describe("judge — fork / non-author PR (the secret-less skip stays legitimate, never FAIL)", () => {
-	it("fork PR: integration_required=false && e2e_required=false ⇒ both skips are legit-skip PASS", () => {
-		const e = env({
-			// code-only frontend change, but author guard false → no secrets → both skip
-			INTEGRATION_REQUIRED: "false",
-			E2E_REQUIRED: "false",
-			INTEGRATION_RESULT: "skipped",
-			E2E_RESULT: "skipped",
-		});
-		const v = judge(inputFromEnv(e));
-		assert.strictEqual(verdictOf(inputFromEnv(e), "integration"), "legit-skip");
-		assert.strictEqual(verdictOf(inputFromEnv(e), "e2e"), "legit-skip");
-		assert.isTrue(v.pass);
 	});
 });
 
@@ -268,45 +160,6 @@ describe("judge — the all-clean happy paths PASS", () => {
 		assert.isTrue(v.pass);
 		assert.isTrue(v.jobs.every((j) => j.verdict === "legit-skip"));
 		assert.isNull(v.changesReport);
-	});
-});
-
-describe("judge — packages-tests gate (#760): packages_required required/legit-skip/fail", () => {
-	// packages_required = (the `packages` path filter only — creds-free, no author/fork guard)
-
-	it("packages changed → packages-tests required; ran+passed PASS", () => {
-		const e = env({PACKAGES_TESTS_REQUIRED: "true", PACKAGES_TESTS_RESULT: "success"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "required-pass");
-		assert.isTrue(judge(inputFromEnv(e)).pass);
-	});
-
-	it("packages changed but a guard test FAILED → packages-tests FAIL → overall FAIL", () => {
-		const e = env({PACKAGES_TESTS_REQUIRED: "true", PACKAGES_TESTS_RESULT: "failure"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "FAIL");
-		assert.isFalse(judge(inputFromEnv(e)).pass);
-	});
-
-	it("packages required but skipped → FAIL (the should-have-run silent no-op)", () => {
-		const e = env({PACKAGES_TESTS_REQUIRED: "true", PACKAGES_TESTS_RESULT: "skipped"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "FAIL");
-		assert.isFalse(judge(inputFromEnv(e)).pass);
-	});
-
-	it("non-packages PR → packages-tests NOT required; skip is a legit-skip PASS", () => {
-		const e = env({PACKAGES_TESTS_REQUIRED: "false", PACKAGES_TESTS_RESULT: "skipped"});
-		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "legit-skip");
-		assert.isTrue(judge(inputFromEnv(e)).pass);
-	});
-
-	it("changes source job failed → packages_required untrustworthy ⇒ overall fail closed", () => {
-		const e = env({
-			CHANGES_RESULT: "failure",
-			PACKAGES_TESTS_REQUIRED: "",
-			PACKAGES_TESTS_RESULT: "skipped",
-		});
-		const v = judge(inputFromEnv(e));
-		assert.isFalse(v.pass);
-		assert.isNotNull(v.changesReport);
 	});
 });
 

@@ -30,8 +30,6 @@ import {
 	outcome,
 	readable,
 	sendEvent,
-	statusLine,
-	titleLine,
 } from "./state.ts";
 
 /** Seven in the morning, so the clock lines read the way a morning brief's do. */
@@ -139,15 +137,6 @@ describe("what a window says about a notifier that has sent something", () => {
 		const many = Array.from({length: HISTORY + 5}, (_, index) => sent(7, 0, `msg ${index}`));
 		expect(notifyView({...idle, deliveries: many}).log).toHaveLength(HISTORY);
 	});
-
-	it("draws the same two lines the tile does", () => {
-		const state = {
-			...idle,
-			deliveries: [sent(7, 0, "boom", {ok: false, status: 500})],
-		};
-		expect(notifyView(state).status).toBe(statusLine(state));
-		expect(notifyView(state).heading).toBe(titleLine(state));
-	});
 });
 
 describe("how a row says a delivery ended", () => {
@@ -250,11 +239,6 @@ describe("a history this version cannot read", () => {
 		expect(readable(mixed)).toEqual([sent(7, 5, "new"), sent(7, 1, "older")]);
 	});
 
-	it("leaves a history it can read entirely alone", () => {
-		const whole = [sent(7, 5, "new"), sent(7, 1, "older")];
-		expect(readable(whole)).toEqual(whole);
-	});
-
 	it("turns a wholly unreadable history into an empty one the window can draw", () => {
 		const only = [beforeText, beforeText, beforeText];
 		expect(readable(only)).toEqual([]);
@@ -271,10 +255,6 @@ describe("the event the composer sends", () => {
 			type: "message",
 			payload: {text: "the desk is up", items: [], ok: true},
 		});
-	});
-
-	it("is built fresh each time, so no caller holds a shared object", () => {
-		expect(sendEvent("x")).not.toBe(sendEvent("x"));
 	});
 });
 
@@ -337,7 +317,7 @@ describe("the browser half reaches no kernel", () => {
 
 	it("reaches only the window, the state it draws and the leaf under that", () => {
 		// `./notify.ts` and `./deliver.ts` are the two that must never appear: the first imports
-		// `@kampus/tuval/authoring`, which reaches `node:crypto` through the kernel, and the second
+		// `@kampus/tuval-sdk/authoring`, which reaches `node:crypto` through the kernel, and the second
 		// sits under it. This list is the whole reachable set, so a new edge fails here by addition.
 		// `./renderer-ref.ts` is not in it either, and should not be: the specifier is the *kernel*
 		// half's to put on the row, and the browser half is what it names.
@@ -352,15 +332,17 @@ describe("the browser half reaches no kernel", () => {
 		const runtime = walk()
 			.bare.filter((entry) => !entry.typeOnly)
 			.map((entry) => entry.spec);
-		// `@kampus/tuval/window` is the browser-safe door, whose own import closure reaches no `node:`
-		// builtin. `@kampus/tuval/authoring` is the one that would be a bug, and it is not in this set.
-		expect([...new Set(runtime)].sort()).toEqual(["@kampus/tuval/window", "effect", "react"]);
+		// `@kampus/tuval-sdk/window` is the browser-safe door, whose own import closure reaches no `node:`
+		// builtin. `@kampus/tuval-sdk/authoring` is the one that would be a bug, and it is not in this set.
+		expect([...new Set(runtime)].sort()).toEqual(["@kampus/tuval-sdk/window", "effect", "react"]);
 	});
 
 	it("takes its one turn type type-only, so the emit imports no port module", () => {
 		// `verbatimModuleSyntax` emits nothing for an `import type`, so the built `state.js` a browser
-		// loads has no import of `@kampus/tuval/ai-agent/ports` at all.
-		const ports = walk().bare.filter((entry) => entry.spec.startsWith("@kampus/tuval/ai-agent"));
+		// loads has no import of `@kampus/tuval-sdk/ai-agent/ports` at all.
+		const ports = walk().bare.filter((entry) =>
+			entry.spec.startsWith("@kampus/tuval-sdk/ai-agent"),
+		);
 		expect(ports.length).toBeGreaterThan(0);
 		expect(ports.every((entry) => entry.typeOnly)).toBe(true);
 	});

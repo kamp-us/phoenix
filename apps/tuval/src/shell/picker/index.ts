@@ -5,3 +5,4 @@
 
 export * from "./browser.ts";
 export {type PickerOptions, runPickerIntent} from "./open.ts";
+export {type ProcessRemovalOptions, runProcessRemoval} from "./remove.ts";

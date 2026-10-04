@@ -21,6 +21,14 @@
  * fraction or a numeric string is a value the writer did not mean. All of them refuse at load rather
  * than round, because a cap silently repaired to a different number is one the operator believes
  * they set and did not.
+ *
+ * **The one key a machine may declare in `.fabrika.local.jsonc`** (`machineLocal`). A seat count is
+ * a property of the laptop holding the seats, not of the repository, so the number stops living in
+ * a tracked file a driving worktree then carries as modified for a whole run. Nothing about the cap
+ * itself softens: there is still no override flag and no environment variable, and a booting lane
+ * cannot argue past the number it reads — only where that number may be *declared* moves.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9020#issuecomment-5625285600
  */
 
 import type {Decoded, KeyGroup} from "../key-group.ts";
@@ -44,6 +52,7 @@ const decode = (raw: unknown): Decoded<number | null> => {
 export const laneConcurrencyCapKey: KeyGroup<number | null> = {
 	key: LANE_CONCURRENCY_CAP,
 	shippedDefault: SHIPPED_LANE_CONCURRENCY_CAP,
+	machineLocal: true,
 	decode,
 	jsonSchema: {
 		type: ["integer", "null"],

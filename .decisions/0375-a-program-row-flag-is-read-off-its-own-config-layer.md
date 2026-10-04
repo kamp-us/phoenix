@@ -1,7 +1,7 @@
 ---
 id: 0375
 title: A program row's feature flag is read off its own config layer's features block, not the merged record
-status: accepted
+status: amended-in-part by [0419](0419-one-desk-opens-many-projects.md)
 date: 2026-09-09
 tags: [tuval, config, feature-flags, programs]
 ---

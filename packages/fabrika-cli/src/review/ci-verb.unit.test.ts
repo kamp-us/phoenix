@@ -2,7 +2,16 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {workflows} from "../ship/fixtures.test-support.ts";
+import {
+	httpError,
+	PROTECTION,
+	planGated,
+	protection,
+	RULES,
+	rules,
+	UNDECLARED,
+	workflows,
+} from "../ship/fixtures.test-support.ts";
 import {CHECK_RUN_NAME, planFor} from "../ship/floor-check.ts";
 import {runCi} from "./ci-verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -35,6 +44,8 @@ const GREEN = runs(3, [
 
 const CI_YML = ".github/workflows/ci.yml";
 const GUARD_YML = ".github/workflows/leak-guard.yml";
+/** Checked into the repo and fired on `pull_request_target` — repo-authored, base-context. */
+const CLEANUP_YML = ".github/workflows/pr-cleanup.yml";
 const CODEQL = "dynamic/github-code-scanning/codeql";
 
 /** The repo's own gates ran here — the coverage reads every non-red rollup now owes. */
@@ -64,9 +75,308 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runCi({...options, ...overrides}),
-			Layer.merge(fakeSeams([...script, ...http]).layer, fakeFs({files}).layer),
+			Layer.merge(fakeSeams([...script, ...http, ...UNDECLARED]).layer, fakeFs({files}).layer),
 		),
 	);
+
+/**
+ * This verb used to roll up every run at the head with no blocking dimension at all, so any red
+ * anywhere made it call the head red. The base branch's declared required set is the authority now.
+ */
+describe("runCi under the base branch's required set", () => {
+	const REQUIRES: ReadonlyArray<Scripted> = [
+		[RULES, rules("unit tests")],
+		[PROTECTION, protection()],
+	];
+
+	it("is green over a red no declared context names, and names it on the notes", async () => {
+		const out = await run(
+			[
+				...REQUIRES,
+				[PULL, served(pull())],
+				[
+					RUNS,
+					runs(2, [
+						{name: "unit tests", status: "completed", conclusion: "success"},
+						{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+					]),
+				],
+			],
+			GATED,
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
+		expect(out.stderr.join("\n")).toContain(
+			"failing outside the required set: Analyze (python) — reported, never blocking.",
+		);
+	});
+
+	// The tally is the whole enumeration's, unchanged: the rollup narrowed, the evidence did not.
+	it("still tallies the non-required run it did not roll up", async () => {
+		const out = await run(
+			[
+				...REQUIRES,
+				[PULL, served(pull())],
+				[
+					RUNS,
+					runs(2, [
+						{name: "unit tests", status: "completed", conclusion: "success"},
+						{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+					]),
+				],
+			],
+			GATED,
+		);
+		expect(out.stdout).toContain("check\tfailure\t1");
+		expect(out.stdout).toContain("run\t2");
+	});
+
+	it("is red when the failing context is one the base branch declares required", async () => {
+		const out = await run([
+			...REQUIRES,
+			[PULL, served(pull())],
+			[
+				RUNS,
+				runs(2, [
+					{name: "unit tests", status: "completed", conclusion: "failure"},
+					{name: "Analyze (python)", status: "completed", conclusion: "success"},
+				]),
+			],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tred`);
+		expect(out.stderr.join("\n")).toContain("review ci: failing at this head: unit tests.");
+	});
+
+	// A non-required run still in flight is not something this head is waiting on.
+	it("does not pend on a still-running check outside the required set", async () => {
+		const out = await run(
+			[
+				...REQUIRES,
+				[PULL, served(pull())],
+				[
+					RUNS,
+					runs(2, [
+						{name: "unit tests", status: "completed", conclusion: "success"},
+						{name: "Analyze (python)", status: "in_progress", conclusion: null},
+					]),
+				],
+			],
+			GATED,
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
+	});
+
+	// `rollupOf([])` is `green` by construction, and the narrowing opens that case wherever the
+	// declared contexts have not posted yet.
+	it("pends, never greens, a head where no run answers any declared required context", async () => {
+		const out = await run(
+			[
+				...REQUIRES,
+				[PULL, served(pull())],
+				[RUNS, runs(1, [{name: "Analyze (python)", status: "completed", conclusion: "success"}])],
+			],
+			GATED,
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tpending`);
+		expect(out.stderr.join("\n")).toContain(
+			"no run at this head answers any context main declares required",
+		);
+	});
+
+	/**
+	 * The partial shape: three declared contexts posted and passed, the fourth has posted nothing. A
+	 * rollup over the runs that exist would call that green while the fourth's jobs have not started.
+	 */
+	describe("a declared context with no run beside ones that passed", () => {
+		const FOUR: ReadonlyArray<Scripted> = [
+			[
+				RULES,
+				rules(
+					"ci-required",
+					"governance floor at head",
+					"scan changed files for leaks",
+					"validate skill frontmatter",
+				),
+			],
+			[PROTECTION, protection()],
+		];
+		const posted = (
+			aggregator: ReadonlyArray<{name: string; status: string; conclusion: string | null}>,
+		) =>
+			runs(3 + aggregator.length, [
+				{name: "governance floor at head", status: "completed", conclusion: "success"},
+				{name: "scan changed files for leaks", status: "completed", conclusion: "success"},
+				{name: "validate skill frontmatter", status: "completed", conclusion: "success"},
+				...aggregator,
+			]);
+		const THREE = posted([]);
+		const FOUR_GREEN = posted([{name: "ci-required", status: "completed", conclusion: "success"}]);
+
+		it("pends, never greens, and names the declared context that has not reported", async () => {
+			const out = await run([...FOUR, [PULL, served(pull())], [RUNS, THREE]], GATED);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tpending`);
+			expect(out.stderr).toContain(
+				"review ci: no run at this head for ci-required, which main declares required — pending, never green: a declared context that has not reported is not satisfied.",
+			);
+		});
+
+		it("is green once all four declared contexts concluded success", async () => {
+			const out = await run([...FOUR, [PULL, served(pull())], [RUNS, FOUR_GREEN]], GATED);
+			expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
+			expect(out.stderr.join("\n")).not.toContain("has not reported");
+		});
+
+		it("--wait keeps polling and exhausts the budget, never settling over the missing context", async () => {
+			const out = await run([...FOUR, [PULL, served(pull())], [RUNS, THREE]], GATED, {
+				wait: true,
+				cadenceSeconds: 0,
+				budgetSeconds: 0,
+			});
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual([
+				"settle\tbudget-exhausted",
+				`ci\t${HEAD}\tpending`,
+			]);
+		});
+
+		it("--wait settles green once the missing context posts and passes", async () => {
+			const out = await run(
+				[...FOUR, [PULL, served(pull())], [once(RUNS), THREE], [RUNS, FOUR_GREEN]],
+				GATED,
+				{wait: true, cadenceSeconds: 0},
+			);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tgreen`]);
+		});
+
+		// A cadence no test could sit through proves the red is answered on the first read.
+		it("--wait still settles a red declared context at once, whatever else is missing", async () => {
+			const out = await run(
+				[
+					[
+						RULES,
+						rules("ci-required", "scan changed files for leaks", "validate skill frontmatter"),
+					],
+					[PROTECTION, protection()],
+					[PULL, served(pull())],
+					[
+						RUNS,
+						runs(1, [
+							{name: "scan changed files for leaks", status: "completed", conclusion: "failure"},
+						]),
+					],
+				],
+				[],
+				{wait: true, cadenceSeconds: 86_400},
+			);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tred`]);
+		});
+	});
+
+	/**
+	 * The reported shape: a repository-wide red (`Analyze (python)`, required by nothing) has
+	 * concluded while the jobs that prove the diff are still queued. The wait used to settle red on
+	 * the first poll.
+	 */
+	describe("--wait over a non-required red beside queued required runs", () => {
+		const TWO: ReadonlyArray<Scripted> = [
+			[RULES, rules("unit tests", "leak-guard")],
+			[PROTECTION, protection()],
+		];
+		const QUEUED = runs(3, [
+			{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+			{name: "unit tests", status: "queued", conclusion: null},
+			{name: "leak-guard", status: "queued", conclusion: null},
+		]);
+		const CONCLUDED = runs(3, [
+			{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+			{name: "unit tests", status: "completed", conclusion: "success"},
+			{name: "leak-guard", status: "completed", conclusion: "success"},
+		]);
+
+		it("does not settle on the first poll, and names the red on the notes", async () => {
+			const out = await run([...TWO, [PULL, served(pull())], [RUNS, QUEUED]], GATED, {
+				wait: true,
+				cadenceSeconds: 0,
+				budgetSeconds: 0,
+			});
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual([
+				"settle\tbudget-exhausted",
+				`ci\t${HEAD}\tpending`,
+			]);
+			expect(out.stderr).toContain(
+				"review ci: failing outside the required set: Analyze (python) — reported, never blocking.",
+			);
+		});
+
+		it("keeps polling until the required runs conclude, then settles on their verdict", async () => {
+			const out = await run(
+				[...TWO, [PULL, served(pull())], [once(RUNS), QUEUED], [RUNS, CONCLUDED]],
+				GATED,
+				{wait: true, cadenceSeconds: 0},
+			);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tgreen`]);
+			expect(out.stderr).toContain(
+				"review ci: failing outside the required set: Analyze (python) — reported, never blocking.",
+			);
+		});
+
+		// The inverse: a cadence no test could sit through proves a required red still ends the wait
+		// on the first read, so the narrowing never turns a real red into a spent budget.
+		it("still settles red at once when a required run has failed beside the queued one", async () => {
+			const out = await run(
+				[
+					...TWO,
+					[PULL, served(pull())],
+					[
+						RUNS,
+						runs(3, [
+							{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+							{name: "unit tests", status: "completed", conclusion: "failure"},
+							{name: "leak-guard", status: "queued", conclusion: null},
+						]),
+					],
+				],
+				[],
+				{wait: true, cadenceSeconds: 86_400},
+			);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tred`]);
+			expect(out.stderr).toContain("review ci: failing at this head: unit tests.");
+		});
+	});
+
+	it("refuses on 11 when the required set cannot be read, never a colour over it", async () => {
+		const out = await run([
+			[RULES, httpError(403, "Resource not accessible by integration")],
+			[PULL, served(pull())],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
+		expect(out.stderr.at(-1)).toContain("which checks block is UNKNOWN, never none.");
+	});
+
+	it("answers a colour over a plan-gated base, naming the plan gate as the authority", async () => {
+		const out = await run([
+			[RULES, planGated],
+			[PULL, served(pull())],
+			[RUNS, runs(1, [{name: "unit tests", status: "completed", conclusion: "failure"}])],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tred`);
+		expect(out.stderr.join("\n")).toContain(
+			"main's plan offers no branch protection or rulesets — every non-informational check blocks",
+		);
+	});
+
+	it("falls back to the denylist on a base branch that declares nothing required", async () => {
+		const out = await run([
+			[PULL, served(pull())],
+			[RUNS, runs(1, [{name: "unit tests", status: "completed", conclusion: "failure"}])],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tred`);
+		expect(out.stderr.join("\n")).toContain("declares no required status checks");
+	});
+});
 
 describe("runCi", () => {
 	it("prints the rollup, the run count, and one line per status present", async () => {
@@ -111,12 +421,20 @@ describe("runCi", () => {
 				[COMMIT(OLD_HEAD), {status: 200, body: JSON.stringify({sha: OLD_HEAD})}],
 				[RUNS, GREEN],
 			],
-			GATED,
+			[
+				[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CODEQL))],
+				[
+					AT_HEAD,
+					served(
+						runsAtHead({path: CI_YML, headSha: OLD_HEAD}, {path: GUARD_YML, headSha: OLD_HEAD}),
+					),
+				],
+			],
 			{sha: OLD_HEAD},
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`ci\t${OLD_HEAD}\tgreen`);
-		expect(out.stderr[0]).toContain("the head moved");
+		expect(out.stderr.join("\n")).toContain("the head moved");
 	});
 
 	it("refuses a --sha proven absent on 7", async () => {
@@ -138,7 +456,7 @@ describe("runCi", () => {
 				[PULL, served(pull())],
 				[RUNS, runs(0, [])],
 			],
-			[[WORKFLOWS, served(workflows("active", "active"))]],
+			[[WORKFLOWS, served(workflows({path: ".github/workflows/ci.yml"}))]],
 		);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
@@ -202,7 +520,7 @@ describe("the gate-coverage read", () => {
 		expect(out.code).toBe(NO_GATE_COVERAGE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`review ci: none of the 2 workflow(s) o/r authors produced a run at ${HEAD} — the 4 check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green.`,
+			`review ci: none of the 2 workflow(s) o/r authors inspected ${HEAD} — the 4 check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected these bytes: the CI state is UNKNOWN, never green.`,
 		);
 	});
 
@@ -219,9 +537,7 @@ describe("the gate-coverage read", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain(`ci\t${HEAD}\tgreen`);
-		expect(out.stderr).toContain(
-			`review ci: 1 of 2 workflow(s) o/r authors produced a run at ${HEAD}.`,
-		);
+		expect(out.stderr).toContain(`review ci: 1 of 2 workflow(s) o/r authors inspected ${HEAD}.`);
 	});
 
 	it("refuses a pending rollup with no gate coverage too — the reviewer would wait forever", async () => {
@@ -238,18 +554,66 @@ describe("the gate-coverage read", () => {
 		expect(out.code).toBe(NO_GATE_COVERAGE);
 	});
 
-	it("names the coverage it judged when the repo's own gates did run", async () => {
+	it("refuses a head whose only repo-authored run opened the base ref", async () => {
+		// The reported incident: a conflicted PR gets no `pull_request` run, and `pr-cleanup.yml` fires on
+		// `pull_request_target`, which carries the head and checks out the base. Its path is inside
+		// `.github/workflows/`, so the path alone reads as a gate that never opened a byte of this head.
 		const out = await run(
 			[
 				[PULL, served(pull())],
+				[
+					RUNS,
+					runs(2, [
+						{name: "resolve app roster", status: "completed", conclusion: "success"},
+						{name: "cleanup (web)", status: "completed", conclusion: "success"},
+					]),
+				],
+			],
+			[
+				[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CLEANUP_YML))],
+				[AT_HEAD, served(runsAtHead({path: CLEANUP_YML, event: "pull_request_target"}))],
+			],
+		);
+		expect(out.code).toBe(NO_GATE_COVERAGE);
+		expect(out.stdout).toBe("");
+	});
+
+	it("judges an abbreviated --sha exactly as its full object name does", async () => {
+		// The Actions run list filters `head_sha` as an exact string, so the abbreviation has to be
+		// resolved before the read. This script answers only the full one: an abbreviation on the wire
+		// matches nothing and the verb refuses on 11 instead of printing this green.
+		const AT_FULL = new RegExp(`actions/runs\\?head_sha=${HEAD}`);
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[COMMIT("03135b91"), {status: 200, body: JSON.stringify({sha: HEAD})}],
 				[RUNS, GREEN],
 			],
-			GATED,
+			[
+				[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CODEQL))],
+				[AT_FULL, served(runsAtHead(CI_YML, GUARD_YML))],
+			],
+			{sha: "03135b91"},
 		);
 		expect(out.code).toBe(0);
-		expect(out.stderr).toContain(
-			`review ci: 2 of 2 workflow(s) o/r authors produced a run at ${HEAD}.`,
+		// The answer still spells the commit the caller asked about; only the coverage read resolves it.
+		expect(out.stdout.split("\n")[0]).toBe("ci\t03135b91\tgreen");
+		expect(out.stderr).toContain(`review ci: 2 of 2 workflow(s) o/r authors inspected ${HEAD}.`);
+	});
+
+	it("reports an unresolvable head as UNKNOWN, never as a repo whose gates were silent", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull({head: "03135b91"}))],
+				[RUNS, GREEN],
+			],
+			[
+				[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CODEQL))],
+				[AT_HEAD, served(runsAtHead(CI_YML))],
+			],
 		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("cannot judge gate coverage at 03135b91");
 	});
 
 	it("carries the coverage on the --json object", async () => {
@@ -366,7 +730,30 @@ describe("the no-producer split", () => {
 		const out = await run(empty, [[WORKFLOWS, served(workflows())]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toContain("zero workflows — no CI producer");
+		expect(out.stderr.at(-1)).toContain("zero repo-authored workflows");
+	});
+
+	/** The synthetic entries the platform lists for default CodeQL and Dependabot — no CI of the repo's own. */
+	const platformOnly = workflows(
+		{path: "dynamic/github-code-scanning/codeql"},
+		{path: "dynamic/dependabot/dependabot-updates"},
+	);
+
+	it("refuses an all-`dynamic/*` inventory on 7 by default — platform entries are no producer", async () => {
+		const out = await run(empty, [[WORKFLOWS, served(platformOnly)]]);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.at(-1)).toContain("zero repo-authored workflows");
+	});
+
+	it("rolls up no-producer over an all-`dynamic/*` inventory when the repo declares degrade", async () => {
+		const out = await run(
+			empty,
+			[[WORKFLOWS, served(platformOnly)]],
+			{},
+			{[CONFIG]: '{"ci": {"noProducer": "degrade"}}'},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe([`ci\t${HEAD}\tno-producer`, "run\t0", ""].join("\n"));
 	});
 
 	it("rolls up no-producer, never green, when the repo declares degrade", async () => {

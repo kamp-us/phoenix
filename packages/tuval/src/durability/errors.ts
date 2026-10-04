@@ -1,0 +1,64 @@
+import {Schema} from "effect";
+import {ProcessId} from "../process/process.ts";
+
+/**
+ * A snapshot exists for the process but was written under a definition this one cannot reach — a
+ * different program altogether, or a version the row declares no walk to the current one from
+ * (`./migrations.ts`). Refused and never fresh-booted over (#7467, #7514): the process stays absent
+ * until a person decides. A version the row does cover is migrated instead and never arrives here
+ * (the founder ruling on #8907:
+ * https://github.com/kamp-us/phoenix/issues/8907#issuecomment-5625300780).
+ */
+export class SnapshotRefused extends Schema.TaggedError<SnapshotRefused>()(
+	"tuval/durability/SnapshotRefused",
+	{
+		processId: ProcessId,
+		expected: Schema.Struct({programId: Schema.String, version: Schema.String}),
+		found: Schema.Struct({programId: Schema.String, version: Schema.String}),
+	},
+) {
+	override get message(): string {
+		return `snapshot for process "${this.processId}" refused: written by ${this.found.programId}@${this.found.version}, the program is now ${this.expected.programId}@${this.expected.version}`;
+	}
+}
+
+/** The bytes at the process's snapshot are not a snapshot. A refusal too, for the same reason. */
+export class SnapshotMalformed extends Schema.TaggedError<SnapshotMalformed>()(
+	"tuval/durability/SnapshotMalformed",
+	{processId: ProcessId},
+) {
+	override get message(): string {
+		return `snapshot for process "${this.processId}" refused: not a snapshot`;
+	}
+}
+
+/** The manifest exists but is not a manifest; restore cannot know what to spawn. */
+export class ManifestMalformed extends Schema.TaggedError<ManifestMalformed>()(
+	"tuval/durability/ManifestMalformed",
+	{},
+) {
+	override get message(): string {
+		return "checkpoint manifest refused: not a manifest";
+	}
+}
+
+/** A live process already holds this checkpoint; restoring it twice would replay its effects twice. */
+export class CheckpointHeld extends Schema.TaggedError<CheckpointHeld>()(
+	"tuval/durability/CheckpointHeld",
+	{processId: ProcessId},
+) {
+	override get message(): string {
+		return `checkpoint for process "${this.processId}" is held by a live process`;
+	}
+}
+
+/**
+ * A `Store` rejected. Demlik lets the rejection propagate to the dispatcher; here it is typed.
+ * `delete` is `Checkpoints.forget` removing a snapshot through its `DeletableStore`
+ * (`./stores.ts`), which fails on its own terms rather than as a save that happened to write
+ * nothing.
+ */
+export class StoreError extends Schema.TaggedError<StoreError>()("tuval/durability/StoreError", {
+	operation: Schema.Literals(["load", "save", "delete"]),
+	cause: Schema.Defect(),
+}) {}

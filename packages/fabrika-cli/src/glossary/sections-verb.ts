@@ -1,9 +1,6 @@
 /**
- * `glossary sections` — the live section names of a register.
- *
- * **There is no exit-0-with-empty-stdout path.** A register that is absent, or present with no
- * heading, prints `-\tbootstrap\t0`, because an answer that prints nothing is byte-identical to a
- * verb that never ran (interface convention rule 2).
+ * `glossary sections` reads the live section names of a register.
+ * See `glossary sections --help` for the bootstrap and row formats.
  */
 import {Effect, Path} from "effect";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";

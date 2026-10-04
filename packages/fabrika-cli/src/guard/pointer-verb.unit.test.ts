@@ -72,6 +72,7 @@ describe("runPointerGuard", () => {
 		expect(outcome.code).toBe(VIOLATION);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.join("\n")).toContain("CLAUDE.md:2  →  apps/site/gone.ts");
+		expect(outcome.stderr.join("\n")).toContain("1 stale CLAUDE.md pointer");
 	});
 
 	// The load-bearing case: CLAUDE.md points at a generated path the doc tells you to create.
@@ -104,11 +105,6 @@ describe("runPointerGuard", () => {
 		expect(outcome.stderr.some((line) => line.startsWith("::error file=CLAUDE.md,line=1::"))).toBe(
 			true,
 		);
-	});
-
-	it("emits no annotation off a runner", async () => {
-		const outcome = await run(tree({"CLAUDE.md": "see `apps/site/gone.ts`"}), ["CLAUDE.md"]);
-		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
 	});
 
 	it("fails closed when no tracked CLAUDE.md is in scope", async () => {

@@ -1,11 +1,19 @@
 /**
  * `review ci` — the live check-run rollup at a head, fail-closed on incomplete enumeration.
  *
+ * The rollup judges only the runs the base branch's declared required set names
+ * (`./blocking.ts`, the authority `ship checks` judges by too). A red outside that set is named on the
+ * notes channel and never settles `--wait`, so a repository-wide red cannot end the wait while the
+ * required checks are still queued behind it.
+ *
  * v1's CI-at-head read was dispatch-prompt-dependent: a gate ruled on a live RED check as a prose
  * question because one sentence was omitted. This verb is that read made structural, and its
  * refusals are what keep it honest — zero declared runs is a vacuous green, an enumeration short
  * of `total_count` is never read as "no red checks", and a complete enumeration that no gate of
- * this repo produced is not green either (`gate-coverage.ts`).
+ * this repo produced is not green either (`gate-coverage.ts`). That last read is over each run's own
+ * provenance — the head it carries and the event that made it — because a workflow path says which
+ * file ran and never which bytes it opened: a repo-authored `pull_request_target` run sits at the
+ * head and checks out the base.
  *
  * `checks` is a status tally, not a row per run: it is an evidence-array — the review
  * skill acts on `rollup` and no skill iterates the rows — and a repo with 34 workflows paid ~20 rows
@@ -20,6 +28,8 @@
  * return on the first read rather than burning the budget. The governance floor is such a state on
  * both of its rollups — `governance-owed` on the `pending` one, `governance-stale` on the `red`
  * (`./governance-owed.ts`).
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9570#issuecomment-5753839456
  */
 import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -30,8 +40,18 @@ import {type CheckRun, commitExists, listCheckRuns} from "../io/pulls.ts";
 // The workflow inventory is read through the `ship` group's reader for the same reason `ship checks`
 // rolls up through this group's `rollup.ts`: one read, so the two verbs cannot drift on the fact.
 import {CHECK_RUN_NAME} from "../ship/floor-check.ts";
-import {listRunsAtHead, listWorkflowPaths, listWorkflows} from "../ship/github.ts";
+import {listRunsAtHead, listWorkflowPaths} from "../ship/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {
+	authorityNote,
+	type BlockingSet,
+	owedRollup,
+	readBlockingSet,
+	reportedLine,
+	reportingAt,
+	reportingNote,
+	unreadableCause,
+} from "./blocking.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {gateCoverageOf} from "./gate-coverage.ts";
 import {governanceOwed, governanceStale, staleFloorIsTheOnlyRed} from "./governance-owed.ts";
@@ -130,9 +150,14 @@ const noProducerAnswer = (
  * other row it also printed was a passing name nobody read. So the names survive, addressed to the
  * channel diagnostics belong on, and the answer channel carries the counts.
  */
-export const namedLines = (verb: string, runs: ReadonlyArray<CheckRun>): ReadonlyArray<string> => {
-	const failing = runs.filter(isFailing).map((run) => run.name);
-	const running = runs.filter((run) => run.status !== "completed").map((run) => run.name);
+export const namedLines = (
+	verb: string,
+	runs: ReadonlyArray<CheckRun>,
+	blocking: BlockingSet,
+): ReadonlyArray<string> => {
+	const named = runs.filter((run) => blocking.blocks(run.name));
+	const failing = named.filter(isFailing).map((run) => run.name);
+	const running = named.filter((run) => run.status !== "completed").map((run) => run.name);
 	return [
 		...(failing.length === 0
 			? []
@@ -162,10 +187,30 @@ export const runCi = (
 		const target = yield* openPull(VERB, repo, pr, {requireOpen: false, requireFiles: false});
 		if (target._tag === "Refused") return target.outcome;
 		const live = target.pull.headSha;
+		const base = target.pull.baseRef;
+
+		// The blocking authority, read once before any rollup: this verb used to roll up every run at
+		// the head with no filter at all, so a red the base branch does not require made it call the
+		// head red. An unreadable authority is a refusal — with it unread, `green` would be a claim
+		// about a set nobody could name.
+		const authority = yield* readBlockingSet(repo, base);
+		if (authority._tag !== "Set") {
+			return refuse(
+				authority._tag === "Incomplete" ? INCOMPLETE_SCAN : PRECONDITION_UNKNOWN,
+				unreadableCause(VERB, base, authority),
+			);
+		}
+		const blocking = authority.set;
 
 		const asked = options.sha?.trim() ?? "";
-		const diagnostics: string[] = [];
+		const diagnostics: string[] = [authorityNote(VERB, base, blocking)];
+		// `sha` is what the caller asked and what every answer is spelled with; `head` is that same
+		// commit's full object name. They differ only on an abbreviated `--sha`, and the split is the
+		// whole fix for it: the Actions run list filters `head_sha` as an exact string, so an
+		// abbreviation there reads as zero runs, while a historical inspection must stay historical
+		// rather than be silently re-bound to the live head.
 		let sha = live;
+		let head = live;
 		if (asked !== "") {
 			const at = yield* commitExists(repo, asked);
 			if (at._tag === "Absent") {
@@ -178,6 +223,7 @@ export const runCi = (
 				);
 			}
 			sha = asked;
+			head = at.value;
 			// A read at a moved-past head is a fact worth seeing, not a refusal: the `12` stale seat
 			// belongs to `review post`, the write seam.
 			if (!prefixMatch(live, asked)) {
@@ -211,10 +257,12 @@ export const runCi = (
 				scannedLine(VERB, runs.length, "check run", `${declared} declared`),
 			];
 			if (declared === 0) {
-				// The producer question is asked HERE and nowhere else on this path: an enumeration that
-				// returned runs already proves a producer. Empty is the one reading where "no CI at all"
-				// and "nothing has reported yet" are two different repos wearing one answer.
-				const inventory = yield* listWorkflows(repo);
+				// The producer question is asked HERE and nowhere else on this path. A run proves no
+				// producer, since a platform `dynamic/*` workflow reports runs too; a non-empty
+				// enumeration skips the question, and gate coverage names the repo that authors nothing
+				// (`NoGates`). Empty is the one reading where "no CI at all" and "nothing has reported
+				// yet" are two different repos wearing one answer.
+				const inventory = yield* listWorkflowPaths(repo);
 				if (inventory._tag === "Failure") {
 					return done(
 						refuse(
@@ -250,19 +298,29 @@ export const runCi = (
 				);
 			}
 
-			const rollup = rollupOf(runs);
-			notes.push(...namedLines(VERB, runs));
+			// The rollup is over the blocking set alone; every other run at the head is reported. The
+			// completeness proof above still divides by the whole enumeration, because a short read is a
+			// fact about the page rather than about what blocks.
+			const blocked = runs.filter((run) => blocking.blocks(run.name));
+			const reporting = reportingAt(
+				blocking,
+				runs.map((run) => run.name),
+			);
+			const rollup: Rollup = owedRollup(rollupOf(blocked), reporting);
+			notes.push(...reportingNote(VERB, base, blocking, reporting));
+			notes.push(...namedLines(VERB, runs, blocking));
+			notes.push(...reportedLine(VERB, blocking, runs));
 			// A red rollup is already the answer a caller must act on, so the coverage question is asked
 			// only where it changes one: `green` and `pending` are the two words that read as "nothing to
 			// do here", and both are wrong over bytes no gate inspected.
 			let gates: {readonly declared: number; readonly covered: number} | null = null;
 			let owedGovernance = false;
 			let staleGovernance = false;
-			if (rollup === "red" && staleFloorIsTheOnlyRed(runs)) {
+			if (rollup === "red" && staleFloorIsTheOnlyRed(blocked)) {
 				// The one red that is also asked: a floor concluded `failure` on a stale verdict is the
 				// reader's own to clear, and only the workflow runs say the row came from this repo's floor
 				// job. The cheap predicate above gates the read, so an ordinary red still pays nothing.
-				const atHead = yield* listRunsAtHead(repo, sha);
+				const atHead = yield* listRunsAtHead(repo, head);
 				if (atHead._tag === "Failure") {
 					return done(
 						refuse(
@@ -272,7 +330,7 @@ export const runCi = (
 						),
 					);
 				}
-				staleGovernance = governanceStale(runs, atHead.value.runs);
+				staleGovernance = governanceStale(blocked, atHead.value.runs);
 				if (staleGovernance) {
 					notes.push(
 						`${VERB}: the only failing check at ${sha} is "${CHECK_RUN_NAME}", and the governance verdict behind it is bound to another head. This red is yours to clear: fire the governance skill, then re-read.`,
@@ -290,7 +348,7 @@ export const runCi = (
 						),
 					);
 				}
-				const atHead = yield* listRunsAtHead(repo, sha);
+				const atHead = yield* listRunsAtHead(repo, head);
 				if (atHead._tag === "Failure") {
 					return done(
 						refuse(
@@ -300,17 +358,25 @@ export const runCi = (
 						),
 					);
 				}
-				const coverage = gateCoverageOf(
-					inventory.value,
-					atHead.value.runs.map((run) => run.path),
-				);
+				const coverage = gateCoverageOf(inventory.value, atHead.value.runs, head);
+				if (coverage._tag === "Unreadable") {
+					// Never the `16`: that code says the repository's gates were silent, and an operand
+					// this verb could not resolve is a fact about the call instead.
+					return done(
+						refuse(
+							PRECONDITION_UNKNOWN,
+							`${VERB}: cannot judge gate coverage at ${sha}: ${coverage.reason} — which gates inspected these bytes is UNKNOWN, never green.`,
+							notes,
+						),
+					);
+				}
 				if (coverage._tag === "Uncovered") {
 					// The `16` refusal is why `--wait` may not simply loop on "not green": a head no gate of
 					// this repo ran at has nothing coming, so waiting out the budget would answer nothing.
 					return done(
 						refuse(
 							NO_GATE_COVERAGE,
-							`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha} — the ${runs.length} check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green.`,
+							`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors inspected ${head} — the ${runs.length} check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected these bytes: the CI state is UNKNOWN, never green.`,
 							notes,
 						),
 					);
@@ -322,10 +388,13 @@ export const runCi = (
 				} else {
 					gates = {declared: coverage.declared, covered: coverage.covered};
 					notes.push(
-						`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha}.`,
+						`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors inspected ${head}.`,
 					);
 				}
-				owedGovernance = governanceOwed(runs, atHead.value.runs);
+				// A declared context that has not posted is unfinished too, so the floor is not the only
+				// thing left and the wait still has something external to wait for.
+				owedGovernance =
+					reporting._tag === "Reported" && governanceOwed(blocked, atHead.value.runs);
 				if (owedGovernance) {
 					notes.push(
 						`${VERB}: the only unfinished check at ${sha} is "${CHECK_RUN_NAME}", and its ${FLOOR_WORKFLOW_NAME} run has completed — what is still owed is a governance verdict bound at this head, which no wait produces. Fire the governance skill, then re-read.`,

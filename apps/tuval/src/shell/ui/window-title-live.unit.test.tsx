@@ -7,14 +7,14 @@
  * title-keyed boundary would cause and a text assertion alone would not notice.
  */
 
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
 import {noEntries} from "../picker/browser.ts";
-import {WindowId} from "../window/index.ts";
-import {installDomShims} from "./dom.testing.ts";
 import {boundMount, type ProcessName, type WindowMount} from "./mount.ts";
 import {WindowView} from "./WindowView.tsx";
 
@@ -52,12 +52,12 @@ const view = (mount: WindowMount): ReactElement => (
 describe("a window whose process re-emits its title", () => {
 	it("moves the title and keeps the window mounted", () => {
 		const {rerender} = render(
-			view(mountNamed({title: "claude · fable · phoenix", programId: claude})),
+			view(mountNamed({title: "claude · fable · phoenix", program: claude})),
 		);
 		const body = screen.getByTestId("body");
 		expect(screen.getByText("claude · fable · phoenix")).toBeTruthy();
 
-		rerender(view(mountNamed({title: "claude · fable · reading #8721", programId: claude})));
+		rerender(view(mountNamed({title: "claude · fable · reading #8721", program: claude})));
 		expect(screen.getByText("claude · fable · reading #8721")).toBeTruthy();
 		expect(screen.queryByText("claude · fable · phoenix")).toBeNull();
 		expect(screen.getByTestId("body")).toBe(body);

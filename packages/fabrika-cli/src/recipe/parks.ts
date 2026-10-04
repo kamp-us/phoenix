@@ -34,9 +34,14 @@ export type Clearance =
 	| "branch-free"
 	| "campaign-active"
 	| "spawn-clear"
+	| "tree-released"
+	| "claim-released"
 	| "queue-moved"
 	| "ci-green"
-	| "route-satisfied";
+	| "head-green"
+	| "route-satisfied"
+	| "axis-closed"
+	| "ruling-made";
 
 export interface ParkRecipe {
 	/** The lane leaf state this recipe clears. */
@@ -91,11 +96,11 @@ export interface ParkRecipe {
 export const QUEUE_MOVED_GRANT = 1;
 
 /**
- * The parks with a fixed fix today: two keyed by their leaf, five by their cause.
+ * The parks with a fixed fix today: one keyed by its leaf, twelve by their cause.
  *
- * `human:cp-approval`'s clearance is `ship cp-approval`'s own discharge table, relayed rather than
- * re-derived — the §CP cardinality question has exactly one answer in this package, and a second
- * reading of it here would drift from that one. `blocked` + `worktree-holds-branch`'s clearance is
+ * `human:cp-approval` + `awaiting-cp-approval`'s clearance is `ship cp-approval`'s own discharge
+ * table, relayed rather than re-derived — the §CP cardinality question has exactly one answer in this
+ * package, and a second reading of it here would drift from that one. `blocked` + `worktree-holds-branch`'s clearance is
  * the inverse of the very read that refuses the build: `build branch --resume-lane` refuses while a
  * working tree holds the child's lane branch, so the park is clear exactly when no working tree holds
  * it — and the clearance first runs `build retire`, which takes that checkout back where a license
@@ -103,11 +108,10 @@ export const QUEUE_MOVED_GRANT = 1;
  * the tree carries nothing. Without the remedy the row read the pin and could never remove it, so
  * every lane parked on this cause sat at exit 13 until a human ran `git worktree remove` by hand.
  *
- * `blocked` + `campaign-paused`'s clearance is the dispatch permission read back: the lane
- * milestone's `## Campaigns` `State` cell is the whole answer to whether lanes may open against that
- * milestone, so the park is clear exactly when that cell reads `active` at the trunk. It names no
- * remedy because resuming a campaign is a human's judgment recorded through `campaign state` — a
- * recipe that "removed" this cause would be granting the dispatch it is only allowed to observe.
+ * `blocked` + `campaign-paused` is a park nothing records any more — no campaign state gates a lane —
+ * kept so a lane parked on it earlier still clears. Its clearance reads the lane milestone's
+ * `## Campaigns` `State` cell at the trunk and clears on `active`. It names no remedy because
+ * resuming a campaign is a human's judgment recorded through `campaign state`.
  *
  * `blocked` + `spawn-dead` is the one row whose clearance reads the lane rather than the cause
  * itself: no verb can spawn an agent to find out whether the provider is back, so the operator's next
@@ -116,9 +120,19 @@ export const QUEUE_MOVED_GRANT = 1;
  * session owns, so a park whose obligations were discharged clears on the first pass and one whose
  * stranded claim still needs a successor's `build adopt` marker holds at exit 13.
  *
- * `human:queue-stall` is the second row keyed by its leaf alone: a `WIP` carries no park cause and
- * `lane report` refuses one on any non-`BLOCKED` event, so the leaf is all there is to key on. It
- * does not collide with the §CP row keyed on the same `null` because the leaves differ. Its clearance
+ * `blocked` + `tree-hijacked` asks what `spawn-clear` asks — no claim standing and no tree holding
+ * this lane's branch — through `tree-released`, which never ends a claim. The age-proved
+ * retraction is `spawn-dead`'s alone (`../build/dead-claim.ts`), and a builder that stopped on a
+ * hijacked tree released its own claim before it reported, so a claim still standing is some live
+ * shell's and holds the park.
+ *
+ * `blocked` + `claim-stranded` is the claim half of that read on its own: `claim-released` clears
+ * only when no build claim stands on the issue or on any open PR linking it — a repair claim sits on
+ * the PR — and it retracts nothing on any arm, age included. The claimant is a shell of the driver's
+ * own session, which `build adopt` refuses, so releasing it under its token is the driver's act.
+ *
+ * `human:queue-stall` is the one row keyed by its leaf alone: a `WIP` carries no park cause and
+ * `lane report` refuses one on any non-`BLOCKED` event, so the leaf is all there is to key on. Its clearance
  * is `ship reconcile`'s answer relayed — no verb in this tree can read the queue's own position, so
  * the row turns on the two outcomes that already exist, `landed` and `ejected`. It names no remedy
  * for the same reason `campaign-active` does not: a recipe that "removed" this cause would be merging
@@ -140,11 +154,43 @@ export const QUEUE_MOVED_GRANT = 1;
  * `human:cp-approval` + `head-ci-red` is the second row on that leaf, and the cause key is what makes
  * two rows there legal: `ship`'s `BLOCKED` folds to `human:cp-approval` whatever the block was, so a
  * shipper that routed to `heal-ci` and one that stopped on a §CP approval land on the same state. The
- * §CP row keys on `null` and this one on the cause, so neither can match the other's park. Its
- * clearance is the shipper's own step-4 read taken again — `ship checks`'s rollup at the live head —
- * conjoined with the reads that step ran before it, so the clear proves the whole floor the shipper
- * was standing on rather than the one condition that failed. It names no remedy because turning a red
- * head green is `heal-ci`'s repair work, and a recipe that "removed" this cause would be doing it.
+ * §CP row keys on `awaiting-cp-approval` and this one on `head-ci-red`, so neither can match the
+ * other's park, and a `ship` park naming neither — a `REFUSED`, an `UNKNOWN`, a bare `BLOCKED` —
+ * matches no row on this leaf at all. Its clearance is the shipper's own step-4 read taken again —
+ * `ship checks`'s rollup at the live head — conjoined with the reads that step ran before it, so the
+ * clear proves the whole floor the shipper was standing on rather than the one condition that
+ * failed. It names no remedy because turning a red head green is repair work, and a recipe that
+ * "removed" this cause would be doing it. What its read does instead, on a red `heal-ci` classes a
+ * defect, is route that repair: the verb records the park's `FAIL` into `build` rather than holding
+ * a park that no wait would ever clear.
+ *
+ * `blocked` + `head-ci-red` is the same cause met one stage earlier: a reviewer that read the head
+ * red and parked rather than judge it. `review`'s `BLOCKED` folds to `blocked`, so the leaf keeps it
+ * apart from the shipper's row and the cause keeps it apart from every other `blocked` row. Its
+ * clearance, `head-green`, proves less than `ci-green` does, because the reviewer stood on less:
+ * `ship scope` for the PR still being open and not a draft, and `ship checks`'s rollup reading
+ * `green` at the live head. Those are `ci-green`'s first two reads without its third. `ci-green`
+ * also asks `ship gate` for a binding verdict in every derived namespace, and those verdicts are the
+ * reviewer's own unfinished work, so asking for them here would hold the park until the very review
+ * it stopped. A red holds and never routes to repair: `blocked` carries no `FAIL` arm. It names no
+ * remedy for `ci-green`'s reason.
+ *
+ * `blocked` + `render-axis-missing` is the one row whose read is another issue: the park line names
+ * the open issue tracking the render axis the rendered review could not reach (`axisIssue`), and
+ * `axis-closed` clears once that issue reads closed. A retry before then re-dispatches `review:ui`
+ * into the same gap, which is why this park does not clear on a driver's rationale. It names no
+ * remedy: building the axis is that issue's own work.
+ *
+ * `blocked` + `ruling-owed` reads another issue too, and reads it differently: the park line names
+ * the issue a ruling is owed on (`rulingIssue`), and `ruling-made` relays `decision ruling` on it.
+ * It clears on a ruling marker dated after the park, in `current` or `stale` — an issue can carry an
+ * older ruling when the lane parks, so a marker alone would clear the park the moment it is
+ * recorded. It names no remedy: a recipe that "removed" this cause would be making the ruling.
+ *
+ * `founder-act-owed` has no row, and that is the decision rather than a gap: no read proves a
+ * person took a step by hand, so that park leaves on a person's `UNBLOCKED` and nothing else.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10290#issuecomment-5974131397
  */
 /**
  * One row, with its route and its remedy read off the cause table rather than written down a second
@@ -163,7 +209,7 @@ const row = (spec: Omit<ParkRecipe, "route" | "remedy">): ParkRecipe => ({
 export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 	row({
 		park: "human:cp-approval",
-		cause: null,
+		cause: "awaiting-cp-approval",
 		clearance: "cp-approval",
 		waitingOn: "a control-plane approval at the PR's current head",
 	}),
@@ -173,6 +219,12 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		clearance: "ci-green",
 		waitingOn:
 			"the head's CI to go green with the PR still open and every derived namespace still bound to that head",
+	}),
+	row({
+		park: "blocked",
+		cause: "head-ci-red",
+		clearance: "head-green",
+		waitingOn: "the head's CI to go green with the PR still open, so the review can judge it",
 	}),
 	row({
 		park: "human:queue-stall",
@@ -201,10 +253,44 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 	}),
 	row({
 		park: "blocked",
+		cause: "tree-hijacked",
+		clearance: "tree-released",
+		waitingOn:
+			"the stopped shell's claim and any working tree holding this lane's branch to be gone so the brief can be dispatched into a clean tree",
+	}),
+	row({
+		park: "blocked",
+		cause: "claim-stranded",
+		clearance: "claim-released",
+		waitingOn:
+			"the build claim standing on this lane's issue or an open PR linking it to be released, so each reads unclaimed",
+	}),
+	row({
+		park: "blocked",
 		cause: "no-rendered-delta",
 		clearance: "route-satisfied",
 		waitingOn:
 			"the review this route hands the verdict to — every required namespace answering at the PR's live head",
+	}),
+	row({
+		park: "blocked",
+		cause: "no-preview-routed",
+		clearance: "route-satisfied",
+		waitingOn:
+			"the review this no-preview route hands the verdict to — every required namespace answering at the PR's live head",
+	}),
+	row({
+		park: "blocked",
+		cause: "render-axis-missing",
+		clearance: "axis-closed",
+		waitingOn:
+			"the issue tracking the render axis this review could not reach to close, so the render can reach the state",
+	}),
+	row({
+		park: "blocked",
+		cause: "ruling-owed",
+		clearance: "ruling-made",
+		waitingOn: "a ruling made after the lane parked, on the issue the park names",
 	}),
 ];
 

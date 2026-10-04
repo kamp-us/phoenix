@@ -6,6 +6,7 @@ import {
 	fakeShell,
 	type HttpReply,
 	linkNext,
+	once,
 } from "../fakes.test-support.ts";
 import {NO_TOKEN, PAGE_CAP} from "./gh-api.ts";
 import type {Attempt, Shell} from "./git.ts";
@@ -13,17 +14,20 @@ import {
 	addLabels,
 	clearMilestone,
 	closeCompleted,
+	closedIssuesWithLabel,
 	closeNotPlanned,
 	createComment,
 	createIssue,
 	deleteComment,
 	getCommentRecord,
 	getIssue,
+	issueNodeId,
 	issueTimeline,
 	listComments,
 	listCommentsReconciled,
 	listLabels,
 	listMilestones,
+	listOpenIssueFacts,
 	listOpenIssues,
 	listOpenMilestones,
 	openIssuesTitled,
@@ -32,9 +36,9 @@ import {
 	openQueueIssues,
 	patchIssueBody,
 	removeLabel,
-	repoDefaultBranch,
 	searchOpenIssues,
 	setMilestone,
+	timelineFacts,
 } from "./issues.ts";
 
 const TOKEN = "ghp_scripted";
@@ -92,12 +96,6 @@ const issue = (fields: Record<string, unknown>) => ({
 });
 
 describe("the credential is an argument to every request, never something a request path guesses", () => {
-	it("sends the resolved token as the authorization header", async () => {
-		const http = scripted([[/issues\/7/, {status: 200, body: issue({})}]]);
-		await against(getIssue("o/r", 7), http);
-		expect(http.calls[0]).toBe("GET https://api.github.com/repos/o/r/issues/7");
-	});
-
 	it("refuses naming both env vars when nothing resolves one, and issues no request", async () => {
 		delete process.env.GITHUB_TOKEN;
 		const http = scripted([]);
@@ -110,6 +108,30 @@ describe("the credential is an argument to every request, never something a requ
 		delete process.env.GITHUB_TOKEN;
 		const result = await against(getIssue("o/r", 7), scripted([]));
 		expect(result._tag).toBe("Unknown");
+	});
+});
+
+describe("issueNodeId reads the content id a Projects add takes, over REST", () => {
+	it("answers an issue's node id", async () => {
+		const http = scripted([[/issues\/7$/, {status: 200, body: issue({node_id: "I_kwDO7"})}]]);
+		expect(await against(issueNodeId("o/r", 7), http)).toEqual({
+			_tag: "Present",
+			value: "I_kwDO7",
+		});
+	});
+
+	it("answers Absent for a pull request, which is never a table row", async () => {
+		const http = scripted([
+			[/issues\/7$/, {status: 200, body: issue({node_id: "PR_kwDO7", pull_request: {url: "u"}})}],
+		]);
+		expect(await against(issueNodeId("o/r", 7), http)).toEqual({_tag: "Absent"});
+	});
+
+	it("answers Absent on a 404 and Unknown on a body with no node id", async () => {
+		const missing = scripted([[/issues\/7$/, {status: 404, body: {message: "Not Found"}}]]);
+		const bare = scripted([[/issues\/7$/, {status: 200, body: issue({})}]]);
+		expect(await against(issueNodeId("o/r", 7), missing)).toEqual({_tag: "Absent"});
+		expect((await against(issueNodeId("o/r", 7), bare))._tag).toBe("Unknown");
 	});
 });
 
@@ -341,14 +363,6 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 		expect(http.calls[0]).toContain("per_page=100");
 	});
 
-	it("listOpenMilestones refuses rather than returning a short list when the read fails", async () => {
-		const result = await against(
-			listOpenMilestones("o/r"),
-			scripted([[/milestones/, {status: 502, body: {message: "Bad gateway"}}]]),
-		);
-		expect(result._tag).toBe("Failure");
-	});
-
 	it("listOpenMilestones refuses a 200 whose entries are not milestones", async () => {
 		const result = await against(
 			listOpenMilestones("o/r"),
@@ -402,6 +416,68 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 			scripted([[/issues/, {status: 200, body: [{message: "Not Found"}]}]]),
 		);
 		expect(refused._tag).toBe("Failure");
+	});
+
+	it("listOpenIssueFacts carries who filed each issue, when, and how they relate to the repository", async () => {
+		const filed = "2026-09-20T08:00:00Z";
+		const read = await against(
+			listOpenIssueFacts("o/r"),
+			scripted([
+				[
+					/issues/,
+					{
+						status: 200,
+						body: [
+							issue({number: 1, author_association: "NONE", created_at: filed}),
+							issue({number: 2, pull_request: {}}),
+							issue({number: 3, created_at: filed}),
+						],
+					},
+				],
+			]),
+		);
+		expect(read).toMatchObject({
+			_tag: "Ok",
+			value: [
+				{number: 1, association: "NONE", createdAt: filed},
+				{number: 3, association: "", createdAt: filed},
+			],
+		});
+	});
+
+	it("listOpenIssueFacts refuses an issue that carries no creation time", async () => {
+		const read = await against(
+			listOpenIssueFacts("o/r"),
+			scripted([[/issues/, {status: 200, body: [issue({number: 1})]}]]),
+		);
+		expect(read).toMatchObject({_tag: "Failure"});
+	});
+
+	it("closedIssuesWithLabel reads a settled sub-issue summary as no open child, and a missing one as maybe", async () => {
+		const read = await against(
+			closedIssuesWithLabel("o/r", "type:epic"),
+			scripted([
+				[
+					/state=closed&labels=type%3Aepic/,
+					{
+						status: 200,
+						body: [
+							issue({number: 1, sub_issues_summary: {total: 3, completed: 3}}),
+							issue({number: 2, sub_issues_summary: {total: 3, completed: 2}}),
+							issue({number: 4}),
+						],
+					},
+				],
+			]),
+		);
+		expect(read).toEqual({
+			_tag: "Ok",
+			value: [
+				{number: 1, mayHaveOpenChildren: false},
+				{number: 2, mayHaveOpenChildren: true},
+				{number: 4, mayHaveOpenChildren: true},
+			],
+		});
 	});
 });
 
@@ -475,24 +551,17 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 		expect(http.calls).toHaveLength(PAGE_CAP);
 	});
 
-	it("listOpenIssues refuses the same capped walk — a short board reads as never drifted", async () => {
-		const http = scripted([], {
-			status: 200,
-			body: [],
-			headers: linkNext("https://api.github.com/next"),
-		});
-		expect((await against(listOpenIssues("o/r"), http))._tag).toBe("Failure");
-	});
-
 	/**
 	 * A read that hands its entries on without the exhaustion flag lets a walk that stopped at the
 	 * cap answer a short list as a clean `Ok`. Each of them seats a proven
-	 * negative — "no duplicate", "no twin", "this label is not in the taxonomy" — and a short list
-	 * there is a wrong answer rather than a short one.
+	 * negative — "no duplicate", "no twin", "this label is not in the taxonomy", "the board never
+	 * drifted" — and a short list there is a wrong answer rather than a short one.
 	 */
 	const cappedReads: ReadonlyArray<readonly [string, () => Shell<Attempt<unknown>>]> = [
+		["listOpenIssues", () => listOpenIssues("o/r")],
 		["openIssuesTitled", () => openIssuesTitled("o/r", "map: portability")],
 		["issueTimeline", () => issueTimeline("o/r", 1)],
+		["timelineFacts", () => timelineFacts("o/r", 1)],
 		["openIssuesWithLabel", () => openIssuesWithLabel("o/r", "status:needs-triage")],
 		["listLabels", () => listLabels("o/r")],
 		["listOpenMilestones", () => listOpenMilestones("o/r")],
@@ -770,14 +839,6 @@ describe("openQueueIssues", () => {
 		);
 		expect(result._tag).toBe("Failure");
 	});
-
-	it("refuses rather than returning a short list when the read fails", async () => {
-		const result = await against(
-			openQueueIssues("o/r", "l"),
-			scripted([[/issues/, {status: 502, body: {message: "Bad gateway"}}]]),
-		);
-		expect(result._tag).toBe("Failure");
-	});
 });
 
 describe("issueTimeline", () => {
@@ -804,28 +865,98 @@ describe("issueTimeline", () => {
 			],
 		});
 	});
-
-	it("refuses on a read that failed — an empty timeline would read as `no twin exists`", async () => {
-		const result = await against(
-			issueTimeline("o/r", 1),
-			scripted([[/timeline/, {status: 502, body: {message: "Bad gateway"}}]]),
-		);
-		expect(result._tag).toBe("Failure");
-	});
 });
 
-describe("repoDefaultBranch", () => {
-	it("reads the branch name off the repository payload", async () => {
-		const http = scripted([[/repos\/o\/r/, {status: 200, body: {default_branch: "main"}}]]);
-		expect(await against(repoDefaultBranch("o/r"), http)).toEqual({_tag: "Ok", value: "main"});
+describe("timelineFacts", () => {
+	it("keeps same-repository references with their state, and every reopen", async () => {
+		const http = scripted([
+			[
+				/timeline/,
+				{
+					status: 200,
+					body: [
+						{event: "labeled"},
+						{event: "reopened", created_at: "2026-10-02T00:00:00Z"},
+						{
+							event: "cross-referenced",
+							source: {
+								issue: {
+									number: 12,
+									title: 'Revert "Faster exports"',
+									state: "closed",
+									created_at: "2026-10-01T00:00:00Z",
+									labels: [],
+									repository_url: "https://api.github.com/repos/o/r",
+									pull_request: {url: "u", merged_at: "2026-10-01T01:00:00Z"},
+								},
+							},
+						},
+						{
+							event: "cross-referenced",
+							source: {
+								issue: {
+									number: 13,
+									title: "Exports crash",
+									state: "open",
+									created_at: "2026-10-03T00:00:00Z",
+									labels: [{name: "type:bug"}],
+									repository_url: "https://api.github.com/repos/o/r",
+								},
+							},
+						},
+						{
+							event: "cross-referenced",
+							source: {
+								issue: {
+									number: 9,
+									title: "Elsewhere",
+									state: "open",
+									created_at: "2026-10-03T00:00:00Z",
+									labels: [],
+									repository_url: "https://api.github.com/repos/other/repo",
+								},
+							},
+						},
+					],
+				},
+			],
+		]);
+		expect(await against(timelineFacts("o/r", 7), http)).toEqual({
+			_tag: "Ok",
+			value: {
+				reopenedAt: ["2026-10-02T00:00:00Z"],
+				references: [
+					{
+						number: 12,
+						title: 'Revert "Faster exports"',
+						isPullRequest: true,
+						open: false,
+						merged: true,
+						labels: [],
+						createdAt: "2026-10-01T00:00:00Z",
+					},
+					{
+						number: 13,
+						title: "Exports crash",
+						isPullRequest: false,
+						open: true,
+						merged: false,
+						labels: ["type:bug"],
+						createdAt: "2026-10-03T00:00:00Z",
+					},
+				],
+			},
+		});
 	});
 
-	it("refuses a 200 that names no default branch, rather than answering an empty ref", async () => {
-		const result = await against(
-			repoDefaultBranch("o/r"),
-			scripted([[/repos/, {status: 200, body: {}}]]),
-		);
-		expect(result._tag).toBe("Failure");
+	it("refuses a cross-reference it cannot read rather than dropping it", async () => {
+		const http = scripted([
+			[
+				/timeline/,
+				{status: 200, body: [{event: "cross-referenced", source: {issue: {number: 1}}}]},
+			],
+		]);
+		expect((await against(timelineFacts("o/r", 7), http))._tag).toBe("Failure");
 	});
 });
 
@@ -837,18 +968,6 @@ describe("repoDefaultBranch", () => {
 describe("listCommentsReconciled", () => {
 	const LIST = /GET .*\/issues\/7\/comments\?/;
 	const ISSUE = /GET .*\/issues\/7$/;
-
-	/** Fires on the first matching call only, so two reads of one URL can answer differently. */
-	const once = (pattern: RegExp): RegExp => {
-		const re = new RegExp(pattern.source);
-		let fired = false;
-		re.test = (input: string) => {
-			if (fired || !RegExp.prototype.test.call(re, input)) return false;
-			fired = true;
-			return true;
-		};
-		return re;
-	};
 
 	const comment = (id: number) => ({id, user: {login: "agent"}, created_at: "", updated_at: ""});
 	const page = (...ids: ReadonlyArray<number>): Reply => ({status: 200, body: ids.map(comment)});

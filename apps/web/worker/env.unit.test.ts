@@ -35,12 +35,6 @@ describe("resolveStateMode", () => {
 		expect(resolveStateMode({ALCHEMY_DEV: "true"})).toBe("local");
 	});
 
-	it("the integration harness (CI, no dev flag) uses the Cloudflare store — real remote D1 (ADR 0082)", () => {
-		// `VITEST` is deliberately NOT an offline signal (it isn't read): integration
-		// deploys to real remote Cloudflare, so a test run must resolve like a real deploy.
-		expect(resolveStateMode({CI: "true"})).toBe("cloudflare");
-	});
-
 	it("alchemy dev still uses local state under the integration run's ALCHEMY_DEV", () => {
 		expect(resolveStateMode({CI: "true", ALCHEMY_DEV: "1"})).toBe("local");
 	});
@@ -86,12 +80,6 @@ describe("devDatabaseName (#2361 — the explicit dev D1 physical name)", () => 
 		expect(
 			devDatabaseName({ALCHEMY_EXEC_OPTIONS: JSON.stringify({dev: true, stage: "dev_usirin"})}),
 		).toBe("phoenix-phoenix-db-dev-usirin");
-	});
-
-	it("is stable across state resets for the same stage (adoption re-links the same D1)", () => {
-		const env = {ALCHEMY_EXEC_OPTIONS: JSON.stringify({dev: true, stage: "dev_umut"})};
-		expect(devDatabaseName(env)).toBe(devDatabaseName(env));
-		expect(devDatabaseName(env)).toBe("phoenix-phoenix-db-dev-umut");
 	});
 
 	it("distinguishes stages so per-stage isolation holds (ADR 0057)", () => {

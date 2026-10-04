@@ -1,0 +1,106 @@
+/**
+ * The one stop the rulings allow: a lane whose row has spent its stop multiple of its size stops
+ * before its next shell. Everything short of that is a flag and the lane keeps going.
+ *
+ * It reads the rows the lane's issue reaches — its own, its epic's, the chains it blocks — through
+ * the flags' own reader and asks {@link stopOf}, so a lane stops exactly when its row reads
+ * `stopped` in `table flags`. A row short of its stop only on what was measured cannot be proven at
+ * it, so the lane goes on and the brief names the unmeasured lanes.
+ *
+ * **No table is no stop.** A repository that never set a table up has no sizes to spend past, so it
+ * is `Clear`. A table that could not be read is `Unknown`, never clear, once the repository adopted
+ * one (`./adoption.ts`) — unless the read failed on a missing `project` scope, which is `Unchecked`
+ * and names the fix. In a repository whose `.fabrika.jsonc` declares no `table` block, any read
+ * failure is `Unchecked`: nothing says a table exists, and refusing would stop every lane of every
+ * repo that never adopted one. Either way the lane goes on and the brief says the stop was never
+ * checked, and why.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ * @ruling https://github.com/kamp-us/phoenix/issues/10135
+ */
+
+import {Effect, type FileSystem, type Path} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
+import {appetiteSizesKey} from "../config/keys/appetite-sizes.ts";
+import {readKey} from "../config/read-key.ts";
+import {withProjects} from "../io/projects.ts";
+import {type Excuse, failedRead, readAdoption} from "./adoption.ts";
+import {NO_TARGET, SCOPE_MISSING} from "./codes.ts";
+import {type OverSize, recOf, stopOf} from "./flags.ts";
+import {readHeads} from "./flags-read.ts";
+import {githubWave, locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
+
+export type SizeStop =
+	| {readonly _tag: "Clear"; readonly note: string}
+	| {readonly _tag: "Unchecked"; readonly reason: string; readonly excuse: Excuse}
+	| {readonly _tag: "Stopped"; readonly flag: OverSize; readonly rec: string}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+export const readSizeStop = <R>(
+	board: TableBoard<R>,
+	verb: string,
+	cwd: string,
+	repo: string,
+	issue: number,
+): Effect.Effect<SizeStop, never, R | FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const adoption = yield* readAdoption(cwd);
+		if (adoption._tag === "Unknown") return adoption;
+		const sizes = yield* readKey(cwd, appetiteSizesKey);
+		if (sizes._tag === "Refused") return {_tag: "Unknown", reason: sizes.reason};
+		const {settings} = adoption;
+		const heads = yield* readHeads(board, verb, repo, settings, [issue]);
+		if (heads._tag === "Refused") {
+			if (heads.code === NO_TARGET && settings.project.number === null) {
+				return {_tag: "Clear", note: `no table project, so #${issue} has no size to stop at`};
+			}
+			const reason = heads.reason.replace(/\.$/, "");
+			const failed = failedRead(
+				adoption,
+				heads.code === SCOPE_MISSING ? {_tag: "MissingScope", reason} : {_tag: "Failed", reason},
+			);
+			return failed._tag === "Unread"
+				? {_tag: "Unchecked", reason: failed.reason, excuse: failed.excuse}
+				: failed;
+		}
+		const read = stopOf(heads.rows, {settings, sizes: sizes.value, records: heads.records}, issue);
+		switch (read._tag) {
+			case "Stopped":
+				return {_tag: "Stopped", flag: read.flag, rec: recOf(read.flag, settings)};
+			case "Short":
+				return {
+					_tag: "Clear",
+					note: `#${issue} stands on no row that has spent ${settings.stopMultiple}x its size`,
+				};
+			case "Unmeasured":
+				return {
+					_tag: "Clear",
+					note: `#${read.head}'s row measured $${read.measuredUsd} of its $${read.stopUsd} stop, and ${read.lanes} lane(s) went unmeasured, so what it really spent is unknown; the lane goes on, since no stop is proven`,
+				};
+		}
+	});
+
+/** The size stop read off GitHub under the ambient token, with `verb` naming the reader. */
+export const sizeStopOnGitHub =
+	(verb: string, cwd: string) =>
+	(
+		repo: string,
+		issue: number,
+	): Effect.Effect<
+		SizeStop,
+		never,
+		FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+	> =>
+		readSizeStop(
+			{
+				locate: (target, board) => withProjects((token) => locateTable(token, target, board, verb)),
+				items: syncBoard.items,
+				node: syncBoard.node,
+				comments: syncBoard.comments,
+				wave: githubWave,
+			},
+			verb,
+			cwd,
+			repo,
+			issue,
+		);

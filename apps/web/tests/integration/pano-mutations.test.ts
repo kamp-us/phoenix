@@ -229,46 +229,9 @@ describe("pano mutations — post.vote / retractVote", () => {
 	});
 });
 
+// The author's own edit and delete (title-only, body-only, the delete ref and `post(id)` → null)
+// are proven by `pano-posts-lifecycle.test.ts`; this block keeps the ownership rejections.
 describe("pano mutations — post.edit / post.delete", () => {
-	it("edit returns the edited entity (title alone)", async () => {
-		const id = await seedPost({title: `${NS} before edit`, tags: [{kind: "meta"}]});
-		const edited = await h.fate(
-			{
-				kind: "mutation",
-				name: "post.edit",
-				input: {id, title: `${NS} after edit`},
-				select: ["id", "title"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(edited.ok).toBe(true);
-		if (!edited.ok) return;
-		expect((edited.data as PostNode).id).toBe(id);
-		expect((edited.data as PostNode).title).toBe(`${NS} after edit`);
-	});
-
-	it("edit can change the body alone", async () => {
-		const id = await seedPost({
-			title: `${NS} body-edit`,
-			body: "original body",
-			tags: [{kind: "meta"}],
-		});
-		const edited = await h.fate(
-			{
-				kind: "mutation",
-				name: "post.edit",
-				input: {id, body: "edited body"},
-				select: ["id", "title", "body"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(edited.ok).toBe(true);
-		if (!edited.ok) return;
-		expect((edited.data as PostNode).id).toBe(id);
-		expect((edited.data as PostNode).title).toBe(`${NS} body-edit`);
-		expect((edited.data as PostNode).body).toBe("edited body");
-	});
-
 	it("a non-author edit is rejected with UNAUTHORIZED; the title is unchanged", async () => {
 		const id = await seedPost({title: `${NS} owned title`, tags: [{kind: "meta"}]});
 		const result = await h.fate(
@@ -293,28 +256,6 @@ describe("pano mutations — post.edit / post.delete", () => {
 		expect(detail.ok).toBe(true);
 		if (!detail.ok) return;
 		expect((detail.data as PostNode).title).toBe(`${NS} owned title`);
-	});
-
-	it("delete returns a bare {__typename, id} ref; post(id) then resolves null", async () => {
-		const id = await seedPost({title: `${NS} to be deleted`, tags: [{kind: "meta"}]});
-		const deleted = await h.fate(
-			{kind: "mutation", name: "post.delete", input: {id}, select: ["id"]},
-			{cookie: author.cookie},
-		);
-		expect(deleted.ok).toBe(true);
-		if (!deleted.ok) return;
-		expect((deleted.data as PostNode).__typename).toBe("Post");
-		expect((deleted.data as PostNode).id).toBe(id);
-
-		const detail = await h.fate({
-			kind: "query",
-			name: "post",
-			args: {idOrSlug: id},
-			select: ["id"],
-		});
-		expect(detail.ok).toBe(true);
-		if (!detail.ok) return;
-		expect(detail.data).toBeNull();
 	});
 
 	it("a non-author delete is rejected with UNAUTHORIZED; the post survives", async () => {
@@ -616,41 +557,8 @@ describe("pano mutations — comment.vote / retractVote / edit", () => {
 		expect(result.error.code).toBe("SELF_VOTE_NOT_ALLOWED");
 	});
 
-	it("delete returns the re-resolved parent Post with the surviving commentCount", async () => {
-		const postId = await seedPost({title: `${NS} comment delete target`});
-		const a = await h.fate(
-			{
-				kind: "mutation",
-				name: "comment.add",
-				input: {postId, body: "to be deleted (leaf)"},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		await h.fate(
-			{
-				kind: "mutation",
-				name: "comment.add",
-				input: {postId, body: "the survivor"},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(a.ok).toBe(true);
-		if (!a.ok) return;
-		const aId = (a.data as CommentNode).id;
-
-		const parent = await h.fate(
-			{kind: "mutation", name: "comment.delete", input: {id: aId}, select: ["id", "commentCount"]},
-			{cookie: author.cookie},
-		);
-		expect(parent.ok).toBe(true);
-		if (!parent.ok) return;
-		const post = parent.data as PostNode;
-		expect(post.__typename).toBe("Post");
-		expect(post.id).toBe(postId);
-		expect(post.commentCount).toBe(1);
-	});
+	// comment.delete (the re-resolved parent Post and its surviving commentCount) is proven by
+	// `pano-comments.test.ts`'s soft-delete cases.
 });
 
 // not portable black-box: pano-submit-post.test.ts D1 row-shape assertions

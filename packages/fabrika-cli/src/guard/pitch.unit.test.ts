@@ -1,32 +1,37 @@
 /**
  * The `pitch-guard` decision: what counts as lane-entering work, the tolerant five-field read, the
- * fail-closed approval resolution, the two zero-scope forks (a backlog sweep reds, one out-of-scope
- * issue passes), the report, and the seat each verdict
- * takes on the guard exit taxonomy. No IO — the board read is crossed in `./pitch-verb.ts`.
+ * fail-closed approval resolution and the verdict over a scanned set. No IO. The zero-scope forks,
+ * the exit seats and the report lines a reader acts on are proven through the board read in
+ * `./pitch-verb.unit.test.ts`.
  */
 import {describe, expect, it} from "vitest";
-import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
+import {SHIPPED_APPETITE_SIZES} from "../config/keys/appetite-sizes.ts";
 import {type LabelUniverse, PRESENT} from "./label-universe.ts";
 import {
+	type Appetite,
+	type BetRow,
+	type BetTable,
 	type Candidate,
 	type Comment,
+	describeAppetite,
 	disposition,
 	isAgentStamped,
 	isLaneEntering,
 	judge,
 	LANE_ENTERING_TYPES,
 	PITCH_FIELDS,
+	parseAppetite,
 	parseAppetiteCycles,
 	pitchSection,
 	readField,
 	readPitch,
 	renderReport,
 	resolveApproval,
+	resolveBetApproval,
 	SCOPE_LABELS,
 	type Scope,
 	toGuardVerdict,
 } from "./pitch.ts";
-import {verdictCode} from "./verdict.ts";
 
 const GOOD_PITCH = [
 	"## Pitch",
@@ -45,6 +50,13 @@ const approval = (body: string, authorized = true): Comment => ({
 });
 
 const APPROVED = approval("pitch-approved: appetite 2 cycles · 2026-08-18T00:00:00Z");
+
+const SIZED_PITCH = GOOD_PITCH.replace("2 cycles", "M");
+const SIZE_APPROVED = approval("pitch-approved: appetite M · 2026-09-26T00:00:00Z");
+
+const cycles = (n: number): Appetite => ({_tag: "cycles", cycles: n});
+const size = (letter: "S" | "M" | "L"): Appetite => ({_tag: "size", size: letter});
+const SIZES = SHIPPED_APPETITE_SIZES;
 
 const candidate = (over: Partial<Candidate> = {}): Candidate => ({
 	number: 4312,
@@ -147,7 +159,7 @@ describe("parseAppetiteCycles", () => {
 
 describe("readPitch", () => {
 	it("reads a complete pitch and carries its declared appetite", () => {
-		expect(readPitch(GOOD_PITCH)).toEqual({_tag: "present", appetiteCycles: 2});
+		expect(readPitch(GOOD_PITCH)).toEqual({_tag: "present", appetite: cycles(2), success: null});
 	});
 
 	it("reports absent for a body with no section, and names every missing field", () => {
@@ -173,7 +185,7 @@ describe("readPitch", () => {
 		const read = readPitch(GOOD_PITCH.replace("2 cycles", "about a month"));
 		expect(read).toMatchObject({_tag: "malformed"});
 		if (read._tag !== "malformed") throw new Error("expected malformed");
-		expect(read.missing).toContain("Appetite (not a whole number of cycles)");
+		expect(read.missing).toContain("Appetite (not a size S / M / L, nor a whole number of cycles)");
 	});
 });
 
@@ -190,36 +202,26 @@ describe("isAgentStamped", () => {
 });
 
 describe("resolveApproval", () => {
-	it("approves a write+ marker whose appetite matches the body's", () => {
-		expect(resolveApproval([APPROVED], 2)).toEqual({_tag: "approved", cycles: 2});
-	});
-
 	it("reports none when no comment carries the marker at all", () => {
-		expect(resolveApproval([approval("looks good to me")], 2)).toEqual({_tag: "none"});
-	});
-
-	it("refuses a marker from below write+ — an unverifiable approval never counts", () => {
-		expect(resolveApproval([approval("pitch-approved: appetite 2 cycles", false)], 2)).toEqual({
-			_tag: "unauthorized",
-		});
+		expect(resolveApproval([approval("looks good to me")], cycles(2))).toEqual({_tag: "none"});
 	});
 
 	it("refuses an agent-stamped marker — approval is a founder seat", () => {
 		const stamped = approval("pitch-approved: appetite 2 cycles\n\nFiled by an agent.");
-		expect(resolveApproval([stamped], 2)).toEqual({_tag: "agent-authored"});
+		expect(resolveApproval([stamped], cycles(2))).toEqual({_tag: "agent-authored"});
 	});
 
 	it("refuses a marker naming no appetite — approval must bind the number it approved", () => {
-		expect(resolveApproval([approval("pitch-approved: go for it")], 2)).toEqual({
+		expect(resolveApproval([approval("pitch-approved: go for it")], cycles(2))).toEqual({
 			_tag: "malformed-marker",
 		});
 	});
 
 	it("reports a mismatch with both numbers, so the report can name the re-approval needed", () => {
-		expect(resolveApproval([approval("pitch-approved: appetite 6 cycles")], 2)).toEqual({
+		expect(resolveApproval([approval("pitch-approved: appetite 6 cycles")], cycles(2))).toEqual({
 			_tag: "appetite-mismatch",
-			approved: 6,
-			declared: 2,
+			approved: cycles(6),
+			declared: cycles(2),
 		});
 	});
 
@@ -228,21 +230,14 @@ describe("resolveApproval", () => {
 			approval("pitch-approved: appetite 9 cycles", false),
 			approval("pitch-approved: appetite 2 cycles"),
 		];
-		expect(resolveApproval(comments, 2)).toEqual({_tag: "approved", cycles: 2});
+		expect(resolveApproval(comments, cycles(2))).toEqual({
+			_tag: "approved",
+			appetite: cycles(2),
+		});
 	});
 });
 
 describe("disposition", () => {
-	it("passes a complete, approved, lane-entering bet", () => {
-		expect(disposition(candidate())).toEqual({_tag: "pitched", cycles: 2});
-	});
-
-	it("holds a sub-issue out of scope — it inherits its epic's pitch", () => {
-		expect(disposition(candidate({hasParent: true, body: "", comments: []}))).toEqual({
-			_tag: "out-of-scope",
-		});
-	});
-
 	it("names the nearest miss for each unpitched shape", () => {
 		expect(disposition(candidate({body: "nothing"}))).toMatchObject({
 			detail: "has no `## Pitch` section",
@@ -264,14 +259,6 @@ describe("judge", () => {
 			scanned: 2,
 			pitched: 2,
 		});
-	});
-
-	it("reds an empty BACKLOG sweep — a vacuous pass would hide every unpitched bet", () => {
-		expect(judge([], BACKLOG)).toEqual({pass: false, reason: "zero-scope", scope: BACKLOG});
-	});
-
-	it("passes an empty ISSUE scope where the scoping labels exist — it is simply not a bet", () => {
-		expect(judge([], issueScope(9))).toMatchObject({pass: true, scanned: 0});
 	});
 
 	it("refuses an empty ISSUE scope in a repo with no scoping labels", () => {
@@ -297,37 +284,182 @@ describe("judge", () => {
 	});
 });
 
-describe("renderReport", () => {
-	it("states what a clean sweep covered rather than a bare all-clear", () => {
-		expect(renderReport(judge([candidate()], BACKLOG))).toContain("scanned 1 lane-entering");
-	});
-
-	it("names the fail-closed reason on an empty backlog sweep", () => {
-		expect(renderReport(judge([], BACKLOG))).toContain("fail-closed");
-	});
-
-	it("names every offender and prints the draft/approve remedy once", () => {
-		const report = renderReport(judge([candidate({comments: []})], BACKLOG));
-		expect(report).toContain("#4312 product search");
-		expect(report).toContain("the FOUNDER approves it");
-		expect(report).toContain(".glossary/TERMS.md");
+describe("toGuardVerdict", () => {
+	it("counts an issue-scoped pass as a scan of one, never of zero", () => {
+		const verdict = toGuardVerdict(judge([], issueScope(9)), SIZES);
+		expect(verdict).toMatchObject({_tag: "Clean", scanned: 1});
 	});
 });
 
-describe("toGuardVerdict", () => {
-	it("seats each verdict on the guard exit taxonomy", () => {
-		expect(verdictCode(toGuardVerdict(judge([candidate()], BACKLOG)))).toBe(0);
-		expect(verdictCode(toGuardVerdict(judge([], BACKLOG)))).toBe(ZERO_SCOPE);
-		expect(verdictCode(toGuardVerdict(judge([], issueScope(9, ABSENT))))).toBe(
-			PRECONDITION_UNKNOWN,
-		);
-		expect(verdictCode(toGuardVerdict(judge([candidate({comments: []})], BACKLOG)))).toBe(
-			VIOLATION,
-		);
+describe("appetite as a size — S / M / L, with N cycles kept as the legacy read", () => {
+	it("reads an upper-case size letter, with or without a trailing note", () => {
+		expect(parseAppetite("M")).toEqual(size("M"));
+		expect(parseAppetite("L ($40 per child)")).toEqual(size("L"));
+		expect(parseAppetite("2 cycles")).toEqual(cycles(2));
 	});
 
-	it("counts an issue-scoped pass as a scan of one, never of zero", () => {
-		const verdict = toGuardVerdict(judge([], issueScope(9)));
-		expect(verdict).toMatchObject({_tag: "Clean", scanned: 1});
+	it("refuses a lower-case letter, a spelled-out size and an unknown letter", () => {
+		expect(parseAppetite("m")).toBeNull();
+		expect(parseAppetite("Medium")).toBeNull();
+		expect(parseAppetite("XL")).toBeNull();
+		expect(parseAppetite("S-ish")).toBeNull();
+	});
+
+	it("describes each arm the way a pitch writes it", () => {
+		expect(describeAppetite(size("S"))).toBe("S");
+		expect(describeAppetite(cycles(3))).toBe("3 cycles");
+	});
+
+	it("still passes a legacy `2 cycles` pitch against its `appetite 2 cycles` approval", () => {
+		expect(disposition(candidate())).toEqual({_tag: "pitched", appetite: cycles(2)});
+	});
+
+	it("refuses a size approval that disagrees with the body's size, asking for re-approval", () => {
+		const drifted = candidate({
+			body: SIZED_PITCH.replace("**Appetite:** M", "**Appetite:** L"),
+			comments: [SIZE_APPROVED],
+		});
+		expect(resolveApproval(drifted.comments, size("L"))).toEqual({
+			_tag: "appetite-mismatch",
+			approved: size("M"),
+			declared: size("L"),
+		});
+		expect(disposition(drifted)).toEqual({
+			_tag: "unpitched",
+			detail: "its approval names appetite M but the body declares L — re-approval needed",
+		});
+	});
+
+	it("refuses a cycles approval over a size body, and a size approval over a cycles body", () => {
+		expect(disposition(candidate({body: SIZED_PITCH, comments: [APPROVED]}))).toMatchObject({
+			detail: expect.stringContaining("2 cycles but the body declares M"),
+		});
+		expect(disposition(candidate({comments: [SIZE_APPROVED]}))).toMatchObject({
+			detail: expect.stringContaining("appetite M but the body declares 2 cycles"),
+		});
+	});
+
+	it("reads a lower-case size in the approval as naming no appetite", () => {
+		expect(
+			resolveApproval([approval("pitch-approved: appetite m · 2026-09-26")], size("M")),
+		).toEqual({_tag: "malformed-marker"});
+	});
+});
+
+describe("the optional Success line", () => {
+	it("carries the sentence the two-week check judges when the pitch names one", () => {
+		const body = `${SIZED_PITCH}\n**Success:** half of new yazars find last week's entry in one search`;
+		expect(readPitch(body)).toEqual({
+			_tag: "present",
+			appetite: size("M"),
+			success: "half of new yazars find last week's entry in one search",
+		});
+	});
+
+	it("leaves a pitch without it well-formed", () => {
+		expect(readPitch(SIZED_PITCH)).toMatchObject({_tag: "present", success: null});
+	});
+});
+
+describe("the bet arm — a `bet` on the table approves the pitch", () => {
+	const sized = (over: Partial<Candidate> = {}): Candidate =>
+		candidate({body: SIZED_PITCH, comments: [], ...over});
+	const row = (over: Partial<BetRow> = {}): BetRow => ({
+		head: 4312,
+		covers: [4312],
+		size: "M",
+		headAppetite: {_tag: "stated", appetite: size("M")},
+		setter: "founder",
+		authorized: true,
+		...over,
+	});
+	const table = (...rows: ReadonlyArray<BetRow>): BetTable => ({
+		_tag: "read",
+		source: "o#1",
+		rows,
+	});
+
+	it("counts a `bet` an agent set under a write+ token — the setter's ACL is the whole bar", () => {
+		const agent = table(row({setter: "agent-under-founder-token"}));
+		expect(resolveBetApproval(4312, agent, size("M"))).toMatchObject({_tag: "approved"});
+	});
+
+	it("approves the head and every member of a group row, whatever a member's own size", () => {
+		const group = table(
+			row({
+				head: 50,
+				covers: [50, 51, 52],
+				size: "L",
+				headAppetite: {_tag: "stated", appetite: size("L")},
+			}),
+		);
+		expect(resolveBetApproval(50, group, size("L"))).toMatchObject({_tag: "approved"});
+		expect(resolveBetApproval(51, group, size("S"))).toMatchObject({_tag: "approved"});
+		expect(resolveBetApproval(52, group, cycles(2))).toMatchObject({_tag: "approved"});
+		const head = sized({
+			number: 50,
+			body: SIZED_PITCH.replace("**Appetite:** M", "**Appetite:** L"),
+		});
+		expect(judge([head, sized({number: 51})], BACKLOG, group)).toMatchObject({
+			pass: true,
+			pitched: 2,
+		});
+	});
+
+	it("binds a member's approval to the appetite its own pitch states, never to the row's Size", () => {
+		const group = table(
+			row({
+				head: 50,
+				covers: [50, 51],
+				size: "L",
+				headAppetite: {_tag: "stated", appetite: size("L")},
+			}),
+		);
+		expect(disposition(sized({number: 51}), group)).toEqual({
+			_tag: "pitched",
+			appetite: size("M"),
+		});
+	});
+
+	it("approves no member when the group row's Size is not the size its head's pitch declares", () => {
+		const cases: ReadonlyArray<readonly [BetRow["headAppetite"], string]> = [
+			[{_tag: "stated", appetite: size("S")}, "it is sized L but its head #50 declares S"],
+			[{_tag: "stated", appetite: cycles(2)}, "its head #50 states a legacy `2 cycles` appetite"],
+			[{_tag: "unstated"}, "its head #50 carries no well-formed pitch"],
+			[{_tag: "unread", reason: "HTTP 502"}, "its head's pitch could not be read (HTTP 502)"],
+		];
+		for (const [headAppetite, why] of cases) {
+			const group = table(row({head: 50, covers: [50, 51], size: "L", headAppetite}));
+			expect(resolveBetApproval(51, group, size("M"))).toEqual({
+				_tag: "group-unbacked",
+				head: 50,
+				why,
+			});
+			expect(disposition(sized({number: 51}), group)).toMatchObject({
+				_tag: "unpitched",
+				detail: expect.stringContaining(`approves no member: ${why}`),
+			});
+		}
+	});
+
+	it("refuses a `bet` row with no Size, and one over a legacy cycles pitch", () => {
+		expect(resolveBetApproval(4312, table(row({size: null})), size("M"))).toEqual({
+			_tag: "no-size",
+			head: 4312,
+		});
+		expect(disposition(candidate({comments: []}), table(row()))).toMatchObject({
+			detail: expect.stringContaining("cannot approve a legacy `<N> cycles` pitch"),
+		});
+	});
+
+	it("names the table's miss beside the comment's when neither carrier approves", () => {
+		expect(disposition(sized(), table())).toMatchObject({
+			detail: expect.stringContaining("; and no `bet` row on the table covers it"),
+		});
+	});
+
+	it("says in the remedy that a `bet` on the table is the approval", () => {
+		const report = renderReport(judge([sized()], BACKLOG), SIZES);
+		expect(report).toContain("a `bet` on the table");
 	});
 });

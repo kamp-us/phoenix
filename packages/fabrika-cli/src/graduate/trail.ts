@@ -37,7 +37,6 @@ export interface UnresolvedRow {
 	readonly state: string;
 }
 
-/** The three readiness answers. All three are answers, and all three exit `0`. */
 export type Readiness = "ready" | "blocked" | "empty";
 
 /** Which sibling the trail was resolved through. */

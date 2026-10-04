@@ -13,6 +13,7 @@
  */
 import {createHash} from "node:crypto";
 import {Effect, FileSystem} from "effect";
+import {type ColorScheme, isColorScheme} from "../capture/color-scheme.ts";
 import type {PageError} from "../capture/page-errors.ts";
 import type {CapAndCount} from "../evidence.ts";
 import {isRecord, parseJson} from "../io/json.ts";
@@ -27,6 +28,24 @@ import {isRecord, parseJson} from "../io/json.ts";
  */
 export const PAGE_ERROR_CAP = 3;
 
+export interface CaptureScheme {
+	readonly requested: ColorScheme;
+	readonly proven: ColorScheme;
+}
+
+/** An accented shot's record: the accent the run asked for, and the one the page's root carried. */
+export interface CaptureAccent {
+	readonly requested: string;
+	readonly proven: string;
+}
+
+/** An interacted shot's record: the label it is filed under, the steps it ran, what the page proved. */
+export interface CaptureInteraction {
+	readonly label: string;
+	readonly steps: readonly [string, ...string[]];
+	readonly proven: readonly [string, ...string[]];
+}
+
 /** One captured surface, as both the stdout object and the manifest record it. */
 export interface CaptureEntry {
 	readonly surface: string;
@@ -36,6 +55,23 @@ export interface CaptureEntry {
 	 * without this a manifest cannot say what width its pixels are of.
 	 */
 	readonly viewport: string;
+	/**
+	 * The colour scheme a `--scheme` run asked for and the one the page itself published — present
+	 * only on such a run, so a set rendered without the operand reads exactly as before. The proven
+	 * half is read off the page, never echoed from the request.
+	 */
+	readonly scheme?: CaptureScheme;
+	/**
+	 * The theme accent an `--accent` run asked for and the one the page's root carried when read back
+	 * — present only on such a run, so a set rendered without the operand reads exactly as before.
+	 */
+	readonly accent?: CaptureAccent;
+	/**
+	 * The interaction an `--interact` shot ran and what the page proved at each proving step —
+	 * present only on such a shot, so an at-rest entry reads exactly as before. The proven half is
+	 * read off the page, never echoed from the operand.
+	 */
+	readonly interaction?: CaptureInteraction;
 	readonly path: string;
 	readonly width: number;
 	readonly height: number;
@@ -87,10 +123,61 @@ const isCollapsedPageErrors = (value: unknown): value is CapAndCount<PageError> 
 			typeof (entry as PageError).text === "string",
 	);
 
+/** `undefined` for an absent field, `null` for a present one that is not a scheme pair. */
+const toScheme = (value: unknown): CaptureScheme | null | undefined => {
+	if (value === undefined) return undefined;
+	if (
+		!isRecord(value) ||
+		typeof value.requested !== "string" ||
+		typeof value.proven !== "string" ||
+		!isColorScheme(value.requested) ||
+		!isColorScheme(value.proven)
+	) {
+		return null;
+	}
+	return {requested: value.requested, proven: value.proven};
+};
+
+/** `undefined` for an absent field, `null` for a present one that is not an accent pair. */
+const toAccent = (value: unknown): CaptureAccent | null | undefined => {
+	if (value === undefined) return undefined;
+	if (
+		!isRecord(value) ||
+		typeof value.requested !== "string" ||
+		typeof value.proven !== "string" ||
+		value.requested.length === 0 ||
+		value.proven.length === 0
+	) {
+		return null;
+	}
+	return {requested: value.requested, proven: value.proven};
+};
+
+const toNonEmptyStrings = (value: unknown): readonly [string, ...string[]] | null => {
+	if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return null;
+	const [first, ...rest] = value as string[];
+	return first === undefined ? null : [first, ...rest];
+};
+
+/** `undefined` for an absent field, `null` for a present one that is not an interaction record. */
+const toInteraction = (value: unknown): CaptureInteraction | null | undefined => {
+	if (value === undefined) return undefined;
+	if (!isRecord(value) || typeof value.label !== "string" || value.label.length === 0) return null;
+	const steps = toNonEmptyStrings(value.steps);
+	const proven = toNonEmptyStrings(value.proven);
+	return steps === null || proven === null ? null : {label: value.label, steps, proven};
+};
+
 const toEntry = (value: unknown): CaptureEntry | null => {
 	if (typeof value !== "object" || value === null) return null;
 	const record = value as Record<string, unknown>;
+	const scheme = toScheme(record.scheme);
+	const accent = toAccent(record.accent);
+	const interaction = toInteraction(record.interaction);
 	if (
+		scheme === null ||
+		accent === null ||
+		interaction === null ||
 		typeof record.surface !== "string" ||
 		typeof record.viewport !== "string" ||
 		typeof record.path !== "string" ||
@@ -104,6 +191,9 @@ const toEntry = (value: unknown): CaptureEntry | null => {
 	return {
 		surface: record.surface,
 		viewport: record.viewport,
+		...(scheme === undefined ? {} : {scheme}),
+		...(accent === undefined ? {} : {accent}),
+		...(interaction === undefined ? {} : {interaction}),
 		path: record.path,
 		width: record.width,
 		height: record.height,

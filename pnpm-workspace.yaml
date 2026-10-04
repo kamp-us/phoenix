@@ -4,9 +4,11 @@ packages:
   - infra/*
 
 catalog:
-  # Exact pin (epic #7498): apps/tuval's Claude program is built against this SDK's `tool()` /
+  # Exact pin (epic #7498): @kampus/tuval-claude's Claude program is built against this SDK's `tool()` /
   # `createSdkMcpServer` surface, and its three peers below are pinned with it so one copy of each
-  # lives in the tree. Dependabot bumps it; the CLI it spawns is the `claude` on PATH (#7580).
+  # lives in the tree. Bump it by hand, in one commit with those lockstep peers: Dependabot opens a
+  # PR for it only on a security advisory, never for a new release (#10133). The CLI it spawns is
+  # the `claude` on PATH (#7580).
   '@anthropic-ai/claude-agent-sdk': 0.3.259
   '@anthropic-ai/sdk': 0.123.0
   # Lockstep with better-auth 1.6.23 (the `^1.6.13` catalog pin resolves there):
@@ -20,11 +22,15 @@ catalog:
   '@biomejs/biome': ^2.4.15
   '@cloudflare/workers-types': 5.20260901.1
   # Exact pin: the lane ledger's machines fold over this engine's dispatch semantics
-  # (NoCellError refusal, Transitions-form cells), so the version is part of the contract (#5673).
-  '@demlik/tea': 0.12.0
+  # (NoCellError refusal, Transitions-form cells), so the version is part of the contract (#5673);
+  # fold.no-cell.unit.test.ts pins the no-cell half. 0.19.0's optional `vitest` peer admits
+  # `^4 || ^5`, so an adopter on current vitest installs fabrika-cli without an unmet-peer warning
+  # (#9771); fabrika-cli's tea-peer test holds it there. The daily `release-watch` workflow files an
+  # issue when npm ships a newer @demlik/* release (#10133).
+  '@demlik/tea': 0.19.0
   '@distilled.cloud/cloudflare': 1.0.0-rc.9
   '@effect/language-service': ^0.85.1
-  # Pi 0.85.1, pinned exact: apps/tuval's loopback Pi host speaks protocol 8 end to end, and the
+  # Pi 0.85.1, pinned exact: @kampus/tuval-pi's loopback Pi host speaks protocol 8 end to end, and the
   # envelope is part of that contract (ADR 0366). The family's ninth entry, `@earendil-works/chord`,
   # is a runtime dependency of `pi-protocol` and `pi-client` rather than a direct one, so it is
   # pinned under `overrides:` below; all nine move in one commit.
@@ -34,6 +40,7 @@ catalog:
   '@earendil-works/pi-protocol': 0.85.1
   '@effect/platform-bun': 4.0.0-rc.112
   '@effect/platform-node': 4.0.0-rc.112
+  '@effect/platform-node-shared': 4.0.0-rc.112
   '@effect/sql-d1': 4.0.0-rc.112
   '@effect/sql-pg': 4.0.0-rc.112
   '@effect/tsgo': ^0.36.4
@@ -49,18 +56,19 @@ catalog:
   '@sentry/cloudflare': 10.62.0
   '@sentry/effect': 10.62.0
   '@sentry/react': 10.62.0
-  # Exact pin (grill #7563 R2.1): apps/tuval's ChatWindow virtualizes its transcript on this
+  # Exact pin (grill #7563 R2.1): @kampus/tuval-ui's ChatWindow virtualizes its transcript on this
   # version, whose `peerDependencies.react` reads `^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0`.
   '@tanstack/react-virtual': 3.14.10
   '@testing-library/dom': ^10.4.1
   '@testing-library/react': ^16.3.0
   '@testing-library/user-event': ^14.6.7
-  '@tiptap/core': 3.30.4
+  '@tiptap/core': 3.30.5
   '@tiptap/markdown': 3.27.3
   '@tiptap/pm': 3.27.3
   '@tiptap/react': 3.27.3
   '@tiptap/starter-kit': 3.27.3
   '@types/node': ^25.6.2
+  '@types/semver': 7.8.0
   '@types/ws': ^8.18.1
   '@types/react': ^19.2.14
   '@types/react-dom': ^19.2.3
@@ -117,7 +125,10 @@ catalog:
   # `onLayoutChanged` that fires on release, and `useGroupRef().setLayout` as the only write-back
   # (`.patterns/layout-tree-with-resizable-panels.md`).
   react-resizable-panels: 4.12.3
-  react-router: ^7.18.0
+  react-router: ^7.18.2
+  # What `@kampus/tuval-sdk` reads a program's declared SDK range with (#9686). Pinned to the exact
+  # 7.8.5 an existing lockfile parent already links (sharp), so no third version enters the tree.
+  semver: 7.8.5
   turbo: ^2.9.14
   # Pi's own pin (`@earendil-works/pi-coding-agent@0.85.1`'s `package.json`), because a
   # `ToolDefinition.parameters` this repo writes and one Pi's own tools write have to be the same

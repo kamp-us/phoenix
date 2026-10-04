@@ -6,6 +6,7 @@ import {
 	linkNext,
 	type Scripted,
 	unconfigured,
+	unconfiguredOnPlatform,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -97,6 +98,7 @@ const classifiable = (board: Scripted): ReadonlyArray<Scripted> => [
 	[COMMIT_DATE, commitDate(PUSHED)],
 	[RULES, rules("ci-required")],
 	[PROTECTION, protection()],
+	...unconfiguredOnPlatform(),
 ];
 
 describe("runSweep reports the whole board or none of it", () => {

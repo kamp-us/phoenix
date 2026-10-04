@@ -115,24 +115,39 @@ export const epicBranch = (epic: number): GitRef => `epic/${epic}` as GitRef;
 export type ReviewRange = CommitRange<HeadSha>;
 
 /**
- * The five leaf states that route to a shell. Every other state is a refusal, never a guess.
+ * The six leaf states that route to a shell. Every other state is a refusal, never a guess.
  *
- * A UI-class lane runs its construction and its rendered review in shells of their own,
+ * A UI-class lane runs its construction and its rendered review in shells of their own, a mixed
+ * lane constructs in the shell carrying both construction laws,
  * and the state name is what carries the class — the routing stays a 1:1 state → shell map rather
  * than a diff a brief would have to read, which a `build` state has no PR to read anyway.
  */
-export const SHELL_STATES = ["build", "build:ui", "review", "review:ui", "ship"] as const;
+export const SHELL_STATES = [
+	"build",
+	"build:ui",
+	"build:mixed",
+	"review",
+	"review:ui",
+	"ship",
+] as const;
 
 export type ShellState = (typeof SHELL_STATES)[number];
 
-export type LaneShell = "builder" | "ui-builder" | "reviewer" | "ui-reviewer" | "shipper";
+export type LaneShell =
+	| "builder"
+	| "ui-builder"
+	| "mixed-builder"
+	| "reviewer"
+	| "ui-reviewer"
+	| "shipper";
 
-// The two UI shells are named for the actor, not the skill they preload: `build-ui` / `review-ui`
+// The UI and mixed shells are named for the actor, not the skill they preload: `build-ui` / `review-ui`
 // are the SKILL names, and an agent whose `name:` is the bare spelling of its skill collides with
 // that skill. `claude-plugins/fabrika/agents/` is authoritative here.
 const SHELLS: Readonly<Record<ShellState, LaneShell>> = {
 	build: "builder",
 	"build:ui": "ui-builder",
+	"build:mixed": "mixed-builder",
 	review: "reviewer",
 	"review:ui": "ui-reviewer",
 	ship: "shipper",
@@ -144,12 +159,13 @@ export const shellOf = (state: ShellState): LaneShell => SHELLS[state];
 /**
  * Whether a state constructs, and whether it judges — the two questions the ground rules ask.
  *
- * They ask about the *round*, not the shell: a `build:ui` brief carries no PR for the same reason a
- * `build` one does not, and a `review:ui` child brief needs the same resolved range a `review` one
- * does. Written as predicates so a sixth state cannot answer one of the two by accident.
+ * They ask about the *round*, not the shell: a `build:ui` or `build:mixed` brief carries no PR for
+ * the same reason a `build` one does not, and a `review:ui` child brief needs the same resolved
+ * range a `review` one does. Written as predicates so a seventh state cannot answer one of the two
+ * by accident.
  */
 export const isBuildState = (state: ShellState): boolean =>
-	state === "build" || state === "build:ui";
+	state === "build" || state === "build:ui" || state === "build:mixed";
 
 export const isReviewState = (state: ShellState): boolean =>
 	state === "review" || state === "review:ui";
@@ -196,6 +212,25 @@ export type LaneGround =
 			readonly range: ReviewRange;
 	  };
 
+/**
+ * The comments a control-plane account wrote on the issue that no ruling marker records.
+ *
+ * A third state rather than an empty list, because the read behind it can fail: a brief that printed
+ * nothing there would tell the shell "none" off a roster nobody resolved. `None` is the proven
+ * zero, and the only one a `ship` brief carries — a shipper neither builds nor judges.
+ *
+ * URLs and never the comments' text, for the reason `## Ground` carries no content at all.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10309#issuecomment-5974136525
+ */
+export type OwnerComments =
+	| {readonly _tag: "None"}
+	| {readonly _tag: "Unmarked"; readonly urls: NonEmptyReadonlyArray<ArtifactUrl>}
+	| {readonly _tag: "Unknown"};
+
+/** The token the `owner-comments` field carries when the read behind it failed. */
+export const OWNER_COMMENTS_UNKNOWN = "unknown";
+
 export interface LaneBrief {
 	/** The lane id as the store names it — by convention the driven issue number. */
 	readonly lane: string;
@@ -209,6 +244,7 @@ export interface LaneBrief {
 	readonly shell: LaneShell;
 	readonly issue: ArtifactUrl;
 	readonly ground: LaneGround;
+	readonly ownerComments: OwnerComments;
 }
 
 export type LaneBriefRead = WireRead<LaneBrief>;
@@ -217,7 +253,9 @@ export type LaneBriefRead = WireRead<LaneBrief>;
  * The `## Rules` text, byte-fixed and owned by the format.
  *
  * Each sentence is a rule a driver used to carry in their own prose: worktree isolation, URLs over
- * restatements, and the entrypoint with the reason it exists.
+ * restatements, and the entrypoint with the reason it exists. The last one has the shell record its
+ * worktree, because the brief is the one artifact every shell reads and no other seat knows which
+ * tree a shell was handed.
  *
  * The entrypoint is named by reference — `the `fabrika:` path in `## Task`` — and never interpolated,
  * because the reader recomputes this text from the ground alone.
@@ -229,7 +267,11 @@ Invoke every fabrika verb as \`node <fabrika> <group> <verb>\`, where \`<fabrika
 entrypoint in \`## Task\` above — never the bare \`fabrika\` binstub, which in a worktree resolves to
 another checkout's code, so its answer describes a tree you are not standing in. A relative
 entrypoint is this repo's own source and resolves inside your worktree; an absolute one is an
-installed copy your worktree carries no \`node_modules\` for.`;
+installed copy your worktree carries no \`node_modules\` for.
+Before anything else, record this worktree on the lane with
+\`node <fabrika> lane worktree <lane> --root <root> --task <task>\`, the three fields \`## Task\` carries.
+The lane removes the trees it recorded when its run ends, so one it never heard of stays on disk. A
+refusal there stops nothing: name its exit code in your final report and go on.`;
 
 /**
  * The rules an epic lane's child state adds, byte-fixed the same way and appended to {@link RULES}.
@@ -244,7 +286,10 @@ ends on \`BUILT-NO-PR\`, whose branch disposition is exactly that: left local an
 lane to fold.
 A child re-entering \`build\` after a \`FAIL\` is a repair, not a second build: \`build claim\` refuses
 the fresh claim naming that FAIL, and the route it points at takes over the branch the prior lane
-built on rather than cutting another.
+built on rather than cutting another. A \`FAIL\` out of \`integrate\` writes no verdict on the child, so
+pass this brief's \`lane\` and \`root\` to \`build claim\` and \`build resume-child\` as
+\`--lane <lane> --lane-root <root>\`: the claim reads that \`FAIL\`, its exit and the assembly head off
+the lane's ledger, and without them it reads the child as finished.
 A child's build discloses its deviations — the section a PR body would carry — as a
 \`build-deviations\` marker comment on the child issue, posted through
 \`node <fabrika> build deviations <child> --token <claim-token>\` with the
@@ -309,6 +354,26 @@ trunk is not yours to resolve: name it in your \`build note\` and the driver run
 which merges \`main\` into \`epic/<lane>\`. Merge, never rebase — each landed child's range verdict is
 bound to the commits it names, and a rebase rewrites every one of them.`;
 
+/**
+ * The rule a brief adds when its ground lists `owner-comments` — the last text of the rules, after
+ * whatever the ground's own shape appended.
+ *
+ * It tells the shell to read and stops there. Nothing here makes an unmarked comment a ruling: the
+ * graded set is still the body plus the marked rulings, and recording one is a control-plane
+ * human's act.
+ */
+export const OWNER_COMMENTS_RULES = `\`owner-comments\` above names comments a control-plane account wrote on the issue that no
+ruling marker records, each newer than the newest recorded ruling. No verb folds them into the
+contract, so read every one before you build or judge. An agent posting under an owner's account
+lands there too, so one of them may be no rule at all. Where one changes what the issue asks for,
+name its URL in your report: it becomes a graded ruling through
+\`node <fabrika> decision rule <issue> --cites <url>\`, which a control-plane human runs, never you.`;
+
+/** The rule a brief adds when that same read failed: unknown is said out loud, never left blank. */
+export const OWNER_COMMENTS_UNKNOWN_RULES = `\`owner-comments: unknown\` says the read behind that field failed, so whether a control-plane
+account wrote a comment on the issue that no ruling marker records is unknown, never none. Read the
+issue's comments before you build or judge.`;
+
 /** The section headings this format admits, in the order it emits them. */
 export const SECTIONS = ["Task", "Ground", "Rules"] as const;
 
@@ -327,7 +392,7 @@ export type SectionName = (typeof SECTIONS)[number];
  */
 const TASK_FIELDS = ["lane", "root", "fabrika", "task", "state", "shell"] as const;
 
-const GROUND_FIELDS = ["issue", "pr", "epic", "branch", "range"] as const;
+const GROUND_FIELDS = ["issue", "pr", "epic", "branch", "range", "owner-comments"] as const;
 
 const OWNER: Readonly<Record<string, SectionName | undefined>> = {
 	...Object.fromEntries(TASK_FIELDS.map((key) => [key, "Task" as const])),
@@ -337,8 +402,23 @@ const OWNER: Readonly<Record<string, SectionName | undefined>> = {
 /** Every key the format owns, for the producer-side parse, which sees no headings. */
 const OWNED_FIELDS: ReadonlySet<string> = new Set([...TASK_FIELDS, ...GROUND_FIELDS]);
 
-/** The `## Ground` fields a ground carries, after the `issue` every brief has. */
-const groundFields = (brief: LaneBrief): ReadonlyArray<readonly [string, string]> => {
+const ownerCommentsFields = (comments: OwnerComments): ReadonlyArray<readonly [string, string]> => {
+	if (comments._tag === "None") return [];
+	return [
+		[
+			"owner-comments",
+			comments._tag === "Unknown" ? OWNER_COMMENTS_UNKNOWN : comments.urls.join(" "),
+		],
+	];
+};
+
+/** The `## Ground` fields a brief carries, after the `issue` every brief has. */
+const groundFields = (brief: LaneBrief): ReadonlyArray<readonly [string, string]> => [
+	...shapeFields(brief),
+	...ownerCommentsFields(brief.ownerComments),
+];
+
+const shapeFields = (brief: LaneBrief): ReadonlyArray<readonly [string, string]> => {
 	if (brief.ground._tag === "Pull") {
 		return brief.ground.pr === null ? [] : [["pr", brief.ground.pr]];
 	}
@@ -365,7 +445,13 @@ const groundFields = (brief: LaneBrief): ReadonlyArray<readonly [string, string]
 	];
 };
 
-const rulesFor = (ground: LaneGround): string => {
+const rulesFor = (ground: LaneGround, comments: OwnerComments): string => {
+	const shape = shapeRulesFor(ground);
+	if (comments._tag === "None") return shape;
+	return `${shape}\n${comments._tag === "Unknown" ? OWNER_COMMENTS_UNKNOWN_RULES : OWNER_COMMENTS_RULES}`;
+};
+
+const shapeRulesFor = (ground: LaneGround): string => {
 	if (ground._tag === "Pull") return RULES;
 	if (ground._tag === "Tail") return `${RULES}\n${EPIC_TAIL_RULES}`;
 	if (ground._tag === "TailRepair") return `${RULES}\n${EPIC_TAIL_REPAIR_RULES}`;
@@ -386,7 +472,7 @@ export const emit = (brief: LaneBrief): string =>
 		`issue: ${brief.issue}`,
 		...groundFields(brief).map(([key, value]) => `${key}: ${value}`),
 		"## Rules",
-		rulesFor(brief.ground),
+		rulesFor(brief.ground, brief.ownerComments),
 		"",
 	].join("\n");
 
@@ -560,6 +646,44 @@ const groundOf = (fields: ReadonlyMap<string, string>, state: ShellState): Groun
 	return {_tag: "Ground", ground: {_tag: "EpicRange", epic, branch, range}};
 };
 
+type OwnerCommentsScan =
+	| {readonly _tag: "Comments"; readonly comments: OwnerComments}
+	| {readonly _tag: "Bad"; readonly reason: string};
+
+/**
+ * What the `owner-comments` field carries, and whether the state may carry it — the one reader
+ * `read` and {@link parseFields} share, beside {@link groundOf}.
+ */
+const ownerCommentsOf = (
+	fields: ReadonlyMap<string, string>,
+	state: ShellState,
+): OwnerCommentsScan => {
+	const raw = (fields.get("owner-comments") ?? "").trim();
+	if (raw === "") return {_tag: "Comments", comments: {_tag: "None"}};
+	if (!isBuildState(state) && !isReviewState(state)) {
+		return {
+			_tag: "Bad",
+			reason: `a "${state}" brief names owner comments — only a shell that builds or judges reads them`,
+		};
+	}
+	if (raw === OWNER_COMMENTS_UNKNOWN) return {_tag: "Comments", comments: {_tag: "Unknown"}};
+	const urls: ArtifactUrl[] = [];
+	for (const token of raw.split(/\s+/)) {
+		const url = artifactUrl(token);
+		if (url === null) {
+			return {
+				_tag: "Bad",
+				reason: `"${token}" is not a comment URL — the field carries URLs or "${OWNER_COMMENTS_UNKNOWN}", never the comments' text`,
+			};
+		}
+		urls.push(url);
+	}
+	const [first, ...rest] = urls;
+	return first === undefined
+		? {_tag: "Comments", comments: {_tag: "None"}}
+		: {_tag: "Comments", comments: {_tag: "Unmarked", urls: [first, ...rest]}};
+};
+
 /** Read a brief. Total: `Found` | `Absent` | `Malformed`. */
 export const read = (artifact: string): LaneBriefRead => {
 	const {sections, stray} = sectionsOf(artifact);
@@ -661,10 +785,12 @@ export const read = (artifact: string): LaneBriefRead => {
 	}
 	const scanned = groundOf(fields, state);
 	if (scanned._tag === "Bad") return malformed(scanned.reason, scanned.field);
+	const owned = ownerCommentsOf(fields, state);
+	if (owned._tag === "Bad") return malformed(owned.reason, "owner-comments");
 
 	// The rules are checked against the ground's own text, so a child brief carrying only the
 	// single-issue rules — the shape that would let a child push and open its own PR — is malformed.
-	const expected = rulesFor(scanned.ground);
+	const expected = rulesFor(scanned.ground, owned.comments);
 	if (trimmed(rules.lines).join("\n") !== expected) {
 		return malformed(
 			'"## Rules" does not carry this format\'s own text — the rules are byte-fixed, so an edited one is not a brief',
@@ -683,11 +809,11 @@ export const read = (artifact: string): LaneBriefRead => {
 			shell,
 			issue,
 			ground: scanned.ground,
+			ownerComments: owned.comments,
 		},
 	};
 };
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderBrief = (brief: LaneBrief): NonEmptyReadonlyArray<string> => [
 	`lane\t${brief.lane}`,
 	`root\t${brief.root}`,
@@ -745,6 +871,8 @@ export const parseFields = (fields: string): LaneBriefFields => {
 	if (issue === null) return {_tag: "Unusable", reason: "no issue URL"};
 	const scanned = groundOf(values, state);
 	if (scanned._tag === "Bad") return {_tag: "Unusable", reason: scanned.reason};
+	const owned = ownerCommentsOf(values, state);
+	if (owned._tag === "Bad") return {_tag: "Unusable", reason: owned.reason};
 	return {
 		_tag: "Fields",
 		brief: {
@@ -756,6 +884,7 @@ export const parseFields = (fields: string): LaneBriefFields => {
 			shell: SHELLS[state],
 			issue,
 			ground: scanned.ground,
+			ownerComments: owned.comments,
 		},
 	};
 };

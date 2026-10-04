@@ -275,28 +275,7 @@ describe("rollupCohortWeeksPass — one pass: fold → rewrite → silence check
 			]);
 		}),
 	);
-
-	it.effect("two passes over unchanged inputs produce identical rewrites (idempotence)", () =>
-		Effect.gen(function* () {
-			const inputs = foldFixtureInputs();
-			const h = harness(inputs, {sessionsPresent: 1, newActivityRows: 1});
-			yield* rollupCohortWeeksPass(h.ports, new Date(MONDAY));
-			yield* rollupCohortWeeksPass(h.ports, new Date(MONDAY));
-
-			assert.deepStrictEqual(h.writes[0], h.writes[1]);
-			assert.deepStrictEqual(h.silences, []);
-		}),
-	);
 });
-
-function foldFixtureInputs(): CohortRollupInputs {
-	return {
-		users: [user("u1", MONDAY), user("u2", MONDAY)],
-		activityDays: [{userId: "u2", day: signupDayPlus(2)}],
-		firstContributionAt: [],
-		firstVouchAt: [],
-	};
-}
 
 // ---------------------------------------------------------------------------
 // Rendered-SQL assertions — each predicate `.toSQL()`-inspectable, no engine

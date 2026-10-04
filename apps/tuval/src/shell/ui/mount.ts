@@ -8,17 +8,22 @@
  * takes a `MountResolver` and asks it per window; a test hands over a table.
  */
 
+import type {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {
+	AnyWindowHost,
+	Empty,
+	ProcessGone,
+	WindowId,
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
 import type {ReactNode} from "react";
-import type {ProcessId} from "../../process/process.ts";
-import type {ProgramId} from "../../registry/program.ts";
-import type {AnyWindowHost, Empty, ProcessGone, WindowId} from "../window/index.ts";
 
 /** A program's window renderer, at the surface's own output type. */
 export type ReactWindowRenderer = (host: AnyWindowHost) => ReactNode;
 
 /**
  * What names a window showing a live process: the newest line that process published on its
- * `title@1` port, and the program running it — the fallback when it has published none.
+ * `title@1` port, and the program running it — the fallback when it has published none. The program
+ * is as a person reads it, so a project's program is its declared id, not its scoped one (#9692).
  *
  * The two arms below carry `ProcessName | null` rather than this type carrying its own absence,
  * because "this desk does not name its windows" and "this process has said nothing" are different
@@ -27,7 +32,7 @@ export type ReactWindowRenderer = (host: AnyWindowHost) => ReactNode;
  */
 export interface ProcessName {
 	readonly title: string | null;
-	readonly programId: ProgramId;
+	readonly program: string;
 }
 
 export type WindowMount =
@@ -36,6 +41,12 @@ export type WindowMount =
 			readonly host: AnyWindowHost;
 			readonly render: ReactWindowRenderer;
 			readonly name: ProcessName | null;
+			/**
+			 * The label of the open project the process's program is under, or `null` for a global
+			 * program (#9692). Not part of `name`: a desk that names no windows still says which project
+			 * each one is from.
+			 */
+			readonly project: string | null;
 	  }
 	/**
 	 * The process is live and its program declares no renderer, or names one this surface's table
@@ -48,6 +59,7 @@ export type WindowMount =
 			readonly processId: ProcessId;
 			readonly reason: string;
 			readonly name: ProcessName | null;
+			readonly project: string | null;
 	  }
 	| ProcessGone
 	| Empty;
@@ -62,20 +74,28 @@ export const noRenderer = (
 	processId: ProcessId,
 	reason: string,
 	name: ProcessName | null = null,
+	project: string | null = null,
 ): WindowMount => ({
 	_tag: "NoRenderer",
 	processId,
 	reason,
 	name,
+	project,
 });
 
 export const boundMount = (
 	host: AnyWindowHost,
 	render: ReactWindowRenderer,
 	name: ProcessName | null = null,
+	project: string | null = null,
 ): WindowMount => ({
 	_tag: "Bound",
 	host,
 	render,
 	name,
+	project,
 });
+
+/** The project a window's process is from, for the arms that show a live process. */
+export const mountProject = (mount: WindowMount): string | null =>
+	mount._tag === "Bound" || mount._tag === "NoRenderer" ? mount.project : null;

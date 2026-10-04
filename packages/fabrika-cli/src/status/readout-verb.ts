@@ -4,11 +4,7 @@
  * The display half. The producer is `governance`; this verb ranks nothing and re-derives nothing —
  * it decodes the registered `governance-digest` wire format and prints what it holds.
  *
- * **Four readings, and `absent` is only one of them.** `found`, `absent` and `malformed` are all
- * facts about the repository at exit `0`; a failed fetch, an unreadable freshness stamp and an
- * unregistered format are UNKNOWN at exit `11`. Collapsing any of the three into `absent` reports a
- * proven negative over evidence never held — the hazard `../wire/codes.ts` names when it seats
- * `ARTIFACT_UNKNOWN` deliberately apart from `ABSENT`.
+ * See `status readout --help` for results and exit codes.
  *
  * **`<as-of>` is the artifact comment's own `updated_at`, never the fetch time.** Printing the
  * fetch time for a digest written three weeks ago claims a freshness nobody has.

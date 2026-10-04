@@ -11,15 +11,14 @@
  * errors and the scripted stand-in and nothing that touches the process table: the kernel-side
  * layer lives in `./kernel.ts`, which only `boot.ts` imports (#7910).
  *
- * A desk is a process, so it can be absent — a config that drops the shell row boots without one —
+ * A desk is a process, so it can be absent — a `start` handed rows without the shell row runs without one —
  * or stopped mid-call. `dispatch` therefore fails typed rather than dying, and the executor turns
  * that failure into a `SpellReplyError`: asking a desk-less kernel to close a window is answered
  * with a refusal a caller can read, never a defect.
  */
 
+import type {DispatchError} from "@kampus/tuval-sdk/kernel/process/process";
 import {Context, Effect, Layer, Schema} from "effect";
-import type {DispatchError} from "../../host/actor.ts";
-import type {HandlerFailed} from "../../process/errors.ts";
 import type {ShellMsg} from "../core/machine.ts";
 
 /** No process of the desk's program row is running, so the Msg has nowhere to land. */
@@ -32,7 +31,7 @@ export class NoDesk extends Schema.TaggedError<NoDesk>()("tuval/shell/NoDesk", {
 }
 
 /** Every way putting a Msg on the desk can be refused: no desk, or the desk's own dispatch. */
-export type ShellDispatchError = NoDesk | DispatchError<HandlerFailed>;
+export type ShellDispatchError = NoDesk | DispatchError;
 
 export class ShellDispatch extends Context.Service<
 	ShellDispatch,

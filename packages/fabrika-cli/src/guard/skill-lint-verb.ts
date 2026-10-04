@@ -29,7 +29,7 @@ import {
 const VERB = "guard skill-lint check";
 
 /** The corpus root: the whole plugin tree, every plugin dir, `skills/**` and `agents/**` alike. */
-const CORPUS = "claude-plugins";
+export const CORPUS = "claude-plugins";
 
 /** What an agent reads or runs. A `.sh` is scanned whole; a `.md` contributes its fenced blocks. */
 const isCorpusFile = (name: string): boolean => name.endsWith(".md") || name.endsWith(".sh");

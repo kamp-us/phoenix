@@ -52,8 +52,7 @@ lane's claim from yours.
 `--purpose gate` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
 should pick the issue up to **build**, and an epic earns that label only *after* it has been planned
 and gated — at step 3, from this very run — so fencing this gate on it is circular, and the fence
-binds build-purpose claims only. A `gate` claim is admitted without the label; the scope axis still
-binds, so an out-of-scope epic is still exit `20`. Never reach for `--override` to get past the
+binds build-purpose claims only. A `gate` claim is admitted without the label. Never reach for `--override` to get past the
 audience axis — that is the fail-open convention the purpose exists to remove.
 
 The blockedness gate does not bind a `gate` claim either: gating writes no code, so an epic waiting
@@ -66,10 +65,10 @@ Done when it answers `won`. Exit `15` is a proven loss with the winner named on 
 `BACKED-OFF`. Exit `7` is a proven-absent or closed target: end at `PLAN-UNGATEABLE`. The verb takes
 the session identity from the environment (`FABRIKA_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`, else
 `PI_SUBAGENT_PARENT_SESSION`), and an unset chain is exit `1` — a claim without
-an identity is not a claim. **Any other non-zero here (`1`, `8`, `9`, `10`, `11`, `20`) ends
+an identity is not a claim. **Any other non-zero here (`1`, `8`, `9`, `10`, `11`) ends
 `STOPPED` with no note**: you hold no claim, and `build note` requires one, so there is nothing
-postable — report the code in the terminal line instead. `10` is an off-enum `--purpose`, and `20`
-is a proven out-of-scope epic. Exits `21` and `16` are not reachable at this step: a `gate` claim is
+postable — report the code in the terminal line instead. `10` is an off-enum `--purpose`. Exits `21`
+and `16` are not reachable at this step: a `gate` claim is
 bound by neither the audience axis nor the blockedness gate.
 
 ```bash
@@ -231,7 +230,9 @@ An unreleased claim is a lock nobody can reclaim, which a human then clears by h
   `fabrika build release $epic_number --token <claim-token>` before you end: this refusal lands ahead
   of everything, and an epic waiting on a founder must not also be waiting on a lock nobody can
   reclaim. The epic goes back to the founder — a re-plan is `plan-epic`'s, and a fresh approval is
-  his.
+  his. Ask for it the way `plan-epic` does, with the one-child-per-line walk of
+  [its step 9](../plan-epic/SKILL.md#9--hand-to-the-gate) ahead of the approve line, and relay no
+  approve line without that walk.
 - `PLAN-MOVED` — `21`: the plan changed between the check and a writing verb. Nothing was written
   and no verdict is posted; re-check from step 2.
 - `FLIP-PARTIAL` — `22`: the floor was clean and something did not move — some children, or the

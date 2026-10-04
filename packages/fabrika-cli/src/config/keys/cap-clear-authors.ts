@@ -1,10 +1,13 @@
 /**
- * `capClearAuthors` — who may clear one extra repair round on a PR.
+ * `capClearAuthors` — **deprecated and ignored.** It used to name who may grant lane authority over a
+ * PR: clear one extra repair round on it, or hand a PR another author opened to the pipeline.
  *
- * The grant-author set is repo configuration, not a compiled-in "founder" concept. Its shipped
- * default is the empty set — **nobody may grant** — which is the one default this key can have: a
- * set that filled itself in on an absent file would widen who holds founder authority in every repo
- * that never declared it.
+ * That set is now the control-plane set `.github/CODEOWNERS` names, narrowed by the live `write+`
+ * ACL (`../../build/clearances.ts`). The key stays registered so a repository that still declares it
+ * keeps a valid config; `build clear`, `build takeover` and `lane clear` name it in a deprecation notice
+ * (`../deprecated-authors.ts`) and read nothing from it.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9852
  */
 
 import type {Decoded, KeyGroup} from "../key-group.ts";
@@ -76,7 +79,7 @@ export const capClearAuthorsKey: KeyGroup<ReadonlyArray<GrantAuthor>> = {
 	jsonSchema: {
 		type: "array",
 		description:
-			"Who may clear one extra repair round on a PR (`fabrika build clear`). Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may grant.",
+			"Deprecated and ignored. Who may clear a repair round or grant a takeover is the control-plane set `.github/CODEOWNERS` names, holding `write` or above; `fabrika build clear` / `build takeover` / `lane clear` print a notice while this key is declared. Remove it.",
 		// Composed from the two regexes `decode` runs, never restated: a hand-copied alternation is
 		// free to drift from the decoder it claims to describe.
 		items: {type: "string", pattern: `${AUTHOR_USER.source}|${AUTHOR_TEAM.source}`},

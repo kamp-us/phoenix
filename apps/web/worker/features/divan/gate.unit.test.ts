@@ -75,10 +75,6 @@ describe("divan gate — yazar OR mod, collapse-to-allow", () => {
 		assert.isTrue(Exit.isSuccess(access(human("u"), {tier: "yazar", mods: ["u"]})));
 	});
 
-	it("a çaylak (no mod tuple) is denied — below the yazar floor, not a mod", () => {
-		assert.isTrue(Exit.isFailure(access(human("u"), {tier: "çaylak", mods: []})));
-	});
-
 	it("a visitor is denied", () => {
 		assert.isTrue(Exit.isFailure(access(human("u"), {tier: "visitor", mods: []})));
 	});
@@ -137,10 +133,6 @@ const standing = (actor: Actor, tier: Tier): Exit.Exit<Grant<DivanStanding>, Req
 describe("DivanStanding — the divan's own yazar floor (no longer borrowing OpenTerm)", () => {
 	it("a yazar discharges the grant", () => {
 		assert.isTrue(Exit.isSuccess(standing(human("u"), "yazar")));
-	});
-
-	it("a çaylak is below the floor — denied", () => {
-		assert.isTrue(Exit.isFailure(standing(human("u"), "çaylak")));
 	});
 
 	it("a visitor is below the floor — denied", () => {

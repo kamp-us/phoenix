@@ -41,10 +41,17 @@ describe("the park table", () => {
 
 describe("classifyPark", () => {
 	it("is Known for the §CP park, and carries the clearance the verb relays", () => {
-		const parked = classifyPark("human:cp-approval", null);
+		const parked = classifyPark("human:cp-approval", "awaiting-cp-approval");
 
 		expect(parked._tag).toBe("Known");
 		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("cp-approval");
+		expect(parked._tag === "Known" && parked.recipe.route).toBe("founder");
+	});
+
+	// `ship`'s BLOCKED folds here whatever the block was, so a park naming no cause is not an approval
+	// wait and must not clear by reading an approval nobody asked for.
+	it("is Novel for the §CP leaf carrying no cause", () => {
+		expect(classifyPark("human:cp-approval", null)._tag).toBe("Novel");
 	});
 
 	it("is Known for a BLOCKED whose cause is the worktree-holds-branch shape", () => {
@@ -72,6 +79,27 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.remedy).toBe("fabrika build retire");
 	});
 
+	// A builder that stopped on a hijacked tree needs what a dead one needs before the brief goes out
+	// again, but not spawn-clear's age retraction, so its read is its own.
+	it("is Known for a BLOCKED whose cause is the tree-hijacked shape", () => {
+		const parked = classifyPark("blocked", "tree-hijacked");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("tree-released");
+		expect(parked._tag === "Known" && parked.recipe.route).toBe("driver");
+		expect(parked._tag === "Known" && parked.recipe.remedy).toBe("fabrika build retire");
+	});
+
+	// A same-session claimant may still be live, so this row names no verb that could end its claim.
+	it("is Known for a BLOCKED whose cause is the claim-stranded shape", () => {
+		const parked = classifyPark("blocked", "claim-stranded");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("claim-released");
+		expect(parked._tag === "Known" && parked.recipe.route).toBe("driver");
+		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
+	});
+
 	// The lanes stranded before `lane report` learned to advance a satisfied route are still stranded;
 	// nothing in a ledger clears itself. The row is what lets a sweep clear them without a person.
 	it("is Known for a BLOCKED whose cause is the no-rendered-delta shape", () => {
@@ -81,6 +109,28 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("route-satisfied");
 		// Dispatching the other gate is the driver's own act, so this row names no remedy to run first.
 		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
+	});
+
+	it("clears a no-preview route's park the way it clears a no-rendered-delta one", () => {
+		const parked = classifyPark("blocked", "no-preview-routed");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("route-satisfied");
+	});
+
+	// A retry sends the lane back to the reviewer who hit the same wall, so this park clears on the
+	// axis issue closing and never on a driver's rationale.
+	it("is Known for a BLOCKED whose cause is the render-axis-missing shape", () => {
+		const parked = classifyPark("blocked", "render-axis-missing");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("axis-closed");
+		expect(parked._tag === "Known" && parked.recipe.route).toBe("driver");
+		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
+	});
+
+	it("keeps no-preview-render Novel beside it — a missing preview is not a missing axis", () => {
+		expect(classifyPark("blocked", "no-preview-render")._tag).toBe("Novel");
 	});
 
 	it("is Novel for a bare BLOCKED, and says the ledger records no cause", () => {
@@ -97,14 +147,28 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Novel" && parked.reason).toMatch(/some-cause-nobody-wrote-a-row-for/);
 	});
 
-	it("is Known for the §CP leaf carrying the red-CI cause, without shadowing the null-cause row", () => {
+	it("is Known for the §CP leaf carrying the red-CI cause, without shadowing the approval row", () => {
 		const red = classifyPark("human:cp-approval", "head-ci-red");
-		const approval = classifyPark("human:cp-approval", null);
+		const approval = classifyPark("human:cp-approval", "awaiting-cp-approval");
 
 		expect(red._tag === "Known" && red.recipe.clearance).toBe("ci-green");
 		expect(approval._tag === "Known" && approval.recipe.clearance).toBe("cp-approval");
 		// Turning a red head green is `heal-ci`'s repair work, so this row runs no remedy first.
 		expect(red._tag === "Known" && red.recipe.remedy).toBeNull();
+	});
+
+	// A reviewer's red-head park folds to `blocked`, not the shipper's leaf, and stands on a floor
+	// with no verdicts yet — so it is its own row with its own clearance.
+	it("is Known for a BLOCKED carrying the red-CI cause, on the reviewer's head-green read", () => {
+		const reviewer = classifyPark("blocked", "head-ci-red");
+		const shipper = classifyPark("human:cp-approval", "head-ci-red");
+
+		expect(reviewer._tag).toBe("Known");
+		expect(reviewer._tag === "Known" && reviewer.recipe.park).toBe("blocked");
+		expect(reviewer._tag === "Known" && reviewer.recipe.clearance).toBe("head-green");
+		expect(reviewer._tag === "Known" && reviewer.recipe.route).toBe("driver");
+		expect(reviewer._tag === "Known" && reviewer.recipe.remedy).toBeNull();
+		expect(shipper._tag === "Known" && shipper.recipe.clearance).toBe("ci-green");
 	});
 
 	it("is Novel for the §CP park carrying a cause no row on that leaf names", () => {

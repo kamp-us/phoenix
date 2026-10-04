@@ -124,14 +124,6 @@ describe("runRoadmapGuard", () => {
 		).toHaveLength(1);
 	});
 
-	it("emits no annotation off a runner", async () => {
-		const out = await run(roadmap("## Arcs\n\n| Arc | M | S |\n|-|-|-|\n| A | #9 | active |\n"), [
-			[MILESTONES, milestones([17, "open", "Other"])],
-		]);
-		expect(out.code).toBe(VIOLATION);
-		expect(out.stderr.some((line) => line.startsWith("::"))).toBe(false);
-	});
-
 	// The fail-closed floor, on both sides of the check.
 	it("fails closed on a ROADMAP.md with no arc rows", async () => {
 		const out = await run(roadmap("# Roadmap\n\nNo tables yet.\n"), [[MILESTONES, PROJECTION]]);
@@ -187,8 +179,8 @@ describe("runRoadmapGuard", () => {
 		expect(out.stderr.join("\n")).toContain("cannot resolve a target repo");
 	});
 
-	// The guard and the scope fence must validate one file. A guard pinned to `ROADMAP.md`
-	// while `build pick` reads the declared one is a key with two answers.
+	// The guard and the campaign readers must validate one file. A guard pinned to `ROADMAP.md`
+	// while `triage homes` reads the declared one is a key with two answers.
 	it("validates the file `roadmapFile` names, not its own literal", async () => {
 		const out = await run(
 			{

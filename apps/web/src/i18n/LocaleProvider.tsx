@@ -7,6 +7,7 @@
 import {DesignTranslationProvider} from "@kampus/design";
 import * as React from "react";
 import {browserStorage} from "../lib/browserStorage";
+import {type DateFormatter, dateFormatter} from "../lib/datetime";
 import {readStoredLocale, writeStoredLocale} from "../lib/localeStorage";
 import {type Catalog, loadCatalog, trCatalog} from "./catalog";
 import {interpolate, type MessageParams} from "./interpolate";
@@ -50,7 +51,9 @@ export function LocaleProvider({children}: {children: React.ReactNode}) {
 
 	// `document.lang` flips with the catalog, not ahead of it: `en` arrives over a dynamic
 	// import, and announcing English while Turkish is still painted would mislead a screen
-	// reader for that frame. A failed chunk load holds both at the Turkish they already carry.
+	// reader for that frame. A failed chunk load holds both at the Turkish they already carry and
+	// snaps `locale` back to match, so the picker never claims a language the page is not in.
+	// The stored choice is left as the reader's intent, so the next load retries it.
 	React.useEffect(() => {
 		if (locale === DEFAULT_LOCALE) {
 			setCatalog(trCatalog);
@@ -64,7 +67,11 @@ export function LocaleProvider({children}: {children: React.ReactNode}) {
 				setCatalog(loaded);
 				document.documentElement.lang = locale;
 			})
-			.catch(() => {});
+			.catch((error: unknown) => {
+				if (!active) return;
+				console.warn(`LocaleProvider: the "${locale}" catalog failed to load`, error);
+				setLocaleState(DEFAULT_LOCALE);
+			});
 		return () => {
 			active = false;
 		};
@@ -101,4 +108,8 @@ export function useTPlural(): TranslatePlural {
 		(count, keys, params) => t(plural(locale, count, keys), {count, ...params}),
 		[locale, t],
 	);
+}
+
+export function useDateFormatter(): DateFormatter {
+	return dateFormatter(React.useContext(LocaleContext).locale);
 }

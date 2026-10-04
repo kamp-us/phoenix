@@ -1,0 +1,70 @@
+# @kampus/tuval-codex
+
+Tuval's Codex harness: the `codex-session` program row, the `codex app-server` adapter behind it
+(`CodexAiAgent`), the kernel tools it serves to Codex over MCP, the history mapper that turns Codex's
+stored threads into the shared transcript items, and the Codex chat window.
+
+It is an official plugin package, built on `@kampus/tuval-sdk` and `@kampus/tuval-ui` through their
+exports maps the same way an outside program is. The desk app registers Codex by importing it, and
+the MCP SDK the kernel tools run on is this package's dependency, not the SDK's or the app's. The
+protocol and lifetime rules are in [tuval-codex.md](../../.patterns/tuval-codex.md).
+
+## Install
+
+```sh
+npm install @kampus/tuval-codex
+```
+
+The package ships compiled ES modules with type declarations.
+
+## Usage
+
+A config registers the row:
+
+```ts
+// ~/.tuval/tuval.config.ts
+import {ClientId, codexSession, WorkspaceId} from "@kampus/tuval-codex";
+import type {TuvalConfigInput} from "@kampus/tuval-sdk/config";
+
+const scope = {workspace: WorkspaceId.make("default"), client: ClientId.make("tuval-desk")};
+
+export default {
+  version: 1,
+  programs: [codexSession({cwd: "/path/to/repo", scope, codex: {mode: "read-only"}})],
+} satisfies TuvalConfigInput;
+```
+
+The row needs the Codex CLI on `PATH` and its existing login when a process starts. Building the
+row starts nothing.
+
+## Dependencies
+
+`@kampus/tuval-sdk`, `effect` and `react` are peer dependencies: the desk supplies the one copy of
+each. `@kampus/tuval-ui`, `@modelcontextprotocol/sdk` and `@effect/platform-node` are regular
+dependencies.
+
+The window reaches stylesheets through `@kampus/tuval-ui`, so a page that renders it bundles it with
+a bundler that handles CSS imports, as the desk does with Vite.
+
+## Entries
+
+| Entry | What it holds |
+|---|---|
+| `.` | `codexSession`, the row's config schema, program id and renderer reference, and the `ClientId` / `WorkspaceId` constructors a row's `scope` needs. Node-side; never reaches React. |
+| `./window` | `codexChatWindow` and `CodexChatWindow`, the browser-side renderer. |
+
+## Develop
+
+```sh
+pnpm --filter @kampus/tuval-codex typecheck
+pnpm --filter @kampus/tuval-codex test
+TUVAL_CODEX_PROTOCOL_TEST=1 pnpm --filter @kampus/tuval-codex exec vitest run --project integration src/codex-cli.integration.test.ts
+pnpm --filter @kampus/tuval-codex build
+```
+
+The `TUVAL_CODEX_PROTOCOL_TEST` command runs the installed CLI with a temporary `CODEX_HOME`, and
+needs no credentials. Inside the workspace the `exports` map points at `src`, which the desk runs
+with no build step. `pnpm pack` builds `dist` and swaps in `publishConfig.exports`, which points at
+`dist` only. `src/public-surface.pack.test.ts` packs the package and pins that published map.
+The desk-level cases that read Codex beside Claude or through the desk's picker live in the app
+under `apps/tuval/src/codex-desk/`.

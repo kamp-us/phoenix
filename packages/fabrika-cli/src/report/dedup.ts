@@ -1,10 +1,6 @@
 /**
  * `report dedup`'s tokenizer and ranking, pure and native to fabrika.
  *
- * **All three outcomes are answers and all three exit 0.** `none` is a printed token rather than
- * empty stdout, because empty stdout is byte-identical to a verb that never ran — which is exactly
- * how v1's `intake-dedup check` reports finding no duplicate.
- *
  * `indeterminate` fires **below a floor of two surviving tokens**, not only at zero. A query that
  * tokenizes to nothing was never compared; a query that tokenizes to one generic term is AND-joined
  * into a match on everything or nothing, and neither carries information about *this* observation.
@@ -210,6 +206,5 @@ export const rank = (input: RankInput): RankResult => {
 	};
 };
 
-/** The line grammar for one candidate: `<number>\t<source>\t<score>\t<title>`. */
 export const renderCandidate = (candidate: Candidate): string =>
 	`${candidate.number}\t${candidate.source}\t${candidate.score}\t${candidate.title}`;

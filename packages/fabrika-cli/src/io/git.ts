@@ -32,7 +32,7 @@ export const isObjectName = (s: string): boolean => /^[0-9a-f]{40}([0-9a-f]{24})
 /**
  * Split a base ref into the remote to fetch and the ref to fetch from it.
  *
- * `origin/main` fetches `main` from `origin`, so a wrong ref surfaces as git's own
+ * `origin/dev` fetches `dev` from `origin`, so a wrong ref surfaces as git's own
  * `couldn't find remote ref` rather than as a silent read of a stale local branch. A ref naming no
  * configured remote (`main`, `HEAD`, a raw SHA) has no remote half; the caller then fetches the
  * default remote wholesale so the read is still against fetched state.
@@ -556,24 +556,6 @@ export const commitStatuses = (
 		]);
 		return r.ok ? ok(parseNameStatus(r.stdout)) : fail(r.reason);
 	});
-
-/**
- * The trunk this clone's `origin` points its HEAD at, as a ref name (`origin/main`).
- *
- * Derived, never defaulted to a spelling: a clone whose `origin/HEAD` is unset answers a failure
- * carrying git's own remedy, because guessing `origin/main` in a repo whose trunk is called
- * something else would compare every branch against a ref that resolves to nothing.
- */
-export const originHeadRef: Shell<Attempt<string>> = Effect.gen(function* () {
-	const r = yield* execCapture("git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
-	if (!r.ok) {
-		return fail(
-			`this clone's origin/HEAD names no branch (${r.reason}) — \`git remote set-head origin -a\` sets it`,
-		);
-	}
-	const ref = r.stdout.trim();
-	return ref === "" ? fail("`git symbolic-ref` exited 0 and named no ref") : ok(ref);
-});
 
 /** One patch, and the commit git attributed it to — all-zeroes for a diff that names no commit. */
 export interface PatchIdentity {

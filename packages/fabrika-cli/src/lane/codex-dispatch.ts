@@ -5,6 +5,7 @@ import {bareEvent} from "./machine.ts";
 export const CODEX_ROLE_SKILLS: Readonly<Record<LaneShell, ReadonlyArray<string>>> = {
 	builder: ["build"],
 	"ui-builder": ["build", "build-ui"],
+	"mixed-builder": ["build", "build-ui"],
 	reviewer: ["review"],
 	"ui-reviewer": ["review-ui"],
 	shipper: ["ship"],

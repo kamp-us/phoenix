@@ -1,11 +1,11 @@
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {delivered, processGone} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import type {Key} from "@kampus/tuval-ui/keys";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {describe, expect, it} from "vitest";
-import {ProcessId} from "../../process/process.ts";
 import type {ShellState} from "../core/index.ts";
 import {applyMsg} from "../core/index.ts";
-import type {Key} from "../keys/index.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
 import {createStack, createTree, createWindow, SIZE_TOLERANCE} from "../layout/index.ts";
-import {delivered, processGone} from "../window/host.ts";
 import {deskWith, threeWindowDesk, threeWindowTree} from "./fixtures.ts";
 import {
 	defaultLayoutOf,
@@ -82,14 +82,10 @@ describe("statusFrame", () => {
 		expect(frame.announcement).toBe("Prefix idle.");
 	});
 
-	it("shows the armed prefix and the sequence typed since it armed", () => {
+	it("shows the armed prefix, and a second prefix press disarms it", () => {
 		const [armed] = applyMsg(table, threeWindowDesk(), {type: "keys.press", key: prefixPress});
 		expect(statusFrame(armed).prefixArmed).toBe(true);
 		expect(statusFrame(armed).announcement).toBe("Prefix armed, waiting for a sequence.");
-
-		// `<c-b>` then `<c-` is the start of `<c-h>`/`<c-l>` and completes nothing, so it stays pending.
-		const [pending] = applyMsg(table, armed, {type: "keys.press", key: {key: "q"}});
-		expect(statusFrame(pending).pending).toEqual([]);
 
 		const [waiting] = applyMsg(table, armed, {type: "keys.press", key: {key: "b", ctrlKey: true}});
 		expect(statusFrame(waiting).prefixArmed).toBe(false);

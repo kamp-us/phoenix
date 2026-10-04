@@ -100,8 +100,6 @@ describe("the en catalog stays off the Turkish path", () => {
 	}, 60_000);
 
 	it("is reached from shipped code only through the dynamic import in catalog.ts", () => {
-		expect(readFileSync(path.join(I18N_DIR, "catalog.ts"), "utf8")).toContain('import("./en")');
-
 		// A static `from "…/en"` specifier. The dynamic form carries no `from`, so it never
 		// matches. Tests are exempt: they are not in the shipped graph, and grading both
 		// catalogs is exactly what the brand-noun invariant does.

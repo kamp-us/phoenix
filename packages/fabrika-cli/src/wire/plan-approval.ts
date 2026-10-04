@@ -99,7 +99,6 @@ export const emit = ({epic, digest, at}: PlanApproval): string =>
 export const approves = (approval: PlanApproval, epic: number, derived: string): boolean =>
 	approval.epic === epic && approval.digest === derived.trim().toLowerCase();
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderApproval = (approval: PlanApproval): NonEmptyReadonlyArray<string> => [
 	`epic\t${approval.epic}`,
 	`digest\t${approval.digest}`,

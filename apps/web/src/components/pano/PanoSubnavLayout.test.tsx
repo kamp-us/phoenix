@@ -1,7 +1,7 @@
 /** pano's persistent Subnav zone, composed through SubnavShell. See ADR 0182. */
 import {fireEvent, render, screen} from "@testing-library/react";
 import {useEffect} from "react";
-import {Link, MemoryRouter, Route, Routes} from "react-router";
+import {Link, MemoryRouter, Route, Routes, useLocation, useNavigate} from "react-router";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {PanoSubnavLayout, useSetPanoSubnavContent} from "./PanoSubnavLayout";
 
@@ -22,6 +22,7 @@ function PublishingLeaf({
 	testid?: string;
 }) {
 	const setContent = useSetPanoSubnavContent();
+	const navigate = useNavigate();
 	useEffect(() => {
 		setContent?.({
 			filters: [
@@ -31,10 +32,18 @@ function PublishingLeaf({
 			activeFilter: "hot",
 			onFilterChange: () => {},
 			meta,
-			...(host ? {crumb: {label: `site / ${host}`, onClear: () => {}}} : {}),
+			...(host
+				? {
+						crumb: {
+							trail: [{key: "site", label: "site"}],
+							current: {key: "host", label: host},
+							onClear: () => navigate("/pano"),
+						},
+					}
+				: {}),
 		});
 		return () => setContent?.(null);
-	}, [setContent, meta, host]);
+	}, [setContent, navigate, meta, host]);
 	return (
 		<div data-testid={testid}>
 			<Link to="/pano/x">detay</Link>
@@ -42,12 +51,18 @@ function PublishingLeaf({
 	);
 }
 
-function renderZone(leaf = <PublishingLeaf />) {
+function LocationProbe() {
+	return <output data-testid="location">{useLocation().pathname}</output>;
+}
+
+function renderZone(leaf = <PublishingLeaf />, entry = "/pano") {
 	return render(
-		<MemoryRouter initialEntries={["/pano"]}>
+		<MemoryRouter initialEntries={[entry]}>
+			<LocationProbe />
 			<Routes>
 				<Route element={<PanoSubnavLayout />}>
 					<Route path="/pano" element={leaf} />
+					<Route path="/pano/site/:host" element={leaf} />
 					<Route path="/pano/x" element={<div data-testid="pano-detail">detay</div>} />
 				</Route>
 			</Routes>
@@ -67,13 +82,6 @@ describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#29
 		expect(screen.getByTestId("leaf")).toBeTruthy();
 	});
 
-	it("publishes the feed's filters + meta up into the zone Subnav", () => {
-		renderZone();
-		expect(screen.getByRole("button", {name: "sıcak"})).toBeTruthy();
-		expect(screen.getByRole("button", {name: "yeni"})).toBeTruthy();
-		expect(screen.getByText("3 başlık")).toBeTruthy();
-	});
-
 	it("lands pano's content in the shell's typed zones — chips in destinations, meta in signal", () => {
 		signedIn = true;
 		const {container} = renderZone(<PublishingLeaf host="foo.com" />);
@@ -82,7 +90,9 @@ describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#29
 		expect(filtersRow?.contains(screen.getByRole("button", {name: "sıcak"}))).toBe(true);
 		expect(filtersRow?.contains(screen.getByRole("button", {name: "yeni"}))).toBe(true);
 		expect(
-			bar?.querySelector(".kp-subnav__leading")?.contains(screen.getByText("site / foo.com")),
+			bar
+				?.querySelector(".kp-subnav__leading")
+				?.contains(screen.getByRole("navigation", {name: "sayfa yolu"})),
 		).toBe(true);
 		expect(
 			bar
@@ -90,13 +100,6 @@ describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#29
 				?.contains(screen.getByRole("button", {name: "yeni gönderi"})),
 		).toBe(true);
 		expect(bar?.querySelector(".kp-subnav__meta")?.textContent).toContain("3 başlık");
-	});
-
-	it("signed in: the primary-action CTA fills the zone's CTA slot", () => {
-		signedIn = true;
-		renderZone();
-		const cta = screen.getByRole("button", {name: "yeni gönderi"});
-		expect(cta.getAttribute("data-variant")).toBe("primary");
 	});
 
 	it("keeps the Subnav zone mounted across a within-pano navigation — no remount", () => {
@@ -121,7 +124,31 @@ describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#29
 		const {container} = renderZone(<PublishingLeaf host="foo.com" />);
 		expect(container.querySelector(".kp-subnav__crumb")).toBeTruthy();
 		expect(container.querySelector(".kp-pano-crumb")).toBeNull();
-		expect(screen.getByText("site / foo.com")).toBeTruthy();
+		const nav = screen.getByRole("navigation", {name: "sayfa yolu"});
+		expect(nav.textContent).toBe("site / foo.com");
+		// The zone hands the host to `Breadcrumbs` as the current page (#9705).
+		const current = nav.querySelectorAll('[aria-current="page"]');
+		expect(current).toHaveLength(1);
+		const spoken = current[0]?.cloneNode(true) as HTMLElement;
+		for (const hidden of spoken.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+		expect(spoken.textContent).toBe("foo.com");
 		expect(screen.getByRole("button", {name: "× filtreyi kaldır"})).toBeTruthy();
+	});
+});
+
+// The breadcrumb semantics themselves (ordered list, current page, hidden separators) belong to
+// the shared `Breadcrumbs` component and are pinned once, in `PanoCrumb.test.tsx`.
+describe("PanoSubnavLayout — the zoned site-filter crumb is a WAI-ARIA breadcrumb (#9705)", () => {
+	function renderSiteCrumb() {
+		renderZone(<PublishingLeaf host="example.com" />, "/pano/site/example.com");
+		return screen.getByRole("navigation", {name: "sayfa yolu"});
+	}
+
+	it("keeps the clear control outside the list, and clearing navigates to /pano", () => {
+		const nav = renderSiteCrumb();
+		const clear = screen.getByRole("button", {name: "× filtreyi kaldır"});
+		expect(nav.contains(clear)).toBe(false);
+		fireEvent.click(clear);
+		expect(screen.getByTestId("location").textContent).toBe("/pano");
 	});
 });

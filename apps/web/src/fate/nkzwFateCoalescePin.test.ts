@@ -2,7 +2,8 @@
  * Behavior-pin for the `@nkzw/fate` pnpm patch (ADR 0038), which coalesces same-tick
  * `add` operations into ONE `/fate/live` control POST and, on a rejected flush,
  * discards the whole batch as a group. Reds if the patch is dropped: unpatched, each
- * `add` POSTs on its own and the count assertions fail.
+ * `add` POSTs on its own and the count assertions fail. Unpatched, an authed /pano load
+ * POSTed about 22 times, each re-running session validation (#2273).
  */
 // @patch-pin: @nkzw/fate@1.3.1
 
@@ -80,9 +81,11 @@ function makeTransport(fetchMock: FetchLike) {
 		liveUrl: "/fate/live",
 		url: "/fate",
 	});
-	const subscribeById = transport.subscribeById;
-	if (!subscribeById) throw new Error("expected a live-capable transport with subscribeById");
-	return {subscribeById};
+	const {subscribeById, subscribeConnection} = transport;
+	if (!subscribeById || !subscribeConnection) {
+		throw new Error("expected a live-capable transport with subscribeById and subscribeConnection");
+	}
+	return {subscribeById, subscribeConnection};
 }
 
 const onlySource = (): MockEventSource => {
@@ -94,28 +97,71 @@ const onlySource = (): MockEventSource => {
 describe("@nkzw/fate patch pin — same-tick /fate/live subscribe coalescing (#2273)", () => {
 	it("coalesces N same-tick subscribes into exactly ONE control POST carrying all N ops", async () => {
 		const calls: ControlBody[] = [];
-		const fetchMock = vi.fn<FetchLike>(async (_input, init) => {
+		const urls: string[] = [];
+		const fetchMock = vi.fn<FetchLike>(async (input, init) => {
 			const body: ControlBody = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
 			calls.push(body);
+			urls.push(String(input));
 			return okResponse(body);
 		});
 		const {subscribeById} = makeTransport(fetchMock);
 
 		const ids = ["a", "b", "c", "d", "e"];
-		for (const id of ids) subscribeById("Post", id, ["id", "body"], undefined, {onData: vi.fn()});
+		const handlers = new Map(ids.map((id) => [id, {onData: vi.fn()}]));
+		for (const [id, handler] of handlers) {
+			subscribeById("Post", id, ["id", "body"], undefined, handler);
+		}
 
+		expect(MockEventSource.instances).toHaveLength(1);
 		expect(fetchMock).not.toHaveBeenCalled();
 
 		onlySource().emit("open", {});
 		await settle();
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(urls).toEqual(["/fate/live"]);
 		const posted = calls.at(0);
 		expect(posted?.operations).toHaveLength(ids.length);
 		expect(posted?.operations.every((op) => op.kind === "subscribe")).toBe(true);
 		expect([...(posted?.operations ?? [])].map((op) => op.entityId).sort()).toEqual(
 			[...ids].sort(),
 		);
+
+		// A frame for one coalesced op still reaches that op's handler and no other.
+		onlySource().emit("next", {
+			data: JSON.stringify({
+				event: {data: {__typename: "Post", body: "updated-c", id: "c"}, select: ["body"]},
+				// The frame names its operation, and ops are numbered in subscribe order: c is the third.
+				id: "3",
+				kind: "next",
+			}),
+			lastEventId: "e1",
+		});
+		expect(handlers.get("c")?.onData).toHaveBeenCalledWith(
+			{__typename: "Post", body: "updated-c", id: "c"},
+			["body"],
+		);
+		for (const id of ["a", "b", "d", "e"]) expect(handlers.get(id)?.onData).not.toHaveBeenCalled();
+	});
+
+	it("batches a mixed subscribeById + subscribeConnection tick into one POST", async () => {
+		const calls: ControlBody[] = [];
+		const fetchMock = vi.fn<FetchLike>(async (_input, init) => {
+			const body: ControlBody = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
+			calls.push(body);
+			return okResponse(body);
+		});
+		const {subscribeById, subscribeConnection} = makeTransport(fetchMock);
+
+		subscribeById("Post", "a", ["id", "body"], undefined, {onData: vi.fn()});
+		subscribeConnection("posts", "Post", undefined, ["id"], undefined, {onEvent: vi.fn()});
+
+		onlySource().emit("open", {});
+		await settle();
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const kinds = [...(calls.at(0)?.operations ?? [])].map((op) => op.kind).sort();
+		expect(kinds).toEqual(["subscribe", "subscribeConnection"]);
 	});
 
 	it("a rejected coalesced flush discards the WHOLE batch and reports the error", async () => {

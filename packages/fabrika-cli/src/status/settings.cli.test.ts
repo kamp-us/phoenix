@@ -1,23 +1,19 @@
 /**
  * `status settings` end to end: the **exit status and the exact stdout bytes** a shell caller reads.
  *
- * Three spawns, one per case the verb's whole design turns on — no file, a declared value, and a
- * file that exists and cannot be read. Only a subprocess proves that the last one writes zero bytes
- * to a real stdout; everything else is covered in-process by `./settings-verb.unit.test.ts`
+ * One spawn, for what only the command adapter does: take `--root` and open both config files off
+ * that real directory. The richest case carries it — a value one machine declared beside the tracked
+ * file — so one run proves the flag, both layers and the detail cell naming the local file. The
+ * no-file and unreadable arms read a real directory in-process in `./settings-verb.unit.test.ts`
  * (`.patterns/subprocess-test-budget.md`).
- *
- * The unreadable case is a **directory** named `.fabrika.jsonc` rather than a chmod'd file: `EISDIR`
- * is raised for every user, where a permission bit is not a fault for root and the case would
- * silently pass as `Absent` in a container that runs as one.
  */
 import {execFileSync} from "node:child_process";
-import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from "node:fs";
+import {mkdtempSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
-import {PRECONDITION_UNKNOWN} from "./codes.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
 
@@ -44,49 +40,32 @@ const settings = (root: string): Run => {
 };
 
 describe("fabrika status settings, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	let base = "";
-	const at = (name: string) => join(base, name);
+	let root = "";
 
 	beforeAll(() => {
-		base = mkdtempSync(join(tmpdir(), "fabrika-settings-"));
-		mkdirSync(at("no-file"));
-		mkdirSync(at("declared"));
+		root = mkdtempSync(join(tmpdir(), "fabrika-settings-"));
 		writeFileSync(
-			join(at("declared"), ".fabrika.jsonc"),
-			'{\n\t// this repo governs two roots\n\t"governedRoots": ["docs/adr/", ".fabrika.jsonc"]\n}\n',
+			join(root, ".fabrika.jsonc"),
+			'{\n\t"governedRoots": ["docs/adr/", ".fabrika.jsonc"],\n\t"laneConcurrencyCap": 2\n}\n',
 		);
-		mkdirSync(at("unreadable"));
-		mkdirSync(join(at("unreadable"), ".fabrika.jsonc"));
+		writeFileSync(
+			join(root, ".fabrika.local.jsonc"),
+			'{\n\t// this laptop drives ten lanes\n\t"laneConcurrencyCap": 10\n}\n',
+		);
 	});
 
 	afterAll(() => {
-		if (base !== "") rmSync(base, {recursive: true, force: true});
+		if (root !== "") rmSync(root, {recursive: true, force: true});
 	});
 
-	it("prints the full default set at exit 0 where no config was written", () => {
-		const run = settings(at("no-file"));
+	it("names the machine-local file on a key that machine declared", () => {
+		const run = settings(root);
 		expect(run.code).toBe(0);
-		expect(run.stdout.split("\n")[0]).toMatch(
-			/^settings\tresolved\t\d+\t0\t0\t\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
-		);
-		expect(run.stdout).toMatch(/^setting\tgovernedRoots\tdefault\t/m);
-		expect(run.stdout).not.toContain("\tdeclared\t");
-	});
-
-	it("marks the declared key `declared` and its siblings `default`", () => {
-		const run = settings(at("declared"));
-		expect(run.code).toBe(0);
-		expect(run.stdout.split("\n")[0]).toMatch(/^settings\tresolved\t\d+\t1\t0\t/);
 		expect(run.stdout).toContain(
-			'setting\tgovernedRoots\tdeclared\t["docs/adr/",".fabrika.jsonc"]\t-\t',
+			"setting\tlaneConcurrencyCap\tdeclared\t10\tdeclared in .fabrika.local.jsonc\t",
 		);
-	});
-
-	it("refuses on 11 with NOTHING on stdout when the config exists and cannot be read", () => {
-		const run = settings(at("unreadable"));
-		expect(run.code).toBe(PRECONDITION_UNKNOWN);
-		expect(run.stdout).toBe("");
-		expect(run.stderr).toContain("resolve UNKNOWN");
-		expect(run.stderr).toMatch(/^setting\tgovernedRoots\tunknown\tUNKNOWN\t/m);
+		expect(run.stdout).toContain(
+			'setting\tgovernedRoots\tdeclared\t["docs/adr/",".fabrika.jsonc"]\tdeclared in .fabrika.jsonc\t',
+		);
 	});
 });

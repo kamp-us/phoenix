@@ -12,7 +12,7 @@ import {Effect, Layer} from "effect";
 import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {Mute} from "../mute/Mute.ts";
-import {makeNotificationStub} from "./Notification.testing.ts";
+import {makeNotificationStub, makeTouchRecordingNotificationStub} from "./Notification.testing.ts";
 import type {NotificationAggregateInput} from "./Notification.ts";
 import {notifyContentVote, VOTE_KIND, voteRecipient} from "./vote-emitters.ts";
 
@@ -163,23 +163,32 @@ describe("notifyContentVote — the aggregated live-content vote emit", () => {
 		}),
 	);
 
-	it.effect("a self-vote emits nothing (the fail-on-contact stub is never touched)", () =>
-		notifyContentVote({
-			authorId: "u-author",
-			voterId: "u-author",
-			targetKind: "post",
-			targetId: "p1",
-		}).pipe(Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(true)))),
-	);
+	// The emitter swallows every cause, so silence is asserted off what was touched.
+	it.effect("a self-vote emits nothing (the fail-on-contact stub is never touched)", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		return Effect.gen(function* () {
+			yield* notifyContentVote({
+				authorId: "u-author",
+				voterId: "u-author",
+				targetKind: "post",
+				targetId: "p1",
+			});
+			assert.deepStrictEqual(notification.touched, []);
+		}).pipe(Effect.provide(Layer.mergeAll(notification.layer, requestContext(true))));
+	});
 
-	it.effect("with the bildirim flag OFF the write never happens (dark by default)", () =>
-		notifyContentVote({
-			authorId: "u-author",
-			voterId: "u-voter",
-			targetKind: "post",
-			targetId: "p1",
-		}).pipe(Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(false)))),
-	);
+	it.effect("with the bildirim flag OFF the write never happens (dark by default)", () => {
+		const notification = makeTouchRecordingNotificationStub();
+		return Effect.gen(function* () {
+			yield* notifyContentVote({
+				authorId: "u-author",
+				voterId: "u-voter",
+				targetKind: "post",
+				targetId: "p1",
+			});
+			assert.deepStrictEqual(notification.touched, []);
+		}).pipe(Effect.provide(Layer.mergeAll(notification.layer, requestContext(false))));
+	});
 
 	it.effect(
 		"a DYING notification write is swallowed — the vote caller still succeeds (the seam AC)",

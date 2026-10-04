@@ -8,21 +8,24 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit} from "effect";
-import type {TargetKind} from "../../db/target-kind.ts";
 import {applyRemovalTransition} from "./apply-removal-transition.ts";
 import * as Removal from "./removal.ts";
 
 const now = new Date("2026-07-04T00:00:00.000Z");
 
-// Records what it was asked to write; the substrate write itself is `removal.ts`'s.
-const recordingSeq = () => {
-	const calls: Array<{op: "remove" | "restore"; kind: TargetKind}> = [];
+// Logs every substrate call (the write's shape is `removal.ts`'s), into `order` when a test
+// shares one to sequence the write against `afterCommit` and the refresh.
+const recordingSeq = (order: string[] = []) => {
+	const log = (op: string) =>
+		Effect.sync(() => {
+			order.push(op);
+		});
 	const seq: Removal.RemovalSequence = {
-		run: <A>(_fn: unknown) => Effect.succeed(undefined as A),
-		batch: <A>(_fn: unknown) => Effect.succeed(undefined as A),
-		clearTarget: () => Effect.void,
+		run: <A>(_fn: unknown) => log("write").pipe(Effect.as(undefined as A)),
+		batch: <A>(_fn: unknown) => log("write").pipe(Effect.as(undefined as A)),
+		clearTarget: () => log("clearTarget"),
 	};
-	return {seq, calls};
+	return {seq, writes: order};
 };
 
 const liveColumns: Removal.RemovalColumns = {
@@ -41,7 +44,7 @@ const removedColumns: Removal.RemovalColumns = {
 describe("applyRemovalTransition — state guard", () => {
 	it.effect("remove on already-removed content is a no-op (no write, no refresh)", () =>
 		Effect.gen(function* () {
-			const {seq} = recordingSeq();
+			const {seq, writes} = recordingSeq();
 			let refreshed = false;
 			const outcome = yield* applyRemovalTransition({
 				label: "test",
@@ -57,13 +60,14 @@ describe("applyRemovalTransition — state guard", () => {
 				}),
 			});
 			assert.deepStrictEqual(outcome, {committed: false});
+			assert.deepStrictEqual(writes, [], "no-op must not reach the substrate");
 			assert.isFalse(refreshed, "no-op must not run the refresh");
 		}),
 	);
 
 	it.effect("restore on live (not-removed) content is a no-op", () =>
 		Effect.gen(function* () {
-			const {seq} = recordingSeq();
+			const {seq, writes} = recordingSeq();
 			const outcome = yield* applyRemovalTransition({
 				label: "test",
 				transition: "restore",
@@ -74,6 +78,7 @@ describe("applyRemovalTransition — state guard", () => {
 				refresh: Effect.void,
 			});
 			assert.deepStrictEqual(outcome, {committed: false});
+			assert.deepStrictEqual(writes, [], "no-op must not reach the substrate");
 		}),
 	);
 });
@@ -100,8 +105,8 @@ describe("applyRemovalTransition — commit + ordering", () => {
 
 	it.effect("afterCommit runs after the substrate write and before the refresh", () =>
 		Effect.gen(function* () {
-			const {seq} = recordingSeq();
 			const order: string[] = [];
+			const {seq} = recordingSeq(order);
 			const outcome = yield* applyRemovalTransition({
 				label: "test",
 				transition: "restore",
@@ -118,7 +123,7 @@ describe("applyRemovalTransition — commit + ordering", () => {
 				}),
 			});
 			assert.isTrue(outcome.committed);
-			assert.deepStrictEqual(order, ["afterCommit", "refresh"]);
+			assert.deepStrictEqual(order, ["write", "afterCommit", "refresh"]);
 		}),
 	);
 });

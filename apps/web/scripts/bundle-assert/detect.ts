@@ -135,15 +135,3 @@ export const detectNodeCore = (graph: BundleGraph, config: DetectConfig): Detect
 		scanned: {moduleIds: graph.moduleIds.length, externalImports: graph.externalImports.length},
 	};
 };
-
-/** The run-evidence `checks[]` entry name this assertion folds into (ADR 0054 §2). */
-export const CHECK_NAME = "bundle-node-core-free";
-
-/** Shape the detect result as an ADR 0054 §2 `Check` the run-evidence manifest folds in. */
-export const toCheck = (
-	result: DetectResult,
-): {name: string; status: "pass" | "fail"; exitCode: number} => ({
-	name: CHECK_NAME,
-	status: result.status,
-	exitCode: result.status === "pass" ? 0 : 1,
-});

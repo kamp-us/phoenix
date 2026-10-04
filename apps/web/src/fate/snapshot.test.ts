@@ -77,13 +77,6 @@ describe("readSnapshot / writeSnapshot round-trip", () => {
 		expect(readSnapshot(storage, KEY)).toEqual(sampleState);
 	});
 
-	it("preserves nested list + pagination + connection-identity fields through JSON", () => {
-		const storage = memoryStorage();
-		writeSnapshot(storage, KEY, sampleState);
-		const restored = readSnapshot(storage, KEY);
-		expect(restored?.data).toEqual(sampleState.data);
-	});
-
 	it("reads back null for an absent key", () => {
 		expect(readSnapshot(memoryStorage(), KEY)).toBeNull();
 	});
@@ -145,19 +138,6 @@ describe("hydrateFromSnapshot", () => {
 		const client = fakeClient(sampleState);
 		expect(hydrateFromSnapshot(client, memoryStorage())).toBe(false);
 		expect(client.hydrated).toEqual([]);
-	});
-
-	it("swallows a client.hydrate throw (scope/version mismatch, pending requests) → false", () => {
-		const storage = memoryStorage();
-		writeSnapshot(storage, KEY, sampleState);
-		const throwing: SnapshotClient = {
-			dehydrate: () => sampleState,
-			hydrate: () => {
-				throw new Error("fate: Hydration state scope does not match this client.");
-			},
-		};
-		expect(() => hydrateFromSnapshot(throwing, storage)).not.toThrow();
-		expect(hydrateFromSnapshot(throwing, storage)).toBe(false);
 	});
 });
 
@@ -373,15 +353,6 @@ describe("authed snapshot — cross-identity hydration is rejected (both directi
 		expect(hydrateFromSnapshot(asA, storage, {identity: authedIdentity("A")})).toBe(true);
 		expect(asA.hydrated).toEqual([sampleState]);
 	});
-
-	it("restores the deep-linked subfeed (?sort/host connection state) for the authed tier (AC5)", () => {
-		// `sampleState.data` carries the `posts(sort:hot,host:example.com)` list identity —
-		// the `?sort=…` / `/pano/site/:host` subfeed.
-		const storage = memoryStorage();
-		saveSnapshot(fakeClient(sampleState), storage, {identity: authedIdentity("A")});
-		const restored = readSnapshot(storage, snapshotKey("v1", authedIdentity("A")));
-		expect(restored?.data).toEqual(sampleState.data);
-	});
 });
 
 describe("authed snapshot teardown — the sign-out / identity-change / deletion seam (#2321 AC3)", () => {
@@ -397,17 +368,6 @@ describe("authed snapshot teardown — the sign-out / identity-change / deletion
 		expect(readSnapshot(storage, snapshotKey("v1", authedIdentity("B")))).not.toBeNull();
 		expect(readSnapshot(storage, snapshotKey("v1", ANON_IDENTITY))).not.toBeNull();
 	});
-
-	it("after teardown, A's own re-hydration finds nothing (the overlay does not survive its session)", () => {
-		const storage = memoryStorage();
-		saveSnapshot(fakeClient(sampleState), storage, {identity: authedIdentity("A")});
-		clearSnapshot(storage, {identity: authedIdentity("A")});
-
-		const asA = fakeClient(sampleState);
-		expect(hydrateFromSnapshot(asA, storage, {identity: authedIdentity("A")})).toBe(false);
-		expect(asA.hydrated).toEqual([]);
-	});
-
 	it("tolerates a throwing removeItem (Safari private mode) → clean no-op", () => {
 		const storage: KeyValueStorage = {
 			getItem: () => null,

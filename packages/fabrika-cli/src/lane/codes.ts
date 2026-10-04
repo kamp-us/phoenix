@@ -1,20 +1,12 @@
 /**
- * The one exit table every `lane` verb allocates from, so a code means one thing across the group.
- *
- * The five shared seats are **imported from the base, never re-typed** — the discipline
- * `../exit-code-alignment.ts` checks. The lane verbs read a local lane directory and append to its
- * log, so the base's facts they can establish are exactly these: the target is not there, the
- * target was read but is not the shape, the write did not land, a marker landed and does not read
- * back, the read that would have proven any of that failed. `12`+ is this group's own band.
- *
- * **A fold that could not be made never resolves to a plausible state.** An absent lane, an
- * unreadable one, and a lane whose bytes parse but contradict the machine stay distinct codes,
- * because they take opposite remedies: open the lane, fix the tree, fix the record.
+ * Exit allocations for lane. See ./command.ts help for caller semantics.
+ * Shared meanings stay imported so their values cannot drift.
  */
 
 import {
 	BAD_SECTIONS as SHARED_BAD_SECTIONS,
 	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	CLASSIFIED as SHARED_CLASSIFIED,
 	EMPTY_STDIN as SHARED_EMPTY_STDIN,
 	LEAKED_PATH as SHARED_LEAKED_PATH,
 	NO_TARGET as SHARED_NO_TARGET,
@@ -55,10 +47,6 @@ export const LANE_ABSENT = SHARED_NO_TARGET;
  */
 export const MALFORMED_RECORD = SHARED_BAD_SECTIONS;
 
-/**
- * The append did not land, or `lane claim`'s marker write did not. The caller refuses; it never
- * reports the event as recorded, nor the claim as held.
- */
 export const APPEND_UNKNOWN = SHARED_WRITE_UNKNOWN;
 
 /**
@@ -73,6 +61,13 @@ export const MARKER_READBACK = SHARED_READBACK_MISMATCH;
  * failed read can be neither.
  */
 export const LANE_UNREADABLE = SHARED_PRECONDITION_UNKNOWN;
+
+/**
+ * `lane scratch`'s `--slug` is not a kebab-case leaf — it carries a path separator, or leaves the
+ * vocabulary a directory leaf may spell. The base's closed-vocabulary seat, the code `build scratch`
+ * spends on the same refusal, so one slug rule answers one way in both namespaces.
+ */
+export const SLUG_OFF_VOCABULARY = SHARED_CLASSIFIED;
 
 /**
  * The event is refused and the log is left unappended: the machine holds no cell for it in the
@@ -103,16 +98,15 @@ export const LANE_EXISTS = 14;
  */
 export const TOPOLOGY_ABSENT = 15;
 
-/** The topology references an issue that is not a child of the epic, and the ref is named. */
 export const TOPOLOGY_FOREIGN = 16;
 
-/** The topology's dependency graph holds a cycle, and the ref path is named. */
 export const TOPOLOGY_CYCLE = 17;
 
 /**
  * The task's leaf state routes to no shell — `queued`, `blocked`, a `human:*` park, a final, or a
  * name this machine does not recognise. Its own seat because there is nothing to fix in the lane:
  * the remedy is the driver acting on that state (record an event, clear the park), not a re-run.
+ * `lane working` seats it on a state that routes to a shell other than a builder.
  */
 export const NO_SHELL = 18;
 
@@ -140,7 +134,7 @@ export const KEY_MALFORMED = 21;
 
 /**
  * The artifact the event claims is **provably not there**: no open pull request traces to the
- * task's issue and the issue is not one a no-PR outcome is legal on, or — on an epic run's child,
+ * task's issue and no comment was written on it since the task entered build, or — on an epic run's child,
  * which opens no PR — no branch in this tree carries commits naming the child. The event
  * is a self-report nothing corroborates, so the remedy is to route the spawn's outcome as blocked,
  * not to record it.
@@ -247,7 +241,10 @@ export const MISDIRECTED_PUSH = 34;
 
 /**
  * The `--cause` handed to `lane report` or `lane transition` is outside the closed park-cause set,
- * or rides on an event that is not `BLOCKED` — refused with the log unappended.
+ * or rides on an event that is not `BLOCKED` — refused with the log unappended. The same seat takes
+ * an `--axis-issue` that does not match its cause: missing beside `render-axis-missing`, present
+ * beside any other cause, or no issue number. `--ruling-issue` beside `ruling-owed` and
+ * `--founder-act` beside `founder-act-owed` refuse here on the same three counts.
  *
  * Its own seat rather than {@link TOKEN_UNRECOGNISED}'s: that one says the terminal token is
  * unknown and the whole report is unreadable, this one says the event resolved fine and the reason
@@ -420,6 +417,9 @@ export const LANE_IS_CHILD = 48;
  * Settling records the terminal a closed issue owes, and an open issue's closure has said nothing
  * yet. Its own seat because the remedy is to drive the lane, not to fix the record.
  *
+ * `lane record` answers here too, on the mirror case: a lane folded to `complete` whose issue is
+ * still open, so a `complete` record would say work is done over an issue the board says is not.
+ *
  * `lane archive` used to answer here too, on a closed-issue gate since retired: a lane whose log
  * will never replay is one nobody can drive whatever its issue says, and refusing the archive left a
  * bricked ledger holding a cap seat with no route out at all.
@@ -519,7 +519,7 @@ export const NOT_AN_EPIC = 56;
  * keyword the swap did not reach, or a classification claim the block quote did not cover, each
  * named.
  *
- * Both should be impossible while the swap list matches that module's `CLOSING_RE` and the lifted
+ * Both should be impossible while the swap list matches `wire/closing-keyword.ts`'s shape and the lifted
  * text stays quoted, and this seat is what keeps it so: the section is read back through the guard's
  * own predicates, and the refusal is fail-closed rather than an assumption that the two still agree.
  * The remedy is a person's — reword the epic's Problem paragraph, or write the section by hand. The
@@ -635,9 +635,9 @@ export const DEFERRAL_REFUSED = 64;
 export const ROOT_NOT_OWNED = 65;
 
 /**
- * `lane clear`'s PR-side grant would be posted by an account that cannot make one: outside
- * `.fabrika.jsonc`'s grant-author set at the pull request's base ref, or below `write+` at GitHub's
- * live ACL. Nothing is posted and the log is unappended.
+ * `lane clear`'s PR-side grant would be posted by an account that cannot make one: outside the
+ * control-plane set `.github/CODEOWNERS` names, or below `write+` at GitHub's live ACL. Nothing is
+ * posted and the log is unappended.
  *
  * The ruling that gave a driver the PR-side seat moved the founder *document* off that grant and
  * never the ACL: the marker `lane clear` posts is honoured through `../build/clearances.ts`'s same
@@ -668,3 +668,77 @@ export const GRANT_UNAUTHORIZED = 66;
  * @ruling https://github.com/kamp-us/phoenix/issues/9169#issuecomment-5688656577
  */
 export const ROUTE_UNDERIVED = 67;
+
+/**
+ * `lane report`'s integrate evidence is missing, malformed, or on the wrong line — refused with the
+ * log unappended. `lane attach-integrate` refuses on the same code when the line it names may not
+ * take the pair: not an integrate FAIL, already answered by a later DONE, or recorded by `lane report`
+ * with its own pair.
+ *
+ * A `FAIL` out of an epic child's `integrate` cell writes no verdict on the child, so the exit and
+ * assembly head on its ledger line are the only record a repair builder's `build claim` can key on.
+ * A line without them sends the child to a repair round no builder can take, and the same fields on
+ * any other line would name a repair that was never owed.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9761
+ */
+export const INTEGRATE_EVIDENCE = 68;
+
+/**
+ * `lane record` was asked for the record of a lane whose fold has not reached a terminal state.
+ * Nothing was read off the board and nothing was posted: a lane still moving has not finished.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9855
+ */
+export const LANE_NOT_TERMINAL = 69;
+
+/**
+ * A lane fact or in-flight record was refused before it was written: an origin outside the closed set on `lane open`
+ * or `lane emit`, a `lane wait` whose `--on` is not one non-blank line or whose `--until` is not a date still to
+ * come, or a `lane working` whose `--token` is no build claim or whose tree is not absolute. Nothing
+ * was booted or appended.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9855
+ */
+export const FACT_REFUSED = 70;
+
+/**
+ * `lane brief` stopped the lane: a table row standing for its issue has spent the stop multiple of
+ * its size (`table.stopMultiple`, 2 shipped). No shell is briefed; record the park the refusal names
+ * (`--cause size-stop`) and the table decides whether to extend, re-shape or drop the work.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9821
+ */
+export const SIZE_STOPPED = 71;
+
+/**
+ * `lane report` was handed a known token that no group owning it serves from the task's current
+ * leaf state — a builder's `SHIPPED-PR` out of `ship`, say. Refused with the log unappended: the
+ * shell that sent it finished after the lane moved on, and its terminal answers a state the lane
+ * has left.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10120
+ */
+export const TOKEN_UNSERVED = 72;
+
+/**
+ * `lane archive --retriaged` was pointed at a lane that did not end `diagnosed` with no pull request
+ * and no spent round: its fold stands on another final or none, a line of its log names a pull
+ * request, its log shows a retry, a review verdict or a grant, or its own machine cannot fold it.
+ * Nothing was retracted or moved. The route moves a builder's no-PR finish aside for a re-triaged
+ * issue and no other final, so the remedy is the lane's own route.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10190
+ */
+export const NOT_DIAGNOSED = 73;
+
+/**
+ * `lane cleanup` kept at least one worktree the lane recorded: it holds uncommitted paths, commits
+ * that are on no remote ref and in no merged pull request of the lane, a builder's standing
+ * in-flight seat, a directory git holds no live registration for, a read that failed, or git
+ * declined the plain removal. Every kept tree is named on
+ * stderr with its reason, and every other recorded tree was still removed. Nothing was forced.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10340
+ */
+export const TREES_KEPT = 74;

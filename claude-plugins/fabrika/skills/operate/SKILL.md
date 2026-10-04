@@ -19,23 +19,32 @@ through `lane report`'s closed in-code map, a recipe exit folds through `recipe 
 `lane prove`'s read — the artifact behind an event — is what lets any event reach the machine at
 all, run by whichever verb does the appending: `lane report` on the shell's path, `lane transition`
 on yours. Neither is a read you run separately.
-**Capability set:** shell in the checkout you were spawned in, repo-scoped token, subagent spawns.
+**Capability set:** shell in the checkout you were spawned in, subagent spawns, and a token with
+repo access plus the `project` scope, which `lane brief`'s size-stop read and `lane record`'s table
+sync spend on the repo's GitHub Projects table. A brief without that scope goes on with the size
+stop unchecked, `table` block or not, and names the fix (`gh auth refresh -h github.com -s project`)
+on stderr.
 Writes used — lane-ledger appends, a booted lane's own machine document brought up to the committed
 template through `lane migrate <lane>`, which is the form that writes that lane and no other,
-comments on the driven issue, whatever a recipe verb writes on
-its own account (step 3's chore row), and, **on an epic lane only**, that run's assembly branch: you
+comments on the driven issue, the driven issue's row fields on the Projects table that `lane record`
+writes through `table sync`, the `ship disarm --site post-enqueue` a `parked` read at
+`ship:queued` owes, whatever a recipe verb writes on
+its own account (step 3's chore row), the removal of the worktrees the lane recorded through
+`lane cleanup` (step 4), and, **on an epic lane only**, that run's assembly branch: you
 merge a passing child into it, push it, and open the one draft PR (step 2's `integrate`). Never a
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
 branch — that one is `ship`'s, once, at the tail.
 
 **The bar this skill is held to: a lane reaches its terminal with zero founder asks about the
 engine.** You are the human seat for every non-product cause — a collision, a drift, a dead shell, a
-spent budget, a park no recipe covers — and the founder is reached only when the cause is a product
-ruling. Every engine ask you send upward is a defect in this skill or in a verb, so file it with
-`/report` and take the move yourself. The authority is a recorded decision in the repository's own
-corpus — the one that rules a park's route out to be its cause's, and the driver's for every cause
-that is not a product call; the search is the phrase "park route". What it costs you is the weekly
-machinery review, where each rationale you recorded is read back.
+park no recipe covers — and the founder is reached only when the cause is a product ruling. A spent
+repair budget is the one cause whose seat the repo declares: it is yours when
+`parkCause.repairBudgetSpent` resolves `driver`, the shipped value, and a person's when it resolves
+`founder`, and then parking it on that person is the declared route, not an engine ask (step 4).
+Every other engine ask you send upward is a defect in this skill or in a verb, so file it with
+`/report` and take the move yourself. The authority is shipped, never remembered: a park's route is
+its cause's, off the closed cause table the CLI carries, and that one setting for a spent budget.
+What it costs you is the weekly machinery review, where each rationale you recorded is read back.
 
 Every lane verb is invoked through this repo's own fabrika entrypoint, which `<fabrika>` stands for
 in every command below:
@@ -59,6 +68,17 @@ Work out the path once, before your first verb, and it is one of exactly two:
 answer describes a tree you are not standing in. `lane brief` resolves the same two shapes itself
 and puts the answer in every spawn prompt's `fabrika:` field, so you never write the path into a
 prompt by hand.
+
+**A command you write for a person is one they can paste.** A park comment, a stop note and your
+final message are read by someone at a prompt, so every command in one is printed with each
+placeholder filled in: the real lane key, task name and PR number where this skill writes `<lane>`,
+`<task>` and `<pr>`, and the bare `fabrika` command where it writes `node <fabrika>`:
+`fabrika lane transition 3 UNBLOCKED --task issue`. Say the command runs from the repo root. The ban
+above covers your own verbs in a worktree; the person stands in the repo's main checkout, where the
+`fabrika` they installed is on their path. Write no path to the CLI at all: a globally installed
+fabrika leaves no `node_modules` copy in the repo, and the absolute path you run your own verbs under
+carries a home directory into a public comment. Read the note back before you post it; done when it
+holds no literal `<fabrika>`, no other angle-bracket placeholder and no file path to the CLI.
 
 ## 1 — Read the seats, claim the lane, then boot or resume
 
@@ -86,6 +106,27 @@ there is no lane to park or release. Never claim anyway to "see what happens" �
 the claim refuses at `51` and leaves you holding a marker for a lane that never booted, which is the
 whole shape this read replaces. Exit `11` is UNKNOWN: the cap or the root did not read, so how full
 the pipeline is went unanswered rather than answering free — end `STOPPED` naming the code.
+
+**The number the cap reads is the repository's, and a machine whose own is different declares it
+in `.fabrika.local.jsonc`.** That file sits beside the tracked `.fabrika.jsonc` at the repository
+root, is gitignored, and wins per key — so one laptop's seat count stops living in a tracked file
+every driving worktree then carries as modified for a whole run, which `lane integrate`'s dirty-seat
+guard refuses at exit `45`. Write the one key and nothing else:
+
+```jsonc
+{
+	"$schema": "./.fabrika.local.schema.json",
+	"laneConcurrencyCap": 10
+}
+```
+
+`laneConcurrencyCap` is the whole allow-list, and a local file naming any other key **refuses the
+whole config load** rather than being ignored, so every verb of that run stops. **Never hand-edit
+the tracked `.fabrika.jsonc` to raise a cap** — that line is the repo's number, and a blanket
+stage-all in a driver worktree lands one laptop's on the default branch for everybody. Nothing about
+the cap itself softens: there is still no override flag, no environment variable, and a booting lane
+cannot argue past the number it reads. `status settings` names the file each value came from, so a
+stale local file is readable rather than invisible.
 
 **The cap counts issue lanes, so a `chore:<name>` drive is never the one turned away.** A chore
 lane lives under a root of its own that nothing counts, and this read is over the issue-lane root.
@@ -125,6 +166,21 @@ that left the lane reading unclaimed.
 Re-claiming with the token you already hold is the idempotent path — it answers `won` with the same
 marker and writes nothing, rather than stacking a second marker a single release cannot clear.
 
+**Never write a script, wrapper or helper file to a path another lane can reach.** The session
+scratchpad is shared by every lane of the session. A `fab` wrapper that `cd`'d into one worktree sat
+there, a sibling operator rewrote it to point at its own tree, and the builders calling it cut their
+branches in that sibling's worktree. So anything lane-local you write goes under the directory this
+prints, keyed on your lane-claim token's nonce:
+
+```bash
+node <fabrika> lane scratch $lane_key --slug helpers --token <lane-claim-token>
+```
+
+A helper there still never holds a `cd` into a tree it did not prove this run. The cwd resets
+between shell calls, so each verb call names its own tree. `lane scratch --help` gives the exits. A
+`chore:<name>` lane holds no claim, so it has no scratch directory and writes no helper. The printed
+path is machine-local and never goes into a brief, a comment or a PR body.
+
 The claim is the driver's own namespace, `lane-claim:`, not the builder's `build-claim:`. That is
 what lets the builder you spawn on this very number claim it and win: two markers on one thread,
 two races that never see each other. You never read the other namespace and never retract a marker
@@ -139,6 +195,13 @@ is boot, and it is the **only** exit that is: exit `39` says this cwd is not a r
 root the verb resolved is not the one your lane lives under, and booting on it writes a second
 ledger over a live lane. On `39`, move to
 the repo root and re-read — never boot.
+
+Both boot verbs below take `--origin <kind>`, which sets where the lane came from once, for the
+lane's record: `bet` when it drives a row the table bet on, `founder-start` when the founder started
+it by hand, `experiment`, `mid-lane-fix` for a fix found while driving another lane, and
+`driver-pick`, the default, for everything else. Pass it on whichever verb boots the lane when your
+caller named the origin. `70` from either verb means the kind is not one of them, and nothing was
+read or written.
 
 ```bash
 node <fabrika> lane emit $lane_key
@@ -196,7 +259,7 @@ node packages/fabrika-cli/src/bin.ts build release <epic> --token <claim-token>
 
 `ledger digest` is the digest's source on this route and it writes nothing — no run directory, no
 file, no issue. **Take it from there and never from `ledger open`**, which prints the same value
-only by staging a plan run and refuses `20` on a tree behind `origin/main`, so a mid-drive lane on
+only by staging a plan run and refuses `20` on a tree behind the trunk, so a mid-drive lane on
 a slightly stale tree would be wedged at the middle step with the body still unrepaired. A `21` out
 of `ledger retopology` means the body moved between the two reads: re-run `ledger digest` and pass
 the new value.
@@ -310,14 +373,32 @@ held one refuses at `64`, an unreadable thread is `11` — so the deferral detac
 discards no branch or worktree.
 
 **Exit `63` out of `lane open` says the board shows this issue already had a lane** — it names every
-pull request that proves it. Nothing here is bootable: end `STOPPED` naming the code, and drive the
-pull request the refusal names, or record the clearance that reopens the frozen lane's door. Never
-retire a directory to get past it.
+pull request that proves it. Drive the pull request the refusal names, or record the clearance that
+reopens the frozen lane's door. Never retire a directory to get past it.
+
+**One shape of that `63` is not a stop, and it is the one a second operator account produces.** When
+the prior ledger was written on another machine it is unreachable forever, so no clearance can
+produce it and driving the PR through a lane is exactly what you cannot do. That case re-runs the
+boot under the flag, which reads the board instead of trusting you:
+
+```bash
+node <fabrika> lane open $lane_key --from-board
+```
+
+It admits the boot only on what the board proves — one open pull request, every namespace its head
+derives answered — and everything short of that is `63` again carrying the board's own reason, so a
+second `63` here is the real stop. On admission it records the adoption as a comment on the issue
+and places the lane with its **repair budget declared spent**: nothing proves how many rounds the
+prior lane burned, so a `FAIL` parks at `human:budget-spent` until `lane clear` grants one. The
+lane lands at its initial state rather than at a stage — walk it forward with `lane transition`,
+which proves each event against the board before recording it. End `STOPPED` naming the code only
+when the flag's own read refuses.
 
 Both verbs live beside `status`/`transition`/`history`/`print` in
 `packages/fabrika-cli/src/lane/`, and each verb's `--help` is its interface. Any other exit is a stop, not a fallback: `4` is a record read in full and not
 the shape, `11` is a lane that could not be read — opposite remedies, neither yours to guess; `63` is
-the issue's prior lane above. End `STOPPED` naming the code.
+the issue's prior lane above, and it stops you only where that passage says it does. End `STOPPED`
+naming the code.
 
 A lane `lane emit` booted is an epic run, and an epic run is **one branch and one PR**: its children
 open none of their own and the run publishes once. That is structural, not a label
@@ -333,7 +414,7 @@ node <fabrika> lane assembly $lane_key
 ```
 
 Its stdout is the absolute path of that worktree — `.claude/worktrees/epic-<lane-key>`, cut off the
-repository's default branch through git's own `origin/HEAD` pointer, tracking nothing — and **every git write this run
+repository's default branch — the trunk GitHub names, never a spelled `main` — tracking nothing — and **every git write this run
 performs on the assembly branch happens there, addressed as `git -C <that path>`**. It is idempotent
 from either side: a later pass finding the tree still there resumes it and re-prints the same path,
 and a pass finding the branch alive with its tree gone — what `--remove` at a terminal leaves behind,
@@ -344,9 +425,9 @@ registration and places the branch again, so the path it prints is always one yo
 run it at the top of any pass that is about to integrate rather than carrying a path you remembered.
 
 **A branch whose content already landed is the verb's problem, not yours.** An epic that ships an
-intermediate tail and still has phases left comes back to a branch holding nothing `main` lacks and
-conflicting with everything `main` took since — a base guaranteed to break every remaining child.
-Every resume now fetches and asks whether `origin/HEAD` already carries that branch's content, and a
+intermediate tail and still has phases left comes back to a branch holding nothing the trunk lacks and
+conflicting with everything the trunk took since — a base guaranteed to break every remaining child.
+Every resume now fetches and asks whether the trunk already carries that branch's content, and a
 contained one is re-cut off the trunk in the same command that places the tree, with the reason on
 stderr. The question is content, not ancestry: every PR here lands as a squash, so a landed branch's
 own commits never enter the trunk and an ancestry test alone says "not contained" for every branch
@@ -373,6 +454,15 @@ the verb answers its path); `11` is working trees, an origin, or the containment
 could not be read. Placing it is not optional — without the branch `lane prove` reads every child's range as
 UNKNOWN (exit `11`), so a run driven without it proves nothing it records.
 
+**Record your own worktree once the lane folds**, so the run that ends it can name it:
+
+```bash
+node <fabrika> lane worktree $lane_key
+```
+
+No `--task`: a driver serves the lane, not one task. It answers `main` and records nothing when you
+stand in the main working tree. A refusal holds nothing up; name its code in your closing line.
+
 Done when `lane status` folds and prints a `stateValue`.
 
 ## 2 — Read the fold, route each active task
@@ -383,12 +473,12 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | Leaf state | Action |
 | --- | --- |
 | `queued` | record `WIP` — the task enters build |
-| `build` / `build:ui` / `review` / `review:ui` / `ship` | dispatch through `lane brief` — below. On an epic lane, `build` is a child's construction **or** the tail's repair round, and the brief says which: a tail repair's `## Ground` names the assembly branch beside the run's one PR |
+| `build` / `build:ui` / `build:mixed` / `review` / `review:ui` / `ship` | dispatch through `lane brief` — below. On an epic lane, `build` is a child's construction **or** the tail's repair round, and the brief says which: a tail repair's `## Ground` names the assembly branch beside the run's one PR |
 | `ship:queued` | the PR is in the merge queue and nothing is wrong — re-read the queue yourself, below. Never a park, and never a shell |
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
-| a task's own final — `landed`, `shipped`, `diagnosed` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final. `diagnosed` is where an investigation ends — the builder's `SUCCESS-NO-PR`, proven off its diagnosis comment — and it is a finish, never a park: it needs no review, opens no PR, and owes you nothing |
-| `human:budget-spent` | park — step 4. The task spent its whole repair budget on content FAILs. It is an error final carrying a door, so it trips the phase where it sits; its cause is `repair-budget-spent`, which routes to **you**, and its door needs a cleared round behind it — `lane clear`, then the `UNBLOCKED` |
+| a task's own final — `landed`, `shipped`, `diagnosed` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final. `diagnosed` is where a no-PR build ends, an investigation being one case — the builder's `SUCCESS-NO-PR`, proven off the comment posted since the task entered build — and it is a finish, never a park: it needs no review, opens no PR, and owes you nothing |
+| `human:budget-spent` | park — step 4. The task spent its whole repair budget on content FAILs. It is an error final carrying a door, so it trips the phase where it sits; its cause is `repair-budget-spent`, which routes to **you** unless the repo's `parkCause.repairBudgetSpent` says `founder`, and its door needs a cleared round behind it — `lane clear`, then the `UNBLOCKED` |
 | `frozen` | park — step 4, and **which** park depends on when the lane was emitted — read the lane's own `workflow.json` to tell: a lane carrying `human:budget-spent` is post-rename, and on it `frozen` is only where an emitted epic child boots, on a board close that was never a landing, so its door leads back to itself and that child is re-emitted rather than resumed. On a lane emitted before the rename — most of the ones on disk — `frozen` is the spent-budget fallthrough instead, and it takes the `human:budget-spent` route above: a granted round, then the `UNBLOCKED`. It is an error final either way, so it trips the phase where it sits and the fold says so |
 | `human:epic-review` | park — step 4. Only a lane emitted before the rename reaches it: it is the epic tail's spent review budget, the same shape as `human:budget-spent` above, so it takes the same route — its door needs a cleared round behind it, `lane clear`, then the `UNBLOCKED` |
 | `human:*` | park — step 4 |
@@ -403,8 +493,8 @@ node <fabrika> lane brief $lane_key --task <name>
 
 For Claude, its stdout is the whole prompt — send those bytes to the spawn verbatim and add nothing to them. For Codex, use the dispatch adapter below; it preserves this brief inside a fixed skill preload envelope. The brief
 derives every value: the state from the same fold you just read, the shell from its own routing
-table (`build` → builder, `build:ui` → ui-builder, `review` → reviewer, `review:ui` → ui-reviewer,
-`ship` → shipper), the issue and PR URLs off the
+table (`build` → builder, `build:ui` → ui-builder, `build:mixed` → mixed-builder, `review` →
+reviewer, `review:ui` → ui-reviewer, `ship` → shipper), the issue and PR URLs off the
 board, your lanes root resolved absolute so the shell's `lane report` addresses this ledger rather
 than its own worktree's, the fabrika entrypoint resolved for this repo so the shell runs a
 path that exists there, and its rules from byte-fixed text the `lane-brief` wire format owns
@@ -412,7 +502,19 @@ path that exists there, and its rules from byte-fixed text the `lane-brief` wire
 Those rules are the three a driver used to carry in their own prose — the isolated worktree, URLs
 never restatements, and the brief's own `fabrika:` entrypoint for every verb rather than the bare
 binstub (now in the spawned tree). They are in the brief because a prompt written per
-dispatch is a prompt two drivers write differently.
+dispatch is a prompt two drivers write differently. A fourth has the shell record its worktree on
+the lane with `lane worktree`, which is the set step 4's `lane cleanup` removes.
+
+**Record the dispatch, then spawn.** With the brief in hand, and before either spawn below:
+
+```bash
+node <fabrika> lane dispatched $lane_key --task <name>
+```
+
+It writes the task's state and the shell that state routes to beside the ledger, so the lane names
+the shell you started for as long as it works — the builder adds its claim token and worktree once
+its claim wins. It records no event, so the fold does not move. A refusal here does not hold the
+spawn: `40` is a held ledger lock, so run it again, and name any other code in your dispatch line.
 
 On Claude, the spawn flag is still yours: **`isolation: worktree`, no exceptions** — a non-isolated subagent
 shares the primary checkout and can mutate its git state, and no bytes in a prompt can enforce that
@@ -433,7 +535,7 @@ its worktree; inspect its named cause before retrying. Never replace it with a n
 
 **An epic child is briefed off the assembly branch, so the branch is refreshed before it and checked
 by it.** A child's worktree is cut from `epic/<lane_key>`, and that branch was cut once — so it runs
-whatever copy of fabrika it carried on the day it was cut, and a `lane` verb that landed on `main`
+whatever copy of fabrika it carried on the day it was cut, and a `lane` verb that landed on the trunk
 afterwards is simply not there. The shell then does real work, produces a real verdict, and cannot
 record it. Two steps close that, and neither is yours to type:
 
@@ -469,6 +571,50 @@ and `11` is a ref this tree cannot read — the same three facts, and the same r
 seats on those codes. Each is a park naming what the verb named — never a prompt you write by hand
 instead. Parallel active tasks brief and spawn in parallel.
 
+**`71` is the size stop, and its park has a cause.** Before any shell is briefed, `lane brief` reads
+the betting table: a row standing for the task's issue that has spent `table.stopMultiple` times its
+size stops the lane. Record the park the refusal names instead of spawning:
+
+```bash
+node <fabrika> lane transition $lane_key BLOCKED --task <name> --cause size-stop
+```
+
+That cause routes to the founder: whether to extend, re-shape or drop the work is the table's call,
+so never clear it yourself. Anything short of the stop is a flag (`table flags`), and the lane keeps
+going. In a repo whose `.fabrika.jsonc` declares no `table` block, a table read that fails for any
+reason (missing `project` scope, rate limit, outage, a malformed record) briefs anyway with
+`size stop NOT checked` on stderr, because nothing says a table exists. Declaring any `table` block
+turns every one of those failed reads but the missing scope into `11`; a missing scope still briefs,
+printing `size stop NOT checked` with the fix (`gh auth refresh -h github.com -s project`). Measured spend is a floor: a row whose measured spend alone has
+reached the stop is stopped even when some of its lanes went unmeasured, so a `71` over such a row is
+real. Only a row short of the stop on measured spend goes on, and the brief's note says how many
+lanes went unmeasured.
+
+**On a single-issue lane, one `20` is not a park: a `review` or `review:ui` brief with zero PRs,
+because the PR was re-pointed.** When a PR under review is edited to serve another issue, no
+candidate links the lane's issue any more and the review has nothing to judge. Record the rewind
+instead of a park or a forged `FAIL`:
+
+```bash
+node <fabrika> lane transition $lane_key WIP --task <name>
+```
+
+A `WIP` out of either review cell folds the task back to `queued` and spends no retry and no lap, so
+the next pass records the ordinary `WIP` and `queued` routes the lane by its standing classes — a
+mixed one to `build:mixed`, a `class:ui` one to `build:ui`, any other to `build`. The rewind is proven, not taken on your word: `lane transition` reads the issue and
+runs the same nominator `lane brief` did, and refuses at `24`, log unappended, while any open PR still
+links the issue **or the issue is closed**. A hand merge past the ledger also leaves zero open PRs, so
+the closed issue is what tells finished work from a re-pointed PR: on that `24`, run `lane settle`
+(below), never another build round. A lane opened before this arm existed refuses the `WIP` at `12`,
+because its own `workflow.json` has no such cell — run `lane migrate $lane_key` first, then record
+it.
+
+**The rewind is the single-issue machine's alone.** An epic tail's `review` and `review:ui` walk no
+`WIP`, and `lane migrate` cannot add one, because an epic lane's machine is emitted rather than
+copied from the single-issue template. So a tail's zero-PR `20` — the tail body not linking the epic,
+the draft-PR case in step 2 — stays a park, like every other `20`: never record `WIP` over it and
+never reach for `lane migrate`.
+
 **Then do nothing until a spawn returns — and never `sleep`.** A Codex dispatch waits for its child process; a shell spawned with the Claude Agent tool
 returns its result to you, so that return *is* the wait. The rule and both incidents behind it are
 [the skill conventions' "a skill never sleeps and never polls on a timer"](../../docs/skill-conventions.md);
@@ -477,6 +623,19 @@ verb, so it is banned on the same terms as a bare `sleep`. So dispatch every tas
 say in one line what you dispatched, and end the turn. Your next move is
 [§3](#3--verify-the-record-landed-and-record-what-no-shell-can)'s fresh `lane status`, once a spawn
 has returned.
+
+**"Is a shell working on this lane, and where?" is `lane status`'s `inFlight`.** Per task it
+names the standing `dispatched` record (state, shell, time) and the builder's `working` record
+(claim token and absolute worktree), `null` until that builder's claim wins. Both stand until the
+task's next event — a terminal, a lap or a park — so after a `SHELL-DEAD` lap and a re-dispatch it
+names the new shell and never the dead one. Read it before stopping an operator whose lane has gone
+quiet: a silent log beside a named shell is what a working re-spawn looks like, so the silence alone
+proves nothing stuck. **It records who said they were working, never proof that they still are.**
+No claim release, worktree retire or reap reads it, and nothing reads its age or its absence as a
+death: a dead spawn is proven only by the reads step 3 names. `lane cleanup` reads it one way only,
+to keep a tree: the one a standing `working` record names, and every tree handed under a task since
+that task's standing `dispatched`. `inFlightUnread` in its place means
+the record could not be read, which says nothing about the lane.
 
 **An `integrate` state is the one thing you do with your own hands.** It routes to no shell —
 `lane brief` refuses it with exit `18` — because the merge *is* the assembly the run exists to
@@ -556,7 +715,9 @@ its head back before answering, and a conflict is aborted the same way — so th
 names a branch that never carried the bad merge, and an exit `8` means that restore did not take and
 nothing may be recorded against the tree at all. The repair builder is
 then the machine's own route out of `build`, and `lane brief` hands it both ranges: the child's
-issue, and the assembly branch, which by now carries every sibling that landed before it. Nothing
+issue, and the assembly branch, which by now carries every sibling that landed before it. Its claim
+takes that round through `build resume-child <child> --lane <lane> --lane-root <root>`, reading
+the `FAIL` line §3 records, so record it with its exit and head or no builder can take it. Nothing
 reaches `landed` except back through `review`, because the resolution changes the content the
 child's range verdict bound — that ordering is in the machine's graph, not in this paragraph.
 
@@ -617,8 +778,8 @@ children open none — and it costs one board read.
 
 **Never close and reopen a PR to force this.** A reopen does rebuild the merge ref, and it also
 tears the PR's preview stage down mid-deploy — which is the reason it is forbidden rather than
-merely discouraged, and `lane retrigger`'s own reference row carries the report that fallout was
-filed under. It raced the rebuild the one time it was used, so the guard re-ran against the stale
+merely discouraged. The [lane group overview](../../../../packages/fabrika-cli/docs/verb-reference.md#the-lane-group)
+links the incident report. It raced the rebuild the one time it was used, so the guard re-ran against the stale
 base anyway and took two rounds. Re-running the workflow is no route either: a re-run replays the original event's
 `GITHUB_SHA` and `GITHUB_REF`, which is the stale merge commit — the very red you are clearing.
 Exit `42` is a child the assembly branch does not merge into, and that is a repair round on that
@@ -694,20 +855,20 @@ opening.
 
 **The `feat(epic):` prefix that title leads with is not decoration: release-please reads this
 title.** The repo squash-merges with `squash_merge_commit_title: COMMIT_OR_PR_TITLE`, so the title
-becomes the subject on `main`, and the node strategy classifies on the subject alone: an untyped one
+becomes the subject on the trunk, and the node strategy classifies on the subject alone: an untyped one
 is unroutable and a `chore`/`docs` one is hidden, either way dropping every package change the epic
 carried from the notes. The same rule binds a builder PR's title, and `feat` is read out of the same
 map both derivations use — [`pr-title.ts`](../../../../packages/fabrika-cli/src/build/pr-title.ts),
 where `type:epic` maps to the one shown type an epic earns by construction. Five epics landed before
-this under the literal `#<n> one-PR run`, whose subject on `main` is a lane key with no sentence in
+this under the literal `#<n> one-PR run`, whose subject on the trunk is a lane key with no sentence in
 it. `lane brief` still resolves the tail's PR through the body's links, not the title.
 
 Every later integration pushes the same branch and **appends that child's closing reference** to the
 body, so the set of references tracks the set of landed children rather than the plan's intent.
 
 **Refresh the assembly branch before the tail enters review, so the review binds to a head the queue
-can take.** Nothing else moves this branch onto trunk: `lane assembly` cuts off `origin/HEAD` on a
-first cut only and a resume fetches just to judge containment, so the branch drifts behind `main`
+can take.** Nothing else moves this branch onto trunk: `lane assembly` cuts off the trunk on a
+first cut only and a resume fetches just to judge containment, so the branch drifts behind the trunk
 while the children build, and
 the queue ejects the tail for it — three times on one run. Run it from the assembly worktree, before
 you dispatch the tail's review:
@@ -737,8 +898,8 @@ PR *and* `epic/<lane_key>`, so the repair knows which branch it is repairing. Fo
 
 **The branch itself stays yours.** The repair builder pushes nothing and merges nothing — the
 assembly worktree is this driver's, and no spawned shell reaches it. So the common tail failure, an
-assembly gone stale against a moved `main`, is discharged by you with `lane refresh` from that
-worktree, above: it merges `main` into `epic/<lane_key>`, **merge, never rebase**, because every
+assembly gone stale against a moved trunk, is discharged by you with `lane refresh` from that
+worktree, above: it merges the trunk into `epic/<lane_key>`, **merge, never rebase**, because every
 landed child's range verdict is bound to the commits it names and a rebase rewrites all of them. A
 lane emitted before this cell landed does not grow one — its tail `FAIL` still points at `review`,
 and re-emitting is the only way to it.
@@ -764,8 +925,9 @@ on its own clock, and one PR took ~1.7x the shipper's ~480s horizon to do it. So
 horizon stays exactly where it is and the waiting happens out here, one re-read per driver pass, in
 `ship:queued` — a queue dwell is a wait, not a park.
 
-You spawn nothing. One read answers the whole cell — `--polls 1` makes it a single look rather than
-another watch, so this costs a driver pass, not a horizon:
+You spawn nothing. One read answers the whole cell (only a `parked` answer adds a write, the
+disarm in the table below). `--polls 1` makes it a single look rather than another watch, so this
+costs a driver pass, not a horizon:
 
 ```bash
 node <fabrika> ship reconcile <pr> --polls 1
@@ -794,9 +956,28 @@ alone.
 | `reconcile` says | Record — `lane report … --token` |
 | --- | --- |
 | `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped`, unless the merge carried `Part of #N` and closed nothing, and then it lands back in `queued` (below). **On an epic lane's tail there is no such arm and none is wanted**: a tail body that does not close its epic is refused where it is written, so the tail's `DONE` folds to `shipped` either way |
-| `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own. This is the one record the floor below can refuse |
+| `unresolved` | `--token UNRESOLVED` — still queued, or armed and not yet past `ship reconcile`'s floor; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own. This is the one record the floor below can refuse |
 | `ejected` | `--token EJECTED` — the PR left the queue un-merged, which is repair work: the machine spends a retry back into `build` |
-| `parked` | `--token UNKNOWN` — the timeline shows a PR neither queued, ejected nor merged, and an unread queue state is UNKNOWN, never a wait to keep sitting in |
+| `parked` | disarm first, then record — the arm has sat unqueued past `ship reconcile`'s floor, so the enqueue did not take effect, and a live arm left standing enqueues ungated later. Run `node <fabrika> ship disarm <pr> --site post-enqueue` before `lane report`. On `kept live-queued` the PR entered the queue between the two reads: `--token UNRESOLVED`. On any other answer, `--token UNKNOWN`. A disarm exit `8` or `11` also records `UNKNOWN`, and your terminal line carries `merge intent: NOT cleared` |
+
+**To settle every queued lane at once, run the sweep instead of an operator per lane.** A PR that
+merges after the shipper's watch leaves its lane in `ship:queued` with nothing left to do but record
+the landing, and spawning a whole operator for that one read is the cost this sweep removes:
+
+```bash
+node <fabrika> lane recover --check   # read every queued PR, append nothing
+node <fabrika> lane recover           # record what the queue already answered
+```
+
+For each task standing in `ship:queued` it takes the PR its own ledger names, makes this same
+`ship reconcile <pr> --polls 1` read, and relays the answer through `lane report`'s own path. A
+`landed` row records `LANDED --pr <url>`, and an `ejected` one records `EJECTED`, exactly as the
+table above does. It records neither `unresolved` nor `parked`, so the sweep never spends a wait
+and never meets the floor below. An `unresolved` answer lands as a `waiting` row, and a lane on one
+is still yours to re-read on a later pass. **A `parked` answer is not a wait.** It lands as a
+`disarm-owed` row whose `owes` field is `ship disarm <pr> --site post-enqueue`: run that disarm now,
+then record off its answer exactly as the table's `parked` row says. The sweep runs no disarm
+itself. A failed read is an `unreadable` row that appended nothing. The sweep's other arms are described under `lane recover` in §4.
 
 **`lane report` may answer "too soon", and that is the wait working.** A queue re-fold is floored on
 elapsed time as well as counted: exit `55` says the shipper's own ~480s horizon has not run since
@@ -906,10 +1087,8 @@ unmerged one refuses at `23`, one this repository does not hold at `22`, and an 
 a body already proves is judged first and stays body-proven, so the flag can only fill a gap. The
 line it appends carries `assertedBy: "caller"` beside its `landed` and `sha`, which is a person's
 word standing where a body normally stands: the verb's own stdout and `lane history` show it, and a
-body-proven line carries no such field at all. **`lane view` does not show it** — the viewer page
-rebuilds every log line as `{task, event, at}` and drops the rest, `landed` and `sha` included, so
-an asserted landing and a body-proven one read identically on that screen. Read `lane history` when
-you need to tell them apart. **Use it only when you have read the merge and know it
+body-proven line carries no such field at all, so read `lane history` when you need to tell an
+asserted landing from a body-proven one. **Use it only when you have read the merge and know it
 discharged this lane** — this is the one place in the verb where the record rests on you rather than
 on the board, so a guess here is a lie nothing downstream can catch.
 
@@ -970,7 +1149,9 @@ Two reads stay yours, because no shell can take them:
 - **a spawn that printed a terminal the fold does not show** — its record never landed (a missing
   root, an unproven event, a refused append). Do not re-spawn: prove and record that token's event
   yourself, below, and where the proof refuses there too, the refusal table is what you route on —
-  a `22` is a `BLOCKED`, never the `DONE` the spawn printed;
+  a `22` is a `BLOCKED`, never the `DONE` the spawn printed. The one exception is a report refused
+  at `72`: the lane moved past the state that shell served before it finished, so its terminal is
+  late and you record nothing for it — the fold already says where the lane stands;
 - **a dead or unresponsive spawn, a report you cannot parse, and a permission denial a shell
   reports** — each is a BLOCKED-class outcome, never something to route around, and never a
   retry-in-place: retries belong to the machine (`FAIL` spends one; `human:budget-spent` is its
@@ -1000,18 +1181,28 @@ this order:
   lane branch checked out, which refuses the next repair round's `build branch --resume-lane` on
   exit `11`. The verb does the two dead-spawn steps in their order —
   salvage the tree's uncommitted work onto its own branch, then `git worktree remove` **without
-  `--force`**, and a remove that still refuses is an incident to file through
-  [`report`](../report/SKILL.md), never a force — and it removes nothing it holds no license for:
+  `--force`**, releasing a harness lock first on a tree it has licensed, because a lock is not
+  content. A remove that still refuses is an incident to file through
+  [`report`](../report/SKILL.md), never a force. The verb removes nothing it holds no license for:
   the ticket is terminal, or an adopt marker names the holding lane's session as gone, or **no claim
   marker holds that lane at all** — which is the state the release above just created, so the two
   steps compose in this order. That last arm is the
   one that reads the tree, having no board statement to lean on: it retires a tree whose removal
   would strand nothing and refuses `33` naming the uncommitted paths, or the commits no branch,
   remote-tracking ref or tag reaches, that block it. Commits on the tree's own lane branch do not
-  block it — the removal leaves the branch behind. **Run it from wherever
+  block it — the removal leaves the branch behind. **Run the verb from wherever
   you are.** The harness rule that refuses a *typed* cross-worktree `git` reads the command you
-  type, so it does not bind the verb's own child process — which is why this obligation is no longer
-  the primary checkout's alone.
+  type, so it does not bind the verb's own child process — which is why the verb's half of this
+  obligation is no longer the primary checkout's alone.
+  **A detached-HEAD tree is yours by hand, because the verb never sees it**: it holds no branch, so
+  it is no lane's subject. **This arm is the primary checkout's only.** Every step below is a typed
+  command against another worktree, which that same harness rule refuses to a worktree-isolated
+  shell; from one, leave the tree standing and name it in your report for the primary checkout's
+  session. If it is dirty, commit its contents onto a fresh, never-pushed
+  `salvage/<worktree-id>` branch, `<worktree-id>` being the tree's directory name, then remove it
+  without `--force`. A tree whose dirty state is a mass deletion may skip the salvage: file it
+  through [`report`](../report/SKILL.md) naming the tree and what it deleted, restore it to its
+  HEAD, then remove it without `--force`.
 
 **Name that failure `spawn-dead`.** A shell its provider killed before it recorded a terminal — a
 session limit, a transport drop, a `network_error` on every completion — is one class with one
@@ -1097,7 +1288,17 @@ prints it; a single-task lane tolerates omission.)
 
 **`--class` is how a UI lane reaches its own shells.** The machine's `build:ui` and `review:ui`
 states are entered by a guarded arm reading the classes standing over the task, and those classes
-ride the event line the way `--cause` does.
+ride the event line the way `--cause` does. **`build:mixed` has no class of its own to relay**: the
+machine enters it when `ui` stands beside a text class (`code`, `doc`, `skill`), so relaying the rows
+below is the whole act and `--class mixed` is refused at exit `38`. Which events enter it depends on
+the lane kind:
+
+- **A single-issue lane** — a `WIP` out of `queued`, and a FAIL out of `review` or `review:ui`. Its
+  other routes back to construction land a mixed lane in `build`, as they do any lane: a FAIL out of
+  `ship`, `ship:queued` or `human:cp-approval`, and the `base-conflicted` lap.
+- **An epic child** — a `WIP` out of `queued`, and a FAIL out of `review` or `integrate`. A child has
+  no `review:ui`.
+- **An epic tail** — never. It repairs in its one `build` cell whatever classes stand.
 
 **A head decides the classes wherever one exists; the ticket's stamp decides only the first build.**
 That is the ruling the decision record *The head's diff decides the classes a review round owes*
@@ -1170,7 +1371,7 @@ can neither ship nor park honestly: `lane recover`'s spawn sweep proves only a d
 never parks a lane standing in `review`, and `lane stale` lists the row without moving it, because
 re-spawning the reviewer reaches the same exit `23`.
 A tail rendered FAIL repairs in the tail's one `build` cell, briefed on the assembly branch beside
-the run's PR; there is no `build:ui` at the tail.
+the run's PR; there is no `build:ui` and no `build:mixed` at the tail.
 
 **On a single-issue lane, a merged PR that closed nothing sends the lane round rather than folding
 it.** A `LANDED` whose merge carried `Part of #N` records its `DONE` as always, and the machine takes
@@ -1187,13 +1388,16 @@ The refusal moved upstream instead: `lane assembly-body` will not relay a tail b
 close its epic, so the merge such an arm would route is one this run cannot produce. The tail's
 `DONE` folds to `shipped` at both polarities.
 
-`lane prove` reads the three events a report can lie about — a `DONE` out of `build`, a `PASS` out
-of `review`, and a reviewer's park out of either review cell — and answers at exit `0` for every
-other one, so it is run on every event and never skipped as an optimisation. The park
-is the one negative claim of the three: it says the run reached no verdict, so a still-binding
-`FAIL` refuses it on `24` and every unreadable half lets it through, because a park nobody can
-record strands the lane in the state only a human could have left. Its refusals each name a
-different next move:
+`lane prove` reads the four events a report can lie about — a `DONE` out of `build`, a `PASS` out
+of `review`, a reviewer's park out of either review cell, and the review rewind (a `WIP` out of
+either review cell) — and answers at exit `0` for every other one, so it is run on every event and
+never skipped as an optimisation. The park and the rewind are the two negative claims. The park says
+the run reached no verdict, so a still-binding `FAIL` refuses it on `24` and every unreadable half
+lets it through, because a park nobody can record strands the lane in the state only a human could
+have left. The rewind says the issue is open and no open PR links it, so a closed issue or one linking PR
+refuses it on `24` and an unread board is `11`, because a rewind recorded on a guess drops a live
+review or rebuilds finished work. Its refusals each
+name a different next move:
 
 **Exit `0` carries three different answers, and the `proof` field says which — read it, never the
 exit alone.** `proven` is the artifact read and found. `not-required` is the machine walking this
@@ -1211,28 +1415,28 @@ and the `PASS` after it is the read that binds.
 | `0` `proven` | the artifact is there | record the event |
 | `0` `not-required` | the leaf walks this event and it claims no artifact | record the event |
 | `0` `not-walkable` | the machine walks no such event out of this leaf | record **nothing** — record the event the leaf does walk |
-| `22` | the artifact is provably absent — no open PR links the task's issue and no legal no-PR outcome is proven either (the issue is not a `type:investigation`, or it is one but no diagnosis was posted since the task entered `build`); on an epic child, no branch in this tree carries commits naming it | the report is unproven — record `BLOCKED`, never the `DONE` |
+| `22` | the artifact is provably absent — no open PR links the task's issue and no no-PR outcome is proven either (no comment was posted on the issue since the task entered `build`); on an epic child, no branch in this tree carries commits naming it | the report is unproven — record `BLOCKED`, never the `DONE` |
 | `23` | a derived namespace has no verdict that still binds — no current-head one on a PR, or, on an epic child, none whose content digest matches what the range carries now | record **nothing**; re-read this pass |
-| `24` | a still-binding `FAIL` under a claimed `PASS`, or under a reviewer's claimed park | record the event the artifact supports (`FAIL`) |
+| `24` | a still-binding `FAIL` under a claimed `PASS`, or under a reviewer's claimed park; or, under a claimed review rewind, an open PR still linking the issue or the issue closed | record the event the artifact supports (`FAIL`); on a rewind, record nothing — brief the reviewer on the PR that links, or run `lane settle` over the closed issue |
 | `25` | several candidates — open PRs linking the issue, or lane branches carrying an epic child's commits that no one of them contains, so a repair round's superseding branch is not one of these | park — step 4, naming the ambiguity |
 | `11` | a lane, board or tree read failed | the proof is UNKNOWN — end `STOPPED` naming the code |
 
 A builder's `SUCCESS-NO-PR` is a proven `DONE`, not an unproven one: the verb takes the no-PR arm
-only for a `type:investigation`, and proves it from the diagnosis comment posted since the task
-entered `build` — the artifact the builder's terminal names, read off the issue rather than off
+whatever the issue's type, and proves it from the comment posted since the task entered `build` —
+the artifact the builder's terminal names, read off the issue rather than off
 the report. An epic child's `BUILT-NO-PR` is the other proven `DONE` without a PR, and its artifact
 is the range's own commits — a child opens no PR to prove one against.
 
-**That proof is also what routes the fold, and only the investigation's is.** All three builder
+**That proof is also what routes the fold, and only the no-PR one is.** All three builder
 terminals map to one `DONE`, so the machine reads the prover's answer rather than the token: a
 `DONE` proven off the diagnosis comment carries `diagnosis: true` onto its recorded line and takes
 the `done:diagnosis` arm straight to `diagnosed`, a final. It never enters `review`, and you never
-park it — the review it used to reach needs an open PR an investigation never opens, so `lane brief`
+park it — the review it used to reach needs an open PR a no-PR build never opens, so `lane brief`
 refused at `20` and the only move left was a `BLOCKED` over a lane that had finished correctly.
 A `SHIPPED-PR` and an epic child's `BUILT-NO-PR` carry no such field and fold to `review` exactly as
 they always did.
 
-**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Five terminal tokens
+**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Six terminal tokens
 belong to no shell's vocabulary — `lane report` groups them as `machinery` in
 [`report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)'s `SHELL_VOCABULARIES` — and each
 one says the pipeline carrying the artifact failed while nothing about the artifact was judged. All
@@ -1278,13 +1482,14 @@ names it. A cause outside the set is exit `35` with the log unappended, as it is
 **The cell has to be there, and on an epic lane one key decides whether it is.**
 `.fabrika.jsonc`'s `machineryLaps.onEmit` ships `off` and is read by `lane emit` alone. An epic
 machine emitted under `off` holds no `LAP` cell at all; one emitted under `on` holds it in each
-child region's `build`, `review` and `integrate` — plus a rendered child's `build:ui` — and in the
+child region's `build`, `review` and `integrate` — plus a rendered child's `build:ui` and a mixed
+child's `build:mixed` — and in the
 tail's `build`, `review`, `review:ui`, `ship` and `ship:queued`. Every state that dispatches a shell
 carries it on both sides of that list, so a `SHELL-DEAD` is recordable wherever a shell was
 dispatched. A single-issue lane is a different document: it boots from the committed coder template
 ([`coder.workflow.json`](../../../../packages/fabrika-cli/src/lane/templates/coder.workflow.json)),
-which the key does not gate and which carries the cell in `build`, `build:ui`, `review`,
-`review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no
+which the key does not gate and which carries the cell in `build`, `build:ui`, `build:mixed`,
+`review`, `review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no
 `LAP` cell is `lane report` exit `12` with the log unappended — not a token to retype. Record the
 pre-lap park instead, naming the same cause the table above gives it (`BLOCKED --cause
 replay-conflict` for a `REPLAY-COLLIDED` an epic machine cannot take), and accept what that costs: a
@@ -1302,10 +1507,10 @@ different next moves, and the verdict line is what tells them apart:
 | --- | --- | --- |
 | `0` | the merged tree holds — the last stdout line is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head | `DONE` |
 | `0` | the child collided and was replayed onto the tip — `INTEGRATE-VERDICT: REPLAYED`, the merged head above it, the machinery event above that | `WIP` — the child re-enters `review` over the event's `range`, and the arm spends a wait rather than a retry |
-| `42` | the child conflicts and no replay was attempted — the repo declares `assemblyReplay.onCollision: "off"` | `FAIL` |
+| `42` | the child conflicts and no replay was attempted — the repo declares `assemblyReplay.onCollision: "off"` | `FAIL --integrate-exit 42 --assembly-head <sha>` |
 | `42` | a replay ran and hit a hunk that is not a plain keep-both — the branch was reset and proved back | `REPLAY-COLLIDED` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause replay-conflict` |
-| `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL` |
-| `44` | the merged tree failed a code validator | `FAIL` |
+| `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL --integrate-exit 43 --assembly-head <sha>` |
+| `44` | the merged tree failed a code validator | `FAIL --integrate-exit 44 --assembly-head <sha>` |
 | `54` | the replay landed and the child's branch would not follow it — nothing was merged, and a working tree standing on that branch is the usual reason | `SEAT-DIRTY` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause worktree-holds-branch` |
 | `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` | the lane record, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
 
@@ -1315,6 +1520,36 @@ line to read twice: a replay that hit a hunk it may not resolve is the machinery
 child, and a `FAIL` there charges the child's repair budget for it — the exact thing the corpus
 forbids, in the one table a driver routes off. That is what `REPLAY-COLLIDED` and `SEAT-DIRTY`
 record instead, and neither is ever recorded beside the `FAIL` it replaces.
+
+**Each of those three `FAIL`s names its exit and the assembly head on the line.** `<sha>` is the head
+the refusal says it put the seat back to (`is back at <sha>` on a `42`, `reset <path> back to <sha>`
+on a `43` or `44`). An integrate `FAIL` writes no verdict on the child, and the child's range
+verdicts are all `PASS`, so this line is the only record a repair builder's claim can read. `lane
+report` refuses a `FAIL` out of `integrate` without the pair, and the pair on any other line, at exit
+`68` with the log unappended.
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token FAIL --integrate-exit 44 --assembly-head <sha>
+```
+
+**A `FAIL` recorded before the pair existed is fixed with `lane attach-integrate`, not by recording
+it again.** That old `FAIL` already folded the child back into `build`, and no shell that owns a
+`FAIL` serves `build`, so running `lane integrate` again to report a new `FAIL` is refused at `72`
+(the token is unserved there) with the log unappended.
+The builder's claim refuses on `31` in the meantime. Read the `FAIL` line's `at` off `lane history`,
+take the exit and head from that integrate run's output, and attach them:
+
+```bash
+node <fabrika> lane attach-integrate <lane> --root <root> --task <task> --at <fail-at> --integrate-exit 43 --assembly-head <sha>
+```
+
+It appends one `CORRECTED` line and rewrites nothing. It refuses at `68` with the log unchanged when
+the line is not an integrate `FAIL`, when a later `DONE` already answered it, or when `lane report`
+recorded it with its own pair. It does not refuse a `FAIL` an earlier attach already paired: a second
+run appends a second `CORRECTED` and the later pair wins, which is how a wrong exit or head is fixed.
+After that, the repair builder's `build resume-child <child> --lane <lane>
+--lane-root <root>` is admitted, exactly as for a `FAIL` recorded with the pair.
+
 A `41` (no tree holds `epic/<n>`, placed
 with `lane assembly`), a `33` (the main checkout is standing on that branch), a `22` (a `--child`
 branch that is not this repo's, so not the one `lane prove` printed) or a `45` (the assembly seat
@@ -1363,20 +1598,23 @@ One more refusal guards a reviewer `FAIL`, and it is the one half `lane prove` c
 hands — the read enforces it mechanically for a `PASS` (exit `23`) on both paths, the shell's
 through `lane report` and yours through `lane transition`, while a `FAIL` claims no
 artifact and so is proven by nothing: **a reviewer `FAIL` is recorded only when every derived
-namespace holds a verdict that still binds** — governance included, on a `governance: required` diff. `FAIL`
+namespace the head does not route elsewhere holds a verdict that still binds** — governance included,
+on a `governance: required` diff, and a routed `review-ui` excluded, which `review`'s own floor
+subtracts for the reasons it states there. `FAIL`
 routes the machine into a repair build, and a repair pushes a new head; recorded while any
 namespace is still in flight, it orphans that namespace's verdict mid-write and spends one of the
 machine's retries on a verdict set nobody finished. A reviewer report carrying a `FAIL` beside a
 namespace with no verdict that still binds is an incomplete read, not an event: re-read the
-artifact's verdicts — the PR's, or the child range's — until every derived namespace is terminal
-against what that artifact carries now, then record. **The re-read is bounded, not a hold**: it runs
+artifact's verdicts — the PR's, or the child range's — until every derived namespace that floor
+still asks for is terminal against what that artifact carries now, then record. **The re-read is bounded, not a hold**: it runs
 only while the reviewer's run is still in flight, and once that run has ended with the namespace
 still empty the outcome is the `BLOCKED` the next paragraph names — never an indefinite wait on a
 state that reads as active. No repair builder is
-ever spawned while any namespace at the head is non-terminal.
+ever spawned while a namespace that floor asks for is non-terminal at the head.
 
-**Re-reading terminates, because no reviewer may decline a derived namespace on a `FAIL` round, and
-none may route one away either.** Governance is
+**Re-reading terminates on `governance`, because no reviewer may decline that namespace on a `FAIL`
+round, and none may route it away either — the claim is `governance`'s alone, and a routed
+`review-ui` is the case it does not cover.** Governance is
 derived-required at every round and every head on a `governance: required` diff, FAIL rounds included —
 `review` §6 states it on both arms, and that skill's `routed elsewhere` terminal covers `review-ui`
 and `check-epic-plan` only, so no reviewer terminal ends a run with governance un-fired. So a
@@ -1384,8 +1622,8 @@ governance verdict missing at a `governance: required` head is
 always a read still in flight or a reviewer that died mid-emit, never a licensed refusal, and the
 remedy above reaches a verdict instead of waiting on one nobody will write. The floor stays, and no
 `governance: required` FAIL round holds the old deadlock — the state where the verdict is refused by rule,
-so it can never be written and the repair can never be dispatched. A namespace still empty after the
-reviewer's run has ended is a dead spawn like any other: record `BLOCKED` per the spawn-report step
+so it can never be written and the repair can never be dispatched. A `governance` verdict still empty
+after the reviewer's run has ended is a dead spawn like any other: record `BLOCKED` per the spawn-report step
 above and let a human unblock it. Do not re-spawn the reviewer on your own read.
 
 `lane transition` exits are verdicts: `12` means the event was refused and the log left
@@ -1397,7 +1635,7 @@ unappended, and the remedies are `lane prove`'s. `8` means the append did not la
 
 Done when the fold reads a terminal state or a park.
 
-## 4 — Park, or end with the transcript — then release
+## 4 — Park, or end with the record — then release
 
 **An epic run gives back its assembly worktree when the lane reaches a terminal fold**, before the
 release below — the run owned that tree, and a tree nobody owns is one a later driver has to reason
@@ -1410,12 +1648,39 @@ node <fabrika> lane assembly $lane_key --remove
 It never forces, so a tree holding uncommitted work is refused rather than dropped. That refusal is
 exit `8`, and it carries git's own reason: uncommitted work sitting there is the usual one, a process
 still standing inside the tree (the `cd` in §3 is one) is the other. Read the reason it prints, name
-it in the transcript comment, and leave the tree. Neither a park nor a queue wait is a terminal, so a
+it in your terminal line, and leave the tree. Neither a park nor a queue wait is a terminal, so a
 `LANE-PARKED` and a `LANE-WAITING` run both leave the worktree in place for the successor that
 resumes the lane.
 
+**Every run that holds the lane removes the worktrees its shells were handed before it releases**,
+whether the run ends on a terminal, a park, a wait or `STOPPED`. Each shell recorded its tree on the
+lane as its brief told it to:
+
+```bash
+node <fabrika> lane cleanup $lane_key
+```
+
+The verb removes the tree of a shell that has returned and keeps the tree of one still running. On
+an epic lane a `STOPPED` run can end with a sibling child's shell in flight: its tree prints as
+`kept`, reason `in-flight`, because it was handed since that task's standing dispatch and no
+terminal has moved the task. That tree is not yours to remove, and the run that next holds the lane
+removes it.
+
+Exit `0` removed every recorded tree it could reach. Exit `74` kept at least one, because it still
+holds work or its shell is still in flight, and removed the rest. Your own tree prints as `left`,
+because no process removes the tree it runs in. A tree an earlier driver of this lane recorded prints as `left` too: nothing here
+proves that driver's shell returned, so its own caller removes it. The epic assembly worktree is
+outside this verb and keeps the rule above.
+**Copy every `kept` and `left` line from stderr into your closing line**, path and reason, on either
+exit: a `left` tree is handed to your caller, who is outside it, and a `kept` one holds work
+somebody has to look at or a shell that is still running. A kept tree is neither a park nor a retry. **Every other non-zero exit is
+named in your closing line and the release still runs**: `8` and `11` are UNKNOWN, `7` is a claim
+held over a lane that never booted (step 1's `lane open` exit `51`), which recorded no tree, and
+`4`, `21`, `39` and `65` removed nothing. The keep rule and the exits are the verb's
+section (`fabrika wire doc-section --heading "lane cleanup" < <skill-base>/contract.md`).
+
 Both ends of the loop release the claim, and it is the **last** thing the run does — after the park
-comment or the transcript has landed, so a successor that wins the lane the moment you let go finds
+comment or the record has landed, so a successor that wins the lane the moment you let go finds
 the artifact already there:
 
 ```bash
@@ -1466,6 +1731,58 @@ future recipe row can key on. Omitting one is right only where the set holds not
 what is never right is reaching for a token because it is nearby rather than because it is what
 happened.
 
+A shipper's `AWAITING-CP-APPROVAL` lands `awaiting-cp-approval` with nothing typed, because that
+token has one reason. Its `ROUTED-REVIEW` lands `verdict-owed` the same way (below). When you park
+an owner-approval wait yourself, name it:
+`lane transition <lane> BLOCKED --task <task> --cause awaiting-cp-approval`. A `ship` park with no
+cause matches no `human:cp-approval` row, so it never clears by reading an approval nobody asked for.
+
+**A lane whose remaining work waits on the founder parks on one of two causes, by what it waits
+for.** The arrival is a builder that backs off with nothing built because the rest of the issue is
+the founder's, often after a `Part of` merge folded the lane back to `queued`. Park it rather than
+spawn a second builder into the same wall:
+
+- **An answer nobody has given**, such as an open question filed elsewhere or two criteria that
+  cannot both hold: `ruling-owed`, with the issue the ruling is owed on, which may be the lane's own.
+  `recipe unpark` clears it once a ruling newer than the park stands on that issue.
+- **A step only the founder may take by hand**, such as a command no agent may run:
+  `founder-act-owed`, with the step in your own words. No read clears it, so `recipe unpark` answers
+  `12` quoting the step, and the lane leaves on a person's `UNBLOCKED`.
+
+```bash
+node <fabrika> lane transition <lane> BLOCKED --task <task> --cause ruling-owed --ruling-issue <n>
+node <fabrika> lane transition <lane> BLOCKED --task <task> --cause founder-act-owed --founder-act "<the step>"
+```
+
+Each cause takes its own flag and refuses the other's. Where what is left can close by either a
+ruling or a step, name the one that matches what your park comment asks for. A `type:decision` lane
+waiting on its own ruling uses neither: that wait has no token yet, so do not borrow one of these
+two. You are type-blind, so that the lane is a decision lane is a fact your caller's brief relays,
+never one you read off a label.
+
+**A `verdict-owed` park needs a verdict before it needs a clear.** A namespace the ship gate
+requires has no binding verdict at the PR's head, usually because the head moved after review. The
+fold reads `human:cp-approval`, and no cell out of it reaches `review`: `UNBLOCKED` returns to
+history, which is `ship`, and `lane brief` briefs a reviewer only from the `review` state. So a
+clear taken first hands a shipper the same missing verdict, and it parks the lane again. Run the
+owing gate first, then clear, in this order:
+
+1. Read the owed namespace off the parking shipper's report, which names each `blocked` line.
+2. Spawn the gate that owns it, `isolation: worktree`, with no lane. The whole prompt is the skill's
+   invocation and the PR number: `/fabrika:review <pr>` for a `review-*` namespace,
+   `/fabrika:review-ui <pr>` for `review-ui`, `/fabrika:governance <pr>` for `governance`. No brief
+   exists for a park, so this is the one spawn without `lane brief` output. The invocation is the
+   whole prompt, so you still compose nothing. With no lane named, the gate posts its verdict on
+   the PR and records nothing on the ledger.
+3. When the spawn returns, run `node <fabrika> build verdicts --pr <pr>`. Go on only when each owed
+   gate has a row with `"current": true`. `PASS` or `FAIL` makes no difference here: the shipper
+   routes a `FAIL` to repair itself. No current row means the verdict is still owed, so do not
+   clear. The gate's own terminal names why; park on that.
+4. Clear it: `recipe unpark <lane-key> --task <task>`. `verdict-owed` routes to the driver and has
+   no recipe row, so where this repo lets a driver clear, it answers `23`. Re-run it with
+   `--rationale` naming the verdict the gate posted at the head. Any other answer is read as below.
+   The lane returns to `ship`, and the next shipper merges or routes the `FAIL`.
+
 **So try `recipe unpark` before you post a park comment**, whenever the fold reads `blocked` or
 `human:*` — a park comment is the founder-routed answer, and you do not know the route until this
 verb reads the cause for you:
@@ -1474,19 +1791,66 @@ verb reads the cause for you:
 node <fabrika> recipe unpark <lane-key> --task <task>
 ```
 
-The table it keys on holds six rows today: `human:cp-approval` twice — once keyed on no cause at all,
-once on `head-ci-red`, which is the shipper's route to `heal-ci` folding to the same leaf —
-`human:queue-stall`, and `blocked` carrying one of `worktree-holds-branch`, `campaign-paused` or
-`spawn-dead`. Reading which one
+The table it keys on holds thirteen rows today: `human:cp-approval` twice — once keyed on
+`awaiting-cp-approval`, the owner-approval wait, and once on `head-ci-red`, which is the shipper's
+route to `heal-ci` folding to the same leaf —
+`human:queue-stall`, and `blocked` carrying one of `head-ci-red` (a reviewer that parked on a red
+head, cleared on a green one with no verdict read), `worktree-holds-branch`, `spawn-dead`,
+`no-rendered-delta`, `no-preview-routed`, `render-axis-missing` (a rendered review that could
+not reach a state, cleared once the axis issue it names is closed), `ruling-owed` (cleared once a
+ruling newer than the park stands on the issue it names), `tree-hijacked`,
+`claim-stranded`, or `campaign-paused`, a legacy row that
+clears a lane parked on it before campaigns became themes and that no park records now. Reading which one
 matched is the verb's answer, not a list you maintain here — the rows live in
 [`packages/fabrika-cli/src/recipe/parks.ts`](../../../../packages/fabrika-cli/src/recipe/parks.ts).
 
-Exit `0` cleared it — the verb recorded the `UNBLOCKED` itself and re-read the fold to prove the task
-left the park, so your next move is the state that re-fold reads, not a park comment. Exit `12` is
+Two of those are mechanical stops, and the clear is yours to set up. **`tree-hijacked`** is a
+builder whose checkout held another lane's branch or unauthored work, and the builder records it:
+give the next spawn a tree of its own. The row asks what `spawn-dead`'s asks — no build claim standing
+on the issue or on an open PR linking it, and no tree holding this lane's branch — and it never ends a
+claim, so one still standing holds it at exit `13`.
+
+**`claim-stranded`** is yours to record, never a builder's. A builder that loses `build claim` on
+`15` to a sibling lane of your own session ends `BACKED-OFF` naming the winning token, because it
+cannot tell a live sibling from a stranded one. You can, and only one way: the token is one a spawn
+of yours printed or reported, and that spawn has **returned** to you — its return is the proof its
+shell ended. On that proof, record the park, release the stranded claim under its token on the number
+`build claimants` shows it on (the PR on a repair lane), then run `recipe unpark`:
+
+```bash
+node <fabrika> lane transition <lane> BLOCKED --task <task> --cause claim-stranded
+node <fabrika> build release <n> --token <its token>
+```
+
+The row clears only once the issue and every open PR linking it read `unclaimed`, and retracts
+nothing. A winner whose spawn has not returned, or one you cannot tie to a spawn of yours, is possibly
+live: record nothing and release nothing, and let that spawn's own return route the lane.
+
+Exit `0` moved the task off the park — the verb recorded the `UNBLOCKED` (or, on the red-CI repair
+route below, the `FAIL`) itself and re-read the fold to prove the task left the park, so your next
+move is the state that re-fold reads, not a park comment. Exit `12` is
 the park's cause outside the table, `13` is a known cause whose clearing condition is not met yet,
 and either way the ledger is untouched and the park below is what you do. You never read past those
 codes and never retype what the verb does: which parks clear on their own is that table's decision,
 not yours: you relay that table's answer and never derive it.
+
+**A `head-ci-red` park on a real defect leaves through this same call, into repair.** On a red head
+the verb relays `heal-ci logs` and `heal-ci classify` itself. When a failing required context classes
+`logic` on a PR the pipeline owns, it records the park's `FAIL` rather than an `UNBLOCKED`, and its
+answer reads `"event": "FAIL"`. That spends one repair retry and lands the lane in `build`, so your
+next move is a repair builder on the PR. With no retry left it falls to the spent-budget park, which
+on a single-task lane re-folds as `tripped`; that is the budget park below. A `transient` or
+`unclassified` red, or one whose logs will not read, stays at `13` and waits for `heal-ci`'s rerun
+or for the head to go green. Never type `lane transition … UNBLOCKED` and then a `FAIL` out of `ship`
+by hand to get the same move: this verb is the route, and it proves the defect before it spends the
+retry. The verb sends that `FAIL` only where the lane's own machine gives the park a `FAIL` arm;
+without one, every red holds at `13`, and the refusal says `no FAIL arm`. On a coder lane booted
+before the arm existed, run `node <fabrika> lane migrate <lane-key>` and then `recipe unpark` again.
+When `lane migrate` answers `generated`, the lane runs a generated machine, such as an epic tail's,
+which is never migrated and has no such arm. There the park clears only on a green head, so a
+`logic` red on it is a park for a human, not a migrate. That repair route belongs to the shipper's
+`human:cp-approval` park alone: a reviewer's `blocked` park on `head-ci-red` holds at `13` on every
+red, because `blocked` has no `FAIL` arm.
 
 **Exit `23` is the one refusal that is yours to answer, and answering it is a sentence.** It says
 the park's cause routes to the *driver* — machinery a driver session owns, not a call only the
@@ -1499,8 +1863,9 @@ node <fabrika> recipe unpark <lane-key> --task <task> --rationale "<why you are 
 
 That rationale lands on the recorded `UNBLOCKED` and reads back off the fold, which is the whole
 audit of a clear nothing else proves — so write the reason, not a restatement of the park. You still
-never compose the routing: whose park it is comes off the cause table, and a `founder` route is exit
-`12` and the park comment below, exactly as before.
+never compose the routing: whose park it is comes off the cause table, and for a spent repair budget
+off `parkCause.repairBudgetSpent` as well, and a `founder` route is exit `12` and the park comment
+below, exactly as before.
 
 **A founder-routed park is the one you cannot clear by hand**: post on the driven issue what is
 needed and from whom (the parking spawn's report names both; for `human:cp-approval` it is a
@@ -1511,17 +1876,24 @@ of those hands the founder an engine failure that was never theirs.
 
 **`human:budget-spent` is the one park you clear by typing the grant yourself** — on a lane
 emitted before the rename it wears an older name, `frozen` on a task and `human:epic-review` on an
-epic tail, and those are the same park, cleared here the same way. Its cause routes
-to you, and the authority is a recorded decision in the repository's own corpus — the one that rules
-a spent budget's route out to be the driver's, acting on its own recommendation and logging it. Read
-it before you take the seat the first time; the search is the leaf's name. `recipe unpark` is not the
-way in: the cause carries no remedy, so the recipe table classes this park `Novel` and refuses it
-with the ledger untouched, which is correct. Two calls, in this order, and the second is refused
-without the first:
+epic tail, and those are the same park, cleared here the same way. Whose park it is comes off one
+config setting, `parkCause.repairBudgetSpent`, and nothing else. Read its resolved value with
+`node <fabrika> status settings` — the `parkCause` row — before you take the
+seat:
+
+- `driver` (the shipped value) — the park is yours. You grant the round yourself on your own read,
+  with the two calls below, and the rationale you type is the record of that call.
+- `founder` — the park is a human's, like any founder-routed park. Do not grant: post the park
+  comment below saying a spent repair budget needs a person's call, and end `LANE-PARKED`. `recipe
+  unpark` refuses this park on `12` and names the setting, which is the same answer.
+
+`recipe unpark` is not the way in under `driver` either: the cause carries no remedy, so the recipe
+table classes this park `Novel` and never clears it with a proving read. Two calls, in this order,
+and the second is refused without the first:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane clear <lane> --task <task> --rationale "<your own read>"
-node packages/fabrika-cli/src/bin.ts lane transition <lane> UNBLOCKED --task <task> --rationale "<the same read>"
+node <fabrika> lane clear <lane> --task <task> --rationale "<your own read>"
+node <fabrika> lane transition <lane> UNBLOCKED --task <task> --rationale "<the same read>"
 ```
 
 **That one call buys both of the lane's repair budgets, which is the thing to know here.** A lane
@@ -1530,16 +1902,20 @@ the PR's FAIL rounds — and only the second stops a builder. `lane clear` grant
 act, posting your `--rationale` on the PR as the grant's dated authorization with the `cap-cleared`
 marker beside it, so the builder you dispatch next proceeds. You never run `build clear` to finish
 the job: that is the founder's verb for a bare PR-side grant with no lane clear behind it, and
-clearing only the lane half is what used to spend a whole shell on budget nobody could read. The
-decision record ruling both halves sits in the repository's own corpus, cited on the founder ruling
-it rests on; the search is this verb's name.
+clearing only the lane half is what used to spend a whole shell on budget nobody could read.
+
+**The pull-request half needs one more thing: the account you run as must be in the control-plane
+set.** `parkCause.repairBudgetSpent` says whose call the round is; the owners `.github/CODEOWNERS`
+names, holding `write+`, are the accounts that may record a round on a pull request. So on a lane
+with a pull request, a `driver` setting alone is not enough — `lane clear` refuses the PR half on
+exit `66` when your account is not in that set, and that `66` is the park.
 
 Read the verb's `pr` field rather than assuming which half it bought: `null` is a task with no pull
 request — an epic child, a chore lane — and `cleared`, `held` or `unspent` is what happened on the
 one it found. Two refusals are the PR half's and both leave the log unappended, so nothing is
 half-granted: exit `20` where two open PRs link the task's issue, and `66` where the account you are
-running as may not clear a round on that PR. Neither is yours to override; `66` is the one park here
-that is genuinely the founder's, and `build clear` from their account is the route.
+running as may not clear a round on that PR. Neither is yours to override; on `66` park the task on
+the founder, whose `build clear` from a control-plane account is the route.
 
 `lane clear` derives the round — one call, one round on each side — and refuses a blank rationale,
 because that line is the whole audit the weekly machinery review reads. Decide what the task actually
@@ -1603,34 +1979,94 @@ defective section and points at the verb that owns the repair — `triage repair
 and the who to the parking spawn's report. Clearing a **founder-routed** park is that founder's
 `UNBLOCKED`, recorded through the same `lane transition` verb, and you never record it — with three
 exceptions, all of them keyed on the park's route rather than on your judgment. The first is yours to
-type: `human:budget-spent` above, where you record the `UNBLOCKED` yourself after `lane clear`, on
-the authority of the recorded decision that fence names. The other two are the verb's: on a **known**
+type: `human:budget-spent` above, where you record the `UNBLOCKED` yourself after `lane clear`, when
+`parkCause.repairBudgetSpent` resolves `driver`. The other two are the verb's: on a **known**
 park a recipe verb owns, `recipe unpark` records the `UNBLOCKED` itself, and only after a re-fold
 proves the task left the park; and on a **driver-routed novel** park under exit `23` above, the same
 verb records it on your rationale, with no proving read behind it. Neither is a route out of the
 spent-budget park, whose cause carries no remedy, as that fence says. This section states no
 park-clearing authority of its own: which parks clear without the founder is the cause table's route
-field and the recipe table's rows, and you relay both. You relay that verb's exit into
+field, `parkCause.repairBudgetSpent` for a spent repair budget, and the recipe table's rows, and you
+relay all three. You relay that verb's exit into
 the chore lane's own event and type no `UNBLOCKED` anywhere.
 
 A chore lane has **no driven issue** — that is what a chore is — so a park it holds has nowhere to
 be commented. Report it to your caller instead, in the terminal line: the chore key, the state the
 fold reads (`human:novel-park` is the named park a recipe refusal folds to), and the verb exit and
-`why` that put it there, quoted off `recipe route --exit`. The transcript below is the artifact; a
-caller re-reads the ledger, never your summary. A resumed run that folds into a still-parked lane restates the park in one comment
-and ends `LANE-PARKED` again; the ledger, not your patience, decides when the lane moves.
+`why` that put it there, quoted off `recipe route --exit`. The `lane history` bytes you hand over at
+the terminal record step below are the artifact; a caller re-reads the ledger, never your summary. A
+resumed run that folds into a still-parked lane restates the park in one comment and ends
+`LANE-PARKED` again; the ledger, not your patience, decides when the lane moves.
 
-**A terminal fold (`status: done` — `shipped`, `complete`, `diagnosed`, `tripped`, `board:cancelled`,
-`board:landed`, and a chore's `swept`) ends the run with the transcript**, posted to the driven issue straight off the verbs:
+**A `tripped` fold that parks on a known date declares the wait before its record.** When the fold
+ends `LANE-PARKED` below and the need you are about to post waits on a person, a release or another
+issue with a date you know, run this before `lane record`, because `table flags` reads the wait off
+the posted record and holds the row's stuck flag until that date, and a record already standing
+keeps the wait it was posted with:
 
 ```bash
-node <fabrika> lane print $lane_key | gh issue comment $lane_key --body-file -
+node <fabrika> lane wait $lane_key --on "<what>" --until <YYYY-MM-DD>
 ```
 
-with `lane history $lane_key` appended the same way when the event log adds anything `print` does not
-show. Name the terminal state in the comment. End `LANE-TERMINAL`. On a chore lane the pipe has no
-issue to land on: print the same two verbs and hand their bytes to your caller, who owns where a
-chore's transcript is posted.
+`70` means `--on` is not one line or `--until` is not a date still to come, and nothing was appended.
+On any other non-zero, name the code and post the record without the wait.
+
+**A terminal fold (`status: done` — `shipped`, `complete`, `diagnosed`, `tripped`, `board:cancelled`,
+`board:landed`, and a chore's `swept`) posts the lane's record**, composed and posted to the driven
+issue by one verb:
+
+```bash
+node <fabrika> lane record $lane_key
+```
+
+The record is the lane's outcome, wall-clock, builds, reviews, parks, Spent $, asks, origin and PRs,
+with the whole log collapsed under it, and it is how the lane's history leaves this machine. Run it
+on every terminal fold, including a `tripped` one that ends `LANE-PARKED` below. `posted` and
+`unchanged` both mean the record stands, and a re-run never stacks a second one, so after a crash just
+run it again. After the record stands it runs `table sync` for the issue; a non-zero `table.code` in
+its answer leaves the record standing, and its stderr names the re-run. `69` means the fold has not
+ended, so read it again rather than posting. `5` means a machine-local path got past the scrub, and
+nothing was posted: name it in your terminal line. On a chore lane there is no issue to post to
+(`19`): print `lane history $lane_key` and hand those bytes to your caller, who owns where a chore's
+transcript is posted. `8` means the post failed and may have landed anyway: re-run it, and a post
+that did land answers `unchanged`. Do not re-run on `4` or `9`. `4` means a record, a fact or a
+`lane-record` comment already on the issue does not read, and `9` means the posted comment does not
+read back as this terminal's record, so a re-run meets the same bytes. Name the code in your terminal
+line for a person. Every other non-zero is UNKNOWN; name the code.
+
+**Which terminal line the run ends on is the fold's.** Every terminal fold ends `LANE-TERMINAL`
+except a `tripped` one whose error task sits in a park with a door, so on `tripped` read which state
+its error task sits in. On `human:budget-spent` and on `frozen` the run ends `LANE-PARKED` with the
+record and the need posted, and the two needs differ: the first needs a granted round behind its
+door, the second — an emitted epic child whose door leads back to itself — needs a re-emitted
+machine. On a lane emitted before the rename, `frozen` is the spent-budget fallthrough and
+`human:epic-review` is the tail's, so both of those park for a granted round too. Every other error
+final has no door and ends `LANE-TERMINAL`.
+
+**A `diagnosed` lane whose issue triage has since rewritten gets a fresh lane, and the verbs are
+yours to run.** The old ledger is final, so `lane open` refuses at `14` while it stands in the key.
+
+Whether the issue was re-triaged is not a read you make. You are type-blind, so you never judge it off
+labels or the body, and no verb serves it yet. It reaches you as one fact your caller relays: the
+brief that handed you this key says the issue was re-triaged since the diagnosis. That is the whole
+trigger. Without it, a `diagnosed` fold ends `LANE-TERMINAL` as below.
+
+With it, move the old lane aside, claim again, and boot:
+
+```bash
+node <fabrika> lane archive $lane_key --retriaged --token <your lane-claim token>
+node <fabrika> lane claim $lane_key
+node <fabrika> lane open $lane_key
+```
+
+The archive retracts the claim you held, so the second line is not optional: without it the fresh
+lane runs with no marker, a second driver can claim it beside you, and it takes no seat against the
+cap. Keep the token that claim prints for the rest of the run, and continue at step 2.
+
+The archive moves only a lane that folds to `diagnosed` with no pull request and no spent round in
+its log, and keeps the log byte for byte. Everything else refuses at `73` and stays where it is. A
+second re-triage of one issue takes the next `<lane>.archived-<n>` slot. This is an engine step,
+never an ask for the founder, so route any refusal by its code.
 
 **A `complete` fold over an issue the board still calls buildable is a defect, and it has a repair.**
 It means the merge behind the ship's `DONE` carried `Part of #N` and the recorded line never said so,
@@ -1639,14 +2075,6 @@ as it reads — nothing here is yours to change — and name the two verbs that 
 `fabrika lane migrate <lane>` where that lane's machine predates the guard, then
 `fabrika lane reconcile --check`, which says which lanes are in this state and appends the correcting
 line when re-run without the flag.
-
-**A `tripped` fold is not automatically a terminal** — read which state its error task sits in. On
-`human:budget-spent` and on `frozen` the run ends `LANE-PARKED` with the transcript and the need
-posted, and the two needs differ: the first needs a granted round behind its door, the second — an
-emitted epic child whose door leads back to itself — needs a re-emitted machine. On a lane emitted
-before the rename, `frozen` is the spent-budget fallthrough and `human:epic-review` is the tail's,
-so both of those park for a granted round too. Every other error final has no door and ends
-`LANE-TERMINAL`.
 
 **Resume is a re-spawn.** There is no handoff and no memory: resuming a lane is spawning the
 operator again with the same issue number — step 1 tolerates the existing lane, and the fold says
@@ -1663,7 +2091,7 @@ node <fabrika> lane stale
 ```
 
 `lane recover --spawns` records the park itself for the one shape it can prove, and that shape is a
-dead **builder**: a lane standing in `build` or `build:ui` — including an epic lane's child regions —
+dead **builder**: a lane standing in `build`, `build:ui` or `build:mixed` — including an epic lane's child regions —
 whose claim has outlived the builder's own budget with nothing left behind anywhere. Lane 7778 sat
 in that state for five days holding a seat against the cap, because recording its
 `BLOCKED --cause spawn-dead` was a driver's act and its driver was gone. The whole sweep is below,
@@ -1736,13 +2164,18 @@ A `recovered` row's `to` is the append's own answer rather than that prediction,
 the lane is in even when another writer landed while the sweep was reading. Read it as the lane's
 current fold; the `--check` row above is a prediction and stays one.
 
-**It records on a proven artifact and on nothing else.** The bar is `lane prove`'s own read and the
-append is `lane transition`'s whole path, so nothing here is a judgement of yours and nothing here
-is a new way onto a ledger. It asks about one event — a `PASS` out of either review cell — and every
-other answer is a row that changed nothing: `unproven` (which carries `not-required` and every
-refusal code alike, told apart by the row's own `proof` and `proofCode`), `refused`, `contended`,
-`current`, `terminal`, `unreadable`. With `--spawns` the row set gains `parked`, `parkable` and
-`working`, which are that arm's own and are described below.
+**It records on a verb's answer and on nothing else, through a verb's own path.** Nothing here is a
+judgement of yours and nothing here is a new way onto a ledger. It has two arms. The proven arm
+asks about one event, a `PASS` out of either review cell: the bar is `lane prove`'s own read and the
+append is `lane transition`'s whole path. The queue arm settles every lane waiting in
+`ship:queued`: it relays one `ship reconcile <pr> --polls 1` answer through `lane report`'s whole
+path, so `landed` records `LANDED` and `ejected` records `EJECTED`, under the rows `settled` and
+`settleable`. The `## ship:queued` section above says what it records there. Every other answer is
+a row that changed nothing: `unproven` (which carries `not-required` and every refusal code alike,
+told apart by the row's own `proof` and `proofCode`), `waiting` (a queue answer of `unresolved`),
+`disarm-owed` (a queue answer of `parked`, which still owes you `ship disarm <pr> --site
+post-enqueue` now, per `## ship:queued`), `refused`, `contended`, `current`, `terminal`, `unreadable`. With `--spawns` the row set
+gains `parked`, `parkable` and `working`, which are that arm's own and are described below.
 
 **Two events a live shell also satisfies are not in this sweep**, and that is what keeps it from
 folding a lane out from under one of your own spawns. A reviewer's `BLOCKED` claims the run reached
@@ -1763,17 +2196,17 @@ A `parkable` row is a lane whose builder is provably gone, and every answer shor
 `working` row that changed nothing — a claim still inside its budget (the live-but-quiet builder,
 which once lost its claim to exactly this kind of guess), a branch still carrying the dead builder's
 commits, an open PR, or no claim at all. A read that failed is `unreadable` and never dead.
-**The conjunction itself is the verb's, written once in its reference row**
-(`packages/fabrika-cli/docs/verb-reference.md`, `lane recover`) — read it there rather than off a
-restatement here, because what counts as "left something behind" differs by role and a copy of it
-here drifted the day it landed. Dropping `--check` records the `BLOCKED --cause spawn-dead`.
+**Read the conjunction in `lane recover --help`.** What counts as "left something behind"
+differs by role; the help owns that predicate rather than a second copy here. Dropping `--check`
+records the `BLOCKED --cause spawn-dead`.
 
 **It retracts nothing, and it is not the end of the chain.** This sweep leaves the claim standing,
 and the park it writes is the exact `blocked` + `spawn-dead` pair `recipe unpark`'s `spawn-clear` row
 clears — which §4 above already tells you to run on a `blocked` fold. That row retracts the claim on
 the same age proof, so the claim does end, one verb later, with no human between the two. That is a
-decision this repo's corpus records, and the verb's reference row names it: a verb-made age read may
-license the park, and the retraction stays where it always was, under every one of its conditions.
+ruling cited by the `@ruling` tag in
+[`recover-verb.ts`](../../../../packages/fabrika-cli/src/lane/recover-verb.ts): the sweep may record
+the park, and retraction keeps its existing conditions.
 **The eviction rule above still holds whole where it matters** — no reader
 retracts a claim, and no claim ends outside a proven identity or a budget-proved death. What changed
 is who may write down the park that death happens inside. The arm is off unless you pass the flag,
@@ -1791,10 +2224,15 @@ never read it as a lane that was judged and left.
 
 Every run ends as exactly one of — each naming what was recorded and what the fold reads after:
 **`LANE-TERMINAL`** (the machine folded to a final state with no door out — `shipped`, `complete`,
-`diagnosed`, `tripped`; no event recorded on top of a final fold; transcript posted on the driven issue) ·
+`diagnosed`, `board:cancelled`, `board:landed`, a chore's `swept`, or a `tripped` whose error task
+has no door; no event recorded on top of a final fold; `lane record`'s answer named — on an issue
+lane the record `posted` or `unchanged`, or the `4`, `5`, `9` or UNKNOWN code that kept it off; on a
+chore lane the `lane history` bytes handed to the caller; a `diagnosed` fold your caller names as
+re-triaged is not this terminal, because `lane archive --retriaged`, `lane claim` and `lane open`
+boot it fresh — above) ·
 **`LANE-PARKED`** (the fold reads `blocked`, `human:*` or `frozen` — either it already did and no
 event was owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
-posted on the driven issue) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns
+posted on the driven issue, and on a `tripped` fold the lane record beside it) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns
 this lane, its token named; no ledger emitted, no shell spawned, no marker retracted, nothing
 posted) · **`LANE-WAITING`** (nothing is wrong and nothing is owed but time — two
 causes reach it, and the cap reaches it by either of two paths. Step 1's `lane seats` answered
@@ -1817,7 +2255,8 @@ are not error finals. From an error final carrying a door — `human:budget-spen
 and `human:epic-review` on every lane emitted before it was renamed — it needs a recorded `CLEARED`
 behind it first: a bare `UNBLOCKED` is refused on exit `36`, per the park-clearing paragraph in step 4 above. So its promise
 is "the round is granted, then the resume walks" — by you, through `lane clear`, which grants the
-lane's round and its pull request's in one act. A park reported as a
+lane's round and its pull request's in one act, or by a person where `parkCause.repairBudgetSpent`
+is `founder`. A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
 lane you are only driving.

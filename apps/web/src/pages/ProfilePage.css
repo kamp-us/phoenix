@@ -22,7 +22,10 @@
 	padding-bottom: var(--s-4);
 	border-bottom: 1px solid var(--border-faint);
 }
-.kp-profile__section--last {
+/* Structural, not a hand-set modifier: the column's order changes (#9273) and the
+   contribution signal renders its own section from another file, so a "this one is last"
+   class can only ever go stale. */
+.kp-profile__inner > .kp-profile__section:last-child {
 	border-bottom: 0;
 }
 .kp-profile__section h3 {

@@ -8,11 +8,13 @@
  */
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import {corpusOverride, decisionsDirOr} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
+import {baseOrTrunk, TRUNK_DEFAULT_HELP, trunkUnresolved} from "../io/trunk.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
-import {CORPUS_DECLINED, DIR_UNREADABLE} from "./codes.ts";
+import {BASE_UNFETCHABLE, CORPUS_DECLINED, DIR_UNREADABLE} from "./codes.ts";
 import {runMint} from "./mint-verb.ts";
 import {runNew} from "./new-verb.ts";
 import {runNext} from "./next-verb.ts";
@@ -62,11 +64,34 @@ const corpusFor = (
 	});
 
 const baseFlag = Flag.string("base").pipe(
-	Flag.withDefault("origin/main"),
+	Flag.optional,
 	Flag.withDescription(
-		"the base ref to fetch and read the merged set from — fetched before it is read (default: origin/main)",
+		`the base ref to fetch and read the merged set from — fetched before it is read (default: ${TRUNK_DEFAULT_HELP})`,
 	),
 );
+
+/** The `--base` a verb of this group reads at, or the refusal an unresolvable trunk is. */
+const baseFor = (
+	verb: string,
+	named: Option.Option<string>,
+	repo: Option.Option<string>,
+): Effect.Effect<
+	| {readonly _tag: "Base"; readonly base: string}
+	| {readonly _tag: "Stop"; readonly outcome: VerbOutcome},
+	never,
+	ChildProcessSpawner.ChildProcessSpawner
+> =>
+	Effect.map(baseOrTrunk(Option.getOrNull(named), process.env, Option.getOrNull(repo)), (read) =>
+		read._tag === "Ok"
+			? {_tag: "Base" as const, base: read.value}
+			: {
+					_tag: "Stop" as const,
+					outcome: refuse(
+						BASE_UNFETCHABLE,
+						`${verb}: ${trunkUnresolved(read.reason)}. Pass --base to name the ref yourself.`,
+					),
+				},
+	);
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,
@@ -88,13 +113,27 @@ const next = leafCommand(
 	Effect.fn(function* ({dir, base, repo, json}) {
 		const corpus = yield* corpusFor("adr next", dir);
 		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
-		yield* emit(yield* runNext({dir: corpus.dir, base, repo: Option.getOrNull(repo), json}));
+		const at = yield* baseFor("adr next", base, repo);
+		if (at._tag === "Stop") return yield* emit(at.outcome);
+		yield* emit(
+			yield* runNext({dir: corpus.dir, base: at.base, repo: Option.getOrNull(repo), json}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("The next unused ADR id: merged, open-PR and branch claims folded."),
 	Command.withDescription(
-		"The next unused ADR id — max(fetched merged set ∪ open-PR claims ∪ branch claims) + 1, where a branch claim is an id on any branch ref this clone carries that the base does not — local branches and fetched remote-tracking ones alike, which is how an epic child's unpublished mint is visible to its siblings. Prints `0240`; --json adds mergedMax/inFlight/branchClaims/baseSha. An empty-and-readable --dir is a fresh corpus and answers 0001. Exits 11 (--dir unreadable), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 21 (origin remote unresolvable), 23 (branch refs unwalkable). Two lanes in two clones still collide while neither branch is pushed; this does not claim otherwise. Example: fabrika adr next",
+		[
+			"Prints the next unused ADR id, such as `0240`, or `0001` for an empty readable --dir.",
+			"  11: --dir unreadable",
+			"  17: --base could not be fetched, or no --base and the trunk is unresolvable",
+			"  18: the in-flight set is unknown",
+			"  19: a record filename has no readable id",
+			"  21: the origin remote is unresolvable",
+			"  23: the branch refs could not be walked",
+			'  Derivation: the adr skill\'s contract.md, "adr next"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr next"}]),
 );
 
 const idArg = Argument.string("id").pipe(
@@ -155,8 +194,13 @@ const newCmd = leafCommand(
 ).pipe(
 	Command.withShortDescription("Scaffold a new ADR file from the canonical template."),
 	Command.withDescription(
-		"Scaffold <dir>/NNNN-slug.md from the canonical template. Prints the path written. Exits 12 (path exists — never overwritten); a bad id or slug is a usage error and exits 1. Example: fabrika adr new 0240 only-landed-adrs-may-be-cited",
+		[
+			"Scaffolds <dir>/NNNN-slug.md from the canonical template and prints the path written.",
+			"  12: the path exists and is never overwritten",
+			'  Derivation: the adr skill\'s contract.md, "adr new"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr new 0240 only-landed-adrs-may-be-cited"}]),
 );
 
 const mint = leafCommand(
@@ -172,11 +216,13 @@ const mint = leafCommand(
 	Effect.fn(function* ({slug, dir, base, repo, status, date, title, tags, json}) {
 		const corpus = yield* corpusFor("adr mint", dir);
 		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
+		const at = yield* baseFor("adr mint", base, repo);
+		if (at._tag === "Stop") return yield* emit(at.outcome);
 		yield* emit(
 			yield* runMint({
 				slug,
 				dir: corpus.dir,
-				base,
+				base: at.base,
 				repo: Option.getOrNull(repo),
 				status,
 				date: Option.getOrElse(date, today),
@@ -189,8 +235,19 @@ const mint = leafCommand(
 ).pipe(
 	Command.withShortDescription("Allocate the next ADR id and scaffold its record in one call."),
 	Command.withDescription(
-		"Allocate the next unused ADR id and scaffold its record in one invocation — `adr next` then `adr new` with no gap for another lane's mint to land in. Prints the path written; --json adds id/mergedMax/inFlight/branchClaims/baseSha. Exits 11 (--dir unreadable), 12 (path exists — never overwritten), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 21 (origin remote unresolvable), 23 (branch refs unwalkable); a bad slug is a usage error and exits 1. Example: fabrika adr mint only-landed-adrs-may-be-cited",
+		[
+			"Allocates the next ADR id, scaffolds its record in the same call and prints the path written.",
+			"  11: --dir unreadable",
+			"  12: the path exists and is never overwritten",
+			"  17: --base could not be fetched, or no --base and the trunk is unresolvable",
+			"  18: the in-flight set is unknown",
+			"  19: a record filename has no readable id",
+			"  21: the origin remote is unresolvable",
+			"  23: the branch refs could not be walked",
+			'  Derivation: the adr skill\'s contract.md, "adr mint"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr mint only-landed-adrs-may-be-cited"}]),
 );
 
 const resolve = leafCommand(
@@ -205,15 +262,27 @@ const resolve = leafCommand(
 	Effect.fn(function* ({ids, dir, base, repo, json}) {
 		const corpus = yield* corpusFor("adr resolve", dir);
 		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
+		const at = yield* baseFor("adr resolve", base, repo);
+		if (at._tag === "Stop") return yield* emit(at.outcome);
 		yield* emit(
-			yield* runResolve({ids, dir: corpus.dir, base, repo: Option.getOrNull(repo), json}),
+			yield* runResolve({ids, dir: corpus.dir, base: at.base, repo: Option.getOrNull(repo), json}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Resolve ADR ids to their real filename and state at a base ref."),
 	Command.withDescription(
-		"Resolve ids to their real filename and state against a fetched base ref — one `<state>\\t<file>\\t<detail>` line per id, state ∈ live|landed|in-flight|absent. An empty-and-readable --dir answers absent. Exits 11 (--dir or one of its records unreadable), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 20 (two records for one id), 21 (origin remote unresolvable). Example: fabrika adr resolve 0164 0023",
+		[
+			"Prints one `<state>\\t<file>\\t<detail>` line per id, state live|landed|in-flight|absent.",
+			"  11: --dir or one of its records is unreadable",
+			"  17: --base could not be fetched, or no --base and the trunk is unresolvable",
+			"  18: the in-flight set is unknown",
+			"  19: a record filename has no readable id",
+			"  20: two records carry one id",
+			"  21: the origin remote is unresolvable",
+			'  Derivation: the adr skill\'s contract.md, "adr resolve"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr resolve 0164 0023"}]),
 );
 
 const byFlag = Flag.string("by").pipe(
@@ -231,8 +300,17 @@ const supersede = leafCommand(
 ).pipe(
 	Command.withShortDescription("Mark an older ADR superseded by this one."),
 	Command.withDescription(
-		"Rewrite an older ADR's status: line to `superseded by [NNNN](NNNN-slug.md)` — that line and nothing else. Prints `<path>\\t<new status>`. Exits 7 (no such id), 13 (no --by record), 14 (no single status: line), 15 (diff touched another line — nothing written), 16 (already superseded). Example: fabrika adr supersede 0126 --by 0240",
+		[
+			"Rewrites an older ADR's status line to `superseded by` and prints `<path>\\t<new status>`.",
+			"  7: no such id",
+			"  13: no --by record",
+			"  14: no single status line",
+			"  15: the diff touched another line, so nothing was written",
+			"  16: already superseded",
+			'  Derivation: the adr skill\'s contract.md, "adr supersede and adr amend-in-part"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr supersede 0126 --by 0240"}]),
 );
 
 const amendInPart = leafCommand(
@@ -246,8 +324,17 @@ const amendInPart = leafCommand(
 ).pipe(
 	Command.withShortDescription("Add this ADR to an older one's amended-in-part list."),
 	Command.withDescription(
-		"Append this ADR to an older one's `amended-in-part by` list, in id order, preserving the links already there. Prints `<path>\\t<new status>`. Exits 7 (no such id), 13 (no --by record), 14 (no single status: line), 15 (diff touched another line — nothing written), 16 (the record is already superseded, so it is not amendable). Example: fabrika adr amend-in-part 0023 --by 0240",
+		[
+			"Adds this ADR to an older one's `amended-in-part by` list and prints `<path>\\t<new status>`.",
+			"  7: no such id",
+			"  13: no --by record",
+			"  14: no single status line",
+			"  15: the diff touched another line, so nothing was written",
+			"  16: the record is superseded, so it is not amendable",
+			'  Derivation: the adr skill\'s contract.md, "adr supersede and adr amend-in-part"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr amend-in-part 0023 --by 0240"}]),
 );
 
 const sweepCmd = leafCommand(
@@ -273,8 +360,14 @@ const sweepCmd = leafCommand(
 ).pipe(
 	Command.withShortDescription("Rank the live ADRs this one may contradict."),
 	Command.withDescription(
-		"Rank the uncited live-accepted ADRs this one may contradict. First stdout line is the outcome token — shortlist | no-overlap | indeterminate — and ALL THREE exit 0; a shortlist adds one `<id>\\t<score>\\t<file>\\t<title>` line per entry. An empty-and-readable --dir answers indeterminate. Exits 7 (no readable --new), 11 (corpus unreadable). Example: fabrika adr sweep --new 0240",
+		[
+			"Prints shortlist, no-overlap or indeterminate, each an answer, then one line per shortlisted ADR.",
+			"  7: no readable --new",
+			"  11: the corpus is unreadable",
+			'  Derivation: the adr skill\'s contract.md, "adr sweep"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika adr sweep --new 0240"}]),
 );
 
 export const adrCommand = Command.make("adr").pipe(

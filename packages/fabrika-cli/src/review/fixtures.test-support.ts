@@ -4,7 +4,7 @@
  * They live in one module because every verb in the group reads the same PR shape, and a per-test
  * literal is how two tests come to disagree about what the platform returns.
  */
-import {okOut} from "../fakes.test-support.ts";
+import {okOut, unconfiguredAtCommits} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 
 export const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
@@ -110,6 +110,10 @@ export const binding = (
 	// The content binding's own read, in the binding script because every verb that binds a head then
 	// digests that same range; a per-test copy is how two tests come to digest differently.
 	[RAW_AT(base, sha), okOut(RAW)],
+	// The class config at both ends of the bound range, absent, for the same reason: every verb that
+	// binds a head derives its classes over that range. A test about the config puts its own
+	// `configAtCommit` rows ahead of these.
+	...unconfiguredAtCommits,
 ];
 
 export const files = (...names: ReadonlyArray<string>): ExecResult =>
@@ -146,22 +150,35 @@ export const inventory = (...paths: ReadonlyArray<string>): ExecResult =>
 		}),
 	);
 
+/** One workflow run as a fixture declares it — `null` on a provenance field omits it entirely. */
+export interface RunAtHeadRow {
+	readonly path: string;
+	readonly name?: string;
+	readonly status?: string;
+	readonly event?: string | null;
+	readonly headSha?: string | null;
+}
+
 /**
  * The workflow runs recorded at one head, each naming the workflow it came from.
  *
- * A bare path is the common case: a completed run whose `name` is its own path, which is all gate
- * coverage reads. The object form is for a caller that needs the two fields coverage ignores — the
- * workflow's `name:`, and a run still in flight (`review ci`'s governance-floor discriminator).
+ * A bare path is the common case: a completed `pull_request` run at {@link HEAD} whose `name` is its
+ * own path — the shape that covers a gate. The object form is for a caller that needs a field the
+ * bare one fixes: the workflow's `name:`, a run still in flight (`review ci`'s governance-floor
+ * discriminator), or the provenance a coverage case turns — another event, another head, or none.
  */
-export const runsAtHead = (
-	...entries: ReadonlyArray<string | {path: string; name?: string; status?: string}>
-): ExecResult =>
+export const runsAtHead = (...entries: ReadonlyArray<string | RunAtHeadRow>): ExecResult =>
 	okOut(
 		JSON.stringify({
 			total_count: entries.length,
 			workflow_runs: entries.map((entry, index) => {
-				const row = typeof entry === "string" ? {path: entry} : entry;
+				const row: RunAtHeadRow = typeof entry === "string" ? {path: entry} : entry;
 				const status = row.status ?? "completed";
+				// A run defaults to the one provenance that establishes coverage — a `pull_request`
+				// event at {@link HEAD} — so a case for the absence of it has to say so, and `null`
+				// is how it does: the field leaves the payload rather than arriving empty.
+				const event = row.event === undefined ? "pull_request" : row.event;
+				const headSha = row.headSha === undefined ? HEAD : row.headSha;
 				return {
 					id: index + 1,
 					name: row.name ?? row.path,
@@ -171,6 +188,8 @@ export const runsAtHead = (
 					status,
 					conclusion: status === "completed" ? "success" : null,
 					completed_at: status === "completed" ? "2026-08-08T00:00:00Z" : null,
+					...(event === null ? {} : {event}),
+					...(headSha === null ? {} : {head_sha: headSha}),
 				};
 			}),
 		}),

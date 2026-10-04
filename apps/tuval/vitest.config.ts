@@ -1,4 +1,5 @@
-import {defineConfig} from "vitest/config";
+import {fileURLToPath} from "node:url";
+import {configDefaults, defineConfig} from "vitest/config";
 import {featuresPlugin} from "./src/page/dev-server.ts";
 
 // A `unit` project so `vitest --project unit` (the pre-push `unit-changed` leg over `apps/**`)
@@ -35,13 +36,34 @@ const maxWorkers = process.env.CI ? undefined : 2;
 // from the booted config (#8439) — so any test that reaches the renderer table has to be able to
 // resolve it. Served here at `featuresDefault`: a unit test renders the desk an operator who stated
 // no flags gets. A test wanting a flag at some other value passes `ChatWindowOptions` to
-// `chatWindow()` directly, which is what `src/shell/chat/subagent-list.unit.test.tsx` does.
+// `chatWindow()` directly, which is what `@kampus/tuval-ui`'s `subagent-list.unit.test.tsx` does.
 // Declared per project rather than at the root: Vitest 4 builds each project's own Vite server and
 // a root `plugins` entry does not reach one.
 const plugins = [featuresPlugin()];
 
+// Anchored to the checkout because `**` never enters a dot directory, and lanes run under
+// `.claude/worktrees/`.
+const repo = fileURLToPath(new URL("../../", import.meta.url));
+
 export default defineConfig({
 	test: {
+		// CI runs `unit` with `vitest --changed <base>` on a PR (#10074), which follows imports only.
+		// The boundary and focus-ring tests walk this app's `src/` and read the SDK's and
+		// `@kampus/tuval-ui`'s sources and manifests as text. The boot and program tests load
+		// `.tuval/tuval.config.ts` through a spawned bin or a runtime `import()`, and the SDK
+		// boundary tests walk and `tsc`-compile `test-consumer/`. A change to one of these runs the
+		// whole suite. `.tuval/` is held to sources because a desk writes untracked state beside
+		// them. Vitest reads this off the root config, once per run.
+		forceRerunTriggers: [
+			...configDefaults.forceRerunTriggers,
+			`${repo}apps/tuval/package.json`,
+			`${repo}apps/tuval/.tuval/**/*.{ts,tsx}`,
+			`${repo}apps/tuval/src/**`,
+			`${repo}apps/tuval/test-consumer/**`,
+			`${repo}packages/tuval/package.json`,
+			`${repo}packages/tuval/src/**`,
+			`${repo}packages/tuval-ui/src/**`,
+		],
 		projects: [
 			{
 				plugins,

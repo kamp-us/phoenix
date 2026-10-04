@@ -7,11 +7,7 @@
  */
 
 import {describe, expect, it, vi} from "vitest";
-import {
-	CF_API_MAX_CONCURRENT,
-	CF_API_MIN_SPACING_MS,
-	createCfApiThrottle,
-} from "./_cf-api-throttle.ts";
+import {createCfApiThrottle} from "./_cf-api-throttle.ts";
 
 // A deferred promise + its resolver, to hold `op` open and observe in-flight concurrency.
 const deferred = <T>() => {
@@ -71,54 +67,32 @@ describe("createCfApiThrottle", () => {
 		expect(peak).toBe(2);
 	});
 
-	it("admits a queued op only after a slot frees", async () => {
-		const throttle = createCfApiThrottle({maxConcurrent: 1, minSpacingMs: 0});
-		const first = deferred<void>();
-		let secondStarted = false;
-		const r1 = throttle.run(async () => {
-			await first.promise;
-		});
-		const r2 = throttle.run(async () => {
-			secondStarted = true;
-		});
-		await flush();
-		expect(secondStarted).toBe(false);
-		first.resolve();
-		await Promise.all([r1, r2]);
-		expect(secondStarted).toBe(true);
-	});
-
 	it("spaces successive starts by >= minSpacingMs of jittered wait", async () => {
-		const waits: number[] = [];
+		// The fake clock only moves inside `sleep`, and a call sleeps exactly until its reserved
+		// start, so the clock after each sleep IS that call's start.
+		const starts: number[] = [];
 		let clock = 0;
-		const sleep = vi.fn(async (ms: number) => {
-			waits.push(ms);
-			clock += ms;
-		});
 		const throttle = createCfApiThrottle({
 			maxConcurrent: 10, // cap out of the way — isolate the pacing knob
 			minSpacingMs: 100,
-			sleep,
+			sleep: async (ms: number) => {
+				clock += ms;
+				starts.push(clock);
+			},
 			now: () => clock,
-			random: () => 0.999999, // maximize jitter → widest wait, still < 2·spacing
+			random: () => 0.999999, // maximize jitter → widest gap, still < 2·spacing
 		});
 		await Promise.all([
 			throttle.run(async () => {}),
 			throttle.run(async () => {}),
 			throttle.run(async () => {}),
 		]);
-		// First call starts immediately (only jitter); the next two wait at least one spacing.
-		const paced = waits.filter((w) => w > 0);
-		expect(paced.length).toBeGreaterThanOrEqual(2);
-		for (const w of paced) {
-			expect(w).toBeGreaterThan(0);
-			expect(w).toBeLessThan(2 * 100); // start floor + jitter, both bounded by spacing
+		expect(starts).toHaveLength(3);
+		for (let i = 1; i < starts.length; i++) {
+			const gap = starts[i]! - starts[i - 1]!;
+			expect(gap).toBeGreaterThanOrEqual(100);
+			expect(gap).toBeLessThan(2 * 100); // start floor + jitter, both bounded by spacing
 		}
-	});
-
-	it("exports sane default knobs", () => {
-		expect(CF_API_MAX_CONCURRENT).toBeGreaterThan(0);
-		expect(CF_API_MIN_SPACING_MS).toBeGreaterThanOrEqual(0);
 	});
 });
 

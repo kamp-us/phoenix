@@ -20,24 +20,20 @@
  * Neither has a REST route at all. The third is `pullsClosing` in `../io/pulls.ts`.
  */
 
-import {writeFile} from "node:fs/promises";
 import {Effect} from "effect";
-import {execCapture} from "../io/exec.ts";
 import {
 	type Api,
-	ambientToken,
 	attemptOf,
 	authed,
 	authedExistence,
 	pagedEnvelope as envelopeOverHttp,
-	existenceOf,
+	githubMessage,
 	graphqlRead,
+	isPlanGated,
 	pagedWithLinkProof as linkProofOverHttp,
-	onTransport,
 	PAGE_CAP,
 	type Rest,
 	refusalText,
-	restBytes,
 	restCall,
 	restRead,
 	restWrite,
@@ -118,27 +114,6 @@ const pagedForExistence = (token: string, path: string): Api<Existence<ReadonlyA
 			`GitHub declared another page past ${PAGE_CAP} — the read is truncated`,
 		);
 	});
-
-/**
- * The repository's default branch, on the ambient credential.
- *
- * A second reading of `build/github.ts`'s `defaultBranch` only because that one publishes `env` and
- * `HttpClient` up into its callers; `../ship/roster.ts` is reached from a hundred `Shell<…>` sites
- * that thread neither. The two fold into one once a single convention wins.
- */
-export const defaultBranch = (repo: string): Shell<Attempt<string>> =>
-	authed((token) =>
-		Effect.map(restRead(token, "GET", `repos/${repo}`), (outcome) => {
-			if (outcome._tag === "Unreachable") return fail(outcome.reason);
-			if (outcome.status < 200 || outcome.status >= 300) {
-				return fail(refusalText(outcome));
-			}
-			const name = isRecord(outcome.body) ? outcome.body.default_branch : undefined;
-			return typeof name === "string" && name.trim() !== ""
-				? ok(name.trim())
-				: fail("GitHub answered 200 but named no default branch");
-		}),
-	);
 
 /** One team's members, paged. A 404 is proven — the team does not exist in this org. */
 export const listTeamMembers = (
@@ -344,6 +319,51 @@ export const latestPerContext = (
 	return [...byName.values()];
 };
 
+/** One active workflow: the `name:` its runs carry, and the `path` the platform addresses it by. */
+export interface ActiveWorkflow {
+	readonly name: string;
+	readonly path: string;
+}
+
+/**
+ * The repository's active workflows beside the envelope's completeness proof.
+ *
+ * `declared` and `received` count every workflow in any state, so a caller concluding that a
+ * workflow is absent can refuse a read that stopped short of the declared total. `malformed` counts
+ * the entries that are not a record or carry no string `name` or `state`: such an entry may be the
+ * workflow the caller looks for, so absence read beside a non-zero count is unproven.
+ */
+export interface WorkflowInventory {
+	readonly declared: number;
+	readonly received: number;
+	readonly malformed: number;
+	readonly active: ReadonlyArray<ActiveWorkflow>;
+}
+
+const isReadableWorkflow = (value: unknown): value is Record<string, unknown> =>
+	isRecord(value) && typeof value.name === "string" && typeof value.state === "string";
+
+export const listWorkflowInventory = (repo: string): Shell<Attempt<WorkflowInventory>> =>
+	authed((token) =>
+		Effect.map(
+			envelopeOverHttp(token, `repos/${repo}/actions/workflows`, "workflows"),
+			(enveloped) => {
+				if (enveloped._tag === "Failure") return enveloped;
+				const active = enveloped.value.entries.flatMap((value) =>
+					isRecord(value) && value.state === "active"
+						? [{name: str(value.name), path: str(value.path)}]
+						: [],
+				);
+				return ok({
+					declared: enveloped.value.declared,
+					received: enveloped.value.entries.length,
+					malformed: enveloped.value.entries.filter((value) => !isReadableWorkflow(value)).length,
+					active,
+				});
+			},
+		),
+	);
+
 /**
  * The repository's active workflow inventory, each entry as the platform addresses it: its `path`.
  *
@@ -352,17 +372,8 @@ export const latestPerContext = (
  * apart is what `../review/gate-coverage.ts` needs, and the path is the only field that says it.
  */
 export const listWorkflowPaths = (repo: string): Shell<Attempt<ReadonlyArray<string>>> =>
-	authed((token) =>
-		Effect.map(
-			envelopeOverHttp(token, `repos/${repo}/actions/workflows`, "workflows"),
-			(enveloped) => {
-				if (enveloped._tag === "Failure") return enveloped;
-				const active = enveloped.value.entries.filter(
-					(value) => isRecord(value) && value.state === "active",
-				);
-				return ok(active.map((value) => str((value as Record<string, unknown>).path)));
-			},
-		),
+	Effect.map(listWorkflowInventory(repo), (read) =>
+		read._tag === "Failure" ? read : ok(read.value.active.map((workflow) => workflow.path)),
 	);
 
 /**
@@ -374,24 +385,6 @@ export const listWorkflowPaths = (repo: string): Shell<Attempt<ReadonlyArray<str
 export const listWorkflows = (repo: string): Shell<Attempt<number>> =>
 	Effect.map(listWorkflowPaths(repo), (read) =>
 		read._tag === "Failure" ? read : ok(read.value.length),
-	);
-
-/**
- * Whether one workflow file exists in the repository.
- *
- * The `absent` arm of `ship evidence` rests on this being a **successful** read that found nothing —
- * the foreign-repo degradation is a fact about the repo, and a failed read is not.
- */
-export const workflowExists = (repo: string, file: string): Shell<Existence<string>> =>
-	authedExistence((token) =>
-		Effect.map(
-			restRead(token, "GET", `repos/${repo}/actions/workflows/${file}`),
-			(outcome): Existence<string> =>
-				existenceOf(outcome, (body) => {
-					const path = isRecord(body) ? str(body.path).trim() : "";
-					return path === "" ? fail("GitHub answered 200 but named no workflow") : ok(path);
-				}),
-		),
 	);
 
 /** Total workflow runs recorded at one head, **pre-dedupe** — the `no-runs` second discriminator. */
@@ -438,6 +431,15 @@ export interface WorkflowRun {
 	readonly completedAt: string | null;
 	/** The workflow this run came from, as {@link listWorkflowPaths} addresses it. */
 	readonly path: string;
+	/**
+	 * The event that created the run, and the head it was created for.
+	 *
+	 * Both are gate coverage's (`../review/gate-coverage.ts`) and neither is optional: a run whose
+	 * provenance the platform did not spell out cannot establish which bytes it opened, and the
+	 * lenient reading of that is the false green this pair exists to refuse.
+	 */
+	readonly event: string;
+	readonly headSha: string;
 	/** The workflow's own id — what makes two runs at one head runs of the *same* workflow. */
 	readonly workflowId: number;
 	/**
@@ -449,7 +451,17 @@ export interface WorkflowRun {
 	readonly checkSuiteId: number | null;
 }
 
-/** The runs at exactly this head — `head_sha` match only, never a name or a date heuristic. */
+/**
+ * The runs at exactly this head — `head_sha` match only, never a name or a date heuristic.
+ *
+ * **`head_sha` is an exact string filter on this endpoint, not a commit-ish the API resolves**, so
+ * an abbreviated `sha` returns `total_count: 0` where the full object name returns every run. The
+ * check-run endpoint resolves abbreviations, which is how one caller could read a complete check
+ * set and an empty run set at one commit and conclude no gate had run. Callers pass the resolved
+ * full object name.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8362
+ */
 export const listRunsAtHead = (
 	repo: string,
 	sha: string,
@@ -468,6 +480,12 @@ export const listRunsAtHead = (
 					) {
 						return fail("GitHub answered 200 but one entry is not a workflow run");
 					}
+					// Gate coverage is decided from these two, so an entry that names neither is unreadable
+					// rather than lenient: a run counted without them is a gate nobody can say inspected
+					// the head.
+					if (typeof value.event !== "string" || typeof value.head_sha !== "string") {
+						return fail("GitHub answered 200 but one workflow run names no event or head commit");
+					}
 					runs.push({
 						id: value.id,
 						name: str(value.name),
@@ -475,6 +493,8 @@ export const listRunsAtHead = (
 						conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
 						completedAt: typeof value.completed_at === "string" ? value.completed_at : null,
 						path: str(value.path),
+						event: value.event,
+						headSha: value.head_sha,
 						workflowId: value.workflow_id,
 						checkSuiteId: typeof value.check_suite_id === "number" ? value.check_suite_id : null,
 					});
@@ -483,88 +503,6 @@ export const listRunsAtHead = (
 			},
 		),
 	);
-
-export interface ArtifactRecord {
-	readonly id: number;
-	readonly name: string;
-	readonly expired: boolean;
-}
-
-export const listRunArtifacts = (
-	repo: string,
-	runId: number,
-): Shell<Attempt<{declared: number; artifacts: ReadonlyArray<ArtifactRecord>}>> =>
-	authed((token) =>
-		Effect.map(
-			envelopeOverHttp(token, `repos/${repo}/actions/runs/${runId}/artifacts`, "artifacts"),
-			(enveloped) => {
-				if (enveloped._tag === "Failure") return enveloped;
-				const artifacts: ArtifactRecord[] = [];
-				for (const value of enveloped.value.entries) {
-					if (!isRecord(value) || typeof value.id !== "number") {
-						return fail("GitHub answered 200 but one entry is not an artifact");
-					}
-					artifacts.push({id: value.id, name: str(value.name), expired: value.expired === true});
-				}
-				return ok({declared: enveloped.value.declared, artifacts});
-			},
-		),
-	);
-
-/** The zip's first two bytes. A 503 body saved with a `.zip` name does not carry them. */
-const isZip = (bytes: Uint8Array): boolean => bytes[0] === 0x50 && bytes[1] === 0x4b;
-
-/**
- * Fetch one artifact into a per-run directory, prove it is a zip, and serve the manifest.
- *
- * The magic-number check makes one failure structural: a 503 body saved with a `.zip` name is not a
- * bundle, and the read that reported "no run-evidence bundle" for a bundle present the whole time is
- * exactly that byte sequence parsed as one. The directory is `mktemp -d` per run — a fixed or
- * PID-derived path lets two racing shippers read each other's bundle.
- *
- * The zip endpoint answers `302` to a signed storage URL, and the redirect is followed by the
- * runtime rather than by this leg: Node's global `fetch` is undici, whose redirect step deletes
- * `authorization` when the location's origin differs from the current one
- * (`undici/lib/web/fetch/index.js`, the fetch spec's CORS non-wildcard header rule). That is the
- * behaviour this endpoint needs — the storage URL carries its own signature in the query string and
- * rejects a bearer credential it did not issue — so the leg neither disables redirects nor re-sends
- * the token.
- */
-export const fetchManifest = (
-	repo: string,
-	artifactId: number,
-	directory: string,
-): Shell<Attempt<string>> =>
-	Effect.gen(function* () {
-		const zip = `${directory}/run-evidence.zip`;
-		const token = yield* ambientToken;
-		if (token._tag === "Failure") return token;
-		const download = yield* onTransport(
-			restBytes(token.value, `repos/${repo}/actions/artifacts/${artifactId}/zip`),
-		);
-		if (download._tag === "Unreachable") return fail(download.reason);
-		if (download.status < 200 || download.status >= 300) {
-			return fail(`GitHub answered HTTP ${download.status}`);
-		}
-		if (!isZip(download.value)) {
-			return fail("the fetched artifact is not a zip — a 503 body saved as .zip is not a bundle");
-		}
-		const written = yield* Effect.tryPromise({
-			try: () => writeFile(zip, download.value),
-			catch: (cause) => `the artifact could not be written: ${String(cause)}`,
-		}).pipe(Effect.match({onFailure: fail, onSuccess: () => ok(undefined)}));
-		if (written._tag === "Failure") return written;
-		const manifest = yield* execCapture("sh", ["-c", `unzip -p '${zip}' manifest.json`]);
-		return manifest.ok ? ok(manifest.stdout) : fail(manifest.reason);
-	});
-
-/** A per-run scratch directory, so two racing shippers never read each other's bundle. */
-export const makeScratchDirectory: Shell<Attempt<string>> = Effect.gen(function* () {
-	const r = yield* execCapture("mktemp", ["-d"]);
-	if (!r.ok) return fail(r.reason);
-	const path = r.stdout.trim();
-	return path === "" ? fail("`mktemp -d` exited 0 but named no directory") : ok(path);
-});
 
 export interface TimelineEvent {
 	readonly event: string;
@@ -661,10 +599,21 @@ export const commitDate = (repo: string, sha: string): Shell<Attempt<string>> =>
  *
  * Read off the **branch's** active rules, never this PR's queue history: a per-PR proxy exempts
  * exactly the parked intent `ship disarm` exists to clear.
+ *
+ * A plan-gated 403 is `false`: a plan with no rulesets has no merge queue. Any other 403 stays a
+ * failure, because a token that may not read the rules has not shown there is no queue.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10155#issuecomment-5886566592
  */
 export const isQueueGoverned = (repo: string, branch: string): Shell<Attempt<boolean>> =>
 	authed((token) =>
 		Effect.map(restRead(token, "GET", `repos/${repo}/rules/branches/${branch}`), (outcome) => {
+			if (
+				outcome._tag === "Response" &&
+				isPlanGated({status: outcome.status, message: githubMessage(outcome)})
+			) {
+				return ok(false);
+			}
 			const body = bodyOf(outcome);
 			if (body._tag === "Failure") return body;
 			if (!Array.isArray(body.value)) {

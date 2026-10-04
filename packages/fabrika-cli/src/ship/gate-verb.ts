@@ -21,14 +21,23 @@
  *
  * The one caller-asserted input is `--cp`, and it reaches **every** resolution in one run — v1
  * passed it to the gate and not the native fold, and a discharged FAIL stayed in force forever.
- * The fold living inside this verb is what makes that seam unrepresentable.
+ * The fold living inside this verb is what makes that seam unrepresentable. Without `--cp` a
+ * head-bound advisory still never resolves a namespace, but it is named on stderr: the row then
+ * describes whichever older comment the other carriers left, and read alone it sends a driver to
+ * re-review a head that already holds a current verdict. That is a notice, not a seventh state.
  *
  * `governance` is the one namespace the caller cannot decline: see {@link requiredWithFloor}.
  *
- * `routed` is the fifth state and the newest. It is not a verdict and not a weaker pass: it is a
+ * `routed` is the fifth state. It is not a verdict and not a weaker pass: it is a
  * gate recording that this PR's diff holds nothing its rubric is about, which `review-ui`
  * alone needed because its emit path cannot produce a verdict over zero rendered surfaces. See
- * {@link ROUTABLE} for why exactly one namespace may resolve that way.
+ * {@link ROUTABLE} for why exactly one namespace may resolve that way. A route a repo's
+ * `reviewUi.whenNoPreview` rules admitted carries its basis — `hand-check` or `skip` — onto the
+ * row and its stderr line ({@link routedLine}), so nobody reads it as a render.
+ *
+ * `unopened` is the sixth. A `review-ui` verdict is the one whose proof lives outside the comment —
+ * hosted captures a human must be able to open — so it counts only after its evidence is re-read
+ * and opens (`../review-ui/standing-evidence.ts`). One that does not open blocks like `absent`.
  *
  * **The enumerated file list is the floor's file set, and `changed_files` no longer refuses.** This
  * verb used to stop at `13` whenever the list came up short of that count, and the count is the
@@ -47,18 +56,20 @@
  * scope nobody saw.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
+ * @ruling https://github.com/kamp-us/phoenix/issues/6796#issuecomment-5519868349
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {governedRootsOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {listPullFiles, permissionFor} from "../io/pulls.ts";
 import {advisoryPolarity, readAdvisory} from "../review/advisory.ts";
+import {classConfigOfPull} from "../review/class-config.ts";
 import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
 import {headContentFor} from "../review/head-content.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
+import {standingEvidence} from "../review-ui/standing-evidence.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {read as readRoute} from "../wire/routed-elsewhere.ts";
+import {type RouteBasis, read as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {listReviews, type ReviewRecord} from "./github.ts";
@@ -77,7 +88,12 @@ const VERB = "ship gate";
 /** The permission levels that count as an authorized verdict author. */
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
 
-export type NamespaceState = "pass" | "fail" | "absent" | "stale" | "routed";
+/**
+ * `unopened` is a `review-ui` verdict that binds this head but whose evidence a reader cannot open:
+ * it does not count, so it blocks as `absent` does, and it names a different remedy — re-render and
+ * re-post.
+ */
+export type NamespaceState = "pass" | "fail" | "absent" | "stale" | "routed" | "unopened";
 export type Carrier = "marker" | "advisory" | "review-fold" | "routed-elsewhere" | "-";
 
 /**
@@ -93,12 +109,49 @@ export type Carrier = "marker" | "advisory" | "review-fold" | "routed-elsewhere"
  */
 export const ROUTABLE = "review-ui";
 
+/**
+ * The stderr line a `routed` row prints. A route flagged by the repo's `reviewUi.whenNoPreview`
+ * rules says so in its own words, because "nothing here renders", "an owner hand-checked it" and
+ * "the repo's config skipped it" are three different facts behind one state.
+ */
+export const routedLine = (name: string, sha: string, basis: RouteBasis | undefined): string => {
+	switch (basis) {
+		case "hand-check":
+			return `${VERB}: ${name}: hand-checked, not rendered — a routed-elsewhere record at ${sha} rests on an owner's hand-check under reviewUi.whenNoPreview, and the namespace resolves routed.`;
+		case "skip":
+			return `${VERB}: ${name}: skipped by config — reviewUi.whenNoPreview skips the rendered review for this PR's ui files, and a routed-elsewhere record at ${sha} says so; the namespace resolves routed, and nothing was rendered.`;
+		case undefined:
+			return `${VERB}: ${name}: no verdict was formed — a routed-elsewhere record at ${sha} states this PR owes none, and the namespace resolves routed rather than absent.`;
+	}
+};
+
 export interface NamespaceVerdict {
 	readonly name: string;
 	readonly state: NamespaceState;
 	readonly carrier: Carrier;
 	readonly commentId: number | null;
+	/**
+	 * On a `routed` row, what the route stood on when it was not the diff: an owner's hand-check or
+	 * the repo's skip rule. Absent otherwise, so a person reading the row can tell those from a
+	 * render and from "nothing here renders".
+	 */
+	readonly basis?: RouteBasis;
 }
+
+/**
+ * Whether a resolved verdict stands on a `review-ui` evidence gallery that must still open before it
+ * counts: a formed verdict of that namespace, read off a comment. A route formed no verdict and
+ * carries no gallery, and a stale or absent row counts for nothing already.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9725#issuecomment-5800916149
+ */
+const evidenceBearing = (
+	verdict: NamespaceVerdict,
+): verdict is NamespaceVerdict & {readonly commentId: number} =>
+	verdict.name === ROUTABLE &&
+	(verdict.state === "pass" || verdict.state === "fail") &&
+	(verdict.carrier === "marker" || verdict.carrier === "advisory") &&
+	verdict.commentId !== null;
 
 export interface GateOptions {
 	readonly pr: number;
@@ -128,9 +181,14 @@ interface Candidate {
 	readonly carrier: Carrier;
 	readonly stamp: string;
 	readonly commentId: number;
+	readonly basis?: RouteBasis;
 }
 
-const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
+/**
+ * The claim one comment makes, whatever `--cp` says. Whether an advisory may resolve a namespace is
+ * `runGate`'s call, because an advisory it withholds is still reported on stderr.
+ */
+const candidateOf = (comment: CommentRecord): Candidate | null => {
 	const marker = readMarker(comment.body);
 	if (marker._tag === "Found") {
 		return {
@@ -157,9 +215,9 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 					carrier: "routed-elsewhere",
 					stamp: comment.updatedAt,
 					commentId: comment.id,
+					...(route.value.basis === undefined ? {} : {basis: route.value.basis}),
 				};
 	}
-	if (!cp) return null;
 	const advisory = readAdvisory(comment.body);
 	return advisory === null
 		? null
@@ -262,13 +320,6 @@ export const runGate = (
 		const bound = inspectedSha(VERB, options.sha);
 		if (typeof bound !== "string") return bound;
 
-		const governed = yield* governedRootsOr(
-			VERB,
-			options.cwd,
-			"the floor cannot be raised and the conjunction is UNKNOWN, never satisfied.",
-		);
-		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
-
 		const requested = [...new Set(options.require)];
 		if (requested.length === 0) {
 			return refuse(
@@ -338,7 +389,22 @@ export const runGate = (
 				diagnostics,
 			);
 		}
-		const {required, floored} = requiredWithFloor(requested, changed, governed.roots);
+		// The governed roots are the PR's own, at the head its file list is read at and that head's
+		// merge base — never the checkout this run stands in.
+		const classConfig = yield* classConfigOfPull(
+			VERB,
+			"the floor cannot be raised and the conjunction is UNKNOWN, never satisfied.",
+			repo,
+			pull,
+		);
+		if (classConfig._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, classConfig.message, diagnostics);
+		}
+		const {required, floored} = requiredWithFloor(
+			requested,
+			changed,
+			classConfig.config.governedRoots,
+		);
 		if (floored.length > 0) {
 			diagnostics.push(
 				`${VERB}: #${pr}'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.`,
@@ -385,14 +451,27 @@ export const runGate = (
 		}
 
 		// The ACL is resolved once per distinct author, and a lookup FAILURE is fail-closed: the
-		// namespace is UNKNOWN, never `absent`.
+		// namespace is UNKNOWN, never `absent`. The exception is an advisory withheld for want of
+		// `--cp`: it decides nothing, is kept only to be named on stderr, and its lookup failure is a
+		// notice rather than `11`.
 		const authorized = new Map<string, boolean>();
 		const candidates: Candidate[] = [];
+		const withheld: Candidate[] = [];
 		for (const comment of commented.value) {
-			const claim = candidateOf(comment, cp);
+			const claim = candidateOf(comment);
 			if (claim === null) continue;
+			const withholding = claim.carrier === "advisory" && !cp;
+			if (withholding && !(required.includes(claim.namespace) && prefixMatch(claim.sha, bound))) {
+				continue;
+			}
 			if (!authorized.has(comment.author)) {
 				const permission = yield* permissionFor(repo, comment.author);
+				if (permission._tag === "Unknown" && withholding) {
+					diagnostics.push(
+						`${VERB}: ${claim.namespace}: cannot read the ACL for ${comment.author} (${permission.reason}), so the §CP advisory in comment ${comment.id} is not reported.`,
+					);
+					continue;
+				}
 				if (permission._tag === "Unknown") {
 					return refuse(
 						PRECONDITION_UNKNOWN,
@@ -406,6 +485,10 @@ export const runGate = (
 				);
 			}
 			if (authorized.get(comment.author) !== true) continue;
+			if (withholding) {
+				withheld.push(claim);
+				continue;
+			}
 			if (claim.carrier === "advisory" && claim.polarity === "FAIL") {
 				diagnostics.push(
 					`${VERB}: #${pr} carries a §CP advisory with a [FAIL] row — an invalid emission; treated as fail, report it.`,
@@ -451,9 +534,7 @@ export const runGate = (
 				);
 			}
 			if (winner.polarity === "ROUTED") {
-				diagnostics.push(
-					`${VERB}: ${name}: no verdict was formed — a routed-elsewhere record at ${winner.sha} states this PR owes none, and the namespace resolves routed rather than absent.`,
-				);
+				diagnostics.push(routedLine(name, winner.sha, winner.basis));
 			}
 			return {
 				name,
@@ -461,8 +542,32 @@ export const runGate = (
 					winner.polarity === "ROUTED" ? "routed" : winner.polarity === "PASS" ? "pass" : "fail",
 				carrier: winner.carrier,
 				commentId,
+				...(winner.polarity === "ROUTED" && winner.basis !== undefined
+					? {basis: winner.basis}
+					: {}),
 			};
 		});
+
+		// A review-ui verdict counts only while a reader can open its evidence, because `review-ui post`
+		// never withdraws a verdict whose evidence stopped opening after it posted.
+		for (const [index, verdict] of verdicts.entries()) {
+			if (!evidenceBearing(verdict)) continue;
+			const body = commented.value.find((comment) => comment.id === verdict.commentId)?.body ?? "";
+			const standing = yield* standingEvidence(repo, {id: verdict.commentId, body});
+			if (standing._tag === "Unreadable") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					unreadable(`the evidence of the ${verdict.name} verdict`, standing.reason),
+					diagnostics,
+				);
+			}
+			if (standing._tag === "DoesNotOpen") {
+				diagnostics.push(
+					`${VERB}: ${verdict.name}: the verdict in comment ${verdict.commentId} does not count — its evidence does not open (${standing.reasons.join("; ")}).`,
+				);
+				verdicts[index] = {...verdict, state: "unopened"};
+			}
+		}
 
 		// The coverage assertion runs BEFORE the answer is believed, not after it is printed.
 		const covered = new Set(verdicts.map((verdict) => verdict.name));
@@ -471,6 +576,17 @@ export const runGate = (
 				PRECONDITION_UNKNOWN,
 				`${VERB}: resolved ${covered.size} of ${required.length} required namespaces — refusing to answer over narrowed coverage.`,
 				diagnostics,
+			);
+		}
+
+		for (const verdict of verdicts) {
+			const skipped = inForce(
+				withheld.filter((claim) => claim.namespace === verdict.name),
+				bound,
+			);
+			if (skipped === null) continue;
+			diagnostics.push(
+				`${VERB}: ${verdict.name}: the §CP advisory verdict in comment ${skipped.commentId} binds this head, but without --cp no advisory resolves a namespace — this row reads ${verdict.state} off the other carriers, not that verdict; passing --cp, once ship cp-approval discharges, is what resolves it.`,
 			);
 		}
 
@@ -494,7 +610,7 @@ export const runGate = (
 						`gate\t${outcome}\t${bound}`,
 						...verdicts.map(
 							(verdict) =>
-								`ns\t${verdict.name}\t${verdict.state}\t${verdict.state === "absent" ? NULL_TOKEN : verdict.carrier}`,
+								`ns\t${verdict.name}\t${verdict.state}\t${verdict.state === "absent" ? NULL_TOKEN : verdict.carrier}${verdict.basis === undefined ? "" : `\t${verdict.basis}`}`,
 						),
 					].join("\n"),
 					diagnostics,

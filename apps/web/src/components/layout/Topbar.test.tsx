@@ -2,9 +2,10 @@ import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
-import {describe, expect, it, vi} from "vitest";
+import {afterEach, describe, expect, it} from "vitest";
 import {promotionBarFor, VOUCH_PROMOTION_KARMA_BAR} from "../../../worker/features/kunye/standing";
 import {trCatalog} from "../../i18n";
+import {ThemeProvider} from "../../lib/theme";
 import {VOUCH_NEEDED_KEYS} from "../profile/CaylakStatusBlock";
 import {caylakMeter} from "./caylakMeter";
 import {Topbar} from "./Topbar";
@@ -17,13 +18,15 @@ const NAV = [
 function renderTopbar() {
 	return render(
 		<MemoryRouter>
-			<Topbar
-				nav={NAV}
-				divanTo="/divan"
-				karma={42}
-				reserveSignedInSlots
-				user={{name: "Elif", username: "elif"}}
-			/>
+			<ThemeProvider>
+				<Topbar
+					nav={NAV}
+					divanTo="/divan"
+					karma={42}
+					reserveSignedInSlots
+					user={{name: "Elif", username: "elif"}}
+				/>
+			</ThemeProvider>
 		</MemoryRouter>,
 	);
 }
@@ -40,7 +43,8 @@ describe("Topbar nav-IA zone grammar (#2611)", () => {
 		expect(statusSignal.classList.contains("kp-topbar__zone--status-signal")).toBe(true);
 		expect(destination.contains(screen.getByRole("link", {name: "sözlük"}))).toBe(true);
 		expect(destination.contains(screen.getByRole("link", {name: "pano"}))).toBe(true);
-		expect(utility.contains(screen.getByRole("textbox", {name: "Ara"}))).toBe(true);
+		// The search affordance is the ⌘K palette's trigger now (ADR 0186), not a second field.
+		expect(utility.contains(screen.getByRole("button", {name: "Ara"}))).toBe(true);
 		expect(statusSignal.contains(screen.getByTestId("topbar-divan-link"))).toBe(true);
 		expect(statusSignal.contains(screen.getByTestId("topbar-karma"))).toBe(true);
 	});
@@ -59,13 +63,15 @@ describe("Topbar nav-IA zone grammar (#2611)", () => {
 		// destination zone ties the CSS-source guard to a real DOM occupant.
 		render(
 			<MemoryRouter initialEntries={["/pano"]}>
-				<Topbar
-					nav={NAV}
-					divanTo="/divan"
-					karma={42}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-				/>
+				<ThemeProvider>
+					<Topbar
+						nav={NAV}
+						divanTo="/divan"
+						karma={42}
+						reserveSignedInSlots
+						user={{name: "Elif", username: "elif"}}
+					/>
+				</ThemeProvider>
 			</MemoryRouter>,
 		);
 		const activePano = screen.getByRole("link", {name: "pano"});
@@ -110,12 +116,6 @@ describe("Topbar accent-scarcity containment law (#2614)", () => {
 		expect(accentFills[0]?.selector).not.toMatch(/kp-topbar__zone--/);
 	});
 
-	it("no taxonomy zone (utility / status-signal / destination) paints an accent fill", () => {
-		for (const r of rules.filter((r) => ACCENT_FILL.test(r.body))) {
-			expect(r.selector).not.toMatch(/kp-topbar__zone--(utility|status-signal|destination)/);
-		}
-	});
-
 	it("the base active pill is neutralized under the zone grammar (a zero-accent reclassed topbar)", () => {
 		// Both zone-scoped active-link overrides reset the fill to a neutral surface token, so
 		// the destination/status active link paints no accent. Deleting an override would leak
@@ -144,32 +144,27 @@ describe("Topbar accent-scarcity containment law (#2614)", () => {
 		expect(temaHover?.body).not.toMatch(/var\(--accent(-11)?\)/);
 	});
 
-	// #5660. The search has exactly one focus owner, and it is the shared ring global.css paints on
-	// [data-part="control"]. Two things make that true and both are asserted: the stylesheet
-	// declares no focus treatment of its own (a second one is the mismatched double-paint), and the
-	// control is the element drawing the visible border (otherwise the ring outlines a box the
-	// reader cannot see, which is what the hand-rolled group did).
+	// #5660. The search has exactly one focus owner, and it is the shared ring global.css paints
+	// on the control. Two things make that true and both are asserted: the stylesheet declares no
+	// focus treatment of its own (a second one is the mismatched double-paint), and the element it
+	// paints on is the one drawing the visible border — the palette trigger, which since ADR 0186
+	// carries the frame the field used to (otherwise the ring outlines a box the reader cannot
+	// see, which is what the hand-rolled group did).
 	it("the search paints no focus treatment of its own, and the ring's box is the bordered one", () => {
 		const focusRules = rules.filter(
 			(r) => /kp-topbar__search/.test(r.selector) && /:focus/.test(r.selector),
 		);
-		// Any focus rule here may only NEUTRALIZE — hold the resting border against Manti's accent
-		// recolour. One that paints an outline or an accent is the second treatment coming back.
 		for (const r of focusRules) {
 			expect(r.body).not.toMatch(/outline/);
 			expect(r.body).not.toMatch(/var\(--accent/);
 		}
-		expect(focusRules.some((r) => /border-color:\s*var\(--border\)/.test(r.body))).toBe(true);
 
-		const control = rules.find(
-			(r) =>
-				/kp-topbar__search-field/.test(r.selector) &&
-				/\[data-part="control"\]/.test(r.selector) &&
-				!/:focus/.test(r.selector),
+		const trigger = rules.find(
+			(r) => r.selector === '.kp-topbar__search-trigger[data-scope="button"][data-part="root"]',
 		);
-		expect(control).toBeDefined();
-		expect(control?.body).toMatch(/border:\s*1px solid var\(--border\)/);
-		expect(control?.body).toMatch(/border-radius:\s*var\(--r-sm\)/);
+		expect(trigger).toBeDefined();
+		expect(trigger?.body).toMatch(/border:\s*1px solid var\(--border\)/);
+		expect(trigger?.body).toMatch(/border-radius:\s*var\(--r-sm\)/);
 	});
 
 	it("kompakt üst çubuk butonu Manti'nin ortak min-height değerine esnemez", () => {
@@ -184,14 +179,16 @@ describe("Topbar status/signal zone (#2613)", () => {
 	function renderStatus(props: Partial<Parameters<typeof Topbar>[0]>) {
 		return render(
 			<MemoryRouter>
-				<Topbar
-					nav={NAV}
-					divanTo="/divan"
-					karma={42}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-					{...props}
-				/>
+				<ThemeProvider>
+					<Topbar
+						nav={NAV}
+						divanTo="/divan"
+						karma={42}
+						reserveSignedInSlots
+						user={{name: "Elif", username: "elif"}}
+						{...props}
+					/>
+				</ThemeProvider>
 			</MemoryRouter>,
 		);
 	}
@@ -259,116 +256,49 @@ describe("Topbar status/signal zone (#2613)", () => {
 	});
 });
 
-describe("Topbar tema toggle → theme picker (#2612)", () => {
-	it("no tema toggle renders, in either auth state", () => {
-		const {rerender} = render(
+// ADR 0437: signed in, the one theme control rides the user menu; signed out, there is none
+// and the page follows the OS.
+function expectNoThemeControl(container: HTMLElement) {
+	expect(screen.queryByTestId("topbar-theme-picker")).toBeNull();
+	expect(screen.queryByTestId("topbar-theme-row")).toBeNull();
+	expect(screen.queryByRole("radiogroup")).toBeNull();
+	expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
+	expect(container.querySelector(".kp-theme-picker")).toBeNull();
+}
+
+describe("Topbar theme control placement (ADR 0437)", () => {
+	afterEach(() => window.localStorage.clear());
+
+	it("signed out: no theme control renders anywhere", () => {
+		const {container} = render(
 			<MemoryRouter>
-				<Topbar
-					nav={NAV}
-					themeChoice="auto"
-					onThemeChange={() => {}}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-				/>
+				<ThemeProvider>
+					<Topbar nav={NAV} />
+				</ThemeProvider>
 			</MemoryRouter>,
 		);
-		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
-		rerender(
-			<MemoryRouter>
-				<Topbar nav={NAV} themeChoice="auto" onThemeChange={() => {}} />
-			</MemoryRouter>,
-		);
-		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
+		expectNoThemeControl(container);
 	});
 
-	it("signed in: the same picker lives in the account popover next to ayarlar", async () => {
-		const onThemeChange = vi.fn();
-		render(
-			<MemoryRouter>
-				<Topbar
-					nav={NAV}
-					themeChoice="dark"
-					onThemeChange={onThemeChange}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-				/>
-			</MemoryRouter>,
-		);
+	it("signed in: the bar carries no theme control until the user menu opens", () => {
+		const {container} = renderTopbar();
+		expectNoThemeControl(container);
+	});
+
+	it("signed in: exactly one picker, in the user menu, and it sets the theme", async () => {
+		renderTopbar();
 		fireEvent.click(screen.getByText("Elif"));
-		expect(await screen.findByRole("link", {name: "ayarlar"})).toBeTruthy();
 		const row = await screen.findByTestId("topbar-theme-row");
 		expect(row.textContent).toContain("tema");
+		expect(screen.getAllByTestId("topbar-theme-picker")).toHaveLength(1);
 		const picker = within(row).getByTestId("topbar-theme-picker");
+		expect(picker.closest(".kp-user-menu__popup")).not.toBeNull();
+		expect(picker.closest(".kp-topbar")).toBeNull();
 		for (const label of ["açık", "koyu", "otomatik"]) {
 			expect(within(picker).getByRole("radio", {name: label})).toBeTruthy();
 		}
-		expect(within(picker).getByRole("radio", {name: "koyu"}).getAttribute("aria-checked")).toBe(
-			"true",
-		);
-		fireEvent.click(within(picker).getByRole("radio", {name: "otomatik"}));
-		await waitFor(() => expect(onThemeChange).toHaveBeenLastCalledWith("auto"));
-	});
-
-	// The picker's segmented track would otherwise stand 42px (its items' --tap-min floor +
-	// the track's 2px pad + 1px border) — taller than the 38px compact topbar it must sit
-	// inside, and taller than the popover's rows. It sizes itself down, in its own sheet, so
-	// BOTH homes get it; the two homes are portal-separated, so neither can style the other.
-	it("the picker sizes itself to a density token, in both of its homes", async () => {
-		const rule = cssRules(readSource("./ThemeChoicePicker.css")).find((r) =>
-			/kp-theme-picker/.test(r.selector),
-		);
-		expect(rule).toBeDefined();
-		expect(rule?.body).toMatch(/min-height:\s*var\(--letter-size\)/);
-		// Unscoped to either host (no .kp-topbar / .kp-user-menu prefix), and specific enough
-		// to beat ToggleGroup.css's own 0-2-0 item rule without depending on import order.
-		expect(rule?.selector).not.toMatch(/kp-topbar|kp-user-menu/);
-		// ToggleGroup.css's `.kp-toggle-group [data-part="item"]` is 0-2-0; carrying BOTH
-		// classes puts this at 0-3-0, so the tie is decided by weight, not import order.
-		expect(rule?.selector).toMatch(/\.kp-theme-picker\b/);
-		expect(rule?.selector).toMatch(/\.kp-toggle-group\b/);
-		// Signed out the picker sits in the bar; signed in it rides the portaled popover,
-		// OUT of the bar — so the host-scoped sheets never reach it.
-		const {unmount} = render(
-			<MemoryRouter>
-				<Topbar nav={NAV} themeChoice="light" onThemeChange={() => {}} />
-			</MemoryRouter>,
-		);
-		expect(screen.getByTestId("topbar-theme-picker").closest(".kp-topbar")).not.toBeNull();
-		unmount();
-		render(
-			<MemoryRouter>
-				<Topbar
-					nav={NAV}
-					themeChoice="light"
-					onThemeChange={() => {}}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-				/>
-			</MemoryRouter>,
-		);
-		fireEvent.click(screen.getByText("Elif"));
-		const inPopover = await screen.findByTestId("topbar-theme-picker");
-		expect(inPopover.closest(".kp-user-menu__popup")).not.toBeNull();
-		expect(inPopover.closest(".kp-topbar")).toBeNull();
-	});
-
-	it("signed out: the same light/dark/auto picker is reachable in the topbar utility zone", async () => {
-		const onThemeChange = vi.fn();
-		render(
-			<MemoryRouter>
-				<Topbar nav={NAV} themeChoice="light" onThemeChange={onThemeChange} />
-			</MemoryRouter>,
-		);
-		const utility = screen.getByTestId("topbar-zone-utility");
-		const picker = within(utility).getByTestId("topbar-theme-picker");
-		for (const label of ["açık", "koyu", "otomatik"]) {
-			expect(within(picker).getByRole("radio", {name: label})).toBeTruthy();
-		}
-		expect(within(picker).getByRole("radio", {name: "açık"}).getAttribute("aria-checked")).toBe(
-			"true",
-		);
 		fireEvent.click(within(picker).getByRole("radio", {name: "koyu"}));
-		await waitFor(() => expect(onThemeChange).toHaveBeenLastCalledWith("dark"));
+		await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
 	});
 });
 
@@ -377,7 +307,9 @@ describe("Topbar reserved signed-in account slot (#2933)", () => {
 	function renderReserved(props: Partial<Parameters<typeof Topbar>[0]>) {
 		return render(
 			<MemoryRouter>
-				<Topbar nav={NAV} {...props} />
+				<ThemeProvider>
+					<Topbar nav={NAV} {...props} />
+				</ThemeProvider>
 			</MemoryRouter>,
 		);
 	}
@@ -400,7 +332,9 @@ describe("Topbar reserved signed-in account slot (#2933)", () => {
 
 		rerender(
 			<MemoryRouter>
-				<Topbar nav={NAV} reserveSignedInSlots user={{name: "Elif", username: "elif"}} />
+				<ThemeProvider>
+					<Topbar nav={NAV} reserveSignedInSlots user={{name: "Elif", username: "elif"}} />
+				</ThemeProvider>
 			</MemoryRouter>,
 		);
 		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
@@ -428,28 +362,20 @@ describe("Topbar reserved signed-in account slot (#2933)", () => {
 		expect(container.querySelector(".kp-topbar__user")).toBeNull();
 	});
 
-	// #2612 says exactly one theme control renders in every state, and the account gate is what
-	// decides which one. These two cases are the states where the gate and a bare `user` disagree.
-	it("reserve off, user supplied: the utility picker still renders — no menu means no menu picker", () => {
-		renderReserved({
+	// The two states where the account gate and a bare `user` disagree (#6660). Under ADR 0176
+	// verdict 2 neither may show a theme control: no menu renders, and signed out there is none.
+	it("reserve off, user supplied: no theme control anywhere", () => {
+		const {container} = renderReserved({
 			reserveSignedInSlots: false,
 			user: {name: "Elif", username: "elif"},
-			themeChoice: "light",
-			onThemeChange: () => {},
 		});
-		const utility = screen.getByTestId("topbar-zone-utility");
-		expect(within(utility).getByTestId("topbar-theme-picker")).toBeTruthy();
+		expectNoThemeControl(container);
 	});
 
-	it("reserve on, no user: the utility picker renders beside the placeholder", () => {
-		renderReserved({
-			reserveSignedInSlots: true,
-			themeChoice: "light",
-			onThemeChange: () => {},
-		});
-		const utility = screen.getByTestId("topbar-zone-utility");
-		expect(within(utility).getByTestId("topbar-theme-picker")).toBeTruthy();
+	it("reserve on, no user: no theme control beside the placeholder", () => {
+		const {container} = renderReserved({reserveSignedInSlots: true});
 		expect(screen.getByTestId("topbar-user-placeholder")).toBeTruthy();
+		expectNoThemeControl(container);
 	});
 });
 
@@ -460,14 +386,16 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 	function renderMeter(props: Partial<Parameters<typeof Topbar>[0]>) {
 		return render(
 			<MemoryRouter>
-				<Topbar
-					nav={NAV}
-					divanTo="/divan"
-					karma={42}
-					reserveSignedInSlots
-					user={{name: "Elif", username: "elif"}}
-					{...props}
-				/>
+				<ThemeProvider>
+					<Topbar
+						nav={NAV}
+						divanTo="/divan"
+						karma={42}
+						reserveSignedInSlots
+						user={{name: "Elif", username: "elif"}}
+						{...props}
+					/>
+				</ThemeProvider>
 			</MemoryRouter>,
 		);
 	}
@@ -541,14 +469,6 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 		expect(bars[0]?.getAttribute("value")).toBe("9");
 		expect(screen.getByTestId("topbar-caylak-kefil").textContent).toContain("kefil: var");
 		expect(screen.queryByTestId("topbar-caylak-vouch-needed")).toBeNull();
-	});
-
-	// Criterion 2's "no badges, streaks or second standing readout anywhere in the chrome".
-	it("adds no second standing readout to the chrome", () => {
-		renderMeter({caylakMeter: caylakMeter(vouched(9))});
-		const zone = screen.getByTestId("topbar-zone-status-signal");
-		expect(zone.querySelectorAll('[data-testid="topbar-karma"]')).toHaveLength(1);
-		expect(zone.querySelectorAll('[data-testid="topbar-caylak-meter"]')).toHaveLength(1);
 	});
 
 	it("the meter stays a read-only status glyph — no button/link affordance", () => {

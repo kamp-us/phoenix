@@ -12,17 +12,20 @@
  * cause, the lane classes, the wait grant, and {@link floorQueueWait}, the elapsed-time floor a
  * queue re-fold clears before it may spend a wait.
  */
+import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
+import {INTEGRATE_STATE} from "./integrate-failure.ts";
 import {type CompiledLane, MACHINERY_EVENT, type OperatorEvent, type TaskState} from "./machine.ts";
-import {REVIEW_UI_STATE} from "./prove.ts";
+import {BUILD_STATES, REVIEW_STATE, REVIEW_UI_STATE, SHIP_STATES} from "./prove.ts";
 
 /**
  * Every recognised terminal token, grouped by the shell skill that owns its vocabulary — the
  * builder's (`build/SKILL.md`), the reviewer's (`review/SKILL.md`), the shipper's
- * (`ship/SKILL.md`), the UI reviewer's (`review-ui/SKILL.md`) — plus one group that belongs to no
- * shell: `machinery`, which a driver records about the pipeline itself. Documentation and test
- * surface; the lookup below flattens it.
+ * (`ship/SKILL.md`), the UI reviewer's (`review-ui/SKILL.md`) — plus two groups that belong to no
+ * shell: `machinery`, which a driver records about the pipeline itself, and `integrator`, the
+ * driver relaying `lane integrate`'s content verdict on an epic child. The lookup below flattens
+ * it, and {@link GROUP_SERVES} says which leaf states each group may report out of.
  */
 export const SHELL_VOCABULARIES = {
 	builder: {
@@ -106,7 +109,73 @@ export const SHELL_VOCABULARIES = {
 		EJECTED: "FAIL",
 		UNKNOWN: "BLOCKED",
 	},
+	// `lane integrate` exiting `42`, `43` or `44` judged the child's content, and the driver relays
+	// it as the one token that spends the child's repair budget. The integrate evidence pair
+	// (`./integrate-failure.ts`) is what pins the line to that exit.
+	integrator: {
+		FAIL: "FAIL",
+	},
 } as const satisfies Readonly<Record<string, Readonly<Record<string, OperatorEvent>>>>;
+
+export type VocabularyGroup = keyof typeof SHELL_VOCABULARIES;
+
+/** Where a group's reporter runs: a closed list of leaf states, or wherever the task stands. */
+export type Serves =
+	| {readonly _tag: "States"; readonly states: ReadonlyArray<string>}
+	| {readonly _tag: "Anywhere"};
+
+/**
+ * The leaf states each vocabulary group serves — the half of a report the token alone cannot say.
+ *
+ * A token is a self-report from whichever shell ran, and a shell can finish after the lane has moved
+ * on without it. Two groups map tokens to one event (`SHIPPED-PR` and `LANDED` are both `DONE`), so a
+ * builder's late `SHIPPED-PR` out of `ship` walked the shipper's merge arm and folded a lane with an
+ * open PR to `complete`. Only a group that serves the task's current leaf may report out of it.
+ *
+ * `machinery` serves every state because a pipeline failure happens wherever the pipeline is: the
+ * lane's own machine decides whether that state holds a `LAP` cell.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10120
+ */
+export const GROUP_SERVES: Readonly<Record<VocabularyGroup, Serves>> = {
+	builder: {_tag: "States", states: BUILD_STATES},
+	reviewer: {_tag: "States", states: [REVIEW_STATE]},
+	"ui-reviewer": {_tag: "States", states: [REVIEW_UI_STATE]},
+	machinery: {_tag: "Anywhere"},
+	shipper: {_tag: "States", states: SHIP_STATES},
+	integrator: {_tag: "States", states: [INTEGRATE_STATE]},
+};
+
+const servesLeaf = (serves: Serves, leaf: string): boolean =>
+	serves._tag === "Anywhere" || serves.states.includes(leaf);
+
+const describeServes = (serves: Serves): string =>
+	serves._tag === "Anywhere" ? "any state" : serves.states.map((s) => `"${s}"`).join(" / ");
+
+export type Service =
+	| {readonly _tag: "Served"; readonly by: ReadonlyArray<VocabularyGroup>}
+	| {readonly _tag: "Unserved"; readonly reason: string};
+
+/**
+ * Whether any group owning this token serves the task's leaf. A token several groups share (`PASS`,
+ * `FAIL`, `UNKNOWN`, `ESCALATED`) is served when at least one owner serves the leaf, because the
+ * token alone never says which of them sent it.
+ */
+export const serviceAt = (token: string, leaf: string): Service => {
+	const canonical = token.trim().toUpperCase();
+	const owners = (Object.keys(SHELL_VOCABULARIES) as ReadonlyArray<VocabularyGroup>).filter(
+		(group) => Object.hasOwn(SHELL_VOCABULARIES[group], canonical),
+	);
+	const by = owners.filter((group) => servesLeaf(GROUP_SERVES[group], leaf));
+	if (by.length > 0) return {_tag: "Served", by};
+	const named = owners
+		.map((group) => `${group} (serves ${describeServes(GROUP_SERVES[group])})`)
+		.join(", ");
+	return {
+		_tag: "Unserved",
+		reason: `${canonical} is owned by ${named}, and the task stands in "${leaf === "" ? "no state" : leaf}" — a report out of a state its shell does not serve is a late or misrouted terminal, not this state's answer`,
+	};
+};
 
 export type Flattening =
 	| {readonly _tag: "Flat"; readonly tokens: Readonly<Record<string, OperatorEvent>>}
@@ -335,6 +404,27 @@ export const PARK_CAUSES = {
 		remedy: "fabrika lane refresh",
 	},
 	/**
+	 * `ship cp-approval` stopped because the control-plane approval the head owes is absent: its
+	 * owners were read and none approved at this head. This is the ordinary wait on a §CP PR, and the
+	 * one cause a shipper's `AWAITING-CP-APPROVAL` carries without being typed
+	 * ({@link TERMINAL_PARK_CAUSES}). A recorder passes `head-behind-base` instead only when the head
+	 * is still behind, because moving the head comes before soliciting the approval.
+	 *
+	 * Named rather than left `null` so the §CP recipe row can key on it: `ship`'s `BLOCKED` folds to
+	 * `human:cp-approval` whatever the block was, so a row keyed on no cause would read an approval
+	 * for a park recorded for some other reason. No remedy: a verb that removed this cause would be
+	 * granting the approval.
+	 *
+	 * Route `founder`: approving a control-plane change is a code owner's act, not machinery.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9180#issuecomment-5752464229
+	 */
+	"awaiting-cp-approval": {
+		meaning: "the PR's control-plane owners were read and none has approved its current head",
+		route: "founder",
+		remedy: null,
+	},
+	/**
 	 * `lane refresh` found a real conflict between the trunk and an epic run's assembly branch. The
 	 * merge was aborted and the branch put back where the refresh found it, so the tail cannot bind
 	 * to a refreshed head until the two sides are reconciled.
@@ -372,8 +462,11 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
-	 * The lane is homed on a milestone whose `## Campaigns` row reads `paused`, and
-	 * that cell is the whole dispatch permission — so no stage may open against it.
+	 * The lane is homed on a milestone whose `## Campaigns` row reads `paused`.
+	 *
+	 * No verb refuses a lane on that cell any more — a campaign groups work and never gates it — so
+	 * nothing produces this park now. It stays in the vocabulary so a lane parked on it earlier can
+	 * still be read and cleared.
 	 *
 	 * A pause is open-ended, which is why this is a park and not a bounded wait (the merge-queue
 	 * dwell is the other side of that line). Its `KNOWN_PARKS` row clears by re-reading the same cell:
@@ -383,7 +476,7 @@ export const PARK_CAUSES = {
 	 */
 	"campaign-paused": {
 		meaning:
-			"the campaign homing this lane's milestone reads paused, so no stage may dispatch against it",
+			"the campaign homing this lane's milestone read paused when the lane parked; no verb parks on this now, and the cause stays so an earlier park still clears",
 		route: "founder",
 		remedy: null,
 	},
@@ -411,6 +504,46 @@ export const PARK_CAUSES = {
 		remedy: "fabrika build retire",
 	},
 	/**
+	 * A builder's tree proof found the checkout it was spawned in holding another lane's branch or
+	 * work it did not author — `build tree` exit `13` or `14`, or `build branch` refusing the same
+	 * way — so it stopped before writing anything into a lane that is not its own.
+	 *
+	 * Distinct from `worktree-holds-branch`, which is *another* tree holding *this* lane's branch: here
+	 * this lane's own seat was taken. What the next dispatch needs is what `spawn-dead` needs — no
+	 * claim of the stopped shell's standing and no tree holding this lane's branch — so its row asks
+	 * that question and names the same retirement, through a read that never ends a claim: the
+	 * age-proved retraction is `spawn-dead`'s alone (`../build/dead-claim.ts`).
+	 *
+	 * Route `driver`: isolating a spawn is the driver's own act, and no product call is in it.
+	 */
+	"tree-hijacked": {
+		meaning:
+			"the builder's checkout held another lane's branch or unauthored work, so it stopped before writing into a lane not its own",
+		route: "driver",
+		remedy: "fabrika build retire",
+	},
+	/**
+	 * `build claim` lost (exit `15`) to a claim a stopped shell of the same session left standing, so
+	 * `build adopt`, which refuses its own session, cannot reach it and the new shell cannot proceed.
+	 *
+	 * The driver records it, never the losing builder: "stopped" is proved only by the spawn that took
+	 * the claim having returned, and that return is the driver's read alone. A builder cannot tell a
+	 * live sibling from a stranded one, so its loss stays a back-off.
+	 *
+	 * Its row clears only on the board reading the issue and every open PR linking it `unclaimed` — a
+	 * repair claim sits on the PR — and it retracts nothing. Releasing it is the driver's act, under
+	 * the stranded lane's token, so no remedy verb is named.
+	 *
+	 * Route `driver`: the claim belongs to the driver's own session, so releasing it is residue
+	 * clean-up and not a product call.
+	 */
+	"claim-stranded": {
+		meaning:
+			"a stopped shell of this session left its build claim standing, so a new shell lost the claim and adopt cannot reach it",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * The rendered gate's `CANT-SEE`: no preview deployment stands at the PR's head, or the
 	 * one that does is stale beyond repair, so there is no rendered surface to judge. It is the
 	 * routine outcome of the three, not the exceptional one — a PR whose preview has not finished
@@ -423,6 +556,28 @@ export const PARK_CAUSES = {
 	 */
 	"no-preview-render": {
 		meaning: "no preview deployment stands at the PR's head, so no rendered surface can be judged",
+		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * The rendered gate's `CANT-SEE` over a preview that stood: the changed pixels only show in a state
+	 * none of `review-ui render`'s operands can reach — a scroll position, a pane no route opens — so no
+	 * re-render and no driver retry can shoot them. Only building that render axis ends it.
+	 *
+	 * Distinct from `no-preview-render`, whose preview a later deploy or a re-seed fixes: a retry there
+	 * is a real move, and here it spends a review round hitting the same wall. So this cause carries
+	 * the number of the open issue tracking the missing axis ({@link AXIS_ISSUE_CAUSES}), and its
+	 * `KNOWN_PARKS` row clears when that issue closes.
+	 *
+	 * No remedy: building a render axis is its own issue's work, and no verb here removes the gap.
+	 *
+	 * Route `driver`: a missing render capability is machinery, and no product call is in it.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10007
+	 */
+	"render-axis-missing": {
+		meaning:
+			"the preview stood, but the changed pixels need a state `review-ui render` cannot reach, so the park waits on the issue that builds that render axis",
 		route: "driver",
 		remedy: null,
 	},
@@ -463,6 +618,42 @@ export const PARK_CAUSES = {
 	"no-rendered-delta": {
 		meaning:
 			"the diff raises no rendered delta, so the verdict is `review`'s to give and not the rendered gate's",
+		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * The rendered gate's `ROUTED-ELSEWHERE` over a PR with no preview, when the repo's
+	 * `reviewUi.whenNoPreview` rules routed it — a `skip`, or an owner's hand-check standing in for
+	 * the render — and the review it waits on is not finished. The diff may well render, which is why
+	 * this is not {@link no-rendered-delta}; the park is the same shape and clears the same way.
+	 *
+	 * Route `driver`: dispatching the other gate is the driver's own act.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10038#issuecomment-5860347862
+	 */
+	"no-preview-routed": {
+		meaning:
+			"the PR has no preview and the repo's reviewUi.whenNoPreview rules routed the rendered gate, so the verdict left to give is `review`'s",
+		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * An `ESCALATED` whose work is done but whose write provably did not land: `review-ui`'s verdict
+	 * or its evidence upload, or `build-ui`'s capture attach on an open PR, refused again on its one
+	 * re-run. Nothing about the artifact was judged wrong — the channel that carries the judgment
+	 * failed.
+	 *
+	 * Distinct from `repair-budget-spent`, the builder's other `ESCALATED`: that one is a graded
+	 * artifact found wrong too often, and this one is an ungraded channel.
+	 *
+	 * No remedy: the fault sits in the upload or write path, and no verb reruns a proof that the path
+	 * works short of re-dispatching the shell that owed the write.
+	 *
+	 * Route `driver`: an upload or write failure is machinery, and no product call is in it.
+	 */
+	"write-unlanded": {
+		meaning:
+			"a verdict or evidence write provably could not land after its one re-run, so the judgment it carries never reached the PR",
 		route: "driver",
 		remedy: null,
 	},
@@ -522,12 +713,37 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
+	 * `ship gate` answered `blocked` on a required namespace that holds no binding verdict at the
+	 * PR's head — absent, stale against moved content, or a `review-ui` verdict whose evidence does
+	 * not open — so the shipper routed back to the gate that owns it and reported `ROUTED-REVIEW`.
+	 * Nothing about the artifact was judged: the verdict the head owes has not been given yet. The
+	 * ordinary producer is a head that moved after review, which a long-lived epic branch re-merged
+	 * with its trunk hits on every merge.
+	 *
+	 * The shipper's `ROUTED-REVIEW` carries it without being typed ({@link TERMINAL_PARK_CAUSES}),
+	 * because the gate's absence arm is that token's one reason. Distinct from a `FAIL` routed to
+	 * repair: a verdict that exists and says no is `ROUTED-REPAIR`, never this.
+	 *
+	 * No remedy: giving the verdict is the owning gate's judgment, and a verb that "removed" this
+	 * cause would be making it.
+	 *
+	 * Route `driver`: dispatching the gate that owes the verdict is the driver's own act, and no
+	 * product call is in it.
+	 */
+	"verdict-owed": {
+		meaning:
+			"a namespace the ship gate requires holds no binding verdict at the PR's head, so the shipper routed back to the gate that owes it",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * The task spent its whole repair budget on content FAILs, so the guarded FAIL arm fell through
 	 * to `human:budget-spent`. Nothing about the machinery went wrong — a reviewer graded the work
 	 * and found it wrong `RETRY_BUDGET` times.
 	 *
-	 * It is the one cause no recorder ever types, because no `FAIL` may carry a `--cause`: it is
-	 * bound to its park leaf in {@link STRUCTURAL_PARK_CAUSES} and read off the fold.
+	 * The budget park never has it typed, because no `FAIL` may carry a `--cause`: it is bound to its
+	 * park leaf in {@link STRUCTURAL_PARK_CAUSES} and read off the fold. A builder that stops at the
+	 * cap reports `ESCALATED`, a `BLOCKED`, and names it by hand.
 	 *
 	 * No remedy, because a remedy is a read a recipe reruns to prove the cause gone, and nothing a
 	 * verb runs makes a repeatedly-failed artifact right. The door out is a grant rather than a
@@ -535,7 +751,9 @@ export const PARK_CAUSES = {
 	 * has none — the seat an epic child and a chore lane were missing entirely.
 	 *
 	 * Route `driver`: deciding what a stuck task needs next — another round, a re-scope, a park a
-	 * person reads — is the driver's own diagnosis, and only a product call goes past it.
+	 * person reads — is the driver's own diagnosis, and only a product call goes past it. This is the
+	 * one route a repo may re-declare: `parkCause.repairBudgetSpent` decides it, this entry is its
+	 * shipped value, and {@link routeUnder} is where the declared one wins.
 	 */
 	"repair-budget-spent": {
 		meaning:
@@ -551,8 +769,8 @@ export const PARK_CAUSES = {
 	 * every replay succeeding and the cycle never closing — two children's ranges chasing each other
 	 * — so what it owes is a person's read of the pair, not a judgment about one hunk.
 	 *
-	 * Typed by no recorder, exactly as `repair-budget-spent` is: the fallthrough arrives as a `WIP`,
-	 * which carries no `--cause`, so it is bound to its leaf in {@link STRUCTURAL_PARK_CAUSES}.
+	 * Typed by no recorder: the fallthrough arrives as a `WIP`, which carries no `--cause`, so it is
+	 * bound to its leaf in {@link STRUCTURAL_PARK_CAUSES}, as `repair-budget-spent`'s budget park is.
 	 *
 	 * No remedy: nothing a verb reruns proves two colliding ranges reconciled.
 	 *
@@ -563,6 +781,75 @@ export const PARK_CAUSES = {
 		meaning:
 			"a child's replays spent its whole wait budget without the range settling, so the collision owes a driver's diagnosis",
 		route: "driver",
+		remedy: null,
+	},
+	/**
+	 * `lane brief` refused at `71`: a table row standing for this lane's issue has spent the stop
+	 * multiple of its size, so no next shell is briefed. It is the one stop the table's rulings allow;
+	 * everything short of it is a flag and the lane keeps going.
+	 *
+	 * No remedy: the spend does not go down, so no verb can prove the cause gone. What moves the lane
+	 * is the table's answer — a new bet restarts the count, a larger size or stop multiple lifts it,
+	 * or the work is dropped.
+	 *
+	 * Route `founder`: extend, re-shape or drop is a call about what the work is worth, which is the
+	 * table's and no driver's.
+	 */
+	"size-stop": {
+		meaning:
+			"a table row standing for this lane's issue spent the stop multiple of its size, so the lane stopped for the table to extend, re-shape or drop it",
+		route: "founder",
+		remedy: null,
+	},
+	/**
+	 * What is left of the lane's issue cannot be built until somebody rules on it, and nobody has: an
+	 * open question filed elsewhere, or two criteria on its own issue that cannot both hold. The
+	 * builder backs off with nothing built, and a second builder sent in meets the same wall.
+	 *
+	 * This is not the decision-lane token. A `type:decision` lane waiting on its own ruling comment
+	 * has no token yet: the second issue cited below asks for one with its own clearing read, because
+	 * `build claim` there needs a ruling that is still current to cite. Until that lands, such a lane
+	 * does not borrow this one. Every other lane type parks on this one.
+	 *
+	 * The park line names the issue the ruling is owed on ({@link RULING_ISSUE_CAUSES}), which may be
+	 * the lane's own. Its `KNOWN_PARKS` row clears once a ruling marker newer than the park stands on
+	 * that issue.
+	 *
+	 * No remedy: a verb that removed this cause would be making the ruling.
+	 *
+	 * Route `founder`: a ruling is a product call, and no driver may make one.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10290#issuecomment-5974131397
+	 * @ruling https://github.com/kamp-us/phoenix/issues/8983 asks for the decision-lane token.
+	 */
+	"ruling-owed": {
+		meaning:
+			"the lane's remaining work waits on a ruling nobody has made yet, on the issue the park names",
+		route: "founder",
+		remedy: null,
+	},
+	/**
+	 * What is left of the lane's issue is a step only the founder may do by hand — the lane-9281
+	 * shape, whose last row is a credential rotation no agent may run. Nothing is undecided: the
+	 * step is known, and the only thing missing is the founder doing it.
+	 *
+	 * Distinct from `ruling-owed`, which waits on an answer. A lane whose last row can close either
+	 * way takes whichever of the two matches what its driver is asking for.
+	 *
+	 * The park line records the step itself ({@link FOUNDER_ACT_CAUSES}), so the park says what it
+	 * waits on without anyone reading the issue. It carries no `KNOWN_PARKS` row on purpose: no read
+	 * proves a person ran a command, so the park leaves only on a person's own `UNBLOCKED`.
+	 *
+	 * No remedy: a verb that removed this cause would be running the step no agent may run.
+	 *
+	 * Route `founder`: the step is the founder's own to take.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10290
+	 */
+	"founder-act-owed": {
+		meaning:
+			"the lane's remaining work is a step only the founder may do by hand, which the park names",
+		route: "founder",
 		remedy: null,
 	},
 } as const satisfies Record<string, ParkCauseEntry>;
@@ -610,6 +897,30 @@ export const machineryCause = (token: string): ParkCause | null =>
 	MACHINERY_CAUSES[token.trim().toUpperCase()] ?? null;
 
 /**
+ * The park terminals whose token already names why the lane parked, so a recorder that passes no
+ * `--cause` still lands a caused `BLOCKED` — the park-side twin of {@link MACHINERY_CAUSES}.
+ *
+ * Only a token with exactly one reason belongs here. `AWAITING-CP-APPROVAL` is `ship cp-approval`'s
+ * `stop`, which says the owners' approval is absent; a `--cause` still overrides it, which is how a
+ * shipper standing on a head behind its base says `head-behind-base` instead. `ROUTED-REVIEW` is
+ * `ship gate`'s absence arm and nothing else — a required namespace with no binding verdict at the
+ * head — so it carries `verdict-owed`. `REFUSED` and `UNKNOWN` fold to the same leaf for other
+ * reasons, so they carry nothing here, and a shipper names `ROUTED-HEAL-CI`'s cause by hand.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9180#issuecomment-5752464229
+ */
+export const TERMINAL_PARK_CAUSES: Readonly<Record<string, ParkCause>> = {
+	"AWAITING-CP-APPROVAL": "awaiting-cp-approval",
+	"ROUTED-REVIEW": "verdict-owed",
+};
+
+/** The cause a terminal token carries on its own — a lap's or a park's — or `null`. */
+export const tokenCause = (token: string): ParkCause | null => {
+	const key = token.trim().toUpperCase();
+	return MACHINERY_CAUSES[key] ?? TERMINAL_PARK_CAUSES[key] ?? null;
+};
+
+/**
  * The causes a park leaf carries on its own — the second binding that makes a cause structural.
  *
  * {@link MACHINERY_CAUSES} reads a lap's cause off its terminal token; this reads a park's cause off
@@ -632,16 +943,228 @@ export const STRUCTURAL_PARK_CAUSES: Readonly<Record<string, ParkCause>> = {
 export const structuralParkCause = (leaf: string): ParkCause | null =>
 	STRUCTURAL_PARK_CAUSES[leaf] ?? null;
 
-/** The recognised causes, for a refusal's listing — sorted so the listing is deterministic. */
-export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES).sort();
+/**
+ * Causes kept only so a line recorded earlier still reads, routes and clears. Nothing parks on one
+ * now, so `--cause` refuses it and no listing offers it.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9852
+ */
+export const RETIRED_PARK_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>(["campaign-paused"]);
+
+/**
+ * The causes whose park waits on another issue closing, so the park line names that issue as
+ * `axisIssue` — required with one of these causes and refused with any other.
+ *
+ * The number is what the `KNOWN_PARKS` row reads: without it the clear would have no issue to read.
+ */
+export const AXIS_ISSUE_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>([
+	"render-axis-missing",
+]);
+
+/** Whether a recorded cause makes its park line carry an `axisIssue`. */
+export const causeTakesAxisIssue = (cause: string | null): boolean =>
+	cause !== null && AXIS_ISSUE_CAUSES.has(cause as ParkCause);
+
+export type AxisIssueResolution =
+	| {readonly _tag: "Named"; readonly axisIssue: number | null}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+/** One issue-pointer flag: the causes that take it, and what its issue is, for a refusal to quote. */
+interface IssuePointer {
+	readonly flag: string;
+	readonly causes: ReadonlySet<ParkCause>;
+	/** What the park waits on and how to name it, completing `"<cause>" waits on …`. */
+	readonly waitsOn: string;
+}
+
+type IssuePointerResolution =
+	| {readonly _tag: "Named"; readonly issue: number | null}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+/**
+ * Resolve one issue-pointer flag against the cause the same line records.
+ *
+ * Both directions refuse. A cause that takes the pointer with no issue is a park nothing can clear,
+ * because the row has no issue to read. An issue beside any other cause is seated on a line no row
+ * reads, so it records a claim nothing will check.
+ */
+const issuePointerFor = (
+	pointer: IssuePointer,
+	raw: number | null,
+	cause: ParkCause | null,
+): IssuePointerResolution => {
+	const takes = cause !== null && pointer.causes.has(cause);
+	if (raw === null) {
+		return takes
+			? {_tag: "Rejected", reason: `"${cause}" waits on ${pointer.waitsOn}`}
+			: {_tag: "Named", issue: null};
+	}
+	if (!takes) {
+		return {
+			_tag: "Rejected",
+			reason: `${pointer.flag} names the issue a ${[...pointer.causes].join("/")} park waits on, and this line records ${cause === null ? "no cause" : `"${cause}"`} — drop ${pointer.flag} ${raw}`,
+		};
+	}
+	return Number.isInteger(raw) && raw > 0
+		? {_tag: "Named", issue: raw}
+		: {_tag: "Rejected", reason: `${pointer.flag} ${raw} is no issue number`};
+};
+
+/** Resolve one `--axis-issue` against the cause the same line records ({@link issuePointerFor}). */
+export const axisIssueForCause = (
+	raw: number | null,
+	cause: ParkCause | null,
+): AxisIssueResolution => {
+	const resolved = issuePointerFor(
+		{
+			flag: "--axis-issue",
+			causes: AXIS_ISSUE_CAUSES,
+			waitsOn:
+				"the open issue that tracks the missing render axis — pass --axis-issue <number>, filing that issue first if none exists",
+		},
+		raw,
+		cause,
+	);
+	return resolved._tag === "Named" ? {_tag: "Named", axisIssue: resolved.issue} : resolved;
+};
+
+/**
+ * The causes whose park waits on a ruling, so the park line names the issue that ruling is owed on
+ * as `rulingIssue` — required with one of these causes and refused with any other.
+ *
+ * Its own field rather than `axisIssue`, because the two are read differently: an axis issue clears
+ * its park by closing, and a ruling issue by carrying a ruling marker newer than the park. One field
+ * for both would let a row read the wrong one.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10290#issuecomment-5974131397
+ */
+export const RULING_ISSUE_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>(["ruling-owed"]);
+
+/** Whether a recorded cause makes its park line carry a `rulingIssue`. */
+export const causeTakesRulingIssue = (cause: string | null): boolean =>
+	cause !== null && RULING_ISSUE_CAUSES.has(cause as ParkCause);
+
+/**
+ * The causes whose park waits on a step the founder takes by hand, so the park line records that
+ * step as `founderAct` — required with one of these causes and refused with any other.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10290
+ */
+export const FOUNDER_ACT_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>(["founder-act-owed"]);
+
+/** Whether a recorded cause makes its park line carry a `founderAct`. */
+export const causeTakesFounderAct = (cause: string | null): boolean =>
+	cause !== null && FOUNDER_ACT_CAUSES.has(cause as ParkCause);
+
+/**
+ * What a park line carries beside its cause — the facts a later read of that park needs and the
+ * cause token alone cannot hold. Each field is present exactly when the cause takes it.
+ */
+export interface ParkEvidence {
+	readonly axisIssue?: number;
+	readonly rulingIssue?: number;
+	readonly founderAct?: string;
+}
+
+/** The evidence flags as a recorder passed them, `null` where a flag was left off. */
+export interface ParkEvidenceFlags {
+	readonly axisIssue: number | null;
+	readonly rulingIssue: number | null;
+	readonly founderAct: string | null;
+}
+
+/** The flags of a line that records no park evidence — every event but a park one of these names. */
+export const NO_PARK_EVIDENCE: ParkEvidenceFlags = {
+	axisIssue: null,
+	rulingIssue: null,
+	founderAct: null,
+};
+
+export type ParkEvidenceResolution =
+	| {readonly _tag: "Named"; readonly evidence: ParkEvidence}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+type FounderActResolution =
+	| {readonly _tag: "Named"; readonly founderAct: string | null}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+/**
+ * Resolve one `--founder-act` against the cause the same line records.
+ *
+ * A blank step is refused as an absent one: the field exists so the park says what it waits on, and
+ * a line naming a step of nothing says nothing.
+ */
+const founderActForCause = (raw: string | null, cause: ParkCause | null): FounderActResolution => {
+	const takes = causeTakesFounderAct(cause);
+	const step = raw === null ? null : raw.trim();
+	if (step === null || step === "") {
+		if (takes) {
+			return {
+				_tag: "Rejected",
+				reason: `"${cause}" waits on a step the founder takes by hand — pass --founder-act "<the step>" saying what that step is`,
+			};
+		}
+		return step === null
+			? {_tag: "Named", founderAct: null}
+			: {_tag: "Rejected", reason: "--founder-act says nothing — drop it"};
+	}
+	if (!takes) {
+		return {
+			_tag: "Rejected",
+			reason: `--founder-act records the step a ${[...FOUNDER_ACT_CAUSES].join("/")} park waits on, and this line records ${cause === null ? "no cause" : `"${cause}"`} — drop --founder-act`,
+		};
+	}
+	return {_tag: "Named", founderAct: step};
+};
+
+/**
+ * Resolve every evidence flag against the cause the same line records.
+ *
+ * Each flag belongs to its own causes and to no other, in both directions, which is what keeps one
+ * token from standing in for another: a ruling park cannot be recorded with a step in place of its
+ * issue, and a founder's-step park cannot be recorded with an issue in place of its step.
+ */
+export const parkEvidenceForCause = (
+	flags: ParkEvidenceFlags,
+	cause: ParkCause | null,
+): ParkEvidenceResolution => {
+	const axis = axisIssueForCause(flags.axisIssue, cause);
+	if (axis._tag === "Rejected") return axis;
+	const ruling = issuePointerFor(
+		{
+			flag: "--ruling-issue",
+			causes: RULING_ISSUE_CAUSES,
+			waitsOn:
+				"a ruling on one issue — pass --ruling-issue <number> naming the issue the ruling is owed on, which may be the lane's own",
+		},
+		flags.rulingIssue,
+		cause,
+	);
+	if (ruling._tag === "Rejected") return ruling;
+	const act = founderActForCause(flags.founderAct, cause);
+	if (act._tag === "Rejected") return act;
+	return {
+		_tag: "Named",
+		evidence: {
+			...(axis.axisIssue === null ? {} : {axisIssue: axis.axisIssue}),
+			...(ruling.issue === null ? {} : {rulingIssue: ruling.issue}),
+			...(act.founderAct === null ? {} : {founderAct: act.founderAct}),
+		},
+	};
+};
+
+/** The causes a recorder may pass, for a refusal's listing — sorted so the listing is deterministic. */
+export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES)
+	.filter((token) => !RETIRED_PARK_CAUSES.has(token as ParkCause))
+	.sort();
 
 /**
  * The route a park takes, read off the one table — the only place a route is written down.
  *
  * A park carrying **no** cause routes `founder`, and that is fail-closed rather than a default: a
  * park nothing named cannot be attributed to machinery, so nothing here may claim a driver can work
- * it. The two `KNOWN_PARKS` rows keyed by their leaf alone (`human:cp-approval`, `human:queue-stall`)
- * take that arm, and both are already waits on somebody else's act.
+ * it. The one `KNOWN_PARKS` row keyed by its leaf alone (`human:queue-stall`) takes that arm, and it
+ * is already a wait on somebody else's act.
  */
 export const routeForCause = (cause: string | null): ParkRoute =>
 	cause !== null && Object.hasOwn(PARK_CAUSES, cause)
@@ -649,12 +1172,25 @@ export const routeForCause = (cause: string | null): ParkRoute =>
 		: "founder";
 
 /**
+ * The route a park takes in a repo that declared its `parkCause` — {@link routeForCause}, with the
+ * one route a repo may re-declare read off its config instead of the table.
+ *
+ * Only `repair-budget-spent` is re-declarable, because whose call another round is depends on who
+ * runs the lane, while every other cause's route is a fact about the machinery that parked it.
+ */
+export const routeUnder = (
+	cause: string | null,
+	parkCause: Pick<ParkCauseSurface, "repairBudgetSpent">,
+): ParkRoute =>
+	cause === "repair-budget-spent" ? parkCause.repairBudgetSpent : routeForCause(cause);
+
+/**
  * The verb that removes a cause, read off the one table — the only place a remedy is written down.
  *
  * A park carrying **no** cause has no remedy, on the same fail-closed reasoning the route takes:
- * nothing named what went wrong, so nothing here may name the verb that undoes it. The two
- * `KNOWN_PARKS` rows keyed by their leaf alone take that arm, and both are waits on somebody else's
- * act rather than something a verb removes.
+ * nothing named what went wrong, so nothing here may name the verb that undoes it. The one
+ * `KNOWN_PARKS` row keyed by its leaf alone takes that arm, and it is a wait on somebody else's act
+ * rather than something a verb removes.
  */
 export const remedyForCause = (cause: string | null): string | null =>
 	cause !== null && Object.hasOwn(PARK_CAUSES, cause)
@@ -713,7 +1249,7 @@ const isParkCause = (token: string): token is ParkCause => Object.hasOwn(PARK_CA
  * **A machinery lap requires one under every rule.** The whole difference between a lap and a repair
  * round is which machinery spent it, and a lap recorded with none says only that the pipeline failed
  * — which is the reading this axis exists to replace. The recorder never has to type it:
- * {@link machineryCause} reads it off the token.
+ * {@link tokenCause} reads it off the token, as it does for a park terminal that names one.
  */
 export const causeForEvent = (
 	raw: string | null,
@@ -741,6 +1277,12 @@ export const causeForEvent = (
 		};
 	}
 	const token = raw.trim().toLowerCase();
+	if (isParkCause(token) && RETIRED_PARK_CAUSES.has(token)) {
+		return {
+			_tag: "Rejected",
+			reason: `"${raw}" is a retired park cause: it still reads on an earlier line, and nothing parks on it now (known: ${PARK_CAUSE_TOKENS.join(", ")})`,
+		};
+	}
 	return isParkCause(token)
 		? {_tag: "Caused", cause: token}
 		: {

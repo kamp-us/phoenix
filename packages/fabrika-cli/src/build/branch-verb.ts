@@ -3,9 +3,9 @@
  *
  * The lane-identity rule lives in `lane.ts`; this verb is where a name that obeys it first comes into
  * existence. Create mode cuts `build/<number>-<slug>-<nonce>` off `FETCH_HEAD` — never a local
- * `origin/main`, which can predate the base the lane needs. **Which base that is, create mode
+ * remote-tracking ref, which can predate the base the lane needs. **Which base that is, create mode
  * derives**: an epic child is cut off its run's assembly branch `epic/<parent>` and a standalone
- * issue off the trunk, with an explicit `--base` honoured verbatim over either — see
+ * issue off the trunk `resolveTrunk` names, with an explicit `--base` honoured verbatim over either — see
  * {@link resolveBase} for the silent wrong base that derivation removes. Resume mode checks the
  * PR's head branch out under the **local** name `build/pr-<pr>-<nonce>` with its upstream pointed at
  * the remote head, so `build push` updates the PR while the local name carries *this* repair claim's
@@ -22,11 +22,15 @@
  * blind is what made the idempotent re-run unable to be the recovery for a wrong first cut. Either
  * way create mode names the base commit it ended on, so a builder proves the cut off this verb's own
  * output rather than off a `git merge-base` of their own.
+ *
+ * Every mode asks {@link assertMovable} before it fetches, switches, renames or creates anything:
+ * a dirty tree it would carry work off refuses on `13`, a tree on another lane's branch on `14`.
  */
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {localBranches} from "../io/git.ts";
+import {resolveTrunk, TRUNK_REMOTE, trunkUnresolved} from "../io/trunk.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
 import {requireCallerToken, requireClaim, requireSession} from "./claim.ts";
@@ -37,7 +41,6 @@ import {
 	bothResolve,
 	branchExists,
 	classifyBase,
-	currentBranch,
 	fetchBase,
 	mergeBaseOf,
 	remoteSha,
@@ -56,7 +59,7 @@ import {
 	resumeBranchName,
 } from "./lane.ts";
 import {resolveTargetRepo} from "./target.ts";
-import {assertGround} from "./tree.ts";
+import {assertGround, assertMovable} from "./tree.ts";
 
 const VERB = "build branch";
 
@@ -67,7 +70,7 @@ export interface BranchOptions {
 	/**
 	 * The base ref an operator named, honoured verbatim on every lane. `null` is "nobody passed one",
 	 * which is what lets the create path derive an epic child's assembly base instead — the two used
-	 * to be one value, and `origin/main` was then indistinguishable from a deliberate trunk cut.
+	 * to be one value, and a defaulted trunk was then indistinguishable from a deliberate trunk cut.
 	 */
 	readonly base: string | null;
 	/** Resume mode: the PR whose head branch to publish back to. Exclusive with `number`. */
@@ -85,9 +88,6 @@ export interface BranchOptions {
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
-
-/** The trunk a lane with no parent epic and no operator-named base is cut from. */
-const TRUNK: BaseRef = {_tag: "Remote", remote: "origin", ref: "main"};
 
 type ResolvedBase =
 	| {readonly _tag: "Resolved"; readonly base: BaseRef; readonly note: string}
@@ -140,15 +140,26 @@ const resolveBase = (
 				_tag: "Refused" as const,
 				outcome: refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read #${issue}'s parent through GitHub's issue-parent endpoint: ${parent.reason} — whether this is an epic child is UNKNOWN, and cutting off ${baseLabel(TRUNK)} anyway is exactly the silent wrong base this derivation exists to remove. No branch was cut; pass --base to name one yourself.`,
+					`${VERB}: cannot read #${issue}'s parent through GitHub's issue-parent endpoint: ${parent.reason} — whether this is an epic child is UNKNOWN, and cutting off the trunk anyway is exactly the silent wrong base this derivation exists to remove. No branch was cut; pass --base to name one yourself.`,
 				),
 			};
 		}
 		if (parent._tag === "Absent") {
+			const trunk = yield* resolveTrunk(env, repo);
+			if (trunk._tag === "Failure") {
+				return {
+					_tag: "Refused" as const,
+					outcome: refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: #${issue} is proven standalone and ${trunkUnresolved(trunk.reason)}. No branch was cut; pass --base to name one yourself.`,
+					),
+				};
+			}
+			const base: BaseRef = {_tag: "Remote", remote: TRUNK_REMOTE, ref: trunk.value.branch};
 			return {
 				_tag: "Resolved" as const,
-				base: TRUNK,
-				note: `${VERB}: base ${baseLabel(TRUNK)} — #${issue} is proven standalone (its parent endpoint answered 404), so no epic base was derived.`,
+				base,
+				note: `${VERB}: base ${baseLabel(base)} — #${issue} is proven standalone (its parent endpoint answered 404), so no epic base was derived.`,
 			};
 		}
 		const assembly = epicBranch(parent.value);
@@ -254,6 +265,9 @@ export const runBranch = (
 		const nonce = caller.nonce;
 
 		if (resume !== null) {
+			const name = resumeBranchName(resume, nonce);
+			const movable = yield* assertMovable(VERB, {serves: resume, ends: [name], notes: held.notes});
+			if (movable._tag === "Refused") return movable.outcome;
 			const head = yield* getPullHead(options.env, repo, resume);
 			if (head._tag === "Unknown") {
 				return refuse(
@@ -277,7 +291,6 @@ export const runBranch = (
 					held.notes,
 				);
 			}
-			const name = resumeBranchName(resume, nonce);
 			const switched = yield* checkout(name, fetched.value);
 			if (switched._tag === "Failure") {
 				return refuse(
@@ -331,6 +344,12 @@ export const runBranch = (
 				);
 			}
 			const name = createBranchName(issue, prior.slug, nonce);
+			const movable = yield* assertMovable(VERB, {
+				serves: issue,
+				ends: [name, only],
+				notes: held.notes,
+			});
+			if (movable._tag === "Refused") return movable.outcome;
 			// Re-keyed in place rather than cut off `only`, so exactly one branch keeps naming this
 			// child — two is the underivable range `lane prove` refuses on, and an idempotent re-run
 			// under the same nonce resolves the same name and has nothing to rename.
@@ -348,16 +367,8 @@ export const runBranch = (
 						held.notes,
 					);
 				}
-				const mine = yield* currentBranch;
-				if (mine._tag === "Failure") {
-					return refuse(
-						PRECONDITION_UNKNOWN,
-						`${VERB}: cannot read which branch this tree holds: ${mine.reason} — whether ${only} is held here or by another lane is UNKNOWN; nothing was changed.`,
-						held.notes,
-					);
-				}
 				const holder =
-					mine.value === only
+					movable.current === only
 						? undefined
 						: checkouts.value.find((checkout) => checkout.branch === only);
 				if (holder !== undefined) {
@@ -394,6 +405,10 @@ export const runBranch = (
 		}
 
 		const issue = number as number;
+		const name = createBranchName(issue, slug as string, nonce);
+		const movable = yield* assertMovable(VERB, {serves: issue, ends: [name], notes: held.notes});
+		if (movable._tag === "Refused") return movable.outcome;
+
 		const resolvedBase = yield* resolveBase(options.env, repo, issue, options.base);
 		if (resolvedBase._tag === "Refused")
 			return {...resolvedBase.outcome, stderr: [...held.notes, ...resolvedBase.outcome.stderr]};
@@ -413,7 +428,6 @@ export const runBranch = (
 			);
 		}
 		const at = fetched.value;
-		const name = createBranchName(issue, slug as string, nonce);
 
 		if (yield* branchExists(name)) {
 			const shared = yield* mergeBaseOf(at, `refs/heads/${name}`);

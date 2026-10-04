@@ -13,7 +13,7 @@ governs these verbs; where this spec and that doc disagree, the doc wins and thi
 **`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** — fabrika reimplements
 what it needs rather than shelling out to its predecessor, so no clause here can break when a tool
 this package does not own changes. v1's `doctor`
-skill and `doctor.sh`, and the `run-evidence`, `epic-ledger` and `decisions-index` tools, were read
+skill and `doctor.sh`, its CI-bundle reader, and the `epic-ledger` and `decisions-index` tools, were read
 for their semantics and their scars — each Grounding section names what the v1 counterpart gets
 wrong and what this spec does instead — but no clause defers to one and none is invoked.
 
@@ -25,7 +25,7 @@ access per
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `status open` | the composite front-door readout: six fields, each with its own state, source and freshness | assembling six independent reads and rendering each one's three-state outcome is a total function; deciding what to *do* about a gap is the skill's |
+| `status open` | the composite front-door readout: seven fields, each with its own state, source and freshness | assembling seven independent reads and rendering each one's three-state outcome is a total function; deciding what to *do* about a gap is the skill's |
 | `status settings` | every key on the `.fabrika.jsonc` config surface, its resolved value, and where that value came from | resolving a key against a shipped default and naming its provenance is a total function; deciding what a repo *should* declare is judgment |
 | `status wiring` | whether `.claude/settings.json` enables the fabrika plugin — the precondition under every other verb | reading one `enabledPlugins` key and reporting what it says is mechanical; deciding to *wire* the repo is the operator's, and creating the file is `status bootstrap`'s |
 | `status menu` | the landed skill roster with each skill's invocation and one-line description | reading a directory and each file's frontmatter is a total function; choosing which skill fits the work at hand is judgment |
@@ -157,9 +157,8 @@ vocabulary in this group. Four consequences bind every verb below:
    (measured).
 2. **A state word names the reading it is not.** The `<detail>` beside `absent` carries "proven
    absent, not unread"; beside `unknown` it carries the raw failed read, reproduced verbatim before
-   clamping, so the failure stays attributable — the shape
-   `packages/pipeline-cli/src/tools/run-evidence/run-evidence.ts` prints, and the shape v1's
-   `doctor.sh` prints when it tells the reader what not to conclude.
+   clamping, so the failure stays attributable — the shape v1's CI-bundle reader printed, and the
+   shape v1's `doctor.sh` prints when it tells the reader what not to conclude.
 3. **Per-field state cannot be an exit code.** A composite readout has five independent outcomes and
    one exit status; because a non-zero exit cannot carry a payload, the exit status answers only
    *"did I produce a readout at all"* and each field carries its own state inside it.
@@ -255,7 +254,8 @@ purpose — keeping proven-empty apart from unread — to chance.
 | `wiring` | no settings file, no `enabledPlugins` block, no fabrika key, a key switched off, or a key naming no marketplace | `unwired` | which of those it was. **Never `unknown`**: the repo proved each of them, and folding them into `unknown` hides the one gap this field exists to name |
 | `wiring` | the settings file, or the repo root above the cwd, could not be read; the bytes are not a JSON object; `enabledPlugins` is not an object; the fabrika key is neither `true` nor `false` | `unknown` | the raw failure. **Never `unwired`**: a probe nobody could perform proves nothing about what loads |
 | `board` | every bucket counted | `counted` | the two headline counts |
-| `board` | ≥1 bucket `unknown`, or the repo unresolvable/unreadable | `unknown` | the raw failure, or the absent labels |
+| `board` | every bucket read, ≥1 bucket's label proven missing | `absent` | `missing <labels> — create them with fabrika status bootstrap label-taxonomy`. **Never `unknown`**: the label set was read, so a missing label is a gap the repo proved |
+| `board` | ≥1 bucket `unknown`, or the repo unresolvable/unreadable | `unknown` | the raw failure — a label set that could not be read makes every label bucket `unknown` |
 | `readout` | digest block found | `found` | `<n> rows` |
 | `readout` | artifact read, no digest block | `absent` | `no digest block in <ref>` |
 | `readout` | artifact read, block present, a row non-conforming | `malformed` | which row failed |
@@ -268,9 +268,14 @@ purpose — keeping proven-empty apart from unread — to chance.
 | `lanes` | sweep answered, zero `stale`, zero `unreadable` | `empty` | `no lanes on disk`, or `<n> lane(s), none silent past <threshold>m` — the threshold echoed from the verb's answer, never a second constant. **Zero lanes on disk is this row, not a fault**: a fresh checkout has none |
 | `lanes` | sweep answered, zero `stale`, ≥1 lane record `unreadable` | `unknown` | which lane failed and why — a lane whose silence cannot be judged is never flattened to clean |
 | `lanes` | the sweep refused — a lane root is there and cannot be listed | `unknown` | the refusal's reason — the lane set is UNKNOWN, never empty |
+| `trunk` | trunk resolved, this clone's `origin/HEAD` names the same branch | `agrees` | `origin/<branch>; origin/HEAD agrees` |
+| `trunk` | trunk resolved, `origin/HEAD` names another branch | `drifted` | `origin/<branch>; this clone's origin/HEAD names <other> — run git remote set-head origin --auto`. A proven fact about this clone: the worktree hooks branch off `origin/HEAD`, so a drifted clone provisions lanes off the wrong base |
+| `trunk` | trunk resolved, this clone records no `origin/HEAD` | `unset` | `origin/<branch>; this clone records no origin/HEAD — run git remote set-head origin --auto` |
+| `trunk` | the trunk could not be resolved, or `origin/HEAD` could not be read | `unknown` | the raw failure. **Never a spelled `main`**: the trunk is GitHub's default branch, and a repo may have no `main` at all |
 
-**A proven-absent artifact is `absent` inside the composite, never `unknown`** — the two rows above
-that both yield `absent` are both facts about the repository, and only a failed *read* is `unknown`.
+**A proven-absent artifact is `absent` inside the composite, never `unknown`** — every row above
+that yields `absent`, the board's missing labels included, is a fact about the repository, and only
+a failed *read* is `unknown`.
 
 ### The shared exit taxonomy
 
@@ -390,8 +395,8 @@ fabrika status open [--field <name>] [--repo <owner/name>] [--skills-dir <path>]
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--field` | string | no | all six | render one field only — `menu`, `settings`, `wiring`, `board`, `readout` or `lanes`; any other value is off-vocabulary |
-| `--repo` | string | no | resolved | the repository the board and digest fields read |
+| `--field` | string | no | all seven | render one field only — `menu`, `settings`, `wiring`, `board`, `readout`, `lanes` or `trunk`; any other value is off-vocabulary |
+| `--repo` | string | no | resolved | the repository the board, digest and trunk fields read |
 | `--skills-dir` | string | no | [resolved](#roster-location) | the roster root the menu field reads |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -402,7 +407,7 @@ open	<field-count>
 field	<name>	<state>	<detail>	<source>	<as-of>
 ```
 
-`<name>` ∈ `menu` · `settings` · `wiring` · `board` · `readout` · `lanes`. `<state>` is drawn from that field's closed set,
+`<name>` ∈ `menu` · `settings` · `wiring` · `board` · `readout` · `lanes` · `trunk`. `<state>` is drawn from that field's closed set,
 **every one of which includes `unknown`**, and is produced by [the mapping](#core-to-field):
 
 | Field | Closed state set |
@@ -410,22 +415,34 @@ field	<name>	<state>	<detail>	<source>	<as-of>
 | `menu` | `ready` · `empty` · `unknown` |
 | `settings` | `resolved` · `unknown` |
 | `wiring` | `wired` · `unwired` · `unknown` |
-| `board` | `counted` · `unknown` |
+| `board` | `counted` · `absent` · `unknown` |
 | `readout` | `found` · `absent` · `malformed` · `unknown` |
+| `lanes` | `stale` · `empty` · `unknown` |
+| `trunk` | `agrees` · `drifted` · `unset` · `unknown` |
+
+The `lanes` field renders `fabrika lane stale`'s sweep over both default roots at its documented
+threshold: `stale` names the silent lanes, zero stale lanes is the proven negative `empty` (no lanes
+on disk is `empty` too), and an unreadable root or lane record is `unknown` with its reason. It
+reports; it never resumes.
+
+The `trunk` field names the trunk every verb resolved — `origin/<the repo's GitHub default branch>`,
+read through `packages/fabrika-cli/src/io/trunk.ts` — and holds this clone's `origin/HEAD` against it.
+It reports; it never runs `git remote set-head` itself.
 
 `<source>` names where the answer came from so the session can re-run one read instead of adopting
 the render: the resolved roster path for `menu`, `.fabrika.jsonc` for `settings`,
 `.claude/settings.json` for `wiring`, `<owner>/<name>` for `board`, and
-`<owner>/<name>#<issue>` for `readout` when an artifact resolved — otherwise `<owner>/<name>`.
+`<owner>/<name>#<issue>` for `readout` when an artifact resolved — otherwise `<owner>/<name>` — and
+`<owner>/<name>` for `trunk`.
 
-**No aggregate state, deliberately.** A roll-up over six independently-sourced fields would need a
+**No aggregate state, deliberately.** A roll-up over seven independently-sourced fields would need a
 rule for "three fine, one unknown", and every such rule either hides the unknown or drowns the three.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
-| `10` | `--field` is not one of `menu`, `settings`, `wiring`, `board`, `readout`, `lanes` |
+| `10` | `--field` is not one of `menu`, `settings`, `wiring`, `board`, `readout`, `lanes`, `trunk` |
 
 **That is the whole table, and it is the point** ([why](#open-is-total)). An unresolvable repo, an
 unreachable GitHub, an unreadable roster, an absent roster and an unregistered digest format each
@@ -503,7 +520,9 @@ fabrika status settings [--root <dir>] [--surfaces] [--json]
 
 The resolved config surface: every key `.fabrika.jsonc` may carry, what it resolves to here, and
 where that value came from. It is the one place a skill asks what a key resolves to, so no skill
-document has to restate a value (R9.1). It reads; it writes nothing.
+document has to restate a value (R9.1). It reads; it writes nothing. Both config layers are read:
+the tracked `.fabrika.jsonc` and, winning per key, the gitignored `.fabrika.local.jsonc` a machine
+may declare an allow-listed key in.
 
 **Inputs**
 
@@ -523,17 +542,17 @@ setting	<key>	<declared|default|unknown>	<value-as-json>	<detail>	<as-of>
 
 `<value-as-json>` is the value as JSON, which is what keeps the cell tab-free — a declared string
 holding a tab escapes rather than splitting the row. It is printed **in the spelling the file
-carries**, not in the shape the package decodes to: `capClearAuthors` prints `["@octocat"]`, never
+carries**, not in the shape the package decodes to: `ownAccounts` prints `["@octocat"]`, never
 `[{"_tag":"User","login":"octocat"}]`. `<as-of>` is this invocation's own read of the file,
 `asOfKind: "read-now"`, the same instant on every row because every row comes off it.
 
 <a id="provenance-is-the-column"></a>**Provenance is the load-bearing column.** "the governance
-roots are the five shipped defaults" and "the governance roots are five values this repo declared"
+roots are the four shipped defaults" and "the governance roots are four values this repo declared"
 are different facts, and an agent reading a bare value cannot tell whether the repo made a choice.
 
 | Provenance | Meaning |
 |---|---|
-| `declared` | the file carries this key and its value decoded |
+| `declared` | a config file carries this key and its value decoded; `<detail>` names the file it was declared in |
 | `default` | no file, or no such key — the shipped default, with which of the two in `<detail>` |
 | `unknown` | the value could not be established, with the reason in `<detail>` and no value printed |
 
@@ -550,7 +569,7 @@ that invites a caller to read the bytes without reading the status. This is the 
 `build check` and `build clearances` already hold on this file: an unreadable config is UNKNOWN,
 never the shipped default (`packages/fabrika-cli/src/config/document.ts`).
 
-**A repo with no `.fabrika.jsonc` is `resolved` at exit `0`**, every row `default`. That is the
+**A repo with neither config file is `resolved` at exit `0`**, every row `default`. That is the
 whole point of a shipped default, and it is the three-state law's proven-empty class, not its third.
 
 <a id="surfaces-expands-one-key"></a>**`--surfaces` expands one key; it does not add a readout.**
@@ -585,7 +604,7 @@ With `--json`, stdout is one object carrying `outcome` (the header's state), `pa
 | Code | Trigger |
 |---|---|
 | `7` | the config surface registers zero keys, or `--surfaces` was passed and no `surfaceDispositions` key is registered — nothing to resolve, and a readout over an empty surface is not an answer |
-| `11` | `.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green |
+| `11` | the repository root could not be resolved, or either config file exists and could not be read or is not a JSON object, a value the surface refuses is declared, or the load was refused — including a local file naming a key no machine may set locally — UNKNOWN, never green |
 
 **Errors**
 
@@ -610,9 +629,9 @@ are not.
 ```
 $ fabrika status settings
 settings	resolved	15	5	0	2026-08-19T20:43:22Z
-setting	capClearAuthors	declared	["@octocat","@hubot","@monalisa"]	-	2026-08-19T20:43:22Z
 setting	codeValidators	declared	[{"command":["pnpm","typecheck","--force"]},{"command":["pnpm","lint:worktree"]}]	-	2026-08-19T20:43:22Z
 setting	docLeakExempt	declared	["/CLAUDE.md",…]	-	2026-08-19T20:43:22Z
+setting	ownAccounts	declared	["@octocat","@hubot","@monalisa"]	-	2026-08-19T20:43:22Z
 setting	surfaceDispositions	default	{"gh-rest":"fail-loud","git-worktree":"fail-loud",…}	.fabrika.jsonc declares no `surfaceDispositions`	2026-08-19T20:43:22Z
 setting	unreadableCodeowners	declared	"refuse"	-	2026-08-19T20:43:22Z
 setting	workflowValidators	declared	[]	-	2026-08-19T20:43:22Z
@@ -625,24 +644,24 @@ $ fabrika status settings --surfaces
 settings	resolved	15	5	0	2026-08-19T20:43:22Z
 setting	surfaceDispositions	default	{"gh-rest":"fail-loud","git-worktree":"fail-loud",…}	.fabrika.jsonc declares no `surfaceDispositions`	2026-08-19T20:43:22Z
 surface	gh-rest	fail-loud	a GitHub repo reachable over `gh` REST with `issues: write`; every issue-writing verb exits 11 without it, and a run with no board is no answer rather than a narrower one
-surface	roadmap-focus	degrade	the `## Campaigns` table at `roadmapFile`, which declares the campaign in exclusive focus; an absent file and an absent table are the same well-formed default — nothing is active, so `build pick`'s and `build claim`'s fence is inert and admits every issue …
+surface	roadmap-focus	degrade	the `## Campaigns` table at `roadmapFile`, which groups work under themes; an absent file and an absent table are the same well-formed default — no theme is being worked, and `triage homes` answers over the milestones alone …
 ```
 
 The same run under `--json` — the notice line stays on stderr, so stdout is the object alone:
 
 ```
 $ fabrika status settings --json
-{"outcome":"resolved","path":".fabrika.jsonc","keys":15,"declared":5,"unknown":0,"settings":[{"key":"capClearAuthors","provenance":"declared","value":["@octocat","@hubot","@monalisa"],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"surfaceDispositions","provenance":"default","value":{"gh-rest":"fail-loud","git-worktree":"fail-loud"},"detail":".fabrika.jsonc declares no `surfaceDispositions`","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"workflowValidators","provenance":"declared","value":[],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"}]}
+{"outcome":"resolved","path":".fabrika.jsonc","keys":15,"declared":5,"unknown":0,"settings":[…,{"key":"ownAccounts","provenance":"declared","value":["@octocat","@hubot","@monalisa"],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"surfaceDispositions","provenance":"default","value":{"gh-rest":"fail-loud","git-worktree":"fail-loud"},"detail":".fabrika.jsonc declares no `surfaceDispositions`","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"workflowValidators","provenance":"declared","value":[],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"}]}
 ```
 
 ```
 $ fabrika status settings --root /srv/storefront
 status settings: could not read .fabrika.jsonc: /srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory; 15 key(s), 0 declared, 15 unknown.
-setting	capClearAuthors	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
 setting	docLeakExempt	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
 setting	governedRoots	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
+setting	ownAccounts	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
 setting	workflowValidators	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
-status settings: 15 key(s) resolve UNKNOWN (boardVocabulary, capClearAuthors, ci, …, workflowValidators) — what this repo runs on is unread, never the shipped default.
+status settings: 15 key(s) resolve UNKNOWN (appetiteSizes, assemblyRefresh, assemblyReplay, …, workflowValidators) — what this repo runs on is unread, never the shipped default.
 $ echo $?
 11
 ```
@@ -993,8 +1012,8 @@ fabrika status board [--repo <owner/name>] [--json]
 fixed order below:
 
 ```
-board	<counted|unknown>	<bucket-count>
-bucket	<name>	<count|unknown>	<selector>	<detail>	<as-of>
+board	<counted|absent|unknown>	<bucket-count>
+bucket	<name>	<count|absent|unknown>	<selector>	<detail>	<as-of>
 ```
 
 <a id="bucket-endpoints"></a>**Six buckets, each with the REST call that produces it.** §11 mandates
@@ -1019,9 +1038,12 @@ second answer here could contradict the verb that actually claims the work. **An
 "banked" bucket**: what marks a pull request banked and what clears it on a head-move is an open
 decision, still unruled.
 
-**A bucket whose label does not exist renders `unknown` with `<detail>` `label absent`, never `0`.**
-A zero count means the label exists and nothing carries it; an absent label means the question was
-never askable. The header is `unknown` if any bucket is.
+**A bucket whose label does not exist renders `absent` with `<detail>` `label <label> absent`, never
+`0` and never `unknown`.** A zero count means the label exists and nothing carries it; an absent
+label means the question was never askable, and the label set that was read proves it. Its `<as-of>`
+is when that label set was read. Only a label set that could not be read makes a label bucket
+`unknown`, and then every label bucket is. The header is `unknown` if any bucket is, else `absent` if
+any bucket is, else `counted`.
 
 **Exit status**
 
@@ -1038,7 +1060,8 @@ no zero-scope refusal for a verb whose scope is "this repository".
 |---|---|---|
 | `status board: cannot resolve a target repo — set CLAUDE_PIPELINE_REPO, GITHUB_REPOSITORY, or pass --repo.` | 1 | refusal |
 | `status board: cannot read <repo>: <reason> — every bucket is UNKNOWN, never 0.` | 11 | refusal |
-| `status board: counted 6 buckets over <repo>, <u> unknown (<absent labels>); scanned <n> items.` | 0 | notice |
+| `status board: counted 6 buckets over <repo>, <u> unknown (<unknown buckets>), <a> absent (<absent buckets>); scanned <n> items.` | 0 | notice |
+| `status board: <labels> <is/are> not on <repo> — create them with fabrika status bootstrap label-taxonomy.` | 0 | notice |
 
 **Scope** — the open issues and pull requests of `--repo`, per bucket call, paginated, with each
 bucket's scanned count on stderr.
@@ -1058,22 +1081,23 @@ bucket	p2	8	labels=p2	-	2026-08-09T14:22:06Z
 
 ```
 $ fabrika status board --repo acme/storefront
-board	unknown	6
-bucket	needs-triage	unknown	labels=status:needs-triage	label absent	unknown
-bucket	triaged	unknown	labels=status:triaged	label absent	unknown
+board	absent	6
+bucket	needs-triage	absent	labels=status:needs-triage	label status:needs-triage absent	2026-08-09T14:23:01Z
+bucket	triaged	absent	labels=status:triaged	label status:triaged absent	2026-08-09T14:23:01Z
 bucket	in-flight	0	pulls?state=open	-	2026-08-09T14:23:01Z
-bucket	p0	unknown	labels=p0	label absent	unknown
-bucket	p1	unknown	labels=p1	label absent	unknown
-bucket	p2	unknown	labels=p2	label absent	unknown
+bucket	p0	absent	labels=p0	label p0 absent	2026-08-09T14:23:01Z
+bucket	p1	absent	labels=p1	label p1 absent	2026-08-09T14:23:01Z
+bucket	p2	absent	labels=p2	label p2 absent	2026-08-09T14:23:01Z
 ```
 
-The second example is the fresh-repo case: the taxonomy is absent, so five buckets are `unknown`
-while `in-flight` is a proven `0`. Rendering the five as `0` would tell a new user their queue is
-clear when the question was never askable.
+The second example is the fresh-repo case: the taxonomy is absent, so five buckets are `absent`
+while `in-flight` is a proven `0`, and stderr names `fabrika status bootstrap label-taxonomy`.
+Rendering the five as `0` would tell a new user their queue is clear when the question was never
+askable, and rendering them `unknown` would tell them the repo could not be read.
 
 ```
 $ fabrika status board --json
-{"outcome":"unknown","buckets":[{"name":"in-flight","count":0,"selector":"pulls?state=open","detail":null,"asOf":"2026-08-09T14:23:01Z","asOfKind":"read-now"},{"name":"p0","count":null,"selector":"labels=p0","detail":"label absent","asOf":null,"asOfKind":null}]}
+{"outcome":"absent","buckets":[{"name":"in-flight","state":"counted","count":0,"selector":"pulls?state=open","detail":null,"asOf":"2026-08-09T14:23:01Z","asOfKind":"read-now"},{"name":"p0","state":"absent","count":null,"selector":"labels=p0","detail":"label p0 absent","asOf":"2026-08-09T14:23:01Z","asOfKind":"read-now"}]}
 ```
 
 **Grounding**
@@ -1101,29 +1125,34 @@ surface merges into a file that is already there instead. The content is the
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
-here, not inferred from any declaration. Nine ids, and
-a tenth is a change to this table, not a new rule.
+here, not inferred from any declaration. Ten ids, and
+an eleventh is a change to this table, not a new rule.
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
 | `design-manifest` | `--path`, default `design-system-manifest.md` at the repo root | **stdin**, required — the skill's inferred draft | the file's bytes match stdin through `normalizeForReadback` |
-| `roadmap-focus` | `--path`, default the `roadmapFile` this repo declares, itself defaulting to `ROADMAP.md` | **stdin**, required — to the [grammar below](#roadmap-grammar), which is not the drafting skill's judgement | same, plus the parsed row count in the notice ([why](#roadmap-grammar)) |
+| `roadmap-focus` | `--path`, default the `roadmapFile` this repo declares, itself defaulting to `ROADMAP.md` | **stdin**, required — to the [grammar below](#roadmap-grammar), which is not the drafting skill's judgement | same, plus the parsed row count in the notice ([why](#roadmap-grammar)) and a [pin check](#roadmap-pin-check) notice that never changes the exit |
 | `gitignore-row` | `--path`, default `.gitignore` at the repo root | **none** — the two comment lines and the row `/.fabrika/`, fixed below, appended to whatever the file already holds | the re-read contains both the row and the whole of the pre-existing text, each through `normalizeForReadback` |
 | `claude-md-section` | `--path`, default `CLAUDE.md` at the repo root | **none** — the canonical operator-first "work flows through fabrika" section, fixed below, appended when its marker heading `## Work flows through fabrika` is absent — the append-if-absent arm of the merge rule | the re-read contains both the heading and the whole of the pre-existing text, each through `normalizeForReadback` |
-| `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, `ready-for:` + every imported `AUDIENCES` member, and every imported `CLASS_LABELS` member (`class:code`, `class:doc`, `class:skill`, `class:ui`) — twenty today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
+| `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, `ready-for:` + every imported `AUDIENCES` member, every imported `CLASS_LABELS` member (`class:code`, `class:doc`, `class:skill`, `class:ui`), and `closed-by-triage`, the label `triage kill` stamps — twenty-one today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
 | `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
 | `settings-patch` | `--path`, default `.claude/settings.json` at the repo root | **none** — the two keys [fixed below](#json-key-merge), merged into the object a present file parses to, written whole into a file that is absent | a present file re-reads to the merged object — every undeclared key intact, the declared keys at their registry values — through `normalizeForReadback` |
-| `dep-pin` | `--path`, default `package.json` at the repo root | **none** — the `dependencies.@kampus/fabrika-cli` row at the version npm's registry currently [publishes](#json-key-merge), merged into the object a present manifest parses to, written whole into a manifest that is absent | a present manifest re-reads to the merged object — every undeclared key intact, the row at exactly the resolved version — through `normalizeForReadback`; an unreachable registry refuses unwritten |
+| `dep-pin` | `--path`, default `package.json` at the repo root | **none** — the `devDependencies.@kampus/fabrika-cli` row at the version npm's registry currently [publishes](#json-key-merge), merged into the object a present manifest parses to, written whole into a manifest that is absent | a present manifest re-reads to the merged object — every undeclared key intact, the row at exactly the resolved version — through `normalizeForReadback`; an unreachable registry refuses unwritten |
+| `hand-check-rule` | `--path`, default `.fabrika.jsonc` at the repo root | **none** — the one `reviewUi.whenNoPreview` rule [fixed below](#hand-check-rule), spliced into a present file's text, written whole into a file that is absent | the re-read matches the spliced text through `normalizeForReadback` — the rule in, every other key and every comment where it was |
 
 <a id="taxonomy-is-derived"></a>**The taxonomy is derived from the vocabularies, never restated.**
 Every name comes from the constant the writing verb already reads — `STATUSES` for the five statuses,
 `PRIORITIES`, `TYPES` and `AUDIENCES` for the rest, and `CLASS_LABELS` for the four `class:*` labels
 `triage apply --class` stamps — so a seventh `TYPES` member widens what this
-verb creates with no second edit anywhere. The class row is the one that does not come off the
-board: its set is closed in code, because a class is what a diff partitions to and no board
-vocabulary widens or renames it. The labels themselves are this verb's to mint even so — the stamp
-that reads them refuses a label the repo lacks rather than letting the API create it. v1 restated two statuses and `PRIORITIES` and stopped, and
+verb creates with no second edit anywhere. The class row and `closed-by-triage` are the two that
+do not come off the board: the class set is closed in code, because a class is what a diff
+partitions to and no board vocabulary widens or renames it, and `closed-by-triage` is what
+`triage kill` stamps whatever the board calls its statuses. The labels themselves are this verb's to
+mint even so — the stamp that reads them refuses a label the repo lacks rather than letting the API
+create it. That refusal names its remedy off these same sets: `labelSurface` in
+[`bootstrap-verb.ts`](../../../../packages/fabrika-cli/src/status/bootstrap-verb.ts) answers which
+surface holds a label on the repo's own board, so a verb never spells the surface itself. v1 restated two statuses and `PRIORITIES` and stopped, and
 the eleven it omitted are each a label some verb writes; since a verb finds its label absent and
 refuses rather than letting the API mint it, a repo that ran the whole documented bootstrap
 could not `triage apply`, `triage park`, `plan flip` or `ship release`. In a repo bootstrapped
@@ -1163,11 +1192,10 @@ session must not need a second file open:
 - **The join key is that number, never the title.** An arc named `Storefront` can pin a milestone
   titled `Checkout — search and discovery`; the two share no substring, so a title cell joins
   nothing.
-- The `State` column **is read on a campaign row**: `active` there is the dispatch permission,
-  so `build`'s scope fence admits a lane only under an `active` campaign. A drafted
-  campaign row is therefore written `paused` — flipping it to `active` is the human's separate,
-  explicit start act, so a bootstrap never grants dispatch permission. On an arc row the column
-  is still for humans; nothing filters on it.
+- The `State` column **is read on a campaign row**: `active` there says the theme is being worked.
+  A drafted campaign row is written `paused` — flipping it to `active` is
+  the human's separate, explicit start act, so a bootstrap never declares a theme worked on its own.
+  On an arc row the column is still for humans; nothing filters on it.
 
 ```markdown
 ## Arcs
@@ -1187,6 +1215,15 @@ read-back predicate stays the byte match this table states — a count is not a 
 Refusing an unjoinable roadmap belongs to `triage homes`, whose exit `7` already fires at the point
 the rows are actually needed; gating here would block the write a human then has to fix by hand. A
 later reader tempted to "fix" this into a gate is looking at the design, not a gap.
+
+<a id="roadmap-pin-check"></a>**The write also checks each arc's pin against the target repo's open
+milestones**, under the same rule: reported, never enforced. After the read-back it reads the repo's
+open milestones and prints one more notice. Every arc pin open reads `pin check — every arc pin is an
+open milestone`. Any arc pinning a milestone that is absent or closed gets one `warning` naming each
+such `#<n>` with its arc, at exit `0`, because `triage homes` offers only open milestones. A failed
+milestone read, or no resolvable target repo, prints `pin check unknown`. It is never silent, so no
+notice can be read as "every pin resolves". A roadmap with no arc rows pins nothing and reads nothing.
+Campaign rows are not checked. `--json` does not change.
 
 The `gitignore-row` block, fixed here so no clause defers to source. The last line is the row
 itself, and it is also the marker the collision guard and the read-back match on:
@@ -1268,8 +1305,24 @@ arm's write-and-read-back protocol. Already merged — the parsed object equals 
 produce, however its keys are ordered — is `exists` at exit `0`: a second run over an adopted repo
 is byte-for-byte a no-op, because idempotency is absolute.
 
+A merged write keeps the present file's layout: the indent its first indented line uses (two
+spaces, four spaces or a tab), its line endings, and whether it ends on a newline. It does not keep
+inline formatting: the whole object is re-rendered, so an array or object a file writes on one line
+(`"files": ["dist"]`) comes back expanded over several lines. A `dep-pin` that moves the row out of
+`dependencies` also removes that line there. So a two-space `package.json` whose values are already
+expanded one per line gets a diff of mostly the lines the new row adds, plus the comma edits JSON
+forces around it: the sibling line before an added last row gains a trailing comma, the line before
+a removed last row loses one, and a `dependencies` whose only row moved collapses to `{}`. A file
+with no indented line (`{}`,
+or one minified line) has no indent to keep and takes a tab. A file created from nothing is written
+tab-indented, with `\n` line endings and a final newline.
+
 **`dep-pin` resolves the version at run time; the registry's answer is the only pin it knows.** The
-row it merges is `dependencies.@kampus/fabrika-cli`, at exactly what
+row it merges is `devDependencies.@kampus/fabrika-cli`, because the CLI is a dev tool and never a
+runtime dependency of what the repo ships. A row already under `dependencies`, where an earlier
+`dep-pin` wrote it, moves in the same write: it leaves `dependencies` (which stays, even when that
+empties it) and lands under `devDependencies`, so the manifest never holds two rows for the package.
+The row's version is exactly what
 `https://registry.npmjs.org/@kampus/fabrika-cli/latest` publishes when the verb runs — never a
 constant in this table, which is what makes a re-run move a stale row forward instead of declaring
 it already adopted. A registry that cannot be reached or answers without a version is exit `11` —
@@ -1277,8 +1330,44 @@ nothing pinned, nothing written; a guessed version is the one outcome this surfa
 edit itself rides the same key-merge arm as `settings-patch`: unknown keys preserved verbatim,
 unparseable bytes refused unwritten, absolute idempotency. And per the founder's ruling
 (R1.3), no package manager ever spawns and no lockfile is read or written — the exact install
-command (`pnpm add --save-exact @kampus/fabrika-cli@<version>`) is printed on the notice channel,
-because the lockfile stays the caller's.
+command (`pnpm add -D --save-exact @kampus/fabrika-cli@<version>`) is printed on the notice channel,
+because the lockfile stays the caller's. Two more notices follow it: the install brings in
+Playwright and a headless Chromium download, and pnpm 10 skips the package's `postinstall` until the
+repo approves it (`pnpm approve-builds`, or an `onlyBuiltDependencies` entry plus
+`pnpm rebuild @kampus/fabrika-cli`) — that `postinstall` is what sets up `ui render`'s browser.
+
+<a id="hand-check-rule"></a>**`hand-check-rule` writes one rule, for a repo whose app has a screen
+and no preview deploy.** A repo that declares no `reviewUi.whenNoPreview` rule resolves every ui file
+to `require-render`, so its first screen change ends `CANT-SEE` with nothing to render. The rule,
+fixed here so no clause defers to source:
+
+```jsonc
+"reviewUi": {
+	"whenNoPreview": [{"paths": ["**"], "mode": "hand-check"}]
+}
+```
+
+`hand-check` is the only mode this surface writes: the owner looks at the screen and posts a
+screenshot, and the screen check is never switched off from here. The glob is
+every path because the rule is read only over a pull request's ui-class files, so it covers whatever
+`uiSurfaces` names now or later, and `review-ui route --no-preview` refuses it on a pull request
+that has a preview.
+
+**Any rule already declared is `exists`, whatever its mode or paths.** Once a repo has said which
+paths take which mode, a second rule from here could only contradict it, so nothing is written and
+the notice says a rule is already there. A `reviewUi` with no rules — the key absent, an empty
+object, an empty list — is the gap this surface fills.
+
+**`.fabrika.jsonc` is edited in place, never re-serialized.** The file carries a person's comments,
+so the rule is spliced into the text: a missing `reviewUi` is appended after the last top-level key,
+a missing `whenNoPreview` goes inside `reviewUi`, and an empty list is filled where it stands, with
+the rule after any comment between its brackets. Every other byte stays, comments included. Before writing, the spliced text is parsed
+again and must equal the old document plus the rule; a file that does not parse as a JSON object
+with comments, a `reviewUi` the key itself refuses, and a splice that would move another key are each
+exit `11` with nothing written. Absent, the file is created holding the rule alone.
+
+`review-ui route` reads the rules off the checkout it runs in, so the rule counts for a reviewer
+once it is committed to the branch that reviewer's worktree is cut from.
 
 The `readout-artifact` body, fixed here so no clause defers to another skill's prose:
 
@@ -1292,8 +1381,8 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | string | yes | — | one `<surface-id>` from the registry above |
-| `--path` | string | no | the registry default | override the target path for a file, line, json or dep-pin surface; must resolve inside the repository root |
-| `--repo` | string | no | resolved | the repository, for the two non-file surfaces |
+| `--path` | string | no | the registry default | override the target path for a file, line, json, dep-pin or hand-check-rule surface; must resolve inside the repository root |
+| `--repo` | string | no | resolved | the repository the three GitHub surfaces (`label-taxonomy`, `issue-shape-markers`, `readout-artifact`) write to, and the one whose open milestones the `roadmap-focus` [pin check](#roadmap-pin-check) reads |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes for `design-manifest` and `roadmap-focus` | — | the content. `NoStdin` and `Text("")` are exit `3`; a **failed** stdin read is exit `1` — the content is UNKNOWN, never empty, the split `packages/fabrika-cli/src/report/file-verb.ts` already ships |
 
@@ -1342,7 +1431,7 @@ the shape this seat exists to prevent. The skill loops.
 | `8` | the write failed — whether anything landed is **UNKNOWN**; re-read before retrying |
 | `9` | the write landed and the read-back does not match |
 | `10` | `--path` resolves outside the repository root |
-| `11` | a precondition read failed — the existence probe could not be performed, a present json target's bytes do not parse as a JSON object, or dep-pin's registry read failed (unreachable, non-200, or no version named); **nothing was written** |
+| `11` | a precondition read failed — the existence probe could not be performed, a present json target's bytes do not parse as a JSON object, dep-pin's registry read failed (unreachable, non-200, or no version named), or hand-check-rule's target does not parse as a JSON object with comments, carries a `reviewUi` the key refuses, or cannot take the rule without another key moving; **nothing was written** |
 | `12` | `<surface-id>` is not in the [buildable-surface registry](#buildable-surfaces) |
 
 **Errors**
@@ -1364,13 +1453,26 @@ the shape this seat exists to prevent. The skill loops.
 | `status bootstrap: appending <marker> to <target> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
-| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.
+| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule.
+| ``status bootstrap: cannot read <target>: <reason> — whether a `reviewUi.whenNoPreview` rule is already there is UNKNOWN, and nothing was written.`` | 11 | refusal |
+| `status bootstrap: <target> does not parse as a JSON object with comments — nothing was written.` | 11 | refusal |
+| `status bootstrap: <target> is refused — <the reviewUi key's reason>. Nothing was written; fix that key first.` | 11 | refusal |
+| `status bootstrap: cannot add the rule to <target> without moving its other keys — nothing was written. Add {"paths":["**"],"mode":"hand-check"} under "reviewUi.whenNoPreview" by hand.` | 11 | refusal |
+| `status bootstrap: created <target> for hand-check-rule with one hand-check rule, read-back conformed.` | 0 | notice |
+| `status bootstrap: added one hand-check rule to <target> for hand-check-rule, read-back conformed.` | 0 | notice |
+| ``status bootstrap: <target> already carries a `reviewUi.whenNoPreview` rule — nothing written.`` | 0 | notice |
 | `status bootstrap: created <target> for <surface-id>, read-back conformed.` | 0 | notice |
 | `status bootstrap: created <target> for roadmap-focus, read-back conformed — <n> arc(s), <n> campaign(s).` | 0 | notice |
+| `status bootstrap: pin check — every arc pin is an open milestone in <owner/name> (scanned <n> open milestone(s)).` | 0 | notice |
+| ``status bootstrap: warning — <an arc pins a milestone that is|arcs pin milestones that are> not open in <owner/name>: #<n> (<arc>), …. `triage homes` offers only open milestones; open <it|them> or fix the pin.`` | 0 | notice |
+| `status bootstrap: pin check unknown — cannot read <owner/name>'s open milestones: <reason>; whether the arc pins are open milestones is unread.` | 0 | notice |
+| `status bootstrap: pin check unknown — no target repo resolved (<reason>); whether the arc pins are open milestones is unread.` | 0 | notice |
 | `status bootstrap: appended <marker> to <target> for <surface-id>, read-back conformed.` | 0 | notice |
 | `status bootstrap: merged the declared keys into <target> for settings-patch, read-back conformed.` | 0 | notice |
 | `status bootstrap: cannot resolve @kampus/fabrika-cli's current release from npm: <reason> — nothing pinned, nothing written.` | 11 | refusal |
-| `status bootstrap: the lockfile stays yours — install with: pnpm add --save-exact @kampus/fabrika-cli@<version>` | 0 | notice |
+| `status bootstrap: the lockfile stays yours — install with: pnpm add -D --save-exact @kampus/fabrika-cli@<version>` | 0 | notice |
+| ``status bootstrap: the install brings in Playwright (@playwright/test) and its postinstall downloads a headless Chromium (~130MB) — the browser `fabrika ui render` drives.`` | 0 | notice |
+| ``status bootstrap: pnpm 10 skips that postinstall until you approve it — run `pnpm approve-builds` and pick @kampus/fabrika-cli, or add @kampus/fabrika-cli to `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`; approving it is what lets `ui render`'s browser setup run.`` | 0 | notice |
 
 **Scope** — the single write target named by `<surface-id>`.
 
@@ -1406,6 +1508,7 @@ $ fabrika status bootstrap roadmap-focus <<'EOF'
 EOF
 bootstrap	created	roadmap-focus	ROADMAP.md	ok
 status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 1 arc, 0 campaigns.
+status bootstrap: pin check — every arc pin is an open milestone in acme/storefront (scanned 1 open milestone).
 ```
 
 ```
@@ -1433,7 +1536,9 @@ nothing else moved. A second run over it reads `{"outcome":"exists",…}` and wr
 $ fabrika status bootstrap dep-pin
 bootstrap	created	dep-pin	package.json	ok
 status bootstrap: created package.json for dep-pin, read-back conformed.
-status bootstrap: the lockfile stays yours — install with: pnpm add --save-exact @kampus/fabrika-cli@0.7.1
+status bootstrap: the lockfile stays yours — install with: pnpm add -D --save-exact @kampus/fabrika-cli@0.7.1
+status bootstrap: the install brings in Playwright (@playwright/test) and its postinstall downloads a headless Chromium (~130MB) — the browser `fabrika ui render` drives.
+status bootstrap: pnpm 10 skips that postinstall until you approve it — run `pnpm approve-builds` and pick @kampus/fabrika-cli, or add @kampus/fabrika-cli to `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`; approving it is what lets `ui render`'s browser setup run.
 $ echo $?
 0
 ```
@@ -1444,8 +1549,20 @@ no package manager ever spawns and no lockfile moves. A re-run with the row alre
 `{"outcome":"exists",…}`; a re-run over an older pin moves it forward.
 
 ```
+$ fabrika status bootstrap hand-check-rule
+bootstrap	created	hand-check-rule	.fabrika.jsonc	ok
+status bootstrap: added one hand-check rule to .fabrika.jsonc for hand-check-rule, read-back conformed.
+$ fabrika status bootstrap hand-check-rule
+bootstrap	exists	hand-check-rule	.fabrika.jsonc	-
+status bootstrap: .fabrika.jsonc already carries a `reviewUi.whenNoPreview` rule — nothing written.
+```
+
+The file was there with keys and comments of its own; the rule went in after the last key and
+nothing else moved. The second run found a rule and wrote nothing.
+
+```
 $ fabrika status bootstrap merge-queue
-status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.
+status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule.
 $ echo $?
 12
 ```

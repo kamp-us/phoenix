@@ -47,6 +47,10 @@ jobs:
       e2e: ${{ steps.filter.outputs.e2e }}
       packages: ${{ steps.filter.outputs.packages }}
       workflows: ${{ steps.filter.outputs.workflows }}
+      # The diff basis the `mergebase` step pins, for `packages-tests`' `vitest --changed` (#10023)
+      # and for `check` and `unit` (#10074).
+      # Empty on `push` and `workflow_dispatch`, and on any fallback, which runs the full suite.
+      merge_base: ${{ steps.mergebase.outputs.sha }}
       # Worker-relevance of the diff (issue #1014): `false` ONLY when the WHOLE PR
       # diff — including its `pnpm-lock.yaml` delta — is provably confined to packages
       # the worker never imports, so the slow real-D1 `integration`/`e2e` tiers can
@@ -74,21 +78,24 @@ jobs:
       # predicate, so both read `check_required`. The integration/e2e author+event
       # guards are reproduced EXACTLY so a fork/non-author PR's legitimate
       # secret-less skip stays legitimate (required=false ⇒ skip is a PASS).
-      # On the merge queue's batched `merge_group` ref there is no PR base for
-      # `paths-filter` to diff, so every `*_required` output ORs in `merge_group` to run
-      # the FULL gate on the batch (fail-safe to running — the same stance the
-      # worker-relevance classifier takes). The batch ref is the prospective merge of all
-      # queued PRs, so cost-optimization path-filtering doesn't apply there (ADR 0132).
-      # `workflow_dispatch` rides beside `merge_group` in every required-ness expression
-      # below, for the same reason and with the same stance: neither event carries a PR base,
-      # so neither gets to narrow the gate on a path filter, and both FAIL SAFE TO RUNNING.
-      # On a dispatched run the `mergebase` step is skipped, dorny falls back to its
-      # default-branch merge-base basis, and the filter outputs stay wide — but the Release PR
-      # is the one PR nobody re-reads before merging, so the full gate is what it gets (#5718).
+      # On the merge queue's batched `merge_group` ref the path filter decides required-ness
+      # exactly as it does on a PR: the `mergebase` step below pins dorny's `base` to
+      # `merge_group.base_sha` (#3797), so the filter diffs the batch's two-dot
+      # `base_sha..head` — the cumulative diff of every queued PR, on a stable basis. A batch
+      # holding one code-touching PR still matches `code` and runs the gate; only a batch in
+      # which nothing matched skips. `integration_required` below already trusts that same
+      # batch diff, so a docs-only batch skips on PR head and batch alike (#3514). ADR 0132
+      # mandates the `merge_group` trigger, not a full gate on the batch. Fail-safe: an empty
+      # `base_sha` leaves the `mergebase` output empty, dorny falls back to its default-branch
+      # merge-base basis, and detection stays wide (it over-reports, never under-reports).
+      # `workflow_dispatch` still ORs in to every required-ness expression below and FAILS
+      # SAFE TO RUNNING: a dispatched run carries no base, the `mergebase` step is skipped,
+      # and the Release PR is the one PR nobody re-reads before merging, so the full gate is
+      # what it gets (#5718).
       # `e2e_required` is the one expression where a dispatch still reads the path filter
       # rather than ORing past it; its own block says why, and it is a widening there too —
       # no event may make that gate not-required on its own.
-      check_required: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.code == 'true' }}
+      check_required: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.code == 'true' }}
       # `worker_relevant != 'false'` (issue #1014) is ANDed in LAST so it can only
       # REMOVE an integration run, never add one: a PR whose diff is provably confined
       # to worker-irrelevant packages skips the tier even though the lockfile delta
@@ -134,11 +141,10 @@ jobs:
             (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
             (github.event_name == 'push' ||
              contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))) }}
-      # e2e is DELIBERATELY the ONE gating job NOT ORed-in on `merge_group` — it is
-      # the opposite stance of check/integration/packages/workflows above (which DO
-      # OR in `merge_group` to run the full gate on the batch, because they need no
-      # deploy). e2e alone awaits a live preview URL + D1 id from deploy.yml, and
-      # deploy.yml has NO `merge_group` trigger (only `push: [main]` + `pull_request`),
+      # e2e is DELIBERATELY the ONE gating job that never runs on `merge_group` — unlike
+      # check/integration/packages/workflows above, which read the batch diff's path
+      # filter there and run whenever it matches, because they need no deploy. e2e alone awaits a live preview URL + D1 id from deploy.yml, and
+      # deploy.yml has NO `merge_group` trigger,
       # so a batch can't produce a preview — e2e would await one forever, time out,
       # and red `ci-required`, ejecting the whole batch (ADR 0132; run 28645439324).
       # e2e already gated every PR in the `pull_request` context (where deploy.yml
@@ -158,7 +164,7 @@ jobs:
       # CHANGELOGs, the release manifest — matches no `e2e:` path, so that run still skips on
       # the filter, which is the same legitimate not-applicable PASS a `pull_request` run of
       # it gets. A dispatched run whose diff DOES hit the `e2e:` paths runs the job and,
-      # since deploy.yml has no dispatch trigger, finds no preview to test: the await step
+      # since deploy.yml dispatches target prod, finds no preview to test: the await step
       # fails and `ci-required` goes red. Red is the correct answer there — a dispatch may
       # not launder a missing e2e run into a pass.
       e2e_required: >-
@@ -173,13 +179,13 @@ jobs:
       # integration/e2e), so a fork PR that touches `packages/**` MUST still run +
       # pass them. A non-packages PR has `packages_required == false`, so the job's
       # skip is a legitimate not-applicable PASS.
-      packages_required: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.packages == 'true' }}
+      packages_required: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.packages == 'true' }}
       # `actionlint` lints `.github/workflows/**` (issue #568). Its single-sourced
       # required-ness is JUST the `workflows` path filter — actionlint is creds-free
       # and fast (no author/fork guard), so any PR (incl. a fork) that touches a
       # workflow MUST run + pass it. A non-workflow PR has `workflows_required ==
       # false`, so the job's skip is a legitimate not-applicable PASS.
-      workflows_required: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.workflows == 'true' }}
+      workflows_required: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.workflows == 'true' }}
     steps:
       # Full history so the worker-relevance step's base...head diff resolves; the
       # default shallow checkout has no merge-base for the comparison (issue #1014).
@@ -197,11 +203,15 @@ jobs:
       # — or an EMPTY one — instead routes to `getChangesSinceMergeBase`, a THREE-DOT merge-base
       # search with depth-limited incremental fetching against a MOVING `main`, whose result
       # drifts run to run. So this step emits a SHA per event:
-      #   - pull_request: the true merge base of `base.sha..HEAD`, so dorny's two-dot diff
-      #     equals the PR's own three-dot diff. `base.sha` is the base BRANCH TIP at event time
-      #     while the checked-out `refs/pull/N/merge` is built on an older tip, so diffing raw
-      #     `base.sha` reports every file main changed since, in reverse — the 22 phantom `e2e:`
-      #     hits that wedged PR #3713 (10-min preview poll on a deploy that correctly skipped).
+      #   - pull_request: the checked-out `refs/pull/N/merge` commit's first parent (`HEAD^1`),
+      #     the exact base tip GitHub merged the PR onto, so dorny's two-dot `HEAD^1..HEAD` is
+      #     the PR's own change against its merge target (#10060). `base.sha` is recorded at event
+      #     time and can sit on either side of that parent, and both directions leak main's drift
+      #     into the diff. NEWER than the parent: diffing raw `base.sha` reports every file main
+      #     changed since, in reverse — the 22 phantom `e2e:` hits that wedged PR #3713 (#3722).
+      #     OLDER than the parent: the merge base of `base.sha` and HEAD is `base.sha` itself, so
+      #     every file main took in between counts as the PR's — nine `.decisions/` files sent
+      #     PR #10027's `packages unit tests` full. The first parent is right in both cases.
       #   - merge_group: the batch's own `base_sha`. An empty `base` here defaulted dorny to
       #     `base = defaultBranch` ('main', a BRANCH NAME — not a SHA) ⇒ the unstable
       #     merge-base-against-moving-main path, so the IDENTICAL docs-only PR #3747 got
@@ -213,13 +223,15 @@ jobs:
       #     scope decision every batch.
       # deploy.yml's filter reads the same globs off this same `base:` input, so both stay
       # anchored to one basis or they classify the same PR differently (`path-filter-guard`
-      # fails closed on that drift). Fail-safe: on any failure the output is empty, dorny falls
+      # fails closed on that drift). Fail-safe: on any failure, including a `pull_request` HEAD
+      # that is not a two-parent merge commit, the output is empty, dorny falls
       # back to its default-branch merge-base basis, and detection stays WIDE (it over-reports,
       # never under-reports) — a doubt always RUNS a gate, never skips one.
       - id: mergebase
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         env:
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -uo pipefail
           if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then
@@ -229,11 +241,12 @@ jobs:
             else
               echo "::warning::merge_group base_sha empty — falling back to dorny's default-branch merge-base basis (detection stays wide, never narrower)"
             fi
-          elif sha=$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD 2>/dev/null); then
+          elif git rev-parse --verify --quiet 'HEAD^2^{commit}' >/dev/null \
+            && sha=$(git rev-parse --verify --quiet 'HEAD^1^{commit}'); then
             echo "sha=$sha" >> "$GITHUB_OUTPUT"
-            echo "::notice::change-detection diff basis = merge base $sha (base.sha ${{ github.event.pull_request.base.sha }})"
+            echo "::notice::change-detection diff basis = merge ref first parent $sha (base.sha $PR_BASE_SHA)"
           else
-            echo "::warning::could not resolve a merge base — falling back to dorny's base.sha basis (detection stays wide, never narrower)"
+            echo "::warning::HEAD is not a merge commit with a resolvable first parent — falling back to dorny's base.sha basis (detection stays wide, never narrower)"
           fi
 
       # API-free git-mode change detection (#3245). dorny/paths-filter reads the changed
@@ -244,7 +257,7 @@ jobs:
       # getChangedFilesFromApi(...)`, else "Github token is not available - changes will be
       # detected using git diff"). That live API read is the sole flake surface in this job:
       # a transient GitHub-API-HTML blip served an error page where JSON was expected
-      # (`invalid character '<'`), hard-failing this step → `produce run-evidence bundle` →
+      # (`invalid character '<'`), hard-failing this step →
       # the `ci-required` aggregate went RED on a defect-free docs-only PR (#3244). Setting
       # `token: ''` forces the git-diff path, removing the API read entirely so the transient
       # CANNOT occur — a stronger fix than retrying a read we don't need to make. The
@@ -259,8 +272,8 @@ jobs:
         id: filter
         with:
           token: ''
-          # The explicit diff basis the `mergebase` step above pins: the PR merge base on
-          # `pull_request`, the batch `base_sha` on `merge_group` (#3797), and empty on `push`
+          # The explicit diff basis the `mergebase` step above pins: the merge ref's first
+          # parent on `pull_request`, the batch `base_sha` on `merge_group` (#3797), and empty on `push`
           # (dorny keeps its default-branch merge-base backstop there). `path-filter-guard`
           # fails closed if this `token`/`base` pairing ever drifts from deploy.yml's.
           base: ${{ steps.mergebase.outputs.sha }}
@@ -284,7 +297,9 @@ jobs:
             # Paths the full e2e suite (#525) actually exercises: the SPA and its
             # build inputs (src, vite config, the served index.html shell), the
             # worker that serves it, the alchemy stack/D1 the preview deploys, the
-            # specs + playwright config, and the seed tool. A docs/skills-only PR
+            # specs + playwright config, the seed tool, and the design package the
+            # SPA renders (a design-only PR routes into review:ui, which needs the
+            # preview — #9720). A docs/skills-only PR
             # touches none of these, so `e2e` stays false → the e2e job skips
             # (→ green, non-blocking). Includes both workflows so a CI/deploy edit
             # keeps the gate self-covering.
@@ -312,6 +327,7 @@ jobs:
               - 'apps/**/playwright.config.cjs'
               - 'apps/**/package.json'
               - 'packages/preview-seed/**'
+              - 'packages/design/**'
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy.yml'
@@ -363,10 +379,15 @@ jobs:
             # document against the config-key registry, and the registry-side edit is
             # already covered by `packages/**` — a hand-edit of the generated file is
             # the half that would otherwise skip the only job that reds on it.
+            # `.fabrika.local.schema.json` is the second document that same verb
+            # reconciles (#9341), and it is generated the same way, so it is listed on
+            # the same rule — the pair is one check, and listing half of it would leave
+            # a hand-edit of the machine-local schema with no job that reds.
             packages:
               - 'packages/**'
               - 'infra/**'
               - '.fabrika.schema.json'
+              - '.fabrika.local.schema.json'
               - 'claude-plugins/fabrika/docs/**'
               - 'claude-plugins/fabrika/hooks.json'
               - 'pnpm-workspace.yaml'
@@ -485,10 +506,21 @@ jobs:
     # job's success when `check_required` is true. Skipped → green, not blocking (no
     # required-status-check rule on `main`, so a legitimate skip never wedges a
     # docs-only PR).
+    #
+    # On a PR or a queue batch both halves read only what the diff since the `changes` job's
+    # diff base reaches (#10074): biome checks the changed files, and turbo `--affected`
+    # typechecks the changed packages and their dependents. `push` to main and
+    # `workflow_dispatch` carry no base and check everything, with turbo's cache unread.
     if: needs.changes.outputs.check_required == 'true'
     runs-on: ubuntu-latest
+    env:
+      BASE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.changes.outputs.merge_base || '' }}
     steps:
+      # Full history: biome's `--since` and turbo's `--affected` both diff against the base, so
+      # the base commit has to be in the clone.
       - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4.1.0
 
@@ -499,42 +531,76 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Carries turbo's task cache between runs, so a package build or typecheck whose inputs
+      # did not change replays instead of running — the `integration` job's pattern (#681).
+      - name: Cache turbo task cache
+        uses: actions/cache@v4.2.3
+        with:
+          path: .turbo/cache
+          key: turbo-check-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'apps/**/src/**', 'apps/**/worker/**', 'packages/**/src/**', 'turbo.json') }}
+          restore-keys: |
+            turbo-check-${{ runner.os }}-
+
       # `biome check` is lint + format in one pass (tabs/100-col/no-bracket-spacing).
       # `--reporter=github` (CI-only) emits `::error file=…,line=…::` workflow commands so a
       # lint/format failure renders as an inline annotation on the PR diff, not just buried log
       # text a repair agent must dig through (#3872). The flag lives here rather than in the root
-      # `lint` script so local `pnpm lint` keeps the default human-readable reporter; this
-      # mirrors that script's primary-checkout branch (`biome check .`) with the reporter added.
-      - run: pnpm exec biome check --reporter=github .
+      # `lint` script so local `pnpm lint` keeps the default human-readable reporter.
+      # With a base it checks only the files changed since it; `--no-errors-on-unmatched` keeps a
+      # diff with no file biome reads green. A changed `biome.jsonc` or GritQL plugin changes the
+      # rules for every file, and the lockfile carries biome's own version, so each runs the
+      # whole repo.
+      - name: biome
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ]; then
+            echo "::notice::no pinned diff base — checking the whole repo"
+            exec pnpm exec biome check --reporter=github .
+          fi
+          if ! git diff --quiet "$BASE...HEAD" -- biome.jsonc biome-plugins pnpm-lock.yaml; then
+            echo "::notice::the diff moves biome.jsonc, a biome plugin or pnpm-lock.yaml — checking the whole repo"
+            exec pnpm exec biome check --reporter=github .
+          fi
+          echo "::notice::checking only the files changed since $BASE (biome --changed)"
+          pnpm exec biome check --reporter=github --changed --since="$BASE" --no-errors-on-unmatched
 
       # tsc has no `--reporter=github` equivalent, so the same inline-annotation win the biome
       # step gets above is done by mapping its `path(line,col): error TSxxxx:` diagnostics onto
       # `::error` workflow commands (#3873). `ci annotate` is a pass-through: it re-prints
       # stdin verbatim (the log reads exactly as before) and always exits 0, so `pipefail` is
-      # what keeps the step red — the pipeline's status is `pnpm typecheck`'s own exit code.
-      # Local `pnpm typecheck` is untouched; the mapping lives here, like the biome reporter.
+      # what keeps the step red — the pipeline's status is turbo's own exit code.
+      # With a base, `--affected` is the same selection the root `typecheck:affected` script and
+      # the pre-push hook make. `tsconfig.json` is a turbo `globalDependencies` entry, so a root
+      # tsconfig change still selects every package, and a lockfile change selects the packages
+      # whose resolved dependencies moved.
       - name: typecheck
         run: |
           set -o pipefail
-          pnpm typecheck | node packages/fabrika-cli/src/bin.ts ci annotate
+          if [ -z "$BASE" ]; then
+            echo "::notice::no pinned diff base — typechecking every package"
+            pnpm exec turbo run typecheck --force | node packages/fabrika-cli/src/bin.ts ci annotate
+          else
+            echo "::notice::typechecking the packages the diff since $BASE affects (turbo --affected)"
+            TURBO_SCM_BASE="$BASE" pnpm exec turbo run typecheck --affected | node packages/fabrika-cli/src/bin.ts ci annotate
+          fi
 
   unit:
     name: unit + client tests
     needs: changes
     # Same gate as `check`: skip (→ green, non-blocking) on a docs/skills-only PR.
     #
-    # #771 evaluated PR-scoping this to the AC-relevant unit tests via `vitest run
-    # --changed` (ADR 0082 blesses `--changed` for the unit tier — disjoint import
-    # graphs). It is LEFT FULL deliberately: `--changed` is unsound HERE against
-    # ADR 0092. Vitest forces `passWithNoTests=true` whenever `--changed` is set
-    # (vitest 4 `resolveConfig`), so a `code`-true PR that edits a `worker/**`/`src/**`
-    # module with NO unit test in its import graph runs ZERO tests and exits 0 — a
-    # green that scanned nothing on a relevant change, exactly the silent-no-op
-    # ADR 0092 forbids. The full run has no such hole. Sound PR-scoping needs a
-    # zero-selection-is-FAIL wrapper (assert ≥1 spec selected on a `code`-true PR,
-    # else fail) — that is gate-shaped (ADR 0092 fail-closed-on-zero-scope) and
-    # belongs with the #738/#751 gate-owner, not guessed at here. Until then `unit`
-    # runs FULL on every `code`-true PR + push (cheap: no DB, no creds).
+    # On a PR or a queue batch the app suites run through turbo `--affected` against the
+    # `changes` job's diff base, so an app neither the diff nor any of its dependencies touched
+    # is not run at all, and each selected app runs vitest `--changed <base>`, only the tests
+    # whose import graph reaches a changed file (#10074). A file a test reads from disk instead
+    # of importing is a `forceRerunTriggers` entry in that app's `vitest.config.ts`, which runs
+    # its whole suite. `--changed` passes a run that selects no test, so that holds only as far
+    # as those triggers are complete; `push` to main and `workflow_dispatch` are the backstop,
+    # running every suite with turbo's cache unread. A diff that moves the lockfile, the
+    # workspace manifest or a vitest config runs every app's whole suite: a dependency change
+    # sits in `node_modules`, which vitest never follows, and a config's own path matches none
+    # of vitest's default triggers. There turbo may replay a suite whose hash, which covers the
+    # app's resolved dependencies and its workspace dependencies' files, did not change.
     #
     # Shares `check`'s `code`-gated predicate, so it reads the same single-sourced
     # `check_required` output (#786) — `ci-required` requires this job's success when
@@ -542,7 +608,11 @@ jobs:
     if: needs.changes.outputs.check_required == 'true'
     runs-on: ubuntu-latest
     steps:
+      # Full history: turbo's `--affected` and vitest's `--changed` both diff against the base, so
+      # the base commit has to be in the clone.
       - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4.1.0
 
@@ -553,14 +623,42 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Carries turbo's task cache between runs, the `integration` job's pattern (#681).
+      - name: Cache turbo task cache
+        uses: actions/cache@v4.2.3
+        with:
+          path: .turbo/cache
+          key: turbo-unit-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'apps/**/src/**', 'apps/**/worker/**', 'packages/**/src/**', 'turbo.json') }}
+          restore-keys: |
+            turbo-unit-${{ runner.os }}-
+
+      # One of three scopes, as turbo arguments both test steps below take verbatim.
+      - name: Decide the test scope
+        id: scope
+        env:
+          BASE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.changes.outputs.merge_base || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ]; then
+            echo "::notice::no pinned diff base — running every app's full suite"
+            echo "args=--force" >> "$GITHUB_OUTPUT"
+          elif ! git diff --quiet "$BASE...HEAD" -- pnpm-lock.yaml pnpm-workspace.yaml ':(glob)**/vitest.config.*'; then
+            echo "::notice::the diff moves pnpm-lock.yaml, pnpm-workspace.yaml or a vitest config — running every app's whole suite"
+            echo "args=" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::running the apps turbo --affected selects since $BASE, each with vitest --changed"
+            echo "args=--affected -- --changed $BASE" >> "$GITHUB_OUTPUT"
+            echo "TURBO_SCM_BASE=$BASE" >> "$GITHUB_ENV"
+          fi
+
       # The `unit` vitest project (ADR 0082): node pool, no worker deploy, no
       # creds, no SQL engine. Fast signal over pure logic substituted directly at
       # the Drizzle seam — keyset/cursor-miss decisions, envelope shaping,
       # normalization, auth gates, Effect-DO builders over a DO-state fake.
-      # Discovery-based across apps/ (the `pnpm --filter './packages/**'` idiom, ADR
-      # 0057): runs each app's `test:unit`, so a second app is gated with no edit here.
-      # Recursive `run` skips an app without the script — same posture as packages-tests.
-      - run: pnpm --filter './apps/**' test:unit
+      # Discovery-based across apps/ (ADR 0057): runs each app's `test:unit`, so a second app is
+      # gated with no edit here, and an app without the script is skipped.
+      - name: Run the apps' unit tests
+        run: pnpm exec turbo run test:unit --filter='./apps/*' ${{ steps.scope.outputs.args }}
 
       # The `client` vitest project (#1419, ADR 0082): the SPA component/DOM tier —
       # jsdom, renders the real React shells and queries the DOM for the `src/**/*.test.tsx`
@@ -571,7 +669,8 @@ jobs:
       # heap is already CI-capped (`--max-old-space-size=512`, vitest.config.ts). A
       # failing `.test.tsx` fails this job → UNIT_RESULT ≠ success → `ci-required` fails
       # closed, exactly as a `test:unit` failure does.
-      - run: pnpm --filter './apps/**' test:client
+      - name: Run the apps' client tests
+        run: pnpm exec turbo run test:client --filter='./apps/*' ${{ steps.scope.outputs.args }}
 
       # apps/tuval's `integration` project (#7556): the page-to-kernel transport over a real
       # loopback WebSocket. Named for the socket it binds, not for ADR 0082's remote-D1 tier —
@@ -579,7 +678,15 @@ jobs:
       # `@kampus/web`'s `test:integration` (real remote D1) cannot. Scoped to the one app for
       # exactly that reason: `--filter './apps/**' test:integration` would drag web's D1 suite
       # into a job with no Cloudflare token.
-      - run: pnpm --filter @kampus/tuval test:integration
+      - run: pnpm --filter @kampus-apps/tuval test:integration
+
+      # The packed desk as an outside author installs it (#9690): packs `@kampus/tuval-sdk` and
+      # `@kampus/tuval`, installs both with npm into a folder outside the checkout, runs
+      # `tuval open .` over a program written there against a scratch home, trusts a second folder
+      # through the desk's own question, edits the program and sees the running desk show the edit,
+      # and reds if the desk resolved a file inside the checkout or loaded a second SDK.
+      - name: Prove an outside author runs and hot-reloads a program on the packed Tuval desk
+        run: pnpm --filter @kampus-apps/tuval run proof:outside
 
   # The `packages/**` vitest suites (#760). Every workspace tooling/guard package
   # ships a `test` script (fabrika-cli — the single home for the consolidated guard/tooling
@@ -592,9 +699,9 @@ jobs:
   # `@kampus/infra` (the CI-credential stack, #1437) is named explicitly alongside
   # the `./packages/**` glob so its permission-group guard suite runs here too.
   # These are node-pool unit suites (ADR 0082): no DB, no worker deploy, no creds —
-  # fast (~7s, ~500 tests), no sharding. Run FULL (no `--changed`): the `packages`
-  # path filter already scopes the JOB, and a full run has no zero-selection hole
-  # (ADR 0092) — same posture as `unit`.
+  # no sharding. The `packages` path filter scopes the JOB, and inside it a PR or queue
+  # batch runs only what the diff reaches (vitest `--changed`, below), the same posture
+  # as `unit`.
   #
   # Unlike `ci-required`'s zero-dep bin, the suites need their deps, so this job
   # installs (`--frozen-lockfile`). Run-ness is single-sourced from
@@ -604,6 +711,80 @@ jobs:
     name: packages unit tests
     needs: changes
     if: needs.changes.outputs.packages_required == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: `vitest --changed <base>` runs `git diff <base>...HEAD`, so the base commit
+      # has to be in the clone.
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # On a PR or a queue batch, each package runs only the tests whose import graph reaches a
+      # changed file, plus its whole suite when a changed file matches its `forceRerunTriggers`
+      # (#10023). `push` to main and `workflow_dispatch` run everything, and so does any run
+      # with no pinned base, or whose diff moves the lockfile or workspace manifest — a dependency
+      # change sits in `node_modules`, which vitest's import graph never follows. A changed
+      # `vitest.config.*` runs everything too: vitest's default `**/{vitest,vite}.config.*/**`
+      # trigger never matches the config's own path, so `--changed` alone runs none of its tests.
+      # `@kampus/fabrika-pi` runs `node --test`, which has no `--changed`, so it always runs whole.
+      - name: Run package unit tests
+        env:
+          BASE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.changes.outputs.merge_base || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ]; then
+            echo "::notice::no pinned diff base — running every package's full suite"
+            exec pnpm --filter './packages/**' --filter @kampus/infra run test
+          fi
+          if ! git diff --quiet "$BASE...HEAD" -- pnpm-lock.yaml pnpm-workspace.yaml ':(glob)**/vitest.config.*'; then
+            echo "::notice::the diff moves pnpm-lock.yaml, pnpm-workspace.yaml or a vitest config — running every package's full suite"
+            exec pnpm --filter './packages/**' --filter @kampus/infra run test
+          fi
+          echo "::notice::running only the tests the diff since $BASE reaches (vitest --changed)"
+          pnpm --filter './packages/**' --filter '!@kampus/fabrika-pi' --filter @kampus/infra run test --changed "$BASE"
+          pnpm --filter @kampus/fabrika-pi run test
+
+      # The Tuval SDK as an outside author installs it (#9654): packs `@kampus/tuval-sdk`,
+      # installs the tarball with npm into a temp directory outside the checkout, type-checks
+      # and tests `packages/tuval/example` there, and reds if either phase resolved a file
+      # inside the checkout.
+      - name: Prove an outside program builds and tests against the packed Tuval SDK
+        run: pnpm --filter @kampus/tuval-sdk run proof:outside
+
+  # No package outside `apps/` depends on or imports an `@kampus-apps/*` app (#9660). It runs on
+  # every event with no path filter, because a rename or a new package anywhere can break the
+  # rule, and `ci-required` requires it with a constant `'true'`. The bin has zero runtime
+  # dependencies, so the job needs no `pnpm install`.
+  app-boundary:
+    name: app boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+
+      - name: Check no package outside apps/ depends on or imports an app
+        run: node packages/app-boundary-guard/src/bin.ts
+
+  # The worker-bundle node-core assertion (ADR 0118, #1836): build the `apps/web` worker with the
+  # same bundler the deploy uses (rolldown + the cloudflare plugin, resolved through alchemy) and
+  # red when the emitted bundle reaches a forbidden Node-only module. No deploy and no Cloudflare
+  # account. It runs on every event with no path filter, as it did inside the retired run-evidence
+  # producer: a lockfile bump or a new import anywhere the worker reaches can pull a module in,
+  # and no path filter here names that set. `ci-required` requires it with a constant `'true'`.
+  bundle-assert:
+    name: worker bundle excludes node-core
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -617,7 +798,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm --filter './packages/**' --filter @kampus/infra run test
+      - name: Assert the worker bundle reaches no forbidden node-core module
+        working-directory: apps/web
+        run: node scripts/bundle-assert/main.ts
 
   skills:
     # The check name is a required status check on `main`, so it keeps its historical name
@@ -919,6 +1102,10 @@ jobs:
             const interval = 15000;
             // Match the web app's block in the sticky comment, capturing the URL
             // and the hidden d1 token deploy.yml emits for web only.
+            // The workers.dev host shape stays deliberate (#9507): a `pr-<n>` stage binds
+            // no custom domain, so alchemy prints `domains: []` and the preview comment
+            // carries a workers.dev host. Widening this to any https URL would let a
+            // custom-domain line — which only prod produces — satisfy a preview poll.
             const webRe = /<!-- preview-deploy:web -->\n[^\n]*?(https:\/\/[A-Za-z0-9.-]+\.workers\.dev)[^\n]*?<!-- d1:([0-9a-f-]+) -->/;
             // Optional, independent of the required URL+D1 match: the forced preview-flag
             // key set deploy.yml emits (issue #2951). Absent when no `preview-flag:<key>`
@@ -1106,7 +1293,7 @@ jobs:
   # (which gates all `packages/**` suites, #760).
   ci-required:
     name: ci-required
-    needs: [changes, check, unit, packages-tests, actionlint, integration, e2e]
+    needs: [changes, check, unit, packages-tests, actionlint, integration, e2e, app-boundary, bundle-assert]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -1125,7 +1312,7 @@ jobs:
           # run-ness cannot drift. `check` and `unit` are two jobs behind one `check_required`
           # output, which is why they carry two keys reading the one source. A declared job whose
           # keys are absent reds rather than reading as not-required.
-          CI_REQUIRED_JOBS: check unit packages-tests actionlint integration e2e
+          CI_REQUIRED_JOBS: check unit packages-tests actionlint integration e2e app-boundary bundle-assert
           CHANGES_RESULT: ${{ needs.changes.result }}
           CHECK_REQUIRED: ${{ needs.changes.outputs.check_required }}
           UNIT_REQUIRED: ${{ needs.changes.outputs.check_required }}
@@ -1133,10 +1320,15 @@ jobs:
           ACTIONLINT_REQUIRED: ${{ needs.changes.outputs.workflows_required }}
           INTEGRATION_REQUIRED: ${{ needs.changes.outputs.integration_required }}
           E2E_REQUIRED: ${{ needs.changes.outputs.e2e_required }}
+          # Unconditional: neither job has an `if:`, so each should run on every event.
+          APP_BOUNDARY_REQUIRED: 'true'
+          BUNDLE_ASSERT_REQUIRED: 'true'
           CHECK_RESULT: ${{ needs.check.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           PACKAGES_TESTS_RESULT: ${{ needs.packages-tests.result }}
           ACTIONLINT_RESULT: ${{ needs.actionlint.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
+          APP_BOUNDARY_RESULT: ${{ needs.app-boundary.result }}
+          BUNDLE_ASSERT_RESULT: ${{ needs.bundle-assert.result }}
         run: node packages/fabrika-cli/src/ci/required-bin.ts

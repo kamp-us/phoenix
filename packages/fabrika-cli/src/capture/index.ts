@@ -12,14 +12,11 @@
  * it). Storing bytes is therefore an injected `StoreLeg` here — the shape, never the
  * store.
  *
- * The seam the design gate codes against: `captureAndUpload(request)` →
- * `Effect<CaptureRecord[], CaptureError, HttpClient>`, each record
- * `{surface, route, state, localPath, hostedUrl, uploadError}` (the `capture`
- * bin emits this per-surface JSON). `hostedUrls` projects the hosted URLs;
- * `resolvePreviewUrl` resolves the preview base from the sticky preview-deploy
- * comment, keyed off the per-app `<!-- preview-deploy:<app> -->` anchor.
+ * `captureAndUpload` and its request/result types live in `./orchestrate.ts`.
+ * `resolvePreviewUrl` reads the sticky preview-deploy comment by its per-app anchor.
  */
 
+export type {AccentProof, AccentRequest} from "./accent.ts";
 // The blessing surface: render the operator gallery comment from a candidate set, parse
 // the operator's verdicts, and fold approve/redline into a golden-pointer move — the
 // human-in-the-loop bless → commit path (no re-render: the blessed sha comes from the
@@ -50,8 +47,16 @@ export type {
 	RenderedCandidate,
 } from "./candidate-set.ts";
 export {assembleCandidateSet, parseCandidateSet, serializeCandidateSet} from "./candidate-set.ts";
-export type {CaptureCookie, CapturedSurface, CaptureOptions} from "./capture.ts";
-export {CaptureError, captureShots} from "./capture.ts";
+export type {
+	CaptureCookie,
+	CapturedSurface,
+	CaptureOptions,
+	ShotCapture,
+	UnwrittenSurface,
+} from "./capture.ts";
+export {CaptureError, captureShots, isWritten, requireWritten} from "./capture.ts";
+export type {ColorScheme, SchemeProof, SchemeRequest} from "./color-scheme.ts";
+export {COLOR_SCHEMES} from "./color-scheme.ts";
 // The golden-baseline seam: the current-golden pointer in git, the bytes in
 // the consuming repo's asset store; pointer → deterministic diff. Consumed by write-code
 // (self-check) and review-design (blocking gate) so there is ONE notion of "golden". The
@@ -66,6 +71,13 @@ export {
 	isSha256Hex,
 	resolveGoldenEntry,
 } from "./golden-pointer.ts";
+export type {
+	Interaction,
+	InteractionOperand,
+	InteractionProof,
+	InteractionStep,
+} from "./interaction.ts";
+export {parseInteractionOperands, STEP_VERBS} from "./interaction.ts";
 export type {CaptureAndUploadRequest, CaptureRecord} from "./orchestrate.ts";
 export {captureAndUpload, hostedUrls, mergeRecord} from "./orchestrate.ts";
 export type {PageError, SurfacePageErrors} from "./page-errors.ts";

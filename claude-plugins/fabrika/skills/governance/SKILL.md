@@ -33,11 +33,11 @@ fabrika governance scope $pr_number
 ```
 
 **On an epic child there is no PR, and the subject is the range instead.** An epic run opens one
-tail PR at the end rather than one per child, so mid-run the child branch is all there is. A
-documentation epic's children sit under a governance root by construction wherever this repo homes
-its skills, and this namespace is owed at **every** review round on such a diff, never only the
-first, so the range is the normal subject on a documentation epic, not an edge. Drop the positional
-and name the two ends your caller gave you; the answer is the same four fields, with
+tail PR at the end rather than one per child, so mid-run the child branch is all there is. Where
+this repo's skills home is one of its governed roots, a documentation epic's children sit under
+that root, and this namespace is owed at **every** review round on such a diff, never only the
+first, so there the range is the normal subject on a documentation epic, not an edge. Drop the
+positional and name the two ends your caller gave you; the answer is the same four fields, with
 `<base>..<tip>` where a head SHA would be:
 
 ```bash
@@ -68,9 +68,12 @@ alone**, over the roots this repo declares in `.fabrika.jsonc`'s `governedRoots`
 - **Independent of who reviewed.** The predicate consults neither which skill ran nor what it
   concluded, so a `review` PASS discharges nothing and a `review` run that forgot to fire you leaves
   the namespace required — the omission surfaces as a refusal rather than as silence.
-- **Self-covering.** A diff editing this skill, its contract or the root set sits under
-  `claude-plugins/` and derives its own namespace. `claude-plugins/fabrika/` carries no CODEOWNERS
-  row, so nothing else would catch it.
+- **Self-covering, where the repo declares it.** A diff editing the root set touches
+  `.fabrika.jsonc`, a shipped root, so it always derives its own namespace. A diff editing this
+  skill or its contract derives it only in a repo that carries the plugin in its tree and declares
+  that tree as a root: the shipped roots do not cover the skill's directory. A repo that keeps the
+  plugin in its tree with no CODEOWNERS row over it declares that root, because nothing else would
+  catch the edit.
 
 <!-- anchor: HARNESS-IS-NOT-CP --> **Harness-touching is not control-plane.** Control-plane asks
 *who must approve*, from `.github/CODEOWNERS`, enforced by GitHub
@@ -108,7 +111,11 @@ fabrika adr resolve 0164 0055
 `indeterminate`. **All three exit 0, all three are answers, and none is a clearance.** `no-overlap`
 means nothing mechanically adjacent was left to open — two records that disagree about what a
 *label means* share no distinctive vocabulary and never appear at all. `indeterminate` means the run
-carried no information. The sweep is **citation-independent by construction**: never derive your
+carried no information: the live-accepted corpus is below the sweep's rarity floor (its value is in
+the [`adr sweep` contract](../adr/contract.md)), which is where a new repo sits for weeks, or the
+subject yielded no distinctive terms, and stderr names which. **On `indeterminate`, read the
+decision corpus by hand** as you would with no record in the diff, and record in the verdict which
+of the two fired. The sweep is **citation-independent by construction**: never derive your
 candidates from the subject's own reference list, or the record it contradicts is exactly the one it
 never cited.
 
@@ -225,9 +232,10 @@ itself, so the green is the job's own. What it re-fires on is the `governance fl
 check-run's state rather than the job's conclusion: the job succeeds whenever it
 *published* an answer, and a pending check-run beside a green job is exactly the "no verdict yet"
 state your post just cleared. Its last stderr line says which of `refired` / `restarting` / `green` /
-`in-flight` / `no-run` / `unknown` happened. A `no-run` line says the head's run list carried no
-floor run and how many runs it did carry, and it names no cause for that — re-read the head's runs
-before treating the floor as absent.
+`in-flight` / `no-run` / `no-floor` / `unknown` happened. A `no-run` line says the head's run list
+carried no floor run and how many runs it did carry, and it names no cause for that — re-read the
+head's runs before treating the floor as absent. A `no-floor` line says this repository has no
+`governance-floor` workflow at all, so there is nothing to re-fire and nothing to re-read.
 
 **Done when** `post` prints `posted`, its read-back conformed, and you have read the floor line — an
 `in-flight` or `unknown` floor means the check may still red at this head, and clearing it is

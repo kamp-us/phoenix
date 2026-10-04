@@ -73,7 +73,8 @@ the same tracked debt the sibling contracts carry.)
   repository-settings mutation with a human's name on it, and arming a required check wrong has cost
   a whole wedged merge queue. `surface` diagnoses and stops.
 - **A conflict-clearing verb** (rebase, merge the base in, force-push). `diagnose` classifies a
-  conflicted PR as `conflicted` and arrows it at `build`, and that is the whole move: clearing the
+  conflicted PR as `conflicted` and arrows it at `build` — or at `author`, on a PR the pipeline
+  does not own — and that is the whole move: clearing the
   conflict is a branch mutation, and this group owns no branch and checks out nothing.
 - **A dispatch or adoption verb.** A detector converts a strand into claimable work; an engine
   never free-scan-adopts, so no verb here assigns, claims, or spawns a lane and `sweep` writes
@@ -352,7 +353,8 @@ imported; a second copy is the drift this section exists to prevent.
 
 | Module | Used for |
 |---|---|
-| `review/rollup.ts` — `rollupOf`, `statusOf`, `isInformational`, `isStalled` | the check-run rollup, the informational carve-out, and half the wedge test |
+| `review/rollup.ts` — `rollupOf`, `statusOf`, `isFailing`, `isStalled` | the check-run rollup and half the wedge test |
+| `review/blocking.ts` — `readBlockingSet`, `authorityNote`, `reportedLine`, `unreadableCause` | which contexts may block: the base branch's declared required set, with the denylist as the undeclared-branch fallback |
 | `review/classes.ts` — `SHIP_NAMESPACES`, `touchesGovernanceRoot` | which namespaces a diff requires a verdict in |
 | `wire/verdict-marker.ts` — `read`, `bindToHead` | reading whether a verdict exists at the head. **Read only — this group emits none.** |
 | `wire/routed-elsewhere.ts` — `read` | reading the head-bound record that says a gate owes this PR no verdict. **Read only — this group emits none.** |
@@ -398,6 +400,7 @@ line per evidence fact, in this fixed order, each present always:
 
 ```
 owner	<login|->	<claimed-at|->	<last-activity|->
+author	<login|->	<ours|granted|foreign|unknown|unread>
 gates	<satisfied|blocked|none-required>	<pass-count>/<required-count>
 ci	<green|red|pending|wedged|no-runs|none>	<failing-or-stranded-context-count>
 
@@ -407,7 +410,20 @@ facts	scanned-comments:<n>	scanned-checks:<n>	behind-base:<k>
 ```
 
 With `--json`:
-`{"outcome":"stall","token":…,"head":<40-hex>,"ageMinutes":<n>,"owner":{"login":…,"claimedAt":…,"lastActivityAt":…},"gates":{"state":…,"pass":<n>,"required":<n>},"ci":{"rollup":…,"contexts":<n>},"queue":…,"link":{"kind":…,"number":<n|null>},"scanned":{"comments":<n>,"checks":<n>},"behindBase":<k>}`.
+`{"outcome":"stall","token":…,"head":<40-hex>,"ageMinutes":<n>,"owner":{"login":…,"claimedAt":…,"lastActivityAt":…},"author":{"login":…,"standing":…},"gates":{"state":…,"pass":<n>,"required":<n>},"ci":{"rollup":…,"contexts":<n>},"queue":…,"link":{"kind":…,"number":<n|null>},"scanned":{"comments":<n>,"checks":<n>},"behindBase":<k>}`.
+
+**The `author` line says whether the pipeline owns the PR.** A pull request belongs to its author.
+It is the pipeline's when its author is in the repo's `ownAccounts` (the running, authenticated
+account alone when that set is empty or absent) — `ours` — or when a
+[`takeover-grant`](../../docs/wire-formats.md#takeover-grant) marker from an account in the
+control-plane set stands on it — `granted`. Otherwise it is `foreign`, and the arrow a class would
+point at `build` points at `author` instead. The standing is read only for a class whose work can
+reach `build`: the arrow's two (`conflicted`, and `linkage-refused` with a holder) and `red`, whose
+arrow is `nobody` but whose `logic` route (`SKILL.md` §3) names `build` only on `ours` or `granted`.
+Every other class prints `unread`. A standing that cannot be
+read — a GitHub App token cannot name its own account, for one — prints `unknown` with a stderr
+notice: the class is still proven, so it is not a refusal, and an unknown standing never reaches
+`build`.
 
 **The `ci` line's two zero-signal tokens are distinct facts, not synonyms.** `none` means the
 repository has **zero active workflows** — there is no CI here at all, the foreign-repo case the
@@ -432,13 +448,13 @@ moving it.
 | # | Token | Fires when |
 |---|---|---|
 | 1 | `not-open` | the PR's state is `draft`, `closed` or `merged`. An answer, not a refusal |
-| 2 | `wedged` | ≥1 **gating** check run is `queued` with a null `started_at` past `--wedge-dwell-minutes` (`isStalled`, plus the dwell) |
+| 2 | `wedged` | ≥1 **blocking** check run is `queued` with a null `started_at` past `--wedge-dwell-minutes` (`isStalled`, plus the dwell) |
 | 3 | `conflicted` | the merge of this head into its base conflicts — `mergeable_state` is `dirty` on a definite read. An **indefinite** read skips this arm rather than firing it |
 | 4 | `check-surface` | ≥1 declared required status context has **no producing run** at this head, or ≥1 gating run answers no declared requirement — `surface`'s exact predicate, shared as one module so the two verbs cannot disagree |
-| 5 | `red` | the gating rollup at the head is `red` (`rollupOf` over `listShipCheckRuns`, informational contexts excluded first) |
+| 5 | `red` | the blocking rollup at the head is `red` (`rollupOf` over `listShipCheckRuns`, narrowed to the base branch's declared required set first — `review/blocking.ts`) |
 | 6 | `linkage-refused` | the diff derives ≥1 namespace whose merge seam requires a linked issue, the body carries neither `Fixes #N` nor `Part of #N`, **and** it carries some other reference form |
 | 7 | `blocked-human` | ≥1 non-`Bot` reviewer's latest decisive review at this head is `CHANGES_REQUESTED`, or the diff touches a control-plane path and no approval stands at this head. REST-derivable signals only — the unresolved-thread axis is out of scope, above |
-| 8 | `attended` | **any positive signal of motion**: an owner whose last activity is inside `--dwell-minutes`, a live merge-queue entry, an armed merge intent, or a gating rollup of `pending` — CI running at this head *is* the PR moving |
+| 8 | `attended` | **any positive signal of motion**: an owner whose last activity is inside `--dwell-minutes`, a live merge-queue entry, an armed merge intent, or a blocking rollup of `pending` — CI running at this head *is* the PR moving |
 | 9 | `claim-stale` | an owner signal exists and arm 8 did not fire — the claim is there and nothing shows it live. The stderr notice names which of the three proved it: activity older than `--dwell-minutes`, a head more than `--drift-commits` behind the base (`behindBase`), or an activity timestamp that could not be read at all |
 | 10 | `gated-unshipped` | no owner signal, and every required namespace is filled at this head (`inForce`) — an in-force `pass` verdict, or for `review-ui` alone a head-bound `routed-elsewhere` record saying the gate owes this PR no verdict |
 | 11 | `ungated` | no owner signal, and ≥1 required namespace holds neither at this head |
@@ -455,7 +471,7 @@ so the first read of a pull request routinely answers `null` with `mergeable_sta
 is the platform declining to answer: it is re-read across `--mergeability-seconds` through `ship`'s
 own poll loop — one implementation, so the two verbs never answer differently about one PR — and a
 value still indefinite at the end of that window **skips the arm** with a stderr notice, exactly as
-an unprobeable surface skips arm 4. Reading indefinite as conflicted would route a healthy PR to a
+the linkage arm skips a draft. Reading indefinite as conflicted would route a healthy PR to a
 rebase nobody owes.
 
 **The read is made only where arm 1 has not already taken the PR.** GitHub computes `mergeable` for
@@ -466,10 +482,20 @@ Arm 3 is skipped there on a fact nobody read, which is the same skip an indefini
 
 **Arm 4 fires above arm 5 deliberately.** A required context that no run produces cannot be healed
 by anything a red-log classifier does, so a PR carrying both a config gap and a failing test is
-reported `check-surface` first: the gap is the cause the other repair cannot reach. Where the
-protection surface is `unprobeable` (see `surface`), arm 4 is **skipped** with a stderr notice
-naming the skip, and the chain continues at arm 5 — a permission the token lacks must never read
-as a surface that is clean.
+reported `check-surface` first: the gap is the cause the other repair cannot reach.
+
+**An unreadable required set stops the classification; it no longer skips one arm.** The base
+branch's declared set is the blocking authority for arms 2, 4 and 5 alike (`review/blocking.ts`), so
+where it is `unprobeable` (see `surface`) none of the three is derivable and the verb refuses on
+`11` naming that read as the cause. A lane then waits or parks on the read failure rather than on a
+check's colour, which is what it means for this definition to fail closed. Where the set reads fine
+and names **nothing**, the informational-name denylist answers instead: an undeclared branch is one
+nobody has said what gates, not one that gates nothing. A plan-gated base (see `surface`) takes the
+denylist too, because its branch cannot declare a required check.
+
+**A red outside the declared set is reported, never routed.** It is named on stderr as
+reported-never-blocking and reaches no arm. Making it block means adding its context to the base
+branch's ruleset, not a list in this repository.
 
 **Arm 8 sits above arms 9–11, not below them.** An actively-worked PR is not stranded, and ranking
 any strand class above `attended` would report a PR whose author pushed two minutes ago as
@@ -497,8 +523,8 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404), `--sha` names no commit on this PR, or the enumerated changed-file list is empty |
-| `11` | the PR, its mergeability, its comments, its check runs, its verdicts, its timeline or its base could not be read — the stall class is UNKNOWN, never `attended` |
-| `13` | the comment, check-run or timeline enumeration is provably short of its declared count, the timeline read never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
+| `11` | the PR, its mergeability, its comments, its check runs, its verdicts, its timeline, its base, or its base branch's declared required set could not be read — the stall class is UNKNOWN, never `attended` |
+| `13` | the comment, check-run or timeline enumeration is provably short of its declared count, the base branch's ruleset walk never reached a terminal page, the timeline read never reached a terminal page, or the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends. The changed-file list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 
 **Errors**
 
@@ -516,6 +542,13 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | `heal-ci diagnose: #<n> conflicts with <base> — no merge ref exists, so every required context reads absent for that reason and not a surface gap.` | 0 | notice |
 | `heal-ci diagnose: GitHub had not computed #<n>'s mergeability after <k>s — the conflict axis is INDEFINITE, so the conflict arm is skipped, never passed.` | 0 | notice |
 | `heal-ci diagnose: claim-stale fired on <inactivity\|ground-drift> — last activity <ts>, behind base <k>.` | 0 | notice |
+| `heal-ci diagnose: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
+| `heal-ci diagnose: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `heal-ci diagnose: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
+| `heal-ci diagnose: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
+| `heal-ci diagnose: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `heal-ci diagnose: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `heal-ci diagnose: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 
 **Scope** — one PR's metadata, mergeability, changed files, comments, check runs, workflow runs,
 reviews and timeline, each paginated to exhaustion, plus its base branch's declared required
@@ -538,6 +571,7 @@ chain is total over what was read; a read that could not complete is `11`, never
 $ fabrika heal-ci diagnose 9412
 stall	gated-unshipped	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	35
 owner	-	-	-
+author	octocat	unread
 gates	satisfied	2/2
 ci	green	0
 queue	none
@@ -547,7 +581,7 @@ facts	scanned-comments:14	scanned-checks:12	behind-base:0
 
 ```
 $ fabrika heal-ci diagnose 9413 --json
-{"outcome":"stall","token":"ungated","head":"9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18","ageMinutes":564,"owner":{"login":null,"claimedAt":null,"lastActivityAt":null},"gates":{"state":"blocked","pass":0,"required":1},"ci":{"rollup":"green","contexts":0},"queue":"none","link":{"kind":"fixes","number":9415},"scanned":{"comments":3,"checks":11},"behindBase":0}
+{"outcome":"stall","token":"ungated","head":"9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18","ageMinutes":564,"owner":{"login":null,"claimedAt":null,"lastActivityAt":null},"author":{"login":"octocat","standing":"unread"},"gates":{"state":"blocked","pass":0,"required":1},"ci":{"rollup":"green","contexts":0},"queue":"none","link":{"kind":"fixes","number":9415},"scanned":{"comments":3,"checks":11},"behindBase":0}
 ```
 
 ```
@@ -610,7 +644,9 @@ With `--json`: `{"outcome":"swept","scanned":<n>,"stalled":<n>,"prs":[{"number":
 
 **The lane is the note's arrow, looked up here rather than by the caller.** It is one of
 `build`/`review`/`ship`/`author`/`human`/`nobody`, and it is a total function of the row's stall
-class plus the owner and author this verb already read — `SKILL.md` §2 carries the table. A caller
+class plus the owner and author this verb already read, and — for a class that would name `build` — the
+PR's ownership standing, which turns `build` into `author` unless the PR is ours or granted.
+`SKILL.md` §2 carries the table. A caller
 composing a note's first line relays this column; deriving one in a workflow's `run:` block is the
 shape a relaying script must never take, and hardcoding one tells every reader the detector found
 nothing for anyone to do.
@@ -747,11 +783,19 @@ than assumed, never taken on trust**:
 
 So the rulesets read is what carries the answer, and the rules are:
 
-- **`no-requirements`** needs a **successful** rulesets read returning zero rules that require a
-  status context for this base, *and* the protection endpoint's 404. Both, never the 404 alone.
-- **`unprobeable`** is when the rulesets read itself is permission-denied, or when the protection
-  404 is the only signal and the rulesets read did not complete. The verb answers at exit `0`,
-  prints `required:-` on its facts line, and emits no `required` rows.
+- **`no-requirements`** has exactly two ways in:
+  - **The branch declares nothing.** A **successful** rulesets read returns zero rules that require
+    a status context for this base, *and* the protection endpoint answers 404. Both, never the 404
+    alone.
+  - **The repository's plan cannot declare anything.** On a private repository on the free plan,
+    rulesets and branch protection are paid features. Either read answers `403` with a `message`
+    beginning `Upgrade to GitHub Pro or make this repository public`, to every token, admin
+    included. That answer is the platform saying no required context can exist on this base, not a
+    read that failed. The verb answers `no-requirements` and names the plan gate on stderr.
+- **`unprobeable`** is when the rulesets read is permission-denied — any `401`/`403` except the plan
+  gate above — or when the protection 404 is the only signal and the rulesets read did not
+  complete. The verb answers at exit `0`, prints `required:-` on its facts line, and emits no
+  `required` rows.
 
 Collapsing `unprobeable` into `no-requirements` would tell an adopter their repo gates nothing when
 it may gate everything — the single most dangerous wrong answer this verb can give. Collapsing it
@@ -761,8 +805,9 @@ the whole skill inert on the common case.
 **`no-requirements` is a proven answer at exit `0`** — a base branch with no protection rule and
 no ruleset requiring a status context genuinely gates nothing, which is the ordinary state of a
 fresh or foreign repository. It is not a gap and not a failure. A protection surface that cannot be read **for any reason other
-than this token's permission** — a transport failure, a 5xx — is `11`; a permission denial is the
-`unprobeable` answer above, not a failed read.
+than this token's permission or the plan gate** — a transport failure, a 5xx — is `11`. A permission
+denial is the `unprobeable` answer above and a plan gate is the `no-requirements` answer above;
+neither is a failed read.
 
 **The comparison, precisely.** The declared set is the union of the base branch's
 `required_status_checks.contexts` and every `required_status_checks` rule in a repository ruleset
@@ -785,7 +830,7 @@ settings changes with a human's name on them.
 | Code | Trigger |
 |---|---|
 | `7` | the PR or the `--sha` commit is proven absent (404) |
-| `11` | the branch protection, the ruleset list, or the check runs could not be read — coverage is UNKNOWN, never `covered` and never `no-requirements` |
+| `11` | the branch protection, the ruleset list, or the check runs could not be read for a reason other than this token's permission or the plan gate — coverage is UNKNOWN, never `covered` and never `no-requirements` |
 | `13` | the ruleset or check-run enumeration is provably short of its declared count |
 
 **Errors**
@@ -797,6 +842,7 @@ settings changes with a human's name on them.
 | `heal-ci surface: cannot read <what> for <base>: <reason> — coverage is UNKNOWN, never "no-requirements".` | 11 | refusal |
 | `heal-ci surface: received <k> of <m> declared <rulesets\|check runs> — refusing to compare a truncated set.` | 13 | refusal |
 | `heal-ci surface: <base> declares no required status contexts — this repository gates nothing on <base>.` | 0 | notice |
+| `heal-ci surface: <base>'s plan offers no branch protection or rulesets — this repository cannot declare a required context on <base>.` | 0 | notice |
 | `heal-ci surface: cannot read <base>'s protection surface at this token's permission — the check-surface axis is UNPROBEABLE, never "no requirements".` | 0 | notice |
 
 **Scope** — the PR's base branch protection, the repository's rulesets filtered to those matching
@@ -894,7 +940,7 @@ bytes it never saw.
 |---|---|
 | `7` | the PR or the `--sha` commit is proven absent (404), or `--context` names a context that does not exist at this head |
 | `11` | the check runs, the run list, or a job log could not be read after retries — whether a failure log exists is UNKNOWN, never empty |
-| `13` | the check-run or job enumeration is provably short of its declared count |
+| `13` | the check-run or job enumeration is provably short of its declared count, or the base branch's ruleset walk never reached a terminal page |
 | `15` | proven: the platform reports the run's logs expired or purged — a fact about the run, and no retry can change it |
 
 **Errors**
@@ -909,10 +955,20 @@ bytes it never saw.
 | `heal-ci logs: context <name> truncated to the last <k> bytes of <m>.` | 0 | notice |
 | `heal-ci logs: context <name> has no workflow job behind it (posted by an external check) — emitted with an empty body.` | 0 | notice |
 | `heal-ci logs: read <k> of <m> failing gating contexts (--context narrowed the read).` | 0 | notice |
+| `heal-ci logs: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
+| `heal-ci logs: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `heal-ci logs: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
+| `heal-ci logs: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
+| `heal-ci logs: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `heal-ci logs: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `heal-ci logs: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 
-**Scope** — the gating check runs at one commit, the workflow runs behind them, and one log per
-failing context, each read paginated and count-checked. Informational contexts are excluded before
-anything is fetched, so a preview-deploy failure never enters this lane.
+**Scope** — the blocking check runs at one commit, the workflow runs behind them, and one log per
+failing context, each read paginated and count-checked. The base branch's declared required set is
+read before anything is fetched, so a failure outside it never enters this lane — it leaves named on
+stderr instead. A base branch declaring nothing required falls back to the informational-name
+denylist, and so does a plan-gated base (see `surface`), whose branch cannot declare a required
+check; a required set that could not be read is `11` naming that read as the cause.
 
 **Examples**
 
@@ -939,7 +995,7 @@ logs	0	03135b91
   the documented-empty answer — which is exactly what it does when `gh` exits 0 with no bytes.
 - v1's three `gh run` calls omitted `--repo`, so a run id resolved against whatever repository the
   process happened to be standing in.
-- Only gating reds reach this lane; the informational carve-out happens before the fetch.
+- Only reds the base branch declares required reach this lane; the required-set read happens before the fetch.
 
 ---
 
@@ -1017,6 +1073,12 @@ An implementer ships exactly these ten rows in this order; the table grows by ad
 branching inside the verb. Row 4 preceding row 6 is what makes a failure to reach **this PR's own
 preview target** a warmup rather than generic network trouble.
 
+**A committed-secret finding is deliberately not a row.** A secret scanner's red (gitleaks'
+`leaks found: <n>`) classifies `unclassified` and leaves through intake to a person. No row may
+route it to repair: a `logic` row would hand an agent builder a pull request carrying a live
+secret, and the fix is to remove the secret and rotate the credential, which stays a human call
+every time. A new row must not match that shape.
+
 **Empty stdin is `3`, not `unclassified`.** A verb that classified nothing and a verb that read
 nothing must not answer the same way.
 
@@ -1076,7 +1138,7 @@ $ echo $?
   guessed into a rerun.
 - A table of prose descriptions is an uninvented core that passes every presence check; the literal
   patterns and the stated precedence are what make two implementations agree.
-- The informational carve-out happens upstream in `logs`, so this table never encodes which
+- The blocking-set narrowing happens upstream in `logs`, so this table never encodes which
   contexts are the blocking ones.
 
 ---

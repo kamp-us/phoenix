@@ -115,6 +115,7 @@ const options = {
 	>,
 	/** No local-tree guard unless a test names one — the sweep has its own describe block. */
 	guards: [] as ReadonlyArray<LocalTreeGuard>,
+	probe: false,
 };
 
 const run = (
@@ -167,6 +168,7 @@ describe("classifyDiff — matched-neither is a bucket, not an absence", () => {
 			code: ["a.ts"],
 			markdown: ["R.md"],
 			workflows: [".github/workflows/ci.yml"],
+			config: [],
 			unvalidatable: ["scripts/x.sh"],
 		});
 	});
@@ -183,8 +185,8 @@ describe("classifyDiff — matched-neither is a bucket, not an absence", () => {
 			"LICENSE",
 			".github/workflows/ci.yaml",
 		];
-		const {code, markdown, workflows, unvalidatable} = classifyDiff(files);
-		expect([...code, ...markdown, ...workflows, ...unvalidatable].sort()).toEqual(
+		const {code, markdown, workflows, config, unvalidatable} = classifyDiff(files, ["LICENSE"]);
+		expect([...code, ...markdown, ...workflows, ...config, ...unvalidatable].sort()).toEqual(
 			[...files].sort(),
 		);
 	});
@@ -560,10 +562,12 @@ describe("the prose leak scan predicts the committed-file gate, not the body gua
 	});
 });
 
-// The regression this pins, one leg per surface. `["a.ts", "README.md"]` is the repo's most common diff
+// The regression this pins, the prose leg. `["a.ts", "README.md"]` is the repo's most common diff
 // shape, and it had no invocation that opened the markdown: `code` never reads it, `plan` runs the
 // grammar check, and `prose` refused on 10 because a code file was present. The leak scan and the
-// link resolver never ran over a mixed diff under any surface.
+// link resolver never ran over a mixed diff under any surface. The code and plan legs over the same
+// shape are "names the markdown a --surface code green did not read" and "names the code a
+// --surface plan green did not read" above.
 describe("a mixed code+markdown diff — every surface has a runnable answer", () => {
 	const MIXED = okOut("src/app/App.tsx\nREADME.md\n");
 
@@ -591,30 +595,6 @@ describe("a mixed code+markdown diff — every surface has a runnable answer", (
 		expect(out.code).toBe(0);
 		const verdict = JSON.parse(out.stdout);
 		expect(verdict.ran).toEqual(["markdown link + leak scan"]);
-		expect(verdict.unvalidated).toEqual(["src/app/App.tsx"]);
-	});
-
-	it("runs the CI commands under --surface code, disclosing the markdown it did not read", async () => {
-		const out = await run([...LANE_OK, [DIFF, MIXED], [TYPECHECK, okOut("")], [LINT, okOut("")]], {
-			surface: "code",
-		});
-		expect(out.code).toBe(0);
-		const verdict = JSON.parse(out.stdout);
-		expect(verdict.ran).toEqual(["pnpm typecheck --force", "pnpm lint:worktree"]);
-		expect(verdict.unvalidated).toEqual(["README.md"]);
-	});
-
-	it("runs the grammar check under --surface plan, disclosing the code file", async () => {
-		const out = await run(
-			[...LANE_OK, [DIFF, MIXED]],
-			{surface: "plan"},
-			{
-				"/repo/trees/lane-a/README.md": "## Dependencies\n\n- phase 1: #12\n",
-			},
-		);
-		expect(out.code).toBe(0);
-		const verdict = JSON.parse(out.stdout);
-		expect(verdict.ran).toEqual(["markdown link + leak scan", "## Dependencies grammar"]);
 		expect(verdict.unvalidated).toEqual(["src/app/App.tsx"]);
 	});
 });
@@ -1362,6 +1342,24 @@ describe("runCheck — the local-tree guard sweep", () => {
 		expect(JSON.parse(out.stdout).skipped).toEqual([]);
 	});
 
+	// readme-guard narrows to these, so the sweep must hand over the diff it judged.
+	it("hands each member the diff's changed paths", async () => {
+		const handed: Array<ReadonlyArray<string>> = [];
+		const out = await sweepRun([
+			{
+				name: "readme-guard",
+				leaf: "check",
+				run: ({changed}) =>
+					Effect.sync(() => {
+						handed.push(changed);
+						return clean;
+					}),
+			},
+		]);
+		expect(out.code).toBe(0);
+		expect(handed).toEqual([["src/app/App.tsx"]]);
+	});
+
 	// The reproduction that forced this: patch-guard red at the tip while `--surface code` greened.
 	it("reds on 18 naming the member that failed, with nothing on stdout", async () => {
 		const out = await sweepRun([
@@ -1433,5 +1431,355 @@ describe("runCheck — the local-tree guard sweep", () => {
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).skipped).toEqual([]);
 		expect(JSON.parse(out.stdout).ran).toEqual(["pnpm typecheck --force", "pnpm lint:worktree"]);
+	});
+});
+
+/**
+ * A root config file no surface owns, validated by the repo's declared `configValidators` entries on
+ * every surface.
+ */
+describe("configValidators — a config-only diff greens or reds under every surface", () => {
+	const LEFTHOOK_ARGV = ["pnpm", "exec", "lefthook", "validate"];
+	const LEFTHOOK = /^pnpm exec lefthook validate$/;
+	const DECLARED: Record<string, string> = {
+		[CONFIG_FILE]: JSON.stringify({
+			codeValidators: [
+				{command: ["pnpm", "typecheck", "--force"]},
+				{command: ["pnpm", "lint:worktree"]},
+			],
+			configValidators: [{command: LEFTHOOK_ARGV, reads: ["lefthook.yml"]}],
+		}),
+	};
+	const configRun = (
+		diff: string,
+		surface: string,
+		script: ReadonlyArray<Scripted> = [],
+		files: Record<string, string> = DECLARED,
+		unreadable: ReadonlyArray<string> = [],
+	) => {
+		const shell = fakeSeams([...LANE_OK, [DIFF, okOut(diff)], ...script]);
+		return Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface}),
+				Layer.merge(shell.layer, fakeFs({files, unreadable}).layer),
+			),
+		).then((out) => ({out, calls: shell.calls}));
+	};
+
+	it("keeps the surface vocabulary at four members", () => {
+		expect(SURFACES).toEqual(["code", "prose", "plan", "workflows"]);
+	});
+
+	it("classifies a declared file as config, and nothing a surface already owns", () => {
+		const configured = ["lefthook.yml", "biome.json", ".github/workflows/ci.yml", "docs/a.md"];
+		expect(
+			classifyDiff(
+				["lefthook.yml", "biome.json", ".github/workflows/ci.yml", "docs/a.md", "x.sh"],
+				configured,
+			),
+		).toEqual({
+			code: ["biome.json"],
+			markdown: ["docs/a.md"],
+			workflows: [".github/workflows/ci.yml"],
+			config: ["lefthook.yml"],
+			unvalidatable: ["x.sh"],
+		});
+	});
+
+	it("lets a config-only diff through the anchor under every surface", () => {
+		for (const surface of SURFACES) {
+			expect(surfaceMismatch(surface, ["lefthook.yml"], ["lefthook.yml"])).toBeNull();
+		}
+	});
+
+	it("counts a config file covered under every surface, since its entries run on each", () => {
+		for (const surface of SURFACES) {
+			expect(notCoveredBy(surface, ["lefthook.yml", "x.sh"], ["lefthook.yml"])).toEqual(["x.sh"]);
+		}
+	});
+
+	it.each(SURFACES)("greens a lefthook.yml-only diff under --surface %s", async (surface) => {
+		const {out, calls} = await configRun("lefthook.yml\n", surface, [
+			[LEFTHOOK, okOut("All good")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			verdict: "green",
+			surface,
+			tree: ROOT,
+			ran: [LEFTHOOK_ARGV.join(" ")],
+			skipped: [],
+			unvalidated: [],
+		});
+		expect(calls).toContain("pnpm exec lefthook validate");
+		expect(calls).not.toContain("pnpm typecheck --force");
+	});
+
+	it.each(
+		SURFACES,
+	)("reds on 18 under --surface %s when the entry exits non-zero", async (surface) => {
+		const {out} = await configRun("lefthook.yml\n", surface, [
+			[LEFTHOOK, errOut("lefthook.yml: unknown hook")],
+		]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-2)).toBe("lefthook.yml: unknown hook");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: red — pnpm exec lefthook validate failed; diagnostics above.",
+		);
+	});
+
+	it.each(
+		SURFACES,
+	)("still refuses on 22 under --surface %s when no entry reads it", async (surface) => {
+		const {out, calls} = await configRun("lefthook.yml\n", surface, [], CODE_CONFIG);
+		expect(out.code).toBe(UNCLASSIFIED_DIFF);
+		expect(out.stderr.at(-1)).toContain("no surface validates any of the 1 changed file(s)");
+		expect(calls).not.toContain("pnpm exec lefthook validate");
+	});
+
+	it("still refuses on 22 over a config file the declared entries do not read", async () => {
+		const {out, calls} = await configRun("biome.jsonc\n.prettierrc\n", "code");
+		expect(out.code).toBe(UNCLASSIFIED_DIFF);
+		expect(calls).not.toContain("pnpm exec lefthook validate");
+	});
+
+	it("discloses an undeclared file beside a declared one rather than refusing the pair", async () => {
+		const {out} = await configRun("lefthook.yml\nscripts/x.sh\n", "prose", [[LEFTHOOK, okOut("")]]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual(["scripts/x.sh"]);
+	});
+
+	it("runs the entry beside the code validators on a mixed diff", async () => {
+		const {out} = await configRun("src/a.ts\nlefthook.yml\n", "code", [
+			[LEFTHOOK, okOut("")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			ran: ["pnpm typecheck --force", "pnpm lint:worktree", LEFTHOOK_ARGV.join(" ")],
+			unvalidated: [],
+		});
+	});
+
+	it("refuses UNKNOWN when the declaration cannot be read over a diff that needs it", async () => {
+		const {out, calls} = await configRun("lefthook.yml\n", "code", [], DECLARED, [CONFIG_FILE]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("cannot read `configValidators`");
+		expect(calls).not.toContain("pnpm exec lefthook validate");
+	});
+
+	it("refuses UNKNOWN on a malformed declaration rather than guessing which files it reads", async () => {
+		const {out} = await configRun("lefthook.yml\n", "code", [], {
+			[CONFIG_FILE]: JSON.stringify({configValidators: [{command: ["x"], reads: ["*.yml"]}]}),
+		});
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("a pattern");
+	});
+});
+
+/**
+ * Non-JS source, such as a Java file under an Android Gradle tree, takes the same declared-validator
+ * route as a root config file, and never a widened code class.
+ */
+describe("configValidators — a Java-only diff greens or reds on the repo's declared build", () => {
+	const SERVICE = "android/app/src/main/java/com/example/AuditService.java";
+	const HELPER = "android/app/src/main/java/com/example/Helper.java";
+	const GRADLE_ARGV = ["./gradlew", "testDebugUnitTest"];
+	const GRADLE = /^\.\/gradlew testDebugUnitTest$/;
+	const DECLARED: Record<string, string> = {
+		[CONFIG_FILE]: JSON.stringify({
+			codeValidators: [
+				{command: ["pnpm", "typecheck", "--force"]},
+				{command: ["pnpm", "lint:worktree"]},
+			],
+			configValidators: [{command: GRADLE_ARGV, reads: [SERVICE]}],
+		}),
+	};
+	const javaRun = (
+		diff: string,
+		surface: string,
+		script: ReadonlyArray<Scripted> = [],
+		files: Record<string, string> = DECLARED,
+	) => {
+		const shell = fakeSeams([...LANE_OK, [DIFF, okOut(diff)], ...script]);
+		return Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface}),
+				Layer.merge(shell.layer, fakeFs({files}).layer),
+			),
+		).then((out) => ({out, calls: shell.calls}));
+	};
+
+	it("leaves non-JS source out of the code class, declared or not", () => {
+		expect(classifyDiff([SERVICE, "App.kt", "View.swift"]).unvalidatable).toEqual([
+			SERVICE,
+			"App.kt",
+			"View.swift",
+		]);
+		expect(classifyDiff([SERVICE], [SERVICE])).toMatchObject({code: [], config: [SERVICE]});
+	});
+
+	it.each(
+		SURFACES,
+	)("greens a Java-only diff under --surface %s when the build passes", async (surface) => {
+		const {out, calls} = await javaRun(`${SERVICE}\n`, surface, [
+			[GRADLE, okOut("BUILD SUCCESSFUL")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			verdict: "green",
+			surface,
+			tree: ROOT,
+			ran: [GRADLE_ARGV.join(" ")],
+			skipped: [],
+			unvalidated: [],
+		});
+		expect(calls).toContain("./gradlew testDebugUnitTest");
+		expect(calls).not.toContain("pnpm typecheck --force");
+	});
+
+	it.each(SURFACES)("reds on 18 under --surface %s when the build fails", async (surface) => {
+		const {out} = await javaRun(`${SERVICE}\n`, surface, [
+			[GRADLE, errOut("AuditService.java:12: error: ';' expected")],
+		]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: red — ./gradlew testDebugUnitTest failed; diagnostics above.",
+		);
+	});
+
+	it.each(SURFACES)("refuses on 22 under --surface %s when no entry claims it", async (surface) => {
+		const {out, calls} = await javaRun(`${SERVICE}\n`, surface, [], CODE_CONFIG);
+		expect(out.code).toBe(UNCLASSIFIED_DIFF);
+		expect(out.stderr.at(-1)).toContain(
+			`no surface validates any of the 1 changed file(s) (${SERVICE})`,
+		);
+		expect(calls).not.toContain("./gradlew testDebugUnitTest");
+	});
+
+	it("discloses an unclaimed Java file beside a claimed one on a mixed green", async () => {
+		const {out} = await javaRun(`src/a.ts\n${SERVICE}\n${HELPER}\n`, "code", [
+			[GRADLE, okOut("")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			ran: ["pnpm typecheck --force", "pnpm lint:worktree", GRADLE_ARGV.join(" ")],
+			unvalidated: [HELPER],
+		});
+		expect(out.stderr.join("\n")).toContain(`NOT covered by this verdict: ${HELPER}`);
+	});
+});
+
+describe("--probe — the declared code validators, with no lane and no diff", () => {
+	/** The only read a probe makes before spawning: the tree root. No branch, claim or diff read. */
+	const GROUND: ReadonlyArray<Scripted> = [[REV_PARSE, GIT_DIRS]];
+	const TRIO =
+		'{"codeValidators": [{"command": ["pnpm", "typecheck", "--force"]}, {"command": ["biome", "ci"]}, {"command": ["pnpm", "lint:worktree"]}]}';
+	const BIOME = /^biome ci$/;
+
+	const probeRun = (
+		script: ReadonlyArray<Scripted>,
+		config: string = TRIO,
+		unstartable: ReadonlyArray<RegExp> = [],
+		overrides: Partial<typeof options> = {},
+	) => {
+		const shell = fakeSeams([...GROUND, ...script], undefined, unstartable);
+		const fs = fakeFs({files: {[CONFIG_FILE]: config}});
+		return Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, probe: true, env: {}, ...overrides}),
+				Layer.merge(shell.layer, fs.layer),
+			),
+		).then((out) => ({out, calls: shell.calls, written: fs.written}));
+	};
+
+	it("greens with no session and no lane branch, starting each entry once and writing nothing", async () => {
+		const {out, calls, written} = await probeRun([
+			[TYPECHECK, okOut("")],
+			[BIOME, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			verdict: "green",
+			mode: "probe",
+			surface: "code",
+			tree: ROOT,
+			ran: ["pnpm typecheck --force", "biome ci", "pnpm lint:worktree"],
+		});
+		expect(calls.filter((call) => !REV_PARSE.test(call))).toEqual([
+			"pnpm typecheck --force",
+			"biome ci",
+			"pnpm lint:worktree",
+		]);
+		expect(written.size).toBe(0);
+	});
+
+	it("reds on 18 with the failing entry's diagnostics, and still starts every other entry", async () => {
+		const {out, calls} = await probeRun([
+			[TYPECHECK, errOut("src/App.tsx(12,3): error TS2345")],
+			[BIOME, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr).toContain("src/App.tsx(12,3): error TS2345");
+		expect(out.stderr).toContain("build check: probe: biome ci — green.");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: red — pnpm typecheck --force failed; diagnostics above.",
+		);
+		expect(calls).toContain("pnpm lint:worktree");
+	});
+
+	it("refuses UNKNOWN on 11 naming an entry that cannot be started — never green", async () => {
+		const {out, calls} = await probeRun(
+			[
+				[TYPECHECK, okOut("")],
+				[LINT, okOut("")],
+			],
+			TRIO,
+			[BIOME],
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: biome ci could not be executed — the verdict is UNKNOWN, never green.",
+		);
+		expect(calls).toContain("pnpm lint:worktree");
+	});
+
+	it("reds rather than UNKNOWN when one entry failed and another could not start", async () => {
+		const {out} = await probeRun(
+			[
+				[TYPECHECK, errOut("error TS2345")],
+				[LINT, okOut("")],
+			],
+			TRIO,
+			[BIOME],
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(
+			out.stderr.some((line) =>
+				line.startsWith("build check: probe: biome ci — could not be executed"),
+			),
+		).toBe(true);
+	});
+
+	it("refuses UNKNOWN on 11 when the repo declares no code validator", async () => {
+		const {out, calls} = await probeRun([], "{}");
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("there is no code validator to probe");
+		expect(calls.filter((call) => !REV_PARSE.test(call))).toEqual([]);
+	});
+
+	it("refuses a non-code surface on 10 before touching the tree", async () => {
+		const {out, calls} = await probeRun([], TRIO, [], {surface: "prose"});
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(calls).toEqual([]);
 	});
 });

@@ -53,10 +53,10 @@ this skill runs until you hold one. Then take exactly the row your token names:
 |---|---|---|
 | `attended` | end the run | something is acting — an owner inside the dwell, a live queue entry, an armed intent, or CI still running |
 | `not-open` | end the run | draft, closed or merged: a draft is its author's to finish, a merged one already went |
-| `wedged` | step 5 | a gating check queued that never started |
+| `wedged` | step 5 | a required check queued that never started |
 | `conflicted` | step 7 | it conflicts with its base, so no merge ref exists and no required context can run |
 | `check-surface` | step 5 | a required context no run produces — it cannot go green whoever attends it |
-| `red` | step 3 | a gating check failed |
+| `red` | step 3 | a check the base branch declares required failed |
 | `linkage-refused` | step 6 | correct PR; the merge seam refuses its issue-reference grammar |
 | `blocked-human` | step 6 | correctly waiting on a person: changes requested, or a control-plane approval outstanding |
 | `ungated` · `gated-unshipped` · `claim-stale` | step 2 | green, and nobody is holding it |
@@ -103,11 +103,22 @@ over one strand write the same word. The lookup is total over every class that g
 | `ungated` | **review** | no verdict at any head; the gate is the next move |
 | `gated-unshipped` | **ship** | every namespace passes and nothing is armed |
 | `claim-stale` | **author** when the claim holder is this PR's author, **human** when anyone else | the holder is who stopped |
-| `linkage-refused` | **author** when nobody holds it, **build** when a lane does | step 6's two arms, picked by the holder |
-| `conflicted` | **build** | step 7 — the rebase is a repair round on a branch, and every PR here is agent-authored |
+| `linkage-refused` | **author** when nobody holds it, **build** when a lane does and the PR is ours | step 6's two arms, picked by the holder |
+| `conflicted` | **build** when the PR is ours, **author** otherwise | step 7 — the rebase is a repair round on a branch, and only a branch the pipeline owns is `build`'s |
 | `wedged` · `check-surface` | **human** | step 5 — the cancel lever and a required-context change are an operator's |
 | `blocked-human` | **human** | step 6 — correctly waiting on a person |
 | `red` | **nobody** | step 3 routes a red off its log signature, and the class alone carries none |
+
+<!-- anchor: PR-BELONGS-TO-ITS-AUTHOR --> **A PR belongs to its author, so `build` is reached only
+over a PR the pipeline owns.** Nothing here assumes a PR is agent-authored. `diagnose` prints an
+`author` line: `ours` when the author is one of the repo's own accounts (`ownAccounts`, or the
+running account alone when that set is empty), `granted` when a trusted
+[takeover grant](../../docs/wire-formats.md#takeover-grant) stands on it, `foreign` otherwise. Any
+arrow the table would point at **build** points at **author** unless that line reads `ours` or
+`granted` — and that includes `unknown`, a standing nobody could read. The same holds for step 3's
+`logic` route out of a `red`, so `diagnose` reads the line for `red` as well as for the arrows the
+table sends to **build**; every other class prints `unread`. Handing a foreign PR to the pipeline is
+a trusted account's act (`fabrika build takeover`), never this skill's.
 
 The scheduled sweep relays this rather than repeating it: `sweep` emits the lane as its row's sixth
 column, off [`lane.ts`](../../../../packages/fabrika-cli/src/heal-ci/lane.ts)'s lookup over the same
@@ -132,7 +143,7 @@ or decision PR may legitimately carry no issue at all, so a missing row is not a
 fabrika heal-ci logs $pr_number | fabrika heal-ci classify
 ```
 
-`logs` emits **every** failing gating context and `classify` returns one line per context — a PR is
+`logs` emits **every** failing required context and `classify` returns one line per context — a PR is
 only as healed as its worst one. Work every line: a single transient beside a real defect is still
 a defect.
 
@@ -141,13 +152,26 @@ flake. There is no path from an ambiguous log to "safe to rerun". Each token lic
 
 - **`transient`** — a recognised transient signature. One rerun, step 4.
 - **`logic`** — a recognised logic-failure signature. Route to repair: `build`'s repair mode
-  consumes the current-head FAIL verdicts. You never edit code and never push.
+  consumes the current-head FAIL verdicts — on a PR the pipeline owns. `diagnose` reads the `author`
+  line for every `red`, so read it there: on anything but `ours` or `granted`, route it to its author
+  instead (§2's
+  [ownership rule](#2--the-green-stalls-nobody-is-holding-it)). You never edit code and never push.
+  When a lane parked on this red (`human:cp-approval`, cause `head-ci-red`), the move into `build`
+  is not yours either, and it is one verb for the lane's driver:
+  `node <fabrika> recipe unpark <lane-key> --task <task>`. It re-reads these same two verbs at the
+  live head and, on a `logic` context over a PR the pipeline owns, records the park's `FAIL`
+  (`"event": "FAIL"` in its answer), spending one repair retry.
 - **`unclassified`** — no signature matched. It leaves through the intake seam as an observation:
   fire the `fabrika:report` skill, whose verb owns the write and returns the number your
   `FILED — #N` terminal carries. Guessing "probably a flake" is how a rerun loop starts.
+  A secret-scan red lands here on purpose, never as `logic`: the report names it a committed
+  secret for a person to remove and rotate the credential, not a gap in the classifier.
 
-Only **gating** reds reach this lane — an informational context is red without blocking anything,
-and treating one as healable is how a non-failure stalled a mergeable PR.
+Only reds the base branch declares **required** reach this lane. Anything else is red without
+blocking, and treating one as healable is how a non-failure stalled a mergeable PR — which is the
+incident this definition was ruled over. `diagnose` and `logs` both name those reds on stderr as
+reported-never-blocking, so you see them and route none of them. Making one block means adding its
+context to the base branch's ruleset, never a list in this repository.
 
 **The logs you are classifying came from `refs/pull/<n>/merge`, not from the PR's head.** A
 `pull_request` workflow builds the prospective merge of head into base and labels the runs with the
@@ -167,6 +191,9 @@ fabrika heal-ci rerun $pr_number --run 9182736450 --sha 03135b91 --signature pre
 A transient gets **exactly one** rerun per head, ever. The verb re-derives that precondition itself
 and refuses `14` without touching anything — it does not trust the classification you hand it,
 because v1 kept this invariant in the model's memory, and a session-memory invariant is not one.
+
+The queued rerun is the end of your action. If you wait on it to finish, wait the way
+[skill-conventions §14](../../docs/skill-conventions.md) says.
 
 A `14` refusal is a success: the guard proved the state and declined. Report it and stop — a second
 rerun is escalation, not retry, and escalation is a human's.
@@ -206,7 +233,9 @@ therefore no run for anything, which is `conflicted` at step 7 and not a setting
 carrying a non-closing reference is the live case: the seam sanctions `Fixes #N` and `Part of #N`,
 a correct revert wants neither, and the shipper nearly refused a good PR for it.
 
-Route it to the author or to `build` to reword the body, and stop. **Propose no new reference
+Route it to the author, or to `build` to reword the body when a lane holds it and the `author` line
+reads `ours` or `granted` (§2's
+[ownership rule](#2--the-green-stalls-nobody-is-holding-it)), and stop. **Propose no new reference
 token** — `Re: #N`, `Refs`, `See` and a bare `#N` stay banned, and the ruled fix is widening what
 `Part of #N` is stated to cover, not minting a token this skill would be the only reader of.
 
@@ -235,9 +264,10 @@ and the two want opposite repairs: one is a repository-settings change with an o
 it, this one is a rebase. The arm above `check-surface` is what keeps a conflicted PR out of the
 operator's queue.
 
-Name it and stop — the terminal is `ROUTED — build`. **You never rebase, merge or push**: this
+Name it and stop — the terminal is `ROUTED — build` on a PR the pipeline owns, and `ROUTED — author`
+on one it does not (§2's ownership rule). **You never rebase, merge or push**: this
 skill owns no branch and checks out nothing (§CAPABILITIES), and a rebase is a repair round on the
-branch, which is `build`'s. Post the class with `fabrika heal-ci note` exactly as §2 does and end.
+branch — `build`'s on a PR the pipeline owns, its author's on any other. Post the class with `fabrika heal-ci note` exactly as §2 does and end.
 
 `diagnose` reads this fact through `ship`'s own mergeability poll, so the two verbs never disagree
 about one PR. GitHub computes `mergeable` lazily, so a first read routinely answers "not computed
@@ -289,7 +319,7 @@ Every run ends as exactly one of:
 | `NOT-OPEN` | success — draft, closed or merged; no strand, nothing written |
 | `RERUN-QUEUED` | success — one transient rerun at this head, never a second |
 | `RERUN-QUEUED — record unverified` | the rerun **provably happened** and its durable marker did not land (`9`/`16`). Escalate at once: the next session sees no marker and is one read away from spending a second rerun |
-| `ROUTED — <build\|review\|ship\|author\|human\|nobody>` | success — the class was named and the owning lane told |
+| `ROUTED — <build\|review\|ship\|author\|human\|nobody>` | success — the class was named and the arrow says which lane owns the next move; `nobody` is a routed answer too, saying no lane owns it yet |
 | `SURFACED — check-config` | success — a repository-settings gap named for a human |
 | `FILED — #N` | success — an unclassified red or a defect entered intake |
 | `REFUSED — <reason>` | a successful decline: a verb proved the state, nothing mutated beyond the note |
@@ -329,6 +359,17 @@ appears in the note itself.
 Any cross-lane signal is closed-vocabulary: the note opens with the fixed first line
 `heal-ci: <terminal-token> — PR #<n> @ <sha> → <build|review|ship|author|human|nobody>` — kind,
 action, branded reference, no steering prose. The receiver re-fetches from the PR itself.
+
+**The scheduled workflow `.github/workflows/heal-ci-sweep.yml` writes `ROUTED` on every note it
+posts**, whatever the row's class: `red` (arrow `nobody`), `wedged` and `check-surface` (arrow
+`human`) alike, where a per-PR run would end `FILED`, `WEDGED` or `SURFACED`. That workflow posts a
+note per row without working the row, so each of those tokens would name an act it never took, while
+`ROUTED` names only what it did: it read the class and wrote the arrow's lane, `nobody` included. Its
+note body says the run was detection only, so the token claims no fix. Do not add a detection-only
+token for the workflow or filter `red` rows out of its notes; a red strand is the stall it exists to
+report. This rule binds that workflow alone: an agent in `## Sweep — the scheduled surface` mode
+still works each row through step 1 and ends on that row's own terminal (`FILED`, `WEDGED`,
+`SURFACED`, ...).
 
 ## Ingestion surface, declared
 

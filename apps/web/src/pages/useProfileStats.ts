@@ -21,13 +21,21 @@ export type ProfileStatsState =
 	| {status: "ok"; stats: ProfileStats}
 	| {status: "error"};
 
-const ProfileStatsView = view<Profile>()({
+export const ProfileStatsView = view<Profile>()({
 	userId: true,
 	postCount: true,
 	commentCount: true,
 	definitionCount: true,
 	totalKarma: true,
 });
+
+/**
+ * `network-only`, not the `stale-while-revalidate` the rendered `/u/:username` read takes
+ * (#9265): this read is a one-shot snapshot with no `useView` subscription behind it, so a
+ * background revalidation would land in the cache after `readView` has already answered and
+ * nothing would re-render. Awaiting the network is the only mode that shows the new counts.
+ */
+export const PROFILE_STATS_MODE = "network-only" as const;
 
 // A `null` snapshot is a successful zero result, NOT an error — it maps to all-zero
 // counts, which is the honest answer for a brand-new user.
@@ -52,6 +60,7 @@ export function useProfileStats(username: string | null | undefined): ProfileSta
 	const {state} = useImperativeView("profile", ProfileStatsView, {
 		args,
 		enabled: !!username,
+		mode: PROFILE_STATS_MODE,
 	});
 
 	return state.status === "ok" ? toProfileStatsState(state.data) : state;

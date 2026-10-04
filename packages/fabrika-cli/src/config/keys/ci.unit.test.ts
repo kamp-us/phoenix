@@ -1,7 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {producerFor} from "../ci-producer.ts";
 import {loadConfig, resolve} from "../load.ts";
-import {CI, ciKey, SHIPPED_CI} from "./ci.ts";
+import {CI, ciKey, SHIPPED_CI, SHIPPED_MAIN_ALARM} from "./ci.ts";
 
 const declared = (config: unknown) =>
 	resolve(loadConfig({_tag: "Text", text: JSON.stringify({[CI]: config})}), ciKey);
@@ -11,7 +11,11 @@ describe("the shipped CI surface", () => {
 		const resolved = resolve(loadConfig({_tag: "Absent"}), ciKey);
 		expect(resolved._tag).toBe("Default");
 		if (resolved._tag !== "Default") return;
-		expect(resolved.value).toEqual({noProducer: "refuse", gateWorkflow: "ci.yml"});
+		expect(resolved.value).toEqual({
+			noProducer: "refuse",
+			gateWorkflow: "ci.yml",
+			mainAlarm: {mention: [], label: "fabrika-main-alarm"},
+		});
 	});
 
 	it("falls to the shipped value for each sub-key the repo leaves out", () => {
@@ -60,35 +64,116 @@ describe("an off-vocabulary or malformed value is refused at load", () => {
 	});
 });
 
+describe("mainAlarm — who the alarm wakes, and under which label", () => {
+	it("ships an empty mention and fabrika's own label", () => {
+		expect(SHIPPED_MAIN_ALARM).toEqual({mention: [], label: "fabrika-main-alarm"});
+	});
+
+	it("takes a declared handle list and keeps the repo's own spelling", () => {
+		const resolved = declared({mainAlarm: {mention: ["@someone"]}});
+		expect(resolved._tag).toBe("Declared");
+		if (resolved._tag !== "Declared") return;
+		expect(resolved.value.mainAlarm).toEqual({mention: ["@someone"], label: "fabrika-main-alarm"});
+	});
+
+	it("takes an explicitly empty mention — filing still happens, so nothing is disabled", () => {
+		const resolved = declared({mainAlarm: {mention: []}});
+		expect(resolved._tag).toBe("Declared");
+		if (resolved._tag !== "Declared") return;
+		expect(resolved.value.mainAlarm.mention).toEqual([]);
+	});
+
+	it.each([
+		null,
+		"someone",
+		3,
+		[3],
+		[""],
+		["two words"],
+	])("refuses a mention that is not a list of handles (%p)", (value) => {
+		expect(declared({mainAlarm: {mention: value}})._tag).toBe("Malformed");
+	});
+
+	it("refuses a label carrying a comma — the lookup query would silently widen", () => {
+		const resolved = declared({mainAlarm: {label: "alarm,triage"}});
+		expect(resolved._tag).toBe("Malformed");
+		if (resolved._tag !== "Malformed") return;
+		expect(resolved.reason).toContain("single label name");
+	});
+
+	it("refuses an empty label", () => {
+		expect(declared({mainAlarm: {label: "  "}})._tag).toBe("Malformed");
+	});
+
+	it("refuses a sub-key this surface does not own, rather than dropping it", () => {
+		const resolved = declared({mainAlarm: {mentions: ["@someone"]}});
+		expect(resolved._tag).toBe("Malformed");
+		if (resolved._tag !== "Malformed") return;
+		expect(resolved.reason).toContain("is not a main-alarm setting");
+	});
+
+	it("refuses a mainAlarm that is not an object", () => {
+		expect(declared({mainAlarm: ["@someone"]})._tag).toBe("Malformed");
+	});
+});
+
 describe("producerFor", () => {
-	const at = (workflows: number, config: unknown) =>
+	const CI_YML = ".github/workflows/ci.yml";
+	/** The synthetic entries GitHub lists for a repo with default CodeQL, Dependabot and Copilot on. */
+	const PLATFORM = [
+		"dynamic/copilot-pull-request-reviewer/copilot-pull-request-reviewer",
+		"dynamic/agents/copilot-pull-request-reviewer",
+		"dynamic/github-code-scanning/codeql",
+		"dynamic/dependabot/dependabot-updates",
+	];
+	const at = (workflows: ReadonlyArray<string>, config: unknown) =>
 		producerFor("verb", "o/r", workflows, declared(config));
 
-	it("is Present on any workflow at all — existence is the whole test", () => {
-		expect(at(1, {})._tag).toBe("Present");
-		expect(at(1, {noProducer: "degrade"})._tag).toBe("Present");
+	it("is Present on any repo-authored workflow — existence is the whole test", () => {
+		expect(at([CI_YML], {})._tag).toBe("Present");
+		expect(at([CI_YML], {noProducer: "degrade"})._tag).toBe("Present");
+	});
+
+	it("is Present on a mixed inventory, whatever platform entries sit beside the repo's own", () => {
+		expect(at([...PLATFORM, CI_YML], {})._tag).toBe("Present");
+		expect(at([...PLATFORM, CI_YML], {noProducer: "degrade"})._tag).toBe("Present");
 	});
 
 	it("refuses zero workflows under the shipped default", () => {
-		const answer = at(0, {});
+		const answer = at([], {});
 		expect(answer._tag).toBe("Refused");
 		if (answer._tag !== "Refused") return;
-		expect(answer.reason).toContain("zero workflows — no CI producer");
+		expect(answer.reason).toContain("zero repo-authored workflows");
+		expect(answer.reason).toContain("no CI producer");
+	});
+
+	it("refuses an all-dynamic inventory under the shipped default — platform entries are no producer", () => {
+		const answer = at(PLATFORM, {});
+		expect(answer._tag).toBe("Refused");
+		if (answer._tag !== "Refused") return;
+		expect(answer.reason).toContain("`dynamic/*` entries do not count");
 	});
 
 	it("reports the fact, never a green, under degrade", () => {
-		const answer = at(0, {noProducer: "degrade"});
+		const answer = at([], {noProducer: "degrade"});
 		expect(answer._tag).toBe("OptedOut");
 		if (answer._tag !== "OptedOut") return;
 		expect(answer.note).not.toContain("green");
 	});
 
+	it("opts an all-dynamic inventory out under degrade — the route such a repo declares is reachable", () => {
+		const answer = at(PLATFORM, {noProducer: "degrade"});
+		expect(answer._tag).toBe("OptedOut");
+		if (answer._tag !== "OptedOut") return;
+		expect(answer.note).toContain("zero repo-authored workflows");
+	});
+
 	it("is Unknown on a config that never decoded — never the shipped default", () => {
-		expect(at(0, {noProducer: "ignore"})._tag).toBe("Unknown");
+		expect(at([], {noProducer: "ignore"})._tag).toBe("Unknown");
 	});
 
 	it("is Unknown on a config nobody could read", () => {
 		const unreadable = resolve(loadConfig({_tag: "Unreadable", reason: "EACCES"}), ciKey);
-		expect(producerFor("verb", "o/r", 0, unreadable)._tag).toBe("Unknown");
+		expect(producerFor("verb", "o/r", [], unreadable)._tag).toBe("Unknown");
 	});
 });

@@ -1,8 +1,10 @@
 /**
  * `governedRoots` — the roots a diff derives the `governance` namespace over.
  *
- * The shipped default is four roots plus `.fabrika.jsonc` itself: a diff that weakens the config
- * owes a governance verdict like any other governance-corpus change.
+ * The shipped default is three roots plus `.fabrika.jsonc` itself: a diff that weakens the config
+ * owes a governance verdict like any other governance-corpus change. Every shipped root is one the
+ * tool itself reads or writes in any repo, so a repo that keeps governed text elsewhere — its own
+ * plugin tree, say — declares that root.
  *
  * **That self-inclusion is enforced at load, not by convention.** A config can edit its own
  * governed-path list, so a config whose roots do not cover `.fabrika.jsonc` could un-govern itself —
@@ -11,8 +13,9 @@
  * at all refuses it too, since an unusable root list un-governs the config just as effectively.
  *
  * This module ships the key, its default and that refusal, and every path surface that derives the
- * namespace reads it from here through `config/paths.ts`'s `governedRootsOr` — `review scope`,
- * `governance scope` and `post`, the three `ship` verbs, `heal-ci`, `lane prove`.
+ * namespace reads it from here — at the PR's head and merge base through `review/class-config.ts`
+ * (`review scope`, `review diff`, `governance scope` and `post`, the three `ship` verbs, `heal-ci`,
+ * `lane prove`), and off the working tree only for `review preview` over a diff file.
  */
 
 import {CONFIG_PATH} from "../document.ts";
@@ -22,7 +25,7 @@ import type {Decoded, KeyGroup} from "../key-group.ts";
 export const GOVERNED_ROOTS = "governedRoots";
 
 /**
- * The four shipped roots, plus the config file — the one copy of the list.
+ * The three shipped roots, plus the config file — the one copy of the list.
  * `packages/fabrika-cli/src/review/classes.ts` re-exports this binding rather than holding a second
  * literal, so a caller with no config load in reach still lands on this value.
  */
@@ -30,7 +33,6 @@ export const SHIPPED_GOVERNED_ROOTS: ReadonlyArray<string> = [
 	".decisions/",
 	".claude/",
 	".github/",
-	"claude-plugins/",
 	CONFIG_PATH,
 ];
 

@@ -1,11 +1,15 @@
-import {Effect, type FileSystem, Layer, type Path} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
+	configOnPlatform,
 	fakeSeams,
 	type HttpReply,
+	mergeBaseOnPlatform,
 	type Scripted,
 	uiConfigured,
+	uiConfiguredOnPlatform,
 	unconfigured,
+	unconfiguredOnPlatform,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PULL_FILES_CAP} from "../io/pulls.ts";
@@ -43,7 +47,6 @@ const options: ScopeOptions = {
 	pr: 4321,
 	repo: null,
 	json: false,
-	cwd: "/repo",
 	env: ENV,
 	caller: "shipper",
 };
@@ -54,12 +57,12 @@ const run = (
 	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	extra: ReadonlyArray<Scripted> = [],
-	config: Layer.Layer<FileSystem.FileSystem | Path.Path> = unconfigured,
+	config: ReadonlyArray<Scripted> = unconfiguredOnPlatform(),
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runScope({...options, ...overrides}),
-			Layer.merge(fakeSeams([...script, ...extra, LINKED_WORKTREE]).layer, config),
+			Layer.merge(fakeSeams([...script, ...extra, ...config, LINKED_WORKTREE]).layer, unconfigured),
 		),
 	);
 
@@ -83,7 +86,7 @@ describe("runScope", () => {
 			],
 			{},
 			[[REPO, repositoryServed()]],
-			uiConfigured,
+			uiConfiguredOnPlatform(),
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
@@ -138,7 +141,7 @@ describe("runScope", () => {
 			],
 			{},
 			[],
-			uiConfigured,
+			uiConfiguredOnPlatform(),
 		);
 		expect(out.stdout).toContain("class\tui\t1");
 	});
@@ -154,7 +157,7 @@ describe("runScope", () => {
 			],
 			{},
 			[],
-			uiConfigured,
+			uiConfiguredOnPlatform(),
 		);
 		expect(out.stdout).toContain("class\tui\t1");
 		expect(out.stdout).toContain("namespace\treview-ui");
@@ -223,16 +226,6 @@ describe("runScope", () => {
 			[PULL, served(pull({changedFiles: 1}))],
 			[FILES, served(files("README.md"))],
 			[OWNERS, NOT_FOUND],
-		]);
-		expect(out.code).toBe(0);
-		expect(out.stdout).toContain("cp\tunknown");
-	});
-
-	it("still holds on unknown for a boundary that reads fine and bounds nothing", async () => {
-		const out = await run([
-			[PULL, served(pull({changedFiles: 1}))],
-			[FILES, served(files("README.md"))],
-			[OWNERS, raw("/a/ owner@example.test\n")],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("cp\tunknown");
@@ -373,6 +366,88 @@ describe("runScope", () => {
 			);
 			expect(out.code).toBe(0);
 			expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\topen\tfixes:4287`);
+		});
+	});
+
+	/**
+	 * The classes derive over the PR's own config — at its head and at the merge base the platform
+	 * names — and never over the checkout the shipper stands in.
+	 */
+	describe("the config the classes derive over", () => {
+		const MERGE_BASE = "c".repeat(40);
+		const SITE = JSON.stringify({
+			uiSurfaces: [
+				{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
+			],
+		});
+		const scoped = (config: ReadonlyArray<Scripted>, tree = unconfigured) =>
+			Effect.runPromise(
+				Effect.provide(
+					runScope(options),
+					Layer.merge(
+						fakeSeams([
+							[PULL, served(pull())],
+							[FILES, served(files("apps/site/src/App.tsx", "README.md"))],
+							[OWNERS, raw(CODEOWNERS)],
+							[RULES, served(branchRules())],
+							...config,
+							mergeBaseOnPlatform(MERGE_BASE),
+							...configOnPlatform(null),
+							LINKED_WORKTREE,
+						]).layer,
+						tree,
+					),
+				),
+			);
+
+		it("raises the ui class off the head's row when the working tree declares none", async () => {
+			const out = await scoped(configOnPlatform(SITE, HEAD));
+			expect(out.code).toBe(0);
+			expect(out.stdout).toContain("class\tui\t1");
+			expect(out.stdout).toContain("namespace\treview-ui");
+		});
+
+		it("raises the ui class off the merge base's row when the head removes it", async () => {
+			const out = await scoped([
+				...configOnPlatform("{}", HEAD),
+				...configOnPlatform(SITE, MERGE_BASE),
+			]);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toContain("class\tui\t1");
+		});
+
+		it("derives no ui class off a working-tree row neither commit declares", async () => {
+			const out = await scoped([], uiConfigured);
+			expect(out.code).toBe(0);
+			expect(out.stdout).not.toContain("class\tui");
+		});
+
+		it("refuses naming the merge base when its config does not decode", async () => {
+			const out = await scoped(configOnPlatform('{"governedRoots": []}', MERGE_BASE));
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stdout).toBe("");
+			expect(out.stderr.at(-1)).toContain(
+				`.fabrika.jsonc at the base ${MERGE_BASE} is refused — \`governedRoots\` is empty`,
+			);
+		});
+
+		it("refuses naming the head when its config cannot be read", async () => {
+			const out = await scoped([
+				[
+					new RegExp(`contents/\\.fabrika\\.jsonc\\?ref=${HEAD}$`),
+					{status: 502, body: '{"message":"Bad gateway"}'},
+				],
+			]);
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stderr.at(-1)).toContain(`.fabrika.jsonc at the head ${HEAD} is refused`);
+		});
+
+		it("refuses when the platform names no merge base to read the base config at", async () => {
+			const out = await scoped([
+				[/\/compare\/[^?]+\?per_page=1$/, {status: 200, body: '{"status":"ahead"}'}],
+			]);
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stderr.at(-1)).toContain(`cannot read the merge base of ${HEAD} with main`);
 		});
 	});
 });

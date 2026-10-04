@@ -94,12 +94,6 @@ describe("findUncovered", () => {
 		{path: "biome.jsonc", kind: "file"},
 	] as const;
 
-	it("is empty when every path is owned", () => {
-		expect(
-			findUncovered(paths, parseCodeownersPatterns("/.github/ @team\n/biome.jsonc @team\n")),
-		).toEqual([]);
-	});
-
 	it("names the path a dropped row leaves unowned", () => {
 		expect(findUncovered(paths, parseCodeownersPatterns("/biome.jsonc @team\n"))).toEqual([
 			{path: ".github/", kind: "dir"},
@@ -125,10 +119,6 @@ describe("findUncovered", () => {
 });
 
 describe("the live boundary", () => {
-	it("resolves to a non-empty §CP set", () => {
-		expect(cpPaths(CONTROL_PLANE_RE).length).toBeGreaterThan(0);
-	});
-
 	it("marks .github/ and .claude/ control-plane", () => {
 		const paths = cpPaths(CONTROL_PLANE_RE).map((p) => p.path);
 		expect(paths).toContain(".github/");

@@ -137,12 +137,7 @@ export function WelcomePage() {
 					<h1 className="kp-welcome__title" data-testid="welcome-title">
 						{addressing === "çaylak" ? t("auth.welcome.titleCaylak") : t("auth.welcome.title")}
 					</h1>
-					<p className="kp-welcome__lede">
-						{t("auth.welcome.lede", {
-							panoNoun: t("auth.brand.pano"),
-							sozlukNoun: t("auth.brand.sozluk"),
-						})}
-					</p>
+					<p className="kp-welcome__lede">{t("auth.welcome.lede")}</p>
 				</header>
 
 				<section className="kp-welcome__section" data-testid="welcome-standing">

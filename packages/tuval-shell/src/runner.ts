@@ -9,7 +9,7 @@
  * (`run({…})`) and the actor dispatches that ask to the handler below (#9295).
  *
  * **The actor dispatches on `type`.** `HostHandlers` is keyed by the Cmd's `type` field
- * (`@kampus/tuval`'s `registry/program.ts`), and the handler goes onto the compiled row by spread,
+ * (`@kampus/tuval-sdk`'s `registry/program.ts`), and the handler goes onto the compiled row by spread,
  * so the key here and the tag on the value are one string and it is named once: `RUN`.
  *
  * **The child is behind a service, not behind an import.** `ShellRunner` is what actually spawns;

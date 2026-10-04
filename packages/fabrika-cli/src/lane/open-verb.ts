@@ -43,6 +43,19 @@
  * directory is absent, so an existing lane still answers {@link LANE_EXISTS} and a driver's tolerated
  * resume is unchanged.
  *
+ * **That refusal has one arm, and the board opens it: `--from-board`.** A prior ledger written on
+ * another operator's machine is unreachable forever, so the refusal used to leave finished, verified
+ * work with no verb that moved it — and the only moves left were the two `operate` forbids. Under
+ * the flag the boot is admitted by [`board-seat.ts`](board-seat.ts): exactly one open pull request,
+ * every namespace its head derives answered, on `lane prove`'s own fold. The placed document then
+ * declares the repair budget **spent**, because the board proves the work is verified and proves
+ * nothing at all about how many rounds the prior lane burned — so this boot mints none, and the
+ * adoption is recorded on the issue before anything lands on disk. Everything the board does not
+ * prove refuses at {@link PRIOR_LANE} exactly as it did.
+ *
+ * The lane's origin — where it came from — is written as its first fact ([`facts.ts`](facts.ts))
+ * right after the machine is placed, a driver pick unless `--origin` says otherwise.
+ *
  * The repo's declared `laneConcurrencyCap` is the last gate before the write, and an issue lane's
  * alone — see [`concurrency.ts`](concurrency.ts) for what counts as a held seat: a lane under this
  * root whose log folds to `active` AND whose issue carries a live `lane claim`, plus every lane no
@@ -52,11 +65,21 @@ import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {Read} from "../config/read-key.ts";
 import {readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {DEFAULT_ORIGIN, ORIGINS, origin} from "../wire/lane-record.ts";
+import {
+	adoptionRecord,
+	type BoardRecorder,
+	type BoardSeatReader,
+	spendBudget,
+	strandedRecord,
+} from "./board-seat.ts";
 import {type ChildMembership, childMembership} from "./child-membership.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
 import {renderClasses, seedClasses} from "./class-seed.ts";
 import {
+	APPEND_UNKNOWN,
 	CLASS_UNRECOGNISED,
+	FACT_REFUSED,
 	LANE_EXISTS,
 	LANE_IS_CHILD,
 	LANE_UNREADABLE,
@@ -65,8 +88,9 @@ import {
 } from "./codes.ts";
 import {capRefusal} from "./concurrency.ts";
 import type {ExpectationReader} from "./expectation.ts";
+import {recordOrigin} from "./facts.ts";
 import type {PriorLaneReader} from "./prior-lane.ts";
-import {placementRefusal} from "./refusals.ts";
+import {placementRefusal, say} from "./refusals.ts";
 import {type LaneRef, placeMachine, probeLane} from "./store.ts";
 
 const VERB = "fabrika lane open";
@@ -89,6 +113,22 @@ const childRefusal = (issue: number, membership: ChildMembership): string => {
 	}
 };
 
+/**
+ * The prior-lane refusal, and the three routes it names.
+ *
+ * `--from-board` is named first because it is the only one that reaches the case this refusal was
+ * blind to — a ledger on another operator's machine, which no clearance can produce — and the two
+ * grants stay exactly where they were for the case they answer, a budget this checkout can see was
+ * spent.
+ */
+const priorRefusal = (
+	verb: string,
+	issue: number,
+	pulls: ReadonlyArray<number>,
+	root: string,
+): string =>
+	`${verb}: #${issue} already had a lane — the board hangs ${pulls.length === 1 ? "pull request" : "pull requests"} ${pulls.map((pull) => `#${pull}`).join(", ")} off it, which only a driven lane opens, and the ledger that drove them is not under ${root}. A ledger is a lane's whole state and it is gitignored, so booting a second one restores the first one's spent repair budget with nothing recording that a round was granted. Drive the pull request that is already there. Where that prior ledger is unreachable — it was written on another operator's machine, so no clearance can produce it — \`fabrika lane open ${issue} --from-board\` boots a lane the board admits: one open pull request with every namespace its head derives answered, seated with its repair budget declared spent and the adoption recorded on the issue. A spent budget itself comes back only through a granted round recorded on the board — \`lane clear\`, which grants the lane's round and its pull request's together, or \`build clear ${pulls[0] ?? issue}\` for a founder's bare PR-side grant — never a retire and re-open. Nothing was written.`;
+
 export interface OpenOptions<R = never> extends LaneRef {
 	/** The committed coder template's on-disk path — resolved by the adapter beside this module. */
 	readonly templatePath: string;
@@ -104,6 +144,28 @@ export interface OpenOptions<R = never> extends LaneRef {
 	 */
 	readonly priorLane: PriorLaneReader<R> | null;
 	/**
+	 * Whether the operator asked for the board-seated boot — `--from-board`, and false by default.
+	 *
+	 * It reaches the prior-lane arm and nothing else: a fresh issue boots exactly as it always did
+	 * whether or not the flag is on, so the flag can only ever widen the one refusal it is for.
+	 */
+	readonly fromBoard: boolean;
+	/**
+	 * The admission read, or `null` for the offline boot a caller gets by passing none.
+	 *
+	 * Asked only where the prior-lane refusal would fire and only under {@link fromBoard}, so the
+	 * ordinary boot pays for no verdict read at all.
+	 */
+	readonly boardSeat: BoardSeatReader<R> | null;
+	/**
+	 * Where the adoption is recorded — the board, through a caller-passed writer.
+	 *
+	 * It runs BEFORE the placement, because a boot whose record did not land is a lane nobody can
+	 * review afterwards, and the record is the whole difference between this arm and the laundering
+	 * the refusal exists to stop.
+	 */
+	readonly record: BoardRecorder<R> | null;
+	/**
 	 * The repo's declared `laneConcurrencyCap`, read off `.fabrika.jsonc` by the adapter.
 	 *
 	 * Read for every boot and applied to an issue lane only: the cap counts the issue lanes under
@@ -116,12 +178,26 @@ export interface OpenOptions<R = never> extends LaneRef {
 	 * A reader the adapter passes, the way `expectation` is, so the count stays provable offline.
 	 */
 	readonly claimed: ClaimHoldReader<R>;
+	/**
+	 * Where the lane came from, as the operator spelled it — validated here against the closed set,
+	 * and a driver pick when absent. It is written beside the machine as the lane's first fact.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9855
+	 */
+	readonly origin?: string;
 }
 
 export const runOpen = <R = never>(
 	options: OpenOptions<R>,
 ): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
+		const laneOrigin = origin(options.origin ?? DEFAULT_ORIGIN);
+		if (laneOrigin === null) {
+			return refuse(
+				FACT_REFUSED,
+				`${VERB}: --origin "${options.origin}" is not one of ${ORIGINS.join(", ")}. Nothing was written.`,
+			);
+		}
 		// The template read comes first because it is the cheap local one, and because the guard on
 		// the packed tarball's assets is the answer it produces — a boot that never reaches it cannot
 		// tell a missing asset from an unreachable board.
@@ -172,6 +248,10 @@ export const runOpen = <R = never>(
 				`${VERB}: cannot seed ${renderClasses(classes)} into ${options.templatePath}: ${seed.reason} — nothing was booted.`,
 			);
 		}
+		// What the board-seated arm decided, or `null` on every boot that never reached it — the one
+		// carrier between the prior-lane read above and the placement below, so the bytes placed and
+		// the answer printed cannot disagree about whether this lane was seated.
+		let seated: {readonly pr: number; readonly head: string; readonly text: string} | null = null;
 		if (issue !== null && options.priorLane !== null) {
 			// Only over an absent directory: a lane already there is the resume `lane open`'s own
 			// `LANE_EXISTS` names, and answering this code instead would stop a driver mid-drive.
@@ -185,11 +265,30 @@ export const runOpen = <R = never>(
 					);
 				}
 				if (read._tag === "Prior") {
-					const pulls = read.pulls.map((pull) => `#${pull}`).join(", ");
-					return refuse(
-						PRIOR_LANE,
-						`${VERB}: #${issue} already had a lane — the board hangs ${read.pulls.length === 1 ? "pull request" : "pull requests"} ${pulls} off it, which only a driven lane opens, and the ledger that drove them is not under ${options.root}. A ledger is a lane's whole state and it is gitignored, so booting a second one restores the first one's spent repair budget with nothing recording that a round was granted. Drive the pull request that is already there; a spent budget comes back only through a granted round recorded on the board — \`lane clear\`, which grants the lane's round and its pull request's together, or \`build clear ${read.pulls[0]}\` for a founder's bare PR-side grant — never a retire and re-open. Nothing was written.`,
-					);
+					if (!options.fromBoard || options.boardSeat === null) {
+						return refuse(PRIOR_LANE, priorRefusal(VERB, issue, read.pulls, options.root));
+					}
+					const seat = yield* options.boardSeat(issue, read.pulls);
+					if (seat._tag === "Unknown") {
+						return refuse(
+							LANE_UNREADABLE,
+							`${VERB}: whether the board verifies #${issue}'s pull request is UNKNOWN: ${seat.reason} — refusing to seat a lane over a read nobody made. Nothing was written.`,
+						);
+					}
+					if (seat._tag === "Unproven") {
+						return refuse(
+							PRIOR_LANE,
+							`${VERB}: #${issue} already had a lane, and \`--from-board\` read the board rather than trusting the flag: ${seat.why}. A seat is derived from a verified pull request or from nothing, and a spent repair budget comes back only through a granted round recorded on the board — \`lane clear\`, or \`build clear ${read.pulls[0] ?? issue}\` for a founder's bare PR-side grant. Nothing was written.`,
+						);
+					}
+					const spent = spendBudget(seed.text);
+					if (spent._tag === "Unseedable") {
+						return refuse(
+							LANE_UNREADABLE,
+							`${VERB}: cannot declare the repair budget spent in ${options.templatePath}: ${spent.reason} — a seat that mints an unproven budget is the laundering this arm exists not to be. Nothing was written.`,
+						);
+					}
+					seated = {pr: seat.pr, head: seat.head, text: spent.text};
 				}
 			}
 		}
@@ -199,26 +298,73 @@ export const runOpen = <R = never>(
 			const capped = yield* capRefusal(VERB, options.cap, options.root, options.claimed);
 			if (capped !== null) return capped;
 		}
-		const placed = yield* placeMachine(options, seed.text);
+		// After the cap, so a capped boot records no adoption it never took; before the placement,
+		// because an unrecorded seat is one no reader can review, and reviewability is this arm's
+		// whole warrant.
+		let record: string | null = null;
+		if (seated !== null && issue !== null) {
+			if (options.record === null) {
+				return refuse(
+					LANE_UNREADABLE,
+					`${VERB}: \`--from-board\` was asked for with no way to record the adoption on #${issue} — the record is what makes the seat reviewable, so nothing was booted.`,
+				);
+			}
+			const wrote = yield* options.record(issue, adoptionRecord(issue, seated.pr, seated.head));
+			if (wrote._tag === "Unrecorded") {
+				return refuse(
+					LANE_UNREADABLE,
+					`${VERB}: the adoption record did not land on #${issue}: ${wrote.reason} — nothing was booted, so re-run once the board is writable.`,
+				);
+			}
+			record = wrote.url;
+		}
+		// Every arm below this point refused *after* the record landed, so each one carries it: the
+		// board keeps a comment naming a succession the disk never took, and only the refusal can say so.
+		const stranded = strandedRecord(record);
+		const placed = yield* placeMachine(options, seated === null ? seed.text : seated.text);
 		if (placed._tag === "Exists") {
 			return refuse(
 				LANE_EXISTS,
-				`${VERB}: a lane already exists at ${placed.dir} — resuming needs no boot, so drive the lane that is there (\`fabrika lane status ${options.lane}\`). Removing ${placed.dir} and booting again is not the remedy: the ledger is the lane's whole state and it is gitignored, so the re-boot restores its spent repair budget with nothing recording that a round was granted. A spent budget comes back only through a granted round recorded on the board.`,
+				say(
+					`${VERB}: a lane already exists at ${placed.dir} — resuming needs no boot, so drive the lane that is there (\`fabrika lane status ${options.lane}\`). Removing ${placed.dir} and booting again is not the remedy: the ledger is the lane's whole state and it is gitignored, so the re-boot restores its spent repair budget with nothing recording that a round was granted. A spent budget comes back only through a granted round recorded on the board.`,
+					...stranded,
+				),
 			);
 		}
-		if (placed._tag !== "Placed") return placementRefusal(VERB, placed);
+		if (placed._tag !== "Placed") return placementRefusal(VERB, placed, stranded);
+		const recorded = yield* recordOrigin(placed.dir, laneOrigin);
+		if (recorded._tag === "Unrecorded") {
+			return refuse(
+				APPEND_UNKNOWN,
+				say(
+					`${VERB}: booted ${placed.dir}, but its origin did not land in ${recorded.path}: ${recorded.reason} — the lane IS booted and reads as a ${DEFAULT_ORIGIN} until that file says otherwise.`,
+					...stranded,
+				),
+			);
+		}
+		const text = seated === null ? seed.text : seated.text;
 		return answer(
 			JSON.stringify({
 				answer: "opened",
 				lane: options.lane,
+				origin: laneOrigin,
 				workflow: placed.workflow,
 				classes: seed._tag === "Seeded" ? seed.classes : [],
-				bytes: new TextEncoder().encode(seed.text).length,
+				bytes: new TextEncoder().encode(text).length,
+				...(seated === null
+					? {}
+					: {fromBoard: {pr: seated.pr, head: seated.head, maxRetries: 0, record}}),
 			}),
 			[
 				seed._tag === "Seeded"
 					? `${VERB}: booted ${placed.dir} from ${options.templatePath}, seeded ${renderClasses(seed.classes)}.`
 					: `${VERB}: booted ${placed.dir} from ${options.templatePath}.`,
+				...(seated === null
+					? []
+					: [
+							`${VERB}: seated from the board on #${seated.pr} at ${seated.head}, with the repair budget declared spent — a FAIL parks at human:budget-spent until \`lane clear\` grants a round.`,
+							`${VERB}: the adoption is recorded at ${record}. The lane stands at its initial state: walk it with \`fabrika lane transition ${options.lane} <event>\`, which proves every event against the board before it records one.`,
+						]),
 			],
 		);
 	});

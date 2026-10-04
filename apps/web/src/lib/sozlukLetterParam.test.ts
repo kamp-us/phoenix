@@ -14,9 +14,16 @@ describe("sozlukLetterParam", () => {
 		expect(sozlukLetterParam("Ç")).toBe("ç");
 	});
 
+	it("resolves q, w and x — and their capitals — to their own pages (#9425)", () => {
+		expect(sozlukLetterParam("q")).toBe("q");
+		expect(sozlukLetterParam("w")).toBe("w");
+		expect(sozlukLetterParam("x")).toBe("x");
+		expect(sozlukLetterParam("Q")).toBe("q");
+		expect(sozlukLetterParam("W")).toBe("w");
+		expect(sozlukLetterParam("X")).toBe("x");
+	});
+
 	it("refuses anything the strip does not index", () => {
-		expect(sozlukLetterParam("q")).toBeNull();
-		expect(sozlukLetterParam("w")).toBeNull();
 		expect(sozlukLetterParam("42")).toBeNull();
 		expect(sozlukLetterParam("ab")).toBeNull();
 		expect(sozlukLetterParam("")).toBeNull();

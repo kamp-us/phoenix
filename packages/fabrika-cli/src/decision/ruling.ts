@@ -1,5 +1,5 @@
 /**
- * What ruling already stands on a decision issue, and the target read both verbs share.
+ * What ruling already stands on an issue, and the target read both verbs share.
  *
  * Who *may* rule is `../ship/roster.ts` — one control-plane read, the same one `plan approve`
  * resolves, so this group cannot drift from the ACL the merge gate enforces.
@@ -14,10 +14,15 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {DECISION_TYPE_LABEL} from "../build/scope-admission.ts";
 import {type CommentRecord, getIssue, type IssueRecord} from "../io/issues.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
-import {type DecisionRuling, read as readRuling, rules} from "../wire/decision-ruling.ts";
+import {
+	type DecisionRuling,
+	read as readRuling,
+	rules,
+	rulingComment,
+} from "../wire/decision-ruling.ts";
+import {carriesMachineMarker} from "../wire/machine-marker.ts";
 import {NO_TARGET, PRECONDITION_UNKNOWN} from "./codes.ts";
 
 export type DecisionTarget =
@@ -25,12 +30,21 @@ export type DecisionTarget =
 	| {readonly _tag: "Decision"; readonly issue: IssueRecord};
 
 /**
- * The issue this group acts on, proven to be a decision issue before anything else runs.
+ * The issue this group acts on, proven to be an issue before anything else runs.
  *
- * An unreadable issue is `11` and a proven non-decision is `7`; folding the two would let a 502 read
- * as "that is not a decision", which is the fail-open direction for an authority verb.
+ * An unreadable issue is `11` and a proven absence (or a pull request) is `7`; folding the two would
+ * let a 502 read as "that is not there", which is the fail-open direction for an authority verb.
+ *
+ * **The `type:decision` fence used to sit here, and it is gone on purpose.** A founder ruling lands
+ * on whatever issue the work is on — a bug, a feature, an investigation — and refusing to record one
+ * there left the ruling as prose no gate reads, which is the whole defect `review criteria`'s fold
+ * closes. The audience flip reaches every type too, except an epic, whose agent audience is the
+ * plan gate's — that one fence lives on the flip in `rule-verb.ts`, not on this target read.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9517#issuecomment-5752597880
+ * @ruling https://github.com/kamp-us/phoenix/issues/7753#issuecomment-5554842306
  */
-export const requireDecision = (
+export const requireRulable = (
 	verb: string,
 	repo: string,
 	number: number,
@@ -58,15 +72,6 @@ export const requireDecision = (
 				outcome: refuse(NO_TARGET, `${verb}: ${repo}#${number} is a pull request, not an issue.`),
 			};
 		}
-		if (!found.value.labels.includes(DECISION_TYPE_LABEL)) {
-			return {
-				_tag: "Refused" as const,
-				outcome: refuse(
-					NO_TARGET,
-					`${verb}: #${number} is not a ${DECISION_TYPE_LABEL} — refusing to record a ruling on it.`,
-				),
-			};
-		}
 		return {_tag: "Decision" as const, issue: found.value};
 	});
 
@@ -80,6 +85,15 @@ export interface StandingRuling {
 }
 
 export interface RulingScan {
+	/**
+	 * Every conforming marker naming this issue whose author the roster resolved, oldest first.
+	 *
+	 * The decision audience only ever asked whether *a* ruling stands, so {@link RulingScan.standing}
+	 * answered it. A graded set needs the whole sequence: three rulings landed on one issue while its
+	 * lane ran, the third reversing the second, and a reviewer handed only the newest cannot see that
+	 * the second was ever in force — nor that the first still is.
+	 */
+	readonly all: ReadonlyArray<StandingRuling>;
 	/** The newest conforming marker naming this issue, or `null` when none does. */
 	readonly standing: StandingRuling | null;
 	/**
@@ -99,6 +113,9 @@ export interface RulingScan {
 	readonly unauthorized: number;
 }
 
+const byWrite = (a: CommentRecord, b: CommentRecord): number =>
+	a.updatedAt === b.updatedAt ? a.id - b.id : a.updatedAt < b.updatedAt ? -1 : 1;
+
 /**
  * The standing ruling among an issue's comments, newest last.
  *
@@ -113,10 +130,8 @@ export const scanRulings = (
 	issue: number,
 	roster: ReadonlySet<string>,
 ): RulingScan => {
-	const ordered = [...comments].sort((a, b) =>
-		a.updatedAt === b.updatedAt ? a.id - b.id : a.updatedAt < b.updatedAt ? -1 : 1,
-	);
-	let standing: StandingRuling | null = null;
+	const ordered = [...comments].sort(byWrite);
+	const all: StandingRuling[] = [];
 	let disregarded = 0;
 	let unauthorized = 0;
 	for (const comment of ordered) {
@@ -130,9 +145,87 @@ export const scanRulings = (
 			unauthorized += 1;
 			continue;
 		}
-		standing = {ruling: found.value, by: comment.author, comment: comment.id};
+		all.push({ruling: found.value, by: comment.author, comment: comment.id});
 	}
-	return {standing, disregarded, unauthorized};
+	return {all, standing: all.at(-1) ?? null, disregarded, unauthorized};
+};
+
+/**
+ * The latest moment any standing ruling was recorded, for a currency read to date a verdict against.
+ *
+ * **It is not {@link RulingScan.standing}'s stamp, and that is the whole point of the function.**
+ * `standing` is last by comment `updatedAt`, which is the decision audience's ordering: edit an
+ * older marker and it sorts last while still carrying its own older `at`, so a verdict written
+ * between the real newest ruling and that older stamp would read current. Taking the maximum over
+ * every marker closes it in the conservative direction.
+ *
+ * An unparseable stamp is returned as-is rather than skipped, so the caller's read answers UNKNOWN:
+ * a stamp nobody can date cannot be proven older than a verdict.
+ */
+export const newestRulingAt = (scan: RulingScan): string | null => {
+	let newest: string | null = null;
+	let newestInstant = Number.NEGATIVE_INFINITY;
+	for (const standing of scan.all) {
+		const at = standing.ruling.at;
+		const parsed = Date.parse(at);
+		if (Number.isNaN(parsed)) return at;
+		if (parsed >= newestInstant) {
+			newest = at;
+			newestInstant = parsed;
+		}
+	}
+	return newest;
+};
+
+/** A roster account's comment that no ruling marker records, addressed so a reader can open it. */
+export interface UnmarkedComment {
+	readonly id: number;
+	readonly by: string;
+	readonly url: string;
+}
+
+/**
+ * Every roster account's comment that is newer than the newest standing ruling and is neither a
+ * machine marker nor the comment a standing ruling cites, oldest first.
+ *
+ * A ruling counts once a marker records it, and that stays true. This is the other half: an owner
+ * who wrote a rule as a plain comment used to read exactly like an issue nobody ruled on, so a
+ * reviewer graded an older marked ruling the owner had since replaced. Nothing here makes such a
+ * comment a ruling. It only makes it visible, to be read or recorded.
+ *
+ * **The list holds agent prose too.** Where agents post under an owner's account, their free-prose
+ * notes are roster comments with no marker, and no read of the bytes separates them from a person's
+ * — which is why every caller lists these and none refuses on them.
+ *
+ * Dated by `updatedAt`, as {@link scanRulings} orders: an edit after the ruling is a newer
+ * statement. A stamp nobody can date, on either side, cannot prove the comment older, so it counts.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10309#issuecomment-5974136525
+ */
+export const unmarkedOwnerComments = (
+	comments: ReadonlyArray<CommentRecord>,
+	repo: string,
+	issue: number,
+	roster: ReadonlySet<string>,
+	scan: RulingScan,
+): ReadonlyArray<UnmarkedComment> => {
+	const newest = newestRulingAt(scan);
+	const cutoff = newest === null ? Number.NaN : Date.parse(newest);
+	const cited = new Set(scan.all.map((standing) => rulingComment(standing.ruling.ruling)));
+	return [...comments]
+		.sort(byWrite)
+		.filter(
+			(comment) =>
+				roster.has(comment.author) &&
+				!cited.has(comment.id) &&
+				!carriesMachineMarker(comment.body) &&
+				!(Date.parse(comment.updatedAt) <= cutoff),
+		)
+		.map((comment) => ({
+			id: comment.id,
+			by: comment.author,
+			url: `https://github.com/${repo}/issues/${issue}#issuecomment-${comment.id}`,
+		}));
 };
 
 /** The state a scan resolves to against the digest derived from the body as it now stands. */

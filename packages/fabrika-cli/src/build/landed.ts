@@ -28,9 +28,9 @@ import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {mergeBase, noMergeBaseReason, rangeCommits, resolveCommit} from "../io/git.ts";
+import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
 import {landingRefsIn} from "./commit-message.ts";
-import {defaultBranch} from "./github.ts";
 
 /** Every issue number these commit messages claim to land — the set whose work this branch carries. */
 export const landedRefs = (messages: ReadonlyArray<string>): ReadonlySet<number> =>
@@ -75,14 +75,14 @@ export const readAssembly = (
 		const branch = epicBranch(epic);
 		const tip = yield* resolveCommit(branch, " — the epic run's assembly branch");
 		if (tip._tag === "Failure") return {_tag: "Unreadable" as const, branch, reason: tip.reason};
-		const trunk = yield* defaultBranch(env, repo);
+		const trunk = yield* resolveTrunk(env, repo);
 		if (trunk._tag === "Failure")
 			return {
 				_tag: "Unreadable" as const,
 				branch,
-				reason: `cannot name ${repo}'s default branch to bound the read against: ${trunk.reason}`,
+				reason: `the read has no trunk to bound it against: ${trunkUnresolved(trunk.reason)}`,
 			};
-		const baseRef = `origin/${trunk.value}`;
+		const baseRef = trunk.value.ref;
 		const base = yield* mergeBase(baseRef, tip.value);
 		if (base._tag === "Failure")
 			return {

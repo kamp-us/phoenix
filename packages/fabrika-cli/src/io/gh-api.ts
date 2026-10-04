@@ -13,8 +13,10 @@
  *   read proves completeness by `total_count`, a bare-array read declares no count at all and its
  *   proof is exhausted pagination — a terminal page carrying no `rel="next"` link.
  *
- * REST throughout, with exactly three carves: {@link graphqlRead} for review threads
- * and their mutations, the auto-merge mutation, and `pullsClosing` in `./pulls.ts`. Issue
+ * REST throughout, with exactly five carves: {@link graphqlRead} for review threads
+ * and their mutations, the auto-merge mutation, `pullsClosing` in `./pulls.ts`, the Projects
+ * (v2) client in `./projects.ts`, and the batched issue reads in `./issue-batch.ts`, carved by
+ * ruling rather than by a missing REST edge. Issue
  * *search* stays REST — this org's Projects-classic integration errors GraphQL search out.
  *
  * The credential is an argument to every leg *of this module*, never something a leg resolves —
@@ -282,22 +284,6 @@ export const restRead = (token: string, method: "GET" | "POST", path: string): A
 	restCall(token, {method, path});
 
 /**
- * A read whose answer is bytes — the run-evidence artifact zip, and nothing else today.
- *
- * It is separate from {@link restCall} rather than a flag on it because {@link Rest} carries a
- * parsed body and a decoded `text`, and a zip decoded as UTF-8 is corrupt rather than merely
- * unparsed. The caller still reads `status` before the bytes: a 503 body saved as `.zip` is not a
- * bundle.
- */
-export const restBytes = (token: string, path: string, accept?: string): Api<Served<Uint8Array>> =>
-	served(
-		HttpClientRequest.get(endpoint(path)).pipe(
-			HttpClientRequest.setHeaders(headersFor(token, accept)),
-		),
-		(response) => Effect.map(response.arrayBuffer, (buffer) => new Uint8Array(buffer)),
-	);
-
-/**
  * Run `use` under the ambient credential and the ambient transport, or hand back the refusal that
  * says there is no credential.
  *
@@ -347,6 +333,15 @@ export const restWrite = (
 const MESSAGE_CAP = 200;
 
 /**
+ * GitHub's own `message` off a response, verbatim and uncapped, or `null` when the body carries none.
+ *
+ * The structured field a caller classifies a refusal by — {@link refusalText} is for printing, and
+ * its bound cuts the very text a classification would match.
+ */
+export const githubMessage = (outcome: Rest & {_tag: "Response"}): string | null =>
+	isRecord(outcome.body) && typeof outcome.body.message === "string" ? outcome.body.message : null;
+
+/**
  * The refusal a non-2xx is, naming GitHub's own `message` when it sent one.
  *
  * Every non-2xx arm in this module and in `./issues.ts` builds its reason here, because the string
@@ -360,8 +355,9 @@ const MESSAGE_CAP = 200;
  */
 export const refusalText = (outcome: Rest & {_tag: "Response"}): string => {
 	const status = `GitHub answered HTTP ${outcome.status}`;
-	if (!isRecord(outcome.body) || typeof outcome.body.message !== "string") return status;
-	const message = outcome.body.message.replace(/\s+/g, " ").trim();
+	const raw = githubMessage(outcome);
+	if (raw === null) return status;
+	const message = raw.replace(/\s+/g, " ").trim();
 	if (message === "") return status;
 	const bounded =
 		message.length <= MESSAGE_CAP ? message : `${message.slice(0, MESSAGE_CAP)}…truncated`;
@@ -431,14 +427,39 @@ const paged = (path: string, page: number): string =>
 	`${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`;
 
 /**
- * A paged read's answer: an {@link Attempt} whose failure also names the status GitHub served.
+ * What GitHub served beside a read: its status and its own `message`, or neither when no status
+ * arrived. A `message` exists only where a status does.
+ */
+export type ServedStatus =
+	| {readonly status: null}
+	| {readonly status: number; readonly message: string | null};
+
+/**
+ * The start of GitHub's `message` on a 403 served because the repository's plan lacks the feature —
+ * a private repository on the free plan, where rulesets and branch protection are paid. It reaches
+ * every token, admin included, so no permission clears it.
+ */
+const PLAN_GATE = "Upgrade to GitHub Pro or make this repository public";
+
+/**
+ * Whether GitHub refused because the repository's plan lacks the feature, not because this token
+ * may not read it. Classified on the raw {@link githubMessage}, never {@link refusalText}, whose
+ * bound can cut the prefix; any other 403 is a permission refusal and answers `false`.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10155#issuecomment-5886566592
+ */
+export const isPlanGated = (answer: ServedStatus): boolean =>
+	answer.status === 403 && answer.message?.startsWith(PLAN_GATE) === true;
+
+/**
+ * A paged read's answer: an {@link Attempt} whose failure also names what GitHub served.
  *
  * A caller telling a permission denial apart from any other unreadable answer needs the number. A
  * single read gets it from {@link existenceOf}; a paged read walks many responses, so the one it
- * stopped on carries its status here rather than leaving the caller to scrape it back out of the
- * reason — the scraping habit this client exists to end.
+ * stopped on carries its status and message here rather than leaving the caller to scrape them back
+ * out of the reason — the scraping habit this client exists to end.
  */
-export type PagedAttempt<A> = Ok<A> | (Failure & {readonly status: number | null});
+export type PagedAttempt<A> = Ok<A> | (Failure & ServedStatus);
 
 /** A read that produced no status at all — GitHub was never reached, or answered a shape nobody asked for. */
 const statusless = (reason: string): Failure & {readonly status: null} => ({
@@ -446,9 +467,12 @@ const statusless = (reason: string): Failure & {readonly status: null} => ({
 	status: null,
 });
 
-const refusalFor = (outcome: Rest & {_tag: "Response"}): Failure & {readonly status: number} => ({
+const refusalFor = (
+	outcome: Rest & {_tag: "Response"},
+): Failure & {readonly status: number; readonly message: string | null} => ({
 	...fail(refusalText(outcome)),
 	status: outcome.status,
+	message: githubMessage(outcome),
 });
 
 /**
@@ -558,10 +582,14 @@ export const pagedEnvelope = (
 /**
  * The one non-REST leg, and it is a carve rather than a default.
  *
- * Three things need it and nothing else may: review-thread resolution state with the reply and
- * resolve mutations, `enablePullRequestAutoMerge`, and `pullsClosing` in `./pulls.ts`. Issue
+ * Five things need it and nothing else may: review-thread resolution state with the reply and
+ * resolve mutations, `enablePullRequestAutoMerge`, `pullsClosing` in `./pulls.ts`, the
+ * Projects (v2) client in `./projects.ts`, and the batched issue reads in `./issue-batch.ts` —
+ * many aliased `issue(number:)` nodes per request, each read for its state, parent, sub-issues,
+ * blocked-by, blocking and comment count. Issue
  * *search* stays REST — what this org's Projects-classic integration errors out is the GraphQL
- * search connection, not the `repository(...){issue(number:)}` node `pullsClosing` reaches.
+ * search connection, not the `repository(...){issue(number:)}` node `pullsClosing` and the batched
+ * issue reads reach.
  */
 export const graphqlRead = (
 	token: string,

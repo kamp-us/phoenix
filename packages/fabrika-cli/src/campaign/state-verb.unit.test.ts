@@ -4,8 +4,9 @@ import type {FakeFsOptions, Scripted} from "../fakes.test-support.ts";
 import {
 	approving,
 	CITES,
+	CODEOWNERS,
+	codeowners,
 	comment,
-	config,
 	env,
 	FILE,
 	GET_COMMENT,
@@ -60,17 +61,16 @@ describe("campaign state — the answer", () => {
 		expect(after.filter((line, at) => line !== before[at])).toHaveLength(1);
 	});
 
-	it("says lanes may now open when the flip is to active", async () => {
+	it("names the flip and claims no lane opens on it — a campaign gates nothing", async () => {
 		const {outcome} = await run(APPROVED);
-		expect(outcome.stderr.at(-1)).toBe(
-			`campaign state: cited ${CITES} by @usirin (campaignAuthors: @usirin; write on o/r); "Taste-Skill Library" #42 paused → active in ROADMAP.md. — lanes may now open against #42.`,
-		);
+		expect(outcome.stderr).toEqual([
+			`campaign state: cited ${CITES} by @usirin (control plane: @usirin; write on o/r); "Taste-Skill Library" #42 paused → active in ROADMAP.md.`,
+		]);
 	});
 
-	it("omits that clause on a flip that grants nothing", async () => {
+	it("reads a flip to done the same way", async () => {
 		const {outcome} = await run(approving(42, "done"), tree(), {to: "done"});
 		expect(outcome.stderr.at(-1)).toContain("paused → done in ROADMAP.md.");
-		expect(outcome.stderr.at(-1)).not.toContain("lanes may now open");
 	});
 
 	it("emits the documented object under --json, carrying the state it came from", async () => {
@@ -139,13 +139,13 @@ describe("campaign state — the approval trace binds to the selected row", () =
 		expect(outcome.stderr.at(-1)).toContain("approves #42 done, not #42 active");
 	});
 
-	it("refuses an empty campaignAuthors on 17, in this verb's own words", async () => {
-		const {outcome} = await run(APPROVED, tree(TWO_ROWS, config()));
+	it("refuses a CODEOWNERS naming nobody on 17, in this verb's own words", async () => {
+		const {outcome} = await run([[CODEOWNERS, codeowners()], ...APPROVED]);
 		expect(outcome.code).toBe(17);
 		expect(outcome.stderr.at(-1)).toContain("nobody may flip a campaign in this repo");
 	});
 
-	it("refuses a declared author below the write floor on 21, writing nothing", async () => {
+	it("refuses a control-plane author below the write floor on 21, writing nothing", async () => {
 		const {outcome, written} = await run([
 			[GET_COMMENT, comment(marker(42, "active"))],
 			[PERMISSION, permission("triage")],

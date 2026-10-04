@@ -1,7 +1,13 @@
 import {act, render, screen, waitFor} from "@testing-library/react";
-import {beforeEach, describe, expect, it} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {LOCALE_STORAGE_KEY} from "../lib/localeStorage";
+import {loadCatalog} from "./catalog";
 import {LocaleProvider, useLocale, useT} from "./LocaleProvider";
+
+vi.mock("./catalog", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./catalog")>();
+	return {...actual, loadCatalog: vi.fn(actual.loadCatalog)};
+});
 
 function Probe() {
 	const {locale, setLocale} = useLocale();
@@ -23,6 +29,10 @@ function Probe() {
 beforeEach(() => {
 	window.localStorage.clear();
 	document.documentElement.lang = "";
+});
+
+afterEach(() => {
+	vi.restoreAllMocks();
 });
 
 describe("LocaleProvider", () => {
@@ -84,6 +94,24 @@ describe("LocaleProvider", () => {
 		});
 		expect(screen.getByTestId("skip").textContent).toBe("içeriğe geç");
 		expect(document.documentElement.lang).toBe("tr");
+	});
+
+	it("snaps back to Turkish and warns when the English chunk fails to load", async () => {
+		const chunkError = new TypeError("Failed to fetch dynamically imported module");
+		vi.mocked(loadCatalog).mockRejectedValueOnce(chunkError);
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		render(
+			<LocaleProvider>
+				<Probe />
+			</LocaleProvider>,
+		);
+		await act(async () => {
+			screen.getByText("to-en").click();
+		});
+		await waitFor(() => expect(screen.getByTestId("locale").textContent).toBe("tr"));
+		expect(screen.getByTestId("skip").textContent).toBe("içeriğe geç");
+		expect(document.documentElement.lang).toBe("tr");
+		expect(warn).toHaveBeenCalledWith(expect.stringContaining('"en" catalog'), chunkError);
 	});
 
 	it("falls back to the Turkish catalog with no provider above it", () => {

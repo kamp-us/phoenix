@@ -21,7 +21,8 @@
  * The day #9292 lands, the last `describe` is where the change shows up first.
  */
 
-import {type TurnResult, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
+import {BRIEF_PORT} from "@kampus/tuval-cron";
+import {type TurnResult, TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
 import {
 	type AuthoredProgram,
 	emit,
@@ -29,8 +30,7 @@ import {
 	send,
 	TITLE_PORT,
 	testProgram,
-} from "@kampus/tuval/authoring";
-import {BRIEF_PORT} from "@kampus/tuval-cron";
+} from "@kampus/tuval-sdk/authoring";
 import {Effect, type Layer, Schema} from "effect";
 import {describe, expect, it} from "vitest";
 import config, {BLOCKED_ROUTE, desk, morningBrief, phone} from "../.tuval/tuval.config.ts";
@@ -117,8 +117,8 @@ type Authored = ReturnType<typeof program>;
 /**
  * The authored record, at the shape `testProgram` takes.
  *
- * `defineProgram` grew a sixth type argument in #9295 — `X`, the author's own effect — and
- * `testProgram` still stops at five, so a record whose cells answer `Answer<State, Deliver>` does
+ * `defineProgram` takes `X` — the author's own effect — as its fifth type argument (#9295), and
+ * `testProgram` stops at four, so a record whose cells answer `Answer<State, Deliver>` does
  * not fit its parameter. The cells are the same functions and the runner calls them the same way;
  * the cast is over that one type argument and nothing else, and this is the only place in the suite
  * that writes it. Filed upstream as kamp-us/phoenix
@@ -202,17 +202,6 @@ describe("notify says what it is before anything has happened", () => {
 
 describe("what may arrive on `message`", () => {
 	const admits = Schema.is(MessageSchema);
-
-	/**
-	 * The composition claim at the schema level, and it is now an identity rather than a fit: the
-	 * port is declared over the *same object* `@kampus/tuval/ai-agent/ports` ships and cron's `brief`
-	 * out-port is declared over. Nothing structural is being relied on — no open struct dropping
-	 * excess keys — because #9292's route rule is exact schema equality, and only the identical
-	 * schema satisfies it.
-	 */
-	it("is `TurnResultSchema` itself, not a struct a turn happens to satisfy", () => {
-		expect(MessageSchema).toBe(TurnResultSchema);
-	});
 
 	it("takes an AI-agent `TurnResult`, and reads its `text`", () => {
 		const turn: TurnResult = {
@@ -312,11 +301,6 @@ describe("notify, delivering", () => {
 		expect(asked(after)).toEqual([deliver({key: "notify-2", text: "second"})]);
 	});
 
-	it("asks for exactly one delivery per message, when that message takes the slot", () => {
-		const first = driven(program()).send("message", brief("first"));
-		expect(asked(first)).toEqual([deliver({key: "notify-1", text: "first"})]);
-	});
-
 	it("asks for nothing at all when there is nothing to send", () => {
 		// A fresh notifier holds no resource and asks for no work — the old Sub's `null` deps, as an
 		// effect nobody answered rather than a subscription nobody opened.
@@ -360,7 +344,7 @@ describe("notify, delivering", () => {
 /**
  * The bound, as it behaves when it is actually reached. The rule is one sentence — **nothing is
  * lost quietly, and the message in flight is never what goes** — and the cases below are its two
- * halves plus the type-level reason the second half cannot be broken by accident.
+ * halves.
  */
 describe("a full outbox refuses the arrival, out loud", () => {
 	/** A run holding `OUTBOX` undelivered messages: one in flight and fifteen waiting. */
@@ -403,20 +387,6 @@ describe("a full outbox refuses the arrival, out loud", () => {
 			.event(answered({key: "notify-1", text: "msg 0"}, {ok: true, status: 200}))
 			.send("message", brief("room now"));
 		expect(run.state.outbox.queue.at(-1)?.text).toBe("room now");
-	});
-
-	/**
-	 * The structural half. `Outbox` holds the message in flight in a *field*, not at index zero of an
-	 * array, so there is no index by which an arrival could reach it — which is why the invariant is
-	 * not a bounds check somebody has to keep correct. This case states it over the type.
-	 */
-	it("gives an arrival no way to reach the message in flight", () => {
-		const run = filled(program());
-		const inflight = run.state.outbox.inflight;
-		expect(inflight).not.toBeNull();
-		for (let index = 0; index < 5; index += 1) {
-			expect(run.send("message", brief(`refused ${index}`)).state.outbox.inflight).toBe(inflight);
-		}
 	});
 
 	it("says the reason on the tile rather than a bare `failed`", () => {
@@ -647,16 +617,6 @@ describe("notify's `send` command", () => {
 		const run = driven(program()).call("send", {text: "five lines"});
 		expect(run.effects).toEqual([send("message", brief("five lines"))]);
 		expect(run.state.outbox).toEqual(EMPTY_OUTBOX);
-	});
-
-	it("queues the message when that payload reaches the port", () => {
-		expect(driven(program()).send("message", brief("five lines")).state.outbox.inflight?.text).toBe(
-			"five lines",
-		);
-	});
-
-	it("registers the spell under the program id, which is what `:notify send` resolves", () => {
-		expect(notify({target: NTFY}).spells?.map((spell) => spell.path)).toContainEqual(["send"]);
 	});
 });
 

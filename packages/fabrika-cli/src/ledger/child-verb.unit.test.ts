@@ -218,14 +218,14 @@ describe("runChild", () => {
 	});
 
 	/**
-	 * A child with neither an open milestone nor a standing lane is refused by the claim fence
-	 * at exit 20, so it can never be built. The three cases are the whole homing axis.
+	 * A child with neither an open milestone nor a standing lane groups under nothing on the board.
+	 * The three cases are the whole homing axis.
 	 */
 	it("refuses a homeless child before it reads anything, naming both remedies", async () => {
 		const {outcome, calls} = await run({milestone: null});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toBe(
-			"ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built.",
+			"ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child groups under no campaign and no lane, so nothing on the board shows where it belongs.",
 		);
 		expect(calls).toEqual([]);
 	});
@@ -261,9 +261,19 @@ describe("runChild", () => {
 		const {outcome, requests} = await run({labels: ["not-a-label"]});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toBe(
-			'ledger child: label "not-a-label" is absent from o/r\'s taxonomy — refusing to create it.',
+			'ledger child: label "not-a-label" is absent from o/r\'s taxonomy — refusing to create it. No `fabrika status bootstrap` surface creates not-a-label — create it by hand, then re-run.',
 		);
 		expect(requests.some((line) => CREATE.test(line))).toBe(false);
+	});
+
+	it("names the bootstrap surface that creates a missing status:planned", async () => {
+		const {outcome} = await run({}, [
+			...HAPPY.filter(([pattern]) => pattern !== LABELS),
+			[LABELS, labelSet(...DEFAULT_LABELS.filter((label) => label !== "status:planned"))],
+		]);
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toContain('label "status:planned" is absent');
+		expect(outcome.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 	});
 
 	it("refuses a milestone that is not open in the repo", async () => {

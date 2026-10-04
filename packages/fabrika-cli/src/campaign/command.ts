@@ -65,8 +65,15 @@ const list = leafCommand(
 ).pipe(
 	Command.withShortDescription("Print the ## Campaigns rows, optionally narrowed to one state."),
 	Command.withDescription(
-		'Print the ## Campaigns rows as #<milestone>\\t<state>\\t<name>, in table order. An absent table, an empty one and a --state that matches nothing all print the single line "none" at exit 0 — nothing declared means the dispatch fence is off, not closed. Under --json: {"rows":[{"milestone":47,"state":"active","name":"…"}],"file":"ROADMAP.md"}. Exits 1 (a --state outside the three values), 11 (the roadmap file could not be read), 12 (a data row will not parse — the whole table is unreadable), 22 (.fabrika.jsonc could not be read, or its roadmapFile will not decode). Example: fabrika campaign list --state active',
+		[
+			"Prints the ## Campaigns rows as `#<milestone>\\t<state>\\t<name>`, or `none` when no row matches.",
+			"  11: the roadmap file could not be read",
+			"  12: a data row will not parse",
+			"  22: .fabrika.jsonc or its roadmapFile is unreadable",
+			'  Derivation: the campaign skill\'s contract.md, "campaign list"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika campaign list --state active"}]),
 );
 
 const open = leafCommand(
@@ -102,8 +109,29 @@ const open = leafCommand(
 ).pipe(
 	Command.withShortDescription("Append a new paused campaign row, past the approval trace."),
 	Command.withDescription(
-		'Append a new campaign row pinning a milestone, past the campaign-approve: trace, and read it back. The row is always written paused and there is no flag to change that: naming a campaign and granting it dispatch are two acts, and the second is `campaign state`. Prints the row read back, or under --json {"row":{"milestone":52,"state":"paused","name":"…"},"file":"ROADMAP.md"}. Exits 1 (usage), 8 (the write failed — the table may be half-written), 9 (the read-back holds no row for --milestone), 11 (the roadmap could not be read), 12 (the table is unreadable), 13 (the comment, a team membership, the author\'s permission or the repository could not be resolved — authority is UNKNOWN), 14 (no marker on the comment\'s first line), 15 (the marker is malformed, misbound, or in another repository), 16 (the author is not in campaignAuthors), 17 (campaignAuthors is empty — nobody may declare), 19 (a row already holds this name or pins this milestone), 21 (the author holds below write on the repo), 22 (config). Example: fabrika campaign open "Mecmua reading layout" --milestone 52 --cites https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>',
+		[
+			"Appends a paused campaign row past the approval trace and prints it read back.",
+			"  8: the write failed (maybe half-written)",
+			"  9: the read-back holds no such row",
+			"  11: the roadmap is unreadable",
+			"  12: the table is unreadable",
+			"  13: authority is UNKNOWN",
+			"  14: no marker on the comment",
+			"  15: a malformed or misbound marker",
+			"  16: author outside the control plane",
+			"  17: no control-plane owner",
+			"  19: a row already holds this name or milestone",
+			"  21: author holds below write",
+			"  22: .fabrika.jsonc is unreadable",
+			'  Derivation: the campaign skill\'s contract.md, "campaign open"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika campaign open "Mecmua reading layout" --milestone 52 --cites https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>',
+		},
+	]),
 );
 
 const state = leafCommand(
@@ -139,14 +167,39 @@ const state = leafCommand(
 ).pipe(
 	Command.withShortDescription("Rewrite one campaign row's State cell, past the approval trace."),
 	Command.withDescription(
-		'Rewrite one campaign row\'s State cell, past the campaign-approve: trace, and read it back. Only the state token moves — the cell is never re-padded, so every other line stays byte-identical. Selection is exact: two matches refuse rather than pick. Prints the row read back, or under --json {"row":{…},"from":"paused","file":"ROADMAP.md"}. Exits 1 (usage), 7 (the selector matches no row), 8 (the write failed — the row may be half-written), 9 (the read-back does not hold --to), 11 (the roadmap could not be read), 12 (the table is unreadable), 13 (authority is UNKNOWN), 14 (no marker), 15 (the marker is malformed, misbound, or in another repository), 16 (the author is not in campaignAuthors), 17 (campaignAuthors is empty), 18 (the selector matches more than one row), 20 (the row already holds --to — nothing written), 21 (the author holds below write), 22 (config). Example: fabrika campaign state \'#<milestone>\' --to active --cites https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>',
+		[
+			"Rewrites one row's State cell past the approval trace and prints the row read back.",
+			"  7: the selector matches no row",
+			"  8: the write failed (maybe half-written)",
+			"  9: the read-back does not hold --to",
+			"  11: the roadmap is unreadable",
+			"  12: the table is unreadable",
+			"  13: authority is UNKNOWN",
+			"  14: no marker",
+			"  15: a malformed or misbound marker",
+			"  16: author outside the control plane",
+			"  17: no control-plane owner",
+			"  18: several rows match",
+			"  20: the row already holds --to",
+			"  21: author holds below write",
+			"  22: .fabrika.jsonc is unreadable",
+			'  Derivation: the campaign skill\'s contract.md, "campaign state"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika campaign state '#<milestone>' --to active --cites https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>",
+		},
+	]),
 );
 
 export const campaignCommand = Command.make("campaign").pipe(
 	Command.withSubcommands([list, open, state]),
-	Command.withShortDescription("Read and write the ## Campaigns table that gates dispatch."),
+	Command.withShortDescription(
+		"Read and write the ## Campaigns table that groups work under themes.",
+	),
 	Command.withDescription(
-		"Read the ## Campaigns table, declare a new campaign paused, and flip one campaign's lifecycle state — each write past a cited founder approval, because that State cell is the permission to open lanes against a milestone",
+		"Read the ## Campaigns table, declare a new campaign paused, and flip one campaign's lifecycle state — each write past a cited founder approval. A campaign groups work under a theme and pins a milestone; no State value refuses, skips or parks a lane",
 	),
 );

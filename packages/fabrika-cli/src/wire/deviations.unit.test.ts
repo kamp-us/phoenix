@@ -1,14 +1,10 @@
 import {describe, expect, it} from "vitest";
-import {droppedEntries, emitFromFields, parseFields, read} from "./deviations.ts";
+import {droppedEntries, parseFields, read} from "./deviations.ts";
 
 const ENTRY =
 	"- **Scope narrowing** — **Said:** four gates. **Did:** three plus a bounce. **Why:** the fourth emits a trivial verdict. **Disposition:** stated here.";
 
 describe("read", () => {
-	it("is Absent only when nothing in the body reaches for the section", () => {
-		expect(read("Fixes #1\n\n## Summary\n\nstuff")._tag).toBe("Absent");
-	});
-
 	it("is Malformed, never Absent, when a heading reaches for the section and misses", () => {
 		expect(read("### Deviations\n\nNone.\n")._tag).toBe("Malformed");
 		expect(read("## deviations\n\nNone.\n")._tag).toBe("Malformed");
@@ -47,6 +43,51 @@ describe("read", () => {
 		expect(read(body)._tag).toBe("Malformed");
 	});
 
+	it("ends the section at a closing-keyword line, so `None.` above it is a claim", () => {
+		const result = read("## Deviations\n\nNone.\n\nFixes #10\n");
+		expect(result._tag === "Found" && result.value._tag).toBe("NoneDeclared");
+	});
+
+	it("keeps a closing-keyword line out of the last entry's Disposition", () => {
+		const result = read(`## Deviations\n\n${ENTRY}\n${ENTRY}\n\nFixes #10\n`);
+		if (result._tag !== "Found" || result.value._tag !== "Entries") {
+			throw new Error(`expected Found/Entries, got ${result._tag}`);
+		}
+		const last = result.value.entries[result.value.entries.length - 1];
+		expect(last?.disposition).toBe("stated here.");
+		expect(last?.disposition).not.toMatch(/fixes/i);
+	});
+
+	it("does not end the section at a closing-keyword line inside a fence", () => {
+		const result = read("## Deviations\n\n```\nFixes #10\n```\n");
+		expect(result._tag === "Malformed" && result.reason).toContain('holds no "- " entry');
+	});
+
+	it("names the first line after `None.` when other text follows it", () => {
+		expect(read("## Deviations\n\nNone.\n\nthanks for reviewing\n")).toEqual({
+			_tag: "Malformed",
+			reason:
+				'"None." is followed by other text in the section — declare nothing with "None." alone, or replace it with "- " entries',
+			evidence: 'line 5: "thanks for reviewing"',
+		});
+	});
+
+	it("still refuses a section with neither bullets nor `None.` as holding no entry", () => {
+		expect(read("## Deviations\n\nprobably nothing?\n")).toEqual({
+			_tag: "Malformed",
+			reason:
+				'"## Deviations" is present and its section holds no "- " entry — state a deviation, or state "None."',
+			evidence: "line 1",
+		});
+	});
+
+	it("ends the section at the next heading or the end of the body as before", () => {
+		const atHeading = read("## Deviations\n\nNone.\n\n## Testing\n\nran it\n");
+		expect(atHeading._tag === "Found" && atHeading.value._tag).toBe("NoneDeclared");
+		const atEnd = read(`## Summary\n\nx\n\n## Deviations\n\n${ENTRY}`);
+		expect(atEnd._tag === "Found" && atEnd.value._tag).toBe("Entries");
+	});
+
 	it("ignores a heading inside a fenced block", () => {
 		expect(read("before\n\n```\n## Deviations\n\nNone.\n```\n\nafter")._tag).toBe("Absent");
 	});
@@ -64,11 +105,6 @@ describe("parseFields", () => {
 
 	it("refuses a row whose field is blank", () => {
 		expect(parseFields("4\ta\tb\tc\t \n")._tag).toBe("Unusable");
-	});
-
-	it("composes bytes its own reader accepts", () => {
-		const composed = emitFromFields("-\ta.\tb.\tc.\td.\n");
-		expect(composed._tag === "Composed" && read(composed.bytes)._tag).toBe("Found");
 	});
 });
 

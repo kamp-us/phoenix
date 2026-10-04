@@ -13,14 +13,18 @@
  * - **Native reviews are their own row kind**, never coerced into markers. Whether a
  *   `CHANGES_REQUESTED` with no marker drives a repair is still undecided; this verb reports the
  *   state honestly and pre-rules nothing.
- * - **An unreadable page is `11`, never a shorter list.** `{"rows": []}` on exit 0 is a proven "no
- *   verdicts", readable against the scope line's counts.
+ * - An unreadable page cannot prove there are no verdicts. See ./command.ts help for the answer.
  *
  * - **Mergeability is folded beside the rows**, because a PR conflicting against its base is repair
  *   work no gate emits a FAIL for: without the field, an all-PASS fold over a conflicting PR is the
  *   proven-no-work answer the Repair section routes on, and the lane leaves the PR stranded.
  *   The platform's uncomputed read stays `unknown` all the way out — folded as clean it rebuilds the
  *   bug behind a field that looks like it fixed it.
+ *
+ * - **`requiredChecks` is folded beside mergeability for the same reason** (`./required-checks.ts`):
+ *   a reviewer's PASS can land before CI settles red, and an all-PASS fold over a red required check
+ *   read as nothing to fix. An unreadable CI read is `unknown` on the field and never refuses the
+ *   fold, because the gate rows are still proven.
  *
  * - **`capReached` is the declared cap plus what the founder cleared, never a second constant.** A
  *   recorded clearance (`./clearances.ts`) buys the one round it names, so the field the Repair
@@ -58,6 +62,7 @@ import {contentOf, gate} from "./content-gate.ts";
 import {listReviews} from "./github.ts";
 import {closingTargets, proseOf} from "./pr-body.ts";
 import {readRangeVerdicts} from "./range-verdicts.ts";
+import {requiredChecksAt, requiredChecksNote} from "./required-checks.ts";
 import {countRounds, roundsOn} from "./rounds.ts";
 import {openPull, resolveTargetRepo} from "./target.ts";
 
@@ -200,7 +205,7 @@ export const runVerdicts = (
 		}
 
 		const rounds = roundsOn(listed.value);
-		const cleared = yield* clearancesOn(repo, target.pull.baseRef, listed.value);
+		const cleared = yield* clearancesOn(repo, listed.value);
 		if (cleared._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -215,11 +220,14 @@ export const runVerdicts = (
 			);
 		}
 
+		const requiredChecks = yield* requiredChecksAt(VERB, repo, target.pull.baseRef, head);
+
 		const granted = grantedFrom(cleared.rows);
 		return answer(
 			JSON.stringify({
 				head,
 				mergeability: target.pull.mergeability,
+				requiredChecks,
 				rows,
 				rounds,
 				capReached: capReached(rounds, granted),
@@ -230,6 +238,7 @@ export const runVerdicts = (
 			[
 				`${VERB}: head ${head}; scanned ${listed.value.length} comment(s) and ${reviews.value.length} review(s) on #${pr}.`,
 				mergeabilityNote(pr, target.pull.baseRef, target.pull.mergeability),
+				requiredChecksNote(VERB, pr, head, requiredChecks),
 				escalatedNote(linked.escalated),
 				`${VERB}: ${capNote(granted)}, from ${cleared.rows.length} marker(s).`,
 				...headContent.diagnostics,

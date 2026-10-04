@@ -1,15 +1,13 @@
-import {mkdtempSync} from "node:fs";
-import {tmpdir} from "node:os";
-import {join} from "node:path";
 import {Effect, Layer} from "effect";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
-import {fakeHttp, fakeShell, type HttpReply, linkNext, okOut} from "../fakes.test-support.ts";
+import {fakeHttp, fakeShell, type HttpReply, linkNext} from "../fakes.test-support.ts";
 import {forgetAmbientToken, NO_TOKEN, PAGE_CAP} from "../io/gh-api.ts";
 import type {Attempt, Shell} from "../io/git.ts";
+import {httpError, planGated} from "./fixtures.test-support.ts";
 import {
 	armAutoMerge,
 	disableAutoMerge,
-	fetchManifest,
+	isQueueGoverned,
 	listReviews,
 	listReviewThreads,
 	listRunsAtHead,
@@ -141,8 +139,21 @@ describe("the envelope proof", () => {
 				json({
 					total_count: 2,
 					workflow_runs: [
-						{id: 11, workflow_id: 7, check_suite_id: 91, status: "completed"},
-						{id: 12, workflow_id: 7, status: "in_progress"},
+						{
+							id: 11,
+							workflow_id: 7,
+							check_suite_id: 91,
+							status: "completed",
+							event: "pull_request",
+							head_sha: "abc",
+						},
+						{
+							id: 12,
+							workflow_id: 7,
+							status: "in_progress",
+							event: "pull_request",
+							head_sha: "abc",
+						},
 					],
 				}),
 			],
@@ -160,6 +171,17 @@ describe("the envelope proof", () => {
 		]);
 		const read = await run(listRunsAtHead("o/r", "abc"), http);
 		expect(reason(read)).toContain("not a workflow run");
+	});
+
+	it("refuses a workflow run naming no event or head — coverage is decided from both", async () => {
+		const http = fakeHttp([
+			[
+				/actions\/runs\?head_sha=/,
+				json({total_count: 1, workflow_runs: [{id: 11, workflow_id: 7, head_sha: "abc"}]}),
+			],
+		]);
+		const read = await run(listRunsAtHead("o/r", "abc"), http);
+		expect(reason(read)).toContain("names no event or head commit");
 	});
 
 	it("refuses an envelope that declares no total_count rather than inventing one", async () => {
@@ -306,31 +328,17 @@ describe("setPullState", () => {
 	});
 });
 
-describe("fetchManifest", () => {
-	const scratch = () => mkdtempSync(join(tmpdir(), "fabrika-manifest-"));
+describe("isQueueGoverned", () => {
+	const RULES = /rules\/branches\/main$/;
 
-	const withUnzip = (payload: string) =>
-		fakeShell([[/^sh -c unzip -p /, okOut(payload)]], undefined, [/^gh /]);
-
-	const fetchWith = (http: ReturnType<typeof fakeHttp>, shell: ReturnType<typeof fakeShell>) =>
-		Effect.runPromise(
-			Effect.provide(fetchManifest("o/r", 77, scratch()), Layer.merge(shell.layer, http.layer)),
-		);
-
-	it("serves the manifest once the bytes carry the PK magic number", async () => {
-		const http = fakeHttp([[/artifacts\/77\/zip/, {status: 200, body: "PKrest"}]]);
-		const read = await fetchWith(http, withUnzip('{"captures":[]}'));
-		expect(read).toEqual({_tag: "Ok", value: '{"captures":[]}'});
+	it("answers not governed on the plan-gated 403 — a plan with no rulesets has no queue", async () => {
+		const http = fakeHttp([[RULES, planGated]]);
+		expect(await run(isQueueGoverned("o/r", "main"), http)).toEqual({_tag: "Ok", value: false});
 	});
 
-	it("refuses bytes that are not a zip — a 503 body saved as .zip is not a bundle (#3716)", async () => {
-		const http = fakeHttp([[/zip/, {status: 200, body: "<html>502 Bad Gateway</html>"}]]);
-		expect(reason(await fetchWith(http, withUnzip("never read")))).toContain("not a zip");
-	});
-
-	it("refuses a non-2xx download before it ever looks at the bytes", async () => {
-		const http = fakeHttp([[/zip/, {status: 410, body: "PK gone"}]]);
-		expect(reason(await fetchWith(http, withUnzip("never read")))).toContain("410");
+	it("stays a failure on a permission 403 — an unread rule list is never `no queue`", async () => {
+		const http = fakeHttp([[RULES, httpError(403, "Resource not accessible by integration")]]);
+		expect(reason(await run(isQueueGoverned("o/r", "main"), http))).toContain("403");
 	});
 });
 

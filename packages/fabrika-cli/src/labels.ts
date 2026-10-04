@@ -25,6 +25,14 @@ export const PLANNED = "status:planned";
 export const AWAITING_RELEASE = "status:awaiting-release";
 
 /**
+ * What `triage kill` stamps on an issue it closes, and what the kill audit finds it by.
+ *
+ * Not a status and not board vocabulary, but a label a verb refuses without, so the bootstrap
+ * taxonomy carries it: a fresh repo that ran the bootstrap could otherwise never kill an issue.
+ */
+export const KILL_LABEL = "closed-by-triage";
+
+/**
  * The five by role — the shipped default of `boardVocabulary`'s `statuses`, and the shape a repo
  * renaming one of them writes. A role record rather than a list, because "which status is the
  * triaged one" has to survive the rename.

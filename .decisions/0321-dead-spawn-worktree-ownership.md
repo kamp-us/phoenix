@@ -1,7 +1,7 @@
 ---
 id: 0321
 title: The driver retires a dead spawn's worktree, salvaging its dirty work onto the branch first
-status: amended-in-part by [0323](0323-board-licensed-worktree-retirement.md)
+status: amended-in-part by [0323](0323-board-licensed-worktree-retirement.md), [0427](0427-retire-unlocks-a-released-worktree.md); amended in place by the 2026-09-30 detached-HEAD amendment below (#6868)
 date: 2026-08-21
 tags: [fabrika, pipeline-hardening, worktree, isolation]
 ---
@@ -85,3 +85,36 @@ there is nothing left to salvage.
 ## Records
 
 no vocabulary impact
+
+## Amendment (2026-09-30, [#6868](https://github.com/kamp-us/phoenix/issues/6868)) — the detached-HEAD arm and the wiped-tree exception
+
+Decision step 1 commits a dirty tree "to the dead spawn's own branch". A detached-HEAD tree has no
+branch, so the step named no destination for it. The 2026-08-20 sweep hit three such trees and kept
+all three in place, unsalvaged.
+
+Founder ruling, 2026-09-02:
+[the ruling comment on #6868](https://github.com/kamp-us/phoenix/issues/6868#issuecomment-5519864715).
+*"Salvage a dirty detached-HEAD tree onto a fresh local-only `salvage/<worktree-id>` branch, and
+allow a mass-deletion (wiped) tree to be documented-and-removed instead."* This section transcribes
+that ruling. Steps 1 and 2 above stand as written for every tree that has a branch.
+
+**Detached-HEAD arm.** A dirty detached-HEAD tree is salvaged by committing its contents onto a
+fresh branch named `salvage/<worktree-id>`, where `<worktree-id>` is the tree's directory name. That
+branch is **local only**: it is never pushed. Then the tree is removed with `git worktree remove`
+**without `--force`**, exactly as step 2 says. The no-force ban is unchanged: a remove that still
+refuses is an incident to file through
+[`report`](../claude-plugins/fabrika/skills/report/SKILL.md), never a force.
+
+**Wiped-tree exception.** A tree whose dirty state is a mass deletion — a half-wiped tree, where
+committing the wipe would salvage nothing — may be documented-and-removed instead of salvaged. The
+documentation is a [`report`](../claude-plugins/fabrika/skills/report/SKILL.md) filing that names the
+tree and the shape of what it deleted, because a half-wiped state is evidence of how the spawn died.
+After the filing, the tree is restored to its own HEAD and then removed without `--force`: git
+removes only a clean worktree unless forced
+([git-worktree(1), `remove`](https://git-scm.com/docs/git-worktree#Documentation/git-worktree.txt-remove)),
+so the restore is what lets the ban hold. A tree whose dirty state is anything other than a mass
+deletion takes the salvage arm.
+
+The ruling adds no verb, marker, token or gate. The salvage stays the driver's act under
+[`operate`](../claude-plugins/fabrika/skills/operate/SKILL.md) step 3. `fabrika build retire` never
+sees a detached tree, as [ADR 0323](0323-board-licensed-worktree-retirement.md) §2 records.

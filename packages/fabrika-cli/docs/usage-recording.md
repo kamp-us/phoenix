@@ -13,7 +13,8 @@ write/read-back on stderr. Retry the same envelope after fixing the reported pro
 must report recorder failures separately from its original task exit status.
 
 `spend read --ledger <path> [--json]` emits JSON with `records`, `legacy`, `diagnostics` and `usage`.
-The ledger mode always emits JSON. `records` holds the version-2 envelopes, including notices;
+The ledger mode always emits JSON. Its `usage` is the same unfiltered summary `spend rollup`
+prints with no binding flags. `records` holds the version-2 envelopes, including notices;
 `legacy` holds decoded version-1 evaluation rows without invented issue attribution. Diagnostics
 count `malformed`, `newerVersion`, `duplicates` and `conflicts`. Conflicting records remain visible;
 consumers cannot sum them as independent responses. A successful read is not a completeness claim.
@@ -21,7 +22,10 @@ An empty ledger yields empty arrays, with no measured zero or complete run manuf
 Exit 7 means the path is absent; exit 11 means it could not be read.
 
 The positional `spend read <transcript>` interface retains the legacy Claude-shaped reconstruction.
-It cannot be combined with `--ledger`. This historical calculation keeps the last observed model;
+It cannot be combined with `--ledger`. It prints `spend<TAB><billed><TAB><assistantTurns>`, then
+one `<field><TAB><value>` line each for `input`, `cacheCreate`, `cacheRead`, `output`, `exCacheRead`
+and `model`; `--json` emits those eight fields as one object. A transcript with no billed turns is
+exit 12. This historical calculation keeps the last observed model;
 it cannot establish per-response model attribution. `spend rollup` reads both ledger versions.
 Its `usage` object summarizes version-2 responses; the existing top-level totals and capped
 day/skill/stage-arm lists describe historical rows only.
@@ -77,6 +81,28 @@ no issue/run binding. `--since`/`--until` retain inclusive UTC date filtering fo
 They refuse with exit 1 if version-2 records exist, because those records have no timestamp.
 Other rollup exits are 7 for an absent ledger, 11 for unreadable input, 12 for no readable rows,
 and 13 for an empty legacy date window. Malformed and future-version line counts remain distinct.
+
+### The historical view
+
+The historical text lines are the scalar totals `billed`, `exCacheRead`, `assistantTurns`, `runs`
+and `measuredRuns`, then `skipped`, `skippedMalformed`, `skippedNewerVersion` and `undatedRows`,
+each as `<kind><TAB><count>`, then the day, skill and stage-arm breakdowns. A breakdown row starts
+with `day<TAB><day>`, `skill<TAB><skill>` or `stage-arm<TAB><stage><TAB><arm>` and carries `billed`,
+`exCacheRead`, `assistantTurns`, `runs` and `measuredRuns` in that order. Each breakdown keeps at
+most ten rows, ranked by `billed` descending with ties in ascending key order, and is followed by
+its own `dayMore`, `skillMore` or `stageArmMore` line. That line counts the omitted rows, not
+tokens, and always prints, `0` included.
+The scalar totals cover the whole selected historical row set, not only the rows displayed.
+
+In JSON, `window` holds `since` and `until` as strings, or null for an unbounded edge; `totals`
+holds the five named totals; `skipped` holds the `total`, `malformed` and `newerVersion` counts.
+`byDay`, `bySkill` and `byStageArm` are each `{rows, more}`, ranked and capped as in text, with
+`more` the omitted-row count. `skippedMalformed` counts damaged lines, `skippedNewerVersion` counts
+lines that need a newer CLI, and `undatedRows` counts historical rows a bounded date window
+excluded because their timestamp is unreadable. The top-ten cap applies to these historical
+breakdowns only; the `usage` counter, model and coverage lists are never truncated. The summary
+reads recorded counters and nothing else: it parses no native host format, applies no prices and
+changes no task result.
 
 ### Current host evidence
 
@@ -210,8 +236,8 @@ node packages/fabrika-cli/src/bin.ts spend rollup --ledger .fabrika/example-usag
 ```
 
 These are independent processes. [record.cli.test.ts](../src/spend/record.cli.test.ts) exercises
-that journey, copied history and competing processes. [usage-ledger.unit.test.ts](../src/spend/usage-ledger.unit.test.ts)
-uses actual files for interrupted appends, replay, legacy reads and recording failure recovery.
+competing recorder processes and a read in a fresh one. [usage-ledger.unit.test.ts](../src/spend/usage-ledger.unit.test.ts)
+uses actual files for copied history, interrupted appends, replay, legacy reads and recording failure recovery.
 [usage-journey.cli.test.ts](../src/spend/usage-journey.cli.test.ts) drives Claude and Codex callback
 boundaries in fresh processes through interruption, delayed descendants, retries, model switches
 and repeated reads. Its eight-response example expects Codex input/output 40/20 and Claude

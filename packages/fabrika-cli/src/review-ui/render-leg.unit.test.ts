@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {type CapturedSurface, CaptureError} from "../capture/capture.ts";
+import {type CapturedSurface, CaptureError, type UnwrittenSurface} from "../capture/capture.ts";
 import {NO_FORCED_FLAGS} from "../capture/flag-override.ts";
 import {DESKTOP_VIEWPORT, MOBILE_VIEWPORT} from "../capture/plan.ts";
 import {PAGE_ERROR_CAP} from "./manifest.ts";
@@ -16,6 +16,10 @@ const request = {
 	outDir: "/tmp/shots",
 	cookies: [],
 	forcedFlags: NO_FORCED_FLAGS,
+	locale: null,
+	scheme: null,
+	accent: null,
+	interaction: null,
 };
 
 const failing =
@@ -178,7 +182,9 @@ describe("captureRenderLeg — the :auth session proof", () => {
 		const asked: Array<string | undefined> = [];
 		const spy: CaptureShots = (_plan, _outDir, options) => {
 			asked.push(options?.sessionProbeUrl);
-			return authShot({sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar"}})([], "", {});
+			return authShot({
+				sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar", emailVerified: true},
+			})([], "", {});
 		};
 		runAuth(spy);
 		run(spy);
@@ -188,15 +194,28 @@ describe("captureRenderLeg — the :auth session proof", () => {
 
 	it("records the shot only when the proof came back signed in", () => {
 		expect(
-			runAuth(authShot({sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar"}}))._tag,
+			runAuth(
+				authShot({
+					sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar", emailVerified: true},
+				}),
+			)._tag,
 		).toBe("Rendered");
 	});
 
-	it("refuses a visitor's render under the :auth name", () => {
-		expect(runAuth(authShot({sessionProof: {_tag: "Anonymous"}}))).toEqual({
-			_tag: "Unauthenticated",
-			reason: "the preview answered the seeded cookie as a visitor",
-		});
+	/**
+	 * The two visitor answers send a reader to two different places — the signing key, or the
+	 * preview's database — so the refusal says which one the probe's own answer named.
+	 */
+	it("refuses a visitor's render under the :auth name, saying which visitor answer it was", () => {
+		const reasonOf = (cause: "BadSignature" | "NoSessionRow"): string => {
+			const render = runAuth(authShot({sessionProof: {_tag: "Anonymous", cause}}));
+			return render._tag === "Unauthenticated" ? render.reason : `not refused: ${render._tag}`;
+		};
+		const visitor = "the preview answered the seeded cookie as a visitor: ";
+		expect(reasonOf("BadSignature")).toContain(`${visitor}bad signature`);
+		expect(reasonOf("BadSignature")).toContain("signing key");
+		expect(reasonOf("NoSessionRow")).toContain(`${visitor}missing session row`);
+		expect(reasonOf("NoSessionRow")).toContain("was not seeded with this token");
 	});
 
 	it("refuses an unreadable probe too — a proof nobody could read is not a proof", () => {
@@ -227,7 +246,7 @@ describe("captureRenderLeg — the rendered actor's tier", () => {
 					pngBytes: pngHeader(),
 					pageErrors: [],
 					status: 200,
-					sessionProof: {_tag: "SignedIn" as const, userId: "u1", tier},
+					sessionProof: {_tag: "SignedIn" as const, userId: "u1", tier, emailVerified: true},
 				},
 			]);
 	const runCaylak = (capture: CaptureShots): SurfaceRender =>
@@ -247,8 +266,85 @@ describe("captureRenderLeg — the rendered actor's tier", () => {
 
 	it("refuses a çaylak's render under the yazar-tier :auth name too — the fence runs both ways", () => {
 		expect(
-			runAuth(authShot({sessionProof: {_tag: "SignedIn", userId: "u1", tier: "çaylak"}})),
+			runAuth(
+				authShot({
+					sessionProof: {_tag: "SignedIn", userId: "u1", tier: "çaylak", emailVerified: true},
+				}),
+			),
 		).toEqual({_tag: "WrongTier", wanted: "yazar", rendered: "çaylak"});
+	});
+});
+
+/**
+ * The email-verification half of the proof. The unverified çaylak shares its tier with the
+ * verified one, so the tier arm alone passes a verified çaylak's clean render under the unverified
+ * name — the shot of the write the surface exists to show being refused.
+ */
+describe("captureRenderLeg — the rendered actor's email verification", () => {
+	const unverifiedRequest = {...request, surface: "/hosgeldin:auth-caylak-unverified"};
+	const unverifiedShot =
+		(tier: string, emailVerified: boolean): CaptureShots =>
+		() =>
+			Effect.succeed([
+				{
+					surface: "/hosgeldin:auth-caylak-unverified",
+					route: "/hosgeldin",
+					state: "auth-caylak-unverified",
+					localPath: "/tmp/shots/hosgeldin-auth-caylak-unverified.png",
+					fileName: "hosgeldin-auth-caylak-unverified.png",
+					pngBytes: pngHeader(),
+					pageErrors: [],
+					status: 200,
+					sessionProof: {_tag: "SignedIn" as const, userId: "u1", tier, emailVerified},
+				},
+			]);
+	const runUnverified = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(unverifiedRequest));
+
+	it("records the shot when the preview reports an email-unverified çaylak", () => {
+		expect(runUnverified(unverifiedShot("çaylak", false))._tag).toBe("Rendered");
+	});
+
+	it("refuses a verified çaylak's render under the unverified name", () => {
+		expect(runUnverified(unverifiedShot("çaylak", true))).toEqual({
+			_tag: "WrongVerification",
+			wanted: false,
+		});
+	});
+
+	it("refuses an unverified yazar's render on the tier arm first", () => {
+		expect(runUnverified(unverifiedShot("yazar", false))).toEqual({
+			_tag: "WrongTier",
+			wanted: "çaylak",
+			rendered: "yazar",
+		});
+	});
+
+	it("refuses an unverified çaylak's render under the verified :auth-caylak name too", () => {
+		const caylak = {...request, surface: "/hosgeldin:auth-caylak"};
+		const shot: CaptureShots = () =>
+			Effect.succeed([
+				{
+					surface: "/hosgeldin:auth-caylak",
+					route: "/hosgeldin",
+					state: "auth-caylak",
+					localPath: "/tmp/shots/hosgeldin-auth-caylak.png",
+					fileName: "hosgeldin-auth-caylak.png",
+					pngBytes: pngHeader(),
+					pageErrors: [],
+					status: 200,
+					sessionProof: {
+						_tag: "SignedIn" as const,
+						userId: "u1",
+						tier: "çaylak",
+						emailVerified: false,
+					},
+				},
+			]);
+		expect(Effect.runSync(makeCaptureRenderLeg(shot)(caylak))).toEqual({
+			_tag: "WrongVerification",
+			wanted: true,
+		});
 	});
 });
 
@@ -261,7 +357,7 @@ describe("captureRenderLeg — the forced-flag proof", () => {
 	const forcedRequest = {...authRequest, forcedFlags: FORCED};
 	const runForced = (capture: CaptureShots): SurfaceRender =>
 		Effect.runSync(makeCaptureRenderLeg(capture)(forcedRequest));
-	const signedIn = {_tag: "SignedIn", userId: "u1", tier: "yazar"} as const;
+	const signedIn = {_tag: "SignedIn", userId: "u1", tier: "yazar", emailVerified: true} as const;
 
 	it("asks the preview's own evaluation seam, and asks nothing when no flag is forced", () => {
 		const asked: Array<unknown> = [];
@@ -309,8 +405,298 @@ describe("captureRenderLeg — the forced-flag proof", () => {
 
 	it("keeps the session refusal ahead of the override one — a visitor's page proves no flag", () => {
 		expect(
-			runForced(authShot({sessionProof: {_tag: "Anonymous"}, overrideProof: {_tag: "Forced"}}))
-				._tag,
+			runForced(
+				authShot({
+					sessionProof: {_tag: "Anonymous", cause: "NoSessionRow"},
+					overrideProof: {_tag: "Forced"},
+				}),
+			)._tag,
 		).toBe("Unauthenticated");
+	});
+});
+
+/**
+ * The same class one axis over: a seed the app never read paints the default-locale page, a valid
+ * PNG under the requested locale's name.
+ */
+describe("captureRenderLeg — the locale proof", () => {
+	const SEED = {storageKey: "app.locale", value: "en"};
+	const localeRequest = {...request, locale: SEED};
+	const runLocale = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(localeRequest));
+
+	it("hands the seed to the capture, and seeds nothing when no locale was asked for", () => {
+		const asked: Array<unknown> = [];
+		const spy: CaptureShots = (_plan, _outDir, options) => {
+			asked.push(options?.locale);
+			return succeeding({localeProof: {_tag: "Seeded"}})([], "", {});
+		};
+		runLocale(spy);
+		run(spy);
+		expect(asked).toEqual([SEED, undefined]);
+	});
+
+	it("records the shot only when the page's lang named the seeded value", () => {
+		expect(runLocale(succeeding({localeProof: {_tag: "Seeded"}}))._tag).toBe("Rendered");
+	});
+
+	it("refuses a default-locale render under the seeded name, naming the lang it read", () => {
+		expect(runLocale(succeeding({localeProof: {_tag: "Mismatch", rendered: "tr"}}))).toEqual({
+			_tag: "WrongLocale",
+			wanted: "en",
+			reason: `the page's lang read back "tr"`,
+		});
+	});
+
+	it("refuses an unreadable lang and an absent proof — neither is a proof", () => {
+		expect(
+			runLocale(succeeding({localeProof: {_tag: "Unreadable", reason: "lang read failed: x"}})),
+		).toEqual({_tag: "WrongLocale", wanted: "en", reason: "lang read failed: x"});
+		expect(runLocale(succeeding({}))).toEqual({
+			_tag: "WrongLocale",
+			wanted: "en",
+			reason: "the capture returned no locale proof",
+		});
+	});
+
+	it("keeps a crash ahead of the locale proof — a page that threw set no lang", () => {
+		expect(
+			runLocale(
+				succeeding({
+					localeProof: {_tag: "Mismatch", rendered: "tr"},
+					pageErrors: [{kind: "pageerror", text: "TypeError: x is null"}],
+				}),
+			)._tag,
+		).toBe("Crashed");
+	});
+});
+
+/**
+ * One axis further: an emulated preference the app overrode paints the other scheme, a valid PNG
+ * under the requested scheme's name.
+ */
+describe("captureRenderLeg — the scheme proof", () => {
+	const DARK = {scheme: "dark", rootAttribute: "data-theme"} as const;
+	const schemeRequest = {...request, scheme: DARK};
+	const runScheme = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(schemeRequest));
+
+	it("plans the shot in the requested scheme, and plans no scheme when none was asked for", () => {
+		const planned: Array<{readonly scheme: unknown; readonly fileName: string}> = [];
+		const spy: CaptureShots = (plan) => {
+			planned.push(...plan.map((shot) => ({scheme: shot.scheme, fileName: shot.fileName})));
+			return succeeding({schemeProof: {_tag: "Proven", scheme: "dark"}})([], "", {});
+		};
+		runScheme(spy);
+		run(spy);
+		expect(planned).toEqual([
+			{scheme: DARK, fileName: "pano@desktop-dark.png"},
+			{scheme: undefined, fileName: "pano@desktop.png"},
+		]);
+	});
+
+	it("records the requested and the proven scheme on the entry, and neither without a request", () => {
+		const proven = runScheme(succeeding({schemeProof: {_tag: "Proven", scheme: "dark"}}));
+		expect(proven._tag === "Rendered" && proven.entry.scheme).toEqual({
+			requested: "dark",
+			proven: "dark",
+		});
+		const plain = run(succeeding({}));
+		expect(plain._tag === "Rendered" && "scheme" in plain.entry).toBe(false);
+	});
+
+	it("refuses the other scheme under the requested name, naming what the page published", () => {
+		expect(runScheme(succeeding({schemeProof: {_tag: "Mismatch", rendered: "light"}}))).toEqual({
+			_tag: "WrongScheme",
+			wanted: "dark",
+			reason: `the page's data-theme read back "light"`,
+		});
+	});
+
+	it("refuses an unreadable attribute and an absent proof — neither is a proof", () => {
+		const unreadable = "the page's root carries no data-theme attribute";
+		expect(runScheme(succeeding({schemeProof: {_tag: "Unreadable", reason: unreadable}}))).toEqual({
+			_tag: "WrongScheme",
+			wanted: "dark",
+			reason: unreadable,
+		});
+		expect(runScheme(succeeding({}))).toEqual({
+			_tag: "WrongScheme",
+			wanted: "dark",
+			reason: "the capture returned no scheme proof",
+		});
+	});
+
+	it("keeps a crash ahead of the scheme proof — a page that threw published no scheme", () => {
+		expect(
+			runScheme(
+				succeeding({
+					schemeProof: {_tag: "Mismatch", rendered: "light"},
+					pageErrors: [{kind: "pageerror", text: "TypeError: x is null"}],
+				}),
+			)._tag,
+		).toBe("Crashed");
+	});
+});
+
+/**
+ * One axis further again: an app that re-asserts its own accent paints that one, a valid PNG under
+ * the requested accent's name.
+ */
+describe("captureRenderLeg — the accent proof", () => {
+	const AMBER = {rootAttribute: "data-color-theme", value: "amber"};
+	const accentRequest = {...request, accent: AMBER};
+	const runAccent = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(accentRequest));
+
+	it("hands the accent to the capture and keeps the file name, and sets nothing when none was asked for", () => {
+		const asked: Array<{readonly accent: unknown; readonly fileName: string | undefined}> = [];
+		const spy: CaptureShots = (plan, _outDir, options) => {
+			asked.push({accent: options?.accent, fileName: plan[0]?.fileName});
+			return succeeding({accentProof: {_tag: "Proven", accent: "amber"}})([], "", {});
+		};
+		runAccent(spy);
+		run(spy);
+		expect(asked).toEqual([
+			{accent: AMBER, fileName: "pano@desktop.png"},
+			{accent: undefined, fileName: "pano@desktop.png"},
+		]);
+	});
+
+	it("records the requested and the proven accent on the entry, and neither without a request", () => {
+		const proven = runAccent(succeeding({accentProof: {_tag: "Proven", accent: "amber"}}));
+		expect(proven._tag === "Rendered" && proven.entry.accent).toEqual({
+			requested: "amber",
+			proven: "amber",
+		});
+		const plain = run(succeeding({}));
+		expect(plain._tag === "Rendered" && "accent" in plain.entry).toBe(false);
+	});
+
+	it("refuses another accent under the requested name, naming what the root carried", () => {
+		expect(runAccent(succeeding({accentProof: {_tag: "Mismatch", rendered: "ember"}}))).toEqual({
+			_tag: "WrongAccent",
+			wanted: "amber",
+			reason: `the page's data-color-theme read back "ember"`,
+		});
+	});
+
+	it("refuses an unreadable attribute and an absent proof — neither is a proof", () => {
+		const unreadable = "the page's root carries no data-color-theme attribute";
+		expect(runAccent(succeeding({accentProof: {_tag: "Unreadable", reason: unreadable}}))).toEqual({
+			_tag: "WrongAccent",
+			wanted: "amber",
+			reason: unreadable,
+		});
+		expect(runAccent(succeeding({}))).toEqual({
+			_tag: "WrongAccent",
+			wanted: "amber",
+			reason: "the capture returned no accent proof",
+		});
+	});
+
+	it("keeps a crash ahead of the accent proof — a page that threw is a red render", () => {
+		expect(
+			runAccent(
+				succeeding({
+					accentProof: {_tag: "Mismatch", rendered: "ember"},
+					pageErrors: [{kind: "pageerror", text: "TypeError: x is null"}],
+				}),
+			)._tag,
+		).toBe("Crashed");
+	});
+});
+
+/**
+ * A hover the page never registered paints the surface at rest, a valid PNG under the interacted
+ * name — so the interacted entry exists only when the capture came back proven, and a refused
+ * interaction came back with no bytes at all.
+ */
+describe("captureRenderLeg — the interaction proof", () => {
+	const SIL = {
+		label: "sil-highlighted",
+		steps: [
+			{verb: "click", locator: 'role=button[name="Aç"]'},
+			{verb: "hover", locator: 'role=menuitem[name="Sil"]'},
+		],
+	} as const;
+	const interactRequest = {...request, interaction: SIL};
+	const runInteract = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(interactRequest));
+	const REFUSED = {
+		_tag: "Refused",
+		step: 'hover:role=menuitem[name="Sil"]',
+		reason: 'role=menuitem[name="Sil"] does not match :hover',
+	} as const;
+	const unwritten =
+		(shot: Partial<UnwrittenSurface>): CaptureShots =>
+		() =>
+			Effect.succeed([
+				{
+					surface: "/pano",
+					route: "/pano",
+					state: null,
+					fileName: "pano~sil-highlighted@desktop.png",
+					pageErrors: [],
+					status: 200,
+					interactionProof: REFUSED,
+					...shot,
+				},
+			]);
+
+	it("plans the shot with its interaction and label, and plans neither for a shot at rest", () => {
+		const planned: Array<{readonly interaction: unknown; readonly fileName: string}> = [];
+		const spy: CaptureShots = (plan) => {
+			planned.push(
+				...plan.map((shot) => ({interaction: shot.interaction, fileName: shot.fileName})),
+			);
+			return succeeding({interactionProof: {_tag: "Proven", proven: ["x"]}})([], "", {});
+		};
+		runInteract(spy);
+		run(spy);
+		expect(planned).toEqual([
+			{interaction: SIL, fileName: "pano~sil-highlighted@desktop.png"},
+			{interaction: undefined, fileName: "pano@desktop.png"},
+		]);
+	});
+
+	it("records the label, the steps it ran and what the page proved, and nothing on a shot at rest", () => {
+		const proven = runInteract(
+			succeeding({
+				interactionProof: {_tag: "Proven", proven: ['role=menuitem[name="Sil"] matches :hover']},
+			}),
+		);
+		expect(proven._tag === "Rendered" && proven.entry.interaction).toEqual({
+			label: "sil-highlighted",
+			steps: ['click:role=button[name="Aç"]', 'hover:role=menuitem[name="Sil"]'],
+			proven: ['role=menuitem[name="Sil"] matches :hover'],
+		});
+		const plain = run(succeeding({}));
+		expect(plain._tag === "Rendered" && "interaction" in plain.entry).toBe(false);
+	});
+
+	it("refuses a refused interaction, naming the step that stopped it", () => {
+		expect(runInteract(unwritten({}))).toEqual({
+			_tag: "Uninteracted",
+			reason: `hover:role=menuitem[name="Sil"]: role=menuitem[name="Sil"] does not match :hover`,
+		});
+	});
+
+	it("refuses an absent proof — a capture that says nothing about the interaction proved nothing", () => {
+		expect(runInteract(succeeding({}))).toEqual({
+			_tag: "Uninteracted",
+			reason: "the capture returned no interaction proof",
+		});
+	});
+
+	it("keeps a crash ahead of the interaction proof — a page that threw is a red render", () => {
+		expect(
+			runInteract(unwritten({pageErrors: [{kind: "pageerror", text: "TypeError: x is null"}]}))
+				._tag,
+		).toBe("Crashed");
+	});
+
+	it("keeps an unreachable page ahead of it too — a 404 has no menu to open", () => {
+		expect(runInteract(unwritten({status: 404}))._tag).toBe("Unreachable");
 	});
 });

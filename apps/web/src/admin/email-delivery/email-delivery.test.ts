@@ -1,13 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {emailDeliveryOutcomeKey, sinceLabel} from "./email-delivery";
-
-describe("sinceLabel", () => {
-	it("renders the epoch-millis in the active locale", () => {
-		const label = sinceLabel(Date.UTC(2026, 0, 1), "tr");
-		expect(label).toBeTypeOf("string");
-		expect(label.length).toBeGreaterThan(0);
-	});
-});
+import {emailDeliveryOutcomeKey} from "./email-delivery";
 
 describe("emailDeliveryOutcomeKey", () => {
 	it("success (null code) keys the confirmation per verb", () => {

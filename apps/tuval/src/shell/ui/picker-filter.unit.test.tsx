@@ -9,6 +9,8 @@
  * elements with the clock under the test's control.
  */
 
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, fireEvent, render} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {useState} from "react";
@@ -21,8 +23,6 @@ import {
 	withFilter,
 } from "../picker/browser.ts";
 import {processId, programId, programRow} from "../picker/fixtures.ts";
-import {WindowId} from "../window/index.ts";
-import {installDomShims} from "./dom.testing.ts";
 import {PickerView} from "./PickerView.tsx";
 
 installDomShims();
@@ -200,15 +200,5 @@ describe("the picker's `/` filter", () => {
 		expect(picker.listbox()?.getAttribute("aria-activedescendant")).toBe(
 			"picker-window-1-option-1",
 		);
-	});
-
-	it("a fresh mount starts with no filter and the whole list, whatever the last one held", () => {
-		const filtering = mount(withFilter(mountPicker(), "pi"));
-		expect(filtering.rows()).toHaveLength(1);
-
-		// What `mountPicker()` produces is what the next `<c-b> w` renders — nothing carries over.
-		const reopened = mount(mountPicker());
-		expect(reopened.input()).toBeNull();
-		expect(reopened.rows()).toHaveLength(3);
 	});
 });

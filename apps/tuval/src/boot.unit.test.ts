@@ -1,14 +1,29 @@
 import {type ChildProcess, spawn, spawnSync} from "node:child_process";
-import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
+import {subagentExtensionPaths} from "@kampus/tuval-pi/server";
+import {sessionListProgram} from "@kampus/tuval-sdk/kernel/ai-agent/session-list";
+import {Features} from "@kampus/tuval-sdk/kernel/feature-flags";
+import {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
+import {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {homeStateDir, PROJECT_MARKER} from "@kampus/tuval-sdk/kernel/state-dir";
 import {Context, Effect, Layer, Schema} from "effect";
 import {afterEach, expect} from "vitest";
-import {sessionListProgram} from "./ai-agent/session-list.ts";
 import {
+	type BootReport,
 	boot,
 	coreSpells,
 	defaultGlobalConfig,
@@ -16,29 +31,38 @@ import {
 	projectConfig,
 	projectDir,
 } from "./boot.ts";
-import {Features} from "./feature-flags.ts";
-import {featuresDefault, type TuvalFeatures} from "./features.ts";
-import {subagentExtensionPaths} from "./pi/server/index.ts";
+import {ProjectId} from "./project-id.ts";
+import {trustFolders} from "./scratch-home.ts";
+import {DESK_SDK_VERSION} from "./sdk-admission.ts";
+import {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellSpells} from "./shell/commands/spells.ts";
+import type {ShellMsg} from "./shell/core/index.ts";
+import {windows} from "./shell/layout/index.ts";
+import {shellId, shellStateOf} from "./shell/program.ts";
 
-/** Every boot registers these, whatever the config declares; no fixture program declares a spell. */
-const CORE_SPELLS = coreSpells.length;
 /**
- * The box config declares the shell, whose command rows ride on its row (#7555), and the
- * session-list row, which declares `session.list` (#8101).
+ * Every boot registers these, whatever the config declares: the kernel's own spells and the command
+ * rows riding on the shell the desk supplies (#7555, #9683). No fixture program declares a spell.
  */
+const DESK_SPELLS = coreSpells.length + shellSpells.length;
+/** The shell row every boot carries below its config files (`./desk-layer.ts`). */
+const DESK_PROGRAMS = 1;
+/** The box config adds the session-list row, which declares `session.list` (#8101). */
 const sessionListSpells = sessionListProgram().spells;
 if (sessionListSpells === undefined) {
 	throw new Error(
 		"the session-list row declares spells; the box's spell count is derived from them",
 	);
 }
-const BOX_SPELLS = CORE_SPELLS + shellSpells.length + sessionListSpells.length;
+const BOX_SPELLS = DESK_SPELLS + sessionListSpells.length;
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
 const bin = fileURLToPath(new URL("./bin.ts", import.meta.url));
-/** The config the box ships — the shell plus the two demo rows — read as a global layer over a throwaway project. */
+/**
+ * Tuval's own project config — its demo rows, the session list and the module demo; no shell and
+ * no harness rows (#9694) — read as a global layer over a throwaway project.
+ */
 const boxConfig = fileURLToPath(new URL("../.tuval/tuval.config.ts", import.meta.url));
 
 interface Run {
@@ -47,7 +71,10 @@ interface Run {
 	readonly stderr: string;
 }
 
-/** A boot that has nothing to run exits on its own. */
+/**
+ * A refused boot, or `--help`, exits on its own. A boot that succeeds never does, since the desk's
+ * shell is always live, so those cases go through `runUntilRunning`.
+ */
 const run = (args: ReadonlyArray<string>, env: NodeJS.ProcessEnv = process.env): Run =>
 	spawnSync(process.execPath, [bin, ...args], {encoding: "utf8", env});
 
@@ -82,9 +109,10 @@ const DIRECT_BOOT_MS = 20_000;
 const runUntilRunning = (
 	args: ReadonlyArray<string>,
 	env: NodeJS.ProcessEnv = process.env,
+	cwd?: string,
 ): Promise<Run> =>
 	new Promise((resolve, reject) => {
-		const child: ChildProcess = spawn(process.execPath, [bin, ...args], {stdio: "pipe", env});
+		const child: ChildProcess = spawn(process.execPath, [bin, ...args], {stdio: "pipe", env, cwd});
 		let stdout = "";
 		let stderr = "";
 		let signalled = false;
@@ -116,9 +144,19 @@ const freshDir = (prefix: string) => {
 	return dir;
 };
 
-/** A project dir whose `.tuval/` is empty: no project config, nothing checkpointed. */
+/**
+ * The scratch home every case here boots under. Saved state lives under the home dir keyed by the
+ * project's absolute path (ADR 0402), so a case that did not name one would write the desk's
+ * manifest and checkpoints into the operator's own `~/.tuval`.
+ */
+const freshHome = () => freshDir("tuval-home-");
+
+/** A project dir holding no files at all — a supported, first-class case (ADR 0402 rule 1). */
+const emptyProject = () => freshDir("tuval-project-");
+
+/** A project dir whose `.tuval/` is there but empty: no project config, nothing checkpointed. */
 const freshProject = () => {
-	const project = freshDir("tuval-project-");
+	const project = emptyProject();
 	mkdirSync(projectDir(project));
 	return project;
 };
@@ -133,29 +171,67 @@ const projectWithConfig = (name: string) => {
 	return project;
 };
 
-/** A project dir holding one checkpointed `counter` process at `version`. */
-const seededProject = (version: string) => {
-	const project = freshProject();
+/**
+ * One checkpointed `counter` process at `version`, written where an older build wrote it: under
+ * `<project>/.tuval`. Every case that boots on this is reading the one-time move (ADR 0402 rule 7),
+ * because nothing writes there any more.
+ */
+const seedInProjectState = (project: string, version: string, id = "p-1") => {
 	const stateDir = projectDir(project);
-	mkdirSync(join(stateDir, "processes"));
+	mkdirSync(join(stateDir, "processes"), {recursive: true});
 	writeFileSync(
 		join(stateDir, "manifest.json"),
-		JSON.stringify({processes: [{id: "p-1", programId: "counter", parentId: null}]}),
+		JSON.stringify({processes: [{id, programId: "counter", parentId: null}]}),
 	);
 	writeFileSync(
-		join(stateDir, "processes", "p-1.json"),
+		join(stateDir, "processes", `${id}.json`),
 		JSON.stringify({programId: "counter", version, state: {count: 3}}),
 	);
 	return project;
 };
+
+const seededProject = (version: string) => seedInProjectState(freshProject(), version);
 
 class TestIo extends Schema.TaggedError<TestIo>()("TestIo", {cause: Schema.Defect()}) {}
 
 const io = <A>(run: () => Promise<A>) =>
 	Effect.tryPromise({try: run, catch: (cause) => new TestIo({cause})});
 
-const bootDirect = (global: string, project: string) =>
-	boot({global, project}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
+const bootDirect = (global: string, project: string, home: string = freshHome()) =>
+	boot({global, project, home}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
+
+/** The boot folder's state, from a boot that opened it rather than asking about it. */
+const openedState = (report: BootReport) => {
+	if (report.first._tag !== "Opened") {
+		throw new Error(`${report.first.folder} was asked about, not opened`);
+	}
+	return report.first.state;
+};
+
+/** `project`, trusted in `home`'s saved list, so a boot on it asks nothing (#9977). */
+const trusted = (home: string, project: string) => {
+	trustFolders(home, [project]);
+	return project;
+};
+
+/**
+ * A project whose config module writes a file into the project as it is evaluated, then re-exports
+ * the named fixture: the file existing is the proof the module was imported.
+ */
+const projectMarking = (name: string) => {
+	const project = projectWithConfig(name);
+	const marker = join(project, "imported");
+	writeFileSync(
+		projectConfig(project),
+		[
+			'import {writeFileSync} from "node:fs";',
+			`writeFileSync(${JSON.stringify(marker)}, "imported");`,
+			`export {default} from ${JSON.stringify(fixture(name))};`,
+			"",
+		].join("\n"),
+	);
+	return {project, marker};
+};
 
 afterEach(() => {
 	for (const dir of tempDirs.splice(0)) rmSync(dir, {recursive: true, force: true});
@@ -166,16 +242,31 @@ describe("boot", () => {
 		"registers the rows the config module exports and reports their count",
 		() =>
 			Effect.gen(function* () {
+				const home = freshHome();
 				const project = freshProject();
-				const {report} = yield* bootDirect(fixture("two-rows"), project);
+				const {report} = yield* bootDirect(fixture("two-rows"), project, home);
 				assert.deepStrictEqual(report, {
 					sources: [fixture("two-rows")],
-					programCount: 2,
-					spellCount: CORE_SPELLS,
+					programCount: DESK_PROGRAMS + 2,
+					spellCount: DESK_SPELLS,
 					bindingCount: 0,
 					bindingErrors: [],
-					stateDir: projectDir(project),
-					processCount: 0,
+					refused: [],
+					reopened: [],
+					skipped: [],
+					deskStateDir: homeStateDir(home, home),
+					first: {
+						_tag: "Opened",
+						folder: project,
+						state: {
+							stateDir: homeStateDir(project, home),
+							adopted: {moved: [], kept: [], unowned: []},
+							scoped: {moved: []},
+						},
+						lifted: {moved: [], kept: []},
+					},
+					// The desk's shell: the fixture plans no process of its own.
+					processCount: 1,
 					restoredCount: 0,
 				});
 			}),
@@ -183,13 +274,20 @@ describe("boot", () => {
 	);
 
 	it(
-		"exits on its own when the config plans no process",
-		() => {
+		"runs the desk's shell when the config plans no process of its own",
+		async () => {
+			const home = freshHome();
 			const project = freshProject();
-			const result = run(["--config", fixture("two-rows"), "--project", project]);
+			const result = await runUntilRunning(
+				["--config", fixture("two-rows"), "--project", project, "--no-page"],
+				{...process.env, HOME: home},
+			);
 			expect(result.status).toBe(0);
-			expect(result.stdout).toBe(
-				`tuval: booted — 2 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("two-rows")}; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			expect(result.stdout).toContain(
+				`tuval: booted — ${DESK_PROGRAMS + 2} program(s), ${DESK_SPELLS} spell(s) registered from ${fixture("two-rows")}; 1 process(es) live, 0 restored; desk state in ${homeStateDir(home, home)}\n`,
+			);
+			expect(result.stdout).toContain(
+				"tuval: process shell program=shell parent=- ports=- state=running@0\n",
 			);
 		},
 		spawnBudget(1),
@@ -197,37 +295,64 @@ describe("boot", () => {
 
 	it(
 		"reads ~/.tuval/tuval.config.ts and the cwd's .tuval/tuval.config.ts by default, both merged",
-		() => {
-			const home = freshDir("tuval-home-");
+		async () => {
+			const home = freshHome();
 			mkdirSync(join(home, ".tuval"));
 			writeFileSync(
 				defaultGlobalConfig(home),
 				`export {default} from ${JSON.stringify(fixture("two-rows"))};\n`,
 			);
-			const project = projectWithConfig("one-counter");
-			const result = spawnSync(process.execPath, [bin], {
-				encoding: "utf8",
-				cwd: project,
-				env: {...process.env, HOME: home},
-			});
+			// Neither layer declares a shell row; the desk supplies one anyway.
+			const project = trusted(home, projectWithConfig("one-counter"));
+			const result = await runUntilRunning(["--no-page"], {...process.env, HOME: home}, project);
 			expect(result.stderr).toBe("");
 			expect(result.status).toBe(0);
-			expect(result.stdout).toBe(
-				`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${defaultGlobalConfig(home)} + ${projectConfig(project)}; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			// The boot line comes first and alone: this boot moved nothing, so the account of what the
+			// move left behind has nothing to account for, and the project's config module goes
+			// unmentioned.
+			expect(result.stdout.split("\n")[0]).toBe(
+				`tuval: booted — ${DESK_PROGRAMS + 3} program(s), ${DESK_SPELLS} spell(s) registered from ${defaultGlobalConfig(home)} + ${projectConfig(project)}; 1 process(es) live, 0 restored; desk state in ${homeStateDir(home, home)}`,
+			);
+			expect(result.stdout.split("\n")[1]).toBe(
+				"tuval: process shell program=shell parent=- ports=- state=running@0",
 			);
 		},
 		spawnBudget(1),
 	);
 
+	// #9375: this folder has no `.tuval` at all, and neither has the home dir. Before the desk
+	// supplied its shell, this boot planned no process and the page sat at "Attaching to the Tuval
+	// kernel…"; now the shell is live and the page is served over it.
 	it(
-		"boots with no config module at all: nothing registered, nothing to run",
-		() => {
-			const home = freshDir("tuval-home-");
-			const project = freshProject();
-			const result = run(["--project", project], {...process.env, HOME: home});
+		"boots the desk's shell and serves the page for a folder with no .tuval folder at all",
+		async () => {
+			const home = freshHome();
+			const project = emptyProject();
+			const result = await runUntilRunning(["--project", project], {...process.env, HOME: home});
+			expect(result.stderr).toBe("");
 			expect(result.status).toBe(0);
-			expect(result.stdout).toBe(
-				`tuval: booted — 0 program(s), ${CORE_SPELLS} spell(s) registered from no config module; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			expect(result.stdout).toContain(
+				`tuval: booted — ${DESK_PROGRAMS} program(s), ${DESK_SPELLS} spell(s) registered from no config module; 1 process(es) live, 0 restored; desk state in ${homeStateDir(home, home)}\n`,
+			);
+			expect(result.stdout).toContain(
+				"tuval: process shell program=shell parent=- ports=- state=running@0\n",
+			);
+			expect(result.stdout).toContain("tuval: desk at http://");
+			expect(readdirSync(project)).toEqual([]);
+		},
+		spawnBudget(1),
+	);
+
+	it(
+		"refuses to boot on a project config that still declares the shell, naming the file",
+		() => {
+			const home = freshHome();
+			const project = trusted(home, projectWithConfig("declares-shell"));
+			const result = run(["--project", project], {...process.env, HOME: home});
+			expect(result.status).toBe(1);
+			expect(result.stdout).toBe("");
+			expect(result.stderr).toBe(
+				`tuval: refusing to boot — config module ${projectConfig(project)}: declares program row "shell", which the desk supplies itself; remove the row and its graph node\n`,
 			);
 		},
 		spawnBudget(1),
@@ -236,13 +361,15 @@ describe("boot", () => {
 	it(
 		"boots the box config: the shell and the two demo processes, the table on the terminal, and all three back after a restart",
 		async () => {
+			const home = freshHome();
+			const env = {...process.env, HOME: home};
 			const project = freshProject();
 			const args = ["--config", boxConfig, "--project", project];
-			const first = await runUntilRunning(args);
+			const first = await runUntilRunning(args, env);
 			expect(first.stderr).toBe("");
 			expect(first.status).toBe(0);
 			expect(first.stdout).toContain(
-				`tuval: booted — 8 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${projectDir(project)}\n`,
+				`tuval: booted — 5 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored; desk state in ${homeStateDir(home, home)}\n`,
 			);
 			expect(first.stdout).toContain(
 				"tuval: process shell program=shell parent=- ports=- state=running@0\n",
@@ -265,10 +392,10 @@ describe("boot", () => {
 				first.stdout.indexOf("tuval: running — Ctrl-C stops and checkpoints\n"),
 			);
 
-			const second = await runUntilRunning(args);
+			const second = await runUntilRunning(args, env);
 			expect(second.status).toBe(0);
 			expect(second.stdout).toContain(
-				`tuval: booted — 8 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${projectDir(project)}\n`,
+				`tuval: booted — 5 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored; desk state in ${homeStateDir(home, home)}\n`,
 			);
 			expect(second.stdout).toContain("tuval: process log program=log parent=counter");
 		},
@@ -276,20 +403,25 @@ describe("boot", () => {
 	);
 
 	it.effect(
-		"restores every checkpointed process from the project's state through Demlik's fileStore",
+		"restores every checkpointed process from the home-dir state through Demlik's fileStore",
 		() =>
 			Effect.gen(function* () {
+				const home = freshHome();
 				const project = seededProject("1.0.0");
-				const {report} = yield* bootDirect(fixture("one-counter"), project);
-				assert.strictEqual(report.processCount, 1);
+				const {report} = yield* bootDirect(fixture("one-counter"), project, home);
+				assert.strictEqual(report.processCount, 2);
 				assert.strictEqual(report.restoredCount, 1);
 				const result = yield* io(() =>
-					runUntilRunning(["--config", fixture("one-counter"), "--project", project]),
+					runUntilRunning(["--config", fixture("one-counter"), "--project", project], {
+						...process.env,
+						HOME: home,
+					}),
 				);
 				assert.strictEqual(result.status, 0);
 				assert.include(
 					result.stdout,
-					`tuval: booted — 1 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("one-counter")}; 1 process(es) live, 1 restored from ${projectDir(project)}\n`,
+					// The shell the direct boot above checkpointed comes back beside the counter.
+					`tuval: booted — ${DESK_PROGRAMS + 1} program(s), ${DESK_SPELLS} spell(s) registered from ${fixture("one-counter")}; 2 process(es) live, 2 restored; desk state in ${homeStateDir(home, home)}\n`,
 				);
 				assert.include(
 					result.stdout,
@@ -303,7 +435,10 @@ describe("boot", () => {
 		"refuses to boot on a snapshot under another program version, naming the process and both versions",
 		() => {
 			const project = seededProject("0.9.0");
-			const result = run(["--config", fixture("one-counter"), "--project", project]);
+			const result = run(["--config", fixture("one-counter"), "--project", project], {
+				...process.env,
+				HOME: freshHome(),
+			});
 			expect(result.status).toBe(1);
 			expect(result.stdout).toBe("");
 			expect(result.stderr).toBe(
@@ -316,24 +451,14 @@ describe("boot", () => {
 	it(
 		"refuses to boot on a throwing config module, naming the module and the reason",
 		() => {
-			const result = run(["--config", fixture("throws"), "--project", freshProject()]);
+			const result = run(["--config", fixture("throws"), "--project", freshProject()], {
+				...process.env,
+				HOME: freshHome(),
+			});
 			expect(result.status).toBe(1);
 			expect(result.stdout).toBe("");
 			expect(result.stderr).toBe(
 				`tuval: refusing to boot — config module ${fixture("throws")}: module threw while loading: boom at import time\n`,
-			);
-		},
-		spawnBudget(1),
-	);
-
-	it(
-		"refuses to boot on a wrong-shaped project config the same way",
-		() => {
-			const project = projectWithConfig("wrong-shape");
-			const result = run(["--project", project], {...process.env, HOME: freshDir("tuval-home-")});
-			expect(result.status).toBe(1);
-			expect(result.stderr).toBe(
-				`tuval: refusing to boot — config module ${projectConfig(project)}: not a v1 config at version: Missing key\n`,
 			);
 		},
 		spawnBudget(1),
@@ -348,6 +473,291 @@ describe("boot", () => {
 			expect(result.stderr).toContain(`Path does not exist: ${missing}`);
 		},
 		spawnBudget(1),
+	);
+
+	it.effect(
+		"keys each project's state dir off that checkout's absolute path, and records the path in it",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const one = freshProject();
+				const two = freshProject();
+				const first = yield* bootDirect(fixture("two-rows"), one, home);
+				const second = yield* bootDirect(fixture("two-rows"), two, home);
+				assert.notStrictEqual(
+					openedState(first.report).stateDir,
+					openedState(second.report).stateDir,
+				);
+				// The key is a folder name, and an operator reading one back wants the path rather than
+				// the substitution that made it: the marker inside the directory is what answers.
+				assert.deepStrictEqual(
+					JSON.parse(
+						readFileSync(join(openedState(first.report).stateDir, PROJECT_MARKER), "utf8"),
+					),
+					{path: one},
+				);
+				assert.deepStrictEqual(
+					JSON.parse(
+						readFileSync(join(openedState(second.report).stateDir, PROJECT_MARKER), "utf8"),
+					),
+					{path: two},
+				);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"layers the project's config module over the home one and leaves that dir holding config alone",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				mkdirSync(join(home, ".tuval"));
+				writeFileSync(
+					defaultGlobalConfig(home),
+					`export {default} from ${JSON.stringify(fixture("two-rows"))};\n`,
+				);
+				const project = trusted(home, projectWithConfig("one-counter"));
+				const {report} = yield* bootDirect(defaultGlobalConfig(home), project, home);
+				assert.deepStrictEqual(report.sources, [defaultGlobalConfig(home), projectConfig(project)]);
+				assert.strictEqual(report.programCount, DESK_PROGRAMS + 3);
+				assert.deepStrictEqual(readdirSync(projectDir(project)), ["tuval.config.ts"]);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"moves state an older build left in the project into the home key once, config module aside",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const project = seedInProjectState(
+					trusted(home, projectWithConfig("one-counter")),
+					"1.0.0",
+				);
+				const {report} = yield* bootDirect(fixture("one-counter"), project, home);
+				assert.deepStrictEqual([...openedState(report).adopted.moved].sort(), [
+					"manifest.json",
+					"processes",
+				]);
+				assert.deepStrictEqual(openedState(report).adopted.kept, []);
+				assert.deepStrictEqual(openedState(report).adopted.unowned, ["tuval.config.ts"]);
+				assert.strictEqual(report.restoredCount, 1);
+				assert.deepStrictEqual(readdirSync(projectDir(project)), ["tuval.config.ts"]);
+				assert.isTrue(existsSync(join(openedState(report).stateDir, "manifest.json")));
+				// Once, not on every boot: the second one finds nothing left to move and restores the
+				// same process off the home-dir key.
+				const again = yield* bootDirect(fixture("one-counter"), project, home);
+				assert.deepStrictEqual(openedState(again.report).adopted, {
+					moved: [],
+					kept: [],
+					unowned: ["tuval.config.ts"],
+				});
+				// The counter, and the shell the first boot checkpointed.
+				assert.strictEqual(again.report.restoredCount, 2);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"refuses a project row outside the desk's SDK range by name and keeps the desk and its other rows running",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const project = trusted(home, projectWithConfig("sdk-out-of-range-counter"));
+				const id = ProjectId.of(project);
+				const {report} = yield* bootDirect(fixture("does-not-exist"), project, home);
+				assert.deepStrictEqual(
+					report.refused.map((refusal) => refusal.message),
+					[
+						`program "${id.scope("future-counter")}" supports @kampus/tuval-sdk >=1.0.0, and this desk runs ${DESK_SDK_VERSION}; it was not loaded`,
+					],
+				);
+				// The desk's shell and the in-range `main`; nothing was started for `later`.
+				assert.strictEqual(report.processCount, 2);
+				assert.strictEqual(report.programCount, DESK_PROGRAMS + 1);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"boots when a project names a global row refused for its SDK range, dropping the nodes that name it",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const project = trusted(home, projectWithConfig("names-refused-global"));
+				const {report} = yield* bootDirect(fixture("sdk-out-of-range-counter"), project, home);
+				assert.deepStrictEqual(
+					report.refused.map((refusal) => refusal.program),
+					["future-counter"],
+				);
+				// The desk's shell, the global `main` and the project's `own`.
+				assert.strictEqual(report.processCount, 3);
+				assert.strictEqual(report.programCount, DESK_PROGRAMS + 2);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"boots on checkpoints saved before project scoping, moving project rows and nodes onto scoped ids once",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const project = trusted(home, projectWithConfig("planned-counter"));
+				const id = ProjectId.of(project);
+				// What a build before #9684 saved: the planned node at its bare id, and an ad-hoc child
+				// of it, both running the project's `counter` row under its bare id.
+				const stateDir = homeStateDir(project, home);
+				mkdirSync(join(stateDir, "processes"), {recursive: true});
+				writeFileSync(
+					join(stateDir, "manifest.json"),
+					JSON.stringify({
+						processes: [
+							{id: "main", programId: "counter", parentId: null},
+							{id: "p-1", programId: "counter", parentId: "main"},
+						],
+					}),
+				);
+				for (const [process, count] of [
+					["main", 5],
+					["p-1", 3],
+				] as const) {
+					writeFileSync(
+						join(stateDir, "processes", `${process}.json`),
+						JSON.stringify({programId: "counter", version: "1.0.0", state: {count}}),
+					);
+				}
+				const {report} = yield* bootDirect(fixture("does-not-exist"), project, home);
+				assert.deepStrictEqual(openedState(report).scoped.moved, [
+					{from: "main", to: id.scope("main")},
+					{from: "p-1", to: "p-1"},
+				]);
+				// Both came back: the planned node at its scoped id, and its child under it.
+				assert.strictEqual(report.restoredCount, 2);
+				const manifest = JSON.parse(readFileSync(join(stateDir, "manifest.json"), "utf8"));
+				assert.deepStrictEqual(manifest.processes.slice(0, 2), [
+					{id: id.scope("main"), programId: id.scope("counter"), parentId: null},
+					{id: "p-1", programId: id.scope("counter"), parentId: id.scope("main")},
+				]);
+				assert.deepStrictEqual(
+					JSON.parse(readFileSync(join(stateDir, "processes", `${id.scope("main")}.json`), "utf8"))
+						.state,
+					{count: 5},
+				);
+				assert.isFalse(existsSync(join(stateDir, "processes", "main.json")));
+				// Once: the next boot finds the directory already scoped and restores off it.
+				const again = yield* bootDirect(fixture("does-not-exist"), project, home);
+				assert.deepStrictEqual(openedState(again.report).scoped.moved, []);
+				// The node, its child, and the shell the first boot checkpointed.
+				assert.strictEqual(again.report.restoredCount, 3);
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"reads no state back out of the project after the move, whatever is written there next",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const project = seededProject("1.0.0");
+				yield* bootDirect(fixture("one-counter"), project, home);
+				// An older build's leftovers, written again after the move and naming a process the
+				// home-dir key has never heard of. A fallback read would spawn it; nothing does.
+				seedInProjectState(project, "1.0.0", "p-2");
+				const {report} = yield* bootDirect(fixture("one-counter"), project, home);
+				assert.deepStrictEqual([...openedState(report).adopted.kept].sort(), [
+					"manifest.json",
+					"processes",
+				]);
+				assert.deepStrictEqual(openedState(report).adopted.moved, []);
+				// The counter and the desk's shell, both off the home-dir key; never `p-2`.
+				assert.strictEqual(report.processCount, 2);
+				assert.strictEqual(report.restoredCount, 2);
+				assert.isTrue(existsSync(join(projectDir(project), "processes", "p-2.json")));
+				assert.isFalse(existsSync(join(openedState(report).stateDir, "processes", "p-2.json")));
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	// #9977: a folder that starts a new desk is asked about like any other open, and nothing from its
+	// config runs before the answer. No page attaches here, so the question is never answered.
+	it(
+		"starts a desk from `tuval open` on an untrusted folder without importing the folder's config",
+		async () => {
+			const home = freshHome();
+			const {project, marker} = projectMarking("one-counter");
+			const result = await runUntilRunning(
+				["--config", fixture("two-rows"), "--no-page", "open", project],
+				{...process.env, HOME: home},
+			);
+			expect(result.stderr).toBe("");
+			expect(result.status).toBe(0);
+			expect(result.stdout.split("\n").slice(0, 2)).toEqual([
+				`tuval: booted — ${DESK_PROGRAMS + 2} program(s), ${DESK_SPELLS} spell(s) registered from ${fixture("two-rows")}; 1 process(es) live, 0 restored; desk state in ${homeStateDir(home, home)}`,
+				`tuval: ${project} holds a .tuval config nobody has trusted; nothing from it runs until the page answers "Trust this folder?"`,
+			]);
+			expect(existsSync(marker)).toBe(false);
+		},
+		spawnBudget(1),
+	);
+
+	it.effect(
+		"keeps the desk's checkpoints in its own state dir, not the boot folder's",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const project = freshProject();
+				const {report} = yield* bootDirect(fixture("two-rows"), project, home);
+				assert.strictEqual(report.deskStateDir, homeStateDir(home, home));
+				assert.notStrictEqual(report.deskStateDir, openedState(report).stateDir);
+				const manifest = JSON.parse(
+					readFileSync(join(report.deskStateDir, "manifest.json"), "utf8"),
+				) as {readonly processes: ReadonlyArray<{readonly id: string}>};
+				assert.deepStrictEqual(
+					manifest.processes.map((entry) => entry.id),
+					["shell"],
+				);
+				assert.isFalse(existsSync(join(openedState(report).stateDir, "manifest.json")));
+			}),
+		DIRECT_BOOT_MS,
+	);
+
+	it.effect(
+		"moves the desk's checkpoints an older desk left in its boot folder's state dir, once",
+		() =>
+			Effect.gen(function* () {
+				const home = freshHome();
+				const project = freshProject();
+				// What a desk before #9977 saved: its shell beside the boot folder's own processes.
+				const shared = homeStateDir(project, home);
+				mkdirSync(join(shared, "processes"), {recursive: true});
+				writeFileSync(
+					join(shared, "manifest.json"),
+					JSON.stringify({processes: [{id: "p-1", programId: "counter", parentId: null}]}),
+				);
+				writeFileSync(
+					join(shared, "processes", "p-1.json"),
+					JSON.stringify({programId: "counter", version: "1.0.0", state: {count: 3}}),
+				);
+				mkdirSync(join(shared, "pi-sessions"));
+				const {report} = yield* bootDirect(fixture("one-counter"), project, home);
+				assert.deepStrictEqual(openedState(report).stateDir, shared);
+				assert.deepStrictEqual(report.first._tag === "Opened" && report.first.lifted, {
+					moved: ["p-1", "pi-sessions"],
+					kept: [],
+				});
+				assert.strictEqual(report.restoredCount, 1);
+				assert.isTrue(existsSync(join(report.deskStateDir, "processes", "p-1.json")));
+				assert.isTrue(existsSync(join(report.deskStateDir, "pi-sessions")));
+				assert.isFalse(existsSync(join(shared, "processes", "p-1.json")));
+				const again = yield* bootDirect(fixture("one-counter"), project, home);
+				assert.deepStrictEqual(again.report.first._tag === "Opened" && again.report.first.lifted, {
+					moved: [],
+					kept: [],
+				});
+				// The counter and the shell, both off the desk's own directory.
+				assert.strictEqual(again.report.restoredCount, 2);
+			}),
+		DIRECT_BOOT_MS,
 	);
 
 	it(
@@ -368,7 +778,7 @@ describe("boot", () => {
  * is built the way `ai-agent/backends.ts` builds a backend's layer — under the boot's own kernel
  * context. What `PiAiAgent.layer` does with the record it gets there is `subagentExtensionPaths`,
  * and that its `R` is this service and nothing else is pinned in
- * `pi/ai-agent/boundary.unit.test.ts`.
+ * `@kampus/tuval-pi`'s `src/ai-agent/boundary.unit.test.ts`.
  */
 describe("the merged feature flags on the node side", () => {
 	class Probe extends Context.Service<Probe, {readonly features: TuvalFeatures}>()(
@@ -397,35 +807,86 @@ describe("the merged feature flags on the node side", () => {
 	);
 
 	// The direction that costs something: `piSubagents` defaults on, so an operator turning it off is
-	// a project layer stating `false` over a global `true` — and before this the layer read
+	// the global layer stating `false` over that default — and before #8595 the row's layer read
 	// `featuresDefault` and loaded the extension anyway.
 	it.effect(
-		"let the project layer's false beat the global layer's true",
+		"reach a row's layer as the global layer states them",
 		() =>
 			Effect.gen(function* () {
-				const booted = yield* bootDirect(
-					fixture("pi-subagents-on"),
-					projectWithConfig("pi-subagents-off"),
-				);
+				const booted = yield* bootDirect(fixture("pi-subagents-off"), freshProject());
 				const features = yield* flagsAtSpawn(booted);
 				assert.deepStrictEqual(features, {...featuresDefault, piSubagents: false});
 				assert.deepStrictEqual(subagentExtensionPaths(features), []);
 			}),
 		DIRECT_BOOT_MS,
 	);
+});
 
-	it.effect(
-		"let the project layer's true beat the global layer's false",
+describe("a booted desk's key bindings follow focus (#9687)", () => {
+	/**
+	 * The whole path a key takes in a running desk: a press dispatched into the shell process, routed
+	 * over the table its focus selects, and a fired binding's spell run by the host back into the
+	 * shell. Each binding splits a window, so what fired is read off the desk's window count.
+	 */
+	it.live(
+		"fires the global binding on an empty window and the board, and the project's only in its window",
 		() =>
 			Effect.gen(function* () {
-				const booted = yield* bootDirect(
-					fixture("pi-subagents-off"),
-					projectWithConfig("pi-subagents-on"),
+				const home = freshHome();
+				const project = trusted(home, projectWithConfig("project-shell-key"));
+				const booted = yield* boot({global: fixture("global-shell-key"), project, home});
+				const inKernel = <A, E>(effect: Effect.Effect<A, E, Kernel>) =>
+					effect.pipe(Effect.provideContext(booted.kernel));
+				const send = (msg: ShellMsg) =>
+					inKernel(ShellDispatch.use((desk) => desk.dispatch(msg))).pipe(Effect.orDie);
+				const ctrl = (key: string): ShellMsg => ({
+					type: "keys.press",
+					key: {key, ctrlKey: true},
+				});
+				const windowCount = inKernel(
+					Effect.map(
+						ProcessTable.use((table) => table.list),
+						(rows) => {
+							const state = shellStateOf(
+								rows.find((row) => row.programId === shellId)?.stateSummary().state,
+							);
+							const workspace = state?.workspaces[state.activeWorkspace];
+							return workspace === undefined ? 0 : [...windows(workspace.layout.root)].length;
+						},
+					),
 				);
-				const features = yield* flagsAtSpawn(booted);
-				assert.deepStrictEqual(features, {...featuresDefault, piSubagents: true});
-				assert.strictEqual(subagentExtensionPaths(features).length, 1);
-			}),
+				// A fired binding runs on a fiber of its own, so its split lands after the press returns.
+				const settlesAt = (count: number) =>
+					Effect.gen(function* () {
+						for (let tries = 0; tries < 200 && (yield* windowCount) < count; tries += 1) {
+							yield* Effect.sleep("10 millis");
+						}
+						yield* Effect.sleep("100 millis");
+						assert.strictEqual(yield* windowCount, count);
+					});
+
+				assert.strictEqual(yield* windowCount, 1);
+				// The focused window is empty, so it runs the global table: the project's key is not
+				// there, and the global one is.
+				yield* send(ctrl("g"));
+				yield* send(ctrl("y"));
+				yield* settlesAt(2);
+
+				yield* send({
+					type: "window.bind",
+					processId: "process-alpha",
+					program: ProjectId.of(project).scope("counter"),
+				});
+				yield* send(ctrl("g"));
+				yield* settlesAt(3);
+
+				// The board is the global config's: the project's key stays out, the global one fires.
+				yield* send({type: "desk.board.toggle"});
+				yield* send(ctrl("g"));
+				yield* settlesAt(3);
+				yield* send(ctrl("y"));
+				yield* settlesAt(4);
+			}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
 		DIRECT_BOOT_MS,
 	);
 });

@@ -57,15 +57,11 @@ describe("invoking this checkout's bin from a cwd in another checkout", {
 	// copy has to stay unset — and vitest inherits the parent env.
 	skip: process.env.FABRIKA_SKIP_INFER !== undefined,
 }, () => {
-	it("refuses instead of answering, and never lets the cwd's install speak", () => {
+	it("refuses instead of answering, never lets the cwd's install speak, and names both checkouts", () => {
 		const run = invokeFromConsumer("--version");
 		expect(run.stdout).not.toContain(IMPOSTER);
 		expect(run.code).toBe(NO_IMPLEMENTATION);
 		expect(run.stderr).toContain("different repositories");
-	});
-
-	it("names both checkouts in the refusal, so the caller can see which copy it declined", () => {
-		const run = invokeFromConsumer("--version");
 		expect(run.stderr).toContain(consumer);
 		expect(run.stderr).toContain(
 			fileURLToPath(new URL("../../", import.meta.url)).replace(/\/$/, ""),

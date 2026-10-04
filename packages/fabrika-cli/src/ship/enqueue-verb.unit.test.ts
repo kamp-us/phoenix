@@ -3,6 +3,7 @@ import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import {
 	BASE_CONFLICTED,
+	PR_NOT_OURS,
 	PRECONDITION_UNKNOWN,
 	PROVEN_NOT_IN_STATE,
 	STALE_HEAD,
@@ -10,7 +11,15 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {runEnqueue} from "./enqueue-verb.ts";
-import {ENV, HEAD, OTHER_HEAD, type PullShape, pull} from "./fixtures.test-support.ts";
+import {
+	ENV,
+	HEAD,
+	OTHER_HEAD,
+	OURS,
+	OWNERSHIP_CASES,
+	type PullShape,
+	pull,
+} from "./fixtures.test-support.ts";
 import {ADDED} from "./queue.ts";
 
 /**
@@ -54,12 +63,10 @@ const timeline = (...rows: ReadonlyArray<{event: string; at: string}>): HttpRepl
 });
 
 /**
- * The shipped mergeability window is 60s of real backoff, so every test scripts a short one.
- *
- * 4s is two waits of 2s, which is the smallest window that still exercises the re-read loop — a
- * window of 0 would prove only that one read happened.
+ * One read, no re-read: the backoff loop is `./mergeability.unit.test.ts`'s, proven there on the
+ * test clock, so this verb's tests only map the loop's three outcomes and spend no real seconds.
  */
-const MERGEABILITY_SECONDS = 4;
+const MERGEABILITY_SECONDS = 0;
 
 const options = {
 	pr: 4321,
@@ -71,7 +78,7 @@ const options = {
 };
 
 const both = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
-	const seams = fakeSeams(script);
+	const seams = fakeSeams([...script, ...OURS]);
 	return {
 		seams,
 		outcome: Effect.runPromise(Effect.provide(runEnqueue({...options, ...overrides}), seams.layer)),
@@ -150,27 +157,10 @@ describe("runEnqueue", () => {
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"ship enqueue: #4321's mergeable_state is still indefinite after 2 polls over 4s — mergeability is UNKNOWN, never green; nothing was armed.",
+			"ship enqueue: #4321's mergeable_state is still indefinite after 0 polls over 0s — mergeability is UNKNOWN, never green; nothing was armed.",
 		);
 		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
-	}, 20_000);
-
-	// The window, not the read path, is what left a conflicted PR refusing as UNKNOWN. GitHub computes
-	// `mergeable` in a background job the first read only STARTS, so the conflict arrives on a later
-	// read of the same endpoint — and before this, three polls 2s apart gave it 6s.
-	// @ruling https://github.com/kamp-us/phoenix/issues/9032
-	it("re-reads past an indefinite value and lands the conflict the later read carries", async () => {
-		const scripted = both([
-			livePull(),
-			[once(MERGEABILITY), mergeability({mergeable: null, mergeableState: "unknown"})],
-			[MERGEABILITY, mergeability({mergeable: false, mergeableState: "dirty"})],
-		]);
-		const out = await scripted.outcome;
-		expect(out.code).toBe(BASE_CONFLICTED);
-		expect(out.stderr.at(-1)).toContain("mergeable_state: dirty");
-		expect(out.stderr.at(-1)).not.toContain("indefinite");
-		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
-	}, 20_000);
+	});
 
 	// The two definite not-mergeable refusals are two codes because the lane charges them to two
 	// budgets: a moved base is machinery, everything else is the repair round retries bound.
@@ -219,5 +209,25 @@ describe("runEnqueue", () => {
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("the confirming read-back failed");
+	});
+});
+
+describe("runEnqueue — a PR is its author's until the pipeline owns it", () => {
+	it.each(OWNERSHIP_CASES)("$name", async ({author, reads, drivable}) => {
+		const scripted = both([
+			...reads,
+			livePull({author}),
+			[MERGEABILITY, mergeability({author})],
+			[GRAPHQL, ARMED],
+			[TIMELINE, timeline()],
+		]);
+		const out = await scripted.outcome;
+		const armed = scripted.seams.requests.some((line) => GRAPHQL.test(line));
+		expect({code: out.code, armed}).toEqual(
+			drivable ? {code: 0, armed: true} : {code: PR_NOT_OURS, armed: false},
+		);
+		expect(out.stderr.join("\n").includes(`is ${author}'s to finish — nothing was armed.`)).toBe(
+			!drivable,
+		);
 	});
 });

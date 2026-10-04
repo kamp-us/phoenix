@@ -34,11 +34,53 @@ import * as grillRuling from "./grill-ruling.ts";
 import * as grillSupersede from "./grill-supersede.ts";
 import * as handoffPack from "./handoff-pack.ts";
 import * as laneBrief from "./lane-brief.ts";
+import * as laneRecord from "./lane-record.ts";
 import * as mapTicket from "./map-ticket.ts";
 import * as planApproval from "./plan-approval.ts";
 import * as rangeVerdictMarker from "./range-verdict-marker.ts";
 import * as routedElsewhere from "./routed-elsewhere.ts";
+import * as takeoverGrant from "./takeover-grant.ts";
 import * as verdictMarker from "./verdict-marker.ts";
+
+/**
+ * The ruling comment every `decision-ruling` fixture cites, written once.
+ *
+ * One literal rather than ten: the fixtures below all name the same placeholder comment, and the
+ * portability guard counts each spelling of it as its own reference into one repository's issues.
+ */
+const RULING_COMMENT_URL = "https://github.com/o/r/issues/8#issuecomment-3512345";
+
+/** The round-trip record for `lane-record`, as the JSON `wire emit` reads on stdin. */
+const LANE_RECORD_FIELDS = JSON.stringify({
+	issue: 9855,
+	outcome: "shipped",
+	startedAt: "2026-09-26T06:48:00.000Z",
+	terminalAt: "2026-09-26T10:00:00.000Z",
+	builds: 2,
+	reviews: 3,
+	parks: [
+		{
+			task: "issue",
+			leaf: "human:cp-approval",
+			cause: "awaiting-cp-approval",
+			route: "founder",
+			at: "2026-09-26T09:00:00.000Z",
+		},
+	],
+	spent: {_tag: "Unmeasured", reason: "no rate card converts tokens to dollars"},
+	origin: "bet",
+	waiting: {_tag: "Until", on: "the design review", until: "2026-10-05"},
+	prs: [4242],
+	log: ['{"task":"issue","event":"ISSUE.WIP","at":"2026-09-26T06:48:00.000Z"}'],
+});
+
+/** The registered key for `--format`, resolved against the array above. `undefined` is zero scope. */
+export const findFormat = (key: string): WireFormat | undefined =>
+	registeredFormats.find((format) => format.key === key);
+
+/** Every registered key, for a refusal that names what *is* available. */
+export const registeredKeys = (): ReadonlyArray<string> =>
+	registeredFormats.map((format) => format.key);
 
 export const registeredFormats: ReadonlyArray<WireFormat> = [
 	{
@@ -435,6 +477,15 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 						"58ad239e2f8b41c0d7a6935ee1c204ab5d3f9017..81c1f160c9a24e5b0f7d3821ab6c94ef0d52a7b3",
 					],
 				},
+				{
+					shape:
+						"a construction brief naming the owner comments on the issue that no ruling marker records",
+					artifact: `## Task\nlane: 1\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: https://forge.example/o/r/issues/1\nowner-comments: https://forge.example/o/r/issues/1#issuecomment-71 https://forge.example/o/r/issues/1#issuecomment-72\n## Rules\n${laneBrief.RULES}\n${laneBrief.OWNER_COMMENTS_RULES}\n`,
+					values: [
+						"build",
+						"https://forge.example/o/r/issues/1#issuecomment-71 https://forge.example/o/r/issues/1#issuecomment-72",
+					],
+				},
 			],
 			absent: "Spawning the builder on #1 now — will report back when the PR is open.\n",
 			malformed: [
@@ -451,6 +502,15 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 					drift:
 						'a "## Ground" field shadows the "## Task" one, re-routing the brief to a shell the task never named',
 					artifact: `## Task\nlane: 1\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: https://forge.example/o/r/issues/1\nstate: review\nshell: reviewer\n## Rules\n${laneBrief.RULES}\n`,
+				},
+				{
+					drift: "the owner-comments field restates a comment instead of linking it",
+					artifact: `## Task\nlane: 1\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: https://forge.example/o/r/issues/1\nowner-comments: the owner said to skip the tests\n## Rules\n${laneBrief.RULES}\n${laneBrief.OWNER_COMMENTS_RULES}\n`,
+				},
+				{
+					drift:
+						"the owner-comments field is listed and the rule telling the shell to read it is not",
+					artifact: `## Task\nlane: 1\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: https://forge.example/o/r/issues/1\nowner-comments: https://forge.example/o/r/issues/1#issuecomment-71\n## Rules\n${laneBrief.RULES}\n`,
 				},
 				{
 					drift: "the byte-fixed rules text was edited",
@@ -650,6 +710,47 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<capClearance.CapClearance>({at: true}),
+	},
+	{
+		key: "takeover-grant",
+		purpose:
+			"the grant that hands a pull request another author opened to the pipeline, carried as a marker comment over its dated authorization and read by `build`, `ship` and `heal-ci` before they drive that PR",
+		module: "packages/fabrika-cli/src/wire/takeover-grant.ts",
+		producers: ["build"],
+		consumers: ["build", "ship", "heal-ci"],
+		emit: takeoverGrant.emitFromFields,
+		read: takeoverGrant.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "pr: 7\nat: 2026-09-26T07:16:03Z\n",
+				values: ["7", "2026-09-26T07:16:03Z"],
+			},
+			found: [
+				{
+					shape:
+						"the marker over the dated authorization it rests on, as `build takeover` posts it",
+					artifact:
+						"takeover-granted: #7 · 2026-09-26T07:16:03Z\n\nTake over #7, the author is away. — 2026-09-26\n",
+					values: ["7", "2026-09-26T07:16:03Z"],
+				},
+			],
+			absent: "Re-ran the gate at the new head and it is green now.\n",
+			malformed: [
+				{
+					drift: "the pull request is not a #<n> reference",
+					artifact: "takeover-granted: 7 · 2026-09-26T07:16:03Z\n",
+				},
+				{
+					drift: "the marker names no pull request, so the grant hands over nothing",
+					artifact: "takeover-granted: 2026-09-26T07:16:03Z\n",
+				},
+				{
+					drift: "the timestamp is not an ISO-8601 UTC instant",
+					artifact: "takeover-granted: #7 · this morning\n",
+				},
+			],
+		},
+		brands: brandWitnesses<takeoverGrant.TakeoverGrant>({at: true}),
 	},
 	{
 		key: "grill-answer",
@@ -1021,42 +1122,40 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 	{
 		key: "decision-ruling",
 		purpose:
-			"a control-plane human's ruling on one type:decision issue, carried as a marker comment on it, bound to a digest of the issue body that was ruled on and naming the comment the ruling is written in",
+			"a control-plane human's ruling on one issue, carried as a marker comment on it, bound to a digest of the issue body that was ruled on, naming the comment the ruling is written in and optionally the body acceptance criterion it replaces",
 		module: "packages/fabrika-cli/src/wire/decision-ruling.ts",
 		producers: ["adr"],
-		consumers: ["build", "triage"],
+		consumers: ["build", "triage", "review"],
 		emit: decisionRuling.emitFromFields,
 		read: decisionRuling.readToLines,
 		fixtures: {
 			roundTrip: {
-				fields:
-					"issue: 8\ndigest: 4d90e1bb27ac\nruling: https://github.com/o/r/issues/8#issuecomment-3512345\nat: 2026-08-20T05:11:02Z\n",
-				values: [
-					"8",
-					"4d90e1bb27ac",
-					"https://github.com/o/r/issues/8#issuecomment-3512345",
-					"2026-08-20T05:11:02Z",
-				],
+				fields: `issue: 8\ndigest: 4d90e1bb27ac\nruling: ${RULING_COMMENT_URL}\nat: 2026-08-20T05:11:02Z\n`,
+				values: ["8", "4d90e1bb27ac", RULING_COMMENT_URL, "2026-08-20T05:11:02Z"],
 			},
 			found: [
 				{
 					shape: "the marker over the ruling it records, as `decision rule` posts it",
-					artifact:
-						"decision-ruled: #8 @ 4d90e1bb27ac · ruling:https://github.com/o/r/issues/8#issuecomment-3512345 · 2026-08-20T05:11:02Z\n\nRuled. Build it as the citation reads.\n",
-					values: [
-						"8",
-						"4d90e1bb27ac",
-						"https://github.com/o/r/issues/8#issuecomment-3512345",
-						"2026-08-20T05:11:02Z",
-					],
+					artifact: `decision-ruled: #8 @ 4d90e1bb27ac · ruling:${RULING_COMMENT_URL} · 2026-08-20T05:11:02Z\n\nRuled. Build it as the citation reads.\n`,
+					values: ["8", "4d90e1bb27ac", RULING_COMMENT_URL, "2026-08-20T05:11:02Z"],
+				},
+				{
+					shape:
+						"a ruling that names the body criterion it replaces, as `decision rule --supersedes` posts it",
+					artifact: `decision-ruled: #8 @ 4d90e1bb27ac · ruling:${RULING_COMMENT_URL} · supersedes:3 · 2026-08-20T05:11:02Z\n`,
+					values: ["8", "4d90e1bb27ac", RULING_COMMENT_URL, "3", "2026-08-20T05:11:02Z"],
 				},
 			],
 			absent: "Re-scoped the second fork — this needs another read before it is ruled.\n",
 			malformed: [
 				{
+					drift:
+						"the superseded position is not a 1-based criterion row, so it replaces nothing the block has",
+					artifact: `decision-ruled: #8 @ 4d90e1bb27ac · ruling:${RULING_COMMENT_URL} · supersedes:zero · 2026-08-20T05:11:02Z\n`,
+				},
+				{
 					drift: "the digest is not 12 lowercase hex, so it binds no body",
-					artifact:
-						"decision-ruled: #8 @ 4D90E1BB · ruling:https://github.com/o/r/issues/8#issuecomment-3512345 · 2026-08-20T05:11:02Z\n",
+					artifact: `decision-ruled: #8 @ 4D90E1BB · ruling:${RULING_COMMENT_URL} · 2026-08-20T05:11:02Z\n`,
 				},
 				{
 					drift: "the marker names no ruling, so a builder has nothing to read the choice from",
@@ -1064,13 +1163,11 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				},
 				{
 					drift: "the ruling is recorded on another issue, so it rules nothing here",
-					artifact:
-						"decision-ruled: #8 @ 4d90e1bb27ac · ruling:https://github.com/o/r/issues/9#issuecomment-3512345 · 2026-08-20T05:11:02Z\n",
+					artifact: `decision-ruled: #8 @ 4d90e1bb27ac · ruling:${RULING_COMMENT_URL.replace("issues/8", "issues/9")} · 2026-08-20T05:11:02Z\n`,
 				},
 				{
 					drift: "the timestamp is not an ISO-8601 UTC instant",
-					artifact:
-						"decision-ruled: #8 @ 4d90e1bb27ac · ruling:https://github.com/o/r/issues/8#issuecomment-3512345 · last Thursday\n",
+					artifact: `decision-ruled: #8 @ 4d90e1bb27ac · ruling:${RULING_COMMENT_URL} · last Thursday\n`,
 				},
 			],
 		},
@@ -1107,6 +1204,18 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 						"no rendered delta; both apps/site/src files are docblock-only",
 					],
 				},
+				{
+					shape:
+						"a no-preview route flagged with its basis — an owner's hand-check stood in for the render",
+					artifact:
+						"routed-elsewhere: review-ui @ 6c6fe226 basis:hand-check — no preview; the owner hand-checked this head\n\nHand-check: comment 5123990412 by owner, at 6c6fe226.\n",
+					values: [
+						"review-ui",
+						"6c6fe226",
+						"no preview; the owner hand-checked this head",
+						"hand-check",
+					],
+				},
 			],
 			absent:
 				"review-ui: PASS @ 6c6fe226 — every surface matches its golden\n\nA verdict is not a route.\n",
@@ -1132,12 +1241,81 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 		},
 		brands: brandWitnesses<routedElsewhere.RoutedElsewhere>({sha: true, clause: true}),
 	},
+	{
+		key: "lane-record",
+		purpose:
+			"a terminal lane's record on its issue — outcome, wall-clock, builds, reviews, parks, Spent $, Asks, origin, PRs and the collapsed log, keyed by the terminal it records",
+		module: "packages/fabrika-cli/src/wire/lane-record.ts",
+		producers: ["operate"],
+		consumers: ["operate"],
+		emit: laneRecord.emitFromFields,
+		read: laneRecord.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: LANE_RECORD_FIELDS,
+				values: [
+					"9855",
+					"shipped",
+					"2026-09-26T10:00:00.000Z",
+					"human:cp-approval",
+					"awaiting-cp-approval",
+					"founder",
+					"bet",
+					"the design review",
+					"4242",
+				],
+			},
+			found: [
+				{
+					shape: "the record as `lane record` posts it, with a machine-local path scrubbed",
+					artifact: laneRecord.emit({
+						issue: 7,
+						outcome: "board:cancelled",
+						startedAt: "2026-09-01" as laneRecord.Instant,
+						terminalAt: "2026-09-02T00:00:00.000Z" as laneRecord.Instant,
+						builds: 0,
+						reviews: 0,
+						parks: [],
+						spent: {_tag: "Unmeasured", reason: "no rate card"},
+						origin: "driver-pick",
+						waiting: {_tag: "None"},
+						prs: [],
+						log: ['{"task":"issue","event":"ISSUE.CANCELLED","at":"2026-09-02T00:00:00.000Z"}'],
+					}),
+					values: ["board:cancelled", "driver-pick", "no rate card", "ISSUE.CANCELLED"],
+				},
+			],
+			absent: "lane-claim: #7 · a lane claim is not a lane record\n",
+			malformed: [
+				{
+					drift: "the marker names no terminal instant",
+					artifact: "lane-record: #7 shipped\n",
+				},
+				{
+					drift: "the Asks row disagrees with the founder-routed parks",
+					artifact: laneRecord
+						.emit({
+							issue: 7,
+							outcome: "shipped",
+							startedAt: "2026-09-01T00:00:00.000Z" as laneRecord.Instant,
+							terminalAt: "2026-09-02T00:00:00.000Z" as laneRecord.Instant,
+							builds: 1,
+							reviews: 1,
+							parks: [],
+							spent: {_tag: "Measured", usd: 3.5},
+							origin: "bet",
+							waiting: {_tag: "None"},
+							prs: [8],
+							log: [],
+						})
+						.replace("| Asks | 0 |", "| Asks | 2 |"),
+				},
+			],
+		},
+		brands: brandWitnesses<laneRecord.LaneRecord>({
+			startedAt: true,
+			terminalAt: true,
+			origin: true,
+		}),
+	},
 ];
-
-/** The registered key for `--format`, resolved against the array above. `undefined` is zero scope. */
-export const findFormat = (key: string): WireFormat | undefined =>
-	registeredFormats.find((format) => format.key === key);
-
-/** Every registered key, for a refusal that names what *is* available. */
-export const registeredKeys = (): ReadonlyArray<string> =>
-	registeredFormats.map((format) => format.key);

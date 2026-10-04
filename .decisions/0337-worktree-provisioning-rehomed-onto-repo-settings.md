@@ -1,7 +1,7 @@
 ---
 id: 0337
 title: Worktree Provisioning Is Rehomed onto This Repo's Own Settings, Not fabrika's Plugin Surface
-status: accepted
+status: amended-in-part by [0420](0420-worktree-creation-locks-installs-outside.md)
 date: 2026-08-28
 tags: [fabrika, hooks, worktree, tooling, harness]
 ---
@@ -84,6 +84,10 @@ untouched. What the verb adds is the environment that install needs: the OS-stan
 prepended to the inherited `PATH` (never a per-machine volta/fnm shim — 0109's prohibition), so
 `bootstrap-deps` resolves a runner instead of clean-SKIPping.
 
+> **Amended in part by [0420](0420-worktree-creation-locks-installs-outside.md).** The hook's add no
+> longer fires the install: it adds with hooks off inside a repo-level lock, then runs the same
+> `post-checkout` hook itself after the lock is released. The reuse and 0109's rules above still hold.
+
 **4. The base is fetched before it is branched from**, carrying ADR 0178's #3621 amendment forward:
 `git fetch --quiet origin <base>` then `git worktree add --detach <path> FETCH_HEAD`. The fetch moves
 only remote-tracking refs, never the primary's local `main`, so the #2143/#2144 corruption class is
@@ -98,6 +102,14 @@ not reintroduced. `<base>` is read from `refs/remotes/origin/HEAD` and falls bac
 > `git worktree add --detach <path> <commit-id>` runs. Freshness is unchanged and stricter: the base
 > is still exactly what this fetch wrote, and with an explicit refspec the fetch no longer updates
 > `refs/remotes/origin/*` either, so it now moves nothing any other process reads.
+
+> **Amendment, 2026-09-29 ([#10030](https://github.com/kamp-us/phoenix/issues/10030)).** The
+> fallback to `main` is gone. A repo whose default branch is `dev` and that has no `main` would
+> branch every spawn off a ref that does not exist, so no spelled branch stands in for the base.
+> When this clone records no `refs/remotes/origin/HEAD`, the hook runs
+> `git remote set-head origin --auto` and reads it again. If that read still names no branch, the
+> spawn refuses at exit `16` (`BASE_FETCH_FAILED`), names that command as the fix, and creates
+> nothing.
 
 That fetch needs credentials, and the child inherits nothing it is not handed, so the allowlist
 carries the ssh-agent channel (`SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `GIT_SSH`, `GIT_SSH_COMMAND`)

@@ -8,7 +8,7 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  *
- * Seven leaves author a plan run. `retopology`, `digest` and `defer` are the three that read no run
+ * Eight leaves author a plan run. `retopology`, `digest` and `defer` are the three that read no run
  * directory at all — each belongs to the descope route, which is found on epics whose run was long
  * since cleared: `retopology` repairs the block, `digest` prints the input that repair takes, and
  * `defer` unlinks the child. Sourcing any of them from `ledger open` would put the staged run back
@@ -26,6 +26,7 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
+import {runAdopt} from "./adopt-verb.ts";
 import {runChild} from "./child-verb.ts";
 import {runDefer} from "./defer-verb.ts";
 import {runDigest} from "./digest-verb.ts";
@@ -79,8 +80,18 @@ const open = leafCommand(
 ).pipe(
 	Command.withShortDescription("Prove the ground and open the plan run for an epic."),
 	Command.withDescription(
-		'Prove the ground fresh, allocate the run directory (keyed on the claim nonce --token names, never the session), read the epic\'s existing children, probe the cycle doc, and rank duplicate candidates. Prints {"answer":"opened","epic":n,"run":"…","mode":"fresh|re-plan","bodyDigest":"…","dir":"…","children":[…],"cycleDoc":"present|absent|unknown","candidates":{"outcome":"candidates|none|indeterminate","items":[…]}}. Carry bodyDigest to `ledger draft` and `ledger write`. Exits 7 (the epic is proven absent or closed), 10 (not a type:epic), 11 (the epic, its sub-issue list, the backlog, the cycle-doc probe or the freshness probe could not be read), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking, since ownership turns on the whole token and never the session id), 20 (the base is proven behind origin/main), 22 (two or more "## Plan (plan-epic)" headings — the mode has no single meaning). Example: fabrika ledger open 9420 --token build:s-9f2e:c1a4d6f8-…',
+		[
+			'Opens an epic\'s plan run and prints {"answer":"opened","mode":…,"bodyDigest":…,…} as JSON.',
+			"  7: the epic is absent or closed",
+			"  10: not a type:epic",
+			"  11: a read failed (UNKNOWN)",
+			"  15: this lane does not hold the epic's claim",
+			"  20: the base is behind the trunk (the repo's default branch)",
+			'  22: more than one "## Plan (plan-epic)" heading',
+			'  Derivation: the plan-epic skill\'s contract.md, "ledger open"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika ledger open 9420 --token build:s-9f2e:c1a4d6f8-…"}]),
 );
 
 const draft = leafCommand(
@@ -102,8 +113,26 @@ const draft = leafCommand(
 ).pipe(
 	Command.withShortDescription("Validate the plan block on stdin and stage it."),
 	Command.withDescription(
-		'Validate the plan block on STDIN against the closed section set and the story grammar, then stage it in the run directory. Prints {"answer":"staged","epic":n,"document":"plan","sections":11,"stories":[…],"bytes":n}. It does not judge content — a "### Approach" reading TBD stages cleanly. Exits 3 (stdin held nothing), 4 (a required ### section is missing, duplicated or out of order; the block does not open with "## Plan (plan-epic)"; "### Acceptance criteria" is followed by a blank line or reads back absent/malformed; zero user stories; or story ids that are not contiguous from 1), 5 (machine-local path), 6 (bare @ reference), 7 (the epic is proven absent or closed), 10 (not a type:epic, or --body-digest is not 12 lowercase hex), 11 (a read failed — nothing was staged), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 21 (the epic body moved since open). Example: fabrika ledger draft 9420 --body-digest 8f2c1a90b4d7 --token build:s-9f2e:c1a4d6f8-… < plan.md',
+		[
+			'Validates the plan block on stdin, stages it, and prints {"answer":"staged",…} as JSON.',
+			"  3: stdin held nothing",
+			"  4: the block breaks the section set or the story grammar",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: the epic is absent or closed",
+			"  10: not a type:epic, or --body-digest is malformed",
+			"  11: a read failed; nothing was staged",
+			"  15: this lane does not hold the epic's claim",
+			"  21: the epic body moved since open",
+			'  Derivation: the plan-epic skill\'s contract.md, "ledger draft"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika ledger draft 9420 --body-digest 8f2c1a90b4d7 --token build:s-9f2e:c1a4d6f8-… < plan.md",
+		},
+	]),
 );
 
 const child = leafCommand(
@@ -183,8 +212,91 @@ const child = leafCommand(
 ).pipe(
 	Command.withShortDescription("Mint one child issue with every birth attribute at once."),
 	Command.withDescription(
-		'Mint one child with EVERY birth attribute in the one POST — title, body, every label, milestone and assignee — record it in the run manifest, link it as a native sub-issue, then re-read and report the OBSERVED result. Prints {"answer":"minted","epic":n,"child":n,"linked":true,"observed":{…},"stories":[…],"containment":"…"}. Exits 3 (stdin held nothing), 4 (the composed body\'s fields or sections do not parse: a malformed **Stories:** value, absent or malformed acceptance criteria, or a child of an asked type whose **Containment:** is off the vocabulary `.fabrika.jsonc`\'s containmentVocabulary resolves to, while the cycle doc is present), 5 (machine-local path), 6 (bare @ reference), 7 (the epic is proven absent or closed), 8 (the create was attempted and no re-read could prove it — UNKNOWN), 9 (created and it does not read back as sent), 10 (a label, --type, --priority, --milestone or --ready-for off its closed vocabulary; --ready-for absent; --ready-for human without --assignee; --type type:decision with --ready-for agent, which advertises a child the first builder refuses on its type axis — mint it --ready-for human with --assignee, record the ruling on the child, then flip it with `fabrika decision rule <n> --cites <child-comment-url>`; neither --milestone nor a standing-lane --label, so the child would be born homeless; or not a type:epic), 11 (a precondition read failed, or the config exists and its containmentVocabulary does not decode — NOTHING was created), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 23 (created and the sub-issue link could not be proven), 26 (created and the run manifest could not be written). Example: fabrika ledger child 9420 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent --token build:s-9f2e:c1a4d6f8-… < child.md',
+		[
+			'Mints one child from the body on stdin, links it, and prints {"answer":"minted",…}.',
+			"  3: stdin held nothing",
+			"  4: the body does not parse",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: the epic is absent or closed",
+			"  8: the create is unproven (UNKNOWN)",
+			"  9: created; it does not read back as sent",
+			"  10: a flag is off its vocabulary or missing",
+			"  11: a read failed; nothing was created",
+			"  15: this lane does not hold the epic's claim",
+			"  23: created; the sub-issue link is unproven",
+			"  26: created; the run manifest was not written",
+			'  Derivation: the plan-epic skill\'s contract.md, "ledger child"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika ledger child 9420 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent --milestone "fabrika campaign" --token build:s-9f2e:c1a4d6f8-… < child.md',
+		},
+	]),
+);
+
+const adopt = leafCommand(
+	"adopt",
+	{
+		number: epicArg,
+		child: Flag.integer("child").pipe(
+			Flag.withDescription("the already-filed issue joining this epic's plan as a child"),
+		),
+		stories: Flag.string("stories").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				'the plan\'s story ids for the child — bare integers or "none"; required when the issue declares no **Stories:** line, and REFUSED on 4 when it declares a different one',
+			),
+		),
+		containment: Flag.string("containment").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the child's containment keyword off containmentVocabulary; required for an asked type with no **Containment:** line while the cycle doc is present, and REFUSED on 4 when the issue declares a different one",
+			),
+		),
+		token: tokenFlag,
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({number, child: childNumber, stories, containment, token, repo}) {
+		yield* emit(
+			yield* runAdopt({
+				number,
+				child: childNumber,
+				stories: Option.getOrNull(stories),
+				containment: Option.getOrNull(containment),
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+				now: () => new Date(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Adopt an already-filed issue as a child, without minting a duplicate.",
+	),
+	Command.withDescription(
+		[
+			'Adopts a filed issue as the epic\'s child and prints {"answer":"adopted",…}.',
+			"  4: a field or the criteria conflict or do not parse",
+			"  5: the amendment carries a machine-local path",
+			"  7: the epic or the issue is absent or closed",
+			"  8: a write is unproven (UNKNOWN); re-run",
+			"  9: amended; the body does not read back",
+			"  10: the issue or a flag is not adoptable",
+			"  11: a read failed; nothing was written",
+			"  15: this lane does not hold the epic's claim",
+			"  23: the sub-issue link is unproven; re-run",
+			"  26: the run manifest was not written; re-run",
+			'  Derivation: the plan-epic skill\'s contract.md, "ledger adopt"',
+		].join("\n"),
+	),
+	Command.withExamples([
+		{command: "fabrika ledger adopt 9420 --child 8195 --stories 2 --token build:s-9f2e:c1a4d6f8-…"},
+	]),
 );
 
 const topology = leafCommand(
@@ -205,8 +317,22 @@ const topology = leafCommand(
 ).pipe(
 	Command.withShortDescription("Validate the declared topology and render its Dependencies block."),
 	Command.withDescription(
-		'Validate the topology declared on STDIN — one "#<ref> phase <n> [requires #<a>, #<b>]" line per child, order-indifferent — against the run manifest, render the "## Dependencies" block, and parse it back through the shipped reader before staging it. Every phase member and every requires: SUBJECT is a manifest child placed exactly once; a PREREQUISITE may name an issue outside this epic, and each such target is proven to be a real issue at the boundary before anything is staged — except the epic\'s own number, which is 24 before any read, because an epic closes only once its children close, so that edge could never clear. Prints {"answer":"staged","epic":n,"document":"topology","phases":n,"children":n,"edges":{"rows":[["#<child>","#<prerequisite>"]],"more":0},"external":n,"bytes":n} — the edges are a cap-and-count: the first 5 pairs plus how many followed, and external counts the prerequisites that resolved outside the manifest. It cannot see a shared-file conflict — whether two children in one phase write the same module is the skill\'s judgment. Exits 3 (stdin held nothing), 4 (a line does not parse), 7 (the epic is proven absent or closed, or the run manifest holds zero children), 10 (not a type:epic, or a phase is not a positive integer), 11 (a read failed, an external prerequisite included — nothing was staged), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 24 (a cycle, a subject that is not a child, a prerequisite naming the epic itself, a manifest child placed nowhere, a rendered block that does not parse back to the declared edges, or an external prerequisite proven absent or resolving to a pull request). Example: fabrika ledger topology 9420 --token build:s-9f2e:c1a4d6f8-… < topo.txt',
+		[
+			'Stages the Dependencies block from the topology on stdin and prints {"answer":"staged",…}.',
+			'  Stdin: one "#<ref> phase <n> [requires #<a>, #<b>]" line per child.',
+			"  3: stdin held nothing",
+			"  4: a line does not parse",
+			"  7: the epic is absent or closed, or the manifest has no child",
+			"  10: not a type:epic, or a phase is not a positive integer",
+			"  11: a read failed; nothing was staged",
+			"  15: this lane does not hold the epic's claim",
+			"  24: the topology is invalid",
+			'  Derivation: the plan-epic skill\'s contract.md, "ledger topology"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika ledger topology 9420 --token build:s-9f2e:c1a4d6f8-… < topo.txt"},
+	]),
 );
 
 const write = leafCommand(
@@ -227,8 +353,26 @@ const write = leafCommand(
 ).pipe(
 	Command.withShortDescription("Splice the staged plan and topology into the epic body."),
 	Command.withDescription(
-		'Splice the staged plan and topology into the epic body in one PATCH, then re-read and compare the WHOLE normalized body. The plan region is resolved through the verb-written enrichment marker, never by position, and is never cut to end-of-file. mode is carried from `ledger open`, never re-derived. Prints {"answer":"written","epic":n,"mode":"…","bodyDigest":"…","newDigest":"…","planBytes":n,"topologyBytes":n,"verified":true}. Exits 7 (the epic is proven absent or closed), 8 (the PATCH was issued and could not be confirmed — UNKNOWN), 9 (written and it does not read back as composed), 10 (not a type:epic, or --body-digest is not 12 lowercase hex), 11 (a read failed — NOTHING was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 21 (the epic body moved since open), 22 (the plan region is unresolvable), 25 (plan.md or topology.md was never staged in this run). Example: fabrika ledger write 9420 --body-digest 8f2c1a90b4d7 --token build:s-9f2e:c1a4d6f8-…',
+		[
+			'Splices the staged plan and topology into the epic body and prints {"answer":"written",…}.',
+			"  7: the epic is absent or closed",
+			"  8: the PATCH is unconfirmed (UNKNOWN)",
+			"  9: written; it does not read back as composed",
+			"  10: not a type:epic, or --body-digest is malformed",
+			"  11: a read failed; nothing was written",
+			"  15: this lane does not hold the epic's claim",
+			"  21: the epic body moved since open",
+			"  22: the plan region is unresolvable",
+			"  25: plan.md or topology.md was never staged",
+			'  Derivation: the plan-epic skill\'s contract.md, "ledger write"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika ledger write 9420 --body-digest 8f2c1a90b4d7 --token build:s-9f2e:c1a4d6f8-…",
+		},
+	]),
 );
 
 const digest = leafCommand(
@@ -248,8 +392,16 @@ const digest = leafCommand(
 ).pipe(
 	Command.withShortDescription("Print an epic's body digest, staging nothing."),
 	Command.withDescription(
-		'Print the 12-lowercase-hex digest of an epic\'s live body — the value --body-digest takes — without allocating a run directory, seeding a manifest or probing the base. It is the source for `ledger retopology`, whose whole claim is that it needs no staged plan run: `ledger open` prints the same value and is the right source inside a plan run, but it stages one, so the repair route reads it here instead. It writes NOTHING: no directory, no file, no issue. Prints {"answer":"digest","epic":n,"bodyDigest":"…"}. Exits 7 (the epic is proven absent or closed), 10 (not a type:epic), 11 (the epic or its claim could not be read — the digest is UNKNOWN), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking). Example: fabrika ledger digest 5817 --token build:s-9f2e:c1a4d6f8-…',
+		[
+			'Prints {"answer":"digest","epic":n,"bodyDigest":"…"} for an epic\'s live body, writing nothing.',
+			"  7: the epic is absent or closed",
+			"  10: not a type:epic",
+			"  11: a read failed; the digest is UNKNOWN",
+			"  15: this lane does not hold the epic's claim",
+			'  Derivation: the plan-epic skill\'s contract.md, "ledger digest"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika ledger digest 5817 --token build:s-9f2e:c1a4d6f8-…"}]),
 );
 
 const retopology = leafCommand(
@@ -270,8 +422,27 @@ const retopology = leafCommand(
 ).pipe(
 	Command.withShortDescription("Rewrite an epic's Dependencies block from its live child links."),
 	Command.withDescription(
-		'Rewrite the epic body\'s "## Dependencies" block so it names exactly the live sub-issues — the repair a founder descope owes, which without it wedges `lane emit` at 16 forever. Every ref the block names and the live child list does not leaves its phase and every requires list naming it; every surviving child keeps its declared phase and its requires edges; a phase left with no members is elided. It needs NO staged plan run — it reads no run.json, no manifest and no staged document, because a cleared run is the state a descoped epic is found in — and it closes, unlinks and comments on NOTHING: a descoped child is left open and unlinked, and retiring one stays `ledger supersede`\'s job. The block is rendered through the same renderer `ledger topology` stages with and parsed back through the shipped reader before the PATCH, and every byte outside the block — the "## Plan (plan-epic)" block, the preserved brief envelope, any amendment below a thematic break — is left where it is. Idempotent: a body whose block already names exactly the live children answers "unchanged" with no PATCH issued. Prints {"answer":"rewritten"|"unchanged","epic":n,"children":n,"phases":n,"dropped":{"count":n,"rows":["#n"]},"bodyDigest":"…","newDigest":"…","verified":true}. Exits 4 (a topology line does not parse), 7 (the epic is proven absent or closed, it carries no readable "## Dependencies" block, or it has no sub-issue links), 8 (the PATCH was issued and could not be confirmed — UNKNOWN), 9 (written and it does not read back as composed), 10 (not a type:epic, or --body-digest is not 12 lowercase hex), 11 (the epic, its children or its claim could not be read — NOTHING was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 21 (the epic body moved since the digest was taken), 22 (the "## Dependencies" region has no single meaning — a duplicated heading, or one resolving inside the preserved brief envelope), 24 (the rewritten topology is invalid: a duplicate placement, an unplaced requires subject, a live child the block places in no phase, a cycle, or a rendered block that does not parse back to what was rendered). Example: fabrika ledger retopology 5817 --body-digest 8f2c1a90b4d7 --token build:s-9f2e:c1a4d6f8-…',
+		[
+			'Rewrites Dependencies to the live children and prints {"answer":"rewritten|unchanged",…}.',
+			"  4: a topology line does not parse",
+			"  7: the epic is absent or closed, blockless or childless",
+			"  8: the PATCH is unconfirmed (UNKNOWN)",
+			"  9: written; it does not read back as composed",
+			"  10: not a type:epic, or --body-digest is malformed",
+			"  11: a read failed; nothing was written",
+			"  15: this lane does not hold the epic's claim",
+			"  21: the body moved since the digest",
+			"  22: the region has no single meaning",
+			"  24: the rewritten topology is invalid",
+			'  Derivation: the plan-epic skill\'s contract.md, "ledger retopology"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika ledger retopology 5817 --body-digest 8f2c1a90b4d7 --token build:s-9f2e:c1a4d6f8-…",
+		},
+	]),
 );
 
 const defer = leafCommand(
@@ -303,8 +474,25 @@ const defer = leafCommand(
 ).pipe(
 	Command.withShortDescription("Take a child out of an epic's plan and leave its issue open."),
 	Command.withDescription(
-		'Take a child out of a running epic\'s plan and leave its issue OPEN as the follow-up: comment, unlink — in that order, so the reason survives a failed unlink — then re-read and prove the child is still open and no longer a sub-issue. This is the board half of an authorized deferral; `fabrika lane amend <epic> --defer <task> --defer-reason "<why>"` is the ledger half, and neither does the other\'s work. It NEVER calls the close endpoint: a superseded child is work the plan abandoned and closes not_planned (`ledger supersede`), a deferred child is work the founder still wants out of THIS epic\'s scope, and closing it would delete the follow-up. It reads no staged plan run, because a descoped epic is found with its run cleared. Prints {"answer":"deferred","epic":n,"child":n,"comment":id,"unlinked":true,"state":"open"}. Exits 5 (the reason carries a machine-local path), 6 (bare @ reference), 7 (the epic is proven absent or closed, or the child is proven absent or already closed — a deferral keeps an OPEN follow-up and there is none), 8 (a leg was attempted and its outcome could not be proven — the child is UNKNOWN), 9 (the legs landed and the child does not read back open and unlinked), 10 (not a type:epic; --child is not a sub-issue of it; or --reason says nothing), 11 (a precondition read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking). Example: fabrika ledger defer 8892 --child 8951 --reason "deferred to a follow-up cycle by founder ruling" --token build:s-9f2e:c1a4d6f8-…',
+		[
+			'Unlinks a child from the epic\'s plan, leaves it open, and prints {"answer":"deferred",…}.',
+			"  5: the reason carries a machine-local path",
+			"  6: a bare @ reference",
+			"  7: the epic or the child is absent or closed",
+			"  8: a leg is unproven (UNKNOWN)",
+			"  9: the child does not read back open and unlinked",
+			"  10: not a type:epic, not its sub-issue, or an empty reason",
+			"  11: a read failed; nothing was written",
+			"  15: this lane does not hold the epic's claim",
+			'  Derivation: the plan-epic skill\'s contract.md, "ledger defer"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika ledger defer 8892 --child 8951 --reason "deferred to a follow-up cycle by founder ruling" --token build:s-9f2e:c1a4d6f8-…',
+		},
+	]),
 );
 
 const supersede = leafCommand(
@@ -334,8 +522,25 @@ const supersede = leafCommand(
 ).pipe(
 	Command.withShortDescription("Retire a child the re-plan no longer contains."),
 	Command.withDescription(
-		'Retire a child the re-plan no longer contains: comment, unlink, close as not_planned — in that order, so a child is never closed while still linked — then re-read and prove it. Prints {"answer":"superseded","epic":n,"child":n,"comment":id,"unlinked":true,"state":"closed"}. Refuses a child that is not this epic\'s sub-issue, and one this run minted. Exits 5 (the reason carries a machine-local path), 6 (bare @ reference), 7 (the epic or the child is proven absent or closed), 8 (a leg was attempted and its outcome could not be proven), 9 (the legs landed and the child does not read back closed and unlinked), 10 (not a type:epic; --child is not a sub-issue of it; or --child was minted by this run), 11 (a precondition read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking). Example: fabrika ledger supersede 9420 --child 9421 --reason "folded into the loader slice" --token build:s-9f2e:c1a4d6f8-…',
+		[
+			'Retires a child the re-plan dropped, closing it, and prints {"answer":"superseded",…} as JSON.',
+			"  5: the reason carries a machine-local path",
+			"  6: a bare @ reference",
+			"  7: the epic or the child is absent or closed",
+			"  8: a leg is unproven (UNKNOWN)",
+			"  9: the child does not read back closed and unlinked",
+			"  10: not a type:epic, not its sub-issue, or minted by this run",
+			"  11: a read failed; nothing was written",
+			"  15: this lane does not hold the epic's claim",
+			'  Derivation: the plan-epic skill\'s contract.md, "ledger supersede"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika ledger supersede 9420 --child 9421 --reason "folded into the loader slice" --token build:s-9f2e:c1a4d6f8-…',
+		},
+	]),
 );
 
 const edges = leafCommand(
@@ -355,8 +560,20 @@ const edges = leafCommand(
 ).pipe(
 	Command.withShortDescription("Write the epic's declared dependencies into the blocked_by graph."),
 	Command.withDescription(
-		'Read the epic\'s own ## Dependencies block and write every edge it requires into GitHub\'s native blocked_by graph, then prove each one by re-reading the graph. That graph is the ONE carrier of blockedness and both build gates read only it. Reconcile, never replace: an edge already present is "already", an edge no ledger authored is left alone. A prerequisite outside this epic writes like any other — the pair is derived, POSTed on the target\'s internal id, and proven by the same re-read. It reads the epic body, not this run\'s staged topology, so an epic planned by an earlier run reconciles the same way — and it is idempotent, so a re-run over a reconciled epic writes nothing and issues no confirming read. Prints {"answer":"reconciled","epic":n,"required":k,"already":k,"written":k,"verified":true}. Exits 4 (the ## Dependencies block is unparseable), 7 (the epic is proven absent or closed, or declares no topology — zero scope), 8 (edges were POSTed and the graph could not be re-read — UNKNOWN; unreachable when zero were POSTed), 9 (the graph does not read back carrying every required edge), 10 (not a type:epic), 11 (a read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking), 24 (a prerequisite the block names is proven absent, so no edge can point at it). Example: fabrika ledger edges 9420 --token build:s-9f2e:c1a4d6f8-…',
+		[
+			'Writes the Dependencies block into the blocked_by graph and prints {"answer":"reconciled",…}.',
+			"  4: the Dependencies block is unparseable",
+			"  7: the epic is absent or closed, or declares no topology",
+			"  8: edges were written; the graph is unreadable (UNKNOWN)",
+			"  9: the graph does not read back with every required edge",
+			"  10: not a type:epic",
+			"  11: a read failed; nothing was written",
+			"  15: this lane does not hold the epic's claim",
+			"  24: a named prerequisite is absent",
+			'  Derivation: the plan-epic skill\'s contract.md, "ledger edges"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika ledger edges 9420 --token build:s-9f2e:c1a4d6f8-…"}]),
 );
 
 export const ledgerCommand = Command.make("ledger").pipe(
@@ -365,6 +582,7 @@ export const ledgerCommand = Command.make("ledger").pipe(
 		open,
 		draft,
 		child,
+		adopt,
 		topology,
 		write,
 		edges,
@@ -375,6 +593,6 @@ export const ledgerCommand = Command.make("ledger").pipe(
 	]),
 	Command.withShortDescription("Author an epic's plan and its children."),
 	Command.withDescription(
-		"Author an epic's plan: open the run on proven-fresh ground, stage the plan block, mint each child born complete and linked, declare the dependency topology, and splice both into the epic body — plus the two verbs that need no run: `retopology`, which rewrites a descoped epic's Dependencies block from its live child links, and `digest`, which prints the body digest that repair requires",
+		"Author an epic's plan: open the run on proven-fresh ground, stage the plan block, mint each child born complete and linked or adopt an already-filed one, declare the dependency topology, and splice both into the epic body — plus the two verbs that need no run: `retopology`, which rewrites a descoped epic's Dependencies block from its live child links, and `digest`, which prints the body digest that repair requires",
 	),
 );

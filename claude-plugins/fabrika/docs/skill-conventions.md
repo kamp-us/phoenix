@@ -1,8 +1,8 @@
 # fabrika skill conventions
 
 The writing discipline every fabrika skill meets. A session writing a skill works against this doc
-under [`writing-for-agents`](../skills/writing-for-agents/SKILL.md); the skill-reviewer gate holds a
-skill to it.
+under [`writing-for-agents`](../skills/writing-for-agents/SKILL.md); the `review` skill's
+[skill rubric](../skills/review/rubrics/skill.md) holds a skill to it.
 
 These conventions are **skill-agnostic**. The execution core, the ideation layer, and every skill
 after them are consumers on identical terms — there is no per-skill exemption and no
@@ -39,7 +39,7 @@ verb-served, so the `SKILL.md` names the invocation
 never a whole-file pointer. A judgment-shaped read — the reader must weigh the whole surface —
 takes every section the judgment touches, one `doc-section` call each, and is never thinned to a
 token-saving subset. `contract.md` itself stays what
-[cli-interface-convention Part 2](cli-interface-convention.md) says it is — the authoring spec;
+[the contract-spec format](contract-spec-format.md) says it is — the authoring spec;
 runtime lookup was never a role it was designed to carry.
 
 **Nobody reads a `contract.md` whole** — not a shell, not a reviewer,
@@ -134,7 +134,8 @@ group whose verb reads stdin.** A skill names its own verb and its own slug; it 
 different shape.
 
 1. **Allocate** — the group's scratch verb prints one absolute machine-local path
-   (`review scratch`, `build scratch`, `triage scratch`). Never a name of your own: the session
+   (`review scratch`, `build scratch`, `triage scratch`, `report scratch`, `heal-ci scratch`).
+   Never a name of your own: the session
    scratchpad is shared by every lane, so a generic leaf there is a name a concurrent lane writes
    too.
 2. **Write in bounded appends** — one `cat >> <the path it printed> <<'EOF'` per section of the
@@ -299,7 +300,11 @@ REST is the default, and issue search stays REST. The supported GraphQL exceptio
 
 - review-thread state, replies and resolution;
 - the auto-merge mutation;
-- the relationship between an issue and the pull requests that close it.
+- the relationship between an issue and the pull requests that close it;
+- GitHub Projects (v2): the betting table's project, fields, views, items, field values and
+  status updates;
+- batched issue reads: many issues' state, parent, sub-issues, blocked-by, blocking and comment
+  count in one request.
 
 These exceptions belong to the CLI transport. They do not authorize raw GraphQL commands
 in a skill. Extending the list requires a decision in the adopting repository. Every list
@@ -346,6 +351,10 @@ so neither can be split into its own argument without splitting the skill. Their
 `issue_or_pr_number` and their hint spells out both readings plus the third case — omitted, which
 sends them to `pick`.
 
+**`operate` takes a lane key, and declares it the same way.** Its argument is `lane_key`: an issue
+number, or `chore:<name>` for a chore lane. The two fields, the `$<name>` substitution and the blank
+rule below bind it exactly as they bind a number.
+
 **Every body says in one line what a blank means, and the line may not read blank as "no number
 exists".** There are three input cases in the harness, not two, and only one of them is the caller
 typing nothing:
@@ -387,7 +396,7 @@ neither field otherwise:**
    motion — so the report to the caller is a pointer and nothing dies with the run's context.
 
 The five that pass both: **`build`, `build-ui`, `review`, `review-ui`, `heal-ci`**.
-The other twenty-two fail at least one clause, and the two clauses fail in distinct ways:
+The other twenty-four fail at least one clause, and the two clauses fail in distinct ways:
 
 | Excluded | Fails |
 |---|---|
@@ -397,6 +406,7 @@ The other twenty-two fail at least one clause, and the two clauses fail in disti
 | `grilling`, `wayfinding`, `prototyping`, `taste-color`, `front-door`, `deslop-comments`, `architecture-audit` | clause 2 — a human is mid-conversation, waiting. `deslop-comments` hands back a working-tree diff. `architecture-audit` preserves its research on a grilling session and starts the human's selection conversation; persisting that context does not make the waiting conversation unattended. |
 | `diataxis` | clause 2 — a caller is waiting mid-run (`build` mid-authoring, `review` mid-diff), and the verdict is a judgement in the run's own words, so it dies with a fork's context. |
 | `graduate`, `handoff` | clause 2, and harder: their subject is the calling session, which a fork does not have. |
+| `test-audit`, `skill-doctor` | clause 2 — a caller waits on the result. `test-audit` gates a test while it is being written or hands back a working-tree prune. `skill-doctor` is typed by a human, who waits on the report it renders. |
 | `adr`, `write-pattern`, `glossary`, `report`, `triage`, `plan-epic`, `campaign` | clause 1 — each writes one document or one issue's labels and stops, so its length is knowable from its own steps. |
 | `writing-for-agents` | clause 1 — reference read during another skill's run; it has no run of its own. |
 
@@ -450,11 +460,19 @@ Neither skill's text asked for a sleep. The harness refuses a foreground one, so
 it — which makes the absence of this rule from a skill the defect, and copying the rule into each
 skill the wrong fix, because the copies drift.
 
-**The one legitimate `sleep` is inside a CLI verb.** `ship reconcile --wait` polls the merge queue
+**Watching CI by hand is the same poll.** `gh run watch` re-reads the run and its jobs over REST
+every 3 seconds unless told otherwise (`gh run watch --help`: `-i, --interval int   Refresh interval
+in seconds (default 3)`), and a loop that re-runs `gh run view` or `gh api` on a timer is that poll
+written out by hand. Every lane spends the same account's 5,000 REST calls an hour, so a few
+default-interval watches can drain it, and then every fabrika verb refuses until the reset. Wait on
+CI through `review ci --wait` or `ship checks --wait`. When one run outside those verbs truly needs
+watching, the allowed raw watch is `gh run watch <run-id> --interval 60`, or slower.
+
+**The one legitimate `sleep` is inside a CLI verb.** `ship reconcile` polls the merge queue
 on an `Effect.sleep` cadence
 ([`packages/fabrika-cli/src/ship/reconcile-verb.ts`](../../../packages/fabrika-cli/src/ship/reconcile-verb.ts)),
-and that is correct: the verb owns its own loop, bounds it by a poll count, and returns one answer
-to a caller that made one call. `review ci --wait`
+and that is correct: the verb owns its own loop, bounds it by a poll count (`--polls`, with
+`--cadence-seconds` between polls), and returns one answer to a caller that made one call. `review ci --wait`
 ([`packages/fabrika-cli/src/review/ci-verb.ts`](../../../packages/fabrika-cli/src/review/ci-verb.ts))
 is the same shape over a queued check set, bounded by a wall-clock budget instead of a count, and it
 is where this rule was actually converted: the reviewer's wait was the gap that produced the
@@ -472,8 +490,8 @@ time" into "it passed" is worse than the `sleep` it replaced.
 - **What a verb owes its caller** — `--help` discoverability, output contracts, usage examples —
   and the shape of a derived contract spec:
   [the CLI interface convention](interface-convention.md).
-- **The boot document a stateless authoring session works from**:
-  [the authoring-brief contract](authoring-brief-contract.md).
+- **Which stage and gate a skill change passes through, and the page that owns each rule**:
+  [fabrika skill authoring](authoring-brief-contract.md).
 
 ## What fabrika does not take from its reference material
 

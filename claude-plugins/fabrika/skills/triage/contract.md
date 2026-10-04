@@ -26,7 +26,7 @@ makes the implementer guess.
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `triage queue` | the claimable `status:needs-triage` queue, with the count it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
+| `triage queue` | the claimable `status:needs-triage` queue plus every open issue with no label, with the counts it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
 | `triage claim` | take one lane's claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
 | `triage scratch` | the per-lane directory this lane's working files go under | keying a namespace on the claim nonce is mechanical; what the file holds is judgment |
 | `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
@@ -36,6 +36,9 @@ makes the implementer guess.
 | `triage apply` | apply the whole triaged transition — type, priority, audience, class, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
 | `triage park` | park a human-filed issue on `status:needs-info` with questions | the label swap and comment are mechanical; the questions are judgment |
 | `triage kill` | close an agent-filed issue not-planned — or any issue being folded into a survivor with `--duplicate-of` — auditably, preserving a duplicate's content | the three-write envelope, the redacted fold and the human-filed refusal (which the fold lifts) are mechanical; the verdict is judgment |
+| `triage audit-set` | the whole open issue set under one caller-named label — the input of a read-only backlog audit | a paginated, untruncated label read that refuses an absent label is mechanical; which label to audit is judgment |
+| `triage audit-merge` | fold an audit's chunk results onto its input set, refusing a miscounted chunk, a doubled issue or a set that does not match | the row-shape decode and the three set checks are mechanical; each verdict is a reader's judgment |
+| `triage sweep-homes` | clear the milestone on every double-marked triaged issue, keep its standing lane, and leave a trail; list the un-homed ones untouched | the guard's own verdict and the one-remedy clear are mechanical; homing an un-homed issue is judgment |
 
 One existing verb gains one flag:
 
@@ -64,7 +67,7 @@ exists every fabrika skill's rejections live inline like these.
   case* — an unapproved pitch is the normal state of freshly-triaged work and resolves to
   `pass: false` → exit 1, so the happy path always looks like a failure. The skill drafts the pitch —
   into the body `triage enrich` writes — and lets the seam gate answer.
-- **A `triage classify-cp` verb.** `cp-classify` routes the control-plane question and CODEOWNERS
+- **A `triage classify-cp` verb.** `fabrika ship scope` routes the control-plane question and CODEOWNERS
   enforces it at merge. A triage-side second opinion has a measured cost: a routing note once
   asserted the opposite of a settled ruling and a lane was planned around an approval that never
   fires. The skill states the expectation and asserts nothing.
@@ -107,7 +110,8 @@ description discipline even with the collision gone. Two things follow, and neit
 
 Every question this group answers is ungated. The three that *are* enforced — homing, pitch, and
 control-plane membership — are listed above as deliberately underived, with the workflow file that
-owns each. This spec computes no second verdict on any of them.
+owns each. This spec computes no second verdict on any of them. `triage sweep-homes` acts on the
+homing verdict by calling the guard's own decision function, so it adds a write, not a verdict.
 
 ## Shared conventions
 
@@ -142,30 +146,35 @@ in one sweep reads one meaning. This spec calls `report dedup` (the `--exclude` 
 that verb reads from the same `report` table: `7` when `--label` is absent, `27`/`28` when the queue
 or the search index could not be read.
 
-| Code | Meaning | queue | claim | prov | homes | split | enrich | apply | park | kill | scratch |
-|---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `1` | usage error, unresolvable repo, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `3` | stdin was read and held nothing | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — |
-| `4` | *(deliberate gap — see below)* | — | — | — | — | — | — | — | — | — | — |
-| `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — |
-| `6` | the **authored** text is a bare `@` path reference — **not** redactable | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — |
-| `7` | zero scope: a read that succeeded over nothing, an absent label vocabulary, or a target issue **proven absent (404)** or closed — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `8` | the write itself failed — the outcome is **UNKNOWN** | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `9` | the write landed but the read-back does not match | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `10` | the supplied value is not permitted here — off the closed vocabulary, a non-open milestone, or a slug that is not a kebab-case leaf | — | — | — | — | — | — | ✓ | — | — | ✓ |
-| `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `12` | refused: the issue is human-filed and this is not a `--duplicate-of` fold | — | — | — | — | — | — | — | — | ✓ | — |
-| `13` | refused: close-eligible, but the kill is unconfirmed | — | — | — | — | — | — | — | — | ✓ | — |
-| `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` | — | — | — | — | — | ✓ | — | — | — | — |
-| `16` | refused: the `ready-for:agent` audience over a body whose acceptance-criteria block the wire reader does not answer `Found` on — stamped by `--ready-for agent`, or composed by `enrich` over a target already carrying the label; the `epic` surface is exempt at both doors | — | — | — | — | — | ✓ | ✓ | — | — | — |
-| `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — |
-| `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ |
-| `20` | refused: the body this verb composed **states an ordering** the live `blocked_by` graph carries no edge for | — | — | — | — | — | ✓ | — | — | — | — |
-| `21` | refused: a `--blocked-by` target is a **pull request** — a blocking PR is named in the graph by the issue its merge closes | — | — | — | — | — | — | ✓ | — | — | — |
-| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Code | Meaning | queue | claim | prov | homes | split | enrich | apply | park | kill | scratch | aset | amerge |
+|---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `1` | usage error, unresolvable repo, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `3` | stdin was read and held nothing | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — | — | — |
+| `4` | *(deliberate gap — see below)* | — | — | — | — | — | — | — | — | — | — | — | — |
+| `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — | — | — |
+| `6` | the **authored** text is a bare `@` path reference — **not** redactable | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — | — | — |
+| `7` | zero scope: a read that succeeded over nothing, an absent label vocabulary, or a target issue **proven absent (404)** or closed — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
+| `8` | the write itself failed — the outcome is **UNKNOWN** | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — |
+| `9` | the write landed but the read-back does not match | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — |
+| `10` | the supplied value is not permitted here — off the closed vocabulary, a non-open milestone, or a slug that is not a kebab-case leaf | — | — | — | — | — | — | ✓ | — | — | ✓ | — | — |
+| `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `12` | refused: the issue is human-filed and this is not a `--duplicate-of` fold | — | — | — | — | — | — | — | — | ✓ | — | — | — |
+| `13` | refused: close-eligible, but the kill is unconfirmed | — | — | — | — | — | — | — | — | ✓ | — | — | — |
+| `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` | — | — | — | — | — | ✓ | — | — | — | — | — | — |
+| `16` | refused: the `ready-for:agent` audience over a body whose acceptance-criteria block the wire reader does not answer `Found` on — stamped by `--ready-for agent`, or composed by `enrich` over a target already carrying the label; the `epic` surface is exempt at both doors | — | — | — | — | — | ✓ | ✓ | — | — | — | — | — |
+| `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — |
+| `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — | — | — |
+| `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ | — | — |
+| `20` | refused: the body this verb composed **states an ordering** the live `blocked_by` graph carries no edge for | — | — | — | — | — | ✓ | — | — | — | — | — | — |
+| `21` | refused: a `--blocked-by` target is a **pull request** — a blocking PR is named in the graph by the issue its merge closes | — | — | — | — | — | — | ✓ | — | — | — | — | — |
+| `22` | refused: an audit document is not JSON, or a verdict row breaks the pinned shape — unknown verdict, no issue number, or a KILL with no value-bar clause | — | — | — | — | — | — | — | — | — | — | — | ✓ |
+| `23` | refused: a chunk's rows differ from the total it declared — no merged output | — | — | — | — | — | — | — | — | — | — | — | ✓ |
+| `24` | refused: an issue carries more than one verdict row across the chunks — no merged output | — | — | — | — | — | — | — | — | — | — | — | ✓ |
+| `25` | refused: the merged issue set is not the audited input set — an issue is missing or invented — no merged output | — | — | — | — | — | — | — | — | — | — | — | ✓ |
+| `26` | refused: the text `enrich` was sent carries no plain-language summary section, an empty one, or more than one | — | — | — | — | — | ✓ | — | — | — | — | — | — |
+| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
 this group can return `0`, `1`, `126` and `127` with the meanings above, and each of the four is stated
@@ -177,10 +186,15 @@ in ten places is nine chances to drift, so the fact has one place.
 
 **`14` is allocated in code and missing from this matrix, and that is a known gap this spec does not
 close.** `packages/fabrika-cli/src/triage/codes.ts` seats `UNREPAIRABLE = 14` for `triage
-repair-criteria`, a tenth verb this document does not yet specify at all — it has no column above
-and no section below. Writing its row here would be guessing at a spec nobody has written, so `15`
+repair-criteria`, a tenth verb this document does not yet fully specify — it has no column above,
+and its section below carries only the derivation moved out of its help. Writing its row here would
+be guessing at a spec nobody has written, so `15`
 takes the next free seat instead of compacting into `14`, and the gap is disclosed rather than
 silently filled.
+
+**`27` is `triage sweep-homes`'s, and it has no column above either.** That verb's section specifies
+it fully, exit table included; widening this matrix by a column for one verb's one private code is
+left to the pass that closes the `14` gap.
 
 **`4` is a deliberate gap, not a free slot.** It held *"the target issue does not exist, or is not
 readable"* — one code for a proven fact and an unknown at once, which is the exact fusion `7` and
@@ -280,14 +294,15 @@ fabrika triage queue [--label <name>] [--limit <n>] [--repo <owner/name>] [--jso
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--label` | string | no | `status:needs-triage` | the intake-queue label whose open issues form the queue |
+| `--label` | string | no | `status:needs-triage` | the intake-queue label; the queue is its open issues plus every open issue carrying no label at all |
 | `--limit` | integer | no | `100` | the maximum number of rows to print; must be ≥ 1 |
 | `--repo` | string | no | resolved (see Shared conventions) | the repository to read |
 | `--json` | boolean | no | `false` | emit the full result object instead of the line grammar |
 
 **Output** — machine channel. The first line is the outcome token alone: `queued` or `empty`. On
 `queued`, one **tab-separated** line per issue follows — `<number>`, `<age-days>`, `<title>` — oldest
-first, capped at `--limit`. `<age-days>` is a whole number of days from the issue's `created_at` to
+first, capped at `--limit`. The rows are the open issues carrying `--label` **and every open issue
+carrying no label at all**, merged into one order; a row does not say which set it came from. `<age-days>` is a whole number of days from the issue's `created_at` to
 now, floored.
 
 With `--json`, one object with keys `outcome`, `issues` (array of `{number, ageDays, title}`, empty
@@ -300,23 +315,31 @@ so a PR could appear as a triageable row.
 
 | Code | Trigger |
 |---|---|
-| `7` | `--label` does not exist in the repository — the queue would scan nothing |
-| `11` | the queue read failed — the outcome is UNKNOWN, never `empty` |
+| `7` | `--label` does not exist in the repository — the labelled read would scan nothing |
+| `11` | the labelled read or the unlabeled read failed — the outcome is UNKNOWN, never `empty` |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage queue: cannot read the <label> queue in <repo>: <reason> — the outcome is UNKNOWN, never "empty".` | 11 | refusal |
-| `triage queue: label <label> does not exist in <repo> — refusing to report an empty queue over zero scope.` | 7 | refusal |
+| `triage queue: cannot read the open issues in <repo> that carry no label: <reason> — the outcome is UNKNOWN, never "empty".` | 11 | refusal |
+| `triage queue: label <label> does not exist in <repo> — refusing to report an empty queue over zero scope. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage queue: --limit must be 1 or greater.` | 1 | usage error |
 
-**Scope** — every open issue in `--repo` carrying `--label`, read with pagination. **`empty` and a
+**Scope** — every open issue in `--repo` carrying `--label`, plus every open issue carrying no
+label at all, both read with pagination. An issue filed with no label is otherwise one triage never
+sees; the project's Inbox view is the human's view of the same set. The unlabeled read pages the
+whole open list and keeps the bare rows, because the REST list has no "no label" filter and the
+search index's `no:label` lags a fresh filing — and this read decides whether a sweep is done. **`empty` and a
 failed read are different answers and never share a channel or a code.** The distinction is
 load-bearing because the skill uses this verb as a sweep's termination test: a renamed label or a
 scope-limited token returns HTTP 200 with `[]`, and v1 terminated the sweep on it and reported the
 queue drained. The label's existence is checked against the repository's label set, so a typo reds on
-`7` rather than answering `empty`. The scope line on stderr names the scanned count on every run.
+`7` rather than answering `empty`. That check guards the labelled read only: the unlabeled read has
+no label to prove, so its guard is the read itself, and a failure of it is `11` — never an empty half
+of the queue. Two scope lines on stderr name the labelled and the unlabeled scanned counts on every
+run.
 
 The read is this verb's whole answer rather than a step toward a write, so its failure is `11` for
 the same reason it is `11` everywhere else here: `1` would fuse an unreachable GitHub with a bad
@@ -340,7 +363,7 @@ $ echo $?
 
 ```
 $ fabrika triage queue --label status:needs-triage-typo
-triage queue: label status:needs-triage-typo does not exist in <owner>/<repo> — refusing to report an empty queue over zero scope.
+triage queue: label status:needs-triage-typo does not exist in <owner>/<repo> — refusing to report an empty queue over zero scope. No `fabrika status bootstrap` surface creates status:needs-triage-typo — create it by hand, then re-run.
 $ echo $?
 7
 ```
@@ -855,15 +878,15 @@ carry them. This verb states the subtraction and stops; where excluded work goes
 caller's by-fit judgement, and no output here names a destination.
 
 **Which milestone is running is data, never a literal in this spec or in the verb.** It is the
-`State` column of `ROADMAP.md`'s `## Campaigns` table — the same permission `build pick` fences on,
-read through the same parser, off the roadmap text this verb has already read for the arc
-join. Moving to the next campaign is a `ROADMAP.md` edit and never a code or skill edit; `--roadmap`
-moves both reads together. The table's three states are the ones the fence already reads:
+`State` column of `ROADMAP.md`'s `## Campaigns` table, read through the strict campaigns parser, off
+the roadmap text this verb has already read for the arc join. It narrows what triage homes on a
+milestone and refuses no lane. Moving to the next campaign is a `ROADMAP.md` edit and never a code or
+skill edit; `--roadmap` moves both reads together. The table's three states:
 
 | `## Campaigns` | Rows marked | stderr |
 |---|---|---|
 | one or more rows are `active` | every `active` campaign's milestone row, if it is open | `triage homes: campaigns: 1 active — <name> (#<n>).` — or, for N > 1, `triage homes: campaigns: <n> active — <name> (#<a>), <name> (#<b>).` |
-| absent, empty, or every row `paused`/`done` | none — the answer is exactly the pre-marker one | `triage homes: campaigns: none active — scope fence inert.` |
+| absent, empty, or every row `paused`/`done` | none — the answer is exactly the pre-marker one | `triage homes: campaigns: none active.` |
 | reads but does not parse | none | `triage homes: campaigns: unreadable — <reason>.` |
 
 A malformed table is **never** rendered as "no milestone is running", and it does not refuse: a home
@@ -964,9 +987,9 @@ passes.
 **An ABSENT roadmap is an answer, not either refusal.** A file that is proven not to exist is
 a proven negative — the join is simply empty — so every open milestone lists with `roadmapRow: null`,
 any standing lane the board carries lists beside them, and stderr carries
-`triage homes: no roadmap at <path> — every milestone lists with no arc name.` The campaigns fence
-reads the absent file as the empty document, so its scope line says `campaigns: none active — scope
-fence inert.` The zero-arc-rows refusal above is reached only by a roadmap that *exists*, so the
+`triage homes: no roadmap at <path> — every milestone lists with no arc name.` The campaigns read
+takes the absent file as the empty document, so its line says `campaigns: none active.` The
+zero-arc-rows refusal above is reached only by a roadmap that *exists*, so the
 grammar-drift guard keeps its teeth. This is the degrade disposition the rest of the corpus already
 declares for `ROADMAP.md`; `homes` was the one reader treating it fail-loud.
 
@@ -1132,7 +1155,7 @@ a silent lost split, in the one direction v1's own module says it refuses.
 | `triage split: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
-| `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing.` | 7 | refusal |
+| `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage split: the child body carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage split: the child body is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage split: cannot read <what> in <repo>: <reason> — UNKNOWN whether a child already exists; refusing to create a possible twin.` | 11 | refusal |
@@ -1252,7 +1275,7 @@ The rewrite — or, with `--epic`, the pitch — arrives on **stdin only**, for 
 | `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
-| stdin | markdown | yes | — | the rewritten body that goes above the preserved original — with `--epic`, the pitch's five field lines instead: `**Problem:**`, `**Arc:**`, `**Appetite:** <N> cycles`, `**Rabbit-holes:**`, `**No-gos:**`, one per line |
+| stdin | markdown | yes | — | one `## In plain words` section (below), plus the rewritten body that goes above the preserved original — with `--epic`, the pitch's five field lines instead: `**Problem:**`, `**Arc:**`, `**Appetite:** <S\|M\|L>`, `**Rabbit-holes:**`, `**No-gos:**`, one per line, plus the optional `**Success:**` line |
 
 **Output** — machine channel. One tab-separated line: `enriched`, `<number>`, `<redactions>`, where
 `<redactions>` is the count of machine-local paths masked in the preserved original. With `--json`,
@@ -1260,10 +1283,14 @@ an object with keys `outcome`, `number`, `redactions`, and `mode` (`rewrite` or 
 
 **The envelope, byte for byte.** The verb composes the new body itself, so the bytes are pinned here
 rather than left to an implementer who would then verify them against a read-back of their own
-invention. Default mode, where `<REWRITE>` is stdin verbatim and `<ORIGINAL>` is the redacted
-original:
+invention. Default mode, where `<SUMMARY>` is the paragraph under stdin's `## In plain words`
+heading, `<REWRITE>` is the rest of stdin verbatim, and `<ORIGINAL>` is the redacted original:
 
 ```
+## In plain words
+
+<SUMMARY>
+
 <REWRITE>
 
 ---
@@ -1278,9 +1305,13 @@ original:
 ```
 
 `--epic` mode emits the **pitch** instead of a rewrite, above a fixed header and the wrapped
-original, where `<PITCH>` is stdin verbatim:
+original, where `<PITCH>` is the rest of stdin verbatim:
 
 ```
+## In plain words
+
+<SUMMARY>
+
 ## Pitch
 
 <PITCH>
@@ -1297,6 +1328,18 @@ original, where `<PITCH>` is stdin verbatim:
 
 </details>
 ```
+
+**The plain-language summary leads every body, in both modes.** It is what a person deciding many
+rows reads first, and what agenda prep reads when it writes a row's "In plain words" line. The
+caller sends it as one
+`## In plain words` section anywhere on stdin; the verb lifts it out and writes it first, so its
+position is the verb's, never the author's. The section is the heading and **the one paragraph under
+it** — it ends at the first blank line after that paragraph, or at the next heading — because the
+pitch's field lines carry no heading that could end it. Write 2-3 everyday sentences: what is wrong,
+who it hurts, what we would do. It stays honest, not salesy, and says what the body below it says.
+A heading inside a fenced block is quoted content, not the section. Stdin with no such section, an
+empty one, or more than one is refused on `26`; a section with nothing else on stdin is `3`. The
+grammar is `packages/fabrika-cli/src/triage/plain-summary.ts`.
 
 **The `<!-- fabrika:enriched … -->` line is the re-enrich marker**, described in full under the
 detector below. It renders as nothing, it is the boundary between the region this verb owns and the
@@ -1323,25 +1366,30 @@ tests position nowhere, in either mode, for exactly that reason; a re-enrich rep
 the header from fresh stdin and preserves the wrap — and everything under it — unchanged, exactly as
 the default mode replaces a rewrite.
 
-**Stdin carries the five field lines, not the section heading.** The verb writes `## Pitch` itself,
-so the heading always matches the guard's anchor rather than a caller's typing; a caller who sends
+**Stdin carries the `## In plain words` section and the five field lines, not the `## Pitch`
+heading.** The summary section is the one heading `--epic` stdin does send. The verb writes
+`## Pitch` itself, so the heading always matches the guard's anchor rather than a caller's typing; a caller who sends
 the heading too gets two of them, and the guard reads the empty section between them as a pitch
-missing all five fields — loud at the seam, never a silent pass. The five lines, stated here rather
-than deferred to another skill's prose:
+missing all five fields — loud at the seam, never a silent pass. The five lines and the optional
+sixth, stated here rather than deferred to another skill's prose:
 
 ```
 **Problem:** <who has it, and what breaks or stalls for them today>
 **Arc:** <the home just assigned — the milestone title, or the standing lane>
-**Appetite:** <N> cycles
+**Appetite:** <S|M|L>
 **Rabbit-holes:** <the named traps — the specific ways this overspends if left unbounded>
 **No-gos:** <what this deliberately does not do>
+**Success:** <the one sentence the two-week check judges the shipped bet against>
 ```
 
 **The label opens the line.** The guard reads a field as `<optional emphasis><name><optional
 emphasis>:` anchored at line start over optional spaces and tabs, tolerating case and `Rabbit holes`
-for `Rabbit-holes` (`pitch-guard.ts:89-93`) — so a bulleted `- Problem: …` does **not** read as a
-field. Field order is not load-bearing; `Appetite` must parse as a whole positive number of cycles
-(`:104-109`).
+for `Rabbit-holes` (`packages/fabrika-cli/src/guard/pitch.ts` `readField`) — so a bulleted
+`- Problem: …` does **not** read as a field. Field order is not load-bearing. `Appetite` is a size,
+upper-case `S`, `M` or `L`, whose dollar amount per epic child is the repo's `appetiteSizes` key in
+`.fabrika.jsonc` (shipped S = $15, M = $35, L = $40); a legacy whole positive number of cycles still
+parses, so an older pitch stays well-formed (`parseAppetite`). `Success` is optional: a pitch without
+it is still well-formed, and a drafter writes it whenever the bet has a result anyone could check.
 
 **`## Epic — awaiting plan` is a heading, and that is load-bearing rather than cosmetic.** The guard
 reads the pitch section from `## Pitch` to *the next heading of any level, or end of body*
@@ -1365,8 +1413,8 @@ to bold text.**
 verdict on a gated question, which is the same reason a `triage pitch-check` verb is not derived.
 This verb refuses only what it can refuse about text the caller just wrote — empty (`3`), a
 machine-local path (`5`), a bare `@` reference (`6`), an acceptance-criteria block the wire
-reader rejects (`15`, below), and a missing one over a target already stamped `ready-for:agent`
-(`16`, below) — and `--epic` **adds no exit code of its own**: reaching those same
+reader rejects (`15`, below), a missing one over a target already stamped `ready-for:agent`
+(`16`, below), and a missing plain-language summary (`26`) — and `--epic` **adds no exit code of its own**: reaching those same
 refusals is the removal of a restriction, not a new outcome, and `16` is one it does not reach at
 all.
 
@@ -1637,7 +1685,7 @@ moves; a bypass costs a builder a claim on unstartable work.
 
 | Code | Trigger |
 |---|---|
-| `3` | stdin was read and held nothing — the rewrite, or the pitch with `--epic` |
+| `3` | stdin was read and held nothing — the rewrite, or the pitch with `--epic` — or held the `## In plain words` section and nothing else |
 | `5` | the **authored** text carries a machine-local path — the rewrite, or the pitch with `--epic` |
 | `6` | the **authored** text is a bare `@` path reference — the rewrite, or the pitch with `--epic` |
 | `7` | the issue is proven absent (404), is closed, or it was read and its body is empty — a read that succeeded over nothing |
@@ -1648,12 +1696,17 @@ moves; a bypass costs a builder a claim on unstartable work.
 | `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` — a drifted heading, a checkbox with no text, or an outside-diff evidence marker whose keyword drifted or which names no source |
 | `16` | the issue's live labels carry `ready-for:agent` and the composed body's **authored region** carries no acceptance-criteria block the wire reader answers `Found` on — never with `--epic` |
 | `20` | the composed body's **authored region** states an ordering the issue's live `blocked_by` graph carries no edge for |
+| `26` | stdin carries no `## In plain words` section, an empty one, or more than one — nothing written |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage enrich: no body on stdin — pipe the rewritten body in (with --epic, the pitch's five fields).` | 3 | refusal |
+| `triage enrich: <the rewrite\|the pitch> carries only the "## In plain words" section — send the rest of it below the summary. Nothing was written.` | 3 | refusal |
+| `triage enrich: <the rewrite\|the pitch> carries no "## In plain words" section — every enriched issue opens with one. Add the section with one paragraph of 2-3 everyday sentences (what is wrong, who it hurts, what we would do) that matches the body, and re-send. Nothing was written.` | 26 | refusal |
+| `triage enrich: the "## In plain words" section in <the rewrite\|the pitch> is empty — write one paragraph of 2-3 everyday sentences (what is wrong, who it hurts, what we would do) that matches the body under the heading, and re-send. Nothing was written.` | 26 | refusal |
+| `triage enrich: <the rewrite\|the pitch> carries <k> "## In plain words" sections — send exactly one, and re-send. Nothing was written.` | 26 | refusal |
 | `triage enrich: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage enrich: issue #<n> is already closed.` | 7 | refusal |
 | `triage enrich: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
@@ -1720,6 +1773,15 @@ Either author a "### Acceptance criteria" block into the rewrite and re-send, or
 label first with `fabrika triage apply 9 --ready-for human`. Nothing was written.
 $ echo $?
 16
+```
+
+```
+$ fabrika triage enrich 7 < no-summary.md
+triage enrich: the rewrite carries no "## In plain words" section — every enriched issue opens with
+one. Add the section with one paragraph of 2-3 everyday sentences (what is wrong, who it hurts, what
+we would do) that matches the body, and re-send. Nothing was written.
+$ echo $?
+26
 ```
 
 **Grounding**
@@ -2011,7 +2073,7 @@ stamp.
 | `triage apply: --lane must be wayfinder:backlog or axis:pipeline-hardening — got "<v>".` | 10 | refusal |
 | `triage apply: milestone <n> is not an open milestone in <repo>.` | 10 | refusal |
 | `triage apply: give exactly one of --home or --lane; an issue cannot be both homed and lane-exempt.` | 1 | usage error |
-| `triage apply: label <name> does not exist in <repo> — refusing to write, because the API would create it.` | 7 | refusal |
+| `triage apply: label <name> does not exist in <repo> — refusing to write, because the API would create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage apply: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage apply: issue #<n> is already closed.` | 7 | refusal |
 | `triage apply: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
@@ -2211,7 +2273,7 @@ it.
 | `triage park: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage park: the questions text carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage park: the questions text is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
-| `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it.` | 7 | refusal |
+| `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage park: cannot read <what> in <repo>: <reason> — nothing was written; the park is UNKNOWN.` | 11 | refusal |
 | `triage park: the questions comment on #<n> failed: <reason> — nothing was labelled and #<n> is unchanged. Re-run.` | 8 | refusal |
 | `triage park: the questions landed but the label swap failed: <reason> — #<n> carries the questions and may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
@@ -2336,7 +2398,7 @@ location, with the leak matcher literally named for comments.
 | `triage kill: --duplicate-of #<m> is closed — refusing to fold this issue's content into a closed issue where nobody will read it.` | 7 | refusal |
 | `triage kill: the reason carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage kill: the reason is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
-| `triage kill: label closed-by-triage does not exist in <repo> — refusing a kill that would be invisible to the audit.` | 7 | refusal |
+| `triage kill: label closed-by-triage does not exist in <repo> — refusing a kill that would be invisible to the audit. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage kill: cannot read #<n> in <repo>: <reason> — the provenance test has no evidence; refusing to close on a body that was never read.` | 11 | refusal |
 | `triage kill: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
 | `triage kill: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
@@ -2442,58 +2504,313 @@ $ fabrika triage kill 7 --confirm --json < reason.md
 
 ---
 
-## `report dedup` — the `--exclude` extension
+## `triage repair-criteria`
+
+This section carries the derivation the verb's `--help` used to state. Its callers read the
+invocation, outcomes and exits from `fabrika triage repair-criteria --help`; it is not yet a full
+specification, which is why the exit matrix above still has no `14` row.
+
+**What it rewrites.** An acceptance-criteria block's shape, and nothing else: a level-drifted
+`## Acceptance criteria` heading to the conforming `### Acceptance criteria`, and, when the block
+carries no checkbox at all, its plain list bullets to unchecked checkboxes. Each item's text stays
+byte-for-byte unchanged. It touches the authored region only and leaves preserved originals
+byte-for-byte untouched, and the repair is pre-verified through the wire read before anything is
+written.
+
+**What it refuses on `14`.** Only a pure shape rewrite on the exact heading text is repaired. A
+drifted heading text, a block mixing prose or another block into the list, an empty item, a block
+that already carries a checkbox beside its bullets, and a converted bullet the reader counts no
+criterion at are all refused, never guessed. A `Repaired` plan reads back exactly one criterion per
+line it rewrote.
+
+**One issue or the board.** One issue by number, or `--sweep` for every open issue with one outcome
+line each. A sweep re-reads each issue immediately before its write and answers `moved` instead of
+writing when the body changed after the board snapshot. `--dry-run` plans everything and writes
+nothing, answering `would-repair` with the repairs it would make.
+
+**Write order.** Every repaired body gets one disclosure comment naming its repairs, posted after the
+read-back.
+
+---
+
+## `triage sweep-homes`
+
+The apply side of `guard homing-guard check`. It clears the milestone on every double-marked
+`status:triaged` issue, keeps its standing-lane label, and leaves one trail comment on it. It lists
+every un-homed issue and changes nothing on those.
 
 **Invocation**
 
 ```
-fabrika report dedup --query "definition editor loses focus" --exclude 7
+fabrika triage sweep-homes [--dry-run | --apply] [--repo <owner/name>] [--json]
 ```
 
-**Input**
+Under `--apply`, the trail citation arrives on **stdin**.
+
+**Inputs**
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--exclude` | integer | no | absent (no issue is filtered) | an issue number to omit from both sources — the issue being deduped, so it never flags itself |
+| `--dry-run` | boolean | no | `false` | print the per-issue plan and write nothing; a run with neither flag does the same |
+| `--apply` | boolean | no | `false` | clear each double-marked issue's milestone and post its trail comment |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+| stdin | markdown | under `--apply` | — | the citation every trail comment carries: the decision and ruling the sweep runs under |
 
-Everything else — the tokenizer, the two sources, the three outcome tokens — is unchanged from the
-implemented verb at `packages/fabrika-cli/src/report/dedup.ts` and its verb wrapper
-`dedup-verb.ts`. **This change adds no exit code, no error, and no output shape**: `candidates`,
-`none` and `indeterminate` all still exit 0, and the existing `1` / `7` / `27` / `28` are untouched.
+Passing both `--dry-run` and `--apply` exits `1`. A dry run never reads stdin.
 
-**`dedup`'s codes come from the `report` table, not this group's.** `7` is a missing `--label`, and
-`27`/`28` are the queue and the search index read failing — numbers no `triage` verb speaks, so a
-caller invoking both in one sweep never has to ask which table a code came from.
+**Output** — machine channel. A header line, then one row per double-marked issue, ascending:
 
-**Behaviour.** The excluded number is filtered from both the queue half and the search half **after**
-retrieval and **before** scoring and the cap, so excluding an issue never changes the rank order of
-the rest and never lets a truncated row take the excluded issue's place. `--exclude` naming an issue
-that does not exist is not an error: the filter simply matches nothing, because the caller's intent —
-"not this one" — is satisfied either way.
+- dry run: `planned\t<n>`, then `would-clear\t<number>\t<milestone>\t<lanes>` rows;
+- apply: `swept\t<cleared>\t<moved>`, then `cleared\t<number>\t<milestone>\t<lanes>\t<trail-url>`
+  rows (`trail-existing` in place of the URL when an earlier trail was found) and
+  `moved\t<number>\t<milestone>\t<lanes>\t<reason>` rows.
 
-**Scope note.** Excluding the only candidate yields `none`, which remains a **proven** negative: both
-sources were read and nothing else matched. It is not `indeterminate`, which is reserved for a query
-that carried too few distinctive tokens to compare at all.
+`<lanes>` is comma-joined. With `--json`, an object with keys `outcome` (`planned` or `swept`),
+`scanned`, and `issues` (each row's `outcome`, `number`, `milestone`, `lanes`, and `trail` or
+`reason` where the row has one). Stderr carries the scanned line and a tally line,
+`triage sweep-homes: <d> double-marked, <u> un-homed, <h> homed, <e> exempt.`
+
+**The decision is the guard's.** The verb reads the open `status:triaged` set with the guard's own
+read and record mapping, and judges it with `judge`/`resolve` from `guard/homing.ts`. It never parses
+the guard's report. So this verb computes no second homing verdict, and the refusal of a
+`triage homing-check` verb above still holds.
+
+**Which breach it applies.** A double-marked issue has one mechanical remedy: a standing lane is
+milestone-less by design, so the milestone goes and the lane stays. An un-homed issue has three
+(home it, lane it, kill it), and choosing is triage's judgment. The verb prints each un-homed issue
+on stderr as `unhomed\t<number>\t<title>`, with the guard's three-way remedy, writes nothing to it,
+and exits `27`. The double-marked clears in the same run still land first.
+
+**Write order, per issue.** Re-read the issue, and answer `moved` without writing when it is no
+longer open or no longer carries the planned milestone beside a standing lane. Read its comments
+reconciled against the count the issue declares for itself, so a trail posted moments earlier is not
+missed by a short list; a list still short after its re-reads is `11`, never a missing trail. Post
+the trail unless one carrying this milestone's marker (`<!-- fabrika:sweep-homes milestone=<m> -->`)
+is already there. Clear the milestone. Read the issue back and require it milestone-less with every
+planned lane kept. The trail lands before the clear so a run that died between the two can be
+re-run: the breach is still on the board, and the trail is found rather than posted twice. A second
+run over a fully swept board plans nothing and writes nothing.
+
+**It takes no claim.** Unlike `enrich`, `apply`, `park`, `kill` and `split`, this verb reads no
+per-issue claim marker and has no `--token` flag. A sweep spans the whole triaged board, so it
+cannot hold one claim per issue, and it has no need to: it makes no triage judgment on any issue.
+Its only writes are the guard's mechanical remedy and the trail naming it, applied to an issue
+re-read just before the write and skipped as `moved` when that re-read shows the breach changed.
+
+**The trail comment** states the milestone removed and the lane kept, then carries the stdin
+citation, then the marker. Which decision and ruling govern homing is the adopting repository's
+fact, so the citation is the caller's. Every trail is composed and leak-scanned before the first
+write.
+
+**Exit status**
+
+| Trigger | Code |
+|---|---|
+| `--apply` with an empty stdin | 3 |
+| the citation carries a machine-local path | 5 |
+| the citation is a bare `@` reference | 6 |
+| the open `status:triaged` set is empty — fail-closed, never a clean sweep | 7 |
+| a trail or milestone write failed; the message says which, and a re-run is safe | 8 |
+| the read-back after a clear is not milestone-less with the lanes kept | 9 |
+| the backlog, a re-read issue or its comments could not be read | 11 |
+| un-homed issues remain, listed on stderr and untouched | 27 |
+
+A halt on `8`, `9` or `11` mid-sweep prints each row already done on stderr, prefixed
+`before the halt:`, and touches no later issue.
 
 **Examples**
 
 ```
-$ fabrika report dedup --query "definition editor loses focus after an entry is saved" --exclude 7
-none
+$ fabrika triage sweep-homes
+planned	1
+would-clear	8	47	axis:pipeline-hardening
 ```
 
 ```
-$ fabrika report dedup --query "definition editor loses focus after an entry is saved"
-candidates
-7	queue	3	Definition editor loses focus after an entry is saved
+$ fabrika triage sweep-homes --apply < citation.md
+swept	1	0
+cleared	8	47	axis:pipeline-hardening	https://github.com/<owner>/<repo>/issues/8#issuecomment-1
 ```
 
-The pair is the point: the same query returns the issue itself without `--exclude`, and a proven
-`none` with it.
+---
 
-**Grounding**
+## `triage audit-set`
 
-- The `/report` contract deferred this flag to this seam by name. This is the first caller.
-- v1's `intake-dedup` carries `--exclude` for the same reason; its scars (empty stdout as the
-  negative, the discarded `source`/`score`, exit 0 on a zero-token non-check) were already designed
-  out by the `/report` contract's outcome tokens, so this extension inherits the fixed verb.
+**Invocation**
+
+```
+fabrika triage audit-set --label <name> [--repo <owner/name>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--label` | string | yes | none | the label whose open issues form the audit set |
+| `--repo` | string | no | resolved (see Shared conventions) | the repository to read |
+| `--json` | boolean | no | `false` | emit the full result object instead of the line grammar |
+
+**Output** — machine channel. The first line is the outcome token alone: `set` or `empty`. On `set`,
+one **tab-separated** line per issue follows — `<number>`, `<title>` — ascending by number, never
+truncated.
+
+With `--json`, one object with keys `outcome`, `label`, `repo`, `issues` (array of
+`{number, title}`), and `scanned` (integer, equal to the length of `issues`). This object is the
+`--input` document `triage audit-merge` reads.
+
+Stderr carries the scanned count as a scope line in both modes.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | `--label` does not exist in the repository — the set would scan nothing |
+| `11` | the label set or the issue list could not be read — the set is UNKNOWN, never `empty` |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `triage audit-set: label <label> does not exist in <repo> — refusing to report an empty audit set over zero scope. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
+| `triage audit-set: cannot read the label set of <repo>: <reason> — whether the <label> audit set exists is UNKNOWN, and so is the outcome.` | 11 | refusal |
+| `triage audit-set: cannot read the open <label> issues in <repo>: <reason> — the audit set is UNKNOWN, never "empty".` | 11 | refusal |
+| `triage audit-set: --label must name a label.` | 1 | usage error |
+
+**Scope** — every open issue in `--repo` carrying `--label`, read with pagination, pull requests
+excluded. It shares `triage queue`'s read and its label precondition, and differs in two ways an
+audit needs. **The label has no default**, so the set an audit judges is always the one its caller
+named. **Nothing is truncated**, because `audit-merge` checks its rows against this set and a capped
+set would let a merge pass over a subset.
+
+**It reads and never writes.** Its requests are the label-set read and the paged issue list, both
+`GET`s; its unit test asserts that every request it sends is one.
+
+**Examples**
+
+```
+$ fabrika triage audit-set --label status:triaged
+set
+4290	Retry helper swallows the abort reason
+4312	Definition editor loses focus after an entry is saved
+```
+
+```
+$ fabrika triage audit-set --label status:triaged --json
+{"outcome":"set","label":"status:triaged","repo":"<owner>/<repo>","issues":[{"number":4290,"title":"Retry helper swallows the abort reason"}],"scanned":1}
+```
+
+---
+
+## `triage audit-merge`
+
+**Invocation**
+
+```
+fabrika triage audit-merge --input <file> --chunk <file> [--chunk <file>…] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--input` | file | yes | none | the audited set, as `triage audit-set --json` printed it |
+| `--chunk` | file | yes, repeatable | none | one chunk result |
+| `--json` | boolean | no | `false` | emit the full result object instead of the line grammar |
+
+**The verdict row** — one pinned shape, decoded by `parseVerdictRow` in
+`packages/fabrika-cli/src/triage/audit.ts`:
+
+```json
+{"issue": 4312, "verdict": "KILL", "clause": "superseded", "evidence": "the retry helper rewrite already fixed it"}
+```
+
+| Key | Rule |
+|---|---|
+| `issue` | required; a positive integer |
+| `verdict` | required; exactly `KILL`, `DECIDE` or `KEEP` |
+| `clause` | required on a `KILL` and refused on any other verdict; one of `process-ceremony`, `self-generated-churn`, `hardening-with-no-incident`, `superseded`, `duplicate-of-parent` — the value bar's clauses in the skill |
+| `evidence` | required; one non-blank line, no tab or line break |
+
+Any other key is refused, so a misspelt `clause` cannot pass as an absent one.
+
+**The chunk** — `{"declared": <n>, "rows": [<verdict row>…]}`. `declared` is the number of rows the
+chunk says it holds, and it is kept apart from `rows` because comparing the two is the merge's first
+check.
+
+**Output** — machine channel. The first line is the outcome token `merged`, then one
+**tab-separated** line per audited issue, ascending — `<number>`, `<verdict>`, `<clause>` (`-` on a
+`DECIDE` or `KEEP`), `<evidence>`. Stderr carries the per-verdict counts. With `--json`, one object
+with keys `outcome`, `rows` (the verdict rows) and `counts` (`{KILL, DECIDE, KEEP}`).
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | the input set lists no issues — a merge over zero scope proves nothing |
+| `11` | the input file or a chunk file could not be read — the merge is UNKNOWN |
+| `22` | a file is not JSON, the input set's `scanned` differs from the issues it lists, or a row breaks the pinned shape |
+| `23` | a chunk's rows differ from its `declared` total |
+| `24` | one issue carries more than one verdict row, within one chunk or across chunks |
+| `25` | the merged issue set is not the input set — an issue has no row, or a row names an issue the input set does not list |
+
+Every refusal prints nothing on stdout, so no merged output exists to act on.
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `triage audit-merge: the input set <file> lists no issues — refusing to merge over zero scope.` | 7 | refusal |
+| `triage audit-merge: cannot read <input set\|chunk> <file>: <reason> — the merge is UNKNOWN.` | 11 | refusal |
+| `triage audit-merge: <chunk>: row <k>: #<n>: a KILL names no value-bar clause.` | 22 | refusal |
+| `triage audit-merge: <chunk> declares <n> rows and carries <m>.` (one per chunk), then the refusal line | 23 | refusal |
+| `triage audit-merge: #<n> is judged in <chunk>, <chunk>.` (one per issue), then the refusal line | 24 | refusal |
+| `triage audit-merge: the merged rows are not the audited set — missing <#n…\|none>; not in the input set <#n…\|none>.` | 25 | refusal |
+| `triage audit-merge: name at least one --chunk.` | 1 | usage error |
+
+**Scope** — the checks run in a fixed order: every chunk's count first, because a short chunk would
+otherwise surface as a missing issue and hide which chunk lost it; then duplicates; then the set
+comparison. **The verb never repairs.** A missing row goes back to a reader; it is never rebuilt,
+because a rebuilt row is a verdict no reader gave.
+
+**It never touches the issue tracker.** Its only dependency is the filesystem — the
+`FileSystem` service is the whole of its requirement type — and its unit tests run it over a scripted
+filesystem with no HTTP seam provided.
+
+**Examples**
+
+```
+$ fabrika triage audit-merge --input set.json --chunk a.json --chunk b.json
+merged
+4290	KEEP	-	the abort reason is still dropped at main
+4312	KILL	superseded	the retry helper rewrite already fixed it
+```
+
+```
+$ fabrika triage audit-merge --input set.json --chunk a.json --chunk b.json
+triage audit-merge: b.json declares 2 rows and carries 1.
+triage audit-merge: 1 chunk(s) hold a different number of rows than they declare — re-collect them; a missing row is never rebuilt by hand.
+$ echo $?
+23
+```
+
+---
+
+## `report dedup — the --exclude extension`
+
+`fabrika report dedup --query "definition editor loses focus" --exclude 7` omits the issue being
+triaged. Invocation and output grammar are in `fabrika report dedup --help`; retrieval and cache
+requirements belong to [the report contract](../report/contract.md#report-dedup).
+
+Filter the excluded number from the live queue and indexed corpus before either ranking selects
+its top 20 and before the final `--limit`. It cannot consume a candidate slot or match itself.
+Corpus-dependent scores may change when a document is removed. A number absent from both sources
+is harmless and filters nothing.
+
+Excluding the only lexical match produces `none`, not `indeterminate`. The latter is reserved for
+queries below the two-word floor. `none` describes the observed search scope, not proof that no
+paraphrased duplicate exists.
+
+This extension adds no exit codes. The report group's codes apply: 7 for a missing queue label,
+27 for an unreadable queue, and 28 for an unreadable issue corpus. All three outcome tokens still
+exit 0. A closed candidate needs inspection before it can count as fixed work.

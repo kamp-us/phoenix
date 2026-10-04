@@ -163,7 +163,6 @@ export const parseFields = (fields: string): MapTicketFields => {
 	return {_tag: "Fields", marker: {map: Number.parseInt(map, 10), kind, nonce: key}};
 };
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderMarker = (marker: MapTicketMarker): NonEmptyReadonlyArray<string> => [
 	`map\t${marker.map}`,
 	`kind\t${marker.kind}`,

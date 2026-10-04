@@ -12,7 +12,7 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {repoDefaultBranch} from "../io/issues.ts";
+import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {deriveGround, renderGround} from "./ground.ts";
@@ -41,14 +41,14 @@ export const runCapture = (
 
 		let base = options.base;
 		if (base === null) {
-			const named = yield* repoDefaultBranch(repo);
+			const named = yield* resolveTrunk(options.env, repo);
 			if (named._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read ${repo}'s default branch: ${named.reason} — the base the work is measured against is UNKNOWN.`,
+					`${VERB}: ${trunkUnresolved(named.reason)}. The base the work is measured against is UNKNOWN.`,
 				);
 			}
-			base = named.value;
+			base = named.value.branch;
 		}
 
 		const ground = yield* deriveGround({

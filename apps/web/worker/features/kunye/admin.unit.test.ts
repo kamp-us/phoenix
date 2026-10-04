@@ -19,7 +19,7 @@ import {
 } from "@kampus/authz";
 import {Effect, Exit} from "effect";
 import {Admin, adminOf} from "./admin.ts";
-import {Denied} from "./errors.ts";
+import type {Denied} from "./errors.ts";
 
 const discharge = (actor: Actor, holders: ReadonlyArray<string>): Exit.Exit<Grant<Admin>, Denied> =>
 	Effect.runSyncExit(
@@ -70,12 +70,6 @@ describe("Admin.over(platform)", () => {
 		const exit = discharge(unauthenticated, ["u1"]);
 		assert.isTrue(Exit.isFailure(exit));
 		assert.match(String(Exit.isFailure(exit) ? exit.cause : ""), /kunye\/Denied/);
-	});
-
-	it("Denied carries the invisible UNAUTHORIZED wire code (ADR 0098 §2)", () => {
-		const err = new Denied({message: "x"});
-		assert.strictEqual(err._tag, "kunye/Denied");
-		assert.instanceOf(err, Denied);
 	});
 
 	it("adminOf reads the authority-checked id off a discharged grant", () => {

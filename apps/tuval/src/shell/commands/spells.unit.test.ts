@@ -5,13 +5,17 @@
  */
 
 import {assert, describe, expect, it} from "@effect/vitest";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {buildRegistry, SpellRegistry} from "@kampus/tuval-sdk/kernel/commands/registry";
+import {type Client, WindowIndex} from "@kampus/tuval-sdk/kernel/commands/scope";
+import {ClientId, WorkspaceId} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {CallId, type SpellPath} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	type SpellReply,
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {Effect, Layer} from "effect";
-import {SpellExecutor} from "../../commands/executor.ts";
-import {buildRegistry, SpellRegistry} from "../../commands/registry.ts";
-import {type Client, WindowIndex} from "../../commands/scope.ts";
-import {ClientId, WorkspaceId} from "../../commands/spell.ts";
-import {CallId, type SpellPath} from "../../protocol/ids.ts";
-import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../../protocol/messages.ts";
 import type {ShellMsg} from "../core/machine.ts";
 import {ShellDispatch} from "./dispatch.ts";
 import {commandName} from "./row.ts";
@@ -55,7 +59,7 @@ const failure = (reply: SpellReply) => {
 };
 
 describe("the shell's rows as spells", () => {
-	it("declares one spell per row, at the row's own path and with the row's sentence", () => {
+	it("carries each row's path and sentence onto its spell, in table order", () => {
 		expect(shellSpells.map((spell) => spell.path)).toEqual(
 			shellCommands.map((command) => command.path),
 		);

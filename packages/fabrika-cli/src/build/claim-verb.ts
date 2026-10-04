@@ -6,10 +6,8 @@
  * authorized marker wins. Posting alone only detects a race; the checkpoint read is what resolves it,
  * and a claim that skipped it would let two staggered co-racers both proceed.
  *
- * **A lost race is a proven outcome on its own code, never exit 0.** v1's direct-claim script exited 0
- * on both won and lost and left the routing to prose (`step3-direct-claim.sh:31,40`), and v1's
- * `claim is-mine` fused "proven lost" with "no session id" on exit 1 (`claim/command.ts:57`). Here
- * `15` is proven-foreign only, a missing session id is `1`, and an unreadable marker set is `11`.
+ * A lost race must stay distinct from an unreadable marker set or a missing session identity.
+ * See ./command.ts help for the refusal codes.
  *
  * A loser retracts its **own** marker and nothing else — never another lane's, which is the one write
  * this protocol must never make. Which marker is its own is decided by the whole token: `claim` races
@@ -36,14 +34,14 @@
  * agent following its skill to the letter stopped at a stranded lane it could have taken.
  *
  * **`claim` runs the admission test before it writes anything; `confirm` and `release` never run it.**
- * The fence decides what may *start*, so a campaign paused mid-lane must not strand a
+ * The fence decides what may *start*, so a label changed mid-lane must not strand a
  * running lane or block its release. Claiming is the one moment every path goes through — a number
  * handed straight to `claim` passes through no pool — which is why the refusal has teeth here and is
  * advice at the pool.
  *
  * Blockedness rides the same moment but not the same module: the native `blocked_by`
  * graph is the one carrier of "do not start this yet", and the gate reading it is composed AFTER the
- * pure axes, since those answer without IO and an out-of-scope number should refuse on the cheaper
+ * pure axes, since those answer without IO and a number they refuse should refuse on the cheaper
  * fact. That gate carries the assembly-branch discharge of [`./discharge.ts`](./discharge.ts), the
  * same derivation `build eligible` answers from: without it the two seams disagreed on one edge, and
  * every sequential epic tracer after the first parked at a human.
@@ -72,6 +70,9 @@ import {
 	type IssueRecord,
 	listComments,
 } from "../io/issues.ts";
+import {getPullRequest} from "../io/pulls.ts";
+import type {IntegrateFailure} from "../lane/integrate-failure.ts";
+import {type GateResult, ownershipGate} from "../ownership/gate.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {issueRefsOf} from "../review/classes.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -92,14 +93,22 @@ import {
 	BLOCKED,
 	CLAIM_NOT_MINE,
 	OFF_VOCABULARY,
+	PR_NOT_OURS,
 	PRECONDITION_UNKNOWN,
 	PRIOR_BUILD_MISMATCH,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 	WRONG_LANE,
+	ZERO_SCOPE,
 } from "./codes.ts";
 import {readDischargedGate} from "./discharge.ts";
 import {currentBranch, detachHead} from "./git.ts";
+import {
+	type ChildLedger,
+	type IntegrateRound,
+	readIntegrateRound,
+	readLedgerFlags,
+} from "./integrate-round.ts";
 import {composeToken, laneNumber, nonceOf, parseLaneBranch, parseToken} from "./lane.ts";
 import {failing, readRangeVerdicts} from "./range-verdicts.ts";
 import {
@@ -109,14 +118,12 @@ import {
 	type Citation,
 	CLAIM_PURPOSES,
 	DEFAULT_CLAIM_PURPOSE,
-	dispatchScopeLine,
 	NO_CITATION,
 	NOT_REPAIR,
 	parseCitation,
 	parseClaimPurpose,
 	purposeBlockednessLine,
 	purposeScopeLine,
-	readDeclaredDispatch,
 	scopeSubjectOf,
 	typeAxisOf,
 	typeScopeLine,
@@ -128,8 +135,6 @@ export interface ClaimOptions {
 	/** Repair only: the served issue retained independently from the PR's linkage order. */
 	readonly issue: number | null;
 	readonly repo: string | null;
-	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
-	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** A fresh UUID, supplied by the adapter so the token this run mints is deterministic under test. */
 	readonly uuid: string;
@@ -169,10 +174,17 @@ export interface ClaimOptions {
 	 * refuses on one that does.
 	 */
 	readonly resume: boolean;
+	/**
+	 * The epic lane whose ledger records this child's integrate `FAIL` — the brief's `lane` and
+	 * `root`, both or neither. An integrate `FAIL` writes no verdict on the child, so without them a
+	 * child that passed review and failed to integrate reads as finished (`./integrate-round.ts`).
+	 */
+	readonly lane: string | null;
+	readonly laneRoot: string | null;
 }
 
-// `cwd` is dropped with the claim-only fields: the scope fence is `build claim`'s, and confirm /
-// release / adopt ask about a marker rather than about what this repo admits.
+// Confirm / release / adopt ask about a marker rather than about what this repo admits, so the
+// claim-only fields are dropped.
 export type ProtocolOptions = Omit<
 	ClaimOptions,
 	| "uuid"
@@ -182,9 +194,10 @@ export type ProtocolOptions = Omit<
 	| "overrideLane"
 	| "cites"
 	| "token"
-	| "cwd"
 	| "resume"
 	| "issue"
+	| "lane"
+	| "laneRoot"
 > & {
 	/** The token `build claim` handed this lane — the identity it is asking under. */
 	readonly token: string;
@@ -229,7 +242,22 @@ const readOverride = (reason: string | null, lane: string | null): OverrideRead 
 
 type PriorBuildRead =
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
-	| {readonly _tag: "Read"; readonly notes: ReadonlyArray<string>};
+	| {
+			readonly _tag: "Read";
+			readonly notes: ReadonlyArray<string>;
+			/** The integrate `FAIL` a `--resume` claim was admitted on, or `null`. */
+			readonly integrate: IntegrateFailure | null;
+	  };
+
+/** What each integrate `FAIL` exit leaves a repair builder to fix, in the clause its note quotes. */
+const INTEGRATE_REPAIR: Readonly<Record<IntegrateFailure["exit"], string>> = {
+	42: "the child's range conflicts with the assembly branch",
+	43: "the merged lockfile does not install, or the install rewrote a tracked file",
+	44: "the merged tree fails a code validator — two ranges that each passed alone do not hold together",
+};
+
+const integrateClause = (failure: IntegrateFailure): string =>
+	`lane integrate exit ${failure.exit} against assembly head ${failure.head} (${INTEGRATE_REPAIR[failure.exit]})`;
 
 /**
  * The gate a fresh build claim on an epic child clears: has this child already been built and graded?
@@ -242,8 +270,8 @@ type PriorBuildRead =
  *
  * Both directions refuse, because both are a lane about to do the wrong work — one would rebuild
  * over a graded artifact, the other would try to resume a branch no reviewer has ruled on. Neither
- * refusal is overridable by `--override`, which admits an issue the *scope* fence barred; this is
- * not a question about whether the issue is in scope.
+ * refusal is overridable by `--override`, which admits an issue the *audience* axis barred; this is
+ * not a question about who the work is for.
  *
  * A fresh claim refuses on **any** standing verdict, not only a `FAIL`: a `PASS` says the child was
  * built and graded just as loudly, and it is the more finished of the two, so admitting it was the
@@ -259,6 +287,7 @@ const readPriorBuild = (
 	number: number,
 	resume: boolean,
 	lines: ReadonlyArray<string>,
+	round: {readonly ledger: ChildLedger; readonly failure: IntegrateFailure | null} | null,
 ): Effect.Effect<PriorBuildRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const listed = yield* listComments(repo, number);
@@ -299,22 +328,23 @@ const readPriorBuild = (
 				),
 			};
 		}
-		if (read.standing.length > 0 && !resume) {
+		const integrated = round?.failure ?? null;
+		if ((read.standing.length > 0 || integrated !== null) && !resume) {
 			const graded = read.standing
 				.map((v) => `${v.namespace} ${v.polarity} over ${v.range} (comment ${v.commentId})`)
 				.join("; ");
+			const refusal =
+				failed.length > 0
+					? `${CLAIM}: #${number} already carries a build a reviewer failed — ${graded}. A fresh build would re-implement it; run "fabrika build resume-child ${number}" instead, which takes the repair lane and stands this tree on the branch that build left, in the one order those steps work in. Nothing was written.`
+					: integrated !== null && round !== null
+						? `${CLAIM}: #${number} was built and passed review, then failed to integrate — ${integrateClause(integrated)}. A fresh build would re-implement it; run "fabrika build resume-child ${number} --lane ${round.ledger.lane} --lane-root ${round.ledger.root}" instead, which takes the repair lane and stands this tree on the branch that build left. Nothing was written.`
+						: `${CLAIM}: #${number} is already built and graded — ${graded}. A fresh build would re-implement work a reviewer passed, and there is nothing to repair, so --resume does not apply either. The next step is the epic driver's: fold the branch that build left, then close the child. Nothing was written.`;
 			return {
 				_tag: "Refused" as const,
-				outcome: refuse(
-					PRIOR_BUILD_MISMATCH,
-					failed.length > 0
-						? `${CLAIM}: #${number} already carries a build a reviewer failed — ${graded}. A fresh build would re-implement it; run "fabrika build resume-child ${number}" instead, which takes the repair lane and stands this tree on the branch that build left, in the one order those steps work in. Nothing was written.`
-						: `${CLAIM}: #${number} is already built and graded — ${graded}. A fresh build would re-implement work a reviewer passed, and there is nothing to repair, so --resume does not apply either. The next step is the epic driver's: fold the branch that build left, then close the child. Nothing was written.`,
-					[...lines, ...notes],
-				),
+				outcome: refuse(PRIOR_BUILD_MISMATCH, refusal, [...lines, ...notes]),
 			};
 		}
-		if (failed.length === 0 && resume) {
+		if (failed.length === 0 && integrated === null && resume) {
 			return {
 				_tag: "Refused" as const,
 				outcome: refuse(
@@ -324,19 +354,61 @@ const readPriorBuild = (
 				),
 			};
 		}
+		const repairs = [
+			...failed.map((v) => `the ${v.namespace} FAIL over ${v.range}`),
+			...(integrated === null ? [] : [`the ${integrateClause(integrated)}`]),
+		];
 		return {
 			_tag: "Read" as const,
 			notes: resume
 				? [
 						...notes,
-						`${CLAIM}: resuming the build #${number} already carries — repair the ${failed
-							.map((v) => `${v.namespace} FAIL over ${v.range}`)
-							.join(
-								", ",
-							)} on the branch that build left ("fabrika build branch ${number} --resume-lane"), never a fresh one.`,
+						`${CLAIM}: resuming the build #${number} already carries — repair ${repairs.join(
+							", ",
+						)} on the branch that build left ("fabrika build branch ${number} --resume-lane"), never a fresh one.`,
 					]
 				: notes,
+			integrate: resume ? integrated : null,
 		};
+	});
+
+/**
+ * Whether the pipeline owns the PR a claim names: its author is one of ours, or a trusted grant
+ * hands it over. The PR record is read here because the issue record a claim holds carries no
+ * base ref, and the config that decides ownership is read at the base.
+ */
+const pullOwnership = (
+	repo: string,
+	number: number,
+): Effect.Effect<GateResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const found = yield* getPullRequest(repo, number);
+		if (found._tag === "Absent") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					ZERO_SCOPE,
+					`${CLAIM}: PR #${number} is proven absent — nothing was written.`,
+				),
+			};
+		}
+		if (found._tag === "Unknown") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${CLAIM}: cannot read PR #${number}: ${found.reason} — whose PR it is is UNKNOWN, never ours; nothing was written.`,
+				),
+			};
+		}
+		return yield* ownershipGate(
+			CLAIM,
+			repo,
+			{number, author: found.value.authorLogin, baseRef: found.value.baseRef},
+			listComments(repo, number),
+			{notOurs: PR_NOT_OURS, unknown: PRECONDITION_UNKNOWN},
+			"nothing was written.",
+		);
 	});
 
 const preflight = (
@@ -395,6 +467,9 @@ export const runClaim = (
 		const overrideRead = readOverride(options.override, options.overrideLane);
 		if (overrideRead._tag === "Refused") return overrideRead.outcome;
 		const override = overrideRead.override;
+		const ledgerRead = readLedgerFlags(CLAIM, options.lane, options.laneRoot);
+		if (ledgerRead._tag === "Refused") return ledgerRead.outcome;
+		const ledger = ledgerRead.ledger;
 
 		const ready = yield* preflight(CLAIM, options);
 		if (ready._tag === "Refused") return ready.outcome;
@@ -452,21 +527,7 @@ export const runClaim = (
 			}
 		}
 
-		const read = yield* readDeclaredDispatch(options.cwd);
-		if (read._tag === "Unreadable") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${CLAIM}: cannot read the "## Campaigns" table: ${read.reason} — scope is UNKNOWN, never admitted; nothing was written.`,
-			);
-		}
-		const scopeLine = dispatchScopeLine(CLAIM, read.dispatch);
-		const subject = yield* resolveAdmissionSubject(
-			CLAIM,
-			repo,
-			read.dispatch,
-			ready.issue,
-			options.issue,
-		);
+		const subject = yield* resolveAdmissionSubject(CLAIM, repo, ready.issue, options.issue);
 		const judged = subject._tag === "Judged" ? subject.facts : ready.issue;
 		const repair = subject._tag === "Judged" ? subject.repair : NOT_REPAIR;
 		const purposeLine = purposeScopeLine(CLAIM, purpose, audienceAxisOf(judged), repair);
@@ -483,11 +544,10 @@ export const runClaim = (
 		}
 		const admission =
 			subject._tag === "Judged"
-				? admissionOf(read.dispatch, subject.facts, purpose, repair, citation)
+				? admissionOf(subject.facts, purpose, repair, citation)
 				: subject.admission;
 		const typeLine = typeScopeLine(CLAIM, typeAxisOf(judged), citation);
 		const lines = [
-			scopeLine,
 			...(subject._tag === "Judged" && subject.note !== null ? [subject.note] : []),
 			...(typeLine === null ? [] : [typeLine]),
 			purposeLine,
@@ -495,10 +555,7 @@ export const runClaim = (
 		const refusal = admissionRefusal(CLAIM, admission);
 		// An override answers a PROVEN refusal. UNKNOWN has proven nothing, so there is nothing to
 		// override — a fence that could not read its input must not be talked past by a flag.
-		const overridable =
-			admission._tag === "OutOfScope" ||
-			admission._tag === "AudienceNotAgent" ||
-			admission._tag === "NoServedIssue";
+		const overridable = admission._tag === "AudienceNotAgent" || admission._tag === "NoServedIssue";
 		if (refusal !== null && !(overridable && override !== null)) {
 			return {
 				...refusal,
@@ -514,14 +571,32 @@ export const runClaim = (
 			};
 		}
 
+		// A PR belongs to its author. Repair pushes onto that author's branch, so a claim over a PR
+		// the pipeline does not own refuses here, before any marker, whatever the served issue says.
+		if (ready.issue.isPullRequest) {
+			const owned = yield* pullOwnership(repo, number);
+			if (owned._tag === "Refused") {
+				return {...owned.outcome, stderr: [...lines, ...owned.outcome.stderr]};
+			}
+			lines.push(owned.line);
+		}
+
 		// The blockedness gate, ordered AFTER the pure axes because they answer without IO: a number
-		// out of scope should be refused on the fact that cost no call. It runs over the
+		// they refuse should be refused on the fact that cost no call. It runs over the
 		// named target only when that target is an issue — a repair claim names a pull request, which
 		// carries no edges of its own, and a lane repairing an open PR has already started — and only
 		// on a build-purpose claim: planning and plan-gating an epic write no code, and are exactly
 		// the work that should happen while its blocker is still open.
 		const gateNotes: string[] = [];
 		const ownTarget = scopeSubjectOf(ready.issue)._tag === "Own";
+		if (ledger !== null && !(ownTarget && purpose === "build" && repair._tag === "NotRepair")) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${CLAIM}: --lane reads an epic child's integrate FAIL, which only a build claim on an issue asks about — drop --lane and --lane-root; nothing was written.`,
+				lines,
+			);
+		}
+		let integrate: IntegrateFailure | null = null;
 		if (ownTarget && purpose !== "build") {
 			gateNotes.push(purposeBlockednessLine(CLAIM, purpose));
 		} else if (ownTarget) {
@@ -549,9 +624,19 @@ export const runClaim = (
 			// fresh build-purpose claim asks — a repair claim names a PR, whose own verdicts
 			// `build verdicts` already folds.
 			if (repair._tag === "NotRepair") {
-				const prior = yield* readPriorBuild(repo, number, options.resume, lines);
+				const round: IntegrateRound | null =
+					ledger === null ? null : yield* readIntegrateRound(CLAIM, ledger, number, lines);
+				if (round?._tag === "Refused") return round.outcome;
+				const prior = yield* readPriorBuild(
+					repo,
+					number,
+					options.resume,
+					[...lines, ...(round === null ? [] : round.notes)],
+					ledger === null || round === null ? null : {ledger, failure: round.failure},
+				);
 				if (prior._tag === "Refused") return prior.outcome;
-				gateNotes.push(...prior.notes);
+				gateNotes.push(...(round === null ? [] : round.notes), ...prior.notes);
+				integrate = prior.integrate;
 			}
 		}
 
@@ -623,6 +708,7 @@ export const runClaim = (
 					purpose,
 					...(override === null ? {} : {override}),
 					...(citation._tag === "Cited" ? {cites: citation.url} : {}),
+					...(integrate === null ? {} : {integrate}),
 				}),
 				notes,
 			);

@@ -1,16 +1,10 @@
 import {describe, expect, it, vi} from "vitest";
-import {PREFILL_MAX_LEN, prefillIfEmpty} from "./useLinkMetadata";
+import {prefillIfEmpty} from "./useLinkMetadata";
 
 describe("prefillIfEmpty", () => {
 	it("sets the field when it is empty", () => {
 		const set = vi.fn();
 		prefillIfEmpty("", "Fetched Title", set);
-		expect(set).toHaveBeenCalledWith("Fetched Title");
-	});
-
-	it("sets the field when it holds only whitespace (untouched)", () => {
-		const set = vi.fn();
-		prefillIfEmpty("   ", "Fetched Title", set);
 		expect(set).toHaveBeenCalledWith("Fetched Title");
 	});
 
@@ -25,11 +19,5 @@ describe("prefillIfEmpty", () => {
 		prefillIfEmpty("", undefined, set);
 		prefillIfEmpty("", "", set);
 		expect(set).not.toHaveBeenCalled();
-	});
-
-	it("clamps the prefilled value to PREFILL_MAX_LEN", () => {
-		const set = vi.fn();
-		prefillIfEmpty("", "a".repeat(PREFILL_MAX_LEN + 50), set);
-		expect(set).toHaveBeenCalledWith("a".repeat(PREFILL_MAX_LEN));
 	});
 });

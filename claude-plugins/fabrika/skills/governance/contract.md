@@ -385,15 +385,15 @@ skill reads the root set off `fabrika status settings`, never off this field),
 event — the one change to the corpus an `added`/`modified` pair cannot express at all.
 
 **The root set is a path prefix list the repo declares — `governedRoots` in `.fabrika.jsonc` — and a
-repo that declares nothing gets the shipped default, whose five entries are the kinds below. Read
-the resolved list off `fabrika status settings`, never off this table:**
+repo that declares nothing gets the shipped default, whose four entries are the kinds below. A
+repo that keeps governed text anywhere else, such as a plugin tree of its own, declares that root.
+Read the resolved list off `fabrika status settings`, never off this table:**
 
 | Root | Why it is governance-bearing |
 |---|---|
 | the decision corpus (`decisionsDir`) | the records themselves — commonly outside CODEOWNERS, so this is the guard that stays |
 | `.claude/` | agent and skill definitions the harness executes |
 | `.github/` | workflows, CODEOWNERS and rulesets — the enforcement layer |
-| `claude-plugins/` | every plugin's skills, contracts and rubrics, at any depth, whatever the extension |
 | `.fabrika.jsonc` | the config that declares this very list, plus every other gate's scope |
 
 **Two declarations are refused rather than honoured, and both at load.** An empty list would read as
@@ -408,9 +408,9 @@ coverage, not the file type** — the v1 §CP definition learned this the hard w
 skill-dir list plus an any-depth `*.sh` clause left a non-`.sh` file beside a gated script
 proven-ordinary and auto-mergeable at zero approvals. `self` is true when any changed path is under the
 resolved skill root — the same `*/fabrika/skills/governance/SKILL.md` resolution `governance base`
-states below, plugin segment included, **never hardcoded to one repo's install path**. That
-directory is always a subset of
-`claude-plugins/`, so this skill's own diff derives its own namespace by construction.
+states below, plugin segment included, **never hardcoded to one repo's install path**. The
+shipped roots do not cover that directory, so this skill's own diff derives its own namespace only
+in a repo that carries the plugin in its tree and declares that tree as a root.
 
 **This is not the §CP answer and the verb says so on stderr**, once, on every run:
 `governance scope: this is the governance-namespace derivation, not a §CP classification — §CP is CODEOWNERS' answer.`
@@ -484,7 +484,7 @@ $ fabrika governance scope 4 --json
   verb does not try to fill that gap with a content regex; it derives a *separate* namespace whose
   verdict is the skill's judgment, and leaves §CP to CODEOWNERS.
 - The v1 §CP boundary's recorded holes — the enumerated skill-dir list, the `**/*.sh` clause, the
-  `.claude-plugin/` hyphen miss — are why the root set is four directory prefixes and not a file-type
+  `.claude-plugin/` hyphen miss — are why the root set is a list of directory prefixes and not a file-type
   or an enumeration that can rot as surfaces are added.
 - v1's `class-probe` read 0 files and classified `has-code` at exit 0; the zero-file case
   here is a `7` refusal.
@@ -945,13 +945,21 @@ poster reads success.
 write opened a fresh comment or appended into this namespace's existing comment at this head,
 retiring the verdict that was there.
 With `--json`:
-`{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"content":…,"upsert":"created"|"superseded","floor":"refired"|"restarting"|"green"|"in-flight"|"no-run"|"unknown","commentUrl":…}`.
+`{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"content":…,"upsert":"created"|"superseded","floor":"refired"|"restarting"|"green"|"in-flight"|"no-run"|"no-floor"|"unknown","commentUrl":…}`.
 The tab line does not carry `floor` — the floor's outcome is on stderr, one line, always.
 
 **The namespace is fixed.** There is no `--namespace` flag: this verb emits exactly one namespace and
 composing another is not a mode it has. That is the disjointness guarantee made structural in the
 other direction from `review post`, which refuses a namespace outside its derived set — here the
 namespace is a constant, so it cannot be aimed anywhere else even by a confused caller.
+
+**The range-scoped form.** With `--base` and `--tip` the verdict is scoped to a range instead of a
+head — the epic-child form. The positional then names the child issue, and the requirement is
+re-derived over what `<base>...<tip>` changed in this checkout. The first line is composed through
+the `range-verdict-marker` format that `lane prove` reads, and the answer's fourth field is
+`<base>..<tip>` where the pull-request form carries the sha. The write appends exactly as step 5
+below describes, keyed on the range rather than a head. `--sha` is refused beside a range, and so is
+a lone `--base` or `--tip` (`10`); an issue that is absent, closed or a pull request is `7`.
 
 **What the operation does, in order — each step gates the next.**
 
@@ -1016,13 +1024,23 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
 
 **The floor assertion never changes the exit code.** By step 7 the verdict is landed and read back, so
 a floor that could not be asserted is a red check, not an unwritten verdict — every outcome is one
-stderr line and the `--json` `floor` field. The six: `refired` (a new attempt exists), `restarting`
+stderr line and the `--json` `floor` field. The seven: `refired` (a new attempt exists), `restarting`
 (the re-fired run is queued or running again under its own id with the new attempt number not yet
 published — wait and re-read that run, never escalate it), `green` (the run at this head already
 passed), `in-flight` (the run had not completed, so it may still judge state older than this verdict
-— re-read the check), `no-run` (the runs listed at this head carry no `governance-floor` one),
+— re-read the check), `no-run` (the runs listed at this head carry no `governance-floor` one, and
+the repository does carry that workflow), `no-floor` (the repository's complete workflow inventory
+holds no active `governance-floor` workflow, so it runs no floor and nothing needs re-firing),
 `unknown` (the state could not be read or the re-fire could not be proven — never read as
 a pass).
+
+**`no-floor` is read only when the head lists no floor run, and only from a complete inventory.**
+The verb then reads `GET /repos/{o}/{r}/actions/workflows` and matches each active workflow's `name`
+against `governance-floor`. A failed read, or one that received fewer workflows than the envelope
+declares, is `unknown` — never `no-floor`, because a read that did not see every workflow cannot
+say one is absent. So is an inventory holding an entry that is not a record or carries no string
+`name` or `state`: that entry could be the floor workflow, so its absence is unproven. The line
+states the absence as a fact and asks the caller to re-read nothing.
 
 **`no-run`'s line states the read and offers no cause.** The tag is one token, and what the verb
 observed is that this head's run list carried no `governance-floor` entry — never why. The head's own
@@ -1076,9 +1094,10 @@ clothes.
 | `governance post: a standing <PASS\|FAIL> for governance over <base>..<tip> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 17 | refusal |
 
 **Scope** — one PR: its live head, the bound commit's file list for the re-derivation, its comments,
-and the caller's stdin, plus the workflow runs at the bound head for step 7. A read failing at any of
-the first four is `11` — nothing written, outcome known-unwritten; a read failing at the fifth is the
-`unknown` floor, because by then the verdict is written.
+and the caller's stdin, plus two reads for step 7: the workflow runs at the bound head, and, when
+those list no floor run, the repository's workflow inventory (`actions/workflows`). A read failing at
+any of the first four is `11` — nothing written, outcome known-unwritten; a failed run-list read or a
+failed inventory read is the `unknown` floor, because by then the verdict is written.
 
 **Examples**
 
@@ -1152,7 +1171,7 @@ fabrika governance digest --since 2026-08-02 [--until <YYYY-MM-DD>] [--dir <path
 | `--since` | string | yes | — | the window's inclusive start, `YYYY-MM-DD` |
 | `--until` | string | no | now | the window's inclusive end, `YYYY-MM-DD` |
 | `--dir` | string | no | `.decisions` | the corpus whose landings are listed |
-| `--base` | string | no | `origin/main` | the ref whose history is walked; fetched before the walk |
+| `--base` | string | no | the trunk | the ref whose history is walked; fetched before the walk. With none named, the trunk (`origin/<the repo's GitHub default branch>`) is resolved after the window is validated, and an unresolvable one is `11` |
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line: `digest\t<landed|none>\t<count>`. Then one line per landed

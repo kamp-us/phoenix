@@ -6,8 +6,26 @@
  * stop and a real boot from the checkpoint the stop wrote.
  */
 
-import {type Cmd, DispatchDiscardedError, defineMachine} from "@demlik/tea";
+import {type Cmd, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
+import type {SpellPath} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {Checkpoints} from "@kampus/tuval-sdk/kernel/durability/Checkpoints";
+import {type CheckpointStores, memoryStores} from "@kampus/tuval-sdk/kernel/durability/stores";
+import {Processes} from "@kampus/tuval-sdk/kernel/process/Processes";
+import type {ProcessTable} from "@kampus/tuval-sdk/kernel/process/ProcessTable";
+import {type ProcessHandle, ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {PROTOCOL_VERSION, SpellCall} from "@kampus/tuval-sdk/kernel/protocol/messages";
+import {type DuplicateProgramId, ProgramNotFound} from "@kampus/tuval-sdk/kernel/registry/errors";
+import {
+	type AnyProgram,
+	type Program,
+	ProgramId,
+	type RendererRef,
+} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Registry} from "@kampus/tuval-sdk/kernel/registry/Registry";
+import type {DispatchResult, ProcessView} from "@kampus/tuval-sdk/kernel/shell/window/host";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
 import {
 	Context,
 	Effect,
@@ -17,32 +35,17 @@ import {
 	Logger,
 	Option,
 	Queue,
-	Redacted,
+	Schema,
 	Scope,
 	Stream,
 } from "effect";
 import {Socket} from "effect/unstable/socket";
 import {WebSocket as NodeWebSocket} from "ws";
-import type {SpellPath} from "../../commands/spell.ts";
-import {Checkpoints} from "../../durability/Checkpoints.ts";
-import {type CheckpointStores, memoryStores} from "../../durability/stores.ts";
-import {Processes} from "../../process/Processes.ts";
-import type {ProcessTable} from "../../process/ProcessTable.ts";
-import {type ProcessHandle, ProcessId} from "../../process/process.ts";
-import {CallId} from "../../protocol/ids.ts";
-import {PROTOCOL_VERSION, SpellCall} from "../../protocol/messages.ts";
-import {type DuplicateProgramId, ProgramNotFound} from "../../registry/errors.ts";
-import {
-	type AnyProgram,
-	type Program,
-	ProgramId,
-	type RendererRef,
-} from "../../registry/program.ts";
-import {Registry} from "../../registry/Registry.ts";
+import {ProjectLabels} from "../../projects/labels.ts";
+import {makeRecommendPrompts} from "../../projects/RecommendPrompts.ts";
+import {makeTrustPrompts} from "../../projects/TrustPrompts.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import {scriptedDescriptions, scriptedSpellChannel} from "../host/fixtures.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
-import type {DispatchResult, ProcessView} from "../window/host.ts";
 import {attach} from "./client.ts";
 import {PlacementUnsupported} from "./errors.ts";
 import {mintLaunchToken, TOKEN_PARAM} from "./handshake.ts";
@@ -52,6 +55,9 @@ const TIMEOUT = 20_000;
 
 type DeskState = {readonly windows: ReadonlyArray<string>};
 type DeskMsg = {readonly type: "split"; readonly window: string};
+type ExplodeCmd = {readonly type: "explode"};
+/** A Msg no desk has a cell for. */
+type Stray = {readonly type: "nothing-takes-this"};
 
 const shellProgramId = ProgramId.make("tuval/shell");
 const painterProgramId = ProgramId.make("tuval/painter");
@@ -79,9 +85,6 @@ const stamperCore = defineMachine<StampState, StampMsg, StampCmd, never, unknown
 			[{type: "settle"}],
 		],
 	},
-	// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host never
-	// reads it (#7576).
-	interpret: {settle: () => Promise.resolve()},
 });
 
 const deskCore = defineMachine<DeskState, DeskMsg, Cmd<never>, never, unknown>({
@@ -191,12 +194,20 @@ const kernel = Effect.fn("test.kernel")(function* (
 	return {context, handles} satisfies Kernel;
 });
 
+/** Two open projects whose folders share a name, as `serveDesk` would label them (#9692). */
+const scriptedProjects = Stream.make([
+	{key: "-code-kamp_-us-phoenix", label: "kamp-us/phoenix"},
+	{key: "-code-usirin-phoenix", label: "usirin/phoenix"},
+]);
+
 /** A kernel plus a served socket on an ephemeral loopback port, torn down with the caller's Scope. */
 const served = Effect.fn("test.served")(function* (
 	stores: CheckpointStores,
 	registry?: Layer.Layer<Registry, DuplicateProgramId>,
 ) {
 	const built = yield* kernel(stores, registry);
+	const prompts = yield* makeTrustPrompts;
+	const recommends = yield* makeRecommendPrompts;
 	const token = mintLaunchToken();
 	const server = yield* serve({
 		token,
@@ -205,8 +216,11 @@ const served = Effect.fn("test.served")(function* (
 		handles: (id) => Effect.sync(() => Option.fromNullishOr(built.handles.get(id))),
 		spells: yield* scriptedSpellChannel(),
 		descriptions: scriptedDescriptions,
+		projects: scriptedProjects,
+		trust: prompts,
+		recommend: recommends,
 	}).pipe(Effect.provideContext(built.context), Effect.orDie);
-	return {...built, token, server};
+	return {...built, token, server, prompts, recommends};
 });
 
 const page = (url: string) =>
@@ -251,6 +265,68 @@ const rawSocket = (url: string) =>
 			resume(Effect.succeed({opened, closeCode: event.code})),
 		);
 	});
+
+/**
+ * The given stores, with every snapshot save refused while `saving.fails` holds. Boot's own save
+ * lands first, so a test flips it once the process is up.
+ */
+const failingSaves = (
+	stores: CheckpointStores,
+	saving: {readonly fails: boolean},
+): CheckpointStores => ({
+	...stores,
+	snapshot: (id) => {
+		const inner = stores.snapshot(id);
+		return {
+			load: () => inner.load(),
+			save: (snapshot) =>
+				saving.fails ? Promise.reject(new Error("the disk is full")) : inner.save(snapshot),
+			migrate: (raw) => inner.migrate(raw),
+			delete: () => inner.delete(),
+		};
+	},
+});
+
+const failingProgramId = ProgramId.make("tuval/failing");
+const failingProcess = ProcessId.make("failing");
+
+class BlewUp extends Schema.TaggedError<BlewUp>()("test/BlewUp", {}) {}
+
+/** A desk whose every split asks for a Cmd, and whose handler for that Cmd fails. */
+const failingRow: AnyProgram = {
+	id: failingProgramId,
+	core: defineMachine<DeskState, DeskMsg, ExplodeCmd, never, unknown>({
+		init: (loaded) => [loaded ?? {windows: ["root"]}, []],
+		update: {
+			split: (state: DeskState, msg: DeskMsg): readonly [DeskState, ReadonlyArray<ExplodeCmd>] => [
+				{windows: [...state.windows, msg.window]},
+				[{type: "explode"}],
+			],
+		},
+	}),
+	ports: {},
+	handlers: {explode: () => Effect.fail(new BlewUp({}))},
+	capabilities: [],
+	renderer: ref("tuval/failing"),
+	identity: {
+		package: "@kampus/tuval",
+		program: failingProgramId,
+		version: "1.0.0",
+		digest: `sha256:${failingProgramId}`,
+	},
+	placement: {host: "local"},
+} satisfies Program<DeskState, DeskMsg, ExplodeCmd, never, unknown, BlewUp, never>;
+
+/** Every log line's message, collected so a test can say a failure was not silent. */
+const capturing = (logs: unknown[]) =>
+	Logger.layer([
+		Logger.make(({message}) => {
+			logs.push(message);
+		}),
+	]);
+
+const logged = (logs: ReadonlyArray<unknown>, line: string): boolean =>
+	logs.some((message) => Array.isArray(message) && message.includes(line));
 
 describe("the page-to-kernel transport", () => {
 	it.live(
@@ -356,46 +432,93 @@ describe("the page-to-kernel transport", () => {
 		TIMEOUT,
 	);
 
-	it.live(
-		"acks a Msg the actor discarded as ProcessGone, never as Delivered",
-		() =>
-			// A blanket `catchCause` answered Delivered for every failure `dispatch` raises, so a Msg
-			// the actor threw away came back to the page as if it had landed (#7499).
-			Effect.gen(function* () {
-				const built = yield* kernel(memoryStores());
-				const real = built.handles.get(shellProcess);
-				assert.ok(real !== undefined);
-				const discarding: ProcessHandle = {
-					...real,
-					dispatchFolded: (msg) =>
-						Effect.succeed({
-							settled: Exit.fail(new DispatchDiscardedError(msg.type)),
-							summary: {lifecycle: "running", revision: 0, state: {windows: ["root"]}},
-						}),
-				};
-				const server = yield* serve({
-					token: mintLaunchToken(),
-					port: 0,
-					table: defaultPrefixTable,
-					handles: (id) =>
-						Effect.sync(() =>
-							id === shellProcess
-								? Option.some(discarding)
-								: Option.fromNullishOr(built.handles.get(id)),
-						),
-					spells: yield* scriptedSpellChannel(),
-					descriptions: scriptedDescriptions,
-				}).pipe(Effect.provideContext(built.context), Effect.orDie);
+	describe("answers each way a dispatch settles on tea's engine", () => {
+		it.live(
+			"a Msg to a process whose run has stopped is ProcessGone, never Delivered",
+			() =>
+				// A blanket `catchCause` answered Delivered for every failure `dispatch` raises, so a Msg
+				// the run threw away came back to the page as if it had landed (#7499).
+				Effect.gen(function* () {
+					const app = yield* served(memoryStores());
+					const attached = yield* page(app.server.launchUrl);
+					const shell = yield* attached.attachProcess<DeskState, DeskMsg>(shellProcess);
+					const handle = app.handles.get(shellProcess);
+					assert.ok(handle !== undefined);
+					// The handle stays in the server's map, so the refusal is the run's `Stopped`, not a
+					// lookup that found nothing.
+					yield* handle.stop;
 
-				const attached = yield* page(server.launchUrl);
-				const shell = yield* attached.attachProcess<DeskState, DeskMsg>(shellProcess);
-				assert.deepStrictEqual(yield* shell.dispatch({type: "split", window: "w2"}), {
-					_tag: "ProcessGone",
-					processId: shellProcess,
-				});
-			}).pipe(Effect.scoped),
-		TIMEOUT,
-	);
+					assert.deepStrictEqual(yield* shell.dispatch({type: "split", window: "w2"}), {
+						_tag: "ProcessGone",
+						processId: shellProcess,
+					});
+				}).pipe(Effect.scoped),
+			TIMEOUT,
+		);
+
+		it.live(
+			"a Msg whose checkpoint write fails is Delivered, and the failure is logged",
+			() => {
+				const logs: unknown[] = [];
+				const saving = {fails: false};
+				return Effect.gen(function* () {
+					const app = yield* served(failingSaves(memoryStores(), saving));
+					const attached = yield* page(app.server.launchUrl);
+					const shell = yield* attached.attachProcess<DeskState, DeskMsg>(shellProcess);
+					saving.fails = true;
+
+					const result = yield* shell.dispatch({type: "split", window: "w2"});
+
+					assert.deepStrictEqual(answered(result), {windows: ["root", "w2"]});
+					assert.isTrue(
+						logged(logs, "tuval transport: the checkpoint write for a dispatched Msg failed"),
+					);
+				}).pipe(Effect.scoped, Effect.provide(capturing(logs)));
+			},
+			TIMEOUT,
+		);
+
+		it.live(
+			"a Msg whose Cmd handler fails is Delivered, and the failure is logged",
+			() => {
+				const logs: unknown[] = [];
+				return Effect.gen(function* () {
+					const app = yield* served(memoryStores(), Registry.layer([...programs, failingRow]));
+					const processes = Context.get(app.context, Processes);
+					app.handles.set(
+						failingProcess,
+						yield* Effect.orDie(
+							processes.spawn(failingProgramId, {id: failingProcess, services: Context.empty()}),
+						),
+					);
+					const attached = yield* page(app.server.launchUrl);
+					const failing = yield* attached.attachProcess<DeskState, DeskMsg>(failingProcess);
+
+					const result = yield* failing.dispatch({type: "split", window: "w2"});
+
+					assert.deepStrictEqual(answered(result), {windows: ["root", "w2"]});
+					assert.isTrue(logged(logs, "tuval transport: a Cmd handler of a dispatched Msg failed"));
+				}).pipe(Effect.scoped, Effect.provide(capturing(logs)));
+			},
+			TIMEOUT,
+		);
+
+		it.live(
+			"a Msg the process has no cell for leaves the process running",
+			() =>
+				Effect.gen(function* () {
+					const app = yield* served(memoryStores());
+					const attached = yield* page(app.server.launchUrl);
+					const shell = yield* attached.attachProcess<DeskState, DeskMsg | Stray>(shellProcess);
+
+					yield* shell.dispatch({type: "nothing-takes-this"});
+					const after = yield* shell.dispatch({type: "split", window: "w2"});
+
+					assert.deepStrictEqual(answered(after), {windows: ["root", "w2"]});
+				}).pipe(Effect.scoped),
+			TIMEOUT,
+		);
+	});
 
 	it.live(
 		"a socket drop followed by re-attach yields the same current state and replays no dispatch",
@@ -415,35 +538,6 @@ describe("the page-to-kernel transport", () => {
 				const shell = yield* second.attachProcess<DeskState, DeskMsg>(shellProcess);
 				const seen = yield* watch(shell.readProcess);
 				// The one split, once: what came back is current state, not a transcript replayed.
-				assert.deepStrictEqual(stateOf(yield* Queue.take(seen)), {windows: ["root", "w2"]});
-			}).pipe(Effect.scoped),
-		TIMEOUT,
-	);
-
-	it.live(
-		"a kernel stop and boot followed by re-attach yields the restored state",
-		() =>
-			Effect.gen(function* () {
-				const stores = memoryStores();
-				let url = "";
-
-				yield* Effect.scopedWith(
-					Effect.fnUntraced(function* (scope) {
-						const app = yield* Scope.provide(served(stores), scope);
-						url = app.server.launchUrl;
-						const attached = yield* Scope.provide(page(app.server.launchUrl), scope);
-						const shell = yield* attached.attachProcess<DeskState, DeskMsg>(shellProcess);
-						yield* shell.dispatch({type: "split", window: "w2"});
-						const seen = yield* Scope.provide(watch(shell.readProcess), scope);
-						assert.deepStrictEqual(stateOf(yield* Queue.take(seen)), {windows: ["root", "w2"]});
-					}),
-				);
-
-				const rebooted = yield* served(stores);
-				assert.notStrictEqual(rebooted.server.launchUrl, url);
-				const attached = yield* page(rebooted.server.launchUrl);
-				const shell = yield* attached.attachProcess<DeskState, DeskMsg>(shellProcess);
-				const seen = yield* watch(shell.readProcess);
 				assert.deepStrictEqual(stateOf(yield* Queue.take(seen)), {windows: ["root", "w2"]});
 			}).pipe(Effect.scoped),
 		TIMEOUT,
@@ -535,6 +629,70 @@ describe("the page-to-kernel transport", () => {
 	);
 
 	it.live(
+		"a page is sent every open project's label and reads a scoped program id's label from it",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* served(memoryStores());
+				const attached = yield* page(app.server.launchUrl);
+				const labels = yield* Stream.runHead(
+					Stream.filter(attached.projects, (held) => held !== ProjectLabels.none),
+				);
+				const read = Option.getOrThrow(labels);
+				assert.strictEqual(read.labelOf("-code-kamp_-us-phoenix/counter"), "kamp-us/phoenix");
+				assert.strictEqual(read.labelOf("-code-usirin-phoenix/counter"), "usirin/phoenix");
+				assert.isNull(read.labelOf(shellProgramId));
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"a page is asked what an open is waiting on, and only its answer ends the wait",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* served(memoryStores());
+				const attached = yield* page(app.server.launchUrl);
+				const opening = yield* Effect.forkChild(app.prompts.ask("/code/kamp-us/demlik"));
+				const asked = yield* Stream.runHead(
+					Stream.filter(attached.trustPrompts, (prompts) => prompts.length > 0),
+				);
+				const [prompt] = Option.getOrThrow(asked);
+				assert.strictEqual(prompt?.folder, "/code/kamp-us/demlik");
+				assert.strictEqual(prompt?.name, "demlik");
+				yield* attached.answerTrust(prompt?.question ?? "", "refuse");
+				assert.strictEqual(yield* Fiber.join(opening), "refuse");
+				// The answered question leaves every page on the next frame.
+				yield* Stream.runHead(
+					Stream.filter(attached.trustPrompts, (prompts) => prompts.length === 0),
+				);
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"a page is asked about a recommended package, and its answer reaches the kernel",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* served(memoryStores());
+				const attached = yield* page(app.server.launchUrl);
+				const asking = yield* Effect.forkChild(
+					app.recommends.ask("/code/kamp-us/demlik", "demlik", "@kampus/tuval-worktree"),
+				);
+				const asked = yield* Stream.runHead(
+					Stream.filter(attached.recommendPrompts, (prompts) => prompts.length > 0),
+				);
+				const [prompt] = Option.getOrThrow(asked);
+				assert.strictEqual(prompt?.package, "@kampus/tuval-worktree");
+				assert.strictEqual(prompt?.name, "demlik");
+				yield* attached.answerRecommend(prompt?.question ?? "", "decline");
+				assert.strictEqual(yield* Fiber.join(asking), "decline");
+				yield* Stream.runHead(
+					Stream.filter(attached.recommendPrompts, (prompts) => prompts.length === 0),
+				);
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
 		"a page is sent the key grammar the kernel serves, over a real socket and back through JSON",
 		() =>
 			Effect.gen(function* () {
@@ -608,7 +766,6 @@ describe("the page-to-kernel transport", () => {
 				// And the good token on the same server still opens, so the refusal is the token's.
 				const good = yield* rawSocket(app.server.launchUrl);
 				assert.isTrue(good.opened);
-				assert.strictEqual(Redacted.value(app.token).length, 64);
 			}).pipe(Effect.scoped),
 		TIMEOUT,
 	);

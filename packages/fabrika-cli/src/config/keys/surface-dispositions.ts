@@ -113,6 +113,11 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 		note: "the manifest's `@kampus/fabrika-cli` row pinned at a published release; no verb reads the row yet, so nothing refuses and no answer narrows over its absence — buildable through `status bootstrap dep-pin`, which resolves the release from npm at run time, edits only the manifest, and prints the install command",
 	},
 	{
+		id: "hand-check-rule",
+		disposition: "fail-loud",
+		note: "a `reviewUi.whenNoPreview` rule in `.fabrika.jsonc`, for a repo whose app has no preview deploy; with none, every ui file needs a render and `review-ui route --no-preview` exits 21 — buildable through `status bootstrap hand-check-rule`, which writes one `hand-check` rule and is the other axis",
+	},
+	{
 		id: "label-taxonomy",
 		disposition: "fail-loud",
 		note: "the board vocabulary's statuses, types, priorities and audiences; `ledger child` exits 10 and `triage apply` refuses rather than minting a label nobody declared — `status bootstrap label-taxonomy` is the remedy, which is the other axis",
@@ -130,12 +135,12 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 	{
 		id: "issue-home",
 		disposition: "fail-loud",
-		note: "an open milestone or a standing lane on the issue itself; `build claim`'s fence refuses a homeless issue at exit 20 and writes no marker",
+		note: "an open milestone or a standing lane on the issue itself; `ledger child` refuses to mint a child with neither, and writes nothing",
 	},
 	{
 		id: "roadmap-focus",
 		disposition: "degrade",
-		note: "the `## Campaigns` table at `roadmapFile`, which declares the campaign in exclusive focus; an absent file and an absent table are the same well-formed default — nothing is active, so `build pick`'s and `build claim`'s fence is inert and admits every issue, and `triage homes` answers over the milestones alone — buildable through `status bootstrap roadmap-focus`, which is the other axis",
+		note: "the `## Campaigns` table at `roadmapFile`, which groups work under themes; an absent file and an absent table are the same well-formed default — no theme is being worked, and `triage homes` answers over the milestones alone. No campaign state refuses a lane — buildable through `status bootstrap roadmap-focus`, which is the other axis",
 	},
 	{
 		id: "cycle-doc",

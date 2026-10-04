@@ -222,3 +222,52 @@ describe("judgeAmendment with a named deferral", () => {
 		expect(verdict).toMatchObject({_tag: "Amendable", tasks: ["issue_901", "epic_900"]});
 	});
 });
+
+describe("judgeAmendment after an earlier amendment deferred a task", () => {
+	const REASON = "founder deferred it to a follow-up cycle";
+	const deferredEarlier = (...later: ReadonlyArray<LogEntry>): ReadonlyArray<LogEntry> => [
+		line("issue_901", "WIP", AT(1)),
+		line("issue_902", "BLOCKED", AT(2)),
+		{
+			task: "epic_900",
+			event: "EPIC_900.AMENDED",
+			at: AT(3),
+			tasks: ["issue_901", "issue_903", "epic_900"],
+			defers: [{task: "issue_902", through: AT(2), reason: REASON}],
+		},
+		...later,
+	];
+	const current = machineOf(bodyOf("- phase 1: #901, #903"), [901, 903]);
+
+	it("admits a later amendment that also omits the deferred task, without naming it again", () => {
+		const candidate = machineOf(bodyOf("- phase 1: #901, #903, #904"), [901, 903, 904]);
+
+		expect(judgeAmendment(current, candidate, deferredEarlier())).toMatchObject({
+			_tag: "Amendable",
+			added: ["issue_904"],
+			dropped: [],
+			deferred: [],
+		});
+	});
+
+	it("refuses naming the deferred task again, saying it was already deferred", () => {
+		const candidate = machineOf(bodyOf("- phase 1: #901, #903, #904"), [901, 903, 904]);
+
+		expect(judgeAmendment(current, candidate, deferredEarlier(), ["issue_902"])).toEqual({
+			_tag: "DeferralRefused",
+			reasons: ['task "issue_902" is deferred and an earlier amendment already deferred it'],
+		});
+	});
+
+	it("still refuses dropping a historied task no amendment deferred", () => {
+		const candidate = machineOf(bodyOf("- phase 1: #901"), [901, 903]);
+		const log = deferredEarlier(line("issue_903", "BLOCKED", AT(4)));
+
+		expect(judgeAmendment(current, candidate, log)).toEqual({
+			_tag: "Unreachable",
+			reasons: [
+				'task "issue_903" carries recorded history and the new topology places it in no phase',
+			],
+		});
+	});
+});

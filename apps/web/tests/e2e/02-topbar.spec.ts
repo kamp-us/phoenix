@@ -1,5 +1,4 @@
 import {expect, test} from "@playwright/test";
-import {signOut, signUp} from "./_helpers/auth";
 
 test.describe("Topbar (signed out)", () => {
 	test.beforeEach(async ({page}) => {
@@ -28,49 +27,40 @@ test.describe("Topbar (signed out)", () => {
 		);
 	});
 
-	// The three-way picker is the sole theme control (#2612) — a signed-out visitor reaches
-	// it in the topbar's utility zone (a signed-in one gets it in the user menu instead).
-	test("theme picker sets <html data-theme>", async ({page}) => {
+	// Signed out there is no theme control; the page follows the OS (ADR 0437).
+	test("no theme picker, and <html data-theme> follows the OS", async ({page}) => {
+		await expect(page.getByTestId("topbar-theme-picker")).toHaveCount(0);
+
 		const html = page.locator("html");
-		const picker = page.getByTestId("topbar-theme-picker");
-		await expect(picker).toBeVisible();
-
-		await picker.getByRole("radio", {name: /^koyu$/i}).click();
-		await expect(html).toHaveAttribute("data-theme", "dark");
-
-		await picker.getByRole("radio", {name: /^açık$/i}).click();
+		await page.emulateMedia({colorScheme: "light"});
 		await expect(html).toHaveAttribute("data-theme", "light");
+		await page.emulateMedia({colorScheme: "dark"});
+		await expect(html).toHaveAttribute("data-theme", "dark");
 	});
 
-	test("search box focuses + has ⌘K hint + submitting does not error", async ({page}) => {
+	test("search trigger has the ⌘K hint and opens the palette by click and by shortcut", async ({
+		page,
+	}) => {
 		const errors: string[] = [];
 		page.on("pageerror", (err) => errors.push(err.message));
 
-		const search = page.locator(".kp-topbar__search input[name='q']");
-		await search.focus();
-		await expect(search).toBeFocused();
-		await expect(page.locator(".kp-topbar__search kbd")).toContainText("⌘K");
+		const trigger = page.locator("#topbar-search");
+		await expect(trigger.locator("kbd")).toContainText("⌘K");
 
-		await search.fill("hello");
-		await search.press("Enter");
+		const palette = page.getByRole("dialog");
+		const field = palette.getByRole("combobox");
+		await trigger.click();
+		await expect(field).toBeFocused();
+		await field.fill("hello");
+		await field.press("Escape");
+		await expect(palette).toBeHidden();
+
+		await page.keyboard.press("ControlOrMeta+k");
+		await expect(field).toBeFocused();
 		await expect(page.locator(".kp-topbar")).toBeVisible();
 		expect(errors).toHaveLength(0);
 	});
-
-	test("signed-out: + giriş yap visible, no user pill", async ({page}) => {
-		await expect(page.getByRole("button", {name: /giriş yap/i}).first()).toBeVisible();
-		await expect(page.locator(".kp-topbar__user")).toHaveCount(0);
-	});
 });
 
-test.describe("Topbar (signed in)", () => {
-	// `+ gönderi` is NOT a topbar affordance: it is pano's promoted verb, so it lives in the
-	// pano Subnav's primary-action zone (placement law #2587), reachable only under `/pano/*`.
-	test("user pill visible after sign-up", async ({page}) => {
-		const creds = await signUp(page);
-		const pill = page.locator(".kp-topbar__user");
-		await expect(pill).toBeVisible();
-		await expect(pill).toContainText(creds.name);
-		await signOut(page);
-	});
-});
+// The signed-in user pill and the signed-out `giriş yap` state are proven across a real sign-up
+// and sign-out by `08-auth.spec.ts`.

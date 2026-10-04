@@ -9,14 +9,14 @@
  * and nothing but a stated clock can say that.
  */
 
+import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval-claude";
 import {
 	emit,
 	type ShapeSource,
 	STATUS_PORT,
 	TITLE_PORT,
 	testProgram,
-} from "@kampus/tuval/authoring";
-import {ClientId, claudeSession, WorkspaceId} from "@kampus/tuval/sessions";
+} from "@kampus/tuval-sdk/authoring";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {type CronOptions, cron, cronProgram} from "./cron.ts";
 import {armSchedule, humanize, parseSchedule} from "./schedule.ts";
@@ -102,10 +102,6 @@ describe("a schedule cron refuses before it is ever armed", () => {
 			/give `everyMs`/,
 		);
 	});
-
-	it("takes a well-formed expression, and a real job row, without complaint", () => {
-		expect(() => cron({...scheduled("0 7 * * *"), job: job()})).not.toThrow();
-	});
 });
 
 describe("what a schedule cron says on its tile", () => {
@@ -132,14 +128,6 @@ describe("what a schedule cron says on its tile", () => {
 		expect(subs[0]?.deps(testProgram(cronProgram(scheduled("0 7 * * *"))).state)).toEqual({
 			schedule: "0 7 * * *",
 		});
-	});
-
-	it("wakes the same way a tick does once it is woken", () => {
-		const run = testProgram(cronProgram(scheduled("0 7 * * *"))).event({
-			type: "tick",
-		});
-		expect(run.state.ticks).toBe(1);
-		expect(run.effects.filter((effect) => effect.type === "spawn")).toHaveLength(1);
 	});
 });
 

@@ -13,7 +13,7 @@
  * well-formed fresh lane, not a fault.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
-import {exists, readFile, writeFile} from "../io/fs.ts";
+import {exists, isDirectory, type ReadFailed, readDir, readFile, writeFile} from "../io/fs.ts";
 import {type LogEntry, parseLog} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 
@@ -45,6 +45,35 @@ export interface LaneRef {
 	/** The lane id under the root — an issue number, or a chore lane's name. */
 	readonly lane: string;
 }
+
+/**
+ * The entries under a lanes root that may be lanes, in name order — the one listing every verb that
+ * sweeps a root goes through.
+ *
+ * A lane is a directory named for its key, so two kinds of entry are provably not one and are
+ * dropped here: a dot-prefixed name (`.DS_Store`, `.git`, an editor's swap file) and an entry that
+ * stats as anything but a directory. Each drop rests on a proof, never on a failure: a root that
+ * cannot be listed fails, and an entry whose kind cannot be read stays a candidate, so
+ * {@link loadLane} reads it and the caller judges what that read answers. Dropping it instead is the
+ * permissive arm — a real lane whose stat failed would silently leave every count.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9779
+ */
+export const listLanes = (
+	root: string,
+): Effect.Effect<ReadonlyArray<string>, ReadFailed, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		const names = yield* readDir(root);
+		const candidates: string[] = [];
+		for (const name of names) {
+			if (name.startsWith(".")) continue;
+			const kind = yield* Effect.result(isDirectory(path.join(root, name)));
+			if (Result.isSuccess(kind) && !kind.success) continue;
+			candidates.push(name);
+		}
+		return candidates.sort();
+	});
 
 export type LoadedLane =
 	| {

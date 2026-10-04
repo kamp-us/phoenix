@@ -12,12 +12,20 @@
  * **This verb predicts; the gate decides.** The repo's CI gate owns redness, and where they disagree the
  * gate's answer supersedes this one (interface convention rule 6). Nothing here re-reads CI.
  *
- * **Every run also sweeps the shipped local-tree guards, whatever the surface.** A guard that only
+ * **Every lane run also sweeps the shipped local-tree guards, whatever the surface.** A guard that only
  * needs the checked-out tree runs here so it reds on the builder's machine before it reds in CI, and
  * each member is named in the answer — `guard <name> <leaf>` in `ran`, or `skipped: <name>
  * (<reason>)` for one that refused, which is a disclosure and never a pass. Membership is declared
  * beside each guard's registration in `guard/command.ts` and nowhere else; see
  * {@link sweepLocalTreeGuards}.
+ *
+ * **The repo's declared config validators run on every surface of a lane run too**, each one only
+ * when the diff touches a file it `reads` — see {@link runConfigValidators}. That is what lets a diff
+ * of root config files, or of non-JS source such as Java, alone go green or red instead of refusing
+ * as unvalidatable.
+ *
+ * **`--probe` is the one run that is not a lane run**, and it does neither: it starts the declared
+ * code validators and nothing else — see {@link runProbe}.
  *
  * `--surface` is an **anchor, not a second classifier**: naming the surface is a judgement the skill
  * makes reading the issue, and a verb that guessed it from file extensions would be wrong exactly on
@@ -43,10 +51,16 @@ import {
 	type CodeValidator,
 	codeValidatorsKey,
 } from "../config/keys/code-validators.ts";
+import {
+	CONFIG_VALIDATORS,
+	type ConfigValidator,
+	configValidatorsKey,
+} from "../config/keys/config-validators.ts";
 import {loadConfig, resolve} from "../config/load.ts";
 import {readConfigSource} from "../config/source.ts";
 import type {LocalTreeGuard} from "../guard/local-tree.ts";
 import {execStatus} from "../io/exec.ts";
+import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {
 	CONFIG_PATH,
 	readDocLeakExempt,
@@ -65,10 +79,10 @@ import {
 import {predecessorsOf, readTopology, renderRef, sameRef} from "./dependencies.ts";
 import {docLeaks} from "./doc-leaks.ts";
 import {changedFiles, mergeBase, showAt, treePaths} from "./git.ts";
-import {defaultBranch} from "./github.ts";
 import {requireLane} from "./lane-guard.ts";
 import {introducedLeaks} from "./prose-baseline.ts";
 import {resolveTargetRepo} from "./target.ts";
+import {assertGround} from "./tree.ts";
 
 const VERB = "build check";
 
@@ -106,6 +120,8 @@ export interface CheckOptions {
 	 * make every existing test of this verb run twenty guards over a fake filesystem.
 	 */
 	readonly guards: ReadonlyArray<LocalTreeGuard>;
+	/** Start every declared code validator once, with no lane and no diff — see {@link runProbe}. */
+	readonly probe: boolean;
 }
 
 /**
@@ -120,6 +136,10 @@ export interface CheckOptions {
  * repo's own gates live, they *do* have validators, and leaving them unvalidatable left a
  * workflows-only lane with no invocation that could go green at all.
  *
+ * `config` was carved out the same way, but by declaration rather than by pattern: a file the
+ * extension patterns leave unclaimed and some `configValidators` entry `reads`. No surface owns it;
+ * every run spawns the entries that read it, whatever `--surface` names.
+ *
  * `unvalidatable` is a property of the **tree** — no surface covers these files. Whether *this* run
  * covered a file is a narrower question, and {@link notCoveredBy} is the one that answers it; the two
  * were the same word once, which is how a markdown file could sit outside a `--surface code` green's
@@ -129,6 +149,7 @@ export interface DiffClasses {
 	readonly code: ReadonlyArray<string>;
 	readonly markdown: ReadonlyArray<string>;
 	readonly workflows: ReadonlyArray<string>;
+	readonly config: ReadonlyArray<string>;
 	readonly unvalidatable: ReadonlyArray<string>;
 }
 
@@ -136,19 +157,36 @@ export interface DiffClasses {
  * Workflow YAML is its own class, not a widening of `code`: `pnpm typecheck` does not read it, and a
  * class is only sound while every validator its surface claims actually opens it.
  */
-const classOf = (file: string): keyof DiffClasses => {
+const classOf = (file: string, configured: ReadonlySet<string>): keyof DiffClasses => {
 	if (WORKFLOW_RE.test(file)) return "workflows";
 	if (CODE_RE.test(file)) return "code";
 	if (MARKDOWN_RE.test(file)) return "markdown";
+	if (configured.has(file)) return "config";
 	return "unvalidatable";
 };
 
-export const classifyDiff = (files: ReadonlyArray<string>): DiffClasses => ({
-	code: files.filter((f) => classOf(f) === "code"),
-	markdown: files.filter((f) => classOf(f) === "markdown"),
-	workflows: files.filter((f) => classOf(f) === "workflows"),
-	unvalidatable: files.filter((f) => classOf(f) === "unvalidatable"),
-});
+/** `configured` is every path some declared `configValidators` entry reads. */
+export const classifyDiff = (
+	files: ReadonlyArray<string>,
+	configured: ReadonlyArray<string> = [],
+): DiffClasses => {
+	const reads = new Set(configured);
+	const of = (bucket: keyof DiffClasses) => files.filter((f) => classOf(f, reads) === bucket);
+	return {
+		code: of("code"),
+		markdown: of("markdown"),
+		workflows: of("workflows"),
+		config: of("config"),
+		unvalidatable: of("unvalidatable"),
+	};
+};
+
+/** A diff whose only validatable files are declared config files — every surface answers it alike. */
+const configOnly = (classes: DiffClasses): boolean =>
+	classes.config.length > 0 &&
+	classes.code.length === 0 &&
+	classes.markdown.length === 0 &&
+	classes.workflows.length === 0;
 
 /**
  * The file classes each surface's validators actually open. `unvalidatable` is in no surface's.
@@ -187,9 +225,10 @@ const PLAN_GRAMMAR = "## Dependencies grammar";
 export const notCoveredBy = (
 	surface: Surface,
 	files: ReadonlyArray<string>,
+	configured: ReadonlyArray<string> = [],
 ): ReadonlyArray<string> => {
-	const classes = classifyDiff(files);
-	const covered = new Set(COVERS[surface].flatMap((bucket) => classes[bucket]));
+	const classes = classifyDiff(files, configured);
+	const covered = new Set([...COVERS[surface], "config" as const].flatMap((b) => classes[b]));
 	return files.filter((file) => !covered.has(file));
 };
 
@@ -200,9 +239,14 @@ export const notCoveredBy = (
  * reason under every surface — including `code`, whose old "the diff changes no code file" was a true
  * sentence pointing at the wrong remedy (it invites `--surface prose`, the branch that greened).
  */
-export const unvalidatableDiff = (files: ReadonlyArray<string>): string | null => {
-	const {code, markdown, workflows, unvalidatable} = classifyDiff(files);
-	if (code.length > 0 || markdown.length > 0 || workflows.length > 0) return null;
+export const unvalidatableDiff = (
+	files: ReadonlyArray<string>,
+	configured: ReadonlyArray<string> = [],
+): string | null => {
+	const {code, markdown, workflows, config, unvalidatable} = classifyDiff(files, configured);
+	if (code.length > 0 || markdown.length > 0 || workflows.length > 0 || config.length > 0) {
+		return null;
+	}
 	const shown = unvalidatable.slice(0, 5).join(", ");
 	const rest = unvalidatable.length > 5 ? `, +${unvalidatable.length - 5} more` : "";
 	return `no surface validates any of the ${unvalidatable.length} changed file(s) (${shown}${rest})`;
@@ -218,11 +262,18 @@ export const unvalidatableDiff = (files: ReadonlyArray<string>): string | null =
  * `plan` runs the wrong validator, and `prose` refused on `10`. The leak scan and the link resolver
  * simply did not run. The presence of another class is not a contradiction; it is what
  * `unvalidated` discloses.
+ *
+ * A diff of declared config files and nothing any surface owns contradicts no surface: its entries
+ * run under every token, so no token is provably wrong.
  */
-export const surfaceMismatch = (surface: Surface, files: ReadonlyArray<string>): string | null => {
-	const classes = classifyDiff(files);
+export const surfaceMismatch = (
+	surface: Surface,
+	files: ReadonlyArray<string>,
+	configured: ReadonlyArray<string> = [],
+): string | null => {
+	const classes = classifyDiff(files, configured);
 	const covered = COVERS[surface].flatMap((bucket) => classes[bucket]);
-	if (covered.length > 0) return null;
+	if (covered.length > 0 || configOnly(classes)) return null;
 	return `--surface ${surface}, but the diff changes no ${COVERS[surface].join("/")} file`;
 };
 
@@ -528,6 +579,10 @@ type SweepOutcome =
  * check could never reach. The anchor stays what it was: a claim about the repo's *declared*
  * validators.
  *
+ * Each member is handed this diff's changed paths. A guard whose rule is about what a change touches
+ * (`readme-guard`) narrows to them, so a consumer tree that predates the rule is not red on every
+ * lane; the rest ignore them.
+ *
  * The first red stops the sweep: the builder has a guard to fix, and the sixteen that would have
  * run after it say nothing about that.
  */
@@ -535,6 +590,7 @@ const sweepLocalTreeGuards = (
 	guards: ReadonlyArray<LocalTreeGuard>,
 	root: string,
 	env: Readonly<Record<string, string | undefined>>,
+	changed: ReadonlyArray<string>,
 ): Effect.Effect<
 	SweepOutcome,
 	never,
@@ -546,7 +602,7 @@ const sweepLocalTreeGuards = (
 		const notes: string[] = [];
 		for (const guard of guards) {
 			const label = `guard ${guard.name} ${guard.leaf}`;
-			const outcome = yield* guard.run({root, env});
+			const outcome = yield* guard.run({root, env, changed});
 			if (outcome.code === ANSWER) {
 				ran.push(label);
 				continue;
@@ -560,6 +616,69 @@ const sweepLocalTreeGuards = (
 			notes.push(`${VERB}: skipped: ${line} — not a pass; CI's own gate answers this one.`);
 		}
 		return {_tag: "Swept", sweep: {ran, skipped}, notes} as const;
+	});
+
+/** The declared config validators, or why which ones exist is UNKNOWN. */
+type ConfigScope =
+	| {readonly _tag: "Scope"; readonly validators: ReadonlyArray<ConfigValidator>}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+const readConfigScope = (root: string): Effect.Effect<ConfigScope, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const resolved = resolve(loadConfig(yield* readConfigSource(root)), configValidatorsKey);
+		return resolved._tag === "Declared" || resolved._tag === "Default"
+			? {_tag: "Scope", validators: resolved.value}
+			: {_tag: "Unknown", reason: resolved.reason};
+	});
+
+type ConfigRun =
+	| {
+			readonly _tag: "Ran";
+			readonly ran: ReadonlyArray<string>;
+			readonly notes: ReadonlyArray<string>;
+	  }
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/**
+ * Spawn every declared config validator that reads a changed config file, on every surface.
+ *
+ * The same three outcomes the code surface keeps apart: one that ran and failed is red, one that
+ * could not be spawned proves nothing and refuses UNKNOWN, and a clean run names each command.
+ */
+const runConfigValidators = (
+	validators: ReadonlyArray<ConfigValidator>,
+	changed: ReadonlyArray<string>,
+	noted: ReadonlyArray<string>,
+): Effect.Effect<ConfigRun, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		if (changed.length === 0) return {_tag: "Ran", ran: [], notes: []} as const;
+		const notes = [
+			`${VERB}: ${changed.length} changed file(s) read by \`${CONFIG_VALIDATORS}\` in ${CONFIG_PATH}: ${changed.join(", ")}.`,
+		];
+		const ran: string[] = [];
+		for (const {argv, reads} of validators) {
+			if (!reads.some((file) => changed.includes(file))) continue;
+			const label = argv.join(" ");
+			const result = yield* execStatus(argv[0], argv.slice(1));
+			if (result._tag === "Unstartable") {
+				const outcome = refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: ${label} could not be executed: ${result.reason} — the verdict is UNKNOWN, never green.`,
+					[...noted, ...notes],
+				);
+				return {_tag: "Refused", outcome} as const;
+			}
+			if (!result.ok) {
+				const outcome = refuse(
+					VALIDATION_RED,
+					`${VERB}: red — ${label} failed; diagnostics above.`,
+					[...noted, ...notes, ...diagnostics(result.output)],
+				);
+				return {_tag: "Refused", outcome} as const;
+			}
+			ran.push(label);
+		}
+		return {_tag: "Ran", ran, notes} as const;
 	});
 
 /** The code validators to run, or why the answer is UNKNOWN. */
@@ -832,6 +951,98 @@ const runWorkflowSurface = (
 		);
 	});
 
+/** What starting one declared code validator proved, kept three ways like every run here. */
+type Probed =
+	| {readonly _tag: "Green"; readonly label: string}
+	| {readonly _tag: "Red"; readonly label: string; readonly output: string}
+	| {readonly _tag: "Unstartable"; readonly label: string; readonly reason: string};
+
+const probedLine = (probed: Probed): string => {
+	switch (probed._tag) {
+		case "Green":
+			return `${VERB}: probe: ${probed.label} — green.`;
+		case "Red":
+			return `${VERB}: probe: ${probed.label} — red.`;
+		case "Unstartable":
+			return `${VERB}: probe: ${probed.label} — could not be executed: ${probed.reason}; UNKNOWN.`;
+	}
+};
+
+/**
+ * `--probe`: start every declared `codeValidators` entry once in this tree, with no lane, no session
+ * and no diff, so an adopter can prove the commands start before the first lane depends on them.
+ *
+ * Every entry runs even after one fails — the question is about each command, and stopping at the
+ * first would leave the rest unproven. The fold keeps the lane run's polarities: a red is a proven
+ * failure and outranks an unstartable entry, which proves nothing and refuses UNKNOWN; only an
+ * all-green run answers green. Nothing here writes: no git mutation, no claim read, no lane state.
+ * No local-tree guard or config validator runs: the probe asks whether the declared commands start,
+ * not whether this tree would pass CI, so its green claims less than a lane run's and says so with
+ * `"mode":"probe"`. Config validators have no diff to select them by, either.
+ */
+const runProbe = (): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+> =>
+	Effect.gen(function* () {
+		const ground = yield* assertGround(VERB, false);
+		if (ground._tag === "Refused") return ground.outcome;
+		const declared = yield* readCodeScope(ground.root);
+		if (declared._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read \`${CODE_VALIDATORS}\` from ${CONFIG_PATH} (${declared.reason}) — which commands validate this repo's code is UNKNOWN, never green.`,
+			);
+		}
+		if (declared.validators.length === 0) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${declared.absence} — there is no code validator to probe, so the verdict is UNKNOWN, never green and never red.`,
+				[declared.note],
+			);
+		}
+		const probed: Probed[] = [];
+		for (const {argv} of declared.validators) {
+			const label = argv.join(" ");
+			const result = yield* execStatus(argv[0], argv.slice(1));
+			probed.push(
+				result._tag === "Unstartable"
+					? {_tag: "Unstartable", label, reason: result.reason}
+					: result.ok
+						? {_tag: "Green", label}
+						: {_tag: "Red", label, output: result.output},
+			);
+		}
+		const notes = [declared.note, ...probed.map(probedLine)];
+		const red = probed.filter((one) => one._tag === "Red");
+		if (red.length > 0) {
+			return refuse(
+				VALIDATION_RED,
+				`${VERB}: red — ${red.map((one) => one.label).join(", ")} failed; diagnostics above.`,
+				[...notes, ...red.flatMap((one) => [`${VERB}: ${one.label}:`, ...diagnostics(one.output)])],
+			);
+		}
+		const unstartable = probed.filter((one) => one._tag === "Unstartable");
+		if (unstartable.length > 0) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${unstartable.map((one) => one.label).join(", ")} could not be executed — the verdict is UNKNOWN, never green.`,
+				notes,
+			);
+		}
+		return answer(
+			JSON.stringify({
+				verdict: "green",
+				mode: "probe",
+				surface: "code",
+				tree: ground.root,
+				ran: probed.map((one) => one.label),
+			}),
+			notes,
+		);
+	});
+
 export const runCheck = (
 	options: CheckOptions,
 ): Effect.Effect<
@@ -850,6 +1061,15 @@ export const runCheck = (
 				`${VERB}: --surface "${options.surface}" is off the closed vocabulary (${SURFACES.join(" | ")}).`,
 			);
 		}
+		if (options.probe) {
+			if (surface !== "code") {
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --probe starts the declared \`${CODE_VALIDATORS}\`, which only --surface code runs; --surface ${surface} has none to probe.`,
+				);
+			}
+			return yield* runProbe();
+		}
 		const session = requireSession(VERB, options.env);
 		if (session._tag === "Refused") return session.outcome;
 
@@ -859,15 +1079,15 @@ export const runCheck = (
 		const lane = yield* requireLane(VERB, resolved.repo, session.id, null);
 		if (lane._tag === "Refused") return lane.outcome;
 
-		const branch = yield* defaultBranch(options.env, resolved.repo);
-		if (branch._tag === "Failure") {
+		const trunk = yield* resolveTrunk(options.env, resolved.repo);
+		if (trunk._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read ${resolved.repo}'s default branch: ${branch.reason} — the diff base is UNKNOWN, never green.`,
+				`${VERB}: ${trunkUnresolved(trunk.reason)}. The diff base is UNKNOWN, never green.`,
 				lane.notes,
 			);
 		}
-		const base = `origin/${branch.value}`;
+		const base = trunk.value.ref;
 		const merged = yield* mergeBase(base);
 		if (merged._tag === "Failure") {
 			return refuse(
@@ -893,7 +1113,21 @@ export const runCheck = (
 				scope,
 			);
 		}
-		const unvalidatable = unvalidatableDiff(files);
+		// Only a file the extension patterns leave unclaimed can be a config file, so a diff with none
+		// never needs the declaration — and an unreadable one cannot turn its answer UNKNOWN.
+		const unclaimed = classifyDiff(files).unvalidatable;
+		const declared: ConfigScope =
+			unclaimed.length === 0 ? {_tag: "Scope", validators: []} : yield* readConfigScope(lane.root);
+		if (declared._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read \`${CONFIG_VALIDATORS}\` from ${CONFIG_PATH} (${declared.reason}) — whether any of ${unclaimed.join(", ")} has a declared validator is UNKNOWN, never green.`,
+				scope,
+			);
+		}
+		const configured = declared.validators.flatMap((one) => one.reads);
+		const classes = classifyDiff(files, configured);
+		const unvalidatable = unvalidatableDiff(files, configured);
 		if (unvalidatable !== null) {
 			return refuse(
 				UNCLASSIFIED_DIFF,
@@ -901,15 +1135,15 @@ export const runCheck = (
 				scope,
 			);
 		}
-		const mismatch = surfaceMismatch(surface as Surface, files);
+		const mismatch = surfaceMismatch(surface as Surface, files, configured);
 		if (mismatch !== null) {
 			return refuse(OFF_VOCABULARY, `${VERB}: ${mismatch} — the surface is provably wrong.`, scope);
 		}
-		const {markdown} = classifyDiff(files);
+		const {markdown} = classes;
 		// A partial green has to carry what it skipped, on both channels: a run once greened over 25
 		// workflow files whose `ran` line was true and misleading at once, and a `--surface code` green
 		// then did the same to markdown while reporting an empty list.
-		const unvalidated = notCoveredBy(surface as Surface, files);
+		const unvalidated = notCoveredBy(surface as Surface, files, configured);
 		const covered =
 			unvalidated.length === 0
 				? scope
@@ -918,7 +1152,7 @@ export const runCheck = (
 						`${VERB}: ${unvalidated.length} changed file(s) --surface ${surface} does not validate — NOT covered by this verdict: ${unvalidated.join(", ")}.`,
 					];
 
-		const swept = yield* sweepLocalTreeGuards(options.guards, lane.root, options.env);
+		const swept = yield* sweepLocalTreeGuards(options.guards, lane.root, options.env, files);
 		const noted = [...covered, ...swept.notes];
 		if (swept._tag === "Red") {
 			return refuse(VALIDATION_RED, `${VERB}: red — ${swept.label} failed; diagnostics above.`, [
@@ -926,20 +1160,40 @@ export const runCheck = (
 				...diagnostics(swept.output),
 			]);
 		}
-		const sweep = swept.sweep;
+		const configRun = yield* runConfigValidators(declared.validators, classes.config, noted);
+		if (configRun._tag === "Refused") return configRun.outcome;
+		// The config entries ran beside the guards, so they are reported beside them too.
+		const sweep: GuardSweep = {
+			ran: [...configRun.ran, ...swept.sweep.ran],
+			skipped: swept.sweep.skipped,
+		};
+		const withConfig = [...noted, ...configRun.notes];
+		if (configOnly(classes)) {
+			return answer(
+				JSON.stringify({
+					verdict: "green",
+					surface,
+					tree: lane.root,
+					ran: sweep.ran,
+					skipped: sweep.skipped,
+					unvalidated,
+				}),
+				withConfig,
+			);
+		}
 
 		const fs = yield* FileSystem.FileSystem;
 		if (surface === "code") {
-			return yield* runCodeSurface(lane.root, unvalidated, noted, sweep);
+			return yield* runCodeSurface(lane.root, unvalidated, withConfig, sweep);
 		}
 
 		if (surface === "workflows") {
 			return yield* runWorkflowSurface(
 				fs,
 				lane.root,
-				classifyDiff(files).workflows,
+				classes.workflows,
 				unvalidated,
-				noted,
+				withConfig,
 				sweep,
 			);
 		}
@@ -949,10 +1203,10 @@ export const runCheck = (
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot read ${CONFIG_PATH} (${exempt.reason}) — which docs are leak-scan exempt is UNKNOWN, never green.`,
-				noted,
+				withConfig,
 			);
 		}
-		const scoped = [...noted, exempt.note];
+		const scoped = [...withConfig, exempt.note];
 		const atBase = yield* treePaths(lane.root, merged.value, markdown);
 		if (atBase._tag === "Failure") {
 			return refuse(

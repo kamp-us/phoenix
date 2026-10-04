@@ -174,6 +174,10 @@ describe("the near-totality is bounded — an unreadable state still refuses", (
 	it("refuses an off-grammar nonce on 10", async () => {
 		const outcome = await run(happy, {nonce: "run-1"});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.at(-1)).toContain(
+			'spike status: --nonce "run-1" is not eight lowercase hex',
+		);
 	});
 });
 

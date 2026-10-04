@@ -10,24 +10,24 @@
  * stubbed reducer would prove the surface agrees with a fake.
  */
 
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId, type RendererRef} from "@kampus/tuval-sdk/kernel/registry/program";
+import type {AnyWindowHost, WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {empty} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import type {DeskEmptyReason} from "@kampus/tuval-ui/desk";
+import {inspectorRenderer, statusRenderer} from "@kampus/tuval-ui/desk";
+import type {PrefixTable} from "@kampus/tuval-ui/keys";
+import {CommandName, defaultPrefixTable} from "@kampus/tuval-ui/keys";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, fireEvent, render, screen, within} from "@testing-library/react";
 import axe from "axe-core";
 import {Duration} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId, type RendererRef} from "../../registry/program.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
-import type {DeskEmptyReason} from "../desk/index.ts";
-import {inspectorRenderer, statusRenderer} from "../desk/index.ts";
-import type {PrefixTable} from "../keys/index.ts";
-import {CommandName, defaultPrefixTable} from "../keys/index.ts";
-import type {AnyWindowHost, WindowId} from "../window/index.ts";
-import {empty} from "../window/index.ts";
 import {Desk} from "./Desk.tsx";
 import type {DeskTables} from "./desk-snapshot.ts";
 import {noDeskTables} from "./desk-snapshot.ts";
-import {installDomShims} from "./dom.testing.ts";
 import {threeWindowDesk} from "./fixtures.ts";
 import type {MountResolver} from "./mount.ts";
 import {useTestKernel} from "./press.testing.ts";
@@ -57,6 +57,7 @@ const boundEverywhere: MountResolver = (windowId, processId) =>
 		: {
 				_tag: "Bound",
 				name: null,
+				project: null,
 				host: hostFor(windowId, processId),
 				render: (host) => <p>renderer for {String(host.processId)}</p>,
 			};
@@ -132,11 +133,6 @@ const region = (): HTMLElement | null => screen.queryByRole("region", {name: "De
 const group = (name: string): HTMLElement => screen.getByRole("group", {name});
 
 describe("the desk inspector region", () => {
-	it("is not rendered at all while the desk holds it closed", () => {
-		render(<Harness initial={threeWindowDesk()} />);
-		expect(region()).toBeNull();
-	});
-
 	it("opens and closes on desk.inspector.toggle", () => {
 		let dispatch: (msg: ShellMsg) => void = () => undefined;
 		render(<Harness initial={threeWindowDesk()} onReady={(next) => (dispatch = next)} />);
@@ -263,6 +259,7 @@ describe("the composed status bar", () => {
 	it("keeps the announcements the line carried before it was composed", () => {
 		render(<Harness initial={threeWindowDesk()} />);
 		const bar = screen.getByRole("region", {name: "Shell status"});
+		expect(bar.textContent).toContain("3 windows");
 		expect(bar.textContent).toContain("idle");
 		expect(bar.textContent).toContain("Prefix idle.");
 		expect(within(bar).getByText(defaultPrefixTable.prefix).tagName).toBe("KBD");
@@ -280,7 +277,7 @@ describe("the composed status bar", () => {
  * builds. Widening it to the whole desk would red this gate on two defects it does not own and
  * cannot fix here — the empty window's picker `listbox` renders no `option` until a program is
  * typed (`aria-required-children`), and `react-resizable-panels` renders its separators outside any
- * landmark (`region`). Both are filed; scoping is the same call `../../claude/window/claude-a11y.unit.test.tsx`
+ * landmark (`region`). Both are filed; scoping is the same call `packages/tuval-claude/src/window/claude-a11y.unit.test.tsx`
  * makes for the same reason.
  */
 describe("axe over the desk with the inspector open", () => {

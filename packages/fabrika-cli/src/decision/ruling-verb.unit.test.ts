@@ -44,6 +44,7 @@ const marker = (digest: string): string =>
 		issue: markedIssue(ISSUE) ?? (0 as never),
 		digest: scopeDigest(digest) ?? ("" as never),
 		ruling: rulingUrl(RULING_URL) ?? ("" as never),
+		supersedes: null,
 		at: markerTime("2026-08-20T05:11:02Z") ?? ("" as never),
 	});
 
@@ -155,12 +156,15 @@ describe("runRuling", () => {
 		expect(outcome.stdout).toBe("");
 	});
 
-	it("refuses an issue that is not a type:decision", async () => {
+	/** A ruling stands wherever it was recorded; the type fence here only hid it from its readers. */
+	it("reads the ruling on an issue that is not a type:decision", async () => {
 		const outcome = await outcomeOf([
-			[ISSUE_READ, issueRead(["type:feature", "ready-for:agent"])],
+			[ISSUE_READ, issueRead(["type:bug", "ready-for:agent"])],
+			[COMMENTS, comments([900001, RULER, marker(bodyDigest(BODY))])],
 			...acl,
 		]);
-		expect(outcome.code).toBe(7);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({state: "current", by: RULER});
 	});
 
 	it("splits an unreadable issue from a proven absent one", async () => {
@@ -175,6 +179,7 @@ describe("runRuling", () => {
 			issue: markedIssue(5842) ?? (0 as never),
 			digest: scopeDigest(bodyDigest(BODY)) ?? ("" as never),
 			ruling: rulingUrl("https://github.com/o/r/issues/5842#issuecomment-900001") ?? ("" as never),
+			supersedes: null,
 			at: markerTime("2026-08-20T05:11:02Z") ?? ("" as never),
 		});
 		const answer = await run([

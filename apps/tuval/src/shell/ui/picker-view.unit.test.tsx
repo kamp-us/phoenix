@@ -7,13 +7,13 @@
  * listbox keeps DOM focus so `aria-activedescendant` stays the one highlight.
  */
 
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {fireEvent, render} from "@testing-library/react";
 import {describe, expect, it} from "vitest";
 import type {ShellMsg} from "../core/index.ts";
 import {mountPicker, type PickerEntries, programEntries} from "../picker/browser.ts";
 import {processId, programId, programRow} from "../picker/fixtures.ts";
-import {WindowId} from "../window/index.ts";
-import {installDomShims} from "./dom.testing.ts";
 import {PickerView} from "./PickerView.tsx";
 
 installDomShims();
@@ -65,12 +65,19 @@ describe("the picker answers the pointer through the keyboard's own cursor", () 
 			{
 				type: "window.setView",
 				windowId,
-				view: {cursor: 2, refusal: null, previous: null, filter: null},
+				view: {cursor: 2, refusal: null, previous: null, filter: null, step: null, landing: null},
 			},
 		]);
 
 		// The desk folds that view back in; the highlight the mouse moved is the one ARIA announces.
-		const moved = mount({cursor: 2, refusal: null, previous: null, filter: null});
+		const moved = mount({
+			cursor: 2,
+			refusal: null,
+			previous: null,
+			filter: null,
+			step: null,
+			landing: null,
+		});
 		expect(moved.listbox.getAttribute("aria-activedescendant")).toBe("picker-window-1-option-2");
 		expect(rowAt(moved.options, 2).getAttribute("aria-selected")).toBe("true");
 	});

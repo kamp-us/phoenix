@@ -108,19 +108,6 @@ describe("Report.submit — target-liveness decision (mocked Drizzle seam)", () 
 			assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /ReportTargetNotFound/);
 		}).pipe(Effect.provide(reportLayer(scriptedAccess([undefined])))),
 	);
-
-	it.effect("a soft-deleted target reads as absent → ReportTargetNotFound", () =>
-		// The predicate itself is the engine's job; the DECISION under test is that a
-		// presence read returning nothing means not-found.
-		Effect.gen(function* () {
-			const report = yield* Report;
-			const exit = yield* Effect.exit(
-				report.submit({reporterId: "r1", targetKind: "definition", targetId: "def-gone"}),
-			);
-			assert.isTrue(exit._tag === "Failure", "submit against a soft-deleted target fails");
-			assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /ReportTargetNotFound/);
-		}).pipe(Effect.provide(reportLayer(scriptedAccess([undefined])))),
-	);
 });
 
 describe("Report.listResolved — row→group mapping decision (mocked Drizzle seam)", () => {

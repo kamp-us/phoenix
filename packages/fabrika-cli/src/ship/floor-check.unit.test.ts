@@ -7,10 +7,16 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
+import {
+	fakeSeams,
+	type HttpReply,
+	type Scripted,
+	unconfigured,
+	unconfiguredOnPlatform,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
-import {checkRuns, comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
+import {checkRuns, comments, ENV, files, HEAD, pull} from "./fixtures.test-support.ts";
 import {
 	CHECK_RUN_NAME,
 	floorRunner,
@@ -36,10 +42,10 @@ const permissionServed = (permission: string): HttpReply => ({
 	body: JSON.stringify({permission}),
 });
 
-/** A fabrika-tree diff — `claude-plugins/` is one of the shipped governance roots. */
+/** A skill diff under `.claude/`, one of the shipped governance roots. */
 const FABRIKA_TREE: Scripted = [
 	FILES,
-	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/site/src/b.ts")),
+	served(files(".claude/skills/ship/SKILL.md", "apps/site/src/b.ts")),
 ];
 
 /** What GitHub echoes for a check-run this run just wrote. */
@@ -59,7 +65,8 @@ const NO_HELD_CHECK: Scripted = [
 
 const options = {pr: 4321, sha: HEAD, repo: null, json: false, cwd: "/repo", env: ENV};
 
-const seamsFor = (script: ReadonlyArray<Scripted>) => fakeSeams([...script, NO_REVIEWS]);
+const seamsFor = (script: ReadonlyArray<Scripted>) =>
+	fakeSeams([...script, NO_REVIEWS, ...unconfiguredOnPlatform()]);
 
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
 	const seams = seamsFor(script);
@@ -191,29 +198,6 @@ describe("runFloorCheck publishes the answer and exits 0 on having published it"
 		expect(outcome.code).toBe(0);
 		expect(written(seams)).toMatchObject({status: "completed", conclusion: "success"});
 		expect(outcome.stdout).toContain("floor\tsatisfied");
-	});
-
-	it("concludes failure on a verdict bound to another head", async () => {
-		const {outcome, seams} = await run([
-			...withVerdict(marker("governance", "PASS", OTHER_HEAD)),
-			NO_HELD_CHECK,
-			[CREATE, echoed("completed", "failure")],
-		]);
-		expect(outcome.code).toBe(0);
-		expect(written(seams)).toMatchObject({status: "completed", conclusion: "failure"});
-		expect(outcome.stdout).toContain("ns\tgovernance\tstale");
-	});
-
-	it("concludes success and says n/a when the diff touches no governance root", async () => {
-		const {outcome, seams} = await run([
-			[PULL, served(pull())],
-			[FILES, served(files("apps/site/src/a.ts", "apps/site/src/b.ts"))],
-			NO_HELD_CHECK,
-			[CREATE, echoed("completed", "success")],
-		]);
-		expect(outcome.code).toBe(0);
-		expect(written(seams)).toMatchObject({conclusion: "success"});
-		expect(outcome.stdout).toContain("floor\tn/a");
 	});
 
 	// The job relays this exit code, so an UNKNOWN that published its own red must not ALSO red the

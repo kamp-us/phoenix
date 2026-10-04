@@ -1,5 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import {type LeakNames, NO_LEAK_NAMES} from "../config/keys/leak-names.ts";
+import type {Read} from "../config/read-key.ts";
 import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
@@ -15,6 +17,8 @@ import {
 } from "./codes.ts";
 import {composeBody, REQUIRED_SECTIONS, renderFooter} from "./compose.ts";
 import {runFile} from "./file-verb.ts";
+
+const noNames: Read<LeakNames> = {_tag: "Value", value: NO_LEAK_NAMES, note: "test"};
 
 const READBACK = /^GET .*\/repos\/o\/r\/issues\/\d+$/;
 const CREATE = /^POST .*\/repos\/o\/r\/issues$/;
@@ -57,6 +61,7 @@ const options = {
 	title: "Retry helper in the http worker swallows the abort reason",
 	label: "status:needs-triage",
 	redact: false,
+	leakNames: noNames as Read<LeakNames>,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
@@ -166,6 +171,60 @@ describe("runFile", () => {
 		expect(out.stderr[0]).toMatch(/^ {2}line \d+, temp root$/);
 	});
 
+	it("refuses an email address on the leak code, before any network read", async () => {
+		const out = await run([branchDetached], {
+			stdin: Effect.succeed({
+				_tag: "Text",
+				text: sections.replace("content for ## Pointers", "reach them at someone@company.io"),
+			} satisfies StdinRead),
+		});
+		expect(out.code).toBe(LEAKED_PATH);
+		expect(out.stderr[0]).toMatch(/^ {2}line \d+, email$/);
+	});
+
+	describe("with leakNames declared", () => {
+		const declared: Read<LeakNames> = {
+			_tag: "Value",
+			value: {privateRepos: ["acme/secret"], identifiers: ["Jane Roe"]},
+			note: "test",
+		};
+		const withPointer = (pointer: string) =>
+			Effect.succeed({
+				_tag: "Text",
+				text: sections.replace("content for ## Pointers", pointer),
+			} satisfies StdinRead);
+
+		it("files a body that names the private repo bare", async () => {
+			const text = sections.replace("content for ## Pointers", "the acme/secret repo does it too");
+			const body = composeBody(
+				text,
+				renderFooter({session: null, model: null, branch: null, timestamp: "2026-08-01T14:22:07Z"}),
+			);
+			const out = await run(
+				[[READBACK, landed(body)], [CREATE, created], labelsOk, branchDetached],
+				{stdin: Effect.succeed({_tag: "Text", text} satisfies StdinRead), leakNames: declared},
+			);
+			expect(out.code).toBe(0);
+		});
+
+		it("refuses a link to it on the leak code", async () => {
+			const out = await run([branchDetached], {
+				stdin: withPointer("see https://github.com/acme/secret/tree/main"),
+				leakNames: declared,
+			});
+			expect(out.code).toBe(LEAKED_PATH);
+			expect(out.stderr[0]).toMatch(/^ {2}line \d+, private repo link$/);
+		});
+
+		it("refuses on 11 and files nothing when the key could not be read", async () => {
+			const out = await run([branchDetached], {
+				leakNames: {_tag: "Refused", reason: "`leakNames` is not an object"},
+			});
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stderr.at(-1)).toContain("cannot read `leakNames`");
+		});
+	});
+
 	it("files the masked body under --redact, and says what it masked", async () => {
 		const text = sections.replace("content for ## Pointers", "/tmp/session/body.md");
 		const masked = composeBody(
@@ -177,7 +236,7 @@ describe("runFile", () => {
 			{stdin: Effect.succeed({_tag: "Text", text} satisfies StdinRead), redact: true},
 		);
 		expect(out.code).toBe(0);
-		expect(out.stderr.join("\n")).toContain("redacted a machine-local path");
+		expect(out.stderr.join("\n")).toContain("redacted a leak");
 	});
 
 	/**

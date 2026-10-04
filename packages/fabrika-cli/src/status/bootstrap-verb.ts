@@ -20,27 +20,36 @@
 import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
-import {CONFIG_PATH, type ConfigSource} from "../config/document.ts";
+import {CONFIG_PATH, type ConfigSource, readDocument} from "../config/document.ts";
+import {setJsoncValue} from "../config/jsonc-edit.ts";
+import {
+	type NoPreviewRule,
+	REVIEW_UI,
+	reviewUiKey,
+	WHEN_NO_PREVIEW,
+} from "../config/keys/review-ui.ts";
 import {loadConfig} from "../config/load.ts";
 import {type Read, readRoadmapFile} from "../config/paths.ts";
 import {resolveBoard} from "../config/resolve-board.ts";
 import {appendText, exists, readFile, writeFile} from "../io/fs.ts";
-import type {Attempt} from "../io/git.ts";
+import type {Attempt, Shell} from "../io/git.ts";
 import {
 	createLabel,
 	createUnlabelledIssue,
 	getIssue,
 	listLabels,
+	listOpenMilestones,
 	openIssuesTitled,
 } from "../io/issues.ts";
 import {isRecord, parseJsonOrReason} from "../io/json.ts";
+import {FRESH_JSON_LAYOUT, readJsonLayout, renderJson} from "../io/json-layout.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {CLASS_LABELS} from "../labels.ts";
+import {CLASS_LABELS, KILL_LABEL} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
 import {DEFAULT_BOARD_VOCABULARY, FACET_VOCABULARY} from "../triage/facets.ts";
-import {parseRoadmap, ROADMAP_FILE} from "../triage/roadmap.ts";
+import {parseRoadmap, ROADMAP_FILE, unopenedArcPins} from "../triage/roadmap.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	BARE_AT_PATH,
@@ -66,7 +75,7 @@ export interface LabelSpec {
 }
 
 /** The description every created taxonomy label carries, so its creator is on the record. */
-export const LABEL_DESCRIPTION = "created by fabrika status bootstrap label-taxonomy";
+const LABEL_DESCRIPTION = "created by fabrika status bootstrap label-taxonomy";
 
 /**
  * The board label taxonomy this verb creates, in the order it reports it.
@@ -76,7 +85,9 @@ export const LABEL_DESCRIPTION = "created by fabrika status bootstrap label-taxo
  * `triage park`, `plan flip` or `ship release` — each refuses a label the repo lacks, correctly,
  * over a gap that list left. Deriving it from the board vocabulary is what makes a seventh type
  * widen the bootstrap with no second edit here — and what makes a repo that declared its own
- * vocabulary get *its* labels rather than the shipped defaults.
+ * vocabulary get *its* labels rather than the shipped defaults. The class labels and
+ * `closed-by-triage` are the rows no board declares: fixed in code, and minted here because a verb
+ * refuses without them.
  */
 export const taxonomy = (board: BoardVocabulary): ReadonlyArray<LabelSpec> =>
 	[
@@ -85,6 +96,7 @@ export const taxonomy = (board: BoardVocabulary): ReadonlyArray<LabelSpec> =>
 		...board.types.map(typeLabel),
 		...board.audiences.map(audienceLabel),
 		...CLASS_LABELS,
+		KILL_LABEL,
 	].map((name) => ({name, description: LABEL_DESCRIPTION, color: null}));
 
 /** The taxonomy a repo that declared no vocabulary gets — the shipped default. */
@@ -155,6 +167,44 @@ export const roadmapCount = (text: string): ContentCount => {
 };
 
 /**
+ * The `roadmap-focus` pin check: each arc's `#<n>` against the target repo's open milestones.
+ *
+ * Reported like {@link roadmapCount}, never enforced — a pin to a milestone not yet open is a
+ * warning at exit `0`. A repo or milestone read that fails says the check is unknown, so a silent
+ * notice can never be read as "every pin resolves". A roadmap with no arc rows pins nothing, and
+ * reads nothing.
+ */
+export const roadmapPinCheck = (
+	text: string,
+	repo: Attempt<string>,
+): Shell<ReadonlyArray<string>> =>
+	Effect.gen(function* () {
+		const rows = parseRoadmap(text);
+		if (rows.arcs.length === 0) return [];
+		if (repo._tag === "Failure") {
+			return [
+				`${VERB}: pin check unknown — no target repo resolved (${repo.reason}); whether the arc pins are open milestones is unread.`,
+			];
+		}
+		const open = yield* listOpenMilestones(repo.value);
+		if (open._tag === "Failure") {
+			return [
+				`${VERB}: pin check unknown — cannot read ${repo.value}'s open milestones: ${open.reason}; whether the arc pins are open milestones is unread.`,
+			];
+		}
+		const unopened = unopenedArcPins(rows, new Set(open.value.map((m) => m.number)));
+		if (unopened.length === 0) {
+			return [
+				`${VERB}: pin check — every arc pin is an open milestone in ${repo.value} (scanned ${plural(open.value.length, "open milestone")}).`,
+			];
+		}
+		const named = unopened.map((row) => `#${row.milestone} (${row.name})`).join(", ");
+		return [
+			`${VERB}: warning — ${unopened.length === 1 ? "an arc pins a milestone that is" : "arcs pin milestones that are"} not open in ${repo.value}: ${named}. \`triage homes\` offers only open milestones; open ${unopened.length === 1 ? "it" : "them"} or fix the pin.`,
+		];
+	});
+
+/**
  * A surface carries only the fields its own kind uses, so no caller reads a `defaultPath` off a
  * label surface or a label set off a file.
  */
@@ -179,6 +229,11 @@ export type BuildableSurface =
 			 * object exactly as they were, which is what keeps the other surfaces byte-identical.
 			 */
 			readonly count?: (text: string) => ContentCount;
+			/**
+			 * Present only where the content names things in the target repo. Its lines ride the
+			 * notice channel after the write; it never changes the outcome or the exit.
+			 */
+			readonly repoCheck?: (text: string, repo: Attempt<string>) => Shell<ReadonlyArray<string>>;
 	  }
 	| {
 			readonly id: string;
@@ -206,10 +261,16 @@ export type BuildableSurface =
 			readonly kind: "dep-pin";
 			/** The registry default write path — the adopting repo's manifest. */
 			readonly defaultPath: string;
-			/** The manifest section this surface's dependency row belongs to. */
-			readonly section: string;
 			/** The dependency row this surface owns — resolved from npm at run time, never restated. */
 			readonly packageName: string;
+	  }
+	| {
+			readonly id: string;
+			readonly kind: "no-preview-rule";
+			/** The registry default write path — the repo's tracked config file. */
+			readonly defaultPath: string;
+			/** The one rule this surface writes when the file declares none. */
+			readonly rule: HandCheckRule;
 	  }
 	| {
 			readonly id: string;
@@ -252,12 +313,65 @@ export const SETTINGS_PATCH: Readonly<Record<string, unknown>> = {
 export const FABRIKA_CLI_PACKAGE = "@kampus/fabrika-cli";
 
 /**
+ * `manifest` with `packageName` pinned at `version` under `devDependencies` — the CLI is a dev tool,
+ * never a runtime dependency of what the repo deploys. A row already under `dependencies` (where an
+ * earlier `dep-pin` wrote it) moves: it leaves `dependencies` in the same edit that lands it under
+ * `devDependencies`, so the manifest never carries two rows for one package. Every other key keeps
+ * its value and its place, an emptied `dependencies` included.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10032
+ */
+export const pinDevDependency = (
+	manifest: Readonly<Record<string, unknown>>,
+	packageName: string,
+	version: string,
+): Record<string, unknown> => {
+	const runtime = manifest.dependencies;
+	const withoutRuntimeRow =
+		isRecord(runtime) && Object.hasOwn(runtime, packageName)
+			? {
+					...manifest,
+					dependencies: Object.fromEntries(
+						Object.entries(runtime).filter(([name]) => name !== packageName),
+					),
+				}
+			: manifest;
+	return mergeJsonPatch(withoutRuntimeRow, {devDependencies: {[packageName]: version}});
+};
+
+/**
  * The exact install command printed once the row lands, at the version just pinned. The lockfile is
  * the caller's to resolve — fabrika never shells to a package manager — so this line on the notice
  * is the whole handoff.
  */
 export const installCommand = (packageName: string, version: string): string =>
-	`pnpm add --save-exact ${packageName}@${version}`;
+	`pnpm add -D --save-exact ${packageName}@${version}`;
+
+/**
+ * What the install behind {@link installCommand} costs and what it needs approved. The package's
+ * `postinstall` downloads the headless browser `ui render` drives, and pnpm 10 skips a dependency's
+ * build scripts until the repo approves them — so without this the install lands quietly and the
+ * browser never does. `ui render` still refuses on `11` at run time; this names it up front.
+ */
+export const installCostNotices = (packageName: string): ReadonlyArray<string> => [
+	`${VERB}: the install brings in Playwright (@playwright/test) and its postinstall downloads a headless Chromium (~130MB) — the browser \`fabrika ui render\` drives.`,
+	`${VERB}: pnpm 10 skips that postinstall until you approve it — run \`pnpm approve-builds\` and pick ${packageName}, or add ${packageName} to \`onlyBuiltDependencies\` and run \`pnpm rebuild ${packageName}\`; approving it is what lets \`ui render\`'s browser setup run.`,
+];
+
+/**
+ * A `reviewUi.whenNoPreview` rule whose mode can only be `hand-check`. Setup writes this one mode:
+ * the ruling excludes skipping the screen check, so `skip` is not a value this surface can carry.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10362#issuecomment-5974640994
+ */
+export type HandCheckRule = NoPreviewRule & {readonly mode: "hand-check"};
+
+/**
+ * The `hand-check-rule` rule: every path, so it covers whichever source roots `uiSurfaces` names now
+ * or later. The rule is only ever read over a pull request's ui-class files, and the route refuses
+ * it when the pull request has a preview, so the wide glob loosens nothing else.
+ */
+const HAND_CHECK_RULE: HandCheckRule = {paths: ["**"], mode: "hand-check"};
 
 /** The marker heading that decides `exists` for the CLAUDE.md section, and its first line. */
 export const CLAUDE_MD_MARKER = "## Work flows through fabrika";
@@ -294,7 +408,7 @@ The per-stage shells are surgical — resume a half-dead lane, re-run one gate, 
 never the normal entry point: \`build\` (**builder**), \`review\` (**reviewer**), \`ship\`
 (**shipper**), and \`heal-ci\` for a PR that is green but going nowhere.`;
 
-/** Nine ids. A tenth is a change to this table, not a new rule. */
+/** Ten ids. An eleventh is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
@@ -303,6 +417,7 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 		defaultPath: ROADMAP_FILE,
 		declared: readRoadmapFile,
 		count: roadmapCount,
+		repoCheck: roadmapPinCheck,
 	},
 	{
 		id: "gitignore-row",
@@ -326,13 +441,27 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 		id: "dep-pin",
 		kind: "dep-pin",
 		defaultPath: "package.json",
-		section: "dependencies",
 		packageName: FABRIKA_CLI_PACKAGE,
 	},
+	{id: "hand-check-rule", kind: "no-preview-rule", defaultPath: CONFIG_PATH, rule: HAND_CHECK_RULE},
 ];
 
-export const findSurface = (id: string): BuildableSurface | undefined =>
+const findSurface = (id: string): BuildableSurface | undefined =>
 	BUILDABLE_SURFACES.find((surface) => surface.id === id);
+
+/**
+ * The id of the `labels` surface whose set holds `label` on this board, or `null` when no surface
+ * creates it.
+ *
+ * Read off {@link BUILDABLE_SURFACES} so a verb refusing over a missing label names the command that
+ * creates it without restating which set holds it, and so a repo that declared its own vocabulary
+ * is answered for its own label names.
+ */
+export const labelSurface = (label: string, board: BoardVocabulary): string | null =>
+	BUILDABLE_SURFACES.find(
+		(surface) =>
+			surface.kind === "labels" && surface.labels(board).some((spec) => spec.name === label),
+	)?.id ?? null;
 
 export const knownIds = (): string => BUILDABLE_SURFACES.map((surface) => surface.id).join(", ");
 
@@ -372,13 +501,16 @@ const created = (
 	return answer(stdout, [notice, ...(extraNotices ?? [])]);
 };
 
-const already = (surfaceId: string, target: string, json: boolean): VerbOutcome => {
+const already = (
+	surfaceId: string,
+	target: string,
+	json: boolean,
+	notice = `${target} is already present for ${surfaceId} — nothing written.`,
+): VerbOutcome => {
 	const stdout = json
 		? `${JSON.stringify({outcome: "exists", surfaceId, target, readback: EMPTY_CELL})}\n`
 		: `${row("bootstrap", "exists", surfaceId, target, EMPTY_CELL)}\n`;
-	return answer(stdout, [
-		`${VERB}: ${target} is already present for ${surfaceId} — nothing written.`,
-	]);
+	return answer(stdout, [`${VERB}: ${notice}`]);
 };
 
 /** The stdin content, or the refusal its three variants owe. `Failed` is `1`; empty is `3`. */
@@ -506,12 +638,15 @@ const buildFile = (
 			);
 		}
 		const count = surface.count?.(content);
+		const checked =
+			surface.repoCheck === undefined ? [] : yield* surface.repoCheck(content, input.repo);
 		return created(
 			surface.id,
 			relative,
 			input.json,
 			`${VERB}: created ${relative} for ${surface.id}, read-back conformed${count === undefined ? "" : ` — ${count.clause}`}.`,
 			count?.fields,
+			checked,
 		);
 	});
 
@@ -556,8 +691,19 @@ const mergeJsonPatch = (
 	return merged;
 };
 
-const serializeJsonPatch = (value: Readonly<Record<string, unknown>>): string =>
-	`${JSON.stringify(value, null, "\t")}\n`;
+/**
+ * One json surface's edit: `apply` maps a present file's parsed object to what it should hold, and
+ * `seed` is the whole object an absent file is created with.
+ */
+interface JsonEdit {
+	readonly apply: (present: Readonly<Record<string, unknown>>) => Record<string, unknown>;
+	readonly seed: Readonly<Record<string, unknown>>;
+}
+
+const patchEdit = (patch: Readonly<Record<string, unknown>>): JsonEdit => ({
+	apply: (present) => mergeJsonPatch(present, patch),
+	seed: patch,
+});
 
 /**
  * **The JSON key-merge arm, shared by every json-shaped target.** An adopting repo's
@@ -565,14 +711,16 @@ const serializeJsonPatch = (value: Readonly<Record<string, unknown>>): string =>
  * A present target must parse as a JSON object: the patch's declared keys merge over it, every
  * undeclared key survives the re-serialize verbatim, and bytes that refuse to parse are exit `11`
  * naming the file and the parse failure, nothing written. Already merged — the parsed object equals
- * what merging would produce — is `exists`, so idempotency stays absolute. Absent, the declared keys
- * are written whole through the same write-and-read-back protocol the file arm runs.
+ * what merging would produce — is `exists`, so idempotency stays absolute. A merged write renders in
+ * the layout the present file already uses, so its diff is the changed rows alone. Absent, the
+ * declared keys are written whole in {@link FRESH_JSON_LAYOUT} through the same write-and-read-back
+ * protocol the file arm runs.
  */
 const mergePatchAt = (
 	surfaceId: string,
 	relative: string,
 	absolute: string,
-	patch: Readonly<Record<string, unknown>>,
+	edit: JsonEdit,
 	input: BootstrapInput,
 	extraNotices?: ReadonlyArray<string>,
 ): Effect.Effect<VerbOutcome, never, Requirements> =>
@@ -589,7 +737,7 @@ const mergePatchAt = (
 				surfaceId,
 				relative,
 				absolute,
-				serializeJsonPatch(patch),
+				renderJson(edit.seed, FRESH_JSON_LAYOUT),
 				input,
 				`created ${relative} for ${surfaceId}, read-back conformed.`,
 				extraNotices,
@@ -615,13 +763,13 @@ const mergePatchAt = (
 				`${VERB}: ${relative} parses to ${Array.isArray(parsed.value) ? "an array" : typeof parsed.value}, not a JSON object — nothing was written.`,
 			);
 		}
-		const merged = mergeJsonPatch(parsed.value, patch);
+		const merged = edit.apply(parsed.value);
 		if (jsonEquals(parsed.value, merged)) return already(surfaceId, relative, input.json);
 		return yield* writeAndReadBack(
 			surfaceId,
 			relative,
 			absolute,
-			serializeJsonPatch(merged),
+			renderJson(merged, readJsonLayout(read.success)),
 			input,
 			`merged the declared keys into ${relative} for ${surfaceId}, read-back conformed.`,
 			extraNotices,
@@ -636,15 +784,21 @@ const buildJsonPatch = (
 	Effect.gen(function* () {
 		const target = yield* targetOf(surface, input);
 		if (!isTarget(target)) return target;
-		return yield* mergePatchAt(surface.id, target.relative, target.absolute, surface.patch, input);
+		return yield* mergePatchAt(
+			surface.id,
+			target.relative,
+			target.absolute,
+			patchEdit(surface.patch),
+			input,
+		);
 	});
 
 /**
  * **dep-pin resolves the release at run time; the edit itself is the json arm's.** The pinned
  * version is never a constant here — the npm registry's current published release is what makes a
  * re-run move an old row forward — and an unreachable or malformed answer refuses instead of
- * pinning a guess. The merge rides {@link mergePatchAt} over one key path:
- * `dependencies.@kampus/fabrika-cli` at exactly the resolved version, every other key verbatim,
+ * pinning a guess. The merge rides {@link mergePatchAt} with {@link pinDevDependency} as its edit:
+ * `devDependencies.@kampus/fabrika-cli` at exactly the resolved version, every other key verbatim,
  * absolute idempotency. No package manager ever spawns and no lockfile is read or written — the
  * exact install command is printed instead, because the lockfile stays the caller's.
  */
@@ -668,11 +822,111 @@ const buildDepPin = (
 			surface.id,
 			relative,
 			absolute,
-			{[surface.section]: {[surface.packageName]: resolved.value}},
+			{
+				apply: (present) => pinDevDependency(present, surface.packageName, resolved.value),
+				seed: {devDependencies: {[surface.packageName]: resolved.value}},
+			},
 			input,
 			[
 				`${VERB}: the lockfile stays yours — install with: ${installCommand(surface.packageName, resolved.value)}`,
+				...installCostNotices(surface.packageName),
 			],
+		);
+	});
+
+const RULES_KEY = `${REVIEW_UI}.${WHEN_NO_PREVIEW}`;
+
+/**
+ * **The config file is edited in place, never re-serialized.** `.fabrika.jsonc` carries a person's
+ * comments, so the rule is spliced into the text and every other byte stays. Any rule already
+ * declared is `exists`, whatever its mode: which paths take which mode is the repo's own statement
+ * once it has made one, and a second rule from here could only contradict it.
+ *
+ * The spliced text is re-parsed before it is written. A document whose other keys moved, or whose
+ * `reviewUi` is not exactly this surface's rule, is refused unwritten.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10362#issuecomment-5974640994
+ */
+const buildNoPreviewRule = (
+	surface: Extract<BuildableSurface, {kind: "no-preview-rule"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const target = yield* targetOf(surface, input);
+		if (!isTarget(target)) return target;
+		const {relative, absolute} = target;
+		const declared = {[REVIEW_UI]: {[WHEN_NO_PREVIEW]: [surface.rule]}};
+
+		const probe = yield* Effect.result(exists(absolute));
+		if (Result.isFailure(probe)) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot probe ${relative}: ${probe.failure.reason} — nothing was written.`,
+			);
+		}
+		if (!probe.success) {
+			return yield* writeAndReadBack(
+				surface.id,
+				relative,
+				absolute,
+				renderJson(declared, FRESH_JSON_LAYOUT),
+				input,
+				`created ${relative} for ${surface.id} with one ${surface.rule.mode} rule, read-back conformed.`,
+			);
+		}
+		const read = yield* Effect.result(readFile(absolute));
+		if (Result.isFailure(read)) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read ${relative}: ${read.failure.reason} — whether a \`${RULES_KEY}\` rule is already there is UNKNOWN, and nothing was written.`,
+			);
+		}
+		const before = readDocument({_tag: "Text", text: read.success}, relative);
+		if (before._tag !== "Record") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${relative} does not parse as a JSON object with comments — nothing was written.`,
+			);
+		}
+		const standing =
+			before.record[REVIEW_UI] === undefined
+				? ({_tag: "Value", value: reviewUiKey.shippedDefault} as const)
+				: reviewUiKey.decode(before.record[REVIEW_UI]);
+		if (standing._tag === "Malformed") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${relative} is refused — ${standing.reason.replace(/\.$/, "")}. Nothing was written; fix that key first.`,
+			);
+		}
+		if (standing.value.whenNoPreview.length > 0) {
+			return already(
+				surface.id,
+				relative,
+				input.json,
+				`${relative} already carries a \`${RULES_KEY}\` rule — nothing written.`,
+			);
+		}
+
+		const edit = setJsoncValue(read.success, [REVIEW_UI, WHEN_NO_PREVIEW], [surface.rule]);
+		const after =
+			edit._tag === "Edited" ? readDocument({_tag: "Text", text: edit.text}, relative) : null;
+		if (
+			edit._tag === "Refused" ||
+			after?._tag !== "Record" ||
+			!jsonEquals(after.record, {...before.record, ...declared})
+		) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot add the rule to ${relative} without moving its other keys — nothing was written. Add ${JSON.stringify(surface.rule)} under "${RULES_KEY}" by hand.`,
+			);
+		}
+		return yield* writeAndReadBack(
+			surface.id,
+			relative,
+			absolute,
+			edit.text,
+			input,
+			`added one ${surface.rule.mode} rule to ${relative} for ${surface.id}, read-back conformed.`,
 		);
 	});
 
@@ -932,5 +1186,6 @@ export const runBootstrap = (
 	if (surface.kind === "line") return buildLine(surface, input);
 	if (surface.kind === "json") return buildJsonPatch(surface, input);
 	if (surface.kind === "dep-pin") return buildDepPin(surface, input);
+	if (surface.kind === "no-preview-rule") return buildNoPreviewRule(surface, input);
 	return surface.kind === "labels" ? buildLabels(surface, input) : buildArtifact(surface, input);
 };

@@ -6,9 +6,9 @@ description: "Record one architecture decision as an `NNNN-slug.md` file in the 
 # adr
 
 One decision per file; the pull request adds nothing but that file plus the status-line edits it
-implies, because discovery is the CLAUDE.md contract and there is no index. A settled preference
-earns a file even when nobody asks for an ADR — an unrecorded ruling is one the next session
-re-decides differently. Examples run id `9240`.
+implies and any optional pointer step 4 allows, because discovery is the CLAUDE.md contract and there
+is no index. A settled preference earns a file even when nobody asks for an ADR — an unrecorded
+ruling is one the next session re-decides differently. Examples run id `9240`.
 
 ## 1 — Claim the number and write the file, in one call
 
@@ -118,19 +118,20 @@ fabrika adr supersede 9126 --by 9240
 ```
 
 Where the rest of that ADR still stands, `fabrika adr amend-in-part 9023 --by 9240` instead.
-Either verb touches the `status:` line and nothing else — an accepted ADR's decision text is
-immutable, so name the relationship in your own `## Context` rather than editing theirs. Which line
-each rewrites, and what each refuses, is their shared section:
+Either verb rewrites the `status:` line only. You **may** then hand-add a bounded pointer inside the
+older ADR's body: a link to your record and a scope note saying where its text still holds. The
+pointer adds no ruling, reverses nothing, and leaves the claims of the decision it sits in as they
+are; a change past that is a ruling, so it goes in your record, and a reversal is a `supersede`. The
+pointer is optional — naming the relationship only in your own `## Context`, with the older body
+untouched, is equally conforming. Which line each rewrites, and what each refuses, is their shared
+section:
 `fabrika wire doc-section --heading "adr supersede and adr amend-in-part" < <skill-base>/contract.md`.
 
 ## 5 — Record the vocabulary impact
 
-An ADR is a primary coining site, and a term coined here drifts silently unless it is routed. Land
-on **exactly one** outcome; the explicit "none" separates *considered it* from *forgot to*:
-
-- **A term is coined or redefined** → name it and route it to `.glossary/TERMS.md`: the row in this
-  PR when the definition is short and unambiguous, otherwise `/glossary`.
-- **Nothing is coined** → add a terminal `## Records` section and write `no vocabulary impact`.
+A terminal `## Records` section is required only when the ADR coins or redefines a term. Name the
+term there and route it to `.glossary/TERMS.md`: the row in this PR when the definition is short and
+unambiguous, otherwise `/glossary`.
 
 ## 6 — Check, then report
 
@@ -149,7 +150,7 @@ job that is not a required context does not hold the batch. Both records land, t
 goes red, and you renumber
 there instead — a second pull request, a second review, and the approval on this one already spent.
 
-**Whether this PR needs a control-plane approval is `cp-classify`'s answer, not yours** — it routes
+**Whether this PR needs a control-plane approval is `fabrika ship scope`'s answer, not yours** — it routes
 on CODEOWNERS, and how a repo owns its decision corpus decides it
 ([control-plane classification](../../docs/control-plane-classification.md)). **That gate is the
 authority: do not predict it, and never reword the ADR to change its verdict.** A wrong

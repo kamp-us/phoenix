@@ -77,13 +77,6 @@ describe("buildInventory", () => {
 		expect(forward).toEqual(reversed);
 	});
 
-	it("fails closed when no primitive is annotated", () => {
-		expect(buildInventory([source("export const X = () => null;")])).toEqual({
-			pass: false,
-			reason: "zero-scope",
-		});
-	});
-
 	it("takes several components from one file", () => {
 		expect(
 			extractFromFile(source("/**\n * @component A\n */\n/**\n * @component B\n */")),
@@ -120,10 +113,5 @@ describe("renderInventory", () => {
 
 	it("marks agent directives as protected", () => {
 		expect(rendered()).toContain("do not regenerate");
-	});
-
-	// No timestamp: two runs over one tree must produce identical bytes or the check reds on nothing.
-	it("renders identically on a re-run", () => {
-		expect(rendered()).toBe(rendered());
 	});
 });

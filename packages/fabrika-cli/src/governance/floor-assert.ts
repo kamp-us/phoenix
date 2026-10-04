@@ -34,6 +34,7 @@ import {
 	latestPerContext,
 	listRunsAtHead,
 	listShipCheckRuns,
+	listWorkflowInventory,
 	type ShipCheckRun,
 } from "../ship/github.ts";
 
@@ -90,8 +91,20 @@ export type FloorAssertion =
 	 * would be false in exactly that case. The message that used to offer "the floor is not installed
 	 * in this repository" sent one reader down a hypothesis about the re-fire keying, which
 	 * `needsRefire` had never had.
+	 *
+	 * The repository does carry an active `governance-floor` workflow here; where it carries none the
+	 * answer is `NoFloor`.
 	 */
 	| {readonly _tag: "NoRun"; readonly runsAtHead: number}
+	/**
+	 * The repository's complete workflow inventory holds no active `governance-floor` workflow, so it
+	 * runs no floor and there is nothing to re-fire. Proven from that inventory, never from an empty
+	 * run list, and a read that could not prove the inventory complete, or that holds an entry it
+	 * cannot read, is `Unknown`.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10053
+	 */
+	| {readonly _tag: "NoFloor"}
 	/** The run at this head already concluded green — the check reflects the gate's state. */
 	| {readonly _tag: "Green"; readonly run: number}
 	/** The run is still going, so it may yet judge state older than the verdict just written. */
@@ -135,7 +148,25 @@ export const assertFloorAt = (
 			);
 		}
 		const floors = listed.value.runs.filter((run) => run.name === FLOOR_WORKFLOW_NAME);
-		if (floors.length === 0) return {_tag: "NoRun", runsAtHead: listed.value.runs.length};
+		if (floors.length === 0) {
+			const inventory = yield* listWorkflowInventory(repo);
+			if (inventory._tag === "Failure") {
+				return unknown(`the workflows of ${repo} could not be read: ${inventory.reason}`);
+			}
+			if (inventory.value.received < inventory.value.declared) {
+				return unknown(
+					`received ${inventory.value.received} of ${inventory.value.declared} declared workflows in ${repo}`,
+				);
+			}
+			if (inventory.value.malformed > 0) {
+				return unknown(
+					`${inventory.value.malformed} workflow(s) in ${repo} arrived without a readable name or state`,
+				);
+			}
+			return inventory.value.active.some((workflow) => workflow.name === FLOOR_WORKFLOW_NAME)
+				? {_tag: "NoRun", runsAtHead: listed.value.runs.length}
+				: {_tag: "NoFloor"};
+		}
 		// The newest run at this head, by id. A head can carry several — a re-created PR, a retriggered
 		// workflow — and the check the PR shows is the last one.
 		const latest = floors.reduce((held, run) => (run.id > held.id ? run : held));
@@ -181,6 +212,8 @@ export const floorToken = (assertion: FloorAssertion): string => {
 	switch (assertion._tag) {
 		case "NoRun":
 			return "no-run";
+		case "NoFloor":
+			return "no-floor";
 		case "Green":
 			return "green";
 		case "InFlight":
@@ -201,6 +234,8 @@ export const floorLine = (verb: string, assertion: FloorAssertion): string => {
 			return assertion.runsAtHead === 0
 				? `${verb}: this head lists no workflow run at all, so whether ${FLOOR_WORKFLOW_NAME} ran here is unproven — re-read the head's runs before treating the floor as absent.`
 				: `${verb}: the ${assertion.runsAtHead} run(s) listed at this head carry no ${FLOOR_WORKFLOW_NAME} one — that filtered answer is the only fact this read holds, and why it is empty is unproven; re-read the head's runs before treating the floor as absent.`;
+		case "NoFloor":
+			return `${verb}: this repository has no active ${FLOOR_WORKFLOW_NAME} workflow, so it runs no governance floor — nothing to re-fire.`;
 		case "Green":
 			return `${verb}: ${FLOOR_WORKFLOW_NAME} run ${assertion.run} already reads green at this head — nothing to re-fire.`;
 		case "InFlight":

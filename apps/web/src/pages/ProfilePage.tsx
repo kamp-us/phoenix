@@ -9,13 +9,12 @@ import {actorLabel} from "../components/moderation/actor-identity";
 import {CaylakStatusBlock} from "../components/profile/CaylakStatusBlock";
 import {DeleteAccountDialog} from "../components/profile/DeleteAccountDialog";
 import {ProfileContributionSignal} from "../components/profile/ProfileContributionSignal";
-import {ProfileHeader} from "../components/profile/ProfileHeader";
+import {ProfileHeader, type ProfileHeaderStatsState} from "../components/profile/ProfileHeader";
 import {profileStandingLabelKey} from "../components/profile/profileStanding";
 import {PHOENIX_CAYLAK_VISIBILITY} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {type CatalogKey, useT} from "../i18n";
 import {type Density, useDensity} from "../lib/density";
-import {type ThemeChoice, useTheme} from "../lib/theme";
 import {CAYLAK_VISIBILITY_PATH} from "./CaylakVisibilityPage";
 import {useProfileStats} from "./useProfileStats";
 import "./ProfilePage.css";
@@ -49,10 +48,15 @@ export function ProfilePage() {
 	const readUsername = u?.username ?? me?.username ?? null;
 	const statsState = useProfileStats(readUsername);
 	// A failed stats (or `me`) fetch must NOT render as `0` — that's the silent
-	// honest-empty-state bug (#448). Treat either failure as the strip's error.
-	const statsFailed = statsState.status === "error" || meStatus === "error";
-	const stats = statsState.status === "ok" ? statsState.stats : null;
-	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
+	// honest-empty-state bug (#448). Nor may an unanswered one: the read is
+	// `network-only`, so every visit holds the in-flight window open for a full
+	// round-trip, and collapsing it to `null` painted those zeros as counts (#9265).
+	const headerStats: ProfileHeaderStatsState =
+		statsState.status === "error" || meStatus === "error"
+			? {status: "error"}
+			: statsState.status === "ok"
+				? {status: "ready", stats: statsState.stats}
+				: {status: "loading"};
 	const {choice: densityChoice, setChoice: setDensityChoice} = useDensity();
 	// The entry point into /caylak-gorunurlugu (#6426): shown only when the feature is live AND
 	// the viewer is a yazar, so a dark route and a route the server would refuse are both
@@ -151,16 +155,11 @@ export function ProfilePage() {
 					handle={handle}
 					standingLabel={standingLabel}
 					image={me?.image ?? null}
-					stats={stats}
-					statsError={statsFailed}
+					stats={headerStats}
 					showKarma
 				/>
 
 				{me?.id ? <CaylakStatusBlock profileUserId={me.id} /> : null}
-
-				{/* The owner sees their OWN sandboxed content here: this feed keys on authorId
-				    with no sandbox filter. */}
-				{readUsername ? <ProfileContributionSignal username={readUsername} /> : null}
 
 				<section className="kp-profile__section">
 					<h3>{t("profile.section.account")}</h3>
@@ -229,25 +228,7 @@ export function ProfilePage() {
 
 				<section className="kp-profile__section">
 					<h3>{t("profile.section.appearance")}</h3>
-					<div className="kp-profile__row">
-						<span className="label">{t("profile.field.theme")}</span>
-						<span className="value">
-							<ToggleGroup
-								className="kp-toggle-group kp-toggle-group--outline"
-								size="sm"
-								items={[
-									{value: "light", label: t("profile.theme.light")},
-									{value: "dark", label: t("profile.theme.dark")},
-									{value: "auto", label: t("profile.theme.auto")},
-								]}
-								value={[themeChoice]}
-								onValueChange={([next]) => {
-									if (next) setThemeChoice(next as ThemeChoice);
-								}}
-							/>
-						</span>
-						<span />
-					</div>
+					{/* No theme row: the signed-in user's one theme control is the user menu's (ADR 0437). */}
 					<div className="kp-profile__row">
 						<span className="label">{t("profile.field.density")}</span>
 						<span className="value">
@@ -306,7 +287,7 @@ export function ProfilePage() {
 					) : null}
 				</section>
 
-				<section className="kp-profile__section kp-profile__section--last">
+				<section className="kp-profile__section">
 					<h3 className="danger">{t("profile.section.danger")}</h3>
 					<p>{t("profile.danger.description")}</p>
 					<div className="kp-profile__danger">
@@ -321,6 +302,11 @@ export function ProfilePage() {
 						</Button>
 					</div>
 				</section>
+
+				{/* Below every setting, because the menu links here as "ayarlar" and the first
+				    control on the page has to be a setting (#9273). The owner sees their OWN
+				    sandboxed content here: this feed keys on authorId with no sandbox filter. */}
+				{readUsername ? <ProfileContributionSignal username={readUsername} /> : null}
 			</div>
 			<DeleteAccountDialog
 				open={deleteOpen}

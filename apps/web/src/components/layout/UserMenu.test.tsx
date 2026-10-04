@@ -11,6 +11,7 @@ import {fileURLToPath} from "node:url";
 import {fireEvent, render, screen} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {describe, expect, it} from "vitest";
+import {ThemeProvider} from "../../lib/theme";
 import {UserMenu} from "./UserMenu";
 
 // A variable path (not a string literal) so Vite does not statically rewrite
@@ -24,12 +25,9 @@ const BUTTON_CSS = readSource("../../../../../packages/design/src/Button.css");
 async function openMenu() {
 	render(
 		<MemoryRouter>
-			<UserMenu
-				user={{name: "Elif", username: "elif"}}
-				themeChoice="dark"
-				onThemeChange={() => {}}
-				onLogout={() => {}}
-			/>
+			<ThemeProvider>
+				<UserMenu user={{name: "Elif", username: "elif"}} onLogout={() => {}} />
+			</ThemeProvider>
 		</MemoryRouter>,
 	);
 	fireEvent.click(screen.getByText("Elif"));

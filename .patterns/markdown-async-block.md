@@ -3,7 +3,7 @@
 `@kampus/design`'s [`Markdown`](../packages/design/src/Markdown.tsx) promises that everything paints
 on the first render, because its main consumer — Tuval's transcript — virtualizes rows and measures
 each one after it paints
-([`apps/tuval/src/shell/chat/ChatWindow.tsx`](../apps/tuval/src/shell/chat/ChatWindow.tsx)). That is
+([`packages/tuval-ui/src/shell/chat/ChatWindow.tsx`](../packages/tuval-ui/src/shell/chat/ChatWindow.tsx)). That is
 why an image renders as a link and why nothing is syntax-highlighted asynchronously.
 
 [`MermaidBlock`](../packages/design/src/MermaidBlock.tsx) is the one block that finishes later, and
@@ -65,7 +65,7 @@ that a source it refuses stays the code block with the reason visible
 ([`packages/design/src/Markdown.test.tsx`](../packages/design/src/Markdown.test.tsx)). Assert the
 *first* paint on the transcript side, without `waitFor` — that is the measurement contract, and a
 test that waits for the finished block would pass on a broken one
-([`apps/tuval/src/shell/chat/transcript-markdown.unit.test.tsx`](../apps/tuval/src/shell/chat/transcript-markdown.unit.test.tsx)).
+([`packages/tuval-ui/src/shell/chat/transcript-markdown.unit.test.tsx`](../packages/tuval-ui/src/shell/chat/transcript-markdown.unit.test.tsx)).
 Judging the drawn diagram is `review-ui`'s.
 
 ## Where this stops applying
@@ -78,7 +78,7 @@ and images are already excluded for exactly that reason.
 
 Rule 1 says the first paint is the real content, never a placeholder. One block in the transcript
 deliberately breaks it: an edit call's diff
-([`apps/tuval/src/shell/chat/ToolCallDetail.tsx`](../apps/tuval/src/shell/chat/ToolCallDetail.tsx))
+([`packages/tuval-ui/src/shell/chat/ToolCallDetail.tsx`](../packages/tuval-ui/src/shell/chat/ToolCallDetail.tsx))
 renders `@kampus/design`'s `Diff` through a `React.lazy` import, so what paints first is a one-line
 fallback and the diff arrives a frame later.
 

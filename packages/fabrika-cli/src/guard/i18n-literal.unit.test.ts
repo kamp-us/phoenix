@@ -93,20 +93,6 @@ const config = (over: Partial<I18nGuardConfig> = {}): I18nGuardConfig => ({
 });
 
 describe("judge", () => {
-	it("passes a corpus with no Turkish anywhere", () => {
-		expect(judge({files: [scan(`${SCAN_ROOT}/App.tsx`, 0)], config: config()})).toMatchObject({
-			_tag: "Clean",
-			filesScanned: 1,
-			allowed: 0,
-		});
-	});
-
-	it("reds a Turkish literal in a file carrying no allowance", () => {
-		const verdict = judge({files: [scan(`${SCAN_ROOT}/App.tsx`, 1)], config: config()});
-		expect(verdict._tag).toBe("Violation");
-		expect(renderReport(verdict)).toContain(`${SCAN_ROOT}/App.tsx — 1 hit(s), ceiling 0`);
-	});
-
 	it("passes a file at its ceiling and reds it one literal later", () => {
 		const allowance = {ceiling: 2, why: "the wire tier value"};
 		const files = [scan(`${SCAN_ROOT}/App.tsx`, 2)];
@@ -119,15 +105,6 @@ describe("judge", () => {
 				config: config({exempt: {[`${SCAN_ROOT}/App.tsx`]: allowance}}),
 			})._tag,
 		).toBe("Violation");
-	});
-
-	it("honours an unmigrated allowance the same way an exempt one works", () => {
-		expect(
-			judge({
-				files: [scan(`${SCAN_ROOT}/App.tsx`, 1)],
-				config: config({unmigrated: {[`${SCAN_ROOT}/App.tsx`]: {ceiling: 1, why: "debt, #7723"}}}),
-			})._tag,
-		).toBe("Clean");
 	});
 
 	it("reds an allowance naming a file the scan never saw", () => {

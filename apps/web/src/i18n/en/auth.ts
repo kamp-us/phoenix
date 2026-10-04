@@ -2,17 +2,12 @@ import type {AuthKey} from "../tr/auth";
 
 // Lowercase like the Turkish side: kamp.us speaks in lowercase, and a locale swap changes the
 // language, never the typographic voice.
-//
-// Where Turkish suffixes a brand noun into a longer word (`divanda`, `panoda`, `çaylaksın`) that
-// word is no longer a whole-word hit, so English must not spell the bare noun either or the
-// per-key counts diverge. English carries a placeholder instead — named `{panoNoun}`, never
-// `{pano}`, because the invariant's `\p{L}+` scan reads a placeholder's own name as a word.
 export const auth = {
 	"auth.brand.pano": "pano",
 	"auth.brand.sozluk": "sözlük",
-	"auth.brand.divan": "divan",
-	"auth.brand.caylak": "çaylak",
-	"auth.brand.yazar": "yazar",
+	"auth.brand.divan": "Council",
+	"auth.brand.caylak": "newcomer",
+	"auth.brand.yazar": "author",
 
 	"auth.signIn.title": "sign in",
 	"auth.signIn.sub": "pick up where you left off.",
@@ -23,7 +18,7 @@ export const auth = {
 	"auth.signUp.title": "sign up",
 	"auth.signUp.sub": "the door is open, a voice is earned.",
 	"auth.signUp.rite":
-		"opening an account is free to everyone. what you write first is reviewed as a çaylak in the {divanNoun}; as you contribute, a yazar vouches for you and you become one too — and from then on what you write goes live directly.",
+		"opening an account is free to everyone. what you write first is reviewed as a newcomer in the {divanNoun}; as you contribute, an author vouches for you and you become one too — and from then on what you write goes live directly.",
 	"auth.signUp.submit": "create account",
 	"auth.signUp.pending": "creating…",
 	"auth.signUp.failed": "sign-up failed",
@@ -62,32 +57,32 @@ export const auth = {
 
 	"auth.welcome.loading": "loading…",
 	"auth.welcome.title": "welcome",
-	"auth.welcome.titleCaylak": "welcome, çaylak",
+	"auth.welcome.titleCaylak": "welcome, newcomer",
 	"auth.welcome.lede":
-		"kamp.us is a slow corner where developers teach themselves. links and writing are shared on {panoNoun}; in {sozlukNoun} we write terms in our own words. no ads, no follower race — a voice is earned.",
+		"kamp.us is a slow corner where developers teach themselves. links and writing are shared on pano; in sözlük we write terms in our own words. no ads, no follower race — a voice is earned.",
 	"auth.welcome.standingHeading": "where you stand",
 	"auth.welcome.caylakLine": "your account is new; you are still a {caylakNoun}.",
 	"auth.welcome.karmaLabel": "karma",
-	"auth.welcome.vouchTerm": "kefil",
-	"auth.welcome.yazarNote": "you are already a {yazarNoun}; what you write goes live directly.",
+	"auth.welcome.vouchTerm": "vouched",
+	"auth.welcome.yazarNote": "you are already an {yazarNoun}; what you write goes live directly.",
 	"auth.welcome.standingLoading": "loading your standing.",
 	"auth.welcome.riteHeading": "the road ahead",
 	"auth.welcome.riteBody":
-		"as you contribute, a yazar becomes your kefil; once the vouch and the review are complete you become a yazar and what you write goes live directly.",
+		"as you contribute, an author vouches for you; once the vouch and the review are complete you become an author and what you write goes live directly.",
 	"auth.welcome.continue": "continue",
 
 	"auth.firstContribution.heading": "write your first contribution",
 	"auth.firstContribution.addEntry": 'you can start by adding an entry to the "{term}" başlık.',
 	"auth.firstContribution.browse":
-		"find a başlık that interests you in {sozlukNoun} and write your first entry.",
+		"find a başlık that interests you in sözlük and write your first entry.",
 	"auth.firstContribution.goAddEntry": "add an entry",
-	"auth.firstContribution.goBrowse": "browse {sozlukNoun}",
+	"auth.firstContribution.goBrowse": "browse sözlük",
 	"auth.firstContribution.dismiss": "not now",
 
 	"auth.landing.tagline": "a slow corner where developers teach themselves.",
-	"auth.landing.manifesto.panoLead": "on {panoNoun}",
+	"auth.landing.manifesto.panoLead": "on pano",
 	"auth.landing.manifesto.panoBody": "we share and discuss links and writing.",
-	"auth.landing.manifesto.sozlukLead": "in {sozlukNoun}",
+	"auth.landing.manifesto.sozlukLead": "in sözlük",
 	"auth.landing.manifesto.sozlukBody": "we write terms in our own words.",
 	"auth.landing.manifesto.tail":
 		"turkish first; no ads, no follower counts, no sensation — just things worth reading and the few hundred people who write them.",
@@ -95,13 +90,13 @@ export const auth = {
 	"auth.landing.rite.doorBody": "opening an account is free to everyone.",
 	"auth.landing.rite.earnedLead": "a voice is earned:",
 	"auth.landing.rite.earnedBody":
-		"what you write first is reviewed as a çaylak in the {divanNoun}; as you contribute a yazar becomes your kefil and you become a yazar — and from then on what you write goes live directly.",
+		"what you write first is reviewed as a newcomer in the {divanNoun}; as you contribute an author vouches for you and you become an author — and from then on what you write goes live directly.",
 	"auth.landing.join.label": "create an account",
 	"auth.landing.join.sub": "the door is open · a voice is earned",
 	"auth.landing.browse.panoSub": "posts · discussions",
 	"auth.landing.browse.sozlukSub": "terms · definitions",
-	"auth.landing.col.pano": "the last 24 hours on {panoNoun}",
-	"auth.landing.col.sozluk": "latest in {sozlukNoun}",
+	"auth.landing.col.pano": "latest posts on pano",
+	"auth.landing.col.sozluk": "latest in sözlük",
 	"auth.landing.seeAll": "see all",
 	"auth.landing.empty.posts": "no posts yet.",
 	"auth.landing.empty.terms": "no terms yet.",
@@ -109,7 +104,7 @@ export const auth = {
 	"auth.landing.error": "could not load right now",
 	"auth.landing.stats.definitions": "definitions",
 	"auth.landing.stats.posts": "posts",
-	"auth.landing.stats.authors": "yazar",
+	"auth.landing.stats.authors": "authors",
 	"auth.landing.stats.comments": "comments",
 	"auth.landing.stats.version": "phoenix",
 	"auth.landing.stats.error": "no stats right now",
@@ -124,5 +119,5 @@ export const auth = {
 	"auth.onramp.heading.pano": "you're ready to share your first post",
 	"auth.onramp.heading.panoComment": "you're ready to write your first comment",
 	"auth.onramp.body":
-		"what you write as a çaylak is reviewed in a space only moderators see until you become a yazar — it is not visible to everyone right away. as you write and contribute you gather karma, and with a yazar's backing you become one; then what you write goes live directly.",
+		"what you write as a newcomer is reviewed in a space only moderators see until you become an author — it is not visible to everyone right away. as you write and contribute you gather karma, and with an author's backing you become one; then what you write goes live directly.",
 } satisfies Record<AuthKey, string>;

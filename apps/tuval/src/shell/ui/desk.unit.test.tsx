@@ -9,22 +9,27 @@
  * with a fake and nothing about the desk.
  */
 
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {
+	empty,
+	prefixArmedAround,
+	processGone,
+	type WindowId,
+} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {useForwardedKey} from "@kampus/tuval-ui/forwarded-key";
+import {defaultPrefixTable} from "@kampus/tuval-ui/keys";
+import {installDomShims} from "@kampus/tuval-ui/testing/dom";
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {Duration} from "effect";
 import type {ReactElement} from "react";
 import {StrictMode, useEffect, useRef, useState} from "react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {applyMsg} from "../core/index.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
 import type {PickerEntries} from "../picker/index.ts";
-import {empty, prefixArmedAround, processGone, type WindowId} from "../window/index.ts";
 import {Desk} from "./Desk.tsx";
-import {installDomShims} from "./dom.testing.ts";
 import {threeWindowDesk} from "./fixtures.ts";
-import {useForwardedKey} from "./forwarded-key.tsx";
 import {boundMount, type MountResolver, noRenderer, type ReactWindowRenderer} from "./mount.ts";
 import {type KeyPress, refused, replyIn} from "./press.ts";
 
@@ -61,7 +66,7 @@ const boundEverywhere: MountResolver = boundTo((host) => (
 /**
  * A window shaped like the chat one: the two places an operator's focus actually sits — a composer
  * that reads its own keys, and a scroll region that swallows a bare character exactly as
- * `../chat/ChatWindow.tsx` does. The rule is the shipped helper, not a paraphrase of it, so a desk
+ * `packages/tuval-ui/src/shell/chat/ChatWindow.tsx` does. The rule is the shipped helper, not a paraphrase of it, so a desk
  * that stopped honouring the armed mark fails here.
  */
 const chatShapedWindow: MountResolver = boundTo((host) => (
@@ -286,6 +291,7 @@ const composerEverywhere: MountResolver = (windowId, processId) =>
 		: {
 				_tag: "Bound",
 				name: null,
+				project: null,
 				host: {
 					windowId,
 					processId: ProcessId.make(processId),
@@ -582,23 +588,6 @@ describe("the shell's own keys from a focused text entry or transcript", () => {
 
 		expect([prefixPrevented, sequencePrevented]).toEqual([false, false]);
 		expect(box.value).toBe("");
-	});
-});
-
-describe("the status line", () => {
-	it("shows the workspace, the armed prefix and the pending sequence", () => {
-		render(<Harness initial={threeWindowDesk()} sent={[]} />);
-		const status = screen.getByLabelText("Shell status");
-
-		expect(status.textContent).toContain("workspace-0");
-		expect(status.textContent).toContain("3 windows");
-		expect(status.textContent).toContain("idle");
-
-		act(arm);
-		expect(screen.getByLabelText("Shell status").textContent).toContain("armed");
-		expect(screen.getByLabelText("Shell status").textContent).toContain(
-			"Prefix armed, waiting for a sequence.",
-		);
 	});
 });
 

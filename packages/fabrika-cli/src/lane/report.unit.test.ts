@@ -6,6 +6,8 @@ import {EPIC_RULES} from "../wire/lane-brief.ts";
 import {MACHINERY_EVENT} from "./machine.ts";
 import {REVIEW_UI_STATE} from "./prove.ts";
 import {
+	AXIS_ISSUE_CAUSES,
+	axisIssueForCause,
 	causeForEvent,
 	conditionalTerminal,
 	eventForToken,
@@ -16,10 +18,14 @@ import {
 	PARK_CAUSES,
 	type ParkCause,
 	PROOF_CONDITIONAL_TERMINALS,
+	RETIRED_PARK_CAUSES,
 	rationaleForEvent,
 	remedyForCause,
 	routeForCause,
 	SHELL_VOCABULARIES,
+	serviceAt,
+	TERMINAL_PARK_CAUSES,
+	tokenCause,
 } from "./report.ts";
 
 /**
@@ -31,6 +37,19 @@ const RENDERED_PARKS = [
 	["CANT-SEE", "no-preview-render"],
 	["BLOCKED-NO-MANIFEST", "no-design-manifest"],
 	["ROUTED-ELSEWHERE", "no-rendered-delta"],
+] as const;
+
+/**
+ * Every park the rendered gate records: the three above, `ROUTED-ELSEWHERE`'s second cause for a
+ * route the repo's `reviewUi.whenNoPreview` rules admitted, and `ESCALATED`, a verdict that provably
+ * could not land. Under `parkCause.uncaused: "refuse"` an uncaused park is never recorded, so it
+ * names its own cause too.
+ */
+const UI_REVIEWER_PARKS = [
+	...RENDERED_PARKS,
+	["CANT-SEE", "render-axis-missing"],
+	["ROUTED-ELSEWHERE", "no-preview-routed"],
+	["ESCALATED", "write-unlanded"],
 ] as const;
 
 describe("the builder's no-PR terminals", () => {
@@ -115,6 +134,33 @@ describe("the shipper's two queue terminals are waits, not landings", () => {
 	});
 });
 
+describe("the states each vocabulary group serves", () => {
+	it("serves a builder's terminal out of either build state", () => {
+		expect(serviceAt("SHIPPED-PR", "build")).toEqual({_tag: "Served", by: ["builder"]});
+		expect(serviceAt("shipped-pr", "build:ui")).toEqual({_tag: "Served", by: ["builder"]});
+	});
+
+	it("serves the shipper's LANDED out of ship and the queue dwell", () => {
+		expect(serviceAt("LANDED", "ship")).toEqual({_tag: "Served", by: ["shipper"]});
+		expect(serviceAt("LANDED", "ship:queued")).toEqual({_tag: "Served", by: ["shipper"]});
+	});
+
+	it("accepts a shared token wherever any one of its owners serves the state", () => {
+		expect(serviceAt("UNKNOWN", "review")).toEqual({_tag: "Served", by: ["reviewer"]});
+		expect(serviceAt("UNKNOWN", "ship")).toEqual({_tag: "Served", by: ["shipper"]});
+		expect(serviceAt("ESCALATED", "build")).toEqual({_tag: "Served", by: ["builder"]});
+		expect(serviceAt("ESCALATED", "review:ui")).toEqual({_tag: "Served", by: ["ui-reviewer"]});
+		expect(serviceAt("PASS", "review:ui")).toEqual({_tag: "Served", by: ["ui-reviewer"]});
+		expect(serviceAt("FAIL", "integrate")).toEqual({_tag: "Served", by: ["integrator"]});
+	});
+
+	it("serves a machinery token out of any state", () => {
+		for (const leaf of ["review", "review:ui", "ship", "ship:queued", "integrate", "queued"]) {
+			expect(serviceAt("SHELL-DEAD", leaf)).toEqual({_tag: "Served", by: ["machinery"]});
+		}
+	});
+});
+
 describe("flattening the per-shell vocabularies", () => {
 	it("flattens the real vocabularies with nothing overwritten", () => {
 		const flat = flattenVocabularies(SHELL_VOCABULARIES);
@@ -196,16 +242,14 @@ describe("the UI reviewer's vocabulary against the skill that owns it", () => {
 
 	// The emitting half: a cause the skill never tells the gate to pass is a cause nobody
 	// names, so the rows would sit in code while every rendered park still landed bare.
-	it.each(RENDERED_PARKS)("pairs %s with the --cause token %s", (token, cause) => {
+	it.each(UI_REVIEWER_PARKS)("pairs %s with the --cause token %s", (token, cause) => {
 		expect(section).toMatch(new RegExp(`${token}[\\s\\S]*?\`${cause}\``));
 	});
 
-	// The fourth park terminal, `ESCALATED`, is deliberately uncaused: the builder and reviewer
-	// groups spell it the same way, so seating a cause for it is a cross-shell change.
-	it("names those three causes and no fourth", () => {
+	it("names those six causes and no seventh", () => {
 		const named = PARK_CAUSE_TOKENS.filter((cause) => (section ?? "").includes(cause));
 
-		expect(new Set(named)).toEqual(new Set(RENDERED_PARKS.map(([, cause]) => cause)));
+		expect(new Set(named)).toEqual(new Set(UI_REVIEWER_PARKS.map(([, cause]) => cause)));
 	});
 });
 
@@ -244,6 +288,29 @@ describe("the rendered gate's three parks name a cause instead of landing bare",
 	});
 });
 
+describe("a render-axis park names the issue it waits on", () => {
+	it.each([
+		["no-preview-render", 9615],
+		[null, 9615],
+	] as const)("refuses --axis-issue beside %p", (cause, issue) => {
+		expect(axisIssueForCause(issue, cause)._tag).toBe("Rejected");
+	});
+
+	it.each([0, -3, 1.5])("refuses %p as no issue number", (issue) => {
+		expect(axisIssueForCause(issue, "render-axis-missing")._tag).toBe("Rejected");
+	});
+
+	it("leaves every other cause without one exactly as it was", () => {
+		expect(axisIssueForCause(null, "no-preview-render")).toEqual({_tag: "Named", axisIssue: null});
+		expect(axisIssueForCause(null, null)).toEqual({_tag: "Named", axisIssue: null});
+	});
+
+	it("keys only the render-axis cause on an issue", () => {
+		expect([...AXIS_ISSUE_CAUSES]).toEqual(["render-axis-missing"]);
+		expect(PARK_CAUSE_TOKENS).toContain("render-axis-missing");
+	});
+});
+
 /**
  * The route axis: every cause carries one, both `KNOWN_PARKS` shapes read it off this one table, and
  * a cause added without a route reds here rather than routing silently.
@@ -264,7 +331,9 @@ describe("every park cause carries a route", () => {
 		);
 
 		expect(routeless).toEqual([]);
-		expect(PARK_CAUSE_TOKENS).toHaveLength(Object.keys(PARK_CAUSES).length);
+		expect(PARK_CAUSE_TOKENS).toHaveLength(
+			Object.keys(PARK_CAUSES).length - RETIRED_PARK_CAUSES.size,
+		);
 	});
 
 	it("routes campaign-paused to the founder — a campaign's lifecycle is a product call", () => {
@@ -276,10 +345,22 @@ describe("every park cause carries a route", () => {
 		"head-behind-base",
 		"spawn-dead",
 		"no-preview-render",
+		"render-axis-missing",
 		"no-design-manifest",
 		"no-rendered-delta",
+		"write-unlanded",
 	])("routes %s to the driver — it is machinery, and no product call is in it", (cause) => {
 		expect(routeForCause(cause)).toBe("driver");
+	});
+
+	// Under `parkCause.driverRouted: "clear"` a driver route is one a rationale clears, so either of
+	// these routed `driver` would let a driver clear a wait on the founder by saying so.
+	it.each([
+		"ruling-owed",
+		"founder-act-owed",
+	])("routes %s to the founder, with no verb that removes it", (cause) => {
+		expect(routeForCause(cause)).toBe("founder");
+		expect(remedyForCause(cause)).toBeNull();
 	});
 
 	// Fail-closed: a park nothing named cannot be attributed to machinery, so the derivation may not
@@ -352,10 +433,19 @@ describe("a BLOCKED that names no cause", () => {
 	});
 
 	it.each([false, true])("leaves a named cause alone at requireCause %p", (requireCause) => {
-		expect(causeForEvent("campaign-paused", "BLOCKED", requireCause)).toEqual({
+		expect(causeForEvent("worktree-holds-branch", "BLOCKED", requireCause)).toEqual({
 			_tag: "Caused",
-			cause: "campaign-paused",
+			cause: "worktree-holds-branch",
 		});
+	});
+
+	it("refuses a retired cause as a new park, while it still routes on an earlier line", () => {
+		expect(causeForEvent("campaign-paused", "BLOCKED", false)).toMatchObject({
+			_tag: "Rejected",
+			reason: expect.stringContaining('"campaign-paused" is a retired park cause'),
+		});
+		expect(PARK_CAUSE_TOKENS).not.toContain("campaign-paused");
+		expect(routeForCause("campaign-paused")).toBe("founder");
 	});
 });
 
@@ -424,6 +514,37 @@ describe("the machinery terminals a driver records about the pipeline itself", (
 		expect(integrate).toMatchObject({event: MACHINERY_EVENT});
 		expect(review).toMatchObject({event: "FAIL"});
 		expect(integrate).not.toMatchObject({event: "FAIL"});
+	});
+});
+
+describe("the park terminals whose token names their own cause", () => {
+	it.each(Object.entries(TERMINAL_PARK_CAUSES))("%s parks, and names %s", (token, cause) => {
+		expect(eventForToken(token)).toMatchObject({event: "BLOCKED"});
+		expect(tokenCause(token)).toBe(cause);
+		expect(PARK_CAUSE_TOKENS).toContain(cause);
+	});
+
+	it("reads the machinery table through the same lookup", () => {
+		expect(tokenCause(" base-drifted ")).toBe("head-behind-base");
+	});
+
+	// `ship`'s other parks fold to `human:cp-approval` for other reasons, so none may inherit a
+	// token's cause and match a recipe row keyed on it.
+	it("names no cause for a ship park whose token has more than one reason", () => {
+		for (const token of ["REFUSED", "UNKNOWN", "ROUTED-HEAL-CI"]) {
+			expect(tokenCause(token)).toBeNull();
+		}
+	});
+
+	it("routes a verdict owed at the head to the driver and names no remedy", () => {
+		expect(tokenCause("ROUTED-REVIEW")).toBe("verdict-owed");
+		expect(routeForCause("verdict-owed")).toBe("driver");
+		expect(remedyForCause("verdict-owed")).toBeNull();
+	});
+
+	it("routes the approval wait to the founder and names no remedy", () => {
+		expect(routeForCause("awaiting-cp-approval")).toBe("founder");
+		expect(remedyForCause("awaiting-cp-approval")).toBeNull();
 	});
 });
 

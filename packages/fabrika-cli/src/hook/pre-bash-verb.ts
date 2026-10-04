@@ -30,7 +30,8 @@ import {
 	WRONG_EVENT,
 } from "./codes.ts";
 import {classifyEnvelope, type Envelope, type EnvelopeRead} from "./envelope.ts";
-import {type Decision, decideJump} from "./leading-jump.ts";
+import {decideJump} from "./leading-jump.ts";
+import {bashCommandOf, type Decision, preToolUseStdout} from "./pre-tool-use.ts";
 
 const VERB = "fabrika hook pre-bash";
 
@@ -48,35 +49,7 @@ type Requirements = FileSystem.FileSystem | Path.Path;
 const readEnvelope = (piped: StdinRead): EnvelopeRead =>
 	piped._tag === "Text" ? classifyEnvelope(piped.text) : {_tag: "Unknown", reason: piped.reason};
 
-/** The Bash command this envelope carries, or nothing — a payload with no command is not judgeable. */
-const commandOf = (envelope: Envelope): string | undefined => {
-	const input = envelope.payload.tool_input;
-	if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined;
-	const command = (input as Record<string, unknown>).command;
-	return typeof command === "string" ? command : undefined;
-};
-
-/**
- * The harness reads `hookSpecificOutput.permissionDecision`, and reads it only when it is there.
- *
- * An allow therefore carries **no** decision field: `"allow"` is not "I have no objection" to the
- * harness — it bypasses the permission system the operator configured, which is a far larger claim
- * than this guard makes. So the allow answer is a fabrika-namespaced token the harness ignores,
- * which still satisfies the convention's positive-answer rule.
- */
-const stdoutFor = (decision: Decision): string =>
-	decision._tag === "Deny"
-		? `${JSON.stringify({
-				hookSpecificOutput: {
-					hookEventName: EVENT,
-					permissionDecision: "deny",
-					permissionDecisionReason: decision.reason,
-				},
-			})}\n`
-		: `${JSON.stringify({
-				suppressOutput: true,
-				fabrika: {verb: "hook pre-bash", outcome: "allow", because: decision.because},
-			})}\n`;
+const stdoutFor = (decision: Decision): string => preToolUseStdout("hook pre-bash", decision);
 
 const judge = (
 	envelope: Envelope,
@@ -145,7 +118,7 @@ export const runPreBash = ({
 				`${VERB}: judges ${EVENT}/${TOOL} and the envelope carries ${envelope.event} — the declaration is wired to an event this verb does not judge.`,
 			);
 		}
-		const command = commandOf(envelope);
+		const command = bashCommandOf(envelope);
 		if (command === undefined) {
 			return refuse(
 				WRONG_EVENT,

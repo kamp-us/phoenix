@@ -24,6 +24,7 @@ export function AgentChatPickers() {
 		models,
 		thinkingLevels,
 		settingsDisabled,
+		settingsChanging,
 		changeModel,
 		changeThinkingLevel,
 	} = useAgentChatInput();
@@ -87,6 +88,7 @@ export function AgentChatPickers() {
 				held={heldModel}
 				onValueChange={(value) => void changeModel(value)}
 				disabled={settingsDisabled || (modelItems?.length ?? 0) < 2}
+				loading={settingsChanging}
 			/>
 			<SettingMenu
 				label={t("admin.agent.setting.thinking")}
@@ -95,6 +97,7 @@ export function AgentChatPickers() {
 				held={heldThinking}
 				onValueChange={(value) => void changeThinkingLevel(value)}
 				disabled={thinkingDisabled}
+				loading={settingsChanging}
 			/>
 		</>
 	);

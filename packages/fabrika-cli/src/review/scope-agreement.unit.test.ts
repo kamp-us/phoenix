@@ -6,10 +6,22 @@
  * runs *both* catches them drifting. While only the ship side derived `ui`, a reviewer on a rendered
  * diff was told `review-code` was the whole bar, PASSed, and `ship gate` then refused a `review-ui`
  * namespace nobody had routed — one wasted ship dispatch and a park per PR.
+ *
+ * Both read the class config at the PR's head and merge base — review out of git, ship off the
+ * platform — so each side is handed the same config at the same two commits here, and neither reads
+ * the tree the test stands up.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted, uiConfigured} from "../fakes.test-support.ts";
+import {
+	configAtCommit,
+	configOnPlatform,
+	fakeSeams,
+	type HttpReply,
+	mergeBaseOnPlatform,
+	type Scripted,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	branchRules,
@@ -21,7 +33,7 @@ import {
 	pull as shipPull,
 } from "../ship/fixtures.test-support.ts";
 import {runScope as runShipScope} from "../ship/scope-verb.ts";
-import {binding, PATHS_AT, paths, pull as reviewPull} from "./fixtures.test-support.ts";
+import {BASE, binding, PATHS_AT, paths, pull as reviewPull} from "./fixtures.test-support.ts";
 import {runScope as runReviewScope} from "./scope-verb.ts";
 
 /** One mixed diff: a worker source file, a doc, and a rendered surface beside its own test. */
@@ -46,56 +58,92 @@ const namespaceRows = (stdout: string): ReadonlyArray<string> =>
 		.filter((line) => line.startsWith("namespace\t"))
 		.map((line) => line.slice("namespace\t".length));
 
-const reviewScope = (...changed: ReadonlyArray<string>) =>
-	Effect.runPromise(
-		Effect.provide(
-			runReviewScope({
-				pr: 4321,
-				sha: null,
-				repo: null,
-				json: false,
-				cwd: "/repo",
-				env: {CLAUDE_PIPELINE_REPO: "o/r"},
-			}),
-			Layer.merge(
-				fakeSeams([
-					[PULL, served(reviewPull({changedFiles: changed.length}))],
-					...binding(),
-					[PATHS_AT(), paths(...changed)],
-				]).layer,
-				uiConfigured,
+/** The `.fabrika.jsonc` both commits carry. */
+type Config = string;
+
+const configOf = (uiSurfaces: ReadonlyArray<unknown>): Config => JSON.stringify({uiSurfaces});
+
+const twoApps: Config = configOf([
+	{name: "web", prefix: "apps/site/src/", mount: "/", command: "pnpm dev --port {{port}}"},
+	{
+		name: "desk-chat",
+		prefix: "apps/desk/src/",
+		mount: "/desk/chat",
+		basePath: "/",
+		command: "pnpm proof:chat --port {{port}}",
+	},
+]);
+
+const reviewScopeOver =
+	(config: Config) =>
+	(...changed: ReadonlyArray<string>) =>
+		Effect.runPromise(
+			Effect.provide(
+				runReviewScope({
+					pr: 4321,
+					sha: null,
+					repo: null,
+					json: false,
+					cwd: "/repo",
+					env: {CLAUDE_PIPELINE_REPO: "o/r"},
+				}),
+				Layer.merge(
+					fakeSeams([
+						...configAtCommit(config),
+						[PULL, served(reviewPull({changedFiles: changed.length}))],
+						...binding(),
+						[PATHS_AT(), paths(...changed)],
+					]).layer,
+					unconfigured,
+				),
 			),
-		),
-	);
+		);
+
+const reviewScope = reviewScopeOver(twoApps);
 
 /**
  * `caller: "shipper"` with the worktree read scripted, because that is the run whose answer the
  * review side has to agree with — a `relay` seat would compare against a read no shipper performs.
  */
-const shipScope = (...changed: ReadonlyArray<string>) =>
-	Effect.runPromise(
-		Effect.provide(
-			runShipScope({
-				pr: 4321,
-				repo: null,
-				json: false,
-				cwd: "/repo",
-				env: ENV,
-				caller: "shipper",
-			}),
-			Layer.merge(
-				fakeSeams([
-					[PULL, served(shipPull({changedFiles: changed.length}))],
-					[SHIP_FILES, served(shipFiles(...changed))],
-					[OWNERS, {status: 200, body: CODEOWNERS}],
-					[RULES, served(branchRules("pull_request"))],
-					[REPO, repositoryServed()],
-					LINKED_WORKTREE,
-				] as ReadonlyArray<Scripted>).layer,
-				uiConfigured,
+const shipScopeOver =
+	(config: Config) =>
+	(...changed: ReadonlyArray<string>) =>
+		Effect.runPromise(
+			Effect.provide(
+				runShipScope({
+					pr: 4321,
+					repo: null,
+					json: false,
+					env: ENV,
+					caller: "shipper",
+				}),
+				Layer.merge(
+					fakeSeams([
+						[PULL, served(shipPull({changedFiles: changed.length}))],
+						[SHIP_FILES, served(shipFiles(...changed))],
+						[OWNERS, {status: 200, body: CODEOWNERS}],
+						[RULES, served(branchRules("pull_request"))],
+						[REPO, repositoryServed()],
+						mergeBaseOnPlatform(BASE),
+						...configOnPlatform(config),
+						LINKED_WORKTREE,
+					] as ReadonlyArray<Scripted>).layer,
+					unconfigured,
+				),
 			),
-		),
-	);
+		);
+
+const shipScope = shipScopeOver(twoApps);
+
+/** A root-level app: one row naming two directories and one root file as its source roots. */
+const rootLevelApp: Config = configOf([
+	{
+		name: "web",
+		prefix: ["app/", "components/", "tailwind.config.ts"],
+		mount: "/",
+		command: "pnpm dev --port {{port}}",
+	},
+]);
 
 describe("review scope and ship scope over one file list", () => {
 	it("derive the same required-namespace set from a mixed code + ui diff", async () => {
@@ -108,11 +156,26 @@ describe("review scope and ship scope over one file list", () => {
 		expect(namespaceRows(review.stdout)).toEqual(namespaceRows(ship.stdout));
 	});
 
-	it("names `review-ui` routed on the review side — derived there, emitted only by `review-ui`", async () => {
-		const review = await reviewScope(...CHANGED);
+	it.each([
+		["the first listed directory", ["app/page.tsx"]],
+		["the second listed directory", ["components/Nav.tsx"]],
+		["the listed root file alone", ["tailwind.config.ts"]],
+	])("both raise the ui class off %s of a list-shaped prefix", async (_label, changed) => {
+		const review = await reviewScopeOver(rootLevelApp)(...changed);
+		const ship = await shipScopeOver(rootLevelApp)(...changed);
 
 		expect(review.stdout).toContain("class\tui\t1");
-		expect(review.stdout).toContain("routed\treview-ui");
+		expect(namespaceRows(review.stdout)).toEqual(["review-code", "review-ui"]);
+		expect(namespaceRows(ship.stdout)).toEqual(namespaceRows(review.stdout));
+	});
+
+	it("both leave a file that only shares a listed root file's leading characters outside ui", async () => {
+		const review = await reviewScopeOver(rootLevelApp)("tailwind.config.ts.bak");
+		const ship = await shipScopeOver(rootLevelApp)("tailwind.config.ts.bak");
+
+		expect(review.stdout).not.toContain("class\tui");
+		expect(namespaceRows(review.stdout)).toEqual(["review-code"]);
+		expect(namespaceRows(ship.stdout)).toEqual(["review-code"]);
 	});
 
 	it("routes nothing when the diff raises no ui class", async () => {

@@ -1,7 +1,7 @@
 import {defineMachine} from "@demlik/tea";
+import type {AnyProgram, Program} from "@kampus/tuval-sdk/kernel/registry/program";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
 import {Effect} from "effect";
-import type {AnyProgram, Program} from "../registry/program.ts";
-import {ProgramId} from "../registry/program.ts";
 
 type State = {readonly count: number};
 type Msg = {readonly type: "tick"};
@@ -13,12 +13,16 @@ const counter = {
 	core: defineMachine<State, Msg, Notify, never, unknown>({
 		init: (loaded) => [loaded ?? {count: 0}, []],
 		update: {tick: (state) => [{count: state.count + 1}, [{type: "notify"}]]},
-		interpret: {notify: () => Promise.resolve()},
 	}),
 	ports: {},
 	handlers: {notify: () => Effect.succeed([] as ReadonlyArray<Msg>)},
 	capabilities: [],
-	identity: {package: "@kampus/tuval", program: "counter", version: "1.0.0", digest: "sha256:x"},
+	identity: {
+		package: "@kampus/tuval",
+		program: "counter",
+		version: "1.0.0",
+		digest: "sha256:x",
+	},
 	placement: {host: "local"},
 } satisfies Program<State, Msg, Notify, never, unknown, never, never>;
 

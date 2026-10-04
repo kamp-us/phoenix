@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
+
+import {descriptions} from "@kampus/tuval-sdk/kernel/commands/parse/fixtures";
 import {act, cleanup, render, screen, waitFor} from "@testing-library/react";
 import {Deferred, Effect, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {afterEach, expect, it} from "vitest";
-import {descriptions} from "../commands/parse/fixtures.ts";
 import type {PageAttachment} from "../shell/transport/browser.ts";
 import {useSpellRegistry} from "./spell-registry.ts";
 

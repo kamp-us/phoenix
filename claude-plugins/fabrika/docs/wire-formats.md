@@ -1,11 +1,5 @@
 # fabrika wire formats — the index
 
-### `audit-context`
-
-Audit research survives a conversation in the initial session body. The audit producer and the
-grilling reader share this format so retries can compare retained research without treating a
-recommendation as a ruling. Session creation and recovery belong to the grilling contract.
-
 A **wire format** is the byte-level agreement two fabrika skills meet through on a GitHub artifact.
 This page is the map of them: for each registered format, its owner module, who writes those bytes
 and who reads them, and why the two sides need an agreement at all.
@@ -23,6 +17,9 @@ one row per format — and `fabrika wire formats` projects it at runtime
 ([`wire/command.ts`](../../../packages/fabrika-cli/src/wire/command.ts)). Run that verb when you need
 the current inventory; read this page when you need to know what the agreement is *for*.
 
+`fabrika wire --help` lists the group's other verbs: `emit`, `read`, `check`, `doc-section` and
+`codes`.
+
 The two cannot quietly disagree any more. The table below is **generated from the registry** by
 `fabrika wire index --write`, and `fabrika wire index` reds when it has gone stale, when a registered
 format has no section here, or when a section here names no registered format. The narrative under
@@ -30,7 +27,7 @@ each heading is the hand-written half — it is the part no registry row holds.
 
 ## The staging rule
 
-A format lands **with its first consumer**, never in a batch: a format absent from the table above
+A format lands **with its first consumer**, never in a batch: a format absent from the table below
 is almost certainly *unwritten* — its consumer does not exist yet — rather than missing, and the
 registry is the place to check before assuming a gap. Building a format ahead of its first consumer
 is banned: with no reader to hold it honest, the shape is a guess, and the first real consumer
@@ -53,6 +50,7 @@ arrives owing a migration nobody planned.
 | `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
 | `grill-ruling` | [`packages/fabrika-cli/src/wire/grill-ruling.ts`](../../../packages/fabrika-cli/src/wire/grill-ruling.ts) | `grilling` | `grilling` |
 | `cap-clearance` | [`packages/fabrika-cli/src/wire/cap-clearance.ts`](../../../packages/fabrika-cli/src/wire/cap-clearance.ts) | `build` | `build`, `operate` |
+| `takeover-grant` | [`packages/fabrika-cli/src/wire/takeover-grant.ts`](../../../packages/fabrika-cli/src/wire/takeover-grant.ts) | `build` | `build`, `ship`, `heal-ci` |
 | `grill-answer` | [`packages/fabrika-cli/src/wire/grill-answer.ts`](../../../packages/fabrika-cli/src/wire/grill-answer.ts) | `grilling` | `grilling` |
 | `grill-supersede` | [`packages/fabrika-cli/src/wire/grill-supersede.ts`](../../../packages/fabrika-cli/src/wire/grill-supersede.ts) | `grilling` | `grilling` |
 | `handoff-pack` | [`packages/fabrika-cli/src/wire/handoff-pack.ts`](../../../packages/fabrika-cli/src/wire/handoff-pack.ts) | `handoff` | `handoff` |
@@ -60,9 +58,16 @@ arrives owing a migration nobody planned.
 | `graduate-emitted` | [`packages/fabrika-cli/src/wire/graduate-emitted.ts`](../../../packages/fabrika-cli/src/wire/graduate-emitted.ts) | `graduate` | `graduate` |
 | `came-from` | [`packages/fabrika-cli/src/wire/came-from.ts`](../../../packages/fabrika-cli/src/wire/came-from.ts) | `grilling`, `prototyping` | `grilling`, `wayfinding` |
 | `plan-approval` | [`packages/fabrika-cli/src/wire/plan-approval.ts`](../../../packages/fabrika-cli/src/wire/plan-approval.ts) | `check-epic-plan` | `check-epic-plan` |
-| `decision-ruling` | [`packages/fabrika-cli/src/wire/decision-ruling.ts`](../../../packages/fabrika-cli/src/wire/decision-ruling.ts) | `adr` | `build`, `triage` |
+| `decision-ruling` | [`packages/fabrika-cli/src/wire/decision-ruling.ts`](../../../packages/fabrika-cli/src/wire/decision-ruling.ts) | `adr` | `build`, `triage`, `review` |
 | `routed-elsewhere` | [`packages/fabrika-cli/src/wire/routed-elsewhere.ts`](../../../packages/fabrika-cli/src/wire/routed-elsewhere.ts) | `review-ui` | `ship`, `operate` |
+| `lane-record` | [`packages/fabrika-cli/src/wire/lane-record.ts`](../../../packages/fabrika-cli/src/wire/lane-record.ts) | `operate` | `operate` |
 <!-- fabrika:wire-index:end -->
+
+### `audit-context`
+
+Audit research survives a conversation in the initial session body. The audit producer and the
+grilling reader share this format so retries can compare retained research without treating a
+recommendation as a ruling. Session creation and recovery belong to the grilling contract.
 
 ### `acceptance-criteria`
 
@@ -91,7 +96,9 @@ Deviations` section, carried as four-field entries or the literal `None.`. The e
 once, in this format's schema module, and both sides resolve it there; the producing verb runs the
 consumer-side read before posting, so a section the review gate would reject is refused where the
 body is written, not a round later. The obligation behind it is that a build discloses its
-departures in the PR body — the one surface the merge record keeps.
+departures in the PR body — the one surface the merge record keeps. A repair round **replaces**
+the section rather than appending to it: the section describes the change at the reviewed head, not
+a round-tagged log of every round.
 
 The read is total over three answers where the section has four meanings, so `None.` is a `Found`
 carrying a tag of its own rather than an empty entry list. That is the load-bearing distinction:
@@ -159,7 +166,7 @@ materially different instructions, so the format owns the rules text byte for by
 shell routing table with it, and `lane brief` prints what it derives instead of composing anything.
 Both the section set and the field set are closed, and each field belongs to exactly one section —
 `## Task` owns `lane`, `root`, `fabrika`, `task`, `state` and `shell`, `## Ground` owns `issue`,
-`pr`, `epic`, `branch` and `range`. An unknown key, a key under the wrong heading, or a key set twice
+`pr`, `epic`, `branch`, `range` and `owner-comments`. An unknown key, a key under the wrong heading, or a key set twice
 under its own heading is malformed: a misplaced key would quietly beat the one the driver's fold
 derived and re-route the brief to a shell `## Task` never named. `## Ground` carries links and no
 content at all: the shell re-reads its own issue, PR and verdicts through its own verbs. A `review`
@@ -180,6 +187,16 @@ round the tail review's `FAIL` retries into — is the third shape: the PR *and*
 that PR's head sits on, under a rules paragraph of its own saying the branch is the lane driver's to
 move and that a stale trunk is merged in, never rebased. A branch beside a PR is what tells the two
 tail shapes apart, and it is the only ground that carries both.
+
+`owner-comments` rides beside any of those shapes on a build or review brief. It lists, as
+space-separated URLs, the comments a control-plane account wrote on the issue that no ruling marker
+records and that are newer than the newest recorded ruling. A rule an owner wrote as a plain comment
+reached no shell before: the brief carried the issue and nothing said the comment existed. The field
+has three states. Absent is the proven zero and changes no byte of the brief. A list appends a
+byte-fixed rule telling the shell to read each one. `unknown` says the read behind the field failed
+and appends a rule saying so, because a blank there would read as none. The field never carries a
+comment's text, and a `ship` brief carrying it is malformed. Nothing in it makes a comment a ruling:
+the graded set stays the body plus the marked rulings.
 
 ### `map-ticket`
 
@@ -215,8 +232,20 @@ to. The marker names the round it clears and nothing else — deliberately no he
 clearance exists so a *new* head can be pushed, and a head-bound grant would be void the moment it
 was used. Naming the round is also what spends it exactly once: the grant covers the round it names,
 and the next FAIL round leaves it behind. Like the ruling marker, it is not authority on its own —
-the reader settles that against the repo's configured grant-author set and a dated authorization
+the reader settles that against the repo's control-plane set (`.github/CODEOWNERS`) and a dated authorization
 comment beside it.
+
+### `takeover-grant`
+
+This is the grant that hands a pull request another author opened to the pipeline. A pull request
+belongs to its author: `build` will not repair it, `ship` will not land it and `heal-ci` routes it to
+its author, unless its author is one of the repo's own accounts (`ownAccounts`, or the running
+account alone when that set is empty) or this marker stands on it. The marker names the pull request
+it hands over, so a grant read on any other thread grants nothing, and the lines under it quote the
+dated authorization it rests on. Like the clearance marker it is not authority on its own: the
+reader counts it only when its author is in the repo's control-plane set (the owners
+`.github/CODEOWNERS` names on the default branch), holds `write+`, and is not the pull request's own
+author.
 
 ### `grill-answer`
 
@@ -313,20 +342,46 @@ comment on it — so an off-roster marker reads `absent` however fresh its diges
 ### `decision-ruling`
 
 This is the same mechanism as `plan-approval` over a second surface, and it reuses that format's
-binding walk rather than restating it: a control-plane human's ruling on one `type:decision` issue,
-carried as a marker comment on the issue, with the number and a digest in the bytes for the same two
-reasons. What differs is the subject and one extra field. The digest binds the **issue body** that
-was ruled on, so a re-scoped question no longer inherits its ruling; and the marker names the comment
-the ruling is actually written in, which is what makes it worth more than a label — a builder picking
-the issue up reads that human's own words at that URL instead of inferring the choice from a thread,
-and it is the value `build claim --cites` takes. The URL is checked against the issue the
-marker binds, in the read, because a ruling recorded on another issue rules nothing here and
-admitting one would let a single comment unlock every decision on the board. The marker is what
-`decision rule` proves before it flips the issue from `ready-for:human` to `ready-for:agent` — that
-ordering is the point, since a flip written ahead of a proven marker leaves a decision reading
-pickable with no recorded ruling behind it. The proven marker earns the flip and does not compel it:
-a ruled issue whose body carries no readable `### Acceptance criteria` block keeps its marker and
-stays on `ready-for:human`, because `ready-for:agent` promises a builder can grade the issue cold.
+binding walk rather than restating it: a control-plane human's ruling on **any** issue, carried as a
+marker comment on the issue, with the number and a digest in the bytes for the same two reasons.
+What differs is the subject and two extra fields. The digest binds the **issue body** that was ruled
+on, so a re-scoped question no longer inherits its ruling; the marker names the comment the ruling is
+actually written in, which is what makes it worth more than a label — a builder picking the issue up
+reads that human's own words at that URL instead of inferring the choice from a thread, and it is the
+value `build claim --cites` takes; and the optional `supersedes:<k>` names the **1-based** body
+acceptance criterion the ruling replaces, which is the only mechanical statement of contradiction
+there is, since no verb can read the prose and judge which row a ruling overturns. The URL is checked
+against the issue the marker binds, in the read, because a ruling recorded on another issue rules
+nothing here and admitting one would let a single comment unlock every decision on the board.
+
+The marker's subject widened because a ruling that reaches no gate is prose: `review criteria` folds
+every standing one into the set a reviewer grades, and `lane prove` reads a verdict written before
+the newest ruling as no longer current. **The audience flip widened with it, to every type but
+`type:epic`**.
+The marker is what `decision rule` proves before it flips the issue from `ready-for:human` to
+`ready-for:agent` — that ordering is the point, since a flip written ahead of a proven marker leaves
+an issue reading pickable with no recorded ruling behind it — and the proven marker earns the flip
+without compelling it: a ruled issue whose body carries no readable `### Acceptance criteria` block
+keeps its marker and stays on `ready-for:human`, because `ready-for:agent` promises a builder can
+grade the issue cold. On a `type:epic` the marker lands and both `ready-for:` labels are left exactly
+as they were found, because an epic's agent audience is `check-epic-plan`'s flip alone.
+
+`fabrika decision rule` is the only writer, and it runs in this order: derive the digest over the
+issue body itself, post the marker, read it back, and only then flip the audience, reporting the
+labels from a re-read rather than asserting them. Exactly one flag names the ruling: `--cites <url>`
+when it is already a comment on the issue, or `--authorization <file>` when it was given in
+conversation. That file is posted verbatim as a dated comment first and the marker cites it, the
+same shape as `grill rule`, so a ruling already made costs no comment to type. The answer is
+`{"answer":"ruled","issue":n,"digest":"…","ruling":"…","supersedes":k|null,"by":"…","at":"…","comment":n,"audience":"ready-for:agent"|null,"observed":[…]}`.
+`audience` is null wherever no flip was written — an epic, and an issue whose body has no readable
+criteria block — and `observed` then lists the labels as they were found.
+
+`fabrika decision ruling` is the reader. It answers
+`{"answer":"ruling","issue":n,"state":"current|stale|absent","by":…,"markerDigest":…,"derivedDigest":"…","ruling":…,"at":…,"comment":…,"audience":…,"disregarded":n,"unauthorized":n}`,
+and all three states exit `0`, because a missing ruling is the answer rather than a refusal. The
+state is the newest marker's; `review criteria` is what prints every standing marker folded with the
+body criteria. An off-roster author's marker is counted in `unauthorized` and never stands, and a
+drifted one is counted in `disregarded` rather than dropped.
 
 ### `routed-elsewhere`
 
@@ -346,6 +401,19 @@ own, `verdict-marker` reads them as `Absent`, and this reader is `Absent` on eve
 The head binding does the rest: a route is voided by any push, so the next tree is attested afresh
 rather than inheriting a judgement formed over a diff nobody has read since.
 
+### `lane-record`
+
+This is a lane's history made public. A lane's ledger lives in the driving machine's gitignored
+`.fabrika/lanes/`, so a lane driven on another machine is invisible to everyone else; when a lane
+reaches a terminal state, the driver's `lane record` posts one of these to the lane's issue, and the
+table sync reads it back to fill the project's Spent $, Asks and Origin fields. The two sides never
+meet, and one of them is on another machine, so the bytes are the whole agreement. The first line
+keys the record by the terminal it records, which is how a re-run of the driver's terminal step
+answers "already posted" instead of stacking a second record. Two rows restate derived facts — the
+asks are the parks routed to the founder, and the wall-clock is the span between its own two
+instants — and the reader holds each to its source, so a record whose rows disagree is `Malformed`
+rather than a record carrying two numbers for one fact.
+
 ## Adding a format
 
 A new format is one sibling schema module plus one registry row — never a branch inside a verb, and
@@ -357,7 +425,9 @@ row cannot hold, and the only half of this page written by hand.
 
 `fabrika wire index` (no flag) is the check, and it runs in CI on a change to either side. It reds
 on three things: a registered format with no narrative section here, a section here naming no
-registered format, and a generated region that is not what the registry renders today. Hand edits
+registered format, and a generated region that is not what the registry renders today. It refuses
+as zero scope, never a vacuous pass, on an empty registry, an empty doc, a doc with no generated
+region, or a doc with no format sections. Hand edits
 inside the generated markers are overwritten by the generator and red in CI in the meantime. The
 interface and totality law the module meets are typed in
 [`wire/format.ts`](../../../packages/fabrika-cli/src/wire/format.ts): every read is total over

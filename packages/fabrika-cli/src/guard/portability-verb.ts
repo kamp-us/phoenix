@@ -11,15 +11,31 @@
  * which *names* belong to this repository — policy an adopter rewrites. The allow-list at
  * {@link CONFIG_PATH} is this repository's own ledger of what has not been swept yet, so it lives
  * outside the two trees the guard scans and never ships with the plugin.
+ *
+ * **Two subjects, and a commit subject never reads the working tree.** {@link runPortabilityGuard}
+ * walks the checkout, which is what `build check` and CI mean: the tree they stand on is the one
+ * they grade. {@link runPortabilityGuardAt} reads one commit out of the object database instead —
+ * its file list, its bytes, its allow-list and its `portability` key — because a reviewer's worktree
+ * is cut from the driver's checkout and never holds a pull request's head, so a walk of it answers a
+ * clean, plausible number about files the verdict does not name. A commit this clone does not hold
+ * is UNKNOWN, and nothing falls back to the tree in its place.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9531
  */
 
 import {Effect, FileSystem, Option, Path} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import {portabilityKey} from "../config/keys/portability.ts";
-import {readKey} from "../config/read-key.ts";
+import {loadConfig} from "../config/load.ts";
+import {readFromLoad, readKey} from "../config/read-key.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
 import {type ReadFailed, readDir, readFile, realPath} from "../io/fs.ts";
+import {listTreePaths, readFileAt, resolveCommit} from "../io/git.ts";
 import {parseJson} from "../io/json.ts";
-import type {VerbOutcome} from "../verb.ts";
+import {configAtCommit} from "../review/class-config.ts";
+import {refuse, type VerbOutcome} from "../verb.ts";
+import {type HeadSha, headSha} from "../wire/verdict-marker.ts";
+import {OFF_VOCABULARY} from "./codes.ts";
 import {
 	type Allowance,
 	annotationsFor,
@@ -124,22 +140,50 @@ const isUnitMap = (value: unknown): value is Readonly<Record<string, Unit>> =>
 			(entry as Unit).paths.every((p) => typeof p === "string" && p.trim().length > 0),
 	);
 
+const parseAllowList = (verb: string, text: string): ConfigRead => {
+	const parsed = parseJson(text) as Partial<Record<"exempt" | "unmigrated", unknown>> | null;
+	if (parsed === null || !isAllowanceMap(parsed.exempt) || !isUnitMap(parsed.unmigrated)) {
+		return {
+			_tag: "Malformed",
+			report: `${verb}: ${CONFIG_PATH} does not parse, or an entry is missing a numeric \`ceiling\`, a non-empty \`why\`, or (under \`unmigrated\`) a non-empty \`paths\` list — the allow-list the floor is judged against is broken, so the verdict is fail-closed.\n`,
+		};
+	}
+	return {_tag: "Config", config: {exempt: parsed.exempt, unmigrated: parsed.unmigrated}};
+};
+
 const readConfig = (
 	root: string,
 ): Effect.Effect<ConfigRead, ReadFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
-		const parsed = parseJson(yield* readFile(path.join(root, CONFIG_PATH))) as Partial<
-			Record<"exempt" | "unmigrated", unknown>
-		> | null;
-		if (parsed === null || !isAllowanceMap(parsed.exempt) || !isUnitMap(parsed.unmigrated)) {
-			return {
-				_tag: "Malformed",
-				report: `${VERB}: ${CONFIG_PATH} does not parse, or an entry is missing a numeric \`ceiling\`, a non-empty \`why\`, or (under \`unmigrated\`) a non-empty \`paths\` list — the allow-list the floor is judged against is broken, so the verdict is fail-closed.\n`,
-			};
-		}
-		return {_tag: "Config", config: {exempt: parsed.exempt, unmigrated: parsed.unmigrated}};
+		return parseAllowList(VERB, yield* readFile(path.join(root, CONFIG_PATH)));
 	});
+
+/** The directories under each group root that contributed no scanned file — the walk's blind spots. */
+const uncovered = (
+	directories: ReadonlyArray<string>,
+	scanned: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+	directories.filter((dir) => !scanned.some((p) => p.startsWith(`${dir}/`)));
+
+const coverageRefusal = (missing: ReadonlyArray<string>): string =>
+	`these directories contributed ZERO scanned files, so the walk does not cover them: ${missing.join(", ")}`;
+
+/** The one verdict both subjects end on, so a commit and a tree holding the same bytes answer alike. */
+const verdictOf = (
+	verb: string,
+	files: ReadonlyArray<FileScan>,
+	config: PortabilityConfig,
+): GuardVerdict => {
+	const verdict = judge({files, config});
+	const report = renderReport(verb, verdict);
+	if (verdict._tag === "Clean") return clean(report.trimEnd(), verdict.filesScanned);
+	if (verdict._tag === "ZeroScope") return zeroScope(report);
+	return violation(
+		report,
+		annotationsOrNone(() => annotationsFor(verdict)),
+	);
+};
 
 const gather = (
 	root: string,
@@ -169,16 +213,8 @@ const gather = (
 			paths.push(...found);
 		}
 		for (const group of GROUP_ROOTS) {
-			const missing: Array<string> = [];
-			for (const dir of yield* subdirectories(fs, path, root, group)) {
-				if (!paths.some((p) => p.startsWith(`${dir}/`))) missing.push(dir);
-			}
-			if (missing.length > 0) {
-				return {
-					files: [],
-					refusal: `these directories contributed ZERO scanned files, so the walk does not cover them: ${missing.join(", ")}`,
-				};
-			}
+			const missing = uncovered(yield* subdirectories(fs, path, root, group), paths);
+			if (missing.length > 0) return {files: [], refusal: coverageRefusal(missing)};
 		}
 		const scans: Array<FileScan> = [];
 		for (const relative of paths) {
@@ -207,14 +243,7 @@ const judgeTree = (
 		if (gathered.refusal !== null) {
 			return zeroScope(`${VERB}: ${gathered.refusal}. Fail-closed.\n`);
 		}
-		const verdict = judge({files: gathered.files, config: config.config});
-		const report = renderReport(VERB, verdict);
-		if (verdict._tag === "Clean") return clean(report.trimEnd(), verdict.filesScanned);
-		if (verdict._tag === "ZeroScope") return zeroScope(report);
-		return violation(
-			report,
-			annotationsOrNone(() => annotationsFor(verdict)),
-		);
+		return verdictOf(VERB, gathered.files, config.config);
 	});
 
 export interface PortabilityGuardOptions {
@@ -251,3 +280,132 @@ export const runPortabilityGuard = (
 			),
 		),
 	);
+
+/** A group root's direct subdirectories as one commit's paths name them. */
+const subdirectoriesAt = (paths: ReadonlyArray<string>, group: string): ReadonlyArray<string> => {
+	const dirs = new Set<string>();
+	for (const p of paths) {
+		if (!p.startsWith(`${group}/`)) continue;
+		const rest = p.slice(group.length + 1).split("/");
+		if (rest.length > 1) dirs.add(`${group}/${rest[0]}`);
+	}
+	return [...dirs].sort();
+};
+
+/** The tree walk's own skips, applied to a listing that never enters a directory to meet them. */
+const isWalked = (path: string): boolean =>
+	!path.split("/").some((segment) => segment === "node_modules" || segment === "dist");
+
+/** One `git show` per file, bounded so a corpus of well over a thousand files stays quick. */
+const READ_CONCURRENCY = 16;
+
+const cannotRead = (verb: string, what: string, reason: string): GuardVerdict =>
+	unknown(
+		`${verb}: cannot read ${what}: ${reason} — the scan could not be completed, so the verdict is UNKNOWN, never clean.\n`,
+	);
+
+const judgeCommit = (
+	sha: HeadSha,
+): Effect.Effect<GuardVerdict, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const commit = yield* resolveCommit(sha);
+		if (commit._tag === "Failure") {
+			return unknown(
+				`${VERB}: ${commit.reason} — ${sha} is not in this clone's object database, so its files cannot be read. Fetch the head the verdict will name and re-run; the working tree is never read in its place, whatever it holds.\n`,
+			);
+		}
+		const at = commit.value;
+		const verb = `${VERB} at ${at}`;
+
+		const names = readFromLoad(
+			loadConfig((yield* configAtCommit("head", at)).source),
+			portabilityKey,
+		);
+		if (names._tag === "Refused") {
+			return zeroScope(
+				`${verb}: ${names.reason} — the guard cannot judge a name it never read, so the verdict is fail-closed.\n`,
+			);
+		}
+		const allowList = yield* readFileAt(at, CONFIG_PATH);
+		if (allowList._tag === "Failure") return cannotRead(verb, CONFIG_PATH, allowList.reason);
+		const config = parseAllowList(verb, allowList.value);
+		if (config._tag === "Malformed") return zeroScope(config.report);
+
+		const listed = yield* listTreePaths(at);
+		if (listed._tag === "Failure") return cannotRead(verb, "the commit's file list", listed.reason);
+		const tracked = listed.value.filter(isWalked);
+		const paths: Array<string> = [];
+		for (const tree of SCAN_ROOTS) {
+			const found = tracked.filter((p) => p.startsWith(`${tree}/`) && isInScope(p));
+			if (found.length === 0) {
+				return zeroScope(
+					`${verb}: the walk of ${tree}/ matched ZERO readable text files. Fail-closed.\n`,
+				);
+			}
+			paths.push(...found);
+		}
+		for (const group of GROUP_ROOTS) {
+			const missing = uncovered(subdirectoriesAt(tracked, group), paths);
+			if (missing.length > 0) {
+				return zeroScope(`${verb}: ${coverageRefusal(missing)}. Fail-closed.\n`);
+			}
+		}
+
+		const reads = yield* Effect.forEach(
+			paths,
+			(relative) => Effect.map(readFileAt(at, relative), (read) => ({relative, read})),
+			{concurrency: READ_CONCURRENCY},
+		);
+		const files: Array<FileScan> = [];
+		for (const {relative, read} of reads) {
+			if (read._tag === "Failure") return cannotRead(verb, relative, read.reason);
+			files.push({path: relative, hits: scanFile(relative, read.value, names.value.repoNames)});
+		}
+		return verdictOf(verb, files, config.config);
+	});
+
+export interface PortabilityGuardAtOptions {
+	/** The commit the verdict will name; its files are read out of the object database. */
+	readonly sha: HeadSha;
+	readonly env: Readonly<Record<string, string | undefined>>;
+}
+
+/** The guard over one commit's bytes, never over the checkout — see this module's docblock. */
+export const runPortabilityGuardAt = (
+	options: PortabilityGuardAtOptions,
+): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.map(judgeCommit(options.sha), (verdict) => emitVerdict(verdict, options.env));
+
+export interface PortabilityCheckOptions extends PortabilityGuardOptions {
+	/** The raw `--sha`, or `null` to scan the working tree. */
+	readonly sha: string | null;
+}
+
+/** The leaf's flags to one subject: the tree, one commit, or a refusal naming why neither. */
+export const runPortabilityCheck = (
+	options: PortabilityCheckOptions,
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> => {
+	if (options.sha === null) return runPortabilityGuard(options);
+	if (options.root !== null) {
+		return Effect.succeed(
+			refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --sha and --root name two subjects — a commit is read out of this clone's object database, never out of a tree at a root.`,
+			),
+		);
+	}
+	const sha = headSha(options.sha);
+	if (sha === null) {
+		return Effect.succeed(
+			refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --sha "${options.sha}" is not a revision — expected 7–40 lowercase hex characters.`,
+			),
+		);
+	}
+	return runPortabilityGuardAt({sha, env: options.env});
+};

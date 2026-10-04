@@ -143,12 +143,6 @@ const POST_ENTITY = "Post:post_1" as EntityId;
 const connection = {[ConnectionTag]: {key: KEY}};
 
 describe("beginOptimisticCommentMembership — append + rollback", () => {
-	it("appends the temp id into the nested connection immediately", () => {
-		const store = fakeStore({ids: ["a", "b"]});
-		beginOptimisticCommentMembership(store, connection, POST_ID, "temp");
-		expect(store.current()?.ids).toEqual(["a", "b", "temp"]);
-	});
-
 	it("rollback restores the prior list on reject (no phantom row)", () => {
 		const store = fakeStore({ids: ["a", "b"]});
 		const rollback = beginOptimisticCommentMembership(store, connection, POST_ID, "temp");

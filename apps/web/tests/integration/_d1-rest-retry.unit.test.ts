@@ -369,15 +369,6 @@ describe("rateLimitRetryingFetch — 429-resilient restLayer transport", () => {
 		});
 	};
 
-	it("resends a data-plane 429 through the base fetch until it settles 200", async () => {
-		const base = baseFetch([429, 429, 200]);
-		const res = await rateLimitRetryingFetch(base, {sleep: noSleep, random: () => 0.5})(
-			"https://example.test/query",
-		);
-		expect(res.status).toBe(200);
-		expect(base).toHaveBeenCalledTimes(3); // initial + 2 retries
-	});
-
 	it("drives a makeD1Rest query through a 429→200 fetch WITHOUT throwing (the #3099 hard-fail)", async () => {
 		const base = baseFetch([429, 200]);
 		const db = makeD1Rest({

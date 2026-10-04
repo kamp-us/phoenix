@@ -9,17 +9,19 @@ import {
 	once,
 	type Scripted,
 } from "../fakes.test-support.ts";
+import {runAttachIntegrate} from "../lane/attach-integrate-verb.ts";
+import {emitMachine} from "../lane/emit.ts";
 import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {FAILED} from "../verb.ts";
 import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {
 	AUDIENCE_NOT_AGENT,
-	BAD_SECTIONS,
 	BLOCKED,
 	CLAIM_NOT_MINE,
 	NO_ACCEPTANCE_CRITERIA,
+	NO_SERVED_ISSUE,
 	OFF_VOCABULARY,
-	OUT_OF_SCOPE,
+	PR_NOT_OURS,
 	PRECONDITION_UNKNOWN,
 	PRIOR_BUILD_MISMATCH,
 	READBACK_MISMATCH,
@@ -31,9 +33,11 @@ import {
 import {
 	adoptMarker,
 	blockedBy,
+	CODEOWNERS_READ,
 	CRITERIA_BODY,
 	campaignsTable,
 	candidatePage,
+	codeownersNaming,
 	comments,
 	GATEWAY,
 	GH_TOKEN_ENV,
@@ -42,12 +46,14 @@ import {
 	LANE_UUID,
 	marker,
 	NO_BLOCKERS,
+	NO_TABLE,
 	NONCE,
 	NOT_FOUND,
 	SIBLING_NONCE,
 	SIBLING_TOKEN,
 	SIBLING_UUID,
 	served,
+	TRUNK_READ,
 	truncatedComments,
 } from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
@@ -78,6 +84,31 @@ const ECHO = served({body: MINE});
 
 const labelled = (...names: ReadonlyArray<string>) => names.map((name) => ({name}));
 
+/** The PR record `build claim` reads for its author and base ref. */
+const PULL_RECORD = /^GET \S+\/repos\/o\/r\/pulls\/4312$/;
+/** The config at the PR's base ref, where `ownAccounts` is read. */
+const CONFIG_AT_BASE = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
+/** The running account — who counts as ours when no `ownAccounts` is declared. */
+const VIEWER = /^GET \S+\/user$/;
+
+const pullBy = (author: string): HttpReply =>
+	served({
+		number: 4312,
+		state: "open",
+		head: {sha: "03135b9188d2be6c0a4b7bd0b7a3ff9c53f0f2b1"},
+		base: {ref: "main"},
+		body: "Fixes #5553\n",
+		changed_files: 1,
+		user: {login: author},
+	});
+
+/** A PR the running account opened, in a repo that declares no `ownAccounts`: ours, no grant. */
+const OWNED_BY_THE_RUNNING_ACCOUNT: ReadonlyArray<Scripted> = [
+	[PULL_RECORD, pullBy("agent")],
+	[CONFIG_AT_BASE, NOT_FOUND],
+	[VIEWER, served({login: "agent"})],
+];
+
 /** The claim path's default target: triaged, agent-ready, unhomed — admitted under an inert fence. */
 const CLAIMABLE = issue({labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent")});
 
@@ -101,7 +132,7 @@ const thread = (...states: ReadonlyArray<HttpReply>) =>
 		i === states.length - 1 ? ([COMMENTS, state] as const) : ([once(COMMENTS), state] as const),
 	);
 
-/** No `ROADMAP.md`: nothing active, so the scope axis admits and the fence reports itself inert. */
+/** No `ROADMAP.md` and no `.fabrika.jsonc`: the zero-config repository. */
 const NO_CAMPAIGNS = fakeFs({files: {}});
 
 /**
@@ -117,7 +148,6 @@ const options = {
 	number: 4312,
 	issue: null as number | null,
 	repo: null,
-	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e", ...GH_TOKEN_ENV} as Record<
 		string,
 		string | undefined
@@ -130,6 +160,8 @@ const options = {
 	overrideLane: null as string | null,
 	cites: null as string | null,
 	resume: false,
+	lane: null as string | null,
+	laneRoot: null as string | null,
 };
 
 const run = (
@@ -162,41 +194,6 @@ describe("runClaim", () => {
 			purpose: "build",
 			token: `build:s-9f2e:${LANE_UUID}`,
 		});
-	});
-
-	/**
-	 * The two-lanes-one-session race. Lane B mints `SIBLING_UUID`, posts it, and re-reads a
-	 * thread where lane A's marker is earlier. Under the session-only rule it was told `won` and handed
-	 * back a nonce that held nothing, which `build branch` then cut a branch on.
-	 *
-	 * It holds no token yet, so it names none, and the run makes no pre-post read at all.
-	 */
-	it("loses to a SIBLING LANE of its own session, and never answers won on its behalf", async () => {
-		// The loser's own comment id is 9002, distinct from the winner's 9001, so the retraction
-		// assertion below discriminates "retracted its own marker" from "deleted the winner's".
-		const siblingMarker = marker("s-9f2e", SIBLING_UUID);
-		const shell = unblocked([
-			[ISSUE, CLAIMABLE],
-			[POST, served({id: 9002, html_url: "https://example.test/o/r/issues/4312#c"}, 201)],
-			[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: siblingMarker})],
-			[COMMENTS, comments({id: 9001, body: MINE}, {id: 9002, body: siblingMarker})],
-			[perm("agent"), WRITES],
-			[DELETE, NO_CONTENT],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runClaim({...options, uuid: SIBLING_UUID, token: null}),
-				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
-			),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
-		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
-			"DELETE https://api.github.com/repos/o/r/issues/comments/9002",
-		]);
-		expect(
-			shell.requests.some((line) => /DELETE \S+\/repos\/o\/r\/issues\/comments\/9001/.test(line)),
-		).toBe(false);
 	});
 
 	it("re-reads AFTER posting — the checkpoint is what resolves a staggered race", async () => {
@@ -252,29 +249,31 @@ describe("runClaim", () => {
 	});
 
 	/**
-	 * The same refusal against a SIBLING lane of this session, where the route it would name cannot
-	 * run: `build adopt` refuses a `--session` naming this very session. `build release`'s own
-	 * pointer is gated the same way, so the two refusals stay one sentence.
+	 * A loss to a SIBLING lane of this session: this run retracts only its own marker (9002, never the
+	 * winner's 9001), and names no adopt route — `build adopt` refuses a `--session` naming this very
+	 * session, and `build release`'s own pointer is gated the same way.
 	 */
-	it("withholds the adopt pointer when the winner is another lane of this same session", async () => {
+	it("loses to a sibling lane of its own session, retracts only its own marker, and names no adopt route", async () => {
 		const siblingMarker = marker("s-9f2e", SIBLING_UUID);
+		const shell = unblocked([
+			[ISSUE, CLAIMABLE],
+			[POST, served({id: 9002, html_url: "https://example.test/o/r/issues/4312#c"}, 201)],
+			[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: siblingMarker})],
+			[COMMENTS, comments({id: 9001, body: MINE}, {id: 9002, body: siblingMarker})],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
+		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runClaim({...options, uuid: SIBLING_UUID, token: null}),
-				Layer.merge(
-					unblocked([
-						[ISSUE, CLAIMABLE],
-						[POST, served({id: 9002, html_url: "https://example.test/o/r/issues/4312#c"}, 201)],
-						[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: siblingMarker})],
-						[COMMENTS, comments({id: 9001, body: MINE}, {id: 9002, body: siblingMarker})],
-						[perm("agent"), WRITES],
-						[DELETE, NO_CONTENT],
-					]).layer,
-					NO_CAMPAIGNS.layer,
-				),
+				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
 			),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
+		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
+			"DELETE https://api.github.com/repos/o/r/issues/comments/9002",
+		]);
 		expect(out.stderr.some((line) => line.includes("fabrika build adopt"))).toBe(false);
 	});
 
@@ -389,6 +388,7 @@ describe("runClaim", () => {
  * that posted and then refused would leave a marker on the issue with nothing to retract it.
  */
 describe("runClaim — the admission test runs before any marker is written", () => {
+	/** A roadmap with one active campaign — a theme, which no claim reads. */
 	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 
 	const claimWith = (target: HttpReply, fs = IN_SCOPE, overrides: Partial<typeof options> = {}) => {
@@ -410,39 +410,25 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent"),
 	});
 	const HUMAN_AUDIENCE = issue({
-		milestone: {number: 44},
+		milestone: {number: 39},
 		labels: labelled("type:bug", "p1", "status:triaged", "ready-for:human"),
 	});
 
-	it("refuses an out-of-scope issue on 20, and posts NOTHING", async () => {
+	/**
+	 * The campaign gate this replaced refused this claim on 20: its milestone has no `active`
+	 * campaign row. A campaign groups work now and refuses nothing, so the claim is won and the
+	 * marker posted.
+	 */
+	it("claims an issue whose milestone no active campaign pins — never 20", async () => {
 		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN);
-		expect(out.code).toBe(OUT_OF_SCOPE);
-		expect(out.stdout).toBe("");
-		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
-		expect(out.stderr.some((line) => line.includes("out of scope"))).toBe(true);
-		expect(out.stderr.at(-1)).toContain("nothing was written");
-	});
-
-	it("claims an issue homed in the SECOND declared milestone, off the same predicate (#6005)", async () => {
-		const {out} = await claimWith(
-			OUT_OF_CAMPAIGN,
-			fakeFs({files: {[ROADMAP_FILE]: campaignsTable([44, 39])}}),
-		);
 		expect(out.code).toBe(0);
+		expect(out.code).not.toBe(20);
 		expect(JSON.parse(out.stdout).answer).toBe("won");
-		expect(out.stderr.some((line) => line.includes("2 active"))).toBe(true);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(true);
+		expect(out.stderr.join("\n")).not.toContain("campaigns:");
 	});
 
-	it("refuses an out-of-scope issue naming the whole active set in the remedy", async () => {
-		const {out} = await claimWith(
-			OUT_OF_CAMPAIGN,
-			fakeFs({files: {[ROADMAP_FILE]: campaignsTable([44, 46])}}),
-		);
-		expect(out.code).toBe(OUT_OF_SCOPE);
-		expect(out.stderr.some((line) => line.includes("milestones #44, #46"))).toBe(true);
-	});
-
-	it("refuses a non-agent audience on 21 — a sibling axis, never folded into 20", async () => {
+	it("refuses a non-agent audience on 21, off an issue homed outside every campaign too", async () => {
 		const {out, shell} = await claimWith(HUMAN_AUDIENCE);
 		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
 		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
@@ -498,27 +484,25 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		expect(JSON.parse(out.stdout).answer).toBe("won");
 	});
 
-	it("refuses an unreadable declaration on 11 — scope is UNKNOWN, never admitted", async () => {
-		const {out, shell} = await claimWith(
+	it("never reads the campaigns table — an unreadable roadmap refuses nothing", async () => {
+		const {out} = await claimWith(
 			CLAIMABLE,
 			fakeFs({files: {[ROADMAP_FILE]: null}, unprobeable: [ROADMAP_FILE]}),
 		);
-		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
-		expect(out.stderr.at(-1)).toContain("scope is UNKNOWN, never admitted; nothing was written");
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).answer).toBe("won");
 	});
 
-	it("refuses a malformed campaigns table on 4 — never read as 'nothing active'", async () => {
-		const {out, shell} = await claimWith(
+	it("never reads the campaigns table — a malformed one refuses nothing", async () => {
+		const {out} = await claimWith(
 			CLAIMABLE,
 			fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44).replace("| active |", "| activ |")}}),
 		);
-		expect(out.code).toBe(BAD_SECTIONS);
-		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+		expect(out.code).toBe(0);
 	});
 
 	it("claims a refused issue under --override, recording the lane and reason on the marker and in the answer", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, IN_SCOPE, {
+		const {out, shell} = await claimWith(HUMAN_AUDIENCE, IN_SCOPE, {
 			override: "hotfix for the release blocker",
 			overrideLane: "build-ui",
 		});
@@ -540,18 +524,8 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		).toBe(true);
 	});
 
-	it("never lets --override past an UNKNOWN admission — a failed read has proven nothing", async () => {
-		const {out, shell} = await claimWith(
-			CLAIMABLE,
-			fakeFs({files: {[ROADMAP_FILE]: null}, unprobeable: [ROADMAP_FILE]}),
-			{override: "I know what I am doing", overrideLane: "build-ui"},
-		);
-		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
-	});
-
 	it("refuses an empty --override reason on 1 — an override is recorded or it is not one", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, IN_SCOPE, {
+		const {out, shell} = await claimWith(HUMAN_AUDIENCE, IN_SCOPE, {
 			override: "  ",
 			overrideLane: "build-ui",
 		});
@@ -560,7 +534,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	});
 
 	it("refuses an --override that names no lane on 1 — the escape hatch says who took it (#5175)", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, IN_SCOPE, {
+		const {out, shell} = await claimWith(HUMAN_AUDIENCE, IN_SCOPE, {
 			override: "hotfix for the release blocker",
 		});
 		expect(out.code).toBe(FAILED);
@@ -569,7 +543,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	});
 
 	it("refuses a blank --override-lane on 1 — whitespace names no lane", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, IN_SCOPE, {
+		const {out, shell} = await claimWith(HUMAN_AUDIENCE, IN_SCOPE, {
 			override: "hotfix for the release blocker",
 			overrideLane: "   ",
 		});
@@ -583,44 +557,37 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
-	it("names the declaration it judged against on a win, so an inert-fence claim reads as one", async () => {
-		const {out} = await claimWith(
-			issue({milestone: {number: 44}, labels: labelled("status:triaged", "ready-for:agent")}),
-		);
-		expect(out.code).toBe(0);
-		expect(out.stderr).toContain("build claim: campaigns: 1 active — Campaign 44 (#44).");
-	});
-
 	it("refuses by NUMBER the very issue the pool excluded — the direct handoff is fenced too", async () => {
 		const row = {
 			number: 4312,
-			labels: ["status:triaged", "ready-for:agent", "type:bug"],
+			labels: ["status:triaged", "ready-for:human", "type:bug"],
 			milestone: 39,
 		};
 		const picked = await Effect.runPromise(
 			Effect.provide(
-				runPick({repo: null, limit: 20, cwd: "/repo", env: options.env}),
+				runPick({repo: null, limit: 20, cwd: "/repo", env: options.env, now: () => new Date()}),
 				Layer.merge(
 					unblocked([
 						[/labels=status%3Atriaged%2Cp0/, candidatePage(row)],
 						[/labels=status%3Atriaged%2Cp[12]/, served([])],
+						NO_TABLE,
 					]).layer,
 					IN_SCOPE.layer,
 				),
 			),
 		);
 		expect(JSON.parse(picked.stdout).pool).toEqual([]);
-		expect(JSON.parse(picked.stdout).excluded).toEqual({"out-of-scope": 1});
+		expect(JSON.parse(picked.stdout).excluded).toEqual({"audience-not-agent": 1});
 
 		// The same issue, handed straight to `claim` by number: the pool was bypassed, the fence is not.
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN);
-		expect(out.code).toBe(OUT_OF_SCOPE);
+		const {out, shell} = await claimWith(HUMAN_AUDIENCE);
+		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
 		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
-	it("leaves confirm and release outside the fence — a mid-lane pause strands no lane", async () => {
+	it("leaves confirm and release outside the fence — a label changed mid-lane strands no lane", async () => {
 		const script: ReadonlyArray<Scripted> = [
-			[ISSUE, OUT_OF_CAMPAIGN],
+			[ISSUE, HUMAN_AUDIENCE],
 			[COMMENTS, comments({id: 9001, body: MINE})],
 			[perm("agent"), WRITES],
 			[DELETE, NO_CONTENT],
@@ -633,13 +600,14 @@ describe("runClaim — the admission test runs before any marker is written", ()
 });
 
 /**
- * Repair claims a PR number, and a PR carries no milestone and no `ready-for:` label of its own — so
- * while any campaign was active the fence refused every one of them. The subject the two axes
- * read is the issue the PR's lane serves.
+ * Repair claims a PR number, and a PR carries no `ready-for:` label and no criteria of its own. The
+ * subject the axes read is the issue the PR's lane serves.
  */
 describe("runClaim — a PR number is judged by the issue it serves", () => {
+	/** A roadmap with one active campaign — a theme, which no claim reads. */
 	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 	const SERVED = /^GET \S+\/repos\/o\/r\/issues\/5553$/;
+	const owned = OWNED_BY_THE_RUNNING_ACCOUNT;
 
 	const pull = (body: string) =>
 		issue({
@@ -673,6 +641,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		const shell = unblocked([
 			[ISSUE, pull(body)],
 			[SERVED, servedRecord],
+			...owned,
 			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
@@ -687,7 +656,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		).then((out) => ({out, shell}));
 	};
 
-	it("admits a PR whose served issue is in scope, with no override", async () => {
+	it("admits a PR by the issue it serves, with no override", async () => {
 		const {out} = await claimPull("Fixes #5553\n", servedTicket(44));
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).answer).toBe("won");
@@ -718,40 +687,46 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		expect(out.stderr.some((line) => line.includes("serves #5553 (part-of)"))).toBe(true);
 	});
 
-	it("still refuses at 20 when the served issue is genuinely out of scope, and posts NOTHING", async () => {
+	it("admits a PR whose served issue no active campaign pins — never 20", async () => {
 		const {out, shell} = await claimPull("Fixes #5553\n", servedTicket(39));
-		expect(out.code).toBe(OUT_OF_SCOPE);
-		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
-		expect(out.stderr.some((line) => line.includes("out of scope"))).toBe(true);
-		expect(out.stderr.some((line) => line.includes("this issue's home is 39"))).toBe(true);
-	});
-
-	it("keeps that refusal overridable", async () => {
-		const {out} = await claimPull("Fixes #5553\n", servedTicket(39), {
-			override: "repairing a landed FAIL",
-			overrideLane: "build",
-		});
 		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).answer).toBe("won");
+		expect(shell.requests.some((line) => POST.test(line))).toBe(true);
 	});
 
-	it("refuses a PR naming no issue at 20, saying which case fired — and stays overridable", async () => {
+	/**
+	 * A PR naming no issue refused on 20 only while some campaign was active. That refusal is not a
+	 * campaign question, so it binds on its own seat whatever the campaigns say, and stays overridable.
+	 */
+	it("refuses a PR naming no issue on 38 whatever the campaigns say — and stays overridable", async () => {
 		const body = "A conversation-authored ADR.\n\n## Deviations\nNone.\n";
 		const {out, shell} = await claimPull(body, servedTicket(44));
-		expect(out.code).toBe(OUT_OF_SCOPE);
+		expect(out.code).toBe(NO_SERVED_ISSUE);
+		expect(out.stderr.join("\n")).toContain(
+			'no served issue — PR #4312 carries neither a closing keyword nor "Part of #<n>" in its body',
+		);
+		expect(out.stderr.at(-1)).toContain('pass --override "<reason>"');
 		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
-		expect(out.stderr.some((line) => line.includes("no served issue"))).toBe(true);
 		const overridden = await claimPull(body, servedTicket(44), {
 			override: "no ticket — the ADR was authored in conversation",
 			overrideLane: "build",
 		});
-		expect(overridden.out.code).toBe(0);
+		expect(overridden.out.code).not.toBe(NO_SERVED_ISSUE);
 	});
 
-	it("refuses at 20 when the named issue is proven absent — never on the PR's own empty home", async () => {
-		const {out} = await claimPull("Fixes #5553\n", NOT_FOUND);
-		expect(out.code).toBe(OUT_OF_SCOPE);
-		expect(out.stderr.some((line) => line.includes("proven absent"))).toBe(true);
+	it("refuses on 38 when the issue the PR names is proven absent", async () => {
+		const {out, shell} = await claimPull("Fixes #5553\n", NOT_FOUND);
+		expect(out.code).toBe(NO_SERVED_ISSUE);
+		expect(out.stderr.join("\n")).toContain("names #5553, which is proven absent");
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("never lets --override past an UNKNOWN admission — a failed read has proven nothing", async () => {
+		const {out, shell} = await claimPull("Fixes #5553\n", GATEWAY, {
+			override: "I know what I am doing",
+			overrideLane: "build-ui",
+		});
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("refuses at 11 when the served issue cannot be read — UNKNOWN, never admitted", async () => {
@@ -814,9 +789,10 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		expect(out.stderr.some((line) => line.includes("serves #"))).toBe(false);
 	});
 
-	it("admits an unresolvable PR while no campaign is active — an inert fence refuses nothing", async () => {
+	it("refuses an unresolvable PR on 38 under a gate purpose too, where the audience axis does not bind", async () => {
 		const shell = unblocked([
 			[ISSUE, pull("No reference at all.\n")],
+			...owned,
 			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
@@ -829,18 +805,20 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
 			),
 		);
-		expect(out.code).toBe(0);
+		expect(out.code).toBe(NO_SERVED_ISSUE);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	/**
-	 * The nothing-active half, under the DEFAULT `build` purpose — the one that binds the audience axis, and
-	 * so the one that reads whichever record the resolution returned.
+	 * With no roadmap at all, under the DEFAULT `build` purpose — the one that binds the audience axis,
+	 * and so the one that reads whichever record the resolution returned.
 	 */
-	describe("with no campaign active", () => {
+	describe("with no campaigns table", () => {
 		const claimInert = (body: string, servedRecord: HttpReply | null) => {
 			const shell = unblocked([
 				[ISSUE, pull(body)],
 				...(servedRecord === null ? [] : ([[SERVED, servedRecord]] as ReadonlyArray<Scripted>)),
+				...owned,
 				unclaimed(),
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
@@ -856,17 +834,16 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			const {out} = await claimInert("Fixes #5553\n", servedTicket(null));
 			expect(out.code).toBe(0);
 			expect(out.stderr.some((line) => line.includes("PR #4312 serves #5553 (fixes)"))).toBe(true);
-			expect(out.stderr.some((line) => line.includes("scope fence inert"))).toBe(true);
 		});
 
-		it("leaves an unserved PR on its own record, audience and all — the pre-#5562 answer", async () => {
+		it("refuses an unserved PR on 38 with no campaigns table at all", async () => {
 			const {out, shell} = await claimInert("No reference at all.\n", null);
-			expect(out.code).toBe(AUDIENCE_NOT_AGENT);
+			expect(out.code).toBe(NO_SERVED_ISSUE);
 			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 			expect(out.stderr.some((line) => line.includes("serves #"))).toBe(false);
 		});
 
-		it("still refuses at 11 when the served issue cannot be read — an inert fence does not soften UNKNOWN", async () => {
+		it("still refuses at 11 when the served issue cannot be read — UNKNOWN is never softened", async () => {
 			const {out, shell} = await claimInert("Fixes #5553\n", GATEWAY);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
@@ -1005,10 +982,9 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		});
 
-		it("keeps the scope fence armed — an out-of-scope decision PR is still 20", async () => {
-			const {out, shell} = await claimPull("Fixes #5553\n", servedTicket(39, DECISION));
-			expect(out.code).toBe(OUT_OF_SCOPE);
-			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+		it("admits a decision PR whose served issue no active campaign pins — never 20", async () => {
+			const {out} = await claimPull("Fixes #5553\n", servedTicket(39, DECISION));
+			expect(out.code).toBe(0);
 		});
 	});
 });
@@ -1089,13 +1065,18 @@ describe("runClaim — the purpose axis", () => {
 		});
 	}
 
-	for (const purpose of ["plan", "gate", "build"] as const) {
-		it(`still refuses an out-of-scope epic on 20 under --purpose ${purpose} — scope is untouched`, async () => {
-			const {out, shell} = await claimWith(OUT_OF_CAMPAIGN_EPIC, {purpose});
-			expect(out.code).toBe(OUT_OF_SCOPE);
-			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+	for (const purpose of ["plan", "gate"] as const) {
+		it(`admits an epic homed outside every campaign under --purpose ${purpose} — never 20`, async () => {
+			const {out} = await claimWith(OUT_OF_CAMPAIGN_EPIC, {purpose});
+			expect(out.code).toBe(0);
 		});
 	}
+
+	it("refuses that epic under build on the type axis, never on 20", async () => {
+		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN_EPIC, {purpose: "build"});
+		expect(out.code).toBe(TYPE_NOT_BUILDABLE);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+	});
 
 	it("refuses an off-enum purpose on 10 — never a silent fallback to build", async () => {
 		const {out, shell} = await claimWith(UNLABELLED_EPIC, {purpose: "planning"});
@@ -1114,22 +1095,6 @@ describe("runConfirm", () => {
 		]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({answer: "mine", number: 4312, token: LANE_TOKEN});
-	});
-
-	it("refuses a SIBLING LANE OF THIS SESSION on 15, naming both tokens (#6037)", async () => {
-		const out = await run(
-			runConfirm,
-			[
-				[ISSUE, CLAIMABLE],
-				[COMMENTS, comments({id: 9001, body: MINE})],
-				[perm("agent"), WRITES],
-			],
-			{token: SIBLING_TOKEN},
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.at(-1)).toBe(
-			`build confirm: #4312 is held by ${LANE_TOKEN}, not by ${SIBLING_TOKEN} — another lane of this same session.`,
-		);
 	});
 
 	it("refuses a foreign holder on 15, naming the token", async () => {
@@ -1222,6 +1187,25 @@ describe("runRelease", () => {
 		expect(shell.calls.some((line) => DETACH.test(line))).toBe(false);
 	});
 
+	// A sibling lane's `build branch` run in this tree once left it on that lane's branch, and
+	// release is scoped to the cwd's own lane — it never reaches past the tree it runs in.
+	it("detaches nothing when this tree stands on a different issue's lane branch, and reads no other tree", async () => {
+		const shell = unblocked([
+			[ISSUE, CLAIMABLE],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
+			[SHOW_CURRENT, okOut(`build/337-guard-the-tree-${NONCE}\n`)],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).freed).toBeNull();
+		expect(shell.calls.some((line) => DETACH.test(line))).toBe(false);
+		expect(shell.calls.some((line) => /^git (-C|worktree)\b/.test(line))).toBe(false);
+	});
+
 	it("reports a failed detach and stays exit 0 — the claim is already retracted by then", async () => {
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
@@ -1251,6 +1235,9 @@ describe("runRelease", () => {
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.at(-1)).toBe(
 			"build release: this lane holds no claim on #4312 — refusing to release another lane's.",
+		);
+		expect(out.stderr.some((line) => line.includes("fabrika build adopt 4312 --session"))).toBe(
+			true,
 		);
 		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
 	});
@@ -1288,9 +1275,9 @@ describe("runRelease", () => {
  * `requireClaim` read the earliest one, and each `release` peeled a single marker off the stack — so
  * `build branch --resume` cut its branch off a nonce the caller had never been shown. The first fix
  * held the fixed point per SESSION, which is the rule that told a sibling lane it owned its
- * neighbour's claim. Each property is asserted here per lane instead, and every one of them is paired
- * with the sibling case it must NOT swallow: idempotence short-circuits only for the lane that named
- * its own token, and release retracts only markers carrying that token.
+ * neighbour's claim. Each property is asserted here per lane instead: idempotence answers the lane
+ * that named its own token, and release retracts only markers carrying that token. Which lane a
+ * marker belongs to is `resolveOwnership`'s, and `claim.unit.test.ts` owns those cases.
  */
 describe("the claim protocol", () => {
 	const held = () => [
@@ -1316,45 +1303,6 @@ describe("the claim protocol", () => {
 		expect(JSON.parse(second.stdout)).toEqual(JSON.parse(first.stdout));
 		expect(second.stderr.at(-1)).toContain("already held by this lane");
 		expect(second.stderr.at(-1)).toContain("nothing was written");
-	});
-
-	/**
-	 * The narrowing itself. Under the session-scoped short-circuit, lane B naming its own token on a
-	 * number lane A holds was answered `won` with lane A's marker — the sibling-lane defect, arriving
-	 * through the fixed point's idempotence rather than through the race.
-	 */
-	it("does NOT short-circuit for a sibling lane's marker — it races it, and loses", async () => {
-		const shell = unblocked([
-			[ISSUE, CLAIMABLE],
-			...thread(
-				comments({id: 9001, body: MINE}),
-				comments({id: 9001, body: MINE}, {id: 9002, body: SIBLING_MARKER}),
-			),
-			[POST, served({id: 9002, html_url: "https://example.test/o/r/issues/4312#c"}, 201)],
-			[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: SIBLING_MARKER})],
-			[perm("agent"), WRITES],
-			[DELETE, NO_CONTENT],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runClaim({...options, uuid: SIBLING_UUID, token: SIBLING_TOKEN}),
-				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
-			),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
-		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
-			"DELETE https://api.github.com/repos/o/r/issues/comments/9002",
-		]);
-	});
-
-	it("answers claim and confirm with the SAME token — the two can never disagree", async () => {
-		const shell = unblocked(held());
-		const claimed = await on(shell, runClaim);
-		const confirmed = await on(shell, runConfirm);
-		expect(confirmed.code).toBe(0);
-		expect(JSON.parse(confirmed.stdout).token).toBe(JSON.parse(claimed.stdout).token);
-		expect(JSON.parse(claimed.stdout).token).toBe(LANE_TOKEN);
 	});
 
 	it("clears every duplicate of THIS LANE's token on release, and leaves a sibling's standing", async () => {
@@ -1488,43 +1436,6 @@ describe("runAdopt / succession", () => {
 		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
-	// A tokenless `claim` over an adopted number is the shape a real successor produces: `adopt` ran
-	// under its own nonce, this run mints another, and succession turns on the WHOLE token — so the
-	// adopt names a lane that is not this run and ownership resolves `Foreign`. The lose path retracts
-	// this run's own marker, which is what leaves no orphan behind the release (AC 9).
-	it("claim on an adopted number loses and retracts its own marker — release comes first", async () => {
-		const shell = unblocked([
-			[ISSUE, CLAIMABLE],
-			[POST, POSTED],
-			[GET_COMMENT, ECHO],
-			[
-				COMMENTS,
-				comments(
-					{id: 8000, body: THEIRS},
-					{
-						id: 8100,
-						body: adoptMarker(DEAD, "s-9f2e", SIBLING_UUID),
-						createdAt: "2026-08-10T00:00:00Z",
-					},
-					{id: 9001, body: MINE, createdAt: "2026-08-11T00:00:00Z"},
-				),
-			],
-			[perm("agent"), WRITES],
-			[DELETE, NO_CONTENT],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runClaim({...options, token: null}),
-				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
-			),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.some((line) => line.includes("lost to build:s-77aa:"))).toBe(true);
-		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
-			"DELETE https://api.github.com/repos/o/r/issues/comments/9001",
-		]);
-	});
-
 	it("claim --token over an adopted claim refuses before writing anything", async () => {
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
@@ -1544,22 +1455,6 @@ describe("runAdopt / succession", () => {
 		// The token named is the ADOPT's — the one `release` accepts — never the dead session's winner.
 		expect(out.stderr.some((line) => line.includes(`--token ${LANE_TOKEN}`))).toBe(true);
 		expect(shell.requests.some((line) => POST.test(line) || DELETE.test(line))).toBe(false);
-	});
-
-	it("release still refuses the dead session's claim while no adopt marker names it", async () => {
-		const shell = unblocked([
-			[ISSUE, CLAIMABLE],
-			[COMMENTS, comments({id: 8000, body: THEIRS})],
-			[perm("agent"), WRITES],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.some((line) => line.includes("fabrika build adopt 4312 --session"))).toBe(
-			true,
-		);
-		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
 	});
 
 	it("release retracts BOTH markers once an authorized adopt names the dead session", async () => {
@@ -1611,55 +1506,6 @@ describe("runAdopt / succession", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({answer: "mine", number: 4312, token: LANE_TOKEN});
-	});
-
-	it("ignores an adopt marker whose poster holds no write permission — content is not authority", async () => {
-		const shell = unblocked([
-			[ISSUE, CLAIMABLE],
-			[
-				COMMENTS,
-				comments(
-					{id: 8000, body: THEIRS},
-					{id: 8100, body: ADOPT, author: "drive-by", createdAt: "2026-08-10T00:00:00Z"},
-				),
-			],
-			[perm("agent"), WRITES],
-			[perm("drive-by"), READS],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.some((line) => line.includes("counted, never a succession"))).toBe(true);
-		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
-	});
-
-	// The adopt names ONE lane by its whole token, so succession confers exactly what an ordinary win
-	// confers and never re-widens ownership back to a session. A third session and a sibling
-	// lane of the successor's own session are refused by the same test, which is the point.
-	it.each([
-		["a third session", "s-3rd", `build:s-3rd:${LANE_UUID}`],
-		["a sibling lane of the successor's session", "s-9f2e", SIBLING_TOKEN],
-	])("confers the claim on the named lane only — %s reads Foreign", async (_who, session, token) => {
-		const shell = unblocked([
-			[ISSUE, CLAIMABLE],
-			[
-				COMMENTS,
-				comments(
-					{id: 8000, body: THEIRS},
-					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
-				),
-			],
-			[perm("agent"), WRITES],
-		]);
-		const out = await Effect.runPromise(
-			Effect.provide(
-				runRelease({...options, token, env: {...options.env, CLAUDE_CODE_SESSION_ID: session}}),
-				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
-			),
-		);
-		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
 	});
 });
 
@@ -1896,17 +1742,14 @@ describe("runClaim — the blockedness gate", () => {
 				ISSUE,
 				issue({
 					milestone: {number: 39},
-					labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent"),
+					labels: labelled("type:bug", "p1", "status:triaged", "ready-for:human"),
 				}),
 			],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(
-				runClaim(options),
-				Layer.merge(shell.layer, fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}}).layer),
-			),
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
-		expect(out.code).toBe(OUT_OF_SCOPE);
+		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
 		expect(shell.requests.some((line) => EDGES.test(line))).toBe(false);
 	});
 });
@@ -2145,5 +1988,357 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 			{purpose: "plan"},
 		);
 		expect(out.code).toBe(0);
+	});
+
+	/**
+	 * An integrate `FAIL` writes no verdict, so a child that passed review and then failed to
+	 * integrate reads as finished off its comments alone. The epic lane's ledger is its one record.
+	 */
+	describe("an integrate FAIL on the epic lane's ledger", () => {
+		const LANES = "/lanes";
+		const EPIC = "900";
+		const TASK = "issue_4312";
+		const HEAD = "03135b917283a4b5c6d7e8f90a1b2c3d4e5f6071";
+		const LEDGER = {lane: EPIC, laneRoot: LANES};
+		const line = (event: string, extra: Record<string, unknown> = {}) =>
+			`${JSON.stringify({task: TASK, event: `${TASK.toUpperCase()}.${event}`, at: "2026-09-26T00:00:00.000Z", ...extra})}\n`;
+		const INTEGRATE_FAILED = [
+			line("WIP"),
+			line("DONE"),
+			line("PASS"),
+			line("FAIL", {integrate: {exit: 44, head: HEAD}}),
+		];
+		const ledgerFs = (lines: ReadonlyArray<string>, child = 4312) => {
+			const emitted = emitMachine(Number(EPIC), `## Dependencies\n\n- phase 1: #${child}\n`, [
+				{number: child, state: "open", stateReason: null, classes: []},
+			]);
+			if (emitted._tag !== "Emitted") throw new Error(`the epic fixture did not emit`);
+			return fakeFs({
+				files: {
+					[`${LANES}/${EPIC}/workflow.json`]: emitted.text,
+					[`${LANES}/${EPIC}/events.jsonl`]: lines.join(""),
+				},
+			});
+		};
+		const PASS_ONLY = [COMMENTS, comments({id: 8801, body: rangeVerdict("PASS")})] as const;
+		const WINS: ReadonlyArray<Scripted> = [
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[once(COMMENTS), comments({id: 8801, body: rangeVerdict("PASS")})],
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), WRITES],
+		];
+
+		it("admits --resume on a PASS-graded child, naming the integrate exit and assembly head", async () => {
+			const out = await run(runClaim, WINS, {...LEDGER, resume: true}, ledgerFs(INTEGRATE_FAILED));
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({
+				answer: "won",
+				integrate: {exit: 44, head: HEAD},
+			});
+			const stderr = out.stderr.join("\n");
+			expect(stderr).toContain(`lane integrate exit 44 against assembly head ${HEAD}`);
+			expect(stderr).toContain("--resume-lane");
+		});
+
+		it("refuses a fresh claim on that child, pointing at resume-child with the ledger flags", async () => {
+			const out = await run(
+				runClaim,
+				[[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY],
+				LEDGER,
+				ledgerFs(INTEGRATE_FAILED),
+			);
+			expect(out.code).toBe(PRIOR_BUILD_MISMATCH);
+			const stderr = out.stderr.join("\n");
+			expect(stderr).toContain("failed to integrate");
+			expect(stderr).toContain(
+				`"fabrika build resume-child 4312 --lane ${EPIC} --lane-root ${LANES}"`,
+			);
+			expect(stderr).not.toContain("The next step is the epic driver's");
+		});
+
+		it("still refuses a PASS-graded child whose ledger records no integrate FAIL, message unchanged", async () => {
+			const ledger = ledgerFs([line("WIP"), line("DONE"), line("PASS")]);
+			const withLedger = await run(
+				runClaim,
+				[[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY],
+				LEDGER,
+				ledger,
+			);
+			const without = await run(runClaim, [[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY]);
+			expect(withLedger.code).toBe(PRIOR_BUILD_MISMATCH);
+			expect(without.code).toBe(PRIOR_BUILD_MISMATCH);
+			expect(withLedger.stderr.at(-1)).toBe(without.stderr.at(-1));
+			expect(without.stderr.at(-1)).toContain("The next step is the epic driver's");
+
+			const resumed = await run(
+				runClaim,
+				[[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY],
+				{...LEDGER, resume: true},
+				ledgerFs([line("WIP"), line("DONE"), line("PASS")]),
+			);
+			expect(resumed.code).toBe(PRIOR_BUILD_MISMATCH);
+			expect(resumed.stderr.at(-1)).toContain("drop --resume");
+		});
+
+		it("admits --resume once a driver attached the pair to a FAIL recorded without it", async () => {
+			const stamped = (event: string, minute: number) =>
+				`${JSON.stringify({task: TASK, event: `${TASK.toUpperCase()}.${event}`, at: `2026-09-20T18:0${minute}:00.000Z`})}\n`;
+			const wedged = [
+				stamped("WIP", 0),
+				stamped("DONE", 1),
+				stamped("PASS", 2),
+				stamped("FAIL", 3),
+			];
+			const before = await run(
+				runClaim,
+				[[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY],
+				{...LEDGER, resume: true},
+				ledgerFs(wedged),
+			);
+			expect(before.code).toBe(PRIOR_BUILD_MISMATCH);
+
+			const driver = ledgerFs(wedged);
+			const attached = await Effect.runPromise(
+				Effect.provide(
+					runAttachIntegrate({
+						root: LANES,
+						lane: EPIC,
+						task: TASK,
+						at: "2026-09-20T18:03:00.000Z",
+						integrateExit: 43,
+						assemblyHead: HEAD,
+						now: () => new Date("2026-09-27T03:00:00.000Z"),
+					}),
+					driver.layer,
+				),
+			);
+			expect(attached.code).toBe(0);
+			const log = driver.written.get(`${LANES}/${EPIC}/events.jsonl`) ?? "";
+
+			// `WINS` spends its `once` on the first test that runs it, so this claim scripts its own.
+			const wins: ReadonlyArray<Scripted> = [
+				[ISSUE, CLAIMABLE],
+				unclaimed(),
+				[once(COMMENTS), comments({id: 8801, body: rangeVerdict("PASS")})],
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), WRITES],
+			];
+			const out = await run(runClaim, wins, {...LEDGER, resume: true}, ledgerFs([log]));
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({
+				answer: "won",
+				integrate: {exit: 43, head: HEAD},
+			});
+			expect(out.stderr.join("\n")).toContain(
+				`lane integrate exit 43 against assembly head ${HEAD}`,
+			);
+		});
+
+		it("refuses --resume on a stale integrate FAIL a later DONE answered", async () => {
+			const out = await run(
+				runClaim,
+				[[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY],
+				{...LEDGER, resume: true},
+				ledgerFs([...INTEGRATE_FAILED, line("DONE")]),
+			);
+			expect(out.code).toBe(PRIOR_BUILD_MISMATCH);
+			expect(out.stderr.at(-1)).toContain("drop --resume");
+			expect(out.stderr.join("\n")).toContain("records no standing integrate FAIL");
+		});
+
+		it("refuses a ledger that holds no task for this child on 14 — the wrong lane", async () => {
+			const out = await run(
+				runClaim,
+				[[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY],
+				{...LEDGER, resume: true},
+				ledgerFs(INTEGRATE_FAILED, 5000),
+			);
+			expect(out.code).toBe(WRONG_LANE);
+			expect(out.stderr.at(-1)).toContain("holds no task issue_4312");
+		});
+
+		it("refuses an absent ledger on 11 — never 'no integrate FAIL'", async () => {
+			const out = await run(runClaim, [[ISSUE, CLAIMABLE], unclaimed(), PASS_ONLY], {
+				...LEDGER,
+				resume: true,
+			});
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stderr.at(-1)).toContain("UNKNOWN");
+		});
+
+		it("refuses half the ledger address before any read", async () => {
+			const out = await run(runClaim, [], {lane: EPIC});
+			expect(out.code).toBe(FAILED);
+			expect(out.stderr.at(-1)).toContain("--lane and --lane-root");
+		});
+	});
+});
+
+/**
+ * A PR belongs to its author. Repair pushes onto that author's branch, so the claim reads who opened
+ * the PR before it writes anything, and a PR outside the repo's own accounts needs a trusted grant.
+ */
+describe("runClaim — a PR is its author's until the pipeline owns it", () => {
+	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
+	const SERVED = /^GET \S+\/repos\/o\/r\/issues\/5553$/;
+	const servedTicket = served({
+		number: 5553,
+		title: "The ticket the lane serves",
+		body: CRITERIA_BODY,
+		state: "open",
+		labels: labelled("status:triaged", "ready-for:agent"),
+		html_url: "https://example.test/o/r/issues/5553",
+		milestone: {number: 44},
+		state_reason: null,
+	});
+	const asIssue = issue({
+		title: "fix(build): the repair lane",
+		body: "Fixes #5553\n",
+		labels: [],
+		milestone: null,
+		pull_request: {url: "https://api.github.com/repos/o/r/pulls/4312"},
+	});
+	const config = (value: Record<string, unknown>): HttpReply => ({
+		status: 200,
+		body: JSON.stringify(value),
+	});
+	const grant = (id: number, author: string) => ({
+		id,
+		author,
+		body: "takeover-granted: #4312 · 2026-09-26T07:16:03Z\n\nTake over #4312. — 2026-09-26\n",
+	});
+
+	const claimBy = (
+		author: string,
+		base: HttpReply,
+		grants: ReadonlyArray<{id: number; author: string; body: string}> = [],
+		extra: ReadonlyArray<Scripted> = [],
+	) => {
+		const shell = unblocked([
+			[ISSUE, asIssue],
+			[SERVED, servedTicket],
+			[PULL_RECORD, pullBy(author)],
+			[CONFIG_AT_BASE, base],
+			[VIEWER, served({login: "agent"})],
+			...extra,
+			unclaimed(),
+			...(grants.length === 0
+				? []
+				: ([[once(COMMENTS), comments(...grants)]] as ReadonlyArray<Scripted>)),
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, comments(...grants, {id: 9001, body: MINE})],
+			[perm("agent"), WRITES],
+		]);
+		return Effect.runPromise(
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, IN_SCOPE.layer)),
+		).then((out) => ({out, shell}));
+	};
+
+	const posted = (shell: {readonly requests: ReadonlyArray<string>}) =>
+		shell.requests.some((line) => POST.test(line));
+
+	describe("with no ownAccounts declared, the running account alone is ours", () => {
+		it.each([
+			["the config is absent", NOT_FOUND],
+			["the key is absent", config({})],
+			["the key is empty", config({ownAccounts: []})],
+		])("repairs the running account's own PR with no grant when %s", async (_name, base) => {
+			const {out, shell} = await claimBy("agent", base);
+			expect(out.code).toBe(0);
+			expect(posted(shell)).toBe(true);
+			expect(out.stderr.join("\n")).toContain(
+				"opened by agent, one of ours under the running account",
+			);
+		});
+
+		it.each([
+			["the config is absent", NOT_FOUND],
+			["the key is empty", config({ownAccounts: []})],
+		])("refuses another author's PR at 37, writing nothing, when %s", async (_name, base) => {
+			const {out, shell} = await claimBy("ada", base);
+			expect(out.code).toBe(PR_NOT_OURS);
+			expect(posted(shell)).toBe(false);
+			expect(out.stderr.at(-1)).toContain("PR #4312 is ada's to finish");
+			expect(out.stderr.at(-1)).toContain("fabrika build takeover 4312");
+		});
+	});
+
+	describe("with ownAccounts declared", () => {
+		it("repairs a PR a configured account opened with no grant, and never asks who is running", async () => {
+			const {out, shell} = await claimBy("agent-bot", config({ownAccounts: ["@agent-bot"]}));
+			expect(out.code).toBe(0);
+			expect(shell.requests.some((line) => VIEWER.test(line))).toBe(false);
+		});
+
+		it("refuses the running account's PR when the declared set does not name it", async () => {
+			const {out, shell} = await claimBy("agent", config({ownAccounts: ["@agent-bot"]}));
+			expect(out.code).toBe(PR_NOT_OURS);
+			expect(posted(shell)).toBe(false);
+		});
+	});
+
+	describe("a takeover grant", () => {
+		/** The control-plane set — who may grant — read off CODEOWNERS on the default branch. */
+		const roster = (...owners: ReadonlyArray<string>): ReadonlyArray<Scripted> => [
+			[TRUNK_READ, served({default_branch: "main"})],
+			[CODEOWNERS_READ, codeownersNaming(...owners)],
+		];
+		const GRANTORS = roster("@founder", "@ada");
+
+		it("hands a foreign PR over when a trusted, writing account posted it", async () => {
+			const {out, shell} = await claimBy(
+				"ada",
+				NOT_FOUND,
+				[grant(77, "founder")],
+				[...GRANTORS, [perm("founder"), WRITES]],
+			);
+			expect(out.code).toBe(0);
+			expect(posted(shell)).toBe(true);
+			expect(out.stderr.join("\n")).toContain("founder handed it over in comment 77");
+		});
+
+		it("ignores a grant the PR's own author wrote, even one in the control-plane set", async () => {
+			const {out, shell} = await claimBy(
+				"ada",
+				NOT_FOUND,
+				[grant(77, "ada")],
+				[...GRANTORS, [perm("ada"), WRITES]],
+			);
+			expect(out.code).toBe(PR_NOT_OURS);
+			expect(posted(shell)).toBe(false);
+			expect(out.stderr.join("\n")).toContain("an author cannot hand their own PR over");
+		});
+
+		it("ignores a grant from an account outside the control-plane set", async () => {
+			const {out, shell} = await claimBy(
+				"ada",
+				NOT_FOUND,
+				[grant(77, "mallory")],
+				[...GRANTORS, [perm("mallory"), WRITES]],
+			);
+			expect(out.code).toBe(PR_NOT_OURS);
+			expect(posted(shell)).toBe(false);
+			expect(out.stderr.join("\n")).toContain(
+				"mallory is not in the control-plane set the repo's CODEOWNERS names",
+			);
+		});
+
+		it("ignores every grant while CODEOWNERS names no control-plane owner", async () => {
+			const {out} = await claimBy("ada", NOT_FOUND, [grant(77, "founder")], roster());
+			expect(out.code).toBe(PR_NOT_OURS);
+		});
+	});
+
+	it("refuses at 11 when the config at the base cannot be read — never ours", async () => {
+		const {out, shell} = await claimBy("agent", GATEWAY);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(posted(shell)).toBe(false);
+		expect(out.stderr.at(-1)).toContain("ownership is UNKNOWN");
 	});
 });

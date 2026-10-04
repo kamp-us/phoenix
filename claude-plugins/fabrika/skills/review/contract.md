@@ -23,7 +23,7 @@ Named because a spec that leaves the substrate open makes the implementer guess.
 |---|---|---|
 | `review scope` | the PR's head SHA, linked issue, artifact-class partition of its changed files, the namespace set that partition requires and which of those are routed to another gate, the `self` / `harness` flags, and whether the diff requires the `governance` namespace | partitioning paths against a fixed class map, deriving the merge gate's own required set from it, and failing closed on an empty file list is mechanical; what to do with each class is judgment |
 | `review diff` | the PR's diff bytes, with truncation refused rather than silently passed through | fetching and proving completeness is mechanical; reading the diff is the whole judgment layer |
-| `review criteria` | the linked issue's acceptance-criteria block, read through the registered `acceptance-criteria` wire format | fetch + registered parse + checkbox states are mechanical; grading a criterion is judgment |
+| `review criteria` | the set the review grades: the linked issue's acceptance-criteria block through the registered `acceptance-criteria` wire format, plus every standing ruling on that issue through the registered `decision-ruling` one, folded into one sourced list | fetch + registered parse + checkbox states + the roster-gated marker scan are mechanical; grading a criterion or a ruling is judgment |
 | `review ci` | the live CI check-run rollup at a head, fail-closed on incomplete enumeration | classifying check runs and proving the enumeration complete is mechanical; weighing a red check is judgment |
 | `review verdicts` | every verdict marker on the PR, per namespace, each with its `Current` / `Stale` / `Unbindable` binding against the live head and the content it bound | comment sweep + registered parse + `bindToContent` is mechanical; what a stale marker means for this round is judgment |
 | `review deviations` | the PR body's `## Deviations` section state (found / absent / malformed), its entries, and the Tier-M token scan over the diff | section detection and token scanning are mechanical; matching entry *substance* against findings is judgment (Tier R) |
@@ -54,7 +54,11 @@ the same tracked debt the sibling contracts carry.)
   and read the artifact out of the **object database**
   (`git diff <base>...<head>`), which writes objects and no working tree. Nothing is checked out,
   so no head instruction file is ever on disk to be loaded — a diff that adds a worktree or a
-  checkout is still the wrong fix and should be red at review.
+  checkout is still the wrong fix and should be red at review. The one fence a reviewer runs over
+  files holds the same line: `guard portability-guard check --sha <head>` reads the head's files
+  out of the object database rather than walking the reviewer's worktree, which was cut from
+  another checkout and never holds the head. It refuses on `11` when the head is not in the clone,
+  and never falls back to the tree.
 
   **`review seat` is the one checkout this group performs, and it is narrower than the posture it
   looks like it reverses.** It executes nothing and judges nothing: it moves the reviewer's *own*
@@ -71,17 +75,23 @@ the same tracked debt the sibling contracts carry.)
   fence, and a later narrowing may not cite one here.
 - **A dead-link / decision-index / skill-frontmatter checker.** The repo's own CI jobs already
   gate each. The rubrics state the expectation; the verdict stays where it is enforced.
-- **A control-plane classifier.** `cp-classify` routes §CP membership and CODEOWNERS enforces it
+- **A control-plane classifier.** `fabrika ship scope` routes §CP membership and CODEOWNERS enforces it
   at merge; a second opinion here has cost a round before. `review post` takes the carrier as an
   **input** (`--carrier advisory`); it never computes the §CP verdict.
 - **A `review trivial` verb or namespace.** Triviality is a *mode* of the skill by founder ruling:
   it changes which judgment runs, not which namespaces are emitted, and v1's
   `review-trivial` already proved the mode needs no fourth namespace. Nothing mechanical is left
   once the fan-out is skipped.
-- **A second parser for the AC block or the verdict marker.** Both are registered wire formats
-  (`packages/fabrika-cli/src/wire/registry.ts`); `review criteria` and `review post` / `review
-  verdicts` import `read` / `emit` from `acceptance-criteria.ts` and `verdict-marker.ts`. A
-  hand-rolled marker regex is the incident the registry landed to end, and the drift with it.
+- **A second parser for the AC block, the ruling marker or the verdict marker.** All three are
+  registered wire formats (`packages/fabrika-cli/src/wire/registry.ts`); `review criteria` and
+  `review post` / `review verdicts` import `read` / `emit` from `acceptance-criteria.ts`,
+  `decision-ruling.ts` and `verdict-marker.ts`. A hand-rolled marker regex is the incident the
+  registry landed to end, and the drift with it.
+- **A second ruling format beside `decision-ruled`.** The read widened past `type:decision` rather
+  than minting a sibling key: one walk, one author gate, one scan, and every marker already on the
+  board keeps reading. A parallel mechanism would be two gates disagreeing about one comment.
+- **A second reading of who may rule.** The roster is `packages/fabrika-cli/src/ship/roster.ts`, the
+  same one the merge gate enforces and `decision rule` resolves at write time.
 - **A governance sweep.** The ADR contradiction sweep and gate-invariant preservation (v1
   `review-doc`'s sweep, `review-skill`'s rigor check 4) are the `governance` skill's, guarding
   from outside. The skill invokes it at the seam; this group computes nothing for it.
@@ -148,7 +158,7 @@ prose copies are not the authority.
 | `13` | refused: the read was completed but its scope is **provably incomplete** — a truncated file list or diff, a check-run enumeration short of `total_count` | ✓ | ✓ | — | ✓ | ✓ | ✓ | — | — |
 | `14` | refused: the invoking token resolves below `write`, or the ACL lookup failed — authorization denied, fail-closed | — | — | — | — | — | — | — | ✓ |
 | `15` | refused: the write is not provably the prior rows plus one — the append-only fence, whose causes carry distinct messages | — | — | — | — | — | — | — | ✓ |
-| `16` | refused: the enumeration is complete and **no gate inspected the bytes** — the rollup is not `red`, yet no workflow this repo authors produced a run at the head, so a `green` would report coverage that does not exist | — | — | — | ✓ | — | — | — | — |
+| `16` | refused: the enumeration is complete and **no gate inspected the bytes** — the rollup is not `red`, yet no workflow this repo authors inspected the head, because every repo-authored run here carries another commit or ran against another ref, so a `green` would report coverage that does not exist | — | — | — | ✓ | — | — | — | — |
 | `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing written | — | — | — | — | — | — | ✓ | — |
 | `18` | refused: a `PASS` is the terminal of the round that appended an acceptance criterion tagged for that same subject and round — the row binds the next cycle, and a `PASS` has none, so the round owes a `FAIL`; nothing written | — | — | — | — | — | — | ✓ | — |
 | `19` | refused: a `PASS` whose linked contract marks a criterion's evidence as living outside the diff, and whose body names no evidence for it — a marked criterion is graded on the evidence it names, never on the diff alone, so a `PASS` citing none graded it on nothing; nothing written | — | — | — | — | — | — | ✓ | — |
@@ -241,12 +251,43 @@ answer is a path under one of those roots, so a verdict quoting where the diff w
 
 ---
 
+## Review content filtering
+
+Filtering is opt-in for `review scope` and `review diff`: `--filter-placement=after` enables it;
+omitting the flag preserves unfiltered output. `before` and every other value refuse on `10`.
+`--exclude` adds comma-separated patterns only when filtering is enabled. Patterns support `*`
+within a path segment and `**` across segments; every other character, including `?`, is literal.
+The shipped defaults are `pnpm-lock.yaml`, `**/__snapshots__/**`, `**/__generated__/**`,
+`**/schema.graphql.generated` and `**/__mutation__/**`: the lockfile, snapshot directories and the
+generated-schema and build-output shapes.
+The effective set is shipped defaults minus `reviewFilterUnexclude`, then `reviewFilterExclusions`
+and caller additions, deduplicated by pattern in declaration order. Re-adding a removed default
+restores it and removes it from the removal report.
+
+Required classes, namespaces and subsystem constraints always derive from the complete raw path
+list. Filtering changes delivered contents only. Pattern checks and the runtime check of actually
+excluded paths refuse hiding governed content on `21`. Guards continue reading raw paths.
+
+Completeness is proved before filtering. A complete nonempty raw diff may deliberately serve zero
+sections, with every excluded path reported; that result retains all required reviews. It is not a
+verdict and does not establish acceptance criteria. An empty or incomplete raw read retains its
+existing refusal. The reviewer follows the filtered-content instructions in `SKILL.md`.
+
+Worked cases:
+
+- A lockfile-only diff with filtering enabled reports `review-code`, one excluded path and zero
+  served sections. The same call without placement serves the original content.
+- A mixed code/doc diff excluding its code content retains both required text reviews.
+- A configured UI path still requires `review-ui`; a governed path still requires governance and
+  cannot be excluded. Preview and scope report the same required set.
+- A literal `?` pattern matches that filename only, without throwing or acting as a quantifier.
+
 ## `review scope`
 
 **Invocation**
 
 ```
-fabrika review scope 4321 [--sha <head>] [--repo <owner/name>] [--json]
+fabrika review scope 4321 [--sha <head>] [--repo <owner/name>] [--json] [--filter-placement=after] [--exclude <patterns>]
 ```
 
 **Inputs**
@@ -257,6 +298,16 @@ fabrika review scope 4321 [--sha <head>] [--repo <owner/name>] [--json]
 | `--sha` | string | no | the PR's live head | the head to read the changed files at; see the binding step above |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
+
+Filtering options follow [Review content filtering](#review-content-filtering).
+Between class and namespace rows, each matching subsystem emits `subsystem\t<name>\t<count>`,
+`subsystem-note\t<name>\t<constraint>` and sorted `subsystem-path\t<name>\t<path>` rows.
+Subsystems sort by name; a file may match several. JSON adds `subsystems` entries with
+`{name, files, paths, constraint}` only when matches exist.
+When filtering is enabled, the output ends with `excluded\t<count>` and `excluded-path\t<path>`
+rows, then `un-excluded\t<count>` and `un-excluded-path\t<pattern>` for removed defaults when
+any remain removed. JSON adds `filter_placement`, `excluded: {count, paths}` and, when nonempty,
+`unexcluded: {count, paths}`. Classes and `scanned` continue counting all raw paths.
 
 **Output** — machine channel, in this line order. First line:
 `scoped\t<head-sha>\t<fixes:n|part-of:n|->`, where the head is the commit the file list was actually
@@ -308,12 +359,24 @@ the `governance` skill; the flag only makes the seam mechanical.
 
 **`governance` is a fourth-root answer, and it is why `harness` must not be read as one.** The line
 is `touchesGovernanceRoot` over the same file list, against the **declared** governance roots
-(`governedRoots`, whose shipped value here is the decision corpus plus the three `harness` roots) — the
+(`governedRoots`, whose shipped value is four roots: the decision corpus, `.claude/`, `.github/` and
+`.fabrika.jsonc` itself — a repo that governs its own plugin tree declares it) — the
 one derivation `governance scope` prints, imported rather than recomputed. So a
 decision-corpus-only diff prints `harness\tfalse` and `governance\trequired`, which is exactly the
 pair a reviewer keying the governance obligation off `harness` gets wrong: a clean PASS,
 then the ship gate blocking on `ns governance absent` with nobody told to fill it. The token
 vocabulary matches `governance scope`'s on purpose — one word, read the same in both places.
+
+**The config the classes derive over is the PR's, never this checkout's.** `governedRoots`,
+`uiSurfaces` and `reviewSubsystems` are read out of git at the bound head and at its merge base, the
+same two commits the file list is read between. A path counts as governed, raises `ui`, or carries a
+subsystem constraint when **either** commit's `.fabrika.jsonc` says so: head alone would let a PR
+drop its own row and skip the gate, base alone would miss a PR that adds an app. A file absent at
+one commit is that commit's shipped defaults; one that does not decode, or a read that fails, is
+`11` naming the commit. Every verb that derives a PR's classes over a bound head — `ship scope`,
+`ship gate`, `ship floor`, `lane prove`, `heal-ci`, `governance scope` and `post`, `review preview`,
+`review-ui route` — reads through the same reader (`packages/fabrika-cli/src/review/class-config.ts`),
+so the tree a verb stands in cannot change its answer. The filter keys stay the checkout's.
 
 **The issue reference** is resolved from the PR body in two passes, and the kinds are reported
 apart rather than collapsed. First the closing keywords (`Fixes/Closes/Resolves #N`), first match
@@ -334,7 +397,7 @@ the skill states it (`SKILL.md` step 2).
 |---|---|
 | `7` | the PR is proven absent (404), or closed, or has **zero changed files** — a review over nothing, refused fail-closed |
 | `10` | `--sha` is not a head SHA |
-| `11` | the PR could not be read, or the commit could not be bound — the scope is UNKNOWN |
+| `11` | the PR could not be read, the commit could not be bound, or `.fabrika.jsonc` at the head or the merge base could not be read or decoded — the scope is UNKNOWN |
 | `12` | `--sha` is not the PR's head — re-scope at the head, never partition a tree the PR has left |
 | `13` | git reports no changed files for the bound commit's range — an empty read, with nothing to partition |
 
@@ -436,7 +499,7 @@ $ fabrika review scope 4321 --json
 **Invocation**
 
 ```
-fabrika review diff 4321 [--sha <head>] [--repo <owner/name>]
+fabrika review diff 4321 [--sha <head>] [--repo <owner/name>] [--filter-placement=after] [--exclude <patterns>]
 ```
 
 **Inputs**
@@ -446,6 +509,13 @@ fabrika review diff 4321 [--sha <head>] [--repo <owner/name>]
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | no | the PR's live head | the head to read the diff at; see the binding step above |
 | `--repo` | string | no | resolved | the repository |
+
+Filtering options follow [Review content filtering](#review-content-filtering).
+A filtered answer prefixes the kept unified-diff sections with
+`x-fabrika-filter: placement=after excluded=N served=M`, then sorted
+`x-fabrika-excluded-path: <path>` lines and sorted `x-fabrika-unexcluded-path: <pattern>` lines for
+removed defaults. The header remains when M is zero. Counts describe complete file sections,
+including quoted filenames decoded with the same parser as the raw completeness proof.
 
 **Output** — machine channel. The unified diff bytes, read out of the object database at the bound
 commit. There is no empty answer: a PR with zero changed files is `review scope`'s `7`, and this
@@ -515,6 +585,27 @@ index 0b1c2d3..a1b2c3d 100644
 
 ---
 
+## `review preview`
+
+Read one subject with `--filter-placement=after`: a PR number with optional `--sha`/`--repo`,
+`--base` and `--tip`, or `--diff-file <path>`. Exactly one subject is required. Filtering options
+follow [Review content filtering](#review-content-filtering). Omitted placement, `before`, conflicting
+subjects/modifiers, or `--emit-diff` with `--json` refuse on `10`.
+
+PR and range subjects read the object database and prove diff completeness against the same
+range's path list before filtering, so a deliberate exclusion can never masquerade as a truncation. A local diff file has no range to verify; it reads bytes as
+given through the filesystem service. An unreadable input or config refuses on `11`, a stale PR
+head on `12`, a provably incomplete diff on `13`, and a governed exclusion on `21`.
+
+The answer starts `preview\tafter`, then `matched\t<count>`, raw-derived class and namespace
+rows, and excluded/removal rows in scope's grammar. For a PR or range subject, required namespaces
+use the same governed roots and UI prefixes as scope, read at the subject's two commits. A
+`--diff-file` subject has no commit to read, so it takes them from the checkout's `.fabrika.jsonc`.
+`--json` returns `outcome: "previewed"`, `placement`,
+`matched_paths`, `excluded: {count, paths}`, optional `unexcluded: {count, paths}`, `active_classes`,
+`namespaces`, `filtered_diff_bytes` and `filtered_diff_lines`. `--emit-diff` returns the filtered
+bytes in `review diff`'s grammar instead. No review verdict or network write is produced.
+
 ## `review criteria`
 
 **Invocation**
@@ -531,14 +622,72 @@ fabrika review criteria 4287 [--repo <owner/name>] [--json]
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
-**Output** — machine channel. First line: `criteria\t<count>`. Then one line per criterion —
-`<checked|open>\t<text>`, with a third `\t<evidence source>` column on a criterion carrying the
-outside-diff evidence marker and none on one that does not — the same line grammar
-`wire read --format acceptance-criteria` prints, because it **is** that read: the verb fetches the
-issue body and hands it to the registered format's `read`
-(`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), importing the module. No second parser.
+**Output** — machine channel. First line: `criteria\t<count>` (the body rows). Second:
+`rulings\t<count>`. Then one line per row of the graded set —
+`<body|ruling>\t<open|checked|superseded>\t<text>`, with a fourth column carrying a body row's
+outside-diff evidence source or a ruling row's comment URL. Body rows come first in block order,
+ruling rows after them oldest first.
 
-With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"marked":<n>,"criteria":[{"text":…,"checked":…,"evidence":<source|null>}…]}`.
+Both halves are registered reads and there is **no second parser** on either: the verb fetches the
+issue body and hands it to `acceptance-criteria`'s `read`
+(`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), and it fetches the issue's comments and
+hands each to `decision-ruling`'s (`packages/fabrika-cli/src/wire/decision-ruling.ts`), through the
+same roster-gated scan `decision ruling` answers from
+(`packages/fabrika-cli/src/decision/standing-rulings.ts`). The fold of the two is
+`packages/fabrika-cli/src/review/graded-set.ts`.
+
+With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"marked":<n>,"rulings":<n>,"superseded":<n>,"disregarded":<n>,"unauthorized":<n>,"danglingSupersedes":[<n>…][,"unmarked":{…}],"criteria":[{"source":"body"|"ruling","state":"open"|"checked"|"superseded","text":…,"evidence":<source|null>,"ruling":<url|null>,"at":<stamp|null>,"supersedes":<n|null>}…]}`.
+
+**The rulings half is why this verb is the gate's whole contract read.** A founder ruling arrives as
+a comment, and a gate that read only the body graded a spec the founder had already moved: one PR
+passed two independent reviews against ten criteria while three rulings sat on the issue
+contradicting them. A ruling row carries the founder's own words, taken from the cited comment —
+which is on this same issue, so no extra fetch — collapsed to one line; where that comment is gone,
+the row carries its URL instead.
+
+**The marker's grammar** is `decision-ruling`'s, written only by `fabrika decision rule`:
+
+```
+decision-ruled: #<n> @ <12 lowercase hex> · ruling:<issue-comment url> · [supersedes:<k> · ]<ISO-8601 Z>
+```
+
+The digest binds the issue body that was ruled on; the `ruling:` field names the comment the ruling
+is written in, checked against this issue by the format's own read; `supersedes:<k>` is optional and
+names the **1-based** body criterion this ruling replaces.
+
+- **The author gate is the whole authority.** Posting a marker takes nothing but the ability to
+  comment, and the digest is derivable by anyone who can read the body — so the read resolves the
+  control-plane roster (`packages/fabrika-cli/src/ship/roster.ts`) and a conforming marker from an
+  off-roster author is **not** a standing ruling. It is counted in `unauthorized`, never dropped:
+  reporting it as "nobody ruled" tells the account that tried that it never did.
+- **A drifted marker is counted in `disregarded`**, for the same reason.
+- **The roster is resolved only where it can change the answer:** a conforming marker is standing
+  there, or some comment carries no machine marker. On an issue whose every comment is a machine
+  marker with no ruling among them, the ACL's three reads answer nothing and are not made.
+- **An owner comment no marker records is listed, never graded and never a refusal.** A comment
+  counts as unmarked when a control-plane roster account wrote it, it carries no fabrika machine
+  marker, no standing ruling cites it, and its `updated_at` is newer than the newest standing
+  ruling's stamp. With no standing ruling, every such comment on the issue counts. A machine marker
+  is a line opening with a `<!-- fabrika…` or `<!-- ac:…` HTML comment, a first non-blank line
+  opening with a hyphenated lowercase `<key>:`, or a conforming gate verdict
+  (`packages/fabrika-cli/src/wire/machine-marker.ts`); a `decision-ruled:` line is one only when it
+  conforms. The count and each comment's URL print on stderr and, under `--json`, in `unmarked`.
+  The exit code does not change. The list can hold agent prose: an agent's free-prose note posted
+  under an owner's account is a roster comment with no marker, and no read of the bytes tells it
+  from a person's.
+- **`unmarked` is present only when it has something to say.** `{"state":"counted","count":<n>,
+  "comments":[<url>…]}` when at least one such comment stands. `{"state":"unknown","reason":…}` when
+  the roster did not resolve on an issue carrying no conforming marker: the rulings half is still
+  proven empty there, so the verb answers `0`, and the unmarked half says unknown rather than zero.
+  An absent key is the proven zero, so an issue with no such comment prints the bytes it printed
+  before the key existed.
+- **Superseding is declared, never inferred.** No verb can read a ruling's prose and judge which
+  criterion it overturns, so the human recording it says. A `supersedes:<k>` naming a row the block
+  does not have lands in `danglingSupersedes` and on stderr — the founder's statement about which row
+  he replaced is reported rather than discarded.
+- **Ruling versus ruling is ordering, not a flag.** Rows print oldest first with their stamps, and
+  the gate's rule is that the newest wins where two contradict. Nothing marks an earlier ruling
+  retired.
 
 **A marked criterion is one the diff's bytes cannot settle either way**, and the marker names where
 its proof lives — `[evidence: <source>]`, the grammar owned by the wire format and written at mint
@@ -561,7 +710,11 @@ The state is reported on stderr as a notice so the caller sees it.
 | Code | Trigger |
 |---|---|
 | `7` | the issue is proven absent (404); **or** the body was read and the AC block is proven absent or malformed — reported with the wire distinction on stderr, never invented around |
-| `11` | the issue could not be read — whether a block exists is UNKNOWN |
+| `11` | the issue could not be read — whether a block exists is UNKNOWN; **or** the issue's comments or the control-plane roster could not be read — the graded set is UNKNOWN, never the body alone |
+
+**No new exit code.** The rulings half adds one more way to be UNKNOWN and it is the same fact `11`
+already names: a read that did not complete. Reporting "no ruling stands" off a roster that did not
+resolve is the fail-open direction this whole surface exists to close, one layer down.
 
 **`Absent` and `Malformed` share `7` but never share a message.** Both are fail-closed refusals
 of the same judgment ("there is no gradeable contract here"), and the skill's response to both is
@@ -577,6 +730,8 @@ fix the drift).
 | `review criteria: #<n> carries no acceptance-criteria block — absent: <wire reason>. Grade nothing; the contract is missing.` | 7 | refusal |
 | `review criteria: #<n>'s acceptance-criteria block is malformed: <wire reason> — a drifted heading is a defect to report, not "there were none".` | 7 | refusal |
 | `review criteria: cannot read #<n> in <repo>: <reason> — whether a block exists is UNKNOWN.` | 11 | refusal |
+| `review criteria: cannot read the comments on #<n>: <reason> — whether a ruling stands is UNKNOWN — the graded set is UNKNOWN, never the body alone.` | 11 | refusal |
+| `review criteria: cannot read the §CP boundary: <reason> — who may rule is unread, so whether a ruling stands is UNKNOWN — the graded set is UNKNOWN, never the body alone.` | 11 | refusal |
 
 **Scope** — one issue body, read as typed JSON (never `jq -r .body`, which errors on the control
 characters GitHub bodies carry and yields empty in a loop).
@@ -586,16 +741,29 @@ characters GitHub bodies carry and yields empty in a loop).
 ```
 $ fabrika review criteria 4287
 criteria	2
-open	the first retry delay equals `base`
-open	the retry guide documents the delay table
+rulings	0
+body	open	the first retry delay equals `base`
+body	open	the retry guide documents the delay table
 
 $ fabrika review criteria 8900
 criteria	2
-open	the stored-id migration runs on load
-open	a desk checkpointed under the old shape comes back whole	hand-verification on a real desk
+rulings	0
+body	open	the stored-id migration runs on load
+body	open	a desk checkpointed under the old shape comes back whole	hand-verification on a real desk
 review criteria: 1 of 2 criteria mark evidence outside the diff — grade each on the evidence it
 names, and name it in the verdict body:
   - "a desk checkpointed under the old shape comes back whole" — evidence: hand-verification on a real desk
+
+$ fabrika review criteria 9508
+criteria	2
+rulings	1
+body	open	the workflow opens the issue when the run fails
+body	superseded	the builder may judge the inline question for itself
+ruling	open	No inline decision logic in the workflow yaml — a unit-tested decision core with a thin relay.	https://github.com/<owner>/<repo>/issues/9508#issuecomment-5752332411
+review criteria: the graded set is 2 body criteria plus 1 standing ruling(s); 1 body row(s)
+superseded, 0 drifted marker(s) disregarded, 0 from an account off that roster.
+review criteria: grade the ruling rows as well as the body rows — where the two contradict, the
+newest ruling is the spec and a superseded body row is reported, not graded.
 ```
 
 **Grounding**
@@ -666,6 +834,35 @@ uncollapsed: a check run that does not exist has no row here, so a required gate
 a gate the repo does not declare at all were always the same silence. This verb answers "is the head
 green"; `heal-ci surface` answers "is the gate armed and did it post".
 
+**Only a context the base branch declares required is rolled up.** The declared set — branch
+protection unioned with the rulesets whose ref condition matches the base — is read once per
+invocation, before the first sample, through the module the other three head-reading verbs call
+(`src/review/blocking.ts`). A red outside it is named on the notes channel as `review ci: failing
+outside the required set: <name>, … — reported, never blocking.` and never makes this verb call the
+head red; a still-running run outside it never makes it `pending` either. The `check` tally and the
+`run` count stay the **whole** enumeration's: the rollup narrowed, the evidence did not, and the
+completeness proof still divides by what the platform declared. A base branch declaring **nothing**
+required falls back to the informational-name denylist in `src/review/rollup.ts`, so every
+non-informational check blocks there. A plan-gated base takes the same denylist: GitHub's `403`
+beginning `Upgrade to GitHub Pro or make this repository public` says the branch cannot declare a
+required check, so it is not a permission failure. Any other declared set that cannot be read at
+this token's permission is `11` naming that read as the cause — never a colour over it. Which definition answered is stated
+on the notes channel on every run. The two governance-floor settle tokens read the blocking set too,
+so a non-required red beside a stale floor no longer hides it.
+
+**A head that produced runs and no *blocking* run is `pending`, never `green`.** The rollup over an
+empty set is green by construction, and narrowing to the declared set opens that case wherever the
+required contexts have not posted yet. What is missing there is a report, so the answer is `pending`
+with the reason on the notes channel.
+
+**The same holds when only some declared contexts have posted.** A declared required context with no
+run at the head is not satisfied, so a head where three declared contexts passed and a fourth has
+posted nothing is `pending`, never `green`, and the notes channel names the contexts still owed.
+`--wait` keeps polling it and ends `settled` only once every declared context has a concluded run, or
+`budget-exhausted` when the budget runs out first. A `red` declared context still answers `red` at
+once, whatever else has not posted. `ship checks` reads the same rule from the same module
+(`src/review/blocking.ts`).
+
 **The rollup is total over the status vocabulary, fail-closed on the ambiguous rows:** `red`
 when any completed run concluded `failure`, `timed_out`, `action_required` or `cancelled` (a
 cancelled check proved nothing, and "proved nothing" must not read green); `pending` when none
@@ -676,24 +873,37 @@ is `red`, never silently dropped.
 
 **An empty enumeration asks one further question: does this repo produce CI at all?** The two
 facts are different and no longer share an answer — a repo whose checks have not reported yet is
-still going to report, and a repo with no Actions workflows never will. The evidence is the
+still going to report, and a repo with no workflow of its own never will. The evidence is the
 workflow *inventory* and nothing else: **existence is the whole test, and nothing inspects what a
-workflow does**. Zero workflows refuses on
+workflow does**. A producer is a workflow the repo authors itself, a `.github/workflows/*` path:
+the `dynamic/<provider>/<name>` entries the platform lists on the repo's behalf (default CodeQL
+setup, Dependabot, the Copilot reviewer) do not count. Zero repo-authored workflows refuses on
 `7`, unless the repo declares `ci.noProducer: "degrade"` in `.fabrika.jsonc`, which rolls up
 `no-producer` at exit `0` with `run\t0` — its own token, never `green` and never `pending`. The
-inventory is read only when the enumeration came back empty: a check run that reported already
-proves a producer.
+inventory is read only when the enumeration came back empty. A check run that reported proves no
+producer, because a `dynamic/*` workflow reports runs too: a non-empty enumeration skips the
+producer question, and gate coverage below names the repo that authors no workflow of its own.
 
 **A passing check set is not gate coverage, and the verb no longer lets the two share a word.**
 A complete, all-green enumeration that came from no workflow this repo authors is refused on `16`
 — not `green`, not `pending`. The set of gates is the **live workflow inventory**: a workflow
 checked into the repo is addressed by its file path (`.github/workflows/ci.yml`), one the platform
 provides on the repo's behalf by a synthetic `dynamic/<provider>/<name>`, and coverage is the
-intersection of the first with the workflows that actually produced a run at this head. No job
-names, no expected set — nothing here knows what a gate is called. A repo that authors no workflow
-of its own has no gate to have missed, and says so on stderr at exit `0`. The read is skipped over a
-`red` rollup, which is already the answer a caller must act on; `green` and `pending` are the two
-words that read as "nothing to do here", and both are wrong over bytes no gate inspected.
+intersection of the first with the workflows that produced a **head-inspecting** run here. No job
+names, no expected set — nothing here knows what a gate is called. Head-inspecting is read off each
+run's own provenance rather than its path: the run has to carry this commit, and its event has to be
+one GitHub runs against the head. `pull_request_target` is the one that is not — it carries the pull
+request's head and checks out the base, so `.github/workflows/pr-cleanup.yml` is repo-authored, sits
+at the head, and inspected none of it. No other event is filtered: `ci.yml`'s trusted
+`workflow_dispatch` path for Release-PR head inspection counts exactly as a `pull_request` run does.
+The `--sha` operand is resolved to the commit's full object name before this read, because the
+Actions run list filters `head_sha` as an exact string — an abbreviation there returns no runs at
+all. An operand that cannot be resolved to one is `11`, never the `16`: "no gate inspected these
+bytes" is a fact about the repository, and an unresolved operand is a fact about the call. A repo
+that authors no workflow of its own has no gate to have missed, and says so on stderr at exit `0`.
+The read is skipped over a `red` rollup, which is already the answer a caller must act on; `green`
+and `pending` are the two words that read as "nothing to do here", and both are wrong over bytes no
+gate inspected.
 
 **`--wait` is the bounded in-verb wait, and it polls a `pending` and nothing else.** A `pending` is
 the ordinary state of a PR minutes after a push — exactly when a reviewer is spawned — so a caller
@@ -713,7 +923,8 @@ a bound that ran out:
   it.
 - `head-moved` — the PR left the head this answer binds during the wait. The last read still binds
   what it inspected; the caller re-reads at the new head rather than trusting a stale `settled`.
-- `governance-owed` — the only unfinished check at this head is `governance floor at head`, and the
+- `governance-owed` — every declared required context has a run, the only unfinished check at this
+  head is `governance floor at head`, and the
   `governance-floor` workflow run at this head has completed. The floor reports through a check
   run, and that check-run stays `in_progress` while no governance verdict is bound at the head, so what the wait is
   waiting for is a verdict its own caller owes. Nothing was proven — the rollup still reads `pending`
@@ -745,10 +956,10 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is a fail-open and is refused; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
-| `11` | the check-run read, the workflow-inventory read, the runs-at-head read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
-| `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks" |
-| `16` | the rollup is not `red` and **no workflow this repo authors produced a run at the head** — the enumeration is complete, no gate inspected the bytes, and the CI state is UNKNOWN, never `green` |
+| `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is a fail-open and is refused; **or the repo has zero repo-authored `.github/workflows/*` workflows** (platform-provided `dynamic/*` entries do not count) under the shipped `ci.noProducer: "refuse"` |
+| `11` | the check-run read, the workflow-inventory read, the runs-at-head read, the base branch's required-set read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
+| `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks"; **or the base branch's ruleset walk never reached a terminal page** — the declared required set is provably short, so which checks block is UNKNOWN |
+| `16` | the rollup is not `red` and **no workflow this repo authors inspected the head** — the enumeration is complete, every repo-authored run here carries another commit or ran against another ref, and the CI state is UNKNOWN, never `green` |
 
 **Errors**
 
@@ -757,21 +968,33 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `review ci: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review ci: no commit <sha> on PR #<n> in <repo>.` | 7 | refusal |
 | `review ci: zero check runs declared at <sha> — refusing to report green over an empty enumeration (ADR 0092).` | 7 | refusal |
-| `review ci: <repo> has zero workflows — no CI producer, so no head can be evidenced (ADR 0092). A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.` | 7 | refusal |
+| `review ci: <repo> has zero repo-authored workflows (platform-provided \`dynamic/*\` entries do not count) — no CI producer, so no head can be evidenced. A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.` | 7 | refusal |
 | `review ci: cannot enumerate check runs at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `review ci: cannot enumerate the workflow inventory of <repo>: <reason> — whether a producer exists is UNKNOWN, never green.` | 11 | refusal |
 | `review ci: cannot read \`ci\` from the repo config (<reason>) — whether <repo> produces CI is UNKNOWN, never green.` | 11 | refusal |
-| `review ci: <repo> declares \`ci.noProducer: degrade\` and has zero workflows — no producer, so there is nothing to roll up.` | 0 | notice |
+| `review ci: <repo> declares \`ci.noProducer: degrade\` and has zero repo-authored workflows — no producer, so there is nothing to roll up.` | 0 | notice |
 | `review ci: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration (#3999).` | 13 | refusal |
-| `review ci: none of the <g> workflow(s) <repo> authors produced a run at <sha> — the <n> check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green (#6522).` | 16 | refusal |
+| `review ci: none of the <g> workflow(s) <repo> authors inspected <head> — the <n> check run(s) here came from elsewhere or from a run that opened another ref, so no gate inspected these bytes: the CI state is UNKNOWN, never green.` | 16 | refusal |
 | `review ci: cannot enumerate the workflow inventory of <repo>: <reason> — which gates exist is UNKNOWN, never green.` | 11 | refusal |
 | `review ci: cannot enumerate the workflow runs at <sha>: <reason> — which gates ran is UNKNOWN, never green.` | 11 | refusal |
-| `review ci: <c> of <g> workflow(s) <repo> authors produced a run at <sha>.` | 0 | notice |
+| `review ci: cannot judge gate coverage at <sha>: <reason> — which gates inspected these bytes is UNKNOWN, never green.` | 11 | refusal |
+| `review ci: <c> of <g> workflow(s) <repo> authors inspected <head>.` | 0 | notice |
 | `review ci: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
+| `review ci: <base> declares <n> required context(s): <list> — a red outside that set is reported, never blocking.` | 0 | notice |
+| `review ci: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
+| `review ci: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
+| `review ci: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
+| `review ci: no run at this head answers any context <base> declares required — pending, never green: the required checks have not reported.` | 0 | notice |
+| `review ci: no run at this head for <list>, which <base> declares required — pending, never green: a declared context that has not reported is not satisfied.` | 0 | notice |
+| `review ci: every run at this head is informational — pending, never green: nothing here gates.` | 0 | notice |
+| `review ci: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `review ci: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
+| `review ci: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 | `review ci: the live head is <live>, you are enumerating at <sha> — the head moved; a verdict still binds only what was inspected.` | 0 | notice |
 
 **Scope** — the check runs at one commit, paginated, count-verified against `total_count`, and the
-workflows that produced a run there, against the repo's live inventory.
+workflow runs carrying that commit — each judged by its path, event and head — against the repo's
+live inventory.
 
 **Examples**
 
@@ -954,6 +1177,16 @@ review-ui	FAIL	77f61ce9	current	5460446728	superseded
 - `wire check` exits 0 on a stale PASS by construction (binding is deliberately not a property of
   the bytes); this verb is the caller-side half the type was designed for, so no consumer needs
   to fold the three outcomes to use them.
+
+**This column answers the tree and not the contract, and there is a second currency question it
+cannot see.** A verdict written before the newest standing ruling on the issue graded a spec that has
+since moved: it binds this head, it may still bind this head's content, and it never read the ruling.
+`fabrika lane prove` asks that second question on the `PASS` arm — it reads the issue's standing
+rulings through the same roster-gated scan `review criteria` folds, and rows a verdict written before
+the newest one `stale`, so a `PASS` cannot carry a lane past a ruling nobody graded
+(`packages/fabrika-cli/src/lane/ruling-currency.ts`). A stamp that will not read is `unknown`, never
+current. The park arm asks nothing of it: a park is refused only by a FAIL that still binds, and a
+ruling cannot make one bind harder.
 
 ---
 

@@ -16,16 +16,6 @@ describe("a repo that declares nothing runs the gate at its shipped coverage", (
 		expect(resolved.value).toEqual([]);
 	});
 
-	it("resolves the empty list for a config that declares other keys and not this one", () => {
-		const resolved = resolve(
-			loadConfig({_tag: "Text", text: JSON.stringify({docLeakExempt: ["/CLAUDE.md"]})}),
-			auditCatalogsKey,
-		);
-		expect(resolved._tag).toBe("Default");
-		if (resolved._tag !== "Default") return;
-		expect(resolved.value).toEqual([]);
-	});
-
 	// Empty is the strict answer on a widen-only key, so an explicit `[]` is data, not a disabled
 	// gate: the shipped rows are emitted either way.
 	it("takes an explicitly declared empty list as declared", () => {

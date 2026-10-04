@@ -14,13 +14,22 @@ on:
   # cancelled the teardown before it ran. Deploy only needs open/reopen/synchronize.
   pull_request:
     types: [opened, reopened, synchronize]
+  workflow_dispatch:
+    inputs:
+      migrations_drift:
+        description: Migration drift handling for this deploy
+        type: choice
+        default: refuse
+        options:
+          - refuse
+          - adopt
 
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
 # The stage name keys an isolated copy of one app's stack (worker + D1 + DOs).
-# Pull requests → `pr-<n>`; pushes to main (the only push trigger) → `prod`.
+# Pull requests → `pr-<n>`; pushes and manual dispatches on main → `prod`.
 env:
   STAGE: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'prod' }}
 
@@ -65,8 +74,8 @@ jobs:
     outputs:
       deploy: ${{ steps.decide.outputs.deploy }}
     steps:
-      # Full history so the merge-base below resolves; the default shallow checkout has no
-      # common ancestor to compute against.
+      # Full history so the merge ref's first parent below resolves and dorny can diff from it;
+      # the default shallow checkout carries only the merge commit itself.
       - uses: actions/checkout@v4.2.2
         if: github.event_name == 'pull_request'
         with:
@@ -83,20 +92,30 @@ jobs:
       #      `token: ''` also removes the transient GitHub-API-HTML blip that hard-failed the
       #      equivalent ci.yml step and redded a defect-free PR (#3244/#3245).
       #   2. BASIS. In git mode dorny diffs TWO-DOT from `pull_request.base.sha` — the base
-      #      BRANCH TIP at event time, not the common ancestor — so once main advances past
-      #      the PR's merge ref, main's own drift is reported as this PR's changes.
+      #      BRANCH TIP at event time — which can sit on either side of the main commit the
+      #      checked-out `refs/pull/N/merge` is built on. NEWER than it, main's drift after the
+      #      merge ref is reported as this PR's changes, in reverse (#3722). OLDER than it, main's
+      #      drift before the merge ref is (#10060); the merge base of `base.sha` and HEAD fixed
+      #      only the first case, since there it is `base.sha` itself.
       # Together those wedged PR #3713 (#3722): ci.yml saw 22 phantom `e2e:` hits from main's
       # drift → `e2e_required=true`, this job saw the real 4 files → `deploy=false`, and e2e
       # polled 10 min for a preview that structurally could never arrive.
+      # The basis both jobs pin is the merge ref's first parent (`HEAD^1`), the exact base tip
+      # GitHub merged the PR onto, so two-dot `HEAD^1..HEAD` is the PR's own change in both
+      # cases. A HEAD that is not a two-parent merge commit emits nothing, and dorny's wide
+      # fallback fails TOWARD deploying.
       - id: mergebase
         if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -uo pipefail
-          if sha=$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD 2>/dev/null); then
+          if git rev-parse --verify --quiet 'HEAD^2^{commit}' >/dev/null \
+            && sha=$(git rev-parse --verify --quiet 'HEAD^1^{commit}'); then
             echo "sha=$sha" >> "$GITHUB_OUTPUT"
-            echo "::notice::deploy-relevance diff basis = merge base $sha (base.sha ${{ github.event.pull_request.base.sha }})"
+            echo "::notice::deploy-relevance diff basis = merge ref first parent $sha (base.sha $PR_BASE_SHA)"
           else
-            echo "::warning::could not resolve a merge base — falling back to dorny's base.sha basis (detection stays wide, so this fails TOWARD deploying)"
+            echo "::warning::HEAD is not a merge commit with a resolvable first parent — falling back to dorny's base.sha basis (detection stays wide, so this fails TOWARD deploying)"
           fi
 
       # Run it only for a PR — `push` (prod) never consults it; the `decide` step below
@@ -127,6 +146,7 @@ jobs:
               - 'apps/**/playwright.config.cjs'
               - 'apps/**/package.json'
               - 'packages/preview-seed/**'
+              - 'packages/design/**'
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy.yml'
@@ -274,6 +294,7 @@ jobs:
       github.actor != 'dependabot[bot]' &&
       needs.changes.outputs.deploy == 'true' &&
       (github.event_name == 'push' ||
+       github.event_name == 'workflow_dispatch' ||
        github.event.pull_request.head.repo.full_name == github.repository)
     needs: [app-roster, changes]
     runs-on: ubuntu-latest
@@ -288,6 +309,11 @@ jobs:
       # pr-cleanup.yml, so deploy and teardown can never drift onto different app sets.
       matrix: ${{ fromJSON(needs.app-roster.outputs.matrix) }}
     steps:
+      - name: Refuse dispatch outside main
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Manual deploys must run from refs/heads/main."
+          exit 1
       - uses: actions/checkout@v4.2.2
         with:
           # On a `pull_request` event we deliberately keep checkout's default
@@ -368,6 +394,31 @@ jobs:
           echo "stage '$STAGE' → ENVIRONMENT '$ENVIRONMENT'"
           echo "ENVIRONMENT=$ENVIRONMENT" >> "$GITHUB_ENV"
 
+      # Which session-signing key THIS stage deploys with (ADR 0406). Two values exist and
+      # they are not interchangeable: the founder-held `secrets.BETTER_AUTH_SECRET`, which
+      # no agent holds a copy of (#9339), and the deliberately-public preview key committed
+      # at infra/preview-auth-key/key.txt, which anyone reading the repo can forge a login
+      # with. The choice keys on the stage name through `isPreviewStage` — the single owner
+      # of the `pr-<n>` shape, in apps/web/worker/environment.ts — and NOT on ENVIRONMENT
+      # above, which maps every unrecognized stage to `preview` and would hand a
+      # hand-named stage the public key. This step ECHOES the resolved source so a deploy
+      # log says which value the stage took rather than leaving it to be read out of a
+      # nested YAML ternary. Second fence, independent of this one: the worker itself dies
+      # at boot when a non-`preview` ENVIRONMENT is handed a `preview_`-prefixed key
+      # (apps/web/worker/preview-auth-key.ts), so a mistake here serves nothing rather
+      # than serving forgeable logins.
+      - name: Resolve the session-signing key source from stage
+        run: |
+          set -euo pipefail
+          PREVIEW_STAGE="$(node --eval "import('./apps/web/worker/environment.ts').then((m) => process.stdout.write(m.isPreviewStage(process.env.STAGE) ? 'yes' : 'no'))")"
+          if [ "$PREVIEW_STAGE" = "yes" ]; then
+            echo "stage '$STAGE' → session-signing key: the committed public preview key (infra/preview-auth-key/key.txt)"
+            echo "PREVIEW_AUTH_KEY=$(tr -d '\n' < infra/preview-auth-key/key.txt)" >> "$GITHUB_ENV"
+          else
+            echo "stage '$STAGE' → session-signing key: the founder-held BETTER_AUTH_SECRET Actions secret"
+            echo "PREVIEW_AUTH_KEY=" >> "$GITHUB_ENV"
+          fi
+
       # The SPA is a plain Vite build; the worker uploads `dist/client` via its
       # `assets` prop. `alchemy deploy` does not drive Vite for phoenix's shape.
       - name: Build SPA (${{ matrix.app }})
@@ -395,12 +446,19 @@ jobs:
         run: |
           set -o pipefail
           pnpm --filter ${{ matrix.pnpm-name }} exec alchemy deploy --stage "$STAGE" --yes | tee deploy.log
-          # alchemy has no structured URL output, so scrape the worker URL it
-          # prints (`url: 'https://…workers.dev'`). `set -o pipefail` keeps the
-          # deploy's exit code through the `tee` so a failed deploy still fails.
-          echo "url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' deploy.log | tail -1)" >> "$GITHUB_OUTPUT"
+          # alchemy has no structured URL output, so scrape the `url:` key of the
+          # summary object it prints. Match on that key, NOT on a `*.workers.dev`
+          # host (#9507): a stage bound to a custom domain prints only the domain
+          # (`url: 'https://phoenix.kamp.us', domains: [ 'phoenix.kamp.us' ]`), so a
+          # host-shaped pattern scraped nothing on prod and fed the health gate an
+          # empty URL. A preview stage has no custom domain and prints its
+          # workers.dev host on the same key, so one pattern serves both.
+          # `set -o pipefail` keeps the deploy's exit code through the `tee` so a
+          # failed deploy still fails.
+          echo "url=$(sed -nE "s|^[[:space:]]*url: '(https://[^']+)'.*|\1|p" deploy.log | tail -1)" >> "$GITHUB_OUTPUT"
         env:
           CI: "true"
+          D1_MIGRATIONS_DRIFT: ${{ inputs.migrations_drift == 'adopt' && 'adopt' || '' }}
           # ENVIRONMENT comes from the "Resolve deploy ENVIRONMENT from stage" step above
           # (via $GITHUB_ENV) — owned by apps/web/worker/environment.ts, not inlined here (#1433).
           # CI-secret roster: the four secrets below are enumerated canonically in
@@ -413,7 +471,12 @@ jobs:
           # reads it via `Config.redacted(ENV_BINDINGS.betterAuthSecret)` → a `secret_text`
           # binding the worker reads at runtime; the value must be present at deploy
           # time. A future auth-less app sets `needs-auth: false` and never reads it.
-          BETTER_AUTH_SECRET: ${{ matrix.needs-auth && secrets.BETTER_AUTH_SECRET || '' }}
+          # WHICH value is picked by the stage-keyed step above, which sets
+          # PREVIEW_AUTH_KEY non-empty for a `pr-<n>` stage and empty for every other
+          # one — so a preview deploys the committed public key and production, audit
+          # and any hand-named stage deploy the founder-held secret (ADR 0406). The
+          # non-empty test is the whole selector: there is no third value.
+          BETTER_AUTH_SECRET: ${{ matrix.needs-auth && (env.PREVIEW_AUTH_KEY != '' && env.PREVIEW_AUTH_KEY || secrets.BETTER_AUTH_SECRET) || '' }}
           # Sentry DSN for the WORKER tier (ADR 0118, #1502). index.ts adds the
           # `SENTRY_DSN` secret_text binding only when this is present at deploy; absent
           # ⇒ no binding ⇒ the worker Sentry path stays inert. Same public DSN as the SPA
@@ -429,8 +492,8 @@ jobs:
       # the prod-side analogue of the cleanup teardown-verify (#813, now in pr-cleanup.yml): a real
       # post-action behavioral gate that fails loudly rather than pass silently.
       #
-      # Prod-only by construction: gated on `github.event_name == 'push'` (the sole push
-      # trigger is main → STAGE=prod, per the env block above), so PR `pr-<n>` previews —
+      # Prod-only by construction: pushes and manual dispatches both require main
+      # and use STAGE=prod, so PR `pr-<n>` previews —
       # already covered by ci.yml e2e — never run it. Bounded retry absorbs Cloudflare's
       # post-deploy propagation window (a just-deployed worker can 5xx/DNS-miss for a few
       # seconds), mirroring the teardown-verify's retry loop; on exhaustion it FAILS the
@@ -439,16 +502,16 @@ jobs:
       # apps/web/worker/http/health.ts) all red the deploy run.
       #
       # The URL-presence check lives INSIDE the step body, NOT in the `if:` guard (issue
-      # #1617). The guard is `github.event_name == 'push'` ALONE: an empty `outputs.url`
+      # #1617). The guard checks the event alone: an empty `outputs.url`
       # after a "successful" deploy — an alchemy log-scrape miss or a genuinely URL-less
       # deploy — must RED the job, not skip it green. A `&& steps.deploy.outputs.url != ''`
       # clause in the `if:` would make an empty URL SKIP the step, which GitHub records as
       # a passed job: a fail-OPEN corner in the very gate meant to be fail-closed against a
-      # broken prod (ADR 0092, gates fail closed on zero scope). So on a prod push the step
+      # broken prod (ADR 0092, gates fail closed on zero scope). On a prod deploy the step
       # always runs, and an empty URL exits non-zero with `::error::` — "no URL to check"
       # is itself a deploy failure worth surfacing.
       - name: Verify prod serves — GET /api/health (${{ matrix.app }})
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           PROD_URL: ${{ steps.deploy.outputs.url }}
         run: |
@@ -517,6 +580,53 @@ jobs:
             echo "::error::could not resolve D1 uuid for prefix '${DB_NAME_PREFIX}'"; exit 1
           fi
           echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+
+      # Create the review test users on this preview (#9281; rulings in #10330): the moderator,
+      # the newcomer and the email-unverified newcomer `fabrika review-ui render` signs in as to
+      # shoot a page behind login. Without them every `:auth` render answers as a visitor and a
+      # PR whose change is behind sign-in cannot be reviewed.
+      #
+      # WHY HERE and not beside `Seed preview D1` in ci.yml's e2e job: a reviewer looks at the
+      # preview deploy, not at the e2e run, so the deploy is what must leave the preview able
+      # to sign in. e2e can be skipped, retried or red on its own.
+      #
+      # WHY A SEPARATE COMMAND from `preview-seed run`: `run` writes the public read fixtures
+      # and needs no secret; `test-account` writes live session rows, takes the logins, and
+      # refuses any database whose Cloudflare name lacks `-pr-`. Whether `run` moves here too
+      # is not ruled and travels with the deploy-workflow split (#10339).
+      #
+      # THE LOGINS are one JSON object stored twice under the name PREVIEW_TEST_LOGINS. The
+      # Actions secret below is what seeds the preview. The repository variable of the same
+      # name is the capture side's copy: `review-ui render` fetches it when its environment
+      # holds no token (packages/fabrika-cli/src/capture/auth.ts, `LOGINS_VARIABLE` and
+      # `IDENTITY_TOKEN_ENV`), and no workflow reads it. `preview-seed rotate-logins` writes
+      # both in one run and is the rotation path.
+      #
+      # GitHub masks a secret's whole value in the log, not the tokens inside the object, so
+      # the secret goes to the command through its environment and nothing here echoes it;
+      # `preview-seed` holds the tokens redacted and scrubs them out of its own errors.
+      #
+      # UNSET SECRET ⇒ SKIP WITH A NOTICE, never a red deploy: until a person holding the
+      # repo's keys has run `rotate-logins` there is nothing to seed with, and the preview is
+      # as usable as it was before this step existed. A seeding FAILURE with the secret set
+      # reds the step: a preview that silently cannot sign in is the defect this step closes.
+      #
+      # Idempotent (upserts on fixed ids), so a re-run on a later push re-seeds the same rows.
+      # web-only and PR-only, like the D1 lookup above whose id it takes.
+      - name: Seed preview test users (${{ matrix.app }})
+        if: github.event_name == 'pull_request' && matrix.app == 'web'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIEW_TEST_LOGINS: ${{ secrets.PREVIEW_TEST_LOGINS }}
+          DB_ID: ${{ steps.d1.outputs.uuid }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PREVIEW_TEST_LOGINS" ]; then
+            echo "::notice::preview test users NOT seeded — the PREVIEW_TEST_LOGINS secret is not set, so signed-in review renders of this preview will answer as a visitor. A person holding the repo's keys sets it once with: node packages/preview-seed/src/bin.ts rotate-logins"
+            exit 0
+          fi
+          node packages/preview-seed/src/bin.ts test-account --database-id "$DB_ID"
 
       # Force per-PR preview flags ON from `preview-flag:<key>` PR labels — deploy-time
       # serving write (issue #2951; mechanism A2, decided in investigation #2946). A label
@@ -674,3 +784,68 @@ jobs:
                 await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
               }
             }
+
+  # ─── The workflow's own red, reported (#9508) ────────────────────────────────────────────
+  #
+  # Everything above this line runs on both triggers; this job is the push-to-main half only,
+  # and it exists because a post-merge run reports to nobody. The `deploy` job failed on 8
+  # consecutive main pushes over 3 days and the only trace was a red check on each commit —
+  # no issue, no ping. A preview stage carries no custom domain, so the failing step passed on
+  # every pull request and failed only on the prod run: the PR gates cannot structurally cover
+  # this, which is why the workflow has to report itself.
+  #
+  # THE DEDUP IS THE POINT: 8 reds in a row must produce 1 issue and 7 comments. The key is a
+  # body marker carrying THIS workflow's own file name plus the configured label, never title
+  # text, and the lookup is author-constrained to `github-actions[bot]` the way the `Comment
+  # preview URL` step above is (#3740). Both live in the pure core at
+  # packages/fabrika-cli/src/ci/main-alarm.ts; this job only supplies the run's facts. The
+  # per-workflow marker is what lets release-please.yml call the same bin without the two
+  # closing each other's alarms.
+  #
+  # ONE JOB UNDER `if: always()`, not a red job beside a green one: the result is an argument,
+  # so a skipped `deploy` (the dependabot arm) reaches the bin as `skipped` and decides
+  # nothing, where two polarity-fenced jobs would both be skip-propagated away and the standing
+  # alarm would miss its close.
+  #
+  # NO `pnpm install` HERE, deliberately. This is the notification path for a build that just
+  # broke, so it must not depend on the install that may be what broke. The bin is a
+  # zero-runtime-dependency plain-Node module (node strips the TS types natively) that talks
+  # to the REST API over `fetch` with the default GITHUB_TOKEN — the same constraint, and the
+  # same shape, as `ci-required`'s bare bin in ci.yml.
+  #
+  # Workflow-level `permissions:` stays `contents: read`; the job below restates its own
+  # block, which REPLACES the default, the way `changes` and `deploy` already do.
+  #
+  # Runs cannot race: the workflow-level `concurrency` group is `deploy-<ref>` with
+  # `cancel-in-progress: false`, so runs on `main` serialize and a later push never reads the
+  # board before an earlier push has written it.
+  main-alarm:
+    name: report this run to the main alarm
+    # The `push` term is what keeps every `pull_request` run out, since a preview deploy's
+    # redness is already on the PR. The core re-checks GITHUB_EVENT_NAME for the same reason.
+    if: always() && github.event_name == 'push'
+    needs: [changes, app-roster, deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout, for the bin and for `.fabrika.jsonc`
+      issues: write # open the alarm, comment on the standing one, or close it
+      actions: read # read this run's job list, to name which job went red
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+
+      - name: Open, update or close this workflow's alarm
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # One result for the whole run: any failed need is a red main, and a cancelled or
+          # skipped need with nothing failed is a run that proved neither polarity, which the
+          # core no-ops. `cancelled` has to be its own arm rather than falling through to
+          # `success`: reading a cancelled deploy as green closes the standing alarm on a branch
+          # nothing proved healthy.
+          # Passed through the environment rather than interpolated into the command, so the
+          # expression's value is never part of the shell text.
+          RUN_RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || (contains(needs.*.result, 'cancelled') && 'cancelled' || (contains(needs.*.result, 'skipped') && 'skipped' || 'success')) }}
+        run: node packages/fabrika-cli/src/ci/main-alarm-bin.ts --result "$RUN_RESULT"

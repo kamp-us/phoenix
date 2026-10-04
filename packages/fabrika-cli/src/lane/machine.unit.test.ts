@@ -142,7 +142,7 @@ const cellTable = (lane: CompiledLane, taskId: string): string => {
 	const rows: string[] = [];
 	for (const [state, cells] of Object.entries(update)) {
 		for (const event of Object.keys(cells)) {
-			for (const classes of [[] as ReadonlyArray<string>, ["ui"]]) {
+			for (const classes of [[] as ReadonlyArray<string>, ["ui"], ["code", "ui"]]) {
 				for (const retries of [0, RETRY_BUDGET]) {
 					// One "spent" axis drives all three counters, so the spent rows pin the fallthrough of a
 					// FAIL arm, a wait arm and a lap arm alike without tripling the table.
@@ -233,6 +233,7 @@ describe("the compiler — structural recognition", () => {
 		expect([...defined(lane.tasks.issue).errorFinals]).toEqual(["human:budget-spent"]);
 		expect([...defined(lane.tasks.issue).openFinals]).toEqual(["human:budget-spent"]);
 		expect([...defined(lane.tasks.issue).guardedStates].sort()).toEqual([
+			"human:cp-approval",
 			"review",
 			"review:ui",
 			"ship",
@@ -310,6 +311,7 @@ describe("the compiler — structural recognition", () => {
 			"BLOCKED",
 			MACHINERY_EVENT,
 			"FAIL",
+			"WIP",
 			CLEARED_EVENT,
 			CANCELLED_EVENT,
 			LANDED_EVENT,
@@ -407,6 +409,69 @@ describe("the compiler — structural recognition", () => {
 			"ship",
 			"shipped",
 		]);
+	});
+
+	// A mixed lane is `ui` beside a text class, and it is read off the standing set rather than
+	// written into it — so the seed a ticket's labels produce and the set a head's diff relays both
+	// route it, and neither names `mixed`.
+	// @ruling https://github.com/kamp-us/phoenix/issues/6900
+	it("routes a lane seeded ui beside a text class into build:mixed on its first WIP", () => {
+		const seed = seedClasses(coderTemplateText(), ["code", "ui"]);
+		if (seed._tag !== "Seeded") throw new Error(`expected a seeded document, got ${seed._tag}`);
+		const lane = compiled(JSON.parse(seed.text));
+
+		expect(leaves(lane, "issue", ["WIP", "DONE"])).toEqual(["build:mixed", "review"]);
+	});
+
+	it.each([["doc"], ["skill"]])("reads ui beside %s as mixed too", (text) => {
+		const lane = compiled(coderWorkflow());
+
+		expect(leaves(lane, "issue", ["WIP"], [text, "ui"])).toEqual(["build:mixed"]);
+	});
+
+	it("returns a mixed lane's repair rounds to build:mixed out of either review cell", () => {
+		const lane = compiled(coderWorkflow());
+
+		const {leaves: reached, state} = drive(
+			lane,
+			"issue",
+			["WIP", "DONE", "FAIL", "DONE", "PASS", "FAIL"],
+			["code", "ui"],
+		);
+
+		expect(reached).toEqual([
+			"build:mixed",
+			"review",
+			"build:mixed",
+			"review",
+			"review:ui",
+			"build:mixed",
+		]);
+		expect(state.retries).toBe(2);
+	});
+
+	it("routes a head that turns out mixed back to build:mixed, whatever the ticket was stamped", () => {
+		const lane = compiled(coderWorkflow());
+
+		expect(
+			leaves(lane, "issue", ["WIP", "DONE", {event: "FAIL", classes: ["code", "ui"]}], ["ui"]),
+		).toEqual(["build:ui", "review", "build:mixed"]);
+	});
+
+	it("parks a mixed lane whose repair budget is spent instead of looping in build:mixed", () => {
+		const lane = compiled(coderWorkflow());
+		const rounds = Array.from({length: RETRY_BUDGET + 1}, () => ["DONE", "FAIL"]).flat();
+
+		expect(leaves(lane, "issue", ["WIP", ...rounds], ["code", "ui"]).at(-1)).toBe(
+			"human:budget-spent",
+		);
+	});
+
+	it("refuses a seeded `mixed`, which is read off the set and never written into it", () => {
+		const workflow = coderWorkflow() as Record<string, unknown>;
+		taskContext(workflow, "issue").classes = ["mixed"];
+
+		expect(defectsOf(workflow)).toContain('context `classes` declares "mixed"');
 	});
 
 	// The two below pin both halves of the ruling tagged beneath. Stickiness is the machine's and stays:
@@ -805,9 +870,9 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park", () =>
 	});
 
 	// A spent wait carries no park cause — `report.ts` refuses one on any non-BLOCKED event — so it
-	// keys `parks.ts` on its leaf alone. Landing it in `human:cp-approval` would key the `cause: null`
-	// §CP row and clear it by reading an approval nobody was waiting on; its own leaf is what seats it
-	// on the queue-moved recipe instead.
+	// keys `parks.ts` on its leaf alone. Landing it in `human:cp-approval` would seat it on no row at
+	// all, since the §CP row keys on the approval wait's cause; its own leaf is what seats it on the
+	// queue-moved recipe instead.
 	it("escalates to a park the recipe table seats on its own row, never the §CP one", () => {
 		const stalled = [...toShip, ...Array.from({length: WAIT_BUDGET + 2}, () => "WIP")];
 		const leaf = defined(leaves(compiled(coderWorkflow()), "issue", stalled).at(-1));
@@ -815,10 +880,7 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park", () =>
 
 		expect(isPark(leaf)).toBe(true);
 		expect(seated).toMatchObject({_tag: "Known", recipe: {clearance: "queue-moved"}});
-		expect(classifyPark("human:cp-approval", null)).toMatchObject({
-			_tag: "Known",
-			recipe: {clearance: "cp-approval"},
-		});
+		expect(classifyPark("human:cp-approval", null)).toMatchObject({_tag: "Novel"});
 	});
 
 	it("clears the stall back into the wait cell only on a resume that grants the waits", () => {
@@ -915,6 +977,42 @@ describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", (
 		expect(routeForCause("repair-budget-spent")).toBe("driver");
 	});
 
+	// A red head that heal-ci classes a defect never goes green on its own, so the park it folds to
+	// needs a repair route out of it, with no hand UNBLOCKED back into `ship` first.
+	it("routes a FAIL out of the red-CI park straight to `build`, spending one retry", () => {
+		const lane = compiled(coderWorkflow());
+		const parked = [...toShip, "BLOCKED"];
+
+		expect(leaves(lane, "issue", [...parked, "FAIL"])).toEqual([
+			...reached,
+			"human:cp-approval",
+			"build",
+		]);
+		expect(budgets(lane, "issue", [...parked, "FAIL"])).toMatchObject({
+			type: "build",
+			retries: 1,
+		});
+	});
+
+	it("falls from the red-CI park to `human:budget-spent` once the repair budget is spent", () => {
+		const lane = compiled(coderWorkflow());
+		const spent = [
+			...toShip,
+			...Array.from({length: RETRY_BUDGET}, () => ["FAIL", "DONE", "PASS"]).flat(),
+			"BLOCKED",
+			"FAIL",
+		];
+
+		expect(leaves(lane, "issue", spent).slice(-2)).toEqual([
+			"human:cp-approval",
+			"human:budget-spent",
+		]);
+		expect(budgets(lane, "issue", spent)).toMatchObject({
+			type: "human:budget-spent",
+			retries: RETRY_BUDGET,
+		});
+	});
+
 	it("maps the drift stop's terminal to BLOCKED and takes its cause", () => {
 		const resolved = eventForToken("AWAITING-CP-APPROVAL");
 		if (resolved._tag !== "Mapped") throw new Error(resolved.reason);
@@ -943,7 +1041,7 @@ describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", (
 
 	// No `KNOWN_PARKS` row exists for this cause and none is owed yet: clearing it needs a verb that
 	// merges the base into the head, and `build` ships none. Novel-naming-the-cause is the answer.
-	it("reads as a novel park that names its cause, never as the causeless §CP row", () => {
+	it("reads as a novel park that names its cause, never as the approval-wait §CP row", () => {
 		const classified = classifyPark("human:cp-approval", "head-behind-base");
 
 		expect(classified._tag).toBe("Novel");
@@ -1009,11 +1107,77 @@ describe("`class:<name>` leading a budget pair — a route, not the cell", () =>
 
 		expect(defectsOf(workflow)).toContain("routes nowhere");
 	});
+});
 
-	it("keeps the two-arm class form the cell it always was, spending nothing", () => {
-		const {state} = drive(compiled(coderWorkflow()), "issue", ["WIP"], ["ui"]);
+/**
+ * Class arms above one fallthrough — the cell that picks a shell and spends nothing, at any arity.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/6900
+ */
+describe("`class:<name>` arms above a fallthrough — the cell itself", () => {
+	const celled = (arms: ReadonlyArray<Record<string, unknown>>): Record<string, unknown> => {
+		const workflow = twoPhaseWorkflow();
+		for (const name of ["doing:ui", "doing:mixed"]) {
+			regionStates(workflow, "task_a")[name] = {on: {"TASK_A.DONE": "checking"}};
+		}
+		stateNode(workflow, "task_a", "checking").on["TASK_A.WIP"] = arms;
+		return workflow;
+	};
+	const threeArms = [
+		{target: "doing:mixed", guard: "class:mixed"},
+		{target: "doing:ui", guard: "class:ui"},
+		{target: "doing"},
+	];
 
-		expect(state.type).toBe("build:ui");
-		expect(state.retries).toBe(0);
+	it.each([
+		["the first arm whose class stands", ["code", "ui"], "doing:mixed"],
+		["a later arm when the earlier class does not stand", ["ui"], "doing:ui"],
+		["the fallthrough when no arm's class stands", ["code"], "doing"],
+		["the fallthrough on an unclassed task", null, "doing"],
+	])("takes %s, spending nothing", (_, classes, target) => {
+		const {state} = drive(compiled(celled(threeArms)), "task_a", [
+			"DONE",
+			{event: "WIP", ...(classes === null ? {} : {classes})},
+		]);
+
+		expect(state).toMatchObject({type: target, retries: 0, waits: 0, laps: 0});
+	});
+
+	it("keeps the two-arm class form the cell it always was", () => {
+		const twoArms = [{target: "doing:ui", guard: "class:ui"}, {target: "doing"}];
+		const {state} = drive(compiled(celled(twoArms)), "task_a", [
+			"DONE",
+			{event: "WIP", classes: ["ui"]},
+		]);
+
+		expect(state).toMatchObject({type: "doing:ui", retries: 0, waits: 0});
+	});
+
+	it("refuses an array whose non-final arm carries no class guard", () => {
+		const workflow = celled([
+			{target: "doing:mixed", guard: "class:mixed"},
+			{target: "doing:ui"},
+			{target: "doing:ui", guard: "class:ui"},
+			{target: "doing"},
+		]);
+
+		expect(defectsOf(workflow)).toContain("must end in a two-arm pair");
+	});
+
+	it("refuses a class arm that names no target", () => {
+		const workflow = celled([{guard: "class:mixed"}, ...threeArms.slice(1)]);
+
+		expect(defectsOf(workflow)).toContain("routes nowhere");
+	});
+
+	it("leaves the two-arm budget cell spending its event's own counter", () => {
+		const workflow = celled([
+			{target: "checking", guard: "waitsRemaining", actions: "incrementWaits"},
+			{target: "tripped"},
+		]);
+		const lane = compiled(workflow);
+
+		expect(drive(lane, "task_a", ["DONE", "WIP"]).state).toMatchObject({retries: 0, waits: 1});
+		expect(drive(lane, "task_a", ["DONE", "FAIL"]).state).toMatchObject({retries: 1, waits: 0});
 	});
 });

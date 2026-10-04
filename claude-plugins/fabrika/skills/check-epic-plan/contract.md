@@ -29,7 +29,7 @@ reused as landed verbs** ([`build`'s contract](../build/contract.md)) — the cr
 it with `fabrika build release`, and posts a successor note with `fabrika build note`. The purpose is
 part of the reuse, not a detail of it: `build claim`'s audience axis asks whether an agent should
 pick the issue up to *build*, and an epic earns `ready-for:agent` only after it has been planned and
-gated, so a `gate` claim is admitted without it. The scope axis is unchanged by the purpose,
+gated, so a `gate` claim is admitted without it,
 and `--override` stays the exception it was — it now has to name its lane as well as its reason.
 **No second lock is
 derived**, and v1's `epic-lock` is why: its `acquire` short-circuits on a held label *before* any
@@ -123,6 +123,15 @@ reason. A conforming marker from an off-roster account therefore reads `absent` 
 never `absent` — an unread authority list is UNKNOWN, and collapsing it to "not approved" is the
 same fail-open shape in reverse.
 
+**Both verbs resolve the roster from `.github/CODEOWNERS` on the default branch**, through the same
+modules `ship cp-approval` uses — `plan approve` at write time, `plan approval` at read time.
+`plan approve` answers
+`{"answer":"approved","epic":n,"digest":"…","by":"…","at":"…","comment":id}`. `plan approval`
+answers `{"answer":"approval","epic":n,"state":"current|stale|absent","by":"…","markerDigest":"…",
+"derivedDigest":"…","at":"…","comment":id,"disregarded":k,"unauthorized":k}` at exit `0` whatever
+the state. It prints both digests so a `stale` answer shows what moved, and a marker that reaches
+for the format and drifts is counted in `disregarded` rather than folded into `absent`.
+
 **The refusal is seated in the three verbs that re-derive the floor**, on `25` `PLAN_UNAPPROVED`.
 Each reads the epic's comments and resolves the roster itself, against the digest it has just
 derived — never one a caller carried, since an approval measured against a caller-supplied scope
@@ -135,7 +144,8 @@ plan, the other to read it again.
 
 **Considered and not derived: a `plan defects --explain` verb.** A defect's *remedy* is the
 planner's judgment, and a verb that authored one would be minting advice the floor cannot check.
-The defect types are self-describing and `plan check --help` prints the table.
+The defect types are self-describing, and [The floor — fifteen defect types](#the-floor--fifteen-defect-types)
+lists every one with its trigger.
 
 ## The ledger grammar this gate reads
 
@@ -343,19 +353,18 @@ read one meaning for it; `ship` importing `review`'s private band is the shipped
 obligation (interface convention rule 3), and the alignment this group opts into is checked
 **base-only, never pairwise** (`exit-code-alignment.ts`: `occupied = allocatedCodes(base)`).
 
-**The `20`/`21` overlap with `build` is settled.** This was written when `20`+ was free; the
-scope-admission fence has since taken `20` `OUT_OF_SCOPE` and `21` `AUDIENCE_NOT_AGENT`, both
-reachable from `fabrika build claim` — step 1 of this gate's skill. `21` is no longer among them:
-step 1 claims with `--purpose gate`, and the audience axis binds build-purpose claims only, so the
-only admission refusal this gate can meet is `20`. The overlap is therefore narrower than when it
-was settled, and it **stands**, on the same rule: *import a code when two groups prove the same
-fact; allocate freely when they do not.* `15` is imported because `plan flip` and `build claim`
-assert the identical fact (this session holds this issue's claim). `20`/`21` do not overlap in fact
-at all — lane admission is never something a `plan` verb proves, and a defective floor or a moved
+**The `21` overlap with `build` is settled.** This was written when `20`+ was free. `build`
+later seated `21` `AUDIENCE_NOT_AGENT` on its admission test. Step 1 of this gate's skill claims with
+`--purpose gate`, and the audience axis binds build-purpose claims only, so this gate can meet no
+admission refusal at all. The overlap stands, on the same rule: *import a code when two groups
+prove the same fact; allocate freely when they do not.* `15` is imported because `plan flip` and
+`build claim` assert the identical fact (this session holds this issue's claim). `build`'s `21`
+does not overlap in fact at all — lane admission is never something a `plan` verb proves, and a defective floor or a moved
 digest is never something a `build` verb proves — and an exit code is read off the command that
 produced it: [SKILL.md](SKILL.md) step 1 is total (`any other non-zero ends STOPPED`) and branches
 on `20`/`21` only off `plan flip` / `plan verdict`. Re-seating at `24`+ would also buy nothing,
-since `epic` already seats `20`–`24` over the same two `build` codes.
+since `ledger`, `plan-epic`'s group, already seats `20`–`26` over `build`'s `21` on the same rule
+(`packages/fabrika-cli/src/ledger/codes.ts`).
 
 | Code | Meaning | `read` | `check` | `flip` | `verdict` | `approve` | `approval` | `restage` |
 |---|---|---|---|---|---|---|---|---|
@@ -740,7 +749,7 @@ comparable to `plan check`'s directly, and a verdict posted afterwards binds the
 | `plan flip: the plan moved since the check (digest <a> → <b>) — re-check before flipping.` | 21 | refusal |
 | `plan flip: <a> of <n> children flipped; <b> unchanged (#<x>, #<y>) — the epic is half-flipped and needs a human.` | 22 | refusal |
 | `plan flip: every child flipped but epic #<n> does not carry ready-for:agent alone — the epic is half-flipped and needs a human.` | 22 | refusal |
-| `plan flip: label "<name>" is absent from <repo>'s taxonomy — refusing to create it.` | 23 | refusal |
+| `plan flip: label "<name>" is absent from <repo>'s taxonomy — refusing to create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 23 | refusal |
 | `plan flip: wrote <n> label change(s) and could not re-read <what> — the outcome is UNKNOWN.` | 8 | refusal |
 | `plan flip: #<n> is held by <token>, not by <this lane's token>.` | 15 | refusal |
 | `plan flip: --digest must be 12 lowercase hex — got "<v>".` | 10 | refusal |

@@ -32,15 +32,11 @@ export const eventLog = (...events: ReadonlyArray<string>): string =>
 		)
 		.join("");
 
-/** queued → build → review → ship → human:cp-approval, the park the §CP recipe clears. */
-export const PARKED_AT_CP = eventLog("WIP", "DONE", "PASS", "BLOCKED");
-
 /**
- * The same leaf, reached with a cause on the parking line — the red-CI park.
+ * queued → build → review → ship → human:cp-approval, with a `cause` on the parking line.
  *
- * `ship`'s BLOCKED folds to `human:cp-approval` whatever the block was, so this fixture and
- * {@link PARKED_AT_CP} differ only in that `cause` field, which is the whole reason the recipe table
- * keys on it.
+ * `ship`'s BLOCKED folds to `human:cp-approval` whatever the block was, so the parks on that leaf
+ * differ only in that `cause` field, which is the whole reason the recipe table keys on it.
  */
 export const PARKED_AT_CP_ON = (cause: string): string =>
 	eventLog("WIP", "DONE", "PASS") +
@@ -51,8 +47,24 @@ export const PARKED_AT_CP_ON = (cause: string): string =>
 		cause,
 	})}\n`;
 
+/** The owner-approval wait — the line a shipper's bare `AWAITING-CP-APPROVAL` records. */
+export const PARKED_AT_CP = PARKED_AT_CP_ON("awaiting-cp-approval");
+
+/** The same leaf reached by a `ship` park naming no cause, which is not an approval wait. */
+export const PARKED_AT_CP_UNCAUSED = eventLog("WIP", "DONE", "PASS", "BLOCKED");
+
 /** The red-CI park: BLOCKED out of `ship` because `ship checks` read the head red. */
 export const PARKED_ON_CI_RED = PARKED_AT_CP_ON("head-ci-red");
+
+/** The reviewer's red-CI park: queued → build → review → blocked, on the same cause. */
+export const PARKED_IN_REVIEW_ON_CI_RED =
+	eventLog("WIP", "DONE") +
+	`${JSON.stringify({
+		task: "issue",
+		event: "ISSUE.BLOCKED",
+		at: "2026-08-16T00:02:00.000Z",
+		cause: "head-ci-red",
+	})}\n`;
 
 /**
  * queued → … → ship, then a dwell that spends the whole wait budget — the queue-stall park.
@@ -116,6 +128,51 @@ export const PARKED_ON_ROUTED_UI = [
 	.map((entry) => `${JSON.stringify(entry)}\n`)
 	.join("");
 
+/** The open issue the render-axis park names as tracking the render axis the review could not reach. */
+export const AXIS_ISSUE = 9615;
+
+/**
+ * queued → build → review → review:ui → blocked, on `render-axis-missing` naming {@link AXIS_ISSUE}
+ * — the `CANT-SEE` a rendered review records when the preview stood but the state it needs did not
+ * render.
+ */
+export const PARKED_ON_RENDER_AXIS = [
+	{task: "issue", event: "ISSUE.WIP", at: "2026-08-16T00:00:00.000Z", classes: ["ui"]},
+	{task: "issue", event: "ISSUE.DONE", at: "2026-08-16T00:01:00.000Z"},
+	{task: "issue", event: "ISSUE.PASS", at: "2026-08-16T00:02:00.000Z"},
+	{
+		task: "issue",
+		event: "ISSUE.BLOCKED",
+		at: "2026-08-16T00:03:00.000Z",
+		cause: "render-axis-missing",
+		axisIssue: AXIS_ISSUE,
+	},
+]
+	.map((entry) => `${JSON.stringify(entry)}\n`)
+	.join("");
+
+/**
+ * queued → build → blocked on `ruling-owed`, naming `rulingIssue` and parked at `at` — the time a
+ * ruling marker has to be newer than for the park to clear.
+ */
+export const parkedOnRuling = (rulingIssue: number, at: string): string =>
+	eventLog("WIP") +
+	`${JSON.stringify({task: "issue", event: "ISSUE.BLOCKED", at, cause: "ruling-owed", rulingIssue})}\n`;
+
+/** The step {@link PARKED_ON_FOUNDER_ACT} waits on — the lane-9281 shape, a command no agent runs. */
+export const FOUNDER_ACT = "node packages/preview-seed/src/bin.ts rotate-logins";
+
+/** queued → build → blocked on `founder-act-owed`, recording {@link FOUNDER_ACT}. */
+export const PARKED_ON_FOUNDER_ACT =
+	eventLog("WIP") +
+	`${JSON.stringify({
+		task: "issue",
+		event: "ISSUE.BLOCKED",
+		at: "2026-08-16T00:01:00.000Z",
+		cause: "founder-act-owed",
+		founderAct: FOUNDER_ACT,
+	})}\n`;
+
 /** The milestone {@link LANE}'s issue is homed on, and the one a campaign row pins. */
 export const LANE_MILESTONE = 49;
 
@@ -129,8 +186,8 @@ export interface CampaignFixtureRow {
  * A `ROADMAP.md` whose `## Campaigns` table holds exactly `rows`.
  *
  * Written in the shipped column spelling rather than a minimal one, because the clearance reads it
- * through the dispatch fence's own parse and a fixture the fence would call `Malformed` would prove
- * nothing about the row it is meant to be testing.
+ * through the shipped `## Campaigns` parse, and a fixture that parse would call `Malformed` would
+ * prove nothing about the row it is meant to be testing.
  */
 export const campaignsTable = (...rows: ReadonlyArray<CampaignFixtureRow>): string =>
 	[

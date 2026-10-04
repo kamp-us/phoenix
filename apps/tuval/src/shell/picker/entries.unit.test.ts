@@ -1,10 +1,11 @@
 import {assert, describe, expect, it} from "@effect/vitest";
-import {Effect, Option} from "effect";
-import {ProcessId} from "../../process/process.ts";
-import {ProgramId} from "../../registry/program.ts";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {ProgramId} from "@kampus/tuval-sdk/kernel/registry/program";
+import {Effect, Option, Result} from "effect";
+import {OpenProjects, projectLabels} from "../../projects/open-projects.ts";
 import type {TableRow} from "../../table/row.ts";
 import {shellId, shellProgram, unwiredShellEffects} from "../program.ts";
-import {flatten, processEntries, programEntries, readEntries} from "./entries.ts";
+import {flatten, groupKeyOf, processEntries, programEntries, readEntries} from "./entries.ts";
 import {pickerHarness, programRow} from "./fixtures.ts";
 
 describe("picker entries", () => {
@@ -107,4 +108,90 @@ describe("picker entries", () => {
 			);
 		}),
 	);
+});
+
+describe("session entries, generated from the open-projects record (#9694)", () => {
+	const claude = programRow("claude-session", {label: "Claude", folderAtStart: true});
+	const pi = programRow("pi-session", {label: "Pi", folderAtStart: true});
+	const counter = programRow("counter", {label: "Counter"});
+	const rows = [claude, counter, pi];
+
+	/** The labels the record's open projects carry, made the way the kernel makes them. */
+	const labelsAfterOpening = (...folders: ReadonlyArray<string>) => {
+		let record = OpenProjects.none;
+		for (const folder of folders) {
+			const opened = record.open(folder);
+			if (Result.isFailure(opened)) throw new Error(`could not open ${folder}`);
+			record = opened.success.projects;
+		}
+		return projectLabels(record.projects);
+	};
+
+	it("offers each session row once per open project, labelled with the project", () => {
+		const projects = labelsAfterOpening("/code/kamp-us/phoenix", "/code/kamp-us/demlik");
+		const phoenix = projects[0];
+		const demlik = projects[1];
+		if (phoenix === undefined || demlik === undefined) throw new Error("two projects are open");
+		expect(programEntries(rows, projects)).toEqual([
+			{
+				_tag: "Program",
+				programId: "claude-session",
+				label: "Claude · phoenix",
+				place: {_tag: "Project", key: phoenix.key, label: "phoenix"},
+			},
+			{
+				_tag: "Program",
+				programId: "pi-session",
+				label: "Pi · phoenix",
+				place: {_tag: "Project", key: phoenix.key, label: "phoenix"},
+			},
+			{
+				_tag: "Program",
+				programId: "claude-session",
+				label: "Claude · demlik",
+				place: {_tag: "Project", key: demlik.key, label: "demlik"},
+			},
+			{
+				_tag: "Program",
+				programId: "pi-session",
+				label: "Pi · demlik",
+				place: {_tag: "Project", key: demlik.key, label: "demlik"},
+			},
+			// A row that keeps its own folder is offered once, after the sessions.
+			{_tag: "Program", programId: "counter", label: "Counter"},
+		]);
+	});
+
+	it("offers each session row once for home when no project is open", () => {
+		expect(programEntries(rows, labelsAfterOpening())).toEqual([
+			{_tag: "Program", programId: "claude-session", label: "Claude · home", place: {_tag: "Home"}},
+			{_tag: "Program", programId: "pi-session", label: "Pi · home", place: {_tag: "Home"}},
+			{_tag: "Program", programId: "counter", label: "Counter"},
+		]);
+	});
+
+	it("tells two same-named projects apart the way their tiles do", () => {
+		const labels = programEntries(
+			[claude],
+			labelsAfterOpening("/code/kamp-us/phoenix", "/code/usirin/phoenix"),
+		).map((entry) => entry.label);
+		expect(labels).toEqual(["Claude · kamp-us/phoenix", "Claude · usirin/phoenix"]);
+	});
+
+	it("scales to four harnesses in ten projects: forty session entries, grouped by project", () => {
+		const harnesses = ["Claude", "Pi", "agy", "codex"].map((label) =>
+			programRow(`${label}-session`, {label, folderAtStart: true}),
+		);
+		const folders = Array.from({length: 10}, (_, index) => `/code/project-${index}`);
+		const entries = programEntries(harnesses, labelsAfterOpening(...folders));
+		expect(entries).toHaveLength(40);
+		// Each project's four sit together, in the order the projects opened.
+		expect(entries.slice(0, 4).map((entry) => entry.label)).toEqual([
+			"Claude · project-0",
+			"Pi · project-0",
+			"agy · project-0",
+			"codex · project-0",
+		]);
+		expect(new Set(entries.map(groupKeyOf)).size).toBe(10);
+	});
 });

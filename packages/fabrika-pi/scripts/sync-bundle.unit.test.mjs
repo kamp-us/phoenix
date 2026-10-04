@@ -116,34 +116,19 @@ test("bundles every SKILL.md directory and every agent shell", () => {
 	}
 });
 
-test("packaged builder and reviewer inherit the canonical project contract and keep their skills", () => {
-	const fx = fixture({skills: 1, agents: 0});
-	try {
-		copyFileSync(join(PACKAGE_ROOT, "package.json"), join(fx.root, "package.json"));
-		syncBundle({...fx.paths, agents: SOURCES.agents});
-		const agents = resolvePackagedAgents(fx.root);
-		assert.deepEqual(agents.get("builder"), {
-			inheritProjectContext: true,
-			skills: ["build"],
-		});
-		assert.deepEqual(agents.get("reviewer"), {
-			inheritProjectContext: true,
-			skills: ["review"],
-		});
-
-		const agentsFile = join(REPO_ROOT, "AGENTS.md");
-		const claudeLink = join(REPO_ROOT, "CLAUDE.md");
-		assert.ok(lstatSync(agentsFile).isFile(), "AGENTS.md must be the canonical regular file");
-		assert.ok(lstatSync(claudeLink).isSymbolicLink(), "CLAUDE.md must be a symlink");
-		assert.equal(readlinkSync(claudeLink), "AGENTS.md");
-		assert.equal(
-			readFileSync(claudeLink, "utf8"),
-			readFileSync(agentsFile, "utf8"),
-			"the inherited CLAUDE.md contract must resolve to canonical AGENTS.md contents",
-		);
-	} finally {
-		rmSync(fx.root, {recursive: true, force: true});
-	}
+// What each packaged shell inherits and preloads is the next test's; this one holds the project
+// contract those shells inherit, which has to resolve to the canonical AGENTS.md.
+test("the inherited CLAUDE.md contract resolves to canonical AGENTS.md", () => {
+	const agentsFile = join(REPO_ROOT, "AGENTS.md");
+	const claudeLink = join(REPO_ROOT, "CLAUDE.md");
+	assert.ok(lstatSync(agentsFile).isFile(), "AGENTS.md must be the canonical regular file");
+	assert.ok(lstatSync(claudeLink).isSymbolicLink(), "CLAUDE.md must be a symlink");
+	assert.equal(readlinkSync(claudeLink), "AGENTS.md");
+	assert.equal(
+		readFileSync(claudeLink, "utf8"),
+		readFileSync(agentsFile, "utf8"),
+		"the inherited CLAUDE.md contract must resolve to canonical AGENTS.md contents",
+	);
 });
 
 test("every packaged shell explicitly inherits context without changing its skill preload", () => {

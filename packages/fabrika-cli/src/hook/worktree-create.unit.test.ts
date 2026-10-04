@@ -1,37 +1,19 @@
 import {describe, expect, it} from "vitest";
-import {loadGoldenPayload} from "../golden-fixture.ts";
-import {childEnv, planWorktree, toolchainPath, worktreePathFor} from "./worktree-create.ts";
+import {
+	childEnv,
+	locateToplevel,
+	planAtPrimary,
+	primaryWorktree,
+	readWorktreeRequest,
+	toolchainPath,
+} from "./worktree-create.ts";
 
-describe("planning a worktree from a WorktreeCreate payload", () => {
-	it("constructs the path from the captured envelope's cwd and name", () => {
-		const payload = loadGoldenPayload(
-			import.meta.url,
-			"__fixtures__/worktree-create.payload.golden.json",
-		);
-		const read = planWorktree(payload);
-		expect(read).toEqual({
-			_tag: "Plan",
-			plan: {
-				repoRoot: "/private/tmp/fabrika-worktree-capture/repo",
-				name: "capture-probe",
-				worktreePath: "/private/tmp/fabrika-worktree-capture/repo/.claude/worktrees/capture-probe",
-			},
-		});
-	});
-
-	it("lays the tree where the harness's own default path lays it", () => {
-		expect(worktreePathFor("/repo", "agent-abc")).toBe("/repo/.claude/worktrees/agent-abc");
-	});
-
+describe("reading a worktree request from a WorktreeCreate payload", () => {
 	it.each([
-		["an absent cwd", {name: "agent-1"}, "carries no `cwd`"],
-		["a relative cwd", {cwd: "repo", name: "agent-1"}, "not an absolute path"],
-		["an absent name", {cwd: "/repo"}, "carries no `name`"],
-		["a blank name", {cwd: "/repo", name: "   "}, "carries no `name`"],
+		["an absent cwd", {name: "agent-1"}, "the payload carries no `cwd`"],
+		["a blank name", {cwd: "/repo", name: "   "}, "the payload carries no `name`"],
 	])("refuses %s rather than composing a path from it", (_label, payload, reason) => {
-		const read = planWorktree(payload);
-		expect(read._tag).toBe("Unplannable");
-		if (read._tag === "Unplannable") expect(read.reason).toContain(reason);
+		expect(readWorktreeRequest(payload)).toEqual({_tag: "Unplannable", reason});
 	});
 
 	/**
@@ -39,13 +21,53 @@ describe("planning a worktree from a WorktreeCreate payload", () => {
 	 * `git worktree add` at it, so the refusal has to happen here, before the mutation.
 	 */
 	it.each([
-		["../escape"],
 		["a/b"],
 		["/absolute"],
 		[".hidden"],
 		["-leading-dash"],
 	])("refuses the traversing or odd slug %s before any git command runs", (name) => {
-		expect(planWorktree({cwd: "/repo", name})._tag).toBe("Unplannable");
+		expect(readWorktreeRequest({cwd: "/repo", name})).toEqual({
+			_tag: "Unplannable",
+			reason: `\`name\` is not a plain worktree slug and could escape the worktree root: ${name}`,
+		});
+	});
+});
+
+describe("locating the working tree the request's cwd stands in", () => {
+	const request = {cwd: "/repo/packages/fabrika-cli", name: "agent-1"};
+
+	it.each([
+		["an empty answer", ""],
+		["a relative answer", "repo"],
+		["a multi-line answer", "/repo\n/other"],
+	])("refuses %s and names the cwd that did not resolve", (_label, toplevel) => {
+		expect(locateToplevel(request, toplevel)).toEqual({
+			_tag: "Unplannable",
+			reason: "`cwd` resolves to no repository toplevel: /repo/packages/fabrika-cli",
+		});
+	});
+});
+
+describe("planning a worktree at the clone's primary working tree", () => {
+	const request = {cwd: "/repo/.claude/worktrees/epic-9843", name: "agent-1"};
+	const record = (...fields: ReadonlyArray<string>) => `${fields.join("\0")}\0\0`;
+	const HEAD = "HEAD 6d0cb36b763f68b22215650685cd93abd2a567c6";
+
+	it("keeps a primary path verbatim, since -z leaves nothing to trim", () => {
+		expect(primaryWorktree(record("worktree /my repo ", HEAD))).toBe("/my repo ");
+	});
+
+	it.each([
+		["a failed listing", null],
+		["an empty listing", ""],
+		["a first record that is not a worktree", record(HEAD, "worktree /repo")],
+		["a relative primary", record("worktree repo", HEAD)],
+	])("refuses %s and names the cwd whose clone named no primary tree", (_label, listing) => {
+		expect(planAtPrimary(request, listing)).toEqual({
+			_tag: "Unplannable",
+			reason:
+				"`cwd` belongs to a clone whose primary working tree cannot be established: /repo/.claude/worktrees/epic-9843",
+		});
 	});
 });
 

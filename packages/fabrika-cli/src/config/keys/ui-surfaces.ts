@@ -1,9 +1,9 @@
 /**
  * `uiSurfaces` and `uiCapture` — the runnable apps this repo renders, and how a capture is taken.
  *
- * One row per runnable app. A row carries where the app's rendered source lives
- * (`prefix`), how to start it (`command`), what part of the surface namespace it owns (`mount`,
- * `basePath`) and how to tell it is up (`readyPath`). Two questions read this one list: which changed
+ * One row per runnable app. A row carries where the app's rendered source lives (`prefix`: one
+ * source root or a list of them), how to start it (`command`), what part of the surface namespace it
+ * owns (`mount`, `basePath`) and how to tell it is up (`readyPath`). Two questions read this one list: which changed
  * paths raise the `ui` class (`review/classes.ts`'s `isUiSurface` over the prefixes), and which
  * server a surface is captured from (`ui render`). While the first was a compiled-in source-root
  * literal, a second runnable app's pixels passed every gate unrendered.
@@ -16,7 +16,7 @@
  * allocated free ports at start, because a fixed port is not a per-worktree resource: two lanes
  * rendering at once would either collide or, worse, capture each other's tree.
  *
- * `uiCapture` is the list-level half — viewport, evidence store, storage state. `storageState` is the
+ * `uiCapture` is the list-level half — viewport, evidence store, storage state, locale, scheme, accent. `storageState` is the
  * one field naming a file rather than a value: a Playwright storage-state snapshot, so a repo whose
  * surfaces sit behind a login can be rendered as a logged-in user. It is a credential, so it is a
  * path the repo gitignores — never the cookies inline.
@@ -52,7 +52,7 @@ const VIOLATION = {
 	unknownKey: 'unknown key "%key%"',
 	name: `"${UI_SURFACES}[].name" is missing or is not a kebab-case app name`,
 	command: `"${UI_SURFACES}[].command" is missing or not a non-empty string`,
-	prefix: `"${UI_SURFACES}[].prefix" is missing or is not a repo-relative directory prefix ending in "/"`,
+	prefix: `"${UI_SURFACES}[].prefix" is missing or is not a repo-relative source root (a directory ending in "/" or an exact file) or a non-empty list of them`,
 	mount: `"${UI_SURFACES}[].mount" is missing or is not a path beginning with "/"`,
 	basePath: `"${UI_SURFACES}[].basePath" is not a path beginning with "/"`,
 	readyPath: `"${UI_SURFACES}[].readyPath" is not a path beginning with "/"`,
@@ -61,6 +61,14 @@ const VIOLATION = {
 	height: `"${UI_CAPTURE}.viewport.height" is not a positive integer`,
 	evidenceStore: `"${UI_CAPTURE}.evidenceStore" is not a string`,
 	storageState: `"${UI_CAPTURE}.storageState" is not a repo-root-relative path`,
+	locale: `"${UI_CAPTURE}.locale" is not an object`,
+	storageKey: `"${UI_CAPTURE}.locale.storageKey" is missing or not a non-empty string`,
+	values: `"${UI_CAPTURE}.locale.values" is missing or not a non-empty list of distinct locale tags`,
+	scheme: `"${UI_CAPTURE}.scheme" is not an object`,
+	rootAttribute: `"${UI_CAPTURE}.scheme.rootAttribute" is missing or not a lowercase HTML attribute name`,
+	accent: `"${UI_CAPTURE}.accent" is not an object`,
+	accentAttribute: `"${UI_CAPTURE}.accent.rootAttribute" is missing or not a lowercase HTML attribute name`,
+	accentValues: `"${UI_CAPTURE}.accent.values" is missing or not a non-empty list of distinct accent names`,
 } as const;
 
 /**
@@ -107,13 +115,30 @@ const Viewport = Schema.Struct({
 	.annotate({message: VIOLATION.viewport, messageUnexpectedKey: VIOLATION.unknownKey})
 	.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed({...DEFAULT_VIEWPORT})));
 
-/** A repo-relative source root: never absolute, never parent-relative, and ending at a directory. */
-const isPrefix = (value: string): boolean =>
+/**
+ * A repo-relative source root: never absolute, never parent-relative, never padded. A trailing `/`
+ * makes it a directory; without one it names exactly one file (`review/classes.ts`'s `isUiSurface`).
+ */
+const isSourceRoot = (value: string): boolean =>
 	value.trim() !== "" &&
 	!value.startsWith("/") &&
 	!value.startsWith("..") &&
-	value.endsWith("/") &&
 	value === value.trim();
+
+// The missing-key message is what an empty list reads: `NonEmptyArray` reports it as a missing
+// first element.
+const SourceRoot = Schema.String.annotate({message: VIOLATION.prefix})
+	.check(Schema.makeFilter(isSourceRoot, {message: VIOLATION.prefix}))
+	.annotateKey({messageMissingKey: VIOLATION.prefix});
+
+/**
+ * One root as a bare string (the original shape, decoded unchanged) or a non-empty list, so an app
+ * whose rendered source spans several roots — `app/`, `components/`, `tailwind.config.ts` — is one
+ * row rather than one row per root under an invented mount.
+ */
+const Prefix = Schema.Union([SourceRoot, Schema.NonEmptyArray(SourceRoot)])
+	.annotate({message: VIOLATION.prefix})
+	.annotateKey({messageMissingKey: VIOLATION.prefix});
 
 const Surface = Schema.Struct({
 	name: Schema.String.annotate({message: VIOLATION.name})
@@ -122,9 +147,7 @@ const Surface = Schema.Struct({
 	command: Schema.String.annotate({message: VIOLATION.command})
 		.check(Schema.makeFilter((value) => value.trim() !== "", {message: VIOLATION.command}))
 		.annotateKey({messageMissingKey: VIOLATION.command}),
-	prefix: Schema.String.annotate({message: VIOLATION.prefix})
-		.check(Schema.makeFilter(isPrefix, {message: VIOLATION.prefix}))
-		.annotateKey({messageMissingKey: VIOLATION.prefix}),
+	prefix: Prefix,
 	mount: routePath(VIOLATION.mount),
 	basePath: Schema.NullOr(routePath(VIOLATION.basePath))
 		.annotate({message: VIOLATION.basePath})
@@ -135,6 +158,59 @@ const Surface = Schema.Struct({
 }).annotate({message: VIOLATION.list, messageUnexpectedKey: VIOLATION.unknownKey});
 
 const SurfaceList = Schema.Array(Surface).annotate({message: VIOLATION.list});
+
+/** A BCP 47-shaped tag, the form `document.documentElement.lang` reads back in. */
+const LOCALE_TAG = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
+
+const isLocaleList = (values: ReadonlyArray<string>): boolean =>
+	values.length > 0 &&
+	new Set(values).size === values.length &&
+	values.every((value) => LOCALE_TAG.test(value));
+
+const Locale = Schema.Struct({
+	storageKey: Schema.String.annotate({message: VIOLATION.storageKey})
+		.check(Schema.makeFilter((value) => value.trim() !== "", {message: VIOLATION.storageKey}))
+		.annotateKey({messageMissingKey: VIOLATION.storageKey}),
+	values: Schema.Array(Schema.String)
+		.annotate({message: VIOLATION.values})
+		.check(Schema.makeFilter(isLocaleList, {message: VIOLATION.values}))
+		.annotateKey({messageMissingKey: VIOLATION.values}),
+}).annotate({message: VIOLATION.locale, messageUnexpectedKey: VIOLATION.unknownKey});
+
+/** The attribute-name grammar the scheme proof reads through `getAttribute`, lowercase as HTML stores it. */
+const ATTRIBUTE_NAME = /^[a-z][a-z0-9-]*$/;
+
+const ColorSchemeDeclaration = Schema.Struct({
+	rootAttribute: Schema.String.annotate({message: VIOLATION.rootAttribute})
+		.check(
+			Schema.makeFilter((value) => ATTRIBUTE_NAME.test(value), {
+				message: VIOLATION.rootAttribute,
+			}),
+		)
+		.annotateKey({messageMissingKey: VIOLATION.rootAttribute}),
+}).annotate({message: VIOLATION.scheme, messageUnexpectedKey: VIOLATION.unknownKey});
+
+/** An accent name as an attribute value: a token, so a value never carries whitespace or quoting. */
+const ACCENT_NAME = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
+
+const isAccentList = (values: ReadonlyArray<string>): boolean =>
+	values.length > 0 &&
+	new Set(values).size === values.length &&
+	values.every((value) => ACCENT_NAME.test(value));
+
+const AccentDeclaration = Schema.Struct({
+	rootAttribute: Schema.String.annotate({message: VIOLATION.accentAttribute})
+		.check(
+			Schema.makeFilter((value) => ATTRIBUTE_NAME.test(value), {
+				message: VIOLATION.accentAttribute,
+			}),
+		)
+		.annotateKey({messageMissingKey: VIOLATION.accentAttribute}),
+	values: Schema.Array(Schema.String)
+		.annotate({message: VIOLATION.accentValues})
+		.check(Schema.makeFilter(isAccentList, {message: VIOLATION.accentValues}))
+		.annotateKey({messageMissingKey: VIOLATION.accentValues}),
+}).annotate({message: VIOLATION.accent, messageUnexpectedKey: VIOLATION.unknownKey});
 
 const Capture = Schema.Struct({
 	viewport: Viewport,
@@ -150,11 +226,20 @@ const Capture = Schema.Struct({
 	)
 		.annotate({message: VIOLATION.storageState})
 		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	locale: Schema.NullOr(Locale)
+		.annotate({message: VIOLATION.locale})
+		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	scheme: Schema.NullOr(ColorSchemeDeclaration)
+		.annotate({message: VIOLATION.scheme})
+		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	accent: Schema.NullOr(AccentDeclaration)
+		.annotate({message: VIOLATION.accent})
+		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 }).annotate({message: VIOLATION.capture, messageUnexpectedKey: VIOLATION.unknownKey});
 
 /** One runnable app: where its source lives, how to start it, and what it serves. */
 export type UiSurface = typeof Surface.Type;
-/** The list-level capture settings — viewport, evidence store, storage state. */
+/** The list-level capture settings — viewport, evidence store, storage state, locale, scheme, accent. */
 export type UiCapture = typeof Capture.Type;
 
 const decodeList = Schema.decodeUnknownResult(SurfaceList, {onExcessProperty: "error"});
@@ -230,10 +315,22 @@ const decodeSurfaces = (raw: unknown): Decoded<ReadonlyArray<UiSurface>> => {
  */
 export const previewAppOf = (surface: UiSurface): string => surface.name.split("-")[0] as string;
 
+/** One row's source roots, whichever shape its `prefix` was declared in. */
+export const sourceRootsOf = (surface: UiSurface): ReadonlyArray<string> =>
+	typeof surface.prefix === "string" ? [surface.prefix] : surface.prefix;
+
 /** The repo-relative source roots the declared surfaces cover, deduplicated in declaration order. */
 export const prefixesOf = (surfaces: ReadonlyArray<UiSurface>): ReadonlyArray<string> => [
-	...new Set(surfaces.map((surface) => surface.prefix)),
+	...new Set(surfaces.flatMap(sourceRootsOf)),
 ];
+
+const sourceRootSchema: JsonSchema = {
+	type: "string",
+	description:
+		"A repo-relative source root. Ending in `/` it is a directory covering every file under it; otherwise it names exactly one file.",
+	minLength: 1,
+	pattern: "^(?![/\\s])(?!\\.\\.)(?:.*\\S)?$",
+};
 
 const surfaceSchema: JsonSchema = {
 	type: "object",
@@ -246,11 +343,9 @@ const surfaceSchema: JsonSchema = {
 			pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
 		},
 		prefix: {
-			type: "string",
 			description:
-				"The repo-relative source root whose changed files raise the ui class, ending in `/`.",
-			minLength: 1,
-			pattern: "^(?!/)(?!\\.\\.).*/$",
+				"Where the app's rendered source lives: one source root, or a non-empty list of them. A changed file under a directory root, or equal to a file root, raises the ui class.",
+			oneOf: [sourceRootSchema, {type: "array", items: sourceRootSchema, minItems: 1}],
 		},
 		mount: {
 			type: "string",
@@ -296,6 +391,9 @@ const SHIPPED_CAPTURE: UiCapture = {
 	viewport: {...DEFAULT_VIEWPORT},
 	evidenceStore: null,
 	storageState: null,
+	locale: null,
+	scheme: null,
+	accent: null,
 };
 
 export const uiCaptureKey: KeyGroup<UiCapture> = {
@@ -310,7 +408,7 @@ export const uiCaptureKey: KeyGroup<UiCapture> = {
 	jsonSchema: {
 		type: "object",
 		description:
-			"How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, and the storage state to browse as.",
+			"How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, the locales a render can be seeded in, where a page publishes its resolved colour scheme, and the root attribute a theme accent is set on.",
 		properties: {
 			viewport: {
 				type: "object",
@@ -333,6 +431,65 @@ export const uiCaptureKey: KeyGroup<UiCapture> = {
 					"A repo-relative Playwright storage-state file to browse as. It is a credential — gitignore it, never inline the cookies.",
 				minLength: 1,
 				pattern: "^(?!/).+",
+			},
+			locale: {
+				type: ["object", "null"],
+				description:
+					"The localStorage key the app reads its locale from and the closed set of values it accepts. `review-ui render --locale` seeds one of them before navigation and proves it against the page's `lang`. Null (or absent) renders at the app's default locale only.",
+				properties: {
+					storageKey: {
+						type: "string",
+						description: "The localStorage key the app reads its locale from.",
+						minLength: 1,
+					},
+					values: {
+						type: "array",
+						description:
+							"The accepted locale values, each the `lang` the page reads back when it renders in it.",
+						items: {type: "string", pattern: "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"},
+						minItems: 1,
+						uniqueItems: true,
+					},
+				},
+				required: ["storageKey", "values"],
+				additionalProperties: false,
+			},
+			scheme: {
+				type: ["object", "null"],
+				description:
+					"Where the page publishes the colour scheme it resolved. `review-ui render --scheme light|dark` emulates `prefers-color-scheme` and proves each shot against this root attribute. Null (or absent) refuses `--scheme`.",
+				properties: {
+					rootAttribute: {
+						type: "string",
+						description:
+							"The attribute on `document.documentElement` whose value is `light` or `dark` once the page has resolved its scheme.",
+						pattern: "^[a-z][a-z0-9-]*$",
+					},
+				},
+				required: ["rootAttribute"],
+				additionalProperties: false,
+			},
+			accent: {
+				type: ["object", "null"],
+				description:
+					"The root attribute the app switches its theme accent on and the closed set of accents it accepts. `review-ui render --accent` sets one of them on `document.documentElement` after navigation and proves it read back before the shot. Null (or absent) refuses `--accent`.",
+				properties: {
+					rootAttribute: {
+						type: "string",
+						description:
+							"The attribute on `document.documentElement` whose value selects the accent.",
+						pattern: "^[a-z][a-z0-9-]*$",
+					},
+					values: {
+						type: "array",
+						description: "The accepted accent names, each a value of that attribute.",
+						items: {type: "string", pattern: "^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$"},
+						minItems: 1,
+						uniqueItems: true,
+					},
+				},
+				required: ["rootAttribute", "values"],
+				additionalProperties: false,
 			},
 		},
 		required: [],

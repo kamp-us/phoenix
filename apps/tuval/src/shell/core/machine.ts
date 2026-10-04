@@ -20,17 +20,27 @@
  */
 
 import {defineMachine} from "@demlik/tea";
-import {Duration} from "effect";
-import {type CommandIndex, shellCommandIndex} from "../commands/table.ts";
+import type {Binding} from "@kampus/tuval-sdk/kernel/commands/bindings/compile";
+import type {ViewState} from "@kampus/tuval-sdk/kernel/shell/window/host";
 import {
 	closeBoard,
 	type DeskMsg,
 	initialDesk,
 	toggleBoard,
 	toggleInspector,
-} from "../desk/state.ts";
-import type {CommandName, Key, PrefixState, PrefixTable, RouteAnswer} from "../keys/index.ts";
-import {idle, route} from "../keys/index.ts";
+} from "@kampus/tuval-ui/desk";
+import type {CommandName, Key, PrefixState, PrefixTable, RouteAnswer} from "@kampus/tuval-ui/keys";
+import {idle, route, stringify} from "@kampus/tuval-ui/keys";
+import {Duration} from "effect";
+import {
+	boardFocus,
+	type Focus,
+	KeyScopes,
+	noOwnerBindings,
+	type OwnerBindings,
+	windowFocus,
+} from "../../keys/scopes.ts";
+import {type CommandIndex, shellCommandIndex} from "../commands/table.ts";
 import {
 	createStack,
 	createTree,
@@ -45,12 +55,13 @@ import {
 	setProcess,
 	split,
 	unzoom,
+	type WindowBinding,
 	type WindowId,
 	zoom,
 } from "../layout/index.ts";
-import type {OpenSession} from "../picker/intent.ts";
+import type {ProgramOpening} from "../picker/intent.ts";
+import type {SessionPlace} from "../picker/place.ts";
 import {mountPicker} from "../picker/view.ts";
-import type {ViewState} from "../window/host.ts";
 import {
 	activeWorkspace,
 	disarmed,
@@ -61,6 +72,7 @@ import {
 	mint,
 	type PrefixSnapshot,
 	processOf,
+	programOf,
 	type ShellState,
 	type Workspace,
 	type WorkspaceId,
@@ -77,9 +89,9 @@ import {
  * leaves that handler as a `window.setView` written back over it, and the slot is state only the
  * core can read — a refusal handed no slot is the one that throws away the picker's `previous`
  * (#8265). `forwardKey` is here too — a key belongs to the focused window's
- * *process*, and delivering it is a dispatch into that process. `runCommand` and `reloadConfig`
- * have no runner yet and are still the kernel's: resolving a name the command table does not hold
- * needs the spell registry, and `Booted.reload` sits above the kernel (#7743).
+ * *process*, and delivering it is a dispatch into that process. `runCommand` has no runner yet and
+ * is still the kernel's: resolving a name the command table does not hold needs the spell registry.
+ * `reloadConfig` runs the kernel's `ConfigReloader` (`../../reload.ts`).
  */
 export type KernelCmd =
 	| {
@@ -89,15 +101,39 @@ export type KernelCmd =
 			readonly key: string;
 	  }
 	| {readonly type: "runCommand"; readonly name: CommandName}
+	/**
+	 * A config key binding fired under the focus that owns it (#9687): run its spell. The reducer
+	 * cannot reach the spell executor, so it names the binding, the workspace, and the window it was
+	 * pressed in — `null` on the board, where no window is the subject — and stops there.
+	 */
+	| {
+			readonly type: "runBinding";
+			readonly binding: Binding;
+			readonly workspace: WorkspaceId;
+			readonly windowId: WindowId | null;
+	  }
 	| {
 			readonly type: "openProgram";
 			readonly windowId: WindowId;
 			readonly programId: string;
-			readonly session?: OpenSession;
+			readonly session?: ProgramOpening;
+			readonly place?: SessionPlace;
 			readonly view?: ViewState;
 	  }
 	| {
 			readonly type: "attachProcess";
+			readonly windowId: WindowId;
+			readonly processId: string;
+			readonly view?: ViewState;
+	  }
+	/**
+	 * Forget this process durably and stop it — `Processes.remove`, which the reducer cannot reach
+	 * for the same reason `openProgram` names a program rather than spawning one (#9447). The window
+	 * and its slot ride along because every way this refuses is shown *in* that window, as the two
+	 * arms above are.
+	 */
+	| {
+			readonly type: "removeProcess";
 			readonly windowId: WindowId;
 			readonly processId: string;
 			readonly view?: ViewState;
@@ -118,10 +154,11 @@ export type PageCmd =
 	| {readonly type: "openCommandLine"};
 
 /**
- * What the core asks its host to do, as the two halves that answer it. The absence is the point:
- * there is no stop-a-process arm, so closing a window cannot end the process it was showing — a
- * window is a view onto a process, and the last view closing says nothing about the process's
- * lifetime. A ninth arm joins `KernelCmd` or `PageCmd`; there is nowhere else to put one.
+ * What the core asks its host to do, as the two halves that answer it. The absence is still the
+ * point: `removeProcess` is asked for by name and by nothing else, so closing a window cannot end
+ * the process it was showing — a window is a view onto a process, and the last view closing says
+ * nothing about the process's lifetime (`window:close` keeps its detach-only behaviour, #9447). An
+ * eleventh arm joins `KernelCmd` or `PageCmd`; there is nowhere else to put one.
  */
 export type ShellCmd = KernelCmd | PageCmd;
 
@@ -148,6 +185,8 @@ export type ShellMsg =
 			 * (`../picker/open.ts`); absent means the shell forwards this window no keys (#7973).
 			 */
 			readonly takesKeys?: boolean;
+			/** The bound program's id, which picks the key table the window routes over (#9687). */
+			readonly program?: string;
 	  }
 	| {readonly type: "window.unbind"; readonly windowId?: WindowId}
 	| {
@@ -175,7 +214,9 @@ export type ShellMsg =
 			readonly programId: string;
 			readonly windowId?: WindowId;
 			/** The session this open is for, when it is for one (`../picker/intent.ts`). */
-			readonly session?: OpenSession;
+			readonly session?: ProgramOpening;
+			/** The folder a row that takes its folder at start opens in (`../picker/place.ts`). */
+			readonly place?: SessionPlace;
 	  }
 	| {
 			readonly type: "window.attach";
@@ -190,6 +231,18 @@ export type ShellMsg =
 			 * the focused window, which is the parent's own.
 			 */
 			readonly split?: Orientation;
+	  }
+	| {
+			/**
+			 * Remove this process: forget it durably, then stop it. The desk's two routes to it — the
+			 * `process:remove <id>` command row and `d` on the focused picker row — both land here, so
+			 * one Msg is the whole affordance (#9447). No confirmation is asked for and none is
+			 * modelled: the kernel refuses what it must and otherwise acts, which is the shape
+			 * `workspace.remove` above already has.
+			 */
+			readonly type: "process.remove";
+			readonly processId: string;
+			readonly windowId?: WindowId;
 	  }
 	| {readonly type: "command.open"}
 	| {readonly type: "config.reload"}
@@ -311,7 +364,7 @@ const bindWindow = (
 	state: ShellState,
 	windowId: WindowId | undefined,
 	processId: string | null,
-	takesKeys = false,
+	binding: WindowBinding = {},
 ): Step => {
 	const workspace = activeWorkspace(state);
 	if (workspace === undefined) return [state, NO_CMDS];
@@ -321,7 +374,7 @@ const bindWindow = (
 		{
 			...withActive(state, {
 				...workspace,
-				layout: setProcess(workspace.layout, target, processId, takesKeys),
+				layout: setProcess(workspace.layout, target, processId, binding),
 			}),
 			views: withoutViews(state.views, [target]),
 		},
@@ -558,10 +611,47 @@ const attachHome = (
 	return [next, activeWorkspace(next)?.focused ?? target];
 };
 
+/**
+ * Where the core reads the key bindings each focus owner holds (#9687). Configuration like `table`,
+ * but a live one: a project opening or closing and a config reload each replace what it answers,
+ * and the shell process running under the old row reads the new bindings at its next key rather than
+ * being respawned for them. Read once per key, so one press routes over one generation.
+ */
+export interface KeyBindingsSource {
+	readonly current: () => OwnerBindings;
+}
+
+/** No owner binds anything: the desk routes its own grammar and nothing else. */
+export const noKeyBindings: KeyBindingsSource = {current: () => noOwnerBindings};
+
+/**
+ * The scopes over `table`, rebuilt only when the source answers a new generation. `table` is the
+ * one grammar the core routes, so the scopes are built here rather than handed in beside it.
+ */
+const scopesOver = (table: PrefixTable, source: KeyBindingsSource): (() => KeyScopes) => {
+	let built: {readonly bindings: OwnerBindings; readonly scopes: KeyScopes} | undefined;
+	return () => {
+		const bindings = source.current();
+		if (built?.bindings !== bindings) {
+			built = {bindings, scopes: KeyScopes.of({desk: table, ...bindings})};
+		}
+		return built.scopes;
+	};
+};
+
+/** What has focus: the board while it is up, or else the active workspace's focused window. */
+const focusOf = (state: ShellState): Focus => {
+	if (state.desk.boardOpen) return boardFocus;
+	const workspace = activeWorkspace(state);
+	return windowFocus(workspace === undefined ? null : programOf(workspace, workspace.focused));
+};
+
 export const cellsFor = (
 	table: PrefixTable,
 	commands: CommandIndex = shellCommandIndex,
+	keys: KeyBindingsSource = noKeyBindings,
 ): ShellCells => {
+	const scopes = scopesOver(table, keys);
 	const apply = (state: ShellState, msg: ShellMsg): Step => runCell(cells, state, msg);
 
 	/**
@@ -593,13 +683,35 @@ export const cellsFor = (
 	};
 
 	const pressKey = (state: ShellState, msg: Extract<ShellMsg, {type: "keys.press"}>): Step => {
-		const answer = route(table, toRouter(state.prefix), msg.key);
+		const focus = focusOf(state);
+		const scope = scopes().tableFor(focus);
+		const before = toRouter(state.prefix);
+		const answer = route(scope.table, before, msg.key);
 		const prefix = fromRouter(answer.next);
 		const timer = timerCmds(state.prefix, prefix);
 		// The answer is written into state rather than only spent as Cmds, because Cmds are the
 		// kernel's and no Cmd crosses the transport: this field is how the page learns what the one
 		// router decided about the key it sent (#8274, `../ui/Desk.tsx`).
 		const routed: ShellState = {...state, prefix, lastPress: recorded(msg, answer)};
+
+		// A binding the focus's owner holds takes the key before the window or a shell row would. The
+		// page is told `Consumed`: it has nothing to do for a key the kernel runs a spell for.
+		const bound =
+			answer._tag === "ToWindow"
+				? scope.bindingAt(answer.key)
+				: answer._tag === "Command" && before._tag === "Armed"
+					? scope.chordAt([...before.pending, stringify(msg.key)])
+					: undefined;
+		if (bound !== undefined) {
+			const windowId = focus._tag === "Board" ? null : (activeWorkspace(state)?.focused ?? null);
+			return [
+				{...routed, lastPress: {pressId: msg.pressId ?? "", outcome: {_tag: "Consumed"}}},
+				[
+					...timer,
+					{type: "runBinding", binding: bound, workspace: state.activeWorkspace, windowId},
+				],
+			];
+		}
 
 		if (answer._tag === "ToWindow") {
 			const [next, cmds] = toFocusedWindow(routed, answer.key);
@@ -622,7 +734,11 @@ export const cellsFor = (
 		"window.close": closeWindow,
 		"window.focus": (state, msg) => focusWindow(state, msg.windowId),
 		"window.focusDirection": (state, msg) => focusDirection(state, msg.direction),
-		"window.bind": (state, msg) => bindWindow(state, msg.windowId, msg.processId, msg.takesKeys),
+		"window.bind": (state, msg) =>
+			bindWindow(state, msg.windowId, msg.processId, {
+				...(msg.takesKeys === undefined ? {} : {takesKeys: msg.takesKeys}),
+				...(msg.program === undefined ? {} : {program: msg.program}),
+			}),
 		"window.unbind": (state, msg) => unbindWindow(state, msg.windowId),
 		"window.forwardKey": (state, msg) => toFocusedWindow(state, msg.key),
 		"window.setView": setView,
@@ -647,6 +763,7 @@ export const cellsFor = (
 								windowId: target,
 								programId: msg.programId,
 								...(msg.session === undefined ? {} : {session: msg.session}),
+								...(msg.place === undefined ? {} : {place: msg.place}),
 								...viewOf(state, target),
 							},
 						],
@@ -664,6 +781,24 @@ export const cellsFor = (
 		// Neither touches the desk, and neither leaves as `runCommand`: a host answering that Cmd
 		// resolves the name through the command table, so routing a row's own Msg back through it
 		// would be a loop. Each gets the arm that says what it is.
+		// The window is where the removal's refusals are shown, so the Cmd carries it and its slot the
+		// way the two picker arms above do. A desk with no window to show one in asks for nothing.
+		"process.remove": (state, msg) => {
+			const target = targetWindow(state, msg.windowId);
+			return target === null
+				? [state, NO_CMDS]
+				: [
+						state,
+						[
+							{
+								type: "removeProcess",
+								windowId: target,
+								processId: msg.processId,
+								...viewOf(state, target),
+							},
+						],
+					];
+		},
 		"command.open": (state) => [state, [{type: "openCommandLine"}]],
 		"config.reload": (state) => [state, [{type: "reloadConfig"}]],
 		// Desk-level, so every workspace cell above leaves it untouched by spreading `...state`.
@@ -694,8 +829,12 @@ const runCell = (cells: ShellCells, state: ShellState, msg: ShellMsg): Step =>
  * Run one Msg through the cells without a runtime — what the tests drive, and the shape the shell
  * program (#7558) folds when it replays a checkpoint.
  */
-export const applyMsg = (table: PrefixTable, state: ShellState, msg: ShellMsg): Step =>
-	runCell(cellsFor(table), state, msg);
+export const applyMsg = (
+	table: PrefixTable,
+	state: ShellState,
+	msg: ShellMsg,
+	{commands, keys}: Omit<ShellCoreOptions, "table"> = {},
+): Step => runCell(cellsFor(table, commands, keys), state, msg);
 
 export interface ShellCoreOptions {
 	/** The grammar `keys.press` routes against — configuration, never state (it holds `Duration`s). */
@@ -706,23 +845,16 @@ export interface ShellCoreOptions {
 	 * hold would answer `runCommand` for a key the desk was told it had.
 	 */
 	readonly commands?: CommandIndex;
+	/**
+	 * Each focus owner's key bindings over `table`. Absent means none: the desk routes its own
+	 * grammar and nothing else.
+	 */
+	readonly keys?: KeyBindingsSource;
 }
 
 /** The shell's core machine. One `defineMachine`; the registry row that carries it lands with #7558. */
-export const shellCore = ({table, commands}: ShellCoreOptions) =>
+export const shellCore = ({table, commands, keys}: ShellCoreOptions) =>
 	defineMachine<ShellState, ShellMsg, ShellCmd, never, unknown>({
 		init: (loaded) => [loaded ?? initialState(), []],
-		update: cellsFor(table, commands),
-		// Demlik's `Machine` demands a Promise `interpret` beside the row's own handlers; the host
-		// never reads it (#7576). The shell's Effect handlers land with its registry row (#7558).
-		interpret: {
-			forwardKey: () => Promise.resolve(),
-			startRepeatTimer: () => Promise.resolve(),
-			cancelRepeatTimer: () => Promise.resolve(),
-			runCommand: () => Promise.resolve(),
-			openProgram: () => Promise.resolve(),
-			attachProcess: () => Promise.resolve(),
-			openCommandLine: () => Promise.resolve(),
-			reloadConfig: () => Promise.resolve(),
-		},
+		update: cellsFor(table, commands, keys),
 	});

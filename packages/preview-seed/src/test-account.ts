@@ -1,14 +1,16 @@
 /**
- * Provision the tier-keyed test accounts a `review-ui` capture authenticates as, the session row
+ * Provision the audience-keyed test accounts a `review-ui` capture authenticates as, the session row
  * whose token becomes that capture's cookie (issues #7051, #7398), and the `user_profile` row every
  * profile surface reads (issue #9286).
  *
- * **One account per tier, because a tier is an audience.** A surface whose whole point is that it
- * renders *below* yazar — a çaylak nudge, a pre-promotion prompt — cannot be rendered by an
- * identity that clears the floor, and the shot comes back clean showing the state the PR did not
- * add (#7398). So the identity set is keyed by {@link PREVIEW_TIERS} and a caller provisions
- * whichever tiers it holds a token for; a tier with no token is left unseeded, and the capture verb
- * refuses a surface naming it rather than falling back to a seeded one.
+ * **One account per audience.** A surface whose whole point is that it renders *below* yazar — a
+ * çaylak nudge, a pre-promotion prompt — cannot be rendered by an identity that clears the floor,
+ * and the shot comes back clean showing the state the PR did not add (#7398). Tier is one axis of
+ * an audience and a verified email is another: a çaylak whose address is unverified is refused a
+ * write a verified one is granted (#10264). So the identity set is keyed by
+ * {@link PREVIEW_IDENTITIES} and a caller provisions whichever identities it holds a token for; an
+ * identity with no token is left unseeded, and the capture verb refuses a surface naming it rather
+ * than falling back to a seeded one.
  *
  * **A tier is not a standing.** Where the çaylak sits on the promotion path — its karma and whether
  * a kefil exists — is a second axis, and the path forks on it into two compositions that look
@@ -43,6 +45,7 @@ import {eq} from "drizzle-orm";
 import type {BatchItem} from "drizzle-orm/batch";
 import {drizzle} from "drizzle-orm/d1";
 import {defineRelations} from "drizzle-orm/relations";
+import {Redacted} from "effect";
 import {authorshipVouch, relationTuple, seedSchema, session, user, userProfile} from "./schema.ts";
 
 const relations = defineRelations(seedSchema);
@@ -64,6 +67,14 @@ export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const PREVIEW_TIERS = ["yazar", "çaylak"] as const;
 export type PreviewTier = (typeof PREVIEW_TIERS)[number];
 
+/**
+ * The preview identities, one per audience. The two verified ones are named by their tier alone
+ * because they shipped that way (#7051, #7398), and every token variable and capture state written
+ * against them still means what it said.
+ */
+export const PREVIEW_IDENTITIES = ["yazar", "çaylak", "çaylak-unverified"] as const;
+export type PreviewIdentity = (typeof PREVIEW_IDENTITIES)[number];
+
 export interface TestAccount {
 	readonly id: string;
 	readonly email: string;
@@ -71,16 +82,18 @@ export interface TestAccount {
 	readonly name: string;
 	readonly role: "member" | "moderator";
 	readonly tier: PreviewTier;
+	/** better-auth's core `emailVerified` column, which the email-verified write gate reads. */
+	readonly emailVerified: boolean;
 	readonly sessionId: string;
 	/** Whether this identity is granted the platform `moderates` tuple. */
 	readonly moderates: boolean;
 }
 
 /**
- * The test identities, one per tier. Each is fixed so every provision is an upsert on the same row
- * rather than a new account per run, and `.invalid` per RFC 2606 so no address can reach a mailbox.
- * The yazar's id is the one #7051 shipped and is unchanged — `admin-grant` invocations and preview
- * D1s in flight name it.
+ * The test identities, one per audience. Each is fixed so every provision is an upsert on the same
+ * row rather than a new account per run, and `.invalid` per RFC 2606 so no address can reach a
+ * mailbox. The yazar's id is the one #7051 shipped and is unchanged — `admin-grant` invocations and
+ * preview D1s in flight name it.
  */
 export const TEST_ACCOUNTS = {
 	yazar: {
@@ -90,6 +103,7 @@ export const TEST_ACCOUNTS = {
 		name: "Önizleme Moderatörü",
 		role: "moderator",
 		tier: "yazar",
+		emailVerified: true,
 		sessionId: "preview-test-moderator-session",
 		moderates: true,
 	},
@@ -100,14 +114,30 @@ export const TEST_ACCOUNTS = {
 		name: "Önizleme Çaylağı",
 		role: "member",
 		tier: "çaylak",
+		emailVerified: true,
 		sessionId: "preview-test-caylak-session",
 		moderates: false,
 	},
-} as const satisfies Record<PreviewTier, TestAccount>;
+	"çaylak-unverified": {
+		id: "preview-test-caylak-unverified",
+		email: "preview-test-caylak-unverified@preview.invalid",
+		username: "onizleme-caylak-dogrulanmamis",
+		name: "Önizleme Çaylağı (doğrulanmamış)",
+		role: "member",
+		tier: "çaylak",
+		emailVerified: false,
+		sessionId: "preview-test-caylak-unverified-session",
+		moderates: false,
+	},
+} as const satisfies Record<PreviewIdentity, TestAccount>;
 
 declare const SessionTokenBrand: unique symbol;
-/** A session token that has passed {@link parseSessionToken} — the only thing provisioning accepts. */
-export type SessionToken = string & {readonly [SessionTokenBrand]: true};
+/**
+ * A session token that has passed {@link parseSessionToken} — the only thing provisioning accepts.
+ * It stays `Redacted` from the read to the one row that stores it, so a log line, an error or a
+ * `JSON.stringify` of anything holding it prints `<redacted>` rather than a live login.
+ */
+export type SessionToken = Redacted.Redacted<string> & {readonly [SessionTokenBrand]: true};
 
 /**
  * better-auth mints a 32-byte session token, and each one here is the whole credential for a live
@@ -115,20 +145,25 @@ export type SessionToken = string & {readonly [SessionTokenBrand]: true};
  */
 export const MIN_SESSION_TOKEN_LEN = 32;
 
-export const parseSessionToken = (raw: string): SessionToken | null =>
-	raw.trim().length >= MIN_SESSION_TOKEN_LEN && !/[\s;,]/.test(raw.trim())
-		? (raw.trim() as SessionToken)
+export const parseSessionToken = (raw: Redacted.Redacted<string>): SessionToken | null => {
+	const trimmed = Redacted.value(raw).trim();
+	return trimmed.length >= MIN_SESSION_TOKEN_LEN && !/[\s;,]/.test(trimmed)
+		? (Redacted.make(trimmed) as SessionToken)
 		: null;
+};
 
 /**
- * One token per tier to provision. A tier absent here is a tier this run does not seed — the
- * record shape is what makes "the same tier twice" unrepresentable.
+ * One token per identity to provision. An identity absent here is one this run does not seed — the
+ * record shape is what makes "the same identity twice" unrepresentable.
  */
-export type PreviewCredentials = Partial<Readonly<Record<PreviewTier, SessionToken>>>;
+export type PreviewCredentials = Partial<Readonly<Record<PreviewIdentity, SessionToken>>>;
 
-/** The tier a standing is about, and the tier whose identity can vouch for it (ADR 0107 §4). */
-export const CANDIDATE_TIER = "çaylak" satisfies PreviewTier;
-export const VOUCHER_TIER = "yazar" satisfies PreviewTier;
+/**
+ * The identity a standing is about, and the identity that can vouch for it (ADR 0107 §4). The
+ * standing is the verified çaylak's: the unverified one is its own audience and never carries one.
+ */
+export const CANDIDATE_IDENTITY = "çaylak" satisfies PreviewIdentity;
+export const VOUCHER_IDENTITY = "yazar" satisfies PreviewIdentity;
 
 declare const KarmaBrand: unique symbol;
 /** A karma total that has passed {@link parseStanding} — a non-negative safe integer. */
@@ -164,11 +199,11 @@ export const parseStanding = (raw: string): CaylakStanding | null => {
 
 export interface ProvisionReport {
 	/**
-	 * The tiers provisioned, in {@link PREVIEW_TIERS} order — one `user`, one `session` and one
-	 * `user_profile` row each.
+	 * The identities provisioned, in {@link PREVIEW_IDENTITIES} order — one `user`, one `session`
+	 * and one `user_profile` row each.
 	 */
-	readonly tiers: readonly PreviewTier[];
-	/** `moderates` tuples newly minted — `0` on a re-run, and `0` when no moderating tier was seeded. */
+	readonly identities: readonly PreviewIdentity[];
+	/** `moderates` tuples newly minted — `0` on a re-run, and `0` when no moderating identity was seeded. */
 	readonly tuples: number;
 	readonly expiresAt: Date;
 }
@@ -176,8 +211,8 @@ export interface ProvisionReport {
 /**
  * Four arms, never one: a refusal must not read as a provision that wrote nothing. `NotThrowaway`
  * names the database name that failed the fence, which is the fact the operator acts on;
- * `NoCredentials` says the run named no tier at all rather than seeding a default one; and
- * `StandingNeedsTier` names the tier whose absence makes the requested standing unwritable — the
+ * `NoCredentials` says the run named no identity at all rather than seeding a default one; and
+ * `StandingNeedsIdentity` names the identity whose absence makes the requested standing unwritable — the
  * `candidate` this standing is about, or the `voucher` a `kefil` needs. `authorship_vouch` carries
  * no foreign keys (migration `0013`), so a vouch written past that refusal would be a dangling
  * `voucher_id` nothing in the database catches and no read resolves.
@@ -187,8 +222,8 @@ export type ProvisionOutcome =
 	| {readonly _tag: "NotThrowaway"; readonly databaseName: string}
 	| {readonly _tag: "NoCredentials"}
 	| {
-			readonly _tag: "StandingNeedsTier";
-			readonly missing: PreviewTier;
+			readonly _tag: "StandingNeedsIdentity";
+			readonly missing: PreviewIdentity;
 			readonly role: "candidate" | "voucher";
 	  };
 
@@ -215,7 +250,7 @@ export const isThrowawayDatabaseName = (name: string): boolean =>
 type Statement = BatchItem<"sqlite">;
 
 /**
- * The base rows for one tier: its `user`, its `session`, and the `user_profile` row every profile
+ * The base rows for one identity: its `user`, its `session`, and the `user_profile` row every profile
  * surface reads. `Pasaport.lookupProfile` and `Pasaport.lookupProfileById` in
  * `apps/web/worker/features/pasaport/Pasaport.ts` both answer `null` when that row is absent, so an
  * identity seeded without one is a 404 on `/u/<username>` and has nothing to hydrate on `/profile`
@@ -227,12 +262,12 @@ type Statement = BatchItem<"sqlite">;
  */
 const accountRows = (
 	db: SeedDb,
-	tier: PreviewTier,
+	identity: PreviewIdentity,
 	token: SessionToken,
 	now: Date,
 	expiresAt: Date,
 ): readonly [Statement, Statement, Statement] => {
-	const account = TEST_ACCOUNTS[tier];
+	const account = TEST_ACCOUNTS[identity];
 	const accountRow = {
 		id: account.id,
 		name: account.name,
@@ -240,7 +275,7 @@ const accountRows = (
 		type: "human",
 		role: account.role,
 		tier: account.tier,
-		emailVerified: true,
+		emailVerified: account.emailVerified,
 		username: account.username,
 		createdAt: now,
 		updatedAt: now,
@@ -248,7 +283,8 @@ const accountRows = (
 	const sessionRow = {
 		id: account.sessionId,
 		userId: account.id,
-		token,
+		// The one place a token is unwrapped: the row that stores it.
+		token: Redacted.value(token),
 		expiresAt,
 		createdAt: now,
 		updatedAt: now,
@@ -281,7 +317,7 @@ const standingRows = (
 	standing: CaylakStanding,
 	now: Date,
 ): readonly [Statement, Statement] => {
-	const candidate = TEST_ACCOUNTS[CANDIDATE_TIER];
+	const candidate = TEST_ACCOUNTS[CANDIDATE_IDENTITY];
 	const profileRow = {
 		userId: candidate.id,
 		username: candidate.username,
@@ -290,7 +326,7 @@ const standingRows = (
 		updatedAt: now,
 	};
 	const vouchRow = {
-		voucherId: TEST_ACCOUNTS[VOUCHER_TIER].id,
+		voucherId: TEST_ACCOUNTS[VOUCHER_IDENTITY].id,
 		candidateId: candidate.id,
 		createdAt: now,
 	};
@@ -321,35 +357,35 @@ export const provisionTestAccounts = async (
 ): Promise<ProvisionOutcome> => {
 	if (!isThrowawayDatabaseName(databaseName)) return {_tag: "NotThrowaway", databaseName};
 
-	const requested = PREVIEW_TIERS.flatMap((tier) => {
-		const token = credentials[tier];
-		return token === undefined ? [] : [{tier, token}];
+	const requested = PREVIEW_IDENTITIES.flatMap((identity) => {
+		const token = credentials[identity];
+		return token === undefined ? [] : [{identity, token}];
 	});
 	const [head, ...rest] = requested;
 	if (head === undefined) return {_tag: "NoCredentials"};
 
 	if (standing !== null) {
-		const seeded = requested.map(({tier}) => tier);
-		if (!seeded.includes(CANDIDATE_TIER)) {
-			return {_tag: "StandingNeedsTier", missing: CANDIDATE_TIER, role: "candidate"};
+		const seeded = requested.map(({identity}) => identity);
+		if (!seeded.includes(CANDIDATE_IDENTITY)) {
+			return {_tag: "StandingNeedsIdentity", missing: CANDIDATE_IDENTITY, role: "candidate"};
 		}
-		if (standing.kefil && !seeded.includes(VOUCHER_TIER)) {
-			return {_tag: "StandingNeedsTier", missing: VOUCHER_TIER, role: "voucher"};
+		if (standing.kefil && !seeded.includes(VOUCHER_IDENTITY)) {
+			return {_tag: "StandingNeedsIdentity", missing: VOUCHER_IDENTITY, role: "voucher"};
 		}
 	}
 
 	const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
 	const rows = [
-		...accountRows(db, head.tier, head.token, now, expiresAt),
-		...rest.flatMap(({tier, token}) => accountRows(db, tier, token, now, expiresAt)),
+		...accountRows(db, head.identity, head.token, now, expiresAt),
+		...rest.flatMap(({identity, token}) => accountRows(db, identity, token, now, expiresAt)),
 		...(standing === null ? [] : standingRows(db, standing, now)),
 	] as const;
 	const tuples = requested
-		.filter(({tier}) => TEST_ACCOUNTS[tier].moderates)
-		.map(({tier}) =>
+		.filter(({identity}) => TEST_ACCOUNTS[identity].moderates)
+		.map(({identity}) =>
 			db
 				.insert(relationTuple)
-				.values({subject: TEST_ACCOUNTS[tier].id, relation: MODERATES, object: PLATFORM})
+				.values({subject: TEST_ACCOUNTS[identity].id, relation: MODERATES, object: PLATFORM})
 				.onConflictDoNothing(),
 		);
 
@@ -362,7 +398,7 @@ export const provisionTestAccounts = async (
 	return {
 		_tag: "Provisioned",
 		report: {
-			tiers: requested.map(({tier}) => tier),
+			identities: requested.map(({identity}) => identity),
 			tuples: results.slice(rows.length).reduce((total, result) => total + result.meta.changes, 0),
 			expiresAt,
 		},

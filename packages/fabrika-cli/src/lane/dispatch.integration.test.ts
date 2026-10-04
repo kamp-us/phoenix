@@ -112,6 +112,7 @@ const briefFor = (options: ReturnType<typeof fixture>) =>
 		shell: "builder",
 		issue: artifactUrl("https://example.test/issues/8617")!,
 		ground: {_tag: "Pull", pr: null},
+		ownerComments: {_tag: "None"},
 	});
 
 describe("Codex dispatch against real git and a fake child process", {
@@ -153,6 +154,10 @@ describe("Codex dispatch against real git and a fake child process", {
 		expect(git(options.cwd, "branch", "--show-current")).toBe("main");
 		expect(git(options.cwd, "status", "--porcelain")).toBe("");
 		expect(readFileSync(join(options.cwd, "tracked.txt"), "utf8")).toBe("primary bytes\n");
+		// The codex tree is on the lane's record, so `lane cleanup` can remove it when the run ends.
+		expect(
+			JSON.parse(readFileSync(join(options.root, "8617", "worktrees.jsonl"), "utf8")),
+		).toMatchObject({kind: "handed", worktree: options.worktree, task: "issue"});
 		const usage = readUsageLedger(
 			readFileSync(join(options.cwd, ".fabrika", "spend-ledger.jsonl"), "utf8"),
 		).records.filter((row) => row.kind === "measurement" && row.basis.kind === "response");

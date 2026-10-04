@@ -10,9 +10,8 @@ import {NodeFileSystem} from "@effect/platform-node";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {loadLayeredConfig} from "../config.ts";
-import type {AnyProgram} from "../registry/program.ts";
-import {counterRow, noRendererRow} from "../shell/window/fixtures.ts";
-import {type DeclaredProgram, moduleRendererRefs} from "../shell/window/index.ts";
+import {noDesk} from "../config-fixtures/desk-layers.ts";
+import {ProjectId} from "../project-id.ts";
 import {
 	featuresSource,
 	moduleRenderersSource,
@@ -62,7 +61,11 @@ describe("the feature-flag module", () => {
 
 	const generated = (global: string, project: string) =>
 		Effect.runPromise(
-			loadLayeredConfig({global: fixture(global), project: fixture(project)}).pipe(
+			loadLayeredConfig({
+				desk: noDesk,
+				global: fixture(global),
+				projects: [{id: ProjectId.of("/work/project"), module: fixture(project)}],
+			}).pipe(
 				Effect.map((config) => featuresSource(config.features)),
 				Effect.provide(NodeFileSystem.layer),
 			),
@@ -70,13 +73,13 @@ describe("the feature-flag module", () => {
 
 	it("carries a flag a layer turned on", async () => {
 		expect(await generated("features-on", "two-rows")).toBe(
-			'export default {\n\t"subagentList": true,\n\t"piSubagents": true,\n\t"piKernelTools": false,\n\t"kernelChildren": false,\n\t"windowTitles": false,\n\t"processBoard": false,\n\t"prReviewExample": false,\n};\n',
+			'export default {\n\t"subagentList": true,\n\t"piSubagents": true,\n\t"piKernelTools": false,\n\t"kernelChildren": false,\n\t"windowTitles": false,\n\t"processBoard": false,\n\t"prReviewExample": false,\n\t"processRemove": false,\n};\n',
 		);
 	});
 
 	it("carries a flag a layer turned off", async () => {
 		expect(await generated("features-off", "two-rows")).toBe(
-			'export default {\n\t"subagentList": false,\n\t"piSubagents": true,\n\t"piKernelTools": false,\n\t"kernelChildren": false,\n\t"windowTitles": false,\n\t"processBoard": false,\n\t"prReviewExample": false,\n};\n',
+			'export default {\n\t"subagentList": false,\n\t"piSubagents": true,\n\t"piKernelTools": false,\n\t"kernelChildren": false,\n\t"windowTitles": false,\n\t"processBoard": false,\n\t"prReviewExample": false,\n\t"processRemove": false,\n};\n',
 		);
 	});
 
@@ -85,7 +88,7 @@ describe("the feature-flag module", () => {
 	// operator who stated nothing would get the flag off.
 	it("carries every flag at its default when no layer declares a features block", async () => {
 		expect(await generated("two-rows", "one-counter")).toBe(
-			'export default {\n\t"subagentList": true,\n\t"piSubagents": true,\n\t"piKernelTools": false,\n\t"kernelChildren": false,\n\t"windowTitles": false,\n\t"processBoard": false,\n\t"prReviewExample": false,\n};\n',
+			'export default {\n\t"subagentList": true,\n\t"piSubagents": true,\n\t"piKernelTools": false,\n\t"kernelChildren": false,\n\t"windowTitles": false,\n\t"processBoard": false,\n\t"prReviewExample": false,\n\t"processRemove": false,\n};\n',
 		);
 	});
 
@@ -93,36 +96,6 @@ describe("the feature-flag module", () => {
 		expect(featuresSource({subagentList: true, somethingLater: false} as never)).toBe(
 			'export default {\n\t"subagentList": true,\n\t"somethingLater": false,\n};\n',
 		);
-	});
-});
-
-describe("moduleRendererRefs", () => {
-	const declared = (row: AnyProgram, origin: string): DeclaredProgram => ({row, origin});
-
-	it("lists the module references only, each once, in row order, each with its own config", () => {
-		const module = {...counterRow, renderer: {kind: "module", ref: "@x/one/window"}} as const;
-		const again = {...counterRow, renderer: {kind: "module", ref: "@x/one/window"}} as const;
-		const other = {...counterRow, renderer: {kind: "module", ref: "@x/two/window"}} as const;
-		expect(
-			moduleRendererRefs([
-				declared(counterRow, GLOBAL_CONFIG),
-				declared(noRendererRow, GLOBAL_CONFIG),
-				declared(other, GLOBAL_CONFIG),
-				declared(module, PROJECT_CONFIG),
-				declared(again, PROJECT_CONFIG),
-			]),
-		).toEqual([
-			{ref: "@x/two/window", origin: GLOBAL_CONFIG},
-			{ref: "@x/one/window", origin: PROJECT_CONFIG},
-		]);
-	});
-
-	it("keeps the first row's config when two rows write one specifier, as the table has one seat", () => {
-		const first = {...counterRow, renderer: {kind: "module", ref: "@x/one/window"}} as const;
-		const second = {...counterRow, renderer: {kind: "module", ref: "@x/one/window"}} as const;
-		expect(
-			moduleRendererRefs([declared(first, GLOBAL_CONFIG), declared(second, PROJECT_CONFIG)]),
-		).toEqual([{ref: "@x/one/window", origin: GLOBAL_CONFIG}]);
 	});
 });
 

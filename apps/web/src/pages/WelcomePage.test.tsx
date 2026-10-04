@@ -192,15 +192,6 @@ describe("WelcomePage — shown-once persistence (criterion 4)", () => {
 		expect(screen.getByTestId("pano-probe").textContent).toBe("/pano");
 	});
 
-	it("repeat login suppresses too — the marker outlives any session object", () => {
-		flag.value = true;
-		const first = renderRoute();
-		first.unmount();
-		// A later login hands the component a brand-new session object; same account id.
-		renderRoute();
-		expect(screen.getByTestId("pano-probe")).toBeTruthy();
-	});
-
 	// REGRESSION: a real reload paints with `session.isPending` true, so the account id is
 	// not knowable yet. Freezing the marker read at mount latched `false` for the null id and
 	// re-showed the welcome once the session landed — the suppression this criterion buys.

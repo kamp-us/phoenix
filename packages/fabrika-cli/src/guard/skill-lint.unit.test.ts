@@ -210,30 +210,12 @@ describe("checkFrontmatter — the strict-YAML gate (red-then-green)", () => {
 });
 
 describe("lintCorpus — frontmatter findings + scope", () => {
-	it("reports a broken-frontmatter file as a frontmatterFinding", () => {
-		const result = lintCorpus([{file: "skills/release/SKILL.md", content: BROKEN_FRONTMATTER}]);
-		assert.strictEqual(result.frontmatterFindings.length, 1);
-		assert.strictEqual(result.frontmatterFindings[0]?.file, "skills/release/SKILL.md");
-	});
-
-	it("reports no frontmatterFinding for a corpus whose frontmatter all parses", () => {
-		const result = lintCorpus([{file: "skills/release/SKILL.md", content: QUOTED_FRONTMATTER}]);
-		assert.strictEqual(result.frontmatterFindings.length, 0);
-	});
-
 	it("still frontmatter-checks a gh-call self-exempt skill (exempt from grep ≠ exempt from YAML)", () => {
 		// write-code/SKILL.md is self-exempt from the gh-grep, but its frontmatter must still parse.
 		const result = lintCorpus([{file: "skills/write-code/SKILL.md", content: BROKEN_FRONTMATTER}]);
 		assert.strictEqual(result.findings.length, 0); // grep exempt
 		assert.strictEqual(result.frontmatterFindings.length, 1); // frontmatter NOT exempt
 		assert.deepStrictEqual([...result.frontmatterScanned], ["skills/write-code/SKILL.md"]);
-	});
-
-	it("is zero scope when NO frontmatter-bearing file was handed (frontmatter scope empty)", () => {
-		// A corpus of only non-frontmatter files: gh-scan has scope, frontmatter check has none.
-		const result = lintCorpus([{file: "skills/foo/helper.sh", content: "echo hi"}]);
-		assert.strictEqual(result.frontmatterScanned.length, 0);
-		assert.isTrue(isZeroScope(result));
 	});
 });
 

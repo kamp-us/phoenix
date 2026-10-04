@@ -152,6 +152,7 @@ describe("the `Part of #N` sequence that used to deadlock", () => {
 		[SEARCH, nominatedBy(PR)],
 		[PULL, partOfPull],
 		[ISSUE_READ, issuePayload],
+		[new RegExp(`^GET .*/repos/o/r/issues/${ISSUE}/comments\\?`), served([])],
 	];
 
 	it("proves the DONE, then briefs the reviewer on the same PR — no exit-20 refusal in between", async () => {

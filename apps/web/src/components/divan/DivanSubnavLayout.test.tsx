@@ -45,25 +45,13 @@ describe("DivanSubnavLayout — divan product Subnav zone (#2604)", () => {
 	it("renders one persistent Subnav zone carrying the published section switchers above the Outlet", () => {
 		const {container} = renderZone();
 		expect(container.querySelectorAll(".kp-subnav")).toHaveLength(1);
-		const switchers = container.querySelectorAll(".kp-subnav__filter");
+		const switchers = container.querySelectorAll(
+			".kp-subnav .kp-subnav__filters .kp-subnav__filter",
+		);
 		expect(switchers).toHaveLength(2);
 		expect(screen.getByRole("button", {name: "çaylaklar"})).toBeTruthy();
 		expect(screen.getByRole("button", {name: "raporlar"})).toBeTruthy();
 		expect(screen.getByTestId("divan-leaf")).toBeTruthy();
-	});
-
-	it("renders the switcher through SubnavShell INSIDE the bar's filters row, not a detached sibling (ADR 0182)", () => {
-		const {container} = renderZone();
-		const inBar = container.querySelectorAll(".kp-subnav .kp-subnav__filters .kp-subnav__filter");
-		expect(inBar).toHaveLength(2);
-	});
-
-	it("carries the switchers as taxonomy filters — one taxonomy class, no resting boxed pill (#2586/#2590)", () => {
-		const {container} = renderZone();
-		for (const el of container.querySelectorAll(".kp-subnav__filter")) {
-			expect(el.classList.contains("kp-divan__nav-tab")).toBe(false);
-		}
-		expect(container.querySelector(".kp-divan__nav")).toBeNull();
 	});
 
 	it("reflects the active section via aria-pressed and drives the switch on click", () => {

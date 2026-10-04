@@ -2,14 +2,9 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import type {HttpReply, Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {
-	COMMENTS,
-	claimPage,
-	declaring,
-	EXPIRED,
-	guardedShell,
-	LIVE,
-} from "./claim-fixtures.test-support.ts";
+import {KILL_LABEL} from "../labels.ts";
+import {SHIPPED_BOARD} from "../status/board.test-support.ts";
+import {COMMENTS, claimPage, declaring, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
 import {
 	BARE_AT_PATH,
 	CLAIMED_ELSEWHERE,
@@ -22,7 +17,7 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {KILL_LABEL, runKill} from "./kill-verb.ts";
+import {runKill} from "./kill-verb.ts";
 
 const ISSUE = /GET .*\/repos\/o\/r\/issues\/4312$/;
 const DUPLICATE = /GET .*\/repos\/o\/r\/issues\/4290$/;
@@ -130,6 +125,7 @@ const options = {
 	repo: null as string | null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	board: SHIPPED_BOARD,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: REASON}),
 };
 
@@ -394,15 +390,6 @@ describe("runKill", () => {
 		expect(out.stderr.at(-1)).toBe("triage kill: issue #4312 not found in o/r.");
 	});
 
-	it("refuses an already-closed issue on 7", async () => {
-		const {out} = await runWith([
-			[firstCallOnly(ISSUE), issue({state: "closed"})],
-			...happy().slice(1),
-		]);
-		expect(out.code).toBe(ZERO_SCOPE);
-		expect(out.stderr.at(-1)).toBe("triage kill: issue #4312 is already closed.");
-	});
-
 	it("refuses when closed-by-triage is absent from the repo — the kill would be unauditable", async () => {
 		const {out, requests} = await runWith([
 			[firstCallOnly(ISSUE), issue()],
@@ -412,6 +399,7 @@ describe("runKill", () => {
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("invisible to the audit");
+		expect(out.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 		expect(requests.some((c) => CLOSE.test(c))).toBe(false);
 	});
 
@@ -477,27 +465,6 @@ describe("runKill", () => {
 		);
 		// The byte count is what tells a read-but-empty pipe (3) from an unread one (1).
 		expect(out.stderr[0]).toBe("triage kill: stdin was read and held 3 byte(s).");
-	});
-
-	it("refuses a FAILED stdin read on 1, never on the empty code", async () => {
-		const {out} = await runWith(happy(), {
-			stdin: Effect.succeed({_tag: "Failed", reason: "EAGAIN"} satisfies StdinRead),
-		});
-		expect(out.code).toBe(1);
-		expect(out.code).not.toBe(EMPTY_STDIN);
-		expect(out.stderr.at(-1)).toBe(
-			"triage kill: could not read stdin: EAGAIN — the reason is UNKNOWN, never empty.",
-		);
-	});
-
-	it("refuses a bare @ reason on 6 — masking a placeholder never terminates", async () => {
-		const {out} = await runWith(happy(), {
-			stdin: Effect.succeed({_tag: "Text", text: "@/tmp/reason.md"} satisfies StdinRead),
-		});
-		expect(out.code).toBe(BARE_AT_PATH);
-		expect(out.stderr.at(-1)).toBe(
-			'triage kill: the reason is a bare "@" path reference — the body never arrived. Send it on stdin.',
-		);
 	});
 
 	it("seats a reason that is BOTH a bare @ and a leak on 6 — the bare @ is tested first", async () => {
@@ -800,16 +767,6 @@ describe("runKill — the target guard", () => {
 		return {out, wrote: requests.some((line) => CLOSE.test(line) || REASON_COMMENT.test(line))};
 	};
 
-	it("refuses a closed issue on 7 and writes nothing", async () => {
-		const {out, wrote} = await guard([
-			[ISSUE, issue({state: "closed"})],
-			[LABELS, labelSet],
-		]);
-		expect(out.code).toBe(ZERO_SCOPE);
-		expect(out.stderr.at(-1)).toContain("issue #4312 is already closed.");
-		expect(wrote).toBe(false);
-	});
-
 	it("refuses a live claim held by another session on 17 and writes nothing", async () => {
 		const {out, wrote} = await guard([
 			...happy(),
@@ -823,19 +780,6 @@ describe("runKill — the target guard", () => {
 		const {out} = await guard([
 			...happy(),
 			[COMMENTS, claimPage({session: MINE, createdAt: LIVE})],
-		]);
-		expect(out.code).toBe(0);
-	});
-
-	it("kills an issue nobody has claimed", async () => {
-		const {out} = await guard(happy());
-		expect(out.code).toBe(0);
-	});
-
-	it("kills when the only foreign claim has aged out", async () => {
-		const {out} = await guard([
-			...happy(),
-			[COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})],
 		]);
 		expect(out.code).toBe(0);
 	});

@@ -21,6 +21,7 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {
 	closeNotPlanned,
 	createComment,
@@ -30,7 +31,9 @@ import {
 	resolveRepo,
 } from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {KILL_LABEL} from "../labels.ts";
 import {scanBody} from "../report/leaks.ts";
+import {missingLabelRemedy} from "../status/label-remedy.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
 import {
@@ -47,9 +50,6 @@ import {OPERATOR_ACCOUNTS_ENV, provenanceOf, resolveOperatorAccounts} from "./pr
 import {scannedLine} from "./scope.ts";
 import {guardTarget} from "./target-guard.ts";
 
-/** The label a kill is audited by. Its absence in the repo is a zero-scope refusal, not a create. */
-export const KILL_LABEL = "closed-by-triage";
-
 const SURFACE: AuthoredSurface = {
 	verb: "triage kill",
 	noun: "the reason",
@@ -64,6 +64,8 @@ export interface KillOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The board a missing-label refusal reads its `status bootstrap` remedy against. */
+	readonly board: BoardRead;
 	/** The claim token `triage claim` handed this lane — which lane of the session is asking. */
 	readonly token: string | null;
 	readonly stdin: Effect.Effect<StdinRead>;
@@ -204,7 +206,7 @@ export const runKill = (
 		if (!labels.value.includes(KILL_LABEL)) {
 			return refuse(
 				ZERO_SCOPE,
-				`triage kill: label ${KILL_LABEL} does not exist in ${repo} — refusing a kill that would be invisible to the audit.`,
+				`triage kill: label ${KILL_LABEL} does not exist in ${repo} — refusing a kill that would be invisible to the audit. ${missingLabelRemedy(KILL_LABEL, options.board)}`,
 				[scope, ...emptyBodyNotice],
 			);
 		}

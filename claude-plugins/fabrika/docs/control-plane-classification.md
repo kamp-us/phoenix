@@ -13,23 +13,31 @@ behind a clause records it in its own decision corpus.
    against, so it bounds nothing.
 2. **A verb computes it, from two inputs and nothing else** — the CODEOWNERS file and the diff's
    changed paths. **No agent judgement, and no content regex.** A skill may state the expectation;
-   it never asserts the answer.
+   it never asserts the answer. The classifier is `classify` in
+   [`packages/fabrika-cli/src/ship/codeowners.ts`](../../../packages/fabrika-cli/src/ship/codeowners.ts),
+   and three verbs reach it: `fabrika ship scope` prints the state, `fabrika ship cp-approval`
+   answers whether the approval it implies is discharged, and `fabrika lane prove` reads it to
+   decide whether a §CP advisory on the pull request counts as a verdict.
 3. **The output is three-valued**, and the third value is not a "no":
 
    | value | means |
    |---|---|
-   | `§CP` | a changed path is owned by a control-plane owner |
-   | `not-§CP` | CODEOWNERS was read, it bounds somebody, and no changed path is owned |
-   | `UNKNOWN` | the classification could not be made over the boundary — a file that parses to no usable row, a file proven absent, an empty path set |
+   | `control-plane` | a changed path is owned by a control-plane owner |
+   | `not-control-plane` | CODEOWNERS was read, it bounds somebody, and no changed path is owned |
+   | `unknown` | the classification could not be made over the boundary — a file that parses to no usable row, a file proven absent, or a boundary whose owned row matches every path (`*`, `/*`, `**`, `/**`, `**/*`) |
 
-   **A proven-absent file and a failed read are different facts, and neither is `not-§CP`.**
-   *Proven absent* (a 404) is an empty row set, which classifies as the `UNKNOWN` hold. *Present* is
-   parsed and classified, and a file that reads fine but bounds nobody is the `UNKNOWN` hold too.
-   *Unreadable* is neither, and §4 says what happens to it.
+   **A proven-absent file and a failed read are different facts, and neither is
+   `not-control-plane`.** *Proven absent* (a 404) is an empty row set, which classifies as the
+   `unknown` hold. *Present* is parsed and classified, and a file that reads fine but bounds nobody
+   is the `unknown` hold too. *Unreadable* is neither, and §4 says what happens to it.
 
-4. **`UNKNOWN` is treated as §CP — fail closed.** An unreadable CODEOWNERS is not that `UNKNOWN`
+   `fabrika ship scope` and `fabrika ship cp-approval` exit `7` on a pull request with no changed
+   files, so neither asks the classifier about an empty path set.
+
+4. **`unknown` is treated as §CP — fail closed.** An unreadable CODEOWNERS is not that `unknown`
    either — it is exit `11`, in every repo: a failed read proves nothing, so the verb refuses rather
-   than answering, and no config value waives it. Collapsing `UNKNOWN` → `not-§CP` is the recurring
+   than answering, and no config value waives it. The `unreadableCodeowners` key is declared in the
+   config registry and nothing reads it. Collapsing `unknown` → `not-control-plane` is the recurring
    fail-open defect; a boundary that resolves to zero owned paths stays a red, for the same reason
    every fabrika gate reds on zero scope — a gate that scanned nothing has judged nothing. §CP may
    have no residual gate behind it: under a ruleset with `required_approving_review_count: 0`,
@@ -41,26 +49,32 @@ behind a clause records it in its own decision corpus.
 ## No semantic detection exists — path-set completeness is a maintenance obligation
 
 Nothing in fabrika inspects what a change *says*. A guard-relaxing edit in a file no CODEOWNERS row
-owns classifies `not-§CP`, correctly per this model and by design.
+owns classifies `not-control-plane`, correctly per this model and by design.
 
 > **Obligation.** When a surface becomes governance-bearing, its path is added to CODEOWNERS in the
 > same change that creates it. **Owner: the control-plane team** — CODEOWNERS lives under
 > `/.github/`, which that team already owns, so every edit to the boundary is itself a §CP change
 > reviewed by the people accountable for it.
 
-The tempting alternative — classifying by what a change *says* rather than where it lands — is not
-built and is not wanted: a content probe is a second answer to a merge-gating question, and two
-answers that can disagree is exactly what clause 1 forbids. The case it would cover resolves by
-keeping the path set complete instead.
+No content probe exists: classifying by what a change *says* would be a second answer to a
+merge-gating question, which clause 1 rules out.
+
+**Source still carries a path regex, and clause 1 rules against it.**
+[`packages/fabrika-cli/src/guard/control-plane-re.ts`](../../../packages/fabrika-cli/src/guard/control-plane-re.ts)
+names the control-plane paths a second time, and `fabrika guard codeowners-cp check` reds when a
+path matching it has no covering CODEOWNERS row
+([guard contract](guard-contract.md#codeowners-cp-check)). That regex is a second source of the path
+set, and the guard has work only while both lists exist. The classifier reads CODEOWNERS and never
+the regex.
 
 ### A decision corpus may be deliberately left uncovered
 
 A repo may choose to give its decision-record directory no CODEOWNERS row, so that an
-entirely-decision-record change set classifies `not-§CP` and owes no code-owner review. Where a repo
+entirely-decision-record change set classifies `not-control-plane` and owes no code-owner review. Where a repo
 makes that choice, four things hold:
 
 - **A mixed PR is unaffected.** A change set touching the corpus alongside a team-owned path is
-  `§CP` by that other path.
+  `control-plane` by that other path.
 - **The machine gate stays.** The corpus stays a governed root in
   [`packages/fabrika-cli/src/review/classes.ts`](../../../packages/fabrika-cli/src/review/classes.ts),
   so such a PR still owes a current-head `governance` verdict before `ship gate` is satisfied — at
@@ -68,7 +82,7 @@ makes that choice, four things hold:
 - **The sweep that stays is machine-run**: the citation-independent contradiction sweep run by
   [`governance`](../skills/governance/SKILL.md) (its corpus half, `§2`).
 - **The visibility half**: a periodic, non-blocking readout of landed decision records, ranked for
-  consequence and tension by the governance-corpus-integrity skill and surfaced on the front door.
+  consequence and tension by the `governance` skill and surfaced on the front door.
 
 That trade is a machine gate plus after-the-fact visibility standing in for a human approval. It
 removes a human approval, not a gate — a repo that drops the machine half as well has removed the
@@ -76,8 +90,8 @@ review, not relocated it.
 
 ## Who reads this
 
-- **Authoring sessions and briefs** naming `cp-classify`, `control-plane-paths`, `cp-cardinality` or
-  `codeowners-cp` — this is the contract those verbs implement; the interface they meet is
-  [the CLI interface convention](cli-interface-convention.md).
+- **Authoring sessions and briefs** naming `fabrika ship scope`, `fabrika ship cp-approval`,
+  `fabrika lane prove` or `fabrika guard codeowners-cp check` — this is the contract those verbs
+  implement; the interface they meet is [the CLI interface convention](interface-convention.md).
 - **Skills that mention §CP.** State the expectation; never compute a second answer to a
   merge-gating question.

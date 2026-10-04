@@ -4,7 +4,7 @@
  *
  * Two disciplines, both scars:
  *
- * - **A branch is cut off `FETCH_HEAD`, never off a local ref.** A checkout's `origin/main` can
+ * - **A branch is cut off `FETCH_HEAD`, never off a local ref.** A checkout's remote-tracking trunk can
  *   predate the commit the lane needs, and a branch cut off it misses work that is already on the
  *   base. Every create here fetches first and cuts off what was just fetched. {@link fetchBase}
  *   takes a {@link BaseRef} rather than a ref string so the one spelling that cannot be fetched —
@@ -27,6 +27,7 @@ import {
 	type Shell,
 	splitRemoteRef,
 } from "../io/git.ts";
+import type {Released} from "./retire.ts";
 
 /** The tree's HEAD commit. */
 export const headSha: Shell<Attempt<string>> = Effect.gen(function* () {
@@ -278,8 +279,9 @@ export const pruneWorktrees: Shell<Attempt<void>> = Effect.gen(function* () {
  * a dead record permanent. Fourteen of this clone's registrations were in exactly that state, locked
  * by a harness process that died in August with their directories long gone.
  *
- * **Only a caller that has proved the directory absent may run this** — that proof is the whole
- * license, and `../build/reap.ts`'s `Presence` is where it is made.
+ * **Only two proofs license this.** A caller that has proved the directory absent, which
+ * `../build/reap.ts`'s `Presence` makes, or {@link removeWorktree} holding a `build retire`
+ * `Release` verdict for a tree that still stands.
  */
 export const unlockWorktree = (path: string): Shell<Attempt<void>> =>
 	Effect.gen(function* () {
@@ -356,16 +358,28 @@ export const salvageWorktree = (path: string, message: string): Shell<Attempt<vo
  * Remove one worktree and its registration — **never with `--force`**, which is banned on every
  * path for every tree.
  *
- * A remove that refuses after the salvage means something in that tree is unaccounted for, and the
- * caller reports that rather than overriding it. The recurring instance measured against git 2.40.1
- * is a *locked* tree, which answers `cannot remove a locked working tree` however clean it is; the
- * agent harness locks the trees it registers, so that refusal is the one a caller must name in full.
+ * `released` is the one way a lock comes off first: a `build retire` `Release` verdict, passed for a
+ * tree git reports locked. The harness locks the trees it registers, and git 2.40.1 answers
+ * `cannot remove a locked working tree` to a plain remove however clean the tree is. The lock is a
+ * harness artifact, not content, so releasing it spends no judgment the verdict has not already
+ * made. Without a verdict the lock stays, and git's refusal is the answer.
+ *
+ * A remove that refuses after the salvage and the unlock means something in that tree is
+ * unaccounted for, and the caller reports that rather than overriding it.
  *
  * **The branch survives** — removal frees the checkout, it does not delete the ref. That is the
  * whole point: the repair lane refused at `branch --resume-lane` needs exactly that branch.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/6881#issuecomment-5519864099
  */
-export const removeWorktree = (path: string): Shell<Attempt<void>> =>
+export const removeWorktree = (path: string, released?: Released): Shell<Attempt<void>> =>
 	Effect.gen(function* () {
+		if (released !== undefined) {
+			const unlocked = yield* unlockWorktree(path);
+			if (unlocked._tag === "Failure") {
+				return fail(`git worktree unlock refused, so nothing was removed: ${unlocked.reason}`);
+			}
+		}
 		const r = yield* execCapture("git", ["worktree", "remove", path]);
 		return r.ok ? ok<void>(undefined) : fail(r.reason);
 	});

@@ -8,6 +8,7 @@
 
 import {Effect, type FileSystem, type Path} from "effect";
 import {CONFIG_PATH} from "./document.ts";
+import {reviewFilterExclusionsKey, reviewFilterUnexcludeKey} from "./keys/filter-exclusions.ts";
 import {governedRootsKey} from "./keys/governed-roots.ts";
 import {
 	cycleDocKey,
@@ -16,6 +17,7 @@ import {
 	type PathValue,
 	roadmapFileKey,
 } from "./keys/paths.ts";
+import {type NoPreviewRule, reviewUiKey} from "./keys/review-ui.ts";
 import {
 	NO_UI_SURFACES,
 	prefixesOf,
@@ -35,12 +37,12 @@ export const readGovernedRoots = (
 	readKey(cwd, governedRootsKey);
 
 /**
- * The governed roots, or the one refusal sentence every reader of them prints.
+ * The governed roots in the checkout a verb stands in, or the one refusal sentence its readers print.
  *
- * Seven verbs ask this question and each owns a different exit code, so the code stays theirs and
- * only the sentence is shared. `consequence` is the clause that names what the caller cannot answer
- * without the set — the half a reader actually needs, and the half that would drift if seven verbs
- * each wrote their own.
+ * `review preview` over a diff file reads this, since that subject names no commit. Every verb that
+ * derives a PR's governance requirement over a bound head reads the PR's own roots at that head and
+ * its merge base instead (`../review/class-config.ts`). `consequence` is the clause that names what
+ * the caller cannot answer without the set; the exit code stays the caller's.
  */
 export const governedRootsOr = (
 	verb: string,
@@ -141,7 +143,7 @@ export const decisionsDirOr = (
 				};
 	});
 
-/** The roadmap declaration the scope fence and `triage homes` read. */
+/** The roadmap declaration `campaign` and `triage homes` read. */
 export const readRoadmapFile = (
 	cwd: string,
 ): Effect.Effect<Read<string>, never, FileSystem.FileSystem | Path.Path> =>
@@ -194,13 +196,14 @@ export const readUiCapture = (
 	readKey(cwd, uiCaptureKey);
 
 /**
- * The declared UI surfaces, or the one refusal sentence every reader of them prints.
+ * The declared UI surfaces in the checkout a verb stands in, or the one refusal sentence every
+ * reader of them prints.
  *
- * The single reader every `ui`-class derivation goes through — the two scope verbs, `heal-ci
- * diagnose`, both `lane prove` sites and `review-ui route` — so the prefixes that raise the class and
- * the apps `ui render` boots can never be two different lists. `prefixes` rides beside the
- * rows because a class derivation asks for exactly that, and deriving it at each call site is the
- * second copy this key exists to remove.
+ * The reader for the verbs that act on the local tree by design — `ui render`, `ui evidence`,
+ * `ui manifest`, `review-ui render` — and for `review preview` over a diff file, which names no
+ * commit. A verb deriving a PR's classes over a bound head reads the PR's own config at that head
+ * and its merge base instead (`../review/class-config.ts`), so the checkout it stands in cannot
+ * change its answer.
  */
 export type UiSurfacesRead =
 	| {
@@ -249,5 +252,103 @@ export const uiCaptureOr = (
 				},
 	);
 
+export type NoPreviewRulesRead =
+	| {
+			readonly _tag: "Rules";
+			readonly rules: ReadonlyArray<NoPreviewRule>;
+			readonly note: string;
+	  }
+	| {readonly _tag: "Refused"; readonly message: string};
+
+/** The `reviewUi.whenNoPreview` rules, or the refusal their readers print. */
+export const noPreviewRulesOr = (
+	verb: string,
+	cwd: string,
+	consequence: string,
+): Effect.Effect<NoPreviewRulesRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.map(readKey(cwd, reviewUiKey), (read) =>
+		read._tag === "Value"
+			? {_tag: "Rules" as const, rules: read.value.whenNoPreview, note: read.note}
+			: {
+					_tag: "Refused" as const,
+					message: `${verb}: ${CONFIG_PATH} is refused — ${read.reason.replace(/\.$/, "")}, so ${consequence}`,
+				},
+	);
+
 /** The one sentence a verb prints when the declared list is empty — stated, never silent. */
 export const noUiSurfaces = (verb: string): string => `${verb}: ${NO_UI_SURFACES}.`;
+
+/**
+ * The two exclusion-set keys a filtering read assembles its set from, read the same way their
+ * sibling key readers read: the value, the sentence naming where it came from, or the one refusal
+ * sentence every filtering verb prints.
+ *
+ * One shared mapping because the two keys are the same question about two different arms — extend
+ * the set, or drop a default from it — and a third copy of the four-arm collapse is the drift the
+ * sibling accessors exist to prevent.
+ */
+const stringListOr = (
+	verb: string,
+	consequence: string,
+	read: Read<ReadonlyArray<string>>,
+):
+	| {readonly _tag: "List"; readonly values: ReadonlyArray<string>; readonly note: string}
+	| {readonly _tag: "Refused"; readonly message: string} =>
+	read._tag === "Value"
+		? {_tag: "List", values: read.value, note: read.note}
+		: {
+				_tag: "Refused",
+				message: `${verb}: ${CONFIG_PATH} is refused — ${read.reason.replace(/\.$/, "")}, so ${consequence}`,
+			};
+
+/** The globs a repo adds to the review diff filter's exclusion set. */
+export const readReviewFilterExclusions = (
+	cwd: string,
+): Effect.Effect<Read<ReadonlyArray<string>>, never, FileSystem.FileSystem | Path.Path> =>
+	readKey(cwd, reviewFilterExclusionsKey);
+
+export type ReviewFilterExclusionsRead =
+	| {
+			readonly _tag: "Exclusions";
+			readonly exclusions: ReadonlyArray<string>;
+			readonly note: string;
+	  }
+	| {readonly _tag: "Refused"; readonly message: string};
+
+export const reviewFilterExclusionsOr = (
+	verb: string,
+	cwd: string,
+	consequence: string,
+): Effect.Effect<ReviewFilterExclusionsRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.map(readReviewFilterExclusions(cwd), (read) => {
+		const mapped = stringListOr(verb, consequence, read);
+		return mapped._tag === "Refused"
+			? mapped
+			: {_tag: "Exclusions" as const, exclusions: mapped.values, note: mapped.note};
+	});
+
+/** The shipped defaults a repo removes from the review diff filter's exclusion set. */
+export const readReviewFilterUnexclude = (
+	cwd: string,
+): Effect.Effect<Read<ReadonlyArray<string>>, never, FileSystem.FileSystem | Path.Path> =>
+	readKey(cwd, reviewFilterUnexcludeKey);
+
+export type ReviewFilterUnexcludeRead =
+	| {
+			readonly _tag: "Unexclude";
+			readonly unexclude: ReadonlyArray<string>;
+			readonly note: string;
+	  }
+	| {readonly _tag: "Refused"; readonly message: string};
+
+export const reviewFilterUnexcludeOr = (
+	verb: string,
+	cwd: string,
+	consequence: string,
+): Effect.Effect<ReviewFilterUnexcludeRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.map(readReviewFilterUnexclude(cwd), (read) => {
+		const mapped = stringListOr(verb, consequence, read);
+		return mapped._tag === "Refused"
+			? mapped
+			: {_tag: "Unexclude" as const, unexclude: mapped.values, note: mapped.note};
+	});

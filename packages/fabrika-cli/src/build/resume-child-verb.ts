@@ -47,6 +47,13 @@ export interface ResumeChildOptions {
 	 * the one sanctioned entry, because the arm its own `30` refusal names has no way in.
 	 */
 	readonly cites: string | null;
+	/**
+	 * The epic lane whose ledger records the child's integrate `FAIL` — the brief's `lane` and
+	 * `root`. Forwarded unchanged to the claim step, the only step that reads it: an integrate `FAIL`
+	 * writes no verdict, so a child that passed review and failed to integrate has no other record.
+	 */
+	readonly lane: string | null;
+	readonly laneRoot: string | null;
 	readonly repo: string | null;
 	/** Where to look for `ROADMAP.md` — the checkout this run stands in. */
 	readonly cwd: string;
@@ -102,7 +109,6 @@ export const runResumeChild = (
 			number: issue,
 			issue: null,
 			repo,
-			cwd: options.cwd,
 			env,
 			uuid: options.uuid,
 			at: options.at,
@@ -112,6 +118,8 @@ export const runResumeChild = (
 			cites: options.cites,
 			token: options.token,
 			resume: true,
+			lane: options.lane,
+			laneRoot: options.laneRoot,
 		});
 		if (claimed.code !== 0) return stopped("claim", claimed, []);
 		const won = field(claimed.stdout, "token");
@@ -122,6 +130,9 @@ export const runResumeChild = (
 				claimed.stderr,
 			);
 		}
+		// Relayed rather than re-read: the claim step is what proved it, and a repair of an integrate
+		// FAIL has to know which exit and which assembly head it is fixing.
+		const integrate = field(claimed.stdout, "integrate");
 		const notes = [...claimed.stderr];
 		// Every refusal past this point leaves a marker on the board, and a lane that cannot say how to
 		// retract it is how a child ends up claimed by nobody who is still running. The re-run carries
@@ -170,8 +181,23 @@ export const runResumeChild = (
 			);
 		}
 
-		return answer(JSON.stringify({answer: "resumed", issue, token: won, branch, root, claim}), [
-			...notes,
-			`${VERB}: #${issue}'s repair lane is open on ${branch}, proven against the claim it carries — read the findings with "fabrika build verdicts --issue ${issue}", then fix, "build check" and "build commit" on this branch. A child opens no PR: it ends on the build-deviations comment and BUILT-NO-PR.`,
-		]);
+		return answer(
+			JSON.stringify({
+				answer: "resumed",
+				issue,
+				token: won,
+				branch,
+				root,
+				claim,
+				...(integrate === null ? {} : {integrate}),
+			}),
+			[
+				...notes,
+				`${VERB}: #${issue}'s repair lane is open on ${branch}, proven against the claim it carries — ${
+					integrate === null
+						? `read the findings with "fabrika build verdicts --issue ${issue}"`
+						: "the finding is the integrate FAIL the claim step named: make this range hold on that assembly head"
+				}, then fix, "build check" and "build commit" on this branch. A child opens no PR: it ends on the build-deviations comment and BUILT-NO-PR.`,
+			],
+		);
 	});

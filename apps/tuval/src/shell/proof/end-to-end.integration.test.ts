@@ -17,18 +17,19 @@ import {request} from "node:http";
 import {tmpdir} from "node:os";
 import {dirname, join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import type {ProcessView} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {defaultPrefixTable, type Key, parse} from "@kampus/tuval-ui/keys";
 import {Effect, Queue, Result, Schema, Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {start} from "../../boot.ts";
 import {counterNode, demoGraph, demoPrograms} from "../../demo/index.ts";
 import {logId} from "../../demo/log.ts";
 import {LAUNCH_ENDPOINT, servePage} from "../../page/dev-server.ts";
-import {ProcessId} from "../../process/process.ts";
 import {readCommandLine} from "../commands/index.ts";
 import {activeWorkspace, type ShellMsg, type ShellState, windowIds} from "../core/index.ts";
 import {wiredShellEffects} from "../host/effects.ts";
 import {serveDesk} from "../host/serve.ts";
-import {defaultPrefixTable, type Key, parse} from "../keys/index.ts";
 import {windows} from "../layout/index.ts";
 import {
 	mountPicker,
@@ -39,7 +40,6 @@ import {
 } from "../picker/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../program.ts";
 import {attach} from "../transport/client.ts";
-import type {ProcessView} from "../window/index.ts";
 
 const TIMEOUT = 90_000;
 
@@ -218,27 +218,45 @@ const attachDesk = Effect.fn("proof.attachDesk")(function* (url: string) {
 
 /**
  * The picker's own answer to a key, turned into the Msg the browser surface would dispatch
- * (`../ui/PickerView.tsx` does exactly this switch). Driving the real `pickerKey` is what makes
- * "opened from the picker" a claim about the picker rather than about a hand-written Msg.
+ * (`../ui/PickerView.tsx` does exactly this switch), beside the view the next key reads. Driving the
+ * real `pickerKey` and carrying its view forward is what makes "opened from the picker" a claim
+ * about the picker's cursor rather than about a hand-written one.
  */
 const pickerPress = (
 	windowId: string,
 	entries: PickerEntries,
 	view: PickerView,
 	spelling: string,
-): ShellMsg | null => {
+): {readonly msg: ShellMsg | null; readonly view: PickerView} => {
 	const answer = pickerKey(windowId as never, entries, view, spelling);
 	switch (answer._tag) {
 		case "Moved":
 		case "Cleared":
 		case "Filtering":
-			return {type: "window.setView", windowId: windowId as never, view: answer.view};
+		case "Stepped":
+			return {
+				msg: {type: "window.setView", windowId: windowId as never, view: answer.view},
+				view: answer.view,
+			};
 		case "Chose":
-			return answer.intent._tag === "OpenProgram"
-				? {type: "window.open", windowId: windowId as never, programId: answer.intent.programId}
-				: {type: "window.attach", windowId: windowId as never, processId: answer.intent.processId};
+			return {
+				msg:
+					answer.intent._tag === "OpenProgram"
+						? {type: "window.open", windowId: windowId as never, programId: answer.intent.programId}
+						: {
+								type: "window.attach",
+								windowId: windowId as never,
+								processId: answer.intent.processId,
+							},
+				view,
+			};
+		case "Removing":
+			return {
+				msg: {type: "process.remove", windowId: windowId as never, processId: answer.processId},
+				view,
+			};
 		case "Ignored":
-			return null;
+			return {msg: null, view};
 	}
 };
 
@@ -332,13 +350,17 @@ describe("the Tuval shell, end to end", () => {
 				);
 				let view = mountPicker();
 				for (let step = 0; step < logAt; step++) {
-					const msg = pickerPress(left, app.entries, view, "j");
-					assert.isNotNull(msg);
-					view = {...view, cursor: step + 1, refusal: null};
-					yield* desk.send(msg as ShellMsg);
+					const moved = pickerPress(left, app.entries, view, "j");
+					assert.isNotNull(moved.msg);
+					view = moved.view;
+					yield* desk.send(moved.msg as ShellMsg);
 				}
-				const chosen = pickerPress(left, app.entries, view, "<enter>");
-				assert.isNotNull(chosen);
+				const chosen = pickerPress(left, app.entries, view, "<enter>").msg;
+				assert.deepStrictEqual(chosen, {
+					type: "window.open",
+					windowId: left as never,
+					programId: logId,
+				});
 				yield* desk.send(chosen as ShellMsg);
 				const opened = yield* deskWhere(
 					desk.seen,

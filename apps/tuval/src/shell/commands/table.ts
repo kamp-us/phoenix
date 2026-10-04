@@ -16,13 +16,13 @@
  * lives on these two rows so nothing downstream has to know about it.
  */
 
+import {WindowId} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import type {CommandName} from "@kampus/tuval-ui/keys";
+import {FOCUS_LIST_KEY} from "@kampus/tuval-ui/keys";
 import {Schema} from "effect";
 import type {ShellMsg} from "../core/machine.ts";
-import {FOCUS_LIST_KEY} from "../keys/syntax.ts";
-import type {CommandName} from "../keys/table.ts";
 import type {Direction} from "../layout/index.ts";
 import {type PickerCommand, pickerCommands} from "../picker/intent.ts";
-import {WindowId} from "../window/index.ts";
 import {
 	type AnyShellCommand,
 	commandName,
@@ -53,19 +53,15 @@ const pickerRow = (command: PickerCommand): AnyShellCommand => {
 		return defineCommand({
 			path,
 			describe: command.summary,
-			// `session` and `cwd` are one argument in two halves, and both or neither: an open naming
-			// a session is the first send on a row picked out of the session list, and a session id
-			// with no folder is not something a backend can find (epic #8070, ruling 2). A typed
-			// command line never fills them — the caller is the session window.
 			params: Schema.Struct({
 				program: Schema.NonEmptyString,
-				session: Schema.optionalKey(Schema.NonEmptyString),
 				cwd: Schema.optionalKey(Schema.NonEmptyString),
+				session: Schema.optionalKey(Schema.NonEmptyString),
 			}),
 			toMsg: ({program, session, cwd}) => ({
 				type: "window.open",
 				programId: program,
-				...(session === undefined || cwd === undefined ? {} : {session: {cwd, resume: session}}),
+				...(cwd === undefined ? {} : {session: {cwd, resume: session ?? null}}),
 			}),
 		});
 	}
@@ -205,17 +201,43 @@ const boardCommands: ReadonlyArray<AnyShellCommand> = [
 	}),
 ];
 
+/**
+ * The desk's own removal verb (#9447). A command-table row rather than a `commands/core/` spell:
+ * `process spawn` / `send` / `read` are the generic agent tools, and this is a desk verb the shell
+ * owns, beside `workspace:remove` and `window:close`. It takes the process id because a key sequence
+ * has nowhere to carry one, so the command line is the route that names a process the cursor is not
+ * on.
+ */
+const removeCommands: ReadonlyArray<AnyShellCommand> = [
+	defineCommand({
+		path: ["process", "remove"],
+		describe:
+			"Forget this process and its descendants durably and stop them, so a restart does not bring them back.",
+		params: Schema.Struct({process: Schema.NonEmptyString}),
+		toMsg: ({process}) => ({type: "process.remove", processId: process}),
+	}),
+];
+
 /** The flags a command row can be gated on — the shell's own read of `../../features.ts`. */
 export interface ShellCommandFeatures {
 	readonly processBoard: boolean;
+	readonly processRemove: boolean;
 }
 
 /** Every flag off: the table a caller that has resolved no flags is entitled to. */
-export const noShellCommandFeatures: ShellCommandFeatures = {processBoard: false};
+export const noShellCommandFeatures: ShellCommandFeatures = {
+	processBoard: false,
+	processRemove: false,
+};
 
 /** The rows this desk holds: the ungated table, plus whatever each flag turned on. */
-export const shellCommandsFor = (features: ShellCommandFeatures): ReadonlyArray<AnyShellCommand> =>
-	features.processBoard ? [...shellCommands, ...boardCommands] : shellCommands;
+export const shellCommandsFor = (
+	features: ShellCommandFeatures,
+): ReadonlyArray<AnyShellCommand> => [
+	...shellCommands,
+	...(features.processBoard ? boardCommands : []),
+	...(features.processRemove ? removeCommands : []),
+];
 
 /**
  * One table's lookups. Built per row set rather than once per module because the set is now a

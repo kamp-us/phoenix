@@ -90,6 +90,7 @@ describe("runOpen — the checks before it mints", () => {
 		const out = await run([[LABELS, served(labelList("status:needs-triage"))]]);
 		expect(out.code).toBe(NO_TARGET);
 		expect(out.stderr.join("\n")).toContain("no later run could find");
+		expect(out.stderr.join("\n")).toContain("fabrika status bootstrap issue-shape-markers");
 	});
 
 	it("exits 11 when the map search fails — nothing was written and charting is UNKNOWN", async () => {

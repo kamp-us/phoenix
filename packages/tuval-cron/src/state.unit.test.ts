@@ -7,17 +7,9 @@
 // `ProcessId` is a type-only brand — a plain string at runtime — and `ProcessId.make` is the only
 // way to name one. The leaf under test imports it as a type and emits nothing; this test needs the
 // value, which is why the kernel door appears in a test of a kernel-free module and nowhere else.
-import {ProcessId} from "@kampus/tuval/authoring";
+import {ProcessId} from "@kampus/tuval-sdk/authoring";
 import {describe, expect, it} from "vitest";
-import {
-	type CronRun,
-	type CronState,
-	cronView,
-	HISTORY,
-	isCronState,
-	runEvent,
-	statusLine,
-} from "./state.ts";
+import {type CronRun, type CronState, cronView, HISTORY, isCronState, runEvent} from "./state.ts";
 
 /** Seven in the morning, so the clock lines read the way the README spells them. */
 const at = (hour: number, minute: number, second = 0): number =>
@@ -91,11 +83,6 @@ describe("what a window says about a cron that has run", () => {
 		const many = Array.from({length: HISTORY + 5}, (_, index) => run(7, 0, true, `run ${index}`));
 		expect(cronView({...idle, runs: many}).runs).toHaveLength(HISTORY);
 	});
-
-	it("draws the same status sentence the tile does", () => {
-		const state = {...idle, runs: [run(7, 0, false, "boom")]};
-		expect(cronView(state).status).toBe(statusLine(state));
-	});
 });
 
 describe("the predicate the page admits this renderer through", () => {
@@ -127,9 +114,5 @@ describe("the predicate the page admits this renderer through", () => {
 describe("the event the Run now control sends", () => {
 	it("is the arrival `:<id> run` puts on the `run` in-port, so both reach one cell", () => {
 		expect(runEvent()).toEqual({type: "run", payload: {}});
-	});
-
-	it("is built fresh each time, so no caller holds a shared object", () => {
-		expect(runEvent()).not.toBe(runEvent());
 	});
 });

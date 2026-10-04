@@ -1,7 +1,7 @@
 ---
 id: 0384
 title: A retired lane does not re-open over its own work, and a spent budget returns only through a recorded grant
-status: accepted
+status: amended-in-part by [0403](0403-board-seated-lane-boot.md)
 date: 2026-09-10
 tags: [fabrika, lane, pipeline, governance]
 ---

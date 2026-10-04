@@ -27,7 +27,7 @@ import {
 	refusalText,
 	restCall,
 } from "./gh-api.ts";
-import {type Attempt, fail, ok, type Shell} from "./git.ts";
+import {type Attempt, fail, isObjectName, ok, type Shell} from "./git.ts";
 import type {Existence} from "./issues.ts";
 import {isRecord} from "./json.ts";
 
@@ -691,6 +691,28 @@ export const compareStanding = (
 						);
 					}
 					return ok({status: body.status as CompareStatus, behindBy: body.behind_by});
+				}),
+			),
+		),
+	);
+
+/**
+ * The commit `head` left `base` at, as the platform computes it — the base its `pulls/<n>/files`
+ * list is diffed from.
+ */
+export const mergeBaseOf = (repo: string, base: string, head: string): Shell<Attempt<string>> =>
+	authed((token) =>
+		restCall(token, {
+			method: "GET",
+			path: `repos/${repo}/compare/${base}...${head}?per_page=1`,
+		}).pipe(
+			Effect.map((outcome) =>
+				attemptOf(outcome, (body) => {
+					const commit = isRecord(body) ? body.merge_base_commit : undefined;
+					const sha = isRecord(commit) ? commit.sha : undefined;
+					return typeof sha === "string" && isObjectName(sha)
+						? ok(sha)
+						: fail("GitHub answered 200 but its comparison names no merge base commit");
 				}),
 			),
 		),

@@ -3,8 +3,6 @@
  * so a test is a state in, a state and a Cmd list out.
  */
 
-import {describe, expect, it} from "vitest";
-import {commandIndexFor} from "../commands/index.ts";
 import {
 	CommandName,
 	defaultPrefixTable,
@@ -12,7 +10,9 @@ import {
 	type Key,
 	type PrefixTable,
 	prefixTableFor,
-} from "../keys/index.ts";
+} from "@kampus/tuval-ui/keys";
+import {describe, expect, it} from "vitest";
+import {commandIndexFor} from "../commands/index.ts";
 import {findWindow, windows} from "../layout/index.ts";
 import {mountPicker} from "../picker/view.ts";
 import {applyMsg, cellsFor, initialState, type ShellCmd, type ShellMsg} from "./machine.ts";
@@ -45,35 +45,7 @@ const press = (key: string, modifiers: Partial<Key> = {}): ShellMsg => ({
 
 const prefix = press("b", {ctrlKey: true});
 
-describe("shell core: the reducer's cells", () => {
-	it("has one cell per Msg, and the list is exactly the shell's vocabulary", () => {
-		expect(Object.keys(cellsFor(table)).sort()).toEqual([
-			"command.open",
-			"config.reload",
-			"desk.board.close",
-			"desk.board.toggle",
-			"desk.inspector.toggle",
-			"keys.press",
-			"layout.resize",
-			"layout.zoom",
-			"prefix.repeatLapsed",
-			"window.attach",
-			"window.bind",
-			"window.close",
-			"window.focus",
-			"window.focusDirection",
-			"window.forwardKey",
-			"window.open",
-			"window.setView",
-			"window.split",
-			"window.unbind",
-			"workspace.activate",
-			"workspace.create",
-			"workspace.remove",
-			"workspace.step",
-		]);
-	});
-
+describe("shell core: the initial state", () => {
 	it("starts on one workspace holding one empty focused window", () => {
 		const state = initialState();
 		const workspace = active(state);
@@ -95,8 +67,12 @@ describe("shell core: the desk inspector", () => {
 		expect(cmds).toEqual([]);
 	});
 
-	it("holds the inspector open across a workspace switch, a create and a remove", () => {
-		const opened = fold(initialState(), {type: "desk.inspector.toggle"});
+	it("holds the desk-level surfaces open across a workspace switch, a create and a remove", () => {
+		const opened = fold(
+			initialState(),
+			{type: "desk.inspector.toggle"},
+			{type: "desk.board.toggle"},
+		);
 		const first = opened.activeWorkspace;
 		const created = fold(opened, {type: "workspace.create"});
 		const switched = fold(created, {type: "workspace.activate", workspaceId: first});
@@ -104,18 +80,9 @@ describe("shell core: the desk inspector", () => {
 		const removed = fold(stepped, {type: "workspace.remove"});
 
 		expect(created.activeWorkspace).not.toBe(first);
-		expect([
-			created.desk.inspectorOpen,
-			switched.desk.inspectorOpen,
-			stepped.desk.inspectorOpen,
-			removed.desk.inspectorOpen,
-		]).toEqual([true, true, true, true]);
-	});
-
-	it("survives a checkpoint round trip, like the rest of the shell's state", () => {
-		const opened = fold(initialState(), {type: "desk.inspector.toggle"});
-		const restored = JSON.parse(JSON.stringify(opened)) as ShellState;
-		expect(restored.desk).toEqual({inspectorOpen: true, boardOpen: false});
+		expect([created.desk, switched.desk, stepped.desk, removed.desk]).toEqual(
+			Array(4).fill({inspectorOpen: true, boardOpen: true}),
+		);
 	});
 });
 
@@ -125,7 +92,7 @@ describe("shell core: the desk inspector", () => {
  */
 describe("shell core: the process board", () => {
 	const gated = prefixTableFor(defaultPrefixTable, {processBoard: true});
-	const gatedCells = cellsFor(gated, commandIndexFor({processBoard: true}));
+	const gatedCells = cellsFor(gated, commandIndexFor({processBoard: true, processRemove: false}));
 	const run = (state: ShellState, ...msgs: readonly ShellMsg[]): ShellState =>
 		msgs.reduce(
 			(acc, msg) =>
@@ -155,12 +122,6 @@ describe("shell core: the process board", () => {
 		const closed = run(opened, prefix, press("p"));
 
 		expect([opened.desk.boardOpen, closed.desk.boardOpen]).toEqual([true, false]);
-	});
-
-	it("holds its state across a workspace switch, like every desk-level surface", () => {
-		const opened = run(initialState(), {type: "desk.board.toggle"});
-		const created = run(opened, {type: "workspace.create"});
-		expect(created.desk.boardOpen).toBe(true);
 	});
 
 	it("makes `p` an unbound sequence when the flag is off, and opens nothing", () => {
@@ -325,6 +286,33 @@ describe("shell core: windows", () => {
 		expect(cmds).toEqual([{type: "attachProcess", windowId: opened, processId: "p-9"}]);
 		// The parent keeps its own window and its own view slot.
 		expect(after.views[parent]).toEqual({scroll: 7});
+	});
+
+	// #9447. Two routes reach this cell — the `d` key and `process:remove <id>` — and both arrive as
+	// this one Msg, so the cell is the whole of what the desk does about a removal.
+	it("process.remove asks for the removal over the focused window and its slot", () => {
+		const state = fold(initialState(), {type: "window.setView", view: {cursor: 2, refusal: null}});
+		const target = active(state).focused;
+
+		const [after, cmds] = apply(state, {type: "process.remove", processId: "p-9"});
+
+		// Nothing about the desk changes: the row leaves the picker when the process leaves the table.
+		expect(after).toBe(state);
+		expect(cmds).toEqual([
+			{
+				type: "removeProcess",
+				windowId: target,
+				processId: "p-9",
+				view: {cursor: 2, refusal: null},
+			},
+		]);
+	});
+
+	it("process.remove refuses a window this workspace does not hold", () => {
+		const state = initialState();
+		expect(
+			apply(state, {type: "process.remove", processId: "p-9", windowId: "window-nope"}),
+		).toEqual([state, []]);
 	});
 
 	it("window.attach refuses a window this workspace does not hold, split or not", () => {
@@ -602,7 +590,7 @@ describe("shell core: keys", () => {
 		expect(cmds).toEqual([]);
 	});
 
-	it("a partial sequence keeps the prefix armed with what has been typed", () => {
+	it("a bare modifier press leaves the prefix armed", () => {
 		const armed = fold(initialState(), prefix);
 		const [after, cmds] = apply(armed, press("Control"));
 		expect(after.prefix).toEqual({armed: true, pending: [], repeatWindowMs: null});

@@ -3,11 +3,8 @@
  * the PNG. Thin by construction — every decision the exit matrix routes on is *typed here and judged
  * in the verb*, so the whole render orchestration is unit-testable with a fake leg and no browser.
  *
- * The three classifications are the contract's, and each is a different fact: a status ≥ 400 or a
- * navigation that threw is **unreachable** (`15` — no route, dark flag, gated tier), a runtime error
- * thrown into the page is a **crashed** render (`14`, read through the shared
- * `../capture/page-errors.ts` predicate), and anything else that goes wrong leaves the capture
- * **unknown** (`11`) rather than valid.
+ * Classification follows `ui render --help`; uncaught page errors are recognized through
+ * `../capture/page-errors.ts`.
  *
  * A missing browser provision surfaces here as `Unknown` carrying the exact remediation command —
  * never a silent skip, and never a "surface is fine" reading.

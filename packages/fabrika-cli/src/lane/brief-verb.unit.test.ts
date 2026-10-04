@@ -12,10 +12,14 @@ import {
 	type Scripted,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {PROJECT_SCOPE_FIX} from "../io/projects.ts";
+import type {OverSize} from "../table/flags.ts";
+import type {SizeStop} from "../table/size-stop.ts";
 import {
 	EPIC_RULES,
 	EPIC_TAIL_REPAIR_RULES,
 	EPIC_TAIL_RULES,
+	OWNER_COMMENTS_RULES,
 	RULES,
 	read as readBrief,
 } from "../wire/lane-brief.ts";
@@ -31,6 +35,7 @@ import {
 	PR_AMBIGUOUS,
 	PROOF_ABSENT,
 	PROOF_AMBIGUOUS,
+	SIZE_STOPPED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {emitMachine} from "./emit.ts";
@@ -85,6 +90,12 @@ const nominated = (...numbers: ReadonlyArray<number>): HttpReply => ({
 
 /** Nothing nominated by the body half, so the union answers off the closing edge alone. */
 const NO_NOMINATIONS: Scripted = [/^GET .*\/search\/issues\?/, nominated()];
+
+/** An issue nobody commented on, so the owner-comments read is a proven zero unless a case scripts one. */
+const NO_COMMENTS: Scripted = [
+	/^GET .*\/repos\/o\/r\/issues\/\d+\/comments\?/,
+	{status: 200, body: "[]"},
+];
 
 const pullPayload = (number: number, url: string, body: string): HttpReply => ({
 	status: 200,
@@ -242,7 +253,7 @@ const run = (
 		Effect.provide(
 			runBrief({...options, ...overrides}),
 			// The body half is tailed, so a test scripting its own wins the seam's first-match lookup.
-			Layer.merge(fs.layer, fakeSeams([...script, NO_NOMINATIONS]).layer),
+			Layer.merge(fs.layer, fakeSeams([...script, NO_NOMINATIONS, NO_COMMENTS]).layer),
 		),
 	);
 
@@ -280,6 +291,75 @@ describe("lane brief", () => {
 		});
 	});
 
+	/**
+	 * A rule an owner wrote as a plain comment reached no shell: the brief carried the issue and
+	 * nothing said newer owner comments existed. The brief names them now, as URLs, and never holds
+	 * the dispatch on them.
+	 */
+	describe("the owner comments no ruling marker records", () => {
+		const COMMENTS = /^GET .*\/repos\/o\/r\/issues\/5751\/comments\?/;
+		const OWNER_COMMENT = `https://github.com/${options.env.CLAUDE_PIPELINE_REPO}/issues/5751#issuecomment-900010`;
+		const ownerComment: Scripted = [
+			COMMENTS,
+			{
+				status: 200,
+				body: JSON.stringify([
+					{
+						id: 900010,
+						user: {login: "usirin"},
+						created_at: "2026-08-17T00:00:00Z",
+						updated_at: "2026-08-17T00:00:00Z",
+						body: "Use the second fork, not the first.",
+					},
+				]),
+			},
+		];
+		const ROSTER: ReadonlyArray<Scripted> = [
+			[/^GET .*\/repos\/o\/r$/, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+			[
+				/contents\/\.github\/CODEOWNERS\?ref=main$/,
+				{status: 200, body: "/packages/fabrika-cli/ @o/control-plane\n"},
+			],
+			[
+				/^GET .*\/orgs\/o\/teams\/control-plane\/members/,
+				{status: 200, body: JSON.stringify([{login: "usirin"}])},
+			],
+		];
+
+		it("names each one in a build brief, as a URL the shell is told to read", async () => {
+			const out = await run(lane("5751", ["WIP"]), [
+				[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+				[PR_CLOSERS, closingPulls()],
+				ownerComment,
+				...ROSTER,
+			]);
+
+			expect(out.code).toBe(0);
+			expect(out.stdout).toContain(`owner-comments: ${OWNER_COMMENT}\n## Rules`);
+			expect(out.stdout).toContain(OWNER_COMMENTS_RULES);
+			expect(out.stdout).not.toContain("Use the second fork");
+			expect(readBrief(out.stdout)).toMatchObject({
+				_tag: "Found",
+				value: {ownerComments: {_tag: "Unmarked", urls: [OWNER_COMMENT]}},
+			});
+		});
+
+		it("still briefs, saying `unknown`, when the roster does not resolve", async () => {
+			const out = await run(lane("5751", ["WIP"]), [
+				[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+				[PR_CLOSERS, closingPulls()],
+				ownerComment,
+			]);
+
+			expect(out.code).toBe(0);
+			expect(readBrief(out.stdout)).toMatchObject({
+				_tag: "Found",
+				value: {ownerComments: {_tag: "Unknown"}},
+			});
+			expect(out.stderr.join("\n")).toContain("is UNKNOWN, never zero");
+		});
+	});
+
 	it("briefs the ui-builder shell on a `build:ui` state, still with no PR", async () => {
 		const out = await run(lane("5751", ["WIP"], ["ui"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
@@ -290,6 +370,19 @@ describe("lane brief", () => {
 		expect(readBrief(out.stdout)).toMatchObject({
 			_tag: "Found",
 			value: {state: "build:ui", shell: "ui-builder", ground: {_tag: "Pull", pr: null}},
+		});
+	});
+
+	it("briefs the mixed-builder shell on a `build:mixed` state, still with no PR", async () => {
+		const out = await run(lane("5751", ["WIP"], ["code", "ui"]), [
+			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+			[PR_CLOSERS, closingPulls()],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {state: "build:mixed", shell: "mixed-builder", ground: {_tag: "Pull", pr: null}},
 		});
 	});
 
@@ -597,13 +690,109 @@ describe("lane brief", () => {
 	});
 });
 
+describe("lane brief at the size stop", () => {
+	const OVER: OverSize = {
+		_tag: "OverSize",
+		head: 5751,
+		group: null,
+		covers: [5751],
+		size: "S",
+		limitUsd: 15,
+		spentUsd: 31,
+		stopped: true,
+	};
+	const briefWith = (stop: SizeStop) => {
+		const asked: Array<readonly [string, number]> = [];
+		const outcome = Effect.runPromise(
+			Effect.provide(
+				runBrief({
+					...options,
+					sizeStop: (repo, issue) =>
+						Effect.sync(() => {
+							asked.push([repo, issue]);
+							return stop;
+						}),
+				}),
+				Layer.merge(
+					lane("5751", ["WIP"]).layer,
+					fakeSeams([
+						[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+						[PR_CLOSERS, closingPulls()],
+						NO_NOMINATIONS,
+						NO_COMMENTS,
+					]).layer,
+				),
+			),
+		);
+		return {outcome, asked};
+	};
+
+	it("briefs no shell once the issue's row spent its stop, and names the park to record", async () => {
+		const {outcome, asked} = briefWith({_tag: "Stopped", flag: OVER, rec: "Extend?"});
+		const out = await outcome;
+
+		expect(asked).toEqual([["o/r", 5751]]);
+		expect(out.code).toBe(SIZE_STOPPED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain(
+			"`fabrika lane transition 5751 BLOCKED --task issue --cause size-stop`",
+		);
+	});
+
+	it("briefs as ever when the row is short of its stop — over its size, the lane keeps going", async () => {
+		const out = await briefWith({
+			_tag: "Clear",
+			note: "#5751 stands on no row that has spent 2x its size",
+		}).outcome;
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({_tag: "Found", value: {shell: "builder"}});
+		expect(out.stderr.join("\n")).toContain("size stop: #5751 stands on no row");
+	});
+
+	it("briefs on a stop it never checked, and says on stderr that it did not", async () => {
+		const out = await briefWith({
+			_tag: "Unchecked",
+			reason: "fabrika lane brief: the token lacks the `project` scope",
+			excuse: "Unadopted",
+		}).outcome;
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({_tag: "Found", value: {shell: "builder"}});
+		expect(out.stderr.join("\n")).toContain("size stop NOT checked");
+		expect(out.stderr.join("\n")).not.toContain("size stop: ");
+	});
+
+	it("briefs past a table it could not read for a missing scope, naming the fix", async () => {
+		const out = await briefWith({
+			_tag: "Unchecked",
+			reason: `fabrika lane brief: the GitHub token lacks the \`project\` scope the table needs (x) — run \`${PROJECT_SCOPE_FIX}\` and re-run`,
+			excuse: "MissingScope",
+		}).outcome;
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({_tag: "Found", value: {shell: "builder"}});
+		const notes = out.stderr.filter((line) => line.includes("size stop NOT checked"));
+		expect(notes).toHaveLength(1);
+		expect(notes[0]).toContain(PROJECT_SCOPE_FIX);
+		expect(notes[0]).not.toContain("declares no `table` block");
+	});
+
+	it("refuses when the table could not be read — UNKNOWN, never a brief", async () => {
+		const out = await briefWith({_tag: "Unknown", reason: "the project read failed"}).outcome;
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stdout).toBe("");
+	});
+});
+
 describe("lane brief on an epic lane", () => {
 	const runEpic = async (
 		fs: ReturnType<typeof fakeFs>,
 		script: ReadonlyArray<Scripted>,
 		overrides: Partial<typeof options>,
 	) => {
-		const seams = fakeSeams([...script, NO_NOMINATIONS]);
+		const seams = fakeSeams([...script, NO_NOMINATIONS, NO_COMMENTS]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runBrief({...options, lane: String(EPIC), ...overrides}),

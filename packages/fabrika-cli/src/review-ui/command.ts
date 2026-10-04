@@ -8,25 +8,24 @@
  *
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form
  * silently opts out of the excess-operand guard.
- *
- * No `--json` anywhere: each verb's answer is one JSON object, so there is no second output shape
- * to opt into.
  */
 import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {uiSurfacesOr} from "../config/paths.ts";
+import {LOGINS_VARIABLE} from "../capture/auth.ts";
+import {noPreviewRulesOr, uiCaptureOr, uiSurfacesOr} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
+import {getRepoVariable} from "../io/variables.ts";
 import {refuse} from "../verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runNote} from "./note-verb.ts";
-import {runPost} from "./post-verb.ts";
+import {runPostFlags} from "./post-verb.ts";
 import {captureRenderLeg} from "./render-leg.ts";
 import {runRender} from "./render-verb.ts";
-import {runRoute} from "./route-verb.ts";
-import {githubAttachmentUploadLeg} from "./upload-leg.ts";
+import {type NoPreviewRequest, runRoute} from "./route-verb.ts";
+import {githubAttachmentUploadLeg, githubPostedEvidenceCheck} from "./upload-leg.ts";
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,
@@ -55,7 +54,7 @@ const render = leafCommand(
 		surface: Flag.string("surface").pipe(
 			Flag.atLeast(1),
 			Flag.withDescription(
-				"a surface id to capture — a route such as /pano, or a route plus a tier state (/pano:auth renders as the yazar test account, /pano:auth-caylak as the çaylak one), each proved signed in AND at the named tier against the preview's session endpoint before the shot is recorded; repeatable, and zero operands is refused (no tool guesses surfaces from a diff)",
+				"a surface id to capture — a route such as /pano, or a route plus a tier state (/pano:auth renders as the yazar test account, /pano:auth-caylak as the çaylak one, /pano:auth-caylak-unverified as the email-unverified çaylak), each proved signed in AND at the named tier and email verification against the preview's session endpoint before the shot is recorded; repeatable, and zero operands is refused (no tool guesses surfaces from a diff)",
 			),
 		),
 		// `atLeast(0)` is the repeatable form with no floor: omitting it renders at desktop alone,
@@ -73,6 +72,34 @@ const render = leafCommand(
 				"force one flag for this run — <key>=on|off, repeatable; rides the preview's phoenix_flag_overrides cookie, which is honored only for an authorized platform-admin actor, so every --surface must name a tier state and each forced key is proved against the preview's own evaluation before the shot is recorded",
 			),
 		),
+		locale: Flag.string("locale").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"render every shot in this locale — one of the values .fabrika.jsonc's uiCapture.locale declares; the declared localStorage key is seeded in each shot's browser context before it navigates, and the page's document.documentElement.lang is read back and must name the value before the shot is recorded (default: the app's own default locale, nothing seeded)",
+			),
+		),
+		// `atLeast(0)` is the repeatable form with no floor: omitting it shoots the browser's default
+		// scheme with no emulation and no proof, which is what every earlier invocation asked for.
+		scheme: Flag.string("scheme").pipe(
+			Flag.atLeast(0),
+			Flag.withDescription(
+				"a colour scheme to shoot every --surface at — light or dark, repeatable and crossed with --surface and --viewport; each shot's browser context emulates prefers-color-scheme, and the root attribute .fabrika.jsonc's uiCapture.scheme declares must read back that scheme before the shot is recorded (default: the browser's own scheme, nothing emulated or proved)",
+			),
+		),
+		accent: Flag.string("accent").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"render every shot in this theme accent — one of the values .fabrika.jsonc's uiCapture.accent declares; the declared attribute is set on document.documentElement after each shot navigates, and must read back as the value before the shot is recorded (default: the app's own accent, nothing set)",
+			),
+		),
+		// `atLeast(0)` is the repeatable form with no floor: omitting it shoots every surface at rest
+		// alone, which is what every earlier invocation asked for.
+		interact: Flag.string("interact").pipe(
+			Flag.atLeast(0),
+			Flag.withDescription(
+				'an interaction state to shoot beside a --surface at rest — <surface>#<label>=<step>;<step>;…, repeatable, where <surface> is one of this run\'s --surface ids, <label> is kebab-case and names the shot, and each step is hover:<locator>, focus:<locator>, click:<locator>, press:<key> or expect:<locator> over a Playwright selector (role=button[name="Sil"] first); the steps run in order after navigation and must end on hover, focus or expect, and every hover proves :hover, every focus :focus-visible, and every expect exactly one visible match, before the shot is recorded',
+			),
+		),
 		app: Flag.string("app").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -82,14 +109,27 @@ const render = leafCommand(
 		authSecretFrom: Flag.string("auth-secret-from").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"a file holding the BETTER_AUTH_SECRET the preview worker deploys with — the value it verifies the tier cookie against, which is one repo-wide value rather than a per-stage one: infra/ci-credentials/github.ts mints it into the ci-credentials stack's alchemy state, its one readable copy, behind $ALCHEMY_PASSWORD (the app stack's deployed secret_text binding does not read back and the Actions secret is write-only, so there is no preview-stage copy to export); omitted, the ambient $BETTER_AUTH_SECRET stands in and is refused on 11 when it is empty or carries the insecure_ placeholder an example env file ships",
+				"a file holding a session-signing secret to use instead of the repo's own (default: the committed infra/preview-auth-key/key.txt, else $BETTER_AUTH_SECRET); sourcing: the review-ui contract's \"Required environment\"",
 			),
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({pr, out, surface, viewport, flag, app, authSecretFrom, repo}) {
-		// The reviewer's own checked-out tree, never the PR head — the same read `route` takes, and
-		// for the same reason: the declaration is the repo's, not the branch's.
+	Effect.fn(function* ({
+		pr,
+		out,
+		surface,
+		viewport,
+		flag,
+		locale,
+		scheme,
+		accent,
+		interact,
+		app,
+		authSecretFrom,
+		repo,
+	}) {
+		// The reviewer's own checked-out tree, never the PR head: this reads which app serves each
+		// `--surface`, derives no class, and the declaration is the repo's, not the branch's.
 		const surfaces = yield* uiSurfacesOr(
 			"review-ui render",
 			process.cwd(),
@@ -99,6 +139,22 @@ const render = leafCommand(
 			yield* emit(refuse(PRECONDITION_UNKNOWN, surfaces.message));
 			return;
 		}
+		// Read only when asked for, so a run seeding no locale, requesting no scheme and setting no
+		// accent is untouched by the capture settings.
+		const requestedLocale = Option.getOrNull(locale);
+		const requestedAccent = Option.getOrNull(accent);
+		const capture =
+			requestedLocale === null && scheme.length === 0 && requestedAccent === null
+				? null
+				: yield* uiCaptureOr(
+						"review-ui render",
+						process.cwd(),
+						"the storage key --locale seeds, or the root attribute --scheme is proved against or --accent is set on, is UNKNOWN; nothing was rendered.",
+					);
+		if (capture?._tag === "Refused") {
+			yield* emit(refuse(PRECONDITION_UNKNOWN, capture.message));
+			return;
+		}
 		yield* emit(
 			yield* runRender({
 				pr,
@@ -106,21 +162,59 @@ const render = leafCommand(
 				surfaces: surface,
 				viewports: viewport,
 				flags: flag,
+				locale: requestedLocale,
+				localeDeclaration: capture?.capture.locale ?? null,
+				schemes: scheme,
+				schemeDeclaration: capture?.capture.scheme ?? null,
+				accent: requestedAccent,
+				accentDeclaration: capture?.capture.accent ?? null,
+				interactions: interact,
 				app: Option.getOrNull(app),
 				surfaceRows: surfaces.surfaces,
 				authSecretFrom: Option.getOrNull(authSecretFrom),
+				cwd: process.cwd(),
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				tmpRoot: tmpdir(),
 				render: captureRenderLeg,
+				fetchLogins: (target) => getRepoVariable(target, LOGINS_VARIABLE),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Capture the named surfaces from a PR's preview deployment."),
 	Command.withDescription(
-		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface per viewport, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per shot (surface, viewport, path, dimensions, sha256, page errors); every shot's outcome is enumerated on stderr. --viewport is crossed with --surface, so two of each is four captures whose file names carry the viewport label. A tier-naming surface signs its cookie with the BETTER_AUTH_SECRET the preview worker deploys with — one repo-wide value, read from the file --auth-secret-from names (exported from the ci-credentials stack's alchemy state, its one readable copy) or, absent that flag, from the ambient variable — which is refused rather than signed with when it is empty or carries the insecure_ placeholder. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, a --surface names a :state nothing renders — the realized set is auth, auth-caylak, a --viewport names a viewport outside the closed set desktop, mobile or is passed twice, a --flag operand is not a <key>=<on|off> pair, or --flag was passed with an anonymous surface), 11 (a read failed, the declared uiSurfaces are unreadable, the preview comment is malformed or names several apps, a --surface is served by an app this preview does not announce, a capture's validity is undeterminable, a tier-naming surface was requested with that tier's session token unset, with the resolved signing secret empty or carrying the insecure_ placeholder, or with --auth-secret-from naming a file that could not be read, a tier-naming surface's session proof did not come back signed in or came back at another tier, or a forced flag evaluated at its default anyway), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route), 19 (a capture's PNG width read back from its own bytes is not the requested viewport's width). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano --viewport desktop --viewport mobile",
+		[
+			"Captures the named surfaces from a PR's preview deployment and prints one JSON capture record.",
+			"  7: PR absent or closed",
+			"  10: an operand off its closed set, or --flag/--locale/--scheme/--accent/--interact unhonorable",
+			"  11: a read, a proof or a capture check failed (UNKNOWN)",
+			"  12: the preview deploys a stale head",
+			"  13: a surface threw during render",
+			"  14: a surface is unreachable",
+			"  15: a capture is invalid",
+			"  16: no preview deploy at the head (the CANT-SEE route)",
+			"  19: a capture's PNG width is not the requested viewport's",
+			'  Derivation: the review-ui skill\'s contract.md, "review-ui render"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"fabrika review-ui render --pr 4321 --out judged --surface /pano --viewport desktop --viewport mobile",
+			description: "Capture one surface at both viewports",
+		},
+		{
+			command:
+				"fabrika review-ui render --pr 4321 --out schemes --surface /lab/atolye/markdown --scheme light --scheme dark",
+			description: "Capture one surface in both colour schemes, each proved off the page",
+		},
+		{
+			command:
+				'fabrika review-ui render --pr 4321 --out hover --surface /lab/atolye/button --interact \'/lab/atolye/button#danger-hovered=click:role=radio[name="Danger"];hover:role=button[name="Kaydet"]\'',
+			description: "Capture a surface at rest and hovered, the hover proved off the page",
+		},
+	]),
 );
 
 const post = leafCommand(
@@ -136,9 +230,11 @@ const post = leafCommand(
 		clause: Flag.string("clause").pipe(
 			Flag.withDescription("the human clause the marker ends with; blank is not a clause"),
 		),
+		// Repeatable only so the verb sees a repeat and refuses it — one capture set per post.
 		evidence: Flag.string("evidence").pipe(
+			Flag.atLeast(1),
 			Flag.withDescription(
-				"the review-ui render capture-set name whose verified upload is this verdict's evidence",
+				"the review-ui render capture-set name whose verified upload is this verdict's evidence — exactly one; passing it twice is refused on 10",
 			),
 		),
 		carrier: Flag.string("carrier").pipe(
@@ -157,7 +253,7 @@ const post = leafCommand(
 	},
 	Effect.fn(function* ({pr, polarity, sha, clause, evidence, carrier, supersede, repo}) {
 		yield* emit(
-			yield* runPost({
+			yield* runPostFlags({
 				pr,
 				polarity,
 				sha,
@@ -174,14 +270,38 @@ const post = leafCommand(
 				// PR out, so the tier choice is read where the verb is running.
 				cwd: process.cwd(),
 				upload: githubAttachmentUploadLeg(process.env),
+				confirm: githubPostedEvidenceCheck(process.env),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Post the review-ui verdict on stdin as one comment."),
 	Command.withDescription(
-		'Post the review-ui verdict on STDIN as ONE comment for this namespace — re-resolve the live head, read the evidence set through its manifest, re-validate every capture, verify-upload every capture BEFORE anything posts, compose the first line through the `verdict-marker` wire format, leak-scan, APPEND into this head\'s own comment, and read it back from live state. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one. There is no --namespace: this group emits review-ui and nothing else. Prints one JSON object whose `upsert` field is `created` or `superseded`. Exits 3 (empty stdin), 4 (the evidence set has no readable manifest.json, or the declared `uiCapture` violates its schema), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (bad --polarity or --carrier, or advisory with FAIL), 11 (a precondition read failed — nothing uploaded or posted), 12 (the live head moved past --sha, or the set was rendered at another head), 15 (a capture fails its manifest sha), 17 (an evidence upload or its verification failed — nothing was posted), 18 (a standing verdict of the OPPOSITE polarity at this head would be retired and --supersede was not passed — nothing posted). Example: fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged < verdict.md',
+		[
+			"Posts the stdin verdict and its verified evidence as one comment; prints one JSON object.",
+			"  3: empty stdin",
+			"  4: no evidence manifest, or a bad `uiCapture`",
+			"  5: machine-local path",
+			"  6: bare @ reference",
+			"  7: PR absent or closed",
+			"  8: write failed (UNKNOWN)",
+			"  9: posted, but the read-back fails",
+			"  10: bad --polarity, --carrier or --evidence",
+			"  11: a precondition read failed",
+			"  12: head moved, or set rendered at another head",
+			"  15: a capture fails its manifest sha",
+			"  17: evidence upload failed",
+			"  18: opposite verdict needs --supersede",
+			'  Derivation: the review-ui skill\'s contract.md, "review-ui post"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged < verdict.md',
+			description: "Post a FAIL over the judged capture set",
+		},
+	]),
 );
 
 const note = leafCommand(
@@ -200,8 +320,25 @@ const note = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post a blocker note when the surfaces cannot be seen."),
 	Command.withDescription(
-		"Post the blocker note on STDIN as one new comment — the typed non-verdict write for a proven can't-see or escalation state. Append-only, leak-scanned, and read back. A body whose first line parses as a verdict marker or an advisory carrier is refused: a verdict goes through review-ui post. Prints one JSON object. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent or closed), 8 (the post failed — UNKNOWN), 9 (the comment does not read back as sent), 10 (the body is verdict-shaped), 11 (a precondition read failed — nothing was posted). Example: fabrika review-ui note 4321 < blocker.md",
+		[
+			"Posts the stdin blocker note as one new, non-verdict comment and prints one JSON object.",
+			"  3: empty stdin",
+			"  5: machine-local path",
+			"  6: bare @ reference",
+			"  7: PR absent or closed",
+			"  8: the post failed (UNKNOWN)",
+			"  9: the comment does not read back as sent",
+			"  10: the body is verdict-shaped",
+			"  11: a precondition read failed",
+			'  Derivation: the review-ui skill\'s contract.md, "review-ui note"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command: "fabrika review-ui note 4321 < blocker.md",
+			description: "Post a can't-see blocker note",
+		},
+	]),
 );
 
 const route = leafCommand(
@@ -220,19 +357,34 @@ const route = leafCommand(
 				"the head a hand-verification standing in for the render ran at (7–40 lowercase hex); the route is refused when any file in that range to --sha raises the ui class, because the evidence is then spent, and refused as UNKNOWN when the two heads have diverged, because the range was never read (omit it where the route rests on no such evidence)",
 			),
 		),
+		noPreview: Flag.boolean("no-preview").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"the PR has no preview deploy: route under the repo's reviewUi.whenNoPreview rules — skip posts a record flagged basis:skip, hand-check posts one flagged basis:hand-check over the newest owner's hand-check at this head the verb finds on the PR (refused at 21 when there is none), require-render is refused at 21; the verb reads the PR's preview announcement itself and refuses at 23 when one is there",
+			),
+		),
+		handCheck: Flag.string("hand-check").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"pin the owner's hand-check comment on this PR, by id or #issuecomment URL, instead of letting --no-preview find the newest one — a control-plane account's screenshots naming the exact head; implies --no-preview, and is refused at 22 when the comment is not one",
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({pr, sha, clause, verifiedAt, repo}) {
-		// The reviewer's own checked-out tree, never the PR head: the class this route resolves was
-		// raised over these prefixes, so they are read where the verb is running.
-		const surfaces = yield* uiSurfacesOr(
-			"review-ui route",
-			process.cwd(),
-			"which paths raise the ui class is UNKNOWN; nothing was posted.",
-		);
-		if (surfaces._tag === "Refused") {
-			yield* emit(refuse(PRECONDITION_UNKNOWN, surfaces.message));
-			return;
+	Effect.fn(function* ({pr, sha, clause, verifiedAt, noPreview, handCheck, repo}) {
+		const offered = Option.getOrNull(handCheck);
+		let request: NoPreviewRequest | undefined;
+		if (noPreview || offered !== null) {
+			const rules = yield* noPreviewRulesOr(
+				"review-ui route",
+				process.cwd(),
+				"which mode a PR with no preview needs is UNKNOWN; nothing was posted.",
+			);
+			if (rules._tag === "Refused") {
+				yield* emit(refuse(PRECONDITION_UNKNOWN, rules.message));
+				return;
+			}
+			request = {rules: rules.rules, handCheck: offered};
 		}
 		yield* emit(
 			yield* runRoute({
@@ -240,7 +392,7 @@ const route = leafCommand(
 				sha,
 				clause,
 				verifiedAt: Option.getOrNull(verifiedAt),
-				uiPrefixes: surfaces.prefixes,
+				...(request === undefined ? {} : {noPreview: request}),
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				stdin: Effect.sync(readStdin),
@@ -250,8 +402,38 @@ const route = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record that this PR renders nothing, so no verdict is owed."),
 	Command.withDescription(
-		"Record, bound to the head whose diff you read, that this PR moves no pixels — so review-ui owes it no verdict and ship's gate resolves the namespace as routed. The reasoning arrives on STDIN, the record's first line is composed through the `routed-elsewhere` wire format, and both are leak-scanned, upserted as one comment and read back. It is not a verdict: the format carries no polarity, the record is head-bound so any push voids it, and no capture evidence is involved either way. Whether the diff renders anything is your judgment over `review diff`, never a verb's. Where the route rests on a hand-verification instead, --verified-at names the head that ran at and the route is refused when any file in the range to --sha raises the ui class — the same isUiSurface over the same prefixes, and a comparison at GitHub's 300-file ceiling, or one whose two heads have diverged, is UNKNOWN rather than a cleared range. The review-code verdict in force at --sha is read as well, through the same carriers and ordering review verdicts and ship gate use: a standing FAIL refuses, and so does an absent verdict on a --verified-at route, whose record asserts that PASS. The changed-file list is read through platformFileSet, so the changed_files the pull-request record declares prints as a disagreement line and never refuses; an empty list and one at GitHub's 3000-file ceiling still refuse, because neither leaves a ui count anybody read. Prints one JSON object. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent, closed, empty, served an empty changed-file list, or its diff raises no ui class — nothing to route), 8 (the post failed — UNKNOWN), 9 (the record does not read back as sent), 10 (bad --sha or --verified-at, or a blank --clause), 11 (a precondition read failed, the changed-file list came back at the 3000-file ceiling, or the --verified-at comparison came back capped or diverged — nothing was posted), 12 (the live head moved past --sha, or a ui-class file changed since --verified-at), 20 (review-code stands FAIL at --sha, or no review-code verdict binds it on a --verified-at route). Example: fabrika review-ui route 6326 --sha 6c6fe226 --clause \"no rendered delta; both files are prose only\" < why.md",
+		[
+			"Records that no review-ui verdict is owed at --sha; prints one JSON.",
+			'  answer "none": no ui class; nothing posted',
+			"  3: empty stdin",
+			"  5: machine-local path",
+			"  6: bare @ reference",
+			"  7: PR absent, closed, or empty",
+			"  8: post failed (UNKNOWN)",
+			"  9: read-back mismatch",
+			"  10: bad flag value or pairing",
+			"  11: a read failed, capped, or diverged",
+			"  12: head moved, or ui changed since --verified-at",
+			"  20: review-code FAIL, or absent where owed",
+			"  21: whenNoPreview refuses the route",
+			"  22: not an owner's hand-check",
+			"  23: a preview is announced",
+			'  Derivation: the review-ui skill\'s contract.md, "review-ui route"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika review-ui route 6326 --sha 6c6fe226 --clause "no rendered delta; both files are prose only" < why.md',
+			description: "Route a prose-only PR away from review-ui",
+		},
+		{
+			command:
+				'fabrika review-ui route 6326 --sha 6c6fe226 --hand-check 5123990412 --clause "no preview; the owner hand-checked this head" < why.md',
+			description:
+				"Route a no-preview PR on the owner's hand-check, where a hand-check rule matches",
+		},
+	]),
 );
 
 export const reviewUiCommand = Command.make("review-ui").pipe(

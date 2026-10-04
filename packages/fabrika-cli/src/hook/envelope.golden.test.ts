@@ -19,7 +19,7 @@
  *      pass against the fabricated shape too, which is the litmus the pattern doc sets.
  */
 import {spawnSync} from "node:child_process";
-import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -65,8 +65,9 @@ const runDeclared = (
 	command: string,
 	stdin: string,
 	extraArgs: ReadonlyArray<string> = [],
+	extraEnv: NodeJS.ProcessEnv = {},
 ): Run => {
-	const env: NodeJS.ProcessEnv = {...process.env, FABRIKA_SKIP_INFER: "1"};
+	const env: NodeJS.ProcessEnv = {...process.env, ...extraEnv, FABRIKA_SKIP_INFER: "1"};
 	const run = spawnSync(process.execPath, [BIN, ...argvOf(command), ...extraArgs], {
 		encoding: "utf8",
 		input: stdin,
@@ -88,8 +89,11 @@ describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 		expect([...new Set(surface.map((hook) => hook.command))].sort()).toEqual([
 			"fabrika hook check",
 			"fabrika hook claude-spend",
+			"fabrika hook cli-floor",
 			"fabrika hook pre-bash",
+			"fabrika hook stash-guard",
 		]);
+		expect(new Set(surface.map((hook) => hook.event))).toContain("PreToolUse");
 		expect(
 			[
 				...new Set(
@@ -98,15 +102,16 @@ describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 			].sort(),
 		).toEqual(["SessionStart"]);
 		expect(
-			surface.every((hook) =>
-				["fabrika hook check", "fabrika hook claude-spend", "fabrika hook pre-bash"].includes(
-					hook.command,
-				),
-			),
-		).toBe(true);
+			surface.filter((hook) => hook.command === "fabrika hook cli-floor").map((hook) => hook.event),
+		).toEqual(["SessionStart"]);
 		expect(
 			surface.filter((hook) => hook.command === "fabrika hook pre-bash").map((hook) => hook.event),
 		).toEqual(["PreToolUse"]);
+		expect(
+			surface
+				.filter((hook) => hook.command === "fabrika hook stash-guard")
+				.map((hook) => [hook.event, hook.matcher]),
+		).toEqual([["PreToolUse", "Bash"]]);
 	});
 
 	/**
@@ -256,16 +261,6 @@ describe("the plugin-source sync, run against the captured envelopes", {
 		expect(run.stdout).toBe("");
 		expect(run.stderr).toContain("names no clone whose primary worktree this verb can read");
 	});
-
-	it("refuses an envelope for an event it does not judge, rather than syncing from it", () => {
-		const run = runDeclared(
-			declared.command,
-			readGoldenFixture(import.meta.url, "__fixtures__/worktree-create.payload.golden.json"),
-			["--dry-run"],
-		);
-		expect(run.code).toBe(WRONG_EVENT);
-		expect(run.stdout).toBe("");
-	});
 });
 
 describe("the WorktreeCreate provider, run against the captured envelope", {
@@ -279,16 +274,27 @@ describe("the WorktreeCreate provider, run against the captured envelope", {
 	 * most dangerous for. Rule 5's literal grammar cannot express a flag, so the declared command
 	 * can never carry it — which is what keeps the flag a test affordance rather than a live one.
 	 */
+	/**
+	 * The captured `cwd` names a repository on the capturing machine, and the verb now resolves its
+	 * toplevel with git, so that one field is pointed at a repository that exists here. Every other
+	 * field is the capture's own.
+	 */
 	it("constructs the path the harness would adopt, from the captured envelope's own fields", () => {
-		const run = runDeclared(
-			declared.command,
-			readGoldenFixture(import.meta.url, "__fixtures__/worktree-create.payload.golden.json"),
-			["--dry-run"],
-		);
-		expect(run.code).toBe(0);
-		expect(run.stdout).toBe(
-			"/private/tmp/fabrika-worktree-capture/repo/.claude/worktrees/capture-probe\n",
-		);
+		const dir = realpathSync(mkdtempSync(join(tmpdir(), "worktree-create-capture-")));
+		try {
+			spawnSync("git", ["init", "--quiet", dir], {encoding: "utf8"});
+			const payload = loadGoldenPayload(
+				import.meta.url,
+				"__fixtures__/worktree-create.payload.golden.json",
+			);
+			const run = runDeclared(declared.command, JSON.stringify({...payload, cwd: dir}), [
+				"--dry-run",
+			]);
+			expect(run.code).toBe(0);
+			expect(run.stdout).toBe(`${dir}/.claude/worktrees/capture-probe\n`);
+		} finally {
+			rmSync(dir, {recursive: true, force: true});
+		}
 	});
 
 	it("refuses an envelope for an event it does not judge, rather than provisioning from it", () => {
@@ -316,10 +322,17 @@ describe("the WorktreeCreate provider, run against the captured envelope", {
 	});
 });
 
+/** The `PreToolUse` hook whose verb is `verb`, so a second guard on the event cannot be mistaken for it. */
+const declaredGuard = (verb: string) => {
+	const hook = surface.find((row) => row.event === "PreToolUse" && argvOf(row.command)[1] === verb);
+	if (hook === undefined) throw new Error(`the declaration carries no PreToolUse ${verb} hook`);
+	return hook;
+};
+
 describe("the pre-bash guard, run against the captured Bash envelope", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
-	const declared = declaredOn("PreToolUse");
+	const declared = declaredGuard("pre-bash");
 
 	/**
 	 * The capture's `cwd` is a throwaway directory under no working tree, which is the arm that
@@ -335,6 +348,79 @@ describe("the pre-bash guard, run against the captured Bash envelope", {
 		expect(run.code).toBe(0);
 		expect(JSON.parse(run.stdout)).not.toHaveProperty("hookSpecificOutput");
 	});
+});
+
+describe("the stash guard, run against the captured Bash envelope", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
+	const declared = declaredGuard("stash-guard");
+	const captured = () =>
+		loadGoldenPayload(import.meta.url, "__fixtures__/pre-tool-use.payload.golden.json");
+
+	/** The captured envelope with only `cwd` and the command swapped — every other field is the capture's. */
+	const withCommand = (command: string, cwd: string) => {
+		const payload = captured();
+		return JSON.stringify({
+			...payload,
+			cwd,
+			tool_input: {...(payload.tool_input as Record<string, unknown>), command},
+		});
+	};
+
+	/** A real clone with one linked worktree, since the verdict rests on what git reports there. */
+	const withClone = (body: (primary: string, linked: string) => void) => {
+		const dir = realpathSync(mkdtempSync(join(tmpdir(), "stash-guard-")));
+		const primary = join(dir, "primary");
+		const linked = join(dir, "linked");
+		try {
+			const git = (...args: string[]) => spawnSync("git", args, {cwd: primary, encoding: "utf8"});
+			spawnSync("git", ["init", "--quiet", primary], {encoding: "utf8"});
+			git(
+				...["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"],
+				...["commit", "--quiet", "--no-verify", "--allow-empty", "-m", "x"],
+			);
+			git("worktree", "add", "--quiet", "--detach", linked);
+			body(primary, linked);
+		} finally {
+			rmSync(dir, {recursive: true, force: true});
+		}
+	};
+
+	it("lets the captured benign probe command through, with no permission decision", () => {
+		const envelope = readGoldenFixture(
+			import.meta.url,
+			"__fixtures__/pre-tool-use.payload.golden.json",
+		);
+		expect((captured().tool_input as {command: string}).command).not.toContain("stash");
+
+		const run = runDeclared(declared.command, envelope);
+
+		expect(run.code, run.stderr).toBe(0);
+		expect(JSON.parse(run.stdout)).not.toHaveProperty("hookSpecificOutput");
+	});
+
+	it("denies the same envelope carrying a git stash from a linked worktree", () => {
+		withClone((_primary, linked) => {
+			const run = runDeclared(declared.command, withCommand("git stash pop", linked));
+
+			expect(run.code, run.stderr).toBe(0);
+			const decision = JSON.parse(run.stdout).hookSpecificOutput;
+			expect(decision).toMatchObject({hookEventName: "PreToolUse", permissionDecision: "deny"});
+			expect(decision.permissionDecisionReason).toContain("refs/stash");
+			expect(decision.permissionDecisionReason).toContain(
+				".patterns/worktree-agent-constraints.md",
+			);
+		});
+	});
+
+	it("lets the same git stash through in the primary checkout, whose git dir is the common dir", () => {
+		withClone((primary) => {
+			const run = runDeclared(declared.command, withCommand("git stash pop", primary));
+
+			expect(run.code, run.stderr).toBe(0);
+			expect(JSON.parse(run.stdout)).not.toHaveProperty("hookSpecificOutput");
+		});
+	});
 
 	it("refuses an envelope for an event it does not judge, rather than deciding from it", () => {
 		const run = runDeclared(
@@ -347,28 +433,34 @@ describe("the pre-bash guard, run against the captured Bash envelope", {
 	});
 });
 
+describe("the CLI minimum check, run as declared", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
+	const declared = surface.find((row) => row.command === "fabrika hook cli-floor");
+	if (declared === undefined) throw new Error("the declaration carries no cli-floor hook");
+	const pluginRoot = fileURLToPath(new URL("../../../../claude-plugins/fabrika", import.meta.url));
+	const envelope = () =>
+		readGoldenFixture(import.meta.url, "__fixtures__/session-start.payload.golden.json");
+
+	it("shows nothing when this CLI meets the committed plugin's minimum", () => {
+		const run = runDeclared(declared.command, envelope(), [], {CLAUDE_PLUGIN_ROOT: pluginRoot});
+		expect(run.code, run.stderr).toBe(0);
+		const out = JSON.parse(run.stdout);
+		expect(out).not.toHaveProperty("systemMessage");
+		expect(out.fabrika.outcome).toBe("met");
+	});
+});
+
 describe("the declared hook, run against the captured envelope", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
 	const declared = declaredOn("SessionStart");
 
-	it.each([
-		[
-			"the captured SessionStart envelope",
-			"__fixtures__/session-start.payload.golden.json",
-			"SessionStart",
-			5,
-		],
-		[
-			"the captured PreToolUse envelope",
-			"__fixtures__/pre-tool-use.payload.golden.json",
-			"PreToolUse",
-			10,
-		],
-	])("conforms on %s", (_label, fixture, event, fields) => {
-		const run = runDeclared(declared.command, readGoldenFixture(import.meta.url, fixture));
+	it("conforms on the captured SessionStart envelope", () => {
+		const run = runDeclared(
+			declared.command,
+			readGoldenFixture(import.meta.url, "__fixtures__/session-start.payload.golden.json"),
+		);
 		expect(run.code).toBe(0);
-		expect(run.stdout).toBe(`conforms\t${event}\t${fields}\n`);
+		expect(run.stdout).toBe("conforms\tSessionStart\t5\n");
 		expect(run.stderr).toContain("bytes on fd 0");
 	});
 
@@ -461,7 +553,7 @@ describe("the captured envelope shape, pinned by exact key set", {
 		expect(payload.hook_event_name).toBe("PreToolUse");
 		// A `Task|Workflow` matcher fires, but the harness then sends `tool_name: "Agent"` — a hook
 		// keyed on `tool_name === "Task"` would never fire. Kept as the captured record of that gap
-		// even though fabrika declares no PreToolUse hook today.
+		// even though fabrika declares no PreToolUse hook on a spawn tool today.
 		expect(payload.tool_name).toBe("Agent");
 		expect(payload.tool_input).toMatchObject({subagent_type: "general-purpose", model: "opus"});
 	});

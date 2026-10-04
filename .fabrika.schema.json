@@ -8,6 +8,33 @@
 			"type": "string",
 			"description": "Path to the JSON Schema for this file — e.g. \"./.fabrika.schema.json\". Gives an editor autocomplete and validation for the keys below."
 		},
+		"appetiteSizes": {
+			"type": "object",
+			"description": "What each pitch size (`**Appetite:** S`, `M` or `L`) is worth in dollars per epic child. The size is the spending limit a pitch approval binds. Name all three, each positive and rising from S to L. Shipped default: S = 15, M = 35, L = 40.",
+			"properties": {
+				"S": {
+					"type": "number",
+					"exclusiveMinimum": 0,
+					"description": "Dollars a size-S pitch may spend per epic child."
+				},
+				"M": {
+					"type": "number",
+					"exclusiveMinimum": 0,
+					"description": "Dollars a size-M pitch may spend per epic child."
+				},
+				"L": {
+					"type": "number",
+					"exclusiveMinimum": 0,
+					"description": "Dollars a size-L pitch may spend per epic child."
+				}
+			},
+			"required": [
+				"S",
+				"M",
+				"L"
+			],
+			"additionalProperties": false
+		},
 		"assemblyRefresh": {
 			"type": "object",
 			"description": "Whether the driver merges the trunk into an epic's assembly branch before the tail enters review and before a child shell is dispatched off it.",
@@ -42,6 +69,36 @@
 						"off",
 						"on"
 					]
+				},
+				"lockfileRegenerator": {
+					"type": [
+						"object",
+						"null"
+					],
+					"description": "The repo's write-mode command that regenerates a lockfile from the merged manifests. When every unmerged path of a replayed pick is one of `lockfiles` and `.gitattributes` marks it `merge=binary`, the replay runs `command` in the assembly worktree, stages the regenerated lockfile(s), and continues the pick. Absent or null, that collision parks like any other.",
+					"properties": {
+						"command": {
+							"type": "array",
+							"description": "The argv to spawn — e.g. [\"pnpm\", \"install\", \"--lockfile-only\"].",
+							"items": {
+								"type": "string"
+							},
+							"minItems": 1
+						},
+						"lockfiles": {
+							"type": "array",
+							"description": "The repo-relative lockfile paths the command regenerates — e.g. [\"pnpm-lock.yaml\"].",
+							"items": {
+								"type": "string"
+							},
+							"minItems": 1
+						}
+					},
+					"required": [
+						"command",
+						"lockfiles"
+					],
+					"additionalProperties": false
 				}
 			},
 			"additionalProperties": false
@@ -128,9 +185,151 @@
 			},
 			"additionalProperties": false
 		},
+		"boards": {
+			"type": "object",
+			"description": "Split the table's work into a product board (the weekly table) and an on-call board: continuous work pulled in order as it arrives, each item with a response target instead of a size, and its own planned share of weekly spend. Leave it out for one board with a Customers section.",
+			"properties": {
+				"onCall": {
+					"type": "object",
+					"description": "The on-call board. `\"onCall\": {}` splits on the shipped values; declare only the sub-keys you want to change.",
+					"properties": {
+						"route": {
+							"type": "object",
+							"description": "Which issues land on the on-call board: an issue whose origin, type or any label matches goes there; everything else stays on the product board. Default: origin customer, type bug, no label.",
+							"properties": {
+								"origins": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"minLength": 1
+									},
+									"uniqueItems": true,
+									"description": "Origins that route an issue to on-call, as the Origin field names them (customer, hand-start, driver pick, found mid-lane, experiment, bet). An issue with no row reads as customer when its filer only uses the product. Default customer."
+								},
+								"types": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"minLength": 1
+									},
+									"uniqueItems": true,
+									"description": "Type names, without the `type:` prefix, that route an issue to on-call. Default bug."
+								},
+								"labels": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"minLength": 1
+									},
+									"uniqueItems": true,
+									"description": "Labels that route an issue to on-call. Default none."
+								}
+							},
+							"additionalProperties": false
+						},
+						"responseTargets": {
+							"type": "object",
+							"description": "How long an on-call item may wait: the first `byLabel` target whose labels the item carries, else `otherwise`. Default: same day (24 hours) for the first priority label, this week (168 hours) otherwise.",
+							"properties": {
+								"byLabel": {
+									"type": "array",
+									"description": "Targets for items carrying any of their labels, matched in order.",
+									"items": {
+										"type": "object",
+										"properties": {
+											"name": {
+												"type": "string",
+												"minLength": 1,
+												"description": "The option the on-call board's Response target field shows."
+											},
+											"hours": {
+												"type": "number",
+												"exclusiveMinimum": 0,
+												"description": "How many hours an item may wait before it is flagged as past its target."
+											},
+											"labels": {
+												"type": "array",
+												"items": {
+													"type": "string",
+													"minLength": 1
+												},
+												"uniqueItems": true,
+												"description": "The labels this target applies to.",
+												"minItems": 1
+											}
+										},
+										"required": [
+											"name",
+											"hours",
+											"labels"
+										],
+										"additionalProperties": false
+									}
+								},
+								"otherwise": {
+									"type": "object",
+									"description": "The target for every item no `byLabel` target matches.",
+									"properties": {
+										"name": {
+											"type": "string",
+											"minLength": 1,
+											"description": "The option the on-call board's Response target field shows."
+										},
+										"hours": {
+											"type": "number",
+											"exclusiveMinimum": 0,
+											"description": "How many hours an item may wait before it is flagged as past its target."
+										}
+									},
+									"required": [
+										"name",
+										"hours"
+									],
+									"additionalProperties": false
+								}
+							},
+							"additionalProperties": false
+						},
+						"spendShare": {
+							"type": "number",
+							"exclusiveMinimum": 0,
+							"maximum": 100,
+							"description": "The planned share of the week's spend on on-call work, in percent. More is flagged, never stopped. Default 20."
+						},
+						"project": {
+							"type": "object",
+							"description": "Which GitHub project holds the on-call board. Leave both out to have `fabrika table setup` find or create \"<repo name> on-call\" on the repository's own owner.",
+							"properties": {
+								"owner": {
+									"type": [
+										"string",
+										"null"
+									],
+									"description": "The user or organization that owns the project. Default: the repository's owner."
+								},
+								"number": {
+									"type": [
+										"integer",
+										"null"
+									],
+									"minimum": 1,
+									"description": "The project number. Default: the open project `fabrika table setup` finds by its title, or creates."
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					"additionalProperties": false
+				}
+			},
+			"required": [
+				"onCall"
+			],
+			"additionalProperties": false
+		},
 		"campaignAuthors": {
 			"type": "array",
-			"description": "Who may declare a campaign or flip its lifecycle state (`fabrika campaign open` / `fabrika campaign state`), narrowing the repository's collaborator ACL — an entry here still needs `write` or above on the repo. Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may declare.",
+			"description": "Deprecated and ignored. Who may declare or flip a campaign is the control-plane set `.github/CODEOWNERS` names, holding `write` or above; `fabrika campaign open` / `campaign state` print a notice while this key is declared. Remove it.",
 			"items": {
 				"type": "string",
 				"pattern": "^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)$|^@([^/\\s]+)\\/([^/\\s]+)$"
@@ -138,7 +337,7 @@
 		},
 		"capClearAuthors": {
 			"type": "array",
-			"description": "Who may clear one extra repair round on a PR (`fabrika build clear`). Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may grant.",
+			"description": "Deprecated and ignored. Who may clear a repair round or grant a takeover is the control-plane set `.github/CODEOWNERS` names, holding `write` or above; `fabrika build clear` / `build takeover` / `lane clear` print a notice while this key is declared. Remove it.",
 			"items": {
 				"type": "string",
 				"pattern": "^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)$|^@([^/\\s]+)\\/([^/\\s]+)$"
@@ -150,7 +349,7 @@
 			"properties": {
 				"noProducer": {
 					"type": "string",
-					"description": "What a repo with zero Actions workflows gets: `refuse` (a rollup over no producer is vacuous) or `degrade`.",
+					"description": "What a repo with zero repo-authored `.github/workflows/*` workflows gets — platform-provided `dynamic/*` entries do not count: `refuse` (a rollup over no producer is vacuous) or `degrade`.",
 					"enum": [
 						"refuse",
 						"degrade"
@@ -161,6 +360,28 @@
 					"description": "The CI gate's workflow filename, as `gh api actions/workflows/<file>` names it — a bare filename, not a path.",
 					"minLength": 1,
 					"pattern": "^[^/]+$"
+				},
+				"mainAlarm": {
+					"type": "object",
+					"description": "The main-went-red alarm: who it wakes, and the label its tracking issue carries.",
+					"properties": {
+						"mention": {
+							"type": "array",
+							"description": "The handles the alarm mentions — e.g. [\"@someone\"]. Empty mentions nobody and still files.",
+							"items": {
+								"type": "string",
+								"minLength": 1,
+								"pattern": "^\\S+$"
+							}
+						},
+						"label": {
+							"type": "string",
+							"description": "The label the alarm issue carries, which is also how the standing one is found again.",
+							"minLength": 1,
+							"pattern": "^[^,]+$"
+						}
+					},
+					"additionalProperties": false
 				}
 			},
 			"additionalProperties": false
@@ -182,6 +403,38 @@
 				},
 				"required": [
 					"command"
+				],
+				"additionalProperties": false
+			}
+		},
+		"configValidators": {
+			"type": "array",
+			"description": "The repo's own commands that machine-read a file no `build check` surface opens — a root config file such as lefthook.yml, or non-JS source such as a .java file — every `build check` run whose diff touches a file an entry reads spawns that entry, whatever `--surface` names. Empty (or absent) leaves such files unvalidatable.",
+			"items": {
+				"type": "object",
+				"properties": {
+					"command": {
+						"type": "array",
+						"description": "The argv to spawn — e.g. [\"pnpm\", \"exec\", \"lefthook\", \"validate\"].",
+						"items": {
+							"type": "string"
+						},
+						"minItems": 1
+					},
+					"reads": {
+						"type": "array",
+						"description": "The exact repo-relative files this command opens, never a glob — what makes a passing run checkable per file.",
+						"items": {
+							"type": "string",
+							"minLength": 1,
+							"pattern": "^[^*?\\[\\]{}]+$"
+						},
+						"minItems": 1
+					}
+				},
+				"required": [
+					"command",
+					"reads"
 				],
 				"additionalProperties": false
 			}
@@ -270,6 +523,29 @@
 			"description": "How many CLAIMED issue lanes may stand open at once — an active lane no driver claims is idle and counts for nothing. `lane open` and `lane emit` refuse past it, with no override. Write null (or leave it out) for no cap.",
 			"minimum": 1
 		},
+		"leakNames": {
+			"type": "object",
+			"description": "Names the report group's writing verbs keep out of public bodies, beside the structural leak shapes. Absent (or both lists empty) means only the structural shapes refuse.",
+			"properties": {
+				"privateRepos": {
+					"type": "array",
+					"description": "`owner/repo` slugs of private repositories. The bare name may appear; a github.com link to the repo or an `owner/repo#N` reference refuses.",
+					"items": {
+						"type": "string",
+						"pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\/(?!\\.\\.?$)[A-Za-z0-9._-]+$"
+					}
+				},
+				"identifiers": {
+					"type": "array",
+					"description": "Other names — a handle, a person's name — whose every occurrence refuses, matched case-insensitively.",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					}
+				}
+			},
+			"additionalProperties": false
+		},
 		"machineryLaps": {
 			"type": "object",
 			"description": "Whether an emitted epic machine carries the machinery event class, whose laps are counted apart from the repair budget.",
@@ -285,9 +561,17 @@
 			},
 			"additionalProperties": false
 		},
+		"ownAccounts": {
+			"type": "array",
+			"description": "The accounts this repo's own agents and drivers run as. A pull request opened by one of them is repaired (`fabrika build`) and shipped (`fabrika ship`) with no grant; any other author's pull request needs a takeover grant (`fabrika build takeover`) first. Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means only the running, authenticated account counts.",
+			"items": {
+				"type": "string",
+				"pattern": "^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)$|^@([^/\\s]+)\\/([^/\\s]+)$"
+			}
+		},
 		"parkCause": {
 			"type": "object",
-			"description": "What this repo does with a lane park that names no cause, and with one whose cause routes to the driver.",
+			"description": "What this repo does with a lane park that names no cause, with one whose cause routes to the driver, and with a spent repair budget.",
 			"properties": {
 				"uncaused": {
 					"type": "string",
@@ -304,6 +588,14 @@
 						"refuse",
 						"clear"
 					]
+				},
+				"repairBudgetSpent": {
+					"type": "string",
+					"description": "Whose park a spent repair budget (`repair-budget-spent`) is: `driver` (the driver grants the next round itself with `lane clear`; the pull-request half still needs its account in the control-plane set `.github/CODEOWNERS` names) or `founder` (the task parks on a human like any founder-routed park).",
+					"enum": [
+						"driver",
+						"founder"
+					]
 				}
 			},
 			"additionalProperties": false
@@ -318,6 +610,92 @@
 					"items": {
 						"type": "string",
 						"minLength": 1
+					}
+				}
+			},
+			"additionalProperties": false
+		},
+		"reviewFilterExclusions": {
+			"type": "array",
+			"description": "The glob patterns added to the review diff filter's exclusion set, on top of the shipped defaults. Empty (or absent) changes nothing.",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"reviewFilterUnexclude": {
+			"type": "array",
+			"description": "The shipped default exclusion patterns removed from the review diff filter's exclusion set. Each entry must equal a shipped default's pattern exactly; every removal that nothing re-adds is enumerated in the verbs' output. Empty (or absent) changes nothing.",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"reviewSubsystems": {
+			"type": "array",
+			"description": "The path-glob-to-constraint rows `review scope` layers onto the class rubrics, one row per subsystem. Additive constraints, never a partition: a path matching several patterns counts under each. Empty (or absent) changes nothing.",
+			"items": {
+				"type": "object",
+				"description": "One subsystem: the files its glob matches carry its constraint on top of the class rubric.",
+				"properties": {
+					"pattern": {
+						"type": "string",
+						"description": "The slash-separated glob the subsystem's files match — `*` within one segment, `**` spanning directories.",
+						"minLength": 1
+					},
+					"subsystem": {
+						"type": "string",
+						"description": "The subsystem's name, unique across the list.",
+						"minLength": 1
+					},
+					"constraint": {
+						"type": "string",
+						"description": "The constraint text a reviewer applies on top of the class rubric, printed verbatim in the scope output.",
+						"minLength": 1
+					}
+				},
+				"required": [
+					"pattern",
+					"subsystem",
+					"constraint"
+				]
+			}
+		},
+		"reviewUi": {
+			"type": "object",
+			"description": "What the rendered-review gate (`review-ui`) needs from a PR that has no preview deploy. Absent changes nothing: a PR with no preview ends CANT-SEE.",
+			"properties": {
+				"whenNoPreview": {
+					"type": "array",
+					"description": "Path rules for a PR with no preview deploy. The first rule whose glob matches a ui-class file sets that file's mode; a file no rule matches needs a render (`require-render`). A PR whose ui files land in different modes takes the strictest: require-render, then hand-check, then skip.",
+					"items": {
+						"type": "object",
+						"properties": {
+							"paths": {
+								"type": "array",
+								"description": "Repo-relative globs — `*` within one segment, `**` spanning directories. Never absolute, never through `..`.",
+								"minItems": 1,
+								"items": {
+									"type": "string",
+									"minLength": 1,
+									"pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$))\\S(.*\\S)?$"
+								}
+							},
+							"mode": {
+								"type": "string",
+								"enum": [
+									"require-render",
+									"hand-check",
+									"skip"
+								],
+								"description": "`require-render`: no preview is CANT-SEE. `hand-check`: an owner's screenshots on the PR naming its exact head stand in for the render, routed with `fabrika review-ui route --hand-check`. `skip`: no rendered review is owed, routed with `fabrika review-ui route --no-preview`. Both non-render outcomes are flagged on the record and in `ship gate`."
+							}
+						},
+						"required": [
+							"paths",
+							"mode"
+						],
+						"additionalProperties": false
 					}
 				}
 			},
@@ -343,6 +721,7 @@
 					"issue-dependencies",
 					"settings-patch",
 					"dep-pin",
+					"hand-check-rule",
 					"label-taxonomy",
 					"issue-shape-markers",
 					"standing-lanes",
@@ -386,6 +765,173 @@
 					"bootstrap"
 				]
 			}
+		},
+		"table": {
+			"type": "object",
+			"description": "The weekly betting table on GitHub Projects: its cadence, agenda and every threshold its flags read. Its size dollars come from `appetiteSizes`. Leave it out for a working table on the shipped values; declare only the sub-keys you want to change.",
+			"properties": {
+				"cadence": {
+					"type": "string",
+					"enum": [
+						"weekly",
+						"biweekly",
+						"on-demand"
+					],
+					"description": "How often the table meets. Default weekly. Every row is dated by its Table day, the `day` weekday; the cadence words the README."
+				},
+				"day": {
+					"type": "string",
+					"enum": [
+						"sunday",
+						"monday",
+						"tuesday",
+						"wednesday",
+						"thursday",
+						"friday",
+						"saturday"
+					],
+					"description": "The weekday the table meets: every row's Table day falls on it. Default monday."
+				},
+				"timeZone": {
+					"type": "string",
+					"minLength": 1,
+					"description": "The IANA time zone the table reads today in, e.g. America/Los_Angeles. Default UTC. Set it to the zone the people at the table use: GitHub reads the Agenda view's `@today` in theirs, so fabrika's next table matches the view only in the same zone."
+				},
+				"sections": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					},
+					"minItems": 4,
+					"uniqueItems": true,
+					"description": "Agenda sections in agenda order. Default Tails, Customers, New bets, Outside the bets. Must include all four: prep files each proposal under Tails, Customers or New bets, and un-bet lanes land in \"Outside the bets\". Reorder them or add your own."
+				},
+				"agendaCap": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "The most proposed rows agenda prep adds for one table. Default 25."
+				},
+				"flagMultiple": {
+					"type": "number",
+					"minimum": 1,
+					"description": "A lane spending past this multiple of its size is flagged onto the next table and keeps going. Default 1, flagged as soon as it passes its size. At least 1 and below `stopMultiple`."
+				},
+				"stopMultiple": {
+					"type": "number",
+					"exclusiveMinimum": 1,
+					"description": "A lane over its size keeps going and is flagged; at this multiple of its size it stops. Default 2. Must be above 1. What each size is worth is `appetiteSizes`, not a `table` sub-key."
+				},
+				"asksFlag": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "The ask count at which a bet is flagged onto the next table. Default 3."
+				},
+				"stuckDays": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "Days without activity before a lane is flagged as stuck. Default 3."
+				},
+				"activeCampaignFlag": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "More active campaigns than this is flagged. Default 3."
+				},
+				"fabrikaShare": {
+					"type": "object",
+					"description": "The flagged target share of weekly spend on fabrika's own work, and the labels that mark that work. Default 40 percent for the first 4 tables, then 30, with no label. With no label the check is off: it raises no flag and is never listed as unread.",
+					"properties": {
+						"percent": {
+							"type": "number",
+							"exclusiveMinimum": 0,
+							"maximum": 100,
+							"description": "The target share, in percent, for the first tables. Default 40."
+						},
+						"forTables": {
+							"type": "integer",
+							"minimum": 1,
+							"description": "How many tables the first share holds for. Default 4."
+						},
+						"thenPercent": {
+							"type": "number",
+							"exclusiveMinimum": 0,
+							"maximum": 100,
+							"description": "The target share, in percent, after that. Default 30."
+						},
+						"labels": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"minLength": 1
+							},
+							"uniqueItems": true,
+							"description": "The issue labels that mark fabrika's own work; a lane on an issue carrying any of them counts toward the share. Default none. An empty list turns the fabrika-share check off; it runs only once the repo names its labels."
+						}
+					},
+					"additionalProperties": false
+				},
+				"checkDelayDays": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "Days after ship before a bet returns as `check`. Default 14."
+				},
+				"evidenceSources": {
+					"type": "array",
+					"description": "Commands `fabrika table prep` runs for each shipped bet it brings back as a check; each one's standard output is attached to the check as text. Each runs as an argv (never through a shell) in the repository root, with only PATH, HOME, LANG, LC_ALL, TZ and TMPDIR inherited plus FABRIKA_CHECK_REPO, FABRIKA_CHECK_ISSUE, FABRIKA_CHECK_PRS (space-separated) and FABRIKA_CHECK_SHIPPED_AT. A source that exits non-zero, times out or cannot start is reported on the check and prep goes on. Default none: the check still carries the Success line, GitHub signals and fabrika's own numbers.",
+					"items": {
+						"type": "object",
+						"properties": {
+							"name": {
+								"type": "string",
+								"minLength": 1,
+								"description": "The name the check shows the output under."
+							},
+							"command": {
+								"type": "array",
+								"items": {
+									"type": "string"
+								},
+								"minItems": 1,
+								"description": "The argv to run — e.g. [\"pnpm\", \"metrics\", \"--since\", \"14d\"]."
+							},
+							"timeoutSeconds": {
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 600,
+								"description": "Seconds before the source is stopped and reported as timed out. Default 60, at most 600."
+							}
+						},
+						"required": [
+							"name",
+							"command"
+						],
+						"additionalProperties": false
+					}
+				},
+				"project": {
+					"type": "object",
+					"description": "Which GitHub project holds the table. Leave both out to have `fabrika table setup` find or create one on the repository's own owner.",
+					"properties": {
+						"owner": {
+							"type": [
+								"string",
+								"null"
+							],
+							"description": "The user or organization that owns the project. Default: the repository's owner."
+						},
+						"number": {
+							"type": [
+								"integer",
+								"null"
+							],
+							"minimum": 1,
+							"description": "The project number. Default: the open project `fabrika table setup` finds by its title, linked to this repository or under its owner, or creates."
+						}
+					},
+					"additionalProperties": false
+				}
+			},
+			"additionalProperties": false
 		},
 		"triageFacets": {
 			"type": "array",
@@ -432,7 +978,7 @@
 		},
 		"uiCapture": {
 			"type": "object",
-			"description": "How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, and the storage state to browse as.",
+			"description": "How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, the storage state to browse as, the locales a render can be seeded in, where a page publishes its resolved colour scheme, and the root attribute a theme accent is set on.",
 			"properties": {
 				"viewport": {
 					"type": "object",
@@ -468,6 +1014,82 @@
 					"description": "A repo-relative Playwright storage-state file to browse as. It is a credential — gitignore it, never inline the cookies.",
 					"minLength": 1,
 					"pattern": "^(?!/).+"
+				},
+				"locale": {
+					"type": [
+						"object",
+						"null"
+					],
+					"description": "The localStorage key the app reads its locale from and the closed set of values it accepts. `review-ui render --locale` seeds one of them before navigation and proves it against the page's `lang`. Null (or absent) renders at the app's default locale only.",
+					"properties": {
+						"storageKey": {
+							"type": "string",
+							"description": "The localStorage key the app reads its locale from.",
+							"minLength": 1
+						},
+						"values": {
+							"type": "array",
+							"description": "The accepted locale values, each the `lang` the page reads back when it renders in it.",
+							"items": {
+								"type": "string",
+								"pattern": "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
+							},
+							"minItems": 1,
+							"uniqueItems": true
+						}
+					},
+					"required": [
+						"storageKey",
+						"values"
+					],
+					"additionalProperties": false
+				},
+				"scheme": {
+					"type": [
+						"object",
+						"null"
+					],
+					"description": "Where the page publishes the colour scheme it resolved. `review-ui render --scheme light|dark` emulates `prefers-color-scheme` and proves each shot against this root attribute. Null (or absent) refuses `--scheme`.",
+					"properties": {
+						"rootAttribute": {
+							"type": "string",
+							"description": "The attribute on `document.documentElement` whose value is `light` or `dark` once the page has resolved its scheme.",
+							"pattern": "^[a-z][a-z0-9-]*$"
+						}
+					},
+					"required": [
+						"rootAttribute"
+					],
+					"additionalProperties": false
+				},
+				"accent": {
+					"type": [
+						"object",
+						"null"
+					],
+					"description": "The root attribute the app switches its theme accent on and the closed set of accents it accepts. `review-ui render --accent` sets one of them on `document.documentElement` after navigation and proves it read back before the shot. Null (or absent) refuses `--accent`.",
+					"properties": {
+						"rootAttribute": {
+							"type": "string",
+							"description": "The attribute on `document.documentElement` whose value selects the accent.",
+							"pattern": "^[a-z][a-z0-9-]*$"
+						},
+						"values": {
+							"type": "array",
+							"description": "The accepted accent names, each a value of that attribute.",
+							"items": {
+								"type": "string",
+								"pattern": "^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$"
+							},
+							"minItems": 1,
+							"uniqueItems": true
+						}
+					},
+					"required": [
+						"rootAttribute",
+						"values"
+					],
+					"additionalProperties": false
 				}
 			},
 			"required": [],
@@ -486,10 +1108,25 @@
 						"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 					},
 					"prefix": {
-						"type": "string",
-						"description": "The repo-relative source root whose changed files raise the ui class, ending in `/`.",
-						"minLength": 1,
-						"pattern": "^(?!/)(?!\\.\\.).*/$"
+						"description": "Where the app's rendered source lives: one source root, or a non-empty list of them. A changed file under a directory root, or equal to a file root, raises the ui class.",
+						"oneOf": [
+							{
+								"type": "string",
+								"description": "A repo-relative source root. Ending in `/` it is a directory covering every file under it; otherwise it names exactly one file.",
+								"minLength": 1,
+								"pattern": "^(?![/\\s])(?!\\.\\.)(?:.*\\S)?$"
+							},
+							{
+								"type": "array",
+								"items": {
+									"type": "string",
+									"description": "A repo-relative source root. Ending in `/` it is a directory covering every file under it; otherwise it names exactly one file.",
+									"minLength": 1,
+									"pattern": "^(?![/\\s])(?!\\.\\.)(?:.*\\S)?$"
+								},
+								"minItems": 1
+							}
+						]
 					},
 					"mount": {
 						"type": "string",

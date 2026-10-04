@@ -194,8 +194,11 @@ is one instance of the convention rather than its definition.
 
 The four rows are convention paths with no key behind them. **What the repo renders is not a path at
 all**: it is the `uiSurfaces` list in `.fabrika.jsonc`, read by `ui render`, `ui manifest` and `ui
-evidence` — and by `review scope` / `ship scope`, which raise the `ui` class off the same rows'
-`prefix` fields, so what renders and what owes a rendered verdict are one declaration.
+evidence` off the checkout they run in, since they act on that tree — and by `review scope` /
+`ship scope`, which raise the `ui` class off the same rows' `prefix` fields, so what renders and
+what owes a rendered verdict are one declaration. The scope verbs read it at the PR's head and its
+merge base rather than off any checkout, and a path under a row either commit declares raises the
+class.
 
 ### The `uiSurfaces` and `uiCapture` schema — canonical here
 
@@ -307,7 +310,7 @@ The manifest itself is the one surface whose absence refuses: without it there i
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages. Never improvise a design language.` | 12 | refusal |
+| `ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Type /fabrika:front-door in Claude Code: it drafts one from the repo's own pages and styles, and in a repo with no pages or styles yet it proposes a look in plain words and writes it on the owner's yes. Never improvise a design language.` | 12 | refusal |
 | `ui manifest: cannot probe <path>: <reason> — presence is UNKNOWN, never "absent".` | 11 | refusal |
 
 **Scope** — the four convention paths against the repo root, plus the declared `uiSurfaces` rows.
@@ -323,7 +326,7 @@ $ fabrika ui manifest
 
 ```
 $ fabrika ui manifest
-ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages. Never improvise a design language.
+ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Type /fabrika:front-door in Claude Code: it drafts one from the repo's own pages and styles, and in a repo with no pages or styles yet it proposes a look in plain words and writes it on the owner's yes. Never improvise a design language.
 $ echo $?
 12
 ```
@@ -368,7 +371,7 @@ registry with zero rows is `4` (a law file that names no law is malformed, not m
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ui law: design-prohibitions.json exists but does not satisfy the registry schema: <first violation> — refusing the whole file; half a law is not a law.` | 4 | refusal |
-| `ui law: no design manifest at design-system-manifest.md — run /fabrika: front-door's bootstrap drafts one.` | 12 | refusal |
+| `ui law: no design manifest at design-system-manifest.md — Type /fabrika:front-door in Claude Code: it drafts one from the repo's own pages and styles, and in a repo with no pages or styles yet it proposes a look in plain words and writes it on the owner's yes.` | 12 | refusal |
 | `ui law: the law is untyped — no design-prohibitions.json beside the manifest. The manifest's prose prohibitions are the law; note LAW-SOURCE: manifest-prose in the PR.` | 13 | refusal |
 | `ui law: cannot read design-prohibitions.json: <reason> — the law is UNKNOWN, never "untyped".` | 11 | refusal |
 
@@ -633,8 +636,13 @@ verify each upload individually, before anything posts** — the two-tier store:
    the attachment tier — declaring no store is a fact, not an error, at evidence time; a
    `uiCapture` that does not decode is `11`, same key-read rule as in `ui render`.)
 2. **Attachment tier** — no `evidenceStore` declared: upload each PNG through GitHub's
-   user-attachment endpoint, then probe every returned URL (`HEAD`, expect 200). Any failed
-   upload or probe is `17`. Two facts about this tier stated rather than hidden: the endpoint
+   user-attachment endpoint, then read each one back through GitHub's renderer: render the
+   returned URL as an image through `POST /markdown` in the repo's context, take the signed
+   link the rendered HTML gives that asset, and `GET` it with no credential, expecting `200`
+   and bytes identical to the local capture. The returned URL itself is never fetched — a
+   fresh one reads `404` until posted content embeds it — and the token goes to the GitHub
+   API only, never to the served-asset host. `review-ui post` runs the same read-back. Any
+   failed upload, a render with no signed link, a non-`200` or other bytes is `17`. Two facts about this tier stated rather than hidden: the endpoint
    is **undocumented**, and its durability caveat rides along — hosted copies are
    display-grade, the set manifest in the lane scratch is the durable record — and it is an
    upload API, not an issues read/write, so it sits **outside** skill-conventions §11's

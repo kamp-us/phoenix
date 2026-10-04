@@ -16,6 +16,7 @@
  * Nothing here reads disk or the board: two compiled machines and the log go in, one verdict comes
  * out, and the verb writes only on the accepting one.
  */
+import {deferredTasks, resolveDeferrals} from "./deferral.ts";
 import {foldLog, type LogEntry} from "./fold.ts";
 import {AMENDED_EVENT, bareEvent, type CompiledLane} from "./machine.ts";
 
@@ -69,6 +70,8 @@ export const judgeAmendment = (
 	entries: ReadonlyArray<LogEntry>,
 	defers: ReadonlyArray<string> = [],
 ): AmendVerdict => {
+	const standing = resolveDeferrals(entries);
+	if (standing._tag !== "Resolved") return {_tag: "Unreplayable", defects: standing.defects};
 	const before = foldLog(current, entries);
 	if (before._tag !== "Folded") return {_tag: "Unreplayable", defects: before.defects};
 
@@ -80,13 +83,21 @@ export const judgeAmendment = (
 
 	// Before the candidate fold, because that fold answers this case as an unknown-task defect naming
 	// the machine rather than the amendment — a reader sent at `.fabrika/lanes/<n>/workflow.json` for
-	// a fault that is in the epic body.
+	// a fault that is in the epic body. A task an earlier amendment deferred already left the plan with
+	// its history accounted for, so it binds this amendment no more than the fold binds it.
+	const alreadyDeferred = deferredTasks(standing.deferrals);
 	const historied = new Set(
-		entries.filter((entry) => bareEvent(entry.event) !== AMENDED_EVENT).map((entry) => entry.task),
+		entries
+			.filter((entry) => bareEvent(entry.event) !== AMENDED_EVENT)
+			.map((entry) => entry.task)
+			.filter((task) => !alreadyDeferred.has(task)),
 	);
 
 	const deferred = new Set(defers);
 	const misnamed = [...deferred].sort().flatMap((task) => {
+		if (alreadyDeferred.has(task)) {
+			return [`task "${task}" is deferred and an earlier amendment already deferred it`];
+		}
 		if (current.tasks[task] === undefined) {
 			return [`task "${task}" is deferred and this lane's machine holds no such task`];
 		}

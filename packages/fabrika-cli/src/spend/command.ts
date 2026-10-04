@@ -22,15 +22,19 @@ const read = leafCommand(
 	{
 		transcript: Argument.string("transcript").pipe(
 			Argument.optional,
-			Argument.withDescription("path to the run's JSONL transcript"),
+			Argument.withDescription("path to the run's JSONL transcript; never given with --ledger"),
 		),
 		ledger: Flag.string("ledger").pipe(
 			Flag.optional,
-			Flag.withDescription("read versioned usage records from this ledger; emits JSON"),
+			Flag.withDescription(
+				"read versioned usage records from this ledger instead of a transcript; always emits JSON",
+			),
 		),
 		json: Flag.boolean("json").pipe(
 			Flag.withDefault(false),
-			Flag.withDescription("emit the answer as JSON on stdout instead of the line grammar"),
+			Flag.withDescription(
+				"emit a transcript's eight fields as JSON on stdout instead of the line grammar",
+			),
 		),
 	},
 	Effect.fn(function* ({transcript, ledger, json}) {
@@ -43,8 +47,20 @@ const read = leafCommand(
 ).pipe(
 	Command.withShortDescription("Read attributed ledger records or a legacy transcript."),
 	Command.withDescription(
-		"Read either a positional legacy transcript or --ledger <path>, never both. Ledger mode always emits JSON {records, legacy, diagnostics, usage}. usage is the same unfiltered response/model/category and coverage summary as spend rollup. diagnostics counts malformed, newerVersion, duplicates and conflicts; conflicting identities and cumulative snapshots do not enter usage totals. Pi coverage remains unavailable. Legacy transcript mode emits spend\\t<billed>\\t<assistantTurns>, then input, cacheCreate, cacheRead, output, exCacheRead and model rows; --json emits those eight fields. Legacy model attribution is the last observed model, not a per-response breakdown. Exits 1 (ambiguous or missing input), 7 (input absent), 11 (input unreadable), 12 (legacy transcript has no billed turns). Example: node packages/fabrika-cli/src/bin.ts spend read --ledger .fabrika/spend-ledger.jsonl --json",
+		[
+			"Prints a ledger's JSON {records, legacy, diagnostics, usage}, or a transcript's `spend\\t…` lines.",
+			"  7: the input is absent",
+			"  11: the input is unreadable",
+			"  12: the transcript has no billed turns",
+			'  Derivation: packages/fabrika-cli/docs/usage-recording.md, "Entry points"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"node packages/fabrika-cli/src/bin.ts spend read --ledger .fabrika/spend-ledger.jsonl --json",
+		},
+	]),
 );
 
 const rollup = leafCommand(
@@ -75,13 +91,13 @@ const rollup = leafCommand(
 		since: Flag.string("since").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"inclusive lower bound — an ISO-8601 instant, or a bare YYYY-MM-DD meaning that UTC day's first millisecond",
+				"inclusive lower bound — an ISO-8601 instant, or a bare YYYY-MM-DD meaning that UTC day's first millisecond; historical ledgers only, refused once version-2 rows exist",
 			),
 		),
 		until: Flag.string("until").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"inclusive upper bound — an ISO-8601 instant, or a bare YYYY-MM-DD meaning through that whole UTC day",
+				"inclusive upper bound — an ISO-8601 instant, or a bare YYYY-MM-DD meaning through that whole UTC day; historical ledgers only, refused once version-2 rows exist",
 			),
 		),
 		json: Flag.boolean("json").pipe(
@@ -105,8 +121,18 @@ const rollup = leafCommand(
 ).pipe(
 	Command.withShortDescription("Issue/run model and token totals with explicit coverage."),
 	Command.withDescription(
-		"Sum recorded response counters by native host/format/provider/model, preserving additive, subset, aggregate and unknown meanings. --issue, --run and --repo intersect exact recorded bindings. Unattributed responses remain in run/overall totals and are counted as excluded by an issue filter. JSON adds usage {scope, responses, counters, byModel, excluded, unattributed, coverage, diagnostics} and legacy metadata to the historical window/totals/skipped/undatedRows/byDay/bySkill/byStageArm fields. Text retains the historical billed/exCacheRead/assistantTurns/runs/measuredRuns and skipped/skippedMalformed/skippedNewerVersion/undatedRows lines, then day/skill/stage-arm rows capped at ten each with dayMore/skillMore/stageArmMore; it appends legacy\\t<JSON> and usage.<field>\\t<JSON> for every usage field. Category tokens are null without a measurement; states counts distinguish measured zero, absent, unsupported, unavailable and not-applicable. Cumulative snapshots and conflicting identities are excluded. Coverage names missing participants and unknown discovery; Pi is unavailable. Legacy rows have no modern attribution and are excluded by binding filters. --since/--until accept inclusive instants or whole UTC dates for legacy-only ledgers; they refuse when version-2 rows exist because those rows have no timestamps. Exits 1 (invalid dates or modern date filtering), 7 (ledger absent), 11 (unreadable), 12 (no readable rows), 13 (empty legacy date window). No native parsing, prices or task-result changes. Example: node packages/fabrika-cli/src/bin.ts spend rollup --issue 42 --json",
+		[
+			"Prints historical totals and breakdowns, then `legacy\\t<JSON>` and `usage.<field>\\t<JSON>` lines.",
+			"  7: the ledger is absent",
+			"  11: the ledger is unreadable",
+			"  12: the ledger has no readable rows",
+			"  13: the historical date window is empty",
+			'  Derivation: packages/fabrika-cli/docs/usage-recording.md, "Issue and run summaries"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "node packages/fabrika-cli/src/bin.ts spend rollup --issue 42 --json"},
+	]),
 );
 
 const record = leafCommand(
@@ -123,8 +149,18 @@ const record = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record one native model and token usage envelope."),
 	Command.withDescription(
-		"Record one version-2 usage envelope from stdin. Emits JSON status. Exit 11 means recording failed; retry the same envelope without changing the task result.",
+		[
+			'Records one version-2 usage envelope from stdin and prints {"status":"recorded"|"duplicate"}.',
+			"  11: recording failed; retry the same envelope",
+			'  Derivation: packages/fabrika-cli/docs/usage-recording.md, "Entry points"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"node packages/fabrika-cli/src/bin.ts spend record --ledger .fabrika/example-usage.jsonl < packages/fabrika-cli/src/spend/fixtures/attributed/codex.json",
+		},
+	]),
 );
 
 export const spendCommand = Command.make("spend").pipe(

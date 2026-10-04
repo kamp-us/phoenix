@@ -1,7 +1,7 @@
 ---
 id: 0303
 title: The kampus-pipeline Plugin Is Retired — Deleted, Not Frozen
-status: accepted
+status: amended-in-part by [0411](0411-kampus-pipeline-marketplace-entry-removed.md)
 date: 2026-08-19
 tags: [pipeline, fabrika, control-plane, retirement]
 ---

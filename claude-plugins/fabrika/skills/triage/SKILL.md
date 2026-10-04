@@ -1,6 +1,6 @@
 ---
 name: triage
-description: "Turn one raw `status:needs-triage` issue into a single actionable unit a builder can pick up cold. Trigger on \"/triage\", \"triage the queue\", \"triage issue #N\", \"process needs-triage\", \"classify these issues\", and whenever someone asks to make the backlog actionable or pickable."
+description: "Turn one raw issue, labelled `status:needs-triage` or carrying no labels at all, into a single actionable unit a builder can pick up cold. Trigger on \"/triage\", \"triage the queue\", \"triage issue #N\", \"process needs-triage\", \"classify these issues\", and whenever someone asks to make the backlog actionable or pickable."
 arguments: [issue_number]
 argument-hint: "[issue-number] — the raw issue to triage"
 ---
@@ -31,8 +31,8 @@ claim, and never re-run without it — a tokenless re-run is a new lane racing y
 proves, and which refusal each exit code carries, is the verb's own section
 (`fabrika wire doc-section --heading "triage claim" < <skill-base>/contract.md`).
 
-**That rule has teeth now, and the token is what gives it them.** Every verb below that writes —
-`enrich`, `apply`, `park`, `kill`, `split` — re-reads the claim before its first write and refuses
+**That rule has teeth now, and the token is what gives it them.** Every per-issue verb below that
+writes — `enrich`, `apply`, `park`, `kill`, `split` — re-reads the claim before its first write and refuses
 on `17` when a live marker names another claimant, so proceeding on a `lost` no longer overwrites the
 winner's work; it just fails. **Pass `--token <claim-token>` to every one of those five.** Without it
 the verb can only tell that *some* lane of your session holds the claim, which is exactly the sibling
@@ -68,7 +68,8 @@ of it** — a summary of a contract is not the contract. A hand-filed issue skip
 fabrika report dedup --query "definition editor loses focus after save" --exclude $issue_number
 ```
 
-Read `candidates` yourself — shared vocabulary is not a shared observation; `indeterminate` is a
+Read `candidates` yourself — shared vocabulary is not a shared observation. A closed match needs
+a behavior check before it can count as already fixed; `indeterminate` is a
 non-check, so re-query. `--exclude` is this group's extension to the `report` verb, and its grammar
 is the section that adds it:
 `fabrika wire doc-section --heading "report dedup — the --exclude extension" < <skill-base>/contract.md`. A duplicate routes by who filed it (step 8).
@@ -181,13 +182,28 @@ reach here: a split leaves no survivor to fold the original into, so nothing lic
 
 **Every issue leaves with a home** — an open milestone, or one of the two standing lanes.
 Lane-entering work (an epic, or a parentless feature) additionally carries a `## Pitch` whose `Arc`
-*is* that home — inside your rewrite for a feature, on stdin for an epic — and **only the founder
-approves a pitch**. Take an existing home: **triage never creates a milestone**, and
-`wayfinder:backlog` is bounded to genuine fog rather than work you would rather not decide about.
-**An `active` campaign's milestone is closed to new intake** unless the work is `p0` or `p1`, or
-blocks one of that milestone's own in-flight lanes — `triage homes` marks those rows
-`running: p0/p1 or blocker`, and is where you read which milestones they are. Only `p2` is subtracted,
-so a park reason names that band and nothing wider. That is a subtraction and nothing more: home the work by fit exactly as above.
+*is* that home — inside your rewrite for a feature, on stdin for an epic. **The founder approves a
+pitch, never triage**: by a `pitch-approved:` comment, or by setting the issue's betting-table row to
+Stage `bet` — his own write or an agent's on his instruction, with the row's Size matching the
+pitch's Appetite.
+**A founder ruling that names a parentless feature by its number discharges that feature's pitch**,
+when the feature is homed in the ruling's own arc — the same milestone or the same epic. Link the
+ruling in a comment on the feature, and leave the body as it is: the comment is the pitch's whole
+trace, so a discharge without one is a missing pitch. A feature a ruling only implies, however
+plainly, still owes its pitch. Take an existing
+home: **triage never creates a milestone**, and `wayfinder:backlog` is bounded to genuine fog rather
+than work you would rather not decide about.
+**A board-wide homing breach is swept by a verb, never by raw `gh`.** When `guard homing-guard check`
+reds on double-marked issues, `fabrika triage sweep-homes` drops the milestone and keeps the lane,
+dry run first, then `--apply` with the citation on stdin. It is the one writing verb here that takes
+no claim and no `--token`; its contract section says why. The un-homed issues it refuses on `27` are
+yours to home one at a time here.
+**An `active` campaign's milestone admits new intake only at `p0` or `p1`**, or when the work blocks
+one of that milestone's own in-flight lanes — `triage homes` marks those rows
+`running: p0/p1 or blocker`, and is where you read which milestones they are. This narrows
+where you home, and it is yours to apply: the verb marks the row and refuses nothing, and no lane is
+ever refused for its campaign. Only `p2` is subtracted, so a park reason names that band and nothing
+wider; otherwise home the work by fit exactly as above.
 Every row the verb prints, and what `running` is derived from, is its own section
 (`fabrika wire doc-section --heading "triage homes" < <skill-base>/contract.md`).
 
@@ -197,13 +213,28 @@ fabrika triage homes
 
 ```bash
 fabrika triage enrich $issue_number --token <claim-token> <<'EOF'
+## In plain words
+
+…
+
 …
 EOF
 ```
 
-For an epic, `fabrika triage enrich $issue_number --epic` takes the pitch's five fields on that same
-stdin — Problem / Arc / Appetite / Rabbit-holes / No-gos — and heads them `## Pitch` above the
-brief, which it preserves verbatim for the planner; no *rewrite* goes above an epic's brief. The
+**Every enrichment opens with a plain-language summary**, because the person deciding the issue reads
+it first and may read nothing else. Send it on stdin as one `## In plain words` section: one
+paragraph of 2-3 everyday sentences saying what is wrong, who it hurts and what we would do. Keep it
+honest, not salesy, and make it say what the body below it says; a summary that promises more than
+the body is a wrong summary. The verb places it at the very top — above the rewrite, and above an
+epic's `## Pitch` — and writes nothing when the section is wrong: exit `26` for no summary, an empty
+one, or more than one, and exit `3` when the summary is all you sent and nothing follows it.
+
+A pitch carries five fields — Problem / Arc / Appetite / Rabbit-holes / No-gos, plus an optional
+Success line — whether it sits in a feature's rewrite or on an epic's stdin. Write Appetite as a
+size, `S`, `M` or `L`, never as cycles; Success is the one sentence the two-week check judges the
+shipped bet against. For an epic, `fabrika triage enrich $issue_number --epic` takes those fields
+on the same stdin as the summary and heads them `## Pitch` above the brief, which it preserves
+verbatim for the planner; no *rewrite* goes above an epic's brief. The
 rewrite adds real paths and function names over vague framing, and acceptance criteria that make
 "done" legible — not a closed set, a `review-*` gate may append. The criteria block's grammar is
 the wire format's, not this skill's
@@ -254,6 +285,10 @@ fails it earns a kill rather than a price. Then price what survives, on the work
 merit: `p0` for ship-work and fires, `p1` for what you would genuinely pull next, **`p2` is the
 default** and most of a healthy backlog. A roadmap row confers no band either way.
 
+**A defect a signed-out visitor can see is priced `p1` or `p0`, never below, whatever the fix
+costs.** It overrides the `p2` default. Whether a visitor can see it is your judgment on this
+issue, so your `Triage note:` says why you judged the defect visible or not.
+
 ```bash
 fabrika triage apply $issue_number --type bug --priority p2 --ready-for agent --home 47 --token <claim-token>
 ```
@@ -267,7 +302,10 @@ route.** Pass `--class ui` when the deliverable is a rendered surface, so the la
 `build:ui` — and, on a single-issue lane, `review:ui` too. This stamp is the *only* producer of that
 routing before a head has graded a diff: `lane open` and `lane emit` read the `class:<name>` label
 and seed the lane document from it, and without it a rendered ticket builds its first round in a
-shell carrying none of the design law and reaches `build:ui` only after a `review-ui` FAIL. The
+shell carrying none of the design law and reaches `build:ui` only after a `review-ui` FAIL. When
+the deliverable spans a rendered surface and text, pass `--class ui` beside the text class
+(`--class ui --class code`): that pair boots the lane, or the epic child, into `build:mixed`, the shell
+carrying both construction laws. The
 vocabulary is closed — `code`, `doc`, `skill`, `ui` — and an off-set spelling refuses on `10` before
 any label is written. The four labels are minted from that same set by `status bootstrap
 label-taxonomy`; on a board missing one the stamp refuses on `7` rather than letting the API create
@@ -325,7 +363,7 @@ is its only writer: the verb stamps the type, the priority, `status:triaged` and
 un-pickable until it is gated. Stamp it anyway — that is the correct triaged shape for an epic, and
 `--ready-for human` is what parks one for a person instead.
 
-**Do not assert control-plane scope.** `cp-classify` routes it and CODEOWNERS enforces it at merge;
+**Do not assert control-plane scope.** `fabrika ship scope` routes it and CODEOWNERS enforces it at merge;
 asserting it here routes a lane around an approval that never fires.
 
 Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, a `ready-for:` (none on
@@ -376,18 +414,18 @@ EOF
 
 **The value bar.** An issue can be correct, well-written, and still worth nothing. This is the bar
 the founder's own backlog sweeps run on, and it kills an agent-filed issue when any one of five
-clauses holds:
+clauses holds (each clause's token is what an audit's KILL row names):
 
-- **process ceremony** — the deliverable is a record nobody then acts on, a decision written down for
+- **process ceremony** (`process-ceremony`) — the deliverable is a record nobody then acts on, a decision written down for
   its own sake;
-- **self-generated churn** — refactor or build work we filed against our own output with no behaviour
+- **self-generated churn** (`self-generated-churn`) — refactor or build work we filed against our own output with no behaviour
   change: restated vocabulary, a duplicated list tidied, a docblock or sample-transcript nit, a doc
   sentence that omits one clause of a check that already works;
-- **hardening with no incident** — *has this ever failed in production?* This clause is a factual
+- **hardening with no incident** (`hardening-with-no-incident`) — *has this ever failed in production?* This clause is a factual
   test, not a taste call, and a "no" kills it. A missing unit test for a refusal that already works
   is this clause; so is nice-to-have telemetry or cost reporting for a cost nobody is paying;
-- **superseded** — something already landed, or already ruled, makes it moot;
-- **duplicate of its parent** — the parent's scope already covers it.
+- **superseded** (`superseded`) — something already landed, or already ruled, makes it moot;
+- **duplicate of its parent** (`duplicate-of-parent`) — the parent's scope already covers it.
 
 Those examples are verdicts, not hypotheticals: one sweep killed twelve of thirty-five triaged
 `p2`s, and every one of them landed in a clause above. The bar reaches agent-filed work only
@@ -403,8 +441,48 @@ Done when the issue has left the queue by exactly one route.
 fabrika triage queue
 ```
 
+The queue holds every open `status:needs-triage` issue and every open issue carrying no label at
+all, oldest first; a bare issue is triaged exactly like a labelled one.
 **Only `empty` ends a sweep** — a proven-empty queue and a failed read are different answers, and
 which is which is the verb's section
 (`fabrika wire doc-section --heading "triage queue" < <skill-base>/contract.md`; the codes it shares
 with every verb above are `--heading "The shared exit taxonomy"`). Then
 report one line per issue: outcome, type, priority, home, audience, **repo-relative paths only**.
+
+## Auditing already-triaged work
+
+An audit judges issues that are already triaged against the value bar, and it is **read-only until a
+human approves the kills**. The caller names the label the audit covers; there is no default.
+
+```bash
+fabrika triage audit-set --label <label> --json > <scratch>/set.json
+```
+
+That is the whole open set under the label, never truncated, and it refuses on `7` rather than
+printing an empty set when the label does not exist. Keep the audit's files in your session's
+scratch directory; their paths are machine-local and never go into an issue.
+
+**Readers never write.** Fan out one read-only reader per issue. A reader reads the issue and the
+code it names and returns exactly one verdict row, with one line of evidence:
+
+- `KILL` — it fits a value-bar clause, and the row names that clause's token;
+- `DECIDE` — keeping or killing it is a choice only a human can make;
+- `KEEP` — it clears the bar.
+
+A reader never claims, labels, comments or closes. Collect the rows into chunks, each carrying the
+number of rows it holds as `declared`, and merge them:
+
+```bash
+fabrika triage audit-merge --input <scratch>/set.json --chunk <scratch>/a.json --chunk <scratch>/b.json
+```
+
+The row and chunk shapes are that verb's help. The merge refuses, printing nothing, when a chunk's
+rows differ from its `declared` count (`23`), when one issue has two rows (`24`), or when the merged
+issues are not the input set (`25`). **Never rebuild a missing row by hand**: send that issue back to
+a reader. A rebuilt row is a verdict no reader gave.
+
+**The KILL batch waits for human approval.** Show the merged KILL rows with their clauses and
+evidence, and close nothing until a human approves the batch. Then close each approved issue one at
+a time through the normal route in step 8: claim it, run `triage provenance`, and use `triage kill`
+for an agent filing and `triage park` for a human filing, which is never killed. `DECIDE` rows go to
+the human as questions, and `KEEP` rows are left alone.

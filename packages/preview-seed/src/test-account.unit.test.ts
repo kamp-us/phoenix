@@ -1,6 +1,6 @@
 /**
  * The test-account provisioner's four refusable facts: a token weak enough to be guessed, a target
- * whose name is not a per-PR preview's, a run naming no tier at all, and a standing whose tier this
+ * whose name is not a per-PR preview's, a run naming no identity at all, and a standing whose identity this
  * run does not seed. Each must be decided BEFORE any write, so the fake below records every
  * statement it is handed and the assertions read that record.
  */
@@ -8,7 +8,7 @@
 import {fromApiToken} from "@distilled.cloud/cloudflare/Credentials";
 import {assert, describe, it} from "@effect/vitest";
 import {type ResolvedDatabaseName, resolveDatabaseName, toRestParams} from "@kampus/d1-rest";
-import {Layer} from "effect";
+import {Layer, Redacted} from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {
 	type CaylakStanding,
@@ -93,24 +93,29 @@ const fakeD1 = (users: ReadonlyArray<{id: string}>) => {
 	return {d1: client as unknown as D1Database, batched, selected};
 };
 
-const TOKEN = parseSessionToken("t".repeat(MIN_SESSION_TOKEN_LEN));
+const token = (raw: string) => parseSessionToken(Redacted.make(raw));
+
+const TOKEN = token("t".repeat(MIN_SESSION_TOKEN_LEN));
 
 describe("parseSessionToken", () => {
 	it("refuses a token below the minimum length", () => {
-		assert.isNull(parseSessionToken("t".repeat(MIN_SESSION_TOKEN_LEN - 1)));
+		assert.isNull(token("t".repeat(MIN_SESSION_TOKEN_LEN - 1)));
 	});
 
 	it("refuses a token carrying a cookie-illegal character", () => {
-		assert.isNull(parseSessionToken(`${"t".repeat(MIN_SESSION_TOKEN_LEN)};evil=1`));
-		assert.isNull(parseSessionToken(`${"t".repeat(MIN_SESSION_TOKEN_LEN)} spaced`));
+		assert.isNull(token(`${"t".repeat(MIN_SESSION_TOKEN_LEN)};evil=1`));
+		assert.isNull(token(`${"t".repeat(MIN_SESSION_TOKEN_LEN)} spaced`));
 	});
 
-	it("accepts a long token and trims it", () => {
-		assert.strictEqual(parseSessionToken(`  ${"t".repeat(40)}  `), "t".repeat(40));
+	it("accepts a long token, trims it, and prints it redacted", () => {
+		const parsed = token(`  ${"t".repeat(40)}  `);
+		assert.isNotNull(parsed);
+		assert.strictEqual(Redacted.value(parsed), "t".repeat(40));
+		assert.notInclude(`${String(parsed)} ${JSON.stringify({parsed})}`, "t".repeat(40));
 	});
 });
 
-const CAYLAK_TOKEN = parseSessionToken("c".repeat(MIN_SESSION_TOKEN_LEN));
+const CAYLAK_TOKEN = token("c".repeat(MIN_SESSION_TOKEN_LEN));
 
 /** The two forks of the promotion path, the pair a reviewer re-seeds between to capture both. */
 const VOUCHED = parseStanding(`15${KEFIL_SUFFIX}`) as CaylakStanding;
@@ -212,13 +217,13 @@ describe("provisionTestAccounts", () => {
 		assert.strictEqual(outcome._tag, "Provisioned");
 		if (outcome._tag !== "Provisioned") return;
 		assert.strictEqual(outcome.report.expiresAt.getTime(), now.getTime() + SESSION_TTL_MS);
-		assert.deepStrictEqual(outcome.report.tiers, ["yazar"]);
+		assert.deepStrictEqual(outcome.report.identities, ["yazar"]);
 		assert.lengthOf(batched, 4);
 		assert.include(batched[0]?.sql ?? "", '"user"');
 		assert.include(batched[1]?.sql ?? "", '"session"');
 		assert.include(batched[2]?.sql ?? "", "user_profile");
 		assert.include(batched[3]?.sql ?? "", "relation_tuple");
-		assert.include(batched[1]?.params ?? [], TOKEN);
+		assert.include(batched[1]?.params ?? [], Redacted.value(TOKEN));
 		assert.include(batched[3]?.params ?? [], TEST_ACCOUNTS.yazar.id);
 	});
 
@@ -236,10 +241,10 @@ describe("provisionTestAccounts", () => {
 		});
 		assert.strictEqual(outcome._tag, "Provisioned");
 		if (outcome._tag !== "Provisioned") return;
-		assert.deepStrictEqual(outcome.report.tiers, ["yazar", "çaylak"]);
+		assert.deepStrictEqual(outcome.report.identities, ["yazar", "çaylak"]);
 		assert.lengthOf(batched, 7);
 		assert.include(batched[3]?.params ?? [], TEST_ACCOUNTS.çaylak.id);
-		assert.include(batched[4]?.params ?? [], CAYLAK_TOKEN);
+		assert.include(batched[4]?.params ?? [], Redacted.value(CAYLAK_TOKEN));
 		assert.include(batched[6]?.sql ?? "", "relation_tuple");
 		assert.include(batched[6]?.params ?? [], TEST_ACCOUNTS.yazar.id);
 		assert.notInclude(
@@ -256,7 +261,7 @@ describe("provisionTestAccounts", () => {
 		});
 		assert.strictEqual(outcome._tag, "Provisioned");
 		if (outcome._tag !== "Provisioned") return;
-		assert.deepStrictEqual(outcome.report.tiers, ["çaylak"]);
+		assert.deepStrictEqual(outcome.report.identities, ["çaylak"]);
 		assert.strictEqual(outcome.report.tuples, 0);
 		assert.lengthOf(batched, 3);
 		assert.notInclude(
@@ -347,8 +352,8 @@ describe("provisionTestAccounts — çaylak standing", () => {
 			{çaylak: CAYLAK_TOKEN},
 			VOUCHED,
 		);
-		assert.strictEqual(outcome._tag, "StandingNeedsTier");
-		if (outcome._tag !== "StandingNeedsTier") return;
+		assert.strictEqual(outcome._tag, "StandingNeedsIdentity");
+		if (outcome._tag !== "StandingNeedsIdentity") return;
 		assert.strictEqual(outcome.missing, "yazar");
 		assert.strictEqual(outcome.role, "voucher");
 		assert.lengthOf(batched, 0);
@@ -364,8 +369,8 @@ describe("provisionTestAccounts — çaylak standing", () => {
 			{yazar: TOKEN},
 			UNVOUCHED,
 		);
-		assert.strictEqual(outcome._tag, "StandingNeedsTier");
-		if (outcome._tag !== "StandingNeedsTier") return;
+		assert.strictEqual(outcome._tag, "StandingNeedsIdentity");
+		if (outcome._tag !== "StandingNeedsIdentity") return;
 		assert.strictEqual(outcome.missing, "çaylak");
 		assert.strictEqual(outcome.role, "candidate");
 		assert.lengthOf(batched, 0);
@@ -401,7 +406,7 @@ describe("provisionTestAccounts — çaylak standing", () => {
 		assert.strictEqual(outcome._tag, "Provisioned");
 		if (outcome._tag !== "Provisioned") return;
 		assert.deepStrictEqual(outcome.report, {
-			tiers: ["yazar", "çaylak"],
+			identities: ["yazar", "çaylak"],
 			tuples: 1,
 			expiresAt: new Date(now.getTime() + SESSION_TTL_MS),
 		});
@@ -509,5 +514,113 @@ describe("provisionTestAccounts — base profile rows", () => {
 		const karmaRows = profiles.filter((stmt) => stmt.params.includes(VOUCHED.karma));
 		assert.lengthOf(karmaRows, 1);
 		assert.strictEqual(karmaRows[0], profiles[2]);
+	});
+});
+
+/**
+ * The email-unverified çaylak (#10264) is its own audience, not a flag on the verified one: the
+ * email-verified write gate refuses it the write the verified çaylak is granted, so each identity
+ * binds its own `email_verified` value and a run seeds exactly the identities it holds tokens for.
+ */
+describe("provisionTestAccounts — email-unverified çaylak", () => {
+	const UNVERIFIED_TOKEN = token("u".repeat(MIN_SESSION_TOKEN_LEN));
+
+	/** The value one `user` upsert binds for `column`, read off the statement's own column list. */
+	const userColumn = (stmt: Recorded, column: string): unknown => {
+		const list = /^insert into "user" \(([^)]*)\)/i.exec(stmt.sql)?.[1] ?? "";
+		const columns = list.split(",").map((name) => name.trim().replaceAll('"', ""));
+		const index = columns.indexOf(column);
+		assert.notStrictEqual(index, -1, `no ${column} column in ${stmt.sql}`);
+		return stmt.params[index];
+	};
+	const userRowOf = (batched: ReadonlyArray<Recorded>, id: string): Recorded => {
+		const row = batched.find(
+			(stmt) => /^insert into "user" /i.test(stmt.sql) && userColumn(stmt, "id") === id,
+		);
+		assert.isDefined(row, `no user row for ${id}`);
+		return row as Recorded;
+	};
+
+	it("is a third identity distinct from the two verified ones", () => {
+		const unverified = TEST_ACCOUNTS["çaylak-unverified"];
+		assert.isTrue(unverified.email.endsWith(".invalid"));
+		for (const other of [TEST_ACCOUNTS.yazar, TEST_ACCOUNTS.çaylak]) {
+			assert.notStrictEqual(unverified.id, other.id);
+			assert.notStrictEqual(unverified.email, other.email);
+			assert.notStrictEqual(unverified.username, other.username);
+			assert.notStrictEqual(unverified.sessionId, other.sessionId);
+		}
+	});
+
+	it("binds email_verified true for yazar and çaylak and false for the unverified çaylak", async () => {
+		assert.isNotNull(TOKEN);
+		assert.isNotNull(CAYLAK_TOKEN);
+		assert.isNotNull(UNVERIFIED_TOKEN);
+		const {d1, batched} = fakeD1([]);
+		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {
+			yazar: TOKEN,
+			çaylak: CAYLAK_TOKEN,
+			"çaylak-unverified": UNVERIFIED_TOKEN,
+		});
+		assert.strictEqual(outcome._tag, "Provisioned");
+		if (outcome._tag !== "Provisioned") return;
+		assert.deepStrictEqual(outcome.report.identities, ["yazar", "çaylak", "çaylak-unverified"]);
+		// drizzle's boolean mode binds SQLite's integer form.
+		assert.strictEqual(userColumn(userRowOf(batched, TEST_ACCOUNTS.yazar.id), "email_verified"), 1);
+		assert.strictEqual(
+			userColumn(userRowOf(batched, TEST_ACCOUNTS.çaylak.id), "email_verified"),
+			1,
+		);
+		const unverifiedRow = userRowOf(batched, TEST_ACCOUNTS["çaylak-unverified"].id);
+		assert.strictEqual(userColumn(unverifiedRow, "email_verified"), 0);
+		assert.strictEqual(userColumn(unverifiedRow, "tier"), "çaylak");
+	});
+
+	it("writes its user, session and profile rows under its own token and no moderates tuple", async () => {
+		assert.isNotNull(UNVERIFIED_TOKEN);
+		const account = TEST_ACCOUNTS["çaylak-unverified"];
+		const {d1, batched} = fakeD1([]);
+		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {
+			"çaylak-unverified": UNVERIFIED_TOKEN,
+		});
+		assert.strictEqual(outcome._tag, "Provisioned");
+		if (outcome._tag !== "Provisioned") return;
+		assert.deepStrictEqual(outcome.report.identities, ["çaylak-unverified"]);
+		assert.strictEqual(outcome.report.tuples, 0);
+		assert.lengthOf(batched, 3);
+		assert.include(batched[0]?.sql ?? "", '"user"');
+		assert.include(batched[1]?.sql ?? "", '"session"');
+		assert.include(batched[1]?.params ?? [], account.sessionId);
+		assert.include(batched[1]?.params ?? [], Redacted.value(UNVERIFIED_TOKEN));
+		assert.include(batched[2]?.sql ?? "", "user_profile");
+		assert.include(batched[2]?.params ?? [], account.username);
+		const params = batched.flatMap((stmt) => stmt.params);
+		assert.notInclude(params, TEST_ACCOUNTS.yazar.id);
+		assert.notInclude(params, TEST_ACCOUNTS.çaylak.id);
+	});
+
+	it("is refused on a database whose name is not a preview's, writing nothing", async () => {
+		assert.isNotNull(UNVERIFIED_TOKEN);
+		const {d1, batched} = fakeD1([]);
+		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PROD_NAME, {
+			"çaylak-unverified": UNVERIFIED_TOKEN,
+		});
+		assert.strictEqual(outcome._tag, "NotThrowaway");
+		assert.lengthOf(batched, 0);
+	});
+
+	it("never stands in for the çaylak a standing is about", async () => {
+		assert.isNotNull(UNVERIFIED_TOKEN);
+		const {d1, batched} = fakeD1([]);
+		const outcome = await provisionTestAccounts(
+			makeTestAccountDb(d1),
+			PREVIEW_NAME,
+			{"çaylak-unverified": UNVERIFIED_TOKEN},
+			UNVOUCHED,
+		);
+		assert.strictEqual(outcome._tag, "StandingNeedsIdentity");
+		if (outcome._tag !== "StandingNeedsIdentity") return;
+		assert.strictEqual(outcome.missing, "çaylak");
+		assert.lengthOf(batched, 0);
 	});
 });

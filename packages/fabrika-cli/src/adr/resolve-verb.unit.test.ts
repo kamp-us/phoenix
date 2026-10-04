@@ -189,14 +189,4 @@ describe("runResolve", () => {
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("cannot resolve --repo from the origin remote");
 	});
-
-	// The three states this verb used to fuse onto `1` — a caller that branches on the status can now
-	// tell a malformed filename from a duplicated id from a bad argument.
-	it("keeps the unparseable, duplicate and usage refusals on three different codes", async () => {
-		const unparseable = await run([[/^git ls-tree/, okOut(tree("0164-guard.md", "12-bad.md"))]]);
-		const duplicate = await run([[/^git ls-tree/, okOut(tree("0164-a.md", "0164-b.md"))]]);
-		const usage = await run([], {ids: ["0034a"]});
-		expect(new Set([unparseable.code, duplicate.code, usage.code]).size).toBe(3);
-		expect(usage.code).toBe(1);
-	});
 });

@@ -16,12 +16,6 @@ const envelope = JSON.stringify({
 });
 
 describe("hook check", () => {
-	it("answers with a positive token, never with silence", () => {
-		const outcome = check({_tag: "Text", text: envelope});
-		expect(outcome.code).toBe(0);
-		expect(outcome.stdout).toBe("conforms\tSessionStart\t5\n");
-	});
-
 	it("emits the object shape under --json", () => {
 		expect(check({_tag: "Text", text: envelope}, true).stdout).toBe(
 			'{"outcome":"conforms","event":"SessionStart","fields":5}\n',

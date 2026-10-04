@@ -3,9 +3,10 @@
  *
  * Only a subprocess proves those, and each `it` costs one cold node+TS load of `bin.ts` — so spawn
  * count is this file's cost (`.patterns/subprocess-test-budget.md`). Two spawns, both about facts no
- * in-process test can establish: that the group is reachable by its registration alone, and that a
- * refusal really does leave stdout empty across the process boundary. Everything else about these
- * verbs is covered in-process by the `*-verb.unit.test.ts` files beside them.
+ * in-process test can establish: an `open` refusal the adapter makes before any verb runs, and a
+ * genuinely empty pipe on fd 0 reaching a verb as read-and-empty rather than as a failed read. The
+ * empty-pipe spawn stands for every group that takes a body on stdin through the shared reader.
+ * Registration is in `command.unit.test.ts`; the verbs are covered in-process beside them.
  */
 import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
@@ -38,14 +39,6 @@ const fabrika = (args: ReadonlyArray<string>, stdin = ""): Run => {
 };
 
 describe("fabrika grill, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it("lists all five verbs under --help by its registration alone", () => {
-		const run = fabrika(["grill", "--help"]);
-		expect(run.code).toBe(0);
-		for (const verb of ["open", "round", "answer", "rule", "read"]) {
-			expect(run.stdout).toContain(verb);
-		}
-	});
-
 	// The refusal moved to the adapter when `OpenSubject` made "neither flag" unrepresentable in the
 	// verb, so this is the only tier that still reaches it.
 	it("refuses grill open with neither --topic nor --ticket, touching no network", () => {

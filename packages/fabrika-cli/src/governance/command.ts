@@ -21,6 +21,7 @@ import {corpusOverride, decisionsDirOr} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
+import {TRUNK_DEFAULT_HELP} from "../io/trunk.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {runBase} from "./base-verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -105,7 +106,7 @@ const subjectArgument = Argument.integer("pr").pipe(
 const rangeBaseFlag = Flag.string("base").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"with --tip: read a range <base>..<tip> instead of a pull request — the epic-child form",
+		"with --tip: read a range <base>..<tip> instead of a pull request — the epic-child form, which takes no positional",
 	),
 );
 
@@ -133,7 +134,6 @@ const scope = leafCommand(
 				tip: Option.getOrNull(tip),
 				repo: Option.getOrNull(repo),
 				json,
-				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);
@@ -141,8 +141,20 @@ const scope = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether a diff requires the governance namespace."),
 	Command.withDescription(
-		"Derive whether a diff requires the governance namespace, over which of the repo's declared harness roots, at the bound head. Prints `governance\\t<required|not-required>\\t<head>`, then a `root` line per touched root most-touched-first, `self`, and a `record` line per decision record in the diff. With --base and --tip the subject is a RANGE instead of a pull request — the epic-child form, where the third field is `<base>..<tip>`, the tree is read at the tip and the base is `merge-base(base, tip)`; the positional is dropped in that mode and --sha is refused. This is NOT a §CP classification — §CP is CODEOWNERS' answer, and the verb says so on stderr every run. Exits 7 (the PR is absent, closed, or has zero changed files; or the range changes no path), 10 (--sha is not a head SHA, a lone --base/--tip, a range end that is not a revision, --sha or a positional beside a range, or neither a positional nor a range), 11 (the PR, the commit binding, or the range's merge base could not be read — the derivation is UNKNOWN, never not-required), 12 (--sha is not the PR's head), 13 (a range's changed-file enumeration is provably short against a second read of the same range). On the pull-request path the local three-dot list IS the file set: a disagreement with GitHub's declared changed_files is printed on stderr and never refused on, and only an empty local read refuses (7). Examples: fabrika governance scope 4321; fabrika governance scope --base 9f2c1ab --tip 03135b9",
+		[
+			"Prints `governance\\t<required|not-required>\\t<head>`, then root, self and record lines.",
+			"  7: the PR or range is absent, closed or changes no path",
+			"  10: a malformed --sha, range or subject",
+			"  11: a read failed; the requirement is UNKNOWN",
+			"  12: --sha is not the PR's head",
+			"  13: the range's file list is provably short",
+			'  Derivation: the governance skill\'s contract.md, "governance scope"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika governance scope 4321"},
+		{command: "fabrika governance scope --base 9f2c1ab --tip 03135b9"},
+	]),
 );
 
 const sweep = leafCommand(
@@ -193,8 +205,19 @@ const sweep = leafCommand(
 ).pipe(
 	Command.withShortDescription("Rank the live records whose domain this subject touches."),
 	Command.withDescription(
-		"Rank the uncited live-accepted records whose decision domain the subject touches, reading the subject out of a bound commit or out of the corpus. All three outcomes — shortlist, no-overlap, indeterminate — exit 0 and none of them is a clearance. On the PR path the file set proving the record is in this PR is the local three-dot read shared with `governance scope` and `governance guards`; GitHub's `changed_files` is reported beside it on stderr and never refused on. Exits 7 (--dir holds zero records, the PR is absent or closed, or the local range changes no path), 10 (a non-four-digit id, a --sha that is not a head SHA, a negative --limit, or both a PR and --landed), 11 (the subject or a corpus member could not be read — an incomplete corpus is UNKNOWN), 12 (--sha is not the PR's head). Example: fabrika governance sweep 4321 --record 0240",
+		[
+			"Prints shortlist, no-overlap or indeterminate (none a clearance), then a line per ranked record.",
+			"  7: the corpus holds no record, or the PR is absent, closed or empty",
+			"  10: a malformed id, --sha or --limit, or a PR beside --landed",
+			"  11: a read failed; an incomplete corpus is UNKNOWN",
+			"  12: --sha is not the PR's head",
+			'  Derivation: the governance skill\'s contract.md, "governance sweep"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika governance sweep 4321 --record 0240"},
+		{command: "fabrika governance sweep --landed 0240"},
+	]),
 );
 
 const guards = leafCommand(
@@ -214,8 +237,17 @@ const guards = leafCommand(
 ).pipe(
 	Command.withShortDescription("The anchored invariants this diff removes or modifies."),
 	Command.withDescription(
-		"Scan the bound diff for anchored invariants it removes or modifies, and report the guard-bearing files it touches. Prints `guards\\t<hits|no-anchor-change|no-anchors-in-reach>\\t<anchors-in-reach>` then an `anchor` line per hit and a `guard-file` line per touched guard-bearing file, the guard-file evidence capped at five with a `guard-file-more` line carrying the remainder. no-anchors-in-reach is the scan reporting its own silence, never a clearance. Exits 7 (the PR is absent or closed, GitHub declares zero changed files, or the local three-dot read changes no path), 10 (--sha is not a head SHA), 11 (the diff could not be read — UNKNOWN, never no-anchor-change), 12 (--sha is not the PR's head), 13 (the served diff body carries fewer files than git's own enumeration of the same range). The local three-dot list IS the scanned file set: a disagreement with GitHub's declared changed_files is printed on stderr and never refused on, and an empty local read refuses (7) rather than printing no-anchors-in-reach over nothing. Example: fabrika governance guards 4321",
+		[
+			"Prints `guards\\t<hits|no-anchor-change|no-anchors-in-reach>\\t<n>`, then anchor and guard lines.",
+			"  7: the PR is absent or closed, or changes no path",
+			"  10: --sha is not a head SHA",
+			"  11: the diff could not be read (UNKNOWN)",
+			"  12: --sha is not the PR's head",
+			"  13: the served diff is provably short",
+			'  Derivation: the governance skill\'s contract.md, "governance guards"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika governance guards 4321"}]),
 );
 
 const base = leafCommand(
@@ -247,8 +279,19 @@ const base = leafCommand(
 ).pipe(
 	Command.withShortDescription("This skill's own text at a diff's merge base."),
 	Command.withDescription(
-		"Read this skill's own text at the merge base of a diff that edits it — the self fence's bytes, as a pasteable literal. Prints `base\\t<merge-base>\\t<file-count>` then a `file\\t<path>\\t<byte-count>` header and that file's bytes per path; the byte count is the delimiter, there is no separator line. With --base and --tip the subject is a RANGE instead of a pull request — the epic-child form, whose merge base is `merge-base(base, tip)`, the same commit the range's own three-dot diff is taken from; the positional is dropped in that mode. Exits 7 (the PR is absent or closed, the skill root resolved to zero matches, or every --path is absent at the merge base), 10 (a --path outside the resolved skill root, a lone --base/--tip, a range end that is not a revision, a positional beside a range, or neither a positional nor a range), 11 (the merge base or a path could not be read, or the skill root resolved to more than one candidate), 12 (the head moved while the base was being resolved). Examples: fabrika governance base 4321; fabrika governance base --base 9f2c1ab --tip 03135b9",
+		[
+			"Prints `base\\t<merge-base>\\t<count>`, then a `file\\t<path>\\t<bytes>` header and bytes per file.",
+			"  7: the PR is absent or closed, or no skill file resolves",
+			"  10: a bad --path, range or subject",
+			"  11: a read failed, or the skill root is ambiguous",
+			"  12: the head moved while the base was resolved",
+			'  Derivation: the governance skill\'s contract.md, "governance base"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{command: "fabrika governance base 4321"},
+		{command: "fabrika governance base --base 9f2c1ab --tip 03135b9"},
+	]),
 );
 
 const post = leafCommand(
@@ -312,8 +355,33 @@ const post = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the governance verdict on stdin as one comment."),
 	Command.withDescription(
-		'Post the governance verdict read from STDIN: compose through the verdict-marker format, re-resolve the head, re-derive the namespace at the bound commit, leak-scan, APPEND into this head\'s own comment, read it back. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one. With --base and --tip the verdict is RANGE-scoped instead: the positional names the child issue, the requirement is re-derived over what `<base>...<tip>` changed in this checkout, the first line goes through the `range-verdict-marker` format `lane prove` reads, and the answer\'s third field is `<base>..<tip>`; --sha is refused in this mode. That path appends the same way, keyed on the range rather than a head. The namespace is fixed — there is no --namespace, so this verb cannot be aimed at another gate\'s. Prints `posted\\tgovernance\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|superseded>\\t<url>`, where `<content>` is the content digest the verdict binds. Exits 3 (stdin held nothing), 5/6 (a machine-local path, a bare @ reference), 7 (the PR is absent or closed; or, ranged, the issue is absent, closed, or a pull request), 8/9 (the write was unproven, the read-back differs), 10 (a bad --polarity, --sha or blank --clause, a lone --base/--tip, or --sha beside a range), 11 (a precondition read failed — nothing was posted), 12 (the head moved past --sha), 14 (the diff or range derives no governance namespace), 17 (a standing verdict of the OPPOSITE polarity at this head — ranged, over this range — would be retired and --supersede was not passed; nothing posted). Examples: fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" < verdict.md; fabrika governance post 5830 --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "no contradiction, no weakening" < verdict.md',
+		[
+			"Appends the stdin verdict to its comment and prints the read-back line below.",
+			"  posted\\tgovernance\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|superseded>\\t<url>",
+			"  3: stdin held nothing",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: the PR or issue is absent or closed",
+			"  8: the write is unproven",
+			"  9: the read-back differs",
+			"  10: a bad flag or flag combination",
+			"  11: a read failed; nothing posted",
+			"  12: the head moved past --sha",
+			"  14: no governance namespace is required",
+			"  17: an opposite verdict stands (--supersede)",
+			'  Derivation: the governance skill\'s contract.md, "governance post"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" < verdict.md',
+		},
+		{
+			command:
+				'fabrika governance post 5830 --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "no contradiction, no weakening" < verdict.md',
+		},
+	]),
 );
 
 const digest = leafCommand(
@@ -328,8 +396,10 @@ const digest = leafCommand(
 		),
 		dir: dirFlag,
 		base: Flag.string("base").pipe(
-			Flag.withDefault("origin/main"),
-			Flag.withDescription("the ref whose history is walked; fetched before the walk"),
+			Flag.optional,
+			Flag.withDescription(
+				`the ref whose history is walked; fetched before the walk (default: ${TRUNK_DEFAULT_HELP})`,
+			),
 		),
 		json: jsonFlag,
 	},
@@ -341,7 +411,8 @@ const digest = leafCommand(
 				since,
 				until: Option.getOrNull(until),
 				dir: corpus.dir,
-				base: ref,
+				base: Option.getOrNull(ref),
+				env: process.env,
 				json,
 				now: Effect.sync(() => Date.now()),
 			}),
@@ -350,8 +421,16 @@ const digest = leafCommand(
 ).pipe(
 	Command.withShortDescription("The decision records that landed in a window."),
 	Command.withDescription(
-		"List the decision records that landed in a window, each with its status as written, its landing commit, and that commit's anchor delta. `none` is a PROVEN answer at exit 0 — the window was walked and nothing landed. This verb ranks nothing: tension and blast radius are judgment. Exits 7 (--dir is absent or holds zero records), 10 (a malformed date, or --until before --since), 11 (--base could not be fetched or a landing commit could not be read — UNKNOWN, never none), 13 (a shallow clone whose graft boundary falls inside the window). Example: fabrika governance digest --since 2026-08-02",
+		[
+			"Prints `digest\\t<landed|none>\\t<count>`, then a `landed` line per record landed in the window.",
+			"  7: --dir is absent or holds zero records",
+			"  10: a malformed date, or --until before --since",
+			"  11: a fetch or read failed (UNKNOWN, never none)",
+			"  13: a shallow clone's graft cuts the window",
+			'  Derivation: the governance skill\'s contract.md, "governance digest"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika governance digest --since 2026-08-02"}]),
 );
 
 const readout = leafCommand(
@@ -380,8 +459,26 @@ const readout = leafCommand(
 ).pipe(
 	Command.withShortDescription("Publish the ranked rows on stdin to the durable readout."),
 	Command.withDescription(
-		"Publish the ranked rows read from STDIN onto the durable readout artifact: compose through the governance-digest format, leak-scan, upsert the one comment, read it back in order. It gates nothing — there is no outcome here meaning the corpus is in a bad state. Prints `readout\\t<issue>\\t<rows>\\t<created|edited>\\t<url>`. Exits 3 (stdin held nothing), 5/6 (a machine-local path, a bare @ reference), 7 (the artifact is absent, closed, or unresolvable), 8/9 (the write was unproven, the read-back differs), 10 (a row's kind or id is off the vocabulary), 11 (the issue or its comments could not be read — nothing was written), 13 (the comment enumeration is provably short). Example: printf 'row\\t0240\\troutine\\tno tension found\\n' | fabrika governance readout 4952",
+		[
+			"Publishes the rows on stdin and prints `readout\\t<issue>\\t<rows>\\t<created|edited>\\t<url>`.",
+			"  3: stdin held nothing",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: the readout issue is absent, closed or unresolvable",
+			"  8: the write is unproven",
+			"  9: the read-back differs",
+			"  10: a row's kind or id is off the vocabulary",
+			"  11: a read failed; nothing was written",
+			"  13: the comment list is provably short",
+			'  Derivation: the governance skill\'s contract.md, "governance readout"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				"printf 'row\\t0240\\troutine\\tno tension found\\n' | fabrika governance readout 4952",
+		},
+	]),
 );
 
 export const governanceCommand = Command.make("governance").pipe(

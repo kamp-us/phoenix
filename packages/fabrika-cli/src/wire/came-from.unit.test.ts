@@ -30,28 +30,10 @@ describe("read round-trips what the writers compose", () => {
 	it("reads a standalone section as a proven-unbound artifact", () => {
 		expect(found(cameFromSection(null))).toBeNull();
 	});
-
-	it("finds the section wherever it sits in a body", () => {
-		expect(found(`A grilling session.\n\n## Question\n\nwhy?\n\n${cameFromSection(88)}`)).toBe(88);
-	});
 });
 
-describe("read separates a body with no section from one it could not parse", () => {
-	it("answers Absent when nothing reaches for the heading", () => {
-		const answer = read("A grilling session. Nothing reaches for the heading.\n");
-		expect(answer._tag).toBe("Absent");
-	});
-
-	it("answers Absent on empty bytes", () => {
-		expect(read("")._tag).toBe("Absent");
-	});
-
+describe("read refuses the drifts its registry fixtures do not carry", () => {
 	it.each([
-		["a drifted heading level", "### Came from\n\n#6\n"],
-		["a drifted heading spelling", "## Came From\n\n#6\n"],
-		["a section holding prose", "## Came from\n\nthe founder mentioned it on a call\n"],
-		["a section holding a bare number", "## Came from\n\n6\n"],
-		["an empty section", "## Came from\n"],
 		["a section whose next line is the next heading", "## Came from\n\n## Question\n\nwhy?\n"],
 		["two conforming headings", "## Came from\n\n#1\n\n## Came from\n\n#2\n"],
 	])("answers Malformed on %s, never Absent and never Found", (_case, body) => {

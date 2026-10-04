@@ -3,12 +3,12 @@
  * palette is right or wrong, and it is decidable without rendering anything.
  */
 
+import {jsonSchema} from "@kampus/tuval-sdk/kernel/commands/parse/fixtures";
+import {buildSpellIndex} from "@kampus/tuval-sdk/kernel/commands/parse/spell-index";
+import type {RegistryDescription} from "@kampus/tuval-sdk/kernel/protocol/registry-description";
+import {registry, snapshot} from "@kampus/tuval-ui/testing/palette";
 import {describe, expect, it} from "vitest";
-import {jsonSchema} from "../commands/parse/fixtures.ts";
-import {buildSpellIndex} from "../commands/parse/spell-index.ts";
-import type {RegistryDescription} from "../protocol/registry-description.ts";
 import {acceptCandidate, paletteCandidates} from "./candidates.ts";
-import {registry, snapshot} from "./fixtures.ts";
 
 const labels = (input: string): ReadonlyArray<string> =>
 	paletteCandidates(input, registry, snapshot).map((candidate) => candidate.label);
@@ -39,12 +39,13 @@ const zoomLabels = (input: string): ReadonlyArray<string> =>
 	paletteCandidates(input, zoomRegistry, snapshot).map((candidate) => candidate.label);
 
 describe("paletteCandidates", () => {
-	it("lists the spells under a path prefix, not the bare segment", () => {
-		expect(labels("win")).toEqual(["window close", "window move", "window focus"]);
-	});
-
-	it("carries each spell's describe", () => {
+	it("lists the spells under a path prefix, not the bare segment, each with its describe", () => {
 		const found = paletteCandidates("win", registry, snapshot);
+		expect(found.map((candidate) => candidate.label)).toEqual([
+			"window close",
+			"window move",
+			"window focus",
+		]);
 		expect(found.map((candidate) => candidate.describe)).toEqual([
 			"Close the focused window.",
 			"Move the focused window.",

@@ -63,7 +63,6 @@ vi.mock("../components/profile/ProfileHeader", () => ({ProfileHeader: () => null
 // Flag ON so the contribution signal renders and its `username` prop is observable.
 vi.mock("../flags/useFlag", () => ({useFlag: () => ({value: true, loading: false})}));
 
-vi.mock("../lib/theme", () => ({useTheme: () => ({choice: "auto", setChoice: vi.fn()})}));
 vi.mock("../lib/density", () => ({useDensity: () => ({choice: "normal", setChoice: vi.fn()})}));
 
 // Keep react-fate's real `view` — `SetDisplayNameView` calls it at module load — while
@@ -112,24 +111,66 @@ describe("ProfilePage readUsername precedence (#2188 — the me-hop removal)", (
 	});
 });
 
+// The menu links here as "ayarlar", so the first thing the page shows has to be a setting —
+// the contribution list sits below every section (#9273).
+describe("ProfilePage settings-before-contributions order (#9273)", () => {
+	beforeEach(() => {
+		sessionUsername = "session-uname";
+		meUsername = "session-uname";
+	});
+
+	it("renders every settings section above the contribution signal", () => {
+		renderProfile();
+
+		const contributions = screen.getByTestId("contrib-username");
+		const headings = ["hesap", "görünüm", "oturum", "tehlikeli alan"].map((name) =>
+			screen.getByRole("heading", {name}),
+		);
+
+		for (const heading of headings) {
+			expect(heading.compareDocumentPosition(contributions)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+		}
+	});
+
+	it("keeps the appearance, session and danger sections in their existing relative order", () => {
+		renderProfile();
+
+		const [appearance, session, danger] = ["görünüm", "oturum", "tehlikeli alan"].map((name) =>
+			screen.getByRole("heading", {name}),
+		);
+
+		expect(appearance?.compareDocumentPosition(session as Node)).toBe(
+			Node.DOCUMENT_POSITION_FOLLOWING,
+		);
+		expect(session?.compareDocumentPosition(danger as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+	});
+});
+
 describe("ProfilePage appearance controls", () => {
-	it("uses the shared Manti outline ToggleGroup without the retired page override", () => {
+	it("renders the density control as the shared Manti outline ToggleGroup", () => {
 		sessionUsername = "session-uname";
 		meUsername = "session-uname";
 
 		renderProfile();
 
-		const themeGroup = screen
-			.getByRole("radio", {name: "koyu"})
-			.closest('[data-scope="toggle-group"][data-part="root"]');
 		const densityGroup = screen
 			.getByRole("radio", {name: "normal"})
 			.closest('[data-scope="toggle-group"][data-part="root"]');
 
-		for (const group of [themeGroup, densityGroup]) {
-			expect(group?.classList).toContain("kp-toggle-group--outline");
-			expect(group?.classList).not.toContain("kp-profile__theme-toggle");
+		expect(densityGroup?.classList).toContain("kp-toggle-group--outline");
+	});
+
+	// A signed-in user's one theme control is the user menu's (ADR 0437).
+	it("renders no theme control of its own", () => {
+		sessionUsername = "session-uname";
+		meUsername = "session-uname";
+
+		renderProfile();
+
+		for (const label of ["açık", "koyu", "otomatik"]) {
+			expect(screen.queryByRole("radio", {name: label})).toBeNull();
 		}
+		expect(screen.queryByText("tema")).toBeNull();
 	});
 
 	it("promotes account deletion as the dangerous area's primary action", () => {

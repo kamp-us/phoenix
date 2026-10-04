@@ -1,6 +1,6 @@
 /**
- * The divan's two mod surfaces render English once the reader picks `en` (#7532). The brand
- * nouns stay put across the swap, which is the half a catalog-key test cannot show.
+ * The divan's two mod surfaces render English once the reader picks `en` (#7532), and çaylak is
+ * translated like every non-product word (ADR 0414) — the half a catalog-key test cannot show.
  */
 import {render, screen, waitFor} from "@testing-library/react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
@@ -52,7 +52,7 @@ beforeEach(() => {
 });
 
 describe("the divan renders English for an `en` reader", () => {
-	it("swaps the roster's copy and holds çaylak, the brand noun", async () => {
+	it("swaps the roster's copy and translates çaylak", async () => {
 		listItems = [{node: {id: "n-1"}}];
 		viewData = ROSTER_ROW;
 		render(
@@ -62,10 +62,10 @@ describe("the divan renders English for an `en` reader", () => {
 		);
 
 		await waitFor(() =>
-			expect(screen.getByRole("list").getAttribute("aria-label")).toBe("çaylaklar under review"),
+			expect(screen.getByRole("list").getAttribute("aria-label")).toBe("newcomers under review"),
 		);
 		expect(screen.getByText("3 items · 1 definition, 1 post, 1 comment")).toBeTruthy();
-		expect(screen.getByTestId("divan-caylak-a-1").textContent).toContain("çaylak");
+		expect(screen.getByTestId("divan-caylak-a-1").textContent).toContain("newcomer");
 	});
 
 	// Each count in the roster line inflects on its own value, so a row mixing 1, 0 and 2 is

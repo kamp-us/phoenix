@@ -30,6 +30,7 @@ import {
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {UNDECLARED} from "../ship/fixtures.test-support.ts";
 import {
 	APPEND_ONLY,
 	INCOMPLETE_SCAN,
@@ -100,7 +101,10 @@ const withShell = <A>(
 	http: ReadonlyArray<Scripted> = [],
 ): Promise<A> =>
 	Effect.runPromise(
-		Effect.provide(effect, Layer.merge(fakeSeams([...script, ...http]).layer, unconfigured)),
+		Effect.provide(
+			effect,
+			Layer.merge(fakeSeams([...script, ...http, ...UNDECLARED]).layer, unconfigured),
+		),
 	);
 
 /** A canned payload as the platform serves it — the fixtures speak `ExecResult`, the seam HTTP. */

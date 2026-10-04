@@ -1,13 +1,15 @@
 # fabrika hook surface
 
-The reference for fabrika's Claude Code hook layer: **the surface** — where a fabrika hook is declared and how it invokes a verb — and **the record format** a grading pass writes its verdicts into.
+The reference for fabrika's Claude Code hook layer: **the surface** — where a fabrika hook is declared and how it invokes a verb — [**the hook verbs' derivations**](#the-hook-verbs-derivations) each hook verb's help points to, and **the record format** a grading pass writes its verdicts into.
 
 ## The surface
 
-fabrika declares its hooks in one file, [`../hooks.json`](../hooks.json), in the plugin directory. There is no dispatch script, no installed-copy path to resolve and no version marker to compare, and that is not an omission — it falls out of two rules stated elsewhere, so this section cites them instead of restating them:
+fabrika declares its Claude Code hooks in one file, [`../hooks.json`](../hooks.json), in the plugin directory. There is no dispatch script, no installed-copy path to resolve and no version marker gating the dispatch, and that is not an omission — it falls out of two rules stated elsewhere, so this section cites them instead of restating them:
 
-- **A hook command is a plain literal `fabrika <group> <verb>` string** — no `$VAR`, no `${VAR:-default}`, no command substitution, no `source` ([`cli-interface-convention.md`](cli-interface-convention.md) rule 5). An agent executes a command; it never sources one, because a sourced script can rewrite the caller's own shell out from under it.
-- **A hook calls only verbs implemented in [`../../../packages/fabrika-cli/`](../../../packages/fabrika-cli/)** — never another tool the plugin does not own ([`cli-interface-convention.md`](cli-interface-convention.md) rule 6).
+- **A hook command is a plain literal `fabrika <group> <verb>` string** — no `$VAR`, no `${VAR:-default}`, no command substitution, no `source` ([`interface-convention.md`](interface-convention.md#5-every-documented-invocation-is-a-plain-literal-command-string) rule 5). An agent executes a command; it never sources one, because a sourced script can rewrite the caller's own shell out from under it.
+- **A hook calls only verbs implemented in [`../../../packages/fabrika-cli/`](../../../packages/fabrika-cli/)** — never another tool the plugin does not own ([`interface-convention.md`](interface-convention.md#6-fabrika-calls-nothing-outside-fabrika) rule 6).
+
+The Codex usage hooks are a separate declaration, outside this surface: [`../../../packages/fabrika-cli/docs/codex-hooks.json`](../../../packages/fabrika-cli/docs/codex-hooks.json), which a repo merges into its own `.codex/hooks.json` ([Codex guide](../guide/codex.md#enable-interactive-usage-collection)). This page covers the Claude Code hook layer, and the check behind the plain-literal rule reads only the plugin file and a repo's own `.claude/settings.json`, so that rule does not reach the Codex file. Its command carries a command substitution.
 
 Which copy of the CLI serves the invocation is answered by the repo-root shim, not by the hook: [`../../../packages/fabrika-cli/docs/packaging.md`](../../../packages/fabrika-cli/docs/packaging.md), *Which copy serves an invocation*. That is what deletes the wrapper / data-dir / pin apparatus a hand-rolled hook layer grows — every job those three did has a home somewhere else.
 
@@ -15,7 +17,7 @@ Both rules are checked as **data**, not by eye: [`../../../packages/fabrika-cli/
 
 ### The declared hooks, and how they are proven
 
-The plugin declares the envelope check, the Bash worktree guard and the [Claude usage collector](claude-usage.md). An adopting repo may declare a worktree provider on its own, in
+The plugin declares the envelope check, the CLI minimum check, the two Bash guards (worktree escape and stash) and the [Claude usage collector](claude-usage.md). An adopting repo may declare a worktree provider on its own, in
 its `.claude/settings.json` — `fabrika hook worktree-create` on `WorktreeCreate` — for the reason
 [below](#worktreecreate--a-provider-hook-left-undeclared): that event is safe where the toolchain is
 guaranteed and unsafe where it is not, so it lives where the guarantee holds and never here. It may
@@ -28,7 +30,13 @@ two rules; what differs is which events each may carry.
 
 `fabrika hook check` on `SessionStart` is this surface's proof — it reads the envelope the harness writes to a hook's stdin and answers whether it is one fabrika can act on ([`../../../packages/fabrika-cli/src/hook/check-verb.ts`](../../../packages/fabrika-cli/src/hook/check-verb.ts)).
 
-`fabrika hook pre-bash` on `PreToolUse`/`Bash` is the only fabrika hook that **decides** anything: it denies a Bash command whose leading `cd`/`pushd` resolves outside the linked worktree the command runs in, whatever follows that jump, and read through the wrappers that jump can be written inside — a subshell, a command substitution, a brace group, `VAR=value` prefixes — since each of those is the same act one keystroke away. It exists because the harness's own escape refusals read the *command text*, so a program that reaches git in a child process passes them and moves the shared checkout's HEAD — observed twice in the field. It arms only inside a linked worktree, since which tree an agent works in is the operator's call and only *leaving* an isolated one is judged.
+`fabrika hook cli-floor` on `SessionStart` warns when the running CLI is older than the minimum the plugin declares in [`../cli-floor.json`](../cli-floor.json). The skills ship with every commit and the CLI ships by release, so an adopter's pinned CLI can lack a verb or flag a skill calls. The warning goes out as `systemMessage` and names both versions and the upgrade command; a CLI at or above the minimum shows nothing. release-please writes the minimum in each fabrika-cli Release PR, and [`cli-floor.repo.test.ts`](../../../packages/fabrika-cli/src/hook/cli-floor.repo.test.ts) reds when it drifts from the package version. It does not dispatch anything, so it is not a version marker in the sense above. A CLI released before this verb existed refuses it as an unknown subcommand, which the session shows and then starts anyway.
+
+Two fabrika hooks **decide** something, both on `PreToolUse`/`Bash`, and each denies one command shape.
+
+`fabrika hook pre-bash` denies a Bash command whose leading `cd`/`pushd` resolves outside the linked worktree the command runs in, whatever follows that jump, and read through the wrappers that jump can be written inside — a subshell, a command substitution, a brace group, `VAR=value` prefixes — since each of those is the same act one keystroke away. It exists because the harness's own escape refusals read the *command text*, so a program that reaches git in a child process passes them and moves the shared checkout's HEAD — observed twice in the field. It arms only inside a linked worktree, since which tree an agent works in is the operator's call and only *leaving* an isolated one is judged.
+
+`fabrika hook stash-guard` denies a Bash command that runs `git stash`, in any subcommand form and however it is addressed, when `git rev-parse --git-dir` and `--git-common-dir` differ in the command's `cwd` — that is, in a linked worktree. `refs/stash` lives in the common git dir, so every worktree of a clone shares one stash stack, and a pop can restore a sibling lane's files and drop its entry with no warning. `git -C "$WT" stash` is scoped and still shares the stack, which is why the refusal keys on the subcommand. It exists because this happened twice in the field before the guard did, once from a review shell and once between two build lanes, and a prose rule reaches only the shells whose skill carries it. Where the two dirs agree, the stash is let through.
 
 The former `fabrika hook spawn` on `PreToolUse` was a model-allowlist guard. It is **retired** — verb and declaration both deleted — because which model a subagent runs on is a per-run human choice, and a hook that second-guesses it only blocks the choice the human already made.
 
@@ -46,7 +54,7 @@ Everything here is read out of the **installed Claude Code executable, build 2.1
 - **Registry read.** The build carries its own hook-event registry — one `summary` plus a `description` that names the input JSON's fields — the same table `/hooks` renders. Extracted with `strings` and quoted verbatim below.
 - **Live capture.** Probe hooks wired in a throwaway git repository, each writing its stdin to a file. Absolute paths in the captures are elided; nothing else is edited.
 
-A newer build can change any row. The method above is the recheck.
+The registry entries and the exit-code lines quoted on this page were re-read in build 2.1.288 and match. The live captures and the three `WorktreeRemove` teardown strings keep the build each one names. A newer build can change any row. The method above is the recheck.
 
 #### `WorktreeCreate` — a provider hook, left undeclared
 
@@ -174,7 +182,7 @@ Until then the artifact is the only place an outcome can be read — the PR, the
 <a id="the-harness-exit-code-contract"></a>
 ### The harness exit-code contract — exit `2` blocks, and only on `PreToolUse`
 
-**On `PreToolUse`, exit `2` is the only blocking code; every other exit shows stderr and the tool call proceeds.** That is the harness's rule, not fabrika's, and it is the reason `2` is allocated by nothing in fabrika's exit tables ([`cli-interface-convention.md`](cli-interface-convention.md) rule 3). Read first-party out of the installed Claude Code binary (`strings`, build 2.1.228), under *Before tool execution*:
+**On `PreToolUse`, exit `2` is the only blocking code; every other exit shows stderr and the tool call proceeds.** That is the harness's rule, not fabrika's, and it is the reason `2` is allocated by nothing in fabrika's exit tables ([`interface-convention.md`](interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is) rule 3). Read first-party out of the installed Claude Code binary (`strings`, build 2.1.228), under *Before tool execution*:
 
 ```
 Exit code 0 - stdout/stderr not shown
@@ -184,34 +192,131 @@ Other exit codes - show stderr to user only but continue with tool call
 
 **`SessionStart` is the contrast, and it is stated here so nobody re-derives it.** The same binary's *When a new session is started* section reads `Exit code 2 - show stderr to user only`. So `2` carries no blocking power there at all — `fabrika hook check` cannot stop anything whatever it exits, and the whole exposure below is `PreToolUse`-only.
 
-Both legs were also confirmed live on build 2.1.227: a probe hook on matcher `Task|Workflow` exiting `2` produced `PreToolUse:Agent hook error: …` and the subagent never ran, while the identical probe exiting `3` let the spawn through. The matcher fires on the spawn tool even though the envelope's `tool_name` reads `Agent`, so fabrika's declaration is correct.
+Both legs were also confirmed live on build 2.1.227: a probe hook on matcher `Task|Workflow` exiting `2` produced `PreToolUse:Agent hook error: …` and the subagent never ran, while the identical probe exiting `3` let the spawn through. That probe dates from when fabrika declared a spawn guard on that matcher. The one `PreToolUse` matcher it declares today is `Bash`.
 
 The consequence is a **polarity**, not a style preference. A bootstrap or dispatch failure is a state in which no verb ran and no evidence exists, which must fail **open**; seating any such state on `2` makes it deny instead. Three sites did — `bin.ts`'s `ERR_MODULE_NOT_FOUND`, and `delegate/entry.ts`'s foreign-checkout refusal and walk-fault — plus a fourth found while fixing them, `delegate/resolve.ts`'s spawn fault. All four now exit `126` ([`../../../packages/fabrika-cli/src/verb.ts`](../../../packages/fabrika-cli/src/verb.ts), `NO_IMPLEMENTATION`), and the polarity is pinned by [`../../../packages/fabrika-cli/src/hook/pretooluse-polarity.cli.test.ts`](../../../packages/fabrika-cli/src/hook/pretooluse-polarity.cli.test.ts), which runs the argv out of the committed declaration against a real cross-checkout refusal and asserts the exit code is not the blocking one.
 
-**A deny never used an exit code anyway.** The retired `fabrika hook spawn` denied by returning exit **0** carrying `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",…}}`, and `fabrika hook pre-bash` denies the same way. That JSON mechanism is independent of the exit status, so a `PreToolUse` hook that means to refuse says so without touching `2`. The exposure this section describes is **live** rather than latent: `pre-bash` is consulted on every Bash call, so a bootstrap failure seated on `2` would block the whole session's shell — which is what the polarity is pinned against.
+**A deny never used an exit code anyway.** The retired `fabrika hook spawn` denied by returning exit **0** carrying `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",…}}`, and `fabrika hook pre-bash` and `fabrika hook stash-guard` deny the same way. That JSON mechanism is independent of the exit status, so a `PreToolUse` hook that means to refuse says so without touching `2`. The exposure this section describes is **live** rather than latent: `pre-bash` is consulted on every Bash call, so a bootstrap failure seated on `2` would block the whole session's shell — which is what the polarity is pinned against.
 
 **The allow side is the half that is easy to get wrong.** `permissionDecision: "allow"` is not "I have no objection": it bypasses the permission rules the operator configured. So a hook whose answer is "nothing to refuse here" emits no decision field at all, and `pre-bash`'s allow carries a fabrika-namespaced token the harness ignores — a positive answer for the convention's rule 2, and no decision for the harness.
 
 <a id="the-dispatch-failure-policy-point"></a>
 ### The dispatch-failure policy point — a hook that cannot run fails open
 
-A fabrika hook's verb can fail to run: a bare `fabrika` exits `127` on a machine with no install ([`../../../packages/fabrika-cli/docs/running-fabrika-in-a-repo.md`](../../../packages/fabrika-cli/docs/running-fabrika-in-a-repo.md), *Install the CLI and confirm it runs*), and a cross-checkout invocation refuses with exit `126` ([`../../../packages/fabrika-cli/src/delegate/resolve.ts`](../../../packages/fabrika-cli/src/delegate/resolve.ts)). The convention reserves both for *the verb never ran*, which is never a verdict ([`cli-interface-convention.md`](cli-interface-convention.md) rule 3).
+A fabrika hook's verb can fail to run: a bare `fabrika` exits `127` on a machine with no install ([`../../../packages/fabrika-cli/docs/running-fabrika-in-a-repo.md`](../../../packages/fabrika-cli/docs/running-fabrika-in-a-repo.md), *Install the CLI and confirm it runs*), and a cross-checkout invocation refuses with exit `126` ([`../../../packages/fabrika-cli/src/delegate/resolve.ts`](../../../packages/fabrika-cli/src/delegate/resolve.ts)). The convention reserves both for *the verb never ran*, which is never a verdict ([`interface-convention.md`](interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is) rule 3).
 
 **Ruled behaviour: fail open, and say so.** The harness event proceeds — a verb that never ran produced no evidence, so it may never deny. What is **banned is the silence**: the cannot-run state owes a visible degraded notice on stderr naming that the hook did not run and which defence is therefore absent. Fail-open-and-loud, never fail-open-and-forgotten. A verb that *runs* and returns a deny still fails closed as designed; the ruling touches the cannot-run case only.
 
 There is **exactly one kind of place** that decides it, and it is the event a hook is declared on in [`../hooks.json`](../hooks.json). Rule 5 admits no wrapper script, so fabrika has nowhere to intercept an exit code from a process that never started; what a dispatch failure can do is therefore fixed by the event. `SessionStart` cannot abort anything. On `PreToolUse` the answer splits by **which** dispatch failure it is, and the split is the exit code:
 
-- **Exit `127` — nothing ran.** No permission decision is produced, which the harness reads as no objection, so the spawn proceeds **unguarded**. This is the fail-open the ruling describes, reached by the process's own absence.
-- **Every other non-zero exit — the process ran and refused.** Its stderr is shown and the spawn proceeds, per [the harness exit-code contract](#the-harness-exit-code-contract) above. This is fail-open-**and-loud**, which is what the ruling asks for.
-- **Exit `2` — the spawn is blocked.** Not fail-open at all. It is the one code that denies, so no fabrika exit code may take it; that is enforced in the exit tables rather than left to this prose.
+- **Exit `127` — nothing ran.** No permission decision is produced, which the harness reads as no objection, so the Bash call proceeds **unguarded**. This is the fail-open the ruling describes, reached by the process's own absence.
+- **Every other non-zero exit — the process ran and refused.** Its stderr is shown and the Bash call proceeds, per [the harness exit-code contract](#the-harness-exit-code-contract) above. This is fail-open-**and-loud**, which is what the ruling asks for.
+- **Exit `2` — the Bash call is blocked.** Not fail-open at all. It is the one code that denies, so no fabrika exit code may take it; that is enforced in the exit tables rather than left to this prose.
 
-This section previously grouped `2` and `127` together as "the verb never ran, so the spawn proceeds unguarded". That was true for `127` and **false for `2`**: while a bootstrap failure sat on `2`, a fabrika that could not resolve itself blocked every `Task`/`Workflow` spawn in the session — the inverse of the ruling, recorded here as fact.
+This section previously grouped `2` and `127` together as "the verb never ran, so the spawn proceeds unguarded". That was true for `127` and **false for `2`**: while a bootstrap failure sat on `2`, a fabrika that could not resolve itself blocked every `Task`/`Workflow` spawn in the session, the matcher the retired spawn guard was declared on — the inverse of the ruling, recorded here as fact.
 
 Failing *closed* still has no admissible form, and for the reason the ruling gives: it would mean minting the interception rule 5 forbids. Do not spread the behaviour to a per-verb site; this section is the one place a later ruling flips.
 
-`hook pre-bash` makes that cost real, and it is named rather than left implicit: a machine where `fabrika` does not resolve runs every Bash call with the escape refusal silently absent — the exact silence the defence exists to remove.
+`hook pre-bash` and `hook stash-guard` make that cost real, and it is named rather than left implicit: a machine where `fabrika` does not resolve runs every Bash call with the escape refusal and the stash refusal silently absent — the exact silence each defence exists to remove.
 
 **The notice is owed and only half-implementable today, so it is recorded rather than assumed.** On exit `126` the process did start and fabrika speaks for itself (`resolve.ts`'s foreign-checkout refusal). On exit `127` fabrika cannot speak, because `fabrika` is what failed to resolve — so that half has **no owner**, and its structural cure is installing the package: available to any machine that takes it, absent on any that does not. An adversarial review precedes any implementation of this horn in either direction.
+
+## The hook verbs' derivations
+
+Each `fabrika hook <verb> --help` owns calling the verb: its answer bytes and one line per exit. The
+derivation facts behind five of them live here; `hook claude-spend`'s live in the
+[Claude usage collector](claude-usage.md).
+
+### `hook cli-floor`
+
+The minimum is the `minimum` in `cli-floor.json` under `$CLAUDE_PLUGIN_ROOT`: the fabrika plugin's
+declared minimum `@kampus/fabrika-cli` version, a variable the harness sets for the plugin's own
+hooks. The verb reads no stdin. Its stdout is one hook-output JSON object at exit `0`. What the user
+sees on each side of the minimum is stated [above](#the-declared-hooks-and-how-they-are-proven).
+Below the minimum the object carries that warning as `systemMessage`; at or above it, it carries
+`suppressOutput` and a `fabrika` token (`outcome: met`). Both carry `fabrika.installed` and
+`fabrika.minimum`. Exit `23` is no plugin root, or the floor file or a version in it unreadable — the
+comparison was not made, so it is UNKNOWN and never a pass. A non-zero exit on `SessionStart` shows
+stderr and lets the session start.
+
+### `hook pre-bash`
+
+The jump is read through the wrappers named [above](#the-declared-hooks-and-how-they-are-proven). A
+jump behind a word whose meaning is run-time — `eval`, a wrapper script — is out of key and allowed.
+A jump whose target expands at run time is refused, because where it lands cannot be decided before
+it runs. Where the verb arms, and why, is stated [above](#the-declared-hooks-and-how-they-are-proven);
+the primary checkout and a cwd under no repository are therefore allowed untouched. Exit `19` is the one arm
+where the cwd's working tree could not be established: the jump was NOT judged, and the command
+proceeds. Why a deny is JSON at exit `0` and an allow carries no decision field is
+[the harness exit-code contract](#the-harness-exit-code-contract).
+
+### `hook stash-guard`
+
+The verb reads every simple command on the line, including those inside `$( )`, backticks, a
+subshell, a brace group, `sh -c '…'` and `eval`, and reads through `VAR=value` prefixes and the
+wrappers `env`, `sudo`, `nice`, `command`, `exec`, `nohup` and `time`. A here-document body is data
+and is not read. A `git` reached through an alias, a function, a variable or `xargs` is out of key and
+allowed. Only a command that runs `git stash` costs a git call: the verb then runs
+`git rev-parse --path-format=absolute --git-dir --git-common-dir` in the envelope's `cwd`, with a 5s
+timeout. Absolute paths keep a cwd reached through a symlink from reading as two different dirs.
+Exit `19` covers every state where those two dirs could not be read — a relative `cwd`, a `cwd` git
+cannot start in, a failed or timed-out probe. The stash was NOT judged, and the command proceeds.
+Why a deny is JSON at exit `0` and an allow carries no decision field is
+[the harness exit-code contract](#the-harness-exit-code-contract).
+
+### `hook worktree-create`
+
+**The tree goes under the clone's primary working tree, never under the session's cwd.** The
+envelope's `cwd` is where the session was launched, possibly a subdirectory or a linked worktree. So
+`git rev-parse --show-toplevel` runs there, and `git worktree list --porcelain -z` runs in the
+toplevel it names, under `--dry-run` too. The tree is `<primary>/.claude/worktrees/<name>`, where
+`<primary>` is the listing's first record. A `cwd` that resolves to no toplevel, or a clone whose
+primary tree is bare or unreadable, refuses at `15` naming the `cwd`, with no fallback to it.
+
+**It provisions and sweeps nothing.** No `fabrika build reap` runs here, so a spawn never waits on a
+scan of the clone's other worktrees. `build reap` is a verb someone runs on purpose.
+
+**It takes one repo-level lock around the fetch and the add, and nothing else.** The lock is
+`fabrika/worktree-create.lock` in the clone's common git dir, shared by every worktree of the clone,
+so parallel spawns take turns at those two commands. A lock whose holder's process is gone, or older
+than 660s, is taken over. A live holder that keeps it past 240s, or a lock that cannot be created,
+refuses on `24` with nothing fetched or added.
+
+Under the lock it fetches the base into a per-spawn ref and resolves it to a commit id — never the
+shared `FETCH_HEAD`, which a sibling spawn's fetch truncates mid-read. It then runs
+`git worktree add --detach` at that id with git hooks switched off, and releases the lock. Only then
+does it run the repo's own `post-checkout` hook itself (`git hook run post-checkout`), under a PATH
+that resolves the toolchain, so the dependency installs of concurrent spawns overlap instead of
+queueing. It refuses unless the tree exists and its virtual store landed.
+
+The fetch and the add each still recover from the two sibling-worktree faults that a
+`git worktree add` outside this hook, or a dead one, can cause: a fetch reading a half-built
+`worktrees/<name>/HEAD`, and an add reading a half-built `worktrees/<name>/commondir`. Each prunes
+dead worktree entries and re-attempts, bounded to five attempts and up to 3s of delay per command.
+Any other diagnostic refuses on the first attempt. Every non-zero exit blocks the spawn.
+
+### `hook plugin-sync`
+
+It reads the `SessionStart` envelope on stdin and resolves the clone's primary worktree from its
+`cwd` through the shared git common dir — never the session's own linked worktree. It fetches
+`origin/<default>`; what it then does to the checkout, and what it leaves to the harness, is the
+[`SessionStart` / `plugin-sync` note](#sessionstart-plugin-sync--a-checkout-move-left-to-the-repo).
+
+**What it refuses.** A parked branch, a detached HEAD, a diverged branch, or uncommitted work the
+incoming commits would write over is refused with its reason, because where a human's checkout sits
+is a human's call. **Uncommitted work outside the incoming commits' paths is not one of those
+states**: the refusal compares the uncommitted paths — untracked files included, each named
+individually — against the paths the incoming range changes, and fires only on an overlap. That is
+the same overlap `git merge --ff-only` itself refuses on.
+
+**Every refusal leads stderr with its reason**, and carries the scope line and any install lines
+after it. A failed `SessionStart` hook surfaces one line in the session, so a refusal whose first
+line named the directory it judged named no cause at all.
+
+**It reads the harness's own install records.** Every install still bound to an earlier commit is
+named on stderr. Beyond the repository the
+[note](#sessionstart-plugin-sync--a-checkout-move-left-to-the-repo) already rules out, the verb names
+no marketplace or plugin either: the marketplace is selected by the directory it declares.
 
 ## The record format
 

@@ -4,7 +4,7 @@
  * `count()`.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Exit} from "effect";
+import {Effect} from "effect";
 import {
 	knownReportIds,
 	type ReportDefinition,
@@ -37,8 +37,6 @@ describe("resolveReport", () => {
 	});
 
 	it("fails ReportNotFound listing the known ids on an unknown id", () => {
-		const exit = Effect.runSyncExit(resolveReport(catalog, "nope"));
-		assert.isTrue(Exit.isFailure(exit));
 		const error = Effect.runSync(resolveReport(catalog, "nope").pipe(Effect.flip));
 		assert.instanceOf(error, ReportNotFound);
 		assert.deepStrictEqual(error.knownIds, ["votes-vs-reactions"]);

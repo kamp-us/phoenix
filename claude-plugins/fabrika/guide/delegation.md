@@ -6,12 +6,9 @@ You can have more than one copy of `fabrika` on a machine: a global install on `
 inside whatever repo you are standing in. Before any verb runs, the bootstrap decides which of them
 serves the command you typed. This page describes that decision.
 
-The decision is implemented in
-[`packages/fabrika-cli/src/delegate/resolve.ts`](../../../packages/fabrika-cli/src/delegate/resolve.ts)
-(the outcomes) and
-[`packages/fabrika-cli/src/delegate/repository.ts`](../../../packages/fabrika-cli/src/delegate/repository.ts)
-(repository identity), with the process boundary in
-[`entry.ts`](../../../packages/fabrika-cli/src/delegate/entry.ts). The rule the refusal enforces:
+The decision is implemented in the CLI's `delegate` module: `resolve.ts` holds the outcomes,
+`repository.ts` repository identity, and `entry.ts` the process boundary. The rule the refusal
+enforces:
 the boundary delegation will not cross is the **repository**, not the checkout — linked
 worktrees share one repository and answer each other's invocations, two clones of the same remote do
 not, and a tree whose repository cannot be established counts as a different one.
@@ -24,8 +21,8 @@ not, and a tree whose repository cannot be established counts as a different one
 |---|---|---|
 | `selfPackageRoot` | the real path of the package root the running bin belongs to | `entry.ts`, real-path resolved from the bin's own module URL |
 | `origin` | `same-repository`, or `other-repository` carrying the running copy's checkout | `relateCopy` in `repository.ts` |
-| `repoRoot` | the repo root at or above the cwd, or `undefined` when the cwd is in no repo | `discoverRepoRoot` in [`root.ts`](../../../packages/fabrika-cli/src/delegate/root.ts) |
-| `local` | `found` with an install, `absent`, `corrupt` with a reason, or `undefined` when there is no repo root to probe | `probeLocalInstall` in [`local.ts`](../../../packages/fabrika-cli/src/delegate/local.ts) |
+| `repoRoot` | the repo root at or above the cwd, or `undefined` when the cwd is in no repo | `discoverRepoRoot` in `root.ts` |
+| `local` | `found` with an install, `absent`, `corrupt` with a reason, or `undefined` when there is no repo root to probe | `probeLocalInstall` in `local.ts` |
 
 `repoRoot` is the nearest ancestor holding a `package.json`, except that a higher ancestor wins when
 its workspace globs match that nearest package. The globs come from `pnpm-workspace.yaml`'s
@@ -33,8 +30,9 @@ its workspace globs match that nearest package. The globs come from `pnpm-worksp
 
 `local` is resolved by Node's own resolver — `createRequire(<repoRoot>/package.json).resolve` on
 `@kampus/fabrika-cli/package.json` — so pnpm's symlinked layout, hoisting and unusual nesting all
-resolve correctly. `corrupt` covers a manifest that is not valid JSON, declares no `version`,
-declares no `fabrika` bin, cannot be read, or names a bin that is not on disk.
+resolve correctly. `corrupt` covers a manifest that resolves to a path not on disk, is not valid JSON, declares no
+`version`, declares no `fabrika` bin, cannot be read, or names a bin that is not on disk. An install
+that resolves outside the repo root is `absent`, however well-formed it is.
 
 ## Outcomes
 
@@ -119,7 +117,6 @@ broken: the global runs and the warning names the gap. So a consumer repo does n
 `fabrika-cli` in its own `package.json` for delegation's sake; the only copy that refuses outright is
 one invoked from a different repository.
 
-Verb-by-verb behaviour and exit codes live in
-[`packages/fabrika-cli/docs/verb-reference.md`](../../../packages/fabrika-cli/docs/verb-reference.md);
-the delegation-outcome table and the environment variables are in
-[`packages/fabrika-cli/docs/packaging.md`](../../../packages/fabrika-cli/docs/packaging.md).
+Each verb's `--help` owns its behavior and exit meanings: `fabrika --help` lists the groups,
+`fabrika <group> --help` a group's verbs, and `fabrika <group> <verb> --help` one verb. The
+delegation outcomes and environment variables are the ones in the tables above.

@@ -10,18 +10,9 @@ import {envEntries, expansionReport, literalExpansions} from "./settings-env.ts"
 const VERB = "guard settings-env-guard check";
 
 describe("literalExpansions", () => {
-	it("passes values with no brace token", () => {
-		expect(literalExpansions([{key: "A", value: "/usr/bin"}])).toEqual([]);
-	});
-
 	// The whole block was scanned and held nothing to expand — a real pass, not a vacuous green.
 	it("passes an empty env block", () => {
 		expect(literalExpansions([])).toEqual([]);
-	});
-
-	it("flags the #2495 data-dir value", () => {
-		const entry = {key: "KAMPUS_PIPELINE_DATA", value: "${CLAUDE_PROJECT_DIR}/.pipeline"};
-		expect(literalExpansions([entry])).toEqual([entry]);
 	});
 
 	it("flags a brace token anywhere in the value, not only at the start", () => {

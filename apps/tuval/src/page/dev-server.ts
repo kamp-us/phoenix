@@ -18,10 +18,10 @@
 
 import {readFile} from "node:fs/promises";
 import {dirname, join} from "node:path";
-import {Effect, Schema} from "effect";
-import {featuresDefault, type TuvalFeatures} from "../features.ts";
+import {featuresDefault, type TuvalFeatures} from "@kampus/tuval-sdk/kernel/features";
+import type {ModuleRendererRef} from "@kampus/tuval-sdk/kernel/shell/window/index";
+import {Console, Effect, Schema, Stream} from "effect";
 import type {TransportServer} from "../shell/transport/server.ts";
-import type {ModuleRendererRef} from "../shell/window/index.ts";
 import {forwardLoopback, reserveLoopbackPort} from "./loopback.ts";
 
 /** The page did not start. The kernel is unaffected — the bin reports this and keeps running. */
@@ -60,6 +60,13 @@ export interface PageServerOptions {
 	 * and the page loads nothing.
 	 */
 	readonly moduleRenderers?: ReadonlyArray<ModuleRendererRef>;
+	/**
+	 * Every set of module renderers the desk's rows declare from here on, as projects open and close
+	 * (`Projects.renderers`, #9685). Each set replaces the one before: a new specifier is resolved
+	 * and served, a dropped one stops being served, and the loader module is regenerated for the next
+	 * page that loads it. Absent means the set `moduleRenderers` names is the only one.
+	 */
+	readonly moduleRendererChanges?: Stream.Stream<ReadonlyArray<ModuleRendererRef>>;
 	/**
 	 * The booted config's feature flags (`../config.ts`), merged and every one resolved to a boolean.
 	 * Absent means `featuresDefault` — what a caller serving the page over its own rows rather than a
@@ -274,24 +281,20 @@ const warmPageGraph = Effect.fn("Tuval.page.warm")(function* (server: ViteServer
  * loader module imports actually names. Only the loader module's imports are answered — the same
  * specifier written anywhere else in the app is nobody's business but Vite's.
  */
-const moduleRenderersPlugin = (resolved: ReadonlyArray<ResolvedModuleRenderer>) => {
-	const files = new Map(
-		resolved.filter((entry) => !isRootRelative(entry.ref)).map((entry) => [entry.ref, entry.file]),
-	);
-	return {
-		name: "tuval-module-renderers",
-		resolveId(id: string, importer: string | undefined) {
-			if (id === MODULE_RENDERERS_ID) return RESOLVED_MODULE_RENDERERS_ID;
-			if (importer !== RESOLVED_MODULE_RENDERERS_ID) return null;
-			return files.get(id) ?? null;
-		},
-		load(id: string) {
-			return id === RESOLVED_MODULE_RENDERERS_ID
-				? moduleRenderersSource(resolved.map((entry) => entry.ref))
-				: null;
-		},
-	};
-};
+const moduleRenderersPlugin = (current: () => ReadonlyArray<ResolvedModuleRenderer>) => ({
+	name: "tuval-module-renderers",
+	resolveId(id: string, importer: string | undefined) {
+		if (id === MODULE_RENDERERS_ID) return RESOLVED_MODULE_RENDERERS_ID;
+		if (importer !== RESOLVED_MODULE_RENDERERS_ID) return null;
+		const hit = current().find((entry) => entry.ref === id && !isRootRelative(entry.ref));
+		return hit?.file ?? null;
+	},
+	load(id: string) {
+		return id === RESOLVED_MODULE_RENDERERS_ID
+			? moduleRenderersSource(current().map((entry) => entry.ref))
+			: null;
+	},
+});
 
 /**
  * Why a specifier refused the page, in the terms of whoever has to act on it: a package the founder
@@ -313,7 +316,7 @@ const unresolvedSentence = (ref: ModuleRendererRef, root: string): string =>
  *
  * The resolver is a Vite of its own, in middleware mode — it binds no port and serves nothing. It
  * has to be a second one because its answers are what the real server's `optimizeDeps.include` and
- * `server.fs.allow` are built from, and a server reads both once, when it is created.
+ * `server.fs.allow` are built from, and a server reads its optimiser entries once, when it is created.
  */
 const resolveModuleRenderers = Effect.fn("Tuval.page.resolveModuleRenderers")(function* (
 	createServer: typeof import("vite").createServer,
@@ -353,6 +356,35 @@ const resolveModuleRenderers = Effect.fn("Tuval.page.resolveModuleRenderers")(fu
 	).pipe(Effect.ensuring(Effect.ignore(attempt(() => resolver.close()))));
 });
 
+/**
+ * A later set of references resolved against what is already served. A reference served before keeps
+ * its file; each new one resolves on its own, so a specifier nothing answers for costs its own window
+ * and a line on stderr, never the running page.
+ */
+const resolveEach = Effect.fn("Tuval.page.resolveEach")(function* (
+	createServer: typeof import("vite").createServer,
+	root: string,
+	served: ReadonlyArray<ResolvedModuleRenderer>,
+	refs: ReadonlyArray<ModuleRendererRef>,
+) {
+	const key = (ref: ModuleRendererRef) => `${ref.ref}\u0000${ref.origin}`;
+	const known = new Map(served.map((entry) => [key(entry), entry]));
+	const next: Array<ResolvedModuleRenderer> = [];
+	for (const ref of refs) {
+		const hit = known.get(key(ref));
+		if (hit !== undefined) {
+			next.push(hit);
+			continue;
+		}
+		next.push(
+			...(yield* resolveModuleRenderers(createServer, root, [ref]).pipe(
+				Effect.catch((error) => Effect.as(Console.error(`tuval: ${error.message}`), [])),
+			)),
+		);
+	}
+	return next as ReadonlyArray<ResolvedModuleRenderer>;
+});
+
 interface LaunchResponse {
 	setHeader: (name: string, value: string) => void;
 	end: (body: string) => void;
@@ -360,7 +392,9 @@ interface LaunchResponse {
 
 /** Start the dev server, and close it with the caller's Scope. */
 export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageServerOptions) {
-	const {createServer, searchForWorkspaceRoot} = yield* attempt(() => import("vite"));
+	const {createServer, normalizePath, searchForWorkspaceRoot} = yield* attempt(
+		() => import("vite"),
+	);
 	// Configured here rather than in a `vite.config.ts` so the one config lives in code the
 	// typechecker reads. React Fast Refresh is what makes editing a renderer bearable.
 	const react = yield* attempt(() => import("@vitejs/plugin-react"));
@@ -376,7 +410,7 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 	// Resolved before the server exists, because the answers are what its optimiser entries and its
 	// file-serving allowance are built from — and because a specifier that resolves from nowhere then
 	// refuses with no port bound and nothing to close.
-	const moduleRenderers = yield* resolveModuleRenderers(
+	let moduleRenderers = yield* resolveModuleRenderers(
 		createServer,
 		options.root,
 		options.moduleRenderers ?? [],
@@ -393,7 +427,7 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 				appType: "spa",
 				plugins: [
 					launchEndpoint,
-					moduleRenderersPlugin(moduleRenderers),
+					moduleRenderersPlugin(() => moduleRenderers),
 					featuresPlugin(options.features),
 					react.default(),
 				],
@@ -453,6 +487,30 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 	// The browser's upgrade carries this server's origin, not the socket's, and a fence built from
 	// the socket's port alone refuses it (#7560). Done here so no caller can serve a page and forget.
 	options.transport.admitLoopbackPort(port);
+	if (options.moduleRendererChanges !== undefined) {
+		const initial = new Set(servedDirectories(moduleRenderers).map(normalizePath));
+		// What Vite allowed on its own — the workspace — which no project's close takes away.
+		const base = server.config.server.fs.allow.filter((dir) => !initial.has(dir));
+		yield* options.moduleRendererChanges.pipe(
+			Stream.runForEach((refs) =>
+				Effect.gen(function* () {
+					moduleRenderers = yield* resolveEach(createServer, options.root, moduleRenderers, refs);
+					// Vite reads this list on every file request (`isFileLoadingAllowed`), so replacing its
+					// contents moves what the server may read without a restart.
+					const allow = server.config.server.fs.allow;
+					allow.splice(
+						0,
+						allow.length,
+						...new Set([...base, ...servedDirectories(moduleRenderers).map(normalizePath)]),
+					);
+					const graph = server.environments.client.moduleGraph;
+					const loader = graph.getModuleById(RESOLVED_MODULE_RENDERERS_ID);
+					if (loader !== undefined) graph.invalidateModule(loader);
+				}),
+			),
+			Effect.forkScoped,
+		);
+	}
 	yield* warmPageGraph(server, options.root);
 	return {
 		url,

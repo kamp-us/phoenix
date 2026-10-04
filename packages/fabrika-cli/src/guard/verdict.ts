@@ -7,9 +7,7 @@
  * trusted to remember. `zeroScope` is a constructor; there is no way to build a `Clean` verdict
  * that carries no scanned scope.
  *
- * Output split, per the interface convention (`../verb.ts`): a clean run puts its one-line summary
- * on stdout, and every refusal puts the human report — plus, under Actions, the `::error` commands
- * — on stderr with stdout empty.
+ * Output channels follow `../verb.ts`; `./annotate.ts` owns workflow annotations.
  */
 
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -17,9 +15,6 @@ import {type Annotation, fallbackAnnotations, renderAnnotations} from "./annotat
 import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 
 /**
- * A guard's answer. Five states: two exit 0, three red, and the split between the three reds is the
- * point — CI reds on all of them, a human fixing one needs to know which.
- *
  * `Skipped` and `ZeroScope` both mean the guard scanned nothing, and they are not the same answer.
  * `ZeroScope` is a scan that resolved empty when it should have resolved to something — the
  * fail-closed red. `Skipped` is the repo having declared the guard's subject does not exist here,

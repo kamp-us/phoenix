@@ -48,16 +48,6 @@ const failureValue = (exit: Exit.Exit<unknown, unknown>): unknown => {
 	return fail?.error;
 };
 
-it.effect("withColdStartRetry: a surviving RpcCallError failure → LiveTransportError", () =>
-	Effect.gen(function* () {
-		const exit = yield* runPastBackoff(
-			withColdStartRetry("subscribe", Effect.fail(rpcCallError(new Error("cold")))),
-		);
-		assert.isTrue(Exit.isFailure(exit));
-		assert.instanceOf(failureValue(exit), LiveTransportError);
-	}),
-);
-
 it.effect(
 	"withColdStartRetry: a cold `topic:`-DO publish retries the RpcCallError, then LiveTransportError (#2551)",
 	() =>

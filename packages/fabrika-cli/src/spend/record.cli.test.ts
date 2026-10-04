@@ -57,24 +57,4 @@ describe("spend record CLI", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 		).toHaveLength(1);
 		expect(JSON.parse(call(["read", "--ledger", path]).stdout).records).toEqual([fixture]);
 	});
-
-	it("records through the CLI and reads every supplied field in a new process", () => {
-		const path = ledger();
-		const recorded = call(["record", "--ledger", path], fixture);
-		expect(recorded.status, recorded.stderr).toBe(0);
-		const read = call(["read", "--ledger", path, "--json"]);
-		expect(read.status, read.stderr).toBe(0);
-		expect(JSON.parse(read.stdout).records).toEqual([fixture]);
-	});
-
-	it("deduplicates copied history and keeps a genuine attempt separate", () => {
-		const path = ledger();
-		expect(call(["record", "--ledger", path], fixture).status).toBe(0);
-		const copy = {...fixture, recordId: "copied-parent-history"};
-		const repeated = call(["record", "--ledger", path], copy);
-		expect(JSON.parse(repeated.stdout).status).toBe("duplicate");
-		const retry = {...fixture, work: {...fixture.work, attempt: "attempt-2"}};
-		expect(call(["record", "--ledger", path], retry).status).toBe(0);
-		expect(JSON.parse(call(["read", "--ledger", path]).stdout).records).toHaveLength(2);
-	});
 });

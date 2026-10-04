@@ -1,16 +1,13 @@
 /**
- * `ui law` — the typed prohibition registry, schema-validated whole-file, rows in file order.
- *
- * Three different facts, three different codes, and the skill's prose fallback is legal only in the
- * first: untyped (`13` — no registry beside the manifest), mistyped (`4` — a registry that violates
- * the schema), unreadable (`11` — the law is UNKNOWN, never "untyped").
+ * `ui law` reads the typed prohibition registry and validates it whole-file.
+ * See `ui law --help` for the refusal contract.
  */
 import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {BAD_SECTIONS, NO_MANIFEST, PRECONDITION_UNKNOWN, UNTYPED_LAW} from "./codes.ts";
-import {atRoot, MANIFEST_PATH, REGISTRY_PATH} from "./conventions.ts";
+import {atRoot, MANIFEST_PATH, MANIFEST_REMEDY, REGISTRY_PATH} from "./conventions.ts";
 import {resolveRoot} from "./lane.ts";
 import {parseRegistry} from "./law.ts";
 import {probe} from "./manifest-verb.ts";
@@ -36,7 +33,7 @@ export const runLaw = (): Effect.Effect<
 		if (manifest._tag === "Absent") {
 			return refuse(
 				NO_MANIFEST,
-				`${VERB}: no design manifest at ${MANIFEST_PATH} — run /fabrika: front-door's bootstrap drafts one.`,
+				`${VERB}: no design manifest at ${MANIFEST_PATH} — ${MANIFEST_REMEDY}`,
 			);
 		}
 

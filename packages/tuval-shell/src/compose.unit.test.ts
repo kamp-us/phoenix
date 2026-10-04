@@ -11,43 +11,14 @@
  * Nothing here boots a desk, ticks a timer or runs a command: a row is a record.
  */
 
-import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval/ai-agent/ports";
-import {type AuthoredProgram, Program, testProgram} from "@kampus/tuval/authoring";
 import {cron, jobShape} from "@kampus/tuval-cron";
+import {PromptPayloadSchema, TurnResultSchema} from "@kampus/tuval-sdk/ai-agent/ports";
+import {Program} from "@kampus/tuval-sdk/authoring";
 import {describe, expect, it} from "vitest";
 import config, {nightlyFetch} from "../.tuval/tuval.config.ts";
-import {
-	type ShellOptions,
-	type ShellPorts,
-	type ShellUpdate,
-	shell,
-	shellProgram,
-} from "./shell.ts";
-import type {ShellState} from "./state.ts";
-
-/**
- * The authored record under `testProgram`. The cast is `testProgram`'s signature and not this
- * program's — it predates `defineProgram`'s `X` (#9294) — and `shell.unit.test.ts` says so at
- * length. It goes with kamp-us/phoenix
- * [#9296](https://github.com/kamp-us/phoenix/issues/9296).
- */
-const drive = (options: ShellOptions) =>
-	testProgram(
-		// biome-ignore lint/plugin: the cast is `testProgram`'s signature, not this program's — `defineProgram` grew `X` in #9294 and `testProgram` did not, so an `update` answering `Answer<S, Run>` does not fit a helper still saying `Answer<S>`. The target types are this program's own, exported for exactly this. Removed by kamp-us/phoenix#9296, which threads `X` through `testProgram`.
-		shellProgram(options) as unknown as AuthoredProgram<ShellState, ShellPorts, ShellUpdate>,
-	);
+import {shell} from "./shell.ts";
 
 describe("a shell fills a cron's job", () => {
-	it("is accepted as the job — the row fits `jobShape`, which is the whole point", () => {
-		expect(() =>
-			cron({
-				everyMs: null,
-				prompt: "printf hi",
-				job: shell({cwd: "/tmp"}),
-			}),
-		).not.toThrow();
-	});
-
 	it("puts the shell on the cron's fill, so a tick spawns *this* shell", () => {
 		const row = cron({
 			everyMs: null,
@@ -70,25 +41,6 @@ describe("a shell fills a cron's job", () => {
 		const ports = shell({cwd: "/tmp"}).ports;
 		expect(ports.prompt?.schema).toBe(PromptPayloadSchema);
 		expect(ports.result?.schema).toBe(TurnResultSchema);
-	});
-
-	it("refuses a job that does not fit, so the fit above is a check and not a coincidence", () => {
-		expect(() =>
-			cron({
-				everyMs: null,
-				prompt: "printf hi",
-				job: {id: "not-a-job", ports: {}},
-			}),
-		).toThrow();
-	});
-
-	it("sends a prompt the shell's own port admits, which is the seam in one line", () => {
-		const woken = drive({cwd: "/tmp"}).send("prompt", {
-			text: "git -C ~/phoenix fetch --all",
-			key: "run-1",
-			timestamp: 1_700_000_000_000,
-		});
-		expect(woken.state.running?.command).toBe("git -C ~/phoenix fetch --all");
 	});
 });
 

@@ -1,25 +1,10 @@
 /**
- * The one exit table every `triage` verb allocates from, so a code means one thing across this
- * group whichever verb produced it.
+ * Exit allocations for `triage`; `triage codes` renders TRIAGE_EXIT_TABLE.
+ * Each leaf in `./command.ts` documents its triggers. Shared meanings import `../exit-codes.ts`;
+ * `../exit-code-alignment.ts` checks that private allocations do not collide with them.
  *
- * `0`, `1`, `126` and `127` are reserved by the interface convention (see `../verb.ts` and the
- * bootstrap failure in `../bin.ts`); everything else here is `3` and up, the band a verb owns for
- * outcomes it PROVED. `2` is allocated by nothing anywhere in fabrika — it is the harness's block
- * code on `PreToolUse` (`../hook/harness-exit.ts`).
- *
- * **The alignment with `report` is deliberate, code-for-code, and re-exported rather than
- * re-typed.** Where this table overlaps `report`'s writing verbs — `3`, `5`, `6`, `7`, `8`, `9`,
- * `10`, `11` — the values are *imported* from `../exit-codes.ts`, so a caller driving `report` and
- * `triage` in one sweep reads one meaning and a drift between the two is unrepresentable rather than
- * merely detectable (`../review/codes.ts` set the precedent; `../exit-code-alignment.ts` owns the
- * policy and checks the direction an import cannot cover — that the codes added below clear
- * `report`'s whole table). That alignment does **not** extend repo-wide: `wire` allocates `3`-`6`
- * for facts about an artifact, so its `3` is *the format's block is provably not in it*.
- *
- * **`4` is a deliberate gap, not a free slot.** It once held "the target issue does not exist, or is
- * not readable" — a proven fact and an unknown fused into one code. {@link ZERO_SCOPE} and
- * {@link PRECONDITION_UNKNOWN} took the halves; leaving `4` unallocated keeps the alignment with
- * `report file`, where it is a body-section failure no verb here performs.
+ * Code 4 is retired. It combined an absent issue with an unreadable one. Keeping it empty
+ * preserves the split between ZERO_SCOPE and PRECONDITION_UNKNOWN and the shared allocation.
  */
 
 import {
@@ -34,14 +19,10 @@ import {
 } from "../exit-codes.ts";
 import {NO_IMPLEMENTATION} from "../verb.ts";
 
-/** The answer is on stdout. Restated here because {@link TRIAGE_EXIT_TABLE} spans the whole matrix. */
 const ANSWER = 0;
-/** Usage error, an unresolvable repo, or the verb failed to run. */
 const FAILED = 1;
 
-/** Stdin was read and held nothing. Distinct from a read that failed, which is `1`. */
 export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
-/** The **authored** text carries a machine-local path and it was not redacted. */
 export const LEAKED_PATH = SHARED_LEAKED_PATH;
 /**
  * The **authored** text is a bare `@` path reference — **not** redactable.
@@ -69,7 +50,6 @@ export const ZERO_SCOPE = SHARED_NO_TARGET;
  * children.
  */
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
-/** The write landed but the read-back does not match. The artifact exists and needs a human. */
 export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 /**
  * The supplied value is not permitted in this position — off a closed enum, a `--home` naming a
@@ -82,7 +62,6 @@ export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
  * seats it here for the same reason).
  */
 export const OFF_VOCABULARY = SHARED_CLASSIFIED;
-/** A precondition read failed — nothing was written and no outcome is proven. `report`'s `11`. */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 /**
  * Refused: the issue is human-filed and this is not a `--duplicate-of` fold.
@@ -99,7 +78,6 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
  * the other's seat.
  */
 export const HUMAN_FILED = 12;
-/** Refused: close-eligible, but the kill is unconfirmed. */
 export const UNCONFIRMED = 13;
 /**
  * Refused: the acceptance-criteria block is drifted in a way no mechanical repair covers.
@@ -222,6 +200,49 @@ export const UNWIRED_ORDERING = 20;
  * would tell a caller "no such issue" about a number that exists and is on their screen.
  */
 export const PULL_REQUEST_TARGET = 21;
+/**
+ * Refused: an audit document — the input set or a chunk — is not JSON, or a row in it breaks the
+ * pinned verdict-row shape: an unknown verdict, no issue number, a KILL naming no value-bar clause.
+ *
+ * Its own seat rather than {@link PRECONDITION_UNKNOWN}'s: the file was read, so the answer is not
+ * unknown — it is a document a reader must re-emit.
+ */
+export const MALFORMED_AUDIT = 22;
+/**
+ * Refused: a chunk's rows differ from the total it declared. The declared total is the chunk's
+ * checksum, and a merge that went past a short chunk is how a dropped row came back as a verdict
+ * nobody gave.
+ */
+export const CHUNK_MISCOUNTED = 23;
+/** Refused: one issue carries more than one verdict row across the chunks being merged. */
+export const DUPLICATE_VERDICT = 24;
+/**
+ * Refused: the merged issue set is not the audited input set — an issue has no row, or a row names
+ * an issue the audit never listed.
+ */
+export const SET_MISMATCH = 25;
+/**
+ * Refused: the text `triage enrich` was sent carries no plain-language summary section, an empty
+ * one, or more than one.
+ *
+ * Its own seat rather than {@link EMPTY_STDIN}'s: that code says stdin held nothing, and here stdin
+ * held a body that lacks the one section the envelope places first. The fix is to add that section,
+ * not to re-pipe.
+ */
+export const PLAIN_SUMMARY_REQUIRED = 26;
+
+/**
+ * Refused: `triage sweep-homes` left un-homed `status:triaged` issues untouched.
+ *
+ * An un-homed issue has three remedies (home it in an open milestone, label it a standing lane, or
+ * kill it), and choosing one is triage's judgment, so the sweep lists each and writes nothing to it.
+ * The double-marked clears in the same run still land; this code says the backlog is not yet
+ * home-xor-exempt, so the run cannot answer as if it were.
+ *
+ * Its own seat rather than {@link ZERO_SCOPE}'s: that one is a scan that found nothing, and this one
+ * is a scan that found work only a person or a triager can do.
+ */
+export const UNHOMED_REMAIN = 27;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -306,6 +327,35 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		code: PULL_REQUEST_TARGET,
 		meaning:
 			"refused: a --blocked-by target is a pull request — a blocking PR is named in the graph by the issue its merge closes",
+	},
+	{
+		code: MALFORMED_AUDIT,
+		meaning:
+			"refused: an audit document is not JSON, or a verdict row breaks the pinned shape — unknown verdict, no issue number, or a KILL with no value-bar clause",
+	},
+	{
+		code: CHUNK_MISCOUNTED,
+		meaning: "refused: a chunk's rows differ from the total it declared — no merged output",
+	},
+	{
+		code: DUPLICATE_VERDICT,
+		meaning:
+			"refused: an issue carries more than one verdict row across the chunks — no merged output",
+	},
+	{
+		code: SET_MISMATCH,
+		meaning:
+			"refused: the merged issue set is not the audited input set — an issue is missing or invented — no merged output",
+	},
+	{
+		code: PLAIN_SUMMARY_REQUIRED,
+		meaning:
+			"refused: the enrich text carries no plain-language summary section, an empty one, or more than one",
+	},
+	{
+		code: UNHOMED_REMAIN,
+		meaning:
+			"refused: sweep-homes left un-homed triaged issues untouched — each needs triage's home, lane or kill",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

@@ -1,14 +1,14 @@
 import type {WireCodeKey, WireUsernameKey} from "../tr/wire";
 
 // Lowercase like the Turkish side: these are inline error lines, not sentences with a
-// capitalised opener. `yazar`, `kefil`, `mecmua` and `sustur` are brand nouns (ADR 0347), so
-// they read identically here — `brandNouns.unit.test.ts` is what holds that.
+// capitalised opener. `mecmua` is a product name (ADR 0414), so it reads identically here, and
+// the other Turkish words are translated — `brandNouns.unit.test.ts` is what holds that.
 const codes: Record<WireCodeKey, string> = {
 	"wire.UNAUTHORIZED": "you need to sign in to do that",
 	"wire.FORBIDDEN": "you do not have permission to do that",
-	"wire.VOTE_REQUIRES_YAZAR": "you can vote once you are a yazar",
+	"wire.VOTE_REQUIRES_YAZAR": "you can vote once you are an author",
 	"wire.SELF_VOTE_NOT_ALLOWED": "you cannot vote on your own content",
-	"wire.VOUCH_LIMIT_REACHED": "you have reached your kefil limit",
+	"wire.VOUCH_LIMIT_REACHED": "you have reached your vouch limit",
 	"wire.INSUFFICIENT_KARMA": "your karma is too low for that",
 	"wire.RATE_LIMIT_EXCEEDED": "too fast, slow down a little",
 	"wire.DEFINITION_NOT_FOUND": "definition not found",
@@ -35,7 +35,7 @@ const codes: Record<WireCodeKey, string> = {
 	"wire.EMAIL_FAILING_REASON_REQUIRED": "a reason for the mark is required",
 	"wire.MECMUA_DISABLED": "mecmua is closed right now",
 	"wire.MECMUA_POST_NOT_FOUND": "entry not found",
-	"wire.MUTE_DISABLED": "sustur is off right now",
+	"wire.MUTE_DISABLED": "mute is off right now",
 	"wire.SELF_MUTE_REJECTED": "you cannot mute yourself",
 	"wire.BAD_REQUEST": "invalid request",
 	"wire.INTERNAL_SERVER_ERROR": "something went wrong, please try again",

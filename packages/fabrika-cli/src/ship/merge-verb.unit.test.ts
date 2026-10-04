@@ -4,6 +4,7 @@ import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-supp
 import type {ExecResult} from "../io/exec.ts";
 import {
 	NO_LANDING_METHOD,
+	PR_NOT_OURS,
 	PRECONDITION_UNKNOWN,
 	PROVEN_NOT_IN_STATE,
 	READBACK_MISMATCH,
@@ -18,6 +19,8 @@ import {
 	MERGE_COMMIT,
 	mergeProofServed,
 	OTHER_HEAD,
+	OURS,
+	OWNERSHIP_CASES,
 	type PullShape,
 	pull,
 	repositoryServed,
@@ -46,11 +49,10 @@ const livePull = (shape: PullShape = {}): Scripted => [once(PULL), served(pull(s
 const mergeabilityRead = (shape: PullShape = {}): Scripted => [once(PULL), served(pull(shape))];
 
 /**
- * The shipped mergeability window is 60s of real backoff, so every test scripts a short one.
- *
- * 4s is two waits of 2s, which is the smallest window that still exercises the re-read loop.
+ * One read, no re-read: the backoff loop is `./mergeability.unit.test.ts`'s, proven there on the
+ * test clock, so this verb's tests only map the loop's three outcomes and spend no real seconds.
  */
-const MERGEABILITY_SECONDS = 4;
+const MERGEABILITY_SECONDS = 0;
 
 const options = {
 	pr: 4321,
@@ -62,7 +64,7 @@ const options = {
 };
 
 const land = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
-	const seams = fakeSeams(script);
+	const seams = fakeSeams([...script, ...OURS]);
 	return Effect.runPromise(Effect.provide(runMerge({...options, ...overrides}), seams.layer)).then(
 		(outcome) => ({outcome, calls: seams.requests, bodies: seams.bodies}),
 	);
@@ -152,27 +154,10 @@ describe("runMerge", () => {
 		]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toBe(
-			"ship merge: #4321's mergeable_state is still indefinite after 2 polls over 4s — mergeability is UNKNOWN, never green; nothing was merged.",
+			"ship merge: #4321's mergeable_state is still indefinite after 0 polls over 0s — mergeability is UNKNOWN, never green; nothing was merged.",
 		);
 		expect(withoutWrite(calls)).toBe(true);
-	}, 20_000);
-
-	// `ship merge` shares one poll loop with `ship enqueue`, so it inherits the widened window — the
-	// conflict arrives on a re-read of the same endpoint, not from a differently shaped read.
-	// @ruling https://github.com/kamp-us/phoenix/issues/9032
-	it("re-reads past an indefinite value and lands the conflict the later read carries", async () => {
-		const {outcome, calls} = await land([
-			livePull(),
-			UNQUEUED,
-			[REPO, repositoryServed()],
-			[once(PULL), served(pull({mergeable: null, mergeableState: "unknown"}))],
-			[PULL, served(pull({mergeable: false, mergeableState: "dirty"}))],
-		]);
-		expect(outcome.code).toBe(PROVEN_NOT_IN_STATE);
-		expect(outcome.stderr.at(-1)).toContain("mergeable_state: dirty");
-		expect(outcome.stderr.at(-1)).not.toContain("indefinite");
-		expect(withoutWrite(calls)).toBe(true);
-	}, 20_000);
+	});
 
 	it("refuses on 16 on a definite `dirty` — the endpoint would reject it indistinguishably", async () => {
 		const {outcome, calls} = await land([
@@ -264,5 +249,25 @@ describe("runMerge", () => {
 			method: "squash",
 			mergeCommit: MERGE_COMMIT,
 		});
+	});
+});
+
+describe("runMerge — a PR is its author's until the pipeline owns it", () => {
+	it.each(OWNERSHIP_CASES)("$name", async ({author, reads, drivable}) => {
+		const {outcome, calls} = await land([
+			...reads,
+			livePull({author}),
+			mergeabilityRead({author}),
+			UNQUEUED,
+			[REPO, repositoryServed()],
+			MERGED,
+			[PULL, mergeProofServed()],
+		]);
+		expect({code: outcome.code, merged: !withoutWrite(calls)}).toEqual(
+			drivable ? {code: 0, merged: true} : {code: PR_NOT_OURS, merged: false},
+		);
+		expect(
+			outcome.stderr.join("\n").includes(`is ${author}'s to finish — nothing was merged.`),
+		).toBe(!drivable);
 	});
 });

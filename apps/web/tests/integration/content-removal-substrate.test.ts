@@ -9,7 +9,7 @@
  * Runs on the run-scoped SHARED stage (ADR 0104 step 7): every email/slug/username is
  * `NS`-prefixed and karma is asserted per-author off this file's own NS-username.
  */
-import {beforeAll, describe, expect, it} from "vitest";
+import {describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
@@ -36,10 +36,6 @@ async function setUsername(cookie: string, value: string): Promise<void> {
 	);
 	expect(r.ok).toBe(true);
 }
-
-beforeAll(() => {
-	expect(typeof h.url()).toBe("string");
-});
 
 describe("removal substrate — definition remove → restore, karma kept", () => {
 	it("a removed definition leaves the term and restores; the author's karma is unchanged", async () => {

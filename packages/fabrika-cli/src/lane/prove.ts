@@ -8,15 +8,16 @@
  * adds and a range-bound verdict on the child issue. Everything here is the pure half — facts in,
  * one verdict out — so the whole table is testable without a network and without a checkout.
  *
- * **Three events carry a claim, and one of them claims a negative.** `DONE` out of a `build` state
+ * **Four events carry a claim, and two of them claim a negative.** `DONE` out of a `build` state
  * asserts the work exists, `PASS` out of a review state asserts the namespaces that state owes
  * judged it — every derived one out of `review:ui`, every one the plain `review` cell can itself
  * reach out of `review` (see {@link REVIEW_UI_STATE} for why the two differ). `BLOCKED` out of a
  * review state asserts the reviewer's run reached **no** verdict, which one still-binding `FAIL`
- * falsifies ({@link foldPark}). A `WIP`, an `UNBLOCKED`, a `FAIL`, a `BLOCKED` out of `build`, a
- * `DONE` out of `ship` or a `DONE` out of a child's `integrate` asserts nothing a read could
- * falsify — those answer {@link Claim} `None`, so a caller may prove *every* event and still only
- * pay for the three that can lie.
+ * falsifies ({@link foldPark}). `WIP` out of a review state asserts **no** open PR links the issue
+ * any more, which one linking PR falsifies ({@link traceUnlinked}). Any other `WIP`, an
+ * `UNBLOCKED`, a `FAIL`, a `BLOCKED` out of `build`, a `DONE` out of `ship` or a `DONE` out of a
+ * child's `integrate` asserts nothing a read could falsify — those answer {@link Claim} `None`, so
+ * a caller may prove *every* event and still only pay for the four that can lie.
  *
  * **What the two events claim is the same question asked of a different artifact**, and which
  * artifact is structural: {@link roleOf} reads it off the task's own name, exactly as the emitter
@@ -32,13 +33,23 @@ import {issueRefsIn} from "../build/commit-message.ts";
 import type {ParentedCommit} from "../io/git.ts";
 import type {PullScope} from "../io/pulls.ts";
 import {type IssueRefs, ROUTED_NAMESPACES} from "../review/classes.ts";
+import {isBuildState, SHELL_STATES} from "../wire/lane-brief.ts";
+import type {RouteBasis, RoutedBasis} from "../wire/routed-elsewhere.ts";
 import {rawKeyIssue} from "./key.ts";
 
 /** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
 export {childLaneBranches} from "../build/lane.ts";
 
-/** The leaf state a builder runs in — a `DONE` out of it claims the built work exists. */
+/** The plain builder's leaf state — the text-construction member of {@link BUILD_STATES}. */
 export const BUILD_STATE = "build";
+
+/**
+ * Every leaf state a builder runs in — a `DONE` out of any of them claims the built work exists.
+ *
+ * Read off the shell-state table's own `isBuildState` rather than listed again, so every cell the
+ * brief routes to a builder is one this claim table proves.
+ */
+export const BUILD_STATES: ReadonlyArray<string> = SHELL_STATES.filter(isBuildState);
 
 /** The leaf state a reviewer runs in — a `PASS` out of it claims a verdict that still binds. */
 export const REVIEW_STATE = "review";
@@ -61,6 +72,9 @@ export const REVIEW_STATE = "review";
  */
 export const REVIEW_UI_STATE = "review:ui";
 
+/** The queue dwell a shipper's `QUEUED` or `UNRESOLVED` leaves a task waiting in. */
+export const SHIP_QUEUED_STATE = "ship:queued";
+
 /**
  * The two leaves a shipper runs in — `ship` and the queue dwell it re-enters.
  *
@@ -69,10 +83,7 @@ export const REVIEW_UI_STATE = "review:ui";
  * beside the proof rather than folded into it. A refused proof would strand the shipper with no
  * legal terminal over a merge that really did land.
  */
-export const SHIP_STATES: ReadonlyArray<string> = ["ship", "ship:queued"];
-
-/** The label a no-PR builder outcome is only legal under (`build`'s `SUCCESS-NO-PR`). */
-export const INVESTIGATION_LABEL = "type:investigation";
+export const SHIP_STATES: ReadonlyArray<string> = ["ship", SHIP_QUEUED_STATE];
 
 /**
  * Which of the two shapes a task sits in — the union that makes "a child with no epic" unwritable.
@@ -115,11 +126,21 @@ export type Claim =
 	 */
 	| {readonly _tag: "HeadVerdicts"; readonly defers: ReadonlyArray<string>}
 	/**
-	 * A reviewer's park out of a review cell, which claims the run reached no verdict. It is the one
-	 * negative claim here, so it is refused only by a still-binding `FAIL` and by nothing else — see
+	 * A reviewer's park out of a review cell, which claims the run reached no verdict. It is a
+	 * negative claim, so it is refused only by a still-binding `FAIL` and by nothing else — see
 	 * {@link foldPark}.
 	 */
 	| {readonly _tag: "ParkUncontradicted"}
+	/**
+	 * A rewind out of a review cell, which claims the task's issue is still open and no open PR links
+	 * it any more — the PR the review was for now serves another issue. It is the second negative
+	 * claim, and it runs the other way from the park: an unread board refuses it rather than letting
+	 * it through, because the rewind sends the lane back to `queued` and doing that over a PR that
+	 * still links would drop a review in flight. See {@link traceUnlinked}.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/9910
+	 */
+	| {readonly _tag: "Unlinked"}
 	| {readonly _tag: "RangeCommits"; readonly epic: number}
 	/**
 	 * `defers` is {@link Claim}'s one subtraction asked of a range instead of a head, and on this arm
@@ -166,7 +187,7 @@ export const claimOf = (
 	next: string | null = null,
 ): Claim => {
 	const child = role._tag === "Child";
-	if (event === "DONE" && leaf === BUILD_STATE) {
+	if (event === "DONE" && BUILD_STATES.includes(leaf)) {
 		return child ? {_tag: "RangeCommits", epic: role.epic} : {_tag: "OpenPull"};
 	}
 	if (event === "PASS" && leaf === REVIEW_STATE) {
@@ -183,9 +204,12 @@ export const claimOf = (
 	if (event === "BLOCKED" && (leaf === REVIEW_STATE || leaf === REVIEW_UI_STATE) && !child) {
 		return {_tag: "ParkUncontradicted"};
 	}
+	if (event === "WIP" && (leaf === REVIEW_STATE || leaf === REVIEW_UI_STATE) && !child) {
+		return {_tag: "Unlinked"};
+	}
 	return {
 		_tag: "None",
-		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of "${BUILD_STATE}", PASS out of "${REVIEW_STATE}" / "${REVIEW_UI_STATE}" and BLOCKED out of those two review cells do`,
+		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of ${BUILD_STATES.map((state) => `"${state}"`).join(" / ")}, PASS out of "${REVIEW_STATE}" / "${REVIEW_UI_STATE}" and BLOCKED or WIP out of those two review cells do`,
 	};
 };
 
@@ -390,6 +414,42 @@ export const tracePulls = (
 		: {_tag: "Many", prs: matched.map((fact) => fact.number)};
 };
 
+/** An issue's state as the board reports it — the one fact a rewind asks of the issue itself. */
+export type IssueState = "open" | "closed";
+
+/**
+ * The verdict a rewind out of a review cell earns: proven only when the issue is open and no open
+ * PR links it.
+ *
+ * It reads the same trace a `DONE` stands on, with the polarity flipped. `None` is the rewind's
+ * evidence: the PR the review was for now points at another issue, so `lane brief` has nothing to
+ * hand a reviewer and the work is buildable again. `One` and `Many` both contradict it, because
+ * either way a PR still links the issue and the review cell still has a subject.
+ *
+ * A closed issue contradicts it first. A PR merged past the ledger also leaves no open PR linking
+ * the issue, so the trace alone cannot tell a re-pointed PR from finished work; the issue's state
+ * can, and finished work is `lane settle`'s, never another build round.
+ */
+export const traceUnlinked = (issue: number, state: IssueState, trace: PullTrace): Proof => {
+	if (state === "closed") {
+		return {
+			_tag: "Contradicted",
+			what: `#${issue} is closed — the work is finished, not re-pointed, so no rewind is recorded; settle the lane with \`lane settle\` instead`,
+		};
+	}
+	if (trace._tag === "None") {
+		return {
+			_tag: "Proven",
+			note: `${trace.why}, so the review cell has no PR to judge and #${issue} goes back to queued`,
+		};
+	}
+	const prs = trace._tag === "One" ? [trace.pr] : trace.prs;
+	return {
+		_tag: "Contradicted",
+		what: `${prs.map((pr) => `#${pr}`).join(", ")} still ${prs.length === 1 ? "links" : "link"} #${issue} — the review has a subject, so the lane stays in review and no rewind is recorded`,
+	};
+};
+
 /**
  * Whether the merge a shipped lane stands on discharged its issue, or landed part of it.
  *
@@ -433,7 +493,7 @@ export const traceClosure = (issue: number, facts: ReadonlyArray<PullFact>): Clo
 		: {_tag: "Partial", prs: landed.map((fact) => fact.number)};
 };
 
-/** One comment on the driven issue, as much of it as the diagnosis question needs. */
+/** One comment on the driven issue, as much of it as the no-PR proof needs. */
 export interface CommentFact {
 	readonly id: number;
 	readonly createdAt: string;
@@ -446,29 +506,24 @@ export type Diagnosis =
 /**
  * The no-PR arm: `build`'s `SUCCESS-NO-PR`, proven rather than taken on the spawn's word.
  *
- * That terminal is legal only for a `type:investigation`, and its deliverable is a diagnosis posted
- * with `build note` — so the two artifacts are the label and a comment written **after** the task
- * entered build. Without the recency the issue's own triage comment would prove a diagnosis nobody
- * wrote; `since` is the log's own timestamp for the event that moved the task here.
+ * Its one artifact is a comment written **after** the task entered build, the note a no-PR builder
+ * posts with `build note`. The issue's type is not read: a board-data repair ends with no diff just
+ * as an investigation does. Without the recency the issue's own triage comment would prove a note
+ * nobody wrote; `since` is the log's own timestamp for the event that moved the task here.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/6911#issuecomment-5519863361
  */
 export const traceDiagnosis = (
 	issue: number,
-	labels: ReadonlyArray<string>,
 	comments: ReadonlyArray<CommentFact>,
 	since: string | null,
 ): Diagnosis => {
-	if (!labels.includes(INVESTIGATION_LABEL)) {
-		return {
-			_tag: "Absent",
-			why: `#${issue} does not carry ${INVESTIGATION_LABEL}, so a no-PR outcome is not one it may have`,
-		};
-	}
 	const posted = comments.filter((comment) => since === null || comment.createdAt > since);
 	const latest = posted.at(-1);
 	return latest === undefined
 		? {
 				_tag: "Absent",
-				why: `#${issue} carries no comment written since the task entered ${BUILD_STATE}${since === null ? "" : ` at ${since}`}, so no diagnosis was posted`,
+				why: `#${issue} carries no comment written since the task entered its build cell${since === null ? "" : ` at ${since}`}, so no note was posted`,
 			}
 		: {_tag: "Posted", commentId: latest.id};
 };
@@ -482,23 +537,42 @@ export interface VerdictFact {
 	 * passed".
 	 */
 	readonly polarity: "PASS" | "FAIL" | "ROUTED";
-	/** Whether the claim still binds this head — head equality, or the content it bound. */
-	readonly binding: "current" | "stale" | "unknown";
+	/**
+	 * Whether the claim still binds this head — head equality, or the content it bound. `unopened`
+	 * is a `review-ui` verdict that binds the head over evidence a reader cannot open, so it does not
+	 * count (`../review-ui/standing-evidence.ts`).
+	 */
+	readonly binding: "current" | "stale" | "unknown" | "unopened";
 	readonly commentId: number;
+	/** A `ROUTED` claim's basis, when it stood on an owner's hand-check or the repo's skip rule. */
+	readonly basis?: RouteBasis;
 }
 
-export type NamespaceState = "pass" | "fail" | "absent" | "stale" | "unknown" | "routed";
+export type NamespaceState =
+	| "pass"
+	| "fail"
+	| "absent"
+	| "stale"
+	| "unknown"
+	| "routed"
+	| "unopened";
 
 export interface NamespaceRow {
 	readonly namespace: string;
 	readonly state: NamespaceState;
 	readonly commentId: number | null;
+	/**
+	 * On a `routed` row whose route stood on the repo's `reviewUi.whenNoPreview` rules, which one —
+	 * so the proof the lane records says the namespace was hand-checked or skipped, not rendered.
+	 */
+	readonly basis?: RouteBasis;
 }
 
 const stateOf = (verdict: VerdictFact | undefined): NamespaceState => {
 	if (verdict === undefined) return "absent";
 	if (verdict.binding === "stale") return "stale";
 	if (verdict.binding === "unknown") return "unknown";
+	if (verdict.binding === "unopened") return "unopened";
 	// The binding question is asked first, so a route at a head this claim no longer binds rows
 	// `stale` exactly as a verdict does — a route that survived a push would attest a tree nobody read.
 	if (verdict.polarity === "ROUTED") return "routed";
@@ -512,8 +586,20 @@ export const judgeVerdicts = (
 ): ReadonlyArray<NamespaceRow> =>
 	required.map((namespace) => {
 		const verdict = inForce.find((row) => row.namespace === namespace);
-		return {namespace, state: stateOf(verdict), commentId: verdict?.commentId ?? null};
+		const state = stateOf(verdict);
+		const row = {namespace, state, commentId: verdict?.commentId ?? null};
+		return state === "routed" && verdict?.basis !== undefined
+			? {...row, basis: verdict.basis}
+			: row;
 	});
+
+/** The basis each flagged `routed` row stood on, or `null` where no row carries one. */
+export const basisOfRows = (rows: ReadonlyArray<NamespaceRow>): RoutedBasis | null => {
+	const flagged = rows.flatMap((row) =>
+		row.state === "routed" && row.basis !== undefined ? [[row.namespace, row.basis] as const] : [],
+	);
+	return flagged.length === 0 ? null : Object.fromEntries(flagged);
+};
 
 export type Proof =
 	| {readonly _tag: "Proven"; readonly note: string}

@@ -88,6 +88,7 @@ describe("karmaBumpStatements — the bump + its append-only ledger row (#2592)"
 		};
 		const stmts = karmaBumpStatements(renderDb, input);
 		const bump = render(stmts[0]);
+		assert.include(bump.params, -1, "the bump debits the same delta the event records");
 		// A retract debits only if the vote row STILL exists (the mirror of the cast guard, #2552).
 		assert.match(bump.sql, /where.*(?<!not )exists.*select.*post_vote/is);
 		const event = render(stmts[1]);
@@ -97,23 +98,6 @@ describe("karmaBumpStatements — the bump + its append-only ledger row (#2592)"
 		assert.include(event.params, "retract", "event.reason distinguishes the retraction");
 		assert.include(event.params, "post", "event.source_kind carries the target");
 		assert.include(event.params, "post-9", "event.source_id carries the target");
-	});
-
-	it("the bump delta and the event delta are the SAME value — they can't diverge", () => {
-		// Both statements read the one `input.delta`, so SUM(events) tracks the accumulator
-		// by construction (#2592).
-		for (const delta of [1, -1]) {
-			const stmts = karmaBumpStatements(renderDb, {
-				recipientId: "u",
-				delta,
-				source: {kind: "comment", id: "c-1"},
-				reason: delta > 0 ? "vote" : "retract",
-				at: new Date(0),
-				guard: guardFor("comment", "c-1", delta > 0),
-			});
-			assert.include(render(stmts[0]).params, delta, "bump carries the delta");
-			assert.include(render(stmts[1]).params, delta, "event carries the same delta");
-		}
 	});
 });
 

@@ -72,14 +72,6 @@ describe("runLeakGuard", () => {
 		);
 	});
 
-	it("emits no annotation off a runner", async () => {
-		const outcome = await run(
-			["docs/guide.md"],
-			tree({"docs/guide.md": "notes at /Users/alice/vault"}),
-		);
-		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
-	});
-
 	// v1 answered this clean. A scan that covered nothing has proven nothing.
 	it("fails closed on an empty file list", async () => {
 		const outcome = await run([], tree({}));

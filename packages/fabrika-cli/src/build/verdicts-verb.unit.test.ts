@@ -1,9 +1,12 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
+import {PROTECTION, protection, RULES, rules} from "../ship/fixtures.test-support.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
+	CODEOWNERS_READ,
+	CP_ROSTER,
 	comments,
 	GATEWAY,
 	GH_TOKEN_ENV,
@@ -14,6 +17,7 @@ import {
 	PRIOR_HEADS,
 	pull,
 	served,
+	TRUNK_READ,
 } from "./fixtures.test-support.ts";
 import {runChildVerdicts, runVerdicts} from "./verdicts-verb.ts";
 
@@ -301,6 +305,84 @@ describe("runVerdicts", () => {
 		});
 	});
 
+	/**
+	 * A reviewer's PASS can land before CI settles red, and an all-PASS fold over a red required check
+	 * read as nothing to fix — a repair round spent on a no-op. Only a concluded, passing
+	 * required set folds green.
+	 */
+	describe("required checks at head", () => {
+		const PASS_NOW = `review-code: PASS @ ${HEAD} — merge-ready`;
+		const RUNS = new RegExp(`^GET \\S+/repos/o/r/commits/${HEAD}/check-runs`);
+		const runs = (list: ReadonlyArray<{name: string; status: string; conclusion: string | null}>) =>
+			served({total_count: list.length, check_runs: list});
+		const folded = (script: ReadonlyArray<Scripted>) =>
+			run([
+				[PULL, PR_ON_MAIN],
+				[COMMENTS, comments({id: 1, body: PASS_NOW})],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE_COMMENTS, served([])],
+				[ISSUE, issue()],
+				...script,
+				[RULES, rules("packages unit tests")],
+				[PROTECTION, protection()],
+			]);
+
+		it("folds green only when every required context concluded passing", async () => {
+			const out = await folded([
+				[
+					RUNS,
+					runs([
+						{name: "packages unit tests", status: "completed", conclusion: "success"},
+						{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+					]),
+				],
+			]);
+			expect(JSON.parse(out.stdout).requiredChecks).toEqual({state: "green"});
+		});
+
+		it("folds red beside an all-PASS row set, naming each failing required context", async () => {
+			const out = await folded([
+				[
+					RUNS,
+					runs([
+						{name: "packages unit tests", status: "completed", conclusion: "failure"},
+						{name: "Analyze (python)", status: "completed", conclusion: "failure"},
+					]),
+				],
+			]);
+			const parsed = JSON.parse(out.stdout);
+			expect(out.code).toBe(0);
+			expect(parsed.rows[0].polarity).toBe("PASS");
+			expect(parsed.requiredChecks).toEqual({state: "red", failing: ["packages unit tests"]});
+			expect(out.stderr.join("\n")).toContain(
+				`build verdicts: required check(s) RED on PR #4310 at ${HEAD}: packages unit tests — a red required check is repair work no gate emits a FAIL for, so this fold is not a clean answer.`,
+			);
+		});
+
+		it.each([
+			["still running", [{name: "packages unit tests", status: "in_progress", conclusion: null}]],
+			[
+				"not yet reported",
+				[{name: "Analyze (python)", status: "completed", conclusion: "success"}],
+			],
+		])("folds a required context %s as pending, never green", async (_, list) => {
+			const out = await folded([[RUNS, runs(list)]]);
+			expect(JSON.parse(out.stdout).requiredChecks).toEqual({
+				state: "pending",
+				awaiting: ["packages unit tests"],
+			});
+		});
+
+		it("folds an unreadable required set as unknown, and still answers the gate rows", async () => {
+			const out = await folded([[RULES, GATEWAY]]);
+			const parsed = JSON.parse(out.stdout);
+			expect(out.code).toBe(0);
+			expect(parsed.requiredChecks.state).toBe("unknown");
+			expect(parsed.requiredChecks.reason).toContain("never none");
+			expect(parsed.rows[0].polarity).toBe("PASS");
+		});
+	});
+
 	it("refuses a proven-absent PR on 7", async () => {
 		const out = await run([[PULL, NOT_FOUND]]);
 		expect(out.code).toBe(ZERO_SCOPE);
@@ -336,14 +418,14 @@ describe("runVerdicts", () => {
 			[ISSUE, issue()],
 		]);
 		await Effect.runPromise(Effect.provide(runVerdicts(options), seams.layer));
-		expect(seams.requests.filter((line) => line.includes("per_page=100")).length).toBe(3);
+		const lists = [COMMENTS, REVIEWS, ISSUE_COMMENTS];
+		expect(
+			seams.requests.filter(
+				(line) => line.includes("per_page=100") && lists.some((list) => list.test(line)),
+			).length,
+		).toBe(3);
 	});
 	describe("the founder's cleared rounds", () => {
-		const CONFIG = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
-		const CONFIGURED: HttpReply = {
-			status: 200,
-			body: JSON.stringify({capClearAuthors: ["@usirin"]}),
-		};
 		const PERMISSION = /^GET \S+\/repos\/o\/r\/collaborators\/usirin\/permission/;
 		const WRITES = served({permission: "admin"});
 		const AUTHORIZATION = 'Founder ruling 2026-08-18: "one more round."';
@@ -398,7 +480,7 @@ describe("runVerdicts", () => {
 			const out = await run([
 				[PULL, PR_ON_MAIN],
 				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, CONFIGURED],
+				...CP_ROSTER,
 				[PERMISSION, WRITES],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
@@ -421,7 +503,7 @@ describe("runVerdicts", () => {
 						createdAt: "2026-08-18T04:00:00Z",
 					}),
 				],
-				[CONFIG, CONFIGURED],
+				...CP_ROSTER,
 				[PERMISSION, WRITES],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
@@ -458,7 +540,7 @@ describe("runVerdicts", () => {
 						},
 					),
 				],
-				[CONFIG, CONFIGURED],
+				...CP_ROSTER,
 				[PERMISSION, WRITES],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
@@ -471,12 +553,12 @@ describe("runVerdicts", () => {
 			expect(parsed.capReached).toBe(true);
 		});
 
-		/** A committed set narrows the ACL; it never stands in for one. */
-		it("refuses a configured author who resolves below write at the ACL", async () => {
+		/** The control-plane set narrows the ACL; it never stands in for one. */
+		it("refuses a control-plane author who resolves below write at the ACL", async () => {
 			const out = await run([
 				[PULL, PR_ON_MAIN],
 				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, CONFIGURED],
+				...CP_ROSTER,
 				[PERMISSION, served({permission: "read"})],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
@@ -488,11 +570,11 @@ describe("runVerdicts", () => {
 			expect(parsed.clearances[0].reason).toContain("below write");
 		});
 
-		it("holds the fold UNKNOWN when a configured author's permission cannot be read", async () => {
+		it("holds the fold UNKNOWN when a control-plane author's permission cannot be read", async () => {
 			const out = await run([
 				[PULL, PR_ON_MAIN],
 				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, CONFIGURED],
+				...CP_ROSTER,
 				[PERMISSION, GATEWAY],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
@@ -514,7 +596,7 @@ describe("runVerdicts", () => {
 						createdAt: "2026-08-18T03:11:00Z",
 					}),
 				],
-				[CONFIG, CONFIGURED],
+				...CP_ROSTER,
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],
@@ -522,14 +604,15 @@ describe("runVerdicts", () => {
 			const parsed = JSON.parse(out.stdout);
 			expect(parsed.capReached).toBe(true);
 			expect(parsed.clearances[0]).toMatchObject({honoured: false});
-			expect(parsed.clearances[0].reason).toContain("grant-author set");
+			expect(parsed.clearances[0].reason).toContain("is not in o/r's control-plane set at main");
 		});
 
-		it("holds the whole fold UNKNOWN when the grant-author set cannot be read", async () => {
+		it("holds the whole fold UNKNOWN when the control-plane roster cannot be read", async () => {
 			const out = await run([
 				[PULL, PR_ON_MAIN],
 				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, GATEWAY],
+				[TRUNK_READ, served({default_branch: "main"})],
+				[CODEOWNERS_READ, GATEWAY],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE_COMMENTS, served([])],
 				[ISSUE, issue()],

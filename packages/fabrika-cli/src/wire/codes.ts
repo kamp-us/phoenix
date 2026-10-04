@@ -1,21 +1,8 @@
 /**
  * The one exit table every `wire` verb allocates from, so a code means one thing across the group.
  *
- * `0`, `1`, `126` and `127` are reserved by the interface convention (`../verb.ts`); everything else
- * is `3` and up, the band a verb owns for outcomes it PROVED. `2` is allocated by nothing anywhere
- * in fabrika — it is the harness's block code on `PreToolUse` (`../hook/harness-exit.ts`).
- *
- * **The split that is the whole point of this group.** Three different things can go wrong while
- * looking for a format in an artifact, and collapsing any two of them is what blinds a reader:
- *
- *   - {@link ABSENT} — the artifact was read in full and the block is provably not in it.
- *   - {@link MALFORMED} — something in the artifact means to be the block and does not conform.
- *   - {@link ARTIFACT_UNKNOWN} — the artifact was never seen. Nothing is proven about it.
- *
- * Only the first two are answers about an artifact. A reader that seats an unseen artifact on
- * {@link ABSENT} reports a proven negative over evidence it never had — the silent green
- * `../eval/spawn.ts` documents (a skill that never resolved exiting 0 with `num_turns: 0`), in the
- * one place where the negative is the *expected* result and so the least likely to be questioned.
+ * `wire codes` exposes {@link WIRE_EXIT_TABLE}; each verb's `--help` states what triggers its codes.
+ * Keep {@link ARTIFACT_UNKNOWN} apart from {@link ABSENT}: an unread input proves no absence.
  */
 
 import {NO_IMPLEMENTATION} from "../verb.ts";

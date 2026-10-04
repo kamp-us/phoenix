@@ -9,7 +9,7 @@
  * clearance authorizes the *next* tree, so binding one to a head would void it on first use.
  *
  * The marker is never proof on its own. What `build verdicts` folds as budget is this marker
- * **plus** an author in the repo's configured grant-author set plus the dated authorization comment
+ * **plus** an author in the repo's control-plane set plus the dated authorization comment
  * beside it, exactly as `grill-ruled` means the four clauses `grill read` applies and not the bytes.
  */
 
@@ -94,7 +94,6 @@ export const read = (artifact: string): CapClearanceRead => {
 export const emit = ({round, at}: CapClearance): string =>
 	`${KEY}: ${ROUND_PREFIX} ${round} ${FIELD_SEPARATOR} ${at}\n`;
 
-/** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderClearance = (clearance: CapClearance): NonEmptyReadonlyArray<string> => [
 	`round\t${clearance.round}`,
 	`at\t${clearance.at}`,

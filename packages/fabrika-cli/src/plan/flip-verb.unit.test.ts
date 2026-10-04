@@ -224,6 +224,7 @@ describe("runFlip", () => {
 		]);
 		expect(outcome.code).toBe(LABEL_ABSENT);
 		expect(outcome.stderr.at(-1)).toContain('label "ready-for:agent" is absent');
+		expect(outcome.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 		expect(calls.some((line) => /^POST .*\/labels/.test(line))).toBe(false);
 	});
 
@@ -301,6 +302,7 @@ describe("runFlip", () => {
 		]);
 		expect(outcome.code).toBe(LABEL_ABSENT);
 		expect(outcome.stderr.at(-1)).toContain('label "status:triaged" is absent');
+		expect(outcome.stderr.at(-1)).toContain("fabrika status bootstrap label-taxonomy");
 		expect(calls.some((line) => /^POST .*\/labels/.test(line))).toBe(false);
 	});
 

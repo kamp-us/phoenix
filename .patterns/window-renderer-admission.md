@@ -32,7 +32,7 @@ With the desk-level boundary as the only one, that unmount took every window wit
 
 The refusal half is the shape the checkpoint path already had: `loadCheckpoint` refuses an
 unreadable checkpoint into `gone` carrying `checkpointUnreadable` rather than opening silently over
-it (`apps/tuval/src/ai-agent/core/snapshot.ts`, #8095, #7514). An unreadable state is shown and
+it (`packages/tuval/src/ai-agent/core/snapshot.ts`, #8095, #7514). An unreadable state is shown and
 named, never guessed at and never silently empty. This applies that same predicate to the live wire.
 
 ## Shape
@@ -53,7 +53,7 @@ export const pageRenderers: Readonly<Record<string, ReadableRenderer>> = {
 - **`unreadable`** — a `Live` view whose state the predicate refused. Renders a `role="alert"`
   naming the process and the action that clears it (restart the kernel).
 - **`readable`** — mounts the renderer. A `ProcessGone` view counts as readable: the gone arm is the
-  window contract's own (`apps/tuval/src/shell/window/host.ts`), read back by the renderer.
+  window contract's own (`packages/tuval/src/shell/window/host.ts`), read back by the renderer.
 
 The predicate belongs to the program whose state it is — `isCounterState` in `demo/counter.ts`,
 `isAiAgentSessionState` in `ai-agent/core/snapshot.ts` — never to the page. The page only pairs it
@@ -63,6 +63,14 @@ A renderer the page loads from a module (`kind: "module"`, ADR 0359) is seated t
 module exports `admits` beside its `default` renderer, and `loadModuleRenderers`
 (`apps/tuval/src/page/module-renderers.ts`) passes the pair through `readsState`. A module with no
 `admits` is a load failure in the table, not an unguarded entry.
+
+## Every window carries a real predicate, including an authored program's
+
+There used to be one entry here that admitted everything: a window declared inline on
+`defineProgram({window})`, compiled into the page's table with `admitsAnyState` because the
+authoring API had no way for an author to write a predicate. That key is gone (#8946), and with it
+the exception — an authored program's window is a module like any other, so it exports its own
+`admits` beside its `default` renderer and is seated through `readsState` on the same terms.
 
 ## The boundary's reset keys
 
@@ -82,6 +90,11 @@ after one window fails:
   table's every entry carries an `admits`; a hand-written entry is not a `ReadableRenderer`.
 - `apps/tuval/src/shell/ui/error-boundary.unit.test.tsx` — one window's renderer throwing leaves the
   sibling rendered, the failed window's title and frame in place, and the status line alive.
+- `apps/tuval/src/page/module-renderers.unit.test.ts` — a `kind: "module"` reference resolves to the
+  module's own `default` export, admitted by the module's own `admits`, through the loader the page
+  runs over the generated module. That is the one way a program declares a window of its own: the
+  inline `window` key that used to compile a second seat into the page's table is gone, because the
+  compiler behind it ran in the kernel process and never in the tab (#8946).
 
 Flip-verify both: drop the predicate check and the stale-shape test fails with the original
 `Cannot read properties of undefined (reading 'status')`; drop the per-window boundary and the

@@ -1,15 +1,20 @@
 /**
- * `hook worktree-create`'s **whole** provisioning sequence, `git worktree add` included, against
- * real git in a throwaway clone.
+ * `hook worktree-create`'s git sequence, `git worktree add` included, against real git in a
+ * throwaway clone.
  *
  * `worktree-base.git.test.ts` beside this file judges the base resolution and deliberately keeps the
  * add out of its loop, because the add carries faults the base-resolution fix never covered. This
  * file is those faults: the two administrative-state arms {@link concurrencyArm} names, and the
  * recovery that clears them.
  *
+ * **The fan here takes no creation lock, on purpose.** The hook's own spawns now serialize their
+ * fetch and add (`worktree-create-lock.git.test.ts` runs them as real processes), but the arms still
+ * fire from an add the lock does not reach — a dead add's leftover, or a `git worktree add` run
+ * outside the hook. An unlocked fan is that sibling, so it is the case the recovery still exists for.
+ *
  * **What this file exercises is the derivation, not the Effect wrapper** — the same split
  * `worktree-base.git.test.ts` documents. The loop in {@link provision} is the shape
- * `withConcurrencyRecovery` folds over a spawner in `worktree-create-verb.ts`, and its decisions —
+ * `withConcurrencyRecovery` folds over a spawner in `worktree-owner.ts`, and its decisions —
  * which diagnostics are recoverable, whether to prune, how many attempts and how long to wait — are
  * imported from the module under test rather than restated, so a change to any of them moves this
  * file too.
@@ -18,8 +23,8 @@
  * read the arm out of a timing race, and a test that waits for one is a test that hangs on the
  * machine where it never fires. The state is reproduced directly instead — the exact
  * administrative directory a failed `git worktree add` leaves — so the fault fires on every git
- * measured without waiting for anything. The timing race is still driven, at a declared bound, and
- * asserts nothing when it does not open.
+ * measured without waiting for anything. The unlocked fan below still drives the race, and holds
+ * that no spawn is lost whether or not a window opens.
  *
  * **One thing about that planted state is version-dependent, and it is asserted as a choice between
  * the two behaviours measured rather than as the one this machine has.** Whether a *bare* re-run
@@ -280,24 +285,6 @@ describe("provisioning a worktree under parallel spawns", () => {
 		// Asserted as sets so a failure prints the losing spawn's own diagnostics, not `191 !== 192`.
 		expect(new Set(spawns.map((spawn) => spawn.base))).toEqual(new Set([tip]));
 		expect(new Set(spawns.map((spawn) => spawn.created))).toEqual(new Set([true]));
-	}, 300_000);
-
-	/**
-	 * The live-sibling source, which unlike the planted one has to be raced for. Bounded and
-	 * declared: on a machine where the window does not open in this budget the test asserts nothing
-	 * rather than spinning until it does.
-	 */
-	it("recovers from the live window too, when this machine's timing opens one", async ({skip}) => {
-		const {clone, scratch} = openClone();
-		const spawns = await fan(clone, scratch, RECOVERY_ATTEMPTS, "live");
-
-		if (armsIn(spawns).size === 0) {
-			skip(
-				`no live concurrency window opened in ${SPAWNS * ROUNDS} spawns on ${gitVersion()} — the window is timing-dependent and this budget is bounded, so nothing is asserted rather than spun for`,
-			);
-			return;
-		}
-		expect(spawns.filter((spawn) => !spawn.created)).toEqual([]);
 	}, 300_000);
 });
 

@@ -8,10 +8,17 @@ import {
 	okOut,
 	type Scripted,
 	unconfigured,
+	unconfiguredOnPlatform,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {SHIPPED_GOVERNED_ROOTS} from "../review/classes.ts";
+import {
+	evidenceDoesNotOpen,
+	evidenced,
+	evidenceOpens,
+	evidenceUnreadable,
+} from "../review-ui/evidence.test-support.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
 import {inForce, requiredWithFloor, runGate} from "./gate-verb.ts";
@@ -61,10 +68,10 @@ const NO_REVIEWS = [REVIEWS, reviewPage()] as const;
 
 /** The default two-file diff, under no governance root — the floor stays off unless a test asks. */
 const ORDINARY = [FILES, served(files("apps/site/src/a.ts", "apps/site/src/b.ts"))] as const;
-/** A fabrika-tree diff: `claude-plugins/` is one of the shipped governance roots. */
+/** A skill diff under `.claude/`, one of the shipped governance roots. */
 const FABRIKA_TREE = [
 	FILES,
-	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/site/src/b.ts")),
+	served(files(".claude/skills/ship/SKILL.md", "apps/site/src/b.ts")),
 ] as const;
 
 const options = {
@@ -91,7 +98,10 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runGate({...options, ...overrides}),
-			Layer.merge(fakeSeams([...script, ...http, ORDINARY, NO_REVIEWS]).layer, unconfigured),
+			Layer.merge(
+				fakeSeams([...script, ...http, ORDINARY, NO_REVIEWS, ...unconfiguredOnPlatform()]).layer,
+				unconfigured,
+			),
 		),
 	);
 
@@ -248,6 +258,151 @@ describe("runGate", () => {
 		expect(out.stderr.some((line) => line.includes("an invalid emission"))).toBe(true);
 	});
 
+	describe("names a head-bound §CP advisory it withholds without --cp (#6796)", () => {
+		const advisory = (sha: string): string =>
+			`review-code: advisory — a clause\n\nReviewed-head: @ ${sha}\n\n- [PASS] a criterion`;
+		const withheldLines = (stderr: ReadonlyArray<string>) =>
+			stderr.filter((line) => line.includes("§CP advisory verdict in comment"));
+
+		it("explains a `stale` row the earlier-head marker left behind", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 2}))],
+				[
+					COMMENTS,
+					commentsServed(
+						{id: 1, body: marker("review-code", "PASS", OTHER_HEAD)},
+						{id: 2, body: advisory(HEAD), updatedAt: "2026-08-09T00:00:00Z"},
+					),
+				],
+				[ACL, permission("write")],
+			]);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toBe(
+				[`gate\tblocked\t${HEAD}`, "ns\treview-code\tstale\tmarker", ""].join("\n"),
+			);
+			const lines = withheldLines(out.stderr);
+			expect(lines).toHaveLength(1);
+			expect(lines[0]).toContain("review-code:");
+			expect(lines[0]).toContain("comment 2");
+			expect(lines[0]).toContain("reads stale");
+			expect(lines[0]).toContain("passing --cp");
+		});
+
+		it("explains a `fail` row from a same-head FAIL a later advisory PASS replaced (#9772)", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 2}))],
+				[
+					COMMENTS,
+					commentsServed(
+						{
+							id: 1,
+							body: marker("review-code", "FAIL", HEAD),
+							updatedAt: "2026-09-24T10:31:28Z",
+						},
+						{id: 2, body: advisory(HEAD), updatedAt: "2026-09-24T10:32:54Z"},
+					),
+				],
+				[ACL, permission("write")],
+			]);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toContain("ns\treview-code\tfail\tmarker");
+			const lines = withheldLines(out.stderr);
+			expect(lines).toHaveLength(1);
+			expect(lines[0]).toContain("comment 2");
+			expect(lines[0]).toContain("reads fail");
+		});
+
+		it("explains an `absent` row, and the advisory still never satisfies", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 1}))],
+				[COMMENTS, commentsServed({id: 7, body: advisory(HEAD)})],
+				[ACL, permission("write")],
+			]);
+			expect(out.stdout).toBe(
+				[`gate\tblocked\t${HEAD}`, "ns\treview-code\tabsent\t-", ""].join("\n"),
+			);
+			expect(withheldLines(out.stderr)).toHaveLength(1);
+			expect(withheldLines(out.stderr)[0]).toContain("comment 7");
+		});
+
+		it("keeps --json state tokens unchanged beside the notice", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull({comments: 2}))],
+					[
+						COMMENTS,
+						commentsServed(
+							{id: 1, body: marker("review-code", "PASS", HEAD)},
+							{id: 2, body: advisory(HEAD), updatedAt: "2026-08-09T00:00:00Z"},
+						),
+					],
+					[ACL, permission("write")],
+				],
+				{json: true},
+			);
+			expect(JSON.parse(out.stdout)).toMatchObject({
+				outcome: "satisfied",
+				namespaces: [{name: "review-code", state: "pass", carrier: "marker", commentId: 1}],
+			});
+			expect(withheldLines(out.stderr)[0]).toContain("reads pass");
+		});
+
+		it("emits nothing under --cp, where the advisory resolves the namespace itself", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull({comments: 2}))],
+					[
+						COMMENTS,
+						commentsServed(
+							{id: 1, body: marker("review-code", "PASS", OTHER_HEAD)},
+							{id: 2, body: advisory(HEAD), updatedAt: "2026-08-09T00:00:00Z"},
+						),
+					],
+					[ACL, permission("write")],
+				],
+				{cp: true},
+			);
+			expect(out.stdout).toContain("ns\treview-code\tpass\tadvisory");
+			expect(withheldLines(out.stderr)).toEqual([]);
+		});
+
+		it("emits nothing when the advisory binds another head", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 2}))],
+				[
+					COMMENTS,
+					commentsServed(
+						{id: 1, body: marker("review-code", "PASS", OTHER_HEAD)},
+						{id: 2, body: advisory(OTHER_HEAD)},
+					),
+				],
+				[ACL, permission("write")],
+			]);
+			expect(out.stdout).toContain("ns\treview-code\tstale\tmarker");
+			expect(withheldLines(out.stderr)).toEqual([]);
+		});
+
+		it("emits nothing for an advisory whose author is below write+", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 1}))],
+				[COMMENTS, commentsServed({id: 2, body: advisory(HEAD)})],
+				[ACL, permission("read")],
+			]);
+			expect(withheldLines(out.stderr)).toEqual([]);
+		});
+
+		it("reports an unreadable ACL on a withheld advisory as a notice, never 11", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 1}))],
+				[COMMENTS, commentsServed({id: 2, body: advisory(HEAD)})],
+				[ACL, {status: 502, body: '{"message":"Bad gateway"}'}],
+			]);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toContain("ns\treview-code\tabsent\t-");
+			expect(out.stderr.join("\n")).toContain("the §CP advisory in comment 2 is not reported");
+		});
+	});
+
 	it("refuses an off-vocabulary --require on 10", async () => {
 		const out = await run([[PULL, served(pull())]], {require: ["review-vibes"]});
 		expect(out.code).toBe(OFF_VOCABULARY);
@@ -316,6 +471,32 @@ describe("runGate", () => {
 		);
 	});
 
+	// A repo's `reviewUi.whenNoPreview` rules let a PR with no preview resolve the namespace on an
+	// owner's hand-check or a skip; the row and its stderr line flag which, so nobody reads a render.
+	it.each([
+		["hand-check", "hand-checked, not rendered"],
+		["skip", "skipped by config"],
+	] as const)("reads a basis:%s route as routed and flags it on the row", async (basis, said) => {
+		const flagged = route("review-ui", HEAD).replace(`@ ${HEAD} —`, `@ ${HEAD} basis:${basis} —`);
+		const script: ReadonlyArray<Scripted> = [
+			[PULL, served(pull({comments: 1}))],
+			[COMMENTS, commentsServed({id: 1, body: flagged})],
+			[ACL, permission("write")],
+		];
+		const out = await run(script, {require: ["review-ui"]});
+		expect(out.stdout).toBe(
+			[`gate\tsatisfied\t${HEAD}`, `ns\treview-ui\trouted\trouted-elsewhere\t${basis}`, ""].join(
+				"\n",
+			),
+		);
+		expect(out.stderr.join("\n")).toContain(said);
+		const json = await run(script, {require: ["review-ui"], json: true});
+		expect(JSON.parse(json.stdout)).toMatchObject({
+			outcome: "satisfied",
+			namespaces: [{name: "review-ui", state: "routed", basis}],
+		});
+	});
+
 	it("blocks when the route binds a head that has moved — a push re-opens the question", async () => {
 		const out = await run(
 			[
@@ -364,18 +545,95 @@ describe("runGate", () => {
 						{id: 1, body: route("review-ui", HEAD), updatedAt: "2026-08-19T01:00:00Z"},
 						{
 							id: 2,
-							body: marker("review-ui", "FAIL", HEAD),
+							body: evidenced(marker("review-ui", "FAIL", HEAD)),
 							updatedAt: "2026-08-19T02:00:00Z",
 						},
 					),
 				],
 				[ACL, permission("write")],
+				...evidenceOpens("o/r", 2),
 			],
 			{require: ["review-ui"]},
 		);
 		expect(out.stdout).toBe(
 			[`gate\tblocked\t${HEAD}`, "ns\treview-ui\tfail\tmarker", ""].join("\n"),
 		);
+	});
+
+	// `review-ui post` never withdraws a verdict whose evidence stopped opening after it
+	// posted, so the gate re-checks that evidence before it counts the verdict.
+	describe("a review-ui verdict counts only while its evidence opens", () => {
+		const uiPass = (body: string, http: ReadonlyArray<Scripted>) =>
+			run(
+				[
+					[PULL, served(pull({comments: 1}))],
+					[COMMENTS, commentsServed({id: 7, body})],
+					[ACL, permission("write")],
+					...http,
+				],
+				{require: ["review-ui"]},
+			);
+
+		it("counts a PASS whose evidence opens as the judged bytes", async () => {
+			const out = await uiPass(
+				evidenced(marker("review-ui", "PASS", HEAD)),
+				evidenceOpens("o/r", 7),
+			);
+			expect(out.stdout).toBe(
+				[`gate\tsatisfied\t${HEAD}`, "ns\treview-ui\tpass\tmarker", ""].join("\n"),
+			);
+		});
+
+		it("does not count a PASS whose evidence does not open — unopened, blocked", async () => {
+			const out = await uiPass(
+				evidenced(marker("review-ui", "PASS", HEAD)),
+				evidenceDoesNotOpen("o/r", 7),
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toBe(
+				[`gate\tblocked\t${HEAD}`, "ns\treview-ui\tunopened\tmarker", ""].join("\n"),
+			);
+			expect(out.stderr.join("\n")).toMatch(
+				/review-ui: the verdict in comment 7 does not count — its evidence does not open \(.*HTTP 404\)/,
+			);
+		});
+
+		it("does not count a PASS whose capture serves other bytes", async () => {
+			const out = await uiPass(
+				evidenced(marker("review-ui", "PASS", HEAD)),
+				evidenceDoesNotOpen("o/r", 7, {status: 200, body: "other bytes"}),
+			);
+			expect(out.stdout).toContain("ns\treview-ui\tunopened\tmarker");
+		});
+
+		it("does not count a PASS whose gallery records no digest to hold the capture to", async () => {
+			const out = await uiPass(
+				`${marker("review-ui", "PASS", HEAD)}\n\n## Evidence\n\n![/pano](https://github.com/user-attachments/assets/x)\n`,
+				[],
+			);
+			expect(out.stdout).toContain("ns\treview-ui\tunopened\tmarker");
+			expect(out.stderr.join("\n")).toMatch(/carries no sha256 line/);
+		});
+
+		it("is UNKNOWN (11), never blocked or satisfied, when the verdict comment cannot be rendered", async () => {
+			const out = await uiPass(
+				evidenced(marker("review-ui", "PASS", HEAD)),
+				evidenceUnreadable("o/r", 7),
+			);
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stdout).toBe("");
+		});
+
+		it("reads only the review-ui namespace's evidence — review-code is counted as before", async () => {
+			const out = await run([
+				[PULL, served(pull({comments: 1}))],
+				[COMMENTS, commentsServed({id: 7, body: marker("review-code", "PASS", HEAD)})],
+				[ACL, permission("write")],
+			]);
+			expect(out.stdout).toBe(
+				[`gate\tsatisfied\t${HEAD}`, "ns\treview-code\tpass\tmarker", ""].join("\n"),
+			);
+		});
 	});
 
 	it("refuses a truncated comment sweep on 13", async () => {
@@ -538,7 +796,7 @@ describe("requiredWithFloor", () => {
 	it("adds governance on a governance-root diff", () => {
 		const result = requiredWithFloor(
 			["review-skill"],
-			["claude-plugins/fabrika/skills/ship/SKILL.md"],
+			[".claude/skills/ship/SKILL.md"],
 			SHIPPED_GOVERNED_ROOTS,
 		);
 		expect(result.required).toEqual(["review-skill", "governance"]);
@@ -628,6 +886,7 @@ describe("runGate — staleness is the content question", () => {
 			[ACL, permission("write")],
 			ORDINARY,
 			NO_REVIEWS,
+			...unconfiguredOnPlatform(),
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runGate(options), Layer.merge(seams.layer, unconfigured)),
@@ -650,6 +909,7 @@ describe("runGate — staleness is the content question", () => {
 			[ACL, permission("write")],
 			ORDINARY,
 			NO_REVIEWS,
+			...unconfiguredOnPlatform(),
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runGate(options), Layer.merge(seams.layer, unconfigured)),

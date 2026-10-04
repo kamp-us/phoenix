@@ -8,9 +8,6 @@
  *
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
- *
- * There is no `--json` flag: `trail`, `emit` and `read` already answer with one JSON object, and
- * `compose`'s answer is the markdown body a caller hands straight to `emit --spec`.
  */
 
 import {Effect, type FileSystem, Option, Result} from "effect";
@@ -19,6 +16,7 @@ import {emit as emitOutcome} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readFile} from "../io/fs.ts";
 import {readStdin} from "../io/stdin.ts";
+import {readBoard} from "../status/label-remedy.ts";
 import type {DocumentRead} from "./compose-verb.ts";
 import {runCompose} from "./compose-verb.ts";
 import {runEmit} from "./emit-verb.ts";
@@ -60,8 +58,17 @@ const trail = leafCommand(
 ).pipe(
 	Command.withShortDescription("Resolve a source into one provenance-tagged decision trail."),
 	Command.withDescription(
-		'Resolve a grilling session or wayfinding map THROUGH ITS OWN SIBLING RESOLVER and normalize it into one trail: {"source":n,"kind":"grilling|map","readiness":"ready|blocked|empty","trailDigest":"…","decisions":[…],"unresolved":[…],"outOfScope":[…],"counts":{…}}. All three readiness tokens exit 0 — a blocked trail is this skill working. Exits 4 (the map body does not parse), 7 (no such issue), 11 (a read could not complete, so the trail is UNKNOWN), 12 (the issue carries neither source label, or both). Example: fabrika graduate trail 9412',
+		[
+			"Resolves a grilling session or wayfinding map into one decision trail and prints it as JSON.",
+			"  ready, blocked and empty are all answers.",
+			"  4: the map body does not parse",
+			"  7: no such issue",
+			"  11: a read failed, so the trail is UNKNOWN",
+			"  12: the issue carries neither source label, or both",
+			'  Derivation: the graduate skill\'s contract.md, "graduate trail"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika graduate trail 9412"}]),
 );
 
 const compose = leafCommand(
@@ -90,8 +97,21 @@ const compose = leafCommand(
 ).pipe(
 	Command.withShortDescription("Render the four-section spec body from the trail and stdin."),
 	Command.withDescription(
-		"Read the three authored sections (## Problem, ## Solution, ## Out of scope) from STDIN, render ## Decisions from --trail, and print the composed markdown body — the bytes `graduate emit --spec` takes. The decisions section is never authored: a stdin body carrying that heading is 17. Exits 3 (empty stdin), 4 (an authored section is missing, out of order or empty; or --decisions names a ref not on the trail), 5 (machine-local path), 6 (bare @ reference), 11 (--trail could not be read), 13 (the trail is blocked), 14 (no 12-hex trailDigest, or a decision missing a digested field), 16 (zero decisions selected), 17 (stdin carries ## Decisions). Example: fabrika graduate compose --trail trail.json < spec.md",
+		[
+			"Composes the spec body from the stdin sections and --trail's decisions and prints the markdown.",
+			"  3: empty stdin",
+			"  4: an authored section is missing, misordered or empty, or a ref is off the trail",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  11: --trail could not be read",
+			"  13: the trail is blocked",
+			"  14: the trail digest or a decision's digested field is missing",
+			"  16: zero decisions selected",
+			"  17: stdin carries its own Decisions section",
+			'  Derivation: the graduate skill\'s contract.md, "graduate compose"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika graduate compose --trail trail.json < spec.md"}]),
 );
 
 const emit = leafCommand(
@@ -117,6 +137,7 @@ const emit = leafCommand(
 				title,
 				repo: Option.getOrNull(repo),
 				env: process.env,
+				board: yield* readBoard(process.cwd()),
 				now: () => new Date(),
 			}),
 		);
@@ -124,8 +145,31 @@ const emit = leafCommand(
 ).pipe(
 	Command.withShortDescription("File the one spec issue and record the emission on the source."),
 	Command.withDescription(
-		'File exactly ONE spec issue carrying only status:needs-triage, read it back, then post the graduate-emitted marker on the source, and print {"source":n,"issue":n,"url":"…","specDigest":"…","labels":["status:needs-triage"],"marker":n}. The trail and the digest are re-derived from the source, never passed in. Exits 4 (--spec sections), 5 (machine-local path), 6 (bare @ reference), 7 (no such source, or no status:needs-triage label), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (--title classifies), 11 (a precondition read failed), 12 (neither source label), 13 (blocked trail), 14 (a decision cannot be digested), 15 (this spec digest already emitted an issue), 16 (zero decisions), 18 (a ref the spec carries moved on the trail, or a decisions line does not parse). Example: fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per topic"',
+		[
+			"Files one spec issue, marks the emission on its source and prints both as JSON.",
+			"  4: bad --spec sections",
+			"  5: a machine-local path",
+			"  6: a bare @ reference",
+			"  7: no such source, or no status:needs-triage label",
+			"  8: a write failed (UNKNOWN)",
+			"  9: the read-back differs",
+			"  10: --title classifies",
+			"  11: a precondition read failed",
+			"  12: neither source label",
+			"  13: the trail is blocked",
+			"  14: a decision cannot be digested",
+			"  15: this spec was already emitted",
+			"  16: zero decisions",
+			"  18: a spec ref moved, or a decisions line is unparseable",
+			'  Derivation: the graduate skill\'s contract.md, "graduate emit"',
+		].join("\n"),
 	),
+	Command.withExamples([
+		{
+			command:
+				'fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per topic"',
+		},
+	]),
 );
 
 const read = leafCommand(
@@ -137,8 +181,16 @@ const read = leafCommand(
 ).pipe(
 	Command.withShortDescription("Has this source already graduated, and into what."),
 	Command.withDescription(
-		'Read a source\'s emission markers: {"source":n,"state":"graduated|ungraduated","emissions":[…],"disregarded":[…],"scanned":{"comments":n}}. Never refuses on marker content — a malformed marker is a disregarded row at exit 0, never an absence. Exits 7 (no such source), 11 (the comment read could not complete, so whether it graduated is UNKNOWN), 12 (neither source label). Example: fabrika graduate read 9412',
+		[
+			"Prints a source's graduation state and emission markers as JSON.",
+			"  A malformed marker is a disregarded row, never an absence.",
+			"  7: no such source",
+			"  11: the comment read failed, so graduation is UNKNOWN",
+			"  12: neither source label",
+			'  Derivation: the graduate skill\'s contract.md, "graduate read"',
+		].join("\n"),
 	),
+	Command.withExamples([{command: "fabrika graduate read 9412"}]),
 );
 
 export const graduateCommand = Command.make("graduate").pipe(

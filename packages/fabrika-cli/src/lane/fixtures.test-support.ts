@@ -3,11 +3,18 @@
  * idiom), and a two-phase document in the /prd-to-tasks shape small enough for a test to mutate.
  */
 import {Effect} from "effect";
-import type {DriverRouted, ParkCauseSurface, Uncaused} from "../config/keys/park-cause.ts";
+import type {
+	DriverRouted,
+	ParkCauseSurface,
+	RepairBudgetSpent,
+	Uncaused,
+} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {answer, type VerbOutcome} from "../verb.ts";
+import type {RoutedBasis} from "../wire/routed-elsewhere.ts";
 import {LOCK_DIR_NAME} from "./append-lock.ts";
+import type {ClosingMerge} from "./closing-merge.ts";
 import {type ProveOptions, proofLabelOf} from "./prove-verb.ts";
 
 /**
@@ -25,6 +32,7 @@ export const fakeProver = (
 	landed: ReadonlyArray<number> = [],
 	diagnosis = false,
 	routed: ReadonlyArray<string> = [],
+	closingMerge: ClosingMerge | null = null,
 ) => {
 	const asked: ProveOptions[] = [];
 	return {
@@ -41,6 +49,7 @@ export const fakeProver = (
 					landed,
 					diagnosis,
 					routed,
+					closingMerge,
 					proof: proofLabelOf(outcome),
 				};
 			}),
@@ -72,6 +81,8 @@ export const fakeProverByEvent = (
 					landed: facts.landed ?? [],
 					diagnosis: facts.diagnosis ?? false,
 					routed: facts.routed ?? [],
+					closingMerge: facts.closingMerge ?? null,
+					...(facts.routedBasis === undefined ? {} : {routedBasis: facts.routedBasis}),
 					proof: proofLabelOf(facts.outcome),
 				};
 			}),
@@ -86,16 +97,19 @@ export interface ProofFacts {
 	readonly landed?: ReadonlyArray<number>;
 	readonly diagnosis?: boolean;
 	readonly routed?: ReadonlyArray<string>;
+	readonly routedBasis?: RoutedBasis;
+	readonly closingMerge?: ClosingMerge;
 }
 
 /** A `parkCause` read at any arm, for a verb test that does not open a config file. */
 export const parkCauseRead = (
 	uncaused: Uncaused = "record",
 	driverRouted: DriverRouted = "refuse",
+	repairBudgetSpent: RepairBudgetSpent = "driver",
 ): Read<ParkCauseSurface> => ({
 	_tag: "Value",
-	value: {uncaused, driverRouted},
-	note: `test fixture: parkCause.uncaused = ${uncaused}, parkCause.driverRouted = ${driverRouted}`,
+	value: {uncaused, driverRouted, repairBudgetSpent},
+	note: `test fixture: parkCause.uncaused = ${uncaused}, parkCause.driverRouted = ${driverRouted}, parkCause.repairBudgetSpent = ${repairBudgetSpent}`,
 });
 
 /**

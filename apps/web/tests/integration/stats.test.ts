@@ -25,10 +25,9 @@ interface LandingStats {
 	totalPosts: number;
 	totalComments: number;
 	totalAuthors: number;
-	version: string;
 }
 
-const STATS_SELECT = ["totalDefinitions", "totalPosts", "totalComments", "totalAuthors", "version"];
+const STATS_SELECT = ["totalDefinitions", "totalPosts", "totalComments", "totalAuthors"];
 
 async function landingStats(): Promise<LandingStats> {
 	const result = await h.fate({kind: "query", name: "landingStats", select: STATS_SELECT});
@@ -44,15 +43,6 @@ beforeAll(async () => {
 });
 
 describe("landing stats — /fate", () => {
-	it("landingStats returns four numeric counters plus the build version v0.3", async () => {
-		const stats = await landingStats();
-		expect(typeof stats.totalDefinitions).toBe("number");
-		expect(typeof stats.totalPosts).toBe("number");
-		expect(typeof stats.totalComments).toBe("number");
-		expect(typeof stats.totalAuthors).toBe("number");
-		expect(stats.version).toBe("v0.3");
-	});
-
 	it("each counter increases by AT LEAST the amount added under a fresh author", async () => {
 		const before = await landingStats();
 
@@ -105,40 +95,8 @@ describe("landing stats — /fate", () => {
 		expect(after.totalAuthors).toBeGreaterThanOrEqual(before.totalAuthors + 1);
 	});
 
-	it("add-then-delete nets to a smaller delta than add alone (decrement is observable)", async () => {
-		// An add and its matching delete cancel: the net contribution of an add+delete
-		// pair to `totalDefinitions` is 0, whereas a bare add contributes +1. We bound only
-		// by our own deterministic contribution via a lower-bound `>=` on `afterAdd` — safe
-		// on the shared stage, where concurrent writers can only inflate the counter further.
-		const baseline = await landingStats();
-		const added = await h.fate(
-			{
-				kind: "mutation",
-				name: "definition.add",
-				input: {termSlug: `${NS}-del`, body: "to be deleted"},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(added.ok).toBe(true);
-		if (!added.ok) return;
-		const id = (added.data as {id: string}).id;
-
-		const afterAdd = await landingStats();
-		expect(afterAdd.totalDefinitions).toBeGreaterThanOrEqual(baseline.totalDefinitions + 1);
-
-		const deleted = await h.fate(
-			{kind: "mutation", name: "definition.delete", input: {id}, select: ["slug"]},
-			{cookie: author.cookie},
-		);
-		expect(deleted.ok).toBe(true);
-		if (!deleted.ok) return;
-		expect((deleted.data as {__typename: string}).__typename).toBe("Term");
-
-		// not portable black-box: the raw `sozluk_stats` aggregate row isn't on the
-		// wire, so the delete's effect on the count is exercised by the worker but not
-		// directly asserted here; we only assert the delete is accepted and re-resolves
-		// its parent Term. The own-row decrement is verified at the unit layer, not over
-		// this HTTP seam.
-	});
+	// The decrement a delete makes is not observable here: a lower-bound delta on a shared,
+	// only-inflating counter cannot show a -1. The recompute is unit-tested
+	// (`recompute-sozluk-stats-public-live.unit.test.ts`), and the term-level decrement on real D1
+	// by `sozluk-mutations.test.ts`.
 });

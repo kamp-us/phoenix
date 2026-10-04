@@ -3,24 +3,19 @@
  * changed surfaces over its preview deploy, host each as a GitHub attachment,
  * and return one record per surface.
  *
- *   captureAndUpload(request) : Effect<CaptureRecord[], CaptureError, HttpClient>
- *
- * Each `CaptureRecord` is `{surface, route, state, localPath, hostedUrl,
- * uploadError}`:
- *   - `localPath` is ALWAYS present when capture succeeded — the PRIMARY judged
- *     artifact (the gate reads the local PNG bytes), decoupled from upload.
- *   - `hostedUrl` is the GitHub user-attachments URL when upload succeeded, else
- *     `null` (the fallback fired).
- *   - `uploadError` is the diagnostic when the (undocumented) upload endpoint
- *     failed, else `null`.
- *
  * Only a genuine CAPTURE failure short-circuits (`CaptureError`); the upload leg
  * never fails the effect, so a broken endpoint degrades `hostedUrl`/`uploadError`
  * but never loses `localPath` and never breaks the gate.
  */
 import {Effect} from "effect";
 import type {HttpClient} from "effect/unstable/http/HttpClient";
-import {type CapturedSurface, CaptureError, type CaptureOptions, captureShots} from "./capture.ts";
+import {
+	type CapturedSurface,
+	CaptureError,
+	type CaptureOptions,
+	captureShots,
+	requireWritten,
+} from "./capture.ts";
 import type {PageError} from "./page-errors.ts";
 import {buildCapturePlan, type Surface, type Viewport} from "./plan.ts";
 import {type UploadOutcome, uploadAsset} from "./upload.ts";
@@ -85,6 +80,7 @@ export const captureAndUpload = (
 		catch: (cause) => new CaptureError({message: "failed to build capture plan", cause}),
 	}).pipe(
 		Effect.flatMap((plan) => captureShots(plan, request.outDir, request.captureOptions ?? {})),
+		Effect.flatMap(requireWritten),
 		Effect.flatMap((captured) =>
 			Effect.forEach(
 				captured,

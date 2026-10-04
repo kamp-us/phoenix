@@ -41,6 +41,7 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
+import {evidenceHeader} from "./evidence-comment.ts";
 import {requireUiLane} from "./lane.ts";
 import {decodePng, sha256Of} from "./png.ts";
 import {pullHeadRef} from "./pull-head.ts";
@@ -60,8 +61,6 @@ export type Upload =
 	| {readonly _tag: "Ok"; readonly url: string}
 	| {readonly _tag: "Failed"; readonly reason: string};
 
-export type UploadLeg = (target: UploadTarget) => Effect.Effect<Upload>;
-
 export interface EvidenceOptions {
 	readonly pr: number;
 	readonly before: string | null;
@@ -72,10 +71,11 @@ export interface EvidenceOptions {
 	/** Content-addressed PUT + GET-back into the harness's declared store. */
 	readonly storeUpload: (store: string, target: UploadTarget) => Effect.Effect<Upload>;
 	/**
-	 * GitHub's user-attachment endpoint plus a HEAD probe of every returned URL.
+	 * GitHub's user-attachment endpoint plus a read-back of every returned URL through GitHub's
+	 * renderer, held to the capture's bytes.
 	 *
-	 * Wider than {@link UploadLeg} by the two services its credential path needs: the repo id comes
-	 * off the fetch client and the token off `../io/gh-api.ts`, whose `gh` leg spawns.
+	 * Needs the fetch client and the spawner: the repo id comes off the fetch client and the token
+	 * off `../io/gh-api.ts`, whose `gh` leg spawns.
 	 */
 	readonly attachmentUpload: (
 		repo: string,
@@ -101,7 +101,7 @@ export const composeEvidence = (
 			? `### \`${surface}\` — new surface\n\n![after](${after})`
 			: `### \`${surface}\`\n\n| before | after |\n| --- | --- |\n| ![before](${before}) | ![after](${after}) |`,
 	);
-	return [`**UI evidence** — rendered at head \`${head}\`.`, "", ...rows].join("\n");
+	return [evidenceHeader(head), "", ...rows].join("\n");
 };
 
 const readCapture = (

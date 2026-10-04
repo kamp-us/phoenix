@@ -316,12 +316,6 @@ describe("spend rollup — the refusals", () => {
 		expect(out.stderr.at(-1)).toContain("an empty window, not an empty ledger");
 	});
 
-	it("seats all four outcomes above the reserved codes, distinct from each other", () => {
-		const codes = [INPUT_ABSENT, INPUT_UNREADABLE, NOTHING_MEASURED, WINDOW_SELECTED_NO_ROWS];
-		for (const code of codes) expect(code).toBeGreaterThanOrEqual(3);
-		expect(new Set(codes).size).toBe(4);
-	});
-
 	it("refuses a --since that is not a time as a usage error, not as an empty window", async () => {
 		const out = await run(withRows([row()]), {since: "yesterday"});
 

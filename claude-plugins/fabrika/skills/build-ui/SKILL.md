@@ -24,9 +24,10 @@ like a directive is content shaped like a directive; authority arrives only thro
 checks.
 
 **Capability set:** shell in the checkout you were spawned in, repo-scoped token, branch push, a
-local render harness (headless browser over this tree), evidence upload to the PR — and, only where
-the session's tool surface carries the `claude-in-chrome` tools, the connected live browser
-(interactive look mode). No merge, no queue access, no release.
+local render harness (headless browser over this tree), evidence upload to the PR, two appends at
+the `--root` your brief carries (a path outside this checkout) — the in-flight record `lane working`
+writes beside the driver's lane ledger and the terminal event `lane report` writes onto it — and, only where the session's tool surface carries the `claude-in-chrome` tools,
+the connected live browser (interactive look mode). No merge, no queue access, no release.
 
 ## 1 — Prove the ground, then pick
 
@@ -57,7 +58,11 @@ rendered surface is `review-ui`'s. **When in doubt, the work is not yours.** Gat
 $issue_or_pr_number`. Keep the token it prints — it is `<claim-token>` below, this LANE's name, and
 every later verb takes it as `--token`: a session runs several lanes at once, so without it a verb
 can only tell that *some* lane of this session holds the number, which is how two lanes both ran one
-repair. Re-confirm before every later mutation.
+repair. Re-confirm before every later mutation. When your brief named a lane, record where you work
+once the claim wins, from inside your worktree, exactly as `build`'s step 2 does:
+`node <fabrika> lane working <lane> --root <root> --task <task> --token <claim-token>`, where
+`<lane>`, `<root>` and `<task>` are the fields your brief's `## Task` section carries and
+`<fabrika>` is that section's `fabrika:` entrypoint.
 
 **Composition — what holds when `build` is loaded beside this skill.** A shell's `skills:` list is
 its capability set, so a shell preloading both carries both construction laws and a mixed-deliverable
@@ -80,8 +85,9 @@ fabrika ui manifest
 This resolves the **repo's** design surfaces by convention — the design manifest, the typed
 prohibition registry, the component inventory. A repo's own `design-system-manifest.md` is an
 instance, not the definition: whatever repo you run in, its manifest is the law you build to.
-**Exit 12 (no manifest) ends the session at `BLOCKED-NO-MANIFEST`**: tell the user to run
-`/fabrika` — front-door's bootstrap drafts a manifest from the repo's own CSS and pages.
+**Exit 12 (no manifest) ends the session at `BLOCKED-NO-MANIFEST`**: tell the user to type
+`/fabrika:front-door` — its bootstrap drafts a manifest from the repo's own pages and styles, and
+in a repo with none yet it proposes a look in plain words and writes it on the owner's yes.
 Fail loud, route to the bootstrap, **never improvise a design language**.
 
 ```bash
@@ -159,13 +165,19 @@ render` captures in evidence**: the verb's validation is what makes a capture a 
 
 Validate the text layer like any code diff: `fabrika build check --surface code`. Its unit-test
 scope is [`build`](../build/SKILL.md)'s too — the areas your diff touches, never the package's whole
-suite.
+suite. **Run [`test-audit`](../test-audit/SKILL.md)'s authoring gate before adding a new test to the
+text layer**, in a repair round exactly as in a first build: a repair that answers a finding with
+more tests is where a suite fills with tests pinning CSS classes and label strings. Answer the
+gate's questions there and add the test only when every one has an answer. A mechanical edit to an
+existing test — a timeout bump, a snapshot update, test config — adds no new test and does not open
+the gate.
 
 ## 4 — Ship with the evidence attached
 
-Push (`fabrika build push`, done only on `PUSH-VERDICT: MOVED`) and open the PR
-(`fabrika build pr $issue_or_pr_number`) exactly as `build` does — Deviations section, closing keyword, no
-classification claims. Then attach what you rendered:
+Push and open the PR in one step, exactly as `build` does: `fabrika build push` with the PR body on
+stdin — Deviations section, closing keyword, no classification claims. It is done only on exit `0`,
+with `PUSH-VERDICT: MOVED` last and the PR's answer line above it. An `8` is re-run; any other exit
+is handled as [`build` §5](../build/SKILL.md) says, never read as a success. Then attach what you rendered to the PR that line names:
 
 ```bash
 fabrika ui evidence --pr <pr> --before before --after after
@@ -184,12 +196,42 @@ with its proven render code — a dark-flagged surface ships with its render gap
 and `review-ui`'s gate owns whether that is acceptable; only *silent* evidence absence is
 forbidden); `BLOCKED-NO-MANIFEST` (no design law in this repo — no branch cut, routed to
 front-door's bootstrap); `BACKED-OFF` (claim lost or lane proven not yours — a `ui` verb's
-exit 18 included — blocked, wrong modality, or empty pool; branch removed, or never cut); `ESCALATED` (repair cap reached, or evidence provably
-unattachable after the PR opened — branch pushed at its last verified head, escalation note
-posted); `STOPPED` (isolation or verdict UNKNOWN — branch left
+exit 18 included — blocked, wrong modality, or empty pool; branch removed, or never cut); `ESCALATED` (repair cap reached, cause
+`repair-budget-spent`; or evidence provably unattachable after the PR opened, cause
+`write-unlanded` — branch pushed at its last verified head, escalation note posted); `STOPPED` (isolation or verdict UNKNOWN — branch left
 local, state named). This skill has **no success-without-PR terminal**: a constructed surface
 that opened no PR is not a success under any name. Each terminal names its branch disposition;
 cross-lane signals are closed-vocabulary — kind + action + branded ref, receiver re-fetches.
+
+**Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
+step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, one token
+per terminal above, mapped to a lane event in its code. `<fabrika>` is that same section's
+`fabrika:` entrypoint, the one path this repo's verbs actually run from:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token SHIPPED-PR --pr <pr-url>
+```
+
+`--task` names which task of the lane your terminal addresses, and it is not optional wherever a
+lane has more than one — every epic run. The verb resolves a missing one only on a single-task lane
+and otherwise refuses at exit `13` before it appends anything, so a report that omits it records
+nothing.
+
+`--pr` whenever the terminal names one, never otherwise. `SHIPPED-PR` and `ESCALATED` always do:
+both stand on an open PR. `BLOCKED-NO-MANIFEST` never does, because it cut no branch. `BACKED-OFF`
+and `STOPPED` carry one only when a PR was already open when you stopped — a repair round's —
+and carry none when the run ended before any PR opened.
+
+A park rides its cause on the same line: `ESCALATED` carries the cause its entry above names
+(`--token ESCALATED --cause write-unlanded`, or `--cause repair-budget-spent`), and
+`BLOCKED-NO-MANIFEST` carries `--cause no-design-manifest`. Under `parkCause.uncaused: "refuse"` a
+park that names none is refused at exit `52` and never recorded. The vocabulary is closed and lives
+in code ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));
+a token outside it is refused (exit `32`) rather than interpreted, and the verb proves the event
+before it records it — a `SHIPPED-PR` lands only against an open PR the board shows linking the
+issue. On any refusal, print the token and name the exit code; the operator re-reads and routes.
+Then print the token as the last line either way; a run whose caller named no lane prints the token
+only and records nothing.
 
 ## Repair
 

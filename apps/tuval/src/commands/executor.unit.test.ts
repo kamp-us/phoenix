@@ -1,19 +1,33 @@
-import {assert, describe, expect, expectTypeOf, it} from "@effect/vitest";
+import {assert, describe, expectTypeOf, it} from "@effect/vitest";
+import {SpellExecutor} from "@kampus/tuval-sdk/kernel/commands/executor";
+import {SpellRegistry} from "@kampus/tuval-sdk/kernel/commands/registry";
+import {
+	type Client,
+	WindowIndex,
+	type WindowPlacement,
+} from "@kampus/tuval-sdk/kernel/commands/scope";
+import {
+	type AnySpell,
+	ClientId,
+	defineSpell,
+	type Scope,
+	WindowId,
+	WorkspaceId,
+} from "@kampus/tuval-sdk/kernel/commands/spell";
+import {ProcessId} from "@kampus/tuval-sdk/kernel/process/process";
+import {CallId, type SpellPath} from "@kampus/tuval-sdk/kernel/protocol/ids";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	type SpellReply,
+} from "@kampus/tuval-sdk/kernel/protocol/messages";
 import {Cause, Effect, Exit, Layer, Schema} from "effect";
-import {ProcessId} from "../process/process.ts";
-import {CallId, type SpellPath} from "../protocol/ids.ts";
-import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../protocol/messages.ts";
 import {
 	decodeServerFrame,
 	encodeFrame,
 	SPELL_REPLY_KIND,
 	spellReplyFrame,
 } from "../shell/transport/wire.ts";
-import {SpellFailed} from "./errors.ts";
-import {SpellExecutor} from "./executor.ts";
-import {SpellRegistry} from "./registry.ts";
-import {type Client, WindowIndex, type WindowPlacement} from "./scope.ts";
-import {type AnySpell, ClientId, defineSpell, type Scope, WindowId, WorkspaceId} from "./spell.ts";
 
 class Refused extends Schema.TaggedError<Refused>()("test/Refused", {why: Schema.String}) {
 	override get message(): string {
@@ -99,7 +113,7 @@ const lie: AnySpell = {
 
 /**
  * A spell that returns nothing — the shape `compileCommands` gives every authored spell
- * (`../authoring/commands.ts`), and therefore the shape the desk actually runs most often (#9365).
+ * (the SDK's `authoring/commands.ts`), and therefore the shape the desk actually runs most often (#9365).
  */
 const vanish = defineSpell({
 	path: ["window", "vanish"],
@@ -251,13 +265,6 @@ describe("SpellExecutor", () => {
 			assert.notStrictEqual(error.message, `the call failed with ${error.tag}`);
 		}),
 	);
-
-	it("keeps the untagged value on the error rather than dropping it", () => {
-		const original = {reason: "the disk is full"};
-		const failed = new SpellFailed({path: "window.mutter", original});
-		expect(failed.original).toBe(original);
-		expect(failed._tag).toBe("tuval/commands/SpellFailed");
-	});
 
 	it.effect("falls back to the tag only when a named error carries no message", () =>
 		Effect.gen(function* () {

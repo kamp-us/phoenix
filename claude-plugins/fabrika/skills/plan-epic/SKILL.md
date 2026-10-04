@@ -37,7 +37,10 @@ Source grounds *what is true of the code*; authority arrives only through an ACL
 
 **Capability set:** a repo-scoped token, a claim on the epic, and direct reads inside **the
 epic's tree**. Its write surface is: creating child issues, linking them as sub-issues, the
-labels / milestone / assignee those children are born with, one PATCH of the epic body, and — on a
+labels / milestone / assignee those children are born with, linking an already-filed issue as a child,
+appending one dated amendment to its body that carries only the `**Stories:**` /
+`**Containment:**` lines it lacks, and moving it from `status:triaged` to `status:planned`
+(`ledger adopt` — never a rewrite), one PATCH of the epic body, and — on a
 re-plan only — **commenting on, unlinking and closing** a child it supersedes. Through the `grill`
 verbs it also opens or resumes one grilling session issue on the epic and comments its rounds and
 fact answers onto it. Through `build note`
@@ -70,8 +73,7 @@ lane's claim from yours.
 should pick the issue up to **build**, and an epic earns that label only *after* this skill has
 planned it and the gate has passed it — so fencing the planner on it is circular, and the fence
 binds build-purpose claims only. A `plan` claim is admitted without the
-label; the scope axis still binds, so an out-of-scope epic is still exit `20`. Never reach for
-`--override` to get past the audience axis — that is the fail-open convention the purpose exists to
+label. Never reach for `--override` to get past the audience axis — that is the fail-open convention the purpose exists to
 remove.
 
 **The blockedness gate does not bind a `plan` claim either**, on the same reasoning: an epic that
@@ -96,9 +98,7 @@ silence**: `fabrika build claims stale` lists every claim standing past a horizo
 dead, so the adopt is your judgment, attested on the board with your reason on it — post one you
 would defend, and `BACKED-OFF` otherwise. The route is withheld when the winner is a sibling lane of
 your own session, because `build adopt` refuses your own session. `7` is a proven-absent or closed epic
-(`EPIC-UNPLANNABLE`); `20` is a proven admission refusal on the scope axis (`EPIC-NOT-ADMITTED`) —
-report the axis, and do not route around it with an override. Exits `21` and `16` are not reachable
-at this step: a `plan` claim is bound by neither the audience axis nor the blockedness gate. Any
+(`EPIC-UNPLANNABLE`). Exits `21` and `16` are not reachable at this step: a `plan` claim is bound by neither the audience axis nor the blockedness gate. Any
 other non-zero ends `STOPPED` with no note — including `10`, an off-enum `--purpose`, which refuses rather than falling
 back to `build`: you hold no claim, and `build note` requires one.
 
@@ -108,7 +108,7 @@ back to `build`: you hold no claim, and `build note` requires one.
 fabrika ledger open $epic_number --token <claim-token>
 ```
 
-This proves the ground fresh against `origin/main`, allocates the run directory keyed on the
+This proves the ground fresh against the trunk (`origin/<the repo's GitHub default branch>`), allocates the run directory keyed on the
 **claim nonce `--token` names** — never the session, which every sibling subagent of one run shares
 — and reads what already exists. That is why every `ledger` verb takes the token: handed only a
 session id, the claim check passed for a lane that had *lost* the epic's claim and then derived the
@@ -121,7 +121,8 @@ need they read back out of the run directory, which this verb writes — and the
 there too, so **nothing here survives only in your head**, this one included.
 
 `candidates` is the dedup read, **advisory**, and its `outcome` has three non-interchangeable arms:
-`candidates` (overlapping open issues — read them before minting a duplicate), `none` (the sweep ran
+`candidates` (overlapping open issues — read them before minting a duplicate, and adopt one that
+already is a slice of this plan at step 5), `none` (the sweep ran
 and found nothing), `indeterminate` (the sweep could not run, so you know nothing). Reading
 `indeterminate` as `none` re-mints work that already exists.
 
@@ -173,6 +174,13 @@ point.
 Write the product layer first and let the slices fall out of it. A `### Task-split rationale` that
 cannot say which story each slice serves is telling you the split is wrong.
 
+**The pitch bounds the plan.** Its `**Appetite:**` is a size, `S`, `M` or `L`, worth a dollar amount
+per epic child (`appetiteSizes` in `.fabrika.jsonc`), so a child too big to land inside that amount
+is two children. When the pitch carries a `**Success:**` line, the epic's acceptance criteria make
+it checkable; the two-week check judges the shipped epic against that sentence. An older pitch
+still reads `<N> cycles`; plan against it as written and never rewrite the pitch, because a changed
+appetite needs a fresh founder approval.
+
 ## 4 — Grill the plan while it is still cheap
 
 **Every epic is grilled, and it happens here** — the plan is staged, no child exists, and the epic
@@ -208,6 +216,23 @@ docs, a dependency's source, the board — and it is yours: establish it, then r
 choice no evidence settles, and it is **the founder's alone**; the `**Recommended:**` line you owe
 every question is your recommendation, never his answer. The test is "could evidence settle this?",
 not "is it hard".
+
+**Plan shape is yours, and it never enters a round.** Inside an epic whose pitch the founder has
+approved, the order of the children, their `requires:` edges and the phase split are the planner's
+call. No evidence settles them, yet they are not a `decision`: choose them, declare them through
+step 6's `ledger topology`, and post none of them as a question. **Scope is the line.** A shape
+choice that changes what the epic delivers, its appetite or a product outcome — pushing a story out
+of the epic, or cutting one — is a `decision` like any other, and it goes to the founder.
+
+Keep every shape choice visible, and give each one the same home whenever you make it: the plan's
+`### Task-split rationale`, one line per choice with its reason, naming slices by their titles —
+child numbers do not exist until step 5. Most shape is chosen while you author the plan at step 3,
+so it is staged there already. A choice you first make later — step 6's sequencing of two slices
+that write the same file is the usual one — goes into that section too: add its line and re-stage
+with `ledger draft` before step 7, which writes the section into the epic body with the rest of the
+plan. Then name each shape choice in step 9's walk, where the founder reads it before he approves.
+Nothing leaves his hands by this: [`check-epic-plan`](../check-epic-plan/SKILL.md) makes no child
+pickable until his `plan approve` covers the whole ledger, shape included.
 
 Read the frontier before you leave this step:
 
@@ -281,8 +306,8 @@ EOF
 **Every classification attribute lands in the one create call** — labels, milestone, and, for a
 held child, the assignee. `--ready-for` is required and has no default: a child must never inherit
 its audience by omission. **A home is required the same way**: pass `--milestone`, or `--label` the
-child with the parent's standing lane. A child born with neither is one the claim fence refuses at
-exit `20`, so `ledger child` refuses it at mint instead of publishing an issue nobody can pick up. A **held** child is born `ready-for:human` *and* assigned, in the
+child with the parent's standing lane. A child born with neither groups under no campaign and no
+lane, so `ledger child` refuses it at mint, where the remedy is one flag. A **held** child is born `ready-for:human` *and* assigned, in the
 same write: the label is the routing signal, the assignment is the enforced hold, and
 neither substitutes for the other.
 
@@ -314,6 +339,40 @@ write and is preserved. **On a child of an asked type only a legal value will do
 
 `**Stories:**` carries bare integers or `none`, and `ledger child` refuses anything else — a
 parser that harvests every digit run reads `1, 3 (see #<other>)` as claiming a story nobody wrote.
+
+**When a slice is already on the board, adopt it instead of minting it.** A brief that names an
+existing issue as a child, or a `candidates` row that is plainly this slice, is adopted:
+
+```bash
+fabrika ledger adopt $epic_number --child 5 --stories 2 --token <claim-token>
+```
+
+Done when it answers `adopted` with `linked: true`. The issue keeps its title, report and criteria.
+What you may add is only the plan's field lines it lacks. Pass `--stories` when it declares none,
+and `--containment` when the gate would ask for one; the verb appends them under a dated amendment
+and never rewrites a byte above it. It also moves the issue from `status:triaged` to
+`status:planned` before it links it, so an adopted child is unpickable until the gate flips it,
+exactly like a minted one. The authority behind that, and what it leaves to a separate ruling, is in
+[`contract.md`'s `ledger adopt`](contract.md#ledger-adopt).
+
+**Adopt before you mint anything**, so a refusal leaves no half-minted set. Read the refusal line
+before routing it, because the same codes carry two kinds of fact:
+
+- **Your own input.** A `4` that asks you to pass `--stories` or `--containment`, or a `10` on a
+  `--stories` or `--containment` value, `--child` naming the epic, or `--child` naming a pull request.
+  Fix the flag and run it again.
+- **A fact about the issue.** Each has an owner that is not you, so end `STOPPED` naming the issue,
+  the refusal line and that owner, and do not mint a duplicate to get past it. A `4` on the body (no
+  criteria, a field line declared twice, non-conforming, or with a different value) is a body edit by
+  a human or triage. A `10` on its labels (untriaged, a missing label, a status other than
+  `status:triaged` or `status:planned`, or held with nobody assigned) is triage's. A `10` saying it is
+  a sub-issue of another epic is that epic's plan's call. A `7` saying it is closed is the brief
+  author's: whether closed work belongs in this plan is not yours to decide. A `10` naming
+  `status:planned` as absent from the taxonomy is a repository fact, as it is for `ledger child`.
+
+`8`, `23` and `26` are recovered by running the same command again, because every leg re-reads
+live state and repeats only what is missing. If the re-run refuses with one of them again, stop
+there: that is `WRITE-UNPROVEN`, naming the issue. `9` is `WRITE-UNPROVEN` at once.
 
 On a `re-plan`, a child the new plan drops is retired rather than left dangling:
 
@@ -373,6 +432,8 @@ Fix the number and re-run; nothing was staged either way.
 **Two slices are only parallel if they do not write the same file.** A phase that puts two
 children on one central list reads parallel and serializes in practice. The verb cannot see your
 file plan; you can. Sequence them, or say in `### Task-split rationale` why they do not collide.
+Either answer is a shape choice made here, so its line goes into that section and the plan is
+re-staged with `ledger draft` before step 7 writes it (step 4 says why shape is recorded).
 
 ## 7 — Write it into the epic
 
@@ -426,6 +487,45 @@ fabrika build release $epic_number --token <claim-token>
 If you find something that ought to block a plan, that is a finding about the **floor** — file it
 with `report` and let the gate decide.
 
+<!-- anchor: APPROVAL-IS-ASKED-WITH-A-WALK --> **Then ask for the approval the gate needs, and ask
+with a walk.** `check-epic-plan` proceeds only once `plan approve` covers this ledger, and `plan
+approve` is the founder's verb, run by someone on the control-plane roster. The ask you hand him —
+in your terminal report, and in whatever your driver relays onward — walks him through the plan
+first, **one child per line**, and names `plan approve` last. Read every field off the board, never
+off your memory of the run. `plan read` gives the children, the story numbers each one carries, and
+the edges; it prints no title and no story text, so those come from `build issue`:
+
+```bash
+fabrika plan read $epic_number      # children[].number, children[].stories, topology.edges
+fabrika build issue <child>         # once per child: its title
+fabrika build issue $epic_number    # the body's ### User stories and ### Task-split rationale
+fabrika grill read <session>        # step 4's session: its ruled questions
+```
+
+Each line fills from those reads alone: `<title>` is the child's `title`, its stories are the
+`### User stories` items its `stories` numbers name, one or more, and a child whose `stories` array
+is empty (declared `none`) reads `no story`. Each `topology.edges` pair `[a, b]` reads
+"`a` requires `b`". `Shape:` is the epic body's `### Task-split rationale`. `Grill:` lists the
+questions `grill read` returns as `ruled`, each by its `id`, `text`, `author` and `ruledAt`.
+`grill read` carries no ruling prose, so the walk names who ruled and when, and the ruling itself
+stays in step 4's mirror on the epic, one click from the session number.
+
+```text
+Epic #<epic> — <n> children:
+- #<child> <title> — stories <k>, <m>: <each story's text> (or: no story); requires #<other> (or: no prerequisites)
+- …
+Shape: <each Task-split rationale choice, one line with its reason>
+Grill: #<session> — <each ruled question: <id> <text>, ruled by <author> on <ruledAt>>
+If this reads right: fabrika plan approve <epic>
+```
+
+Done when every child `plan read` printed has its own line and the approve line comes after them.
+The walk is the approval request; an approve line with no walk above it asks him to approve a plan
+he has not read, so send the walk every time, including after a re-plan, because a re-plan leaves
+the old approval `stale`. Keep it a read-back: a question the walk raises goes back to step 4's
+session, never into this message. Nothing checks that the walk happened — `plan approve` records
+the approval either way — so this holds because this skill holds it.
+
 ## Terminal vocabulary
 
 End as exactly one. **No case holds a branch or a checkout of its own**: nothing is cut, nothing to
@@ -435,9 +535,8 @@ nothing. Where children were minted, every terminal below says so — a successo
 whether children exist re-mints them.
 
 **Every code below is a `ledger` code unless the row says otherwise.** `build`'s numbers above `11`
-mean different things — its `20` and `21` are admission axes, not stale ground and not a moved
-epic — so read each code off the command that produced it and never off this list alone. The same
-holds for the `grill` verbs step 4 calls: they allocate from their own table
+mean different things — its `21` is an admission axis, not stale ground or a moved epic — so read
+each code off the command that produced it and never off this list alone. The same holds for the `grill` verbs step 4 calls: they allocate from their own table
 ([`packages/fabrika-cli/src/grill/codes.ts`](../../../../packages/fabrika-cli/src/grill/codes.ts)),
 and every row below that seats one says so.
 
@@ -456,14 +555,9 @@ and every row below that seats one says so.
   was written to it.
 - `EPIC-MOVED` — `21` from `ledger draft` or `ledger write`: the epic body changed under the run.
   **A back-off, retryable** — nothing was written; re-open from step 2.
-- `GROUND-STALE` — `20` from `ledger open`: the tree is proven behind `origin/main`. **A
+- `GROUND-STALE` — `20` from `ledger open`: the tree is proven behind the trunk. **A
   back-off, terminal here** — nothing read into a plan, nothing written, no children. Refreshing
   the tree is outside this skill's capabilities and is a fresh run.
-- `EPIC-NOT-ADMITTED` — `20` from **`build claim`**: proven not admitted on the scope axis. **A
-  back-off**; nothing read, nothing written, no claim held. Name the axis. `21` and `16` are not
-  among this skill's codes: step 1 claims with `--purpose plan`, and the audience axis and the
-  blockedness gate each bind build-purpose claims only. Bypassing the scope axis with the override
-  is not your answer to give.
 - `CHILD-ORPHANED` — `23` or `26` from `ledger child`: a child was created and something after the
   create could not be proven. **A back-off holding a real artifact.** On `23` the link is unproven
   and the child is in the run manifest, so name it from there. On `26` the manifest write itself
@@ -473,7 +567,9 @@ and every row below that seats one says so.
 - `WRITE-UNPROVEN` — `8` or `9` from any writing `ledger` verb, and from `grill open`, `grill round`
   or `grill answer`, which allocate those two seats for the same fact: a write landed, or may have,
   and could not be proven. **Neither a success nor a clean back-off — it is UNKNOWN and needs a
-  human.** Report the code, the verb, and any number known. Do not repeat the write. From `ledger
+  human.** Report the code, the verb, and any number known. Do not repeat the write. `ledger adopt`
+  is the one exception: its `8`, `23` and `26` get one re-run at step 5, and land here only when
+  that re-run refuses again. From `ledger
   edges` this says the graph is UNKNOWN while the epic body is written: say so, or a successor
   re-plans an epic that only needs its edges reconciled.
 - `EPIC-UNPLANNABLE` — a proven verdict **about the epic itself**: `7` or `10` from a `ledger`
@@ -488,7 +584,8 @@ and every row below that seats one says so.
   read the message before routing: a `7` from `ledger topology` meaning *the run manifest is empty*
   is a skipped step — mint the children, then re-run it — and a `10` naming an absent label or a
   closed milestone is a repository fact. Neither is a verdict on the epic; both land in `STOPPED`
-  only if you cannot repair them.
+  only if you cannot repair them. A `7` or `10` from `ledger adopt` naming the adopted issue is a
+  fact about that issue too, and step 5 routes it.
 - `NEEDS-INPUT` — no verb refused; the run is **fully known and one human answer short**. **A
   back-off, not UNKNOWN**, which is why it is not `STOPPED`. Mint nothing rather than part of the
   set — a half-minted epic with no topology and no plan in its body is a state a human has to
@@ -531,5 +628,7 @@ position** — a whole-line `<!-- fabrika:enriched … -->` match, so the plan m
 envelope.
 
 <!-- anchor: PLANNER-NEVER-FLIPS --> **This skill writes no `status:triaged`.** Children are born
-`status:planned` and stay there until the gate flips them. A planner that flipped its own children
-would make them pickable over a ledger nothing had checked.
+`status:planned` and stay there until the gate flips them. An adopted child was not born here, so
+`ledger adopt` moves it off `status:triaged` onto `status:planned` before it links it, and it waits
+for the same flip. A planner that flipped its own children would make them pickable over a ledger
+nothing had checked.

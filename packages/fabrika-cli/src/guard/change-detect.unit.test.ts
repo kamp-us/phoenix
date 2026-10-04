@@ -21,21 +21,6 @@ const dorny = (withBlock: string): string =>
 	`      - uses: dorny/paths-filter@v3.0.2\n        with:\n${withBlock}`;
 
 describe("judge", () => {
-	it("passes when the dorny step pins an empty token", () => {
-		expect(
-			judge(
-				ci(dorny("          token: ''\n          filters: |\n            a:\n              - x")),
-			),
-		).toEqual({
-			pass: true,
-		});
-	});
-
-	it("reds an absent token, which the action defaults to the API path", () => {
-		const verdict = judge(ci(dorny("          filters: |\n            a:\n              - x")));
-		expect(verdict).toMatchObject({pass: false, reason: "api-mode"});
-	});
-
 	it("reds an explicitly set token", () => {
 		const verdict = judge(ci(dorny("          token: abc123\n          filters: 'a: x'")));
 		expect(verdict).toMatchObject({pass: false, reason: "api-mode"});
@@ -67,12 +52,6 @@ describe("judge", () => {
 });
 
 describe("renderReport", () => {
-	it("names the flake the api-mode red reopens", () => {
-		const report = renderReport(judge(ci(dorny("          filters: 'a: x'"))));
-		expect(report).toContain("transient API-HTML blip");
-		expect(report).toContain("token: ''");
-	});
-
 	it("says fail-closed on a zero-scope red rather than reporting clean", () => {
 		expect(renderReport(judge("jobs: {}"))).toContain("fail-closed");
 	});

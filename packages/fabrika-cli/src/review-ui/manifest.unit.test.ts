@@ -77,6 +77,99 @@ describe("the manifest round-trip", () => {
 		);
 	});
 
+	it("round-trips a scheme-crossed entry, requested and proven scheme both", () => {
+		const schemed: CaptureManifest = {
+			...manifest,
+			captures: [
+				{
+					...(manifest.captures[0] as CaptureEntry),
+					scheme: {requested: "dark", proven: "dark"},
+					path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano@desktop-dark.png",
+				},
+			],
+		};
+		assert.deepStrictEqual(parseManifest(serializeManifest(schemed)), {
+			_tag: "Manifest",
+			value: schemed,
+		});
+	});
+
+	it("round-trips an accented entry, requested and proven accent both", () => {
+		const accented: CaptureManifest = {
+			...manifest,
+			captures: [
+				{...(manifest.captures[0] as CaptureEntry), accent: {requested: "amber", proven: "amber"}},
+			],
+		};
+		assert.deepStrictEqual(parseManifest(serializeManifest(accented)), {
+			_tag: "Manifest",
+			value: accented,
+		});
+	});
+
+	it("refuses an accent field that is not a requested/proven pair, rather than dropping it", () => {
+		for (const accent of ["amber", {requested: "amber"}, {requested: "amber", proven: ""}, null]) {
+			assert.strictEqual(
+				parseManifest(JSON.stringify({...manifest, captures: [{...manifest.captures[0], accent}]}))
+					._tag,
+				"Malformed",
+			);
+		}
+	});
+
+	it("refuses a scheme field that is not a light/dark pair, rather than dropping it", () => {
+		for (const scheme of ["dark", {requested: "dark"}, {requested: "dark", proven: "dim"}, null]) {
+			assert.strictEqual(
+				parseManifest(JSON.stringify({...manifest, captures: [{...manifest.captures[0], scheme}]}))
+					._tag,
+				"Malformed",
+			);
+		}
+	});
+
+	it("round-trips an interacted entry beside a scheme, label, steps and proofs all", () => {
+		const interacted: CaptureManifest = {
+			...manifest,
+			captures: [
+				...manifest.captures,
+				{
+					...(manifest.captures[0] as CaptureEntry),
+					scheme: {requested: "dark", proven: "dark"},
+					interaction: {
+						label: "sil-highlighted",
+						steps: ['click:role=button[name="Aç"]', 'hover:role=menuitem[name="Sil"]'],
+						proven: ['role=menuitem[name="Sil"] matches :hover'],
+					},
+					path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano~sil-highlighted@desktop-dark.png",
+				},
+			],
+		};
+		assert.deepStrictEqual(parseManifest(serializeManifest(interacted)), {
+			_tag: "Manifest",
+			value: interacted,
+		});
+		// The at-rest entries beside it gain no field, so they read exactly as a set without one.
+		assert.notProperty(manifest.captures[0], "interaction");
+	});
+
+	it("refuses an interaction field that is not a label with its steps and proofs, rather than dropping it", () => {
+		for (const interaction of [
+			"sil",
+			{label: "sil", steps: ["hover:a"]},
+			{label: "", steps: ["hover:a"], proven: ["a"]},
+			{label: "sil", steps: [], proven: ["a"]},
+			{label: "sil", steps: ["hover:a"], proven: [1]},
+			null,
+		]) {
+			assert.strictEqual(
+				parseManifest(
+					JSON.stringify({...manifest, captures: [{...manifest.captures[0], interaction}]}),
+				)._tag,
+				"Malformed",
+			);
+		}
+	});
+
 	it("refuses a document it cannot read whole, rather than defaulting a field", () => {
 		assert.strictEqual(parseManifest("{")._tag, "Malformed");
 		assert.strictEqual(parseManifest("[]")._tag, "Malformed");

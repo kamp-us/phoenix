@@ -3,13 +3,11 @@ import {
 	classifyFeedPath,
 	FEED_PAINT_MARK,
 	type FeedPaintPath,
-	feedPaintMeasureName,
 	markFeedPaintOnce,
 	noteSnapshotHydrated,
 	type PerformanceLike,
 	recordFeedPaint,
 	resetFeedPaintInstrumentation,
-	wasSnapshotHydrated,
 } from "./feedPerf";
 
 function fakePerformance(now = 812): PerformanceLike & {
@@ -50,14 +48,6 @@ describe("classifyFeedPath", () => {
 	});
 });
 
-describe("the snapshot-hydrated latch", () => {
-	it("starts false and latches true once noted", () => {
-		expect(wasSnapshotHydrated()).toBe(false);
-		noteSnapshotHydrated();
-		expect(wasSnapshotHydrated()).toBe(true);
-	});
-});
-
 describe("recordFeedPaint", () => {
 	it("emits a path-suffixed mark and a navigation-start→paint measure with detail", () => {
 		const perf = fakePerformance(750);
@@ -65,11 +55,11 @@ describe("recordFeedPaint", () => {
 
 		expect(duration).toBe(750);
 		expect(perf.marks).toEqual([
-			{name: `${FEED_PAINT_MARK}:snapshot`, detail: {path: "snapshot", reloadToPaintMs: 750}},
+			{name: "pano:feed-paint:snapshot", detail: {path: "snapshot", reloadToPaintMs: 750}},
 		]);
 		expect(perf.measures).toEqual([
 			{
-				name: feedPaintMeasureName("snapshot"),
+				name: "pano:reload->feed-paint:snapshot",
 				start: 0,
 				end: 750,
 				detail: {path: "snapshot", reloadToPaintMs: 750},
@@ -79,9 +69,13 @@ describe("recordFeedPaint", () => {
 
 	it("names the measure per path so each path is a distinct trace entry", () => {
 		const paths: FeedPaintPath[] = ["snapshot", "edge", "cold"];
-		const names = paths.map(feedPaintMeasureName);
-		expect(new Set(names).size).toBe(3);
-		for (const name of names) expect(name).toMatch(/^pano:reload->feed-paint:/);
+		const perf = fakePerformance();
+		for (const path of paths) recordFeedPaint(perf, path);
+		expect(perf.measures.map((measure) => measure.name)).toEqual([
+			"pano:reload->feed-paint:snapshot",
+			"pano:reload->feed-paint:edge",
+			"pano:reload->feed-paint:cold",
+		]);
 	});
 
 	it("degrades to null (never throws) when performance rejects the call", () => {

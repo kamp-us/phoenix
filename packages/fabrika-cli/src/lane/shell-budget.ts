@@ -49,6 +49,10 @@ export const SHELL_BUDGETS: Readonly<Record<ShellState, ShellBudget>> = {
 		minutes: 40,
 		why: "the same construct → check loop as a text build, with a rendered surface inside it rather than a differently-shaped job",
 	},
+	"build:mixed": {
+		minutes: 40,
+		why: "the same construct → check loop as a text build, over a diff that spans text and a rendered surface",
+	},
 	review: {
 		minutes: 15,
 		why: "a reviewer reads one range once and records a verdict — no loop, and nothing it does can send it back to the start",

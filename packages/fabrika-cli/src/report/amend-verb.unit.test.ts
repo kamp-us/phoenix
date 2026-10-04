@@ -1,5 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import {type LeakNames, NO_LEAK_NAMES} from "../config/keys/leak-names.ts";
+import type {Read} from "../config/read-key.ts";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {compose} from "./amend.ts";
@@ -13,6 +15,8 @@ import {
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+
+const noNames: Read<LeakNames> = {_tag: "Value", value: NO_LEAK_NAMES, note: "test"};
 
 const READ = /^GET .*\/repos\/o\/r\/issues\/4312$/;
 const PATCH = /^PATCH .*\/repos\/o\/r\/issues\/4312$/;
@@ -49,6 +53,7 @@ const ACCEPTED: HttpReply = {status: 200, body: "{}"};
 const options = {
 	issue: 4312,
 	redact: false,
+	leakNames: noNames,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
@@ -182,7 +187,7 @@ describe("runAmend", () => {
 		});
 		expect(outcome.code).toBe(0);
 		expect(body).toContain("reproduced from /Users/<redacted>");
-		expect(outcome.stderr.join("\n")).toContain("redacted a machine-local path");
+		expect(outcome.stderr.join("\n")).toContain("redacted a leak");
 	});
 
 	it("scans the appended section only — a path in the prior body is preserved, not rewritten", async () => {

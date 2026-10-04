@@ -1,0 +1,750 @@
+/**
+ * An in-memory GitHub Projects (v2) GraphQL endpoint, substituted at the `HttpClient` service the
+ * production path runs on — the same seam `fakeHttp` replaces — so a test drives the real client.
+ *
+ * It answers the operations `./projects.ts` sends, by operation name, in the response shapes GitHub
+ * answers them with (recorded off a live project; see `./projects.unit.test.ts`), plus the one REST
+ * edge, `POST /{orgs|users}/{login}/projectsV2/{number}/views`, and it keeps state:
+ * a mutation changes what the next read returns. That is what lets a test prove a second `table
+ * setup` writes nothing, which a fixed script of replies cannot.
+ */
+
+import {Effect, Layer} from "effect";
+import type * as HttpBody from "effect/unstable/http/HttpBody";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import {isRecord} from "./json.ts";
+
+export interface FakeOption {
+	id: string;
+	name: string;
+	color: string;
+	description: string;
+}
+
+export interface FakeField {
+	id: string;
+	/** The numeric id REST names the field by; derived from `id` when a fixture leaves it out. */
+	databaseId?: number;
+	name: string;
+	dataType: string;
+	options?: FakeOption[];
+	iteration?: {duration: number; startDay: number};
+	/** The iterations an iteration field still runs, as `configuration.iterations` answers them. */
+	iterations?: Array<{id: string; title: string; startDate: string; duration: number}>;
+}
+
+export interface FakeView {
+	id: string;
+	number: number;
+	name: string;
+	layout: string;
+	filter: string | null;
+	fieldIds: string[];
+	/** The field ids a created view groups rows by, and those its board columns are by. */
+	groupBy?: string[];
+	verticalGroupBy?: string[];
+}
+
+export interface FakeProject {
+	id: string;
+	number: number;
+	owner: string;
+	/** Who `owner` is; an organization when a fixture leaves it out. */
+	ownerKind?: "Organization" | "User";
+	title: string;
+	closed: boolean;
+	linked: boolean;
+	shortDescription: string | null;
+	readme: string | null;
+	fields: FakeField[];
+	views: FakeView[];
+	items: Array<{
+		id: string;
+		contentId: string;
+		/** The issue the item stands for; absent for a draft. */
+		number?: number;
+		archived?: boolean;
+		/** Keyed by field id, holding the value input `TableSetValue` wrote. */
+		values: Record<string, unknown>;
+	}>;
+	statusUpdates: Array<Record<string, unknown>>;
+}
+
+export interface FakeProjectsOptions {
+	/** The repository the fake serves, as owner/name. */
+	readonly repo?: string;
+	/** Projects that exist before the test runs. */
+	readonly projects?: ReadonlyArray<FakeProject>;
+	/** Scopes to declare in `X-OAuth-Scopes`; absent declares none, as a fine-grained token does. */
+	readonly scopes?: string;
+	/** Answer every Projects read with GitHub's `INSUFFICIENT_SCOPES` error. */
+	readonly insufficientScopes?: boolean;
+}
+
+export interface FakeProjects {
+	readonly layer: Layer.Layer<HttpClient.HttpClient>;
+	/** Every operation name received, in order. */
+	readonly operations: ReadonlyArray<string>;
+	/** The variables each operation carried, aligned with {@link FakeProjects.operations}. */
+	readonly variables: ReadonlyArray<Record<string, unknown>>;
+	/** The GraphQL document or `METHOD path` of each request, aligned with {@link FakeProjects.operations}. */
+	readonly requests: ReadonlyArray<string>;
+	readonly projects: ReadonlyArray<FakeProject>;
+}
+
+const MUTATION = /^\s*mutation\b/;
+
+export const isMutation = (query: string): boolean => MUTATION.test(query);
+
+/** The built-in fields and first view GitHub gives every new project. */
+const freshProject = (
+	id: string,
+	number: number,
+	owner: string,
+	title: string,
+	linked: boolean,
+): FakeProject => ({
+	id,
+	number,
+	owner,
+	title,
+	closed: false,
+	linked,
+	shortDescription: null,
+	readme: null,
+	fields: [
+		{id: `${id}_F_title`, name: "Title", dataType: "TITLE"},
+		{id: `${id}_F_assignees`, name: "Assignees", dataType: "ASSIGNEES"},
+		{
+			id: `${id}_F_status`,
+			name: "Status",
+			dataType: "SINGLE_SELECT",
+			options: [
+				{id: "s1", name: "Todo", color: "GREEN", description: "This item hasn't been started"},
+				{
+					id: "s2",
+					name: "In Progress",
+					color: "YELLOW",
+					description: "This is actively being worked on",
+				},
+				{id: "s3", name: "Done", color: "PURPLE", description: "This has been completed"},
+			],
+		},
+		{id: `${id}_F_labels`, name: "Labels", dataType: "LABELS"},
+	],
+	views: [
+		{
+			id: `${id}_V_1`,
+			number: 1,
+			name: "View 1",
+			layout: "TABLE_LAYOUT",
+			filter: null,
+			fieldIds: [`${id}_F_title`, `${id}_F_assignees`, `${id}_F_status`],
+		},
+	],
+	items: [],
+	statusUpdates: [],
+});
+
+export const blankProject = (
+	overrides: Partial<FakeProject> & {number: number; title: string},
+): FakeProject => ({
+	...freshProject(
+		`PVT_${overrides.number}`,
+		overrides.number,
+		overrides.owner ?? "acme",
+		overrides.title,
+		true,
+	),
+	...overrides,
+});
+
+/** A stable positive 31-bit number off a node id: FNV-1a, so two fixture fields never share one by accident. */
+const derivedDatabaseId = (id: string): number => {
+	let hash = 0x811c9dc5;
+	for (const char of id) {
+		hash ^= char.charCodeAt(0);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return (hash >>> 1) + 1;
+};
+
+export const fakeDatabaseId = (field: FakeField): number =>
+	field.databaseId ?? derivedDatabaseId(field.id);
+
+const fieldJson = (field: FakeField): Record<string, unknown> => {
+	const databaseId = fakeDatabaseId(field);
+	if (field.dataType === "SINGLE_SELECT") {
+		return {
+			__typename: "ProjectV2SingleSelectField",
+			id: field.id,
+			databaseId,
+			name: field.name,
+			dataType: field.dataType,
+			options: field.options ?? [],
+		};
+	}
+	if (field.dataType === "ITERATION") {
+		return {
+			__typename: "ProjectV2IterationField",
+			id: field.id,
+			databaseId,
+			name: field.name,
+			dataType: field.dataType,
+			configuration: field.iteration,
+		};
+	}
+	return {
+		__typename: "ProjectV2Field",
+		id: field.id,
+		databaseId,
+		name: field.name,
+		dataType: field.dataType,
+	};
+};
+
+const projectJson = (project: FakeProject): Record<string, unknown> => ({
+	id: project.id,
+	number: project.number,
+	url: `https://github.com/${project.ownerKind === "User" ? "users" : "orgs"}/${project.owner}/projects/${project.number}`,
+	title: project.title,
+	createdAt: "2026-01-01T00:00:00Z",
+	owner: {__typename: project.ownerKind ?? "Organization", login: project.owner},
+	shortDescription: project.shortDescription,
+	readme: project.readme,
+	fields: {pageInfo: {hasNextPage: false}, nodes: project.fields.map(fieldJson)},
+	views: {
+		pageInfo: {hasNextPage: false},
+		nodes: project.views.map((view) => ({
+			id: view.id,
+			number: view.number,
+			name: view.name,
+			layout: view.layout,
+			filter: view.filter,
+			fields: {pageInfo: {hasNextPage: false}, nodes: view.fieldIds.map((id) => ({id}))},
+		})),
+	},
+});
+
+const requestBody = (body: HttpBody.HttpBody): string => {
+	if (body._tag === "Uint8Array") return new TextDecoder().decode(body.body);
+	if (body._tag === "Raw") return typeof body.body === "string" ? body.body : "";
+	return "";
+};
+
+const WEEKDAY_OF = (date: string): number => new Date(`${date}T00:00:00Z`).getUTCDay();
+
+const ISSUE_NODE = /^I_(\d+)$/;
+
+/** The node id the fake reads as issue `number` of the served repository when it is added as an item. */
+export const fakeIssueNodeId = (number: number): string => `I_${number}`;
+
+/** When the fake says every value it holds was set: it keeps no clock. */
+const SET_AT = "2026-01-01T00:00:00Z";
+
+/** One stored value input, answered the way `TableItems` reads a field value back. */
+const valueJson = (
+	project: FakeProject,
+	fieldId: string,
+	raw: unknown,
+	setter: string,
+): Record<string, unknown> | null => {
+	const field = project.fields.find((one) => one.id === fieldId);
+	if (field === undefined || !isRecord(raw)) return null;
+	const meta = {
+		creator: {login: setter},
+		updatedAt: SET_AT,
+		field: {id: field.id, name: field.name},
+	};
+	if (typeof raw.singleSelectOptionId === "string") {
+		const option = field.options?.find((one) => one.id === raw.singleSelectOptionId);
+		return option === undefined
+			? null
+			: {
+					__typename: "ProjectV2ItemFieldSingleSelectValue",
+					name: option.name,
+					optionId: option.id,
+					...meta,
+				};
+	}
+	if (typeof raw.iterationId === "string") {
+		const iteration = field.iterations?.find((one) => one.id === raw.iterationId);
+		return iteration === undefined
+			? null
+			: {
+					__typename: "ProjectV2ItemFieldIterationValue",
+					title: iteration.title,
+					iterationId: iteration.id,
+					...meta,
+				};
+	}
+	if (typeof raw.text === "string") {
+		return {__typename: "ProjectV2ItemFieldTextValue", text: raw.text, ...meta};
+	}
+	if (typeof raw.number === "number") {
+		return {__typename: "ProjectV2ItemFieldNumberValue", number: raw.number, ...meta};
+	}
+	if (typeof raw.date === "string") {
+		return {__typename: "ProjectV2ItemFieldDateValue", date: raw.date, ...meta};
+	}
+	return null;
+};
+
+export const fakeProjects = (options: FakeProjectsOptions = {}): FakeProjects => {
+	const repo = options.repo ?? "acme/widgets";
+	const [repoOwner = "acme"] = repo.split("/");
+	const projects: FakeProject[] = (options.projects ?? []).map((project) =>
+		structuredClone(project),
+	);
+	const operations: string[] = [];
+	const variables: Array<Record<string, unknown>> = [];
+	const requests: string[] = [];
+	let minted = 0;
+	const mint = (prefix: string): string => `${prefix}_${++minted}`;
+	const byId = (id: unknown) => projects.find((project) => project.id === id);
+
+	const answer = (
+		operation: string,
+		vars: Record<string, unknown>,
+	): {data: unknown; errors?: unknown[]} => {
+		const input = isRecord(vars.input) ? vars.input : {};
+		switch (operation) {
+			case "TableRepository":
+				return {
+					data: {
+						repository: {
+							id: "R_repo",
+							owner: {id: `O_${repoOwner}`, login: repoOwner},
+							projectsV2: {
+								pageInfo: {hasNextPage: false, endCursor: null},
+								nodes: projects
+									.filter((project) => project.linked)
+									.map((project) => ({
+										id: project.id,
+										number: project.number,
+										title: project.title,
+										closed: project.closed,
+									})),
+							},
+						},
+					},
+				};
+			case "TableOwnerProjects":
+				return {
+					data: {
+						repositoryOwner: {
+							id: `O_${String(vars.login)}`,
+							projectsV2: {
+								pageInfo: {hasNextPage: false, endCursor: null},
+								nodes: projects
+									.filter((project) => project.owner === vars.login)
+									.map((project) => ({
+										id: project.id,
+										number: project.number,
+										title: project.title,
+										closed: project.closed,
+									})),
+							},
+						},
+					},
+				};
+			case "TableLinkProject": {
+				const project = byId(vars.projectId);
+				if (project === undefined)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no project"}]};
+				project.linked = true;
+				return {data: {linkProjectV2ToRepository: {repository: {id: vars.repositoryId}}}};
+			}
+			case "TableProjectByNumber": {
+				const found = projects.find(
+					(project) => project.owner === vars.login && project.number === vars.number,
+				);
+				if (found !== undefined) return {data: {repositoryOwner: {projectV2: projectJson(found)}}};
+				return {
+					data: {repositoryOwner: {projectV2: null}},
+					errors: [
+						{
+							type: "NOT_FOUND",
+							path: ["repositoryOwner", "projectV2"],
+							message: `Could not resolve to a ProjectV2 with the number ${String(vars.number)}.`,
+						},
+					],
+				};
+			}
+			case "TableProjectById": {
+				const found = byId(vars.id);
+				return {data: {node: found === undefined ? null : projectJson(found)}};
+			}
+			case "TableCreateProject": {
+				const number = Math.max(0, ...projects.map((project) => project.number)) + 1;
+				const owner = String(vars.ownerId).replace(/^O_/, "");
+				const project = freshProject(
+					mint("PVT"),
+					number,
+					owner,
+					String(vars.title),
+					vars.repositoryId !== null,
+				);
+				projects.push(project);
+				return {
+					data: {
+						createProjectV2: {projectV2: {id: project.id, number, url: projectJson(project).url}},
+					},
+				};
+			}
+			case "TableUpdateProject": {
+				const project = byId(vars.projectId);
+				if (project === undefined)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no project"}]};
+				if (typeof vars.readme === "string") project.readme = vars.readme;
+				if (typeof vars.shortDescription === "string")
+					project.shortDescription = vars.shortDescription;
+				return {data: {updateProjectV2: {projectV2: {id: project.id}}}};
+			}
+			case "TableCreateField": {
+				const project = byId(input.projectId);
+				if (project === undefined)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no project"}]};
+				const field: FakeField = {
+					id: mint("PVTF"),
+					name: String(input.name),
+					dataType: String(input.dataType),
+				};
+				if (Array.isArray(input.singleSelectOptions)) {
+					field.options = input.singleSelectOptions.map((option) => ({
+						id: mint("opt"),
+						name: String((option as Record<string, unknown>).name),
+						color: String((option as Record<string, unknown>).color),
+						description: String((option as Record<string, unknown>).description),
+					}));
+				}
+				if (isRecord(input.iterationConfiguration)) {
+					const configuration = input.iterationConfiguration;
+					field.iteration = {
+						duration: Number(configuration.duration),
+						startDay: WEEKDAY_OF(String(configuration.startDate)),
+					};
+					field.iterations = (
+						Array.isArray(configuration.iterations) ? configuration.iterations : []
+					).map((raw) => {
+						const iteration = isRecord(raw) ? raw : {};
+						return {
+							id: mint("iter"),
+							title: String(iteration.title),
+							startDate: String(iteration.startDate),
+							duration: Number(iteration.duration),
+						};
+					});
+				}
+				project.fields.push(field);
+				return {data: {createProjectV2Field: {projectV2Field: {id: field.id}}}};
+			}
+			case "TableUpdateField": {
+				const project = projects.find((one) =>
+					one.fields.some((field) => field.id === input.fieldId),
+				);
+				const field = project?.fields.find((one) => one.id === input.fieldId);
+				if (project === undefined || field === undefined)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no field"}]};
+				if (Array.isArray(input.singleSelectOptions)) {
+					// GitHub replaces the whole list: an option sent without its id is minted anew, and
+					// every item value naming an id the new list lacks is cleared.
+					field.options = input.singleSelectOptions.map((raw) => {
+						const option = isRecord(raw) ? raw : {};
+						return {
+							id: typeof option.id === "string" ? option.id : mint("opt"),
+							name: String(option.name),
+							color: String(option.color),
+							description: String(option.description),
+						};
+					});
+					const ids = new Set(field.options.map((option) => option.id));
+					for (const item of project.items) {
+						const value = item.values[field.id];
+						if (isRecord(value) && !ids.has(String(value.singleSelectOptionId))) {
+							delete item.values[field.id];
+						}
+					}
+				}
+				return {data: {updateProjectV2Field: {projectV2Field: {id: field.id}}}};
+			}
+			case "TableUpdateView": {
+				const view = projects
+					.flatMap((project) => project.views)
+					.find((one) => one.id === input.viewId);
+				if (view === undefined)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no view"}]};
+				if (typeof input.layout === "string") view.layout = input.layout;
+				if (typeof input.filter === "string") view.filter = input.filter;
+				if (isRecord(input.configuration) && Array.isArray(input.configuration.visibleFieldIds)) {
+					view.fieldIds = input.configuration.visibleFieldIds.map(String);
+				}
+				return {data: {updateProjectV2View: {projectV2View: {id: view.id}}}};
+			}
+			case "TableAddItem": {
+				const project = byId(vars.projectId);
+				if (project === undefined)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no project"}]};
+				const standing = project.items.find((item) => item.contentId === vars.contentId);
+				const issue = ISSUE_NODE.exec(String(vars.contentId))?.[1];
+				const item = standing ?? {
+					id: mint("PVTI"),
+					contentId: String(vars.contentId),
+					...(issue === undefined ? {} : {number: Number(issue)}),
+					values: {},
+				};
+				if (standing === undefined) project.items.push(item);
+				return {data: {addProjectV2ItemById: {item: {id: item.id}}}};
+			}
+			case "TableSetValue": {
+				const project = byId(input.projectId);
+				const item = project?.items.find((one) => one.id === input.itemId);
+				if (item === undefined)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no item"}]};
+				item.values[String(input.fieldId)] = input.value;
+				return {data: {updateProjectV2ItemFieldValue: {projectV2Item: {id: item.id}}}};
+			}
+			case "TableBoard": {
+				const project = byId(vars.id);
+				if (project === undefined) return {data: {node: null}};
+				const named = (name: unknown) => project.fields.find((field) => field.name === name);
+				const cell = (values: Record<string, unknown>, name: unknown): unknown => {
+					const field = named(name);
+					const raw = field === undefined ? undefined : values[field.id];
+					if (!isRecord(raw)) return null;
+					if (typeof raw.singleSelectOptionId === "string") {
+						const option = field?.options?.find((one) => one.id === raw.singleSelectOptionId);
+						return option === undefined ? null : {name: option.name};
+					}
+					return typeof raw.date === "string" && field?.dataType === "DATE"
+						? {date: raw.date}
+						: null;
+				};
+				return {
+					data: {
+						node: {
+							items: {
+								pageInfo: {hasNextPage: false, endCursor: null},
+								nodes: project.items.map((item) => ({
+									isArchived: item.archived === true,
+									content:
+										item.number === undefined
+											? {__typename: "DraftIssue"}
+											: {__typename: "Issue", number: item.number},
+									stage: cell(item.values, vars.stage),
+									section: cell(item.values, vars.section),
+									tableDay: cell(item.values, vars.tableDay),
+								})),
+							},
+						},
+					},
+				};
+			}
+			case "TableClearValue": {
+				const project = byId(input.projectId);
+				const item = project?.items.find((one) => one.id === input.itemId);
+				if (item === undefined)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no item"}]};
+				delete item.values[String(input.fieldId)];
+				return {data: {clearProjectV2ItemFieldValue: {projectV2Item: {id: item.id}}}};
+			}
+			case "TableDeleteItem": {
+				const project = byId(vars.projectId);
+				const at = project?.items.findIndex((one) => one.id === vars.itemId) ?? -1;
+				if (project === undefined || at === -1)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no item"}]};
+				project.items.splice(at, 1);
+				return {data: {deleteProjectV2Item: {deletedItemId: vars.itemId}}};
+			}
+			case "TableItems": {
+				const project = byId(vars.id);
+				if (project === undefined) return {data: {node: null}};
+				return {
+					data: {
+						node: {
+							items: {
+								pageInfo: {hasNextPage: false, endCursor: null},
+								nodes: project.items.map((item) => ({
+									id: item.id,
+									content:
+										item.number === undefined
+											? {__typename: "DraftIssue"}
+											: {
+													__typename: "Issue",
+													number: item.number,
+													repository: {nameWithOwner: repo},
+												},
+									fieldValues: {
+										pageInfo: {hasNextPage: false},
+										nodes: Object.entries(item.values).flatMap(([fieldId, raw]) => {
+											const value = valueJson(project, fieldId, raw, repoOwner);
+											return value === null ? [] : [value];
+										}),
+									},
+								})),
+							},
+						},
+					},
+				};
+			}
+			case "TableWeek": {
+				const project = byId(vars.id);
+				if (project === undefined) return {data: {node: null}};
+				const week = project.fields.find((field) => field.name === vars.week);
+				return {
+					data: {
+						node: {
+							field:
+								week === undefined
+									? null
+									: week.dataType === "ITERATION"
+										? {
+												__typename: "ProjectV2IterationField",
+												configuration: {
+													iterations: week.iterations ?? [],
+													completedIterations: [],
+												},
+											}
+										: {__typename: "ProjectV2Field"},
+						},
+					},
+				};
+			}
+			case "TableStatusUpdates": {
+				const project = byId(vars.id);
+				if (project === undefined) return {data: {node: null}};
+				return {
+					data: {
+						node: {
+							statusUpdates: {
+								pageInfo: {hasNextPage: false, endCursor: null},
+								nodes: project.statusUpdates.map((update) => ({
+									id: update.id,
+									body: update.body,
+									startDate: update.startDate ?? null,
+								})),
+							},
+						},
+					},
+				};
+			}
+			case "TableStatusUpdate": {
+				const project = byId(input.projectId);
+				if (project === undefined)
+					return {data: null, errors: [{type: "NOT_FOUND", message: "no project"}]};
+				const id = mint("PVTSU");
+				project.statusUpdates.push({...input, id});
+				return {data: {createProjectV2StatusUpdate: {statusUpdate: {id}}}};
+			}
+			default:
+				return {data: null, errors: [{message: `the fake does not answer ${operation}`}]};
+		}
+	};
+
+	/** `POST /{orgs|users}/{login}/projectsV2/{number}/views`, answered as GitHub's REST API does. */
+	const createViewRest = (
+		path: string,
+		body: Record<string, unknown>,
+	): {status: number; body: Record<string, unknown>} => {
+		const match = /\/(orgs|users)\/([^/]+)\/projectsV2\/(\d+)\/views$/.exec(path);
+		const kind = match?.[1] === "users" ? "User" : "Organization";
+		const project = projects.find(
+			(one) =>
+				match !== null &&
+				one.owner === match[2] &&
+				(one.ownerKind ?? "Organization") === kind &&
+				one.number === Number(match[3]),
+		);
+		if (project === undefined) return {status: 404, body: {message: "Not Found"}};
+		const byNumber = (raw: unknown): string | undefined =>
+			project.fields.find((field) => fakeDatabaseId(field) === raw)?.id;
+		const ids = (raw: unknown): string[] =>
+			(Array.isArray(raw) ? raw : []).flatMap((one) => {
+				const id = byNumber(one);
+				return id === undefined ? [] : [id];
+			});
+		const layout = body.layout === "board" ? "BOARD_LAYOUT" : "TABLE_LAYOUT";
+		const view: FakeView = {
+			id: mint("PVTV"),
+			number: Math.max(0, ...project.views.map((one) => one.number)) + 1,
+			name: String(body.name),
+			layout,
+			filter: typeof body.filter === "string" ? body.filter : null,
+			fieldIds: ids(body.visible_fields),
+			groupBy: ids(body.group_by),
+			verticalGroupBy: ids(body.vertical_group_by),
+		};
+		project.views.push(view);
+		return {
+			status: 201,
+			body: {
+				id: view.number * 1000,
+				node_id: view.id,
+				number: view.number,
+				name: view.name,
+				layout: body.layout,
+				filter: view.filter,
+				visible_fields: body.visible_fields ?? [],
+				group_by: body.group_by ?? [],
+				vertical_group_by: body.vertical_group_by ?? [],
+			},
+		};
+	};
+
+	const layer = Layer.succeed(HttpClient.HttpClient)(
+		HttpClient.make((request) => {
+			const url = new URL(request.url);
+			if (url.pathname !== "/graphql") {
+				const body: unknown = JSON.parse(requestBody(request.body) || "{}");
+				operations.push(`REST ${request.method} views`);
+				variables.push(isRecord(body) ? body : {});
+				requests.push(`${request.method} ${url.pathname}`);
+				const headers: Record<string, string> = {"content-type": "application/json"};
+				if (options.scopes !== undefined) headers["x-oauth-scopes"] = options.scopes;
+				const answered =
+					request.method === "POST" && isRecord(body)
+						? createViewRest(url.pathname, body)
+						: {status: 404, body: {message: "Not Found"}};
+				return Effect.succeed(
+					HttpClientResponse.fromWeb(
+						request,
+						new Response(JSON.stringify(answered.body), {status: answered.status, headers}),
+					),
+				);
+			}
+			const parsed: unknown = JSON.parse(requestBody(request.body));
+			const query = isRecord(parsed) && typeof parsed.query === "string" ? parsed.query : "";
+			const vars = isRecord(parsed) && isRecord(parsed.variables) ? parsed.variables : {};
+			const operation = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "anonymous";
+			operations.push(operation);
+			variables.push(vars);
+			requests.push(query);
+			const headers: Record<string, string> = {"content-type": "application/json"};
+			if (options.scopes !== undefined) headers["x-oauth-scopes"] = options.scopes;
+			const scopeRefusal =
+				options.insufficientScopes === true ||
+				(options.scopes !== undefined && !options.scopes.split(/,\s*/).includes("project"));
+			const body = scopeRefusal
+				? {
+						data: null,
+						errors: [
+							{
+								type: "INSUFFICIENT_SCOPES",
+								message:
+									"Your token has not been granted the required scopes to execute this query. The 'projectsV2' field requires one of the following scopes: ['read:project'], but your token has only been granted the: ['repo'] scopes. Please modify your token's scopes at: https://github.com/settings/tokens.",
+							},
+						],
+					}
+				: answer(operation, vars);
+			return Effect.succeed(
+				HttpClientResponse.fromWeb(
+					request,
+					new Response(JSON.stringify(body), {status: 200, headers}),
+				),
+			);
+		}),
+	);
+
+	return {layer, operations, variables, requests, projects};
+};

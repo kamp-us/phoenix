@@ -6,17 +6,16 @@
  * four clauses hold, the same conjunctive shape `grill rule` records a ruling under:
  *
  *   1. the marker parses, and names a round at or past the declared cap;
- *   2. its author is in the repo's `.fabrika.jsonc` grant-author set, read at the PR's **base** ref
- *      so a PR cannot widen the set that clears its own cap;
+ *   2. its author is in the repo's control-plane set — the owners `.github/CODEOWNERS` names on the
+ *      default branch, teams expanded — the same set `plan approve` and `decision rule` read;
  *   3. that same author holds `write+` on the repo, read live from GitHub's ACL;
  *   4. a dated authorization comment sits immediately before it, from that same author, and is not
  *      itself a `cap-cleared` marker.
  *
- * Clause 3 intersects the two: the committed file says whom the repo *nominates*, and the ACL says
- * who may actually act, so a login with no collaboration clears nothing. A committed list alone has
- * no author gate — the base-ref read of clause 2 fences only who may widen the list, never who may
- * act on it — which is why authority is the ACL's; the file is nevertheless the place the nomination
- * is written down.
+ * Clause 3 intersects the two: CODEOWNERS says whom the repo *nominates*, and the ACL says who may
+ * actually act, so a login with no collaboration clears nothing. The set used to be `.fabrika.jsonc`'s
+ * `capClearAuthors`; that key is now ignored, and a clearing verb names it in a notice when a repo
+ * still declares it.
  *
  * Every miss is a row carrying its reason rather than a dropped marker: an operator who posted a
  * void grant must be able to see it was void, and a silently dropped one reads as a PR nobody ever
@@ -29,11 +28,15 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {authorKeyNotices} from "../config/deprecated-authors.ts";
+import {capClearAuthorsKey, type GrantAuthor} from "../config/keys/cap-clear-authors.ts";
+import {loadConfig} from "../config/load.ts";
 import type {CommentRecord} from "../io/issues.ts";
 import {permissionFor} from "../io/pulls.ts";
-import {CONFIG_PATH, type GrantAuthor, readCapClearAuthors} from "../repo-config.ts";
+import {CONFIG_PATH} from "../repo-config.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
 import {listTeamMembers, readFileAtRef} from "../ship/github.ts";
+import {controlPlaneRoster} from "../ship/roster.ts";
 import {read as readClearance} from "../wire/cap-clearance.ts";
 
 /** Any ISO-8601 date in the quoted authorization — the same dating rule `grill rule` enforces. */
@@ -68,37 +71,60 @@ export const grantedFrom = (rows: ReadonlyArray<ClearanceRow>): ReadonlyArray<nu
 	rows.filter((row) => row.honoured).map((row) => row.round);
 
 export type Membership =
-	| {readonly _tag: "Set"; readonly holds: (login: string) => boolean}
+	| {
+			readonly _tag: "Set";
+			readonly holds: (login: string) => boolean;
+			/** The default-branch ref the CODEOWNERS roster was read at, for a refusal's evidence. */
+			readonly ref: string;
+	  }
 	| {readonly _tag: "Unusable"; readonly reason: string}
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
 /**
- * The grant-author set as a predicate, with every team expanded once.
+ * The control-plane set as a predicate — who may clear a round or grant a takeover.
  *
- * Teams are resolved eagerly rather than per marker so a PR carrying several markers costs one
- * membership read per team; a **404 team** is proven to hold nobody, while a failed read is
- * `Unknown` — the split the whole group rests on.
+ * Read through `../ship/roster.ts`, the one roster read, so the set that may clear a round and the
+ * set that may rule a decision cannot drift into two. A roster that names nobody is `Unusable` —
+ * proven, and nobody may clear — while one that could not be read is `Unknown`.
  */
-export const membershipAt = (
+export const controlPlaneMembership = (
 	repo: string,
-	baseRef: string,
 ): Effect.Effect<Membership, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const file = yield* readFileAtRef(repo, CONFIG_PATH, baseRef);
-		if (file._tag === "Unknown") {
-			return {_tag: "Unknown" as const, reason: `${CONFIG_PATH} at ${baseRef}: ${file.reason}`};
+		const roster = yield* controlPlaneRoster(repo);
+		if (roster._tag === "Unknown") {
+			return {_tag: "Unknown" as const, reason: `the control-plane set: ${roster.reason}`};
 		}
-		if (file._tag === "Absent") {
+		if (roster.logins.size === 0) {
 			return {
 				_tag: "Unusable" as const,
-				reason: `${repo} carries no ${CONFIG_PATH} at ${baseRef} — nobody is configured to clear a round`,
+				reason: `${repo}'s CODEOWNERS names no control-plane owner at ${roster.ref} — nobody may clear a round`,
 			};
 		}
-		const declared = readCapClearAuthors(file.value);
-		if (declared._tag === "Unusable") return {_tag: "Unusable" as const, reason: declared.reason};
+		const logins = new Set([...roster.logins].map((login) => login.toLowerCase()));
+		return {
+			_tag: "Set" as const,
+			holds: (login: string) => logins.has(login.trim().toLowerCase()),
+			ref: roster.ref,
+		};
+	});
 
+export type Expanded =
+	| {readonly _tag: "Logins"; readonly holds: (login: string) => boolean}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+/**
+ * An author set as a predicate, with every team expanded once.
+ *
+ * A **404 team** is proven to hold nobody, while a failed read is `Unknown` — the split every
+ * author-set reader rests on.
+ */
+export const expandAuthors = (
+	authors: ReadonlyArray<GrantAuthor>,
+): Effect.Effect<Expanded, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
 		const logins = new Set<string>();
-		for (const author of declared.authors as ReadonlyArray<GrantAuthor>) {
+		for (const author of authors) {
 			if (author._tag === "User") {
 				logins.add(author.login.toLowerCase());
 				continue;
@@ -114,10 +140,32 @@ export const membershipAt = (
 			for (const member of members.value) logins.add(member.toLowerCase());
 		}
 		return {
-			_tag: "Set" as const,
+			_tag: "Logins" as const,
 			holds: (login: string) => logins.has(login.trim().toLowerCase()),
 		};
 	});
+
+/**
+ * The deprecation notice for a `capClearAuthors` the config at `baseRef` still declares, or none.
+ *
+ * Only a notice: a config that cannot be read at that ref changes nothing about who may clear, so it
+ * answers no notice rather than refusing.
+ */
+export const capClearAuthorsNotices = (
+	verb: string,
+	repo: string,
+	baseRef: string,
+): Effect.Effect<ReadonlyArray<string>, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.map(readFileAtRef(repo, CONFIG_PATH, baseRef), (file) =>
+		file._tag === "Present"
+			? authorKeyNotices(
+					verb,
+					loadConfig({_tag: "Text", text: file.value}),
+					capClearAuthorsKey,
+					`${CONFIG_PATH} at ${baseRef}`,
+				)
+			: [],
+	);
 
 export type Permissions =
 	| {readonly _tag: "Levels"; readonly levelOf: (login: string) => string | null}
@@ -174,18 +222,17 @@ const refusalFor = (
 	membership: Exclude<Membership, {readonly _tag: "Unknown"}>,
 	permissions: Extract<Permissions, {readonly _tag: "Levels"}>,
 	repo: string,
-	baseRef: string,
 	author: string,
 	round: number,
 	authorization: number | null,
 ): string | null => {
 	if (membership._tag === "Unusable") return membership.reason;
 	if (!membership.holds(author)) {
-		return `${author} is not in ${CONFIG_PATH}'s grant-author set at ${baseRef}`;
+		return `${author} is not in ${repo}'s control-plane set at ${membership.ref}`;
 	}
 	const level = permissions.levelOf(author);
 	if (!clearsWriteFloor(level)) {
-		return `${author} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone`;
+		return `${author} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never CODEOWNERS' alone`;
 	}
 	if (round < CAP_ROUND) {
 		return `round ${round} is below the declared cap of ${CAP_ROUND} — there was no round to clear`;
@@ -204,7 +251,6 @@ const refusalFor = (
  */
 export const clearancesOn = (
 	repo: string,
-	baseRef: string,
 	comments: ReadonlyArray<CommentRecord>,
 ): Effect.Effect<ClearancesRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
@@ -214,12 +260,12 @@ export const clearancesOn = (
 		});
 		if (marked.length === 0) return {_tag: "Rows" as const, rows: []};
 
-		const membership = yield* membershipAt(repo, baseRef);
+		const membership = yield* controlPlaneMembership(repo);
 		if (membership._tag === "Unknown") {
 			return {_tag: "Unknown" as const, reason: membership.reason};
 		}
-		// Only the authors the config already names are worth an ACL read: one the file does not name
-		// is refused on that clause alone, and reading it would let a hiccup on an irrelevant login
+		// Only the authors the control-plane set already names are worth an ACL read: one it does not
+		// name is refused on that clause alone, and reading it would let a hiccup on an irrelevant login
 		// turn a plainly-void marker into an UNKNOWN fold.
 		const permissions = yield* permissionsFor(
 			repo,
@@ -251,7 +297,6 @@ export const clearancesOn = (
 				membership,
 				permissions,
 				repo,
-				baseRef,
 				comment.author,
 				round,
 				authorization,

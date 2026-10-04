@@ -35,12 +35,10 @@ const edited = (name: string, over: Record<string, unknown>): ReadonlyArray<unkn
 describe("the shipped default", () => {
 	it("is the vocabulary `triage/facets.ts` carries, and it conforms", () => {
 		expect(triageFacetsKey.shippedDefault).toBe(FACET_VOCABULARY);
-		expect(loadConfig({_tag: "Absent"})).toEqual({_tag: "Config", state: {_tag: "Absent"}});
-	});
-
-	it("resolves for a repo that declares no config at all", () => {
-		const resolved = resolve(loadConfig({_tag: "Absent"}), triageFacetsKey);
-		expect(resolved._tag).toBe("Default");
+		expect(loadConfig({_tag: "Absent"})).toEqual({
+			_tag: "Config",
+			documents: {tracked: {_tag: "Absent"}, local: {_tag: "Absent"}},
+		});
 	});
 });
 
@@ -56,27 +54,6 @@ describe("a declared table", () => {
 		if (refused._tag !== "Refused") return;
 		expect(refused.reason).toContain("facet `priority`");
 		expect(refused.reason).toContain("urgent");
-	});
-
-	it("refuses when a type facet's pattern matches labels no declared type produces", () => {
-		const refused = load(edited("type", {owns: "^kind:"}));
-		expect(refused._tag).toBe("Refused");
-		if (refused._tag !== "Refused") return;
-		expect(refused.reason).toContain("facet `type`");
-		expect(refused.reason).toContain("owns=/^kind:/");
-	});
-
-	it("refuses when the standing-lane set owns a label outside its values", () => {
-		const refused = load(edited("lane", {ownsLabels: [...STANDING_LANES, "axis:dead"]}));
-		expect(refused._tag).toBe("Refused");
-		if (refused._tag !== "Refused") return;
-		expect(refused.reason).toContain("facet `lane`");
-		expect(refused.reason).toContain("axis:dead");
-	});
-
-	it("resolves every OTHER key as malformed once the load is refused", () => {
-		const refused = load(edited("priority", {values: ["urgent"]}));
-		expect(resolve(refused, triageFacetsKey)._tag).toBe("Malformed");
 	});
 });
 

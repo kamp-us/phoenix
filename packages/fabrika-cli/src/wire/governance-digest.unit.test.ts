@@ -1,13 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {
-	emit,
-	emitFromFields,
-	HEADING,
-	KINDS,
-	parseFields,
-	read,
-	readToLines,
-} from "./governance-digest.ts";
+import {emitFromFields, HEADING, KINDS, read, readToLines} from "./governance-digest.ts";
 
 const artifact = (...rows: ReadonlyArray<string>): string =>
 	`${HEADING}\n\n\`\`\`governance-digest\n${rows.join("\n")}\n\`\`\`\n`;
@@ -34,29 +26,9 @@ describe("read", () => {
 		expect(read(artifact("row\t0398\turgent\tnote"))._tag).toBe("Malformed");
 	});
 
-	it("is Absent over an artifact that reaches for nothing", () => {
-		expect(read("Nothing landed this week, as far as I can tell.\n")).toMatchObject({
-			_tag: "Absent",
-		});
-	});
-
-	it("is MALFORMED, never Absent, on a drifted heading level", () => {
-		const drifted = artifact(ROW).replace(HEADING, "### Governance readout");
-		expect(read(drifted)).toMatchObject({_tag: "Malformed"});
-	});
-
-	it("is Malformed on a fence holding prose instead of rows", () => {
-		expect(read(artifact("Nothing much landed."))).toMatchObject({_tag: "Malformed"});
-	});
-
 	it("is Malformed on a fence under no heading, and a heading over no fence", () => {
 		expect(read(`\`\`\`governance-digest\n${ROW}\n\`\`\`\n`)).toMatchObject({_tag: "Malformed"});
 		expect(read(`${HEADING}\n\nnothing here\n`)).toMatchObject({_tag: "Malformed"});
-	});
-
-	it("is Malformed on a non-four-digit id and on a fourth field", () => {
-		expect(read(artifact("row\t398\troutine\tnote"))).toMatchObject({_tag: "Malformed"});
-		expect(read(artifact("row\t0398\troutine\tnote\tmore"))).toMatchObject({_tag: "Malformed"});
 	});
 
 	it("is Malformed on a fence with no row at all — an empty digest is not a digest", () => {
@@ -72,13 +44,6 @@ describe("read", () => {
 });
 
 describe("emit", () => {
-	it("round-trips through read", () => {
-		const parsed = parseFields(`${ROW}\nrow\t0396\troutine\tno tension found\n`);
-		expect(parsed._tag).toBe("Fields");
-		if (parsed._tag !== "Fields") return;
-		expect(read(emit(parsed.rows))).toMatchObject({_tag: "Found"});
-	});
-
 	it("refuses to compose from no rows rather than emitting an empty block", () => {
 		expect(emitFromFields("\n  \n")).toMatchObject({_tag: "Unusable"});
 	});

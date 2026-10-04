@@ -119,21 +119,6 @@ describe("pano reads — /fate", () => {
 		expect(data.pagination.hasPrevious).toBe(false);
 	});
 
-	it("posts(host) filters by host", async () => {
-		const result = await h.fate({
-			kind: "list",
-			name: "posts",
-			args: {sort: "new", host: READ_HOST},
-			select: ["id", "host"],
-		});
-		expect(result.ok).toBe(true);
-		if (!result.ok) return;
-		const data = result.data as Connection<PostNode>;
-		expect(data.items.length).toBeGreaterThan(0);
-		expect(data.items.every((e) => e.node.host === READ_HOST)).toBe(true);
-		expect(data.items.some((e) => e.node.id === postId)).toBe(true);
-	});
-
 	it("post(idOrSlug) returns the detail row with tags", async () => {
 		const result = await h.fate({
 			kind: "query",

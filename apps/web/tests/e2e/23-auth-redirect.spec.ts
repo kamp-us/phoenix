@@ -8,7 +8,7 @@ import {randomSuffix} from "./_helpers/rand";
  * out, which leaves a real definition the second (still-signed-out) user can vote on.
  */
 test.describe("T17 auth-redirect with returnTo", () => {
-	test("signed-out vote → /auth?returnTo=... → sign-up → return → vote succeeds", async ({
+	test("signed-out vote → /auth?returnTo=... → sign-up → return → the vote control is clickable", async ({
 		page,
 	}) => {
 		const slug = `t17-${Date.now().toString(36)}${randomSuffix(4)}`;
@@ -83,13 +83,10 @@ test.describe("T17 auth-redirect with returnTo", () => {
 		await expect(score).toHaveText("0", {timeout: 10_000});
 
 		await voteBtnAfter.click();
-		// QUARANTINED — un-quarantine blocked on #1838 (e2e can't establish yazar tier); see #1903.
-		// The returnTo → sign-up → return → vote-CLICK flow above (the T17 security
-		// coverage) stays fully asserted; only the terminal score-value read-back and
-		// its coupled aria-pressed read are dropped — the same #1903 flake this quarantines
-		// in specs 05/12/15/18, here reached via a plain 5s toHaveText.
-		// await expect(score).toHaveText("1", {timeout: 5_000});
-		// await expect(voteBtnAfter).toHaveAttribute("aria-pressed", "true", {timeout: 5_000});
+		// The returnTo → sign-up → return → vote-CLICK flow above is the T17 security coverage.
+		// No score read-back: voter B signed up here and is a çaylak, so the cast is refused by
+		// the earn-to-vote gate (#1810); the vote round-trip itself is proven on real D1 by
+		// `sozluk-mutations.test.ts`.
 	});
 
 	test("404 page renders for an unknown profile", async ({page}) => {
