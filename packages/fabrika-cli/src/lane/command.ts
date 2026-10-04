@@ -241,7 +241,7 @@ const status = leafCommand(
 const causeFlag = Flag.string("cause").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		`why the lane parked, on a BLOCKED only — one of: ${PARK_CAUSE_TOKENS.join(", ")}. It is the key \`recipe unpark\` seats the park against, and each token carries a route (\`driver\` or \`founder\`) saying whose failure the park is. Omit it and the park stays novel and routes to a human — unless \`.fabrika.jsonc\` declares \`parkCause.uncaused: "refuse"\`, which refuses the cause-less park at exit 52 with the log unappended.`,
+		`why the lane parked, on a BLOCKED only — one of: ${PARK_CAUSE_TOKENS.join(", ")}. It is the key \`recipe unpark\` seats the park against, and each token carries a route (\`driver\` or \`founder\`) saying whose failure the park is. Omit it and the park is refused at exit 52 with the log unappended — unless \`.fabrika.jsonc\` declares \`parkCause.uncaused: "record"\`, which records the cause-less park as a novel one that routes to a human.`,
 	),
 );
 

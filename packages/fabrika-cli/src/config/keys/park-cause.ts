@@ -2,9 +2,8 @@
  * `parkCause` — what a repo does with a lane park: one that names no cause, one whose cause
  * routes to the driver, and a spent repair budget.
  *
- * Three sub-keys, each defaulting to the behaviour that shipped before it. `uncaused` says whether a
- * cause-less park is recorded as the bare `BLOCKED` it always was, or refused before the log is
- * touched. `driverRouted` says whether `recipe unpark` may clear a park whose cause routes `driver`
+ * Three sub-keys. `uncaused` says whether a cause-less park is refused before the log is touched,
+ * or recorded as a bare `BLOCKED`. `driverRouted` says whether `recipe unpark` may clear a park whose cause routes `driver`
  * on the driver's own recorded rationale, or refuses it the way it always did. `repairBudgetSpent`
  * says whose park a spent repair budget is: the driver's, which grants the next round itself, or
  * the founder's, which parks the task on a human like any other founder-routed park.
@@ -15,11 +14,11 @@
  * repository's one shared lane ledger: a linked worktree's tracked copy would decide which parks
  * reach, or leave, a log it does not own.
  *
- * **`uncaused` ships as `record`.** A cause-less park is a bug — it folds to a `Novel` park no
- * recipe keys on, so it costs a human `UNBLOCKED` to say a thing the recorder already knew. But
- * every shell in flight when this lands still reports the bare park on some path, and flipping the
- * refusal on by default would brick those lanes mid-drive. So the strictness is a repo's to
- * declare, and a repo whose shells all name their causes declares `refuse` for itself.
+ * **`uncaused` ships as `refuse`.** A cause-less park folds to a `Novel` park no recipe keys on, so
+ * it costs a human `UNBLOCKED` to say a thing the recorder already knew — and a repo that adopts
+ * fabrika and declares nothing would get that on every driver hold. The cost of the strict value is
+ * a hold with no fitting cause token: it cannot be parked at all, so the lane stays in its stage
+ * until a token exists. A repo that prefers the bare park declares `record`.
  *
  * **`driverRouted` ships as `refuse`.** Taking the founder out of the engine loop is what the route
  * field on a park cause is for, and it is still a repo's call to make: a repo whose shells do not
@@ -61,9 +60,16 @@ export interface ParkCauseSurface {
 	readonly repairBudgetSpent: RepairBudgetSpent;
 }
 
-/** The shipped park-cause surface — what a repo declaring nothing still gets. */
+/**
+ * The shipped park-cause surface — what a repo declaring nothing still gets.
+ *
+ * `uncaused` is `refuse` so an adopting repo that sets nothing never records a park no recipe or
+ * route can act on; `record` is the value a repo declares to keep bare parks.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10310#issuecomment-5974127475
+ */
 export const SHIPPED_PARK_CAUSE: ParkCauseSurface = {
-	uncaused: "record",
+	uncaused: "refuse",
 	driverRouted: "refuse",
 	repairBudgetSpent: "driver",
 };
@@ -153,7 +159,7 @@ export const parkCauseKey: KeyGroup<ParkCauseSurface> = {
 			uncaused: {
 				type: "string",
 				description:
-					"What a BLOCKED carrying no `--cause` gets: `record` (the bare park, which routes to a human) or `refuse` (unappended, so every park names why).",
+					"What a BLOCKED carrying no `--cause` gets: `refuse` (unappended at exit 52, so every park names why — the shipped value) or `record` (the bare park, which routes to a human).",
 				enum: ["record", "refuse"],
 			},
 			driverRouted: {

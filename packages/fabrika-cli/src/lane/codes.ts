@@ -449,12 +449,13 @@ export const LOG_REPLAYS = 50;
 export const CONCURRENCY_CAPPED = 51;
 
 /**
- * A `BLOCKED` was recorded carrying no `--cause`, in a repo whose `.fabrika.jsonc` declares
- * `parkCause.uncaused: "refuse"` — refused with the log unappended.
+ * A `BLOCKED` arrived carrying no `--cause`, in a repo whose `parkCause.uncaused` resolves `refuse`
+ * — the shipped value, so a repo declaring nothing — and is refused with the log unappended.
  *
  * Its own seat rather than {@link CAUSE_UNRECOGNISED}'s: that one says a cause arrived and could not
  * be seated, and the remedy is to drop or respell it. This one says none arrived at all, and the
- * remedy is the opposite — name one. Recording it instead is the defect the code exists to stop: a
+ * remedy is the opposite — name one, or declare `parkCause.uncaused: "record"` where the repo wants
+ * bare parks kept. Recording it instead is the defect the code exists to stop: a
  * park with no cause folds to a `Novel` no recipe keys on, so it always spends a human `UNBLOCKED`
  * to say a thing the recorder already knew.
  */

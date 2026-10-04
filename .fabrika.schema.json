@@ -575,7 +575,7 @@
 			"properties": {
 				"uncaused": {
 					"type": "string",
-					"description": "What a BLOCKED carrying no `--cause` gets: `record` (the bare park, which routes to a human) or `refuse` (unappended, so every park names why).",
+					"description": "What a BLOCKED carrying no `--cause` gets: `refuse` (unappended at exit 52, so every park names why — the shipped value) or `record` (the bare park, which routes to a human).",
 					"enum": [
 						"record",
 						"refuse"

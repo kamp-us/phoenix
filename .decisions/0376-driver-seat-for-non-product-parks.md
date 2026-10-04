@@ -1,7 +1,7 @@
 ---
 id: 0376
 title: A park's route is read off its cause, and only a product call reaches the founder
-status: amended-in-part by [0421](0421-spent-budget-route-is-repo-declared.md)
+status: amended-in-part by [0421](0421-spent-budget-route-is-repo-declared.md), [0450](0450-uncaused-park-refused-by-default.md)
 date: 2026-09-10
 tags: [fabrika, lane, pipeline, recipes, agents]
 ---
@@ -76,6 +76,9 @@ still recorded rather than refused at exit 52. Both defaults are today's behavio
 shipped default is for. A repo whose shells all name their causes declares the strict values for
 itself. The *route* field, by contrast, is live everywhere — it is data on the cause table, not a
 flag.
+
+ADR [0450](0450-uncaused-park-refused-by-default.md) amends the `parkCause.uncaused` half of this
+paragraph: that key now ships `refuse`. The rest of the paragraph holds.
 
 **This amends ADR 0302 in part.** Its clearing mechanics stand whole: classification still happens
 before any write, a recipe clear is still proven by a re-fold, and a park a recipe covers still

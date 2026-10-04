@@ -3,13 +3,15 @@
  * idiom), and a two-phase document in the /prd-to-tasks shape small enough for a test to mutate.
  */
 import {Effect} from "effect";
-import type {
-	DriverRouted,
-	ParkCauseSurface,
-	RepairBudgetSpent,
-	Uncaused,
+import {
+	type DriverRouted,
+	type ParkCauseSurface,
+	parkCauseKey,
+	type RepairBudgetSpent,
+	type Uncaused,
 } from "../config/keys/park-cause.ts";
-import type {Read} from "../config/read-key.ts";
+import {loadConfig} from "../config/load.ts";
+import {type Read, readFromLoad} from "../config/read-key.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {answer, type VerbOutcome} from "../verb.ts";
 import type {RoutedBasis} from "../wire/routed-elsewhere.ts";
@@ -101,7 +103,11 @@ export interface ProofFacts {
 	readonly closingMerge?: ClosingMerge;
 }
 
-/** A `parkCause` read at any arm, for a verb test that does not open a config file. */
+/**
+ * A `parkCause` read at any arm, for a verb test that does not open a config file. Its `record`
+ * default is a fixture convenience, not the shipped value: {@link parkCauseDeclared} is the read a
+ * repo's own file resolves to.
+ */
 export const parkCauseRead = (
 	uncaused: Uncaused = "record",
 	driverRouted: DriverRouted = "refuse",
@@ -111,6 +117,10 @@ export const parkCauseRead = (
 	value: {uncaused, driverRouted, repairBudgetSpent},
 	note: `test fixture: parkCause.uncaused = ${uncaused}, parkCause.driverRouted = ${driverRouted}, parkCause.repairBudgetSpent = ${repairBudgetSpent}`,
 });
+
+/** The `parkCause` read a repo's `.fabrika.jsonc` text resolves to, through the shipped decode. */
+export const parkCauseDeclared = (text: string): Read<ParkCauseSurface> =>
+	readFromLoad(loadConfig({_tag: "Text", text}), parkCauseKey);
 
 /**
  * The paths a verb wrote that are the lane's — what "nothing was written" means for a refusal.

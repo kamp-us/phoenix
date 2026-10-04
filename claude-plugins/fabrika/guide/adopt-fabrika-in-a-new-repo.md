@@ -224,11 +224,17 @@ refuse partway through real work, so write them before your first lane:
 | `dependencyReconciler` | No verb refuses. `lane integrate` skips the install and says so on stderr, so a child that changes the lockfile is validated against the old install and can fail there. | none; `44` from `lane integrate` when a validator then fails | `{"command": ["pnpm", "install", "--frozen-lockfile"]}` |
 | `.github/CODEOWNERS` | `plan approve` refuses every account. `ship cp-approval` answers `stop zero-owners`, so every PR waits for an approval nobody can give. | `24` from `plan approve`; `ship cp-approval` exits `0` with the stop | `/.github/ @your-login` and `/.fabrika.jsonc @your-login`. A row that owns everything (`*`) is a hold, not an owner. |
 | a CI workflow in `.github/workflows/`, or `"ci": {"noProducer": "degrade"}` | `ship checks` and `review ci` refuse. | `7` from both | a `ci.yml` that runs your validators on `pull_request`; `degrade` only for a repo that runs no Actions on purpose |
+| `parkCause` | Its three sub-keys ship as `uncaused: "refuse"`, `driverRouted: "refuse"` and `repairBudgetSpent: "driver"`. Under the first, a `lane transition <n> BLOCKED` or a `lane report` park that names no `--cause` is refused and nothing is appended to the lane log. | `52` from both | none needed: name a `--cause` on every park. `{"uncaused": "record"}` keeps cause-less parks. |
 | `uiSurfaces` | No verb refuses in review: no path raises the `ui` class, so a rendered change is reviewed as text only. `review scope` and `ship scope` print one stderr line saying so. `ui render` refuses, and `review-ui route` answers `none` because there is nothing to route. | `19` from `ui render`; `review-ui route` exits `0` with `"answer":"none"` | one row per app: `{"name": "web", "prefix": "src/", "mount": "/", "command": "pnpm dev --port {{port}}"}`; `[]` for a repo that renders nothing |
 
 A workflow that exists but never runs on a PR's head is a different refusal: `ship checks` exits `20`
 and `review ci` exits `16`. The exit codes above are the ones each verb's `--help` prints; after an
 upgrade, re-read them there rather than here.
+
+A hold that fits no cause token cannot be parked under `parkCause.uncaused: "refuse"`: the lane
+stays in its stage until a token exists for that hold, or until your repo declares
+`"parkCause": {"uncaused": "record"}`, which records the bare park and routes it to a person.
+`lane transition --help` prints the tokens.
 
 The repo that authors fabrika keeps its own `.fabrika.jsonc` as the worked example, with the
 reasoning for each value in comments.

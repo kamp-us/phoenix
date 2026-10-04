@@ -16,19 +16,16 @@ const read = (value: ParkCauseSurface): Read<ParkCauseSurface> => ({
 });
 
 describe("the shipped park-cause surface", () => {
-	// The containment: this slice alone cannot brick a live lane, because every repo that declares
-	// nothing keeps recording the bare park it always did.
-	it("is `record` for a repo with no config at all — today's behaviour, not a new strictness", () => {
+	it("is `refuse` for a repo with no config at all, so an undeclaring repo parks only with a cause", () => {
 		const resolved = resolve(loadConfig({_tag: "Absent"}), parkCauseKey);
 
 		expect(resolved._tag).toBe("Default");
 		if (resolved._tag !== "Default") return;
 		expect(resolved.value).toEqual({
-			uncaused: "record",
+			uncaused: "refuse",
 			driverRouted: "refuse",
 			repairBudgetSpent: "driver",
 		});
-		expect(SHIPPED_PARK_CAUSE.uncaused).toBe("record");
 	});
 
 	it("falls to the shipped value for a declared key that leaves the sub-key out", () => {
@@ -39,12 +36,12 @@ describe("the shipped park-cause surface", () => {
 		expect(resolved.value.uncaused).toBe(SHIPPED_PARK_CAUSE.uncaused);
 	});
 
-	it("takes the strict arm a repo declares for itself", () => {
-		const resolved = declared({uncaused: "refuse"});
+	it.each(["record", "refuse"] as const)("takes the %s arm a repo declares for itself", (value) => {
+		const resolved = declared({uncaused: value});
 
 		expect(resolved._tag).toBe("Declared");
 		if (resolved._tag !== "Declared") return;
-		expect(resolved.value.uncaused).toBe("refuse");
+		expect(resolved.value.uncaused).toBe(value);
 	});
 
 	// The same containment on the second axis: a repo that has not asked for driver clearances keeps
@@ -60,7 +57,7 @@ describe("the shipped park-cause surface", () => {
 		expect(resolved._tag).toBe("Declared");
 		if (resolved._tag !== "Declared") return;
 		expect(resolved.value).toEqual({
-			uncaused: "record",
+			uncaused: "refuse",
 			driverRouted: "clear",
 			repairBudgetSpent: "driver",
 		});
@@ -81,7 +78,7 @@ describe("the shipped park-cause surface", () => {
 		expect(resolved._tag).toBe("Declared");
 		if (resolved._tag !== "Declared") return;
 		expect(resolved.value).toEqual({
-			uncaused: "record",
+			uncaused: "refuse",
 			driverRouted: "refuse",
 			repairBudgetSpent: value,
 		});
