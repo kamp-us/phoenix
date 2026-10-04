@@ -202,13 +202,11 @@ a comment that links the ruling in free prose passes nothing and the feature sta
 the feature's own issue, recorded by `fabrika decision rule`. The other is a founder comment on
 another issue that names the feature as `#<n>`, where that issue and the feature share one open
 milestone. It never passes a "same epic" ruling, and never a feature on a standing lane over a
-ruling on another issue. Done when `fabrika guard pitch-guard check --issue <n>` lists the feature
-with its ruling. On a red, the report names the check the ruling missed, and the guard's contract
-lists each check
-(`fabrika wire doc-section --heading "pitch-guard check" < <plugin-root>/docs/guard-contract.md`).
-A feature the guard refuses still owes its pitch: draft it as for any parentless feature, and never
-re-word the comment to get past the check. A feature a ruling only implies, however plainly, still
-owes its pitch. Take an existing
+ruling on another issue. **You cannot run the guard from this step**: it judges only an issue that
+already carries `status:triaged`, and reports any other as out of scope. Step 7 runs it after the
+stamp. A feature the guard refuses there still owes its pitch: draft it as for any parentless
+feature, and never re-word the comment to get past the check. A feature a ruling only implies,
+however plainly, still owes its pitch. Take an existing
 home: **triage never creates a milestone**, and `wayfinder:backlog` is bounded to genuine fog rather
 than work you would rather not decide about.
 **A board-wide homing breach is swept by a verb, never by raw `gh`.** When `guard homing-guard check`
@@ -383,6 +381,18 @@ asserting it here routes a lane around an approval that never fires.
 
 Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, a `ready-for:` (none on
 an epic sent to `agent`), a home, and every `--blocked-by` edge you asked for.
+
+**A feature you linked to a ruling in step 6 has one more read, and it comes after the stamp.** The
+guard reports an issue without `status:triaged` as out of scope, so it can only answer now:
+
+```bash
+fabrika guard pitch-guard check --issue $issue_number
+```
+
+Done when it lists the feature with its ruling. On a red, the report names the check the ruling
+missed, and the guard's contract lists each check
+(`fabrika wire doc-section --heading "pitch-guard check" < <plugin-root>/docs/guard-contract.md`).
+Go back to step 6 and draft the pitch that feature still owes.
 
 ## 8 — The two outcomes that are not "triaged"
 
