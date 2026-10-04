@@ -28,7 +28,7 @@ export type PortSchema<T = unknown> = InPort<T> | OutPort<T>;
 /**
  * The schema a port was declared over, as a row may publish it beside the predicate: no service
  * requirements and an encoded form equal to the decoded one, because the `accepts` the kernel
- * routes on is `Schema.is` of exactly this (`../authoring/port.ts`).
+ * routes on is the synchronous check of exactly this (`../authoring/port.ts`).
  */
 export type PortPayloadSchema = Schema.Codec<any, any, never, unknown>;
 
