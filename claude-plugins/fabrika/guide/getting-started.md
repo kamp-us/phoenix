@@ -110,73 +110,63 @@ field	trunk	agrees	origin/main; origin/HEAD agrees	you/your-repo	2026-10-03T21:1
 ```
 
 Seven fields: `menu`, `settings`, `wiring`, `board`, `readout`, `lanes` and `trunk`. Two of them
-need you now. `wiring` says `unwired`, which step 4 fixes, and `board` says `absent`, which step 5
-fixes. The `readout` row stays `absent` for this whole lesson.
+need you now. `wiring` says `unwired` and `board` says `absent`, and step 4 fixes both. The
+`readout` row stays `absent` for this whole lesson.
 
 Inside Claude Code the `front-door` skill gives you this same readout: type `/fabrika:front-door`.
 
-## 4. Switch the plugin on in this repo
+## 4. Set up the repo
+
+One command does every part of the setup that needs no answer from you:
 
 ```bash
-fabrika status bootstrap settings-patch
+fabrika setup
 ```
 
 ```
 status bootstrap: created .claude/settings.json for settings-patch, read-back conformed.
-bootstrap	created	settings-patch	.claude/settings.json	ok
-```
-
-Check the row changed:
-
-```bash
-fabrika status wiring
-```
-
-```
-status wiring: read .claude/settings.json; plugin fabrika is wired.
-wiring	wired	fabrika@kampus	kampus	fabrika@kampus is enabled — sessions in this repo load fabrika's skills	2026-10-03T21:15:48Z
-```
-
-## 5. Create the labels
-
-fabrika's stages write their state onto issues as labels, so the labels have to exist before
-anything can move. Create them:
-
-```bash
-fabrika status bootstrap label-taxonomy
-```
-
-```
 status bootstrap: created status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage for label-taxonomy, read-back conformed.
-bootstrap	created	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage	ok
-```
-
-A second set marks what kind of thing an issue is:
-
-```bash
-fabrika status bootstrap issue-shape-markers
-```
-
-```
 status bootstrap: created wayfinding:map,prototyping:spike,grilling:session for issue-shape-markers, read-back conformed.
-bootstrap	created	issue-shape-markers	wayfinding:map,prototyping:spike,grilling:session	ok
-```
-
-## 6. Keep fabrika's run state out of git
-
-fabrika keeps a log of each run under `.fabrika/` in your clone. It belongs to this machine, so git
-should ignore it:
-
-```bash
-fabrika status bootstrap gitignore-row
-```
-
-```
 status bootstrap: appended /.fabrika/ to .gitignore for gitignore-row, read-back conformed.
+status bootstrap: created .github/CODEOWNERS for owners-file, read-back conformed — 9 rows owned by @you.
+status bootstrap: created .github/workflows/ci.yml for ci-file, read-back conformed.
+bootstrap	created	settings-patch	.claude/settings.json	ok
+bootstrap	created	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage	ok
+bootstrap	created	issue-shape-markers	wayfinding:map,prototyping:spike,grilling:session	ok
 bootstrap	created	gitignore-row	.gitignore	ok
+bootstrap	created	owners-file	.github/CODEOWNERS	ok
+bootstrap	created	ci-file	.github/workflows/ci.yml	ok
+
+Setup finished: 6 steps made changes and 0 were already done. Nothing is committed or pushed yet.
+What to do next: paste these lines to commit and push the setup files:
+  git add .claude/settings.json .gitignore .github/CODEOWNERS .github/workflows/ci.yml
+  git commit -m "chore: set up fabrika"
+  …
+Then give work a home: open one milestone and write a roadmap that names it, by hand, as the
+getting-started guide's step "Give the board a home to put work in" shows.
 ```
 
-## 7. Give the board a home to put work in
+Each `bootstrap` row is one part of the setup, and `created` means the run made that change just
+now:
+
+- `settings-patch` switches the plugin on in this repo, so Claude Code sessions opened here load
+  fabrika's skills.
+- `label-taxonomy` creates the labels fabrika's stages write onto issues to mark where each one is.
+- `issue-shape-markers` creates three more labels that mark what kind of thing an issue is.
+- `gitignore-row` keeps `.fabrika/` out of git. fabrika logs each run there, and that log belongs to
+  this machine.
+- `owners-file` writes `.github/CODEOWNERS`, which names you as the owner of the paths the merge
+  step guards. Some of those paths are not in your repo yet. That is expected.
+- `ci-file` writes `.github/workflows/ci.yml`, one check that runs on each pull request. The merge
+  step waits for it.
+
+The sample cuts the third paste line to `…`. Yours prints it in full: `git push -u origin HEAD`.
+
+Run it again and every row reads `exists`: nothing changes. The command commits nothing, so keep
+its closing lines for step 7. It opens no milestone and writes no roadmap. You do that by hand in
+the next step.
+
+## 5. Give the board a home to put work in
 
 Triage puts every issue somewhere, so the repo needs one open milestone and a `ROADMAP.md` that
 names it. Create the milestone:
@@ -226,61 +216,7 @@ Your milestone is the `milestone` row. The `standing lanes` line says you have d
 is right for a new repo: every issue homes on a milestone. The adoption guide says
 [what a standing lane is](adopt-fabrika-in-a-new-repo.md#8-the-lane-rows-if-you-get-any).
 
-## 8. Name an owner and add a CI check
-
-The merge step needs two things from the repo: an owners file, and one CI run on the pull request.
-
-Make the directories:
-
-```bash
-mkdir -p .github/workflows
-```
-
-Create `.github/CODEOWNERS` with these nine rows, with your GitHub login in place of `your-login`:
-
-```
-/.github/ @your-login
-/.claude/ @your-login
-/.claude-plugin/ @your-login
-/packages/ci-required/ @your-login
-/packages/fabrika-cli/src/ci/ @your-login
-/biome.jsonc @your-login
-/biome-plugins/ @your-login
-**/lefthook* @your-login
-**/.lefthook* @your-login
-```
-
-Some of those rows name paths your repo does not have. Keep them anyway: the builder's check in
-step 12 reads this file and stops unless all nine are there.
-
-Check the file:
-
-```bash
-fabrika guard codeowners-cp check --root .
-```
-
-```
-guard codeowners-cp check: all 9 §CP path(s) are covered by .github/CODEOWNERS (9 owned rows)
-```
-
-Create `.github/workflows/ci.yml`:
-
-```yaml
-name: ci
-on:
-  pull_request:
-jobs:
-  readme:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: test -s README.md
-```
-
-The adoption guide covers
-[what each of these files is for](adopt-fabrika-in-a-new-repo.md#9-add-the-config-file).
-
-## 9. Write the design rules, if your app has a screen
+## 6. Write the design rules, if your app has a screen
 
 `design-system-manifest.md` holds your app's design rules: the colours, type and spacing a builder
 must follow whenever an issue changes what a screen looks like. An app with no screen can skip this
@@ -353,32 +289,19 @@ and you post nothing.
 [If your app has no preview deploys](adopt-fabrika-in-a-new-repo.md#if-your-app-has-no-preview-deploys)
 has the three settings and how to choose.
 
-## 10. Commit the setup
+## 7. Commit the setup
+
+Paste the three lines `fabrika setup` printed in step 4, with `ROADMAP.md` from step 5 added to the
+add line:
 
 ```bash
-git add .gitignore ROADMAP.md .claude/settings.json .github
+git add .claude/settings.json .gitignore .github/CODEOWNERS .github/workflows/ci.yml ROADMAP.md
+git commit -m "chore: set up fabrika"
 ```
 
-If you wrote the design rules in step 9, add them too:
-
-```bash
-git add design-system-manifest.md
-```
-
-And if you turned screen review on there:
-
-```bash
-git add .fabrika.jsonc
-```
-
-Then commit:
-
-```bash
-git commit -m "Set up fabrika"
-```
-
-Push that commit to your default branch with `git push`. The builder starts from what is on GitHub,
-so the setup has to be there first.
+If step 6 wrote `design-system-manifest.md` or `.fabrika.jsonc`, add those to the add line too.
+Then run the third line, `git push -u origin HEAD`. The builder starts from what is on GitHub, so
+the setup has to be there first.
 
 Now look at the front door again:
 
@@ -400,7 +323,7 @@ field	trunk	agrees	origin/main; origin/HEAD agrees	you/your-repo	2026-10-03T21:1
 
 `wiring` reads `wired` and `board` reads `counted`. The repo is ready for work.
 
-## 11. File your first issue
+## 8. File your first issue
 
 Open Claude Code in the clone and type:
 
@@ -415,7 +338,7 @@ Filed: #1 https://github.com/you/your-repo/issues/1
 The issue carries the label `status:needs-triage`, which puts it in the queue triage reads. Use the
 number it printed in the next step.
 
-## 12. Triage it, then build it
+## 9. Triage it, then build it
 
 ```
 /fabrika:triage 1
@@ -451,7 +374,7 @@ returns to main whenever you want, and you do not need to switch back before the
 This issue only changes text. An issue with a screen is built with `/fabrika:operate <n>` instead,
 where `<n>` is the issue's number: `/fabrika:build` builds text only and stops on a screen.
 
-## 13. Review it, then merge it
+## 10. Review it, then merge it
 
 ```
 /fabrika:review 2

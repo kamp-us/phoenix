@@ -28,7 +28,15 @@ import {uiSurfacesKey} from "../config/keys/ui-surfaces.ts";
 import {loadConfig} from "../config/load.ts";
 import {type Read, readRoadmapFile} from "../config/paths.ts";
 import {resolveBoard} from "../config/resolve-board.ts";
-import {appendText, exists, readFile, writeFile} from "../io/fs.ts";
+import {
+	cpPaths,
+	findUncovered,
+	parseCodeownersPatterns,
+	renderCodeowners,
+} from "../guard/codeowners-cp.ts";
+import {CODEOWNERS} from "../guard/codeowners-cp-verb.ts";
+import {CONTROL_PLANE_RE} from "../guard/control-plane-re.ts";
+import {appendText, exists, readDir, readFile, writeFile} from "../io/fs.ts";
 import type {Attempt, Shell} from "../io/git.ts";
 import {
 	createLabel,
@@ -41,6 +49,7 @@ import {
 import {isRecord, parseJsonOrReason} from "../io/json.ts";
 import {FRESH_JSON_LAYOUT, readJsonLayout, renderJson} from "../io/json-layout.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
+import {viewerLogin} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {CLASS_LABELS, KILL_LABEL} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -282,6 +291,20 @@ export type BuildableSurface =
 	  }
 	| {
 			readonly id: string;
+			readonly kind: "owners";
+			/** The one path the owners-file guard reads, so `--path` does not move it. */
+			readonly defaultPath: string;
+	  }
+	| {
+			readonly id: string;
+			readonly kind: "workflow";
+			/** GitHub runs a workflow from this file's directory only, so `--path` does not move it. */
+			readonly defaultPath: string;
+			/** The whole file, fixed in the registry. */
+			readonly content: string;
+	  }
+	| {
+			readonly id: string;
 			readonly kind: "labels";
 			/**
 			 * Derived from the resolved board rather than fixed, so a repo that declared its own
@@ -419,7 +442,45 @@ The per-stage shells are surgical — resume a half-dead lane, re-run one gate, 
 never the normal entry point: \`build\` (**builder**), \`review\` (**reviewer**), \`ship\`
 (**shipper**), and \`heal-ci\` for a PR that is green but going nowhere.`;
 
-/** Eleven ids. A twelfth is a change to this table, not a new rule. */
+/**
+ * Where GitHub looks for an owners file, in the order it looks. The first one present is the one in
+ * force, so writing {@link CODEOWNERS} into a repo that keeps its file at a later path would replace
+ * that file's rows. GitHub's "About code owners" names these three directories and this order.
+ */
+export const OWNERS_FILE_LOCATIONS: ReadonlyArray<string> = [
+	CODEOWNERS,
+	"CODEOWNERS",
+	"docs/CODEOWNERS",
+];
+
+/** The one directory GitHub runs workflows from. */
+export const WORKFLOWS_DIR = ".github/workflows";
+
+/**
+ * A workflow file as GitHub reads one: a `.yml` or `.yaml` entry directly in {@link WORKFLOWS_DIR}.
+ * GitHub's "Workflow syntax for GitHub Actions" names both extensions and that one directory.
+ */
+const isWorkflowFile = (name: string): boolean => /\.ya?ml$/.test(name);
+
+/**
+ * The starter CI workflow: one job, run on every pull request, that passes when `README.md` holds
+ * something. The merge step needs one CI run on a pull request, and this is the smallest check a
+ * new repo can pass.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10498
+ */
+export const STARTER_CI_WORKFLOW = `name: ci
+on:
+  pull_request:
+jobs:
+  readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: test -s README.md
+`;
+
+/** Thirteen ids. A fourteenth is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
@@ -456,6 +517,13 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	},
 	{id: "fabrika-config", kind: "starter", defaultPath: CONFIG_PATH, content: STARTER_CONFIG},
 	{id: "hand-check-rule", kind: "no-preview-rule", defaultPath: CONFIG_PATH, rule: HAND_CHECK_RULE},
+	{id: "owners-file", kind: "owners", defaultPath: CODEOWNERS},
+	{
+		id: "ci-file",
+		kind: "workflow",
+		defaultPath: `${WORKFLOWS_DIR}/ci.yml`,
+		content: STARTER_CI_WORKFLOW,
+	},
 ];
 
 const findSurface = (id: string): BuildableSurface | undefined =>
@@ -474,6 +542,12 @@ export const labelSurface = (label: string, board: BoardVocabulary): string | nu
 		(surface) =>
 			surface.kind === "labels" && surface.labels(board).some((spec) => spec.name === label),
 	)?.id ?? null;
+
+/** The repo-relative file a surface writes when no `--path` moves it, or `null` when it writes no file. */
+export const defaultFileOf = (id: string): string | null => {
+	const surface = findSurface(id);
+	return surface !== undefined && "defaultPath" in surface ? surface.defaultPath : null;
+};
 
 export const knownIds = (): string => BUILDABLE_SURFACES.map((surface) => surface.id).join(", ");
 
@@ -1020,6 +1094,115 @@ const buildStarter = (
 	});
 
 /**
+ * **The owners file is written from the guard's own path list and proven by the guard's own check.**
+ * The rows are `cpPaths(CONTROL_PLANE_RE)`, the list `guard codeowners-cp check` reads, so this arm
+ * holds no path and follows that boundary when it moves. Each row is owned by the login the token
+ * signs in as: a new repo has no team to name, and its owner is the one account known to exist.
+ *
+ * An owners file at any path GitHub reads is `exists`, and is never read, merged or judged. The
+ * login is read only once every such path is proven absent, so a repo that has the file answers
+ * with no credential at all.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10497
+ */
+const buildOwners = (
+	surface: Extract<BuildableSurface, {kind: "owners"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		for (const location of OWNERS_FILE_LOCATIONS) {
+			const probe = yield* Effect.result(exists(path.resolve(input.repoRoot, location)));
+			if (Result.isFailure(probe)) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot probe ${location}: ${probe.failure.reason} — nothing was written.`,
+				);
+			}
+			if (probe.success) return already(surface.id, location, input.json);
+		}
+
+		const login = yield* viewerLogin;
+		if (login._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read the signed-in login: ${login.reason} — who would own the rows is UNKNOWN, and nothing was written.`,
+			);
+		}
+
+		const relative = surface.defaultPath;
+		const absolute = path.resolve(input.repoRoot, relative);
+		const demanded = cpPaths(CONTROL_PLANE_RE);
+		const written = yield* Effect.result(
+			writeFile(absolute, renderCodeowners(demanded, login.value)),
+		);
+		if (Result.isFailure(written)) {
+			return refuse(
+				WRITE_UNKNOWN,
+				`${VERB}: writing ${relative} failed: ${written.failure.reason} — whether it landed is UNKNOWN. Re-read before retrying.`,
+			);
+		}
+		const back = yield* Effect.result(readFile(absolute));
+		if (Result.isFailure(back)) {
+			return refuse(
+				WRITE_UNKNOWN,
+				`${VERB}: wrote ${relative} and it could not be read back: ${back.failure.reason} — the outcome is UNKNOWN.`,
+			);
+		}
+		const uncovered = findUncovered(demanded, parseCodeownersPatterns(back.success));
+		if (uncovered.length > 0) {
+			return refuse(
+				READBACK_MISMATCH,
+				`${VERB}: wrote ${relative} and the read-back differs — no row covers ${uncovered.map((p) => p.path).join(", ")}.`,
+			);
+		}
+		return created(
+			surface.id,
+			relative,
+			input.json,
+			`${VERB}: created ${relative} for ${surface.id}, read-back conformed — ${plural(demanded.length, "row")} owned by @${login.value}.`,
+			{rows: demanded.length},
+		);
+	});
+
+/**
+ * **A repo with any workflow of its own never gets a second one.** The collision guard is the
+ * directory GitHub runs workflows from, not the target path: a workflow file under any name there is
+ * `exists`, named in the row, and is never read, merged or judged. A directory that is absent, or
+ * holds no workflow file, is the gap the starter is written into.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10498
+ */
+const buildWorkflow = (
+	surface: Extract<BuildableSurface, {kind: "workflow"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		const listed = yield* Effect.result(readDir(path.resolve(input.repoRoot, WORKFLOWS_DIR)));
+		if (Result.isFailure(listed) && !listed.failure.notFound) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot list ${WORKFLOWS_DIR}: ${listed.failure.reason} — whether the repo has a workflow is UNKNOWN, and nothing was written.`,
+			);
+		}
+		const standing = Result.isFailure(listed)
+			? undefined
+			: listed.success.filter(isWorkflowFile).sort()[0];
+		if (standing !== undefined) {
+			return already(surface.id, `${WORKFLOWS_DIR}/${standing}`, input.json);
+		}
+		return yield* writeAndReadBack(
+			surface.id,
+			surface.defaultPath,
+			path.resolve(input.repoRoot, surface.defaultPath),
+			surface.content,
+			input,
+			`created ${surface.defaultPath} for ${surface.id}, read-back conformed.`,
+		);
+	});
+
+/**
  * One write, one re-read, one comparison — the protocol every byte-writing arm here runs. The notice
  * prefix (`created …` / `merged …`) is the caller's, because the arms differ in what landed; extra
  * notices ride the same channel, which is how dep-pin hands over the install command.
@@ -1277,5 +1460,7 @@ export const runBootstrap = (
 	if (surface.kind === "dep-pin") return buildDepPin(surface, input);
 	if (surface.kind === "starter") return buildStarter(surface, input);
 	if (surface.kind === "no-preview-rule") return buildNoPreviewRule(surface, input);
+	if (surface.kind === "owners") return buildOwners(surface, input);
+	if (surface.kind === "workflow") return buildWorkflow(surface, input);
 	return surface.kind === "labels" ? buildLabels(surface, input) : buildArtifact(surface, input);
 };

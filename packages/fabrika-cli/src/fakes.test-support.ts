@@ -73,6 +73,11 @@ export interface FakeFsOptions {
 	 * not open it" into "it was deleted", which is the fail-open direction.
 	 */
 	readonly unreadable?: ReadonlyArray<string>;
+	/**
+	 * Directories whose listing fails `PermissionDenied` — there, and unlistable. Apart from an absent
+	 * {@link FakeFsOptions.dirs} entry, which answers `NotFound` and proves the directory is gone.
+	 */
+	readonly unlistable?: ReadonlyArray<string>;
 	/** Paths whose writes fail. */
 	readonly unwritable?: ReadonlyArray<string>;
 	/** Paths whose existence check itself fails — distinct from a path that is absent. */
@@ -180,6 +185,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 	const layer = Layer.merge(
 		FileSystem.layerNoop({
 			readDirectory: (path: string) => {
+				if (options.unlistable?.includes(path) === true) return denied("readDirectory", path);
 				const names = dirs[path];
 				return names === undefined || names === null
 					? notFound("readDirectory", path)

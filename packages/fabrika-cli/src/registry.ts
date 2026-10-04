@@ -1,16 +1,17 @@
 /**
- * The fabrika verb-group registry — the extension seam.
+ * The fabrika registry — the extension seam.
  *
- * One row per verb group exposed as `fabrika <group> <verb> …`. The root command and its
- * `--help` index both read this array, so a group appears under `--help` by being registered and
+ * One row per top-level entry. An entry is a **group**, exposed as `fabrika <group> <verb> …`, or a
+ * **command** that runs by itself, exposed as `fabrika <command> …`. The root command and its
+ * `--help` index both read this array, so an entry appears under `--help` by being registered and
  * nowhere else: the index is **derived from the registry, never hand-maintained**, which is the
  * defect a parallel hand-written list reintroduces the moment it drifts.
  *
  * The `Name`/`Input` slots sit at `any` because the Effect CLI types demand it here: both
- * are contravariant, so a concrete literal name (`"adr"`) is not assignable to `string` and a
- * group's concrete flag shape is not assignable from `object`. Only `any` admits groups with
+ * are contravariant, so a concrete literal name (`"adr"`) is not assignable to `string` and an
+ * entry's concrete flag shape is not assignable from `object`. Only `any` admits entries with
  * different names and inputs into one array. The requirement row is bounded by the Node platform
- * services the bin provides; a group needing more bakes its own layer in with `Command.provide`
+ * services the bin provides; an entry needing more bakes its own layer in with `Command.provide`
  * before registering.
  */
 import type {NodeServices} from "@effect/platform-node";
@@ -39,6 +40,7 @@ import {recipeCommand} from "./recipe/command.ts";
 import {reportCommand} from "./report/command.ts";
 import {reviewCommand} from "./review/command.ts";
 import {reviewUiCommand} from "./review-ui/command.ts";
+import {setupCommand} from "./setup/command.ts";
 import {shipCommand} from "./ship/command.ts";
 import {spendCommand} from "./spend/command.ts";
 import {spikeCommand} from "./spike/command.ts";
@@ -48,7 +50,10 @@ import {triageCommand} from "./triage/command.ts";
 import {uiCommand} from "./ui/command.ts";
 import {wireCommand} from "./wire/command.ts";
 
-/** A registered verb group: a top-level `Command` whose name is the `fabrika <name>` selector. */
+/**
+ * A registered entry: a top-level `Command` whose name is the `fabrika <name>` selector. It is a
+ * verb group, or a command that runs by itself.
+ */
 export type VerbGroup = Command.Command<
 	any,
 	any,
@@ -57,7 +62,7 @@ export type VerbGroup = Command.Command<
 	NodeServices.NodeServices | HttpClient.HttpClient
 >;
 
-/** The registered groups, in the order they list under `--help`. */
+/** The registered entries, in the order they list under `--help`. */
 export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	adrCommand,
 	buildCommand,
@@ -82,6 +87,7 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	reportCommand,
 	reviewCommand,
 	reviewUiCommand,
+	setupCommand,
 	shipCommand,
 	spendCommand,
 	spikeCommand,

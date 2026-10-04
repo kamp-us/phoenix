@@ -16,7 +16,7 @@ You need:
 - fabrika's command-line tool at version 0.10.0 or later. `fabrika --version` prints yours.
 - A web browser.
 
-This lesson writes one file that step 9 of getting started also writes: the design rules. If you
+This lesson writes one file that step 6 of getting started also writes: the design rules. If you
 did that step and the file is already on GitHub, read step 2 and then begin at step 4.
 
 The lesson runs with screen review off, which is where a new repo starts. If you turned it on in
@@ -243,7 +243,10 @@ status bootstrap: created .fabrika.jsonc for hand-check-rule with `reviewUi.mode
 bootstrap	created	hand-check-rule	.fabrika.jsonc	ok
 ```
 
-That wrote the setting into a new file, `.fabrika.jsonc`. Put it on GitHub:
+`fabrika setup --hand-check --screens index.html` runs this same step too. It first walks the six
+steps you ran with `fabrika setup` in getting started, and each of those reads `exists`.
+
+Either way, the setting lands in a new file, `.fabrika.jsonc`. Put it on GitHub:
 
 ```bash
 git add .fabrika.jsonc

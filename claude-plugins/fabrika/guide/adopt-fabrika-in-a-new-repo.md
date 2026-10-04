@@ -47,14 +47,14 @@ setup is finished**, and nothing in that verb's output says so.
 
 ## 3. Create the surfaces the CLI can create
 
-Eleven surface ids are buildable today. Read them off the verb rather than off any prose:
+Thirteen surface ids are buildable today. Read them off the verb rather than off any prose:
 
 ```bash
 fabrika status bootstrap --help
 ```
 
 ```
-surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule
+surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, owners-file, ci-file
 ```
 
 One id per invocation. A surface whose content is already in place is `exists` at exit 0, and
@@ -88,9 +88,23 @@ it was. It is `exists` once the file answers how screens are reviewed, it refuse
 that names no screen file, and a file that
 does not parse is refused unwritten. With no file, it creates one holding those keys alone.
 [If your app has no preview deploys](#if-your-app-has-no-preview-deploys) says when to run it.
-`label-taxonomy`,
-`issue-shape-markers` and `readout-artifact` write to GitHub and need a resolvable repo —
+`owners-file` writes `.github/CODEOWNERS` when the repo has no owners
+file: one row per path `fabrika guard codeowners-cp check` demands, each owned by the login the CLI
+is signed in as. An owners file already there is `exists` and is left as it is. `ci-file` writes
+`.github/workflows/ci.yml` when the repo has no workflow file: one job that runs on every pull
+request and checks that `README.md` is not empty. Any workflow file already in `.github/workflows/`
+is `exists`, and nothing is written. `label-taxonomy`, `issue-shape-markers` and
+`readout-artifact` write to GitHub and need a resolvable repo —
 `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote.
+
+**`fabrika setup` runs six of these in one go:** `settings-patch`, `label-taxonomy`,
+`issue-shape-markers`, `gitignore-row`, `owners-file` and `ci-file`, in that order. It prints each
+step's row, then the lines to commit and push the files it wrote. `--hand-check` with one
+`--screens <path>` per screen path adds `hand-check-rule` after the six. A step already in place
+reads `exists`, so it is safe on a repo that has some of them. It opens no milestone and writes no
+roadmap: steps 6 and 7 stay by hand. To run, or skip, a single one of the six, run it alone:
+`settings-patch`, `owners-file` and `ci-file` are ids of this step's `status bootstrap`, and
+`label-taxonomy`, `issue-shape-markers` and `gitignore-row` are the commands in steps 4 and 5 below.
 
 ## 4. Create the labels
 
