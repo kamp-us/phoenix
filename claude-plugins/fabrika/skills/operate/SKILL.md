@@ -92,14 +92,21 @@ else:
   `verdict-owed` gate is spawned with no brief, so a run whose first spawn is that gate names the
   pull request's full URL and a review's time.
 - **A stage line**, each time a spawned stage returns: which stage finished, how it ended, and what
-  happens next. On an epic lane it says which child.
+  happens next. On an epic lane it says which child. A spawn that follows an act of your own gets
+  one too, below.
 
 **A stage line reports the ledger, so it waits for the record.** How the stage ended is the event
 recorded for that return, never the token the spawn printed. Where step 3's fresh `lane status`
 shows a moved fold, write from it. Where it does not — a record that never landed, a dead spawn —
 record what step 3 has you record first, and write from that event. A report refused at `72`
 records nothing, so its line says the stage reported late and the run goes on from where it already
-stood. What happens next is the route step 2 takes on that same fold, named one of three ways:
+stood. Step 4's `verdict-owed` gate is the one return with no event to wait for, because that gate
+records nothing on the ledger. Its line is written from the `build verdicts --pr` read step 4 takes
+on that return: the check posted its result where every owed gate has a row at the pull request's
+head, and it did not where one has none. What happens next is your own act in the first case,
+clearing the hold, and nothing in the second.
+
+What happens next is otherwise the route step 2 takes on that same fold, named one of three ways:
 
 - **a spawned stage**, with its time from the same budget;
 - **an act of your own** — landing a child on the epic's branch, re-reading the merge queue, a
@@ -107,11 +114,23 @@ stood. What happens next is the route step 2 takes on that same fold, named one 
 - **nothing** — the run is ending, or it stops for a person, and the line says which and gives the
   issue's full URL.
 
-**It is the one line a return owes the person.** A dispatch has no line of its own: the opening
-line names everything dispatched with the run's first spawn, and a stage line everything dispatched
-after its return. Print the line after `lane dispatched` and before the spawn (step 2); when the
-return leads to no spawn, print the stage line before your own next act. A `lane dispatched`
-refusal code rides that same line, with what it means beside it.
+**A return owes the person one line, and no stage starts unannounced.** A dispatch adds no second
+line to a return: the opening line names everything dispatched with the run's first spawn, and a
+return's stage line everything dispatched straight after it. Print that line after `lane dispatched`
+and before the spawn (step 2); when the return leads to no spawn, print it before your own next act.
+
+That act can itself lead to a spawn, with no stage returned since the last line: a child's build
+after you landed the one before it, a build after the merge queue sent the pull request back, a
+review after the pull request changed while it waited for an approval, a ship after you cleared a
+hold. That spawn gets a stage line of its own, and the thing that finished is your act. How it ended
+is the event the act recorded, or the answer it read where it recorded none. What happens next is
+the spawned stage, with its time. So step 2's "the stage line otherwise" always names the last thing
+that finished since the line before it: the returned stage, or your own act where the return's line
+already went out. An act of yours that leads to no spawn prints no line under this passage; how a
+run stops or ends is step 4's to say.
+
+A `lane dispatched` refusal code rides the line printed before the spawn it was recorded for, with
+what it means beside it.
 
 Both lines are written in **everyday words**: "writing the change" for a build, "checking it" for a
 review, "merging it" for a ship, "it needs a person" for a park. A pipeline word — lane, fold, park,
@@ -121,7 +140,8 @@ They read like this, with the real URL where the placeholder stands:
 ```text
 Starting on issue 12: writing the change now, which can take up to about 40 minutes. Notes appear at <the issue's full URL> as each step finishes.
 Writing the change finished and opened a pull request. Checking it starts now, up to about 15 minutes.
-Merging it finished: the pull request is in the merge queue. The run looks at the queue next, which has no set time.
+The merge step finished: the pull request is waiting in the merge queue and is not merged yet. The run looks at the queue next, which has no set time.
+The merge queue sent the pull request back without merging it. Fixing it starts now, up to about 40 minutes.
 Checking it stopped before it reported a result. The run stops here and needs a person; the reason is at <the issue's full URL>.
 ```
 
@@ -563,7 +583,9 @@ its claim wins. It records no event, so the fold does not move. A refusal here d
 spawn: `40` is a held ledger lock, so run it again, and name any other code in the line below.
 
 **Then print this pass's line to the person, before the spawn** ("The chat is all the person sees",
-above): the opening line where this run has spawned nothing yet, the stage line otherwise.
+above): the opening line where this run has spawned nothing yet, the stage line otherwise. That
+stage line is for the stage that just returned, or for your own act where the return's line already
+went out before it.
 
 On Claude, the spawn flag is still yours: **`isolation: worktree`, no exceptions** — a non-isolated subagent
 shares the primary checkout and can mutate its git state, and no bytes in a prompt can enforce that
@@ -1853,7 +1875,8 @@ serves the generated machine above. Run the owing gate first, then clear, in thi
 3. When the spawn returns, run `node <fabrika> build verdicts --pr <pr>`. Go on only when each owed
    gate has a row with `"current": true`. `PASS` or `FAIL` makes no difference here: the shipper
    routes a `FAIL` to repair itself. No current row means the verdict is still owed, so do not
-   clear. The gate's own terminal names why; park on that.
+   clear. The gate's own terminal names why; park on that. This read is also what the return's
+   stage line reports ("The chat is all the person sees", above), since the gate recorded no event.
 4. Clear it: `recipe unpark <lane-key> --task <task>`. `verdict-owed` routes to the driver and has
    no recipe row, so where this repo lets a driver clear, it answers `23`. Re-run it with
    `--rationale` naming the verdict the gate posted at the head. Any other answer is read as below.
