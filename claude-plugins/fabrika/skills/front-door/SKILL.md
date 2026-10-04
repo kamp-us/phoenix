@@ -174,9 +174,11 @@ Then **converse** — you are human-typed, so a human is present. Take one gap a
   turns screen review on. Then ask whether they want it on now. On a **no**, or no answer, write
   nothing: off is a fine place to start, and the step is there later. On a **yes**, ask where the
   screens live, a folder or a file, and run `fabrika setup --hand-check --screens <path>` (below),
-  with one `--screens` per path if there are several. The six setup steps read `exists` and the
-  run adds `hand-check-rule`, so its closing's add line names `.fabrika.jsonc`; relay that closing
-  as you relayed the first. Then tell the owner what they will be asked
+  with one `--screens` per path if there are several. That run is the six setup steps plus
+  `hand-check-rule`. Any of the six already in place reads `exists`, and any still missing is
+  written now, which can happen when `SETUP-FIRST` did not run: the owners file, the CI file, the
+  ignore row or the marker labels. Relay the closing's rows and lines exactly as this run printed
+  them; its add line names `.fabrika.jsonc`. Then tell the owner what they will be asked
   from now on: when a pull request changes a file under that path, the run stops, and they run the
   app, look at the screen, and post a screenshot on the pull request. A repo whose `uiSurfaces`
   already carries a row needs no `--screens`. At `hand-check` or `preview` the repo has already

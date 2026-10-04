@@ -102,8 +102,9 @@ is `exists`, and nothing is written. `label-taxonomy`, `issue-shape-markers` and
 step's row, then the lines to commit and push the files it wrote. `--hand-check` with one
 `--screens <path>` per screen path adds `hand-check-rule` after the six. A step already in place
 reads `exists`, so it is safe on a repo that has some of them. It opens no milestone and writes no
-roadmap: steps 6 and 7 stay by hand. Steps 4 and 5 below are the same work one step at a time, for
-when you want to run, or skip, a single one.
+roadmap: steps 6 and 7 stay by hand. To run, or skip, a single one of the six, run it alone:
+`settings-patch`, `owners-file` and `ci-file` are ids of this step's `status bootstrap`, and
+`label-taxonomy`, `issue-shape-markers` and `gitignore-row` are the commands in steps 4 and 5 below.
 
 ## 4. Create the labels
 
