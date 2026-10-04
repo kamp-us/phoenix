@@ -447,6 +447,7 @@ describe("emitMachine", () => {
 				"human:cp-approval": {
 					on: {
 						"EPIC_4300.UNBLOCKED": "hist",
+						"EPIC_4300.WIP": "review",
 						"EPIC_4300.FAIL": [
 							{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 							{target: "human:budget-spent"},

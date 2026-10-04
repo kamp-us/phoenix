@@ -481,6 +481,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | `human:budget-spent` | park — step 4. The task spent its whole repair budget on content FAILs. It is an error final carrying a door, so it trips the phase where it sits; its cause is `repair-budget-spent`, which routes to **you** unless the repo's `parkCause.repairBudgetSpent` says `founder`, and its door needs a cleared round behind it — `lane clear`, then the `UNBLOCKED` |
 | `frozen` | park — step 4, and **which** park depends on when the lane was emitted — read the lane's own `workflow.json` to tell: a lane carrying `human:budget-spent` is post-rename, and on it `frozen` is only where an emitted epic child boots, on a board close that was never a landing, so its door leads back to itself and that child is re-emitted rather than resumed. On a lane emitted before the rename — most of the ones on disk — `frozen` is the spent-budget fallthrough instead, and it takes the `human:budget-spent` route above: a granted round, then the `UNBLOCKED`. It is an error final either way, so it trips the phase where it sits and the fold says so |
 | `human:epic-review` | park — step 4. Only a lane emitted before the rename reaches it: it is the epic tail's spent review budget, the same shape as `human:budget-spent` above, so it takes the same route — its door needs a cleared round behind it, `lane clear`, then the `UNBLOCKED` |
+| `human:cp-approval` | park — step 4, with one event of yours first: where the PR's head moved under the park, record the `WIP` that re-enters `review` (step 4, "A `human:cp-approval` park whose head moved") |
 | `human:*` | park — step 4 |
 | `blocked` | park — step 4 |
 | any other name | end `STOPPED` naming the state — never guess a shell for a state you do not recognise, and never a park: `LANE-PARKED` promises a fold in `blocked`/`human:*`/`frozen`, which an unrecognised state cannot honour (Terminal vocabulary, below) |
@@ -1760,12 +1761,36 @@ waiting on its own ruling uses neither: that wait has no token yet, so do not bo
 two. You are type-blind, so that the lane is a decision lane is a fact your caller's brief relays,
 never one you read off a label.
 
-**A `verdict-owed` park needs a verdict before it needs a clear.** A namespace the ship gate
-requires has no binding verdict at the PR's head, usually because the head moved after review. The
-fold reads `human:cp-approval`, and no cell out of it reaches `review`: `UNBLOCKED` returns to
-history, which is `ship`, and `lane brief` briefs a reviewer only from the `review` state. So a
-clear taken first hands a shipper the same missing verdict, and it parks the lane again. Run the
-owing gate first, then clear, in this order:
+**A `human:cp-approval` park whose head moved re-enters `review`, and the event is yours to
+record.** A head refreshed while the lane waits, by a merge of its base or a rebase, binds none of
+the verdicts the park was reached on. Read them:
+
+```bash
+node <fabrika> build verdicts --pr <pr>
+```
+
+When a gate row reads `"current": false` at the live head, record the round the head owes:
+
+```bash
+node <fabrika> lane transition <lane> WIP --task <task>
+```
+
+The fold then reads `review`, so the next pass dispatches the reviewer through `lane brief` like any
+other review, and its `PASS` or `FAIL` lands on the ledger. A `PASS` walks `review`, `ship`, and the
+shipper parks the lane again on whatever the head still owes. The `WIP` approves nothing and spends
+no budget. Every row `"current": true` is no refresh: leave the park as it stands. Whatever the
+park's cause, this read comes before `recipe unpark` and before a park comment, because an approval
+solicited on an unreviewed head binds nothing.
+
+Exit `12` on that `WIP` means the lane's own `workflow.json` predates the cell. Run
+`node <fabrika> lane migrate <lane>` and record it again. When `lane migrate` answers `generated`,
+the lane runs an emitted machine that is never migrated: take the hand route below.
+
+**A `verdict-owed` park with no stale row needs a verdict before it needs a clear.** A namespace the
+ship gate requires has no verdict at the PR's head at all, so no row reads `"current": false` and
+the route above does not open. `UNBLOCKED` returns to history, which is `ship`, so a clear taken
+first hands a shipper the same missing verdict, and it parks the lane again. The same hand route
+serves the generated machine above. Run the owing gate first, then clear, in this order:
 
 1. Read the owed namespace off the parking shipper's report, which names each `blocked` line.
 2. Spawn the gate that owns it, `isolation: worktree`, with no lane. The whole prompt is the skill's
