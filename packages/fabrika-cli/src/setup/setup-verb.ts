@@ -18,6 +18,13 @@ export const MILESTONE_STEP = "first-milestone";
 /** The step that writes the roadmap, handed {@link starterRoadmap} over {@link MILESTONE_STEP}'s milestone. */
 export const ROADMAP_STEP = "roadmap-focus";
 
+/**
+ * The step that writes the owners file, each row owned by the signed-in login.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10497
+ */
+export const OWNERS_STEP = "owners-file";
+
 /** The steps every run walks, in order. */
 export const SETUP_STEPS = [
 	"settings-patch",
@@ -26,6 +33,7 @@ export const SETUP_STEPS = [
 	"gitignore-row",
 	MILESTONE_STEP,
 	ROADMAP_STEP,
+	OWNERS_STEP,
 ] as const;
 
 /** The step `--hand-check` adds after the others. Without the flag it is never run. */

@@ -43,14 +43,14 @@ setup is finished**, and nothing in that verb's output says so.
 
 ## 3. Create the surfaces the CLI can create
 
-Twelve surface ids are buildable today. Read them off the verb rather than off any prose:
+Thirteen surface ids are buildable today. Read them off the verb rather than off any prose:
 
 ```bash
 fabrika status bootstrap --help
 ```
 
 ```
-surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone
+surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file
 ```
 
 One id per invocation. A surface whose content is already in place is `exists` at exit 0, and
@@ -83,7 +83,9 @@ it was. It is `exists` once the file declares any `reviewUi.whenNoPreview` rule,
 does not parse is refused unwritten. With no file, it creates one holding the rule alone.
 [If your app has no preview deploys](#if-your-app-has-no-preview-deploys) says when to run it.
 `first-milestone` opens a milestone titled `First arc` when the repo has no open milestone, and is
-`exists` over any open one. `label-taxonomy`, `issue-shape-markers`, `readout-artifact` and
+`exists` over any open one. `owners-file` writes `.github/CODEOWNERS` when the repo has no owners
+file: one row per path `fabrika guard codeowners-cp check` demands, each owned by the login the CLI
+is signed in as. An owners file already there is `exists` and is left as it is. `label-taxonomy`, `issue-shape-markers`, `readout-artifact` and
 `first-milestone` write to GitHub and need a resolvable repo —
 `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote.
 

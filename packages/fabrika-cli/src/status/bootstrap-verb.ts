@@ -31,6 +31,14 @@ import {
 import {loadConfig} from "../config/load.ts";
 import {type Read, readRoadmapFile} from "../config/paths.ts";
 import {resolveBoard} from "../config/resolve-board.ts";
+import {
+	cpPaths,
+	findUncovered,
+	parseCodeownersPatterns,
+	renderCodeowners,
+} from "../guard/codeowners-cp.ts";
+import {CODEOWNERS} from "../guard/codeowners-cp-verb.ts";
+import {CONTROL_PLANE_RE} from "../guard/control-plane-re.ts";
 import {appendText, exists, readFile, writeFile} from "../io/fs.ts";
 import type {Attempt, Shell} from "../io/git.ts";
 import {
@@ -46,6 +54,7 @@ import {
 import {isRecord, parseJsonOrReason} from "../io/json.ts";
 import {FRESH_JSON_LAYOUT, readJsonLayout, renderJson} from "../io/json-layout.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
+import {viewerLogin} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {CLASS_LABELS, KILL_LABEL} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -285,6 +294,12 @@ export type BuildableSurface =
 	  }
 	| {
 			readonly id: string;
+			readonly kind: "owners";
+			/** The one path the owners-file guard reads, so `--path` does not move it. */
+			readonly defaultPath: string;
+	  }
+	| {
+			readonly id: string;
 			readonly kind: "labels";
 			/**
 			 * Derived from the resolved board rather than fixed, so a repo that declared its own
@@ -439,7 +454,18 @@ The per-stage shells are surgical — resume a half-dead lane, re-run one gate, 
 never the normal entry point: \`build\` (**builder**), \`review\` (**reviewer**), \`ship\`
 (**shipper**), and \`heal-ci\` for a PR that is green but going nowhere.`;
 
-/** Twelve ids. A thirteenth is a change to this table, not a new rule. */
+/**
+ * Where GitHub looks for an owners file, in the order it looks. The first one present is the one in
+ * force, so writing {@link CODEOWNERS} into a repo that keeps its file at a later path would replace
+ * that file's rows. GitHub's "About code owners" names these three directories and this order.
+ */
+export const OWNERS_FILE_LOCATIONS: ReadonlyArray<string> = [
+	CODEOWNERS,
+	"CODEOWNERS",
+	"docs/CODEOWNERS",
+];
+
+/** Thirteen ids. A fourteenth is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
@@ -477,6 +503,7 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "fabrika-config", kind: "starter", defaultPath: CONFIG_PATH, content: STARTER_CONFIG},
 	{id: "hand-check-rule", kind: "no-preview-rule", defaultPath: CONFIG_PATH, rule: HAND_CHECK_RULE},
 	{id: "first-milestone", kind: "milestone", title: FIRST_MILESTONE_TITLE},
+	{id: "owners-file", kind: "owners", defaultPath: CODEOWNERS},
 ];
 
 const findSurface = (id: string): BuildableSurface | undefined =>
@@ -1001,6 +1028,78 @@ const buildStarter = (
 	});
 
 /**
+ * **The owners file is written from the guard's own path list and proven by the guard's own check.**
+ * The rows are `cpPaths(CONTROL_PLANE_RE)`, the list `guard codeowners-cp check` reads, so this arm
+ * holds no path and follows that boundary when it moves. Each row is owned by the login the token
+ * signs in as: a new repo has no team to name, and its owner is the one account known to exist.
+ *
+ * An owners file at any path GitHub reads is `exists`, and is never read, merged or judged. The
+ * login is read only once every such path is proven absent, so a repo that has the file answers
+ * with no credential at all.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10497
+ */
+const buildOwners = (
+	surface: Extract<BuildableSurface, {kind: "owners"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		for (const location of OWNERS_FILE_LOCATIONS) {
+			const probe = yield* Effect.result(exists(path.resolve(input.repoRoot, location)));
+			if (Result.isFailure(probe)) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot probe ${location}: ${probe.failure.reason} — nothing was written.`,
+				);
+			}
+			if (probe.success) return already(surface.id, location, input.json);
+		}
+
+		const login = yield* viewerLogin;
+		if (login._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read the signed-in login: ${login.reason} — who would own the rows is UNKNOWN, and nothing was written.`,
+			);
+		}
+
+		const relative = surface.defaultPath;
+		const absolute = path.resolve(input.repoRoot, relative);
+		const demanded = cpPaths(CONTROL_PLANE_RE);
+		const written = yield* Effect.result(
+			writeFile(absolute, renderCodeowners(demanded, login.value)),
+		);
+		if (Result.isFailure(written)) {
+			return refuse(
+				WRITE_UNKNOWN,
+				`${VERB}: writing ${relative} failed: ${written.failure.reason} — whether it landed is UNKNOWN. Re-read before retrying.`,
+			);
+		}
+		const back = yield* Effect.result(readFile(absolute));
+		if (Result.isFailure(back)) {
+			return refuse(
+				WRITE_UNKNOWN,
+				`${VERB}: wrote ${relative} and it could not be read back: ${back.failure.reason} — the outcome is UNKNOWN.`,
+			);
+		}
+		const uncovered = findUncovered(demanded, parseCodeownersPatterns(back.success));
+		if (uncovered.length > 0) {
+			return refuse(
+				READBACK_MISMATCH,
+				`${VERB}: wrote ${relative} and the read-back differs — no row covers ${uncovered.map((p) => p.path).join(", ")}.`,
+			);
+		}
+		return created(
+			surface.id,
+			relative,
+			input.json,
+			`${VERB}: created ${relative} for ${surface.id}, read-back conformed — ${plural(demanded.length, "row")} owned by @${login.value}.`,
+			{rows: demanded.length},
+		);
+	});
+
+/**
  * One write, one re-read, one comparison — the protocol every byte-writing arm here runs. The notice
  * prefix (`created …` / `merged …`) is the caller's, because the arms differ in what landed; extra
  * notices ride the same channel, which is how dep-pin hands over the install command.
@@ -1327,5 +1426,6 @@ export const runBootstrap = (
 	if (surface.kind === "starter") return buildStarter(surface, input);
 	if (surface.kind === "no-preview-rule") return buildNoPreviewRule(surface, input);
 	if (surface.kind === "milestone") return buildMilestone(surface, input);
+	if (surface.kind === "owners") return buildOwners(surface, input);
 	return surface.kind === "labels" ? buildLabels(surface, input) : buildArtifact(surface, input);
 };
