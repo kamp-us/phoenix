@@ -1112,8 +1112,8 @@ surface merges into a file that is already there instead. The content is the
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
-here, not inferred from any declaration. Fourteen ids, and
-a fifteenth is a change to this table, not a new rule.
+here, not inferred from any declaration. Thirteen ids, and
+a fourteenth is a change to this table, not a new rule.
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
@@ -1128,7 +1128,6 @@ a fifteenth is a change to this table, not a new rule.
 | `dep-pin` | `--path`, default `package.json` at the repo root | **none** — the `devDependencies.@kampus/fabrika-cli` row at the version npm's registry currently [publishes](#json-key-merge), merged into the object a present manifest parses to, written whole into a manifest that is absent | a present manifest re-reads to the merged object — every undeclared key intact, the row at exactly the resolved version — through `normalizeForReadback`; an unreachable registry refuses unwritten |
 | `fabrika-config` | `--path`, default `.fabrika.jsonc` at the repo root | **none** — the starting config file [fixed below](#fabrika-config), written whole into a file that is absent; a file already there is `exists` and is never read | the file's bytes match the fixed text through `normalizeForReadback` |
 | `hand-check-rule` | `--path`, default `.fabrika.jsonc` at the repo root | **none** — `reviewUi.mode` at `hand-check` and the `--screens` paths under `reviewUi.screens`, [fixed below](#hand-check-rule), spliced into a present file's text, written whole into a file that is absent; refused on `13` in a repo that names no screen file | the re-read matches the spliced text through `normalizeForReadback` — the keys in, every other key and every comment where it was |
-| `first-milestone` | one open milestone in the repo | **none** — title exactly `First arc`, opened only when the repo has [no open milestone](#first-milestone) | the milestone's own resource resolves open under that exact title |
 | `owners-file` | `.github/CODEOWNERS` at the repo root; `--path` does not move it | **none** — one row per path the owners-file guard demands, each owned by the signed-in login, written only when the repo has [no owners file](#owners-file) | the re-read file covers every path `guard codeowners-cp check` demands |
 | `ci-file` | `.github/workflows/ci.yml` at the repo root; `--path` does not move it | **none** — the starter CI workflow [fixed below](#ci-file), written only when the repo has no workflow file | the file's bytes match the fixed text through `normalizeForReadback` |
 
@@ -1424,20 +1423,6 @@ the file is created holding the `reviewUi` key alone.
 merge base, and `review-ui route` reads it off the checkout it runs in, so it counts once it is
 committed to the default branch.
 
-<a id="first-milestone"></a>**`first-milestone` gives triage one home, in a repo that has none.**
-`triage homes` refuses on `7` over a repo with no open milestone, so a new repo needs one before its
-first issue can be homed. The surface is that one home, not the title:
-
-- **Any open milestone is `exists`, whatever its title.** A repo that opened its own is done, and no
-  second one is opened beside it. With several open, `<target>` names the lowest number, so a re-run
-  names the same one.
-- **With none open, it opens one titled `First arc`.** A create GitHub refuses is `8`, with GitHub's
-  reason on the line.
-- **The read-back is the created milestone's own resource**, by the number the create answered with.
-  It never re-reads the list, for the reason `readout-artifact` reads its issue by number.
-- **`<target>` is `milestone #<n>`.** A milestone's number is its own sequence, not an issue number,
-  so the cell never takes the `<owner>/<name>#<issue>` form.
-
 <a id="owners-file"></a>**`owners-file` writes the owners file a new repo lacks, from the guard's
 own path list.** `guard codeowners-cp check` refuses a repo whose `.github/CODEOWNERS` leaves one of
 its paths unowned, so a new repo needs the file before its first build.
@@ -1503,7 +1488,7 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 | *(positional)* | string | yes | — | one `<surface-id>` from the registry above |
 | `--path` | string | no | the registry default | override the target path for a file, line, json, dep-pin, fabrika-config or hand-check-rule surface; must resolve inside the repository root |
 | `--screens` | string, repeatable | no | none | `hand-check-rule` only: where the app's screens live, a folder ending in `/` or one file; needed in a repo with no `uiSurfaces` row, and no start command is asked for |
-| `--repo` | string | no | resolved | the repository the four GitHub surfaces (`label-taxonomy`, `issue-shape-markers`, `readout-artifact`, `first-milestone`) write to, and the one whose open milestones the `roadmap-focus` [pin check](#roadmap-pin-check) reads |
+| `--repo` | string | no | resolved | the repository the three GitHub surfaces (`label-taxonomy`, `issue-shape-markers`, `readout-artifact`) write to, and the one whose open milestones the `roadmap-focus` [pin check](#roadmap-pin-check) reads |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes for `design-manifest` and `roadmap-focus` | — | the content. `NoStdin` and `Text("")` are exit `3`; a **failed** stdin read is exit `1` — the content is UNKNOWN, never empty, the split `packages/fabrika-cli/src/report/file-verb.ts` already ships |
 
@@ -1513,8 +1498,7 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 bootstrap	<created|exists>	<surface-id>	<target>	<readback>
 ```
 
-`<target>` is the repo-relative path, `<owner>/<name>#<issue>`, the comma-separated label list, or
-`milestone #<n>`.
+`<target>` is the repo-relative path, `<owner>/<name>#<issue>`, or the comma-separated label list.
 `<readback>` is `ok` for `created` and `-` for `exists`.
 
 **`exists` is an exit-`0` answer, not a refusal.** A target that is already there is a proven fact the
@@ -1576,7 +1560,7 @@ the shape this seat exists to prevent. The skill loops.
 | `status bootstrap: appending <marker> to <target> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
-| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file, ci-file.
+| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, owners-file, ci-file.
 | ``status bootstrap: cannot read <target>: <reason> — what `reviewUi` already says is UNKNOWN, and nothing was written.`` | 11 | refusal |
 | `status bootstrap: <target> does not parse as a JSON object with comments — nothing was written.` | 11 | refusal |
 | `status bootstrap: <target> is refused — <the reviewUi or uiSurfaces key's reason>. Nothing was written; fix that key first.` | 11 | refusal |
@@ -1590,12 +1574,6 @@ the shape this seat exists to prevent. The skill loops.
 | ``status bootstrap: <target> already declares `reviewUi.mode` hand-check — nothing written.`` | 0 | notice |
 | ``status bootstrap: <target> already declares `reviewUi.mode` preview, so screen review is on and this step leaves it — nothing written.`` | 0 | notice |
 | ``status bootstrap: <target> already carries a `reviewUi.whenNoPreview` rule — nothing written.`` | 0 | notice |
-| `status bootstrap: cannot probe <owner/name>'s open milestones: <reason> — nothing was written.` | 11 | refusal |
-| `status bootstrap: opening the milestone "First arc" in <owner/name> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
-| `status bootstrap: opened milestone #<n> in <owner/name> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
-| `status bootstrap: opened milestone #<n> in <owner/name> and the read-back differs — it does not resolve open under the title "First arc".` | 9 | refusal |
-| `status bootstrap: opened milestone #<n> in <owner/name> titled "First arc" for first-milestone, read-back conformed.` | 0 | notice |
-| `status bootstrap: <owner/name> already has <n> open milestone(s) — nothing written.` | 0 | notice |
 | `status bootstrap: created <target> for <surface-id>, read-back conformed.` | 0 | notice |
 | `status bootstrap: cannot read the signed-in login: <reason> — who would own the rows is UNKNOWN, and nothing was written.` | 11 | refusal |
 | `status bootstrap: wrote <target> and the read-back differs — no row covers <path>, ….` | 9 | refusal |
@@ -1715,15 +1693,6 @@ refused on `13`. The second went in after the last key and nothing else moved. T
 mode set and wrote nothing.
 
 ```
-$ fabrika status bootstrap first-milestone
-bootstrap	created	first-milestone	milestone #1	ok
-status bootstrap: opened milestone #1 in acme/storefront titled "First arc" for first-milestone, read-back conformed.
-$ fabrika status bootstrap first-milestone
-bootstrap	exists	first-milestone	milestone #1	-
-status bootstrap: acme/storefront already has 1 open milestone — nothing written.
-```
-
-```
 $ fabrika status bootstrap owners-file
 bootstrap	created	owners-file	.github/CODEOWNERS	ok
 status bootstrap: created .github/CODEOWNERS for owners-file, read-back conformed — 9 rows owned by @octocat.
@@ -1751,7 +1720,7 @@ only workflow is `.github/workflows/deploy.yml`, the first run answers `exists` 
 
 ```
 $ fabrika status bootstrap merge-queue
-status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file, ci-file.
+status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, owners-file, ci-file.
 $ echo $?
 12
 ```
@@ -1787,7 +1756,7 @@ $ fabrika status bootstrap label-taxonomy --json
 **Invocation**
 
 ```
-fabrika setup [--hand-check] [--repo <owner/name>]
+fabrika setup [--hand-check [--screens <path>]...] [--repo <owner/name>]
 ```
 
 Runs the setup steps a new repo needs, in one fixed order, and prints what to do next. Each step is
@@ -1803,33 +1772,22 @@ read-back stay the step's.
 | 2 | `label-taxonomy` | always |
 | 3 | `issue-shape-markers` | always |
 | 4 | `gitignore-row` | always |
-| 5 | `first-milestone` | always |
-| 6 | `roadmap-focus` | always, handed the [starter roadmap](#setup-starter-roadmap) |
-| 7 | `owners-file` | always |
-| 8 | `ci-file` | always |
-| 9 | `hand-check-rule` | only under `--hand-check` |
+| 5 | `owners-file` | always |
+| 6 | `ci-file` | always |
+| 7 | `hand-check-rule` | only under `--hand-check`, handed the `--screens` paths |
 
-<a id="setup-starter-roadmap"></a>**The starter roadmap.** `roadmap-focus` is the one step that takes
-content, and the command hands it this, where `<n>` is the number in the `first-milestone` row's
-`milestone #<n>` target, whether that row read `created` or `exists`:
-
-```markdown
-## Arcs
-
-| Arc | Milestone | State |
-|---|---|---|
-| First arc | #<n> | active |
-```
-
-A roadmap file already at the step's target reads `exists` and keeps every byte, as it does under
-`status bootstrap roadmap-focus`.
+<a id="setup-opens-no-milestone"></a>**No step opens a milestone or writes a roadmap.** Giving work
+a home is a by-hand step, so the command reads no milestone, opens none, and leaves a roadmap file
+the repo already has untouched, with no row for either. The closing names that by-hand step
+instead.
 
 **Inputs**
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--hand-check` | boolean | no | `false` | also run `hand-check-rule`; without it that step is not run and `.fabrika.jsonc` is neither created nor changed |
-| `--repo` | string | no | resolved | the repository the two label steps and `first-milestone` write to |
+| `--screens` | string, repeatable | no | none | with `--hand-check` only: the paths handed to `hand-check-rule`, read as its own [`--screens`](#status-bootstrap) is; needed in a repo with no `uiSurfaces` row. Given without `--hand-check`, the run is refused on `10` before any step |
+| `--repo` | string | no | resolved | the repository the two label steps write to |
 
 `owners-file` reads the signed-in login and no repository, and `ci-file` reads neither, so `--repo`
 does not reach them.
@@ -1855,13 +1813,16 @@ what happened, then what to do next. A caller that parses the answer keeps the l
 - **What to do next** gives three lines to paste, each indented two spaces: `git add` naming the
   `<target>` of every step run that writes a file, in step order; then
   `git commit -m "chore: set up fabrika"`; then `git push -u origin HEAD`. So the add line names the
-  roadmap file at the path the repo declares for it, the owners file at the path the
-  `owners-file` row answered with, and the CI file the `ci-file` row answered with:
-  `.github/workflows/ci.yml` when the step wrote it, the repo's own workflow file when it read
-  `exists`. A label step and `first-milestone` write no
-  file and add nothing to the add line. The lines print on a run that changed nothing too, because
-  the command does not read whether an earlier run's files were committed. The examples below show
-  the add line and cut the other two to `…`, which never vary.
+  owners file at the path the `owners-file` row answered with, and the CI file the `ci-file` row
+  answered with: `.github/workflows/ci.yml` when the step wrote it, the repo's own workflow file
+  when it read `exists`. A label step writes no file and adds nothing to the add line, and no
+  roadmap file is ever named. The lines print on a run that changed nothing too, because the
+  command does not read whether an earlier run's files were committed. The examples below show the
+  add line and cut the other two to `…`, which never vary.
+- **Then the home step**, two lines after the paste lines: give work a home by opening one
+  milestone and writing a roadmap that names it, by hand, as the getting-started guide's step 7
+  shows. The closing promises nothing of `triage homes`, which refuses in a repo with no open
+  milestone.
 
 Each step's notices go to stderr as the step printed them.
 
@@ -1876,25 +1837,27 @@ the person's to run.
 | `1` | a word followed `setup`; or a label step could not resolve a target repo |
 | `8` | a step's write failed — whether anything landed is UNKNOWN |
 | `9` | a step's write landed and its read-back differs |
+| `10` | `--screens` was given without `--hand-check`, refused before any step; or `hand-check-rule` refused a `--screens` path |
 | `11` | a step's precondition read failed, the signed-in login `owners-file` needs and the directory listing `ci-file` needs included; that step wrote nothing |
+| `13` | `hand-check-rule` ran in a repo that names no screen file and was given no `--screens`; the six rows before it stand |
 
 **A step that refuses stops the run.** The exit code is that step's code and the last stderr line is
 that step's own refusal. Stdout holds the rows of the steps that finished before it and no closing,
 and no later step runs. Those rows are writes that landed, so they are kept: a second run answers
 `exists` for each and picks up at the step that refused. The triggers behind each code are the
-step's, in [`status bootstrap`'s exit table](#status-bootstrap). `3`, `5`, `6`, `10` and `12` are
-unreachable here: the one step that takes content is handed the starter roadmap, and no step takes
-`--path` or names a surface off the registry.
+step's, in [`status bootstrap`'s exit table](#status-bootstrap). `3`, `5`, `6` and `12` are
+unreachable here: no step takes content or `--path`, and none names a surface off the registry.
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `fabrika: unexpected operand "<word>" for "fabrika setup" — the verb declares no argument to bind it to` | 1 | usage error |
+| `setup: --screens is read only by the hand-check-rule step, which runs under --hand-check. Pass both, or neither. Nothing was written.` | 10 | refusal |
 | the refusing step's own `status bootstrap: …` line, unchanged | that step's | refusal |
 
 **Scope** — the default target of each step in the [list](#setup-steps), under the repository root
-above the cwd, and the labels and open milestones of `--repo`.
+above the cwd, and the labels of `--repo`.
 
 **Examples**
 
@@ -1906,15 +1869,15 @@ bootstrap	created	settings-patch	.claude/settings.json	ok
 bootstrap	created	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage	ok
 bootstrap	created	issue-shape-markers	wayfinding:map,prototyping:spike,grilling:session	ok
 bootstrap	created	gitignore-row	.gitignore	ok
-bootstrap	created	first-milestone	milestone #1	ok
-bootstrap	created	roadmap-focus	ROADMAP.md	ok
 bootstrap	created	owners-file	.github/CODEOWNERS	ok
 bootstrap	created	ci-file	.github/workflows/ci.yml	ok
 
-Setup finished: 8 steps made changes and 0 were already done. Nothing is committed or pushed yet.
+Setup finished: 6 steps made changes and 0 were already done. Nothing is committed or pushed yet.
 What to do next: paste these lines to commit and push the setup files:
-  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS .github/workflows/ci.yml
+  git add .claude/settings.json .gitignore .github/CODEOWNERS .github/workflows/ci.yml
   …
+Then give work a home: open one milestone and write a roadmap that names it, by hand, as step 7
+of the getting-started guide, "Give the board a home to put work in", shows.
 ```
 
 The same repo, run again:
@@ -1925,15 +1888,14 @@ bootstrap	exists	settings-patch	.claude/settings.json	-
 bootstrap	exists	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage	-
 bootstrap	exists	issue-shape-markers	wayfinding:map,prototyping:spike,grilling:session	-
 bootstrap	exists	gitignore-row	.gitignore	-
-bootstrap	exists	first-milestone	milestone #1	-
-bootstrap	exists	roadmap-focus	ROADMAP.md	-
 bootstrap	exists	owners-file	.github/CODEOWNERS	-
 bootstrap	exists	ci-file	.github/workflows/ci.yml	-
 
-Setup finished: all 8 steps were already done, so this run changed nothing.
+Setup finished: all 6 steps were already done, so this run changed nothing.
 What to do next: nothing, unless the setup files are not committed yet. If they are not, paste these lines:
-  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS .github/workflows/ci.yml
+  git add .claude/settings.json .gitignore .github/CODEOWNERS .github/workflows/ci.yml
   …
+Then give work a home: …
 ```
 
 A fresh directory with no target repo to resolve. The first step lands and the second refuses:
@@ -1947,22 +1909,31 @@ $ echo $?
 1
 ```
 
-Under `--hand-check` a ninth row follows the eight above, and the add line names its file:
+Under `--hand-check --screens index.html` a seventh row follows the six above, and the add line
+names its file:
 
 ```
 bootstrap	created	hand-check-rule	.fabrika.jsonc	ok
 
-Setup finished: 9 steps made changes and 0 were already done. Nothing is committed or pushed yet.
+Setup finished: 7 steps made changes and 0 were already done. Nothing is committed or pushed yet.
 What to do next: paste these lines to commit and push the setup files:
-  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS .github/workflows/ci.yml .fabrika.jsonc
+  git add .claude/settings.json .gitignore .github/CODEOWNERS .github/workflows/ci.yml .fabrika.jsonc
   …
+Then give work a home: …
 ```
+
+Under `--hand-check` with no `--screens`, in a repo that names no screen file, the six rows land and
+`hand-check-rule` refuses on `13` with no closing. Running it again with `--screens <path>` answers
+`exists` for the six and writes the seventh.
 
 **Grounding**
 
 - The owner's ruling on first-run setup: one command runs the existing steps; it stops after
   writing files and prints the add, commit and push lines; the hand-check rule is written only
   under `--hand-check`. The command's source carries the ruling's issue in its `@ruling` tag.
+- The owner's later ruling that no command or skill opens a milestone: setup runs no milestone or
+  roadmap step and points at the by-hand step instead. `SETUP_STEPS` carries that ruling's issue in
+  its `@ruling` tag.
 - `setup` is a top-level entry in `packages/fabrika-cli/src/registry.ts` and takes flags only. In
   the pinned `effect` CLI, `Command.withSubcommands` runs the parent's own handler when no
   sub-command is named, so sub-commands can be added under `setup` later while bare
