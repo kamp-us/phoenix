@@ -501,6 +501,12 @@ brevity. Everything else goes: sweep methodology, a "what I deliberately kept" s
 per row defending a choice nobody attacked. Same no-op test as the prose — delete a sentence whose
 absence would change no reviewer behaviour.
 
+**A criterion that asks you to report something earns a third: `## Report`.** An audit's scope, why
+a duplication was kept, the overlap with another ticket — write each under that exact heading, one
+statement per criterion that asks. It is the only body prose besides `## Deviations` the reviewer is
+served ([`review report`](../review/SKILL.md)), and a report-shaped criterion over a body without
+the section is a FAIL.
+
 ```bash
 fabrika build push <<'EOF'
 …body…

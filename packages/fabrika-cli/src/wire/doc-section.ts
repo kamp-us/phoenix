@@ -43,7 +43,7 @@ const names = (headingText: string, wanted: string): boolean => {
 };
 
 /** Every ATX heading outside a fenced code block, with its depth and 1-based line. */
-const scanHeadings = (
+export const scanHeadings = (
 	lines: ReadonlyArray<string>,
 ): ReadonlyArray<FoundHeading & {readonly text: string}> => {
 	const headings: Array<FoundHeading & {readonly text: string}> = [];
