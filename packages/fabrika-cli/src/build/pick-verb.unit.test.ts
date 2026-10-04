@@ -273,9 +273,64 @@ describe("runPick", () => {
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toContain("build pick: cannot read the standing lanes");
-		expect(out.stderr.at(-1)).toContain("which label is a home here is UNKNOWN, never none");
+		expect(out.stderr.at(-1)).toContain(
+			"build pick: cannot read .fabrika.jsonc's board vocabulary",
+		);
+		expect(out.stderr.at(-1)).toContain(
+			"which labels this board runs on is UNKNOWN, never the shipped names",
+		);
 		expect(seams.requests.filter((line) => line.includes("labels=status%3Atriaged"))).toEqual([]);
+	});
+
+	describe("a repo that renamed its triaged status", () => {
+		const RENAMED = fakeFs({
+			files: {
+				"/repo/.fabrika.jsonc": JSON.stringify({
+					boardVocabulary: {statuses: {triaged: "state:ready"}},
+				}),
+			},
+		});
+		const renamedBucket = (priority: string) =>
+			new RegExp(
+				`^GET https://api\\.github\\.com/repos/o/r/issues\\?state=open&labels=state%3Aready%2C${priority}`,
+			);
+		const READY = ["state:ready", "ready-for:agent", "type:bug"];
+
+		/**
+		 * The reported failure, end to end: the work is labelled with the renamed status, and a pool
+		 * queried under the shipped name answered empty on exit 0. Only the renamed query is scripted,
+		 * so a read under `status:triaged` has no answer to come back empty from.
+		 */
+		it("returns the issues carrying the renamed label instead of an empty pool", async () => {
+			const out = await run(
+				[
+					[renamedBucket("p0"), candidatePage({number: 500, labels: [...READY, "p0"]})],
+					[renamedBucket("p1"), EMPTY],
+					[renamedBucket("p2"), EMPTY],
+				],
+				{},
+				RENAMED,
+			);
+			expect(out.code).toBe(0);
+			expect(pool(out).map((row) => row.number)).toEqual([500]);
+		});
+
+		it("keeps out an issue still carrying a second status under the renamed board", async () => {
+			const out = await run(
+				[
+					[
+						renamedBucket("p0"),
+						candidatePage({number: 500, labels: [...READY, "status:needs-info", "p0"]}),
+					],
+					[renamedBucket("p1"), EMPTY],
+					[renamedBucket("p2"), EMPTY],
+				],
+				{},
+				RENAMED,
+			);
+			expect(out.code).toBe(0);
+			expect(pool(out)).toEqual([]);
+		});
 	});
 
 	it("prints an empty pool as a FACT on exit 0, with the scanned counts beside it", async () => {

@@ -51,7 +51,7 @@ Named because a spec that leaves the substrate open makes the implementer guess.
 | `ship disarm` | the four-site merge-intent lifecycle: `kept` / `disarmed`, read-back-verified | the site policy table and the verified write are mechanical |
 | `ship nudge` | the at-most-once dropped-trigger remedy: re-derive the zero-runs state, close→reopen, verify both legs | the precondition re-derivation and the guarded PATCH pair are mechanical; the verb refuses rather than trusting its dispatch |
 | `ship note` | the durable stop-path comment: stdin body, leak-scanned, read back | posting with the sibling groups' write protocol is mechanical; what the note says is the skill's |
-| `ship release` | dark-ship detection and the `status:awaiting-release` label, read-back-verified | the three ground-truth signals and the label write are mechanical; the flip is a human's |
+| `ship release` | dark-ship detection and the board's awaiting-release label, read-back-verified | the three ground-truth signals and the label write are mechanical; the flip is a human's |
 
 ### Considered and deliberately not derived
 
@@ -2266,7 +2266,7 @@ fabrika ship release 4321 [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. One line: `release\t<queued|n/a|no-issue>\t<flag-key|->` —
-`queued` means the linked issue now carries `status:awaiting-release` (read back); `n/a`
+`queued` means the linked issue now carries the board's awaiting-release status (read back); `n/a`
 means not a dark ship, a proven answer, third field `-`; `no-issue` means a dark-ship signal
 FIRED and there is no linked issue to label — the flag key is printed and the skill
 escalates to a human, because a dark ship the release queue cannot see is the exact hazard
@@ -2285,7 +2285,10 @@ PR, and reading it has queued a phantom release. No signal → `n/a`; a signal w
 linked issue → `no-issue` (see Output — a proven answer, never `n/a`).
 The label write is read back; a failed or unconfirmed write is `8`/`9`, never `queued` —
 v1's unverified label POST could report a release queued that no human would ever find.
-The write is taxonomy-guarded first: `status:awaiting-release` absent from the repo's labels
+The label is the board's awaiting-release status: `status:awaiting-release` unless
+`.fabrika.jsonc` renames it under `boardVocabulary.statuses.awaitingRelease`, read before the pull
+request is, so a board vocabulary that does not resolve is `11` on every path.
+The write is taxonomy-guarded first: that label absent from the repo's labels
 refuses on `23` rather than let GitHub's POST mint it, and the taxonomy is read
 only on the path that would post — `n/a` and `no-issue` read none.
 
@@ -2296,9 +2299,9 @@ only on the path that would post — `n/a` and `no-issue` read none.
 | `7` | the PR is proven absent (404), or the enumerated changed-file list is empty — a zero carries no declaration to find, and `n/a` there would be a dark ship nobody queued |
 | `8` | the label write, or its confirming re-read, failed — UNKNOWN; the release queue may be missing a real dark ship, say so loudly |
 | `9` | the label write landed but the read-back does not show it |
-| `11` | the diff, body, flag registry, or linked issue could not be read — dark-ship-ness is UNKNOWN, never `n/a` |
+| `11` | `.fabrika.jsonc`'s board vocabulary, the diff, body, flag registry, or linked issue could not be read — dark-ship-ness is UNKNOWN, never `n/a` |
 | `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a flag declaration could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
-| `23` | `status:awaiting-release` is absent from the repository's taxonomy — refused rather than let the POST mint it; guarded only on the path that would post, so `n/a` and `no-issue` read no taxonomy |
+| `23` | the board's awaiting-release status is absent from the repository's taxonomy — refused rather than let the POST mint it; guarded only on the path that would post, so `n/a` and `no-issue` read no taxonomy |
 
 **Errors**
 
@@ -2307,11 +2310,11 @@ only on the path that would post — `n/a` and `no-issue` read none.
 | `ship release: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship release: cannot read <what>: <reason> — whether this is a dark ship is UNKNOWN, never "n/a".` | 11 | refusal |
 | `ship release: label write failed: <reason> — a real dark ship may be missing from the release queue; escalate.` | 8 | refusal |
-| `ship release: label read-back does not show status:awaiting-release on #<issue> — inspect it.` | 9 | refusal |
+| `ship release: label read-back does not show <name> on #<issue> — inspect it.` | 9 | refusal |
 | `ship release: PR #<n> has zero changed files — whether it carries a flag signal is unanswerable, and "n/a" would be a dark ship nobody queued.` | 7 | refusal |
 | `ship release: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
 | `ship release: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a flag declaration could sit in the part the platform never served.` | 13 | refusal |
-| `ship release: label "status:awaiting-release" is absent from <repo>'s taxonomy — refusing to create it. A real dark ship is not queued; run `fabrika status bootstrap label-taxonomy` and re-run.` | 23 | refusal |
+| `ship release: label "<name>" is absent from <repo>'s taxonomy — refusing to create it. A real dark ship is not queued; run `fabrika status bootstrap label-taxonomy` and re-run.` | 23 | refusal |
 | `ship release: cannot read <repo>'s label taxonomy: <reason> — nothing was written, and a real dark ship is not queued; escalate.` | 11 | refusal |
 
 **Scope** — one PR's changed-file list (paginated to exhaustion), its diff and body, the flag registry

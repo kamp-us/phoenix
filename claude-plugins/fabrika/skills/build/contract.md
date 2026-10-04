@@ -79,7 +79,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | Verb | Purpose | Split test |
 |---|---|---|
 | `build tree` | prove the ground: optionally clean, optionally this lane's | two git-derivable assertions — no judgment; *what to do on a refusal* (stop, report) stays in the skill |
-| `build pick` | the ranked candidate pool: `status:triaged` + `ready-for:agent` + unassigned, paginated | a label/assignee filter over a paged listing, plus the same `blocked_by` gate `build claim` runs — no judgment; the *choice* among candidates stays in the skill |
+| `build pick` | the ranked candidate pool: the board's triaged status + `ready-for:agent` + unassigned, paginated | a label/assignee filter over a paged listing, plus the same `blocked_by` gate `build claim` runs — no judgment; the *choice* among candidates stays in the skill |
 | `build eligible` | one issue's dependency gate: `eligible` / blocked-by-named-edge / UNKNOWN | derivable entirely from the issue's native `blocked_by` edges, those blockers' states, and the commits `epic/<parent>` adds over the trunk in this tree |
 | `build claim` | race the earliest-authorized claim on an issue; win, or name the winner | a deterministic race protocol; *what to do on a loss* stays in the skill |
 | `build confirm` | re-prove this LANE still holds the claim before a mutation | a lookup with a defined answer |
@@ -519,7 +519,9 @@ how many issues it bets on, and how many of those were graph-read and survived �
 
 The filter, fail-closed on every axis:
 
-- `status:triaged` present, `status:` nothing-else;
+- the board's triaged status present and no other status beside it. The name is read off
+  `.fabrika.jsonc`'s `boardVocabulary.statuses.triaged` — `status:triaged` where the repo declares
+  none — and a status is any label that board names as one, or any label under `status:`;
 - **admitted by the shared admission test** imported from
   `packages/fabrika-cli/src/build/scope-admission.ts` — this verb re-derives nothing. On this seam
   the test's **audience axis** is the one that excludes with a reason (`ready-for:agent` present; an
@@ -611,7 +613,7 @@ on top of that, unpaginated. Here either every bucket was read in full or the an
 
 | Code | Trigger |
 |---|---|
-| `11` | any bucket read failed or came back truncated, `.fabrika.jsonc`'s standing-lane declaration could not be read, or the table project could not be read in a repository that declares a `table` block — for any reason but a missing `project` scope — the pool is UNKNOWN, never partial and never ranked as if nothing were bet on |
+| `11` | any bucket read failed or came back truncated, `.fabrika.jsonc`'s board vocabulary — the status names and standing lanes this verb reads off it — did not resolve, or the table project could not be read in a repository that declares a `table` block — for any reason but a missing `project` scope — the pool is UNKNOWN, never partial and never ranked as if nothing were bet on |
 
 A malformed `--limit` is a plain usage error: `1`, per the reserved table. `21`, `30` and `32` are
 **not** reachable here: a refusal on the browse path is an exclusion with a reason, not the verb's
@@ -623,10 +625,10 @@ verdict — the pool still answers on `0`. Those codes are the claim seam's.
 |---|---|---|
 | `build pick: cannot read the <bucket> bucket: <reason> — the pool is UNKNOWN, never partial.` | 11 | refusal |
 | `build pick: cannot read the bets: <reason> — the pool order is UNKNOWN, never ranked as if nothing were bet on.` | 11 | refusal |
-| `build pick: cannot read the standing lanes: <reason> — which label is a home here is UNKNOWN, never none.` | 11 | refusal |
+| `build pick: cannot read .fabrika.jsonc's board vocabulary: <reason> — which labels this board runs on is UNKNOWN, never the shipped names.` | 11 | refusal |
 | `build pick: --limit "<value>" is not a positive integer.` | 1 | usage error |
 
-**Scope** — every open issue in `--repo` carrying `status:triaged`, read via paginated REST; the
+**Scope** — every open issue in `--repo` carrying the board's triaged status, read via paginated REST; the
 table project's items with their Stage, Section and Table day cells, when there is a project; the
 `blocked_by` graph of each admitted candidate in rank order, until `--limit` survive; plus, for each
 candidate the graph reads blocked, that issue's parent and the commits `epic/<parent>` adds over the

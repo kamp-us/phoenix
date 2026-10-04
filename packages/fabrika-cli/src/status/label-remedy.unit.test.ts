@@ -2,9 +2,8 @@ import {describe, expect, it} from "vitest";
 import {BOARD_VOCABULARY} from "../config/keys/board-vocabulary.ts";
 import {INTAKE_LABEL} from "../graduate/emit-verb.ts";
 import {SESSION_LABEL} from "../grill/session.ts";
-import {AWAITING_RELEASE, KILL_LABEL, NEEDS_INFO, PLANNED} from "../labels.ts";
+import {AWAITING_RELEASE, KILL_LABEL, NEEDS_INFO, PLANNED, TRIAGED} from "../labels.ts";
 import {MAP_LABEL} from "../map/frontier.ts";
-import {FLIP_LABELS} from "../plan/digest.ts";
 import {SPIKE_LABEL} from "../spike/bodies.ts";
 import {READY_FOR_AGENT} from "../triage/audience.ts";
 import {DEFAULT_QUEUE_LABEL} from "../triage/queue-verb.ts";
@@ -21,7 +20,8 @@ import {missingLabelRemedy} from "./label-remedy.ts";
 const REFUSED_WHEN_MISSING: ReadonlyArray<readonly [string, string]> = [
 	["ledger child", PLANNED],
 	["ledger adopt", PLANNED],
-	...FLIP_LABELS.map((label) => ["plan flip", label] as const),
+	["plan flip", PLANNED],
+	["plan flip", TRIAGED],
 	["plan flip", READY_FOR_AGENT],
 	["decision rule", READY_FOR_AGENT],
 	["triage kill", KILL_LABEL],

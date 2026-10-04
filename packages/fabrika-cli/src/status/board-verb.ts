@@ -11,16 +11,18 @@
  * where a fresh repo would be told its queue is clear. The label set was read, so the absence is
  * proven: only a label set that could not be read makes a bucket `unknown`.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import {scannedLine} from "../build/target.ts";
+import type {StatusNames} from "../config/board.ts";
 import type {Shell} from "../io/git.ts";
 import {openPullRequests} from "../io/github.ts";
 import {listLabels, openIssuesWithLabel} from "../io/issues.ts";
-import {NEEDS_TRIAGE, TRIAGED} from "../labels.ts";
 import {PRIORITIES} from "../triage/facets.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {type AsOf, asOfToken, detail, EMPTY_CELL, instant, noAsOf, readNow, row} from "./fields.ts";
+import {BOARD_SUBJECT, readBoard as readRepoBoard, refusalReason} from "./repo-board.ts";
 
 const VERB = "status board";
 
@@ -35,14 +37,15 @@ const labelBucket = (name: string, label: string) => ({
 });
 
 /**
- * The six buckets, each with the REST call that produces it — never GitHub search syntax, which
- * caps at 1000 results and cannot back a count.
+ * The label buckets, each with the REST call that produces it — never GitHub search syntax, which
+ * caps at 1000 results and cannot back a count. A bucket's name is its role and stays put; its
+ * label is whatever this board calls that status.
  */
-export const BUCKETS = [
-	labelBucket("needs-triage", NEEDS_TRIAGE),
-	labelBucket("triaged", TRIAGED),
+export const labelBuckets = (statuses: StatusNames) => [
+	labelBucket("needs-triage", statuses.needsTriage),
+	labelBucket("triaged", statuses.triaged),
 	...PRIORITIES.map((priority) => labelBucket(priority, priority)),
-] as const;
+];
 
 /** The pull-request bucket, read off `/pulls` rather than `/issues` — it counts PRs on purpose. */
 export const IN_FLIGHT = {name: "in-flight", selector: "pulls?state=open"} as const;
@@ -80,7 +83,10 @@ export const bucketAsOf = (reading: BucketReading): AsOf =>
 	reading._tag === "Unknown" ? noAsOf : reading.asOf;
 
 export type BoardRead =
-	/** The repository could not be read at all — every bucket is UNKNOWN, so there is no readout. */
+	/**
+	 * The repository could not be read at all, or its config gave no board to name the status
+	 * buckets by — every bucket is UNKNOWN, so there is no readout.
+	 */
 	| {readonly _tag: "Failed"; readonly repo: string; readonly reason: string}
 	| {readonly _tag: "Read"; readonly repo: string; readonly buckets: ReadonlyArray<Bucket>};
 
@@ -104,14 +110,14 @@ const countedBucket = (name: string, selector: string, count: number, at: Date):
  * label read itself fails, every label bucket is UNKNOWN — a count taken without it could not be
  * told apart from a proven zero.
  */
-export const readBoard = (repo: string, now: () => Date): Shell<BoardRead> =>
+const readBuckets = (repo: string, statuses: StatusNames, now: () => Date): Shell<BoardRead> =>
 	Effect.gen(function* () {
 		const labels = yield* listLabels(repo);
 		const labelFailure = labels._tag === "Failure" ? labels.reason : null;
 		const known = labels._tag === "Ok" ? new Set(labels.value) : null;
 		const buckets: Bucket[] = [];
 
-		for (const bucket of BUCKETS) {
+		for (const bucket of labelBuckets(statuses)) {
 			if (known === null) {
 				buckets.push(
 					unknownBucket(
@@ -152,6 +158,33 @@ export const readBoard = (repo: string, now: () => Date): Shell<BoardRead> =>
 					reason: labels._tag === "Failure" ? labels.reason : "every bucket read failed",
 				} as const)
 			: ({_tag: "Read", repo, buckets: ordered(buckets)} as const);
+	});
+
+/**
+ * Read every bucket of the board the repo above `cwd` declares.
+ *
+ * A refused config is `Failed`, never a count under the shipped names: a repo that renamed a status
+ * carries no issue under the old label, so that read would report its queue clear.
+ */
+export const readBoard = (
+	repo: string,
+	cwd: string,
+	now: () => Date,
+): Effect.Effect<
+	BoardRead,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
+	Effect.gen(function* () {
+		const board = yield* readRepoBoard(cwd);
+		if (board._tag === "Refused") {
+			return {
+				_tag: "Failed" as const,
+				repo,
+				reason: `${BOARD_SUBJECT} is refused — ${refusalReason(board)}`,
+			};
+		}
+		return yield* readBuckets(repo, board.resolved.board.statuses, now);
 	});
 
 /** The fixed print order: the two queue buckets, in-flight, then the priorities. */

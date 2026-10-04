@@ -23,6 +23,7 @@ import {
 	deriveFloorFor,
 	loadLedger,
 	type PlanMessages,
+	readBoardVocabulary,
 	readContainmentVocabulary,
 	requireEpic,
 	scannedChildren,
@@ -89,6 +90,9 @@ export const runCheck = (
 		const vocabulary = yield* readContainmentVocabulary(MESSAGES, options.cwd);
 		if (vocabulary._tag === "Refused") return vocabulary.outcome;
 
+		const board = yield* readBoardVocabulary(MESSAGES, options.cwd);
+		if (board._tag === "Refused") return board.outcome;
+
 		const cycle = yield* cycleDocOr(
 			VERB,
 			options.cwd,
@@ -102,6 +106,7 @@ export const runCheck = (
 			target.issue,
 			cycle.path,
 			vocabulary.vocabulary,
+			board.read.resolved.board.statuses,
 			options.env,
 		);
 		if (read._tag === "Refused") return read.outcome;

@@ -993,6 +993,12 @@ syntax — search caps at 1000 results and cannot back a count.
 | `in-flight` | `GET /repos/{o}/{r}/pulls?state=open` | pull requests only |
 | `p0` `p1` `p2` | `GET /repos/{o}/{r}/issues?state=open&labels=<p>` | one per member of the imported `PRIORITIES`; PRs excluded |
 
+**The two status buckets query the label this board gives each role.** `needs-triage` and `triaged`
+are bucket names and stay put; the label each one selects on is `boardVocabulary.statuses.needsTriage`
+and `.triaged` from `.fabrika.jsonc`, which are the shipped names in the table where the repo
+declares none. A count under the shipped name in a repo that renamed it would be a proven `0` over
+work that exists, so a board vocabulary that does not resolve is `11`, read before any label.
+
 **`/issues` returns pull requests among issues** — every issue bucket therefore drops any item
 carrying a `pull_request` key before counting. Omitting that filter silently inflates every issue
 count by the open-PR count, which is a wrong number with nothing marking it wrong.
@@ -1015,7 +1021,7 @@ any bucket is, else `counted`.
 
 | Code | Trigger |
 |---|---|
-| `11` | the repository could not be read at all — every bucket is UNKNOWN, so there is no readout |
+| `11` | the repository could not be read at all, or `.fabrika.jsonc`'s board vocabulary did not resolve — every bucket is UNKNOWN, so there is no readout |
 
 **No `7` seat.** Zero open issues is a *proven* count and a legitimate answer at exit `0`; there is
 no zero-scope refusal for a verb whose scope is "this repository".

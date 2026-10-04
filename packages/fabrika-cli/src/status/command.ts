@@ -237,7 +237,9 @@ const board = leafCommand(
 			);
 			return;
 		}
-		yield* emit(runBoard({read: yield* readBoard(target.value, () => new Date()), json}));
+		yield* emit(
+			runBoard({read: yield* readBoard(target.value, process.cwd(), () => new Date()), json}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("The board's decided buckets, each with its own freshness."),
@@ -387,7 +389,7 @@ const open = leafCommand(
 				fields.push(
 					boardField(
 						target._tag === "Ok"
-							? yield* readBoard(target.value, () => new Date())
+							? yield* readBoard(target.value, process.cwd(), () => new Date())
 							: {_tag: "Failed", repo: repoName, reason: target.reason},
 					),
 				);
