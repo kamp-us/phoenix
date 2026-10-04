@@ -15,7 +15,7 @@ installed its dependencies has the whole gate — there is no install-time state
 
 ## Why two commands and not one patched compiler
 
-ADR [0457](../.decisions/0457-typecheck-two-step-no-install-patch.md) records the decision and the
+ADR [0459](../.decisions/0459-typecheck-two-step-no-install-patch.md) records the decision and the
 false green that forced it. It supersedes ADR
 [0271](../.decisions/0271-one-compiler-effect-patched-tsc.md), under which a root `postinstall`
 swapped the `tsc` binary for the Effect build.

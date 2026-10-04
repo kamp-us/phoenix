@@ -1,12 +1,12 @@
 ---
-id: 0457
+id: 0459
 title: Effect diagnostics come from a second `typecheck` step, never from a compiler patched at install
 status: accepted
 date: 2026-10-04
 tags: [toolchain, typescript, effect, ci, dependencies]
 ---
 
-# 0457 — Effect diagnostics come from a second `typecheck` step, never from a compiler patched at install
+# 0459 — Effect diagnostics come from a second `typecheck` step, never from a compiler patched at install
 
 **What this decides:** every package's `typecheck` runs the stock `tsc` and then
 `effect-tsgo diagnostics --project tsconfig.json --strict`, and nothing rewrites the compiler binary
