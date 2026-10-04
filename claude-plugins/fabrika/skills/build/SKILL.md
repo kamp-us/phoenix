@@ -114,11 +114,11 @@ re-spawns the right shell.
 
 **When the rendered-visual refusal fires, your stop note is read by a person at a prompt.** Say in
 plain words why you stopped — the issue has a screen, and this command builds text only — then give
-one next step: the command `/fabrika:operate <n>`, written with the issue's real number, which picks
-the builder from the issue's labels. That command is the note's whole next step. An agent shell is
-not something a person can type, so the note names none as a thing to run or re-spawn — not
-`fabrika:mixed-builder`, not `fabrika:ui-builder`. You do not run `operate` or `build-ui` yourself:
-release any claim you hold and end `STOPPED`.
+one next step: run the `operate` skill on the issue's real number, which picks the builder from the
+issue's labels. On Claude Code, write that step as the command `/fabrika:operate <n>`. That one step
+is the note's whole next step. An agent shell is not something a person can type, so the note names
+none as a thing to run or re-spawn — not `fabrika:mixed-builder`, not `fabrika:ui-builder`. You do
+not run `operate` or `build-ui` yourself: release any claim you hold and end `STOPPED`.
 
 This skill is not a router: on its own text surfaces
 it executes the whole loop itself. In pick mode neither the argument nor your caller gave you a
@@ -554,9 +554,10 @@ the receiver re-fetches from the artifact.
 
 **A denied tool call is one of those terminals, never an obstacle to route around.** When the
 harness refuses a mutation — on Claude Code, an `Edit` the classifier blocks or a command a
-permission rule denies — that refusal is a human saying they decide this one, and re-making the identical change through a
-different tool, a script or a shell command spends the decision without ever asking for it. So do
-not re-attempt it. Stop where you stand, quote the denied action verbatim in a `fabrika build note`
+permission rule denies — that refusal is a human saying they decide this one, and re-making the
+identical change through a different tool, a script or a shell command spends the decision without
+ever asking for it. So do not re-attempt it. Stop where you stand, quote the denied action verbatim
+in a `fabrika build note`
 so the driver reads it before anything is pushed, and end `STOPPED` — `lane report` maps that token
 to a `BLOCKED` event, which is already the routing a denial wants, so no sixth terminal is needed.
 The content being legitimate changes nothing: a change nobody could have refused and a

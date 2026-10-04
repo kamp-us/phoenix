@@ -198,11 +198,11 @@ itself**, in this order, and print which tier served it on the scope line. (`boo
 this list: it builds from a fixed [registry](#buildable-surfaces) and reads no roster at all.)
 
 1. `--skills-dir <path>`, when given explicitly.
-2. `$CLAUDE_PLUGIN_ROOT`, when it is set and holds a plugin manifest — the harness's own answer for
+2. `$CLAUDE_PLUGIN_ROOT`, when it is set and holds a plugin manifest — Claude Code's own answer for
    which plugin is running, and the only rung that stays correct if the cache layout changes. It is
    read by the verb, never written into a fence: interface rule 5 constrains the **command string**
    the model runs, and a fence carries zero expansions, so everything dynamic lives inside what the
-   fence invokes. It cannot be the only rung, because the harness
+   fence invokes. It cannot be the only rung, because Claude Code
    sets it for plugin hooks and plugin-provided commands and **not** for an ordinary Bash call.
 3. A plugin tree the running module itself sits inside, found by walking up for the manifest. This
    fires only where a consumer vendors the CLI into its own plugin; neither shape fabrika ships in

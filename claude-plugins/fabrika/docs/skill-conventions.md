@@ -488,10 +488,10 @@ time" into "it passed" is worse than the `sleep` it replaced.
 ## 15. The plain rule first, then the harness beside its knob
 
 **Shared skill text states the rule in words every supported harness can act on, and names the
-harness in the same sentence whenever it names that harness's knob.** A knob is a control one
-harness owns and the step tells the reader to operate: a tool, a tool parameter, a spawn flag, an
-environment variable, a config key. The skills are the stage contract on every harness fabrika
-supports, so a reader on any of them finishes the step from the plain rule alone.
+harness whenever it names that harness's knob.** A knob is a control one harness owns and the step
+tells the reader to operate: a tool, a tool parameter, a spawn flag, a typed command, an environment
+variable, a config key. The skills are the stage contract on every harness fabrika supports, so a
+reader on any of them finishes the step from the plain rule alone.
 
 The shape is two parts, in this order:
 
@@ -499,6 +499,11 @@ The shape is two parts, in this order:
    a caller-side deadline above its budget*.
 2. **The instance, harness-named** — *on Claude Code, that deadline is the Bash tool's `timeout`*.
    Every number that belongs to the knob — a ceiling, a default, a unit — sits in this part.
+
+**The unit is the instance part, not the sentence.** The part opens by naming its harness, once, and
+that naming covers every knob the part goes on to name. An instance is as long as it needs to be: a
+parenthesis inside the rule's own sentence, or a paragraph after it. Its end is the end of that
+parenthesis or paragraph, and a knob named past it is bare again.
 
 Write an instance for a harness once someone has run the step there; until then that harness reads
 the rule alone.
