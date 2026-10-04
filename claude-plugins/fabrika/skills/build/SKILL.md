@@ -653,9 +653,21 @@ nothing. When `freed` names a branch and this tree is the clone's main working t
 and finds `git status` reading `HEAD (no branch)`. So your closing message, above the token, tells
 them three things in plain words: the clone is on no branch, nothing is lost because the files and
 commits are as the run left them, and the one command that returns to the branch they started on,
-`git switch <starting-branch>`. The starting branch is the one this clone held before `build branch`
-cut yours — the `from` side of that checkout in `git reflog HEAD`. A linked worktree gets no such
-line: no person stands in it.
+`git switch <starting-branch>`. The starting branch is the one this clone held before this run
+checked out its lane branch, whether `build branch` cut that branch or resumed it — the `from` side
+of that checkout in `git reflog HEAD`.
+
+**That `from` side is a branch only when the clone stood on one.** A repair run, or a second build
+by a person who never switched back, starts in a clone the earlier run already left on no branch,
+and there the `from` side is a 40-character commit id. `git switch` refuses a commit id, and
+returning to it would leave the person on no branch again. So take the `from` side as the starting
+branch only when `git show-ref --verify refs/heads/<from>` proves it a local branch. Otherwise name
+the repo's default branch, read with `gh repo view --json defaultBranchRef --jq
+.defaultBranchRef.name`, and say why: the clone was already on no branch when this run started, so
+the command returns to the default branch. The message never offers a commit id as the branch to
+return to.
+
+A linked worktree gets no such line: no person stands in it.
 
 ## Repair
 
