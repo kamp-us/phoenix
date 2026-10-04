@@ -166,6 +166,12 @@ flake. There is no path from an ambiguous log to "safe to rerun". Each token lic
   `FILED — #N` terminal carries. Guessing "probably a flake" is how a rerun loop starts.
   A secret-scan red lands here on purpose, never as `logic`: the report names it a committed
   secret for a person to remove and rotate the credential, not a gap in the classifier.
+- **`derived`** — a roll-up context whose log restates other jobs' verdicts and holds no failure of
+  its own. Its FAIL lines each name a job: work that job's own `class` line under the token it
+  carries, and take no action on the roll-up line itself, since a rerun or a filing there would
+  work one defect twice. When a named job has **no** `class` line — it should have run and never
+  reported, so `logs` emitted no context for it — the roll-up is the only place that failure shows.
+  File it through the intake seam as you would an `unclassified`, quoting the FAIL line.
 
 Only reds the base branch declares **required** reach this lane. Anything else is red without
 blocking, and treating one as healable is how a non-failure stalled a mergeable PR — which is the

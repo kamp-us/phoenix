@@ -1021,13 +1021,15 @@ keeps a classification reproducible from the bytes alone.
 **Output** — machine channel. First line `classified\t<n>`, then one line per classified context:
 
 ```
-class	<context>	<transient|logic|unclassified>	<signature-id>	<matched-line>
+class	<context>	<transient|logic|derived|unclassified>	<signature-id>	<matched-line>
 ```
 
 `<context>` is the name from the `==== context … ====` header the block came from, or `-` when
 stdin carried a bare body with no framing. On `unclassified` the last two fields are both `-`; the
 field count never varies.
 With `--json`: `{"outcome":"classified","count":<n>,"contexts":[{"context":…,"class":…,"signature":…,"line":<n|null>}…]}`.
+`class` is one of `"transient"`, `"logic"`, `"derived"` or `"unclassified"`; `signature` and `line`
+are `null` on `unclassified` and set on the other three.
 
 **This verb consumes the framed multi-context stream, so nothing splits it by hand.** `heal-ci
 logs` emits N contexts and this verb emits N `class` lines, in the order received — `fabrika
@@ -1041,11 +1043,28 @@ block's `==== context … ====` header, so a signature's coordinate does not mov
 context is added upstream. For an unframed stdin it is 1-based over the whole input.
 
 **Default-deny, structurally.** The only path to `transient` is a positive match in a `transient`
-row. Everything else is `logic` when a `logic` row matched and `unclassified` when none did.
+row. Everything else is `logic` when a `logic` row matched, `derived` when only the roll-up row
+did, and `unclassified` when none did.
 **`unclassified` is a third token deliberately**, where v1's classifier had only two: fusing "I
 recognise this as a deterministic bug" with "I recognise nothing" means a caller can never count
 how often the classifier is guessing, and the routing differs — a logic signature goes to repair,
 an unrecognised failure is filed for a human. There is no path from ambiguous input to `transient`.
+
+**`derived` is a fourth token, for a log that only restates another job's verdict.** A roll-up
+context goes red because a job it watches did not succeed, and its log holds that job's verdict and
+no failure of its own. `logic` would name a defect the log does not contain, and `unclassified`
+would file one defect twice: once for the job that failed and once for the roll-up repeating it.
+The token does not mean "ignore this line". The roll-up's FAIL lines name the job to route, and
+when that job never reported, the roll-up is the only context that shows the failure, which is why
+`heal-ci logs` still emits it. `unclassified` keeps its meaning: nothing matched.
+
+**`derived` is a signature class, and `gate-failed` is a stall class.** The first lives in the
+signature table (`signatures.ts`) and answers why one log cannot be read as a defect of its own;
+`classify` prints it once per failing context. The second belongs to `heal-ci diagnose`'s stall
+vocabulary (`stall.ts`) and answers why one pull request is stuck, once per pull request, off a
+SHA-bound review-gate verdict. Neither
+token appears in the other's union, and a pull request whose only failing context is `derived` is
+not thereby `gate-failed`.
 
 **The taxonomy is a single-sourced, ORDERED table, and it is data.** Each row carries a stable id,
 a class, a literal pattern and a rationale, in one module, with the table under unit test against
@@ -1068,10 +1087,19 @@ way down. Patterns are case-insensitive, applied per line.
 | 8 | `typecheck-failure` | logic | `/\berror TS\d{4,5}\b/` |
 | 9 | `lint-failure` | logic | `/\b(eslint\|biome)\b.{0,60}\berror\b\|^\s*error\s+.{0,80}\s+@?[\w/-]+\/[\w-]+$/` |
 | 10 | `build-failure` | logic | `/\b(cannot find module\|module not found\|failed to resolve import\|syntaxerror\|unexpected token)\b/` |
+| 11 | `roll-up-verdict` | derived | `/\bresult=\S+ (?:→\|->) FAIL\b\|\bci-required FAILED\b/` |
 
-An implementer ships exactly these ten rows in this order; the table grows by adding rows, never by
-branching inside the verb. Row 4 preceding row 6 is what makes a failure to reach **this PR's own
+An implementer ships exactly these eleven rows in this order; the table grows by adding rows, never
+by branching inside the verb. Row 4 preceding row 6 is what makes a failure to reach **this PR's own
 preview target** a warmup rather than generic network trouble.
+
+**Row 11 is last, and a row added later goes above it.** It is the only row whose match says the
+log holds no failure of its own, so every row that names a real failure has to be able to beat it:
+a roll-up log that also printed a defect classifies on the defect. Last place is also what proves
+no generic row reaches roll-up prose. A log holding only that prose classifies `derived` only when
+all ten rows above it missed, and the committed `ci-required` fixture holds that under test. The
+pattern matches the per-job `result=<r> → FAIL` lines and the terminal `ci-required FAILED` line
+the repo's always-on required context prints.
 
 **A committed-secret finding is deliberately not a row.** A secret scanner's red (gitleaks'
 `leaks found: <n>`) classifies `unclassified` and leaves through intake to a person. No row may
@@ -1128,6 +1156,16 @@ $ echo $?
 0
 ```
 
+```
+$ fabrika heal-ci logs 9414 --sha 4be07c1d | fabrika heal-ci classify
+classified	2
+class	ci-required	derived	roll-up-verdict	2
+class	unit tests	logic	assertion-failure	2
+```
+
+(One defect, two failing contexts. The `ci-required` block's line 2 is
+`unit: should_run=true result=failure → FAIL`, which names the job the second line classifies.)
+
 **Grounding**
 
 - v1's `failure-classifier` was correct in its default-deny core and ships **dormant with zero live
@@ -1140,6 +1178,10 @@ $ echo $?
   patterns and the stated precedence are what make two implementations agree.
 - The blocking-set narrowing happens upstream in `logs`, so this table never encodes which
   contexts are the blocking ones.
+- One red produced two `unclassified` lines and three filed issues, because the required roll-up
+  context repeated a sibling job's failure. The ruling took a fourth token over excluding the
+  roll-up upstream, which would lose the only signal when a job should have run and never
+  reported; the signature table's docblock cites it.
 
 ---
 
@@ -1158,7 +1200,7 @@ fabrika heal-ci rerun 9412 --run 9182736450 --sha 03135b91 --signature preview-w
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--run` | integer | yes | — | the workflow run to re-run the failed jobs of |
 | `--sha` | string | yes | — | the head the transient was diagnosed at; the at-most-once guard is per head |
-| `--signature` | string | yes | — | the `classify` signature id justifying the rerun; recorded in the durable marker |
+| `--signature` | string | yes | — | the `transient` `classify` signature id justifying the rerun; recorded in the durable marker |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -1191,6 +1233,11 @@ Steps 4–6 are one logical operation whose ordering is deliberate: the rerun be
 means an interrupted run leaves a re-runnable state rather than a permanently blocked one, and the
 read-back in step 5 is what makes step 6's marker true.
 
+**The signature's class is re-derived too, before any read.** `--signature` must name a row of
+`classify`'s table whose class is `transient`, else `10`. A `logic` or `derived` id is refused
+exactly as an unknown one is: the budget is one rerun per head, so spending it on a red a retry
+cannot change leaves the pull request less healable than before the call.
+
 **Why the guard cannot live in the skill.** v1's `rerun-once.sh` accepted no already-rerun input
 and performed no check of its own; the entire one-rerun invariant rested on the model remembering
 a number it had read several steps earlier. A session-memory invariant is not an invariant. The
@@ -1209,7 +1256,7 @@ the skill's, and it is exercised before this verb is called.
 | Code | Trigger |
 |---|---|
 | `7` | the PR or the run is proven absent (404) |
-| `10` | `--signature` is not one of `classify`'s table ids |
+| `10` | `--signature` is not one of `classify`'s table ids, or names a row whose class is not `transient` — nothing was read |
 | `8` | the rerun request, or the confirming read-back, failed — whether a new attempt exists is UNKNOWN, and **no marker was written**; re-read before retrying |
 | `9` | the rerun landed and the marker comment's read-back does not match — the rerun happened, the durable record did not |
 | `11` | the head, the run, or the marker comments could not be read — nothing was requested |
@@ -1222,7 +1269,8 @@ the skill's, and it is exercised before this verb is called.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `heal-ci rerun: --signature <v> is not a known classify signature id (see \`heal-ci classify\`'s table).` | 10 | refusal |
+| `heal-ci rerun: --signature <v> is not a known classify signature id (a rerun takes a transient one: <ids>).` | 10 | refusal |
+| `heal-ci rerun: --signature <v> is a <logic\|derived> signature, and only a transient one licenses a rerun (<ids>) — nothing was requested.` | 10 | refusal |
 | `heal-ci rerun: PR #<n> or run <id> not found in <repo>.` | 7 | refusal |
 | `heal-ci rerun: the live head is <live>, you diagnosed <sha> — refusing to rerun against a tree nobody classified.` | 12 | refusal |
 | `heal-ci rerun: run <id> concluded <conclusion>, not a failure — refusing to rerun a run that did not fail.` | 14 | refusal |

@@ -1,5 +1,7 @@
 import {describe, expect, it} from "vitest";
-import {classifyLog, isSignatureId, SIGNATURE_IDS, SIGNATURES} from "./signatures.ts";
+import {judge} from "../ci/required.ts";
+import {CI_REQUIRED_ROLLUP_LOG} from "./fixtures.test-support.ts";
+import {classifyLog, SIGNATURES} from "./signatures.ts";
 
 /** One fixture per row, so the table is exercised by its own contract rather than by a sample. */
 const FIXTURES: ReadonlyArray<readonly [string, string]> = [
@@ -13,11 +15,12 @@ const FIXTURES: ReadonlyArray<readonly [string, string]> = [
 	["typecheck-failure", "src/a.ts(3,1): error TS2345: Argument of type 'x'."],
 	["lint-failure", "biome check found 1 error in src/a.ts"],
 	["build-failure", "Error: Cannot find module './missing'"],
+	["roll-up-verdict", "##[error]unit: should_run=true result=failure → FAIL (silent no-op)"],
 ];
 
 describe("the taxonomy is a table, and every row is reachable", () => {
-	it("ships exactly the ten contracted rows in order", () => {
-		expect(SIGNATURE_IDS).toEqual(FIXTURES.map(([id]) => id));
+	it("ships exactly the eleven contracted rows in order", () => {
+		expect(SIGNATURES.map((row) => row.id)).toEqual(FIXTURES.map(([id]) => id));
 	});
 
 	it.each(FIXTURES)("`%s` matches its own fixture", (id, line) => {
@@ -26,10 +29,44 @@ describe("the taxonomy is a table, and every row is reachable", () => {
 		expect(found._tag === "Matched" ? found.signature.id : null).toBe(id);
 	});
 
-	it("puts every transient row above every logic row", () => {
-		const firstLogic = SIGNATURES.findIndex((row) => row.class === "logic");
-		expect(SIGNATURES.slice(0, firstLogic).every((row) => row.class === "transient")).toBe(true);
-		expect(SIGNATURES.slice(firstLogic).every((row) => row.class === "logic")).toBe(true);
+	it("puts every transient row above every logic row, and the derived row below both", () => {
+		const rank = {transient: 0, logic: 1, derived: 2};
+		const ranks = SIGNATURES.map((row) => rank[row.class]);
+		expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+		expect(SIGNATURES.at(-1)?.class).toBe("derived");
+	});
+});
+
+describe("a roll-up that only restates another job's verdict is derived", () => {
+	it("classifies a ci-required log holding only verdict prose as derived", () => {
+		const found = classifyLog(CI_REQUIRED_ROLLUP_LOG);
+		expect(found._tag === "Matched" ? found.signature : null).toMatchObject({
+			id: "roll-up-verdict",
+			class: "derived",
+		});
+		expect(found._tag === "Matched" ? found.line : null).toBe(2);
+	});
+
+	it("classifies a log carrying a real defect beside roll-up prose on the defect", () => {
+		const found = classifyLog(
+			[CI_REQUIRED_ROLLUP_LOG, "AssertionError: expected 3 to be 2"].join("\n"),
+		);
+		expect(found._tag === "Matched" ? found.signature.id : null).toBe("assertion-failure");
+	});
+
+	it.each([
+		["a should-have-run job that failed", "success", {required: true, result: "failure"}],
+		["a should-have-run job that never ran", "success", {required: true, result: "skipped"}],
+		["a not-required job that was cancelled", "success", {required: false, result: "cancelled"}],
+		["a failed required-ness source", "failure", {required: false, result: "skipped"}],
+	] as const)("matches the line the gate prints for %s", (_case, changesResult, job) => {
+		const verdict = judge({changesResult, jobs: [{name: "unit", ...job}], scopeReasons: []});
+		const failing = [verdict.changesReport, ...verdict.jobs].filter(
+			(report) => report?.verdict === "FAIL",
+		);
+		expect(failing).toHaveLength(1);
+		const found = classifyLog(failing[0]?.reason ?? "");
+		expect(found._tag === "Matched" ? found.signature.id : null).toBe("roll-up-verdict");
 	});
 });
 
@@ -68,10 +105,5 @@ describe("default-deny", () => {
 			].join("\n"),
 		);
 		expect(found._tag).toBe("Unclassified");
-	});
-
-	it("names only its own ids as signatures", () => {
-		expect(isSignatureId("preview-warmup")).toBe(true);
-		expect(isSignatureId("flaky")).toBe(false);
 	});
 });
