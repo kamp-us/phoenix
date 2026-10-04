@@ -108,6 +108,31 @@ describe("containmentOf against a real squash landing", {
 		});
 	});
 
+	it("reads a branch re-indented after its squash landed as unlanded, so the re-indent is not discarded", async () => {
+		const repo = seeded();
+		branched(repo, "a.txt", "if (x) {\n  changed\n}\n");
+		repo.git("merge", "--squash", "feature");
+		repo.commit("feat: the branch's work, squashed (#1)");
+
+		repo.git("checkout", "--quiet", "feature");
+		repo.write("a.txt", "if (x) {\n\tchanged\n}\n");
+		repo.commit("re-indent the branch copy");
+		repo.git("checkout", "--quiet", "main");
+
+		// The premise: a whitespace-blind id calls these two patches one, so only a byte-exact
+		// comparison can tell the re-indented branch from its landing.
+		const blind = (range: string): string =>
+			execFileSync("git", ["patch-id", "--stable"], {
+				cwd: repo.dir,
+				env: GIT_ENV,
+				encoding: "utf8",
+				input: repo.git("diff", range),
+			}).split(" ")[0] ?? "";
+		expect(blind("main...feature")).toBe(blind("main~1..main"));
+
+		await expect(read(repo, "feature", "main")).resolves.toEqual({_tag: "Unlanded"});
+	});
+
 	it("reads a branch whose work never landed as unlanded, so nothing re-cuts it", async () => {
 		const repo = seeded();
 		branched(repo, "b.txt", "only here\n");

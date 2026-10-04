@@ -29,7 +29,7 @@ const NAMES = /^git diff .*--name-only/;
 const DIFF = /^git diff .*bbbb222\.\.\./;
 const MERGE_BASE = /^git merge-base bbbb222 /;
 const LOG = /^git log --no-merges -p /;
-const PATCH_ID = /^git patch-id --stable$/;
+const PATCH_ID = /^git patch-id --verbatim$/;
 const UNSET = /^git branch --unset-upstream /;
 
 const NO_BRANCHES = okOut("main\n");
@@ -381,11 +381,11 @@ describe("runAssembly", () => {
 			"git rev-parse --verify origin/main^{commit}",
 			`git merge-base --is-ancestor ${BRANCH} bbbb222`,
 			`git diff ${DIFF_FLAGS} bbbb222...${BRANCH}`,
-			"git patch-id --stable",
+			"git patch-id --verbatim",
 			`git diff ${DIFF_FLAGS} --name-only -z bbbb222...${BRANCH}`,
 			`git merge-base bbbb222 ${BRANCH}`,
 			`git log --no-merges -p ${DIFF_FLAGS} --format=commit %H -n 200 ${BASE_SHA}..bbbb222 -- x.ts`,
-			"git patch-id --stable",
+			"git patch-id --verbatim",
 			`git worktree remove ${EXPECTED}`,
 			"git worktree list --porcelain",
 			`git worktree add ${EXPECTED} ${BRANCH}`,

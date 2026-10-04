@@ -78,3 +78,39 @@ come to disagree about a branch one of them is about to destroy.
 - **`isAncestor` moved from `build/git.ts` to `io/git.ts`.** The shared reader sits under `io/`, and
   an `io/` module reaching up into `build/` for a primitive would invert the layering; `lane push`
   was already reaching across for it.
+
+## Amendment (2026-10-04, #9040) — the positive verdict is byte-exact
+
+The Decision above names `git patch-id --stable` and says nothing about how strict a match is. That
+mode strips whitespace before it hashes: git-patch-id(1) says of `--stable` that "all whitespace
+within the patch is ignored and does not affect the id". So a branch that differed from its own
+landed squash by whitespace alone read as `Squashed`, and the record gave a reader no reason to
+expect that.
+
+Ruling, 2026-09-10 PT, made by the founder:
+[the ruling comment on issue 9040](https://github.com/kamp-us/phoenix/issues/9040#issuecomment-5625300412).
+Asked whether the landed check should compare byte for byte, so that a whitespace-only difference no
+longer counts as already landed, the answer was yes.
+
+**Both sides of the comparison are read with `git patch-id --verbatim`.** That mode does not strip
+whitespace, and it implies `--stable`, so the hunk-order stability the Decision relies on is kept.
+`Squashed` now means the trunk carries the branch's net diff byte for byte. The mode is the only
+thing that changes: the pathspec, the 200-commit bound and the ancestry fast path stand as written.
+
+**The stricter direction is the fail-safe one because one caller moves a ref.** The two errors cost
+different things. A match lost to whitespace answers `Unlanded`, and both callers then keep the
+branch: `lane assembly` resumes it and `build reap` leaves its worktree. A match gained from
+whitespace answers `Squashed`, and `lane assembly`'s resume arm re-cuts the branch off the trunk
+with `git worktree add --no-track -B`. That moves the ref, so the commits holding the
+whitespace-only work are discarded, and the verb's output reads the same as it does for a true
+squash match. A wrong `Unlanded` costs a resume a driver can see. A wrong `Squashed` costs committed
+work without a signal.
+
+**What it gives up.** Where the landing side normalized whitespace, such as a formatter that ran on
+the merge and not on the branch, a branch that did land now answers `Unlanded` and resumes as it did
+before this record. That sits beside the conflict-resolution case in Consequences: `Unlanded` is "no
+proof it landed", never "proven unlanded".
+
+`packages/fabrika-cli/src/io/containment.git.test.ts` carries the case against real git: it lands a
+squash, re-indents the branch copy, shows that `--stable` gives the two patches one id, and asserts
+the reader answers `Unlanded`.
