@@ -636,7 +636,7 @@ same roster-gated scan `decision ruling` answers from
 (`packages/fabrika-cli/src/decision/standing-rulings.ts`). The fold of the two is
 `packages/fabrika-cli/src/review/graded-set.ts`.
 
-With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"marked":<n>,"rulings":<n>,"superseded":<n>,"disregarded":<n>,"unauthorized":<n>,"danglingSupersedes":[<n>…],"criteria":[{"source":"body"|"ruling","state":"open"|"checked"|"superseded","text":…,"evidence":<source|null>,"ruling":<url|null>,"at":<stamp|null>,"supersedes":<n|null>}…]}`.
+With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"marked":<n>,"rulings":<n>,"superseded":<n>,"disregarded":<n>,"unauthorized":<n>,"danglingSupersedes":[<n>…][,"unmarked":{…}],"criteria":[{"source":"body"|"ruling","state":"open"|"checked"|"superseded","text":…,"evidence":<source|null>,"ruling":<url|null>,"at":<stamp|null>,"supersedes":<n|null>}…]}`.
 
 **The rulings half is why this verb is the gate's whole contract read.** A founder ruling arrives as
 a comment, and a gate that read only the body graded a spec the founder had already moved: one PR
@@ -661,8 +661,26 @@ names the **1-based** body criterion this ruling replaces.
   off-roster author is **not** a standing ruling. It is counted in `unauthorized`, never dropped:
   reporting it as "nobody ruled" tells the account that tried that it never did.
 - **A drifted marker is counted in `disregarded`**, for the same reason.
-- **The roster is resolved only when a conforming marker is standing there.** On an issue no comment
-  of which reaches for the key, the ACL's three reads answer nothing and are not made.
+- **The roster is resolved only where it can change the answer:** a conforming marker is standing
+  there, or some comment carries no machine marker. On an issue whose every comment is a machine
+  marker with no ruling among them, the ACL's three reads answer nothing and are not made.
+- **An owner comment no marker records is listed, never graded and never a refusal.** A comment
+  counts as unmarked when a control-plane roster account wrote it, it carries no fabrika machine
+  marker, no standing ruling cites it, and its `updated_at` is newer than the newest standing
+  ruling's stamp. With no standing ruling, every such comment on the issue counts. A machine marker
+  is a line opening with a `<!-- fabrika…` or `<!-- ac:…` HTML comment, a first non-blank line
+  opening with a hyphenated lowercase `<key>:`, or a conforming gate verdict
+  (`packages/fabrika-cli/src/wire/machine-marker.ts`); a `decision-ruled:` line is one only when it
+  conforms. The count and each comment's URL print on stderr and, under `--json`, in `unmarked`.
+  The exit code does not change. The list can hold agent prose: an agent's free-prose note posted
+  under an owner's account is a roster comment with no marker, and no read of the bytes tells it
+  from a person's.
+- **`unmarked` is present only when it has something to say.** `{"state":"counted","count":<n>,
+  "comments":[<url>…]}` when at least one such comment stands. `{"state":"unknown","reason":…}` when
+  the roster did not resolve on an issue carrying no conforming marker: the rulings half is still
+  proven empty there, so the verb answers `0`, and the unmarked half says unknown rather than zero.
+  An absent key is the proven zero, so an issue with no such comment prints the bytes it printed
+  before the key existed.
 - **Superseding is declared, never inferred.** No verb can read a ruling's prose and judge which
   criterion it overturns, so the human recording it says. A `supersedes:<k>` naming a row the block
   does not have lands in `danglingSupersedes` and on stderr — the founder's statement about which row

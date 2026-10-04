@@ -30,16 +30,21 @@ const ROSTER: ReadonlyArray<Scripted> = [
 	[MEMBERS, json([{login: RULER}])],
 ];
 
-const comments = (...rows: ReadonlyArray<readonly [number, string, string]>): HttpReply =>
+/** One page of comments, each `[id, author, body, written?]` — written an hour before the marker's stamp unless the case says otherwise. */
+const comments = (...rows: ReadonlyArray<readonly [number, string, string, string?]>): HttpReply =>
 	json(
-		rows.map(([id, author, body]) => ({
+		rows.map(([id, author, body, written = "2026-09-20T05:00:00Z"]) => ({
 			id,
 			user: {login: author},
-			created_at: "2026-09-20T05:00:00Z",
-			updated_at: "2026-09-20T05:00:00Z",
+			created_at: written,
+			updated_at: written,
 			body,
 		})),
 	);
+
+const AFTER_RULING = "2026-09-20T07:00:00Z";
+const commentUrl = (id: number): string =>
+	`https://github.com/${REPO}/issues/4287#issuecomment-${id}`;
 
 /** The marker `decision rule` posts, over whatever criterion the case says it replaces. */
 const marker = (supersedes: string = ""): string =>
@@ -120,16 +125,150 @@ describe("runCriteria", () => {
 	});
 
 	/**
-	 * The ACL is three reads, and on an issue no comment of which reaches for the marker key there is
-	 * nothing to check against it.
+	 * The ACL is three reads, and on an issue whose every comment is a machine marker with no ruling
+	 * among them there is nothing to check against it.
 	 */
-	it("resolves no roster while nothing on the issue reaches for a marker", async () => {
-		const out = await run([
-			[ISSUE, served(issue())],
-			[COMMENTS, comments([900001, RULER, "Just a comment."])],
-		]);
+	it("resolves no roster while every comment is a machine marker and none is a ruling", async () => {
+		const out = await run(
+			[
+				[ISSUE, served(issue())],
+				[COMMENTS, comments([900001, RULER, "build-claim: build:s:n · 2026-09-20T05:00:00Z"])],
+			],
+			{json: true},
+		);
 		expect(out.code).toBe(0);
 		expect(out.stderr.join("\n")).toContain("the control-plane roster was not resolved");
+		expect(JSON.parse(out.stdout)).not.toHaveProperty("unmarked");
+	});
+
+	/**
+	 * An owner who wrote a rule as a plain comment used to read exactly like an issue nobody ruled
+	 * on. The comment is still no ruling; what changes is that the verb points at it.
+	 */
+	describe("comments by a control-plane account that no ruling marker records", () => {
+		it("names one on an issue carrying no marker at all", async () => {
+			const out = await run(board(comments([900010, RULER, "Use `base * 3` instead."])), {
+				json: true,
+			});
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({
+				rulings: 0,
+				unmarked: {state: "counted", count: 1, comments: [commentUrl(900010)]},
+			});
+			expect(out.stderr.join("\n")).toContain(
+				`1 comment(s) by a control-plane account on #4287 carry no ruling marker: ${commentUrl(900010)}`,
+			);
+		});
+
+		it("names one newer than the marked ruling, and not the comment that ruling cites", async () => {
+			const out = await run(
+				board(
+					comments(
+						[RULING_COMMENT, RULER, "The first delay is `base * 2`, not `base`."],
+						[900002, RULER, marker()],
+						[900010, RULER, "Changed my mind: `base * 3`.", AFTER_RULING],
+					),
+				),
+				{json: true},
+			);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({
+				rulings: 1,
+				unmarked: {state: "counted", count: 1, comments: [commentUrl(900010)]},
+			});
+			expect(out.stderr.join("\n")).toContain(
+				"are newer than the newest standing ruling and carry no ruling marker",
+			);
+		});
+
+		/**
+		 * `decision rule` stamps the marker's `at` before it posts, and the cited comment can land
+		 * after that stamp too, so on a freshly ruled issue the date excludes neither.
+		 */
+		it("lists neither the cited comment nor the marker when both are written after its stamp", async () => {
+			const out = await run(
+				board(
+					comments(
+						[RULING_COMMENT, RULER, "The first delay is `base * 2`, not `base`.", AFTER_RULING],
+						[900002, RULER, marker(), AFTER_RULING],
+					),
+				),
+				{json: true},
+			);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({rulings: 1});
+			expect(JSON.parse(out.stdout)).not.toHaveProperty("unmarked");
+			expect(out.stderr.join("\n")).not.toContain("carry no ruling marker");
+		});
+
+		/** A drifted marker is a ruling its author tried to record and did not, so it is pointed at. */
+		it("names a drifted marker by a control-plane account written after the ruling", async () => {
+			const drifted = "decision-ruled: #4287 @ NOTADIGEST · ruling:x · 2026-09-20T07:00:00Z\n";
+			const out = await run(
+				board(
+					comments(
+						[RULING_COMMENT, RULER, "The first delay is `base * 2`, not `base`."],
+						[900002, RULER, marker()],
+						[900015, RULER, drifted, AFTER_RULING],
+					),
+				),
+				{json: true},
+			);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({
+				rulings: 1,
+				unmarked: {state: "counted", count: 1, comments: [commentUrl(900015)]},
+			});
+		});
+
+		it("leaves one older than the marked ruling out, and prints what it always printed", async () => {
+			const out = await run(
+				board(
+					comments(
+						[900010, RULER, "An early thought, before the ruling."],
+						[RULING_COMMENT, RULER, "The first delay is `base * 2`, not `base`."],
+						[900002, RULER, marker()],
+					),
+				),
+				{json: true},
+			);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).not.toHaveProperty("unmarked");
+			expect(out.stderr.join("\n")).not.toContain("carry no ruling marker");
+		});
+
+		it("never counts a machine marker or an off-roster author, however new", async () => {
+			const out = await run(
+				board(
+					comments(
+						[RULING_COMMENT, RULER, "The first delay is `base * 2`, not `base`."],
+						[900002, RULER, marker()],
+						[900011, RULER, "build-claim: build:s:n · 2026-09-20T07:00:00Z", AFTER_RULING],
+						[900012, RULER, "<!-- fabrika-triage-claim session=s -->\nclaimed", AFTER_RULING],
+						[900013, RULER, "**review: PASS @ a1b2c3d — criteria met**", AFTER_RULING],
+						[900014, "some-agent", "I think the delay should be longer.", AFTER_RULING],
+					),
+				),
+				{json: true},
+			);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).not.toHaveProperty("unmarked");
+		});
+
+		/** A roster that did not resolve says nothing about who commented, so it is never a zero. */
+		it("answers unknown, on exit 0, when the roster does not resolve and no marker stands", async () => {
+			const out = await run(
+				[
+					[ISSUE, served(issue())],
+					[COMMENTS, comments([900010, RULER, "Use `base * 3` instead."])],
+					[TRUNK, {status: 502, body: "{}"}],
+				],
+				{json: true},
+			);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({rulings: 0, unmarked: {state: "unknown"}});
+			expect(out.stderr.join("\n")).toContain("is UNKNOWN, never zero");
+		});
 	});
 
 	it("counts a drifted marker rather than reading it as nobody having ruled", async () => {

@@ -48,7 +48,7 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
 import {newestRulingAt} from "../decision/ruling.ts";
-import {standingRulings} from "../decision/standing-rulings.ts";
+import {describeUnmarked, standingRulings} from "../decision/standing-rulings.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {getPullRequest, listPullFiles} from "../io/pulls.ts";
@@ -1067,6 +1067,7 @@ const proveVerdicts = (
 			[
 				...diagnostics,
 				`${VERB}: #${issue} carries ${ruled.scan.all.length} standing ruling(s)${rulingAt === null ? "" : `, the newest at ${rulingAt}`}; ${ruled.scan.disregarded} drifted marker(s) disregarded, ${ruled.scan.unauthorized} off the control-plane roster.`,
+				...describeUnmarked(VERB, issue, ruled),
 			],
 			defers,
 			rulingAt,

@@ -166,7 +166,7 @@ materially different instructions, so the format owns the rules text byte for by
 shell routing table with it, and `lane brief` prints what it derives instead of composing anything.
 Both the section set and the field set are closed, and each field belongs to exactly one section —
 `## Task` owns `lane`, `root`, `fabrika`, `task`, `state` and `shell`, `## Ground` owns `issue`,
-`pr`, `epic`, `branch` and `range`. An unknown key, a key under the wrong heading, or a key set twice
+`pr`, `epic`, `branch`, `range` and `owner-comments`. An unknown key, a key under the wrong heading, or a key set twice
 under its own heading is malformed: a misplaced key would quietly beat the one the driver's fold
 derived and re-route the brief to a shell `## Task` never named. `## Ground` carries links and no
 content at all: the shell re-reads its own issue, PR and verdicts through its own verbs. A `review`
@@ -187,6 +187,16 @@ round the tail review's `FAIL` retries into — is the third shape: the PR *and*
 that PR's head sits on, under a rules paragraph of its own saying the branch is the lane driver's to
 move and that a stale trunk is merged in, never rebased. A branch beside a PR is what tells the two
 tail shapes apart, and it is the only ground that carries both.
+
+`owner-comments` rides beside any of those shapes on a build or review brief. It lists, as
+space-separated URLs, the comments a control-plane account wrote on the issue that no ruling marker
+records and that are newer than the newest recorded ruling. A rule an owner wrote as a plain comment
+reached no shell before: the brief carried the issue and nothing said the comment existed. The field
+has three states. Absent is the proven zero and changes no byte of the brief. A list appends a
+byte-fixed rule telling the shell to read each one. `unknown` says the read behind the field failed
+and appends a rule saying so, because a blank there would read as none. The field never carries a
+comment's text, and a `ship` brief carrying it is malformed. Nothing in it makes a comment a ruling:
+the graded set stays the body plus the marked rulings.
 
 ### `map-ticket`
 

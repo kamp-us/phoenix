@@ -24,9 +24,14 @@
  * checkout, so it resolves inside the shell's worktree, and a branch cut before a lane verb landed
  * hands the shell a CLI that cannot execute the contract this brief states. `./briefed-verbs.ts`
  * reads the branch's own tree, and a missing verb refuses at {@link BRIEFED_VERB_ABSENT}.
+ *
+ * A build or review brief also names the comments a control-plane account left on the issue that no
+ * ruling marker records, read through the scan `review criteria` and `lane prove` answer from. That
+ * read never refuses a dispatch: a failure rides in the brief as `unknown`.
  */
 import {Effect, type FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {describeUnmarked, standingRulings} from "../decision/standing-rulings.ts";
 import type {EntrypointRead} from "../delegate/entrypoint.ts";
 import {getIssue, resolveRepo} from "../io/issues.ts";
 import type {SizeStop} from "../table/size-stop.ts";
@@ -43,6 +48,7 @@ import {
 	type LaneBrief,
 	type LaneGround,
 	lanesRoot,
+	type OwnerComments,
 	type ShellState,
 	shellOf,
 	shellState,
@@ -291,6 +297,39 @@ const briefedVerbRefusal = (
 		);
 	});
 
+/**
+ * The unmarked owner comments a build or review shell is told to read, with the diagnostics the
+ * driver sees pushed onto `notes`.
+ *
+ * A warning and never a gate: an unreadable half is `Unknown` in the brief rather than a refusal,
+ * because holding a dispatch on it would stop a lane every time a comment page blipped.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10309#issuecomment-5974136525
+ */
+const ownerCommentsOf = (
+	repo: string,
+	issue: number,
+	state: ShellState,
+	notes: string[],
+): Effect.Effect<OwnerComments, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		if (!isBuildState(state) && !isReviewState(state)) return {_tag: "None"};
+		const ruled = yield* standingRulings(repo, issue);
+		if (ruled._tag === "Unknown") {
+			notes.push(
+				`${VERB}: ${ruled.reason} — whether a control-plane account commented on #${issue} without a ruling marker is UNKNOWN, never zero; the brief says so.`,
+			);
+			return {_tag: "Unknown"};
+		}
+		notes.push(...describeUnmarked(VERB, issue, ruled));
+		if (ruled.unmarked._tag === "Unknown") return {_tag: "Unknown"};
+		const [first, ...rest] = ruled.unmarked.comments.flatMap((comment) => {
+			const url = artifactUrl(comment.url);
+			return url === null ? [] : [url];
+		});
+		return first === undefined ? {_tag: "None"} : {_tag: "Unmarked", urls: [first, ...rest]};
+	});
+
 export const runBrief = (
 	options: BriefOptions,
 ): Effect.Effect<
@@ -397,6 +436,7 @@ export const runBrief = (
 				shell,
 				issue: read.url,
 				ground,
+				ownerComments: yield* ownerCommentsOf(repo.value, issue, state, notes),
 			};
 			return answer(emitBrief(brief), [
 				...notes,
@@ -470,6 +510,7 @@ export const runBrief = (
 			shell,
 			issue: read.url,
 			ground,
+			ownerComments: yield* ownerCommentsOf(repo.value, issue, state, notes),
 		};
 		return answer(emitBrief(brief), [
 			...notes,

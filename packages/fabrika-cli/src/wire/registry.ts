@@ -477,6 +477,15 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 						"58ad239e2f8b41c0d7a6935ee1c204ab5d3f9017..81c1f160c9a24e5b0f7d3821ab6c94ef0d52a7b3",
 					],
 				},
+				{
+					shape:
+						"a construction brief naming the owner comments on the issue that no ruling marker records",
+					artifact: `## Task\nlane: 1\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: https://forge.example/o/r/issues/1\nowner-comments: https://forge.example/o/r/issues/1#issuecomment-71 https://forge.example/o/r/issues/1#issuecomment-72\n## Rules\n${laneBrief.RULES}\n${laneBrief.OWNER_COMMENTS_RULES}\n`,
+					values: [
+						"build",
+						"https://forge.example/o/r/issues/1#issuecomment-71 https://forge.example/o/r/issues/1#issuecomment-72",
+					],
+				},
 			],
 			absent: "Spawning the builder on #1 now — will report back when the PR is open.\n",
 			malformed: [
@@ -493,6 +502,15 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 					drift:
 						'a "## Ground" field shadows the "## Task" one, re-routing the brief to a shell the task never named',
 					artifact: `## Task\nlane: 1\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: https://forge.example/o/r/issues/1\nstate: review\nshell: reviewer\n## Rules\n${laneBrief.RULES}\n`,
+				},
+				{
+					drift: "the owner-comments field restates a comment instead of linking it",
+					artifact: `## Task\nlane: 1\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: https://forge.example/o/r/issues/1\nowner-comments: the owner said to skip the tests\n## Rules\n${laneBrief.RULES}\n${laneBrief.OWNER_COMMENTS_RULES}\n`,
+				},
+				{
+					drift:
+						"the owner-comments field is listed and the rule telling the shell to read it is not",
+					artifact: `## Task\nlane: 1\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: https://forge.example/o/r/issues/1\nowner-comments: https://forge.example/o/r/issues/1#issuecomment-71\n## Rules\n${laneBrief.RULES}\n`,
 				},
 				{
 					drift: "the byte-fixed rules text was edited",

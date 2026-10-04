@@ -19,6 +19,7 @@ import {
 	EPIC_RULES,
 	EPIC_TAIL_REPAIR_RULES,
 	EPIC_TAIL_RULES,
+	OWNER_COMMENTS_RULES,
 	RULES,
 	read as readBrief,
 } from "../wire/lane-brief.ts";
@@ -89,6 +90,12 @@ const nominated = (...numbers: ReadonlyArray<number>): HttpReply => ({
 
 /** Nothing nominated by the body half, so the union answers off the closing edge alone. */
 const NO_NOMINATIONS: Scripted = [/^GET .*\/search\/issues\?/, nominated()];
+
+/** An issue nobody commented on, so the owner-comments read is a proven zero unless a case scripts one. */
+const NO_COMMENTS: Scripted = [
+	/^GET .*\/repos\/o\/r\/issues\/\d+\/comments\?/,
+	{status: 200, body: "[]"},
+];
 
 const pullPayload = (number: number, url: string, body: string): HttpReply => ({
 	status: 200,
@@ -246,7 +253,7 @@ const run = (
 		Effect.provide(
 			runBrief({...options, ...overrides}),
 			// The body half is tailed, so a test scripting its own wins the seam's first-match lookup.
-			Layer.merge(fs.layer, fakeSeams([...script, NO_NOMINATIONS]).layer),
+			Layer.merge(fs.layer, fakeSeams([...script, NO_NOMINATIONS, NO_COMMENTS]).layer),
 		),
 	);
 
@@ -281,6 +288,75 @@ describe("lane brief", () => {
 				issue: ISSUE_URL,
 				ground: {_tag: "Pull", pr: PR_URL},
 			},
+		});
+	});
+
+	/**
+	 * A rule an owner wrote as a plain comment reached no shell: the brief carried the issue and
+	 * nothing said newer owner comments existed. The brief names them now, as URLs, and never holds
+	 * the dispatch on them.
+	 */
+	describe("the owner comments no ruling marker records", () => {
+		const COMMENTS = /^GET .*\/repos\/o\/r\/issues\/5751\/comments\?/;
+		const OWNER_COMMENT = `https://github.com/${options.env.CLAUDE_PIPELINE_REPO}/issues/5751#issuecomment-900010`;
+		const ownerComment: Scripted = [
+			COMMENTS,
+			{
+				status: 200,
+				body: JSON.stringify([
+					{
+						id: 900010,
+						user: {login: "usirin"},
+						created_at: "2026-08-17T00:00:00Z",
+						updated_at: "2026-08-17T00:00:00Z",
+						body: "Use the second fork, not the first.",
+					},
+				]),
+			},
+		];
+		const ROSTER: ReadonlyArray<Scripted> = [
+			[/^GET .*\/repos\/o\/r$/, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+			[
+				/contents\/\.github\/CODEOWNERS\?ref=main$/,
+				{status: 200, body: "/packages/fabrika-cli/ @o/control-plane\n"},
+			],
+			[
+				/^GET .*\/orgs\/o\/teams\/control-plane\/members/,
+				{status: 200, body: JSON.stringify([{login: "usirin"}])},
+			],
+		];
+
+		it("names each one in a build brief, as a URL the shell is told to read", async () => {
+			const out = await run(lane("5751", ["WIP"]), [
+				[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+				[PR_CLOSERS, closingPulls()],
+				ownerComment,
+				...ROSTER,
+			]);
+
+			expect(out.code).toBe(0);
+			expect(out.stdout).toContain(`owner-comments: ${OWNER_COMMENT}\n## Rules`);
+			expect(out.stdout).toContain(OWNER_COMMENTS_RULES);
+			expect(out.stdout).not.toContain("Use the second fork");
+			expect(readBrief(out.stdout)).toMatchObject({
+				_tag: "Found",
+				value: {ownerComments: {_tag: "Unmarked", urls: [OWNER_COMMENT]}},
+			});
+		});
+
+		it("still briefs, saying `unknown`, when the roster does not resolve", async () => {
+			const out = await run(lane("5751", ["WIP"]), [
+				[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+				[PR_CLOSERS, closingPulls()],
+				ownerComment,
+			]);
+
+			expect(out.code).toBe(0);
+			expect(readBrief(out.stdout)).toMatchObject({
+				_tag: "Found",
+				value: {ownerComments: {_tag: "Unknown"}},
+			});
+			expect(out.stderr.join("\n")).toContain("is UNKNOWN, never zero");
 		});
 	});
 
@@ -643,6 +719,7 @@ describe("lane brief at the size stop", () => {
 						[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
 						[PR_CLOSERS, closingPulls()],
 						NO_NOMINATIONS,
+						NO_COMMENTS,
 					]).layer,
 				),
 			),
@@ -715,7 +792,7 @@ describe("lane brief on an epic lane", () => {
 		script: ReadonlyArray<Scripted>,
 		overrides: Partial<typeof options>,
 	) => {
-		const seams = fakeSeams([...script, NO_NOMINATIONS]);
+		const seams = fakeSeams([...script, NO_NOMINATIONS, NO_COMMENTS]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runBrief({...options, lane: String(EPIC), ...overrides}),
