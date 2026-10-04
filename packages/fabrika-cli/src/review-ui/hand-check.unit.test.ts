@@ -1,7 +1,7 @@
 import {describe, expect, it} from "vitest";
 import type {CommentRecord} from "../io/issues.ts";
 import {composeEvidence} from "../ui/evidence-verb.ts";
-import {admitHandCheck, findHandCheck, handCheckCommentId} from "./hand-check.ts";
+import {admitHandCheck, findHandCheck, handCheckCommentId, nearMisses} from "./hand-check.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const OWNERS = new Set(["owner"]);
@@ -77,5 +77,28 @@ describe("findHandCheck", () => {
 	it("finds none where no comment passes all four facts", () => {
 		const found = [comment(`looks right at ${HEAD}`), comment(`at 9fe12ab04f ${SHOT}`, "owner", 2)];
 		expect(findHandCheck(found, HEAD, OWNERS)).toBeNull();
+	});
+});
+
+describe("nearMisses", () => {
+	it("names the one fact a head-naming comment failed, and passes over the rest", () => {
+		const found = [
+			comment(`looks right at ${HEAD.slice(0, 8)}`, "owner", 1),
+			comment(`at ${HEAD} ${SHOT}`, "agent", 2),
+			comment(`gate note citing ${HEAD}`, "agent", 3),
+			comment(`at 9fe12ab04f ${SHOT}`, "owner", 4),
+			comment(`at ${HEAD} ${SHOT}`, "owner", 5),
+			comment(EVIDENCE, "owner", 6),
+			comment(STAMPED, "owner", 7),
+			comment(STAMPED, "agent", 8),
+		];
+		expect(
+			nearMisses(found, HEAD, OWNERS).map((miss) => [miss.comment.id, miss.fact]),
+		).toStrictEqual([
+			[1, "screenshot"],
+			[2, "author"],
+			[6, "evidence"],
+			[7, "stamp"],
+		]);
 	});
 });

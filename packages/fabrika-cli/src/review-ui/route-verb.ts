@@ -92,6 +92,8 @@ import {
 	readNamespaced,
 	clause as toClause,
 } from "../wire/routed-elsewhere.ts";
+import {read as readMarker} from "../wire/verdict-marker.ts";
+import {handCheckNote, isCantSeeNote, noteLines, requireRenderNote} from "./cant-see-note.ts";
 import {
 	HAND_CHECK_INADMISSIBLE,
 	NO_PREVIEW_MODE_UNMET,
@@ -104,7 +106,7 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {admitHandCheck, findHandCheck, handCheckCommentId} from "./hand-check.ts";
+import {admitHandCheck, findHandCheck, handCheckCommentId, nearMisses} from "./hand-check.ts";
 import {filesAtMode, type NoPreviewMode, type NoPreviewRule, noPreviewMode} from "./no-preview.ts";
 import {NAMESPACE} from "./post-verb.ts";
 import {resolvePreview} from "./preview.ts";
@@ -161,12 +163,13 @@ const basisUnder = (
 	decisive: ReadonlyArray<string>,
 ):
 	| {readonly _tag: "Basis"; readonly basis: RouteBasis}
-	| {readonly _tag: "Unmet"; readonly why: string} => {
+	| {readonly _tag: "Unmet"; readonly why: string; readonly note: string} => {
 	const files = decisive.join(", ");
 	if (mode === "require-render") {
 		return {
 			_tag: "Unmet",
 			why: `reviewUi.whenNoPreview resolves require-render for #${pr} (${files}) — a render is owed, so a PR with no preview is CANT-SEE, never routed.`,
+			note: requireRenderNote(decisive),
 		};
 	}
 	return offered || mode === "hand-check"
@@ -367,7 +370,10 @@ export const runRoute = (
 				filesAtMode(noPreview.rules, ui, mode),
 			);
 			if (under._tag === "Unmet") {
-				return refuse(NO_PREVIEW_MODE_UNMET, `${VERB}: ${under.why}`, diagnostics);
+				return refuse(NO_PREVIEW_MODE_UNMET, `${VERB}: ${under.why}`, [
+					...diagnostics,
+					...noteLines(VERB, pr, under.note),
+				]);
 			}
 			basis = under.basis;
 		}
@@ -394,6 +400,19 @@ export const runRoute = (
 					diagnostics,
 				);
 			}
+			// A person's attempts only: this gate's own earlier note and a verdict both name the head,
+			// and on a repo whose reviewing account is an owner each would read as a failed hand-check.
+			const attempts = comments.value.filter(
+				(comment) => !isCantSeeNote(comment.body) && readMarker(comment.body)._tag === "Absent",
+			);
+			const owed = (): ReadonlyArray<string> => [
+				...diagnostics,
+				...noteLines(
+					VERB,
+					pr,
+					handCheckNote({repo, pr}, live, nearMisses(attempts, live, roster.logins)),
+				),
+			];
 			let admitted: CommentRecord;
 			if (handCheckId === null) {
 				const found = findHandCheck(comments.value, live, roster.logins);
@@ -401,7 +420,7 @@ export const runRoute = (
 					return refuse(
 						NO_PREVIEW_MODE_UNMET,
 						`${VERB}: reviewUi.whenNoPreview resolves hand-check for #${pr}, and no comment on it is an owner's hand-check at ${live} — a control-plane account's screenshots naming this head; with none posted, the PR is CANT-SEE.`,
-						diagnostics,
+						owed(),
 					);
 				}
 				admitted = found;
@@ -411,7 +430,7 @@ export const runRoute = (
 					return refuse(
 						HAND_CHECK_INADMISSIBLE,
 						`${VERB}: ${named.reason}; nothing was posted.`,
-						diagnostics,
+						owed(),
 					);
 				}
 				admitted = named.comment;

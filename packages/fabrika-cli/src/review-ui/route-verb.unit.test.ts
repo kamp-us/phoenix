@@ -539,6 +539,7 @@ describe("review-ui route --no-preview", () => {
 		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
 		expect(outcome.stderr.join("\n")).toContain("apps/site/src/styles/lint.config.json");
 		expect(outcome.stderr.join("\n")).toContain("require-render");
+		expect(outcome.stderr.join("\n")).toContain("- `apps/site/src/styles/lint.config.json`");
 		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
@@ -562,6 +563,30 @@ describe("review-ui route --no-preview", () => {
 		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
 		expect(outcome.stderr.join("\n")).toContain("no comment on it is an owner's hand-check");
 		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("prints the note on 21, naming the fact an owner's comment at this head failed", async () => {
+		const textOnly = {...handCheck(OWNER, `Looks right at ${HEAD}.`), id: 7002};
+		const {outcome} = await run(
+			script([textOnly], flagged("hand-check"), roster),
+			under("hand-check"),
+		);
+		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
+		const stderr = outcome.stderr.join("\n");
+		expect(stderr).toContain(`Hand-checked at ${HEAD}.`);
+		expect(stderr).toContain("#issuecomment-7002) by `owner` names the right commit but has no");
+	});
+
+	it("leaves its own earlier note out of the comments that came close", async () => {
+		const first = await run(script([], flagged("hand-check"), roster), under("hand-check"));
+		const lines = first.outcome.stderr;
+		const note = lines.slice(lines.indexOf("----- note begins -----") + 1, -2).join("\n");
+		const {outcome} = await run(
+			script([handCheck(OWNER, note)], flagged("hand-check"), roster),
+			under("hand-check"),
+		);
+		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
+		expect(outcome.stderr.join("\n")).not.toContain("came close");
 	});
 
 	it("finds the owner's hand-check itself when none is named", async () => {
