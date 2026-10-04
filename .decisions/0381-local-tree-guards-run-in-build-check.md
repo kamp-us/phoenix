@@ -1,7 +1,7 @@
 ---
 id: 0381
 title: build check runs every local-tree guard by name, never a repo declaration and never a blind loop
-status: accepted
+status: amended-in-part by [0465](0465-catalog-guard-is-config-gated.md)
 date: 2026-09-10
 tags: [fabrika, cli, pipeline, gates, build]
 ---
