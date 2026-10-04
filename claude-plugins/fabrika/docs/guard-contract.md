@@ -115,6 +115,12 @@ No-gos) and a founder approval. Either carrier gives it:
 A table that does not read (none configured, a token without the `project` scope, or a failed read)
 approves nothing and is named on stderr, and the comments decide as before.
 
+The table can have its own token. When the `TABLE_READ_TOKEN` environment variable is set, the guard
+reads the table project with it and reads everything else (issues, comments, and the permission of
+each commenter and Stage setter) with the usual `GITHUB_TOKEN` or `GH_TOKEN`. Unset or empty, one
+token makes every read. This is for CI, where the workflow's own token cannot be given the `project`
+scope and a token minted for the project may not see a collaborator's permission.
+
 `**Appetite:**` is a size, `S`, `M` or `L`, whose dollar amount per epic child `.fabrika.jsonc`
 `appetiteSizes` sets (shipped S = $15, M = $35, L = $40). A legacy `<N> cycles` appetite still
 reads, approved only by a `pitch-approved: appetite <N> cycles` comment. An optional `**Success:**`
