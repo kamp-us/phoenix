@@ -68,7 +68,7 @@ describe("a repo that keeps no decision corpus", {timeout: SUBPROCESS_TEST_TIMEO
 	});
 
 	it("refuses `governance sweep` and names the half this repo can still run", () => {
-		const out = run(root, ["governance", "sweep", "--landed", "0240"]);
+		const out = run(root, ["governance", "sweep", "4321", "--record", "0240"]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 		// The word this verb must never print here: `no-overlap` reads as "checked, nothing found".

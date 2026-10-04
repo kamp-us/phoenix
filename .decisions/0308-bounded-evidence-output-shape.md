@@ -359,3 +359,8 @@ to-do the next builder may pick up: a row leaves this section when the founder r
   The current authoring rule is
   [command documentation ownership](../claude-plugins/fabrika/docs/interface-convention.md#command-documentation-ownership).
   No vocabulary impact.
+- **#10529 — Two classified verbs retired (2026-10-04).** [ADR 0472](0472-governance-readout-retired-without-replacement.md)
+  removes `governance digest` and `status readout` from fabrika, so their rows in the per-field
+  table above (`governance digest` `records`, `status readout` `rows`) describe verbs that no longer
+  exist, and `status open` prints six fields rather than the count its row states. The rows stay as
+  history; no live verb is classified by them. No vocabulary impact.

@@ -1,7 +1,7 @@
 ---
 id: 0274
 title: "`claude-plugins/fabrika/**` is not §CP — a required governance verdict replaces the human gate"
-status: accepted
+status: amended-in-part by [0472](0472-governance-readout-retired-without-replacement.md)
 date: 2026-08-11
 tags: [pipeline, fabrika, control-plane, governance, ship]
 ---
@@ -12,6 +12,11 @@ tags: [pipeline, fabrika, control-plane, governance, ship]
 fabrika-tree change is meant to be held by a machine check (a required `governance` verdict) and then
 shown to the founder after it lands (the §CP digest readout). `.github/**` and everything the
 existing control-plane matcher already covers stay human-gated, unchanged.
+
+> **Amended in part by [ADR 0472](0472-governance-readout-retired-without-replacement.md)
+> (2026-10-04):** the §CP digest readout is retired with no replacement, so it is not a standing
+> control. Every mention of the readout below is history. The required `governance` verdict is the
+> fabrika tree's only substituted control; the non-coverage ruling and the kept §CP paths stand.
 
 ## Context
 
@@ -130,3 +135,5 @@ The ruling has four parts, as ruled:
   in [`.glossary/TERMS.md`](../.glossary/TERMS.md).
 
 > Amendment 2026-08-19: `CONTROL_PLANE_RE` is now single-sourced in [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts); the `packages/pipeline-cli/src/tools/control-plane-paths/` copy goes with that package's deletion and the `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` byte-sync mirror no longer exists. The ruling is unchanged: no §CP coverage for `claude-plugins/fabrika/**`.
+
+> Amendment 2026-10-04: [ADR 0472](0472-governance-readout-retired-without-replacement.md) retires the §CP digest readout on the founder's ruling ([#10529](https://github.com/kamp-us/phoenix/issues/10529#issuecomment-5984818746), [the governance verdict alone is enough](https://github.com/kamp-us/phoenix/issues/10529#issuecomment-5985299071)). The fabrika tree stays outside §CP on the required `governance` verdict alone; the readout half of the Decision, binding constraint and Consequences above no longer holds.

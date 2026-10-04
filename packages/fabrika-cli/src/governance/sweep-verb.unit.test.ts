@@ -29,9 +29,8 @@ const corpusFiles = (): Record<string, string> =>
 	);
 
 const options = {
-	pr: null as number | null,
-	record: null as string | null,
-	landed: null as string | null,
+	pr: 4321,
+	record: "0240",
 	sha: null as string | null,
 	dir: DIR,
 	limit: 8,
@@ -52,41 +51,9 @@ const run = (
 		),
 	);
 
-describe("runSweep in --landed mode", () => {
-	it("ranks the corpus against a record already in --dir and exits 0", async () => {
-		const out = await run([], {landed: "0001"});
-		expect(out.code).toBe(0);
-		expect(out.stdout.split("\n")[0]).toMatch(/^(shortlist|no-overlap)$/);
-	});
-
-	it("carries the not-a-clearance sentence on the no-overlap arm's `reason`", async () => {
-		const out = await run([], {landed: "0002", json: true});
-		const parsed = JSON.parse(out.stdout);
-		if (parsed.outcome === "no-overlap") {
-			expect(parsed.reason).toContain("this is not a clearance");
-		}
-		expect(parsed.subject).toBe("0002");
-	});
-
-	it("answers `indeterminate` at exit 0 below the imported rarity floor", async () => {
-		const small = ["0001-a.md", "0002-b.md"];
-		const out = await run(
-			[],
-			{landed: "0001"},
-			fakeFs({
-				dirs: {[DIR]: small},
-				files: {
-					[`${DIR}/0001-a.md`]: record("0001", "accepted"),
-					[`${DIR}/0002-b.md`]: record("0002", "accepted"),
-				},
-			}),
-		);
-		expect(out.code).toBe(0);
-		expect(out.stdout.trim()).toBe("indeterminate");
-	});
-
+describe("runSweep's corpus read", () => {
 	it("refuses a zero-record corpus on 7 rather than answering no-overlap over nothing", async () => {
-		const out = await run([], {landed: "0001"}, fakeFs({dirs: {[DIR]: []}}));
+		const out = await run([], {}, fakeFs({dirs: {[DIR]: []}}));
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe(
 			"governance sweep: scanned .decisions, 0 decision records — refusing to answer.",
@@ -96,7 +63,7 @@ describe("runSweep in --landed mode", () => {
 	it("refuses an UNREADABLE member on 11 — an incomplete corpus is UNKNOWN", async () => {
 		const out = await run(
 			[],
-			{landed: "0001"},
+			{},
 			fakeFs({
 				dirs: {[DIR]: names},
 				files: corpusFiles(),
@@ -109,14 +76,8 @@ describe("runSweep in --landed mode", () => {
 	});
 
 	it("refuses an unlistable --dir on 11, distinct from an empty one", async () => {
-		const out = await run([], {landed: "0001"}, fakeFs({}));
+		const out = await run([], {}, fakeFs({}));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-	});
-
-	it("refuses a --landed id the corpus does not carry on 11", async () => {
-		const out = await run([], {landed: "9999"});
-		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stderr.at(-1)).toContain("carries no decision record 9999");
 	});
 });
 
@@ -132,9 +93,36 @@ describe("runSweep in --record mode", () => {
 	];
 
 	it("reads the subject at the BOUND commit and ranks against the corpus", async () => {
-		const out = await run(scripted, {pr: 4321, record: "0240"});
+		const out = await run(scripted);
 		expect(out.code).toBe(0);
 		expect(out.stderr[0]).toContain(`bound to ${HEAD}`);
+		expect(out.stdout.split("\n")[0]).toMatch(/^(shortlist|no-overlap)$/);
+	});
+
+	it("carries the not-a-clearance sentence on the no-overlap arm's `reason`", async () => {
+		const out = await run(scripted, {json: true});
+		const parsed = JSON.parse(out.stdout);
+		if (parsed.outcome === "no-overlap") {
+			expect(parsed.reason).toContain("this is not a clearance");
+		}
+		expect(parsed.subject).toBe("0240");
+	});
+
+	it("answers `indeterminate` at exit 0 below the imported rarity floor", async () => {
+		const small = ["0001-a.md", "0002-b.md"];
+		const out = await run(
+			scripted,
+			{},
+			fakeFs({
+				dirs: {[DIR]: small},
+				files: {
+					[`${DIR}/0001-a.md`]: record("0001", "accepted"),
+					[`${DIR}/0002-b.md`]: record("0002", "accepted"),
+				},
+			}),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.trim()).toBe("indeterminate");
 	});
 
 	it("refuses when the bound commit carries no such record on 11", async () => {
@@ -192,21 +180,16 @@ describe("runSweep in --record mode", () => {
 });
 
 describe("runSweep's usage fence", () => {
-	it("refuses both a PR and --landed, and neither, on 10", async () => {
-		expect((await run([], {pr: 4321, record: "0240", landed: "0240"})).code).toBe(OFF_VOCABULARY);
-		expect((await run([], {})).code).toBe(OFF_VOCABULARY);
-	});
-
 	it("refuses a non-four-digit id on 10", async () => {
-		const out = await run([], {landed: "240"});
+		const out = await run([], {record: "240"});
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stderr.at(-1)).toBe(
-			'governance sweep: --landed "240" is not a four-digit decision id.',
+			'governance sweep: --record "240" is not a four-digit decision id.',
 		);
 	});
 
 	it("refuses a negative --limit on 10", async () => {
-		const out = await run([], {landed: "0001", limit: -1});
+		const out = await run([], {limit: -1});
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stderr.at(-1)).toContain("a shortlist cannot be shorter than empty");
 	});

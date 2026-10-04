@@ -30,14 +30,7 @@ import {type Read, readRoadmapFile} from "../config/paths.ts";
 import {resolveBoard} from "../config/resolve-board.ts";
 import {appendText, exists, readFile, writeFile} from "../io/fs.ts";
 import type {Attempt, Shell} from "../io/git.ts";
-import {
-	createLabel,
-	createUnlabelledIssue,
-	getIssue,
-	listLabels,
-	listOpenMilestones,
-	openIssuesTitled,
-} from "../io/issues.ts";
+import {createLabel, listLabels, listOpenMilestones} from "../io/issues.ts";
 import {isRecord, parseJsonOrReason} from "../io/json.ts";
 import {FRESH_JSON_LAYOUT, readJsonLayout, renderJson} from "../io/json-layout.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
@@ -61,7 +54,6 @@ import {
 } from "./codes.ts";
 import {EMPTY_CELL, row} from "./fields.ts";
 import {HAND_CHECK_MODE, planHandCheck} from "./hand-check-step.ts";
-import {ARTIFACT_TITLE} from "./readout-verb.ts";
 import {STARTER_CONFIG} from "./starter-config.ts";
 import {PLUGIN, SETTINGS_PATH} from "./wiring-verb.ts";
 
@@ -129,10 +121,6 @@ export const ISSUE_SHAPE_MARKERS: ReadonlyArray<LabelSpec> = [
 	marker("prototyping:spike", "disposable prototyping spike"),
 	marker("grilling:session", "grilling session"),
 ];
-
-/** The artifact issue's body, fixed here so no clause defers to another skill's prose. */
-export const ARTIFACT_BODY = `The durable home for the landed-decision digest. \`fabrika governance readout\` upserts a comment
-here; \`fabrika status readout\` displays it. This issue stays open and is not worked.`;
 
 /**
  * What a machine-read file's own parser saw in the bytes just written: a clause for the notice, and
@@ -289,8 +277,7 @@ export type BuildableSurface =
 			 * issue *is* is fabrika's vocabulary, not the host repo's.
 			 */
 			readonly labels: (board: BoardVocabulary) => ReadonlyArray<LabelSpec>;
-	  }
-	| {readonly id: string; readonly kind: "issue"};
+	  };
 
 /** The `.gitignore` row that keeps `fabrika lane`'s per-checkout state out of shared history. */
 export const FABRIKA_IGNORE_ROW = "/.fabrika/";
@@ -419,7 +406,7 @@ The per-stage shells are surgical — resume a half-dead lane, re-run one gate, 
 never the normal entry point: \`build\` (**builder**), \`review\` (**reviewer**), \`ship\`
 (**shipper**), and \`heal-ci\` for a PR that is green but going nowhere.`;
 
-/** Eleven ids. A twelfth is a change to this table, not a new rule. */
+/** Ten ids. An eleventh is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
@@ -446,7 +433,6 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	},
 	{id: "label-taxonomy", kind: "labels", labels: taxonomy},
 	{id: "issue-shape-markers", kind: "labels", labels: () => ISSUE_SHAPE_MARKERS},
-	{id: "readout-artifact", kind: "issue"},
 	{id: "settings-patch", kind: "json", defaultPath: SETTINGS_PATH, patch: SETTINGS_PATCH},
 	{
 		id: "dep-pin",
@@ -1198,64 +1184,6 @@ const buildLabels = (
 	});
 
 /**
- * **The pre-write probe and the read-back use different primitives, and the asymmetry is the point.**
- * With no number in hand a title scan is the only probe there is; once `createUnlabelledIssue` has
- * returned one, `getIssue` reads the issue's own resource. The issues *list* is eventually
- * consistent, so re-scanning it spends `READBACK_MISMATCH` — the loudest code here — on a correct
- * first creation whose row has not propagated yet.
- */
-const buildArtifact = (
-	surface: Extract<BuildableSurface, {kind: "issue"}>,
-	input: BootstrapInput,
-): Effect.Effect<VerbOutcome, never, Requirements> =>
-	Effect.gen(function* () {
-		if (input.repo._tag === "Failure") return UNRESOLVED_REPO;
-		const repo = input.repo.value;
-
-		const before = yield* openIssuesTitled(repo, ARTIFACT_TITLE);
-		if (before._tag === "Failure") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot probe ${repo} for "${ARTIFACT_TITLE}": ${before.reason} — nothing was written.`,
-			);
-		}
-		const found = before.value[0];
-		if (found !== undefined) return already(surface.id, `${repo}#${found.number}`, input.json);
-
-		const write = yield* createUnlabelledIssue(repo, ARTIFACT_TITLE, ARTIFACT_BODY);
-		if (write._tag === "Failure") {
-			return refuse(
-				WRITE_UNKNOWN,
-				`${VERB}: writing the ${ARTIFACT_TITLE} issue failed: ${write.reason} — whether it landed is UNKNOWN. Re-read before retrying.`,
-			);
-		}
-		const target = `${repo}#${write.value.number}`;
-		const back = yield* getIssue(repo, write.value.number);
-		if (back._tag === "Unknown") {
-			return refuse(
-				WRITE_UNKNOWN,
-				`${VERB}: created ${target} and it could not be read back: ${back.reason} — the outcome is UNKNOWN.`,
-			);
-		}
-		if (
-			back._tag === "Absent" ||
-			back.value.title !== ARTIFACT_TITLE ||
-			back.value.state !== "open"
-		) {
-			return refuse(
-				READBACK_MISMATCH,
-				`${VERB}: wrote ${target} and the read-back differs — it does not resolve open under that exact title.`,
-			);
-		}
-		return created(
-			surface.id,
-			target,
-			input.json,
-			`${VERB}: created ${target} for ${surface.id}, read-back conformed.`,
-		);
-	});
-
-/**
  * One surface per invocation, deliberately: a run spanning several surfaces can write some and fail
  * on the rest, and there is no honest single answer for that.
  */
@@ -1277,5 +1205,5 @@ export const runBootstrap = (
 	if (surface.kind === "dep-pin") return buildDepPin(surface, input);
 	if (surface.kind === "starter") return buildStarter(surface, input);
 	if (surface.kind === "no-preview-rule") return buildNoPreviewRule(surface, input);
-	return surface.kind === "labels" ? buildLabels(surface, input) : buildArtifact(surface, input);
+	return buildLabels(surface, input);
 };

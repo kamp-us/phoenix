@@ -55,7 +55,6 @@ arrives owing a migration nobody planned.
 | `grill-answer` | [`packages/fabrika-cli/src/wire/grill-answer.ts`](../../../packages/fabrika-cli/src/wire/grill-answer.ts) | `grilling` | `grilling` |
 | `grill-supersede` | [`packages/fabrika-cli/src/wire/grill-supersede.ts`](../../../packages/fabrika-cli/src/wire/grill-supersede.ts) | `grilling` | `grilling` |
 | `handoff-pack` | [`packages/fabrika-cli/src/wire/handoff-pack.ts`](../../../packages/fabrika-cli/src/wire/handoff-pack.ts) | `handoff` | `handoff` |
-| `governance-digest` | [`packages/fabrika-cli/src/wire/governance-digest.ts`](../../../packages/fabrika-cli/src/wire/governance-digest.ts) | `governance` | `front-door` |
 | `graduate-emitted` | [`packages/fabrika-cli/src/wire/graduate-emitted.ts`](../../../packages/fabrika-cli/src/wire/graduate-emitted.ts) | `graduate` | `graduate` |
 | `came-from` | [`packages/fabrika-cli/src/wire/came-from.ts`](../../../packages/fabrika-cli/src/wire/came-from.ts) | `grilling`, `prototyping` | `grilling`, `wayfinding` |
 | `plan-approval` | [`packages/fabrika-cli/src/wire/plan-approval.ts`](../../../packages/fabrika-cli/src/wire/plan-approval.ts) | `check-epic-plan` | `check-epic-plan` |
@@ -300,17 +299,6 @@ artifact whose section set is open can steer its receiver past the artifact and 
 way to tell the format's own words from someone else's. Its digest is over the proven half's fields
 rather than over the comment text, and a reader recomputes it — a pack comment is editable by its
 author, so two printed copies of a number nobody recomputes can drift with nothing marking it.
-
-### `governance-digest`
-
-This is the periodic readout of the decision records that landed in a window — the non-blocking half
-of the ruling that retired the human gate on ADRs, so it carries no polarity and nothing about it can
-red. Each row is an id, one of three closed kinds (`tension`, `blast`, `routine`) and a one-line note,
-ranked highest consequence first. The note is a **pointer, not a directive**: the receiver re-fetches
-the record the id names and reads it there, which is what keeps a coordination artifact from steering
-whoever reads it, and it is why free prose is confined to that one field. The block is upserted onto a
-durable issue rather than appended, so a reader always finds exactly one current readout instead of a
-stream a timestamp has to decide between.
 
 ### `graduate-emitted`
 

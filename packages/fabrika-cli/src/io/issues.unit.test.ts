@@ -30,7 +30,6 @@ import {
 	listOpenIssueFacts,
 	listOpenIssues,
 	listOpenMilestones,
-	openIssuesTitled,
 	openIssuesWithLabel,
 	openIssuesWithLabelDetailed,
 	openQueueIssues,
@@ -301,24 +300,6 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 		});
 	});
 
-	it("openIssuesTitled matches the title exactly, off the issues endpoint not the search index", async () => {
-		const http = scripted([
-			[
-				/issues/,
-				{
-					status: 200,
-					body: [
-						{number: 1, title: "map: portability"},
-						{number: 2, title: "map: portability (draft)"},
-					],
-				},
-			],
-		]);
-		const result = await against(openIssuesTitled("o/r", "map: portability"), http);
-		expect(result).toEqual({_tag: "Ok", value: [{number: 1, title: "map: portability"}]});
-		expect(http.calls[0]).not.toContain("search/issues");
-	});
-
 	it("searchOpenIssues reads the envelope's items, AND-joining the tokens into the query", async () => {
 		const http = scripted([
 			[/search/, {status: 200, body: {total_count: 1, items: [{number: 5, title: "focus"}]}}],
@@ -559,7 +540,6 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 	 */
 	const cappedReads: ReadonlyArray<readonly [string, () => Shell<Attempt<unknown>>]> = [
 		["listOpenIssues", () => listOpenIssues("o/r")],
-		["openIssuesTitled", () => openIssuesTitled("o/r", "map: portability")],
 		["issueTimeline", () => issueTimeline("o/r", 1)],
 		["timelineFacts", () => timelineFacts("o/r", 1)],
 		["openIssuesWithLabel", () => openIssuesWithLabel("o/r", "status:needs-triage")],

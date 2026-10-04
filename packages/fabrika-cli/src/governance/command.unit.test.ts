@@ -15,8 +15,6 @@ describe("the `governance` group registers each verb", () => {
 		"guards",
 		"base",
 		"post",
-		"digest",
-		"readout",
 	])("resolves `governance %s` to a leaf", (verb) => {
 		const leaf = group.subcommands
 			.flatMap((set) => set.commands)

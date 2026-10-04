@@ -54,7 +54,7 @@ fabrika status bootstrap --help
 ```
 
 ```
-surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule
+surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, settings-patch, dep-pin, fabrika-config, hand-check-rule
 ```
 
 One id per invocation. A surface whose content is already in place is `exists` at exit 0, and
@@ -88,8 +88,8 @@ it was. It is `exists` once the file answers how screens are reviewed, it refuse
 that names no screen file, and a file that
 does not parse is refused unwritten. With no file, it creates one holding those keys alone.
 [If your app has no preview deploys](#if-your-app-has-no-preview-deploys) says when to run it.
-`label-taxonomy`,
-`issue-shape-markers` and `readout-artifact` write to GitHub and need a resolvable repo —
+`label-taxonomy` and
+`issue-shape-markers` write to GitHub and need a resolvable repo —
 `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote.
 
 ## 4. Create the labels
@@ -351,8 +351,7 @@ verdict by hand. The rules for each route, and their exit codes, are in
 ## 10. Re-run the front door
 
 **Writes to GitHub:** `status open` only reads. The follow-ups below write:
-`status bootstrap readout-artifact` creates an issue, `/fabrika:report` files one, and
-`/fabrika:triage` labels it.
+`/fabrika:report` files an issue, and `/fabrika:triage` labels it.
 
 ### Read the fields
 
@@ -360,9 +359,8 @@ verdict by hand. The rules for each route, and their exit codes, are in
 fabrika status open
 ```
 
-Seven fields: the installed skill roster, what this repo declares from step 2, whether the plugin
-carrying the skills is enabled here, your board's counts, the decision digest, any lanes on this
-machine, and the trunk every verb resolved, with whether this clone's `origin/HEAD` agrees.
+Six fields: the installed skill roster, what this repo declares from step 2, whether the plugin
+carrying the skills is enabled here, your board's counts, any lanes on this machine, and the trunk every verb resolved, with whether this clone's `origin/HEAD` agrees.
 
 **Read the `wiring` field first.** It is the only one that answers about the plugin rather than
 about something the CLI reads, so it is the only one that catches a repo where every verb answers
@@ -370,11 +368,6 @@ and no fabrika skill can load in a session. `unwired` means `.claude/settings.js
 `fabrika@<marketplace>`, and until it does nothing in this guide's pipeline can start.
 `status bootstrap settings-patch` is the remedy: it merges the marketplace registration and the flip
 into a settings file that is already there, and creates the file whole when it is absent.
-
-The `readout` field reads `absent` with the detail
-`no readout artifact` until you run `fabrika status bootstrap readout-artifact`, which opens the
-durable issue the digest is upserted into, and then `absent` with `no digest block` until
-`fabrika governance readout` writes one. Both are facts, not failed reads.
 
 ### File the issue before the work
 

@@ -39,14 +39,12 @@ import {
 	isFieldName,
 	lanesField,
 	menuField,
-	readoutField,
 	runOpen,
 	settingsField,
 	type TrunkRead,
 	trunkField,
 	wiringField,
 } from "./open-verb.ts";
-import {badIssueRefusal, issueNumberOf, readReadout, runReadout} from "./readout-verb.ts";
 import {type RosterSources, readRoster} from "./roster.ts";
 import {runSettings, settingRows} from "./settings-verb.ts";
 import {readWiringSource, repoWiringSource, runWiring, wiringOf} from "./wiring-verb.ts";
@@ -258,47 +256,6 @@ const board = leafCommand(
 	Command.withExamples([{command: "fabrika status board"}]),
 );
 
-const readout = leafCommand(
-	"readout",
-	{
-		issue: Argument.string("issue").pipe(
-			Argument.optional,
-			Argument.withDescription(
-				'the artifact issue number (default: $FABRIKA_GOVERNANCE_READOUT_ISSUE, else the single open issue titled exactly "Governance readout")',
-			),
-		),
-		repo: repoFlag,
-		json: jsonFlag,
-	},
-	Effect.fn(function* ({issue, repo, json}) {
-		const supplied = Option.getOrNull(issue);
-		const number = supplied === null ? null : issueNumberOf(supplied);
-		if (supplied !== null && number === null) {
-			yield* emit(badIssueRefusal(supplied));
-			return;
-		}
-		const target = yield* resolveTarget(Option.getOrNull(repo));
-		const read = yield* readReadout({
-			repo: target._tag === "Ok" ? target.value : "",
-			issue: number,
-			env: process.env,
-		});
-		yield* emit(runReadout({read, json}));
-	}),
-).pipe(
-	Command.withShortDescription("The landed-decision digest from the durable artifact."),
-	Command.withDescription(
-		[
-			"Prints the landed-decision digest published in the durable governance readout artifact.",
-			"  stdout: `readout\\t<found|absent|malformed>\\t<row-count>\\t<source>\\t<as-of>`, then its rows",
-			"  10: the positional is not a positive issue number",
-			"  11: the artifact or its format could not be read (UNKNOWN, never absent)",
-			'  Derivation: the front-door skill\'s contract.md, "status readout"',
-		].join("\n"),
-	),
-	Command.withExamples([{command: "fabrika status readout"}]),
-);
-
 const bootstrap = leafCommand(
 	"bootstrap",
 	{
@@ -353,7 +310,7 @@ const bootstrap = leafCommand(
 			'  Derivation: the front-door skill\'s contract.md, "status bootstrap"',
 		].join("\n"),
 	),
-	Command.withExamples([{command: "fabrika status bootstrap readout-artifact"}]),
+	Command.withExamples([{command: "fabrika status bootstrap label-taxonomy"}]),
 );
 
 const open = leafCommand(
@@ -402,15 +359,6 @@ const open = leafCommand(
 					),
 				);
 			}
-			if (name === "readout") {
-				fields.push(
-					readoutField(
-						target._tag === "Ok"
-							? yield* readReadout({repo: target.value, issue: null, env: process.env})
-							: {_tag: "Unfetchable", repo: repoName, issue: null, reason: target.reason},
-					),
-				);
-			}
 			if (name === "trunk") {
 				fields.push(
 					trunkField(
@@ -447,12 +395,10 @@ const open = leafCommand(
 		yield* emit(runOpen({fields, json, scope: `${rosterScope}; repo ${repoName}`}));
 	}),
 ).pipe(
-	Command.withShortDescription(
-		"Composite readout: menu, settings, wiring, board, readout, lanes, trunk.",
-	),
+	Command.withShortDescription("Composite readout: menu, settings, wiring, board, lanes, trunk."),
 	Command.withDescription(
 		[
-			"Prints the composite front-door readout: menu, settings, wiring, board, readout, lanes and trunk.",
+			"Prints the composite front-door readout: menu, settings, wiring, board, lanes and trunk.",
 			"  stdout: `open\\t<field-count>`, then `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` each",
 			"  10: --field is off the closed vocabulary",
 			'  Derivation: the front-door skill\'s contract.md, "status open"',
@@ -469,12 +415,11 @@ export const statusCommand = Command.make("status").pipe(
 		settings,
 		wiring,
 		menu,
-		readout,
 		board,
 		bootstrap,
 	]),
 	Command.withShortDescription("Answer what state the factory is in."),
 	Command.withDescription(
-		"Answer what state the factory is in — the composite front-door readout, the resolved `.fabrika.jsonc` config surface, whether the plugin carrying the skills is enabled here, the derived skill roster, the landed-decision digest, the board's bucket counts, and the one primitive that creates a missing surface",
+		"Answer what state the factory is in — the composite front-door readout, the resolved `.fabrika.jsonc` config surface, whether the plugin carrying the skills is enabled here, the derived skill roster, the board's bucket counts, and the one primitive that creates a missing surface",
 	),
 );

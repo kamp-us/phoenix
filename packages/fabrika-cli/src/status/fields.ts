@@ -10,8 +10,8 @@
 /** The token an unestablished timestamp prints. It moves with the field's state, never alone. */
 export const UNKNOWN_AS_OF = "unknown";
 
-/** Where an `<as-of>` came from: this invocation's read, or the artifact's own last write. */
-export type AsOfKind = "read-now" | "artifact";
+/** Where an `<as-of>` came from: this invocation's read. */
+export type AsOfKind = "read-now";
 
 /** A field's freshness: an instant with its provenance, or an unestablished one. */
 export interface AsOf {
@@ -20,7 +20,6 @@ export interface AsOf {
 }
 
 export const readNow = (at: string): AsOf => ({at, kind: "read-now"});
-export const fromArtifact = (at: string): AsOf => ({at, kind: "artifact"});
 export const noAsOf: AsOf = {at: null, kind: null};
 
 export const asOfToken = (asOf: AsOf): string => asOf.at ?? UNKNOWN_AS_OF;

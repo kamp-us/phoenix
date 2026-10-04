@@ -37,7 +37,7 @@ in either direction.
 
 Read when: the answer changes if the list is short. `triage claim` answered `won` for a lane that had
 already lost, off a list missing a marker three minutes old ([#8067](https://github.com/kamp-us/phoenix/issues/8067));
-`heal-ci`'s suppression and rerun reads, and `governance readout`'s upsert, all refuse on the same
+`heal-ci`'s suppression and rerun reads both refuse on the same
 `received <k> of <m> declared` shape. A read that only reports what it saw — a scanned-count line, a
 survey — needs no reconciliation.
 
