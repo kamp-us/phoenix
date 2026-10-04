@@ -1423,6 +1423,9 @@ its paths unowned, so a new repo needs the file before its first build.
   does not move this surface. `.github/` is created when it is missing.
 - **The read-back is the guard's own check.** The written file is read again and must cover every
   path the guard demands; a path left uncovered is `9`, named on the line.
+- **A `created` answer reports how many rows it wrote.** The notice ends `<n> row(s) owned by
+  @<login>`, and `--json` carries the count as the number field `rows`. An `exists` answer carries
+  no `rows` field, because that file was never read. The tab-separated line does not change.
 
 The `readout-artifact` body, fixed here so no clause defers to another skill's prose:
 

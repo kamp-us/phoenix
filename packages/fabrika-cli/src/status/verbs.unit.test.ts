@@ -2101,7 +2101,11 @@ describe("owners-file writes the owners file from the guard's own path list", ()
 	const USER = /GET .*\/user$/;
 	const SIGNED_IN: Scripted = [USER, {status: 200, body: '{"login":"octo"}'}];
 
-	const run = (files: Record<string, string>, script: ReadonlyArray<Scripted> = [SIGNED_IN]) => {
+	const run = (
+		files: Record<string, string>,
+		script: ReadonlyArray<Scripted> = [SIGNED_IN],
+		json = false,
+	) => {
 		const seams = fakeSeams(script);
 		const fs = fakeFs({files});
 		return Effect.runPromise(
@@ -2109,7 +2113,7 @@ describe("owners-file writes the owners file from the guard's own path list", ()
 				runBootstrap({
 					surfaceId: "owners-file",
 					path: null,
-					json: false,
+					json,
 					repoRoot: "/repo",
 					configSource: {_tag: "Absent"},
 					repo: ok("o/r"),
@@ -2140,6 +2144,25 @@ describe("owners-file writes the owners file from the guard's own path list", ()
 			),
 		);
 		expect(guard.code).toBe(ANSWER);
+	});
+
+	it("carries the count of written rows as the number field `rows` on --json", async () => {
+		const {outcome, written} = await run({}, [SIGNED_IN], true);
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "owners-file",
+			target: ".github/CODEOWNERS",
+			readback: "ok",
+			rows: parseCodeownersPatterns(written.get(TARGET) ?? "").length,
+		});
+		expect(JSON.parse(outcome.stdout).rows).toBe(cpPaths(CONTROL_PLANE_RE).length);
+	});
+
+	it("carries no `rows` field on --json when the owners file is already there", async () => {
+		const {outcome} = await run({[TARGET]: "* @someone\n"}, [SIGNED_IN], true);
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).not.toHaveProperty("rows");
 	});
 
 	it.each([
