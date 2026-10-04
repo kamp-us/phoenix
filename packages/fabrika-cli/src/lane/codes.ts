@@ -243,7 +243,8 @@ export const MISDIRECTED_PUSH = 34;
  * The `--cause` handed to `lane report` or `lane transition` is outside the closed park-cause set,
  * or rides on an event that is not `BLOCKED` — refused with the log unappended. The same seat takes
  * an `--axis-issue` that does not match its cause: missing beside `render-axis-missing`, present
- * beside any other cause, or no issue number.
+ * beside any other cause, or no issue number. `--ruling-issue` beside `ruling-owed` and
+ * `--founder-act` beside `founder-act-owed` refuse here on the same three counts.
  *
  * Its own seat rather than {@link TOKEN_UNRECOGNISED}'s: that one says the terminal token is
  * unknown and the whole report is unreadable, this one says the event resolved fine and the reason

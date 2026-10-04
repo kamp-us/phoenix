@@ -45,6 +45,7 @@ import {CONFIG_PATH} from "../config/document.ts";
 import {PARK_CAUSE, type ParkCauseSurface} from "../config/keys/park-cause.ts";
 import {readRoadmapFile} from "../config/paths.ts";
 import type {Read} from "../config/read-key.ts";
+import {runRuling} from "../decision/ruling-verb.ts";
 import {runClassify} from "../heal-ci/classify-verb.ts";
 import {runLogs} from "../heal-ci/logs-verb.ts";
 import {fetchAndResolve, localBranches, readFileAt} from "../io/git.ts";
@@ -55,7 +56,7 @@ import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {nominatePulls, nominationScope} from "../lane/nominate.ts";
 import {tracePulls} from "../lane/prove.ts";
 import {runProve} from "../lane/prove-verb.ts";
-import {routeUnder} from "../lane/report.ts";
+import {NO_PARK_EVIDENCE, routeUnder} from "../lane/report.ts";
 import {BUILD_CLAIM_BUDGET_MINUTES} from "../lane/shell-budget.ts";
 import {runStatus} from "../lane/status-verb.ts";
 import {loadLane} from "../lane/store.ts";
@@ -79,8 +80,9 @@ import {
 	TASK_UNRESOLVED,
 } from "./codes.ts";
 import {classifyPark, isPark, type ParkClass, type ParkRecipe, QUEUE_MOVED_GRANT} from "./parks.ts";
-import {buildExit, laneExit, relayRefusal} from "./relay.ts";
-import {clearProof, issueOf, leafOf, repairProof} from "./status-read.ts";
+import {buildExit, decisionExit, laneExit, relayRefusal} from "./relay.ts";
+import {rulingSince} from "./ruling-read.ts";
+import {clearProof, issueOf, type LeafRead, leafOf, repairProof} from "./status-read.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "fabrika recipe unpark";
@@ -192,9 +194,13 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 		const rationale = options.rationale?.trim() === "" ? null : (options.rationale?.trim() ?? null);
 		const routed = routeOfPark(parked, options.parkCause.value);
 		if (routed._tag === "Human") {
+			// The step is quoted because no read stands in for it: the person this routes to is the one
+			// who takes it, and the park line is where it was written down.
+			const step =
+				read.founderAct === null ? "" : `, waiting on the founder's own step "${read.founderAct}"`;
 			return refuse(
 				PARK_NOVEL,
-				`${VERB}: task "${task}" is parked at "${leaf}" and ${routed.reason} — refusing with the ledger untouched; route this to a human.`,
+				`${VERB}: task "${task}" is parked at "${leaf}" and ${routed.reason}${step} — refusing with the ledger untouched; route this to a human.`,
 			);
 		}
 		if (routed._tag === "Driver" && rationale === null) {
@@ -206,7 +212,7 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 
 		const clearance: Clearance =
 			routed._tag === "Recipe"
-				? yield* clear(options, task, routed.recipe, read.axisIssue)
+				? yield* clear(options, task, routed.recipe, read)
 				: {
 						_tag: "Cleared",
 						mechanism: `driver-rationale:${routed.cause}`,
@@ -222,7 +228,7 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 				event,
 				task,
 				cause: null,
-				axisIssue: null,
+				...NO_PARK_EVIDENCE,
 				parkCause: options.parkCause,
 				classes: [],
 				waitGrant: repair ? null : clearance.waitGrant,
@@ -347,11 +353,13 @@ const clear = (
 	options: UnparkOptions,
 	task: string,
 	recipe: ParkRecipe,
-	axisIssue: number | null,
+	read: Extract<LeafRead, {readonly _tag: "Leaf"}>,
 ): Effect.Effect<Clearance, never, Deps> => {
 	switch (recipe.clearance) {
 		case "axis-closed":
-			return clearAxisClosed(options, recipe, axisIssue);
+			return clearAxisClosed(options, recipe, read.axisIssue);
+		case "ruling-made":
+			return clearRulingMade(options, recipe, read.rulingIssue, read.parkedAt);
 		case "cp-approval":
 			return clearCpApproval(options, task, recipe);
 		case "branch-free":
@@ -1131,6 +1139,62 @@ const clearAxisClosed = (
 			);
 		}
 		return {_tag: "Cleared", mechanism: `axis-closed:#${axisIssue}`, waitGrant: null};
+	});
+
+/**
+ * Read whether the ruling park's cause is gone: a ruling marker dated after the park stands on the
+ * issue its park line named.
+ *
+ * `decision ruling` is relayed whole, so who may rule and which marker stands are that verb's
+ * answers and never a second reading here. Its refusal — a roster or a comment list that did not
+ * read — is UNKNOWN and holds the park. Its `0` proves only that the read ran, so the state and the
+ * marker's time are read off stdout ([`ruling-read.ts`](ruling-read.ts)).
+ */
+const clearRulingMade = (
+	options: UnparkOptions,
+	recipe: ParkRecipe,
+	rulingIssue: number | null,
+	parkedAt: string | null,
+): Effect.Effect<Clearance, never, Deps> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+		if (rulingIssue === null) {
+			return no(
+				refuse(
+					TARGET_ABSENT,
+					`${VERB}: "${recipe.park}" parked on "${recipe.cause}" names no ruling issue, so there is no issue to read for ${recipe.waitingOn}; nothing was written.`,
+				),
+			);
+		}
+		const relayed = yield* runRuling({number: rulingIssue, repo: options.repo, env: options.env});
+		if (relayed.code !== 0) {
+			return no(relayRefusal(VERB, "fabrika decision ruling", relayed, decisionExit(relayed.code)));
+		}
+		const ruling = rulingSince(relayed.stdout, parkedAt);
+		switch (ruling._tag) {
+			case "Unreadable":
+				return no(
+					refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot read a ruling on #${rulingIssue}: ${ruling.reason} — whether the ruling was made is UNKNOWN, never cleared.`,
+						[...relayed.stderr],
+					),
+				);
+			case "Holds":
+				return no(
+					refuse(
+						PARK_HOLDS,
+						`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — #${rulingIssue}: ${ruling.reason}; nothing was written.`,
+						[...relayed.stderr],
+					),
+				);
+			case "Made":
+				return {
+					_tag: "Cleared",
+					mechanism: `ruling-made:#${rulingIssue} ${ruling.state} at ${ruling.at}`,
+					waitGrant: null,
+				};
+		}
 	});
 
 /**

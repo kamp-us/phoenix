@@ -109,7 +109,7 @@ import {
 	queuedBy,
 	queuedPullOf,
 } from "./recover.ts";
-import {eventForToken} from "./report.ts";
+import {eventForToken, NO_PARK_EVIDENCE} from "./report.ts";
 import {type IssueCloser, runReport} from "./report-verb.ts";
 import {DEFAULT_CHORES_ROOT, listLanes, loadLane} from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
@@ -375,7 +375,7 @@ const recoverLane = <R>(
 						event,
 						task,
 						cause,
-						axisIssue: null,
+						...NO_PARK_EVIDENCE,
 						parkCause: options.parkCause,
 						classes: [],
 						waitGrant: null,
@@ -738,7 +738,7 @@ const recoverLane = <R>(
 							pr: pull.url,
 							comment: null,
 							cause: null,
-							axisIssue: null,
+							...NO_PARK_EVIDENCE,
 							integrateExit: null,
 							assemblyHead: null,
 							parkCause: options.parkCause,

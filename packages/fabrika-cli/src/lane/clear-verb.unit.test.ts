@@ -119,6 +119,8 @@ describe("lane clear — the grant", () => {
 							event,
 							cause: null,
 							axisIssue: null,
+							rulingIssue: null,
+							founderAct: null,
 							classes: [],
 							waitGrant: null,
 							parkCause: parkCauseRead(),

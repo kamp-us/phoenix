@@ -13,6 +13,9 @@ describe("leafOf", () => {
 			leaf: "human:cp-approval",
 			cause: null,
 			axisIssue: null,
+			rulingIssue: null,
+			parkedAt: null,
+			founderAct: null,
 		});
 	});
 
@@ -28,6 +31,9 @@ describe("leafOf", () => {
 			leaf: "build",
 			cause: null,
 			axisIssue: null,
+			rulingIssue: null,
+			parkedAt: null,
+			founderAct: null,
 		});
 	});
 

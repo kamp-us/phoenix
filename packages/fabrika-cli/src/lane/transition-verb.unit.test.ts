@@ -41,6 +41,7 @@ const run = (
 	rationale: string | null = null,
 	prover: ReturnType<typeof fakeProver> = fakeProver(),
 	axisIssue: number | null = null,
+	owed: {readonly rulingIssue?: number; readonly founderAct?: string} = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
@@ -52,6 +53,8 @@ const run = (
 					task,
 					cause,
 					axisIssue,
+					rulingIssue: owed.rulingIssue ?? null,
+					founderAct: owed.founderAct ?? null,
 					parkCause,
 					classes,
 					waitGrant,
@@ -272,6 +275,11 @@ describe("lane transition — the park cause a driver-originated BLOCKED carries
 		[{cause: "render-axis-missing"}, /names no `axisIssue`/],
 		[{cause: "no-preview-render", axisIssue: 9615}, /waits on no issue/],
 		[{cause: "render-axis-missing", axisIssue: 0}, /no issue number/],
+		[{cause: "ruling-owed"}, /names no `rulingIssue`/],
+		[{cause: "ruling-owed", founderAct: "rotate the logins"}, /names no `rulingIssue`/],
+		[{cause: "founder-act-owed"}, /names no `founderAct`/],
+		[{cause: "founder-act-owed", rulingIssue: 42}, /waits on no ruling/],
+		[{cause: "founder-act-owed", founderAct: " "}, /says nothing/],
 	])("reads %j as a malformed line, never a park", (fields, defect) => {
 		const line = JSON.stringify({
 			task: "issue",
@@ -340,6 +348,104 @@ describe("lane transition — a cause-less park under `parkCause.uncaused: refus
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(fs.written.has(LOG)).toBe(false);
+	});
+});
+
+/**
+ * A lane whose remaining work waits on the founder: a `Part of` merge folded it back to `queued`,
+ * and what is left is either a ruling nobody has made or a step only he may take. Both arrivals
+ * refused at `PARK_UNCAUSED` before these two causes existed, so the lane sat in `queued` unparked.
+ */
+describe("lane transition — a park that waits on the founder", () => {
+	const strict = parkCauseRead("refuse");
+	const requeued =
+		logLine("WIP") +
+		logLine("DONE") +
+		logLine("PASS") +
+		`${JSON.stringify({task: "issue", event: "ISSUE.DONE", at: "2026-08-16T00:00:00.000Z", partial: true})}\n`;
+	const STEP = "node packages/preview-seed/src/bin.ts rotate-logins";
+	const park = (
+		fs: ReturnType<typeof fakeFs>,
+		cause: string | null,
+		owed: {readonly rulingIssue?: number; readonly founderAct?: string} = {},
+	) => run(fs, "BLOCKED", null, cause, [], null, strict, null, undefined, null, owed);
+	const statusOf = async (fs: ReturnType<typeof fakeFs>) =>
+		JSON.parse(
+			(await Effect.runPromise(Effect.provide(runStatus({root: ROOT, lane: "42"}), fs.layer)))
+				.stdout,
+		);
+
+	it("refuses the requeued lane's bare park — the arrival both causes exist for", async () => {
+		const fs = freshLane(requeued);
+
+		expect((await statusOf(fs)).stateValue).toEqual({pipeline: {issue: "queued"}});
+		const out = await park(fs, null);
+
+		expect(out.code).toBe(PARK_UNCAUSED);
+		expect(fs.written.has(LOG)).toBe(false);
+	});
+
+	it("records the lane-10334 arrival: the rest waits on a ruling on the lane's own issue", async () => {
+		const fs = freshLane(requeued);
+
+		const out = await park(fs, "ruling-owed", {rulingIssue: 42});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			previous: {pipeline: {issue: "queued"}},
+			current: {pipeline: {issue: "blocked"}},
+			cause: "ruling-owed",
+			rulingIssue: 42,
+		});
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended).toMatchObject({cause: "ruling-owed", rulingIssue: 42});
+		// The park's own time rides the status beside the issue, because the clear compares a ruling
+		// marker against it.
+		expect((await statusOf(fs)).context.issue).toMatchObject({
+			cause: "ruling-owed",
+			rulingIssue: 42,
+			parkedAt: appended.at,
+		});
+	});
+
+	it("records the lane-9281 arrival: the rest is a command only the founder may run", async () => {
+		const fs = freshLane(requeued);
+
+		const out = await park(fs, "founder-act-owed", {founderAct: ` ${STEP} `});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			current: {pipeline: {issue: "blocked"}},
+			cause: "founder-act-owed",
+			founderAct: STEP,
+		});
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended).toMatchObject({cause: "founder-act-owed", founderAct: STEP});
+		expect((await statusOf(fs)).context.issue).toMatchObject({founderAct: STEP});
+	});
+
+	it.each([
+		["ruling-owed with no issue", "ruling-owed", {}, "--ruling-issue"],
+		["ruling-owed with a step for its issue", "ruling-owed", {founderAct: STEP}, "--ruling-issue"],
+		["ruling-owed with no issue number", "ruling-owed", {rulingIssue: 0}, "no issue number"],
+		["founder-act-owed with no step", "founder-act-owed", {}, "--founder-act"],
+		["founder-act-owed with a blank step", "founder-act-owed", {founderAct: " "}, "--founder-act"],
+		[
+			"founder-act-owed with an issue for its step",
+			"founder-act-owed",
+			{rulingIssue: 42},
+			"drop --ruling-issue",
+		],
+		["a ruling issue beside another cause", "size-stop", {rulingIssue: 42}, "drop --ruling-issue"],
+		["a step beside another cause", "size-stop", {founderAct: STEP}, "drop --founder-act"],
+	] as const)("refuses %s, log byte-identical", async (_name, cause, owed, names) => {
+		const fs = freshLane(requeued);
+
+		const out = await park(fs, cause, owed);
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(out.stderr.join(" ")).toContain(names);
+		expect(fs.written.size).toBe(0);
 	});
 });
 
