@@ -387,7 +387,7 @@ describe("lane prove — a verdict older than the issue's newest ruling", () => 
 describe("lane prove — a reviewer's park, refused only by a FAIL that still binds", () => {
 	/** The 5661 diff's own shape: a skill file and a package file, so all three namespaces derive. */
 	const FIVE_SIX_SIX_ONE = served([
-		{filename: "claude-plugins/fabrika/skills/review/SKILL.md"},
+		{filename: ".claude/skills/review/SKILL.md"},
 		{filename: "packages/fabrika-cli/src/lane/prove.ts"},
 	]);
 
@@ -883,7 +883,7 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
 			[PULL, pull()],
-			[FILES, served([{filename: "claude-plugins/fabrika/skills/operate/SKILL.md"}])],
+			[FILES, served([{filename: ".claude/skills/operate/SKILL.md"}])],
 			[PR_COMMENTS, comments({id: 1, body: `review-skill: PASS @ ${HEAD} — reads clean`})],
 		]);
 

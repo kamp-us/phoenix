@@ -68,10 +68,10 @@ const NO_REVIEWS = [REVIEWS, reviewPage()] as const;
 
 /** The default two-file diff, under no governance root — the floor stays off unless a test asks. */
 const ORDINARY = [FILES, served(files("apps/site/src/a.ts", "apps/site/src/b.ts"))] as const;
-/** A fabrika-tree diff: `claude-plugins/` is one of the shipped governance roots. */
+/** A skill diff under `.claude/`, one of the shipped governance roots. */
 const FABRIKA_TREE = [
 	FILES,
-	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/site/src/b.ts")),
+	served(files(".claude/skills/ship/SKILL.md", "apps/site/src/b.ts")),
 ] as const;
 
 const options = {
@@ -796,7 +796,7 @@ describe("requiredWithFloor", () => {
 	it("adds governance on a governance-root diff", () => {
 		const result = requiredWithFloor(
 			["review-skill"],
-			["claude-plugins/fabrika/skills/ship/SKILL.md"],
+			[".claude/skills/ship/SKILL.md"],
 			SHIPPED_GOVERNED_ROOTS,
 		);
 		expect(result.required).toEqual(["review-skill", "governance"]);

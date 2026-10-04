@@ -2,6 +2,7 @@ import {describe, expect, it} from "vitest";
 import type {ConfigSource} from "../config/document.ts";
 import {SHIPPED_GOVERNED_ROOTS} from "../config/keys/governed-roots.ts";
 import {type ConfigAt, classConfigOf} from "./class-config.ts";
+import {touchesGovernanceRoot} from "./classes.ts";
 
 const HEAD = "a".repeat(40);
 const BASE = "b".repeat(40);
@@ -50,6 +51,17 @@ describe("classConfigOf", () => {
 		expect(out.config.governedRoots).toEqual(SHIPPED_GOVERNED_ROOTS);
 		expect(out.config.uiPrefixes).toEqual(["apps/shop/"]);
 		expect(out.config.notes.governedRoots).toContain(`at the head ${HEAD}, the shipped`);
+	});
+
+	it("governs a plugin tree only for a repo that declares it — the shipped roots name none", () => {
+		const pluginFile = ["claude-plugins/fabrika/skills/ship/SKILL.md"];
+		const undeclared = read({_tag: "Absent"}, {_tag: "Absent"});
+		const declaring = text({governedRoots: ["claude-plugins/", ".fabrika.jsonc"]});
+		const declared = read(declaring, declaring);
+		expect([undeclared._tag, declared._tag]).toEqual(["Config", "Config"]);
+		if (undeclared._tag !== "Config" || declared._tag !== "Config") return;
+		expect(touchesGovernanceRoot(pluginFile, undeclared.config.governedRoots)).toBe(false);
+		expect(touchesGovernanceRoot(pluginFile, declared.config.governedRoots)).toBe(true);
 	});
 
 	it("refuses naming the commit whose config does not decode, whatever the other says", () => {

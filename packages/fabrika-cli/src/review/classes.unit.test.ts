@@ -92,13 +92,7 @@ describe("SHIP_NAMESPACES", () => {
 
 describe("touchesGovernanceRoot", () => {
 	it("fires on each shipped root, at any depth — the config file among them", () => {
-		expect(GOVERNANCE_ROOTS).toEqual([
-			".decisions/",
-			".claude/",
-			".github/",
-			"claude-plugins/",
-			".fabrika.jsonc",
-		]);
+		expect(GOVERNANCE_ROOTS).toEqual([".decisions/", ".claude/", ".github/", ".fabrika.jsonc"]);
 		for (const root of GOVERNANCE_ROOTS) {
 			expect(touchesGovernanceRoot([`${root}deep/nested/file.txt`], GOVERNANCE_ROOTS)).toBe(true);
 		}
@@ -171,7 +165,7 @@ describe("shipNamespacesOf", () => {
 	it("appends governance — never replaces or reorders a review namespace", () => {
 		const result = partitionWithUi(
 			[
-				"claude-plugins/fabrika/skills/ship/contract.md",
+				".claude/skills/ship/contract.md",
 				"packages/fabrika-cli/src/ship/gate-verb.ts",
 				"apps/site/src/App.tsx",
 			],

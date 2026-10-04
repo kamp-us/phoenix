@@ -72,7 +72,7 @@ const happy = (...rows: ReadonlyArray<readonly [string, string]>): ReadonlyArray
 
 const GOVERNING = happy(
 	["A", ".decisions/0240-only-landed-adrs-may-be-cited.md"],
-	["M", "claude-plugins/fabrika/skills/review/SKILL.md"],
+	["M", ".claude/skills/review/SKILL.md"],
 );
 
 describe("runScope over a foreign repo's declared roots", () => {
@@ -121,8 +121,8 @@ describe("runScope", () => {
 		expect(out.stdout).toBe(
 			[
 				`governance\trequired\t${HEAD}`,
+				"root\t.claude/\t1",
 				"root\t.decisions/\t1",
-				"root\tclaude-plugins/\t1",
 				"self\tfalse",
 				"record\t0240\tadded\t.decisions/0240-only-landed-adrs-may-be-cited.md",
 				"",
@@ -136,7 +136,7 @@ describe("runScope", () => {
 		expect(out.stdout.split("\n")[0]).toBe(`governance\tnot-required\t${HEAD}`);
 	});
 
-	it("sets `self` on this skill's own diff, which derives its own namespace by construction", async () => {
+	it("sets `self` on this skill's own diff", async () => {
 		const out = await run(happy(["M", "claude-plugins/fabrika/skills/governance/SKILL.md"]));
 		expect(out.stdout).toContain("self\ttrue");
 	});
@@ -148,7 +148,7 @@ describe("runScope", () => {
 		const record = JSON.parse(out.stdout);
 		// `roots` is a histogram object, not an array of `{name, files}` — the evidence collapse.
 		// `records` beside it stays whole: every `id` feeds `governance sweep --record`.
-		expect(record.roots).toEqual({".decisions/": 1, "claude-plugins/": 1});
+		expect(record.roots).toEqual({".decisions/": 1, ".claude/": 1});
 		expect(record).toMatchObject({
 			outcome: "required",
 			head: HEAD,
@@ -173,7 +173,7 @@ describe("runScope", () => {
 			`governance scope: bound to ${HEAD} (base ${BASE}) — read from the object database, nothing checked out.`,
 		);
 		expect(out.stderr).toContain(
-			`governance scope: partitioned 2 of the 2 declared changed files at ${HEAD} across 5 roots.`,
+			`governance scope: partitioned 2 of the 2 declared changed files at ${HEAD} across 4 roots.`,
 		);
 	});
 
@@ -185,7 +185,7 @@ describe("runScope", () => {
 			[TREE_AT(), treeOf(".decisions/0240-x.md", "src/cart.ts")],
 		]);
 		expect(out.stderr).toContain(
-			"governance scope: root .claude/ is absent in this repository — the derivation covered 1 of 5 roots.",
+			"governance scope: root .claude/ is absent in this repository — the derivation covered 1 of 4 roots.",
 		);
 	});
 
@@ -224,7 +224,7 @@ describe("runScope", () => {
 		const out = await run([
 			[PULL, served(pull({changedFiles: 9}))],
 			...binding(),
-			[STATUS_AT(), statuses(["M", "claude-plugins/fabrika/skills/review/SKILL.md"])],
+			[STATUS_AT(), statuses(["M", ".claude/skills/review/SKILL.md"])],
 			[TREE_AT(), treeOf(...FULL_TREE)],
 		]);
 		expect(out.code).toBe(0);
@@ -274,7 +274,7 @@ describe("runScope over a range", () => {
 		const out = await run(
 			overRange(
 				["A", ".decisions/0240-only-landed-adrs-may-be-cited.md"],
-				["M", "claude-plugins/fabrika/skills/review/SKILL.md"],
+				["M", ".claude/skills/review/SKILL.md"],
 			),
 			ranged,
 		);
@@ -282,8 +282,8 @@ describe("runScope over a range", () => {
 		expect(out.stdout).toBe(
 			[
 				`governance\trequired\t${RANGE_BASE}..${RANGE_TIP}`,
+				"root\t.claude/\t1",
 				"root\t.decisions/\t1",
-				"root\tclaude-plugins/\t1",
 				"self\tfalse",
 				"record\t0240\tadded\t.decisions/0240-only-landed-adrs-may-be-cited.md",
 				"",
@@ -324,7 +324,13 @@ describe("runScope over a range", () => {
 	// The self fence's own precondition: a child range editing this skill has to READ as self-editing
 	// before `governance base` can be asked for the base revision's bytes.
 	it("sets `self` on a range that edits this skill, and names merge-base(base, tip) as the base", async () => {
-		const out = await run(overRange(["M", `${SKILL_ROOT}SKILL.md`]), {...ranged, json: true});
+		const declared = configAtCommit(
+			JSON.stringify({governedRoots: ["claude-plugins/", ".fabrika.jsonc"]}),
+		);
+		const out = await run([...declared, ...overRange(["M", `${SKILL_ROOT}SKILL.md`])], {
+			...ranged,
+			json: true,
+		});
 		const record = JSON.parse(out.stdout);
 		expect(record).toMatchObject({
 			outcome: "required",
