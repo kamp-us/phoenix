@@ -60,15 +60,23 @@ fabrika status bootstrap --help
 surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule
 ```
 
-One id per invocation; a target already present is `exists` at exit 0 and nothing is written or
-overwritten. `design-manifest` and `roadmap-focus` take their content on stdin. `gitignore-row`
-and `claude-md-section` append their own row/block and read no stdin. `settings-patch` merges the
-`kampus` marketplace registration and the `fabrika@kampus` flip into a `.claude/settings.json`
-that is already there — unknown keys preserved, unparseable bytes refused unwritten — and creates
-the file when it is absent; it reads no stdin either way. `dep-pin` pins the `@kampus/fabrika-cli`
-dependency row to the version npm's registry publishes at run time — same merge law over the
-repo's `package.json`, an unreachable registry refused unwritten — and prints the exact install
-command; it never runs a package manager or touches a lockfile. That install is not small: it
+One id per invocation. A surface whose content is already in place is `exists` at exit 0, and
+nothing is written. `design-manifest` and `roadmap-focus` take their content on stdin, and a target
+already present is `exists`. `gitignore-row` and `claude-md-section` append their own row/block and
+read no stdin. `settings-patch` and `dep-pin` are the two that merge into a file already there.
+`settings-patch` merges the `kampus` marketplace registration and the `fabrika@kampus` flip into a
+`.claude/settings.json` that is already there — unknown keys preserved, unparseable bytes refused
+unwritten — and creates the file when it is absent; it reads no stdin either way. `dep-pin` pins the
+`@kampus/fabrika-cli` row under `devDependencies` to the version npm's registry publishes at run
+time — same merge law over the repo's `package.json`, an unreachable registry refused unwritten. A
+row an earlier `dep-pin` put under `dependencies` moves to `devDependencies`. Either one is `exists`
+only when the file already holds what it would merge. `settings-patch` and `dep-pin` keep a present
+file's indentation, line endings and final newline, so a pretty-printed file's diff is mostly the
+added lines. Two things add more: an array or object written inline on one line (`"files":
+["dist"]`) comes back expanded over several lines, and a row moved out of `dependencies` also
+removes a line there. `dep-pin` prints the exact dev install
+command, `pnpm add -D --save-exact @kampus/fabrika-cli@<version>`; it never runs a package manager
+or touches a lockfile. That install is not small: it
 brings in Playwright, adds a few hundred lockfile lines, and the package's `postinstall` downloads a
 headless Chromium (~130MB) for `fabrika ui render`. pnpm 10 skips that `postinstall` until you
 approve it: run `pnpm approve-builds` and pick `@kampus/fabrika-cli`, or add it to
