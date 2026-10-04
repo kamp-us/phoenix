@@ -343,6 +343,14 @@
 				"pattern": "^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)$|^@([^/\\s]+)\\/([^/\\s]+)$"
 			}
 		},
+		"catalogGuard": {
+			"type": "string",
+			"description": "Whether `fabrika guard catalog-guard check` judges this repo: `on` (the shipped default — every dependency in a workspace package.json must be a `catalog:` or `workspace:` reference) or `off` (the guard judges no manifest, exits 0 saying so, and `build check` lists it under `skipped`). Turn it off in a repo that does not use a pnpm catalog. It governs catalog-guard and no other guard.",
+			"enum": [
+				"on",
+				"off"
+			]
+		},
 		"ci": {
 			"type": "object",
 			"description": "What fabrika may assume about the repo's continuous-integration producer.",

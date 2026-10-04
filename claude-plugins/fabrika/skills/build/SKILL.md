@@ -390,6 +390,8 @@ failing one reds the whole run on `18` and the failing line names it — fix tha
 any other red. A member that **refused** — zero scope, or a read it could not make — lands in the
 green's `skipped` array as `<name> (<reason>)` and on stderr. **A skip is not a pass**: it says CI's
 own gate will answer that one, so read the line rather than treating the green as covering it.
+A `skipped` line reading `<name> (turned off: …)` is the one skip CI answers the same way: this
+repo's `.fabrika.jsonc` turned that guard off, so there is nothing to fix and nothing to wait for.
 Membership is a property each guard declares beside its own registration, so there is no list here to
 keep in step with it and none to pass on the command line.
 

@@ -9,28 +9,36 @@
  */
 
 import {Effect, type FileSystem, Path} from "effect";
+import {catalogGuardKey} from "../config/keys/catalog-guard.ts";
+import {loadLayeredConfig} from "../config/load.ts";
+import {readFromLoad} from "../config/read-key.ts";
+import {readConfigLayers} from "../config/source.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
 import {exists, type ReadFailed, readFile} from "../io/fs.ts";
 import {isRecord, parseJson} from "../io/json.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {
 	type AllowlistEntry,
 	type CatalogViolation,
 	cleanSummary,
 	DEFAULT_ALLOWLIST,
+	explained,
 	findDepLine,
 	findViolations,
 	manifestDeps,
+	OFF_DECLARATION,
+	offSummary,
 	type PackageManifest,
 	violationAnnotations,
 	violationReport,
 } from "./catalog.ts";
+import type {LocalTreeOutcome} from "./local-tree.ts";
 import {scanWorkspaceMembers} from "./members.ts";
 import {
 	annotationsOrNone,
 	clean,
 	emitVerdict,
 	type GuardVerdict,
+	skipped,
 	unknown,
 	violation,
 	zeroScope,
@@ -137,25 +145,59 @@ const judge = (
 		);
 	});
 
+/**
+ * The verdict as an outcome, with the rule and the key that turns the guard off on every red.
+ *
+ * Applied where a verdict leaves the verb rather than where one is built, so no red can leave
+ * without them. A `Violation` already carries them: its report is built whole in `./catalog.ts`.
+ */
+const emit = (
+	verdict: GuardVerdict,
+	env: Readonly<Record<string, string | undefined>>,
+): LocalTreeOutcome =>
+	emitVerdict(
+		verdict._tag === "ZeroScope" || verdict._tag === "Unknown"
+			? {...verdict, report: explained(verdict.report)}
+			: verdict,
+		env,
+	);
+
 export const runCatalogGuard = (
 	options: CatalogGuardOptions,
-): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<LocalTreeOutcome, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const root =
 			options.root ?? (yield* discoverRepoRoot(options.cwd).pipe(Effect.map((r) => r ?? null)));
 		if (root === null) {
-			return emitVerdict(
+			return emit(
 				unknown(
 					`${VERB}: no repo root at or above ${options.cwd} — nothing to scope the scan to, so the verdict is UNKNOWN.`,
 				),
 				options.env,
 			);
 		}
-		return emitVerdict(yield* judge(root, options.allowlist ?? DEFAULT_ALLOWLIST), options.env);
+		// Read at `root` itself, with no root discovery of its own: the key has to come from the repo
+		// the scan is scoped to, and discovery opens manifests, which an off guard must not do.
+		const declared = readFromLoad(
+			loadLayeredConfig(yield* readConfigLayers(root)),
+			catalogGuardKey,
+		);
+		if (declared._tag === "Refused") {
+			return emit(
+				unknown(
+					`${VERB}: cannot tell whether this repo turned the guard off — ${declared.reason}. The verdict is UNKNOWN, never off.`,
+				),
+				options.env,
+			);
+		}
+		if (declared.value === "off") {
+			return {...emit(skipped(offSummary(VERB)), options.env), turnedOff: OFF_DECLARATION};
+		}
+		return emit(yield* judge(root, options.allowlist ?? DEFAULT_ALLOWLIST), options.env);
 	}).pipe(
 		Effect.catchTag("fabrika-cli/ReadFailed", (failure) =>
 			Effect.succeed(
-				emitVerdict(
+				emit(
 					unknown(
 						`${VERB}: cannot read ${failure.path}: ${failure.reason} — the scan could not be completed, so the verdict is UNKNOWN, never clean.`,
 					),

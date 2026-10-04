@@ -1,6 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
+import {runCatalogGuard} from "../guard/catalog-verb.ts";
 import type {LocalTreeGuard} from "../guard/local-tree.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {VerbOutcome} from "../verb.ts";
@@ -1410,6 +1411,59 @@ describe("runCheck — the local-tree guard sweep", () => {
 			"i18n-guard (UNKNOWN read: i18n-guard: the allow-list could not be read.)",
 		]);
 		expect(green.ran).not.toContain("guard i18n-guard check");
+	});
+
+	describe("a guard this repo's config turned off", () => {
+		/** The lane root as a workspace whose manifests pin hardcoded versions, declaring the key. */
+		const pinnedTree = (catalogGuard: string): Record<string, string> => ({
+			[CONFIG_FILE]: `{"catalogGuard": ${catalogGuard}, "codeValidators": [{"command": ["pnpm", "typecheck", "--force"]}, {"command": ["pnpm", "lint:worktree"]}]}`,
+			[`${ROOT}/pnpm-workspace.yaml`]: "packages: []\n",
+			[`${ROOT}/package.json`]: JSON.stringify({name: "acme", dependencies: {bar: "^1.2.3"}}),
+		});
+
+		const catalogGuard: LocalTreeGuard = {
+			name: "catalog-guard",
+			leaf: "check",
+			run: (o) => runCatalogGuard({root: o.root, cwd: o.root, env: o.env}),
+		};
+
+		const withCatalogGuard = (value: string, seen: string[]) =>
+			run(
+				[...LANE_OK, [DIFF, okOut("src/app/App.tsx\n")], [TYPECHECK, okOut("")], [LINT, okOut("")]],
+				{guards: [catalogGuard, guard("patch-guard", clean, "check", seen)]},
+				pinnedTree(value),
+			);
+
+		// The adopter's case: with the key off the sweep reaches the guards after catalog-guard and the
+		// repo's own validators, and the answer says the guard was turned off rather than passed.
+		it("lists it under `skipped`, runs the remaining guards and the declared codeValidators", async () => {
+			const seen: string[] = [];
+			const out = await withCatalogGuard('"off"', seen);
+			expect(out.code).toBe(0);
+			expect(seen).toEqual(["patch-guard check"]);
+			const green = JSON.parse(out.stdout);
+			expect(green.ran).toEqual([
+				"pnpm typecheck --force",
+				"pnpm lint:worktree",
+				"guard patch-guard check",
+			]);
+			expect(green.skipped).toEqual([
+				'catalog-guard (turned off: "catalogGuard": "off" in .fabrika.jsonc)',
+			]);
+			expect(out.stderr).toContain(
+				'build check: skipped: catalog-guard (turned off: "catalogGuard": "off" in .fabrika.jsonc) — not a pass; this repo\'s config turned the guard off, so nothing was judged.',
+			);
+		});
+
+		it("reds on the same tree with the key on, naming the key in the diagnostics", async () => {
+			const seen: string[] = [];
+			const out = await withCatalogGuard('"on"', seen);
+			expect(out.code).toBe(VALIDATION_RED);
+			expect(out.stderr.at(-1)).toBe(
+				"build check: red — guard catalog-guard check failed; diagnostics above.",
+			);
+			expect(out.stderr.join("\n")).toContain('set "catalogGuard": "off" in .fabrika.jsonc');
+		});
 	});
 
 	// Two portability-guard repair rounds were spent on prose-only diffs, which the `code` surface

@@ -426,9 +426,10 @@ const catalogCheck = leafCommand(
 	Command.withDescription(
 		leafHelp("catalog-guard check", [
 			"Prints a one-line all-clear when every package.json dependency is a catalog: or workspace: ref.",
+			'  With "catalogGuard": "off" in .fabrika.jsonc it judges nothing, and the answer says so.',
 			"  A red puts the report on stderr, with GitHub ::error annotations under Actions.",
 			"  7: zero scope: no manifest scanned",
-			"  11: a manifest could not be read or does not parse (UNKNOWN)",
+			"  11: a manifest or the config could not be read or does not parse (UNKNOWN)",
 			"  12: a dependency pins a hardcoded version",
 		]),
 	),

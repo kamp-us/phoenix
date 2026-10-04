@@ -15,6 +15,18 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import type {VerbOutcome} from "../verb.ts";
 
 /**
+ * What a member answers: a plain {@link VerbOutcome}, plus the one fact an exit code cannot carry.
+ *
+ * A guard this repo's config turned off exits `0` without judging anything, which by its code alone
+ * reads as a pass. `turnedOff` names the declaration that did it, so the sweep reports the member as
+ * not run instead of folding it into the green.
+ */
+export interface LocalTreeOutcome extends VerbOutcome {
+	/** The declaration that turned the guard off, as `<declaration> in <file>`. Absent when it judged. */
+	readonly turnedOff?: string;
+}
+
+/**
  * One local-tree guard's invocation, bound to the tree it judges.
  *
  * The three services are the ceiling the predicate implies: the filesystem and path for the walk,
@@ -31,7 +43,7 @@ export type LocalTreeRun = (options: {
 	 */
 	readonly changed: ReadonlyArray<string>;
 }) => Effect.Effect<
-	VerbOutcome,
+	LocalTreeOutcome,
 	never,
 	FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 >;

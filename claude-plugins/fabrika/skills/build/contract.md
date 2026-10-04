@@ -2545,6 +2545,12 @@ stderr, and is never folded into the green: a skip is a disclosure, read as *CI 
 one*. The repo's own fail-closed-on-zero-scope rule for its CI gates is untouched by it — this is a
 local predictor with no authority to answer for a gate.
 
+A member this repo's config **turned off** exits `0` without judging anything, so its exit code
+alone would read as a pass. Its outcome names the declaration that turned it off, and the sweep
+reports it as `skipped: <name> (turned off: <declaration> in <file>)` in the same `skipped` array
+and on stderr, never in `ran`. The sweep then goes on to the remaining members and the surface's
+validators. `catalog-guard` is the one member with such a key, `catalogGuard`.
+
 The sweep is deliberately **not** anchored by `--surface`. `portability-guard` reads shipped
 markdown and `patch-guard` reads `patches/`, so a prose-only diff is exactly the diff that kept
 reaching review red under a `code`-only check. `--surface` stays an anchor over the repo's own
@@ -2783,6 +2789,7 @@ the tree root is the only precondition: no session, no lane branch and no claim 
 | `build check: red — <runner> failed; diagnostics above.` | 18 | refusal |
 | `build check: red — guard <name> <leaf> failed; diagnostics above.` | 18 | refusal |
 | `build check: skipped: <name> (<reason>) — not a pass; CI's own gate answers this one.` | 0 | disclosure beside a green |
+| `build check: skipped: <name> (turned off: <declaration> in <file>) — not a pass; this repo's config turned the guard off, so nothing was judged.` | 0 | disclosure beside a green |
 | `build check: no surface validates any of the <n> changed file(s) (<files>) — there is nothing here to run, so the verdict is a refusal, never green.` | 22 | refusal |
 | `build check: <n> changed file(s) --surface <surface> does not validate — NOT covered by this verdict: <files>.` | 0 | scope note beside a green |
 | `build check: probe: <entry> — green.` | 0 | per-entry note under `--probe` |
