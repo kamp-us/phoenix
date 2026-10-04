@@ -6,10 +6,17 @@
  * evidence honest — a hand-check of an earlier tree says nothing about this one, and the record the
  * route posts is bound to this head alone.
  *
+ * Two kinds of comment pass those facts and are not a person's: the builder's own `ui evidence`
+ * comment, and any comment carrying an agent stamp. Where an agent posts under a roster account the
+ * author fact cannot tell them from the owner, so each is refused on what its body says.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/10038#issuecomment-5860347862
+ * @ruling https://github.com/kamp-us/phoenix/issues/10370
  */
 
+import {isAgentStamped} from "../guard/pitch.ts";
 import type {CommentRecord} from "../io/issues.ts";
+import {isUiEvidence} from "../ui/evidence-comment.ts";
 import {headSha, SHA_MIN} from "../wire/marker-line.ts";
 
 /** A comment id, or a comment URL ending in `#issuecomment-<id>`. */
@@ -22,6 +29,16 @@ export const handCheckCommentId = (raw: string): number | null => {
 
 /** A markdown image, an HTML `<img>`, or an attachment link GitHub renders as one. */
 const SCREENSHOT = /!\[[^\]]*\]\([^)\s]+[^)]*\)|<img\s[^>]*src=|\/user-attachments\/assets\//i;
+
+/**
+ * Every screenshot reference, whole. A GitHub attachment URL ends in a UUID, which the stamp read
+ * takes for a session id, so the stamp is read over the body with its screenshots removed.
+ */
+const SCREENSHOT_REFERENCES =
+	/!\[[^\]]*\]\([^)]*\)|<img\s[^>]*>|\S*\/user-attachments\/assets\/\S*/gi;
+
+const carriesAgentStamp = (body: string): boolean =>
+	isAgentStamped(body.replace(SCREENSHOT_REFERENCES, ""));
 
 const HEX_TOKEN = new RegExp(`\\b[0-9a-f]{${SHA_MIN},40}\\b`, "gi");
 
@@ -52,6 +69,18 @@ export const admitHandCheck = (
 			reason: `comment ${id} is by ${comment.author}, who is not on the control plane — only an owner's hand-check stands in for a render`,
 		};
 	}
+	if (isUiEvidence(comment.body)) {
+		return {
+			_tag: "Inadmissible",
+			reason: `comment ${id} is the builder's own ui evidence — the builder's captures are not an owner's hand-check`,
+		};
+	}
+	if (carriesAgentStamp(comment.body)) {
+		return {
+			_tag: "Inadmissible",
+			reason: `comment ${id} carries an agent stamp — a comment an agent posted is not an owner's hand-check`,
+		};
+	}
 	if (!namesHead(comment.body, head)) {
 		return {
 			_tag: "Inadmissible",
@@ -68,7 +97,7 @@ export const admitHandCheck = (
 };
 
 /**
- * The newest admissible hand-check on the PR, or `null` where no comment passes all four facts —
+ * The newest admissible hand-check on the PR, or `null` where `admitHandCheck` admits none —
  * so a reviewer never browses comments for one; the verb reads them and names what it stood on.
  */
 export const findHandCheck = (
