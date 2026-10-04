@@ -44,8 +44,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # The default Actions token cannot read an organization's projects, and the on-call section
-      # reads the on-call board. `FABRIKA_DIGEST_TOKEN` is a token that can read that project; with
-      # no such secret the default token serves a `digest.sections` of `triage` alone.
+      # reads the on-call board and the table. `FABRIKA_DIGEST_TOKEN` is a token that can read both
+      # projects; with no such secret the default token serves a `digest.sections` of `triage` alone.
       - name: Post the digest
         env:
           GH_TOKEN: ${{ secrets.FABRIKA_DIGEST_TOKEN || github.token }}

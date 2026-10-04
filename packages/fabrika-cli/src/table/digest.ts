@@ -5,9 +5,9 @@
  * what a scheduled run posts is a property of this module. `digest-post.ts` sends the message;
  * `digest-verb.ts` joins the two.
  *
- * **The on-call section is `table flags`'s `past-target` list.** It judges the open items on the
- * on-call board through {@link pastTargetOf}, with the wait starting at the issue's filing or at the
- * board's making when that is later, so the channel and the table never name different items.
+ * **The on-call section is the `past-target` judgment.** It judges each open on-call item it is
+ * handed through {@link pastTargetOf}, with the wait starting at the issue's filing or at the
+ * board's making when that is later, so the channel and the table agree on any item both see.
  *
  * **One message, both tools.** The text is cut to {@link MESSAGE_LIMIT}, the tighter of the two
  * tools' documented limits, and the cut says how many lines it dropped.
@@ -53,7 +53,7 @@ export interface DigestReport {
 	readonly notAsked: ReadonlyArray<DigestSection>;
 }
 
-/** The on-call board's open items and what they are judged against. */
+/** The open on-call items, placed on the board or routed there, and what they are judged against. */
 export interface OnCallQueue {
 	readonly targets: ResponseTargets;
 	/** When the on-call board was made: no item's wait starts before it. */

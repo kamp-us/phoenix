@@ -7,7 +7,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeShell, unconfigured} from "../fakes.test-support.ts";
 import {type Attempt, fail, ok} from "../io/git.ts";
-import type {ListedIssue} from "../io/issues.ts";
+import {type ListedIssue, present} from "../io/issues.ts";
 import type {ProjectItem, ProjectSnapshot, ProjectsAnswer} from "../io/projects.ts";
 import {
 	CONFIG_MALFORMED,
@@ -17,6 +17,7 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {type DigestBoard, runDigest} from "./digest-verb.ts";
+import type {SyncNode} from "./sync.ts";
 import type {Located} from "./sync-verb.ts";
 
 const REPO = "acme/widgets";
@@ -35,6 +36,14 @@ const ON_CALL: ProjectSnapshot = {
 	readme: null,
 	fields: [],
 	views: [],
+};
+
+const TABLE: ProjectSnapshot = {
+	...ON_CALL,
+	id: "PVT_1",
+	number: 3,
+	url: "https://github.com/orgs/acme/projects/3",
+	title: "widgets table",
 };
 
 const issue = (number: number, createdAt: string, labels: ReadonlyArray<string>): ListedIssue => ({
@@ -60,38 +69,73 @@ const world = (
 		issues?: Attempt<ReadonlyArray<ListedIssue>>;
 		posted?: Attempt<null>;
 		located?: ProjectsAnswer<Located>;
+		/** What finding the table answers; the on-call board is found either way. */
+		tableLocated?: ProjectsAnswer<Located>;
 		/** The issues on the on-call board. */
 		onCall?: ReadonlyArray<number>;
+		/** The table's rows and the Stage each reads. */
+		table?: ReadonlyArray<{readonly number: number; readonly stage: string}>;
 	} = {},
 ) => {
 	const calls: string[] = [];
 	const posts: Array<{tool: string; url: string; text: string}> = [];
+	const item = (number: number, values: ProjectItem["values"]): ProjectItem => ({
+		itemId: `PVTI_${number}`,
+		contentNumber: number,
+		contentType: "Issue",
+		repository: REPO,
+		values,
+	});
+	const tableItems = (): ReadonlyArray<ProjectItem> =>
+		(over.table ?? [{number: 5, stage: "bet"}]).map((row) =>
+			item(row.number, [
+				{
+					fieldId: "F_Stage",
+					fieldName: "Stage",
+					value: {_tag: "Option", optionId: `Stage:${row.stage}`, name: row.stage},
+					creator: "octo-owner",
+					updatedAt: "2026-10-01T00:00:00.000Z",
+				},
+			]),
+		);
 	const board: DigestBoard<never> = {
 		openIssues: () => {
 			calls.push("openIssues");
 			return Effect.succeed(over.issues ?? ok(OPEN));
 		},
-		locate: () => {
+		locate: (_repo, target) => {
 			calls.push("locate");
+			const found = (project: ProjectSnapshot): ProjectsAnswer<Located> => ({
+				_tag: "Ok",
+				value: {_tag: "Located", project},
+			});
 			return Effect.succeed(
-				over.located ?? {_tag: "Ok", value: {_tag: "Located", project: ON_CALL}},
+				target.key.startsWith("boards.")
+					? (over.located ?? found(ON_CALL))
+					: (over.tableLocated ?? found(TABLE)),
 			);
 		},
-		items: () => {
+		items: (projectId) => {
 			calls.push("items");
 			return Effect.succeed({
 				_tag: "Ok" as const,
-				value: (over.onCall ?? [3, 4]).map(
-					(number): ProjectItem => ({
-						itemId: `PVTI_${number}`,
-						contentNumber: number,
-						contentType: "Issue",
-						repository: REPO,
-						values: [],
-					}),
-				),
+				value:
+					projectId === ON_CALL.id
+						? (over.onCall ?? [3, 4]).map((number) => item(number, []))
+						: tableItems(),
 			});
 		},
+		node: (_repo, number) =>
+			Effect.succeed(
+				present<SyncNode>({
+					number,
+					open: true,
+					parent: null,
+					subIssues: [],
+					blockedBy: [],
+					blocking: [],
+				}),
+			),
 		post: (tool, url, text) => {
 			calls.push("post");
 			posts.push({tool, url: url.href, text});
@@ -171,6 +215,41 @@ describe("a repository that opted in", () => {
 		expect(posts[0]?.text).toContain("#3 Issue 3: target 4h, waited 10 hours.");
 	});
 
+	it("reports an issue the routing rule sends to on-call that nobody has placed on the board yet", async () => {
+		const {board} = world({table: []});
+		const out = await digest(board);
+
+		expect(JSON.parse(out.stdout).sections[1]).toEqual({
+			section: "on-call",
+			late: [
+				{issue: 5, target: "4h", hours: 4, since: ON_CALL.createdAt, waitedHours: 24},
+				{issue: 3, target: "4h", hours: 4, since: "2026-10-03T02:00:00.000Z", waitedHours: 10},
+			],
+		});
+	});
+
+	it("follows the routing rule the block declares", async () => {
+		const {board} = world({table: [], onCall: []});
+		const byLabel = {onCall: {...SPLIT.onCall, route: {origins: [], types: [], labels: ["p0"]}}};
+		const out = await digest(board, config({digest: {tool: "slack"}, boards: byLabel}));
+		const none = {onCall: {...SPLIT.onCall, route: {origins: [], types: [], labels: []}}};
+		const quiet = await digest(board, config({digest: {tool: "slack"}, boards: none}));
+
+		expect(
+			JSON.parse(out.stdout).sections[1].late.map((late: {issue: number}) => late.issue),
+		).toEqual([5, 3]);
+		expect(JSON.parse(quiet.stdout).sections[1].late).toEqual([]);
+	});
+
+	it("leaves out a routed issue the table still holds", async () => {
+		const {board} = world({table: [{number: 5, stage: "not now"}], onCall: []});
+		const out = await digest(board);
+
+		expect(
+			JSON.parse(out.stdout).sections[1].late.map((late: {issue: number}) => late.issue),
+		).toEqual([3]);
+	});
+
 	it("reports the triage queue alone, with no board read, when the block names only that section", async () => {
 		const {board, calls} = world();
 		const out = await digest(board, config({digest: {tool: "slack", sections: ["triage"]}}));
@@ -238,6 +317,17 @@ describe("what it refuses", () => {
 		const unscoped = world({located: {_tag: "MissingScope", reason: "the token lacks the scope"}});
 		expect((await digest(unscoped.board)).code).toBe(SCOPE_MISSING);
 		expect(unscoped.calls).not.toContain("post");
+	});
+
+	it("refuses a table it could not read, since the held issues decide who is on-call", async () => {
+		const {board, calls} = world({tableLocated: {_tag: "Failed", reason: "HTTP 502"}});
+		const out = await digest(board);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("cannot find the table: HTTP 502");
+		expect(out.stderr.join("\n")).toContain("leave `on-call` out of `digest.sections`");
+		expect(calls).not.toContain("post");
 	});
 
 	it("refuses a failed post, with the webhook URL in no line it prints", async () => {

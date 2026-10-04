@@ -289,7 +289,7 @@ export interface Scoped {
  * reader in its refusals, and every refusal says nothing was written, since none of them writes.
  */
 export const readScope = <R>(
-	board: TableBoard<R>,
+	board: Pick<TableBoard<R>, "node" | "wave">,
 	verb: string,
 	repo: string,
 	seeds: ReadonlyArray<number>,

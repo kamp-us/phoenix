@@ -290,12 +290,12 @@ const digest = leafCommand(
 	Command.withDescription(
 		tableHelp("table digest", [
 			'Posts issues past their response target to a chat webhook; prints {"answer":"sent",…}.',
-			"  7: no on-call project; run table setup",
+			"  7: no on-call project or no table; run table setup",
 			"  8: the post did not land (UNKNOWN)",
-			"  11: the open issues or the on-call board were unreadable (UNKNOWN)",
-			"  12: the digest or boards block does not decode",
+			"  11: the open issues, the on-call board or the table were unreadable (UNKNOWN)",
+			"  12: the digest, boards or table block does not decode",
 			"  20: the on-call section needs the token's project scope",
-			"  22: two open projects carry the on-call board's title",
+			"  22: two open projects carry the on-call board's title or the table's",
 			"  25: the variable digest.webhookEnv names holds no URL",
 		]),
 	),

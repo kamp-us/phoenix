@@ -466,13 +466,17 @@ sends nothing and answers `off` at exit `0`. A block names `tool` (`slack` or `d
 
 - `triage` — every open issue that carries `status:needs-triage` or no label at all and was filed
   more than `digest.triageTargetHours` ago, longest wait first.
-- `on-call` — the [`past-target`](#table-flags) list: every open item on the on-call board that has
-  waited longer than the target its labels pick, judged by the same function with the same start of
-  the wait, so the channel and `table flags` name the same items. It reads the on-call board, so it
-  needs a token that can read the project, which the default Actions token cannot do for an
-  organization's project. A read that fails refuses the whole run and names
-  `digest.sections` as the way to report the triage queue alone. With no `boards.onCall` block
-  there is no response target to miss: the section is named under `notAsked` and the rest is sent.
+- `on-call` — every open on-call issue that has waited longer than the target its labels pick. An
+  issue is on-call when it is an item on the on-call board, or when `boards.onCall.route` sends it
+  there and [`table route`](#table-route) has not placed it yet: the same pick route makes, so an
+  issue the table holds at `bet`, `not now` or `check` is left out. Nothing on a schedule runs
+  route, so this is what reports an issue filed since the last run of it. Each is judged by the
+  function behind the [`past-target`](#table-flags) flag, with the same start of the wait. It reads
+  the on-call board and the table, so it needs a token that can read both projects, which the
+  default Actions token cannot do for an organization's projects. A read that fails refuses the
+  whole run and names `digest.sections` as the way to report the triage queue alone. With no
+  `boards.onCall` block there is no response target to miss: the section is named under `notAsked`
+  and the rest is sent.
 
 **The message.** One line per issue naming its number, title, target and wait, then its URL, under a
 heading per section that carries the section's full count. The text is cut to 2000 characters,
@@ -495,11 +499,12 @@ unless `digest.allClear` is `true`, and then it posts one line saying so.
 that refusal does not echo the value. A failed post names the HTTP status, a short error token when
 the tool answered with one, or the platform's error code, and never the URL.
 
-**A failure is never an empty report.** An issue list or on-call board that could not be read, and a
-post that did not land, each exit non-zero naming the read or the write that failed.
+**A failure is never an empty report.** An issue list, on-call board or table that could not be
+read, and a post that did not land, each exit non-zero naming the read or the write that failed.
 
-**Dry run.** `--dry-run` makes every read, builds the message and prints it under answer `dry-run`
-without posting. It needs no webhook variable.
+**Dry run.** `--dry-run` makes every read and posts nothing. With something to send it builds the
+message and prints it under answer `dry-run`; with nothing late and no all-clear it answers `quiet`,
+as a real run would. It needs no webhook variable.
 
 stdout is `{"answer":"off"}`, or
 `{"answer":"sent"|"quiet"|"dry-run","repo":"…","tool":"slack"|"discord","late":n,"sections":[{"section":"triage"|"on-call","late":[{"issue":n,"target":"…","hours":n,"since":"…","waitedHours":n}]}],"notAsked":["on-call"],"text":"…"|null}`;
@@ -507,11 +512,15 @@ stdout is `{"answer":"off"}`, or
 
 ### Exit status
 
-- `7` — the `on-call` section is asked and there is no on-call board. Run `table setup`.
+- `7` — the `on-call` section is asked and the on-call board or the table is missing. Run
+  `table setup`.
 - `8` — the post to the webhook did not land. UNKNOWN; the report was built and not delivered.
-- `11` — the repository, its open issues or the on-call board could not be read. UNKNOWN.
-- `12` — the `digest` or `boards` block in `.fabrika.jsonc` does not decode.
+- `11` — the repository, its open issues, the on-call board, the table or an issue a table row
+  groups with could not be read. UNKNOWN.
+- `12` — the `digest`, `boards` or `table` block in `.fabrika.jsonc` does not decode. The `table`
+  block is read only when the `on-call` section is asked.
 - `20` — the `on-call` section is asked and the token lacks the `project` scope.
-- `22` — two open projects carry the on-call board's title. Set `boards.onCall.project.number`.
+- `22` — two open projects carry the on-call board's title or the table's. Set
+  `boards.onCall.project.number` or `table.project.number`.
 - `25` — the environment variable `digest.webhookEnv` names is unset, empty or holds no http(s)
   URL. Nothing was read from GitHub.

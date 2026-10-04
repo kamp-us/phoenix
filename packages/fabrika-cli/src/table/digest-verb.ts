@@ -3,8 +3,13 @@
  * `digest` block names.
  *
  * With no `digest` block it reads nothing and sends nothing. The triage section reads the open
- * issues alone. The on-call section also reads the on-call board, the read `table flags` makes, so
- * it needs a token that can read the project.
+ * issues alone. The on-call section also reads both boards, so it needs a token that can read the
+ * projects.
+ *
+ * **An issue is on-call once the routing rule says so, not once someone placed it.** The section
+ * lists the on-call board's open items and every open issue `boards.onCall.route` sends there that
+ * `table route` has yet to place, picked by the `onCallIssuesOf` route and prep use. Nothing on a
+ * schedule runs route, so a list of placed items alone would miss the issue filed overnight.
  *
  * **A source it could not read is a refusal, never an empty report**, and so is a post that did not
  * land: a scheduled run that goes quiet has to mean nothing is late.
@@ -19,21 +24,24 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {boardsKey} from "../config/keys/boards.ts";
 import {type ChatTool, type DigestSettings, digestKey} from "../config/keys/digest.ts";
+import {tableKey} from "../config/keys/table.ts";
 import {readKey} from "../config/read-key.ts";
 import type {Attempt} from "../io/git.ts";
 import {type ListedIssue, listOpenIssueFacts, resolveRepo} from "../io/issues.ts";
 import {withProjects} from "../io/projects.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {dueChecks} from "./check.ts";
 import {CONFIG_MALFORMED, NO_WEBHOOK, PRECONDITION_UNKNOWN, WRITE_UNKNOWN} from "./codes.ts";
 import {digestOf, lateCount, type OnCallQueue, renderDigest} from "./digest.ts";
 import {postWebhook} from "./digest-post.ts";
-import {onCallItemsOf, readOnCall} from "./on-call-prep.ts";
-import {locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
+import {readHeadRows} from "./flags-read.ts";
+import {onCallIssuesOf, onCallItemsOf, readOnCall} from "./on-call-prep.ts";
+import {githubWave, locateTable, syncBoard, type TableBoard} from "./sync-verb.ts";
 
 const VERB = "table digest";
 
 /** Every read the verb makes and its one write, passed in so it stays provable offline. */
-export interface DigestBoard<R> extends Pick<TableBoard<R>, "locate" | "items"> {
+export interface DigestBoard<R> extends Pick<TableBoard<R>, "locate" | "items" | "node" | "wave"> {
 	readonly openIssues: (
 		repo: string,
 	) => Effect.Effect<Attempt<ReadonlyArray<ListedIssue>>, never, R>;
@@ -69,7 +77,7 @@ const webhookOf = (
 };
 
 const ON_CALL_FIX =
-	"The on-call section reads the on-call board, so the run needs a token that can read the project; leave `on-call` out of `digest.sections` to report the triage queue alone. Nothing was sent, and this is not an empty report.";
+	"The on-call section reads the on-call board and the table, so the run needs a token that can read both projects; leave `on-call` out of `digest.sections` to report the triage queue alone. Nothing was sent, and this is not an empty report.";
 
 export const runDigest = <R>(
 	options: DigestOptions<R>,
@@ -92,6 +100,12 @@ export const runDigest = <R>(
 		const boards = yield* readKey(options.cwd, boardsKey);
 		if (boards._tag === "Refused") {
 			return refuse(CONFIG_MALFORMED, `${VERB}: ${boards.reason}. Nothing was read from GitHub.`);
+		}
+		const table = settings.sections.includes("on-call")
+			? yield* readKey(options.cwd, tableKey)
+			: null;
+		if (table?._tag === "Refused") {
+			return refuse(CONFIG_MALFORMED, `${VERB}: ${table.reason}. Nothing was read from GitHub.`);
 		}
 		const webhook = options.dryRun ? null : webhookOf(settings, options.env);
 		if (webhook?._tag === "None") {
@@ -117,15 +131,19 @@ export const runDigest = <R>(
 			);
 		}
 		let onCall: OnCallQueue | null = null;
-		if (settings.sections.includes("on-call")) {
+		if (table !== null) {
 			const read = yield* readOnCall(board, VERB, repo, boards.value);
 			if (read._tag === "Refused") return refuse(read.code, `${read.reason} ${ON_CALL_FIX}`);
 			if (read._tag === "Split") {
+				const heads = yield* readHeadRows(board, VERB, repo, table.value, []);
+				if (heads._tag === "Refused") return refuse(heads.code, `${heads.reason} ${ON_CALL_FIX}`);
 				const open = new Map(listing.value.map((issue) => [issue.number, issue] as const));
+				const due = dueChecks(heads.rows, table.value.checkDelayDays, options.now);
+				const routed = onCallIssuesOf(open, heads.table, heads.rows, read.settings, due);
 				onCall = {
 					targets: read.settings.responseTargets,
 					boardCreatedAt: read.project.createdAt,
-					open: onCallItemsOf(read.rows, open, []),
+					open: onCallItemsOf(read.rows, open, routed),
 				};
 			}
 		}
@@ -186,6 +204,8 @@ export const runDigest = <R>(
 export const digestBoard: DigestBoard<ChildProcessSpawner.ChildProcessSpawner> = {
 	locate: (repo, target) => withProjects((token) => locateTable(token, repo, target, VERB)),
 	items: syncBoard.items,
+	node: syncBoard.node,
+	wave: githubWave,
 	openIssues: listOpenIssueFacts,
 	post: postWebhook,
 };

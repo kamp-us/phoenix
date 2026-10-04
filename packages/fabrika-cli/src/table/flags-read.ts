@@ -17,7 +17,14 @@ import {type HeadRow, type StageCell, sizeOf} from "./flags.ts";
 import {membersOf} from "./group.ts";
 import {FIELD, productBoard} from "./shape.ts";
 import type {Row, SyncNode} from "./sync.ts";
-import {type Refusal, readRecords, readScope, rowsOf, type TableBoard} from "./sync-verb.ts";
+import {
+	type Refusal,
+	readRecords,
+	readScope,
+	rowsOf,
+	type Scoped,
+	type TableBoard,
+} from "./sync-verb.ts";
 
 export interface Heads {
 	readonly _tag: "Heads";
@@ -55,18 +62,24 @@ const stageOf = (row: Row): StageCell | null => {
 		: null;
 };
 
+/** The table's group rows and the graph that decided them, with no lane record read. */
+export interface HeadRows extends Omit<Heads, "_tag" | "records" | "graph"> {
+	readonly _tag: "HeadRows";
+	readonly scoped: Scoped;
+}
+
 /**
- * Every group row the named issues reach, or every row on the table when none is named, with the
- * lane records on the issues each stands for. A group head that is not a row carries no Stage or
- * Size, so it has nothing to be flagged on and is left out.
+ * Every group row the named issues reach, or every row on the table when none is named. A group
+ * head that is not a row carries no Stage or Size, so it has nothing to be flagged on and is left
+ * out.
  */
-export const readHeads = <R>(
-	board: TableBoard<R>,
+export const readHeadRows = <R>(
+	board: Pick<TableBoard<R>, "locate" | "items" | "node" | "wave">,
 	verb: string,
 	repo: string,
 	settings: TableSettings,
 	issues: ReadonlyArray<number>,
-): Effect.Effect<Heads | Refusal, never, R> =>
+): Effect.Effect<HeadRows | Refusal, never, R> =>
 	Effect.gen(function* () {
 		const located = yield* board.locate(repo, productBoard(repo, settings));
 		if (located._tag !== "Ok") return stopOn(verb, located, "cannot find the table");
@@ -81,8 +94,6 @@ export const readHeads = <R>(
 		const seeds = issues.length > 0 ? issues : [...onTable].sort((a, b) => a - b);
 		const scoped = yield* readScope(board, verb, repo, seeds, onTable);
 		if (scoped._tag === "Refused") return scoped;
-		const read = yield* readRecords(board, verb, repo, scoped, onTable);
-		if (read._tag === "Refused") return read;
 		const heads = scoped.scope.heads.flatMap((group): HeadRow[] => {
 			const row = rows.get(group.head);
 			if (row === undefined) return [];
@@ -100,12 +111,22 @@ export const readHeads = <R>(
 				},
 			];
 		});
-		return {
-			_tag: "Heads",
-			project,
-			rows: heads,
-			records: read.records,
-			table: rows,
-			graph: scoped.graph,
-		};
+		return {_tag: "HeadRows", project, rows: heads, table: rows, scoped};
+	});
+
+/** {@link readHeadRows}, with the lane records on the issues each row stands for. */
+export const readHeads = <R>(
+	board: TableBoard<R>,
+	verb: string,
+	repo: string,
+	settings: TableSettings,
+	issues: ReadonlyArray<number>,
+): Effect.Effect<Heads | Refusal, never, R> =>
+	Effect.gen(function* () {
+		const heads = yield* readHeadRows(board, verb, repo, settings, issues);
+		if (heads._tag === "Refused") return heads;
+		const {project, rows, table, scoped} = heads;
+		const read = yield* readRecords(board, verb, repo, scoped, new Set(table.keys()));
+		if (read._tag === "Refused") return read;
+		return {_tag: "Heads", project, rows, records: read.records, table, graph: scoped.graph};
 	});

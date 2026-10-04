@@ -258,7 +258,7 @@ which setup creates, route fills and flags reads. A `digest` block lets `table d
 issues past their response target to a Slack or Discord webhook from a scheduled run. Use
 `table --help`, `table setup --help`, `table sync --help`, `table flags --help`,
 `table prep --help`, `table route --help`, `table migrate-week --help` and `table digest --help`.
-The token needs the `project` scope; the
+The token needs the `project` scope, except for `table digest` reporting the triage queue alone; the
 [adopter guide](../../../claude-plugins/fabrika/guide/adopt-fabrika-in-a-new-repo.md#11-set-up-the-betting-table)
 covers the scope and the three manual steps setup prints.
 

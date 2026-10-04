@@ -335,8 +335,8 @@ with `/fabrika:report`, triage it with `/fabrika:triage`, and you are running.
 The table is a GitHub project where your control-plane owners decide what fabrika bets on each week.
 It is optional. The steps below set it up and keep it running. What each verb reads and writes is
 in [`table-contract.md`](../docs/table-contract.md); its `--help` (`fabrika table setup --help`, and
-the same for `sync`, `flags`, `prep`, `route` and `migrate-week`) carries only the answer it prints
-and its exit codes.
+the same for `sync`, `flags`, `prep`, `route`, `migrate-week` and `digest`) carries only the answer
+it prints and its exit codes.
 
 ### 11.1 Give the token the `project` scope
 
@@ -346,7 +346,8 @@ gh auth refresh -h github.com -s project
 
 Use that exact line: a plain `gh auth refresh` fails in a non-interactive shell. With
 `GITHUB_TOKEN` or `GH_TOKEN` set, give that token the scope instead. The `table` verbs stop at exit
-20 without it.
+20 without it. The one exception is `table digest` reporting the triage queue alone (step 12), which
+reads only open issues.
 
 The `table` verbs are not the only readers. `lane brief` reads the table for the size stop,
 `lane record` runs `fabrika table sync` after it posts, `build pick` reads it to put bets first, and
@@ -528,9 +529,11 @@ shipped value:
 ```
 
 `triage` lists issues still labeled `status:needs-triage`, or carrying no label, after
-`triageTargetHours`. `on-call` lists the open items on the on-call board from step 11.9 that are
-past the target their labels pick; without a `boards.onCall` block it is left out. With nothing late
-no message is sent, unless `allClear` is `true`.
+`triageTargetHours`. `on-call` lists the open on-call issues from step 11.9 that are past the target
+their labels pick: the items on the on-call board, and every issue `boards.onCall.route` sends there
+that `fabrika table route` has not placed yet. So a bug filed overnight is reported before anyone
+routes it. Without a `boards.onCall` block the section is left out. With nothing late no message is
+sent, unless `allClear` is `true`.
 
 **2. Store the webhook URL as a secret.** Create an incoming webhook for the channel in your chat
 tool, then save its URL as the repository secret `FABRIKA_DIGEST_WEBHOOK`. The URL is a credential:
@@ -568,9 +571,9 @@ jobs:
 It runs on a schedule and by hand, never on a pull request, so it cannot become a required check. A
 red run means the report could not be built or delivered.
 
-The `on-call` section reads the on-call project, and the token GitHub Actions provides cannot read
-an organization's projects. Either save a token that can read the project as the secret
-`FABRIKA_DIGEST_TOKEN`, or set `"sections": ["triage"]` and the provided token is enough.
+The `on-call` section reads the on-call project and the table's project, and the token GitHub
+Actions provides cannot read an organization's projects. Either save a token that can read both as
+the secret `FABRIKA_DIGEST_TOKEN`, or set `"sections": ["triage"]` and the provided token is enough.
 
 Try it before you schedule it: `fabrika table digest --dry-run` prints the message and sends
 nothing. What it reads, sends and refuses is the "table digest" section of
