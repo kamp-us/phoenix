@@ -1,7 +1,7 @@
 ---
 id: 0420
 title: The worktree-create hook locks only its base fetch and add, and installs after the lock
-status: accepted
+status: amended-in-part by [0448](0448-worktree-create-hook-never-sweeps.md)
 date: 2026-09-27
 tags: [fabrika, hooks, worktree, tooling, harness]
 ---
@@ -37,6 +37,9 @@ Moving the install out reverses two recorded choices, so this record amends both
 
 **The hook's base fetch and `git worktree add` run inside one lock per clone, and nothing else
 does; the dependency install runs after the lock is released.**
+
+> Amended by [0448](0448-worktree-create-hook-never-sweeps.md): the hook no longer runs the reap
+> sweep. Items 1 and 2 mention it as history; the lock's scope is unchanged.
 
 1. **One owner.** `packages/fabrika-cli/src/hook/worktree-owner.ts` is the only place the hook
    fetches a base or adds a worktree. The verb reads the envelope, runs the reap sweep and hands the
