@@ -646,7 +646,16 @@ your `SHIPPED-PR` lands only against an open PR the board shows linking the issu
 against a local branch in this tree whose commits name the child issue — so a refusal here is the board
 disagreeing with your terminal, never a token to change. On any refusal, print the token and name
 the exit code; the operator re-reads and routes. Then print the token as the last line either way;
-a run whose caller named no lane prints the token only and records nothing.
+a run whose caller named no lane records nothing, and still writes the next paragraph's two plain
+lines above the token.
+
+**Close in plain words, on every ending.** Directly above the token, your closing message ends with
+the two plain lines
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+requires: what happened, and what the person does next. Write both whichever of the six terminals
+you end on, including a `STOPPED` that came before any claim, and word them as that section says.
+A refusal's exit code goes above those lines, and they say what it means. Where the clone passage
+below applies, its `git switch` command is what the person does next.
 
 **Say where you left the person's own clone.** `build release` steps the tree off the lane branch
 it just released, and its answer's `freed` field names that branch, or is `null` when it moved

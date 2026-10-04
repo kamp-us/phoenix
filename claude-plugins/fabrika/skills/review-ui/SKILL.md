@@ -448,8 +448,17 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr 
 has more than one — every epic run. The verb resolves a missing one only on a single-task lane and
 otherwise refuses at exit `13` before it appends anything, so a report that omits it records
 nothing. On any refusal, print the token and name the exit code; the operator re-reads and routes.
-Then print the token as the last line either way; a run whose caller named no lane prints the token
-only and records nothing.
+Then print the token as the last line either way; a run whose caller named no lane records nothing,
+and still writes the next paragraph's two plain lines above the token.
+
+**Close in plain words, on every ending.** Directly above the token, your closing message ends with
+the two plain lines
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+requires: what happened, and what the person does next. Write both on every one of the six
+terminals, the four that land no verdict included, and word them as that section says. Where §1 had
+you post the note a `21` or `22` printed, that note stays as printed on the pull request, and your
+second line points the person at it by the pull request's full URL. A refusal's exit code goes above
+those lines, and they say what it means.
 
 **Four of those six land no verdict, and each names its cause when you record it.** They fold to
 one park, so a report that names none is a park the sweep cannot tell apart from the other three — and
