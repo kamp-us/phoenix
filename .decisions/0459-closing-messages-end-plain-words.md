@@ -1,12 +1,12 @@
 ---
-id: 0458
+id: 0459
 title: A stage's closing message ends in two plain lines, under one shared rule skill review checks
 status: accepted
 date: 2026-10-04
 tags: [fabrika, skills, pipeline, docs]
 ---
 
-# 0458 — A stage's closing message ends in two plain lines, under one shared rule skill review checks
+# 0459 — A stage's closing message ends in two plain lines, under one shared rule skill review checks
 
 **What this decides:** when a fabrika stage finishes or stops, the last thing it writes for a person
 is two plain lines: what happened, and what the person does next. The rule has one home, the skill
