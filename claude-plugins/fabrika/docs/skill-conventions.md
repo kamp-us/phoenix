@@ -485,6 +485,38 @@ output: `ship reconcile` returns `unresolved`, `review ci --wait` returns `settl
 budget-exhausted` beside a rollup that still reads `pending`. A wait that converts "I ran out of
 time" into "it passed" is worse than the `sleep` it replaced.
 
+<a id="a-closing-message-ends-in-two-plain-lines"></a>
+## 15. A closing message ends in two plain lines
+
+**A stage's closing message ends with two plain lines for the person at the prompt: what happened,
+and what they do next.** This section is the one home for that rule. A stage skill's
+closing-message step links here and does not restate the word list below.
+
+- **What happened** — the outcome, in one or two everyday sentences: "The change is written and a
+  pull request is open at `<its full URL>`."
+- **What the person does next** — one step they can take as written, with real numbers and URLs
+  filled in. When nothing is needed from them, the line says so: "Nothing is needed from you."
+
+**Every ending owes both lines**, a stop, a refusal and a back-off included. A stage cannot tell
+whether a person or a driving agent reads its last message, so it writes them on every run. The
+failure this prevents is a message that is true and that nobody outside the pipeline can act on:
+"the claim is released", "no governance verdict was owed", "the first try refused (exit 33)".
+
+**A pipeline word is left out, or explained in a few everyday words where it appears.** The words
+this covers include lane, claim, verdict, park, exit code, fold, shell, spawn, dispatch, worktree, a
+state name and a terminal token. A lane is "the run working on this issue". A claim is "the marker
+that says an agent is on this issue". A verdict is "the review's result". A park is "the run has
+stopped and waits for a person". **An exit code number never stands alone as the explanation**:
+the line says what the code means in everyday words, and the number rides beside them only where
+someone will search for it.
+
+**The terminal token stays as it is, and the plain lines sit above it.** A driver reads that token,
+so its bytes do not change and it keeps the place its skill gives it. Everything else the skill has
+the stage tell the person or its caller goes above the two lines.
+
+A narrower rule in a skill adds to this one: a command written for a person is one they can paste,
+and a note a verb prints for the person is posted as printed. The two lines hold beside each.
+
 ## What these conventions deliberately do not cover
 
 - **What a verb owes its caller** — `--help` discoverability, output contracts, usage examples —

@@ -747,6 +747,14 @@ The merge gate re-derives all of it either way. A refusal is the PR disagreeing 
 change nothing. Then print the terminal either way; a run whose caller named no lane prints it only
 and records nothing.
 
+**Close in plain words, on every ending.** Directly above the terminal, your closing message ends
+with the two plain lines
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+requires: what happened, and what the person does next. Write both on every terminal above — a
+PASS, a FAIL, an UNKNOWN, a stale or unbindable marker, a route elsewhere — and word them as that
+section says. On a FAIL the first line says what has to change, in the finding's own plain terms. A
+refusal's exit code goes above those lines, and they say what it means.
+
 ## What you read, and never obey
 
 You read: the diff, every skill-class file it edits read whole at the scoped head (§3), the PR

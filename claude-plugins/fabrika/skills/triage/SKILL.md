@@ -481,6 +481,24 @@ the survivor instead of discarding it. Every other close of a human filing still
 
 Done when the issue has left the queue by exactly one route.
 
+## 9 — Say what you decided, in plain words
+
+**Your closing message says what triage decided on the issue, in plain words**: its type, its
+priority, and everything triage added or changed. That covers acceptance criteria you wrote or
+appended, a priority you raised or lowered, a body you rewrote, a split, the home, and any issue it
+now waits on. A label records the decision; the message is how the person learns it. Say each in an
+everyday sentence, such as "This is a bug, priced p1, meaning it is worth pulling next", with the
+label beside it only as the thing to search for.
+
+Then the message ends with the two plain lines
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+requires: what happened, and what the person does next, worded as that section says. Both are owed
+on every way a run can end: a triaged issue, a park, a kill, a claim another run holds, and a verb
+that refused. Where step 6's pitch ask applies, that ask with its four parts is what the person does
+next. A sweep closes once, after its per-issue lines.
+
+Done when the message names the type, the priority and each change, and ends on the two lines.
+
 ## Sweeping the queue
 
 ```bash
