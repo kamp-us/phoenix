@@ -1122,7 +1122,7 @@ heads have diverged, because the platform's three-dot compare then answers from 
 the range was never read at all. With `--no-preview`, the mode is resolved right after the `ui`
 class (`21` on `require-render`); the comments read then checks that no preview is announced
 (`23`, or `11` when the announcement does not read) and, under `hand-check`, admits the owner's
-hand-check (`21` with none found, `22` when a pinned one fails a fact), both before the text
+hand-check (`21` with none found, `22` when a pinned one is not admitted), both before the text
 verdict. Compose the record's first
 line through the `routed-elsewhere` wire format, leak-scan the assembled comment (`5`/`6`), upsert
 one record for this namespace on the emitter's own comment, and read it back from live state (`9` on
@@ -1180,10 +1180,11 @@ announcement that does not read is `11`. So `--no-preview` is never the caller's
   comment, recognised by the header that verb writes, and a comment carrying an agent stamp, read
   over the body with its screenshots removed. The verb reads the PR's comments and stands on the
   newest one it admits; with none, it refuses on `21`. `--hand-check <comment>` pins one instead,
-  and a pinned comment that fails a fact or is one of the two refused kinds refuses on `22`. It stands in for the render the way a desk run does, so it rests on a standing
-  `review-code` PASS at `--sha` too (`20` without one). The record carries `basis:hand-check` and a
-  closing line naming the comment and its author. Under a `skip` mode a pinned hand-check is checked
-  the same way and recorded as `hand-check`.
+  and a pinned comment that fails a fact or is one of the two refused kinds refuses on `22`. It
+  stands in for the render the way a desk run does, so it rests on a standing `review-code` PASS at
+  `--sha` too (`20` without one). The record carries `basis:hand-check` and a closing line naming
+  the comment and its author. Under a `skip` mode a pinned hand-check is checked the same way and
+  recorded as `hand-check`.
 
 Both flags ride the record's first line, so `ship gate` still reads the namespace as `routed` and
 flags the row with the basis, and `lane prove` carries it onto the namespace row it records. `lane

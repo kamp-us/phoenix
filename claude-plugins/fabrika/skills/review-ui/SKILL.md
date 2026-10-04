@@ -83,10 +83,10 @@ to reach the head. It then resolves the mode over the PR's `ui` files:
 - `hand-check` posts a record flagged `basis:hand-check`. **When a `hand-check` rule matches, the
   owner's hand-check is admissible evidence**: a comment on the PR by a control-plane account that
   names the exact head and carries screenshots. The verb reads the PR's comments, stands on the
-  newest one that passes all four facts, and names it in its answer's `handCheck`. You do not look
-  for it yourself. With none at this head it refuses on `21`: end **CANT-SEE** and say in the note
-  that an owner's hand-check at `<head>` is what the rule asks for. `--hand-check <comment-id>` pins
-  one comment instead, and `22` says which fact it fails.
+  newest one it admits, and names it in its answer's `handCheck`. You do not look for it yourself.
+  With none at this head it refuses on `21`: end **CANT-SEE** and say in the note that an owner's
+  hand-check at `<head>` is what the rule asks for. `--hand-check <comment-id>` pins one comment
+  instead, and `22` says why it is not admitted.
 - `require-render` refuses on `21`: the rules owe a render.
 
 Either posted record ends **ROUTED-ELSEWHERE** with cause `no-preview-routed` (Terminal vocabulary
