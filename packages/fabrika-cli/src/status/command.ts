@@ -163,15 +163,9 @@ const settings = leafCommand(
 				"the directory holding .fabrika.jsonc and .fabrika.local.jsonc (default: the repository root, else the cwd)",
 			),
 		),
-		surfaces: Flag.boolean("surfaces").pipe(
-			Flag.withDefault(false),
-			Flag.withDescription(
-				"expand `surfaceDispositions` into one `surface\\t<id>\\t<fail-loud|degrade|bootstrap>\\t<what the surface is>` row per repo surface, appended to the same readout, each with the disposition this repo resolves to",
-			),
-		),
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({root, surfaces, json}) {
+	Effect.fn(function* ({root, json}) {
 		const layers = yield* configSurface(Option.getOrNull(root));
 		yield* emit(
 			runSettings({
@@ -179,7 +173,6 @@ const settings = leafCommand(
 				rows: settingRows(layers),
 				asOf: readNow(instant(new Date())),
 				json,
-				surfaces,
 			}),
 		);
 	}),
@@ -190,15 +183,12 @@ const settings = leafCommand(
 			"Prints every config key with its resolved value and the file or default it came from.",
 			"  stdout: `settings\\t<resolved|unknown>\\t<keys>\\t<declared>\\t<unknown>\\t<as-of>`, then",
 			"  `setting\\t<key>\\t<declared|default|unknown>\\t<value-as-json>\\t<detail>\\t<as-of>` per key",
-			"  7: no keys registered, or --surfaces finds no `surfaceDispositions` key",
+			"  7: no keys registered",
 			"  11: the root or a config file could not be read or resolved (UNKNOWN)",
 			'  Derivation: the front-door skill\'s contract.md, "status settings"',
 		].join("\n"),
 	),
-	Command.withExamples([
-		{command: "fabrika status settings"},
-		{command: "fabrika status settings --surfaces"},
-	]),
+	Command.withExamples([{command: "fabrika status settings"}]),
 );
 
 const wiring = leafCommand(

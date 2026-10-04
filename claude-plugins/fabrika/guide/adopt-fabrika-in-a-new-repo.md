@@ -30,23 +30,16 @@ non-obvious.
 ## 2. Find out what your repo is missing
 
 ```bash
-fabrika status settings --surfaces
+fabrika status settings
 ```
 
 Every key on the config surface lists with its resolved value and whether that came from your file or
-the shipped default; `--surfaces` expands `surfaceDispositions` into one row per repo surface, each
-naming what the surface *is* — without it that key prints as one raw id-to-word value. Each row's
-disposition is what a missing surface costs you: `fail-loud` makes a verb refuse and name the
-surface, `degrade` continues with a narrower answer and says so, and `bootstrap` marks a surface you
-have not adopted yet — those are the ones the CLI can create for you, which is step 3. Each
-`surface` row's last column says in one line what that surface is.
+the shipped default. No verb lists the repo surfaces fabrika reads. A verb that needs one you do not
+have tells you when it runs: it refuses and names the surface, or it continues with a narrower answer
+and says so. The surfaces the CLI can create for you are step 3.
 
 **A `read-back conformed` from `status bootstrap` means one surface landed — it does not mean the
 setup is finished**, and nothing in that verb's output says so.
-
-The dispositions are yours to change: a repo that runs no design system declares
-`"surfaceDispositions": {"design-manifest": "degrade"}` and stops being told to build one; every key
-you do not name keeps its shipped value.
 
 ## 3. Create the surfaces the CLI can create
 

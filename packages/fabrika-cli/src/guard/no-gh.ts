@@ -62,8 +62,8 @@ const GH_CHAINED = /(?:&&|\|\||;|\|)\s*gh\s+[a-z][a-z-]*/g;
  *
  * Gated on {@link EXEC_MARKER} rather than folded into {@link GH_ARGV}, because backticked `gh` is
  * also how this package spells the binary in prose, and prose is not only in comments {@link codeOf}
- * strips: `config/keys/surface-dispositions.ts` names the surface in a `note:` string, and a widened
- * {@link GH_ARGV} would red that sentence.
+ * strips: `guard/command.ts` names the binary in its verbs' help strings, and a widened
+ * {@link GH_ARGV} would red those sentences.
  */
 const GH_ARGV_TEMPLATE = /`gh`/g;
 

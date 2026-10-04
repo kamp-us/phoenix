@@ -12,7 +12,6 @@ import type {ConfigSource} from "../config/document.ts";
 import {CAP_CLEAR_AUTHORS} from "../config/keys/cap-clear-authors.ts";
 import {GOVERNED_ROOTS, SHIPPED_GOVERNED_ROOTS} from "../config/keys/governed-roots.ts";
 import {PARK_CAUSE} from "../config/keys/park-cause.ts";
-import {SURFACE_DISPOSITIONS, SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
 import type {ConfigLayers} from "../config/load.ts";
 import {readConfigLayers} from "../config/source.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -27,13 +26,12 @@ const tracked = (source: ConfigSource): ConfigLayers => ({
 	local: {_tag: "Absent"},
 });
 
-const run = (source: ConfigSource, json = false, surfaces = false) =>
+const run = (source: ConfigSource, json = false) =>
 	runSettings({
 		layers: tracked(source),
 		rows: settingRows(tracked(source)),
 		asOf: AS_OF,
 		json,
-		surfaces,
 	});
 
 const rowFor = (rows: ReadonlyArray<SettingRow>, key: string): SettingRow => {
@@ -169,65 +167,8 @@ describe("runSettings", () => {
 			rows: [],
 			asOf: AS_OF,
 			json: false,
-			surfaces: false,
 		});
 		expect(outcome.code).toBe(ZERO_SCOPE);
-		expect(outcome.stdout).toBe("");
-	});
-});
-
-describe("runSettings --surfaces", () => {
-	it("prints one row per registered surface, each carrying what the surface is", () => {
-		const outcome = run({_tag: "Absent"}, false, true);
-		expect(outcome.code).toBe(0);
-		const surfaces = outcome.stdout
-			.trimEnd()
-			.split("\n")
-			.filter((one) => one.startsWith("surface\t"));
-		expect(surfaces.length).toBe(SURFACE_REGISTRY.length);
-		for (const one of surfaces) {
-			const [, id, disposition, note] = one.split("\t");
-			expect(id).toBeTruthy();
-			expect(["fail-loud", "degrade", "bootstrap"]).toContain(disposition);
-			expect((note ?? "").length).toBeGreaterThan(0);
-		}
-	});
-
-	it("relays the whole note, never a clamped one — the note IS the answer here", () => {
-		const outcome = run({_tag: "Absent"}, false, true);
-		const longest = [...SURFACE_REGISTRY].sort((a, b) => b.note.length - a.note.length)[0];
-		expect(outcome.stdout).toContain(`surface\t${longest?.id}\t`);
-		expect(outcome.stdout).toContain(longest?.note ?? "");
-	});
-
-	it("prints the disposition this repo declared, not the one the registry ships", () => {
-		const outcome = run(
-			{_tag: "Text", text: `{"${SURFACE_DISPOSITIONS}": {"design-manifest": "degrade"}}`},
-			false,
-			true,
-		);
-		expect(outcome.stdout).toContain("surface\tdesign-manifest\tdegrade\t");
-	});
-
-	it("appends nothing when --surfaces was not passed", () => {
-		expect(run({_tag: "Absent"}).stdout).not.toContain("\nsurface\t");
-	});
-
-	it("carries the surfaces under --json only when they were asked for", () => {
-		const asked = JSON.parse(run({_tag: "Absent"}, true, true).stdout) as {
-			surfaces?: ReadonlyArray<{id: string; note: string}>;
-		};
-		expect(asked.surfaces?.length).toBe(SURFACE_REGISTRY.length);
-		expect(JSON.parse(run({_tag: "Absent"}, true).stdout)).not.toHaveProperty("surfaces");
-	});
-
-	it("has no surface rows to print when the key did not resolve — the readout is the refusal", () => {
-		const outcome = run(
-			{_tag: "Text", text: `{"${SURFACE_DISPOSITIONS}": ["design-manifest"]}`},
-			false,
-			true,
-		);
-		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stdout).toBe("");
 	});
 });
@@ -260,7 +201,6 @@ describe("runSettings over a real directory", () => {
 						rows: settingRows(layers),
 						asOf: AS_OF,
 						json: false,
-						surfaces: false,
 					}),
 				),
 				NodeServices.layer,

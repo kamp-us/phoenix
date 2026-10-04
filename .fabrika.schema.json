@@ -707,65 +707,6 @@
 			"minLength": 1,
 			"pattern": "^(?!/)(?!\\.\\.).+"
 		},
-		"surfaceDispositions": {
-			"type": "object",
-			"description": "What this repo does when a surface fabrika reads is missing. Declare only the ids you move; every other falls to its shipped disposition.",
-			"propertyNames": {
-				"enum": [
-					"gh-rest",
-					"git-worktree",
-					"git-origin",
-					"git-history",
-					"authoritative-source-checkout",
-					"collaborator-permissions",
-					"issue-dependencies",
-					"settings-patch",
-					"dep-pin",
-					"hand-check-rule",
-					"label-taxonomy",
-					"issue-shape-markers",
-					"standing-lanes",
-					"issue-home",
-					"roadmap-focus",
-					"cycle-doc",
-					"decisions-corpus",
-					"decisions-rarity-floor",
-					"patterns-dir",
-					"patterns-index",
-					"patterns-admission-bar",
-					"glossary-registers",
-					"prose-homes",
-					"doc-gates",
-					"dep-manifest",
-					"design-manifest",
-					"design-prohibitions",
-					"design-inventory",
-					"golden-pointer",
-					"ui-surfaces",
-					"dev-server",
-					"preview-deployment",
-					"codeowners",
-					"landing-path",
-					"required-status-contexts",
-					"governance-floor-workflow",
-					"code-validators",
-					"readout-artifact",
-					"gitignore-row",
-					"claude-md-section",
-					"temp-root",
-					"claim-signal",
-					"verdict-history"
-				]
-			},
-			"additionalProperties": {
-				"type": "string",
-				"enum": [
-					"fail-loud",
-					"degrade",
-					"bootstrap"
-				]
-			}
-		},
 		"table": {
 			"type": "object",
 			"description": "The weekly betting table on GitHub Projects: its cadence, agenda and every threshold its flags read. Its size dollars come from `appetiteSizes`. Leave it out for a working table on the shipped values; declare only the sub-keys you want to change.",
