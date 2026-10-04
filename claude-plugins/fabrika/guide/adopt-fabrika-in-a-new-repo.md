@@ -50,14 +50,14 @@ you do not name keeps its shipped value.
 
 ## 3. Create the surfaces the CLI can create
 
-Nine surface ids are buildable today. Read them off the verb rather than off any prose:
+Ten surface ids are buildable today. Read them off the verb rather than off any prose:
 
 ```bash
 fabrika status bootstrap --help
 ```
 
 ```
-surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin
+surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule
 ```
 
 One id per invocation; a target already present is `exists` at exit 0 and nothing is written or
@@ -73,7 +73,10 @@ brings in Playwright, adds a few hundred lockfile lines, and the package's `post
 headless Chromium (~130MB) for `fabrika ui render`. pnpm 10 skips that `postinstall` until you
 approve it: run `pnpm approve-builds` and pick `@kampus/fabrika-cli`, or add it to
 `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`. Skip the approval and `ui render`
-refuses with exit `11` until the browser is set up. `label-taxonomy`,
+refuses with exit `11` until the browser is set up. `hand-check-rule` writes one
+`reviewUi.whenNoPreview` rule into `.fabrika.jsonc` and reads no stdin;
+[If your app has no preview deploys](#if-your-app-has-no-preview-deploys) says when to run it.
+`label-taxonomy`,
 `issue-shape-markers` and `readout-artifact` write to GitHub and need a resolvable repo —
 `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote.
 
@@ -249,6 +252,18 @@ Which hand-verification counts is yours to say, by path, with `reviewUi.whenNoPr
 - `hand-check` lets your own comment on the PR stand in for the render: screenshots, naming the PR's
   exact head, from an account on your control-plane `CODEOWNERS` row.
 - `skip` means no rendered review is owed for those files.
+
+**A repo with no rule yet gets its first one from one command.** Run it when your app has a screen
+and nothing puts up a preview for each PR:
+
+```bash
+fabrika status bootstrap hand-check-rule
+```
+
+It writes one rule, `{"paths": ["**"], "mode": "hand-check"}`, and keeps every other key and
+comment in the file. The rule is read only over a PR's `uiSurfaces` files, so `**` covers each app
+you declare. Once any rule is there the command answers `exists` and writes nothing, so narrower
+paths are yours to edit by hand. Commit the file to your default branch before the first build.
 
 A PR takes the strictest mode across its files. The route checks that the PR really has no preview,
 so a rule never stands in for a render that could run. Both looser outcomes are flagged on the PR,

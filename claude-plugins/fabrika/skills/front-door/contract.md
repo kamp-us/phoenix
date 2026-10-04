@@ -1125,8 +1125,8 @@ surface merges into a file that is already there instead. The content is the
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
-here, not inferred from any declaration. Nine ids, and
-a tenth is a change to this table, not a new rule.
+here, not inferred from any declaration. Ten ids, and
+an eleventh is a change to this table, not a new rule.
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
@@ -1139,6 +1139,7 @@ a tenth is a change to this table, not a new rule.
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
 | `settings-patch` | `--path`, default `.claude/settings.json` at the repo root | **none** — the two keys [fixed below](#json-key-merge), merged into the object a present file parses to, written whole into a file that is absent | a present file re-reads to the merged object — every undeclared key intact, the declared keys at their registry values — through `normalizeForReadback` |
 | `dep-pin` | `--path`, default `package.json` at the repo root | **none** — the `dependencies.@kampus/fabrika-cli` row at the version npm's registry currently [publishes](#json-key-merge), merged into the object a present manifest parses to, written whole into a manifest that is absent | a present manifest re-reads to the merged object — every undeclared key intact, the row at exactly the resolved version — through `normalizeForReadback`; an unreachable registry refuses unwritten |
+| `hand-check-rule` | `--path`, default `.fabrika.jsonc` at the repo root | **none** — the one `reviewUi.whenNoPreview` rule [fixed below](#hand-check-rule), spliced into a present file's text, written whole into a file that is absent | the re-read matches the spliced text through `normalizeForReadback` — the rule in, every other key and every comment where it was |
 
 <a id="taxonomy-is-derived"></a>**The taxonomy is derived from the vocabularies, never restated.**
 Every name comes from the constant the writing verb already reads — `STATUSES` for the five statuses,
@@ -1319,6 +1320,39 @@ Playwright and a headless Chromium download, and pnpm 10 skips the package's `po
 repo approves it (`pnpm approve-builds`, or an `onlyBuiltDependencies` entry plus
 `pnpm rebuild @kampus/fabrika-cli`) — that `postinstall` is what sets up `ui render`'s browser.
 
+<a id="hand-check-rule"></a>**`hand-check-rule` writes one rule, for a repo whose app has a screen
+and no preview deploy.** A repo that declares no `reviewUi.whenNoPreview` rule resolves every ui file
+to `require-render`, so its first screen change ends `CANT-SEE` with nothing to render. The rule,
+fixed here so no clause defers to source:
+
+```jsonc
+"reviewUi": {
+	"whenNoPreview": [{"paths": ["**"], "mode": "hand-check"}]
+}
+```
+
+`hand-check` is the only mode this surface writes: the owner looks at the screen and posts a
+screenshot, and the screen check is never switched off from here. The glob is
+every path because the rule is read only over a pull request's ui-class files, so it covers whatever
+`uiSurfaces` names now or later, and `review-ui route --no-preview` refuses it on a pull request
+that has a preview.
+
+**Any rule already declared is `exists`, whatever its mode or paths.** Once a repo has said which
+paths take which mode, a second rule from here could only contradict it, so nothing is written and
+the notice says a rule is already there. A `reviewUi` with no rules — the key absent, an empty
+object, an empty list — is the gap this surface fills.
+
+**`.fabrika.jsonc` is edited in place, never re-serialized.** The file carries a person's comments,
+so the rule is spliced into the text: a missing `reviewUi` is appended after the last top-level key,
+a missing `whenNoPreview` after the last key inside `reviewUi`, and an empty list is replaced where
+it stands. Every other byte stays, comments included. Before writing, the spliced text is parsed
+again and must equal the old document plus the rule; a file that does not parse as a JSON object
+with comments, a `reviewUi` the key itself refuses, and a splice that would move another key are each
+exit `11` with nothing written. Absent, the file is created holding the rule alone.
+
+`review-ui route` reads the rules off the checkout it runs in, so the rule counts for a reviewer
+once it is committed to the branch that reviewer's worktree is cut from.
+
 The `readout-artifact` body, fixed here so no clause defers to another skill's prose:
 
 ```markdown
@@ -1331,7 +1365,7 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | string | yes | — | one `<surface-id>` from the registry above |
-| `--path` | string | no | the registry default | override the target path for a file, line, json or dep-pin surface; must resolve inside the repository root |
+| `--path` | string | no | the registry default | override the target path for a file, line, json, dep-pin or hand-check-rule surface; must resolve inside the repository root |
 | `--repo` | string | no | resolved | the repository the three GitHub surfaces (`label-taxonomy`, `issue-shape-markers`, `readout-artifact`) write to, and the one whose open milestones the `roadmap-focus` [pin check](#roadmap-pin-check) reads |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes for `design-manifest` and `roadmap-focus` | — | the content. `NoStdin` and `Text("")` are exit `3`; a **failed** stdin read is exit `1` — the content is UNKNOWN, never empty, the split `packages/fabrika-cli/src/report/file-verb.ts` already ships |
@@ -1381,7 +1415,7 @@ the shape this seat exists to prevent. The skill loops.
 | `8` | the write failed — whether anything landed is **UNKNOWN**; re-read before retrying |
 | `9` | the write landed and the read-back does not match |
 | `10` | `--path` resolves outside the repository root |
-| `11` | a precondition read failed — the existence probe could not be performed, a present json target's bytes do not parse as a JSON object, or dep-pin's registry read failed (unreachable, non-200, or no version named); **nothing was written** |
+| `11` | a precondition read failed — the existence probe could not be performed, a present json target's bytes do not parse as a JSON object, dep-pin's registry read failed (unreachable, non-200, or no version named), or hand-check-rule's target does not parse as a JSON object with comments, carries a `reviewUi` the key refuses, or cannot take the rule without another key moving; **nothing was written** |
 | `12` | `<surface-id>` is not in the [buildable-surface registry](#buildable-surfaces) |
 
 **Errors**
@@ -1403,7 +1437,14 @@ the shape this seat exists to prevent. The skill loops.
 | `status bootstrap: appending <marker> to <target> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
-| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.
+| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule.
+| ``status bootstrap: cannot read <target>: <reason> — whether a `reviewUi.whenNoPreview` rule is already there is UNKNOWN, and nothing was written.`` | 11 | refusal |
+| `status bootstrap: <target> does not parse as a JSON object with comments — nothing was written.` | 11 | refusal |
+| `status bootstrap: <target> is refused — <the reviewUi key's reason>. Nothing was written; fix that key first.` | 11 | refusal |
+| `status bootstrap: cannot add the rule to <target> without moving its other keys — nothing was written. Add {"paths":["**"],"mode":"hand-check"} under "reviewUi.whenNoPreview" by hand.` | 11 | refusal |
+| `status bootstrap: created <target> for hand-check-rule with one hand-check rule, read-back conformed.` | 0 | notice |
+| `status bootstrap: added one hand-check rule to <target> for hand-check-rule, read-back conformed.` | 0 | notice |
+| ``status bootstrap: <target> already carries a `reviewUi.whenNoPreview` rule — nothing written.`` | 0 | notice |
 | `status bootstrap: created <target> for <surface-id>, read-back conformed.` | 0 | notice |
 | `status bootstrap: created <target> for roadmap-focus, read-back conformed — <n> arc(s), <n> campaign(s).` | 0 | notice |
 | `status bootstrap: pin check — every arc pin is an open milestone in <owner/name> (scanned <n> open milestone(s)).` | 0 | notice |
@@ -1492,8 +1533,20 @@ no package manager ever spawns and no lockfile moves. A re-run with the row alre
 `{"outcome":"exists",…}`; a re-run over an older pin moves it forward.
 
 ```
+$ fabrika status bootstrap hand-check-rule
+bootstrap	created	hand-check-rule	.fabrika.jsonc	ok
+status bootstrap: added one hand-check rule to .fabrika.jsonc for hand-check-rule, read-back conformed.
+$ fabrika status bootstrap hand-check-rule
+bootstrap	exists	hand-check-rule	.fabrika.jsonc	-
+status bootstrap: .fabrika.jsonc already carries a `reviewUi.whenNoPreview` rule — nothing written.
+```
+
+The file was there with keys and comments of its own; the rule went in after the last key and
+nothing else moved. The second run found a rule and wrote nothing.
+
+```
 $ fabrika status bootstrap merge-queue
-status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.
+status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule.
 $ echo $?
 12
 ```

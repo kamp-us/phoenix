@@ -11,7 +11,11 @@ import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {describe, expect, it} from "vitest";
 import type {BoardVocabulary} from "../config/board.ts";
+import {stripJsonComments} from "../config/document.ts";
+import {reviewUiKey} from "../config/keys/review-ui.ts";
 import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
+import {loadConfig} from "../config/load.ts";
+import {readFromLoad} from "../config/read-key.ts";
 import * as report from "../exit-codes.ts";
 import {
 	fakeFs,
@@ -28,6 +32,7 @@ import {AWAITING_RELEASE, PLANNED, STATUSES} from "../labels.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
+import {noPreviewMode} from "../review-ui/no-preview.ts";
 import {
 	AUDIENCES,
 	PRIORITIES,
@@ -609,7 +614,7 @@ describe("status bootstrap", () => {
 		expect(outcome.code).toBe(NOT_BUILDABLE);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.at(-1)).toBe(
-			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.',
+			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule.',
 		);
 		expect(fs.written.size).toBe(0);
 	});
@@ -916,6 +921,117 @@ describe("the settings-patch surface", () => {
 		);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * hand-check-rule edits a file a person annotates, so what it must not do matters as much as what
+ * it writes: no second rule over a repo's own, no lost comment, no mode but `hand-check`.
+ */
+describe("the hand-check-rule surface", () => {
+	const CONFIG = "/repo/.fabrika.jsonc";
+	const SCREEN_FILES = ["src/app/page.tsx", "src/app/habits/row.tsx"];
+
+	const bootstrapWith = (files: Record<string, string | null>) => {
+		const fs = fakeFs({files});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "hand-check-rule",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		).then((outcome) => ({outcome, text: fs.written.get(CONFIG), written: fs.written}));
+	};
+
+	/** The mode `review-ui route --no-preview` resolves over a config file's bytes. */
+	const routedMode = (text: string) => {
+		const rules = readFromLoad(loadConfig({_tag: "Text", text}), reviewUiKey);
+		if (rules._tag === "Refused") throw new Error(rules.reason);
+		return noPreviewMode(rules.value.whenNoPreview, SCREEN_FILES);
+	};
+
+	it("creates the file with one hand-check rule, which the no-preview route then resolves", async () => {
+		const {outcome, text} = await bootstrapWith({});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "hand-check-rule",
+			target: ".fabrika.jsonc",
+			readback: "ok",
+		});
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: created .fabrika.jsonc for hand-check-rule with one hand-check rule, read-back conformed.",
+		]);
+		expect(JSON.parse(text ?? "")).toEqual({
+			reviewUi: {whenNoPreview: [{paths: ["**"], mode: "hand-check"}]},
+		});
+		expect(routedMode("{}")).toBe("require-render");
+		expect(routedMode(text ?? "")).toBe("hand-check");
+	});
+
+	it("adds the rule to a present file and keeps its other keys and every comment", async () => {
+		const before = [
+			"// fabrika config for the habit tracker",
+			"{",
+			"\t// the app, started on a free port",
+			'\t"uiSurfaces": [',
+			'\t\t{"name": "web", "prefix": "src/", "mount": "/", "command": "pnpm dev --port {{port}}"}',
+			"\t],",
+			'\t"reviewUi": {"whenNoPreview": [] /* no hosting yet */},',
+			'\t"codeValidators": [{"command": ["pnpm", "typecheck"]}] // same as ci.yml',
+			"}",
+			"",
+		].join("\n");
+		const {outcome, text = ""} = await bootstrapWith({[CONFIG]: before});
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: added one hand-check rule to .fabrika.jsonc for hand-check-rule, read-back conformed.",
+		]);
+		for (const comment of [
+			"// fabrika config for the habit tracker",
+			"// the app, started on a free port",
+			"/* no hosting yet */",
+			"// same as ci.yml",
+		]) {
+			expect(text).toContain(comment);
+		}
+		const [was, is] = [before, text].map(
+			(source) => JSON.parse(stripJsonComments(source)) as Record<string, unknown>,
+		);
+		expect(is).toEqual({...was, reviewUi: {whenNoPreview: [{paths: ["**"], mode: "hand-check"}]}});
+		expect(routedMode(text)).toBe("hand-check");
+	});
+
+	it.each([
+		["a stricter rule", "require-render"],
+		["a looser rule", "skip"],
+	])("writes nothing over %s the repo already declared, and says the rule exists", async (_, mode) => {
+		const {outcome, written} = await bootstrapWith({
+			[CONFIG]: `{\n\t"reviewUi": {"whenNoPreview": [{"paths": ["docs/**"], "mode": "${mode}"}]}\n}\n`,
+		});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout).outcome).toBe("exists");
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: .fabrika.jsonc already carries a `reviewUi.whenNoPreview` rule — nothing written.",
+		]);
+		expect(written.size).toBe(0);
+	});
+
+	it.each([
+		["does not parse", '{"reviewUi": '],
+		["declares a `reviewUi` the key refuses", '{"reviewUi": {"whenNoPreview": "hand-check"}}'],
+	])("refuses a file that %s, writing nothing", async (_, text) => {
+		const {outcome, written} = await bootstrapWith({[CONFIG]: text});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toMatch(/[Nn]othing was written/);
+		expect(written.size).toBe(0);
 	});
 });
 

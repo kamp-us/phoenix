@@ -87,7 +87,15 @@ to reach the head. It then resolves the mode over the PR's `ui` files:
   With none at this head it refuses on `21`: end **CANT-SEE** and say in the note that an owner's
   hand-check at `<head>` is what the rule asks for. `--hand-check <comment-id>` pins one comment
   instead, and `22` says why it is not admitted.
-- `require-render` refuses on `21`: the rules owe a render.
+- `require-render` refuses on `21`: the rules owe a render. **Where that is because no rule
+  matched**, the CANT-SEE note names the way through. `fabrika status settings` prints `reviewUi`
+  as `default` in a repo that declares no rule at all: name the setup command
+  `fabrika status bootstrap hand-check-rule` in the note, the one the
+  [getting-started tutorial](../../guide/getting-started.md#if-your-app-is-not-hosted-yet) gives,
+  and say it lets the owner check the screen and post a screenshot. Where the repo declares rules
+  and none covers these files, that command answers `exists`, so name the files and
+  `reviewUi.whenNoPreview` instead. Naming the command is all you do with it: the write is the
+  owner's.
 
 Either posted record ends **ROUTED-ELSEWHERE** with cause `no-preview-routed` (Terminal vocabulary
 below). Never write a hand-check yourself, and never pass a builder's or another agent's comment as
