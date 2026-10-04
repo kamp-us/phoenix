@@ -70,5 +70,5 @@ installed copy. `publishConfig` is what lets both entry points ship from one man
 is `["dist", "scripts"]` and `prepublishOnly` runs the build.
 
 `dist/` exists for the tarball and nothing else reads it. Emit and type-check run the same binary —
-the stable native `tsc` ([ADR 0271](../../../.decisions/0271-one-compiler-effect-patched-tsc.md)) —
+the stable native `tsc` ([ADR 0457](../../../.decisions/0457-typecheck-two-step-no-install-patch.md)) —
 so the published artifact and the type gate cannot disagree about the compiler.

@@ -1,12 +1,18 @@
 ---
 id: 0271
 title: one compiler — the stable native `tsc`, patched at install with the Effect language service
-status: accepted
+status: superseded by [0457](0457-typecheck-two-step-no-install-patch.md)
 date: 2026-08-10
 tags: [toolchain, typescript, effect, ci, dependencies]
 ---
 
 # 0271 — one compiler: the stable native `tsc`, patched at install with the Effect language service
+
+> **Superseded by [0457](0457-typecheck-two-step-no-install-patch.md).** The install-time patch and
+> `scripts/patch-effect-tsgo.mjs` are gone: `typecheck` now runs the stock `tsc`, then
+> `effect-tsgo diagnostics --project tsconfig.json --strict`. The text below is history. What still
+> holds — one `typescript@7` `tsc` for emit and check, and the root `plugins` entry — is carried in
+> 0457.
 
 **What this decides:** phoenix compiles with exactly one binary. `typescript@7` (the native Go
 compiler, shipped stable) provides `tsc`; `@effect/tsgo`'s `patch` swaps that binary for the
