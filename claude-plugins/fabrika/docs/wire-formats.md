@@ -59,6 +59,7 @@ arrives owing a migration nobody planned.
 | `came-from` | [`packages/fabrika-cli/src/wire/came-from.ts`](../../../packages/fabrika-cli/src/wire/came-from.ts) | `grilling`, `prototyping` | `grilling`, `wayfinding` |
 | `plan-approval` | [`packages/fabrika-cli/src/wire/plan-approval.ts`](../../../packages/fabrika-cli/src/wire/plan-approval.ts) | `check-epic-plan` | `check-epic-plan` |
 | `decision-ruling` | [`packages/fabrika-cli/src/wire/decision-ruling.ts`](../../../packages/fabrika-cli/src/wire/decision-ruling.ts) | `adr` | `build`, `triage`, `review` |
+| `pitch-ruling` | [`packages/fabrika-cli/src/wire/pitch-ruling.ts`](../../../packages/fabrika-cli/src/wire/pitch-ruling.ts) | `triage` | `guard pitch-guard check` |
 | `routed-elsewhere` | [`packages/fabrika-cli/src/wire/routed-elsewhere.ts`](../../../packages/fabrika-cli/src/wire/routed-elsewhere.ts) | `review-ui` | `ship`, `operate` |
 | `lane-record` | [`packages/fabrika-cli/src/wire/lane-record.ts`](../../../packages/fabrika-cli/src/wire/lane-record.ts) | `operate` | `operate` |
 <!-- fabrika:wire-index:end -->
@@ -382,6 +383,20 @@ and all three states exit `0`, because a missing ruling is the answer rather tha
 state is the newest marker's; `review criteria` is what prints every standing marker folded with the
 body criteria. An off-roster author's marker is counted in `unauthorized` and never stands, and a
 drifted one is counted in `disregarded` rather than dropped.
+
+### `pitch-ruling`
+
+A parentless feature that a founder ruling names by number needs no pitch. This format is the comment
+triage posts on that feature to say where the ruling is. It carries the feature the comment is
+posted on and the comment the ruling is written in, on that feature or on another issue; the shape
+is in the owner module.
+
+The comment is a pointer and carries no authority: anyone who can comment can post it, so its author
+and its agent stamp are not read. `guard pitch-guard check` reads it and then verifies the ruling it
+links, and [the guard's contract](guard-contract.md#pitch-guard-check) says what that ruling has to
+be. A comment that links the ruling in free prose reads `Absent`, so the guard sees no pointer and
+the feature still owes its pitch. One that reaches for the key and misses reads `Malformed`, and the
+guard names the drift in that feature's failure line.
 
 ### `routed-elsewhere`
 

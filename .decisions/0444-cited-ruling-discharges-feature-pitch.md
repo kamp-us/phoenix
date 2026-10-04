@@ -84,6 +84,17 @@ number, in the same arc.
 
 Vocabulary impact: none coined. The `.glossary/TERMS.md` **pitch** row gains this exception.
 
-**Left open.** `guard pitch-guard check` does not yet read the discharge comment, so it still
-counts such a feature as unpitched. The ruling does not say how a machine reads the discharge;
-that is filed as [#10294](https://github.com/kamp-us/phoenix/issues/10294).
+**Left open, since ruled.** This record did not say how a machine reads the discharge, so
+`guard pitch-guard check` kept counting such a feature as unpitched. The founder ruled on
+2026-10-03, on
+[#10294, comment 5974132205](https://github.com/kamp-us/phoenix/issues/10294#issuecomment-5974132205),
+that the guard may accept triage's comment. The guard now reads a `pitch-ruled:` comment on the
+feature and verifies the ruling it links before it reads the body; the comment's shape is in
+[`wire-formats.md`](../claude-plugins/fabrika/docs/wire-formats.md#pitch-ruling) and the checks are
+in [`guard-contract.md`](../claude-plugins/fabrika/docs/guard-contract.md#pitch-guard-check).
+
+That ruling said the guard may accept the comment, not what the comment looks like or how the
+ruling behind it is checked. Both are triage's reading, recorded on
+[#10294](https://github.com/kamp-us/phoenix/issues/10294). The reading is narrower than "same
+milestone or epic" above: the guard accepts a ruling on the feature itself, or one on another issue
+in the same open milestone. A feature with no milestone does not pass on another issue's ruling.

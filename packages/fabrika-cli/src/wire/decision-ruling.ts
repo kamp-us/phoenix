@@ -90,17 +90,20 @@ export const RULING_GRAMMAR =
 	"https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>";
 
 const RULING_URL_RE =
-	/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/issues\/([0-9]+)#issuecomment-([0-9]+)$/;
+	/^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/issues\/([0-9]+)#issuecomment-([0-9]+)$/;
 
 export const rulingUrl = (raw: string): RulingUrl | null =>
 	RULING_URL_RE.test(raw.trim()) ? (raw.trim() as RulingUrl) : null;
 
+/** The `<owner>/<repo>` a ruling URL is recorded in, for a caller that must hold it to one repository. */
+export const rulingRepo = (url: RulingUrl): string => RULING_URL_RE.exec(url)?.[1] ?? "";
+
 /** The issue a ruling URL is recorded on. Total on the brand — the grammar guarantees the capture. */
-export const rulingIssue = (url: RulingUrl): number => Number(RULING_URL_RE.exec(url)?.[1] ?? "0");
+export const rulingIssue = (url: RulingUrl): number => Number(RULING_URL_RE.exec(url)?.[2] ?? "0");
 
 /** The comment id a ruling URL names, for a caller that re-reads the comment through the API. */
 export const rulingComment = (url: RulingUrl): number =>
-	Number(RULING_URL_RE.exec(url)?.[2] ?? "0");
+	Number(RULING_URL_RE.exec(url)?.[3] ?? "0");
 
 declare const CRITERION_INDEX: unique symbol;
 

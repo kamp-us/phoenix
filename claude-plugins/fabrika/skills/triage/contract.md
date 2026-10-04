@@ -113,6 +113,28 @@ control-plane membership — are listed above as deliberately underived, with th
 owns each. This spec computes no second verdict on any of them. `triage sweep-homes` acts on the
 homing verdict by calling the guard's own decision function, so it adds a write, not a verdict.
 
+### The `pitch-ruled` comment
+
+Step 6 posts one comment on a parentless feature whose pitch a founder ruling covers. Its first line
+is the [`pitch-ruling` wire format](../../docs/wire-formats.md#pitch-ruling), exactly:
+
+```text
+pitch-ruled: #<n> · ruling:https://github.com/<owner>/<repo>/issues/<m>#issuecomment-<comment-id>
+```
+
+`<n>` is the feature the comment is posted on. The URL is the comment the ruling is written in: on
+the feature itself for a desk ruling, where `<m>` is `<n>`, or on the issue the ruling was made on.
+Anything below the first line is free prose. `fabrika wire emit --format pitch-ruling` composes the
+line from `issue:` and `ruling:` on stdin, and `fabrika wire check --format pitch-ruling` proves a
+written one.
+
+**A comment that links the ruling in free prose does not pass the guard.** `pitch-guard` reads the
+first line only, so a comment without it is no pointer and the feature reds as a missing pitch.
+
+The comment points and the guard decides: this group computes no verdict on it. What the linked
+ruling has to be, and what each red means, is in
+[the guard's contract](../../docs/guard-contract.md#pitch-guard-check).
+
 ## Shared conventions
 
 Stated once rather than repeated per block.

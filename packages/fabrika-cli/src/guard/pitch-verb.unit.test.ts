@@ -10,6 +10,8 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
+import {emit as emitRuling, markedIssue, rulingUrl, scopeDigest} from "../wire/decision-ruling.ts";
+import {markerTime} from "../wire/grill-marker.ts";
 import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 import {type BetRowsReader, runPitchGuard} from "./pitch-verb.ts";
 
@@ -52,6 +54,7 @@ interface IssueShape {
 	readonly body?: string;
 	readonly parent?: boolean;
 	readonly pull?: boolean;
+	readonly milestone?: number;
 }
 
 const payload = (shape: IssueShape) => ({
@@ -61,7 +64,7 @@ const payload = (shape: IssueShape) => ({
 	state: "open",
 	labels: (shape.labels ?? ["status:triaged", "type:feature"]).map((name) => ({name})),
 	html_url: `https://example.test/issues/${shape.number}`,
-	milestone: null,
+	milestone: shape.milestone === undefined ? null : {number: shape.milestone},
 	...(shape.parent === true ? {parent_issue_url: "https://api.example.test/issues/1"} : {}),
 	...(shape.pull === true ? {pull_request: {url: "https://example.test/pulls/9"}} : {}),
 });
@@ -510,5 +513,158 @@ describe("runPitchGuard — a `bet` on the table is the approval", () => {
 			{issue: 9, betRows: watched},
 		);
 		expect(read).toBe(false);
+	});
+});
+
+describe("runPitchGuard — a founder ruling stands in for a parentless feature's pitch", () => {
+	const noTable: BetRowsReader = () => Effect.succeed({_tag: "NoTable", note: "no table"});
+	const TRUNK = /^GET .*\/repos\/o\/r$/;
+	const CODEOWNERS = /contents\/\.github\/CODEOWNERS\?ref=main$/;
+	const MEMBERS = /^GET .*\/orgs\/o\/teams\/control-plane\/members/;
+	const MILESTONES = /^GET .*\/repos\/o\/r\/milestones\?state=open/;
+
+	/** The three reads `controlPlaneRoster` makes, resolving to a one-account control plane. */
+	const ROSTER: ReadonlyArray<Scripted> = [
+		[TRUNK, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+		[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @o/control-plane\n"}],
+		[MEMBERS, {status: 200, body: JSON.stringify([{login: "founder"}])}],
+	];
+
+	const REPO = "o/r";
+	const link = (issue: number, comment: number): string =>
+		`https://github.com/${REPO}/issues/${issue}#issuecomment-${comment}`;
+	const pointer = (feature: number, url: string): string =>
+		`pitch-ruled: #${feature} · ruling:${url}`;
+	const STAMP = "<sub>Filed by an agent · session `bc1bd9fd-00a1-474b-ada9-c223d0f09632`</sub>";
+
+	/** The marker `decision rule` posts beside a desk ruling: it cites the feature's first comment. */
+	const marker = emitRuling({
+		issue: markedIssue(11) ?? (0 as never),
+		digest: scopeDigest("4d90e1bb27ac") ?? ("" as never),
+		ruling: rulingUrl(link(11, 1)) ?? ("" as never),
+		supersedes: null,
+		at: markerTime("2026-10-03T00:00:00Z") ?? ("" as never),
+	});
+
+	/** A desk ruling on the feature, its marker by `markedBy`, and a pointer at it by `pointedBy`. */
+	const deskRuled = (markedBy: string, pointedBy: string, stamp = ""): HttpReply =>
+		comments(
+			{author: "founder", body: "Yes."},
+			{author: markedBy, body: marker},
+			{author: pointedBy, body: `${pointer(11, link(11, 1))}\n\n${stamp}`},
+		);
+
+	it("passes on a desk ruling whose marker a control-plane account posted, over a rewritten body and an agent's pointer", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(11), one({number: 11, body: "Rewritten after the ruling; no pitch section."})],
+				[COMMENTS(11), deskRuled("founder", "triage-bot", STAMP)],
+				[PERM("founder"), permission("admin")],
+				[PERM("triage-bot"), permission("read")],
+				...ROSTER,
+			],
+			{issue: 11, betRows: noTable},
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toContain("1 passed by a founder ruling");
+		expect(outcome.stdout).toContain(`ruling: ${link(11, 1)}`);
+	});
+
+	it("does not pass the founder's own pointer over a marker from an account off the control plane", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(11), one({number: 11, body: "no pitch here"})],
+				[COMMENTS(11), deskRuled("drive-by", "founder")],
+				[PERM("founder"), permission("admin")],
+				[PERM("drive-by"), permission("write")],
+				...ROSTER,
+			],
+			{issue: 11, betRows: noTable},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr.join("\n")).toContain(
+			"no `decision-ruled:` marker from a control-plane account cites that comment",
+		);
+	});
+
+	const epicRuling: ReadonlyArray<Scripted> = [
+		[COMMENTS(11), comments({author: "triage-bot", body: pointer(11, link(70, 1))})],
+		[PERM("triage-bot"), permission("read")],
+		[COMMENTS(70), comments({author: "founder", body: "Amendment ruling 5: #11 ships here."})],
+		[PERM("founder"), permission("admin")],
+		[MILESTONES, {status: 200, body: JSON.stringify([{number: 52, title: "search"}])}],
+	];
+
+	it("passes on a write+ collaborator's comment naming the feature on an issue in the same open milestone", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(11), one({number: 11, body: "no pitch here", milestone: 52})],
+				[ONE(70), one({number: 70, labels: ["type:epic"], milestone: 52})],
+				...epicRuling,
+			],
+			{issue: 11, betRows: noTable},
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toContain(`ruling: ${link(70, 1)}`);
+	});
+
+	it("does not pass a feature on a standing lane over a ruling on another issue of that lane", async () => {
+		const lane = ["status:triaged", "type:feature", "axis:pipeline-hardening"];
+		const {outcome} = await run(
+			[
+				[ONE(11), one({number: 11, body: "no pitch here", labels: lane})],
+				[ONE(70), one({number: 70, labels: ["type:epic", "axis:pipeline-hardening"]})],
+				...epicRuling,
+			],
+			{issue: 11, betRows: noTable},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr.join("\n")).toContain("#11 is on no milestone");
+	});
+
+	it("reds 11 and names the read that failed when the linked issue's comments cannot be read", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(11), one({number: 11, body: "no pitch here", milestone: 52})],
+				[COMMENTS(11), comments({author: "triage-bot", body: pointer(11, link(70, 1))})],
+				[PERM("triage-bot"), permission("read")],
+				[COMMENTS(70), BAD_GATEWAY],
+			],
+			{issue: 11, betRows: noTable},
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		const report = outcome.stderr.join("\n");
+		expect(report).toContain("the comments on #70 could not be read");
+		expect(report).not.toContain("has no `## Pitch` section");
+	});
+
+	it("reads nothing past the comments for a feature whose linking comment is free prose, and reds it", async () => {
+		const {outcome, requests} = await run(
+			[
+				[ONE(11), one({number: 11, body: "no pitch here", milestone: 52})],
+				[
+					COMMENTS(11),
+					comments({author: "founder", body: `Pitch covered by the ruling at ${link(70, 1)}.`}),
+				],
+				[PERM("founder"), permission("admin")],
+			],
+			{issue: 11, betRows: noTable},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(requests).toHaveLength(3);
+		expect(outcome.stderr.join("\n")).toContain("#11 issue 11\n      has no `## Pitch` section\n");
+	});
+
+	it("reads nothing behind a pointer on an epic — the route reaches a parentless feature only", async () => {
+		const {outcome, requests} = await run(
+			[
+				[ONE(11), one({number: 11, body: "no pitch", labels: ["status:triaged", "type:epic"]})],
+				[COMMENTS(11), comments({author: "founder", body: pointer(11, link(70, 1))})],
+				[PERM("founder"), permission("admin")],
+			],
+			{issue: 11, betRows: noTable},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(requests).toHaveLength(3);
 	});
 });
