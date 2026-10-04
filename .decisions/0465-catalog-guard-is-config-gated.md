@@ -109,3 +109,15 @@ ADRs [0381](0381-local-tree-guards-run-in-build-check.md),
 [`packages/fabrika-cli/src/guard/catalog.ts`](../packages/fabrika-cli/src/guard/catalog.ts),
 [`packages/fabrika-cli/src/guard/catalog-verb.ts`](../packages/fabrika-cli/src/guard/catalog-verb.ts),
 [`packages/fabrika-cli/src/build/check-verb.ts`](../packages/fabrika-cli/src/build/check-verb.ts).
+
+## Amendments
+
+- **#9639 — the default is ruled on, and the sweep question is answered (2026-10-04).** The founder
+  answered two questions on the rulings desk
+  ([ruling comment](https://github.com/kamp-us/phoenix/issues/9639#issuecomment-5983099465)). Asked
+  whether the check should be on by default, so an adopter turns it off with one config line, he
+  picked "Yes, on by default". The default above is now his ruling, not this record's proposal.
+  Asked whether the sweep should keep going past a red guard, he picked "Yes, keep going". ADR
+  [0468](0468-guard-sweep-reports-every-red.md) records that answer, so the first bullet under
+  "Not ruled" no longer holds. The second one does: nobody asked whether `readme-guard` is covered,
+  and no ruling answers it.
