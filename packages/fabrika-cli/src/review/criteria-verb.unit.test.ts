@@ -181,6 +181,46 @@ describe("runCriteria", () => {
 			);
 		});
 
+		/**
+		 * `decision rule` stamps the marker's `at` before it posts, and the cited comment can land
+		 * after that stamp too, so on a freshly ruled issue the date excludes neither.
+		 */
+		it("lists neither the cited comment nor the marker when both are written after its stamp", async () => {
+			const out = await run(
+				board(
+					comments(
+						[RULING_COMMENT, RULER, "The first delay is `base * 2`, not `base`.", AFTER_RULING],
+						[900002, RULER, marker(), AFTER_RULING],
+					),
+				),
+				{json: true},
+			);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({rulings: 1});
+			expect(JSON.parse(out.stdout)).not.toHaveProperty("unmarked");
+			expect(out.stderr.join("\n")).not.toContain("carry no ruling marker");
+		});
+
+		/** A drifted marker is a ruling its author tried to record and did not, so it is pointed at. */
+		it("names a drifted marker by a control-plane account written after the ruling", async () => {
+			const drifted = "decision-ruled: #4287 @ NOTADIGEST · ruling:x · 2026-09-20T07:00:00Z\n";
+			const out = await run(
+				board(
+					comments(
+						[RULING_COMMENT, RULER, "The first delay is `base * 2`, not `base`."],
+						[900002, RULER, marker()],
+						[900015, RULER, drifted, AFTER_RULING],
+					),
+				),
+				{json: true},
+			);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({
+				rulings: 1,
+				unmarked: {state: "counted", count: 1, comments: [commentUrl(900015)]},
+			});
+		});
+
 		it("leaves one older than the marked ruling out, and prints what it always printed", async () => {
 			const out = await run(
 				board(
