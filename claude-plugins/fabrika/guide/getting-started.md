@@ -10,9 +10,26 @@ You need:
 
 - Claude Code, signed in.
 - Node 22.12 or newer, and pnpm.
-- `gh` logged in to the account that owns the repo.
-- A clone of the repo on disk, with an `origin` remote pointing at it and a `README.md` in it.
-- GitHub Actions switched on for the repo, which is how a new repo starts.
+- `gh`, GitHub's command-line tool, logged in to your GitHub account.
+- A repo on GitHub, and a copy of it on your machine. The copy is called a clone. These two lines
+  make a new private repo with a `README.md` in it, clone it into a folder named `your-repo`, and
+  move you into that folder:
+
+  ```bash
+  gh repo create your-repo --private --add-readme --clone
+  cd your-repo
+  ```
+
+  The lesson leans on three things, and that command gave you all of them:
+
+  - An `origin` remote: the name your clone uses for the repo on GitHub, so it knows where to send
+    your changes.
+  - A default branch: the main line of the repo's history, usually named `main`, where finished
+    work ends up.
+  - GitHub Actions switched on: Actions is the part of GitHub that runs checks on each change, and
+    a new repo starts with it on.
+
+  A repo you already have works too, as long as it has those three and a `README.md`.
 
 Run every command from the root of that clone. A command that starts with `/` is typed into Claude
 Code, opened in that clone, not into a shell.
@@ -29,6 +46,13 @@ your machine:
 ```bash
 pnpm add --global @kampus/fabrika-cli
 ```
+
+pnpm may print a warning about "Ignored build scripts" that names `@kampus/fabrika-cli`. The
+install did not break. pnpm skipped one extra download, a browser that fabrika uses to take pictures
+of web pages, and this lesson never uses it, so the tool works for the lesson as it is. To let that
+download run, type `pnpm approve-builds --global` and pick `@kampus/fabrika-cli`.
+[Running fabrika in a repo](../../../packages/fabrika-cli/docs/running-fabrika-in-a-repo.md#install-the-cli-and-confirm-it-runs)
+has the detail.
 
 Check it answers:
 
