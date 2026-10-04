@@ -3,7 +3,8 @@
 In this lesson you take an app idea to its first working page. The app is Streakly, a small habit
 tracker: one web page that lists three habits with a streak count beside each. You describe the
 look, file the idea, and fabrika builds the page, checks it and adds it to your repo. It takes
-about 25 minutes, and most of that is waiting while fabrika works.
+about 25 minutes, and most of that is waiting while fabrika works. It is shorter when the run does
+not stop to ask you for a screenshot, which step 7 explains.
 
 Build Streakly as written, even if you have your own idea ready. Once you have done it once, the
 same steps carry your own app.
@@ -52,14 +53,16 @@ included:
 Want me to write the design rules file with this look?
 ```
 
-Ask for one change, so the look is yours, and say yes. If your proposal names another colour for
-streaks, put that colour in place of `orange`. Type:
+Ask for one change, so the look is yours, and say yes. Find the colour your proposal gives for
+streaks, and pick a different colour you like better. Your message names both: the colour you want
+first, then the colour it proposed. This run's proposal said orange, so the message was:
 
 ```
 I like it, but make the streak colour green instead of orange. Then yes, write it.
 ```
 
-Its answer began:
+Type that line with your two colours in it. The colour you asked for is your streak colour from here
+on. Its answer began:
 
 ```
 Done. The design rules file is written and checked: `design-system-manifest.md` at the repo root, with green (`#1B7F45`) as the streak colour.
@@ -154,8 +157,9 @@ A pitch is a short proposal naming the problem, how much effort it is worth and 
 ````
 
 Open the issue on GitHub and read it. The section named "Pitch" is the proposal, and the list under
-"Acceptance criteria" is what the finished page is graded against. Notice the criterion that asks
-for a screenshot. You meet it again in step 8.
+"Acceptance criteria" is what the finished page is graded against. In this run one criterion asked
+for a screenshot in the pull request. Triage writes the criteria fresh each time, so yours may have
+no such criterion. Look for it now: it decides how step 7 ends.
 
 ## 6. Approve the pitch
 
@@ -177,8 +181,11 @@ pitch-approved: appetite S
 `operate` carries one issue all the way through. It picks the right builder for an issue with a
 screen, sends the pull request to review, and merges it. You watch.
 
-This is the long step, about ten minutes. The run builds the page and opens pull request 4. Then it
-stops and hands one job to you. Its last lines were:
+This is the long step, about ten minutes. The run builds the page and opens pull request 4. How it
+ends depends on the criteria triage wrote. If one of them asks for a screenshot, the run stops and
+hands that one job to you. If none does, the run goes straight on to the merge.
+
+This run had the screenshot criterion, so it stopped. Its last lines were:
 
 ```
 **What happened:** the page and README in <pull-request-url> are right, but the review failed because the PR body has no screenshot, and no step in the run can upload one.
@@ -188,11 +195,12 @@ stops and hands one job to you. Its last lines were:
 LANE-PARKED
 ```
 
-`LANE-PARKED` means the run is waiting for a person. The reviewer checked the page against all
+`LANE-PARKED` means the run is waiting for a person. Here the reviewer checked the page against all
 twelve criteria and passed every one but the screenshot, which only you can supply. Step 8 supplies
 it.
 
-If your last line is `LANE-TERMINAL`, the pull request is already merged. Go to step 10.
+If your last line is `LANE-TERMINAL`, your criteria asked for no screenshot and the pull request is
+already merged. Steps 8 and 9 are not for you. Go to step 10.
 
 ## 8. Look at the page, and add a screenshot
 
@@ -212,8 +220,8 @@ HEAD is now at c8bf203 feat: add the first Streakly page, a habit list with stre
 ```
 
 Open `index.html` in your browser. On a Mac, `open index.html` does it. You see a `Streakly` heading
-and three white cards, Read, Walk and Water, each with a green number on its right. That is your
-app's first page. Check it against your design rules, then take a screenshot of it.
+and three habits, Read, Walk and Water, each with a streak number in your streak colour. That is
+your app's first page. Check it against your design rules, then take a screenshot of it.
 
 Open pull request 4 on GitHub. On its description, the first box on the page, choose **Edit** from
 the `…` menu. Drag your screenshot into the text, at the end, and press **Update comment**.
@@ -259,12 +267,14 @@ Pull the merge into your clone:
 git pull
 ```
 
-Open `index.html` in your browser again. This time it comes from `main`. Streakly's first page is
-in your repo.
+Open `index.html` in your browser. On a Mac, `open index.html` does it. This time the file comes
+from `main`: a `Streakly` heading and three habits, Read, Walk and Water, each with a streak number
+in your streak colour. If you came here straight from step 7, this is your first look at the page,
+so check it against your design rules. Streakly's first page is in your repo.
 
 ## You are done
 
-You wrote down a look, filed an idea in two sentences, approved its scope, and checked the screen
+You wrote down a look, filed an idea in two sentences, approved its scope, and looked at the page
 with your own eyes. fabrika wrote the page, reviewed it against the criteria and merged it.
 
 Every page after this one takes steps 4 to 10 again: report, triage, approve, operate, look, open.
