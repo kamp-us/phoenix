@@ -7,6 +7,10 @@ After an upgrade, re-check a verb against its own `--help`.
 If you have never run fabrika at all, do [`getting-started.md`](getting-started.md) first on a repo
 you do not mind experimenting on. This page assumes you know what the stages are.
 
+This page covers the files inside your repo. What the repo needs on GitHub itself, such as the
+account that owns it, its visibility, the merge queue and the owner rows fabrika's guard checks, is
+in [`github-repository-setup.md`](github-repository-setup.md).
+
 ## 1. Install
 
 The tool is one global install; the skills are a Claude Code plugin.
