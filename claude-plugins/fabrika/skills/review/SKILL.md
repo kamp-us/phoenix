@@ -160,11 +160,14 @@ fabrika review report $pr_number
   each falsifiable statement in it against the diff; one the diff contradicts is a FAIL.
 - `absent` and `malformed` are proven facts about a body the verb read, so the row is a FAIL that
   names `## Report` as the section the author owes and quotes the reason stderr printed.
-- A non-zero exit is the one UNKNOWN: the body was not read, so the row is an unseen input.
+- Exit `11` is UNKNOWN: the body was not read, so the row is an unseen input. Exit `7` is a PR
+  proven absent, so there is no body to grade a row on.
 
 A PR whose graded set asks for no report owes no section, so skip the read there. An epic child has
 no PR body, so this read has no subject on one: a report row there is an unseen input, so it is
-UNKNOWN, and the verdict body names it as a row no verb serves on a child.
+UNKNOWN too, and the verdict body names it as a row no verb serves on a child. The child's builder
+names the same row in its `build note` and writes no report anywhere, so a report you find in a
+comment there is not a served input.
 
 <!-- anchor: BOTH-ISSUE-KINDS-BIND --> **Both issue kinds bind, and you grade against the number
 either one names.** `part-of:<n>` is an intentional partial split — `build --partial` emits `Part of

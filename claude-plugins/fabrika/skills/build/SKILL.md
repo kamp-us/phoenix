@@ -231,7 +231,8 @@ criterion named: `review post` refuses a `PASS` whose verdict body cites no evid
 criterion (exit `19`), so a row you left unevidenced costs the lane a repair round on a PR that is
 otherwise fine. An `evidence` of `null` is the proven absence of a marker, and what discharges that
 row is what it asks for: a row that asks you to report something is discharged by the `## Report`
-section step 5 has you write, and every other unmarked row by the diff.
+section step 5 has you write, and every other unmarked row by the diff. An epic child writes no
+such section, and step 5 says what it does with that row.
 
 **Neither `absent` nor `malformed` is a token you build past.** The verb's three tokens are
 three different facts, and only `found` is a contract: `absent` says no heading reaches for the
@@ -504,11 +505,19 @@ per row defending a choice nobody attacked. Same no-op test as the prose — del
 absence would change no reviewer behaviour.
 
 **A criterion that asks you to report something earns a third: `## Report`.** An audit's scope, why
-a duplication was kept, the overlap with another ticket — write each under that exact heading, one
-statement per criterion that asks. Such a row carries no evidence marker and needs none: the section
-is what discharges it. It is the only body prose besides `## Deviations` the reviewer is
+a duplication was kept, the overlap with another ticket — state each in that section, one statement
+per criterion that asks. Such a row carries no evidence marker and needs none: the section is what
+discharges it. Its grammar is the registered `report` wire format
+([`wire/report.ts`](../../../../packages/fabrika-cli/src/wire/report.ts)), which the verb that opens
+the PR and the gate that reads it back both resolve, so a heading that drifted is refused when you
+post the body. It is the only body prose besides `## Deviations` the reviewer is
 served ([`review report`](../review/SKILL.md)), and a report-shaped criterion over a body without
 the section is a FAIL.
+
+**An epic child has no PR body, so it writes no `## Report`.** No verb serves a report on a child
+yet. Name each report-shaped row in your `build note` as a row no verb serves on a child, and write
+the report nowhere else: the reviewer grades that row UNKNOWN, as the
+[review skill](../review/SKILL.md) says, and a report left in a comment is not an input it reads.
 
 ```bash
 fabrika build push <<'EOF'
@@ -517,7 +526,7 @@ EOF
 ```
 
 The verb is the guard, and it runs in this order. It checks the body first and refuses leaks, stray
-closing keywords and a Deviations section the review gate would read as malformed. A refused body
+closing keywords and a Deviations or Report section the review gate would read as malformed. A refused body
 pushes nothing. Then it pushes, reads the remote ref back, and opens the PR, reading back what
 landed. If an open PR for this branch already exists, it answers `existing` and opens no second one.
 
@@ -857,7 +866,7 @@ round's work — each one you verify is still unfixed, because nothing retires a
 **When the whole fix is the PR body, the route is `fabrika build pr-body <pr>` and nothing else.**
 The recurring one is a FAIL reading `deviations malformed`: the head does not need to move, so a
 push is the wrong tool and a raw `gh` call runs none of the guards `build push` runs on a create. This
-verb runs all of them over the rewrite — leak scan, the `## Deviations` shape, the closing-keyword
+verb runs all of them over the rewrite — leak scan, the `## Deviations` and `## Report` shapes, the closing-keyword
 target read off the PR's own head branch, the classification check — and reads the landed body back.
 Re-send the corrected body on stdin, then answer the finding in a `fabrika build note` and
 release; no commit, no `build check`, no `build push`.

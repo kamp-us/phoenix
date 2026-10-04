@@ -67,6 +67,20 @@ describe("the closing keyword", () => {
 	});
 });
 
+describe("a Report section is checked only when a heading reaches for it", () => {
+	it("passes a body with no report, and one whose report reads found", () => {
+		expect(bodyDefect(body(""), 4312, false)).toBeNull();
+		expect(bodyDefect(body("\n## Report\n\nAudit scope: all callers.\n"), 4312, false)).toBeNull();
+	});
+
+	it("refuses a drifted report heading, naming the line it judged", () => {
+		expect(bodyDefect(body("\n### Report\n\nAudit scope: all callers.\n"), 4312, false)).toEqual({
+			_tag: "MalformedReport",
+			reason: 'the report heading has drifted, expected "## Report" — line 5: "### Report"',
+		});
+	});
+});
+
 describe("the classification guard reads prose only", () => {
 	it("catches a control-plane claim in either polarity (#4153)", () => {
 		expect(classificationIn("this is not control-plane")).toBe("control-plane");

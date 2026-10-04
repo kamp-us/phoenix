@@ -1341,16 +1341,20 @@ fabrika review report 4321 [--repo <owner/name>] [--json]
 line after it is the section's text, verbatim: outer blank lines dropped, interior lines untouched.
 With `--json`: `{"outcome":…,"text":<string|null>}`, `text` being `null` off `found`.
 
-The section is the body under the one heading `## Report` — level 2, that spelling — up to the next
-heading of level 1 or 2 outside a code fence, so an author's `###` subheadings stay inside it. A
-trailing closing-keyword line (`Fixes #N`) is the PR's link and is left out. The text is free prose:
-what a report holds is the criterion's to say, so the heading is the whole grammar.
+The three states are the answers of the registered `report` wire format
+([`packages/fabrika-cli/src/wire/report.ts`](../../../../packages/fabrika-cli/src/wire/report.ts)),
+which owns the section's grammar. `build push`, `build pr` and `build pr-body` run the same read
+before they post a body and refuse a `malformed` section, so a body those verbs accepted reads
+`found` or `absent` here. What this verb's caller needs from that grammar:
 
-- `absent` — no heading reaches for the section. A heading reaches for it when its text, case and
-  punctuation aside, is `report` or `reports`; `## Test report` and `## Reporting` are an author's
-  own headings and do not.
+- `found` — the body under the one heading `## Report`, up to the next heading of level 1 or 2
+  outside a code fence, so an author's `###` subheadings stay inside it. A trailing closing-keyword
+  line (`Fixes #N`) is the PR's link and is left out.
+- `absent` — no heading reaches for the section. `## Test report` and `## Reporting` are an
+  author's own headings and do not.
 - `malformed` — a heading reaches for it and the section cannot be served: the level or spelling
-  drifted, more than one heading reaches for it, or the section is empty.
+  drifted, more than one heading reaches for it, or the section is empty. A body edited outside the
+  build verbs is how this state still arrives.
 
 On `absent` and `malformed` the reason goes to stderr. Both answer at exit `0`: each is a proven
 fact about a body that was read, which is what lets the skill grade a criterion on it. A body that

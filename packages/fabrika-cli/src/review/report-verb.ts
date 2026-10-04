@@ -14,10 +14,16 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, type VerbOutcome} from "../verb.ts";
-import {readReport} from "./report.ts";
+import {REPORT_HEADING, type ReportRead, read as readReport} from "../wire/report.ts";
 import {badNumber, openPull, resolveTargetRepo} from "./target.ts";
 
 const VERB = "review report";
+
+/** The verb's state words, one per answer of the registered read. */
+const STATE = {Found: "found", Absent: "absent", Malformed: "malformed"} as const satisfies Record<
+	ReportRead["_tag"],
+	string
+>;
 
 export interface ReportOptions {
 	readonly pr: number;
@@ -46,16 +52,17 @@ export const runReport = (
 		if (target._tag === "Refused") return target.outcome;
 
 		const report = readReport(target.pull.body);
-		const diagnostics = [
-			report.state === "found"
-				? `${VERB}: read #${pr}'s body; "## Report" at line ${report.line}, ${report.text.split("\n").length} line(s).`
-				: `${VERB}: ${report.state} — ${report.reason}.`,
-		];
-		const text = report.state === "found" ? report.text : null;
+		const state = STATE[report._tag];
+		const diagnostic =
+			report._tag === "Found"
+				? `read #${pr}'s body; "${REPORT_HEADING}" at line ${report.value.line}, ${report.value.text.split("\n").length} line(s)`
+				: report._tag === "Absent"
+					? `${state} — ${report.reason}`
+					: `${state} — ${report.reason} — ${report.evidence}`;
+		const text = report._tag === "Found" ? report.value.text : null;
 		return json
-			? answer(JSON.stringify({outcome: report.state, text}), diagnostics)
-			: answer(
-					[`report\t${report.state}`, ...(text === null ? [] : [text])].join("\n"),
-					diagnostics,
-				);
+			? answer(JSON.stringify({outcome: state, text}), [`${VERB}: ${diagnostic}.`])
+			: answer([`report\t${state}`, ...(text === null ? [] : [text])].join("\n"), [
+					`${VERB}: ${diagnostic}.`,
+				]);
 	});

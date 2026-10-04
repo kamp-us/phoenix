@@ -44,6 +44,7 @@ arrives owing a migration nobody planned.
 | `acceptance-criteria` | [`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts) | `triage` | `build`, `review` |
 | `deviations` | [`packages/fabrika-cli/src/wire/deviations.ts`](../../../packages/fabrika-cli/src/wire/deviations.ts) | `build`, `build-ui` | `review`, `review-ui` |
 | `build-deviations` | [`packages/fabrika-cli/src/wire/build-deviations.ts`](../../../packages/fabrika-cli/src/wire/build-deviations.ts) | `build` | `review` |
+| `report` | [`packages/fabrika-cli/src/wire/report.ts`](../../../packages/fabrika-cli/src/wire/report.ts) | `build`, `build-ui` | `review` |
 | `verdict-marker` | [`packages/fabrika-cli/src/wire/verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/verdict-marker.ts) | `review`, `check-epic-plan`, `governance` | `build`, `ship` |
 | `range-verdict-marker` | [`packages/fabrika-cli/src/wire/range-verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/range-verdict-marker.ts) | `review` | `build`, `operate` |
 | `lane-brief` | [`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../packages/fabrika-cli/src/wire/lane-brief.ts) | `operate` | `build`, `build-ui`, `review`, `review-ui`, `ship` |
@@ -133,6 +134,25 @@ edits the standing marker in place and retracts any superseded one, and it is th
 way this marker is posted. Editing in place puts the whole-range completeness of the disclosure at
 that same seam: the verb compares each replacement against the standing one and refuses a section
 that drops an entry, because a reader of these bytes sees only the round that wrote them.
+
+### `report`
+
+This is what a PR author states in answer to an acceptance criterion that asks for a report: an
+audit's scope, why a duplication was kept, the overlap with another ticket. No diff holds such a
+statement, so it is carried in the PR body under `## Report` and the review gate grades the
+criterion from that section. The content is free prose, since what a report holds is the criterion's
+to say. The grammar is the heading (level 2, that spelling) over a non-empty section that runs to
+the next level-1 or level-2 heading, so an author's own `###` subheadings stay inside it.
+
+Most PRs answer no such criterion and owe no section, so `Absent` is an ordinary answer here and
+only `Malformed` is a defect. The reach is narrow on purpose: a heading reaches for the section
+when its text, case and punctuation aside, is `report` or `reports`, so `## Test report` is the
+author's own heading and reads `Absent`. The verbs that post a PR body run this read and refuse a
+`Malformed` section, so a drifted heading is caught where the body is written, and a reviewer who
+reads `Absent` holds a proven fact about the body.
+
+An epic child opens no PR, so it has no body to carry the section. No format serves a report there
+yet.
 
 ### `verdict-marker`
 
