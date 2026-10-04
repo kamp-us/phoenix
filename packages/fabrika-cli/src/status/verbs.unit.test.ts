@@ -13,7 +13,6 @@ import {describe, expect, it} from "vitest";
 import type {BoardVocabulary} from "../config/board.ts";
 import {stripJsonComments} from "../config/document.ts";
 import {reviewUiKey} from "../config/keys/review-ui.ts";
-import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
 import {loadConfig} from "../config/load.ts";
 import {readFromLoad} from "../config/read-key.ts";
 import * as report from "../exit-codes.ts";
@@ -47,7 +46,6 @@ import {
 	runBoard,
 } from "./board-verb.ts";
 import {
-	BUILDABLE_SURFACES,
 	CLAUDE_MD_MARKER,
 	CLAUDE_MD_SECTION,
 	FABRIKA_IGNORE_ROW,
@@ -610,16 +608,6 @@ describe("status bootstrap", () => {
 			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule.',
 		);
 		expect(fs.written.size).toBe(0);
-	});
-
-	/**
-	 * Buildability and disposition are separate axes over the same surface, so a surface can be
-	 * buildable here and carry any disposition there — but it cannot be buildable and carry none.
-	 * `roadmap-focus` shipped exactly that way and the gap reached a review round.
-	 */
-	it("names no surface the disposition registry has never heard of", () => {
-		const registered = new Set(SURFACE_REGISTRY.map((surface) => surface.id));
-		for (const surface of BUILDABLE_SURFACES) expect(registered.has(surface.id)).toBe(true);
 	});
 
 	it("builds every issue-shape marker the ideation skills mint issues with", () => {

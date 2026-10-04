@@ -15,25 +15,14 @@
  * See `status settings --help` for results and exit codes. On refusal, omit resolved rows so they
  * cannot be mistaken for a complete answer.
  *
- * **`--surfaces` expands one key rather than adding a readout.** `surfaceDispositions` resolves to
- * an id-to-word map, and a map is not what the front door relays to a human — it relays what each
- * surface *is* alongside what happens here when it is missing, and that half only exists as the
- * registry's notes. The expansion joins the two and appends `surface` rows to the same answer, so
- * the config surface still has one resolver and one path.
- *
  * It reads. It writes nothing.
  */
 
 import {CONFIG_PATH, type ConfigLayer, layerPath} from "../config/document.ts";
-import {
-	SURFACE_DISPOSITIONS,
-	type SurfaceDispositions,
-	surfaceNotes,
-} from "../config/keys/surface-dispositions.ts";
 import {type ConfigLayers, loadLayeredConfig, type Resolved, resolveAll} from "../config/load.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {type AsOf, asOfToken, detail, row, surfaceNote} from "./fields.ts";
+import {type AsOf, asOfToken, detail, row} from "./fields.ts";
 
 const VERB = "status settings";
 
@@ -139,36 +128,12 @@ export interface SettingsInput {
 	/** This invocation's own read of the file — every row is derived from it, so all share it. */
 	readonly asOf: AsOf;
 	readonly json: boolean;
-	/**
-	 * Expand `surfaceDispositions` into one row per surface instead of printing its value as a blob.
-	 *
-	 * The blob answers "what happens here" for a caller that already knows the ids. A human at the
-	 * front door does not, and the id-to-word pairs alone tell them nothing about what the surface
-	 * *is* — that half lives in the registry's notes and reached no output at all.
-	 */
-	readonly surfaces: boolean;
 }
-
-/**
- * The `surfaceDispositions` row's value, or `null` when it did not resolve.
- *
- * A surface readout over shipped defaults the repo may have overridden would be the exact collapse
- * the whole verb refuses, so an unresolved key has no surface rows — it has the same refusal.
- */
-const resolvedDispositions = (rows: ReadonlyArray<SettingRow>): SurfaceDispositions | null => {
-	const one = rows.find((each) => each.key === SURFACE_DISPOSITIONS);
-	return one === undefined || one.provenance === "unknown"
-		? null
-		: (one.value as SurfaceDispositions);
-};
-
-const surfaceLine = (surface: {id: string; disposition: string; note: string}): string =>
-	row("surface", surface.id, surface.disposition, surfaceNote(surface.note));
 
 const line = (one: SettingRow, asOf: AsOf): string =>
 	row("setting", one.key, one.provenance, valueCell(one), one.detail, asOfToken(asOf));
 
-export const runSettings = ({layers, rows, asOf, json, surfaces}: SettingsInput): VerbOutcome => {
+export const runSettings = ({layers, rows, asOf, json}: SettingsInput): VerbOutcome => {
 	if (rows.length === 0) {
 		return refuse(
 			ZERO_SCOPE,
@@ -187,16 +152,6 @@ export const runSettings = ({layers, rows, asOf, json, surfaces}: SettingsInput)
 		]);
 	}
 
-	const dispositions = surfaces ? resolvedDispositions(rows) : null;
-	if (surfaces && dispositions === null) {
-		return refuse(
-			ZERO_SCOPE,
-			`${VERB}: the config surface registers no \`${SURFACE_DISPOSITIONS}\` key, so there are no surfaces to expand.`,
-			[scope],
-		);
-	}
-	const expanded = dispositions === null ? [] : surfaceNotes(dispositions);
-
 	const body = json
 		? JSON.stringify({
 				outcome: state,
@@ -214,7 +169,6 @@ export const runSettings = ({layers, rows, asOf, json, surfaces}: SettingsInput)
 					asOf: asOf.at,
 					asOfKind: asOf.kind,
 				})),
-				...(surfaces ? {surfaces: expanded} : {}),
 			})
 		: [
 				row(
@@ -226,7 +180,6 @@ export const runSettings = ({layers, rows, asOf, json, surfaces}: SettingsInput)
 					asOfToken(asOf),
 				),
 				...rows.map((one) => line(one, asOf)),
-				...expanded.map(surfaceLine),
 			].join("\n");
 
 	return answer(`${body}\n`, [scope]);

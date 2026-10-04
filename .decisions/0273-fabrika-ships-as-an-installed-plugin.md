@@ -127,10 +127,11 @@ part of the campaign, not adjacent to it."*
 **Binding constraints.**
 - Every input a fabrika skill, contract, or verb requires is obtainable by opening the repository it
   is installed into.
-- That input set is declared in the `surfaceDispositions` key group, one entry per surface, each
-  disposition drawn from the closed set **`fail-loud` · `degrade` · `bootstrap`**. (Superseded shape:
-  this was a `## Required repo files` section in every skill until the 2026-08-19 amendment below
-  removed the tables and their reader.)
+- That input set is enumerated at review time, from the skill's `SKILL.md` and its contract.
+  (Superseded shapes: a `## Required repo files` section in every skill until the 2026-08-19
+  amendment below removed the tables and their reader, then the `surfaceDispositions` key group, one
+  entry per surface from the closed set **`fail-loud` · `degrade` · `bootstrap`**, until the
+  2026-10-03 amendment below removed the key.)
 - A declared disposition states what the skill **already does**. A row that contradicts the code is
   worse than no row.
 - A `fail-loud` row names the absent surface and points at the front door; it never dead-ends in a
@@ -159,9 +160,10 @@ fabrika's scope.
 is answerable by reading the skill and the repo — no judgement call about what counts as "specific":
 
 1. An input it requires cannot be satisfied by a repo that is not this one, opening only itself.
-2. A surface it reads has no entry on `surfaceDispositions` in `.fabrika.jsonc`. Undeclared is not
-   satisfied. (This item named each skill's own `## Required repo files` section until the
-   2026-08-19 amendment below moved the declaration to the config key; the property is unchanged.)
+2. A surface it reads is absent from the review-time enumeration of its inputs. Unenumerated is not
+   satisfied. (Superseded shapes: this item named each skill's own `## Required repo files` section
+   until the 2026-08-19 amendment below, then an entry on the `surfaceDispositions` config key until
+   the 2026-10-03 amendment below removed the key and left no declaration surface.)
 3. A declared row's disposition is not one of `fail-loud` / `degrade` / `bootstrap`, or contradicts
    what the code does on the missing-surface path.
 4. A runnable fence or a command example names a specific repository.
@@ -169,9 +171,9 @@ is answerable by reading the skill and the repo — no judgement call about what
 
 **What a reviewer looks for**, concretely, in this order: enumerate the skill's inputs from its
 `SKILL.md` and its contract; for each, ask whether a repo that is not this one could obtain it by
-opening itself; check that `surfaceDispositions` carries exactly that set with a
-closed-set disposition per entry (the 2026-08-19 amendment below, which replaced the per-skill
-table this sentence used to name); walk each `fail-loud` path and confirm it names the missing surface
+opening itself (superseded shape: this sentence then checked a per-skill table, and after the
+2026-08-19 amendment the `surfaceDispositions` key, for exactly that set, until the 2026-10-03
+amendment below removed the key); walk each `fail-loud` path and confirm it names the missing surface
 rather than erroring bare; grep the runnable fences and examples for a repository literal. The
 enumeration is the review — a portability claim with no input list behind it is not one.
 
@@ -277,3 +279,36 @@ degrades to the existing recurrence-based authoring path, while an explicitly su
 cannot produce the required portable evidence fails loudly. The broader rule still stands for every
 other fabrika input: installed skills do not gain general permission to read machine-local state,
 hosted infrastructure, or files outside the repository they run in.
+
+## Amendment (2026-10-03) — `surfaceDispositions` is removed, and no declaration surface replaces it
+
+Founder ruling on [#6412](https://github.com/kamp-us/phoenix/issues/6412), recorded at
+<https://github.com/kamp-us/phoenix/issues/6412#issuecomment-5363113242>: *"Dead config key:
+Non-declarable — small change — note: kill the key entirely"*, with the clarification in the same
+comment, *"do we even need surfaceDispositions then? can we just kill it?"*, ruled: kill it. The key
+resolved a declared value that no verb read, so a repo could declare
+`{"design-manifest": "degrade"}`, watch it resolve as declared, and still meet the refusal its verb
+hardcodes.
+
+**What is removed.** `surfaceDispositions` is deleted from the declarable config surface: the key
+group, its registry entry and its schema property. It is not kept as a readout. `fabrika status
+settings --surfaces` and its `surface` rows go with it, because every row came off the resolved key.
+
+**What checkable violation #2 becomes.** With no declaration surface left, there is no entry for a
+surface to lack. The sibling ruling on [#6571](https://github.com/kamp-us/phoenix/issues/6571),
+recorded at <https://github.com/kamp-us/phoenix/issues/6571#issuecomment-5363131743> (*"(b)
+Reviewer's job — amend ADR 0273"*), settles the fallback: review-time enumeration of a skill's inputs
+is the recorded end state, and no mechanical coverage check is built. A reviewer enumerates the
+inputs from the skill's `SKILL.md` and contract and asks of each whether a repo that is not this one
+could obtain it by opening itself. Wherever the binding constraints, the violations and the
+reviewer's checklist above name `surfaceDispositions` or a declared row, read that enumeration, and
+read what happens on a missing-surface path off the verb's own code. That ruling's other half, a
+caveat on `--surfaces`, is moot: the readout does not survive the key.
+
+**What this ADR still rules, unchanged:** every input a fabrika skill needs is obtainable by opening
+the repo it is installed into, and a verb that refuses over an absent surface names it and never
+dead-ends bare. The 2026-08-28 amendment's source-checkout exception stands as that amendment words
+it; only its `surfaceDispositions` entry is gone.
+
+**Re-add condition.** The key comes back only when a real adopter needs missing-surface
+dispositions, and then wired into the verbs from day one.
