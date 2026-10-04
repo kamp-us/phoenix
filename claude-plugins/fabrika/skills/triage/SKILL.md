@@ -186,6 +186,21 @@ Lane-entering work (an epic, or a parentless feature) additionally carries a `##
 pitch, never triage**: by a `pitch-approved:` comment, or by setting the issue's betting-table row to
 Stage `bet` — his own write or an agent's on his instruction, with the row's Size matching the
 pitch's Appetite.
+**An issue that leaves triage with a pitch nobody has approved yet ends your closing message on the
+ask, complete enough to act on cold.** Triage posts no approval itself, and an agent-posted line
+never counts, so the message is the whole hand-off. It carries four things:
+
+- the full approval line with the pitch's own size filled in — `pitch-approved: appetite S` for a
+  pitch whose Appetite is `S`. A comment of any other shape approves nothing;
+- where the line goes: a comment on the issue, named by the issue's full URL;
+- one everyday sentence on what a pitch is and what the size means: a pitch is a short proposal
+  naming the problem, how much effort it is worth and what is left out, and the size — `S`, `M` or
+  `L`, small to large — is that effort budget;
+- one sentence on what the approval is for, in the
+  [pitch guard's](../../docs/guard-contract.md#pitch-guard-check) own terms: work entering a lane
+  owes a pitch and the founder's approval of its size, the guard reds this issue at intake until
+  that approval stands, and a size changed afterwards needs a new one.
+
 **A founder ruling that names a parentless feature by its number discharges that feature's pitch**,
 when the feature is homed in the ruling's own arc — the same milestone or the same epic. Link the
 ruling in a comment on the feature, and leave the body as it is: the comment is the pitch's whole
