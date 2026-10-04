@@ -8,7 +8,7 @@ import {CurrentUser, Fate} from "@kampus/fate-effect";
 import {PHOENIX_PANO_STAMP_WAVE} from "../../../src/flags/keys.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
-import {currentSandboxViewer} from "../kunye/sandbox.ts";
+import {currentInPlaceSandboxViewer} from "../kunye/sandbox.ts";
 import {currentMutedIds} from "../mute/read-mask.ts";
 import {Pano, tagLabel} from "./Pano.ts";
 import {CommentView, PostOverlayView, PostView, TagView} from "./views.ts";
@@ -19,7 +19,7 @@ export const postSource = Fate.source(
 	{
 		byIds: function* (ids) {
 			const pano = yield* Pano;
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const mutedIds = yield* currentMutedIds;
 			return yield* pano.getPostsByIds(ids, {
 				viewerId: sandboxViewer.viewerId,
@@ -55,7 +55,7 @@ export const commentSource = Fate.source(
 	{
 		byIds: function* (ids) {
 			const pano = yield* Pano;
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const mutedIds = yield* currentMutedIds;
 			// Contained behind a default-off flag (#2710); both arms produce the same wire
 			// output, serially or in one concurrent wave.

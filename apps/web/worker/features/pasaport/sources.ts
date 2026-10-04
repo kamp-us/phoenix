@@ -3,7 +3,7 @@
  * (ADR 0016). See `.patterns/fate-effect-sources.md`.
  */
 import {Fate} from "@kampus/fate-effect";
-import {currentSandboxViewer} from "../kunye/sandbox.ts";
+import {currentInPlaceSandboxViewer} from "../kunye/sandbox.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {toProfile} from "./shapers.ts";
 import {getUsersWithModerationByIds} from "./trusted-user.ts";
@@ -38,7 +38,7 @@ export const profileSource = Fate.source(
 			const pasaport = yield* Pasaport;
 			// The SAME viewer the root `queries.profile` resolves, so headline counts agree
 			// on every fetch path (#1406).
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const row = yield* pasaport.lookupProfileById(userId, {sandboxViewer});
 			// `toProfile` stamps the client normalization key `id`; the service row carries
 			// only `userId`.

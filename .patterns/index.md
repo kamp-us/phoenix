@@ -25,7 +25,7 @@ Shared Effect concepts apply across consumers. Match API examples to the owning 
 | [effect-sse-externally-driven.md](./effect-sse-externally-driven.md) | Web SSE | Building an SSE response written to from another component (e.g. the `LiveDO` topic `deliver` RPC) |
 | [effect-socket-session.md](./effect-socket-session.md) | Effect consumers | Writing a per-connection socket handler, or a socket that opens and then goes silent |
 | [authz-capability-as-effect.md](./authz-capability-as-effect.md) | Web / authz package | Gating a privileged op, adding a capability/right/relation, or touching `packages/authz` ([ADR 0107](../.decisions/0107-capability-authz-framework.md)) |
-| [caylak-content-containment.md](./caylak-content-containment.md) | apps/web | Adding any çaylak-reachable write path — decide if it needs the sandbox seam |
+| [caylak-content-containment.md](./caylak-content-containment.md) | apps/web | Adding any çaylak-reachable write path, or a read over çaylak content — decide if it needs the sandbox seam, and which sandbox viewer the read takes |
 | [telemetry.md](./telemetry.md) | apps/web | Adding/instrumenting product-usage telemetry, or querying it ([ADR 0153](../.decisions/0153-analytics-engine-telemetry-seam.md)) |
 | [sentry.md](./sentry.md) | apps/web | Wiring or changing Sentry capture on either tier ([ADR 0118](../.decisions/0118-error-crash-monitoring-sentry-saas.md)) |
 

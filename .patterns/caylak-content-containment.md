@@ -117,9 +117,9 @@ const rows = yield* pano.getPostsByIds(ids, {sandboxViewer});
 
 `moderatorSandboxViewer` (`apps/web/worker/features/kunye/sandbox.ts`) puts `Moderate` in `R`,
 so a path that never proved moderation authority cannot build the viewer that claims it. Use
-`currentSandboxViewer` instead only on an **ungated** read — it probes the moderation gate and
-collapses a denial to `false`, which inside a gated path is a second relation-store round trip
-for an answer the grant already carries.
+`currentSandboxViewer` or `currentInPlaceSandboxViewer` instead only on an **ungated** read —
+they probe the moderation gate and collapse a denial to `false`, which inside a gated path is a
+second relation-store round trip for an answer the grant already carries.
 
 Two dimensions stay out of this. `removed_at` is orthogonal: the by-id reads carry their own
 `isNull(removedAt)`, which takes no viewer, so widening the sandbox viewer never surfaces a
@@ -130,6 +130,38 @@ Widening the read does not widen the broadcast. `decidePublish(sandboxedAt)` sti
 node fan-out, so a still-sandboxed target that now comes back off a moderator read reaches that
 gate and is suppressed there, which is where the #1205/#1280 decision belongs — not in a read
 that was masking it by accident.
+
+## A read is narrow unless it asks to be wide
+
+An opted-in yazar sees çaylak content in place (#6423), and that widening is a property of the
+viewer a resolver hands the mask. The mask cannot tell a term page from a ranked corpus search, so
+which viewer a resolver takes is the whole decision
+([ADR 0453](../.decisions/0453-narrow-sandbox-viewer-by-default.md)):
+
+```ts
+const sandboxViewer = yield* currentSandboxViewer;        // the default: never widened
+const sandboxViewer = yield* currentInPlaceSandboxViewer; // the widening, asked for by name
+```
+
+`currentSandboxViewer` (`apps/web/worker/features/kunye/sandbox.ts`) carries
+`seesSandboxedInPlace: false` for every viewer, an opted-in yazar included. Identity and moderator
+authority survive, so an author still reads their own sandboxed rows and a moderator reads
+everything. `currentInPlaceSandboxViewer` is the only path that can carry `true`, and grepping
+that name lists every widened read.
+
+**A new discovery surface takes the default and does nothing else.** Discovery means the row is
+met away from where it lives: search, a tag or host browse, a trending list, a recommendation
+feed. Widening one surfaces newcomer content out of context and, on a ranked read, shifts the
+ranking of everything around it. Search is the standing example
+(`apps/web/worker/features/search/lists.ts`).
+
+Take `currentInPlaceSandboxViewer` only for an in-place read: a post in its feed, a definition on
+its term page, a profile's own contributions, and the re-read a mutation over one of those rows
+answers with. A mutation's re-read asks for the same viewer its row was read under, or the
+mutation commits and then answers `null` for a row the caller was looking at.
+
+Both paths read one per-request memo, so mixing them in a request costs one resolution
+([fate-effect worker wiring](./fate-effect-worker-wiring.md#memoizing-a-per-request-read-across-resolvers)).
 
 ## The client side — one badge per item, owner's wins
 

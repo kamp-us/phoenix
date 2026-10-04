@@ -18,7 +18,11 @@ import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {InsufficientKarma} from "../kunye/errors.ts";
 import {gateContentOnKarma} from "../kunye/privilege.ts";
-import {currentSandboxViewer, decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {
+	currentInPlaceSandboxViewer,
+	decidePublish,
+	sandboxedAtForAuthor,
+} from "../kunye/sandbox.ts";
 import {ownSandboxed} from "../lifecycle/SandboxVisibility.ts";
 import {authorDisplayLabel} from "../pasaport/author-label.ts";
 import {SelfVoteNotAllowed, VoterNotEligible} from "../vote/errors.ts";
@@ -275,7 +279,7 @@ export const mutations = {
 			// an opted-in yazar or a moderator can now reach — and the handler answers
 			// `PostNotFound` on a write that already committed. Every re-read below that can
 			// raise `*NotFound` carries it for the same reason.
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id, sandboxViewer});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
@@ -306,7 +310,7 @@ export const mutations = {
 			yield* pano.retractPostVote({postId: input.id, voterId: UserId.make(user.id)});
 			// Re-resolve like `post.vote` above so the returned/published projection keeps the
 			// real `isSaved` + author identity instead of the null-bearing write shape (#2213).
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id, sandboxViewer});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
@@ -327,7 +331,7 @@ export const mutations = {
 		Effect.fn("post.react")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			// Dark-ship gate (ADR 0083). Off ⇒ the react never lands; re-resolve unchanged so
 			// the caller's cache stays consistent. A Flagship outage reads `false` = dark.
 			const flags = yield* Flags;
@@ -366,7 +370,7 @@ export const mutations = {
 			const bookmark = yield* Bookmark;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			yield* bookmark.toggle({userId: UserId.make(user.id), postId: input.id, value: true});
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id, sandboxViewer});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
@@ -388,7 +392,7 @@ export const mutations = {
 			const bookmark = yield* Bookmark;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			yield* bookmark.toggle({userId: UserId.make(user.id), postId: input.id, value: false});
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id, sandboxViewer});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
@@ -421,7 +425,7 @@ export const mutations = {
 			});
 			// Re-read the viewer's vote so the edited entity carries an accurate
 			// `myVote` (edit doesn't touch vote state).
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id, sandboxViewer});
 			const post = shapePost({...r, myVote: fresh?.myVote ?? null});
 			yield* live.post.update(post.id, {changed: ["title", "body", "updatedAt"], data: post});
@@ -465,7 +469,7 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const restored = yield* pano.restorePost({postId: input.id, actorId: UserId.make(user.id)});
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const page = yield* pano.getPost(input.id, {viewerId: user.id, sandboxViewer});
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id, sandboxViewer});
@@ -593,7 +597,7 @@ export const mutations = {
 		Effect.fn("comment.react")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			// Dark-ship gate (ADR 0083). Off ⇒ the react never lands; re-resolve unchanged so
 			// the caller's cache stays consistent. A Flagship outage reads `false` = dark.
 			const flags = yield* Flags;
@@ -650,7 +654,7 @@ export const mutations = {
 				actorId: UserId.make(user.id),
 				body: input.body,
 			});
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {
 				viewerId: user.id,
 				sandboxViewer,
@@ -688,7 +692,7 @@ export const mutations = {
 				actorId: UserId.make(user.id),
 			});
 			if (!postId) return null;
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const page = yield* pano.getPost(postId, {viewerId: user.id, sandboxViewer});
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id, sandboxViewer});
@@ -735,7 +739,7 @@ export const mutations = {
 				actorId: UserId.make(user.id),
 			});
 			if (!postId) return null;
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const [comment] = yield* pano.getCommentsByIds([input.id], {
 				viewerId: user.id,
 				sandboxViewer,
