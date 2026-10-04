@@ -646,6 +646,29 @@ disagreeing with your terminal, never a token to change. On any refusal, print t
 the exit code; the operator re-reads and routes. Then print the token as the last line either way;
 a run whose caller named no lane prints the token only and records nothing.
 
+**Say where you left the person's own clone.** `build release` steps the tree off the lane branch
+it just released, and its answer's `freed` field names that branch, or is `null` when it moved
+nothing. When `freed` names a branch and this tree is the clone's main working tree — `git rev-parse
+--git-dir` and `git rev-parse --git-common-dir` name one directory — a person opens that clone next
+and finds `git status` opening with `HEAD detached at <commit id>`. So your closing message, above
+the token, tells them three things in plain words: the clone is on no branch, nothing is lost
+because the files and commits are as the run left them, and the one command that returns to the
+branch they started on, `git switch <starting-branch>`. The starting branch is the one this clone
+held before this run checked out its lane branch, whether `build branch` cut that branch or resumed
+it — the `from` side of that checkout in `git reflog HEAD`.
+
+**That `from` side is a branch only when the clone stood on one.** A repair run, or a second build
+by a person who never switched back, starts in a clone the earlier run already left on no branch,
+and there the `from` side is a 40-character commit id. `git switch` refuses a commit id, and
+returning to it would leave the person on no branch again. So take the `from` side as the starting
+branch only when `git show-ref --verify refs/heads/<from>` proves it a local branch. Otherwise name
+the repo's default branch, read with `gh repo view --json defaultBranchRef --jq
+.defaultBranchRef.name`, and say why: the clone was already on no branch when this run started, so
+the command returns to the default branch. The message never offers a commit id as the branch to
+return to.
+
+A linked worktree gets no such line: no person stands in it.
+
 ## Repair
 
 A repair brief carries two distinct Ground URLs: the PR being repaired and the issue it serves.
