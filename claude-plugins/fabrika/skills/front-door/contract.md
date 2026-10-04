@@ -2,7 +2,8 @@
 
 **Skill:** [`front-door`](SKILL.md) · **Date:** 2026-08-09
 
-These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `status` subcommand
+These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `status` subcommand —
+bar [`setup`](#setup), a command registered by itself —
 beside the groups registered in `packages/fabrika-cli/src/registry.ts` — at the time of writing
 `adr`, `build`, `epic`, `hook`, `plan`, `report`, `review`, `review-ui`, `ship`, `spend`,
 `triage`, `ui` and `wire`. That list grows most weeks, so **read the file rather than this
@@ -32,6 +33,7 @@ access per
 | `status readout` | the landed-decision digest as published in the durable artifact | fetching an artifact and decoding a registered wire format is mechanical; ranking the rows is `governance`'s judgment and is not recomputed here |
 | `status board` | counts of the board's decided buckets, each with its own freshness | counting labelled issues over named REST endpoints is arithmetic; ranking or picking from them is `build pick`'s |
 | `status bootstrap` | create one missing repo surface from this group's own buildable-surface registry, and read it back | the write, the collision guard and the read-back are a protocol; what the file *says* is judgment the skill forms by inference and grilling |
+| `setup` | run the setup steps a new repo needs, in order, and print what to do next | walking a fixed step list and stopping at the first refusal is a total function; every step is a `status bootstrap` surface, and committing the result stays the person's |
 
 ### Considered and deliberately not derived
 
@@ -1565,11 +1567,166 @@ $ fabrika status bootstrap label-taxonomy --json
 
 ---
 
+## `setup`
+
+**Invocation**
+
+```
+fabrika setup [--hand-check] [--repo <owner/name>]
+```
+
+Runs the setup steps a new repo needs, in one fixed order, and prints what to do next. Each step is
+one [`status bootstrap`](#status-bootstrap) surface run with no `--path` and no stdin. The command
+owns the order, the stop and the closing; the write, the collision guard and the read-back stay the
+step's.
+
+<a id="setup-steps"></a>**The step list.** A later step is a row added to this table.
+
+| Order | Step | Run |
+|---|---|---|
+| 1 | `settings-patch` | always |
+| 2 | `label-taxonomy` | always |
+| 3 | `issue-shape-markers` | always |
+| 4 | `gitignore-row` | always |
+| 5 | `hand-check-rule` | only under `--hand-check` |
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--hand-check` | boolean | no | `false` | also run `hand-check-rule`; without it that step is not run and `.fabrika.jsonc` is neither created nor changed |
+| `--repo` | string | no | resolved | the repository the two label steps write to |
+
+The command declares no positional argument of its own, so a word after `setup` is refused as an
+unexpected operand on `1`. It reads nothing from stdin and asks no question: it finishes with no
+terminal attached.
+
+**Output** — machine rows, then a closing for the person. For each step, in order, the step's own
+[`status bootstrap` row](#status-bootstrap), [tab-separated](#separator) and unchanged:
+
+```
+bootstrap	<created|exists>	<step>	<target>	<readback>
+```
+
+After the last row comes one empty line and the closing, which follows
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines):
+what happened, then what to do next. A caller that parses the answer keeps the lines that start
+`bootstrap` and a tab.
+
+- **What happened** counts the rows that read `created` against the steps run. A run where every
+  row reads `exists` says so, and says the run changed nothing.
+- **What to do next** gives three lines to paste, each indented two spaces: `git add` naming the
+  default target file of every step run that writes a file, in step order; then
+  `git commit -m "chore: set up fabrika"`; then `git push -u origin HEAD`. A label step writes no
+  file and adds nothing to the add line. The lines print on a run that changed nothing too, because
+  the command does not read whether an earlier run's files were committed. The examples below show
+  the add line and cut the other two to `…`, which never vary.
+
+Each step's notices go to stderr as the step printed them.
+
+**The command never commits and never pushes.** It spawns no `git` of its own; the three lines are
+the person's to run.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `0` | every step run answered `created` or `exists` |
+| `1` | a word followed `setup`; or a label step could not resolve a target repo |
+| `8` | a step's write failed — whether anything landed is UNKNOWN |
+| `9` | a step's write landed and its read-back differs |
+| `11` | a step's precondition read failed; that step wrote nothing |
+
+**A step that refuses stops the run.** The exit code is that step's code and the last stderr line is
+that step's own refusal. Stdout holds the rows of the steps that finished before it and no closing,
+and no later step runs. Those rows are writes that landed, so they are kept: a second run answers
+`exists` for each and picks up at the step that refused. The triggers behind each code are the
+step's, in [`status bootstrap`'s exit table](#status-bootstrap). `3`, `5`, `6`, `10` and `12` are
+unreachable here: no step in the list reads stdin, takes `--path` or names a surface off the
+registry.
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `fabrika: unexpected operand "<word>" for "fabrika setup" — the verb declares no argument to bind it to` | 1 | usage error |
+| the refusing step's own `status bootstrap: …` line, unchanged | that step's | refusal |
+
+**Scope** — the default target of each step in the [list](#setup-steps), under the repository root
+above the cwd, and the labels of `--repo`.
+
+**Examples**
+
+A repo with none of the steps done, whose origin is `acme/storefront`:
+
+```
+$ fabrika setup
+bootstrap	created	settings-patch	.claude/settings.json	ok
+bootstrap	created	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage	ok
+bootstrap	created	issue-shape-markers	wayfinding:map,prototyping:spike,grilling:session	ok
+bootstrap	created	gitignore-row	.gitignore	ok
+
+Setup finished: 4 steps made changes and 0 were already done. Nothing is committed or pushed yet.
+What to do next: paste these lines to commit and push the setup files:
+  git add .claude/settings.json .gitignore
+  …
+```
+
+The same repo, run again:
+
+```
+$ fabrika setup
+bootstrap	exists	settings-patch	.claude/settings.json	-
+bootstrap	exists	label-taxonomy	status:needs-triage,status:triaged,status:needs-info,status:planned,status:awaiting-release,p0,p1,p2,type:bug,type:feature,type:chore,type:decision,type:investigation,type:epic,ready-for:human,ready-for:agent,class:code,class:doc,class:skill,class:ui,closed-by-triage	-
+bootstrap	exists	issue-shape-markers	wayfinding:map,prototyping:spike,grilling:session	-
+bootstrap	exists	gitignore-row	.gitignore	-
+
+Setup finished: all 4 steps were already done, so this run changed nothing.
+What to do next: nothing, unless the setup files are not committed yet. If they are not, paste these lines:
+  git add .claude/settings.json .gitignore
+  …
+```
+
+A fresh directory with no target repo to resolve. The first step lands and the second refuses:
+
+```
+$ fabrika setup
+status bootstrap: created .claude/settings.json for settings-patch, read-back conformed.
+status bootstrap: cannot resolve a target repo — set CLAUDE_PIPELINE_REPO, GITHUB_REPOSITORY, or pass --repo.
+bootstrap	created	settings-patch	.claude/settings.json	ok
+$ echo $?
+1
+```
+
+Under `--hand-check` a fifth row follows the four above, and the add line names its file:
+
+```
+bootstrap	created	hand-check-rule	.fabrika.jsonc	ok
+
+Setup finished: 5 steps made changes and 0 were already done. Nothing is committed or pushed yet.
+What to do next: paste these lines to commit and push the setup files:
+  git add .claude/settings.json .gitignore .fabrika.jsonc
+  …
+```
+
+**Grounding**
+
+- The owner's ruling on first-run setup: one command runs the existing steps; it stops after
+  writing files and prints the add, commit and push lines; the hand-check rule is written only
+  under `--hand-check`. The command's source carries the ruling's issue in its `@ruling` tag.
+- `setup` is a top-level entry in `packages/fabrika-cli/src/registry.ts` and takes flags only. In
+  the pinned `effect` CLI, `Command.withSubcommands` runs the parent's own handler when no
+  sub-command is named, so sub-commands can be added under `setup` later while bare
+  `fabrika setup` keeps working.
+- The push line is `git push -u origin HEAD` so it works on a branch that has no upstream yet.
+
+---
+
 ## Capability declaration
 
 Shell; a repo-scoped GitHub token; filesystem reads under the repository root and over the resolved
 roster; filesystem **writes** only through `status bootstrap`, only inside the repository root, only
-to a target proven absent first. GitHub writes: exactly two, both `status bootstrap`'s — creating the
+to a target proven absent first. `setup` writes through those same surfaces and adds none. GitHub writes: exactly two, both `status bootstrap`'s — creating the
 readout artifact issue, and creating board labels. **No push, no branch, no merge, no merge-queue
 access, no pull request, and no label applied to any existing issue.** This group emits no cross-lane
 signal of any kind.

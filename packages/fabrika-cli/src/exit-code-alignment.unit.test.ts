@@ -41,6 +41,7 @@ import {registeredGroups} from "./registry.ts";
 import * as report from "./report/codes.ts";
 import * as review from "./review/codes.ts";
 import * as reviewUi from "./review-ui/codes.ts";
+import * as setup from "./setup/codes.ts";
 import * as ship from "./ship/codes.ts";
 import * as spend from "./spend/codes.ts";
 import * as spike from "./spike/codes.ts";
@@ -81,6 +82,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	report,
 	review,
 	"review-ui": reviewUi,
+	setup,
 	ship,
 	spend,
 	spike,

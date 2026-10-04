@@ -463,6 +463,12 @@ export const labelSurface = (label: string, board: BoardVocabulary): string | nu
 			surface.kind === "labels" && surface.labels(board).some((spec) => spec.name === label),
 	)?.id ?? null;
 
+/** The repo-relative file a surface writes when no `--path` moves it, or `null` when it writes no file. */
+export const defaultFileOf = (id: string): string | null => {
+	const surface = findSurface(id);
+	return surface !== undefined && "defaultPath" in surface ? surface.defaultPath : null;
+};
+
 export const knownIds = (): string => BUILDABLE_SURFACES.map((surface) => surface.id).join(", ");
 
 export interface BootstrapInput {
