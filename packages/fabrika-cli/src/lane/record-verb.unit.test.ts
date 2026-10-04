@@ -1,10 +1,16 @@
 /** `lane record` and `lane wait` — posting once per terminal, the leak scrub, and the wait fact. */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import {reviewUiKey} from "../config/keys/review-ui.ts";
+import {uiSurfacesKey} from "../config/keys/ui-surfaces.ts";
+import {loadConfig} from "../config/load.ts";
+import {readFromLoad} from "../config/read-key.ts";
+import {SCREEN_CHECK_SKIPPED, screenReviewOf} from "../config/screen-review.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import {fail, ok} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read} from "../wire/lane-record.ts";
+import {seedClasses} from "./class-seed.ts";
 import {
 	APPEND_UNKNOWN,
 	FACT_REFUSED,
@@ -19,10 +25,12 @@ import {
 import {coderTemplateText} from "./fixtures.test-support.ts";
 import {LEDGER_SPEND} from "./record.ts";
 import {type IssueComment, type RecordBoard, runRecord} from "./record-verb.ts";
+import {readScreenCheck} from "./screen-check.ts";
 import {runWait} from "./wait-verb.ts";
 
 const ROOT = ".fabrika/lanes";
 const LANE = "42";
+const ROW = {name: "web", prefix: "src/", mount: "/", command: "pnpm dev --port {{port}}"};
 const WORKFLOW = `${ROOT}/${LANE}/workflow.json`;
 const LOG = `${ROOT}/${LANE}/events.jsonl`;
 const FACTS = `${ROOT}/${LANE}/facts.jsonl`;
@@ -367,5 +375,152 @@ describe("lane record — a complete record over an open issue", () => {
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({answer: "posted", outcome: "complete"});
 		expect(posted).toHaveLength(1);
+	});
+});
+
+/**
+ * The screen check rides the record's answer: one sentence where a screen change went unreviewed
+ * because screen review is not set up, and no key at all anywhere else.
+ */
+describe("lane record, then the screen check", () => {
+	const reviewAt = (config: Record<string, unknown>) => {
+		const load = loadConfig({_tag: "Text", text: JSON.stringify(config)});
+		const reviewUi = readFromLoad(load, reviewUiKey);
+		const surfaces = readFromLoad(load, uiSurfacesKey);
+		if (reviewUi._tag === "Refused" || surfaces._tag === "Refused") throw new Error("refused");
+		return screenReviewOf(reviewUi.value, surfaces.value);
+	};
+
+	/** A lane booted off an issue labelled `class:ui`, or one with no class at all. */
+	const workflow = (seed: ReadonlyArray<string>): string => {
+		const seeded = seedClasses(coderTemplateText(), seed);
+		if (seeded._tag !== "Seeded" && seeded._tag !== "Unchanged") throw new Error(seeded._tag);
+		return seeded.text;
+	};
+
+	/**
+	 * {@link shipped}, as a lane seeded `ui` walks it at skip: the head's diff raises no ui class, so
+	 * the reviewer relays `code` on its PASS and the lane goes on to ship.
+	 */
+	const shippedTextOnly = (): string => {
+		tick = 0;
+		return [
+			line("WIP"),
+			line("DONE", {pr: "https://forge.test/o/r/pull/12"}),
+			line("PASS", {classes: ["code"]}),
+			line("BLOCKED", {cause: "awaiting-cp-approval"}),
+			line("UNBLOCKED"),
+			line("DONE", {landed: [12]}),
+		].join("");
+	};
+
+	const recorded = (
+		seed: ReadonlyArray<string>,
+		config: Record<string, unknown>,
+		files: ReadonlyArray<string> | null = ["index.html"],
+		log: string = shippedTextOnly(),
+	) =>
+		Effect.runPromise(
+			Effect.provide(
+				runRecord({
+					root: ROOT,
+					lane: LANE,
+					issue: {_tag: "Issue", number: 42},
+					spent: LEDGER_SPEND,
+					board: thread().board,
+					screenCheck: (lane) =>
+						readScreenCheck(lane, {
+							review: Effect.succeed({_tag: "Review", review: reviewAt(config)} as const),
+							files: () => Effect.succeed(files === null ? fail("HTTP 502") : ok(files)),
+						}),
+				}),
+				fakeFs({
+					files: {[WORKFLOW]: workflow(seed), [LOG]: log},
+					dirs: {[ROOT]: [LANE]},
+					directories: [ROOT],
+				}).layer,
+			),
+		);
+
+	const SKIPPED = {screenCheck: SCREEN_CHECK_SKIPPED};
+
+	it("says the screen check was skipped on a class:ui issue in a repo that declares nothing", async () => {
+		const out = await recorded(["ui"], {});
+		expect({code: out.code, stderr: out.stderr}).toMatchObject({code: 0});
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "posted", ...SKIPPED});
+		expect(out.stderr).toContain(`fabrika lane record: ${SCREEN_CHECK_SKIPPED}`);
+	});
+
+	it("says it on a pull request that changes a declared screen file at skip, with no class:ui", async () => {
+		const config = {reviewUi: {mode: "skip", screens: ["index.html"]}};
+		expect(JSON.parse((await recorded([], config)).stdout)).toMatchObject(SKIPPED);
+		expect(JSON.parse((await recorded([], config, ["README.md"])).stdout)).not.toHaveProperty(
+			"screenCheck",
+		);
+	});
+
+	it.each([
+		["hand-check", {reviewUi: {mode: "hand-check", screens: ["index.html"]}}],
+		["preview", {reviewUi: {mode: "preview", screens: ["index.html"]}}],
+		["a repo with rows and no mode", {uiSurfaces: [ROW]}],
+	])("prints no skip sentence at %s", async (_, config) => {
+		const out = await recorded(["ui"], config);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).not.toHaveProperty("screenCheck");
+		expect(out.stderr.join("\n")).not.toContain("screen check");
+	});
+
+	it("prints none for a text-only lane in a repo that names no screen file", async () => {
+		expect(JSON.parse((await recorded([], {})).stdout)).not.toHaveProperty("screenCheck");
+	});
+
+	it("keeps the sentence out of the record posted to the issue", async () => {
+		const {board, posted} = thread();
+		await Effect.runPromise(
+			Effect.provide(
+				runRecord({
+					root: ROOT,
+					lane: LANE,
+					issue: {_tag: "Issue", number: 42},
+					spent: LEDGER_SPEND,
+					board,
+					screenCheck: () => Effect.succeed({_tag: "Skipped"} as const),
+				}),
+				laneFs(shipped()).layer,
+			),
+		);
+		expect(posted[0]).not.toContain("screen check");
+	});
+
+	it("says UNKNOWN on stderr and leaves the record standing when a read fails", async () => {
+		const out = await recorded([], {reviewUi: {mode: "skip", screens: ["index.html"]}}, null);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).not.toHaveProperty("screenCheck");
+		expect(out.stderr.join("\n")).toContain(
+			"whether this lane's screen check was skipped is UNKNOWN — cannot read the changed files of #12: HTTP 502",
+		);
+	});
+});
+
+describe("readScreenCheck", () => {
+	const never = {
+		review: Effect.die("the config was read for a lane with no pull request"),
+		files: () => Effect.die("the files were read"),
+	};
+
+	it("skips nothing for a lane that opened no pull request, and reads nothing to say so", async () => {
+		expect(await Effect.runPromise(readScreenCheck({seededUi: true, prs: []}, never))).toEqual({
+			_tag: "NotSkipped",
+		});
+	});
+
+	it("is UNKNOWN where the repo's config does not read", async () => {
+		const check = await Effect.runPromise(
+			readScreenCheck(
+				{seededUi: true, prs: [12]},
+				{...never, review: Effect.succeed({_tag: "Refused", message: "v: refused"} as const)},
+			),
+		);
+		expect(check).toEqual({_tag: "Unread", reason: "v: refused"});
 	});
 });

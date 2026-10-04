@@ -20,7 +20,7 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import type {TableSettings} from "../config/keys/table.ts";
-import type {Api} from "../io/gh-api.ts";
+import {type Api, onTransport} from "../io/gh-api.ts";
 import type {Shell} from "../io/git.ts";
 import {
 	type ProjectsAnswer,
@@ -103,8 +103,9 @@ const readTable = <A>(
 	repo: string,
 	settings: TableSettings,
 	read: TableReader<A>,
-): Shell<ProjectsAnswer<Found<A>>> =>
-	withProjects<Found<A>>((token) =>
+	tableToken: string | null,
+): Shell<ProjectsAnswer<Found<A>>> => {
+	const under = (token: string): Api<ProjectsAnswer<Found<A>>> =>
 		Effect.gen(function* () {
 			const located = yield* locate(token, repo, settings);
 			if (located._tag !== "Ok") return located;
@@ -113,8 +114,9 @@ const readTable = <A>(
 			return value._tag === "Ok"
 				? {_tag: "Ok", value: {_tag: "Table", source: located.value.source, value: value.value}}
 				: value;
-		}),
-	);
+		});
+	return tableToken === null ? withProjects(under) : onTransport(under(tableToken));
+};
 
 export type TableRead<A> =
 	/** The repository has no table project; `note` says why, for the caller's stderr. */
@@ -154,11 +156,15 @@ export const tableReadOf = <A>(
 /**
  * Find the table and run `read` against it. Every reader of the table comes through here, so they
  * all agree on when a repository has no table.
+ *
+ * `tableToken` is a credential for the project alone: finding the project and running `read` go
+ * through it, and nothing else does. `null` reads the project under the ambient credential.
  */
 export const readTableWith = <A>(
 	cwd: string,
 	repo: string,
 	read: TableReader<A>,
+	tableToken: string | null = null,
 ): Effect.Effect<
 	TableRead<A>,
 	never,
@@ -167,7 +173,7 @@ export const readTableWith = <A>(
 	Effect.gen(function* () {
 		const adoption = yield* readAdoption(cwd);
 		if (adoption._tag === "Unknown") return adoption;
-		return tableReadOf(adoption, repo, yield* readTable(repo, adoption.settings, read));
+		return tableReadOf(adoption, repo, yield* readTable(repo, adoption.settings, read, tableToken));
 	});
 
 export const readBets = (

@@ -10,7 +10,14 @@
  * The ACL resolution is fail-closed at the boundary: a permission that cannot be read
  * resolves NOT authorized, so an unverifiable approval stops counting rather than passing.
  *
+ * Two credentials can be in play. The ambient one reads the repository: issues, comments, and the
+ * permission of whoever commented or set a Stage. {@link TABLE_TOKEN_ENV}, when set, reads the
+ * table project and nothing else: a token minted for the project cannot be assumed to read a
+ * collaborator's permission, and one that cannot would fail every approval closed.
+ *
  * The whole decision lives in `./pitch.ts`; this file resolves the repo, reads, and emits.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9982
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -60,10 +67,21 @@ import {emitVerdict, type GuardVerdict, unknown} from "./verdict.ts";
 
 type Requirements = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path;
 
-/** The table read behind the bet arm. */
+/** The env var naming a credential for the table project alone. */
+export const TABLE_TOKEN_ENV = "TABLE_READ_TOKEN";
+
+/** The table's own credential, or `null` when the ambient one reads the table too. */
+const tableTokenOf = (env: Readonly<Record<string, string | undefined>>): string | null => {
+	// An unset Actions secret arrives as an empty string, not as an absent variable.
+	const token = (env[TABLE_TOKEN_ENV] ?? "").trim();
+	return token === "" ? null : token;
+};
+
+/** The table read behind the bet arm; `tableToken` is the project's credential, `null` for ambient. */
 export type BetRowsReader = (
 	cwd: string,
 	repo: string,
+	tableToken: string | null,
 ) => Effect.Effect<TableRead<ReadonlyArray<TableBetRow>>, never, Requirements>;
 
 export interface PitchGuardOptions {
@@ -329,9 +347,10 @@ const readBetTable = (
 	read: BetRowsReader,
 	cwd: string,
 	repo: string,
+	tableToken: string | null,
 ): Effect.Effect<BetTable, never, Requirements> =>
 	Effect.gen(function* () {
-		const table = yield* read(cwd, repo);
+		const table = yield* read(cwd, repo, tableToken);
 		if (table._tag === "NoTable") return {_tag: "unread", reason: table.note};
 		if (table._tag === "Unknown") return {_tag: "unread", reason: table.reason};
 		const authorized = new Map<string, boolean>();
@@ -394,7 +413,12 @@ export const runPitchGuard = (
 				options.env,
 			);
 		}
-		const table = yield* readBetTable(options.betRows ?? readBetRows, options.cwd, target.value);
+		const table = yield* readBetTable(
+			options.betRows ?? readBetRows,
+			options.cwd,
+			target.value,
+			tableTokenOf(options.env),
+		);
 		return withBetNote(
 			emitVerdict(
 				toGuardVerdict(judge(scan.candidates, scan.scope, table), sizes.value),

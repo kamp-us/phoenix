@@ -2137,8 +2137,26 @@ Once the record stands, posted now or already there, it runs `fabrika table sync
 that refuses leaves the record standing, repeats the sync's reason and exit on stderr, and changes
 no exit code here, so re-running this retries the sync.
 
+Once the record stands it also answers whether the lane's screen change went unreviewed because
+screen review is not set up. Three facts decide it, and all three must hold: the lane's log names a
+pull request; screen review resolves `skip` in the checkout the verb stands in (`reviewUi.mode`, or
+an unset mode in a repo that declares no `uiSurfaces` row, no `reviewUi.screens` path and no
+`reviewUi.whenNoPreview` rule); and a screen was involved, which is either the `ui` class the lane
+was seeded with from its issue's `class:ui` label, or a pull request of the lane changing a file
+under a source root the repo names a screen under. Then the answer carries `screenCheck`, one fixed
+sentence, and stderr repeats it:
+
+```text
+The screen check was skipped because screen review is not set up in this repo; to turn it on, run `fabrika status bootstrap hand-check-rule --screens <path>`, where <path> is the folder or file your screens live in.
+```
+
+The key is absent everywhere else, a repo at `preview` or `hand-check` included. A config or
+changed-file read that fails leaves the key absent, says on stderr that whether the check was
+skipped is UNKNOWN, and changes no exit code. The sentence never enters the posted record.
+
 stdout is `{answer: "posted"|"unchanged", lane, issue, commentId, outcome, origin, asks, builds,
-reviews, parks, spent, prs, table: {code, answer}}`, plus `url` on a post.
+reviews, parks, spent, prs, table: {code, answer}}`, plus `url` on a post and `screenCheck` where
+the screen check was skipped.
 
 ### Exit status
 

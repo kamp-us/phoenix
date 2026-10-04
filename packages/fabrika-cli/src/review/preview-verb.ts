@@ -33,8 +33,9 @@ import {
 	governedRootsOr,
 	reviewFilterExclusionsOr,
 	reviewFilterUnexcludeOr,
-	uiSurfacesOr,
+	screenReviewOr,
 } from "../config/paths.ts";
+import {raisedPrefixes} from "../config/screen-review.ts";
 import {diffRange, diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {type ClassRefs, classConfigAtCommits} from "./class-config.ts";
@@ -272,13 +273,16 @@ export const runPreview = (
 				"the refusal union is UNKNOWN without the governed roots, and an UNKNOWN union refuses nothing.",
 			);
 			if (roots._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, roots.message);
-			const surfaces = yield* uiSurfacesOr(
+			const screens = yield* screenReviewOr(
 				VERB,
 				options.cwd,
 				"the required UI reviews are UNKNOWN without configured UI prefixes.",
 			);
-			if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
-			return serve(read.text, [], {roots: roots.roots, prefixes: surfaces.prefixes});
+			if (screens._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, screens.message);
+			return serve(read.text, [], {
+				roots: roots.roots,
+				prefixes: raisedPrefixes(screens.review),
+			});
 		}
 
 		if (pr !== null) {

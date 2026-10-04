@@ -296,6 +296,18 @@ could discharge is not one of these, and marking it moves a mechanical check ont
 The name, the grammar and what makes a usable source live in the verb's contract section
 (`fabrika wire doc-section --heading "The outside-diff evidence marker" < <skill-base>/contract.md`).
 
+**Read the repo's screen review setting before you write a criterion about a screen.** Run
+`fabrika status settings` and read the `reviewUi.mode` row: `preview`, `hand-check` or `skip`. At
+`skip`, screen review is not set up in this repo, so no step of a run renders the app or asks
+anyone for a screenshot. Write no acceptance criterion there that only a screenshot or another
+image can meet, marked or unmarked: nothing in the run can supply it, so it fails review and spends
+a repair round on a pull request that is otherwise fine. Write a criterion checkable from the files
+in its place. Name the element, the text or the style rule the change adds and the file it lands
+in, such as "`index.html` has a button labelled Add habit, and `app.js` appends a row to the list
+when it is clicked". You still pass `--class ui` in step 7 for a screen deliverable at `skip`: the
+label is how the run knows to say the screen check was skipped. A row printing `unknown` is unread,
+not `skip`; stop and name it. At `preview` and `hand-check` this paragraph changes nothing.
+
 **An ordering you state must already be an edge.** The native `blocked_by` graph is the one carrier
 of "do not start this yet", so a rewrite saying "Blocked. Do not start until #N" over a graph with
 no such edge ships an issue `build pick` admits and no lane can build — one such rewrite cost a

@@ -81,15 +81,18 @@ jobs:
       # is printed by the guard itself. 7 is an empty backlog sweep, 11 an unreadable board, 12 an
       # unpitched bet.
       #
-      # The repo secret `TABLE_READ_TOKEN` reads the table: it carries the `project` scope that
-      # `github.token` cannot be given, and the guard takes one token, so every read in this step
-      # goes through it. Where the secret is unset or withheld (a fork's own Actions run gets no
-      # repo secrets) the expression below is empty on its left side and falls back to
-      # `github.token`: the bet arm then reads as unread and only the comments approve, so a
-      # bet-only issue reds on 12 there. The `permissions:` block above scopes that fallback only.
+      # Two tokens, one job each. The repo secret `TABLE_READ_TOKEN` reads the table project and
+      # nothing else: it carries the `project` scope that `github.token` cannot be given.
+      # `github.token` reads everything else: the issue, its comments, and the permission of each
+      # commenter and Stage setter, which the table token cannot be assumed to see. Where the secret
+      # is unset or withheld (a fork's own Actions run gets no repo secrets) `TABLE_READ_TOKEN` is
+      # empty and the guard reads the table with `github.token` too: the bet arm then reads as
+      # unread and only the comments approve, so a bet-only issue reds on 12 there. The
+      # `permissions:` block above scopes `github.token` only.
       - name: pitch-guard check
         env:
-          GH_TOKEN: ${{ secrets.TABLE_READ_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
+          TABLE_READ_TOKEN: ${{ secrets.TABLE_READ_TOKEN }}
           ISSUE: ${{ github.event.issue.number || inputs.issue }}
         run: |
           if [ -n "$ISSUE" ]; then

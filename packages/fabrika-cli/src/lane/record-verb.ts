@@ -9,10 +9,18 @@
  * reads the issue itself and refuses while it is open or unread. Only then is the comment posted,
  * and it is read back through the format's own reader before the verb says `posted`.
  *
+ * Once the record stands the verb also says whether the lane's screen change went unreviewed
+ * because screen review is not set up (`./screen-check.ts`). The sentence is fixed in
+ * `../config/screen-review.ts` and printed here, on the one verb every terminal run calls, so the
+ * driver relays it and never composes it. It rides the answer, never the posted record.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9855
+ * @ruling https://github.com/kamp-us/phoenix/issues/10520#issuecomment-5984214868
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {screenReviewOr} from "../config/paths.ts";
+import {SCREEN_CHECK_SKIPPED} from "../config/screen-review.ts";
 import {findLeaks} from "../guard/leak.ts";
 import type {Attempt} from "../io/git.ts";
 import {
@@ -23,6 +31,7 @@ import {
 	resolveRepo,
 } from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
+import {listPullFiles} from "../io/pulls.ts";
 import {scanBody} from "../report/leaks.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -48,6 +57,7 @@ import {loadFacts} from "./facts.ts";
 import type {KeyIssue} from "./key.ts";
 import {composeRecord} from "./record.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
+import {readScreenCheck, type ScreenCheck, type ScreenCheckLane, seededUi} from "./screen-check.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane record";
@@ -88,7 +98,48 @@ export interface RecordOptions<R> extends LaneRef {
 	readonly syncTable?: (
 		issue: number,
 	) => Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path>;
+	/**
+	 * Whether the lane's screen change went unreviewed at `skip`, read once its record stands.
+	 * Absent, the answer says nothing about it.
+	 */
+	readonly screenCheck?: (
+		lane: ScreenCheckLane,
+	) => Effect.Effect<ScreenCheck, never, R | FileSystem.FileSystem | Path.Path>;
 }
+
+/**
+ * The answer's `screenCheck` field and its stderr line. The field is the sentence itself, present
+ * only where the check was skipped, so a caller relays it by reading one key and prints nothing
+ * where the key is absent.
+ */
+const followScreenCheck = <R>(
+	options: RecordOptions<R>,
+	lane: ScreenCheckLane,
+): Effect.Effect<
+	{readonly field: Record<string, string>; readonly notes: ReadonlyArray<string>},
+	never,
+	R | FileSystem.FileSystem | Path.Path
+> =>
+	Effect.gen(function* () {
+		if (options.screenCheck === undefined) return {field: {}, notes: []};
+		const check = yield* options.screenCheck(lane);
+		switch (check._tag) {
+			case "Skipped":
+				return {
+					field: {screenCheck: SCREEN_CHECK_SKIPPED},
+					notes: [`${VERB}: ${SCREEN_CHECK_SKIPPED}`],
+				};
+			case "Unread":
+				return {
+					field: {},
+					notes: [
+						`${VERB}: whether this lane's screen check was skipped is UNKNOWN — ${check.reason.replace(/\.$/, "")}. The record stands.`,
+					],
+				};
+			case "NotSkipped":
+				return {field: {}, notes: []};
+		}
+	});
 
 /** What the table sync after a record answered, for the record's own answer. */
 const followTable = <R>(
@@ -169,6 +220,7 @@ export const runRecord = <R>(
 			);
 		}
 		const {record} = composed;
+		const screenLane: ScreenCheckLane = {seededUi: seededUi(loaded.lane), prs: record.prs};
 
 		const scan = scanBody(emit(record));
 		const body = scan.redacted;
@@ -199,6 +251,7 @@ export const runRecord = <R>(
 			const standing = read(comment.body);
 			if (standing._tag === "Found" && sameTerminal(standing.value, record)) {
 				const followed = yield* followTable(options, issue);
+				const screen = yield* followScreenCheck(options, screenLane);
 				return answer(
 					JSON.stringify({
 						answer: "unchanged",
@@ -207,10 +260,12 @@ export const runRecord = <R>(
 						commentId: comment.id,
 						...summary(record),
 						...(followed.table === null ? {} : {table: followed.table}),
+						...screen.field,
 					}),
 					[
 						`${VERB}: #${issue} already carries the record of this terminal (comment ${comment.id}) — nothing was written.`,
 						...followed.notes,
+						...screen.notes,
 					],
 				);
 			}
@@ -260,6 +315,7 @@ export const runRecord = <R>(
 			);
 		}
 		const followed = yield* followTable(options, issue);
+		const screen = yield* followScreenCheck(options, screenLane);
 		return answer(
 			JSON.stringify({
 				answer: "posted",
@@ -269,14 +325,41 @@ export const runRecord = <R>(
 				url: posted.value.url,
 				...summary(record),
 				...(followed.table === null ? {} : {table: followed.table}),
+				...screen.field,
 			}),
 			[
 				...notes,
 				`${VERB}: posted the ${record.outcome} record to #${issue} (comment ${posted.value.id}).`,
 				...followed.notes,
+				...screen.notes,
 			],
 		);
 	});
+
+/**
+ * The shipped screen-check read: screen review as the checkout the driver stands in resolves it,
+ * and each pull request's changed files off the platform.
+ */
+export const recordScreenCheck =
+	(repo: string | null, cwd: string, env: Readonly<Record<string, string | undefined>>) =>
+	(
+		lane: ScreenCheckLane,
+	): Effect.Effect<
+		ScreenCheck,
+		never,
+		ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	> =>
+		readScreenCheck<ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path>(
+			lane,
+			{
+				review: screenReviewOr(VERB, cwd, "whether screen review is set up in this repo is unread"),
+				files: (pr) =>
+					Effect.gen(function* () {
+						const name = yield* resolveRepo(repo, env);
+						return name._tag === "Failure" ? name : yield* listPullFiles(name.value, pr);
+					}),
+			},
+		);
 
 /** The shipped board: the target repo's issue comments, read whole before anything is posted. */
 export const recordBoard = (

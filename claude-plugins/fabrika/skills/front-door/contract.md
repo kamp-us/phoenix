@@ -291,6 +291,7 @@ group registers as an aligned group claiming `SHARED_SEATS`:
 | `3` `5` `6` `7` `8` `9` `10` `11` | `packages/fabrika-cli/src/report/codes.ts` | `EMPTY_STDIN`, `LEAKED_PATH`, `BARE_AT_PATH`, `NO_TARGET` (re-exported here as `ZERO_SCOPE`, the same rename `build`, `review`, `ship`, `triage`, `ui` and `review-ui` use), `WRITE_UNKNOWN`, `READBACK_MISMATCH`, `CLASSIFIED` (re-exported as `OFF_VOCABULARY`), `PRECONDITION_UNKNOWN` |
 | `4` | declared locally as `DELIBERATE_GAP = 4` | the same shape `review`, `ship` and `triage` ship, so the gap is registered rather than silently absent — no verb here composes body sections |
 | `12` | this group's own | `NOT_BUILDABLE` — see below |
+| `13` | this group's own | `NO_SCREENS` — `status bootstrap hand-check-rule` in a repo that names no screen file |
 
 **Three registration edits, not two.** `packages/fabrika-cli/src/exit-code-alignment.ts` gains a
 `status` row in `ALIGNED_GROUPS`; `packages/fabrika-cli/src/exit-code-alignment.unit.test.ts` gains
@@ -313,13 +314,14 @@ one, which the first edit already satisfies.
 | `10` | a supplied value is off the closed vocabulary — an unknown `--field`, a non-integer issue, a `--path` outside the repository root | ✓ | — | — | ✓ | — | ✓ |
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | — | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `12` | refused: the surface named is not in this group's [buildable-surface registry](#buildable-surfaces) | — | — | — | — | — | ✓ |
+| `13` | refused: `hand-check-rule` in a repo that names no screen file, so no pull request could trigger the hand-check | — | — | — | — | — | ✓ |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **The export names `status/codes.ts` must ship**, because `checkAlignment`
 (`packages/fabrika-cli/src/exit-code-alignment.ts`) keys on export *names* and not on numerals — a
 different spelling reds the alignment test with nothing in the failure naming why: `EMPTY_STDIN`,
 `DELIBERATE_GAP`, `LEAKED_PATH`, `BARE_AT_PATH`, `ZERO_SCOPE`, `WRITE_UNKNOWN`, `READBACK_MISMATCH`,
-`OFF_VOCABULARY`, `PRECONDITION_UNKNOWN`, plus this group's own `NOT_BUILDABLE`.
+`OFF_VOCABULARY`, `PRECONDITION_UNKNOWN`, plus this group's own `NOT_BUILDABLE` and `NO_SCREENS`.
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb can
 also return `0`, `1`, `126` and `127` with the meanings above, stated here and nowhere else; the
@@ -540,6 +542,17 @@ key in registry order:
 settings	<resolved|unknown>	<keys>	<declared>	<unknown>	<as-of>
 setting	<key>	<declared|default|unknown>	<value-as-json>	<detail>	<as-of>
 ```
+
+<a id="the-reviewui-mode-row"></a>**One row is derived, not registered: `reviewUi.mode`.** It sits
+directly under the `reviewUi` row and prints what screen review resolves to in this repo:
+`"preview"`, `"hand-check"` or `"skip"`. It exists because an unset mode resolves off a second key,
+so the `reviewUi` row alone cannot say it. `declared` means the file carries `reviewUi.mode`.
+`default` means it does not, and the value is then `"skip"` in a repo that declares no `uiSurfaces`
+row, no `reviewUi.screens` path and no `reviewUi.whenNoPreview` rule, and `"preview"` in a repo that
+declares any of those. The row counts in `<keys>`. It is left out when `reviewUi` or `uiSurfaces`
+resolves `unknown`, since that row already says so. A `reviewUi.mode` outside the three makes the
+`reviewUi` row `unknown`, with a `<detail>` naming the three allowed values, and the run refuses on
+`11`.
 
 `<value-as-json>` is the value as JSON, which is what keeps the cell tab-free — a declared string
 holding a tab escapes rather than splitting the row. It is printed **in the spelling the file
@@ -1114,7 +1127,7 @@ a fifteenth is a change to this table, not a new rule.
 | `settings-patch` | `--path`, default `.claude/settings.json` at the repo root | **none** — the two keys [fixed below](#json-key-merge), merged into the object a present file parses to, written whole into a file that is absent | a present file re-reads to the merged object — every undeclared key intact, the declared keys at their registry values — through `normalizeForReadback` |
 | `dep-pin` | `--path`, default `package.json` at the repo root | **none** — the `devDependencies.@kampus/fabrika-cli` row at the version npm's registry currently [publishes](#json-key-merge), merged into the object a present manifest parses to, written whole into a manifest that is absent | a present manifest re-reads to the merged object — every undeclared key intact, the row at exactly the resolved version — through `normalizeForReadback`; an unreachable registry refuses unwritten |
 | `fabrika-config` | `--path`, default `.fabrika.jsonc` at the repo root | **none** — the starting config file [fixed below](#fabrika-config), written whole into a file that is absent; a file already there is `exists` and is never read | the file's bytes match the fixed text through `normalizeForReadback` |
-| `hand-check-rule` | `--path`, default `.fabrika.jsonc` at the repo root | **none** — the one `reviewUi.whenNoPreview` rule [fixed below](#hand-check-rule), spliced into a present file's text, written whole into a file that is absent | the re-read matches the spliced text through `normalizeForReadback` — the rule in, every other key and every comment where it was |
+| `hand-check-rule` | `--path`, default `.fabrika.jsonc` at the repo root | **none** — `reviewUi.mode` at `hand-check` and the `--screens` paths under `reviewUi.screens`, [fixed below](#hand-check-rule), spliced into a present file's text, written whole into a file that is absent; refused on `13` in a repo that names no screen file | the re-read matches the spliced text through `normalizeForReadback` — the keys in, every other key and every comment where it was |
 | `first-milestone` | one open milestone in the repo | **none** — title exactly `First arc`, opened only when the repo has [no open milestone](#first-milestone) | the milestone's own resource resolves open under that exact title |
 | `owners-file` | `.github/CODEOWNERS` at the repo root; `--path` does not move it | **none** — one row per path the owners-file guard demands, each owned by the signed-in login, written only when the repo has [no owners file](#owners-file) | the re-read file covers every path `guard codeowners-cp check` demands |
 | `ci-file` | `.github/workflows/ci.yml` at the repo root; `--path` does not move it | **none** — the starter CI workflow [fixed below](#ci-file), written only when the repo has no workflow file | the file's bytes match the fixed text through `normalizeForReadback` |
@@ -1357,40 +1370,59 @@ collision guard: a present file is the repo's own statement, so it is not read, 
 and a file that does not parse is `exists` too. That makes the order with `hand-check-rule` matter,
 because both default to the one path: `hand-check-rule` creates the file when it is absent, and
 `fabrika-config` then finds it present and writes nothing. Run `fabrika-config` first and
-`hand-check-rule` splices its rule into the starting file with every comment kept.
+`hand-check-rule` splices its keys into the starting file with every comment kept.
 
-<a id="hand-check-rule"></a>**`hand-check-rule` writes one rule, for a repo whose app has a screen
-and no preview deploy.** A repo that declares no `reviewUi.whenNoPreview` rule resolves every ui file
-to `require-render`, so its first screen change ends `CANT-SEE` with nothing to render. The rule,
-fixed here so no clause defers to source:
+<a id="hand-check-rule"></a>**`hand-check-rule` is the one step that turns screen review on, for a
+repo whose app has a screen and no preview deploy.** Screen review starts off: a repo that declares
+no `reviewUi.mode`, no `uiSurfaces` row, no `reviewUi.screens` path and no `reviewUi.whenNoPreview`
+rule resolves `skip`, so a screen change gets the text review only and the run says the screen check
+was skipped. This step sets the repo to `hand-check` and records where the screens live. What it
+writes, fixed here so no clause defers to source, for `--screens src/app/ --screens index.html`:
 
 ```jsonc
 "reviewUi": {
-	"whenNoPreview": [{"paths": ["**"], "mode": "hand-check"}]
+	"mode": "hand-check",
+	"screens": ["src/app/", "index.html"]
 }
 ```
 
-`hand-check` is the only mode this surface writes: the owner looks at the screen and posts a
-screenshot, and the screen check is never switched off from here. The glob is
-every path because the rule is read only over a pull request's ui-class files, so it covers whatever
-`uiSurfaces` names now or later, and `review-ui route --no-preview` refuses it on a pull request
-that has a preview.
+Once that is on the default branch, a pull request that changes a file under one of those paths
+stops for the owner: they run the app, look at the screen, and post a screenshot on the pull request
+naming its exact commit. `hand-check` is the only mode this surface writes. `preview` needs hosting
+this step cannot set up, and `skip` is what a repo that never ran the step already resolves to. The
+mode is read only over a pull request's ui-class files, and `review-ui route --no-preview` refuses
+it on a pull request that has a preview.
 
-**Any rule already declared is `exists`, whatever its mode or paths.** Once a repo has said which
-paths take which mode, a second rule from here could only contradict it, so nothing is written and
-the notice says a rule is already there. A `reviewUi` with no rules — the key absent, an empty
-object, an empty list — is the gap this surface fills.
+**`--screens` says where the screens live, and no start command is asked for.** Each value is a
+repo-relative path: a folder ending in `/` covers every file under it, anything else names one file.
+Repeat the flag for several. They land under `reviewUi.screens`, joined to any already there, and
+they raise the ui class exactly as a `uiSurfaces` prefix does. An absolute path, a path through
+`..` and a `*` pattern are each exit `10` with nothing written.
+
+**In a repo that names no screen file the step refuses on `13`, and never reports `ok`.** With no
+`uiSurfaces` row, no `reviewUi.screens` path and no `--screens`, no pull request could raise the ui
+class, so the hand-check written there is one nothing could trigger. Nothing is written, and the one
+sentence on stderr names what to add. A repo with a `uiSurfaces` row needs no `--screens`: the row's
+prefixes already name its screens.
+
+**A repo that already answered is `exists`.** A declared `reviewUi.mode` of `hand-check` with no
+new `--screens` path, a declared `preview`, and a repo with its own `reviewUi.whenNoPreview` rules
+and no mode have each said how their screens are reviewed, so nothing is written and the notice
+says which. A declared `skip` is the one answer this step changes, since turning screen review on
+is what it is for. A repo with its own rules still takes new `--screens` paths, and its mode stays
+unset.
 
 **`.fabrika.jsonc` is edited in place, never re-serialized.** The file carries a person's comments,
-so the rule is spliced into the text: a missing `reviewUi` is appended after the last top-level key,
-a missing `whenNoPreview` goes inside `reviewUi`, and an empty list is filled where it stands, with
-the rule after any comment between its brackets. Every other byte stays, comments included. Before writing, the spliced text is parsed
-again and must equal the old document plus the rule; a file that does not parse as a JSON object
-with comments, a `reviewUi` the key itself refuses, and a splice that would move another key are each
-exit `11` with nothing written. Absent, the file is created holding the rule alone.
+so the keys are spliced into the text: a missing `reviewUi` is appended after the last top-level
+key, and `mode` and `screens` go inside it. Every other byte stays, comments included. Before
+writing, the spliced text is parsed again and must equal the old document plus those keys; a file
+that does not parse as a JSON object with comments, a `reviewUi` or `uiSurfaces` the key itself
+refuses, and a splice that would move another key are each exit `11` with nothing written. Absent,
+the file is created holding the `reviewUi` key alone.
 
-`review-ui route` reads the rules off the checkout it runs in, so the rule counts for a reviewer
-once it is committed to the branch that reviewer's worktree is cut from.
+`review scope`, `ship scope` and `ship gate` read the setting off the pull request's own head and
+merge base, and `review-ui route` reads it off the checkout it runs in, so it counts once it is
+committed to the default branch.
 
 <a id="first-milestone"></a>**`first-milestone` gives triage one home, in a repo that has none.**
 `triage homes` refuses on `7` over a repo with no open milestone, so a new repo needs one before its
@@ -1470,6 +1502,7 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 |---|---|---|---|---|
 | *(positional)* | string | yes | — | one `<surface-id>` from the registry above |
 | `--path` | string | no | the registry default | override the target path for a file, line, json, dep-pin, fabrika-config or hand-check-rule surface; must resolve inside the repository root |
+| `--screens` | string, repeatable | no | none | `hand-check-rule` only: where the app's screens live, a folder ending in `/` or one file; needed in a repo with no `uiSurfaces` row, and no start command is asked for |
 | `--repo` | string | no | resolved | the repository the four GitHub surfaces (`label-taxonomy`, `issue-shape-markers`, `readout-artifact`, `first-milestone`) write to, and the one whose open milestones the `roadmap-focus` [pin check](#roadmap-pin-check) reads |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes for `design-manifest` and `roadmap-focus` | — | the content. `NoStdin` and `Text("")` are exit `3`; a **failed** stdin read is exit `1` — the content is UNKNOWN, never empty, the split `packages/fabrika-cli/src/report/file-verb.ts` already ships |
@@ -1519,9 +1552,10 @@ the shape this seat exists to prevent. The skill loops.
 | `6` | the stdin content is a bare `@` path reference — not redactable |
 | `8` | the write failed — whether anything landed is **UNKNOWN**; re-read before retrying |
 | `9` | the write landed and the read-back does not match |
-| `10` | `--path` resolves outside the repository root |
-| `11` | a precondition read failed — the existence probe could not be performed, a present json target's bytes do not parse as a JSON object, dep-pin's registry read failed (unreachable, non-200, or no version named), or hand-check-rule's target does not parse as a JSON object with comments, carries a `reviewUi` the key refuses, or cannot take the rule without another key moving, or owners-file could not read the signed-in login, or ci-file could not list `.github/workflows`; **nothing was written** |
+| `10` | `--path` resolves outside the repository root, or a `--screens` path is absolute, climbs through `..` or carries a `*` |
+| `11` | a precondition read failed — the existence probe could not be performed, a present json target's bytes do not parse as a JSON object, dep-pin's registry read failed (unreachable, non-200, or no version named), or hand-check-rule's target does not parse as a JSON object with comments, carries a `reviewUi` or `uiSurfaces` the key refuses, or cannot take the keys without another key moving, or owners-file could not read the signed-in login, or ci-file could not list `.github/workflows`; **nothing was written** |
 | `12` | `<surface-id>` is not in the [buildable-surface registry](#buildable-surfaces) |
+| `13` | refused, proven: `hand-check-rule` in a repo that names no screen file — no `uiSurfaces` row, no `reviewUi.screens` path and no `--screens` — so no pull request could trigger the hand-check; **nothing was written** |
 
 **Errors**
 
@@ -1543,12 +1577,18 @@ the shape this seat exists to prevent. The skill loops.
 | `status bootstrap: appended <marker> to <target> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
 | `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file, ci-file.
-| ``status bootstrap: cannot read <target>: <reason> — whether a `reviewUi.whenNoPreview` rule is already there is UNKNOWN, and nothing was written.`` | 11 | refusal |
+| ``status bootstrap: cannot read <target>: <reason> — what `reviewUi` already says is UNKNOWN, and nothing was written.`` | 11 | refusal |
 | `status bootstrap: <target> does not parse as a JSON object with comments — nothing was written.` | 11 | refusal |
-| `status bootstrap: <target> is refused — <the reviewUi key's reason>. Nothing was written; fix that key first.` | 11 | refusal |
-| `status bootstrap: cannot add the rule to <target> without moving its other keys — nothing was written. Add {"paths":["**"],"mode":"hand-check"} under "reviewUi.whenNoPreview" by hand.` | 11 | refusal |
-| `status bootstrap: created <target> for hand-check-rule with one hand-check rule, read-back conformed.` | 0 | notice |
-| `status bootstrap: added one hand-check rule to <target> for hand-check-rule, read-back conformed.` | 0 | notice |
+| `status bootstrap: <target> is refused — <the reviewUi or uiSurfaces key's reason>. Nothing was written; fix that key first.` | 11 | refusal |
+| `status bootstrap: cannot add <what> to <target> without moving its other keys — nothing was written. Add <the keys as JSON> under "reviewUi" by hand.` | 11 | refusal |
+| `status bootstrap: --screens "<path>" <why it is refused>. Nothing was written.` | 10 | refusal |
+| ``status bootstrap: <target> names no screen files (no `uiSurfaces` row and no `reviewUi.screens` path), so no pull request could trigger a hand-check — run this again with `--screens <path>`, where <path> is the folder your screens live in, ending in "/", or one file such as index.html. Nothing was written.`` | 13 | refusal |
+| ``status bootstrap: created <target> for hand-check-rule with `reviewUi.mode` hand-check and <n> `reviewUi.screens` path(s), read-back conformed.`` | 0 | notice |
+| ``status bootstrap: added `reviewUi.mode` hand-check to <target> for hand-check-rule, read-back conformed.`` | 0 | notice |
+| ``status bootstrap: added `reviewUi.mode` hand-check and <n> `reviewUi.screens` path(s) to <target> for hand-check-rule, read-back conformed.`` | 0 | notice |
+| ``status bootstrap: added <n> `reviewUi.screens` path(s) to <target> for hand-check-rule, read-back conformed.`` | 0 | notice |
+| ``status bootstrap: <target> already declares `reviewUi.mode` hand-check — nothing written.`` | 0 | notice |
+| ``status bootstrap: <target> already declares `reviewUi.mode` preview, so screen review is on and this step leaves it — nothing written.`` | 0 | notice |
 | ``status bootstrap: <target> already carries a `reviewUi.whenNoPreview` rule — nothing written.`` | 0 | notice |
 | `status bootstrap: cannot probe <owner/name>'s open milestones: <reason> — nothing was written.` | 11 | refusal |
 | `status bootstrap: opening the milestone "First arc" in <owner/name> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
@@ -1661,15 +1701,18 @@ nothing, as it would over any file at that path.
 
 ```
 $ fabrika status bootstrap hand-check-rule
+status bootstrap: .fabrika.jsonc names no screen files (no `uiSurfaces` row and no `reviewUi.screens` path), so no pull request could trigger a hand-check — run this again with `--screens <path>`, where <path> is the folder your screens live in, ending in "/", or one file such as index.html. Nothing was written.
+$ fabrika status bootstrap hand-check-rule --screens index.html
 bootstrap	created	hand-check-rule	.fabrika.jsonc	ok
-status bootstrap: added one hand-check rule to .fabrika.jsonc for hand-check-rule, read-back conformed.
+status bootstrap: added `reviewUi.mode` hand-check and 1 `reviewUi.screens` path(s) to .fabrika.jsonc for hand-check-rule, read-back conformed.
 $ fabrika status bootstrap hand-check-rule
 bootstrap	exists	hand-check-rule	.fabrika.jsonc	-
-status bootstrap: .fabrika.jsonc already carries a `reviewUi.whenNoPreview` rule — nothing written.
+status bootstrap: .fabrika.jsonc already declares `reviewUi.mode` hand-check — nothing written.
 ```
 
-The file was there with keys and comments of its own; the rule went in after the last key and
-nothing else moved. The second run found a rule and wrote nothing.
+The file was there with keys and comments of its own and named no screen file, so the first run
+refused on `13`. The second went in after the last key and nothing else moved. The third found the
+mode set and wrote nothing.
 
 ```
 $ fabrika status bootstrap first-milestone

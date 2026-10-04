@@ -64,11 +64,10 @@ import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {CONFIG_PATH} from "../config/document.ts";
 import {SHIP_SCOPE_ALLOW_DECLARATION, shipScopeKey} from "../config/keys/ship-scope.ts";
-import {noUiSurfaces} from "../config/paths.ts";
 import {readKey} from "../config/read-key.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {standingInLinkedWorktree} from "../lane/assembly.ts";
-import {classConfigOfPull} from "../review/class-config.ts";
+import {classConfigOfPull, uiDerivationLine} from "../review/class-config.ts";
 import {issueRefOf, partitionWithUi, renderIssueRef, shipNamespacesOf} from "../review/classes.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -230,9 +229,7 @@ export const runScope = (
 			...seat.notices,
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared`),
 			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
-			classConfig.uiPrefixes.length === 0
-				? noUiSurfaces(VERB)
-				: `${VERB}: ui derived over ${classConfig.uiPrefixes.length} prefix(es) — ${classConfig.notes.uiSurfaces}.`,
+			uiDerivationLine(VERB, classConfig),
 		];
 		// Zero is the shortfall the enumeration alone establishes, and with the declared count no longer
 		// refusing it is the whole floor: an empty list partitions into no class and derives no

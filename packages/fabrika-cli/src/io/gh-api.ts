@@ -20,10 +20,16 @@
  * *search* stays REST — this org's Projects-classic integration errors GraphQL search out.
  *
  * The credential is an argument to every leg *of this module*, never something a leg resolves —
- * {@link resolveToken} is the one producer, and a caller holding no `token` cannot construct a
- * request at all. Adapters outside this file take `(repo, …)` and reach {@link ambientToken} for
- * theirs, and they erase the transport requirement with {@link onTransport} rather than publishing
- * `HttpClient` up through every verb annotation.
+ * {@link resolveToken} produces every credential but one, and a caller holding no `token` cannot
+ * construct a request at all. Adapters outside this file take `(repo, …)` and reach
+ * {@link ambientToken} for theirs, and they erase the transport requirement with {@link onTransport}
+ * rather than publishing `HttpClient` up through every verb annotation.
+ *
+ * The one exception: the pitch guard reads the table project under `TABLE_READ_TOKEN` when that
+ * variable is set (`../guard/pitch-verb.ts`, `../table/bets-read.ts`). Nothing else may take a
+ * token from outside {@link resolveToken}.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9982
  */
 
 import {Duration, Effect, Option} from "effect";

@@ -76,11 +76,13 @@ approve it: run `pnpm approve-builds` and pick `@kampus/fabrika-cli`, or add it 
 `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`. Skip the approval and `ui render`
 refuses with exit `11` until the browser is set up. `fabrika-config` writes a starting
 `.fabrika.jsonc` when the repo has none and reads no stdin; a file already there is `exists`,
-whatever it holds. [Step 9](#9-add-the-config-file) says what is in it. `hand-check-rule` writes one
-`reviewUi.whenNoPreview` rule into `.fabrika.jsonc` and reads no stdin. A `.fabrika.jsonc` already
-there is edited in place: the rule goes into the text, and every other key and comment stays where
-it was. It is `exists` once the file declares any `reviewUi.whenNoPreview` rule, and a file that
-does not parse is refused unwritten. With no file, it creates one holding the rule alone.
+whatever it holds. [Step 9](#9-add-the-config-file) says what is in it. `hand-check-rule` turns
+screen review on: it writes `reviewUi.mode` at `hand-check` and the `--screens` paths you give it
+into `.fabrika.jsonc`, and reads no stdin. A `.fabrika.jsonc` already
+there is edited in place: the keys go into the text, and every other key and comment stays where
+it was. It is `exists` once the file answers how screens are reviewed, it refuses on `13` in a repo
+that names no screen file, and a file that
+does not parse is refused unwritten. With no file, it creates one holding those keys alone.
 [If your app has no preview deploys](#if-your-app-has-no-preview-deploys) says when to run it.
 `first-milestone` opens a milestone titled `First arc` when the repo has no open milestone, and is
 `exists` over any open one. `owners-file` writes `.github/CODEOWNERS` when the repo has no owners
@@ -255,7 +257,8 @@ makes a verb refuse partway through real work, so write them before your first l
 | `.github/CODEOWNERS` | `plan approve` refuses every account. `ship cp-approval` answers `stop zero-owners`, so every PR waits for an approval nobody can give. | `24` from `plan approve`; `ship cp-approval` exits `0` with the stop | `/.github/ @your-login` and `/.fabrika.jsonc @your-login`. A row that owns everything (`*`) is a hold, not an owner. |
 | a CI workflow in `.github/workflows/`, or `"ci": {"noProducer": "degrade"}` | `ship checks` and `review ci` refuse. | `7` from both | a `ci.yml` that runs your validators on `pull_request`; `degrade` only for a repo that runs no Actions on purpose |
 | `parkCause` | Its three sub-keys ship as `uncaused: "refuse"`, `driverRouted: "refuse"` and `repairBudgetSpent: "driver"`. Under the first, a `lane transition <n> BLOCKED` or a `lane report` park that names no `--cause` is refused and nothing is appended to the lane log. | `52` from both | none needed: name a `--cause` on every park. `{"uncaused": "record"}` keeps cause-less parks. |
-| `uiSurfaces` | No verb refuses in review: no path raises the `ui` class, so a rendered change is reviewed as text only. `review scope` and `ship scope` print one stderr line saying so. `ui render` refuses, and `review-ui route` answers `none` because there is nothing to route. | `19` from `ui render`; `review-ui route` exits `0` with `"answer":"none"` | one row per app: `{"name": "web", "prefix": "src/", "mount": "/", "command": "pnpm dev --port {{port}}"}`; `[]` for a repo that renders nothing |
+| `uiSurfaces` | No verb refuses in review: with no `reviewUi.screens` path either, no path raises the `ui` class, so a rendered change is reviewed as text only. `review scope` and `ship scope` print one stderr line saying so. `ui render` refuses, and `review-ui route` answers `none` because there is nothing to route. | `19` from `ui render`; `review-ui route` exits `0` with `"answer":"none"` | one row per app: `{"name": "web", "prefix": "src/", "mount": "/", "command": "pnpm dev --port {{port}}"}`; `[]` for a repo that renders nothing |
+| `reviewUi.mode` | No verb refuses. Unset, it resolves `skip` in a repo that declares no `uiSurfaces` row, no `reviewUi.screens` path and no `reviewUi.whenNoPreview` rule: screen review is off, a screen change gets the text review only, and the run's closing message says the screen check was skipped. Unset in a repo that declares any of those, it resolves `preview`. | none; a value outside the three makes every verb that reads the config exit `11` | `"hand-check"`, written with your screen paths by `fabrika status bootstrap hand-check-rule --screens <path>`; `"preview"` once each PR gets a hosted copy; `"skip"` to say off on purpose |
 
 A workflow that exists but never runs on a PR's head is a different refusal: `ship checks` exits `20`
 and `review ci` exits `16`. The exit codes above are the ones each verb's `--help` prints; after an
@@ -271,18 +274,55 @@ reasoning for each value in comments.
 
 ### If your app has no preview deploys
 
-A PR that changes a declared `uiSurfaces` path cannot ship until the `review-ui` gate is resolved at
-its head. There are two ways to resolve it:
+**Screen review is one setting, `reviewUi.mode`, with three values.** `fabrika status settings`
+prints what your repo resolves to on its `reviewUi.mode` row.
+
+| Value | What it means | What a PR that changes a screen file needs |
+|---|---|---|
+| `preview` | The reviewer opens a hosted copy of each PR. | A preview deploy at the PR's head. With none, the screen check stays unanswered and the PR waits. |
+| `hand-check` | An owner looks at the screen. | A comment on the PR from an owner account, naming the exact head, with screenshots. |
+| `skip` | Screen review is not set up. | Nothing. The PR gets the text review only, `ship gate` owes no `review-ui` answer, and the run's closing message says the screen check was skipped and names the step that turns it on. |
+
+**A repo that leaves the setting unset resolves one of two ways.** If it declares no `uiSurfaces`
+row, no `reviewUi.screens` path and no `reviewUi.whenNoPreview` rule, it resolves `skip`: a new repo
+starts with screen review off. If it declares any of those, it resolves `preview`, which is what
+such a repo did before the setting existed, so an upgrade changes nothing for it. A value outside
+the three is refused, and so is `skip` beside a `whenNoPreview` rule, since one says nothing is owed
+and the other says what a path owes.
+
+**One command turns screen review on at `hand-check`.** Run it when your app has a screen and
+nothing puts up a preview for each PR:
+
+```bash
+fabrika status bootstrap hand-check-rule --screens src/app/
+```
+
+It writes `"mode": "hand-check"` and your paths under `"screens"`, inside `reviewUi`, and keeps
+every other key and comment in the file. `--screens` says where your screens live: a folder ending
+in `/`, or one file such as `index.html`. Repeat it for several. It asks for no command to start
+the app, so it works for a page you open as a file. A repo that already declares a `uiSurfaces` row
+needs no `--screens`, because the row's `prefix` already names its screens. In a repo that names no
+screen file and is given no `--screens`, the command refuses on exit `13` and writes nothing, since
+no PR could trigger the hand-check. A repo that already declares `preview`, `hand-check` or its own
+`whenNoPreview` rules gets `exists`. Commit the file to your default branch before the first build.
+
+A screen file is one under a `uiSurfaces` row's `prefix` or a `reviewUi.screens` path. A PR is
+judged by its own config at its head and at its merge base, and the stricter of the two wins, so a
+PR cannot switch off the screen review it faces.
+
+**At `preview` and `hand-check`,** a PR that changes a screen file cannot ship until the
+`review-ui` gate is resolved at its head. There are two ways to resolve it:
 
 1. **A preview deploy.** Your CI posts a `preview-deploy` comment on the PR with the deployed URL and
    head. The ui reviewer renders that and posts a PASS or FAIL. It never runs the PR's code itself.
 2. **A route instead of a render.** The ui reviewer posts a `routed-elsewhere` record with
    `fabrika review-ui route`, which `ship gate` reads as `routed`. With no preview, what the route
-   needs depends on the path's `reviewUi.whenNoPreview` mode, below: under `require-render` and
+   needs depends on the file's mode, below: under `require-render` and
    `hand-check`, a hand-verification at the PR's head and a `review-code` PASS at that same head;
    under `skip`, neither.
 
-Which hand-verification counts is yours to say, by path, with `reviewUi.whenNoPreview`:
+The repo's mode is the answer for every screen file. `reviewUi.whenNoPreview` makes exceptions to
+it by path:
 
 ```jsonc
 "reviewUi": {
@@ -293,7 +333,10 @@ Which hand-verification counts is yours to say, by path, with `reviewUi.whenNoPr
 }
 ```
 
-- `require-render` is what every file no rule matches gets. The only hand-verification it takes is
+A file no rule matches takes the repo's mode: `require-render` at `preview`, `hand-check` at
+`hand-check`.
+
+- `require-render` is what a repo set to `preview` owes. The only hand-verification it takes is
   the builder's own run of the app at the head, which the ui reviewer routes with
   `review-ui route --verified-at <head>`.
 - `hand-check` lets a comment on the PR stand in for the render: screenshots, naming the PR's
@@ -302,19 +345,9 @@ Which hand-verification counts is yours to say, by path, with `reviewUi.whenNoPr
   to you. [Why an owner-only step confirms an account](how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)
   explains it, and [Run agents under a second GitHub account](run-agents-under-a-second-account.md)
   makes the check refuse them.
-- `skip` means no rendered review is owed for those files.
-
-**A repo with no rule yet gets its first one from one command.** Run it when your app has a screen
-and nothing puts up a preview for each PR:
-
-```bash
-fabrika status bootstrap hand-check-rule
-```
-
-It writes one rule, `{"paths": ["**"], "mode": "hand-check"}`, and keeps every other key and
-comment in the file. The rule is read only over a PR's `uiSurfaces` files, so `**` covers each app
-you declare. Once any rule is there the command answers `exists` and writes nothing, so narrower
-paths are yours to edit by hand. Commit the file to your default branch before the first build.
+- `skip` as a rule's mode means no rendered review is owed for those files, in a repo that
+  otherwise reviews its screens. The reviewer still posts a flagged record for it. That is
+  narrower than `skip` as the repo's mode, where no file raises a screen check at all.
 
 A PR takes the strictest mode across its files. The route checks that the PR really has no preview,
 so a rule never stands in for a render that could run. Both looser outcomes are flagged on the PR,

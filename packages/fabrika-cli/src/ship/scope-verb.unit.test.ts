@@ -174,14 +174,64 @@ describe("runScope", () => {
 		expect(out.stdout).toContain("namespace\treview-ui");
 	});
 
-	it("derives no ui class and says why when the repo declares no uiSurfaces row", async () => {
+	it("derives no ui class and says screen review is not set up when the repo declares nothing", async () => {
 		const out = await run([
 			[PULL, served(pull())],
 			[FILES, served(files("apps/site/src/App.tsx", "README.md"))],
 			[OWNERS, raw(CODEOWNERS)],
 		]);
 		expect(out.stdout).not.toContain("class\tui");
-		expect(out.stderr.join("\n")).toContain("declares no `uiSurfaces` rows");
+		expect(out.stderr.join("\n")).toContain(
+			"ship scope: screen review is not set up, so no path raises the ui class and no rendered review is owed",
+		);
+	});
+
+	// A repo may name its screens and still say screen review is off: the screen file is then an
+	// ordinary code file to every gate, and the scope read says why.
+	it("owes no review-ui over a declared screen file in a repo set to skip", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[FILES, served(files("apps/site/src/App.tsx"))],
+				[OWNERS, raw(CODEOWNERS)],
+			],
+			{},
+			[],
+			[
+				mergeBaseOnPlatform("b".repeat(40)),
+				...configOnPlatform(
+					JSON.stringify({reviewUi: {mode: "skip", screens: ["apps/site/src/"]}}),
+				),
+			],
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("class\tcode\t1");
+		expect(out.stdout).toContain("namespace\treview-code");
+		expect(out.stdout).not.toContain("class\tui");
+		expect(out.stdout).not.toContain("review-ui");
+		expect(out.stderr.join("\n")).toContain("ship scope: screen review is not set up");
+	});
+
+	// `reviewUi.screens` names a screen with no runnable row, so a hand-check repo with no start
+	// command still raises the class its hand-check is read over.
+	it("derives review-ui from a `reviewUi.screens` path in a repo set to hand-check", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[FILES, served(files("index.html", "README.md"))],
+				[OWNERS, raw(CODEOWNERS)],
+			],
+			{},
+			[],
+			[
+				mergeBaseOnPlatform("b".repeat(40)),
+				...configOnPlatform(
+					JSON.stringify({reviewUi: {mode: "hand-check", screens: ["index.html"]}}),
+				),
+			],
+		);
+		expect(out.stdout).toContain("class\tui\t1");
+		expect(out.stdout).toContain("namespace\treview-ui");
 	});
 
 	it("prints governance beside the class namespaces when the diff touches a governance root", async () => {
