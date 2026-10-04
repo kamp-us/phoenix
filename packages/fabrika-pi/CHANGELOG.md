@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/kamp-us/phoenix/compare/fabrika-pi-v0.3.0...fabrika-pi-v0.4.0) (2026-10-04)
+
+
+### Features
+
+* **epic:** Run a test-audit subsystem sweep over every test surface in the repo ([#10122](https://github.com/kamp-us/phoenix/issues/10122)) ([e9210e4](https://github.com/kamp-us/phoenix/commit/e9210e418cf0913607579d1cc8420ac7a9a6ff32))
+
 ## [0.3.0](https://github.com/kamp-us/phoenix/compare/fabrika-pi-v0.2.0...fabrika-pi-v0.3.0) (2026-09-30)
 
 
