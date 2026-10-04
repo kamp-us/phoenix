@@ -8,7 +8,7 @@
  * schema — and the only version is the npm package's. Nothing here may grow a `@`-segment back.
  */
 
-import {Schema} from "effect";
+import {Effect, Exit, Schema} from "effect";
 import type {InPort, OutPort, PortBound, PortSchema, ProgramId} from "../registry/program.ts";
 
 /**
@@ -17,11 +17,12 @@ import type {InPort, OutPort, PortBound, PortSchema, ProgramId} from "../registr
  * schema breaks one of those. `Schema.DateFromString`, `Schema.NumberFromString` or any
  * `Schema.decodeTo` transform is refused: declare the wire form and convert inside `update`.
  *
- * The row's `accepts` is `Schema.is` over the raw wire payload, and `update` receives that payload
- * unchanged once it passes, so nothing on the arrival path could run a transform or answer a
- * service. An asynchronous decode also breaks the rule even though this type cannot see it:
- * `Schema.is` throws on it instead of answering `false` (#8749). The rule and the deferred
- * decode-on-arrival alternative (#10296) are ADR 0445.
+ * The row's `accepts` runs the schema's check synchronously over the raw wire payload and keeps only
+ * whether it passed. `update` receives that payload unchanged, so nothing on the arrival path could
+ * run a transform or answer a service. An asynchronous decode also breaks the rule even though this
+ * type cannot see it: the check never finishes at that synchronous boundary, so the port refuses
+ * every payload, a valid one included (#8749). A check that throws is a refusal too. The rule and
+ * the deferred decode-on-arrival alternative (#10296) are ADR 0445.
  */
 export type PortCodec<T> = Schema.Codec<T, T, never, unknown>;
 
@@ -89,8 +90,19 @@ export interface InPortOptions {
  */
 export const portKind = (program: ProgramId, name: string): string => `${program}/${name}`;
 
-/** The schema's own check, read as the row's predicate. Built once per port, not per payload. */
-const admits = <T>(schema: PortCodec<T>): ((payload: unknown) => payload is T) => Schema.is(schema);
+/**
+ * The schema's own check, read as the row's predicate. Built once per port, not per payload.
+ *
+ * Total: a check that fails, throws, dies or does not finish synchronously is a refusal (#8749). It
+ * is the decode and not `Schema.is`, which reads the type side alone and so never runs a
+ * `Schema.decode` check. The `suspend` is there because a filter that throws does so while the
+ * parser is still building its effect, outside anything `runSyncExit` would catch.
+ */
+const admits = <T>(schema: PortCodec<T>): ((payload: unknown) => payload is T) => {
+	const decode = Schema.decodeUnknownEffect(schema);
+	return (payload): payload is T =>
+		Exit.isSuccess(Effect.runSyncExit(Effect.suspend(() => decode(payload))));
+};
 
 const declareIn = <T>(schema: PortCodec<T>, options?: InPortOptions): InPortDecl<T> => ({
 	direction: "in",

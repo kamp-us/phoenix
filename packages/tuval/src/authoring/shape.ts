@@ -89,7 +89,7 @@ export type ShapePort = AnyPortDecl | PortSchema;
 
 /**
  * What a config may hand a program-valued arg: anything publishing its ports, in either form. A
- * compiled port carries a `Schema.is` predicate, which cannot be compared with another predicate;
+ * compiled port carries a predicate, which cannot be compared with another predicate;
  * what makes it readable here is the schema `compilePort` keeps beside it (`./port.ts`). A port
  * published without one — a hand-written row's — is invisible to the check and is refused by name
  * rather than passed (#8887).
