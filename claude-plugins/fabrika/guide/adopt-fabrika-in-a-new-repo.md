@@ -30,23 +30,16 @@ non-obvious.
 ## 2. Find out what your repo is missing
 
 ```bash
-fabrika status settings --surfaces
+fabrika status settings
 ```
 
 Every key on the config surface lists with its resolved value and whether that came from your file or
-the shipped default; `--surfaces` expands `surfaceDispositions` into one row per repo surface, each
-naming what the surface *is* — without it that key prints as one raw id-to-word value. Each row's
-disposition is what a missing surface costs you: `fail-loud` makes a verb refuse and name the
-surface, `degrade` continues with a narrower answer and says so, and `bootstrap` marks a surface you
-have not adopted yet — those are the ones the CLI can create for you, which is step 3. Each
-`surface` row's last column says in one line what that surface is.
+the shipped default. No verb lists the repo surfaces fabrika reads. A verb that needs one you do not
+have tells you when it runs: it refuses and names the surface, or it continues with a narrower answer
+and says so. The surfaces the CLI can create for you are step 3.
 
 **A `read-back conformed` from `status bootstrap` means one surface landed — it does not mean the
 setup is finished**, and nothing in that verb's output says so.
-
-The dispositions are yours to change: a repo that runs no design system declares
-`"surfaceDispositions": {"design-manifest": "degrade"}` and stops being told to build one; every key
-you do not name keeps its shipped value.
 
 ## 3. Create the surfaces the CLI can create
 
@@ -185,29 +178,30 @@ not match `^#(\d+)$`.
 
 `triage homes` also prints a `lane` row per **standing lane** — a label that is a home in its own
 right, for work no milestone owns. You get one only where your repo both declares the lane and
-carries its label. A fresh repo declares both — the CLI ships a pair of defaults — but carries
-neither label, so you get none, and stderr says so:
+carries its label. The CLI ships no lane, so a fresh repo declares none and gets none, and stderr
+says so:
 
 ```
-triage homes: standing lanes: 0 of 2 declared carry a label in you/your-repo — not offered: wayfinder:backlog, axis:pipeline-hardening.
+triage homes: standing lanes: this repo declares none.
 ```
 
-That is the correct answer, not a gap to fix. Home everything to a milestone and skip `--lane`.
+That is the correct answer, not a gap to fix. Home everything to a milestone and skip `--lane`:
+`triage apply --lane` refuses on `10` here, naming the key, and `ledger child` takes a milestone as
+the only home.
 
 If you do want a standing lane: create the label on your board (**writes to GitHub**: a label you
 create by hand), then declare it under
 `boardVocabulary.standingLanes` in `.fabrika.jsonc` (next section). Both halves are required — a
 declared lane whose label does not exist is not offered, which is what stops `triage apply --lane`
-from failing a write at the end of a full triage run.
+from failing a write at the end of a full triage run. `triage homes` names each declared lane the
+board lacks:
 
-If you want none at all, say so: `"standingLanes": []` under `boardVocabulary`. Then `triage homes`
-reads no labels, offers no lane, and prints `standing lanes: this repo declares none.` — every issue
-homes on a milestone, and `triage apply --lane` refuses. Leaving the key out is a different answer:
-it falls to the shipped pair, which then gets filtered against your board.
+```
+triage homes: standing lanes: 0 of 1 declared carry a label in you/your-repo — not offered: lane:ops.
+```
 
-Standing lanes come from your repo, never from a CLI literal. The shipped default is still there
-until a later change evicts it, and it reaches no board that has not created the labels, so the
-empty declaration above is how you opt out of it entirely.
+Standing lanes come from your repo's `.fabrika.jsonc` and nowhere else. Leaving the key out and
+writing `"standingLanes": []` are the same answer: zero lanes, every issue homes on a milestone.
 
 ## 9. Add the config file
 
@@ -260,8 +254,12 @@ Which hand-verification counts is yours to say, by path, with `reviewUi.whenNoPr
 - `require-render` is what every file no rule matches gets. The only hand-verification it takes is
   the builder's own run of the app at the head, which the ui reviewer routes with
   `review-ui route --verified-at <head>`.
-- `hand-check` lets your own comment on the PR stand in for the render: screenshots, naming the PR's
-  exact head, from an account on your control-plane `CODEOWNERS` row.
+- `hand-check` lets a comment on the PR stand in for the render: screenshots, naming the PR's
+  exact head, from an account on your control-plane `CODEOWNERS` row. The check is on the account,
+  not on who typed the comment, so where your agents post under your account it is theirs to leave
+  to you. [Why an owner-only step confirms an account](how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)
+  explains it, and [Run agents under a second GitHub account](run-agents-under-a-second-account.md)
+  makes the check refuse them.
 - `skip` means no rendered review is owed for those files.
 
 **A repo with no rule yet gets its first one from one command.** Run it when your app has a screen
@@ -353,6 +351,11 @@ The `table` verbs are not the only readers. `lane brief` reads the table for the
 `lane record` runs `fabrika table sync` after it posts, `build pick` reads it to put bets first, and
 `pitch-guard` reads it because a `bet` row approves a pitch. So give the scope to every token that
 drives lanes, not only yours.
+
+That approval is checked on the account: `pitch-guard` counts a `bet` set by any account with write
+access. [Why an owner-only step confirms an account](how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)
+explains it. A [second GitHub account for agents](run-agents-under-a-second-account.md) does not
+change this one, because that account has write access too.
 
 A token without the scope never stops a lane: `lane brief` and `build pick` go on without the
 table and print the fix above. Other failed reads differ: until a `table` block (11.4) is declared

@@ -360,13 +360,13 @@ const route = leafCommand(
 		noPreview: Flag.boolean("no-preview").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				"the PR has no preview deploy: route under the repo's reviewUi.whenNoPreview rules — skip posts a record flagged basis:skip, hand-check posts one flagged basis:hand-check over the newest owner's hand-check at this head the verb finds on the PR (refused at 21 when there is none), require-render is refused at 21; the verb reads the PR's preview announcement itself and refuses at 23 when one is there",
+				"the PR has no preview deploy: route under the repo's reviewUi.whenNoPreview rules — skip posts a record flagged basis:skip, hand-check posts one flagged basis:hand-check over the newest owner account's hand-check at this head the verb finds on the PR (refused at 21 when there is none), require-render is refused at 21; the verb reads the PR's preview announcement itself and refuses at 23 when one is there",
 			),
 		),
 		handCheck: Flag.string("hand-check").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"pin the owner's hand-check comment on this PR, by id or #issuecomment URL, instead of letting --no-preview find the newest one — a control-plane account's screenshots naming the exact head; implies --no-preview, and is refused at 22 when the comment is not one",
+				"pin the owner account's hand-check comment on this PR, by id or #issuecomment URL, instead of letting --no-preview find the newest one — a control-plane account's screenshots naming the exact head; implies --no-preview, and is refused at 22 when the comment is not one",
 			),
 		),
 		repo: repoFlag,
@@ -416,7 +416,7 @@ const route = leafCommand(
 			"  12: head moved, or ui changed since --verified-at",
 			"  20: review-code FAIL, or absent where owed",
 			"  21: whenNoPreview refuses the route",
-			"  22: not an owner's hand-check",
+			"  22: no owner-account hand-check",
 			"  23: a preview is announced",
 			'  Derivation: the review-ui skill\'s contract.md, "review-ui route"',
 		].join("\n"),
@@ -429,9 +429,9 @@ const route = leafCommand(
 		},
 		{
 			command:
-				'fabrika review-ui route 6326 --sha 6c6fe226 --hand-check 5123990412 --clause "no preview; the owner hand-checked this head" < why.md',
+				'fabrika review-ui route 6326 --sha 6c6fe226 --hand-check 5123990412 --clause "no preview; an owner account hand-checked this head" < why.md',
 			description:
-				"Route a no-preview PR on the owner's hand-check, where a hand-check rule matches",
+				"Route a no-preview PR on an owner account's hand-check, where a hand-check rule matches",
 		},
 	]),
 );

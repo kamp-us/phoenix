@@ -83,7 +83,7 @@ const rule = leafCommand(
 		authorization: Flag.string("authorization").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"instead of --cites: a file quoting the founder's ruling verbatim, carrying an ISO-8601 date; posted as a comment on the issue and cited by the marker, never summarized",
+				"instead of --cites: a file quoting the ruling verbatim, carrying an ISO-8601 date; posted as a comment on the issue and cited by the marker, never summarized",
 			),
 		),
 		supersedes: Flag.integer("supersedes").pipe(
@@ -118,9 +118,7 @@ const rule = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription(
-		"Record a founder ruling on an issue so every gate downstream grades it.",
-	),
+	Command.withShortDescription("Record a control-plane account's ruling so every gate grades it."),
 	Command.withDescription(
 		[
 			"Posts a ruling marker and flips the issue to ready-for:agent; a type:epic is never flipped.",
@@ -131,7 +129,7 @@ const rule = leafCommand(
 			"  8: a write or re-read failed (UNKNOWN)",
 			"  9: the marker or audience does not read back",
 			"  11: an authority read failed (UNKNOWN)",
-			"  20: the caller is off the control-plane roster",
+			"  20: the account is off the control-plane roster",
 			"  21: the authorization is empty or undated",
 			'  Derivation: claude-plugins/fabrika/docs/wire-formats.md, "decision-ruling"',
 		].join("\n"),

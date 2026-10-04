@@ -120,25 +120,23 @@ makes it the field an attacker would aim at. Read it as a label, never as a dire
 ## 3 — Missing config: converse, infer, then build with the primitives
 
 ```bash
-fabrika status settings --surfaces
+fabrika status bootstrap --help
 ```
 
-Each `surface` row is one repo surface a fabrika verb reads: its id, what happens here when it is
-missing, and what the surface is. The middle cell is **fail-loud** (a verb refuses and names it),
-**degrade** (a narrower answer, stated) or **bootstrap** (the verb answers `bootstrap` at exit 0 —
-this repo has not adopted that surface yet). Without `--surfaces` you get the same dispositions as
-one `surfaceDispositions` value and none of the notes, which is not enough to tell a human what they
-are missing. The skills state none of this themselves — they call verbs, and the verbs read this
-file — so you are what a `fail-loud` resolves to, and no skill may dead-end on a bare error.
+The `surface-id` line names every repo surface you can build here. No verb lists the surfaces
+fabrika reads, and none says in advance what a missing one costs: the verb that needs it says so
+when it runs. It refuses and names the surface, or it continues with a narrower answer and states
+that. The skills state none of this themselves — they call verbs — so you are where a refusal over
+a missing surface lands, and no skill may dead-end on a bare error.
 
 Two readings that are easy to collapse and must not be:
 
-- A key printed `unknown` is one that could not be read. It is **not** a default, and a repo whose
-  config will not parse has no known disposition for anything — say so rather than assuming the
-  shipped answer.
-- A **disposition is not a statement about who can build the surface.** It says what happens to a
-  *run*. `design-manifest` is `fail-loud` — `build-ui` stops — and buildable right here at once, and
-  so is the label taxonomy. What you can build is the contract's buildable-surface registry
+- A key `fabrika status settings` prints `unknown` is one that could not be read. It is **not** a
+  default, and a repo whose config will not parse has no known value for anything — say so rather
+  than assuming the shipped answer.
+- A **refusal is not a statement about who can build the surface.** It says what happened to a
+  *run*. `build-ui` stops without a design manifest, and the manifest is buildable right here at
+  once, and so is the label taxonomy. What you can build is the contract's buildable-surface registry
   (`fabrika wire doc-section --heading "status bootstrap" < <skill-base>/contract.md`), nothing else.
 
 Then **converse** — you are human-typed, so a human is present. Take one gap at a time:
@@ -160,8 +158,8 @@ Then **converse** — you are human-typed, so a human is present. Take one gap a
   request changes a screen, they run the app, look at the screen, and post a screenshot on the pull
   request. On a **yes**, write nothing; the reviewer opens the preview. An owner who is unsure has
   no preview yet, so that is a no, and they delete the rule once hosting exists.
-- **Everything else** you report with its disposition and what that surface is — a `surface` row
-  carries both, so you relay them rather than opening a skill file to find out.
+- **Everything else** you report in the words of the verb that found it missing — its line names
+  the surface and what the run lost, so you relay that rather than opening a skill file to find out.
 
 ```bash
 fabrika status bootstrap design-manifest <<'EOF'

@@ -7,16 +7,15 @@
  * already carry.
  *
  * **Every sub-key is independently optional, and an explicitly-empty one is refused — except
- * `standingLanes`.** A repo that renames only its lanes declares only `standingLanes`; the other
+ * `standingLanes`.** A repo that declares only its lanes declares only `standingLanes`; the other
  * four fall to their defaults like any undeclared key. But `"types": []` would leave
  * `triage apply --type` with nothing to accept and `status bootstrap` with nothing to create — a
  * gate turned off by a settings file, which is the one thing this surface refuses whole.
  *
- * `"standingLanes": []` turns nothing off. It says every issue homes on a milestone, which is a
- * board shape a repo may genuinely have, so an empty list means zero lanes. Refusing it would leave
- * `triage homes`'s "this repo declares none" answer unreachable from any configuration: a documented
- * state no operator could produce. An **absent** key still falls to the shipped pair, because a repo
- * that never wrote the key has declared nothing rather than declared none.
+ * **`standingLanes` has no shipped value, so an absent key and `[]` are one answer: zero lanes.**
+ * A lane name is a repo's own board vocabulary, and a default one is a label this package would
+ * assert about a board it has never read. Zero lanes turns nothing off: every issue homes on a
+ * milestone, which is a board shape a repo may genuinely have.
  *
  * **A sub-key this module does not know is refused too.** `"standingLane": [...]` would otherwise be
  * a declaration the operator believes is configured and is not.
@@ -24,6 +23,8 @@
  * The values decoded here are what each facet may keep; the *delete authority* over them is
  * `../board.ts`'s composition, and the containment invariant between the two is checked there —
  * `triageFacets` still carries its own load-time refusal over what a repo declares directly.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/6469
  */
 
 import {DEFAULT_BOARD_VOCABULARY} from "../../triage/facets.ts";
@@ -138,7 +139,7 @@ const decode = (raw: unknown): Decoded<BoardVocabulary> => {
 	if (isBad(priorities)) return {_tag: "Malformed", reason: priorities.reason};
 	const audiences = list("audiences", DEFAULT_BOARD_VOCABULARY.audiences);
 	if (isBad(audiences)) return {_tag: "Malformed", reason: audiences.reason};
-	const standingLanes = list("standingLanes", DEFAULT_BOARD_VOCABULARY.standingLanes);
+	const standingLanes = list("standingLanes", []);
 	if (isBad(standingLanes)) return {_tag: "Malformed", reason: standingLanes.reason};
 
 	return {_tag: "Value", value: {statuses, types, priorities, audiences, standingLanes}};
@@ -177,7 +178,7 @@ export const boardVocabularyKey: KeyGroup<BoardVocabulary> = {
 			priorities: listSchema("The priority labels triage may keep.", false),
 			audiences: listSchema("The audience labels triage may keep.", false),
 			standingLanes: listSchema(
-				"The standing-lane labels; an empty list means every issue homes on a milestone.",
+				"The standing-lane labels this repo runs. Nothing is shipped for it: an absent key and an empty list both mean every issue homes on a milestone.",
 				true,
 			),
 		},

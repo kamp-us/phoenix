@@ -7,7 +7,7 @@ import {Fate} from "@kampus/fate-effect";
 import {PHOENIX_SOZLUK_STAMP_WAVE} from "../../../src/flags/keys.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
-import {currentSandboxViewer} from "../kunye/sandbox.ts";
+import {currentInPlaceSandboxViewer} from "../kunye/sandbox.ts";
 import {currentMutedIds} from "../mute/read-mask.ts";
 import {Sozluk} from "./Sozluk.ts";
 import {DefinitionView, TermView} from "./views.ts";
@@ -18,7 +18,7 @@ export const definitionSource = Fate.source(
 	{
 		byIds: function* (ids) {
 			const sozluk = yield* Sozluk;
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const mutedIds = yield* currentMutedIds;
 			// #2709: off ⇒ the stamps run serially, on ⇒ one concurrent wave. Same wire output.
 			const flags = yield* Flags;

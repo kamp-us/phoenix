@@ -66,8 +66,9 @@ export type BetRows =
 export const betRowsOf = (cells: ReadonlyArray<BetCell>, graph: IssueGraph): BetRows => {
 	const rows: BetRow[] = [];
 	const missing = new Set<number>();
+	const bets = new Set(cells.map((cell) => cell.head));
 	for (const cell of cells) {
-		const membership = groupOf(cell.head, graph);
+		const membership = groupOf(cell.head, graph, bets);
 		if (membership._tag === "Incomplete") {
 			for (const issue of membership.missing) missing.add(issue);
 			continue;

@@ -1,6 +1,8 @@
 /**
- * `currentSandboxViewer`'s in-place-visibility resolution (#6423, epic #4306) — the
- * third viewer class, resolved from the #6422 opt-in behind `phoenix-caylak-visibility`.
+ * `currentInPlaceSandboxViewer`'s in-place-visibility resolution (#6423, epic #4306) — the
+ * third viewer class, resolved from the #6422 opt-in behind `phoenix-caylak-visibility` —
+ * and the narrow default beside it: `currentSandboxViewer` never carries that class, so
+ * the widening is reachable only by name (#6467, ADR 0453).
  *
  * The load-bearing cells: the flag is the outer gate (off ⇒ `false`, and the store is
  * never read — the fail-on-contact double proves it); the yazar floor is re-checked at
@@ -14,7 +16,11 @@ import {CurrentUser} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {inPlaceVisibilityLayer} from "./sandbox.testing.ts";
-import {currentSandboxViewer} from "./sandbox.ts";
+import {
+	currentInPlaceSandboxViewer,
+	currentSandboxViewer,
+	type SandboxViewerResolution,
+} from "./sandbox.ts";
 import type {Tier} from "./standing.ts";
 
 const VIEWER = {id: "yzr", email: "kaan@kamp.us", name: "kaan", image: null};
@@ -28,13 +34,18 @@ const noModerators = {
 	subjectsOf: () => Effect.succeed(new Set<string>()),
 } as never;
 
-const resolve = (opts: {
+interface ViewerCase {
 	readonly signedIn: boolean;
 	readonly flagOn: boolean;
 	readonly tier?: Tier;
 	readonly optedIn?: boolean;
-}): Effect.Effect<SandboxViewer> =>
-	currentSandboxViewer.pipe(
+}
+
+const resolveThrough = (
+	path: SandboxViewerResolution,
+	opts: ViewerCase,
+): Effect.Effect<SandboxViewer> =>
+	path.pipe(
 		Effect.provideService(CurrentUser, {user: opts.signedIn ? VIEWER : undefined}),
 		Effect.provideService(CurrentActor, {
 			actor: opts.signedIn ? human(VIEWER.id) : unauthenticated,
@@ -52,7 +63,24 @@ const resolve = (opts: {
 		),
 	);
 
-describe("currentSandboxViewer — the #6423 in-place opt-in", () => {
+const resolve = (opts: ViewerCase) => resolveThrough(currentInPlaceSandboxViewer, opts);
+
+describe("currentSandboxViewer — narrow by default (#6467)", () => {
+	it.effect("flag ON + opted-in yazar ⇒ false by default, true only when requested", () =>
+		Effect.gen(function* () {
+			const optedInYazar = {signedIn: true, flagOn: true, tier: "yazar", optedIn: true} as const;
+			assert.deepStrictEqual(yield* resolveThrough(currentSandboxViewer, optedInYazar), {
+				viewerId: VIEWER.id,
+				canSeeSandboxed: false,
+				seesSandboxedInPlace: false,
+			});
+			const widened = yield* resolveThrough(currentInPlaceSandboxViewer, optedInYazar);
+			assert.isTrue(widened.seesSandboxedInPlace);
+		}),
+	);
+});
+
+describe("currentInPlaceSandboxViewer — the #6423 in-place opt-in", () => {
 	it.effect("flag ON + yazar + opted in ⇒ the third class, and NOT moderator authority", () =>
 		Effect.gen(function* () {
 			const viewer = yield* resolve({signedIn: true, flagOn: true, tier: "yazar", optedIn: true});

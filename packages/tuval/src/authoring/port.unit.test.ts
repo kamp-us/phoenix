@@ -1,4 +1,4 @@
-import {Result, Schema} from "effect";
+import {Effect, Result, Schema, SchemaGetter} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import {type PortSchema, ProgramId} from "../registry/program.ts";
 import {
@@ -41,6 +41,50 @@ describe("authoring.port", () => {
 		expect(review.accepts({pr: 8726, urgent: false})).toBe(true);
 		expect(review.accepts({pr: "8726", urgent: false})).toBe(false);
 		expect(review.accepts(null)).toBe(false);
+	});
+
+	// Every schema here satisfies `PortCodec<string>`, so the type lets each one through (#8749).
+	const checked = (check: (text: string) => Effect.Effect<boolean>) =>
+		Schema.String.pipe(
+			Schema.decode({
+				decode: SchemaGetter.checkEffect(check),
+				encode: SchemaGetter.passthrough(),
+			}),
+		);
+	const longEnough = (text: string) => text.length > 2;
+
+	it("runs a `Schema.decode` check instead of skipping it", () => {
+		const named = compilePort(
+			counter,
+			"named",
+			port.in(checked((text) => Effect.succeed(longEnough(text)))),
+		);
+		expect(named.accepts("long enough")).toBe(true);
+		expect(named.accepts("no")).toBe(false);
+	});
+
+	it.each([
+		[
+			"an asynchronous check",
+			checked((text) => Effect.as(Effect.sleep("1 millis"), longEnough(text))),
+		],
+		["a check that dies", checked(() => Effect.die("boom"))],
+		[
+			"a filter that throws",
+			Schema.String.pipe(
+				Schema.check(
+					Schema.makeFilter<string>(() => {
+						throw new Error("boom");
+					}),
+				),
+			),
+		],
+	])("refuses every payload on a port over %s, and never throws", (_name, schema) => {
+		const asked = compilePort(counter, "asked", port.request(schema, schema));
+		for (const payload of ["long enough", "no", 3]) {
+			expect(asked.accepts(payload)).toBe(false);
+			expect(asked.answers?.(payload)).toBe(false);
+		}
 	});
 
 	it("derives the kind from the program id and the port name, with no version segment", () => {

@@ -16,7 +16,7 @@ import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Admin, requireAdmin} from "../kunye/admin.ts";
 import {Denied} from "../kunye/errors.ts";
 import {Kunye} from "../kunye/Kunye.ts";
-import {currentSandboxViewer} from "../kunye/sandbox.ts";
+import {currentInPlaceSandboxViewer} from "../kunye/sandbox.ts";
 import {promotionBarFor} from "../kunye/standing.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {Pasaport} from "./Pasaport.ts";
@@ -64,7 +64,7 @@ export const queries = {
 			// contribution feed, or the header disagrees with the feed for that viewer
 			// (#1309/#1312). Sandboxed content shows to its author, a moderator, or the
 			// opted-in in-place reader of #6423 — see lifecycle/SandboxVisibility.ts.
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const row = yield* pasaport.lookupProfile(args.username, {sandboxViewer});
 			if (!row) return null;
 

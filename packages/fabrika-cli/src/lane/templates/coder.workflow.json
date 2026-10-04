@@ -188,6 +188,7 @@
 							"human:cp-approval": {
 								"on": {
 									"ISSUE.UNBLOCKED": "hist",
+									"ISSUE.WIP": "review",
 									"ISSUE.FAIL": [
 										{
 											"target": "build",

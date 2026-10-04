@@ -11,9 +11,14 @@
  * an interrupted run leaves a re-runnable state rather than a permanently blocked one, and the
  * read-back is what makes the marker true.
  *
+ * The signature's class is re-derived here too: the budget is one rerun per head, so spending it on
+ * a red a retry cannot change leaves the pull request less healable than before the call.
+ *
  * This verb takes no view on whether the rerun is wise — where the failing context is itself a gate
  * checking its own output a bounded retry can be actively harmful; that judgment is the
  * skill's and is exercised before this verb is called.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/7206
  */
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -41,7 +46,7 @@ import {
 } from "./codes.ts";
 import {getWorkflowRun, rerunFailedJobs} from "./github.ts";
 import {markerBoundTo, renderMarker} from "./marker.ts";
-import {isSignatureId, SIGNATURE_IDS} from "./signatures.ts";
+import {RERUNNABLE_SIGNATURE_IDS, rerunLicence} from "./signatures.ts";
 
 const VERB = "heal-ci rerun";
 
@@ -72,10 +77,17 @@ export const runRerun = (
 		if (badRun !== null) return badRun;
 		const bound = inspectedSha(VERB, options.sha);
 		if (typeof bound !== "string") return bound;
-		if (!isSignatureId(options.signature)) {
+		const licence = rerunLicence(options.signature);
+		if (licence._tag === "UnknownId") {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --signature ${options.signature} is not a known classify signature id (known: ${SIGNATURE_IDS.join(", ")}).`,
+				`${VERB}: --signature ${options.signature} is not a known classify signature id (a rerun takes a transient one: ${RERUNNABLE_SIGNATURE_IDS.join(", ")}).`,
+			);
+		}
+		if (licence._tag === "NotTransient") {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --signature ${options.signature} is a ${licence.signature.class} signature, and only a transient one licenses a rerun (${RERUNNABLE_SIGNATURE_IDS.join(", ")}) — nothing was requested.`,
 			);
 		}
 

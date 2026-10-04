@@ -89,6 +89,11 @@ const shapeRefusal = (
 				BAD_SECTIONS,
 				`${verb}: the body's "## Deviations" section is not readable — ${defect.reason}. State each deviation as an entry, or state "None."`,
 			);
+		case "MalformedReport":
+			return refuse(
+				BAD_SECTIONS,
+				`${verb}: the body's "## Report" section is not readable — ${defect.reason}. Write the report under "## Report", or rename a heading that is not the report.`,
+			);
 		case "StrayClosing":
 			return refuse(
 				BAD_SECTIONS,

@@ -82,8 +82,9 @@ thing that opens it: when the issue carries a founder ruling comment that alread
 the deciding is done and the writing is all that is left, so claim it and transcribe — turn that
 ruling into the ADR or amendment it names, nothing more. **The citation goes inside the artifact you
 write** — the ADR or amendment names the ruling comment's URL in its own text, so it lands in the
-diff, which is a surface `review diff` serves; free prose in the PR body is read by no verb, so a URL
-that lives only there is invisible to every gate. Name it in the PR body as well, so the merge
+diff, which is a surface `review diff` serves. No verb reads the PR body for a ruling's citation —
+the only body prose one serves is `## Deviations` and `## Report` (step 5), and neither is where a
+gate looks for it — so a URL that lives only in the body is invisible to every gate. Name it in the PR body as well, so the merge
 record carries the citation too.
 **With no citable ruling comment the refusal stands exactly as it reads above.** You never judge a
 decision settled yourself: "this looks settled" is not a citation, a converged thread is not a
@@ -92,12 +93,14 @@ citation, and a gap the ruling left open goes back to the founder rather than ge
 citation does not lift, so the issue still has to carry `ready-for:agent`. Two things stamp it:
 triage, when it first reads a decision that already carries a ruling comment — its
 [`--ready-for` routing](../triage/SKILL.md) owns that call, not this skill — and
-`fabrika decision rule <n>`, which a control-plane human runs on a decision that is already parked —
+`fabrika decision rule <n>`, which a control-plane owner runs on a decision that is already parked —
 `--cites <url>` over a comment that is already there, `--authorization <file>` over a ruling given in
 conversation, from a file quoting it verbatim and dated. On `ready-for:human` the claim is exit `21`
 and step 2's rule holds unchanged: end the run naming the code, and name that verb as the way back
-in — a control-plane human runs it, never you, and never an override on your own authority, however
-good the citation.
+in — a control-plane owner runs it, never you, and never an override on your own authority, however
+good the citation. **That rule is yours to keep**: the verb checks that the invoking account is on
+the control-plane roster, so on a repo where you run under a roster account no check stops you
+([why](../../guide/how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)).
 
 **Composition — what holds when `build-ui` is loaded beside this skill.** A shell's `skills:` list is
 its capability set, so a shell preloading both carries both construction laws and a mixed-deliverable
@@ -112,11 +115,11 @@ re-spawns the right shell.
 
 **When the rendered-visual refusal fires, your stop note is read by a person at a prompt.** Say in
 plain words why you stopped — the issue has a screen, and this command builds text only — then give
-one next step: the command `/fabrika:operate <n>`, written with the issue's real number, which picks
-the builder from the issue's labels. That command is the note's whole next step. An agent shell is
-not something a person can type, so the note names none as a thing to run or re-spawn — not
-`fabrika:mixed-builder`, not `fabrika:ui-builder`. You do not run `operate` or `build-ui` yourself:
-release any claim you hold and end `STOPPED`.
+one next step: run the `operate` skill on the issue's real number, which picks the builder from the
+issue's labels. On Claude Code, write that step as the command `/fabrika:operate <n>`. That one step
+is the note's whole next step. An agent shell is not something a person can type, so the note names
+none as a thing to run or re-spawn — not `fabrika:mixed-builder`, not `fabrika:ui-builder`. You do
+not run `operate` or `build-ui` yourself: release any claim you hold and end `STOPPED`.
 
 This skill is not a router: on its own text surfaces
 it executes the whole loop itself. In pick mode neither the argument nor your caller gave you a
@@ -176,7 +179,7 @@ and the verb can prove no more than that, so citing a comment that does not rule
 the tool cannot catch and you must not tell. Passing `--cites` on a decision whose audience is still
 `ready-for:human` lands on `21`, because the citation opens the type axis and nothing else — the
 route back in is `fabrika decision rule <n> --cites <url>` — or `--authorization <file>` over a
-ruling given in conversation — run by a control-plane human, as step 1 says.
+ruling given in conversation — run by a control-plane owner, as step 1 says.
 
 Exit `32` (no acceptance criteria) is the fourth refusal, and it is the one you are most likely to
 meet: the verb reads the issue's body itself, so a body with no readable `### Acceptance criteria`
@@ -226,8 +229,10 @@ a pre-fix artifact, a runtime observation — and stderr quotes every marked row
 one. Do that verification and write what you observed into the PR body, naming the source the
 criterion named: `review post` refuses a `PASS` whose verdict body cites no evidence for a marked
 criterion (exit `19`), so a row you left unevidenced costs the lane a repair round on a PR that is
-otherwise fine. An `evidence` of `null` is the proven absence of a marker, and that row is
-discharged by the diff exactly as it always was.
+otherwise fine. An `evidence` of `null` is the proven absence of a marker, and what discharges that
+row is what it asks for: a row that asks you to report something is discharged by the `## Report`
+section step 5 has you write, and every other unmarked row by the diff. An epic child writes no
+such section, and step 5 says what it does with that row.
 
 **Neither `absent` nor `malformed` is a token you build past.** The verb's three tokens are
 three different facts, and only `found` is a contract: `absent` says no heading reaches for the
@@ -499,6 +504,21 @@ brevity. Everything else goes: sweep methodology, a "what I deliberately kept" s
 per row defending a choice nobody attacked. Same no-op test as the prose — delete a sentence whose
 absence would change no reviewer behaviour.
 
+**A criterion that asks you to report something earns a third: `## Report`.** An audit's scope, why
+a duplication was kept, the overlap with another ticket — state each in that section, one statement
+per criterion that asks. Such a row carries no evidence marker and needs none: the section is what
+discharges it. Its grammar is the registered `report` wire format
+([`wire/report.ts`](../../../../packages/fabrika-cli/src/wire/report.ts)), which the verb that opens
+the PR and the gate that reads it back both resolve, so a heading that drifted is refused when you
+post the body. It is the only body prose besides `## Deviations` the reviewer is
+served ([`review report`](../review/SKILL.md)), and a report-shaped criterion over a body without
+the section is a FAIL.
+
+**An epic child has no PR body, so it writes no `## Report`.** No verb serves a report on a child
+yet. Name each report-shaped row in your `build note` as a row no verb serves on a child, and write
+the report nowhere else: the reviewer grades that row UNKNOWN, as the
+[review skill](../review/SKILL.md) says, and a report left in a comment is not an input it reads.
+
 ```bash
 fabrika build push <<'EOF'
 …body…
@@ -506,7 +526,7 @@ EOF
 ```
 
 The verb is the guard, and it runs in this order. It checks the body first and refuses leaks, stray
-closing keywords and a Deviations section the review gate would read as malformed. A refused body
+closing keywords and a Deviations or Report section the review gate would read as malformed. A refused body
 pushes nothing. Then it pushes, reads the remote ref back, and opens the PR, reading back what
 landed. If an open PR for this branch already exists, it answers `existing` and opens no second one.
 
@@ -551,10 +571,11 @@ cross-lane signal you emit is closed-vocabulary — kind + action + the branded 
 the receiver re-fetches from the artifact.
 
 **A denied tool call is one of those terminals, never an obstacle to route around.** When the
-harness refuses a mutation — an `Edit` the classifier blocks, a command a permission rule denies —
-that refusal is a human saying they decide this one, and re-making the identical change through a
-different tool, a script or a shell command spends the decision without ever asking for it. So do
-not re-attempt it. Stop where you stand, quote the denied action verbatim in a `fabrika build note`
+harness refuses a mutation — on Claude Code, an `Edit` the classifier blocks or a command a
+permission rule denies — that refusal is a human saying they decide this one, and re-making the
+identical change through a different tool, a script or a shell command spends the decision without
+ever asking for it. So do not re-attempt it. Stop where you stand, quote the denied action verbatim
+in a `fabrika build note`
 so the driver reads it before anything is pushed, and end `STOPPED` — `lane report` maps that token
 to a `BLOCKED` event, which is already the routing a denial wants, so no sixth terminal is needed.
 The content being legitimate changes nothing: a change nobody could have refused and a
@@ -644,7 +665,39 @@ your `SHIPPED-PR` lands only against an open PR the board shows linking the issu
 against a local branch in this tree whose commits name the child issue — so a refusal here is the board
 disagreeing with your terminal, never a token to change. On any refusal, print the token and name
 the exit code; the operator re-reads and routes. Then print the token as the last line either way;
-a run whose caller named no lane prints the token only and records nothing.
+a run whose caller named no lane records nothing, and still writes the next paragraph's two plain
+lines above the token.
+
+**Close in plain words, on every ending.** Directly above the token, your closing message ends with
+the two plain lines
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+requires: what happened, and what the person does next. Write both whichever of the six terminals
+you end on, including a `STOPPED` that came before any claim, and word them as that section says.
+A refusal's exit code goes above those lines, and they say what it means. Where the clone passage
+below applies, its `git switch` command is what the person does next.
+
+**Say where you left the person's own clone.** `build release` steps the tree off the lane branch
+it just released, and its answer's `freed` field names that branch, or is `null` when it moved
+nothing. When `freed` names a branch and this tree is the clone's main working tree — `git rev-parse
+--git-dir` and `git rev-parse --git-common-dir` name one directory — a person opens that clone next
+and finds `git status` opening with `HEAD detached at <commit id>`. So your closing message, above
+the token, tells them three things in plain words: the clone is on no branch, nothing is lost
+because the files and commits are as the run left them, and the one command that returns to the
+branch they started on, `git switch <starting-branch>`. The starting branch is the one this clone
+held before this run checked out its lane branch, whether `build branch` cut that branch or resumed
+it — the `from` side of that checkout in `git reflog HEAD`.
+
+**That `from` side is a branch only when the clone stood on one.** A repair run, or a second build
+by a person who never switched back, starts in a clone the earlier run already left on no branch,
+and there the `from` side is a 40-character commit id. `git switch` refuses a commit id, and
+returning to it would leave the person on no branch again. So take the `from` side as the starting
+branch only when `git show-ref --verify refs/heads/<from>` proves it a local branch. Otherwise name
+the repo's default branch, read with `gh repo view --json defaultBranchRef --jq
+.defaultBranchRef.name`, and say why: the clone was already on no branch when this run started, so
+the command returns to the default branch. The message never offers a commit id as the branch to
+return to.
+
+A linked worktree gets no such line: no person stands in it.
 
 ## Repair
 
@@ -813,7 +866,7 @@ round's work — each one you verify is still unfixed, because nothing retires a
 **When the whole fix is the PR body, the route is `fabrika build pr-body <pr>` and nothing else.**
 The recurring one is a FAIL reading `deviations malformed`: the head does not need to move, so a
 push is the wrong tool and a raw `gh` call runs none of the guards `build push` runs on a create. This
-verb runs all of them over the rewrite — leak scan, the `## Deviations` shape, the closing-keyword
+verb runs all of them over the rewrite — leak scan, the `## Deviations` and `## Report` shapes, the closing-keyword
 target read off the PR's own head branch, the classification check — and reads the landed body back.
 Re-send the corrected body on stdin, then answer the finding in a `fabrika build note` and
 release; no commit, no `build check`, no `build push`.

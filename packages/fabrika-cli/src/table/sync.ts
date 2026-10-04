@@ -17,14 +17,17 @@
  *   cell empty, and clears a number standing there, so no row reads a spend nobody measured.
  * - **A group row sums its members, and its members carry no Section**, so they show only in the
  *   members view. A head with no Section, no `bet` and at least one lane lands under Outside the bets.
+ * - **A bet row is never a member**, so sync never clears its Section. It heads its own row even
+ *   when it blocks, or hangs under, another row, and that other row does not sum it.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9856
+ * @ruling https://github.com/kamp-us/phoenix/issues/9972#issuecomment-5974135601
  */
 
 import {OUTSIDE_THE_BETS} from "../config/keys/table.ts";
 import type {FieldValue, ItemFieldValue, ProjectField, ProjectSnapshot} from "../io/projects.ts";
 import type {LaneRecord, Origin} from "../wire/lane-record.ts";
-import {type Group, groupOf, type IssueNode, issuesOf, membersOf} from "./group.ts";
+import {type Bets, type Group, groupOf, type IssueNode, issuesOf, membersOf} from "./group.ts";
 import {FIELD} from "./shape.ts";
 import {addTallies, EMPTY_TALLY, latestRecord, type Tally, tally} from "./tally.ts";
 
@@ -53,11 +56,13 @@ export type Scope =
  * The issues a run touches. From each seed it walks up through open issues — to the epic it hangs
  * under, and to what it blocks — so a lane's record reaches the group rows that sum it. A reached
  * issue heads a row when it is a seed, already a row, or an epic something hangs under. An issue
- * another head stands for is a member, never a head.
+ * another head stands for is a member, never a head. No head stands for a row in `bets`, so a bet
+ * row the walk reaches stays a head and one it does not reach is not touched.
  */
 export const scope = (
 	seeds: ReadonlyArray<number>,
 	rows: ReadonlySet<number>,
+	bets: Bets,
 	graph: ReadonlyMap<number, SyncNode>,
 ): Scope => {
 	const missing = new Set<number>();
@@ -92,7 +97,7 @@ export const scope = (
 		.sort((a, b) => a - b);
 	const groups: Group[] = [];
 	for (const head of candidates) {
-		const membership = groupOf(head, graph);
+		const membership = groupOf(head, graph, bets);
 		if (membership._tag === "Incomplete") {
 			for (const issue of membership.missing) missing.add(issue);
 			continue;
@@ -227,6 +232,14 @@ const optionName = (row: Row, field: string): string | null => {
 	const value = fieldValueOf(row, field)?.value;
 	return value?._tag === "Option" ? value.name : null;
 };
+
+/** The rows whose Stage is `bet`: the boundary no other row's group crosses. */
+export const betsOf = (rows: ReadonlyMap<number, Row>): Bets =>
+	new Set(
+		[...rows.values()]
+			.filter((row) => optionName(row, FIELD.stage) === STAGE.bet)
+			.map((row) => row.issue),
+	);
 
 const numberOf = (row: Row, field: string): number | null => {
 	const value = fieldValueOf(row, field)?.value;

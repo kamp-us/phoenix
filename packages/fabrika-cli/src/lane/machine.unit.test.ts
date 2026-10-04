@@ -920,9 +920,35 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park", () =>
 		]);
 	});
 
-	// A real lane's route out, and the only one permitted: a park is left by a recorded
-	// `UNBLOCKED` and never by a second exit cell, so the landing is recorded from the state the lane
-	// resumes into rather than from inside the park.
+	// A head refreshed while the lane waits on its approval carries no binding verdict, so the round
+	// it owes is walked from `review` and the park is re-entered by the path that reached it the first
+	// time. Nothing here reaches `ship` on its own account: the approval still binds.
+	it("walks a refreshed head out of `human:cp-approval` into `review` and back to the park", () => {
+		const lane = compiled(coderWorkflow());
+		const rereviewed = [...toShip, "BLOCKED", "WIP", "PASS", "BLOCKED"];
+
+		expect(leaves(lane, "issue", rereviewed)).toEqual([
+			...reached,
+			"human:cp-approval",
+			"review",
+			"ship",
+			"human:cp-approval",
+		]);
+		expect(budgets(lane, "issue", rereviewed)).toMatchObject({retries: 0, waits: 0, laps: 0});
+		expect(leaves(lane, "issue", [...rereviewed, "UNBLOCKED"]).at(-1)).toBe("ship");
+	});
+
+	// The cost the second occurrence named: a FAIL at the refreshed head had no cell at the park.
+	it("gives the re-review's FAIL a cell, as an ordinary repair round out of `review`", () => {
+		const lane = compiled(coderWorkflow());
+		const failed = [...toShip, "BLOCKED", "WIP", "FAIL"];
+
+		expect(leaves(lane, "issue", failed).slice(-2)).toEqual(["review", "build"]);
+		expect(budgets(lane, "issue", failed)).toMatchObject({type: "build", retries: 1});
+	});
+
+	// The landing's route out: it is recorded from the state the lane resumes into by `UNBLOCKED`,
+	// never from inside the park, which holds no cell reaching `ship` or `shipped` on its own.
 	it("leaves a park over a merged PR by UNBLOCKED, then records the landing", () => {
 		expect(
 			leaves(compiled(coderWorkflow()), "issue", [...toShip, "BLOCKED", "UNBLOCKED", "DONE"]),

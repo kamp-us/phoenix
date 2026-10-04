@@ -25,6 +25,14 @@
 		"repoNames": ["phoenix", "kamp-us", "Tuval", "sözlük", "apps/web"]
 	},
 
+	// phoenix's two standing lanes (ADR 0208): the labels that are a home in their own right, for
+	// work that is milestone-less by design. fabrika ships no lane, so a repo that leaves this out
+	// runs none (ADR 0286, eviction ruled on #6469). A third lane stays a founder ruling, and is an
+	// edit to this list.
+	"boardVocabulary": {
+		"standingLanes": ["wayfinder:backlog", "axis:pipeline-hardening"]
+	},
+
 	// How many issue lanes a driver may hold at once — the number the founder drove this weekend, now
 	// enforced at the boot instead of remembered (#8264). A seat is an active lane whose issue carries
 	// a live `lane claim`; an active lane nobody claims is idle and counts for nothing (#8484).

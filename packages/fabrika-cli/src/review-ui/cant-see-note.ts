@@ -37,7 +37,7 @@ const nearMissLine = (subject: NoteSubject, miss: NearMiss): string => {
 		case "screenshot":
 			return `- ${link} names the right commit but has no screenshot image.`;
 		case "author":
-			return `- ${link} names the right commit and has a screenshot, but \`${miss.comment.author}\` is not an owner.`;
+			return `- ${link} names the right commit and has a screenshot, but \`${miss.comment.author}\` is not an owner account.`;
 		case "evidence":
 			return `- ${link} names the right commit and has a screenshot, but it is the builder's own evidence comment, which an agent posts.`;
 		case "stamp":
@@ -55,9 +55,9 @@ export const handCheckNote = (
 	return [
 		CANT_SEE_HEADING,
 		"",
-		`${NO_PREVIEW} This repo's rules let an owner check the change by hand instead, and the review is waiting for that.`,
+		`${NO_PREVIEW} This repo's rules let a hand check stand in for the preview: a comment from an owner account, with a screenshot. The review is waiting for that comment.`,
 		"",
-		"**What to do.** An owner posts one new comment on this pull request: the text below, with a screenshot of the change in place of the second line.",
+		"**What to do.** Post one new comment on this pull request from an owner account: the text below, with a screenshot of the change in place of the second line.",
 		"",
 		"```text",
 		`Hand-checked at ${head}.`,
@@ -66,7 +66,7 @@ export const handCheckNote = (
 		"```",
 		"",
 		"- **Add a screenshot image.** A comment with only text does not count.",
-		"- **An owner posts it, never an agent.** An owner is an account on the control-plane row of `.github/CODEOWNERS`.",
+		"- **An owner account posts it.** That is an account on a control-plane row of `.github/CODEOWNERS`. The review checks the account, not who typed the comment.",
 		`- **A new push needs a new comment.** The long code in the text is the head: the newest commit on this pull request, \`${head}\` right now. Every push makes a new head, and a comment naming an old one stops counting.`,
 		"",
 		RERUN,
@@ -94,7 +94,7 @@ export const requireRenderNote = (files: ReadonlyArray<string>): string =>
 		"",
 		"1. **Set up preview deploys.** CI posts a `preview-deploy` comment on the pull request with the deployed address and the head, which is the newest commit on the pull request. The UI review opens that address.",
 		"2. **Let the builder's own run of the app stand in.** The builder runs the app at the head and records what it saw. The UI review accepts that run once the code review has passed at the same head.",
-		"3. **Let an owner's screenshot stand in.** Add a `hand-check` rule for these paths under `reviewUi.whenNoPreview` in `.fabrika.jsonc`. An owner's comment with a screenshot, naming the head, then counts.",
+		"3. **Let an owner account's screenshot stand in.** Add a `hand-check` rule for these paths under `reviewUi.whenNoPreview` in `.fabrika.jsonc`. An owner account's comment with a screenshot, naming the head, then counts.",
 		"4. **Say no rendered review is owed.** Add a `skip` rule for these paths in the same place.",
 		"",
 		'The details are in fabrika\'s guide "Adopt fabrika in a repo you already have", under "If your app has no preview deploys".',

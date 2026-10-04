@@ -41,7 +41,7 @@ const on = (issues: Readonly<Record<number, FakeIssue>>, options = {}) => {
 
 const scopeOf = (issues: Readonly<Record<number, FakeIssue>>, seeds: ReadonlyArray<number>) => {
 	const {github, run} = on(issues);
-	return {github, read: run(readScope(syncBoard, VERB, REPO, seeds, new Set(seeds)))};
+	return {github, read: run(readScope(syncBoard, VERB, REPO, seeds, new Set(seeds), new Set()))};
 };
 
 describe("the shipped board over a whole table", () => {
@@ -54,7 +54,7 @@ describe("the shipped board over a whole table", () => {
 		);
 		const rows = new Set(numbers);
 
-		const scoped = await run(readScope(syncBoard, VERB, REPO, numbers, rows));
+		const scoped = await run(readScope(syncBoard, VERB, REPO, numbers, rows, new Set()));
 		if (scoped._tag !== "Graph") throw new Error(scoped.reason);
 		const read = await run(readRecords(syncBoard, VERB, REPO, scoped, rows));
 		if (read._tag !== "Records") throw new Error(read.reason);
@@ -71,7 +71,7 @@ describe("the shipped board over a whole table", () => {
 		const {github, run} = on({1: {comments: ["a"]}, 2: {comments: ["b"]}});
 		const rows = new Set([1, 2]);
 
-		const scoped = await run(readScope(syncBoard, VERB, REPO, [1, 2], rows));
+		const scoped = await run(readScope(syncBoard, VERB, REPO, [1, 2], rows, new Set()));
 		if (scoped._tag !== "Graph") throw new Error(scoped.reason);
 		await run(readRecords(syncBoard, VERB, REPO, scoped, rows));
 
@@ -86,7 +86,7 @@ describe("the shipped board over a whole table", () => {
 		const {github, run} = on({1: {comments: ["a", "b", "c"], listed: [1]}});
 		const rows = new Set([1]);
 
-		const scoped = await run(readScope(syncBoard, VERB, REPO, [1], rows));
+		const scoped = await run(readScope(syncBoard, VERB, REPO, [1], rows, new Set()));
 		if (scoped._tag !== "Graph") throw new Error(scoped.reason);
 		const read = await run(readRecords(syncBoard, VERB, REPO, scoped, rows));
 		delete process.env.FABRIKA_COMMENT_SCAN_ATTEMPTS;
@@ -132,7 +132,7 @@ describe("an issue a batch could not prove whole", () => {
 	it("refuses PRECONDITION_UNKNOWN, writing nothing, when the batched request fails whole", async () => {
 		const {github, run} = on({1: {}, 2: {}}, {graphqlStatus: 502});
 
-		const scoped = await run(readScope(syncBoard, VERB, REPO, [1, 2], new Set([1, 2])));
+		const scoped = await run(readScope(syncBoard, VERB, REPO, [1, 2], new Set([1, 2]), new Set()));
 
 		expect(scoped._tag).toBe("Refused");
 		if (scoped._tag !== "Refused") return;

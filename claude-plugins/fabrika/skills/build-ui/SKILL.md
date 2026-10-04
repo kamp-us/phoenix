@@ -85,9 +85,10 @@ fabrika ui manifest
 This resolves the **repo's** design surfaces by convention — the design manifest, the typed
 prohibition registry, the component inventory. A repo's own `design-system-manifest.md` is an
 instance, not the definition: whatever repo you run in, its manifest is the law you build to.
-**Exit 12 (no manifest) ends the session at `BLOCKED-NO-MANIFEST`**: tell the user to type
-`/fabrika:front-door` — its bootstrap drafts a manifest from the repo's own pages and styles, and
-in a repo with none yet it proposes a look in plain words and writes it on the owner's yes.
+**Exit 12 (no manifest) ends the session at `BLOCKED-NO-MANIFEST`**: tell the user to run the
+`front-door` skill (on Claude Code, by typing `/fabrika:front-door`) — its bootstrap drafts a
+manifest from the repo's own pages and styles, and in a repo with none yet it proposes a look in
+plain words and writes it on the owner's yes.
 Fail loud, route to the bootstrap, **never improvise a design language**.
 
 ```bash
@@ -230,8 +231,15 @@ in code ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrik
 a token outside it is refused (exit `32`) rather than interpreted, and the verb proves the event
 before it records it — a `SHIPPED-PR` lands only against an open PR the board shows linking the
 issue. On any refusal, print the token and name the exit code; the operator re-reads and routes.
-Then print the token as the last line either way; a run whose caller named no lane prints the token
-only and records nothing.
+Then print the token as the last line either way; a run whose caller named no lane records nothing,
+and still writes the next paragraph's two plain lines above the token.
+
+**Close in plain words, on every ending.** Directly above the token, your closing message ends with
+the two plain lines
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+requires: what happened, and what the person does next. Write both whichever of the five terminals
+you end on, a `STOPPED` and a `BLOCKED-NO-MANIFEST` included, and word them as that section says. A
+refusal's exit code goes above those lines, and they say what it means.
 
 ## Repair
 

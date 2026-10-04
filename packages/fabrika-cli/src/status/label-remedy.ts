@@ -6,18 +6,11 @@
  * bootstrap sets stay the one place that says which command creates which label.
  */
 
-import {Effect, type FileSystem, type Path} from "effect";
 import {CONFIG_PATH} from "../config/document.ts";
-import {type BoardRead, resolveBoard} from "../config/resolve-board.ts";
-import {loadRepoConfig} from "../config/working-root.ts";
-import {FACET_VOCABULARY} from "../triage/facets.ts";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {labelSurface} from "./bootstrap-verb.ts";
 
-/** The board the repo above `cwd` declares, or the reason none of it may be used. */
-export const readBoard = (
-	cwd: string,
-): Effect.Effect<BoardRead, never, FileSystem.FileSystem | Path.Path> =>
-	Effect.map(loadRepoConfig(cwd), (load) => resolveBoard(load, FACET_VOCABULARY));
+export {readBoard} from "./repo-board.ts";
 
 /**
  * The sentence a missing-label refusal ends on.

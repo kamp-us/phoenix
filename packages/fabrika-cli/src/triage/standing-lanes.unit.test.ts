@@ -9,13 +9,10 @@ const read = (files: Record<string, string | null>) =>
 	Effect.runPromise(Effect.provide(readStandingLanes("/repo"), fakeFs({files}).layer));
 
 describe("offeredLanes", () => {
-	it("offers a declared lane the board carries, with its shipped meaning", () => {
+	it("offers a declared lane the board carries, glossed as declared and never by name", () => {
 		expect(offeredLanes(PHOENIX_LANES, new Set(PHOENIX_LANES))).toEqual([
-			{label: "wayfinder:backlog", meaning: "fog — uncharted work upstream of any arc"},
-			{
-				label: "axis:pipeline-hardening",
-				meaning: "the standing pipeline and reliability lane",
-			},
+			{label: "wayfinder:backlog", meaning: DECLARED_MEANING},
+			{label: "axis:pipeline-hardening", meaning: DECLARED_MEANING},
 		]);
 	});
 
@@ -24,12 +21,9 @@ describe("offeredLanes", () => {
 	});
 
 	it("drops only the absent one when the board carries a subset", () => {
-		expect(offeredLanes(PHOENIX_LANES, new Set(["axis:pipeline-hardening"]))).toEqual([
-			{
-				label: "axis:pipeline-hardening",
-				meaning: "the standing pipeline and reliability lane",
-			},
-		]);
+		expect(
+			offeredLanes(PHOENIX_LANES, new Set(["axis:pipeline-hardening"])).map((lane) => lane.label),
+		).toEqual(["axis:pipeline-hardening"]);
 	});
 
 	it("keeps the declared order, not the board's", () => {
@@ -43,42 +37,39 @@ describe("offeredLanes", () => {
 		).toEqual([]);
 	});
 
-	it("says a lane it has no shipped meaning for is one this repo declares, rather than inventing a gloss", () => {
-		expect(offeredLanes(["lane:ops"], new Set(["lane:ops"]))).toEqual([
-			{label: "lane:ops", meaning: DECLARED_MEANING},
-		]);
-	});
-
 	it("offers nothing when the repo declares nothing, whatever the board carries", () => {
 		expect(offeredLanes([], new Set(PHOENIX_LANES))).toEqual([]);
 	});
 });
 
 describe("readStandingLanes", () => {
-	it("resolves the shipped default over a repo declaring no config", async () => {
+	it("resolves zero lanes over a repo declaring no config — nothing is shipped for it", async () => {
 		const lanes = await read({});
-		expect(lanes).toMatchObject({_tag: "Value", value: PHOENIX_LANES});
+		expect(lanes).toMatchObject({_tag: "Value", value: []});
 	});
 
-	it("takes the declared set over the default", async () => {
+	it("resolves zero lanes where `boardVocabulary` is declared without the key", async () => {
+		const lanes = await read({
+			"/repo/.fabrika.jsonc": '{"boardVocabulary": {"priorities": ["p0", "p1"]}}',
+		});
+		expect(lanes).toMatchObject({_tag: "Value", value: []});
+	});
+
+	it("takes the declared set", async () => {
 		const lanes = await read({
 			"/repo/.fabrika.jsonc": '{"boardVocabulary": {"standingLanes": ["lane:ops"]}}',
 		});
 		expect(lanes).toMatchObject({_tag: "Value", value: ["lane:ops"]});
 	});
 
-	/**
-	 * The `declares none` arm has to be reachable from a config file, or `triage homes` documents a
-	 * state no operator can produce. An absent key is a different answer — the default.
-	 */
-	it("reads an explicitly empty declaration as zero lanes, not as the default", async () => {
+	it("reads an explicitly empty declaration as zero lanes, the same answer as an absent key", async () => {
 		const lanes = await read({
 			"/repo/.fabrika.jsonc": '{"boardVocabulary": {"standingLanes": []}}',
 		});
 		expect(lanes).toMatchObject({_tag: "Value", value: []});
 	});
 
-	it("REFUSES a config it cannot decode — never a silent fall back to the shipped lanes", async () => {
+	it("REFUSES a config it cannot decode — never a silent fall back to zero lanes", async () => {
 		const lanes = await read({
 			"/repo/.fabrika.jsonc": '{"boardVocabulary": {"standingLanes": ["lane:ops", ""]}}',
 		});

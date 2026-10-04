@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import {DEFAULT_STATUS_NAMES} from "../labels.ts";
 import {
 	AUDIENCE_NOT_AGENT,
 	NO_ACCEPTANCE_CRITERIA,
@@ -31,12 +32,12 @@ import {
 	NO_CITATION,
 	NO_CRITERIA_REASON,
 	NOT_REPAIR,
+	parseCampaigns,
 	parseCitation,
 	parseClaimPurpose,
 	purposeScopeLine,
 	readCampaigns,
 	repairClaimOf,
-	STANDING_LANE_LABELS,
 	scopeSubjectOf,
 	typeAxisBinds,
 	typeAxisOf,
@@ -121,6 +122,26 @@ describe("readCampaigns", () => {
 
 	it("reads N active rows as the permitted set — campaigns run concurrently", () => {
 		expect(readCampaigns(CAMPAIGNS_44_AND_46)).toEqual(activeBoth);
+	});
+
+	it("reads a table followed by active-at-creation footnote lines exactly as it reads the bare table", () => {
+		const footnote =
+			"fabrika fast follows — active at creation, authorized by https://example.com/ruling";
+		const footnoted = CAMPAIGNS_44.replace(
+			"| switching to fabrika | #45 | done |\n",
+			`| switching to fabrika | #45 | done |\n\n${footnote}\n`,
+		);
+		expect(footnoted).not.toBe(CAMPAIGNS_44);
+		expect(parseCampaigns(footnoted)).toEqual(parseCampaigns(CAMPAIGNS_44));
+		expect(readCampaigns(footnoted)).toEqual(active);
+	});
+
+	it("reads a footnote that begins with a pipe as a data row, so the whole table is malformed", () => {
+		const piped = CAMPAIGNS_44.replace(
+			"| switching to fabrika | #45 | done |\n",
+			"| switching to fabrika | #45 | done |\n\n| fabrika fast follows — active at creation, authorized by https://example.com/ruling |\n",
+		);
+		expect(readCampaigns(piped)._tag).toBe("Malformed");
 	});
 
 	it("makes ONE bad row among good ones malformed for the whole table", () => {
@@ -209,13 +230,21 @@ describe("admissionOf", () => {
 		expect(exclusionReasonOf(out)).toBeNull();
 	});
 
-	for (const lane of STANDING_LANE_LABELS) {
-		it(`reads ${lane} as the home of an issue carrying no milestone`, () => {
+	/** A repo's declared lanes, as a fixture: the admission test carries no lane of its own. */
+	const LANES = ["wayfinder:backlog", "axis:pipeline-hardening"];
+
+	for (const lane of LANES) {
+		it(`reads the declared lane ${lane} as the home of an issue carrying no milestone`, () => {
 			const standing = issue({milestone: null, labels: ["ready-for:agent", "p2", lane]});
-			expect(homeOf(standing)).toBe(lane);
+			expect(homeOf(standing, LANES)).toBe(lane);
 			expect(admissionOf(standing)._tag).toBe("Admitted");
 		});
 	}
+
+	it("reads no lane home off a label the repo did not declare", () => {
+		const standing = issue({milestone: null, labels: ["ready-for:agent", "wayfinder:backlog"]});
+		expect(homeOf(standing, [])).toBeNull();
+	});
 
 	it("refuses ready-for:human on the audience axis, at 21", () => {
 		const out = admissionOf(issue({labels: ["ready-for:human"]}));
@@ -453,7 +482,7 @@ describe("admissionOf", () => {
 		it("is the same predicate the pool filters on", () => {
 			for (const candidate of [decision, epic]) {
 				const listed = {...candidate, title: "", body: "", assigned: false, isPullRequest: false};
-				expect(isCandidate(listed)).toBe(false);
+				expect(isCandidate(listed, DEFAULT_STATUS_NAMES)).toBe(false);
 				expect(admissionOf(candidate)._tag).toBe("TypeNotBuildable");
 			}
 		});

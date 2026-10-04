@@ -220,7 +220,7 @@ describe("resolveApproval", () => {
 		expect(resolveApproval([approval("looks good to me")], cycles(2))).toEqual({_tag: "none"});
 	});
 
-	it("refuses an agent-stamped marker — approval is a founder seat", () => {
+	it("refuses an agent-stamped marker — a stamped comment never approves", () => {
 		const stamped = approval("pitch-approved: appetite 2 cycles\n\nFiled by an agent.");
 		expect(resolveApproval([stamped], cycles(2))).toEqual({_tag: "agent-authored"});
 	});

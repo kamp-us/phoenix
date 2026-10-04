@@ -151,10 +151,13 @@ export const SandboxViewerMemo = Context.Reference<SandboxViewerResolution>(
 	{defaultValue: () => resolveSandboxViewer},        // the unmemoized read
 );
 export const makeSandboxViewerMemo = Effect.cached(resolveSandboxViewer);  // one per request
-export const currentSandboxViewer = Effect.gen(function* () {
+export const currentInPlaceSandboxViewer = Effect.gen(function* () {
 	return yield* yield* SandboxViewerMemo;
 });
 ```
+
+`currentSandboxViewer`, the narrow default, maps over that same read, so both paths share the one
+resolution ([çaylak content containment](./caylak-content-containment.md#a-read-is-narrow-unless-it-asks-to-be-wide)).
 
 Three properties are load-bearing:
 

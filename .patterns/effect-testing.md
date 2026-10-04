@@ -3,7 +3,8 @@
 **Scope:** test projects and database guidance below describe `apps/web`, whose
 integration tier uses real remote D1. Fiber coordination and bounded-wait guidance
 also apply to Tuval. Its integration project exercises real local sessions and
-sockets, with no D1 or cloud credentials.
+sockets, with no D1 or cloud credentials, so it runs anywhere
+([ADR 0461](../.decisions/0461-ci-only-follows-deploy-credentials.md)).
 Use the owning app's Vitest projects; the shared tier vocabulary is in
 [LANGUAGE.md](../.glossary/LANGUAGE.md#the-two-test-tiers-unit--integration-and-seam-graduation).
 
@@ -14,7 +15,7 @@ Two tiers, no middle, **no faked engine**. The split is whether a test needs a d
 | Tier | What it tests | Backed by | Examples |
 |---|---|---|---|
 | **`unit`** | Pure logic and Effect control flow — **no database, no SQL engine, no I/O**. The unit under test sits on a seam whose lower layer is substituted directly (the `Database` / `Drizzle` seam is already mockable — a `Layer.succeed(Drizzle, …)` with a recording or throwing `run`). | nothing — the seam below is substituted (`Layer.succeed(Drizzle, …)`) | `keyset.unit.test.ts`, `pasaport/errors.unit.test.ts`, `env.unit.test.ts`, `Vote.unit.test.ts`, `Drizzle.unit.test.ts`, `live-publisher.unit.test.ts`, `queries.unit.test.ts` |
-| **`integration`** | Real behavior against **real remote Cloudflare D1**, the deployed worker, the DOs, and the fate seam — black-box over HTTP | **real remote D1** + the deployed worker; a run-scoped shared stage by default, dedicated stages where assertions require isolation | the suites under `tests/integration/` |
+| **`integration`** | Real behavior at a real boundary a substituted seam cannot stand in for. In `apps/web`: **real remote Cloudflare D1**, the deployed worker, the DOs, and the fate seam — black-box over HTTP, CI-only because it needs a deploy token. In Tuval: real local sessions and sockets, no credentials, runs anywhere ([ADR 0461](../.decisions/0461-ci-only-follows-deploy-credentials.md)) | `apps/web`: **real remote D1** + the deployed worker; a run-scoped shared stage by default, dedicated stages where assertions require isolation. Tuval: a real session behind a real loopback socket | `apps/web`: the suites under `tests/integration/`. Tuval: `src/**/*.integration.test.ts` |
 
 **`unit` runs offline** in the `unit` Vitest project (default node pool, no workerd, no database). **`integration`** is the separate `integration` project — black-box HTTP against an alchemy-deployed worker, authored over the harness in [alchemy-test-harness.md](./alchemy-test-harness.md). No miniflare, no `@cloudflare/vitest-pool-workers`, no `SELF.fetch`, no `env.PHOENIX_DB`, no `runInDurableObject`. **If you're writing an integration test, stop reading here and go to that doc.**
 

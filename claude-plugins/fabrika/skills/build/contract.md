@@ -79,7 +79,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | Verb | Purpose | Split test |
 |---|---|---|
 | `build tree` | prove the ground: optionally clean, optionally this lane's | two git-derivable assertions — no judgment; *what to do on a refusal* (stop, report) stays in the skill |
-| `build pick` | the ranked candidate pool: `status:triaged` + `ready-for:agent` + unassigned, paginated | a label/assignee filter over a paged listing, plus the same `blocked_by` gate `build claim` runs — no judgment; the *choice* among candidates stays in the skill |
+| `build pick` | the ranked candidate pool: the board's triaged status + `ready-for:agent` + unassigned, paginated | a label/assignee filter over a paged listing, plus the same `blocked_by` gate `build claim` runs — no judgment; the *choice* among candidates stays in the skill |
 | `build eligible` | one issue's dependency gate: `eligible` / blocked-by-named-edge / UNKNOWN | derivable entirely from the issue's native `blocked_by` edges, those blockers' states, and the commits `epic/<parent>` adds over the trunk in this tree |
 | `build claim` | race the earliest-authorized claim on an issue; win, or name the winner | a deterministic race protocol; *what to do on a loss* stays in the skill |
 | `build confirm` | re-prove this LANE still holds the claim before a mutation | a lookup with a defined answer |
@@ -253,8 +253,8 @@ until one of them has run.
 - **The issue's body** — for the criteria block.
 
 Those four are the whole input set. `homeOf` derives a home separately — the open
-milestone's number, or a standing-lane label (`wayfinder:backlog`, `axis:pipeline-hardening`) — but
-only `build pick`'s ranking and its histogram rows read it.
+milestone's number, or a standing-lane label the repo declares under `boardVocabulary.standingLanes`
+— but only `build pick`'s ranking and its histogram rows read it.
 
 **The outcomes — state words, never a boolean.** The admission test returns exactly one across all
 three axes, and every refusal carries its reason and names which axis refused:
@@ -489,9 +489,10 @@ fabrika build pick [--repo <owner/name>] [--limit <n>]
 **Output** — machine. One JSON object:
 `{"pool": [...], "excluded": {...}, "unread": n, "scanned": {"p0": n, "p1": n, "p2": n}, "bets": {...}}`.
 Each pool entry: `{"number", "title", "priority", "type", "home", "bet"}` — `home` is the open
-milestone's number as a string, or the standing-lane label (`wayfinder:backlog` /
-`axis:pipeline-hardening`) for an issue with no milestone; `bet` says whether the table in force
-bet on it. **Bets first**, then `p0` → `p1` → `p2`, milestone order within a bucket (below).
+milestone's number as a string, or the standing-lane label for an issue with no milestone, or `null`.
+The lanes are the ones `.fabrika.jsonc` declares under `boardVocabulary.standingLanes`; a repo that
+declares none has no lane home, and a declaration that could not be read refuses on `11`. `bet` says
+whether the table in force bet on it. **Bets first**, then `p0` → `p1` → `p2`, milestone order within a bucket (below).
 **An empty pool is a fact and prints `{"pool": [], ...}` on exit 0** with the scanned counts proving
 what was searched — never an empty stdout (interface convention rule 2).
 
@@ -518,7 +519,9 @@ how many issues it bets on, and how many of those were graph-read and survived �
 
 The filter, fail-closed on every axis:
 
-- `status:triaged` present, `status:` nothing-else;
+- the board's triaged status present and no other status beside it. The name is read off
+  `.fabrika.jsonc`'s `boardVocabulary.statuses.triaged` — `status:triaged` where the repo declares
+  none — and a status is any label that board names as one, or any label under `status:`;
 - **admitted by the shared admission test** imported from
   `packages/fabrika-cli/src/build/scope-admission.ts` — this verb re-derives nothing. On this seam
   the test's **audience axis** is the one that excludes with a reason (`ready-for:agent` present; an
@@ -610,7 +613,7 @@ on top of that, unpaginated. Here either every bucket was read in full or the an
 
 | Code | Trigger |
 |---|---|
-| `11` | any bucket read failed or came back truncated, or the table project could not be read in a repository that declares a `table` block — for any reason but a missing `project` scope — the pool is UNKNOWN, never partial and never ranked as if nothing were bet on |
+| `11` | any bucket read failed or came back truncated, `.fabrika.jsonc`'s board vocabulary — the status names and standing lanes this verb reads off it — did not resolve, or the table project could not be read in a repository that declares a `table` block — for any reason but a missing `project` scope — the pool is UNKNOWN, never partial and never ranked as if nothing were bet on |
 
 A malformed `--limit` is a plain usage error: `1`, per the reserved table. `21`, `30` and `32` are
 **not** reachable here: a refusal on the browse path is an exclusion with a reason, not the verb's
@@ -622,9 +625,10 @@ verdict — the pool still answers on `0`. Those codes are the claim seam's.
 |---|---|---|
 | `build pick: cannot read the <bucket> bucket: <reason> — the pool is UNKNOWN, never partial.` | 11 | refusal |
 | `build pick: cannot read the bets: <reason> — the pool order is UNKNOWN, never ranked as if nothing were bet on.` | 11 | refusal |
+| `build pick: cannot read .fabrika.jsonc's board vocabulary: <reason> — which labels this board runs on is UNKNOWN, never the shipped names.` | 11 | refusal |
 | `build pick: --limit "<value>" is not a positive integer.` | 1 | usage error |
 
-**Scope** — every open issue in `--repo` carrying `status:triaged`, read via paginated REST; the
+**Scope** — every open issue in `--repo` carrying the board's triaged status, read via paginated REST; the
 table project's items with their Stage, Section and Table day cells, when there is a project; the
 `blocked_by` graph of each admitted candidate in rank order, until `--limit` survive; plus, for each
 candidate the graph reads blocked, that issue's parent and the commits `epic/<parent>` adds over the
@@ -3047,7 +3051,11 @@ The guards, in order, all before any write:
    naming that line. "None." is content, silence is not,
    and a prose bullet is refused here rather than a review round later (the *truth* of the
    section stays the skill's — a verb can force the author to write, not to be
-   honest); exactly one closing-keyword line, targeting `<number>` and matching `--partial`
+   honest); a `## Report` section, when a heading reaches for one, reads `Found` through the
+   registered `report` wire format
+   ([`packages/fabrika-cli/src/wire/report.ts`](../../../../packages/fabrika-cli/src/wire/report.ts)),
+   the module `review report` reads, and a body with no such heading passes, since most PRs owe
+   no report; exactly one closing-keyword line, targeting `<number>` and matching `--partial`
    (`Fixes #<n>` without `--partial`, `Part of #<n>` with it); no second closing keyword aimed
    at any other issue, since a stray one auto-closes a ticket the PR does not fix.
 4. **no forbidden classification** (`10`), by a closed pattern set, checked outside code fences,
@@ -3079,7 +3087,7 @@ posts the literal string.
 | Code | Trigger |
 |---|---|
 | `3` | stdin held nothing |
-| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format — absent, empty, a drifted heading, or an entry short a field — or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
+| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format — absent, empty, a drifted heading, or an entry short a field — or a `## Report` section reads `Malformed` through the `report` wire format, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
 | `5` | the body carries a machine-local path |
 | `6` | the body is a bare `@` path reference |
 | `7` | the issue is proven absent or closed |
@@ -3096,6 +3104,7 @@ posts the literal string.
 |---|---|---|
 | `build pr: stdin held nothing — the body is the input.` | 3 | refusal |
 | `build pr: the body's "## Deviations" section is not readable — <the wire format's reason>. State each deviation as an entry, or state "None."` | 4 | refusal |
+| `build pr: the body's "## Report" section is not readable — <the wire format's reason and the heading it judged>. Write the report under "## Report", or rename a heading that is not the report.` | 4 | refusal |
 | `build pr: the body says "Fixes #<n>" but --partial was given — a partial PR must say "Part of #<n>".` | 4 | refusal |
 | `build pr: the body carries a closing keyword aimed at #<m> — this PR serves #<n>.` | 4 | refusal |
 | `build pr: the body carries a machine-local path: <first hit> — redact before posting.` | 5 | refusal |
@@ -3211,7 +3220,7 @@ argv value, never `-f body=@file`, which posts the literal string.
 | Code | Trigger |
 |---|---|
 | `3` | stdin held nothing |
-| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
+| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format, or a `## Report` section reads `Malformed` through the `report` wire format, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
 | `5` | the body carries a machine-local path |
 | `6` | the body is a bare `@` path reference |
 | `7` | the PR is proven absent, closed or merged |
@@ -3228,6 +3237,7 @@ argv value, never `-f body=@file`, which posts the literal string.
 |---|---|---|
 | `build pr-body: stdin held nothing — the body is the input.` | 3 | refusal |
 | `build pr-body: the body's "## Deviations" section is not readable — <the wire format's reason>. State each deviation as an entry, or state "None."` | 4 | refusal |
+| `build pr-body: the body's "## Report" section is not readable — <the wire format's reason and the heading it judged>. Write the report under "## Report", or rename a heading that is not the report.` | 4 | refusal |
 | `build pr-body: the body carries a closing keyword aimed at #<m> — this PR serves #<n>.` | 4 | refusal |
 | `build pr-body: the body carries a machine-local path: <first hit> — redact before posting.` | 5 | refusal |
 | `build pr-body: the body is a bare @ path reference — write the body, not a pointer to it.` | 6 | refusal |

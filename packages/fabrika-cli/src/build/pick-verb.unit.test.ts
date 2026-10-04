@@ -233,16 +233,104 @@ describe("runPick", () => {
 		expect(pool(out)).toEqual([]);
 	});
 
-	it("names a standing lane as the home when there is no milestone", async () => {
-		const out = await run([
-			[
-				bucket("p0"),
-				candidatePage({number: 500, labels: [...TRIAGED, "p0", "axis:pipeline-hardening"]}),
-			],
-			[bucket("p1"), EMPTY],
-			[bucket("p2"), EMPTY],
-		]);
+	/** One lane-labelled, milestone-less candidate; whether the label is a home is the repo's call. */
+	const LANE_CANDIDATE: ReadonlyArray<Scripted> = [
+		[
+			bucket("p0"),
+			candidatePage({number: 500, labels: [...TRIAGED, "p0", "axis:pipeline-hardening"]}),
+		],
+		[bucket("p1"), EMPTY],
+		[bucket("p2"), EMPTY],
+	];
+
+	it("names a declared standing lane as the home when there is no milestone", async () => {
+		const out = await run(
+			LANE_CANDIDATE,
+			{},
+			fakeFs({
+				files: {
+					"/repo/.fabrika.jsonc": JSON.stringify({
+						boardVocabulary: {standingLanes: ["axis:pipeline-hardening"]},
+					}),
+				},
+			}),
+		);
 		expect(JSON.parse(out.stdout).pool[0].home).toBe("axis:pipeline-hardening");
+	});
+
+	it("reads no home off that label in a repo that declares no lane", async () => {
+		const out = await run(LANE_CANDIDATE);
+		expect(JSON.parse(out.stdout).pool[0].home).toBeNull();
+	});
+
+	it("refuses a lane declaration nobody could read on 11 — never ranked as a repo with no lane", async () => {
+		const seams = fakeSeams([...LANE_CANDIDATE, NO_BLOCKERS, NO_TABLE]);
+		const fs = fakeFs({
+			files: {"/repo/.fabrika.jsonc": JSON.stringify({boardVocabulary: "wayfinder:backlog"})},
+		});
+		const out = await Effect.runPromise(
+			Effect.provide(runPick(options), Layer.merge(seams.layer, fs.layer)),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			"build pick: cannot read .fabrika.jsonc's board vocabulary",
+		);
+		expect(out.stderr.at(-1)).toContain(
+			"which labels this board runs on is UNKNOWN, never the shipped names",
+		);
+		expect(seams.requests.filter((line) => line.includes("labels=status%3Atriaged"))).toEqual([]);
+	});
+
+	describe("a repo that renamed its triaged status", () => {
+		const RENAMED = fakeFs({
+			files: {
+				"/repo/.fabrika.jsonc": JSON.stringify({
+					boardVocabulary: {statuses: {triaged: "state:ready"}},
+				}),
+			},
+		});
+		const renamedBucket = (priority: string) =>
+			new RegExp(
+				`^GET https://api\\.github\\.com/repos/o/r/issues\\?state=open&labels=state%3Aready%2C${priority}`,
+			);
+		const READY = ["state:ready", "ready-for:agent", "type:bug"];
+
+		/**
+		 * The reported failure, end to end: the work is labelled with the renamed status, and a pool
+		 * queried under the shipped name answered empty on exit 0. Only the renamed query is scripted,
+		 * so a read under `status:triaged` has no answer to come back empty from.
+		 */
+		it("returns the issues carrying the renamed label instead of an empty pool", async () => {
+			const out = await run(
+				[
+					[renamedBucket("p0"), candidatePage({number: 500, labels: [...READY, "p0"]})],
+					[renamedBucket("p1"), EMPTY],
+					[renamedBucket("p2"), EMPTY],
+				],
+				{},
+				RENAMED,
+			);
+			expect(out.code).toBe(0);
+			expect(pool(out).map((row) => row.number)).toEqual([500]);
+		});
+
+		it("keeps out an issue still carrying a second status under the renamed board", async () => {
+			const out = await run(
+				[
+					[
+						renamedBucket("p0"),
+						candidatePage({number: 500, labels: [...READY, "status:needs-info", "p0"]}),
+					],
+					[renamedBucket("p1"), EMPTY],
+					[renamedBucket("p2"), EMPTY],
+				],
+				{},
+				RENAMED,
+			);
+			expect(out.code).toBe(0);
+			expect(pool(out)).toEqual([]);
+		});
 	});
 
 	it("prints an empty pool as a FACT on exit 0, with the scanned counts beside it", async () => {

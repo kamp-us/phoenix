@@ -127,6 +127,8 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Production-ready kamp.us | #57 | active |
 | Tuval on tea | #58 | active |
 
+Geçit product push — active at creation, authorized by https://github.com/kamp-us/phoenix/pull/6417#issuecomment-5347095221
+
 **Tuval programs** carries the new Tuval scope after the first slice shipped: the program authoring API (#8716) and the desk showing kernel children (#8715). **Tuval first slice - fast follows** remains open and active for follow-up repairs discovered during Tuval work, including when its backlog is temporarily empty. Completing the current issues does not close this campaign; closure requires an explicit founder decision.
 
 **Tuval on tea** moves Tuval off its own Effect host onto `@demlik/tea` 0.18's Effect engine, and ends the repo on one tea pin (epic #9785). It is the phoenix half of demlik's campaign of the same name, which closes when this lands.
@@ -135,6 +137,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 
 - **Columns** are `Campaign | Milestone | State`, in that order. `Campaign` is the founder-voice name; `Milestone` pins the campaign to its GitHub milestone **by number** (`#N`) — the same row→milestone-by-number binding the roadmap-guard already enforces on `## Arcs`, and that number is the one link to the operational projection. `State` is the lifecycle cell.
 - **`State ∈ {active, paused, done}`** — the lifecycle cell. `active` means the theme is being worked and its milestone is draining. `paused` means the campaign is alive and nobody is working it right now: the milestone stays open. `done` means the milestone is fully drained (its GitHub milestone closed). There is no `queued` state: unlike an arc, a campaign is not sequenced ahead. **A newly added row is `paused`** — writing the row records the campaign, and flipping the cell to `active` is the separate, explicit act that says it is being worked (founder ruling on #6289, 2026-08-19). Resuming a paused campaign is that same flip. **No state refuses, skips or parks a lane** ([ADR 0417](.decisions/0417-campaigns-are-themes-not-dispatch-permission.md)): an agent may build an issue whatever its milestone's campaign reads.
+- **Active at creation is footnoted.** A row minted `active` in its creating commit skips that default, so it carries a `<campaign> — active at creation, authorized by <url>` line below the table, naming the row and linking the ruling that allowed it ([ADR 0452](.decisions/0452-active-at-creation-campaign-footnote.md)). The line sits after the table's last row, outside the `Campaign | Milestone | State` grammar, and never begins with `|`: a `|`-leading line is read as a data row. It carries no state and no milestone.
 
 **Nothing active is a real state, not a failure.** A missing table, an empty one, and one whose every row is `paused` or `done` are the same well-formed default: no theme is being worked. **One unreadable row makes the whole table unreadable**, though: no reader falls back to the rows it could parse.
 

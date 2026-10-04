@@ -13,7 +13,7 @@ import {PHOENIX_SOZLUK_STAMP_WAVE} from "../../../src/flags/keys.ts";
 import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
-import {currentSandboxViewer} from "../kunye/sandbox.ts";
+import {currentInPlaceSandboxViewer} from "../kunye/sandbox.ts";
 import {currentMutedIds} from "../mute/read-mask.ts";
 import {Sozluk} from "./Sozluk.ts";
 import {toDefinition, toTermFromPage} from "./shapers.ts";
@@ -34,7 +34,7 @@ export const queries = {
 		Effect.fn("term")(function* ({args, select}) {
 			const sozluk = yield* Sozluk;
 			// Resolved once (identity + moderator probe) for both the term and its definitions (#1205).
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const viewerId = sandboxViewer.viewerId;
 			const page = yield* sozluk.getTerm(args.slug, {sandboxViewer});
 			if (!page) return null;

@@ -619,7 +619,7 @@ const judgeRuling = (
 			}
 			if (isAgentStamped(read.body)) {
 				return missed(
-					`${linked}, which is agent-provenance-stamped — a ruling is a founder seat, never agent-satisfiable`,
+					`${linked}, which is agent-provenance-stamped — a ruling counts only from a write+ account's comment that carries no agent stamp`,
 				);
 			}
 			if (!namesIssue(read.body, candidate.number)) {
@@ -680,7 +680,7 @@ const APPROVAL_DETAIL: {
 	none: "carries a well-formed pitch but no founder `pitch-approved:` comment — awaiting the founder",
 	unauthorized: "its only `pitch-approved:` comment is not from a write+ collaborator",
 	"agent-authored":
-		"its only `pitch-approved:` comment is agent-provenance-stamped — approval is a founder seat, never agent-satisfiable",
+		"its only `pitch-approved:` comment is agent-provenance-stamped — approval counts only from a write+ account's comment that carries no agent stamp",
 	"malformed-marker":
 		"its `pitch-approved:` comment names no `appetite <S|M|L>` (or legacy `appetite <N> cycles`) — approval must bind the appetite it approved",
 };

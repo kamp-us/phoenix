@@ -216,14 +216,15 @@ fabrika triage homes
 
 ```
 triage homes: scanned 1 open milestone in you/your-repo.
-triage homes: standing lanes: 0 of 2 declared carry a label in you/your-repo — not offered: wayfinder:backlog, axis:pipeline-hardening.
+triage homes: standing lanes: this repo declares none.
 triage homes: campaigns: none active.
 homes
 milestone	1	First arc
 ```
 
-Your milestone is the `milestone` row. The `standing lanes` line is expected on a new repo; the
-adoption guide says [what a standing lane is](adopt-fabrika-in-a-new-repo.md#8-the-lane-rows-if-you-get-any).
+Your milestone is the `milestone` row. The `standing lanes` line says you have declared none, which
+is right for a new repo: every issue homes on a milestone. The adoption guide says
+[what a standing lane is](adopt-fabrika-in-a-new-repo.md#8-the-lane-rows-if-you-get-any).
 
 ## 8. Name an owner and add a CI check
 
@@ -433,6 +434,12 @@ SHIPPED-PR
 
 Above that word it prints the pull request's URL. Use the pull request's number in the next step.
 
+The build also leaves your clone on no branch. `git status` now opens with
+`HEAD detached at <commit id>`, which is git's way of saying the clone sits on a commit and not on a
+branch. That is expected. The builder steps off its own branch when it finishes, so a later fix can
+pick that branch up again, and it leaves your files as they are. Nothing is lost. `git switch main`
+returns to main whenever you want, and you do not need to switch back before the next step.
+
 This issue only changes text. An issue with a screen is built with `/fabrika:operate <n>` instead,
 where `<n>` is the issue's number: `/fabrika:build` builds text only and stops on a screen.
 
@@ -466,7 +473,7 @@ In this run it answered:
 
 The shipper mentions an exit `33` and restarts itself on the way. It needs nothing from you.
 
-The builder left your clone on its own branch. Go back to yours and pull the merge:
+Your clone is still on no branch, as the build left it. Go back to main and pull the merge:
 
 ```bash
 git switch main

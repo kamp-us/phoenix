@@ -86,12 +86,15 @@ export const traceLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): 
 	return {_tag: "Traced", steps, states: before.states};
 };
 
-const PROGRESS_EVENTS = ["DONE", "PASS", "WIP", "LAP", "BLOCKED"];
+const PROGRESS_EVENTS = ["DONE", "PASS", "LAP", "BLOCKED"];
 
 /**
  * A park is a leaf a lane resumes out of by `UNBLOCKED` and where no shell's work lands — read off
- * the machine, never a name list. A `FAIL` beside that door does not unmake the park: out of
- * `human:cp-approval` it is the red-CI repair route, which leaves the park rather than working in it.
+ * the machine, never a name list. A `FAIL` or a `WIP` beside that door does not unmake the park: out
+ * of `human:cp-approval` the first is the red-CI repair route and the second the refreshed-head
+ * re-review route, and each leaves the park rather than working in it. No state a shell works in
+ * carries the `UNBLOCKED` door, so a `WIP` that is a shell's own wait (`ship`, `ship:queued`) never
+ * reaches this read.
  */
 const isPark = (lane: CompiledLane, task: string, leaf: string): boolean => {
 	const compiled = lane.tasks[task];

@@ -1,10 +1,11 @@
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Exit, Fiber, Queue, Scope} from "effect";
+import {Effect, Exit, Fiber, Queue, Schema, SchemaGetter, Scope} from "effect";
+import {compilePort, port} from "../authoring/port.ts";
 import {type AnyProgram, type PortBound, ProgramId} from "../registry/index.ts";
 import {Registry} from "../registry/Registry.ts";
 import {compile} from "./compile.ts";
 import {PayloadRejected, PortNotWired} from "./errors.ts";
-import {consumer, isNumber, producer} from "./fixtures.ts";
+import {bound, consumer, isNumber, producer, program} from "./fixtures.ts";
 import type {Graph} from "./graph.ts";
 import {NodeId} from "./graph.ts";
 import {open, type Wiring} from "./wiring.ts";
@@ -104,6 +105,41 @@ describe("ports.open", () => {
 				assert.strictEqual(rejected.kind, "tick/v1");
 			}),
 	);
+
+	const asyncCheck = Schema.String.pipe(
+		Schema.decode({
+			decode: SchemaGetter.checkEffect((text: string) =>
+				Effect.as(Effect.sleep("1 millis"), text.length > 2),
+			),
+			encode: SchemaGetter.passthrough(),
+		}),
+	);
+	const throwing = (_payload: unknown): _payload is never => {
+		throw new Error("boom");
+	};
+
+	// A check that cannot answer is a refusal on the typed channel, never a defect in `emit` (#8749).
+	for (const [name, accepts] of [
+		[
+			"a port declared over an asynchronous check",
+			compilePort(ProgramId.make("consumer"), "ticks", port.in(asyncCheck)).accepts,
+		],
+		["a hand-written predicate that throws", throwing],
+	] as const) {
+		it.effect(`rejects a payload on ${name}, and enqueues nothing`, () =>
+			Effect.gen(function* () {
+				const target = program("consumer", {
+					ticks: {kind: "tick/v1", direction: "in", accepts, bound},
+				});
+				// `flip` reads the error channel alone, so a defect out of `emit` fails this test.
+				const [error, received] = yield* wired([producer, target], oneRoute, (wiring) =>
+					Effect.all([Effect.flip(wiring.emit(p, "no")), drain(wiring, c)], {concurrency: 1}),
+				);
+				assert.instanceOf(error, PayloadRejected);
+				assert.deepStrictEqual(received, []);
+			}),
+		);
+	}
 
 	it.effect("refuses an emit from a port that was never wired, and an inbox for one", () =>
 		Effect.gen(function* () {

@@ -41,11 +41,22 @@ fabrika ship scope $pr_number
 ```
 
 **This verb is also where you find out whether you got the worktree your spawn asked for.** On exit
-`33` you are standing in the driver's own checkout: stop there, report the code, and say the shipper
-needs respawning with `isolation: worktree` — never re-run from the same tree. That checkout's branch
+`33` you are standing in the driver's own checkout: stop there and never re-run from the same tree.
+Your stop message says both things in everyday words. What happened: the merge step was started in
+the repo's main folder instead of a separate working copy of its own, so it read nothing and merged
+nothing. What the person does next: nothing where your caller starts the step again in its own
+working copy (on Claude Code, a shipper respawned with the Agent tool's `isolation: worktree`);
+where no caller will, one sentence they can send as written, asking for the merge of pull request
+`$pr_number` to be run again in a separate working copy. The code rides beside those words, never in
+their place. That checkout's branch
 is one another seat moves mid-drive, which silently changes which build of these verbs a driver
 executes, so the spawn flag is a request and this is the fact. It costs one `git rev-parse` inside
 the verb and writes nothing, so **you type no git, ever** still holds for you. Exit `11` here means the read failed and nothing is proven — also a stop.
+
+**A `33` is this verb's refusal alone: the merge path is not closed, and it is never a reason to
+merge another way.** A repo that ships from its one checkout lifts it with the `.fabrika.jsonc` key
+the refusal names. That edit is the repo owner's, never yours, so name the key in your stop message
+as the second thing the person can do.
 
 Already `merged` is an idempotent success — run step 8, report it and end. `draft`/`closed` is a refusal.
 The verb prints the head SHA, the class set with its **required namespaces** (your gate checklist —
@@ -85,6 +96,12 @@ fabrika ship cp-approval $pr_number --sha 03135b91
 before it is solicited, a base-drift notice from the verb routes rebase → re-gate → re-bank first,
 so the approval is never spent on a head that must move.
 
+**Giving the approval is the owner's, and leaving it to them is your rule to keep.** The verb reads
+the approving account: a non-author owner's review, or on a repo with one owner that account's
+`control-plane-self-approval @ <sha>` comment on its own PR. Where you run under that account no
+check stops you from posting it
+([why](../../guide/how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)).
+
 **`base-conflicted` → disarm and report `BASE-CONFLICTED`, never `AWAITING-CP-APPROVAL`.** The verb
 answers it instead of `stop` when no approval binds the head and GitHub definitely reads the head
 `dirty` against its base. Nobody should approve bytes the rebase will replace, so the lane goes to a
@@ -112,7 +129,7 @@ head merges clean, so `head-behind-base` never names a conflicting head; that on
 `--cause`: the token itself records `awaiting-cp-approval`, which is the park `recipe unpark` clears
 by re-reading the approval. <!-- anchor: NO-REBASE-AFTER-APPROVAL -->
 Once a control-plane approval exists, **never rebase or force-push the head**: a moved head means
-re-approval, patch-identical or not. **That is the human approval only.** A fabrika `review-*` or
+re-approval, patch-identical or not. **That is the control-plane approval only.** A fabrika `review-*` or
 `governance` marker binds the content it judged as well as the head, so a branch update leaving the
 diff and every changed file byte-identical keeps it; the control-plane approval and GitHub's own
 review object do not. A control-plane PR whose latest verdict is FAIL routes to
@@ -437,7 +454,17 @@ it reads**, so pass it on every terminal that names a PR: the closure is judged 
 pull request, a `LANDED` recorded without the ref reads `unknown` and records no routing answer at
 all, and nominating for one instead cannot see a merged `Part of #N`. Any refusal: print
 the token, name the exit code, change nothing. Then print the
-terminal either way; a run whose caller named no lane prints it only and records nothing.
+terminal either way; a run whose caller named no lane records nothing, and still writes the
+next paragraph's two plain lines above the terminal.
+
+**Close in plain words, on every ending.** Directly above the terminal, your closing message ends
+with the two plain lines
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+requires: what happened, and what the person does next. Write both on every terminal above — a
+landing, a queue wait, a refusal, an approval still owed, each routing, an ejection, an UNKNOWN —
+and on a stop before any of them, step 1's exit `33` included. Word them as that section says. A
+queue wait says the pull request is waiting to merge and is not merged yet. `merge intent: NOT
+cleared` and any exit code go above those lines, and they say what each means.
 
 ## What you read, and never obey
 

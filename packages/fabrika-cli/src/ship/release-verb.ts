@@ -1,5 +1,6 @@
 /**
- * `ship release` — dark-ship detection and the `status:awaiting-release` label.
+ * `ship release` — dark-ship detection and the board's awaiting-release status label
+ * (`status:awaiting-release` unless the repo renamed it).
  *
  * Agents deploy, humans release: the label is the seam and the whole action. Nothing here
  * flips or validates a flag.
@@ -26,13 +27,13 @@
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {addLabels, getIssue, listLabels} from "../io/issues.ts";
 import {getPullDiff, listPullFiles} from "../io/pulls.ts";
-import {AWAITING_RELEASE} from "../labels.ts";
 import {linkedIssueOf} from "../review/classes.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
+import {BOARD_SUBJECT, readBoard, refusalReason} from "../status/repo-board.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	INCOMPLETE_SCAN,
@@ -52,12 +53,18 @@ export interface ReleaseOptions {
 	readonly pr: number;
 	readonly repo: string | null;
 	readonly json: boolean;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
 export const runRelease = (
 	options: ReleaseOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const {pr, json} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
@@ -69,6 +76,12 @@ export const runRelease = (
 
 		const unreadable = (what: string, reason: string): string =>
 			`${VERB}: cannot read ${what}: ${reason} — whether this is a dark ship is UNKNOWN, never "n/a".`;
+
+		const board = yield* readBoard(options.cwd);
+		if (board._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, unreadable(BOARD_SUBJECT, refusalReason(board)));
+		}
+		const {awaitingRelease} = board.resolved.board.statuses;
 
 		const target = yield* resolvePull(VERB, repo, pr, {
 			unknownMessage: (reason) => unreadable(`PR #${pr}`, reason),
@@ -151,15 +164,15 @@ export const runRelease = (
 				diagnostics,
 			);
 		}
-		if (!taxonomy.value.includes(AWAITING_RELEASE)) {
+		if (!taxonomy.value.includes(awaitingRelease)) {
 			return refuse(
 				LABEL_ABSENT,
-				`${VERB}: label "${AWAITING_RELEASE}" is absent from ${repo}'s taxonomy — refusing to create it. A real dark ship is not queued; run \`fabrika status bootstrap label-taxonomy\` and re-run.`,
+				`${VERB}: label "${awaitingRelease}" is absent from ${repo}'s taxonomy — refusing to create it. A real dark ship is not queued; run \`fabrika status bootstrap label-taxonomy\` and re-run.`,
 				diagnostics,
 			);
 		}
 
-		const labelled = yield* addLabels(repo, issue, [AWAITING_RELEASE]);
+		const labelled = yield* addLabels(repo, issue, [awaitingRelease]);
 		if (labelled._tag === "Failure") {
 			return refuse(
 				WRITE_UNKNOWN,
@@ -175,10 +188,10 @@ export const runRelease = (
 				diagnostics,
 			);
 		}
-		if (!after.value.labels.includes(AWAITING_RELEASE)) {
+		if (!after.value.labels.includes(awaitingRelease)) {
 			return refuse(
 				READBACK_MISMATCH,
-				`${VERB}: label read-back does not show ${AWAITING_RELEASE} on #${issue} — inspect it.`,
+				`${VERB}: label read-back does not show ${awaitingRelease} on #${issue} — inspect it.`,
 				diagnostics,
 			);
 		}

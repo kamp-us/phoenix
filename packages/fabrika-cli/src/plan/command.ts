@@ -206,7 +206,7 @@ const approve = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Record a control-plane approval of the epic's plan."),
+	Command.withShortDescription("Record a control-plane account's approval of the epic's plan."),
 	Command.withDescription(
 		[
 			'Posts an approval bound to the scope digest it derives and prints {"answer":"approved",…}.',
@@ -216,7 +216,7 @@ const approve = leafCommand(
 			"  9: posted; the read-back does not match",
 			"  10: not a type:epic",
 			"  11: a read failed; nothing was posted",
-			"  24: the account is not on the control-plane roster",
+			"  24: the invoking account is not on the control-plane roster",
 			'  Derivation: the check-epic-plan skill\'s contract.md, "Verb inventory"',
 		].join("\n"),
 	),

@@ -569,6 +569,19 @@ describe("lane brief", () => {
 		expect(out.stderr.join("\n")).toContain("human:cp-approval");
 	});
 
+	it("briefs the reviewer once a refreshed head's `WIP` walks the park back into `review`", async () => {
+		const out = await run(lane("5751", ["WIP", "DONE", "PASS", "BLOCKED", "WIP"]), [
+			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+			...linked(5751, [5790, PR_URL]),
+		]);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {state: "review", shell: "reviewer", ground: {_tag: "Pull", pr: PR_URL}},
+		});
+	});
+
 	it("refuses a task the machine does not hold", async () => {
 		const out = await run(lane("5751", ["WIP"]), [], {task: "issue_9999"});
 

@@ -1,7 +1,7 @@
 ---
 id: 0082
 title: Two Test Tiers — Unit (No DB) and Integration (Real D1 via alchemy `Test.make`)
-status: extended-in-part by [0104](0104-two-mode-integration-test-tier.md)
+status: extended-in-part by [0104](0104-two-mode-integration-test-tier.md); amended-in-part by [0461](0461-ci-only-follows-deploy-credentials.md)
 date: 2026-06-17
 tags: [testing, architecture, alchemy, d1]
 ---
@@ -181,3 +181,7 @@ tier's **per-file-stage** shape is superseded by a run-scoped shared stage for t
 irreducible real-D1/DO files plus a downward move of the pure-logic files to the
 `unit` tier — the per-file 24× create/destroy surface was the root of the
 #1010/#1019/#1020 flake cluster.
+
+Amended-in-part by [0461](0461-ci-only-follows-deploy-credentials.md): the `integration`
+definition above is `apps/web`'s and stands for every suite that deploys to Cloudflare. 0461 says
+what the same tier name means for an app that is not a Cloudflare worker.

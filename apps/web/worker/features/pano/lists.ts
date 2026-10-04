@@ -18,7 +18,7 @@ import * as Schema from "effect/Schema";
 import {toPostSort} from "../../../src/lib/panoFeedSort.ts";
 import {emptyKeysetPage} from "../../db/keyset.ts";
 import {toConnection} from "../fate/connection.ts";
-import {currentSandboxViewer} from "../kunye/sandbox.ts";
+import {currentInPlaceSandboxViewer} from "../kunye/sandbox.ts";
 import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
 import {currentMutedIds} from "../mute/read-mask.ts";
 import {Bookmark} from "./Bookmark.ts";
@@ -67,7 +67,7 @@ export const lists = {
 			// The feed admits a çaylak-sandboxed post to its author, a moderator, or the
 			// opted-in in-place reader of #6423 — the rule is `sandboxVisibleWhere` in
 			// lifecycle/SandboxVisibility.ts (#1205).
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const viewerId = sandboxViewer.viewerId;
 			// Gated behind the default-off `member-mute` flag — empty set means unchanged
 			// feed (#3113).
@@ -113,7 +113,7 @@ export const lists = {
 			// Resolve the sandbox viewer once, exactly as the feed does: a bookmarked
 			// çaylak-sandboxed post the viewer could see in the feed must still resolve
 			// on the re-hydrate, or the saved list silently drops it (#6424).
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const viewerId = sandboxViewer.viewerId;
 			if (!viewerId) {
 				return toConnection<PostSummaryRow, Post>(

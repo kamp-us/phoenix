@@ -113,6 +113,17 @@ describe("runPr — the body guards run before any write", () => {
 		);
 	});
 
+	it("refuses a malformed Report section on 4", async () => {
+		const out = await run(
+			[],
+			withBody(BODY.replace("## Deviations", "## Report\n\n## Deviations")),
+		);
+		expect(out.code).toBe(BAD_SECTIONS);
+		expect(out.stderr.at(-1)).toContain(
+			'build pr: the body\'s "## Report" section is not readable — "## Report" is present and its section is empty',
+		);
+	});
+
 	it("refuses a stray closing keyword on 4 (#4471)", async () => {
 		const out = await run(
 			[],
@@ -411,6 +422,27 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 		);
 		expect(out.code).toBe(BAD_SECTIONS);
 		expect(out.stderr.at(-1)).toContain('build pr-body: the body\'s "## Deviations" section');
+		expect(shell.requests.some((line) => PATCH_BODY.test(line))).toBe(false);
+	});
+
+	it("refuses a malformed Report section on 4, and writes nothing", async () => {
+		const shell = fakeSeams([...LANE_ONLY, head(), [PATCH_BODY, PATCHED]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runPrBody({
+					...bodyOptions,
+					stdin: Effect.succeed<StdinRead>({
+						_tag: "Text",
+						text: BODY.replace("## Deviations", "## report\n\nscope: all\n\n## Deviations"),
+					}),
+				}),
+				shell.layer,
+			),
+		);
+		expect(out.code).toBe(BAD_SECTIONS);
+		expect(out.stderr.at(-1)).toBe(
+			'build pr-body: the body\'s "## Report" section is not readable — the report heading has drifted, expected "## Report" — line 5: "## report". Write the report under "## Report", or rename a heading that is not the report.',
+		);
 		expect(shell.requests.some((line) => PATCH_BODY.test(line))).toBe(false);
 	});
 

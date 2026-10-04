@@ -23,6 +23,7 @@ import {
 	requiredEdges,
 } from "../build/dependencies.ts";
 import {openIssue} from "../build/target.ts";
+import type {StatusNames} from "../config/board.ts";
 import {CONFIG_PATH} from "../config/document.ts";
 import {
 	CONTAINMENT_VOCABULARY,
@@ -31,9 +32,11 @@ import {
 	readContainment,
 } from "../config/keys/containment-vocabulary.ts";
 import {resolve} from "../config/load.ts";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {loadRepoConfig} from "../config/working-root.ts";
 import {blockedBy} from "../io/edges.ts";
 import {getIssue, type IssueRecord} from "../io/issues.ts";
+import {BOARD_SUBJECT, readBoard, refusalReason} from "../status/repo-board.ts";
 import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {read as readAcceptanceCriteria} from "../wire/acceptance-criteria.ts";
@@ -101,6 +104,33 @@ export const readContainmentVocabulary = (
 		}
 	});
 
+/**
+ * The board this repo resolves to, or the refusal it owes.
+ *
+ * Read beside the containment vocabulary and for the same reason: the digest leaves out the two
+ * status labels `plan flip` writes, so a board nobody could read leaves the digest — and every
+ * verdict and approval bound to it — UNKNOWN rather than computed over the shipped names.
+ */
+export type BoardVocabularyRead =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Board"; readonly read: Extract<BoardRead, {readonly _tag: "Resolved"}>};
+
+export const readBoardVocabulary = (
+	messages: PlanMessages,
+	cwd: string,
+): Effect.Effect<BoardVocabularyRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.map(readBoard(cwd), (read) =>
+		read._tag === "Refused"
+			? {
+					_tag: "Refused" as const,
+					outcome: refuse(
+						PRECONDITION_UNKNOWN,
+						messages.unreadable(BOARD_SUBJECT, refusalReason(read)),
+					),
+				}
+			: {_tag: "Board" as const, read},
+	);
+
 export type EpicTarget =
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
 	| {readonly _tag: "Epic"; readonly issue: IssueRecord};
@@ -163,6 +193,8 @@ export const loadLedger = (
 	/** Where this repo keeps its cycle doc — `cycleDoc`, resolved by the verb. */
 	cycleDocPath: string,
 	vocabulary: ContainmentVocabulary,
+	/** The board's status labels by role — the digest leaves out the two `plan flip` writes. */
+	statuses: StatusNames,
 	/** The caller's environment, which is where the GitHub credential resolves from. */
 	env: Readonly<Record<string, string | undefined>>,
 ): Effect.Effect<
@@ -290,7 +322,7 @@ export const loadLedger = (
 		};
 		return {
 			_tag: "Ledger" as const,
-			ledger: {...scope, digest: scopeDigest(scope)},
+			ledger: {...scope, digest: scopeDigest(scope, statuses)},
 			required: requiredEdges(parsed),
 		};
 	});

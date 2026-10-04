@@ -26,7 +26,7 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `unusable.ts` | `unusableReason(load)` — the one reason no value of this config may be used, which is what a gate keys on instead of the refusal arm |
 | `containment.ts` | The triage-facet containment invariant, checked over declared data |
 | `board.ts` | The board vocabulary's shape (`BoardVocabulary`, `StatusNames`) and how a facet's delete authority is composed from it — pure, so `triage/facets.ts` can build the shipped default off it |
-| `resolve-board.ts` | `resolveBoard(load, shipped)` — joins `boardVocabulary` and `triageFacets` into one table and re-runs containment over the join |
+| `resolve-board.ts` | `resolveBoard(load, shipped)` — joins `boardVocabulary` and `triageFacets` into one table and re-runs containment over the join. Every verb that writes or reads a board label goes through it ([below](#the-boards-statuses-on-the-write-side-and-the-read-side)) |
 | `ci-producer.ts` | `producerFor(...)` — the "does this repo produce CI at all" rule `review ci` and `ship checks` both decide through, over a workflow count and `ci.noProducer` |
 | `paths.ts` | One reader per path key off the working tree — the value, where it came from, and the refusal a verb prints verbatim |
 
@@ -150,6 +150,49 @@ which reads both layers through `repoConfigLayers` (or `readConfigLayers` under 
 `loadLayeredConfig` and never calls `loadRepoConfig`. A rule about the local layer is enforced in the
 load (`loadLayeredConfig`), which both readers share, not in either opener.
 
+## The board's statuses, on the write side and the read side
+
+`boardVocabulary.statuses` drives both sides of the board through the one `resolveBoard`
+([#6428](https://github.com/kamp-us/phoenix/issues/6428#issuecomment-5363116003)). A repo that
+renames a status gets the new label created, written, queried and flipped under the same name.
+
+| Side | Verbs | Door |
+|---|---|---|
+| write | `status bootstrap` | `resolveBoard(loadConfig(source), FACET_VOCABULARY)` in `status/bootstrap-verb.ts` |
+| write | `triage apply`, `triage park` | `guardConfig` in `triage/config-guard.ts` |
+| read | `build pick`, `status board`, `ship release`, `ledger child` | `readBoard(cwd)` in `status/repo-board.ts` |
+| read | `plan flip` and every `plan` verb that computes the scope digest | `readBoardVocabulary` in `plan/load.ts`, over the same `readBoard` |
+
+Four rules hold for a verb that reads a status.
+
+**Take the name off the resolved board by its role.** `board.statuses.triaged`, never an import of
+`TRIAGED` from `labels.ts`. Those constants are the shipped default (`DEFAULT_STATUS_NAMES`) and
+nothing else. No verb indexes `statusList()` by position; using it as a set is fine, as
+`build pick` does to tell that an issue carries a second status.
+
+**A refused board refuses the verb.** `Refused` never falls back to the shipped names. A repo that
+renamed a status carries no issue under the old label, so a query under it comes back empty on
+exit `0` and reads as "no work". Each reading verb words the refusal in its own voice, naming
+`.fabrika.jsonc's board vocabulary` and the reason, and seats it on its own `11` before it queries
+or writes a label. The two triage writers refuse on `18` (`CONFIG_REFUSED`), because their gate also
+runs `unusableReason` over the whole config.
+
+**Pure code takes the statuses as a parameter.** `plan/digest.ts` leaves the two labels `plan flip`
+writes out of the scope digest, so `scopeDigest(ledger, statuses)` and `flipLabels(statuses)` take
+the role record from the verb that read the board. A pure module that imported the names could only
+ever exclude the shipped pair.
+
+**One read per run.** A verb that needs two things off the board takes both from one `readBoard`:
+`build pick` and `ledger child` read the status and the standing lanes together, and `plan flip`
+hands the same read to `missingLabelRemedy`. Two loads of one file can disagree if it changes
+between them.
+
+Not every reader is on the resolved board yet. The homing and pitch guards, the plan floor's
+`status:` prefix test, `triage queue`, `triage split`, `graduate emit` and `report` still select the
+shipped names; [#8854](https://github.com/kamp-us/phoenix/issues/8854) owns them. `ledger adopt`,
+the table agenda and the main alarm do too, reported as
+[#10427](https://github.com/kamp-us/phoenix/issues/10427).
+
 ## The machine-local layer
 
 A machine may declare a key in a gitignored `.fabrika.local.jsonc` beside the tracked file, so a
@@ -263,28 +306,6 @@ The caller owes the resolution arm in its message even when both arms carry the 
 `codeValidators`" off `Default`, because the fix differs: one repo wrote the wrong thing and the
 other wrote nothing.
 
-## A key over a closed id set merges, and refuses an id it does not know
-
-`surfaceDispositions` (#6301) is a record rather than a list: one entry per repo surface fabrika
-reads, each `fail-loud | degrade | bootstrap`. Two rules make that shape safe.
-
-**The registry is the shipped default, and a repo declares only what it moves.** A declared record is
-merged over the shipped one, so `{"design-manifest": "degrade"}` resolves as that one change and
-every other surface at its shipped disposition. Requiring the whole record instead would make a repo
-restate thirty-odd values it does not care about, and every restated value is one that drifts.
-
-**An id outside the registry is `Malformed`, not ignored.** `"desing-manifest": "degrade"` is a
-disposition the operator believes is configured and is not, and nothing would ever say so — the same
-failure the whole-value refusal above exists for, arriving through a key name instead of a value.
-The registry is therefore closed and carries a one-line note per id saying what the surface is, so
-the ids are readable without a second document.
-
-**A note nothing prints is a note nobody reads.** The resolved value is an id-to-word map, which
-tells a caller what happens and never what the surface *is* — so `status settings --surfaces` joins
-the registry's notes to the resolved dispositions and prints one `surface` row each. The join lives
-with the key (`surfaceNotes`), not in the verb, because the notes and the overrides are two halves
-of one answer and neither is complete alone.
-
 ## The editor schema, assembled from the fragments
 
 A hand-edited config with no editor support is where a silent typo turns a gate off — the feedback
@@ -302,8 +323,8 @@ Three things hold.
 
 **The fragment is single-sourced beside the decoder.** It describes the *declared* value's shape —
 that a key is absent-optional is the document's rule, not each fragment's. A fragment derived from
-another module's data reads it there rather than restating it: `surfaceDispositions` enumerates its
-ids off `SURFACE_REGISTRY`, `boardVocabulary` builds its status roles off `STATUS_ROLES`.
+another module's data reads it there rather than restating it: `boardVocabulary` builds its status
+roles off `STATUS_ROLES`.
 
 **An incomplete registry refuses the assembly whole.** The `jsonSchema` field is optional on the
 type but required in practice: `assembleSchema` names any registered key that carries no fragment and

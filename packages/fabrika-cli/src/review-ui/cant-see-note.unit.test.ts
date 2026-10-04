@@ -47,7 +47,7 @@ describe("handCheckNote", () => {
 			"/o/r/pull/6#issuecomment-11) by `owner` names the right commit but has no screenshot image.",
 		);
 		expect(note).toContain("#issuecomment-12) by `agent`");
-		expect(note).toContain("`agent` is not an owner");
+		expect(note).toContain("`agent` is not an owner account");
 	});
 
 	it("says when an owner account's comment was refused as an agent's", () => {

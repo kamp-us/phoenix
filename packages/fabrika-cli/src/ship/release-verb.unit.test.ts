@@ -1,6 +1,13 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
+import {
+	fakeFs,
+	fakeSeams,
+	type HttpReply,
+	once,
+	type Scripted,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PULL_FILES_CAP} from "../io/pulls.ts";
 import {
@@ -68,20 +75,26 @@ const DECLARING_DIFF = `diff --git a/${FLAG_REGISTRY} b/${FLAG_REGISTRY}
 +	FlagshipFlag("sozluk-new-thing", {defaultVariation: "off"}),
 `;
 
-const options = {pr: 4321, repo: null, json: false, env: ENV};
+const options = {pr: 4321, repo: null, json: false, cwd: "/repo", env: ENV};
 
 const run = (
 	script: ReadonlyArray<Scripted>,
 	http: ReadonlyArray<Scripted> = [],
 	overrides: Partial<typeof options> = {},
+	config = unconfigured,
 ) =>
 	Effect.runPromise(
-		Effect.provide(runRelease({...options, ...overrides}), fakeSeams([...script, ...http]).layer),
+		Effect.provide(
+			runRelease({...options, ...overrides}),
+			Layer.merge(fakeSeams([...script, ...http]).layer, config),
+		),
 	);
 
 const runObserved = (script: ReadonlyArray<Scripted>, http: ReadonlyArray<Scripted> = []) => {
 	const seams = fakeSeams([...script, ...http]);
-	return Effect.runPromise(Effect.provide(runRelease(options), seams.layer)).then((out) => ({
+	return Effect.runPromise(
+		Effect.provide(runRelease(options), Layer.merge(seams.layer, unconfigured)),
+	).then((out) => ({
 		out,
 		calls: seams.requests,
 	}));
@@ -112,6 +125,47 @@ describe("runRelease", () => {
 			[[REGISTRY, REGISTRY_SERVED]],
 		);
 		expect(out.stdout).toBe("release\tqueued\tsozluk-vote-widget\n");
+	});
+
+	it("queues under the label a repo renamed awaiting-release to, never the shipped name", async () => {
+		const seams = fakeSeams([
+			pullRecord({body: "Fixes #4287\n\nFlag: sozluk-vote-widget\n"}),
+			[FILES, twoFiles],
+			diff(PLAIN_DIFF),
+			[LABELS, taxonomy("state:release-queue", "status:awaiting-release")],
+			[LABEL, {status: 200, body: "[]"}],
+			[ISSUE, served(issue(["state:release-queue"]))],
+			[REGISTRY, REGISTRY_SERVED],
+		]);
+		const config = fakeFs({
+			files: {
+				"/repo/.fabrika.jsonc": JSON.stringify({
+					boardVocabulary: {statuses: {awaitingRelease: "state:release-queue"}},
+				}),
+			},
+		});
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(seams.layer, config.layer)),
+		);
+		expect(out.stdout).toBe("release\tqueued\tsozluk-vote-widget\n");
+		const posted = seams.requests.findIndex((line) => LABEL.test(line));
+		expect(JSON.parse(seams.bodies[posted] ?? "{}")).toEqual({labels: ["state:release-queue"]});
+	});
+
+	it("refuses a config that gives no board on 11, before it reads the pull request", async () => {
+		const seams = fakeSeams([]);
+		const config = fakeFs({
+			files: {"/repo/.fabrika.jsonc": JSON.stringify({boardVocabulary: {statuses: "queued"}})},
+		});
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(seams.layer, config.layer)),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			"ship release: cannot read .fabrika.jsonc's board vocabulary",
+		);
+		expect(seams.requests).toEqual([]);
 	});
 
 	it("answers no-issue — never n/a — when a signal fires with nothing to label", async () => {

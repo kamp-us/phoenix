@@ -107,7 +107,7 @@ as the sibling contracts do):
 |---|---|---|
 | `plan read` | fetch the epic and its children, parse the ledger, print it as one object | fetch + registered parses — no judgment; *what the plan is worth* stays in the skill |
 | `plan check` | the deterministic floor: the fifteen hard defect types over the scanned child set | a total function from the ledger to a sorted defect list; the whole pass/fail decision, checkable by construction |
-| `plan flip` | flip every `status:planned` child to `status:triaged` and the epic itself to `ready-for:agent`, re-gating first, reporting the **observed** result for each | a guarded batch write with a read-back — no judgment; *what a partial flip means* stays in the skill |
+| `plan flip` | flip every child on the board's planned status to its triaged one and the epic itself to `ready-for:agent`, re-gating first, reporting the **observed** result for each | a guarded batch write with a read-back — no judgment; *what a partial flip means* stays in the skill |
 | `plan verdict` | post the gate's verdict comment, bound to the scope digest, and read it back | marker composition + a guarded write; the caveats are the skill's judgment, taken as input |
 | `plan approve` | post the approval marker on the epic, bound to a scope digest the verb derives itself, and read it back | an ACL-checked guarded write with a read-back — no judgment; **no `--digest` flag exists**, because an approval whose scope its caller supplies attests whatever the caller pleased |
 | `plan restage` | reconcile an already-minted epic's machine-owned `## Dependencies` region against its children's observed close state, dropping every ref the board proves closed without landing | a filter with a read-back — no judgment; *whether the reconciled plan is still worth building* stays in the skill, and the drop rule is `lane emit`'s own boot rule read backwards |
@@ -246,16 +246,21 @@ canonical serialization of the inputs the floor read. One line per child, ascend
 one epic line, joined by `\n` with no trailing newline:
 
 ```
-#<number>|labels=<names, ascending, comma-joined, EXCLUDING status:planned and status:triaged>|assignees=<logins ascending comma-joined, or "" observed-empty, or "?" unobserved>|ac=<count, or "?" when not Found>|stories=<ids ascending comma-joined, or "none", or "?" when absent or non-conforming>|containment=<flag|exempt|none|?>
+#<number>|labels=<names, ascending, comma-joined, EXCLUDING the board's planned and triaged statuses>|assignees=<logins ascending comma-joined, or "" observed-empty, or "?" unobserved>|ac=<count, or "?" when not Found>|stories=<ids ascending comma-joined, or "none", or "?" when absent or non-conforming>|containment=<flag|exempt|none|?>
 epic=<number>|stories=<ids ascending comma-joined, or "" when the epic declares none>|cycleDoc=<present|absent|unknown>|deps=<"p<i>:<ref>,<ref>" segments ascending, joined by ";">|edges=<"<dependent>><prerequisite>" pairs ascending, joined by ";">
 ```
 
 <a id="flip-neutral"></a>
 **The flip is digest-neutral and floor-neutral by construction — this is the invariant the whole
-gate rests on.** The only two labels `plan flip` writes on a **child** are `status:planned` and
-`status:triaged`, and both are **excluded from the digest serialization**. Neither is a floor trigger
-either: `MISSING_LABEL` requires *a* `status:` prefix, which both satisfy, and `NEEDS_TRIAGE_LABEL`
-names `status:needs-triage`, which the flip never writes. The audience labels it writes on the
+gate rests on.** The only two labels `plan flip` writes on a **child** are the board's planned and
+triaged statuses, and both are **excluded from the digest serialization**. The pair is read by role
+off `.fabrika.jsonc`'s `boardVocabulary.statuses` (`planned`, `triaged`): `status:planned` and
+`status:triaged` where the repo declares none, and its own two names where it renamed them. A board
+vocabulary that does not resolve is `11` on every verb that computes the digest, and `plan flip`
+writes nothing. **A renamed pair has to stay under `status:`.** Neither label is a floor trigger
+while it does: `MISSING_LABEL` tests that literal prefix on every child, so a pair renamed outside
+it reds `plan check` and `plan flip` refuses. `NEEDS_TRIAGE_LABEL` names `status:needs-triage`,
+which the flip never writes. The audience labels it writes on the
 **epic** are neutral for a stronger reason: the epic line carries no labels field at all, and every
 defect in the enum is derived from a child, so nothing about the epic's own labels reaches either the
 digest or the floor. So a digest taken at check time still binds
@@ -458,7 +463,7 @@ absent or non-conforming. `topology` is the imported `readTopology` parse. `cycl
 | `4` | the epic body's `## Dependencies` is `Unparseable`; a ledger section appears more than once; a child's `**Stories:**` or `**Containment:**` field line appears more than once; or a **non-empty** `### User stories` list is not contiguous from 1 |
 | `7` | the epic is proven absent (404) or closed, or it has zero sub-issue children |
 | `10` | the issue is not a `type:epic` |
-| `11` | the epic, the sub-issue list, or a child could not be read (when this was written this row also named the `product-development-cycle.md` probe, so the premise is stale and the conclusion is not — the probe is total and answers `unknown` on a failed read, which the output schema above carries and `plan check` names in `skipped`; `11` stays reachable by the three reads named here) |
+| `11` | the epic, the sub-issue list, or a child could not be read; or `.fabrika.jsonc` could not be read or decoded for one of the three keys this verb takes from it — `containmentVocabulary`, the board vocabulary (`boardVocabulary`, whose planned and triaged statuses the digest leaves out), or the declared cycle-doc path. The probe for the cycle doc itself is not among them: it is total and answers `unknown` on a failed read, which the output schema above carries and `plan check` names in `skipped` |
 
 An **absent** `## Dependencies` block is *not* `4` — it is defect `MISSING_DEPS_SECTION`, which
 `plan check` derives. `4` is the unparseable, duplicated and mis-numbered cases only.
@@ -627,6 +632,12 @@ fabrika plan flip 3 --digest 4d90e1bb27ac --token <claim-token>
 | `--digest` | string, 12 lowercase hex | yes | — | the scope digest `plan check` printed; the flip refuses if the plan has moved since |
 | `--token` | string | yes | — | the claim token `build claim <epic> --purpose gate` printed — which lane is asking |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
+
+**`status:planned` and `status:triaged` below name the board's planned and triaged statuses.** The
+verb takes both by role off `.fabrika.jsonc`'s `boardVocabulary.statuses`, so on a board that renamed
+them every rule in this section holds for the renamed pair, and the pair has to stay under `status:`
+for the [floor](#flip-neutral) to pass. A board vocabulary that does not resolve is `11`, and nothing
+is written.
 
 **Output** — machine. The **observed** results over the children and for the epic, never the
 intended ones:

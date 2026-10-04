@@ -36,9 +36,15 @@ export type SweepPlan =
 			readonly unhomed: ReadonlyArray<Unhomed>;
 	  };
 
-/** Plan a sweep over the open `status:triaged` backlog, through the guard's own verdict. */
-export const planSweep = (issues: ReadonlyArray<TriagedIssue>): SweepPlan => {
-	const verdict = judge(issues, {_tag: "backlog"});
+/**
+ * Plan a sweep over the open `status:triaged` backlog, through the guard's own verdict. `lanes` is
+ * the set the repo declares, the same one the guard judges against.
+ */
+export const planSweep = (
+	issues: ReadonlyArray<TriagedIssue>,
+	lanes: ReadonlyArray<string>,
+): SweepPlan => {
+	const verdict = judge(issues, lanes, {_tag: "backlog"});
 	if (verdict.pass) {
 		const {scanned, homed, exempt} = verdict;
 		return {_tag: "Planned", scanned, homed, exempt, clears: [], unhomed: []};
@@ -60,14 +66,23 @@ export const planSweep = (issues: ReadonlyArray<TriagedIssue>): SweepPlan => {
  * Whether a freshly re-read issue still carries the breach the plan was made from. The board read
  * ages across a sweep, so a milestone someone changed or cleared since is not this run's to clear.
  */
-export const stillDoubleMarked = (fresh: TriagedIssue, planned: DoubleMarked): boolean => {
-	const now = resolve(fresh);
+export const stillDoubleMarked = (
+	fresh: TriagedIssue,
+	planned: DoubleMarked,
+	lanes: ReadonlyArray<string>,
+): boolean => {
+	const now = resolve(fresh, lanes);
 	return now.kind === "double-marked" && now.milestone === planned.milestone;
 };
 
 /** Whether the read-back after the clear is the exempt shape the clear was for, lanes intact. */
-export const landedExempt = (back: TriagedIssue, planned: DoubleMarked): boolean =>
-	resolve(back).kind === "exempt" && planned.lanes.every((lane) => back.labels.includes(lane));
+export const landedExempt = (
+	back: TriagedIssue,
+	planned: DoubleMarked,
+	lanes: ReadonlyArray<string>,
+): boolean =>
+	resolve(back, lanes).kind === "exempt" &&
+	planned.lanes.every((lane) => back.labels.includes(lane));
 
 /**
  * The hidden marker a trail comment carries, keyed on the milestone it records dropping. A re-run

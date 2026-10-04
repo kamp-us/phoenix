@@ -175,7 +175,7 @@
 				},
 				"standingLanes": {
 					"type": "array",
-					"description": "The standing-lane labels; an empty list means every issue homes on a milestone.",
+					"description": "The standing-lane labels this repo runs. Nothing is shipped for it: an absent key and an empty list both mean every issue homes on a milestone.",
 					"items": {
 						"type": "string",
 						"minLength": 1
@@ -752,64 +752,20 @@
 			"minLength": 1,
 			"pattern": "^(?!/)(?!\\.\\.).+"
 		},
-		"surfaceDispositions": {
+		"shipScope": {
 			"type": "object",
-			"description": "What this repo does when a surface fabrika reads is missing. Declare only the ids you move; every other falls to its shipped disposition.",
-			"propertyNames": {
-				"enum": [
-					"gh-rest",
-					"git-worktree",
-					"git-origin",
-					"git-history",
-					"authoritative-source-checkout",
-					"collaborator-permissions",
-					"issue-dependencies",
-					"settings-patch",
-					"dep-pin",
-					"hand-check-rule",
-					"label-taxonomy",
-					"issue-shape-markers",
-					"standing-lanes",
-					"issue-home",
-					"roadmap-focus",
-					"cycle-doc",
-					"decisions-corpus",
-					"decisions-rarity-floor",
-					"patterns-dir",
-					"patterns-index",
-					"patterns-admission-bar",
-					"glossary-registers",
-					"prose-homes",
-					"doc-gates",
-					"dep-manifest",
-					"design-manifest",
-					"design-prohibitions",
-					"design-inventory",
-					"golden-pointer",
-					"ui-surfaces",
-					"dev-server",
-					"preview-deployment",
-					"codeowners",
-					"landing-path",
-					"required-status-contexts",
-					"governance-floor-workflow",
-					"code-validators",
-					"readout-artifact",
-					"gitignore-row",
-					"claude-md-section",
-					"temp-root",
-					"claim-signal",
-					"verdict-history"
-				]
+			"description": "Whether `ship scope` answers from the repository's main working tree.",
+			"properties": {
+				"mainWorkingTree": {
+					"type": "string",
+					"description": "What a shipper's own `ship scope` does when it stands in the main working tree: `refuse` (exit 33 with nothing read — the shipped default, and the behaviour before this key) or `allow` (read the pull request and print its scope from there, for a repo that keeps one checkout or ships by hand).",
+					"enum": [
+						"refuse",
+						"allow"
+					]
+				}
 			},
-			"additionalProperties": {
-				"type": "string",
-				"enum": [
-					"fail-loud",
-					"degrade",
-					"bootstrap"
-				]
-			}
+			"additionalProperties": false
 		},
 		"table": {
 			"type": "object",

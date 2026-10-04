@@ -104,7 +104,7 @@ import {
 } from "./flags.ts";
 import {readHeads, stopOn} from "./flags-read.ts";
 import {type FlagsBoard, flagsBoard} from "./flags-verb.ts";
-import {type Group, groupOf, kindOf, membersOf} from "./group.ts";
+import {type Bets, type Group, groupOf, kindOf, membersOf} from "./group.ts";
 import {
 	flagCount,
 	healthOf,
@@ -117,7 +117,7 @@ import {responseTargetOf} from "./on-call.ts";
 import {onCallIssuesOf, onCallItemsOf, readOnCall} from "./on-call-prep.ts";
 import {type RuledUnbuilt, ruledSuspects, ruledUnbuiltOf} from "./ruled.ts";
 import {FIELD} from "./shape.ts";
-import type {Row, SyncNode} from "./sync.ts";
+import {betsOf, type Row, type SyncNode} from "./sync.ts";
 import {
 	GRAPH_CAP,
 	githubWave,
@@ -248,13 +248,14 @@ const prefetchGroups = <R>(
 	board: PrepBoard<R>,
 	repo: string,
 	graph: Map<number, SyncNode>,
+	bets: Bets,
 	heads: ReadonlyArray<number>,
 ): Effect.Effect<void, never, R> =>
 	Effect.gen(function* () {
 		const unread = new Set<number>();
 		for (;;) {
 			const lacking = heads.flatMap((head) => {
-				const membership = groupOf(head, graph);
+				const membership = groupOf(head, graph, bets);
 				return membership._tag === "Derived" ? [] : membership.missing;
 			});
 			const wanted = [...new Set(lacking)].filter((n) => !graph.has(n) && !unread.has(n));
@@ -271,11 +272,12 @@ const groupFor = <R>(
 	board: PrepBoard<R>,
 	repo: string,
 	graph: Map<number, SyncNode>,
+	bets: Bets,
 	head: number,
 ): Effect.Effect<Group | Refusal, never, R> =>
 	Effect.gen(function* () {
 		for (;;) {
-			const membership = groupOf(head, graph);
+			const membership = groupOf(head, graph, bets);
 			if (membership._tag === "Derived") return membership.group;
 			for (const issue of membership.missing) {
 				if (graph.size >= GRAPH_CAP) {
@@ -477,14 +479,16 @@ export const runPrep = <R>(
 			});
 			triageFirst = sorted.triageFirst;
 			const graph = new Map(heads.graph);
+			const bets = betsOf(heads.table);
 			yield* prefetchGroups(
 				board,
 				repo,
 				graph,
+				bets,
 				sorted.candidates.map((candidate) => candidate.issue),
 			);
 			for (const candidate of sorted.candidates) {
-				const group = yield* groupFor(board, repo, graph, candidate.issue);
+				const group = yield* groupFor(board, repo, graph, bets, candidate.issue);
 				if (group._tag === "Refused") return refuse(group.code, group.reason);
 				selection = admit(selection, candidate, group, table.agendaCap);
 			}

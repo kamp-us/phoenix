@@ -76,7 +76,7 @@ const scope = leafCommand(
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
-				caller: "shipper",
+				caller: {_tag: "shipper", cwd: process.cwd()},
 			}),
 		);
 	}),
@@ -87,7 +87,7 @@ const scope = leafCommand(
 			"\n  7: the PR is absent, has no changed files, or its diff derives no namespace" +
 			"\n  11: a read failed; the scope is UNKNOWN" +
 			"\n  13: the changed-file list hit GitHub's 3000-file ceiling, so it is partial" +
-			"\n  33: this is the main working tree; respawn the shipper with `isolation: worktree`" +
+			"\n  33: the main working tree, and `shipScope.mainWorkingTree` is not `allow`" +
 			'\n  Derivation: the ship skill\'s contract.md, "ship scope"',
 	),
 	Command.withExamples([{command: "fabrika ship scope 4321"}]),
@@ -118,6 +118,7 @@ const cpApproval = leafCommand(
 	Command.withShortDescription("Whether the control-plane approval is discharged at a head."),
 	Command.withDescription(
 		"Prints one PR's §CP approval answer at a head: discharge, stop, base-conflicted or n/a, and how." +
+			"\n  discharge: an owner account approved this head; who typed it is not read" +
 			"\n  base-conflicted: no approval, and the head conflicts with its base; report BASE-CONFLICTED" +
 			"\n  7: the PR is absent or closed, or has no changed files" +
 			"\n  11: the boundary, roster, reviews, markers, live head or mergeability could not be read" +
@@ -565,7 +566,15 @@ const release = leafCommand(
 	"release",
 	{pr: prArg, repo: repoFlag, json: jsonFlag},
 	Effect.fn(function* ({pr, repo, json}) {
-		yield* emit(yield* runRelease({pr, repo: Option.getOrNull(repo), json, env: process.env}));
+		yield* emit(
+			yield* runRelease({
+				pr,
+				repo: Option.getOrNull(repo),
+				json,
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Detect a dark ship and queue its issue for release."),
@@ -574,7 +583,7 @@ const release = leafCommand(
 			"\n  7: the PR is absent, or has no changed files" +
 			"\n  8: the label write or its re-read failed; escalate" +
 			"\n  9: the label landed and the read-back does not show it" +
-			"\n  11: the diff, body, registry or linked issue could not be read; UNKNOWN" +
+			"\n  11: the board vocabulary, diff, body, registry or linked issue was unreadable; UNKNOWN" +
 			"\n  13: the changed-file list hit GitHub's 3000-file ceiling, so it is partial" +
 			"\n  23: the release label is absent from the repository's taxonomy" +
 			'\n  Derivation: the ship skill\'s contract.md, "ship release"',

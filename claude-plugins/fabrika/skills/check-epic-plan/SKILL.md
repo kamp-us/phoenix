@@ -91,10 +91,12 @@ discriminator; a missing approval is this verb's answer, not a refusal. It still
 everything else (`4`, `7`, `10`, `11` and the reserved codes), and a refusal is not a fourth state:
 the opening UNKNOWN rule holds, so read the code, then re-run or stop, and never read one as
 `absent`. Only `current` proceeds to step 2. On `stale` or `absent` end at `PLAN-UNAPPROVED`,
-**naming which**: `absent` means nobody with authority has approved this plan, `stale` means the plan
+**naming which**: `absent` means no control-plane account has approved this plan, `stale` means the plan
 moved after he read it and a re-plan does not inherit the old approval. You never write the marker
-and you never decide the plan is approved enough — `plan approve` is the founder's verb and its
-roster is resolved from CODEOWNERS at both the write and the read.
+and you never decide the plan is approved enough — `plan approve` is the founder's to run, and its
+roster is resolved from CODEOWNERS at both the write and the read. **That rule is yours to keep**:
+the roster names accounts, so on a repo where you run under a roster account no check stops you
+([why](../../guide/how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)).
 
 This read is the *report*, not the enforcement: `plan check`, `plan flip` and `plan verdict` each
 re-derive the approval themselves and refuse on `25`, so an approval that lapses between this read

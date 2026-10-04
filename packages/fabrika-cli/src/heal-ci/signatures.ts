@@ -1,5 +1,5 @@
 /**
- * The failure-signature taxonomy: a closed, **ordered** table of ten rows, and the default-deny
+ * The failure-signature taxonomy: a closed, **ordered** table of eleven rows, and the default-deny
  * lookup over it.
  *
  * The order is part of the contract, not an implementation detail — the classes genuinely overlap
@@ -7,6 +7,10 @@
  * matches both a warmup row and a generic network row), so the first matching row wins and specific
  * rows precede general ones. Transient rows precede logic rows so an infrastructure death is not
  * read as the assertion failure it printed on its way down.
+ *
+ * The one `derived` row is last. It is the only row whose match says the log holds no failure of
+ * its own, so every row that names a real failure must be able to beat it: a roll-up that also
+ * printed a defect is that defect. A row added later goes above it.
  *
  * The table grows by adding a row, never by branching inside a verb: it is data, under unit test
  * against fixture logs.
@@ -16,9 +20,15 @@
  * hand a repair lane a pull request carrying a live secret.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/7288#issuecomment-5519663185
+ * @ruling https://github.com/kamp-us/phoenix/issues/7206#issuecomment-5460774567
  */
 
-export type SignatureClass = "transient" | "logic";
+/**
+ * `derived` is a log that only restates another job's verdict. It is not `unclassified`, which
+ * stays "nothing matched", and it is not a stall class: why one pull request is stuck is
+ * `stall.ts`'s vocabulary, and no token crosses between the two unions.
+ */
+export type SignatureClass = "transient" | "logic" | "derived";
 
 export interface Signature {
 	readonly id: string;
@@ -28,7 +38,7 @@ export interface Signature {
 	readonly rationale: string;
 }
 
-/** The ten rows, in precedence order. Index 0 is tested first. */
+/** The eleven rows, in precedence order. Index 0 is tested first. */
 export const SIGNATURES: ReadonlyArray<Signature> = [
 	{
 		id: "runner-oom",
@@ -95,11 +105,35 @@ export const SIGNATURES: ReadonlyArray<Signature> = [
 			/\b(cannot find module|module not found|failed to resolve import|syntaxerror|unexpected token)\b/i,
 		rationale: "the tree does not build, which no retry changes",
 	},
+	{
+		id: "roll-up-verdict",
+		class: "derived",
+		// The terminal `ci-required FAILED` line is deliberately unmatched: a roll-up that could not
+		// read its own scope prints it with no per-job FAIL line, and that failure is the roll-up's own.
+		pattern: /\bresult=\S+ (?:→|->) FAIL\b/i,
+		rationale:
+			"a roll-up restating another job's verdict, with no failure of its own — route the job its FAIL line names",
+	},
 ];
 
-export const SIGNATURE_IDS: ReadonlyArray<string> = SIGNATURES.map((row) => row.id);
+/** The ids a rerun may be justified by: a retry changes nothing a `logic` or `derived` row found. */
+export const RERUNNABLE_SIGNATURE_IDS: ReadonlyArray<string> = SIGNATURES.filter(
+	(row) => row.class === "transient",
+).map((row) => row.id);
 
-export const isSignatureId = (value: string): boolean => SIGNATURE_IDS.includes(value);
+export type RerunLicence =
+	| {readonly _tag: "Licensed"; readonly signature: Signature}
+	| {readonly _tag: "NotTransient"; readonly signature: Signature}
+	| {readonly _tag: "UnknownId"};
+
+/** Whether a signature id licenses the one rerun. Only a `transient` row does. */
+export const rerunLicence = (id: string): RerunLicence => {
+	const signature = SIGNATURES.find((row) => row.id === id);
+	if (signature === undefined) return {_tag: "UnknownId"};
+	return signature.class === "transient"
+		? {_tag: "Licensed", signature}
+		: {_tag: "NotTransient", signature};
+};
 
 /** `unclassified` is a **third** token: recognising nothing is not the same as recognising a bug. */
 export type Classification =

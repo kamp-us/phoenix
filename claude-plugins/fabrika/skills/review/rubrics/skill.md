@@ -64,6 +64,16 @@ spawn prompt in the diff point at
 `fabrika wire doc-section --heading "…" < <skill-base>/contract.md`; text telling an agent to read,
 open, or load a `contract.md` whole is a finding, whatever the read's shape.
 
+**A closing message written for a person is held to
+[skill-conventions §15](../../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines).**
+Where a skill-class file tells an agent to write a closing message, a stop note or a final report a
+person reads, the text must require that section's two plain lines on every way the run can end,
+link to the section for how a pipeline word is handled, and leave the terminal token unchanged below
+them. A miss is a finding, and it refuses PASS on the `review-skill` namespace: an ending the step
+leaves out, a bare exit code offered as the explanation, or the section's word list restated in
+place of the link. This check reads the skill's text, never the message an agent wrote on a given
+run.
+
 ## 5 — Writing craft
 
 Apply [`writing-for-agents`](../../writing-for-agents/SKILL.md) verbatim to each skill-class file

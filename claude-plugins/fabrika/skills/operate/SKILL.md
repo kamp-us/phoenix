@@ -26,7 +26,8 @@ stop unchecked, `table` block or not, and names the fix (`gh auth refresh -h git
 on stderr.
 Writes used — lane-ledger appends, a booted lane's own machine document brought up to the committed
 template through `lane migrate <lane>`, which is the form that writes that lane and no other,
-comments on the driven issue, the driven issue's row fields on the Projects table that `lane record`
+comments on the driven issue and, on an epic lane, on a child's own issue (step 2's late-fact
+comment), the driven issue's row fields on the Projects table that `lane record`
 writes through `table sync`, the `ship disarm --site post-enqueue` a `parked` read at
 `ship:queued` owes, whatever a recipe verb writes on
 its own account (step 3's chore row), the removal of the worktrees the lane recorded through
@@ -34,6 +35,16 @@ its own account (step 3's chore row), the removal of the worktrees the lane reco
 merge a passing child into it, push it, and open the one draft PR (step 2's `integrate`). Never a
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
 branch — that one is `ship`'s, once, at the tail.
+
+**A multi-stage run boots a lane ledger before its first spawn.** Any run that spawns fabrika
+shells for more than one stage — build, review, review-ui, ship, in any combination — is driven
+through this skill, off a ledger step 1 boots before the first shell starts. An ad-hoc in-memory
+chain over those shells, a script or a session awaiting one stage and then naming the next, is out
+of contract. The failure it stops: the chain's host dies, the child finishes and saves its handoff,
+and the parent reads that handoff and states it is recovering — having dispatched nothing, because
+the remaining stages lived only in the lost continuation. A driver that finds itself mid-run
+off-ledger has two moves: boot a lane on the issue and re-drive from the ledger (step 1), or stop
+and name the blocker. A progress claim with neither a dispatch nor a named blocker is not a report.
 
 **The bar this skill is held to: a lane reaches its terminal with zero founder asks about the
 engine.** You are the human seat for every non-product cause — a collision, a drift, a dead shell, a
@@ -79,6 +90,72 @@ above covers your own verbs in a worktree; the person stands in the repo's main 
 fabrika leaves no `node_modules` copy in the repo, and the absolute path you run your own verbs under
 carries a home directory into a public comment. Read the note back before you post it; done when it
 holds no literal `<fabrika>`, no other angle-bracket placeholder and no file path to the CLI.
+
+**The chat is all the person sees, so the run says where it is.** A stage can work for most of an
+hour, and a person reading only the chat cannot tell a working run from a dead one. Two lines close
+that. Each is one line of a sentence or two, printed to the person in the chat and written nowhere
+else:
+
+- **The opening line**, once a run, before that run's first spawn: what is about to happen, roughly
+  how long it can take, and the driven issue's full URL as the place where notes appear. The time is
+  the budget step 3's `spawn-dead` passage gives the stage about to start. The URL is the `epic:`
+  field of the brief's `## Ground` where it prints one, and its `issue:` field otherwise. Step 4's
+  `verdict-owed` gate is spawned with no brief, so a run whose first spawn is that gate names the
+  pull request's full URL and a review's time.
+- **A stage line**, each time a spawned stage returns: which stage finished, how it ended, and what
+  happens next. On an epic lane it says which child. A spawn that follows an act of your own gets
+  one too, below.
+
+**A stage line reports the ledger, so it waits for the record.** How the stage ended is the event
+recorded for that return, never the token the spawn printed. Where step 3's fresh `lane status`
+shows a moved fold, write from it. Where it does not — a record that never landed, a dead spawn —
+record what step 3 has you record first, and write from that event. A report refused at `72`
+records nothing, so its line says the stage reported late and the run goes on from where it already
+stood. Step 4's `verdict-owed` gate is the one return with no event to wait for, because that gate
+records nothing on the ledger. Its line is written from the `build verdicts --pr` read step 4 takes
+on that return: the check posted its result where every owed gate has a row at the pull request's
+head, and it did not where one has none. What happens next is your own act in the first case,
+clearing the hold, and nothing in the second.
+
+What happens next is otherwise the route step 2 takes on that same fold, named one of three ways:
+
+- **a spawned stage**, with its time from the same budget;
+- **an act of your own** — landing a child on the epic's branch, re-reading the merge queue, a
+  recipe verb — in everyday words and with no time, because nothing budgets it;
+- **nothing** — the run is ending, or it stops for a person, and the line says which and gives the
+  issue's full URL.
+
+**A return owes the person one line, and no stage starts unannounced.** A dispatch adds no second
+line to a return: the opening line names everything dispatched with the run's first spawn, and a
+return's stage line everything dispatched straight after it. Print that line after `lane dispatched`
+and before the spawn (step 2); when the return leads to no spawn, print it before your own next act.
+
+That act can itself lead to a spawn, with no stage returned since the last line: a child's build
+after you landed the one before it, a build after the merge queue sent the pull request back, a
+review after the pull request changed while it waited for an approval, a ship after you cleared a
+hold. That spawn gets a stage line of its own, and the thing that finished is your act. How it ended
+is the event the act recorded, or the answer it read where it recorded none. What happens next is
+the spawned stage, with its time. So step 2's "the stage line otherwise" always names the last thing
+that finished since the line before it: the returned stage, or your own act where the return's line
+already went out. An act of yours that leads to no spawn prints no line under this passage; how a
+run stops or ends is the closing message's to say (Terminal vocabulary, below).
+
+A `lane dispatched` refusal code rides the line printed before the spawn it was recorded for, with
+what it means beside it.
+
+Both lines are written in **everyday words**: "writing the change" for a build, "checking it" for a
+review, "merging it" for a ship, "it needs a person" for a park. A pipeline word is handled as
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+says, which holds the list of them.
+They read like this, with the real URL where the placeholder stands:
+
+```text
+Starting on issue 12: writing the change now, which can take up to about 40 minutes. Notes appear at <the issue's full URL> as each step finishes.
+Writing the change finished and opened a pull request. Checking it starts now, up to about 15 minutes.
+The merge step finished: the pull request is waiting in the merge queue and is not merged yet. The run looks at the queue next, which has no set time.
+The merge queue sent the pull request back without merging it. Fixing it starts now, up to about 40 minutes.
+Checking it stopped before it reported a result. The run stops here and needs a person; the reason is at <the issue's full URL>.
+```
 
 ## 1 — Read the seats, claim the lane, then boot or resume
 
@@ -481,6 +558,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | `human:budget-spent` | park — step 4. The task spent its whole repair budget on content FAILs. It is an error final carrying a door, so it trips the phase where it sits; its cause is `repair-budget-spent`, which routes to **you** unless the repo's `parkCause.repairBudgetSpent` says `founder`, and its door needs a cleared round behind it — `lane clear`, then the `UNBLOCKED` |
 | `frozen` | park — step 4, and **which** park depends on when the lane was emitted — read the lane's own `workflow.json` to tell: a lane carrying `human:budget-spent` is post-rename, and on it `frozen` is only where an emitted epic child boots, on a board close that was never a landing, so its door leads back to itself and that child is re-emitted rather than resumed. On a lane emitted before the rename — most of the ones on disk — `frozen` is the spent-budget fallthrough instead, and it takes the `human:budget-spent` route above: a granted round, then the `UNBLOCKED`. It is an error final either way, so it trips the phase where it sits and the fold says so |
 | `human:epic-review` | park — step 4. Only a lane emitted before the rename reaches it: it is the epic tail's spent review budget, the same shape as `human:budget-spent` above, so it takes the same route — its door needs a cleared round behind it, `lane clear`, then the `UNBLOCKED` |
+| `human:cp-approval` | park — step 4, with one event of yours first: where the PR's head moved under the park, record the `WIP` that re-enters `review` (step 4, "A `human:cp-approval` park whose head moved") |
 | `human:*` | park — step 4 |
 | `blocked` | park — step 4 |
 | any other name | end `STOPPED` naming the state — never guess a shell for a state you do not recognise, and never a park: `LANE-PARKED` promises a fold in `blocked`/`human:*`/`frozen`, which an unrecognised state cannot honour (Terminal vocabulary, below) |
@@ -505,6 +583,18 @@ binstub (now in the spawned tree). They are in the brief because a prompt writte
 dispatch is a prompt two drivers write differently. A fourth has the shell record its worktree on
 the lane with `lane worktree`, which is the set step 4's `lane cleanup` removes.
 
+**A fact that postdates the issue body goes on the issue as a comment, and that comment is the one
+sanctioned channel for it.** A body is a snapshot, so you can hold a fact it does not carry —
+typically a PR that landed after the body was written and already discharged part of its criteria.
+Post it as a comment on the issue the task you are about to brief reads, **before you run
+`lane brief`**: state the fact in a sentence and link the artifact that proves it. That issue is the
+one the brief prints as `issue:` in `## Ground`. On a single-issue lane it is the driven issue. On an
+epic lane's `issue_<n>` task it is child `<n>`'s own issue, never the epic: the brief reads comments
+off the child, so a fact posted on the epic reaches no child's shell. The brief then stays the verb's
+bytes, and on a build or review state it lists a control-plane account's comment under
+`owner-comments` in `## Ground`, beside a rule telling the shell to read it. Done when the comment's
+URL is in hand, and, where your account is on that roster, when the brief you print names it.
+
 **Record the dispatch, then spawn.** With the brief in hand, and before either spawn below:
 
 ```bash
@@ -514,7 +604,12 @@ node <fabrika> lane dispatched $lane_key --task <name>
 It writes the task's state and the shell that state routes to beside the ledger, so the lane names
 the shell you started for as long as it works — the builder adds its claim token and worktree once
 its claim wins. It records no event, so the fold does not move. A refusal here does not hold the
-spawn: `40` is a held ledger lock, so run it again, and name any other code in your dispatch line.
+spawn: `40` is a held ledger lock, so run it again, and name any other code in the line below.
+
+**Then print this pass's line to the person, before the spawn** ("The chat is all the person sees",
+above): the opening line where this run has spawned nothing yet, the stage line otherwise. That
+stage line is for the stage that just returned, or for your own act where the return's line already
+went out before it.
 
 On Claude, the spawn flag is still yours: **`isolation: worktree`, no exceptions** — a non-isolated subagent
 shares the primary checkout and can mutate its git state, and no bytes in a prompt can enforce that
@@ -619,8 +714,9 @@ never reach for `lane migrate`.
 returns its result to you, so that return *is* the wait. The rule and both incidents behind it are
 [the skill conventions' "a skill never sleeps and never polls on a timer"](../../docs/skill-conventions.md);
 the one thing it adds for you is that a timed `lane status` is the same defect wearing a fabrika
-verb, so it is banned on the same terms as a bare `sleep`. So dispatch every task the fold routed,
-say in one line what you dispatched, and end the turn. Your next move is
+verb, so it is banned on the same terms as a bare `sleep`. So dispatch every task the fold routed
+and end the turn; the line you printed before the spawn is all you say about the dispatch. Your next
+move is
 [§3](#3--verify-the-record-landed-and-record-what-no-shell-can)'s fresh `lane status`, once a spawn
 has returned.
 
@@ -1144,6 +1240,8 @@ of yours. **That verb proves before it appends**: it runs `lane prove`'s read on
 and refuses on `lane prove`'s own codes, so a shell-recorded `DONE` or `PASS` reaches the ledger
 only with its artifact behind it, exactly as one you record does. So when a spawn returns, your
 first move is a fresh `lane status`: a moved fold is a recorded terminal, and you route from it.
+The return's stage line ("The chat is all the person sees", above) reports that recorded terminal,
+so in the two reads below it waits for the event you record.
 Two reads stay yours, because no shell can take them:
 
 - **a spawn that printed a terminal the fold does not show** — its record never landed (a missing
@@ -1760,28 +1858,60 @@ waiting on its own ruling uses neither: that wait has no token yet, so do not bo
 two. You are type-blind, so that the lane is a decision lane is a fact your caller's brief relays,
 never one you read off a label.
 
-**A `verdict-owed` park needs a verdict before it needs a clear.** A namespace the ship gate
-requires has no binding verdict at the PR's head, usually because the head moved after review. The
-fold reads `human:cp-approval`, and no cell out of it reaches `review`: `UNBLOCKED` returns to
-history, which is `ship`, and `lane brief` briefs a reviewer only from the `review` state. So a
-clear taken first hands a shipper the same missing verdict, and it parks the lane again. Run the
-owing gate first, then clear, in this order:
+**A `human:cp-approval` park whose head moved re-enters `review`, and the event is yours to
+record.** A head refreshed while the lane waits, by a merge of its base or a rebase, binds none of
+the verdicts the park was reached on. Read them:
+
+```bash
+node <fabrika> build verdicts --pr <pr>
+```
+
+When a gate row reads `"current": false` at the live head, record the round the head owes:
+
+```bash
+node <fabrika> lane transition <lane> WIP --task <task>
+```
+
+The fold then reads `review`, so the next pass dispatches the reviewer through `lane brief` like any
+other review, and its `PASS` or `FAIL` lands on the ledger. A `PASS` walks `review`, `ship`, and the
+shipper parks the lane again on whatever the head still owes. The `WIP` approves nothing and spends
+no budget. Every row `"current": true` is no refresh: leave the park as it stands. Whatever the
+park's cause, this read comes before `recipe unpark` and before a park comment, because an approval
+solicited on an unreviewed head binds nothing.
+
+Exit `12` on that `WIP` means the lane's own `workflow.json` predates the cell. Run
+`node <fabrika> lane migrate <lane>` and record it again. When `lane migrate` answers `generated`,
+the lane runs an emitted machine that is never migrated: take the hand route below.
+
+**A `verdict-owed` park with no stale row needs a verdict before it needs a clear.** A namespace the
+ship gate requires has no verdict at the PR's head at all, so no row reads `"current": false` and
+the route above does not open. `UNBLOCKED` returns to history, which is `ship`, so a clear taken
+first hands a shipper the same missing verdict, and it parks the lane again. The same hand route
+serves the generated machine above. Run the owing gate first, then clear, in this order:
 
 1. Read the owed namespace off the parking shipper's report, which names each `blocked` line.
-2. Spawn the gate that owns it, `isolation: worktree`, with no lane. The whole prompt is the skill's
-   invocation and the PR number: `/fabrika:review <pr>` for a `review-*` namespace,
-   `/fabrika:review-ui <pr>` for `review-ui`, `/fabrika:governance <pr>` for `governance`. No brief
-   exists for a park, so this is the one spawn without `lane brief` output. The invocation is the
-   whole prompt, so you still compose nothing. With no lane named, the gate posts its verdict on
-   the PR and records nothing on the ledger.
+2. Spawn the gate that owns it in a worktree of its own (on Claude, `isolation: worktree`), with no
+   lane. The whole prompt is the skill's invocation and the PR number: `/fabrika:review <pr>` for a
+   `review-*` namespace, `/fabrika:review-ui <pr>` for `review-ui`, `/fabrika:governance <pr>` for
+   `governance`. No brief exists for a park, so this is the one spawn without `lane brief` output.
+   The invocation is the whole prompt, so you still compose nothing. With no lane named, the gate
+   posts its verdict on the PR and records nothing on the ledger.
 3. When the spawn returns, run `node <fabrika> build verdicts --pr <pr>`. Go on only when each owed
    gate has a row with `"current": true`. `PASS` or `FAIL` makes no difference here: the shipper
    routes a `FAIL` to repair itself. No current row means the verdict is still owed, so do not
-   clear. The gate's own terminal names why; park on that.
+   clear. The gate's own terminal names why; park on that. This read is also what the return's
+   stage line reports ("The chat is all the person sees", above), since the gate recorded no event.
 4. Clear it: `recipe unpark <lane-key> --task <task>`. `verdict-owed` routes to the driver and has
    no recipe row, so where this repo lets a driver clear, it answers `23`. Re-run it with
    `--rationale` naming the verdict the gate posted at the head. Any other answer is read as below.
    The lane returns to `ship`, and the next shipper merges or routes the `FAIL`.
+
+**On Codex, leave this park for a person.** Step 2 is a Claude Agent-tool spawn, and Codex has no
+isolated route to it: `lane dispatch` runs only a task active in the lane's state, and this park
+briefs no shell. So a Codex driver runs step 1 and stops there. It spawns no gate, and it runs no
+`recipe unpark` while the verdict is owed, the try-first rule below included. Post a park comment
+that names the PR and each owed namespace and says a person runs steps 2 to 4 from a Claude
+session, then end `LANE-PARKED`.
 
 **So try `recipe unpark` before you post a park comment**, whenever the fold reads `blocked` or
 `human:*` — a park comment is the founder-routed answer, and you do not know the route until this
@@ -2260,3 +2390,15 @@ is `founder`. A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
 lane you are only driving.
+
+**Close in plain words, on every ending.** Directly above the terminal token, your final message
+ends with the two plain lines
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+requires: what happened, and what the person does next. Write both on each of the five terminals,
+`STOPPED` and `LANE-HELD` included, and word them as that section says. On `LANE-PARKED` the second
+line is the one thing the person does to get the run moving, with the issue's full URL. A parked
+chore lane has no issue, so there the line names the chore and that one thing, with no URL. On
+`LANE-WAITING` it gives the time after which to start the run again. A command in either line is
+one they can paste ("A command you write for a person", above). Codes, `kept` and `left` lines and
+everything else this skill has you name for your caller go above those two lines, and the lines say
+what each code means.

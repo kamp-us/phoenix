@@ -7,10 +7,10 @@
  * runs the primitives to build the missing thing"*. A **line** surface is the exception and
  * carries its own text here: a caller supplying it would let two repos spell one block two ways.
  *
- * **What this builds is fixed in {@link BUILDABLE_SURFACES}, never read off a disposition.** A
- * surface's disposition in `surfaceDispositions` says what happens to a *run* that finds it missing —
- * `design-manifest` is `fail-loud` and buildable here at once — so reading `fail-loud` as
- * "unbuildable" would make the most important onboarding surface unreachable.
+ * **What this builds is fixed in {@link BUILDABLE_SURFACES}, never read off what a verb does when
+ * the surface is missing.** That behaviour belongs to a *run* that finds it missing — `ui manifest`
+ * refuses without a design manifest, and the manifest is buildable here at once — so reading a
+ * refusal as "unbuildable" would make the most important onboarding surface unreachable.
  *
  * **`exists` is an exit-`0` answer, not a refusal.** A target already there is a proven fact the
  * caller acts on, and a non-zero exit cannot carry it. Nothing is written and nothing is overwritten

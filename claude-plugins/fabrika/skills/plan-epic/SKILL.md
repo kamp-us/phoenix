@@ -317,7 +317,7 @@ recorded on **that** issue, and a child you just minted carries none — so the 
 every builder refuses, which parks the whole epic lane.
 Naming the epic's own ruling comment does not open it either; the citation binds to the claimed
 issue. Mint the child `--ready-for human` with `--assignee`, and once the ruling is recorded on the
-child a control-plane human flips it with `fabrika decision rule <n> --cites <child-comment-url>`.
+child a control-plane account flips it with `fabrika decision rule <n> --cites <child-comment-url>`.
 
 **Choosing that assignee is yours when the work belongs to the team, and not yours when it does
 not.** Pick from the repository's contributors and say in the child body why — a wrong pick is one
@@ -489,7 +489,11 @@ with `report` and let the gate decide.
 
 <!-- anchor: APPROVAL-IS-ASKED-WITH-A-WALK --> **Then ask for the approval the gate needs, and ask
 with a walk.** `check-epic-plan` proceeds only once `plan approve` covers this ledger, and `plan
-approve` is the founder's verb, run by someone on the control-plane roster. The ask you hand him —
+approve` is the founder's to run. **Leaving it to him is your rule to keep**: the verb checks that
+the invoking account is on the control-plane roster, so on a repo where you run under a roster
+account no check stops you
+([why](../../guide/how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)).
+The ask you hand him —
 in your terminal report, and in whatever your driver relays onward — walks him through the plan
 first, **one child per line**, and names `plan approve` last. Read every field off the board, never
 off your memory of the run. `plan read` gives the children, the story numbers each one carries, and

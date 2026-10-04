@@ -182,13 +182,16 @@ reach here: a split leaves no survivor to fold the original into, so nothing lic
 
 **Every issue leaves with a home** — an open milestone, or one of the two standing lanes.
 Lane-entering work (an epic, or a parentless feature) additionally carries a `## Pitch` whose `Arc`
-*is* that home — inside your rewrite for a feature, on stdin for an epic. **The founder approves a
-pitch, never triage**: by a `pitch-approved:` comment, or by setting the issue's betting-table row to
-Stage `bet` — his own write or an agent's on his instruction, with the row's Size matching the
-pitch's Appetite.
+*is* that home — inside your rewrite for a feature, on stdin for an epic. **Approving a pitch is the
+founder's, and triage leaves it to him**: by a `pitch-approved:` comment, or by setting the issue's
+betting-table row to Stage `bet` — his own write or an agent's on his instruction, with the row's
+Size matching the pitch's Appetite. **That rule is yours to keep.** The guard reads the approving
+account's write access and refuses a comment carrying an agent stamp; it does not read who typed,
+so on a repo where agents post under the founder's account no check enforces it
+([why](../../guide/how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)).
 **An issue that leaves triage with a pitch nobody has approved yet ends your closing message on the
-ask, complete enough to act on cold.** Triage posts no approval itself, and an agent-posted line
-never counts, so the message is the whole hand-off. It carries four things:
+ask, complete enough to act on cold.** Triage posts no approval itself, so the message is the
+whole hand-off. It carries four things:
 
 - the full approval line with the pitch's own size filled in — `pitch-approved: appetite S` for a
   pitch whose Appetite is `S`. A comment of any other shape approves nothing;
@@ -376,7 +379,7 @@ another human round-trip. No such comment, and the default above stands: `human`
 comment rather than judging the question settled yourself, and a ruling that left a gap open is
 still a judgment, so it stays `human`. An issue already parked on `human` needs no triage re-run to
 come back:
-`fabrika decision rule <n>` is how a control-plane human records the ruling and flips the audience —
+`fabrika decision rule <n>` is how a control-plane account records the ruling and flips the audience —
 `--cites <url>` over a comment that is already there, `--authorization <file>` over a ruling given in
 conversation — and its contract is that verb's `--help`, not this page.
 
@@ -477,6 +480,26 @@ a `--duplicate-of` fold closes it whatever its provenance, because a fold moves 
 the survivor instead of discarding it. Every other close of a human filing still refuses on `12`.
 
 Done when the issue has left the queue by exactly one route.
+
+## 9 — Say what you decided, in plain words
+
+**Your closing message says what triage decided on the issue, in plain words**: its type, its
+priority, and everything triage added or changed. That covers acceptance criteria you wrote or
+appended, a priority you raised or lowered, a body you rewrote, a split, the home, and any issue it
+now waits on. A label records the decision; the message is how the person learns it. Say each in an
+everyday sentence, such as "This is a bug, priced p1, meaning it is worth pulling next", with the
+label beside it only as the thing to search for.
+
+Then the message ends with the two plain lines
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+requires: what happened, and what the person does next, worded as that section says. Both are owed
+on every way a run can end: a triaged issue, a park, a kill, a claim another run holds, and a verb
+that refused. Where step 6's pitch ask applies, that ask with its four parts is what the person does
+next. A sweep closes once, after its per-issue lines.
+
+Done when the message ends on the two lines and names what triage decided: the type and the priority
+where triage set them, and each change. A park, a kill, a claim another run holds and a verb that
+refused can end with no type or priority set, and then the message owes neither.
 
 ## Sweeping the queue
 

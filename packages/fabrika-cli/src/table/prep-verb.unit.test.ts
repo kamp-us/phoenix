@@ -555,6 +555,17 @@ describe("table prep with no .fabrika.jsonc", () => {
 		expect(agenda.find((row) => row.issue === 20)).toMatchObject({kind: "epic", members: [21, 22]});
 	});
 
+	it("leaves a bet row that blocks a proposed row out of its chain, with its Section standing", async () => {
+		const {board, cell} = world(ISSUES, {
+			...ROWS,
+			31: {Stage: "bet", Section: "New bets", Size: "S", "Table day": PREVIOUS, Rec: "yes."},
+		});
+		const agenda = JSON.parse((await prep(board)).stdout).agenda as ReadonlyArray<AgendaOut>;
+
+		expect(agenda.find((row) => row.issue === 30)).toMatchObject({kind: null, members: []});
+		expect(cell(31, "Section")).toBe("New bets");
+	});
+
 	it("counts a chain once toward the cap and leaves what does not fit for a later table", async () => {
 		const {board} = world();
 		const capped = fakeFs({

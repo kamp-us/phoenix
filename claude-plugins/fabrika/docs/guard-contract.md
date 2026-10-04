@@ -90,9 +90,11 @@ run the guard with no `--sha`, over the tree they stand on, and that behaviour i
 
 ## homing-guard check
 
-Every `status:triaged` issue must carry either an arc/campaign milestone or exactly one of the two
-standing-lane labels, `wayfinder:backlog` and `axis:pipeline-hardening`. Neither is a violation, and
-both is banned outright.
+Every `status:triaged` issue must carry either an arc/campaign milestone or a standing-lane label.
+Neither is a violation, and both is banned outright. The standing lanes are the labels the repo
+declares under `boardVocabulary.standingLanes` in `.fabrika.jsonc`. Nothing is shipped for that key,
+so in a repo that declares none no label exempts an issue and a milestone is the only home. A
+declaration that could not be read is UNKNOWN (`11`), never an empty set.
 
 `--issue N` scopes the scan to the one issue triage just stamped, which is where the invariant
 binds; a bare run sweeps the whole open triaged backlog. Zero scope is a backlog sweep that found no

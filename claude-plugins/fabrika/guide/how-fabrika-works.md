@@ -76,6 +76,36 @@ stories, satisfy every structural rule, and produce a clean plan for the wrong p
 approves the plan before the gate runs, and every epic is grilled while it is being planned rather
 than after — asking after the plan is written turns an answer into a re-plan.
 
+## An owner-only step confirms an account, not a person
+
+fabrika keeps six steps for the repo's owner: the UI hand-check, the `pitch-approved:` comment, the
+`bet` row on the betting table, `plan approve`, `decision rule`, and the sole-owner self-approval of
+a control-plane pull request. Each is meant as a person's judgement. What each one checks is
+smaller than that: which GitHub account acted.
+
+That is all GitHub can show a tool. A comment has an author, a table field has an account that set
+it, and a command runs under a token that belongs to an account. None of them records who was at
+the keyboard. So the hand-check, `plan approve`, `decision rule` and the self-approval ask whether
+the account is one the control-plane rows of `.github/CODEOWNERS` name, and the `pitch-approved:`
+comment and the `bet` row ask whether the account has write access. Two of them also refuse a
+comment that carries an agent's stamp, which catches an agent that signs its work and nothing else.
+
+On a repo with one GitHub account, agents act as that account, so an agent can pass every one of
+the six. The line between owner and agent is then a rule the agents keep, written into their
+skills, and no check holds it. fabrika says this plainly instead of adding a proof step, because a
+proof an agent on the same account cannot also produce does not exist on GitHub, and one that
+pretends otherwise would be worse than none: the owner would trust a check that is not there.
+
+A second GitHub account for agents turns four of the six into real checks, since an account that is
+off the control-plane rows fails the roster. The two that read write access still pass it.
+[Run agents under a second GitHub account](run-agents-under-a-second-account.md) has the steps. It
+is optional, and a one-account repo works without it.
+
+One check in this area is GitHub's own, and fabrika does not have to be trusted for it: a pull
+request's author cannot approve that pull request. Where a repo has two or more control-plane
+owners, a control-plane pull request needs an approving review from an owner account that did not
+open it.
+
 ## An epic run produces one pull request, because the repair loop is what costs money
 
 An epic has many children. The shape that looks obvious is one pull request per child: each is

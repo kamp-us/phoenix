@@ -137,3 +137,16 @@ export const createdComment = (id: number): ExecResult =>
 	okOut(JSON.stringify({id, html_url: `https://example.test/pull/4321#issuecomment-${id}`}));
 
 export const commentBody = (body: string): ExecResult => okOut(JSON.stringify({body}));
+
+/**
+ * A red `ci-required` log as `ci/required-bin.ts` prints it and the runner renders it: per-job
+ * verdict prose and the terminal line, and no failure of the context's own.
+ */
+export const CI_REQUIRED_ROLLUP_LOG = [
+	"check: should_run=true result=success → required-pass",
+	"##[error]unit: should_run=true result=failure → FAIL (a should-have-run gating job did not succeed — silent no-op)",
+	"integration: should_run=false result=skipped → legit-skip",
+	"e2e: should_run=false result=skipped → legit-skip",
+	"##[error]ci-required FAILED — a should-have-run gating job was skipped or failed (see per-job verdicts above)",
+	"##[error]Process completed with exit code 1.",
+].join("\n");

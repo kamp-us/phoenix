@@ -30,7 +30,6 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readAuthored} from "../build/authored.ts";
-import {STANDING_LANE_LABELS, type StandingLaneLabel} from "../build/scope-admission.ts";
 import {scannedLine} from "../build/target.ts";
 import {CONFIG_PATH} from "../config/document.ts";
 import {
@@ -41,9 +40,9 @@ import {resolve} from "../config/load.ts";
 import {loadRepoConfig} from "../config/working-root.ts";
 import {listLabels, listOpenMilestones} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {PLANNED} from "../labels.ts";
 import {listSubIssues} from "../plan/github.ts";
-import {missingLabelRemedy, readBoard} from "../status/label-remedy.ts";
+import {missingLabelRemedy} from "../status/label-remedy.ts";
+import {BOARD_SUBJECT, readBoard, refusalReason} from "../status/repo-board.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {composeChildBody} from "./child-body.ts";
 import {
@@ -79,11 +78,16 @@ export const PRIORITIES: ReadonlyArray<string> = ["p0", "p1", "p2"];
 export const AUDIENCES: ReadonlyArray<string> = ["human", "agent"];
 
 /**
- * A home is a milestone **or** a standing lane, read off the one set `build` reads homes from — never
- * a second copy of it here, which is how two readers drift into disagreeing.
+ * Why a child with no home is refused, worded off the lanes the repo declares. A repo that declares
+ * none has one home to offer, and naming a lane flag there sends the caller after a label that is
+ * not a home.
  */
-const isStandingLane = (label: string): label is StandingLaneLabel =>
-	(STANDING_LANE_LABELS as ReadonlyArray<string>).includes(label);
+const homelessRefusal = (lanes: ReadonlyArray<string>): string =>
+	`${VERB}: a child needs a home — pass --milestone <open milestone title>${
+		lanes.length === 0
+			? "; this repo declares no standing lane (`boardVocabulary.standingLanes`), so a milestone is the only home"
+			: `, or --label the child with the parent's standing lane (${lanes.join(", ")})`
+	}. A homeless child groups under no campaign and no lane, so nothing on the board shows where it belongs.`;
 
 export const MESSAGES: LedgerMessages = {
 	verb: VERB,
@@ -152,11 +156,19 @@ export const runChild = (
 				`${VERB}: --priority ${options.priority} is off the closed set (${PRIORITIES.join(", ")}).`,
 			);
 		}
-		if (options.milestone === null && !options.labels.some(isStandingLane)) {
-			return refuse(
-				OFF_VOCABULARY,
-				`${VERB}: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (${STANDING_LANE_LABELS.join(", ")}). A homeless child groups under no campaign and no lane, so nothing on the board shows where it belongs.`,
-			);
+		const board = yield* readBoard(options.cwd);
+		if (board._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, MESSAGES.unreadable(BOARD_SUBJECT, refusalReason(board)));
+		}
+		const {statuses, standingLanes} = board.resolved.board;
+
+		// A home is a milestone or a standing lane, and the lanes are the one set every reader takes
+		// from the repo's declaration.
+		if (
+			options.milestone === null &&
+			!options.labels.some((label) => standingLanes.includes(label))
+		) {
+			return refuse(OFF_VOCABULARY, homelessRefusal(standingLanes));
 		}
 
 		const authored = readAuthored(
@@ -199,7 +211,7 @@ export const runChild = (
 		const labels = [
 			options.type,
 			options.priority,
-			PLANNED,
+			statuses.planned,
 			`ready-for:${options.readyFor}`,
 			...options.labels,
 		];
@@ -213,7 +225,7 @@ export const runChild = (
 		}
 		for (const label of labels) {
 			if (taxonomy.value.includes(label)) continue;
-			const remedy = missingLabelRemedy(label, yield* readBoard(options.cwd));
+			const remedy = missingLabelRemedy(label, board);
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: label "${label}" is absent from ${repo}'s taxonomy — refusing to create it. ${remedy}`,

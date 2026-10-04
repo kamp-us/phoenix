@@ -13,7 +13,6 @@ import {describe, expect, it} from "vitest";
 import type {BoardVocabulary} from "../config/board.ts";
 import {stripJsonComments} from "../config/document.ts";
 import {reviewUiKey} from "../config/keys/review-ui.ts";
-import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
 import {loadConfig} from "../config/load.ts";
 import {readFromLoad} from "../config/read-key.ts";
 import * as report from "../exit-codes.ts";
@@ -28,33 +27,25 @@ import {
 import {type Attempt, ok} from "../io/git.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {AWAITING_RELEASE, PLANNED, STATUSES} from "../labels.ts";
+import {AWAITING_RELEASE, DEFAULT_STATUS_NAMES, PLANNED, STATUSES} from "../labels.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import {noPreviewMode} from "../review-ui/no-preview.ts";
-import {
-	AUDIENCES,
-	PRIORITIES,
-	parkedFacets,
-	STANDING_LANES,
-	TYPES,
-	triagedFacets,
-} from "../triage/facets.ts";
+import {AUDIENCES, PRIORITIES, parkedFacets, TYPES, triagedFacets} from "../triage/facets.ts";
 import {ANSWER} from "../verb.ts";
 import {
 	absentLabels,
 	type BoardRead,
-	BUCKETS,
 	type Bucket,
 	boardState,
 	IN_FLIGHT,
 	LABEL_TAXONOMY_COMMAND,
+	labelBuckets,
 	readBoard,
 	runBoard,
 } from "./board-verb.ts";
 import {
-	BUILDABLE_SURFACES,
 	CLAUDE_MD_MARKER,
 	CLAUDE_MD_SECTION,
 	FABRIKA_IGNORE_ROW,
@@ -500,21 +491,26 @@ describe("status board", () => {
 		const ISSUES = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\?state=open&labels=/;
 		const PULLS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\?state=open/;
 		const served = (body: unknown): HttpReply => ({status: 200, body: JSON.stringify(body)});
+		const BUCKETS = labelBuckets(DEFAULT_STATUS_NAMES);
 		const BOARD_LABELS = BUCKETS.map((bucket) => bucket.label);
 
-		const read = (labels: HttpReply) => {
+		const observed = (labels: HttpReply, config?: Record<string, unknown>) => {
 			const seams = fakeSeams([
 				[LABELS, labels],
 				[ISSUES, served([{number: 1, title: "one"}])],
 				[PULLS, served([{number: 9}])],
 			]);
+			const fs = fakeFs({
+				files: config === undefined ? {} : {"/repo/.fabrika.jsonc": JSON.stringify(config)},
+			});
 			return Effect.runPromise(
 				Effect.provide(
-					readBoard("o/r", () => new Date("2026-08-09T14:22:03Z")),
-					seams.layer,
+					readBoard("o/r", "/repo", () => new Date("2026-08-09T14:22:03Z")),
+					Layer.merge(seams.layer, fs.layer),
 				),
-			);
+			).then((board) => ({board, requests: seams.requests}));
 		};
+		const read = (labels: HttpReply) => observed(labels).then(({board}) => board);
 		const states = (board: BoardRead) =>
 			board._tag === "Read"
 				? Object.fromEntries(board.buckets.map((bucket) => [bucket.name, bucket.reading._tag]))
@@ -531,6 +527,28 @@ describe("status board", () => {
 				p2: "Absent",
 			});
 			expect(board._tag === "Read" && boardState(board.buckets)).toBe("absent");
+		});
+
+		it("counts the triaged bucket under the label a repo renamed it to, never the shipped name", async () => {
+			const {board, requests} = await observed(
+				served(["status:needs-triage", "status:triaged", "state:ready"].map((name) => ({name}))),
+				{boardVocabulary: {statuses: {triaged: "state:ready"}}},
+			);
+			expect(states(board)).toMatchObject({"needs-triage": "Counted", triaged: "Counted"});
+			expect(requests.some((line) => line.includes("labels=state%3Aready"))).toBe(true);
+			expect(requests.some((line) => line.includes("labels=status%3Atriaged"))).toBe(false);
+		});
+
+		it("fails the whole board on a config that gives no board, reading no label", async () => {
+			const {board, requests} = await observed(served([{name: "status:triaged"}]), {
+				boardVocabulary: {statuses: "triaged"},
+			});
+			expect(board._tag).toBe("Failed");
+			expect(board._tag === "Failed" && board.reason).toContain(
+				".fabrika.jsonc's board vocabulary is refused",
+			);
+			expect(requests).toEqual([]);
+			expect(runBoard({read: board, json: false}).code).toBe(PRECONDITION_UNKNOWN);
 		});
 
 		it("reads a fully unlabelled board as absent, and names every missing label with the fix", async () => {
@@ -617,16 +635,6 @@ describe("status bootstrap", () => {
 			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule.',
 		);
 		expect(fs.written.size).toBe(0);
-	});
-
-	/**
-	 * Buildability and disposition are separate axes over the same surface, so a surface can be
-	 * buildable here and carry any disposition there — but it cannot be buildable and carry none.
-	 * `roadmap-focus` shipped exactly that way and the gap reached a review round.
-	 */
-	it("names no surface the disposition registry has never heard of", () => {
-		const registered = new Set(SURFACE_REGISTRY.map((surface) => surface.id));
-		for (const surface of BUILDABLE_SURFACES) expect(registered.has(surface.id)).toBe(true);
 	});
 
 	it("builds every issue-shape marker the ideation skills mint issues with", () => {
@@ -1664,6 +1672,8 @@ describe("the readout-artifact read-back reads the created issue by number", () 
  */
 describe("the bootstrap taxonomy is derived from the vocabularies the verbs write", () => {
 	const names = new Set(TAXONOMY.map((label) => label.name));
+	/** The lanes some repo declares, as a fixture: a keep set can carry one, and none is shipped. */
+	const LANES = ["wayfinder:backlog", "axis:pipeline-hardening"];
 
 	/** Every label any facet keep set can produce, over the whole vocabulary cross-product. */
 	const keepable = (): ReadonlyArray<string> => {
@@ -1672,7 +1682,7 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 			...TYPES.flatMap((type) =>
 				PRIORITIES.flatMap((priority) =>
 					AUDIENCES.flatMap((readyFor) =>
-						[null, ...STANDING_LANES].map((lane) =>
+						[null, ...LANES].map((lane) =>
 							triagedFacets({type, priority, readyFor, lane, classes: []}),
 						),
 					),
@@ -1684,9 +1694,9 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 
 	it("mints every label a facet keep set can produce, bar the per-repo standing lanes", () => {
 		// The lanes are the one deliberate exclusion: a lane is the host repo's own home vocabulary,
-		// declared in its ROADMAP, not a pipeline state every repo is born with.
+		// declared in its `.fabrika.jsonc`, not a pipeline state every repo is born with.
 		const outside = keepable().filter((label) => !names.has(label));
-		expect(outside.slice().sort()).toEqual([...STANDING_LANES].sort());
+		expect(outside.slice().sort()).toEqual([...LANES].sort());
 	});
 
 	it("mints one label per member of TYPES and of AUDIENCES, and no thirteenth", () => {

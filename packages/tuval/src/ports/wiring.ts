@@ -53,6 +53,13 @@ export interface JoinedInPort {
 export type Join = (at: PortRef) => Effect.Effect<JoinedInPort, PortNotWired>;
 
 /**
+ * A row types `accepts` as total, and a hand-written one is only as total as its author made it. A
+ * check that throws has not admitted the payload, so it reads as a refusal here (#8749).
+ */
+const admitted = (accepts: (payload: unknown) => boolean, payload: unknown) =>
+	Effect.try(() => accepts(payload)).pipe(Effect.orElseSucceed(() => false));
+
+/**
  * Scoped: every queue this opened is shut down when the scope closes, so a wiring never outlives its
  * owner. A joined queue is not this wiring's, and closing it leaves that queue open.
  */
@@ -99,7 +106,7 @@ export const open = Effect.fn("Tuval.ports.open")(function* (compiled: CompiledG
 		}
 		const deliveries: Delivery[] = [];
 		for (const {route, queue, accepts} of routed) {
-			if (!accepts(payload)) {
+			if (!(yield* admitted(accepts, payload))) {
 				return yield* new PayloadRejected({
 					node: route.target.node,
 					program: route.target.program,

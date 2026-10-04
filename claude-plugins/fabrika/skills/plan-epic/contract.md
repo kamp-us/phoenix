@@ -125,7 +125,7 @@ as the sibling contracts do):
   group derives no second verdict; `ledger draft`, `ledger child` and `ledger topology` each
   validate *the document they are composing* so a defect is caught at authoring time, which is a
   different question from grading a finished ledger.
-- **A `status:triaged` flip.** The gate's, unconditionally. No verb here writes it.
+- **A flip to the board's triaged status.** The gate's, unconditionally. No verb here writes it.
 - **A pickability predicate.** `build`'s picker question, and still open there.
 - **A reachability check.** `reachability-guard` answers a flag-graduation question at the
   `/release` seam; nothing in planning needs it, and its v1 shape is pinned to one app's paths.
@@ -732,7 +732,7 @@ EOF
 | `--priority` | string, one of `p0`/`p1`/`p2` | yes | — | the child's priority label; `p3` is retired, not admitted |
 | `--ready-for` | string, one of `human`/`agent` | **optional at the parser, refused in the body** | none | the child's audience; an absent value is refused on `10`, never defaulted |
 | `--assignee` | string (login) | no | none | required when `--ready-for human`; born-assignment is the enforced hold |
-| `--milestone` | string (open milestone title) | **required unless a `--label` carries a standing lane** | none | the child's home; a call naming neither is refused on `10` before any read |
+| `--milestone` | string (open milestone title) | **required unless a `--label` carries a standing lane** | none | the child's home; `.fabrika.jsonc`'s board vocabulary is read on every call, with or without this flag, and one that does not resolve is `11`; without the flag a call whose `--label`s name no declared standing lane is refused on `10` before anything is read from GitHub |
 | `--label` | string, repeatable | no | none | any further label, applied in the same create call |
 | `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
@@ -747,7 +747,7 @@ EOF
 ```
 
 **Every birth attribute lands in the one `POST /issues` call** — `title`, `body`, every label
-(`--type`, `--priority`, `status:planned`, `ready-for:<v>`, each `--label`), `milestone` and
+(`--type`, `--priority`, the board's planned status, `ready-for:<v>`, each `--label`), `milestone` and
 `assignees`. This is the whole reason the verb exists: v1's create hardcoded exactly three
 `labels[]` with no pass-through and set no milestone, so a fourth required label could only be
 applied by a follow-up PATCH — and a follow-up PATCH opens a window in which the child exists with
@@ -755,12 +755,19 @@ applied by a follow-up PATCH — and a follow-up PATCH opens a window in which t
 reads as a permissive default rather than an unknown. v1's own sibling script knows the hazard by
 name and warns that patching a fresh child "reopens the label-less-orphan window".
 
+**The planned status and the standing lanes come off one read of `.fabrika.jsonc`'s board
+vocabulary.** The status is `boardVocabulary.statuses.planned` — `status:planned` where the repo
+declares none — and a home is checked against `boardVocabulary.standingLanes`. A board vocabulary
+that does not resolve is `11` before anything is read from GitHub, with or without `--milestone`.
+
 **A home is required and is never defaulted**: the call names an open milestone, or a
-`--label` from the standing-lane set (`STANDING_LANE_LABELS`) — a child carrying neither groups under
-no campaign and no lane, so nothing on the board shows where it belongs, and the refusal sits at the
-mint, where nothing has been written yet. The lane set is *imported* from `build/scope-admission.ts`,
-never re-listed here in code: two copies is how two readers drift into disagreeing about what a home
-is.
+`--label` from the standing lanes the repo declares (`boardVocabulary.standingLanes` in
+`.fabrika.jsonc`) — a child carrying neither groups under no campaign and no lane, so nothing on the
+board shows where it belongs, and the refusal sits at the mint, where nothing has been written yet.
+The lane set is read from that one declaration, the same one `build pick` and the homing guard read,
+and never listed in code: two copies is how two readers drift into disagreeing about what a home is.
+A repo that declares no lane has one home to offer, the milestone, and a declaration that could not
+be read is `11`.
 
 **`--ready-for` is required and has no default**: a child must never inherit its audience
 by omission. **`--ready-for human` requires `--assignee`**: the label is the routing
@@ -856,7 +863,8 @@ link, deliberately** — see step 5.
 | `ledger child: --type type:decision with --ready-for agent is refused — a child minted now carries no ruling comment of its own, and the citation that opens a decision claim names a comment on the decision issue itself, so the first builder refuses it on the type axis. Mint it --ready-for human with --assignee, record the ruling on the child, then flip it with \`fabrika decision rule <n> --cites <child-comment-url>\`.` | 10 | refusal |
 | `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 10 | refusal |
 | `ledger child: milestone "<title>" is not an open milestone of <repo>.` | 10 | refusal |
-| `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built.` | 10 | refusal |
+| `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (<the declared lanes, comma-joined>). A homeless child groups under no campaign and no lane, so nothing on the board shows where it belongs.` | 10 | refusal |
+| ``ledger child: a child needs a home — pass --milestone <open milestone title>; this repo declares no standing lane (`boardVocabulary.standingLanes`), so a milestone is the only home. A homeless child groups under no campaign and no lane, so nothing on the board shows where it belongs.`` | 10 | refusal |
 | `ledger child: --priority <v> is off the closed set (p0, p1, p2).` | 10 | refusal |
 | `ledger child: cannot read <what>: <reason> — nothing was created.` | 11 | refusal |
 | `ledger child: this lane does not hold #<n>'s claim.` | 15 | refusal |

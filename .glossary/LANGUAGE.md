@@ -110,7 +110,8 @@ thing by it.
 phoenix runs **exactly two test tiers**, split by *which fidelity a claim needs* — not
 by folder. (ADR [0082](../.decisions/0082-two-test-tiers-unit-integration.md) — *Two test
 tiers: unit (no DB) and integration (real D1 via alchemy `Test.make`)*, the source of
-truth, extended by [0104](../.decisions/0104-two-mode-integration-test-tier.md). 0082
+truth, extended by [0104](../.decisions/0104-two-mode-integration-test-tier.md) and amended
+by [0461](../.decisions/0461-ci-only-follows-deploy-credentials.md). 0082
 **supersedes** [0040](../.decisions/0040-testing-taxonomy-and-seam-graduation.md), whose
 four-tier T0–T3 taxonomy rested on a faked in-memory `node:sqlite` D1 stand-in
 (`makeSqliteTestDb`) and the now-falsified premise that *`node:sqlite` is the same engine
@@ -144,7 +145,15 @@ remote** and needs no cloud credentials (`apps/tuval/vitest.config.ts`; epic
 [#7497](https://github.com/kamp-us/phoenix/issues/7497)). Two rules hold across both: the
 split is by fidelity and never by folder, and a claim that only a real engine could falsify
 belongs in `integration` whichever app it is in. What you may not do is read one app's
-`integration` and expect the other's — say which app you mean.
+`integration` and expect the other's — say which app you mean. The `integration` projects of
+`packages/tuval-agy`, `packages/tuval-claude`, `packages/tuval-codex` and `packages/tuval-pi` are
+of Tuval's kind.
+
+**Where an `integration` suite may run follows its credentials, not its name** (ADR
+[0461](../.decisions/0461-ci-only-follows-deploy-credentials.md)). A suite that needs a Cloudflare
+deploy token is CI-only (ADR [0154](../.decisions/0154-integration-tier-is-ci-only.md)): today
+`apps/web`'s, `packages/preview-seed`'s, `packages/admin-grant`'s and `packages/founder-seed`'s. A
+suite that needs none, Tuval's kind, runs anywhere, an agent's machine included.
 
 **One `Database` seam.** A single `Database` tag holds the raw `D1Database` handle; both
 the `Drizzle` service and the better-auth adapter *derive* from it, so they share one

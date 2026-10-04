@@ -316,6 +316,11 @@ const region = (
  * head `heal-ci` classes `logic` red out of the park into repair. It retries into `build`, not
  * `review`, for the reason `review`'s does: a red head is a builder's to fix.
  *
+ * Its `WIP` is the refreshed-head route: a head moved while the tail waits on its approval has no
+ * binding verdict, so the round it owes is walked from `review` and returns to this park only by
+ * `review → ship → BLOCKED`. It is a plain target because a re-review is neither a repair round nor
+ * a queue dwell, and it is not `UNBLOCKED` because nothing was approved.
+ *
  * `review:ui` is the tail's second review cell, and the tail is the ONE region of this machine that
  * carries it. Every child hands its rendered namespace on unconditionally, so the whole run's
  * `review-ui` debt arrives here; with no cell to route into, `prove.ts` left the tail owing the set
@@ -332,6 +337,7 @@ const region = (
  * per-file law over that same branch, which needs no second cell here.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/8937
+ * @ruling https://github.com/kamp-us/phoenix/issues/6380
  */
 const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => ({
 	initial: "review",
@@ -396,6 +402,7 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 		"human:cp-approval": {
 			on: {
 				[`${ns}.UNBLOCKED`]: "hist",
+				[`${ns}.WIP`]: "review",
 				[`${ns}.FAIL`]: [
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:budget-spent"},

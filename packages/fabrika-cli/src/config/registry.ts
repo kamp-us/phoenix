@@ -34,7 +34,7 @@ import {cycleDocKey, decisionsDirKey, roadmapFileKey} from "./keys/paths.ts";
 import {portabilityKey} from "./keys/portability.ts";
 import {reviewSubsystemsKey} from "./keys/review-subsystems.ts";
 import {reviewUiKey} from "./keys/review-ui.ts";
-import {surfaceDispositionsKey} from "./keys/surface-dispositions.ts";
+import {shipScopeKey} from "./keys/ship-scope.ts";
 import {tableKey} from "./keys/table.ts";
 import {triageFacetsKey} from "./keys/triage-facets.ts";
 import {uiCaptureKey, uiSurfacesKey} from "./keys/ui-surfaces.ts";
@@ -70,7 +70,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(reviewSubsystemsKey),
 	register(reviewUiKey),
 	register(roadmapFileKey),
-	register(surfaceDispositionsKey),
+	register(shipScopeKey),
 	register(tableKey),
 	register(triageFacetsKey),
 	register(uiCaptureKey),
