@@ -484,7 +484,7 @@ $ fabrika governance scope 4 --json
   verb does not try to fill that gap with a content regex; it derives a *separate* namespace whose
   verdict is the skill's judgment, and leaves §CP to CODEOWNERS.
 - The v1 §CP boundary's recorded holes — the enumerated skill-dir list, the `**/*.sh` clause, the
-  `.claude-plugin/` hyphen miss — are why the root set is four directory prefixes and not a file-type
+  `.claude-plugin/` hyphen miss — are why the root set is a list of directory prefixes and not a file-type
   or an enumeration that can rot as surfaces are added.
 - v1's `class-probe` read 0 files and classified `has-code` at exit 0; the zero-file case
   here is a `7` refusal.
