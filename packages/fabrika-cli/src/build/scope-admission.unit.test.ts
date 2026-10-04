@@ -31,6 +31,7 @@ import {
 	NO_CITATION,
 	NO_CRITERIA_REASON,
 	NOT_REPAIR,
+	parseCampaigns,
 	parseCitation,
 	parseClaimPurpose,
 	purposeScopeLine,
@@ -120,6 +121,26 @@ describe("readCampaigns", () => {
 
 	it("reads N active rows as the permitted set — campaigns run concurrently", () => {
 		expect(readCampaigns(CAMPAIGNS_44_AND_46)).toEqual(activeBoth);
+	});
+
+	it("reads a table followed by active-at-creation footnote lines exactly as it reads the bare table", () => {
+		const footnote =
+			"fabrika fast follows — active at creation, authorized by https://example.com/ruling";
+		const footnoted = CAMPAIGNS_44.replace(
+			"| switching to fabrika | #45 | done |\n",
+			`| switching to fabrika | #45 | done |\n\n${footnote}\n`,
+		);
+		expect(footnoted).not.toBe(CAMPAIGNS_44);
+		expect(parseCampaigns(footnoted)).toEqual(parseCampaigns(CAMPAIGNS_44));
+		expect(readCampaigns(footnoted)).toEqual(active);
+	});
+
+	it("reads a footnote that begins with a pipe as a data row, so the whole table is malformed", () => {
+		const piped = CAMPAIGNS_44.replace(
+			"| switching to fabrika | #45 | done |\n",
+			"| switching to fabrika | #45 | done |\n\n| fabrika fast follows — active at creation, authorized by https://example.com/ruling |\n",
+		);
+		expect(readCampaigns(piped)._tag).toBe("Malformed");
 	});
 
 	it("makes ONE bad row among good ones malformed for the whole table", () => {

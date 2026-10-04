@@ -318,6 +318,15 @@ describe("parseSectionRows + parseRoadmap", () => {
 		]);
 	});
 
+	it("reads a campaigns table followed by active-at-creation footnote lines as the same rows", () => {
+		const footnoted = md.replace(
+			"| Mentor Audit | #27 | active |\n",
+			"| Mentor Audit | #27 | active |\n\nMentor Audit — active at creation, authorized by https://example.com/ruling\n",
+		);
+		expect(footnoted).not.toBe(md);
+		expect(parseRoadmap(footnoted)).toEqual(parseRoadmap(md));
+	});
+
 	it("returns [] for an absent section", () => {
 		expect(parseSectionRows(md, "Nonexistent")).toEqual([]);
 		const {campaigns} = parseRoadmap(
