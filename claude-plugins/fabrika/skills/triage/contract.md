@@ -1999,7 +1999,7 @@ in the keep set. So the ownership rule is stated here rather than left for an im
 | priority | `^p\d+$` | `<--priority>` |
 | status | `^status:(needs-triage\|triaged\|needs-info)$` | `status:triaged` |
 | audience | `^ready-for:` | `ready-for:<--ready-for>`, or **none** with `--type epic --ready-for agent` |
-| lane | the two lane labels `triage homes` lists | `<--lane>`, or none when `--home` was given |
+| lane | exactly the labels `boardVocabulary.standingLanes` declares — nothing in a repo that declares none | `<--lane>`, or none when `--home` was given |
 | class | `^class:` | `class:<--class>` for each, or **none** when the flag was not passed |
 | **milestone** | the issue's milestone, whatever it is | `--home`'s number, or **none** when `--lane` was given |
 
