@@ -991,6 +991,30 @@ describe("emitMachine — the class axis", () => {
 		expect(statesOf(lane, integrateFailed).issue_4301?.type).toBe("build:ui");
 	});
 
+	// A child labelled `ui` beside a text class is mixed, and the single-law rendered shell refuses
+	// it — so its first build and both repair arms have to reach the shell carrying both laws.
+	// @ruling https://github.com/kamp-us/phoenix/issues/6900
+	it("builds a mixed child in build:mixed, first round and both repair rounds", () => {
+		const lane = laneOf(
+			emitted(emitMachine(4300, body(), [open(4301, ["code", "ui"]), open(4302), open(4303)])),
+		);
+		const builtSteps: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+		];
+		const built = driveLog(lane, builtSteps);
+		const reviewFailed = driveLog(lane, [...builtSteps, ["issue_4301", "FAIL"]]);
+		const integrateFailed = driveLog(lane, [
+			...builtSteps,
+			["issue_4301", "PASS"],
+			["issue_4301", "FAIL"],
+		]);
+
+		expect(statesOf(lane, built.slice(0, 1)).issue_4301?.type).toBe("build:mixed");
+		expect(statesOf(lane, reviewFailed).issue_4301?.type).toBe("build:mixed");
+		expect(statesOf(lane, integrateFailed).issue_4301?.type).toBe("build:mixed");
+	});
+
 	// The constraint that left these arms unclassed when the seed landed: the class has to pick the
 	// cell without taking the budget's place, or a spent rendered child loops instead of parking.
 	it("parks the classed child at human:budget-spent once its retries are spent, on either arm", () => {

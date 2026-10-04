@@ -304,7 +304,7 @@ routing before a head has graded a diff: `lane open` and `lane emit` read the `c
 and seed the lane document from it, and without it a rendered ticket builds its first round in a
 shell carrying none of the design law and reaches `build:ui` only after a `review-ui` FAIL. When
 the deliverable spans a rendered surface and text, pass `--class ui` beside the text class
-(`--class ui --class code`): that pair boots a single-issue lane into `build:mixed`, the shell
+(`--class ui --class code`): that pair boots the lane, or the epic child, into `build:mixed`, the shell
 carrying both construction laws. The
 vocabulary is closed — `code`, `doc`, `skill`, `ui` — and an off-set spelling refuses on `10` before
 any label is written. The four labels are minted from that same set by `status bootstrap
