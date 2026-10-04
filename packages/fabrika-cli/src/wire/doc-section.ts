@@ -65,6 +65,35 @@ export const scanHeadings = (
 };
 
 /**
+ * The body under one already-located heading: from the line after it to the next heading of equal
+ * or shallower depth outside a fence. Outer blank lines are dropped; interior lines are verbatim.
+ * A caller that picks its heading by its own rule cuts here, so the pick and the cut cannot
+ * disagree about which heading is the section's.
+ */
+export const sectionBody = (lines: ReadonlyArray<string>, heading: FoundHeading): string => {
+	const body: string[] = [];
+	let openFence: string | null = null;
+	for (const line of lines.slice(heading.line)) {
+		const fence = FENCE.exec(line);
+		if (fence !== null) {
+			const marker = fence[1] ?? "";
+			if (openFence === null) openFence = marker;
+			else if (closes(openFence, marker)) openFence = null;
+			body.push(line);
+			continue;
+		}
+		if (openFence === null) {
+			const next = ATX_HEADING.exec(line);
+			if (next !== null && (next[1] ?? "").length <= heading.level) break;
+		}
+		body.push(line);
+	}
+	while (body.length > 0 && body[body.length - 1]?.trim() === "") body.pop();
+	while (body.length > 0 && body[0]?.trim() === "") body.shift();
+	return body.join("\n");
+};
+
+/**
  * The section under the one heading that {@link names} `heading` (trimmed, case-sensitive, any
  * depth). Leading and trailing blank lines are dropped from the body; interior lines are verbatim.
  */
@@ -88,29 +117,9 @@ export const extractSection = (markdown: string, heading: string): DocSection =>
 		};
 	}
 
-	const body: string[] = [];
-	let openFence: string | null = null;
-	for (const line of lines.slice(first.line)) {
-		const fence = FENCE.exec(line);
-		if (fence !== null) {
-			const marker = fence[1] ?? "";
-			if (openFence === null) openFence = marker;
-			else if (closes(openFence, marker)) openFence = null;
-			body.push(line);
-			continue;
-		}
-		if (openFence === null) {
-			const next = ATX_HEADING.exec(line);
-			if (next !== null && (next[1] ?? "").length <= first.level) break;
-		}
-		body.push(line);
-	}
-	while (body.length > 0 && body[body.length - 1]?.trim() === "") body.pop();
-	while (body.length > 0 && body[0]?.trim() === "") body.shift();
-
 	return {
 		_tag: "Found",
-		body: body.join("\n"),
+		body: sectionBody(lines, first),
 		heading: {level: first.level, line: first.line},
 	};
 };

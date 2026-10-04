@@ -82,8 +82,9 @@ thing that opens it: when the issue carries a founder ruling comment that alread
 the deciding is done and the writing is all that is left, so claim it and transcribe — turn that
 ruling into the ADR or amendment it names, nothing more. **The citation goes inside the artifact you
 write** — the ADR or amendment names the ruling comment's URL in its own text, so it lands in the
-diff, which is a surface `review diff` serves; free prose in the PR body is read by no verb, so a URL
-that lives only there is invisible to every gate. Name it in the PR body as well, so the merge
+diff, which is a surface `review diff` serves. No verb reads the PR body for a ruling's citation —
+the only body prose one serves is `## Deviations` and `## Report` (step 5), and neither is where a
+gate looks for it — so a URL that lives only in the body is invisible to every gate. Name it in the PR body as well, so the merge
 record carries the citation too.
 **With no citable ruling comment the refusal stands exactly as it reads above.** You never judge a
 decision settled yourself: "this looks settled" is not a citation, a converged thread is not a
@@ -228,8 +229,9 @@ a pre-fix artifact, a runtime observation — and stderr quotes every marked row
 one. Do that verification and write what you observed into the PR body, naming the source the
 criterion named: `review post` refuses a `PASS` whose verdict body cites no evidence for a marked
 criterion (exit `19`), so a row you left unevidenced costs the lane a repair round on a PR that is
-otherwise fine. An `evidence` of `null` is the proven absence of a marker, and that row is
-discharged by the diff exactly as it always was.
+otherwise fine. An `evidence` of `null` is the proven absence of a marker, and what discharges that
+row is what it asks for: a row that asks you to report something is discharged by the `## Report`
+section step 5 has you write, and every other unmarked row by the diff.
 
 **Neither `absent` nor `malformed` is a token you build past.** The verb's three tokens are
 three different facts, and only `found` is a contract: `absent` says no heading reaches for the
@@ -503,7 +505,8 @@ absence would change no reviewer behaviour.
 
 **A criterion that asks you to report something earns a third: `## Report`.** An audit's scope, why
 a duplication was kept, the overlap with another ticket — write each under that exact heading, one
-statement per criterion that asks. It is the only body prose besides `## Deviations` the reviewer is
+statement per criterion that asks. Such a row carries no evidence marker and needs none: the section
+is what discharges it. It is the only body prose besides `## Deviations` the reviewer is
 served ([`review report`](../review/SKILL.md)), and a report-shaped criterion over a body without
 the section is a FAIL.
 

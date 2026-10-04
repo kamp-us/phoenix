@@ -10,7 +10,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/8924#issuecomment-5625300585
  */
 import {isClosingLine} from "../wire/closing-keyword.ts";
-import {extractSection, scanHeadings} from "../wire/doc-section.ts";
+import {scanHeadings, sectionBody} from "../wire/doc-section.ts";
 
 declare const REPORT_TEXT: unique symbol;
 
@@ -49,38 +49,36 @@ const withoutClosingLines = (body: string): string => {
 
 /** Read the `## Report` section out of a PR body. Total: `found` | `absent` | `malformed`. */
 export const readReport = (body: string): ReportRead => {
-	const candidates = scanHeadings(body.split("\n")).filter((heading) =>
-		reachesForBlock(heading.text),
-	);
-	if (candidates.length === 0) {
+	const lines = body.split("\n");
+	const candidates = scanHeadings(lines).filter((heading) => reachesForBlock(heading.text));
+	const [only, ...others] = candidates;
+	if (only === undefined) {
 		return {state: "absent", reason: `no heading in the body reaches for "${HEADING}"`};
 	}
 	const quoted = candidates
 		.map((heading) => `line ${heading.line}: "${"#".repeat(heading.level)} ${heading.text}"`)
 		.join(" | ");
-	const conforming = candidates.filter(
-		(heading) => heading.level === HEADING_LEVEL && heading.text === HEADING_TEXT,
-	);
-	if (conforming.length === 0) {
+	if (others.length > 0) {
+		return {
+			state: "malformed",
+			reason: `the body carries ${candidates.length} report headings, so which one is the report is undecidable — ${quoted}`,
+		};
+	}
+	if (only.level !== HEADING_LEVEL || only.text !== HEADING_TEXT) {
 		return {
 			state: "malformed",
 			reason: `the report heading has drifted, expected "${HEADING}" — ${quoted}`,
 		};
 	}
 
-	const section = extractSection(body, HEADING_TEXT);
-	if (candidates.length > 1 || section._tag !== "Found") {
-		return {
-			state: "malformed",
-			reason: `the body carries ${candidates.length} report headings, so which one is the report is undecidable — ${quoted}`,
-		};
-	}
-	const text = withoutClosingLines(section.body);
+	// Cut under the heading picked above. A second matcher here would count `## Summary, Report` as
+	// the same section and refuse a body the pick already settled.
+	const text = withoutClosingLines(sectionBody(lines, only));
 	if (text === "") {
 		return {
 			state: "malformed",
-			reason: `"${HEADING}" is present at line ${section.heading.line} and its section is empty`,
+			reason: `"${HEADING}" is present at line ${only.line} and its section is empty`,
 		};
 	}
-	return {state: "found", text: text as ReportText, line: section.heading.line};
+	return {state: "found", text: text as ReportText, line: only.line};
 };

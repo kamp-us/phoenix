@@ -33,6 +33,23 @@ describe("readReport", () => {
 		expect(read.state).toBe("absent");
 	});
 
+	it.each([
+		[
+			"beside the section",
+			"## Summary, Report\n\nwhat changed\n\n## Report\n\nAudit scope: all callers.\n",
+			5,
+		],
+		[
+			"nested inside it",
+			"## Report\n\nAudit scope: all callers.\n\n### Notes, Report\n\nnone\n",
+			1,
+		],
+	])("reads found past a heading carrying Report as one comma-separated part, %s", (_, body, line) => {
+		const read = readReport(body);
+		expect(read).toMatchObject({state: "found", line});
+		expect(read.state === "found" ? read.text : "").toContain("Audit scope: all callers.");
+	});
+
 	it("does not take a fenced example of the heading for the section", () => {
 		expect(readReport("```md\n## Report\n\nexample\n```\n").state).toBe("absent");
 	});

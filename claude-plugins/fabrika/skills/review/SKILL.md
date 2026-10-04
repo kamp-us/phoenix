@@ -135,14 +135,16 @@ comment — and grade on that. **Then name it in the verdict body**: say which c
 which evidence and what you read there. `review post` refuses a `PASS` whose body names no evidence
 for a marked criterion (`19`), because a `PASS` citing none has graded the criterion on nothing.
 Evidence you looked for and could not find is a `FAIL` that names what is missing — never a `PASS`
-with a caveat. An **unmarked** criterion keeps today's rule unchanged: the diff discharges it, or it
-is undischarged.
+with a caveat. An **unmarked** criterion has two rules, and which one applies is what the row asks
+for. A row that asks the author to report something is graded from `## Report`, below. Every other
+unmarked row is discharged by the diff, or it is undischarged.
 
 **Do not read an absent marker as licence, and do not add one.** A criterion that is genuinely
 byte-discharged and unmarked grades exactly as it always did. A criterion you believe should have
 been marked and was not is a finding you name in the verdict body and route through
 `review append-criterion` — the marker is triage's to write at mint time, and a reviewer minting one
-mid-review would be marking its own homework.
+mid-review would be marking its own homework. **A report row is never that finding**: it carries no
+marker by design, because `## Report` is its channel, so grade it there and append nothing.
 
 <!-- anchor: A-REPORT-ROW-GRADES-ON-THE-REPORT-SECTION --> **A criterion that asks the author to
 report something is graded on the PR body's `## Report` section.** Some rows ask for a statement no
@@ -161,7 +163,8 @@ fabrika review report $pr_number
 - A non-zero exit is the one UNKNOWN: the body was not read, so the row is an unseen input.
 
 A PR whose graded set asks for no report owes no section, so skip the read there. An epic child has
-no PR body, so this read has no subject on one.
+no PR body, so this read has no subject on one: a report row there is an unseen input, so it is
+UNKNOWN, and the verdict body names it as a row no verb serves on a child.
 
 <!-- anchor: BOTH-ISSUE-KINDS-BIND --> **Both issue kinds bind, and you grade against the number
 either one names.** `part-of:<n>` is an intentional partial split — `build --partial` emits `Part of
