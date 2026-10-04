@@ -4,12 +4,13 @@
  *
  * **The flip is digest-neutral by construction, and this file is where that invariant lives.** The
  * only two labels `plan flip` writes — the board's planned and triaged statuses, `status:planned`
- * and `status:triaged` unless the repo renamed them — are excluded from the child serialization, so a digest taken at check time still binds after the flip and a verdict
- * posted afterwards attests the scope the floor actually scanned. Without the exclusion the digest
- * would be invalidated by the very write it guards, and every clean verdict would bind a scope no
- * floor had checked. Neither label is a floor trigger either: `MISSING_LABEL` requires *a* `status:`
- * prefix, which both satisfy, and `NEEDS_TRIAGE_LABEL` names `status:needs-triage`, which the flip
- * never writes.
+ * and `status:triaged` unless the repo renamed them — are excluded from the child serialization, so
+ * a digest taken at check time still binds after the flip and a verdict posted afterwards attests
+ * the scope the floor actually scanned. Without the exclusion the digest would be invalidated by the
+ * very write it guards, and every clean verdict would bind a scope no floor had checked. Neither
+ * label is a floor trigger while it sits under `status:`: `MISSING_LABEL` tests that literal prefix,
+ * so a pair renamed outside it reds the floor on every child, and `NEEDS_TRIAGE_LABEL` names
+ * `status:needs-triage`, which the flip never writes.
  *
  * The digest is threaded explicitly and never remembered: `plan check` prints it, and the two
  * mutating verbs require it as `--digest` and recompute from a fresh read. That is the TOCTOU answer

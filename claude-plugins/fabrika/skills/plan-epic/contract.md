@@ -732,7 +732,7 @@ EOF
 | `--priority` | string, one of `p0`/`p1`/`p2` | yes | — | the child's priority label; `p3` is retired, not admitted |
 | `--ready-for` | string, one of `human`/`agent` | **optional at the parser, refused in the body** | none | the child's audience; an absent value is refused on `10`, never defaulted |
 | `--assignee` | string (login) | no | none | required when `--ready-for human`; born-assignment is the enforced hold |
-| `--milestone` | string (open milestone title) | **required unless a `--label` carries a standing lane** | none | the child's home; without it the lane declaration in `.fabrika.jsonc` is read first, so a call naming neither home is refused on `10` before any board read, and an unreadable declaration is `11` |
+| `--milestone` | string (open milestone title) | **required unless a `--label` carries a standing lane** | none | the child's home; `.fabrika.jsonc`'s board vocabulary is read on every call, with or without this flag, and one that does not resolve is `11`; without the flag a call whose `--label`s name no declared standing lane is refused on `10` before anything is read from GitHub |
 | `--label` | string, repeatable | no | none | any further label, applied in the same create call |
 | `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |

@@ -2,7 +2,20 @@ import {describe, expect, it} from "vitest";
 import type {StatusNames} from "../config/board.ts";
 import {DEFAULT_STATUS_NAMES} from "../labels.ts";
 import {DIGEST_RE, type LedgerScope, scopeDigest, serializeScope} from "./digest.ts";
+import {
+	CHILD,
+	CYCLE_DOC,
+	cycleDoc,
+	digestOver,
+	epic,
+	epicBody,
+	child as issue,
+	SUB_ISSUES,
+	subIssues,
+} from "./fixtures.test-support.ts";
 import type {ChildLedger} from "./model.ts";
+
+const EPIC = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
 
 /** The board a repo that declared nothing runs on — every case below but the renamed one. */
 const digest = (ledger: LedgerScope) => scopeDigest(ledger, DEFAULT_STATUS_NAMES);
@@ -136,5 +149,36 @@ describe("scopeDigest", () => {
 
 	it("is stable across two computations of one scope", () => {
 		expect(digest(scope())).toBe(digest(scope()));
+	});
+});
+
+describe("the digest a plan verb prints, on a board that renamed planned and triaged", () => {
+	const config = JSON.stringify({
+		boardVocabulary: {statuses: {planned: "status:drafted", triaged: "status:ready"}},
+	});
+	const printed = (status: string): Promise<string> =>
+		digestOver(
+			[
+				[EPIC, epic({body: epicBody({dependencies: "- phase 1: #4301"})})],
+				[SUB_ISSUES, subIssues(4301)],
+				[CHILD(4301), issue({number: 4301, labels: ["type:feature", "p1", status]})],
+				[CYCLE_DOC, cycleDoc],
+			],
+			{config},
+		);
+
+	/**
+	 * `scopeDigest` is handed the board `.fabrika.jsonc` declares, not the shipped one. Pass
+	 * `DEFAULT_STATUS_NAMES` anywhere between the config read and the digest and both cases red — and
+	 * in the field the digest moves at the flip, so the next `plan verdict` refuses the plan as moved.
+	 */
+	it("holds across the flip between the declared pair", async () => {
+		const drafted = await printed("status:drafted");
+		expect(drafted).toMatch(DIGEST_RE);
+		expect(await printed("status:ready")).toBe(drafted);
+	});
+
+	it("binds the shipped pair as ordinary labels once the board declares another", async () => {
+		expect(await printed("status:planned")).not.toBe(await printed("status:triaged"));
 	});
 });
