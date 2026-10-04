@@ -297,8 +297,9 @@ With `--json`: `{"outcome":"scoped","head":<40-hex>,"state":…,"issue":{"kind":
 **Before any of that, this verb proves the checkout it runs in is not the repository's main working
 tree**, and refuses `33` when it is: a shipper reads from a worktree of its own, never from the
 driver's checkout, whose branch another seat can move mid-drive and so change which build of these
-verbs the driver goes on executing. The refusal names the remedy — respawn the shipper with
-`isolation: worktree`. The fact is git's own `--git-dir` / `--git-common-dir` pair, read through
+verbs the driver goes on executing. The remedy is to respawn the shipper in a worktree of its own;
+the refusal names Claude Code's spawn flag for that, the Agent tool's `isolation: worktree`. The
+fact is git's own `--git-dir` / `--git-common-dir` pair, read through
 `lane`'s `standingInLinkedWorktree` (`packages/fabrika-cli/src/lane/assembly.ts`) rather than
 re-derived here; a read that fails is `11` with nothing proven, never a pass. `ship scope` is the
 seat because every shipper run carries it and nothing downstream proceeds without it, so one read
@@ -476,7 +477,8 @@ $ echo $?
 - **One derivation, printed once.** A class set hand-copied into a second script dropped a class on
   a live PR; the vacuous-conjunction refusal is executable here, not five comment lines.
 - **A failed file read is `11`.** It once answered "no §CP, no classes present" in one stroke.
-- **The spawn flag is a request, not a fact.** A shipper dispatched `isolation: worktree` ran in the
+- **The spawn flag is a request, not a fact.** A shipper dispatched with Claude Code's
+  `isolation: worktree` ran in the
   driver's checkout; that checkout's branch then moved under a mid-drive operator, and the driver
   went on executing a different build of these verbs with no signal. One read, in the seat every run
   already carries.

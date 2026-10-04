@@ -485,6 +485,28 @@ output: `ship reconcile` returns `unresolved`, `review ci --wait` returns `settl
 budget-exhausted` beside a rollup that still reads `pending`. A wait that converts "I ran out of
 time" into "it passed" is worse than the `sleep` it replaced.
 
+## 15. The plain rule first, then the harness beside its knob
+
+**Shared skill text states the rule in words every supported harness can act on, and names the
+harness in the same sentence whenever it names that harness's knob.** A knob is a control one
+harness owns and the step tells the reader to operate: a tool, a tool parameter, a spawn flag, an
+environment variable, a config key. The skills are the stage contract on every harness fabrika
+supports, so a reader on any of them finishes the step from the plain rule alone.
+
+The shape is two parts, in this order:
+
+1. **The rule, harness-free** — what must hold, as a condition the reader can check: *give the call
+   a caller-side deadline above its budget*.
+2. **The instance, harness-named** — *on Claude Code, that deadline is the Bash tool's `timeout`*.
+   Every number that belongs to the knob — a ceiling, a default, a unit — sits in this part.
+
+Write an instance for a harness once someone has run the step there; until then that harness reads
+the rule alone.
+
+The failure this prevents: a knob named bare reads as the step itself. A reader on another harness
+finds a control with a different name, or none, and cannot tell the sentence was written for someone
+else — so the harnesses quietly diverge in what one skill means.
+
 ## What these conventions deliberately do not cover
 
 - **What a verb owes its caller** — `--help` discoverability, output contracts, usage examples —

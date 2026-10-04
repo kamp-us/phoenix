@@ -42,7 +42,8 @@ fabrika ship scope $pr_number
 
 **This verb is also where you find out whether you got the worktree your spawn asked for.** On exit
 `33` you are standing in the driver's own checkout: stop there, report the code, and say the shipper
-needs respawning with `isolation: worktree` — never re-run from the same tree. That checkout's branch
+needs respawning in a worktree of its own (on Claude Code, the Agent tool's `isolation: worktree`) —
+never re-run from the same tree. That checkout's branch
 is one another seat moves mid-drive, which silently changes which build of these verbs a driver
 executes, so the spawn flag is a request and this is the fact. It costs one `git rev-parse` inside
 the verb and writes nothing, so **you type no git, ever** still holds for you. Exit `11` here means the read failed and nothing is proven — also a stop.

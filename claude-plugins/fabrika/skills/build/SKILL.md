@@ -553,8 +553,8 @@ cross-lane signal you emit is closed-vocabulary — kind + action + the branded 
 the receiver re-fetches from the artifact.
 
 **A denied tool call is one of those terminals, never an obstacle to route around.** When the
-harness refuses a mutation — an `Edit` the classifier blocks, a command a permission rule denies —
-that refusal is a human saying they decide this one, and re-making the identical change through a
+harness refuses a mutation — on Claude Code, an `Edit` the classifier blocks or a command a
+permission rule denies — that refusal is a human saying they decide this one, and re-making the identical change through a
 different tool, a script or a shell command spends the decision without ever asking for it. So do
 not re-attempt it. Stop where you stand, quote the denied action verbatim in a `fabrika build note`
 so the driver reads it before anything is pushed, and end `STOPPED` — `lane report` maps that token
