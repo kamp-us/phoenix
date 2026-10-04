@@ -637,7 +637,7 @@ describe("status bootstrap", () => {
 		expect(outcome.code).toBe(NOT_BUILDABLE);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.at(-1)).toBe(
-			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule.',
+			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone.',
 		);
 		expect(fs.written.size).toBe(0);
 	});
@@ -1759,6 +1759,106 @@ describe("the readout-artifact read-back reads the created issue by number", () 
 		expect(wrongTitle.outcome.code).toBe(READBACK_MISMATCH);
 		const closed = await run(artifact({state: "closed"}));
 		expect(closed.outcome.code).toBe(READBACK_MISMATCH);
+	});
+});
+
+describe("first-milestone opens a milestone only in a repo with none open", () => {
+	const LIST = /GET .*\/repos\/o\/r\/milestones\?state=open/;
+	const CREATE = /POST .*\/repos\/o\/r\/milestones$/;
+	const READBACK = /GET .*\/repos\/o\/r\/milestones\/1$/;
+	const milestone = (overrides: Readonly<Record<string, unknown>> = {}): HttpReply => ({
+		status: 200,
+		body: JSON.stringify({number: 1, title: "First arc", state: "open", ...overrides}),
+	});
+
+	const run = (script: ReadonlyArray<Scripted>) => {
+		const seams = fakeSeams(script);
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "first-milestone",
+					path: null,
+					json: false,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(seams.layer, fakeFs({files: {}}).layer),
+			),
+		).then((outcome) => ({outcome, seams}));
+	};
+	const NONE_OPEN: Scripted = [LIST, {status: 200, body: "[]"}];
+	const OPENED: Scripted = [CREATE, {...milestone(), status: 201}];
+
+	it("opens one titled `First arc` and proves it off the milestone's own resource", async () => {
+		const {outcome, seams} = await run([NONE_OPEN, OPENED, [READBACK, milestone()]]);
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stdout).toBe("bootstrap\tcreated\tfirst-milestone\tmilestone #1\tok\n");
+		expect(seams.bodies[seams.requests.findIndex((line) => CREATE.test(line))]).toBe(
+			'{"title":"First arc"}',
+		);
+	});
+
+	it("answers exists over any open milestone, naming the lowest, and opens none", async () => {
+		const {outcome, seams} = await run([
+			[
+				LIST,
+				{
+					status: 200,
+					body: JSON.stringify([
+						{number: 7, title: "Later"},
+						{number: 3, title: "Launch"},
+					]),
+				},
+			],
+		]);
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stdout).toBe("bootstrap\texists\tfirst-milestone\tmilestone #3\t-\n");
+		expect(seams.requests.filter((line) => line.startsWith("POST"))).toEqual([]);
+	});
+
+	it.each([
+		{
+			name: "a refused create",
+			script: [NONE_OPEN, [CREATE, {status: 422, body: '{"message":"Validation Failed"}'}]],
+			code: WRITE_UNKNOWN,
+			says: 'opening the milestone "First arc" in o/r failed',
+		},
+		{
+			name: "a created milestone that cannot be re-read",
+			script: [NONE_OPEN, OPENED, [READBACK, {status: 502, body: "{}"}]],
+			code: WRITE_UNKNOWN,
+			says: "opened milestone #1 in o/r and it could not be read back",
+		},
+		{
+			name: "a created milestone that is absent on the re-read",
+			script: [NONE_OPEN, OPENED, [READBACK, {status: 404, body: '{"message":"Not Found"}'}]],
+			code: READBACK_MISMATCH,
+			says: "opened milestone #1 in o/r and the read-back differs",
+		},
+		{
+			name: "a created milestone that re-reads closed",
+			script: [NONE_OPEN, OPENED, [READBACK, milestone({state: "closed"})]],
+			code: READBACK_MISMATCH,
+			says: "opened milestone #1 in o/r and the read-back differs",
+		},
+		{
+			name: "an unreadable milestone list",
+			script: [[LIST, {status: 500, body: "{}"}]],
+			code: PRECONDITION_UNKNOWN,
+			says: "cannot probe o/r's open milestones",
+		},
+	] satisfies ReadonlyArray<{
+		name: string;
+		script: ReadonlyArray<Scripted>;
+		code: number;
+		says: string;
+	}>)("refuses $name, saying which happened", async ({script, code, says}) => {
+		const {outcome} = await run(script);
+		expect(outcome.code).toBe(code);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.at(-1)).toContain(says);
 	});
 });
 

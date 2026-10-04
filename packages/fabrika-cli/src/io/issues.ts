@@ -678,6 +678,33 @@ export const listMilestones = (repo: string): Shell<Attempt<ReadonlyArray<Milest
 		),
 	);
 
+const milestoneState = (body: unknown): Attempt<MilestoneState> =>
+	isRecord(body) &&
+	typeof body.number === "number" &&
+	typeof body.title === "string" &&
+	(body.state === "open" || body.state === "closed")
+		? ok({number: body.number, state: body.state, title: body.title})
+		: fail("GitHub answered 2xx but its body is not a milestone");
+
+/** Open one milestone titled `title`, answering the milestone the host created. */
+export const createMilestone = (repo: string, title: string): Shell<Attempt<MilestoneState>> =>
+	withToken((token) =>
+		Effect.map(restWrite(token, "POST", `repos/${repo}/milestones`, {title}), (outcome) =>
+			then(servedBody(outcome), milestoneState),
+		),
+	);
+
+/** One milestone read off its own resource, in whichever state it is in. */
+export const getMilestone = (repo: string, number: number): Shell<Existence<MilestoneState>> =>
+	Effect.gen(function* () {
+		const token = yield* ambientToken;
+		if (token._tag === "Failure") return unknown<MilestoneState>(token.reason);
+		const outcome = yield* onTransport(
+			restRead(token.value, "GET", `repos/${repo}/milestones/${number}`),
+		);
+		return existenceOf(outcome, milestoneState);
+	});
+
 /** One issue comment, as a claim scan reads it. */
 export interface CommentRecord {
 	readonly id: number;

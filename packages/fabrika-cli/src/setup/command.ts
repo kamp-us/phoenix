@@ -13,15 +13,8 @@ import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
-import type {StdinRead} from "../io/stdin.ts";
 import {bootstrapStep, repoFlag} from "../status/command.ts";
 import {runSetup} from "./setup-verb.ts";
-
-/**
- * What a step is handed in place of fd 0. No step here takes content, so nothing reads this; a step
- * that did would refuse on its empty-content code instead of waiting on a terminal.
- */
-const NO_STDIN: StdinRead = {_tag: "NoStdin", reason: "fabrika setup reads nothing from stdin"};
 
 export const setupCommand = leafCommand(
 	"setup",
@@ -38,13 +31,13 @@ export const setupCommand = leafCommand(
 		yield* emit(
 			yield* runSetup({
 				handCheck,
-				runStep: (surfaceId) =>
+				runStep: (surfaceId, content) =>
 					bootstrapStep({
 						surfaceId,
 						path: null,
 						repo: Option.getOrNull(repo),
 						json: false,
-						stdin: Effect.succeed(NO_STDIN),
+						stdin: Effect.succeed(content),
 					}),
 			}),
 		);
