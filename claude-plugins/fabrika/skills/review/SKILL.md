@@ -744,8 +744,8 @@ decides which one owes what; you relay the row, never the split. On an epic chil
 the flag's: that `PASS` is proved against the range, and it defers the routed namespace whatever the
 flag says (§6).
 The merge gate re-derives all of it either way. A refusal is the PR disagreeing with your terminal: print the token, name the exit code,
-change nothing. Then print the terminal either way; a run whose caller named no lane prints it only
-and records nothing.
+change nothing. Then print the terminal either way; a run whose caller named no lane records
+nothing, and still writes the next paragraph's two plain lines above the terminal.
 
 **Close in plain words, on every ending.** Directly above the terminal, your closing message ends
 with the two plain lines

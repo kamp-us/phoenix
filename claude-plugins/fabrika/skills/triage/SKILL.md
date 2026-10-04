@@ -497,7 +497,9 @@ on every way a run can end: a triaged issue, a park, a kill, a claim another run
 that refused. Where step 6's pitch ask applies, that ask with its four parts is what the person does
 next. A sweep closes once, after its per-issue lines.
 
-Done when the message names the type, the priority and each change, and ends on the two lines.
+Done when the message ends on the two lines and names what triage decided: the type and the priority
+where triage set them, and each change. A park, a kill, a claim another run holds and a verb that
+refused can end with no type or priority set, and then the message owes neither.
 
 ## Sweeping the queue
 

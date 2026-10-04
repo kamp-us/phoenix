@@ -448,7 +448,8 @@ it reads**, so pass it on every terminal that names a PR: the closure is judged 
 pull request, a `LANDED` recorded without the ref reads `unknown` and records no routing answer at
 all, and nominating for one instead cannot see a merged `Part of #N`. Any refusal: print
 the token, name the exit code, change nothing. Then print the
-terminal either way; a run whose caller named no lane prints it only and records nothing.
+terminal either way; a run whose caller named no lane records nothing, and still writes the
+next paragraph's two plain lines above the terminal.
 
 **Close in plain words, on every ending.** Directly above the terminal, your closing message ends
 with the two plain lines

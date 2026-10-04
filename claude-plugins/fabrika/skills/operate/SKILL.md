@@ -2383,7 +2383,8 @@ ends with the two plain lines
 [skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
 requires: what happened, and what the person does next. Write both on each of the five terminals,
 `STOPPED` and `LANE-HELD` included, and word them as that section says. On `LANE-PARKED` the second
-line is the one thing the person does to get the run moving, with the issue's full URL; on
+line is the one thing the person does to get the run moving, with the issue's full URL. A parked
+chore lane has no issue, so there the line names the chore and that one thing, with no URL. On
 `LANE-WAITING` it gives the time after which to start the run again. A command in either line is
 one they can paste ("A command you write for a person", above). Codes, `kept` and `left` lines and
 everything else this skill has you name for your caller go above those two lines, and the lines say
