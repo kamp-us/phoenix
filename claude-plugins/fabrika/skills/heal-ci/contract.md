@@ -1087,7 +1087,7 @@ way down. Patterns are case-insensitive, applied per line.
 | 8 | `typecheck-failure` | logic | `/\berror TS\d{4,5}\b/` |
 | 9 | `lint-failure` | logic | `/\b(eslint\|biome)\b.{0,60}\berror\b\|^\s*error\s+.{0,80}\s+@?[\w/-]+\/[\w-]+$/` |
 | 10 | `build-failure` | logic | `/\b(cannot find module\|module not found\|failed to resolve import\|syntaxerror\|unexpected token)\b/` |
-| 11 | `roll-up-verdict` | derived | `/\bresult=\S+ (?:→\|->) FAIL\b\|\bci-required FAILED\b/` |
+| 11 | `roll-up-verdict` | derived | `/\bresult=\S+ (?:→\|->) FAIL\b/` |
 
 An implementer ships exactly these eleven rows in this order; the table grows by adding rows, never
 by branching inside the verb. Row 4 preceding row 6 is what makes a failure to reach **this PR's own
@@ -1097,9 +1097,15 @@ preview target** a warmup rather than generic network trouble.
 log holds no failure of its own, so every row that names a real failure has to be able to beat it:
 a roll-up log that also printed a defect classifies on the defect. Last place is also what proves
 no generic row reaches roll-up prose. A log holding only that prose classifies `derived` only when
-all ten rows above it missed, and the committed `ci-required` fixture holds that under test. The
-pattern matches the per-job `result=<r> → FAIL` lines and the terminal `ci-required FAILED` line
-the repo's always-on required context prints.
+all ten rows above it missed, and the committed `ci-required` fixture holds that under test.
+
+**The pattern matches a per-job `result=<r> → FAIL` line and nothing else the roll-up prints.** The
+terminal `ci-required FAILED` line is left unmatched on purpose. A roll-up that could not read its
+own scope (it was told of no gating job, or a declared job's required-ness was missing) prints that
+terminal line under a `ci-required: …` reason and no per-job FAIL line. That failure is the
+roll-up's own and names no job to route, so it classifies `unclassified` and leaves through intake.
+Every roll-up red that does restate a job carries that job's FAIL line, so the row loses nothing
+by it.
 
 **A committed-secret finding is deliberately not a row.** A secret scanner's red (gitleaks'
 `leaks found: <n>`) classifies `unclassified` and leaves through intake to a person. No row may

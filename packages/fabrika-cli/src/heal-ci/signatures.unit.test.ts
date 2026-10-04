@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {judge} from "../ci/required.ts";
+import {inputFromEnv, JOBS_ENV_KEY, judge} from "../ci/required.ts";
 import {CI_REQUIRED_ROLLUP_LOG} from "./fixtures.test-support.ts";
 import {classifyLog, SIGNATURES} from "./signatures.ts";
 
@@ -67,6 +67,27 @@ describe("a roll-up that only restates another job's verdict is derived", () => 
 		expect(failing).toHaveLength(1);
 		const found = classifyLog(failing[0]?.reason ?? "");
 		expect(found._tag === "Matched" ? found.signature.id : null).toBe("roll-up-verdict");
+	});
+
+	it.each([
+		["names no gating job", {CHANGES_RESULT: "success"}],
+		[
+			"declares a job whose required-ness key is absent",
+			{CHANGES_RESULT: "success", [JOBS_ENV_KEY]: "unit", UNIT_RESULT: "success"},
+		],
+	])("leaves a roll-up that failed on its own scope read unclassified when it %s", (_case, env) => {
+		const verdict = judge(inputFromEnv(env));
+		expect(verdict.pass).toBe(false);
+		expect(verdict.scopeReasons).not.toHaveLength(0);
+		expect([verdict.changesReport, ...verdict.jobs].some((r) => r?.verdict === "FAIL")).toBe(false);
+		// The lines `ci/required-bin.ts` prints for this verdict, as the runner renders them.
+		const log = [
+			...verdict.scopeReasons.map((reason) => `##[error]ci-required: ${reason}`),
+			...verdict.jobs.map((job) => job.reason),
+			"##[error]ci-required FAILED — a should-have-run gating job was skipped or failed (see per-job verdicts above)",
+			"##[error]Process completed with exit code 1.",
+		].join("\n");
+		expect(classifyLog(log)._tag).toBe("Unclassified");
 	});
 });
 

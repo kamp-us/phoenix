@@ -108,7 +108,9 @@ export const SIGNATURES: ReadonlyArray<Signature> = [
 	{
 		id: "roll-up-verdict",
 		class: "derived",
-		pattern: /\bresult=\S+ (?:→|->) FAIL\b|\bci-required FAILED\b/i,
+		// The terminal `ci-required FAILED` line is deliberately unmatched: a roll-up that could not
+		// read its own scope prints it with no per-job FAIL line, and that failure is the roll-up's own.
+		pattern: /\bresult=\S+ (?:→|->) FAIL\b/i,
 		rationale:
 			"a roll-up restating another job's verdict, with no failure of its own — route the job its FAIL line names",
 	},

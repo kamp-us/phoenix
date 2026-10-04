@@ -338,7 +338,7 @@ const rerun = leafCommand(
 			"  7: the PR or run is absent",
 			"  8: the request or its re-read failed (UNKNOWN), no marker written",
 			"  9: the marker read-back does not match",
-			"  10: --signature is off the classify table, or names a row whose class is not transient",
+			"  10: --signature names no transient classify row",
 			"  11: a precondition read failed; nothing was requested",
 			"  12: the live head moved past --sha",
 			"  13: the comment enumeration never proved complete",

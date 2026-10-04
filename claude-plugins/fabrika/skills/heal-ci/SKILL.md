@@ -169,9 +169,12 @@ flake. There is no path from an ambiguous log to "safe to rerun". Each token lic
 - **`derived`** — a roll-up context whose log restates other jobs' verdicts and holds no failure of
   its own. Its FAIL lines each name a job: work that job's own `class` line under the token it
   carries, and take no action on the roll-up line itself, since a rerun or a filing there would
-  work one defect twice. When a named job has **no** `class` line — it should have run and never
-  reported, so `logs` emitted no context for it — the roll-up is the only place that failure shows.
-  File it through the intake seam as you would an `unclassified`, quoting the FAIL line.
+  work one defect twice. A FAIL line names the workflow job key (`packages-tests`), and a `class`
+  line carries the check-run name (`packages unit tests`), so the two can differ:
+  the job's `name:` in its workflow file is what ties one to the other. When a named job has **no** `class` line, file it through the
+  intake seam as you would an `unclassified`, quoting the FAIL line. That holds for either reason
+  the line is missing: the job never reported, or it failed outside the required set and `logs`
+  left it out. Both leave the roll-up as the only place the failure shows.
 
 Only reds the base branch declares **required** reach this lane. Anything else is red without
 blocking, and treating one as healable is how a non-failure stalled a mergeable PR — which is the
