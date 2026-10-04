@@ -28,6 +28,9 @@ import {
 	type HttpReply,
 	type Scripted,
 } from "../fakes.test-support.ts";
+import {cpPaths, parseCodeownersPatterns} from "../guard/codeowners-cp.ts";
+import {runCodeownersCpGuard} from "../guard/codeowners-cp-verb.ts";
+import {CONTROL_PLANE_RE} from "../guard/control-plane-re.ts";
 import {type Attempt, ok} from "../io/git.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
@@ -637,7 +640,7 @@ describe("status bootstrap", () => {
 		expect(outcome.code).toBe(NOT_BUILDABLE);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.at(-1)).toBe(
-			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone.',
+			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file.',
 		);
 		expect(fs.written.size).toBe(0);
 	});
@@ -2090,5 +2093,76 @@ describe("the tab-separated field discipline", () => {
 
 	it("clamps after reproducing the raw text, so a truncated detail stays attributable", () => {
 		expect(oneLine("x".repeat(200), 120)).toHaveLength(120);
+	});
+});
+
+describe("owners-file writes the owners file from the guard's own path list", () => {
+	const TARGET = "/repo/.github/CODEOWNERS";
+	const USER = /GET .*\/user$/;
+	const SIGNED_IN: Scripted = [USER, {status: 200, body: '{"login":"octo"}'}];
+
+	const run = (files: Record<string, string>, script: ReadonlyArray<Scripted> = [SIGNED_IN]) => {
+		const seams = fakeSeams(script);
+		const fs = fakeFs({files});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "owners-file",
+					path: null,
+					json: false,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(seams.layer, fs.layer),
+			),
+		).then((outcome) => ({outcome, written: fs.written, seams}));
+	};
+
+	it("writes one row per path the guard demands, owned by the signed-in login, and the guard passes on it", async () => {
+		const {outcome, written} = await run({});
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stdout).toBe("bootstrap\tcreated\towners-file\t.github/CODEOWNERS\tok\n");
+		expect([...written.keys()]).toEqual([TARGET]);
+
+		const text = written.get(TARGET) ?? "";
+		const rows = parseCodeownersPatterns(text);
+		expect(rows.map((row) => row.pattern)).toEqual(
+			cpPaths(CONTROL_PLANE_RE).map((demanded) => demanded.path),
+		);
+		expect(new Set(rows.flatMap((row) => row.owners))).toEqual(new Set(["@octo"]));
+
+		const guard = await Effect.runPromise(
+			Effect.provide(
+				runCodeownersCpGuard({root: "/repo", cwd: "/repo", env: {}}),
+				fakeFs({files: {[TARGET]: text}}).layer,
+			),
+		);
+		expect(guard.code).toBe(ANSWER);
+	});
+
+	it.each([
+		".github/CODEOWNERS",
+		"CODEOWNERS",
+		"docs/CODEOWNERS",
+	])("answers exists over an owners file at %s, writing nothing and reading no login", async (at) => {
+		const {outcome, written, seams} = await run({[`/repo/${at}`]: "* @someone\n"});
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stdout).toBe(`bootstrap\texists\towners-file\t${at}\t-\n`);
+		expect(written.size).toBe(0);
+		expect(seams.requests).toEqual([]);
+	});
+
+	it("refuses unwritten when the signed-in login cannot be read", async () => {
+		const {outcome, written} = await run({}, [
+			[USER, {status: 401, body: '{"message":"Bad credentials"}'}],
+		]);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.at(-1)).toMatch(
+			/^status bootstrap: cannot read the signed-in login: .+ — who would own the rows is UNKNOWN, and nothing was written\.$/,
+		);
+		expect(written.size).toBe(0);
 	});
 });

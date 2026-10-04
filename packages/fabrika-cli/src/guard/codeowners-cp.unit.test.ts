@@ -13,6 +13,7 @@ import {
 	expandBranch,
 	findUncovered,
 	parseCodeownersPatterns,
+	renderCodeowners,
 	renderReport,
 	splitTopLevelBranches,
 } from "./codeowners-cp.ts";
@@ -132,5 +133,27 @@ describe("renderReport", () => {
 		expect(report).toContain(".github/");
 		expect(report).toContain("control-plane-re.ts");
 		expect(report).toContain("zero required");
+	});
+});
+
+describe("renderCodeowners", () => {
+	// The paths are ones no boundary of ours names, so a renderer carrying a list of its own would
+	// print rows this case never handed it.
+	it("renders exactly the paths it is handed, each owned by the login", () => {
+		const text = renderCodeowners(
+			[
+				{path: "infra/", kind: "dir"},
+				{path: "Makefile", kind: "file"},
+				{path: "scripts/*.sh", kind: "glob"},
+				{path: "**/*.tf", kind: "glob"},
+			],
+			"octo",
+		);
+		expect(text.split("\n").filter((line) => line !== "" && !line.startsWith("#"))).toEqual([
+			"/infra/ @octo",
+			"/Makefile @octo",
+			"/scripts/*.sh @octo",
+			"**/*.tf @octo",
+		]);
 	});
 });

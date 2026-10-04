@@ -112,6 +112,25 @@ export const parseCodeownersPatterns = (codeownersText: string): ReadonlyArray<O
 };
 
 /**
+ * One CODEOWNERS pattern that covers `p`. A path is anchored at the repo root with a leading `/`; an
+ * any-depth glob keeps its double-star lead, which a root anchor would only restate.
+ */
+const patternFor = (p: CpPath): string => (p.path.startsWith("**/") ? p.path : `/${p.path}`);
+
+/**
+ * A whole CODEOWNERS file: one row per §CP path, in the order given, each owned by `login`. It holds
+ * no path of its own, so it renders whatever boundary it is handed.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10497
+ */
+export const renderCodeowners = (paths: ReadonlyArray<CpPath>, login: string): string =>
+	[
+		"# One row per path `fabrika guard codeowners-cp check` requires an owner for.",
+		...paths.map((p) => `${patternFor(p)} @${login}`),
+		"",
+	].join("\n");
+
+/**
  * Does CODEOWNERS pattern `e` cover §CP path `p`?
  *
  * A directory entry does NOT cover a sibling file — `hooks/` does not cover `hooks.json`, which is
