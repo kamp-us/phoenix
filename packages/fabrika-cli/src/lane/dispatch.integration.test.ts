@@ -112,6 +112,7 @@ const briefFor = (options: ReturnType<typeof fixture>) =>
 		shell: "builder",
 		issue: artifactUrl("https://example.test/issues/8617")!,
 		ground: {_tag: "Pull", pr: null},
+		ownerComments: {_tag: "None"},
 	});
 
 describe("Codex dispatch against real git and a fake child process", {

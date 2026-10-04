@@ -421,6 +421,12 @@ Four events carry a claim, and which artifact answers them is the task's shape.
   the same roster-gated scan `review criteria` folds, so an off-roster marker rules nothing. A
   comment page or roster that will not read is `11`, never "nobody ruled". The park arm asks none
   of this.
+- The same read names, on stderr, the comments a control-plane account wrote on the issue that no
+  ruling marker records and that are newer than the newest standing ruling: their count and each
+  one's URL, worded exactly as `review criteria` words them. A plain comment is no ruling, so it
+  makes no verdict stale and changes no exit code. Where the roster did not resolve on an issue
+  carrying no conforming marker, the line says UNKNOWN rather than zero and the proof goes on.
+  [`review criteria`](../review/contract.md#review-criteria) owns what counts as unmarked.
 
 **On an epic run's child, which opens no PR at all:**
 
@@ -775,6 +781,12 @@ pastes a brief rather than composing one. stdout is the `lane-brief` wire format
   repo, so each worktree runs its own copy, and absolute for an installed one no worktree has a
   `node_modules` for;
 - the resolved issue and PR URLs. They are URLs only: the spawned shell re-reads its own ground;
+- on a build or review state, `owner-comments`: the URLs of the comments a control-plane account
+  wrote on the issue that no ruling marker records, read through the scan `review criteria` and
+  `lane prove` answer from, with a byte-fixed rule telling the shell to read each one. The field is
+  absent when there is none. It reads `unknown` when the comments or the roster could not be read,
+  and the brief is still printed: this read warns and never refuses a dispatch. stderr carries the
+  same count and URLs;
 - the format's byte-fixed rules.
 
 Hand the bytes to the spawn verbatim. A line appended under them is text the format's own reader

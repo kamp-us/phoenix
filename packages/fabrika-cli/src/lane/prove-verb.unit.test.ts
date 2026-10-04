@@ -351,6 +351,34 @@ describe("lane prove — a verdict older than the issue's newest ruling", () => 
 		expect(JSON.parse(out.stdout)).toMatchObject({proof: "proven"});
 	});
 
+	/**
+	 * A plain owner comment is no ruling, so it never makes a verdict stale. It is named so the
+	 * driver sees it, and the proof's exit is what it was without it.
+	 */
+	it("names an owner comment newer than the ruling that no marker records, and still proves", async () => {
+		const at = "2026-08-16T04:00:00Z";
+		const later = "2026-08-16T04:30:00Z";
+		const page = served([
+			{id: 900002, body: rulingMarker(at), user: {login: RULER}, created_at: at, updated_at: at},
+			{
+				id: 900010,
+				body: "Changed my mind: take the other fork.",
+				user: {login: RULER},
+				created_at: later,
+				updated_at: later,
+			},
+		]);
+		const seams = seamsWith(board(page, "2026-08-16T05:00:00Z"));
+
+		const out = await run(laneAt("review"), seams, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "proven"});
+		expect(out.stderr.join("\n")).toContain(
+			`1 comment(s) by a control-plane account on #5747 are newer than the newest standing ruling and carry no ruling marker: https://github.com/${REPO}/issues/5747#issuecomment-900010`,
+		);
+	});
+
 	/** A marker anyone can post is no ruling; the roster is what makes it one. */
 	it("leaves the PASS current under a marker from an off-roster author", async () => {
 		const seams = seamsWith(

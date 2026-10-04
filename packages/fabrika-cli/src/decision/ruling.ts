@@ -16,7 +16,13 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type CommentRecord, getIssue, type IssueRecord} from "../io/issues.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
-import {type DecisionRuling, read as readRuling, rules} from "../wire/decision-ruling.ts";
+import {
+	type DecisionRuling,
+	read as readRuling,
+	rules,
+	rulingComment,
+} from "../wire/decision-ruling.ts";
+import {carriesMachineMarker} from "../wire/machine-marker.ts";
 import {NO_TARGET, PRECONDITION_UNKNOWN} from "./codes.ts";
 
 export type DecisionTarget =
@@ -107,6 +113,9 @@ export interface RulingScan {
 	readonly unauthorized: number;
 }
 
+const byWrite = (a: CommentRecord, b: CommentRecord): number =>
+	a.updatedAt === b.updatedAt ? a.id - b.id : a.updatedAt < b.updatedAt ? -1 : 1;
+
 /**
  * The standing ruling among an issue's comments, newest last.
  *
@@ -121,9 +130,7 @@ export const scanRulings = (
 	issue: number,
 	roster: ReadonlySet<string>,
 ): RulingScan => {
-	const ordered = [...comments].sort((a, b) =>
-		a.updatedAt === b.updatedAt ? a.id - b.id : a.updatedAt < b.updatedAt ? -1 : 1,
-	);
+	const ordered = [...comments].sort(byWrite);
 	const all: StandingRuling[] = [];
 	let disregarded = 0;
 	let unauthorized = 0;
@@ -168,6 +175,57 @@ export const newestRulingAt = (scan: RulingScan): string | null => {
 		}
 	}
 	return newest;
+};
+
+/** A roster account's comment that no ruling marker records, addressed so a reader can open it. */
+export interface UnmarkedComment {
+	readonly id: number;
+	readonly by: string;
+	readonly url: string;
+}
+
+/**
+ * Every roster account's comment that is newer than the newest standing ruling and is neither a
+ * machine marker nor the comment a standing ruling cites, oldest first.
+ *
+ * A ruling counts once a marker records it, and that stays true. This is the other half: an owner
+ * who wrote a rule as a plain comment used to read exactly like an issue nobody ruled on, so a
+ * reviewer graded an older marked ruling the owner had since replaced. Nothing here makes such a
+ * comment a ruling. It only makes it visible, to be read or recorded.
+ *
+ * **The list holds agent prose too.** Where agents post under an owner's account, their free-prose
+ * notes are roster comments with no marker, and no read of the bytes separates them from a person's
+ * — which is why every caller lists these and none refuses on them.
+ *
+ * Dated by `updatedAt`, as {@link scanRulings} orders: an edit after the ruling is a newer
+ * statement. A stamp nobody can date, on either side, cannot prove the comment older, so it counts.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10309#issuecomment-5974136525
+ */
+export const unmarkedOwnerComments = (
+	comments: ReadonlyArray<CommentRecord>,
+	repo: string,
+	issue: number,
+	roster: ReadonlySet<string>,
+	scan: RulingScan,
+): ReadonlyArray<UnmarkedComment> => {
+	const newest = newestRulingAt(scan);
+	const cutoff = newest === null ? Number.NaN : Date.parse(newest);
+	const cited = new Set(scan.all.map((standing) => rulingComment(standing.ruling.ruling)));
+	return [...comments]
+		.sort(byWrite)
+		.filter(
+			(comment) =>
+				roster.has(comment.author) &&
+				!cited.has(comment.id) &&
+				!carriesMachineMarker(comment.body) &&
+				!(Date.parse(comment.updatedAt) <= cutoff),
+		)
+		.map((comment) => ({
+			id: comment.id,
+			by: comment.author,
+			url: `https://github.com/${repo}/issues/${issue}#issuecomment-${comment.id}`,
+		}));
 };
 
 /** The state a scan resolves to against the digest derived from the body as it now stands. */

@@ -103,6 +103,14 @@ is reported rather than graded, so it never silently vanishes. A marker from an 
 control-plane roster is not a ruling and is counted on stderr, never dropped, and so is a drifted
 one — read those counts.
 
+**`criteria` also names owner comments that no marker records, and they are not in the graded set.**
+stderr lists the count and each URL, and `--json` carries them in `unmarked`; your brief's
+`owner-comments` field names the same URLs. Read each one. Grade the set the verb printed and
+nothing else: a plain comment rules nothing until a control-plane human records it with
+`fabrika decision rule <n> --cites <url>`. Where one of them contradicts a row you are grading, say
+so in the verdict body and name its URL, so the owner can record it. `unknown` there means the
+roster did not resolve, never that there are none.
+
 **A verdict older than the newest standing ruling is not current, and `lane prove` says so.** It
 binds a head and it may still bind that head's content, and it graded a contract that has since
 moved — so a `PASS` cannot ride it past a ruling it never read. That is not a finding about the

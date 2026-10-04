@@ -33,7 +33,11 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import type {StandingRuling} from "../decision/ruling.ts";
-import {standingRulings} from "../decision/standing-rulings.ts";
+import {
+	describeUnmarked,
+	standingRulings,
+	type UnmarkedRead,
+} from "../decision/standing-rulings.ts";
 import {type CommentRecord, getIssue} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
@@ -68,6 +72,25 @@ const withText = (
 		ruling,
 		text: byId.get(rulingComment(ruling.ruling.ruling)) ?? null,
 	}));
+};
+
+/**
+ * The `unmarked` key, present only when there is something to say.
+ *
+ * Absent is the proven zero, so an issue with no such comment prints the bytes it always printed.
+ * `unknown` is its own state and never rides as an absence.
+ */
+const unmarkedField = (unmarked: UnmarkedRead): {readonly unmarked?: unknown} => {
+	if (unmarked._tag === "Unknown") return {unmarked: {state: "unknown", reason: unmarked.reason}};
+	return unmarked.comments.length === 0
+		? {}
+		: {
+				unmarked: {
+					state: "counted",
+					count: unmarked.comments.length,
+					comments: unmarked.comments.map((comment) => comment.url),
+				},
+			};
 };
 
 export const runCriteria = (
@@ -127,10 +150,11 @@ export const runCriteria = (
 		const set = gradedSet(criteria, withText(ruled.scan.all, ruled.comments));
 		diagnostics.push(
 			ruled.roster === null
-				? `${VERB}: read ${ruled.comments.length} comment(s) on #${issue}; none reaches for a ruling marker, so the control-plane roster was not resolved.`
+				? `${VERB}: read ${ruled.comments.length} comment(s) on #${issue}; none reaches for a ruling marker, ${ruled.unmarked._tag === "Unknown" ? "and the control-plane roster did not resolve" : "so the control-plane roster was not resolved"}.`
 				: `${VERB}: ${ruled.roster.size} control-plane account(s) from ${ruled.roster.owners} at ${ruled.roster.ref}; read ${ruled.comments.length} comment(s) on #${issue}.`,
 			`${VERB}: the graded set is ${criteria.length} body criteri${criteria.length === 1 ? "on" : "a"} plus ${set.rulings} standing ruling(s); ${set.superseded} body row(s) superseded, ${ruled.scan.disregarded} drifted marker(s) disregarded, ${ruled.scan.unauthorized} from an account off that roster.`,
 		);
+		diagnostics.push(...describeUnmarked(VERB, issue, ruled));
 		if (set.rulings > 0) {
 			diagnostics.push(
 				`${VERB}: grade the ruling rows as well as the body rows — where the two contradict, the newest ruling is the spec and a superseded body row is reported, not graded.`,
@@ -161,6 +185,7 @@ export const runCriteria = (
 						disregarded: ruled.scan.disregarded,
 						unauthorized: ruled.scan.unauthorized,
 						danglingSupersedes: set.danglingSupersedes,
+						...unmarkedField(ruled.unmarked),
 						criteria: set.rows,
 					}),
 					diagnostics,
