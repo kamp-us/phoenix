@@ -119,12 +119,23 @@ spelling reads as `exists`. Commit the change before running a lane.
 
 ## 6. Open at least one milestone
 
-**Writes to GitHub:** you create a milestone in your repo, by hand. No fabrika verb does this, so a
-permission tool that asks before outside writes will ask here.
+**Writes to GitHub:** the command opens a milestone in your repo when it has no open one.
+
+```bash
+fabrika status bootstrap first-milestone
+```
+
+```
+bootstrap	created	first-milestone	milestone #1	ok
+```
 
 `triage homes` offers only **open** milestones joined to a roadmap row, and zero open milestones is a
 refusal (exit 7), not an empty answer. It creates none — curating the milestone set is a human act.
-Open one on GitHub and note its number: the roadmap you write next pins it.
+`first-milestone` opens one titled `First arc` only when the repo has no open milestone. Over any
+open one it prints `exists` and opens nothing, so a set you already keep is never added to.
+
+Note the number in the row's `milestone #<n>` target: the roadmap you write next pins it. To start
+under a title of your own, open the milestone on GitHub by hand instead and note that number.
 
 ## 7. Write a `ROADMAP.md`
 
