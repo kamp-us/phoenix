@@ -81,6 +81,7 @@ makes that choice, three things hold:
   every review round, with the floor reported through a check run.
 - **The sweep that stays is machine-run**: the citation-independent contradiction sweep run by
   [`governance`](../skills/governance/SKILL.md) (its corpus half, `§2`).
+
 That trade is a machine gate standing in for a human approval. It
 removes a human approval, not a gate — a repo that drops the machine half as well has removed the
 review, not relocated it.
