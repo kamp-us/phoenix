@@ -1,7 +1,7 @@
 ---
 id: 0313
 title: A clean PR still in the merge queue is a wait the driver re-folds, not a human park
-status: accepted
+status: amended-in-part by [0451](0451-parked-lane-rereviews-refreshed-head.md)
 date: 2026-08-20
 tags: [fabrika, lane, pipeline, ship, state-machine]
 ---
