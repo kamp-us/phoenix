@@ -438,7 +438,7 @@ const clearRouteSatisfied = (
 			repo,
 			json: true,
 			env: options.env,
-			caller: "relay",
+			caller: {_tag: "relay"},
 		});
 		if (scoped.code !== 0) {
 			return unknown(`#${pr}'s scope`, `fabrika ship scope refused at exit ${scoped.code}`);
@@ -1635,7 +1635,7 @@ const readOpenHeadCi = (
 			repo,
 			json: true,
 			env: options.env,
-			caller: "relay",
+			caller: {_tag: "relay"},
 		});
 		if (scoped.code !== 0) {
 			return unknown(`#${pr}'s scope`, `fabrika ship scope refused at exit ${scoped.code}`);

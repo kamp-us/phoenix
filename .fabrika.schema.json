@@ -707,6 +707,21 @@
 			"minLength": 1,
 			"pattern": "^(?!/)(?!\\.\\.).+"
 		},
+		"shipScope": {
+			"type": "object",
+			"description": "Whether `ship scope` answers from the repository's main working tree.",
+			"properties": {
+				"mainWorkingTree": {
+					"type": "string",
+					"description": "What a shipper's own `ship scope` does when it stands in the main working tree: `refuse` (exit 33 with nothing read — the shipped default, and the behaviour before this key) or `allow` (read the pull request and print its scope from there, for a repo that keeps one checkout or ships by hand).",
+					"enum": [
+						"refuse",
+						"allow"
+					]
+				}
+			},
+			"additionalProperties": false
+		},
 		"table": {
 			"type": "object",
 			"description": "The weekly betting table on GitHub Projects: its cadence, agenda and every threshold its flags read. Its size dollars come from `appetiteSizes`. Leave it out for a working table on the shipped values; declare only the sub-keys you want to change.",
