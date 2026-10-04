@@ -152,8 +152,8 @@ of Tuval's kind.
 **Where an `integration` suite may run follows its credentials, not its name** (ADR
 [0461](../.decisions/0461-ci-only-follows-deploy-credentials.md)). A suite that needs a Cloudflare
 deploy token is CI-only (ADR [0154](../.decisions/0154-integration-tier-is-ci-only.md)): today
-`apps/web`'s and `packages/preview-seed`'s. A suite that needs none, Tuval's kind, runs anywhere,
-an agent's machine included.
+`apps/web`'s, `packages/preview-seed`'s, `packages/admin-grant`'s and `packages/founder-seed`'s. A
+suite that needs none, Tuval's kind, runs anywhere, an agent's machine included.
 
 **One `Database` seam.** A single `Database` tag holds the raw `D1Database` handle; both
 the `Drizzle` service and the better-auth adapter *derive* from it, so they share one

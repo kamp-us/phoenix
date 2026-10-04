@@ -55,7 +55,8 @@ requirement, never the name.**
   `packages/tuval-agy`, `packages/tuval-claude`, `packages/tuval-codex` and `packages/tuval-pi`.
 - **CI-only binds the credentialed suites.** A suite that needs a Cloudflare deploy token runs in
   GitHub Actions only, and no agent runs it locally. Today those are the `integration` projects of
-  `apps/web` and `packages/preview-seed`. Everything 0154 says about them stands.
+  `apps/web`, `packages/preview-seed`, `packages/admin-grant` and `packages/founder-seed`.
+  Everything 0154 says about them stands.
 - **A credential-free `integration` suite runs anywhere.** An agent may run it locally, and CI may
   run it in a job that holds no Cloudflare token.
 - **Which rule applies is read off the suite, not the name.** A suite that deploys to Cloudflare or
