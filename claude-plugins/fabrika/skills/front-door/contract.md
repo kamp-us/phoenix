@@ -1099,8 +1099,8 @@ surface merges into a file that is already there instead. The content is the
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
-here, not inferred from any declaration. Thirteen ids, and
-a fourteenth is a change to this table, not a new rule.
+here, not inferred from any declaration. Fourteen ids, and
+a fifteenth is a change to this table, not a new rule.
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
@@ -1117,6 +1117,7 @@ a fourteenth is a change to this table, not a new rule.
 | `hand-check-rule` | `--path`, default `.fabrika.jsonc` at the repo root | **none** — the one `reviewUi.whenNoPreview` rule [fixed below](#hand-check-rule), spliced into a present file's text, written whole into a file that is absent | the re-read matches the spliced text through `normalizeForReadback` — the rule in, every other key and every comment where it was |
 | `first-milestone` | one open milestone in the repo | **none** — title exactly `First arc`, opened only when the repo has [no open milestone](#first-milestone) | the milestone's own resource resolves open under that exact title |
 | `owners-file` | `.github/CODEOWNERS` at the repo root; `--path` does not move it | **none** — one row per path the owners-file guard demands, each owned by the signed-in login, written only when the repo has [no owners file](#owners-file) | the re-read file covers every path `guard codeowners-cp check` demands |
+| `ci-file` | `.github/workflows/ci.yml` at the repo root; `--path` does not move it | **none** — the starter CI workflow [fixed below](#ci-file), written only when the repo has no workflow file | the file's bytes match the fixed text through `normalizeForReadback` |
 
 <a id="taxonomy-is-derived"></a>**The taxonomy is derived from the vocabularies, never restated.**
 Every name comes from the constant the writing verb already reads — `STATUSES` for the five statuses,
@@ -1427,6 +1428,35 @@ its paths unowned, so a new repo needs the file before its first build.
   @<login>`, and `--json` carries the count as the number field `rows`. An `exists` answer carries
   no `rows` field, because that file was never read. The tab-separated line does not change.
 
+<a id="ci-file"></a>**`ci-file` writes a starter CI workflow, for a repo that has none.** The merge
+step needs one CI run on each pull request, and a new repo has no workflow to give it one.
+
+- **The content is fixed here.** One job, run on every pull request, that passes when `README.md`
+  is not empty:
+
+  ```yaml
+  name: ci
+  on:
+    pull_request:
+  jobs:
+    readme:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - run: test -s README.md
+  ```
+
+- **Any workflow file already there is `exists`, and is never read or changed.** GitHub runs
+  workflows from `.github/workflows/` only, and a workflow file is a `.yml` or `.yaml` entry
+  directly in it. One such file under any name is `exists`, with `<target>` naming the first in
+  name order, so a repo with its own CI never gets a second one. A directory that is absent, or
+  that holds no workflow file, is the gap the file is written into.
+- **The target is fixed.** A workflow outside `.github/workflows/` never runs, so `--path` does not
+  move this surface. The directories are created when they are missing.
+- **It reads no stdin, no login and no repository**, so it runs with no credential.
+- **A directory that cannot be listed is `11`** with nothing written. Only a directory proven absent
+  reads as "no workflow".
+
 The `readout-artifact` body, fixed here so no clause defers to another skill's prose:
 
 ```markdown
@@ -1490,7 +1520,7 @@ the shape this seat exists to prevent. The skill loops.
 | `8` | the write failed — whether anything landed is **UNKNOWN**; re-read before retrying |
 | `9` | the write landed and the read-back does not match |
 | `10` | `--path` resolves outside the repository root |
-| `11` | a precondition read failed — the existence probe could not be performed, a present json target's bytes do not parse as a JSON object, dep-pin's registry read failed (unreachable, non-200, or no version named), or hand-check-rule's target does not parse as a JSON object with comments, carries a `reviewUi` the key refuses, or cannot take the rule without another key moving, or owners-file could not read the signed-in login; **nothing was written** |
+| `11` | a precondition read failed — the existence probe could not be performed, a present json target's bytes do not parse as a JSON object, dep-pin's registry read failed (unreachable, non-200, or no version named), or hand-check-rule's target does not parse as a JSON object with comments, carries a `reviewUi` the key refuses, or cannot take the rule without another key moving, or owners-file could not read the signed-in login, or ci-file could not list `.github/workflows`; **nothing was written** |
 | `12` | `<surface-id>` is not in the [buildable-surface registry](#buildable-surfaces) |
 
 **Errors**
@@ -1512,7 +1542,7 @@ the shape this seat exists to prevent. The skill loops.
 | `status bootstrap: appending <marker> to <target> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
-| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file.
+| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file, ci-file.
 | ``status bootstrap: cannot read <target>: <reason> — whether a `reviewUi.whenNoPreview` rule is already there is UNKNOWN, and nothing was written.`` | 11 | refusal |
 | `status bootstrap: <target> does not parse as a JSON object with comments — nothing was written.` | 11 | refusal |
 | `status bootstrap: <target> is refused — <the reviewUi key's reason>. Nothing was written; fix that key first.` | 11 | refusal |
@@ -1530,6 +1560,7 @@ the shape this seat exists to prevent. The skill loops.
 | `status bootstrap: cannot read the signed-in login: <reason> — who would own the rows is UNKNOWN, and nothing was written.` | 11 | refusal |
 | `status bootstrap: wrote <target> and the read-back differs — no row covers <path>, ….` | 9 | refusal |
 | `status bootstrap: created <target> for owners-file, read-back conformed — <n> row(s) owned by @<login>.` | 0 | notice |
+| `status bootstrap: cannot list .github/workflows: <reason> — whether the repo has a workflow is UNKNOWN, and nothing was written.` | 11 | refusal |
 | `status bootstrap: created <target> for roadmap-focus, read-back conformed — <n> arc(s), <n> campaign(s).` | 0 | notice |
 | `status bootstrap: pin check — every arc pin is an open milestone in <owner/name> (scanned <n> open milestone(s)).` | 0 | notice |
 | ``status bootstrap: warning — <an arc pins a milestone that is|arcs pin milestones that are> not open in <owner/name>: #<n> (<arc>), …. `triage homes` offers only open milestones; open <it|them> or fix the pin.`` | 0 | notice |
@@ -1664,8 +1695,20 @@ The repo had no owners file, so one landed with a row for each path the guard de
 day this ran. The second run found the file and wrote nothing.
 
 ```
+$ fabrika status bootstrap ci-file
+bootstrap	created	ci-file	.github/workflows/ci.yml	ok
+status bootstrap: created .github/workflows/ci.yml for ci-file, read-back conformed.
+$ fabrika status bootstrap ci-file
+bootstrap	exists	ci-file	.github/workflows/ci.yml	-
+status bootstrap: .github/workflows/ci.yml is already present for ci-file — nothing written.
+```
+
+The repo had no `.github/workflows/`, so the directories and the file were made. In a repo whose
+only workflow is `.github/workflows/deploy.yml`, the first run answers `exists` naming that file.
+
+```
 $ fabrika status bootstrap merge-queue
-status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file.
+status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file, ci-file.
 $ echo $?
 12
 ```
@@ -1720,7 +1763,8 @@ read-back stay the step's.
 | 5 | `first-milestone` | always |
 | 6 | `roadmap-focus` | always, handed the [starter roadmap](#setup-starter-roadmap) |
 | 7 | `owners-file` | always |
-| 8 | `hand-check-rule` | only under `--hand-check` |
+| 8 | `ci-file` | always |
+| 9 | `hand-check-rule` | only under `--hand-check` |
 
 <a id="setup-starter-roadmap"></a>**The starter roadmap.** `roadmap-focus` is the one step that takes
 content, and the command hands it this, where `<n>` is the number in the `first-milestone` row's
@@ -1744,7 +1788,8 @@ A roadmap file already at the step's target reads `exists` and keeps every byte,
 | `--hand-check` | boolean | no | `false` | also run `hand-check-rule`; without it that step is not run and `.fabrika.jsonc` is neither created nor changed |
 | `--repo` | string | no | resolved | the repository the two label steps and `first-milestone` write to |
 
-`owners-file` reads the signed-in login and no repository, so `--repo` does not reach it.
+`owners-file` reads the signed-in login and no repository, and `ci-file` reads neither, so `--repo`
+does not reach them.
 
 The command declares no positional argument of its own, so a word after `setup` is refused as an
 unexpected operand on `1`. It reads nothing from stdin and asks no question: it finishes with no
@@ -1767,8 +1812,10 @@ what happened, then what to do next. A caller that parses the answer keeps the l
 - **What to do next** gives three lines to paste, each indented two spaces: `git add` naming the
   `<target>` of every step run that writes a file, in step order; then
   `git commit -m "chore: set up fabrika"`; then `git push -u origin HEAD`. So the add line names the
-  roadmap file at the path the repo declares for it, and the owners file at the path the
-  `owners-file` row answered with. A label step and `first-milestone` write no
+  roadmap file at the path the repo declares for it, the owners file at the path the
+  `owners-file` row answered with, and the CI file the `ci-file` row answered with:
+  `.github/workflows/ci.yml` when the step wrote it, the repo's own workflow file when it read
+  `exists`. A label step and `first-milestone` write no
   file and add nothing to the add line. The lines print on a run that changed nothing too, because
   the command does not read whether an earlier run's files were committed. The examples below show
   the add line and cut the other two to `…`, which never vary.
@@ -1786,7 +1833,7 @@ the person's to run.
 | `1` | a word followed `setup`; or a label step could not resolve a target repo |
 | `8` | a step's write failed — whether anything landed is UNKNOWN |
 | `9` | a step's write landed and its read-back differs |
-| `11` | a step's precondition read failed, the signed-in login `owners-file` needs included; that step wrote nothing |
+| `11` | a step's precondition read failed, the signed-in login `owners-file` needs and the directory listing `ci-file` needs included; that step wrote nothing |
 
 **A step that refuses stops the run.** The exit code is that step's code and the last stderr line is
 that step's own refusal. Stdout holds the rows of the steps that finished before it and no closing,
@@ -1819,10 +1866,11 @@ bootstrap	created	gitignore-row	.gitignore	ok
 bootstrap	created	first-milestone	milestone #1	ok
 bootstrap	created	roadmap-focus	ROADMAP.md	ok
 bootstrap	created	owners-file	.github/CODEOWNERS	ok
+bootstrap	created	ci-file	.github/workflows/ci.yml	ok
 
-Setup finished: 7 steps made changes and 0 were already done. Nothing is committed or pushed yet.
+Setup finished: 8 steps made changes and 0 were already done. Nothing is committed or pushed yet.
 What to do next: paste these lines to commit and push the setup files:
-  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS
+  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS .github/workflows/ci.yml
   …
 ```
 
@@ -1837,10 +1885,11 @@ bootstrap	exists	gitignore-row	.gitignore	-
 bootstrap	exists	first-milestone	milestone #1	-
 bootstrap	exists	roadmap-focus	ROADMAP.md	-
 bootstrap	exists	owners-file	.github/CODEOWNERS	-
+bootstrap	exists	ci-file	.github/workflows/ci.yml	-
 
-Setup finished: all 7 steps were already done, so this run changed nothing.
+Setup finished: all 8 steps were already done, so this run changed nothing.
 What to do next: nothing, unless the setup files are not committed yet. If they are not, paste these lines:
-  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS
+  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS .github/workflows/ci.yml
   …
 ```
 
@@ -1855,14 +1904,14 @@ $ echo $?
 1
 ```
 
-Under `--hand-check` an eighth row follows the seven above, and the add line names its file:
+Under `--hand-check` a ninth row follows the eight above, and the add line names its file:
 
 ```
 bootstrap	created	hand-check-rule	.fabrika.jsonc	ok
 
-Setup finished: 8 steps made changes and 0 were already done. Nothing is committed or pushed yet.
+Setup finished: 9 steps made changes and 0 were already done. Nothing is committed or pushed yet.
 What to do next: paste these lines to commit and push the setup files:
-  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS .fabrika.jsonc
+  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS .github/workflows/ci.yml .fabrika.jsonc
   …
 ```
 

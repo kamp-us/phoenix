@@ -43,14 +43,14 @@ setup is finished**, and nothing in that verb's output says so.
 
 ## 3. Create the surfaces the CLI can create
 
-Thirteen surface ids are buildable today. Read them off the verb rather than off any prose:
+Fourteen surface ids are buildable today. Read them off the verb rather than off any prose:
 
 ```bash
 fabrika status bootstrap --help
 ```
 
 ```
-surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file
+surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file, ci-file
 ```
 
 One id per invocation. A surface whose content is already in place is `exists` at exit 0, and
@@ -85,7 +85,10 @@ does not parse is refused unwritten. With no file, it creates one holding the ru
 `first-milestone` opens a milestone titled `First arc` when the repo has no open milestone, and is
 `exists` over any open one. `owners-file` writes `.github/CODEOWNERS` when the repo has no owners
 file: one row per path `fabrika guard codeowners-cp check` demands, each owned by the login the CLI
-is signed in as. An owners file already there is `exists` and is left as it is. `label-taxonomy`, `issue-shape-markers`, `readout-artifact` and
+is signed in as. An owners file already there is `exists` and is left as it is. `ci-file` writes
+`.github/workflows/ci.yml` when the repo has no workflow file: one job that runs on every pull
+request and checks that `README.md` is not empty. Any workflow file already in `.github/workflows/`
+is `exists`, and nothing is written. `label-taxonomy`, `issue-shape-markers`, `readout-artifact` and
 `first-milestone` write to GitHub and need a resolvable repo —
 `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote.
 

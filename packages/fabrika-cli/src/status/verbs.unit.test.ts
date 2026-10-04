@@ -10,6 +10,7 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {describe, expect, it} from "vitest";
+import {parse as parseYaml} from "yaml";
 import type {BoardVocabulary} from "../config/board.ts";
 import {type ConfigSource, stripJsonComments} from "../config/document.ts";
 import {CI} from "../config/keys/ci.ts";
@@ -640,7 +641,7 @@ describe("status bootstrap", () => {
 		expect(outcome.code).toBe(NOT_BUILDABLE);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.at(-1)).toBe(
-			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file.',
+			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file, ci-file.',
 		);
 		expect(fs.written.size).toBe(0);
 	});
@@ -2093,6 +2094,74 @@ describe("the tab-separated field discipline", () => {
 
 	it("clamps after reproducing the raw text, so a truncated detail stays attributable", () => {
 		expect(oneLine("x".repeat(200), 120)).toHaveLength(120);
+	});
+});
+
+describe("ci-file writes the starter CI file into a repo with no workflow", () => {
+	const WORKFLOWS = "/repo/.github/workflows";
+	const TARGET = `${WORKFLOWS}/ci.yml`;
+
+	const run = (options: Parameters<typeof fakeFs>[0], json = false) => {
+		const seams = fakeSeams([]);
+		const fs = fakeFs(options);
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "ci-file",
+					path: null,
+					json,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(seams.layer, fs.layer),
+			),
+		).then((outcome) => ({outcome, written: fs.written, seams}));
+	};
+
+	it("writes one job that runs on pull_request when the repo has no workflows directory", async () => {
+		const {outcome, written, seams} = await run({});
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stdout).toBe("bootstrap\tcreated\tci-file\t.github/workflows/ci.yml\tok\n");
+		expect([...written.keys()]).toEqual([TARGET]);
+
+		const workflow = parseYaml(written.get(TARGET) ?? "");
+		expect(Object.keys(workflow.on)).toEqual(["pull_request"]);
+		expect(Object.keys(workflow.jobs)).toHaveLength(1);
+		// The step reads no login and no repository, so it runs with no credential at all.
+		expect(seams.requests).toEqual([]);
+		expect(seams.calls).toEqual([]);
+	});
+
+	it("writes the file into a workflows directory that holds no workflow file", async () => {
+		const {outcome, written} = await run({dirs: {[WORKFLOWS]: ["README.md", ".gitkeep"]}});
+		expect(outcome.stdout).toBe("bootstrap\tcreated\tci-file\t.github/workflows/ci.yml\tok\n");
+		expect([...written.keys()]).toEqual([TARGET]);
+	});
+
+	it.each([
+		"ci.yml",
+		"deploy.yml",
+		"test.yaml",
+	])("answers exists over a workflow file named %s, writing nothing", async (name) => {
+		const {outcome, written} = await run({
+			dirs: {[WORKFLOWS]: ["README.md", name]},
+			files: {[`${WORKFLOWS}/${name}`]: "name: ours\n"},
+		});
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stdout).toBe(`bootstrap\texists\tci-file\t.github/workflows/${name}\t-\n`);
+		expect(written.size).toBe(0);
+	});
+
+	it("refuses unwritten when the workflows directory cannot be listed", async () => {
+		const {outcome, written} = await run({unlistable: [WORKFLOWS]});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.at(-1)).toMatch(
+			/^status bootstrap: cannot list \.github\/workflows: .+ — whether the repo has a workflow is UNKNOWN, and nothing was written\.$/,
+		);
+		expect(written.size).toBe(0);
 	});
 });
 

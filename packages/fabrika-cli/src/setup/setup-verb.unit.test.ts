@@ -60,8 +60,17 @@ const github = (world: World) => {
 	return {http, labels, milestones};
 };
 
+const WORKFLOWS = "/repo/.github/workflows";
+
 const setup = async (world: World, handCheck = false) => {
-	const fs = fakeFs({files: {...world.files}});
+	// The fake lists a directory only when told what it holds, so a seeded workflow file is listed here.
+	const workflows = Object.keys(world.files ?? {}).flatMap((file) =>
+		file.startsWith(`${WORKFLOWS}/`) ? [file.slice(WORKFLOWS.length + 1)] : [],
+	);
+	const fs = fakeFs({
+		files: {...world.files},
+		dirs: workflows.length === 0 ? {} : {[WORKFLOWS]: workflows},
+	});
 	const {http, labels, milestones} = github(world);
 	const shell = fakeShell([]);
 	const outcome = await Effect.runPromise(
@@ -105,7 +114,7 @@ const STARTER_ROADMAP = [
 ].join("\n");
 
 describe("fabrika setup", () => {
-	it("runs the seven steps in order on a fresh repo, then says what to paste", async () => {
+	it("runs the eight steps in order on a fresh repo, then says what to paste", async () => {
 		const {outcome, rows, written, milestones, shell} = await setup({});
 		expect(outcome.code).toBe(ANSWER);
 		expect(rows).toEqual([
@@ -115,19 +124,21 @@ describe("fabrika setup", () => {
 			"created first-milestone milestone #4",
 			"created roadmap-focus ROADMAP.md",
 			"created owners-file .github/CODEOWNERS",
+			"created ci-file .github/workflows/ci.yml",
 		]);
 		expect(milestones).toEqual([{number: 4, title: "First arc", state: "open"}]);
 		expect(written.get("/repo/ROADMAP.md")).toBe(STARTER_ROADMAP);
 		expect([...written.keys()].sort()).toEqual([
 			"/repo/.claude/settings.json",
 			"/repo/.github/CODEOWNERS",
+			"/repo/.github/workflows/ci.yml",
 			"/repo/.gitignore",
 			"/repo/ROADMAP.md",
 		]);
 		expect(outcome.stdout.split("\n").slice(-6)).toEqual([
-			"Setup finished: 7 steps made changes and 0 were already done. Nothing is committed or pushed yet.",
+			"Setup finished: 8 steps made changes and 0 were already done. Nothing is committed or pushed yet.",
 			"What to do next: paste these lines to commit and push the setup files:",
-			"  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS",
+			"  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS .github/workflows/ci.yml",
 			'  git commit -m "chore: set up fabrika"',
 			"  git push -u origin HEAD",
 			"",
@@ -175,14 +186,15 @@ describe("fabrika setup", () => {
 			"exists first-milestone milestone #4",
 			"exists roadmap-focus ROADMAP.md",
 			"exists owners-file .github/CODEOWNERS",
+			"exists ci-file .github/workflows/ci.yml",
 		]);
 		expect(second.written.size).toBe(0);
 		expect(second.posts()).toEqual([]);
 		expect(second.outcome.stdout).toContain(
-			"Setup finished: all 7 steps were already done, so this run changed nothing.",
+			"Setup finished: all 8 steps were already done, so this run changed nothing.",
 		);
 		expect(second.outcome.stdout).toContain(
-			"  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS",
+			"  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS .github/workflows/ci.yml",
 		);
 	});
 
@@ -195,7 +207,7 @@ describe("fabrika setup", () => {
 			],
 		});
 		expect(outcome.code).toBe(ANSWER);
-		expect(rows.slice(-3, -1)).toEqual([
+		expect(rows.slice(-4, -2)).toEqual([
 			"exists first-milestone milestone #2",
 			"exists roadmap-focus ROADMAP.md",
 		]);
@@ -207,7 +219,7 @@ describe("fabrika setup", () => {
 		const {rows, written} = await setup({
 			milestones: [{number: 2, title: "Launch", state: "open"}],
 		});
-		expect(rows.slice(-3, -1)).toEqual([
+		expect(rows.slice(-4, -2)).toEqual([
 			"exists first-milestone milestone #2",
 			"created roadmap-focus ROADMAP.md",
 		]);
@@ -229,10 +241,10 @@ describe("fabrika setup", () => {
 
 		const withFlag = await setup({}, true);
 		expect(withFlag.rows.at(-1)).toBe("created hand-check-rule .fabrika.jsonc");
-		expect(withFlag.rows).toHaveLength(8);
+		expect(withFlag.rows).toHaveLength(9);
 		expect(withFlag.written.has("/repo/.fabrika.jsonc")).toBe(true);
 		expect(withFlag.outcome.stdout).toContain(
-			"  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS .fabrika.jsonc",
+			"  git add .claude/settings.json .gitignore ROADMAP.md .github/CODEOWNERS .github/workflows/ci.yml .fabrika.jsonc",
 		);
 	});
 });
