@@ -166,7 +166,7 @@ const pick = leafCommand(
 			"  Stage-bet issues on the table project lead the pool; no campaign state excludes anything.",
 			"  blocked_by is read in rank order until --limit survive; unread counts the rest.",
 			"  A token without the project scope degrades to the pool's own order and names the fix.",
-			"  11: a bucket, or the table when .fabrika.jsonc declares one, was unreadable (UNKNOWN)",
+			"  11: a bucket, the board vocabulary or a declared table was unreadable (UNKNOWN)",
 			`  Derivation: the build skill's contract.md, "build pick"`,
 		].join("\n"),
 	),

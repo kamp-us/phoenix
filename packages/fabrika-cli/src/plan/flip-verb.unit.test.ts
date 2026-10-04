@@ -10,6 +10,7 @@ import {
 	PARTIAL_FLIP,
 	PLAN_MOVED,
 	PLAN_UNAPPROVED,
+	PRECONDITION_UNKNOWN,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {
@@ -102,17 +103,66 @@ const CLEAN_READ: ReadonlyArray<Scripted> = [
 	[CYCLE, cycleDoc],
 ];
 
-const run = (digest: string, script: ReadonlyArray<Scripted>) => {
-	const seams = planSeams(script);
+const run = (digest: string, script: ReadonlyArray<Scripted>, config?: string) => {
+	const seams = planSeams(script, config);
 	return Effect.runPromise(
 		Effect.provide(
 			runFlip({number: 4300, digest, token: TOKEN, repo: null, env, cwd: CWD}),
 			seams.layer,
 		),
-	).then((outcome) => ({outcome, calls: seams.http.calls}));
+	).then((outcome) => ({outcome, calls: seams.http.calls, bodies: seams.http.bodies}));
 };
 
 describe("runFlip", () => {
+	it("flips between the labels a repo renamed planned and triaged to, never the shipped names", async () => {
+		const config = JSON.stringify({
+			boardVocabulary: {statuses: {planned: "status:drafted", triaged: "status:ready"}},
+		});
+		const drafted = child({number: 4301, labels: ["type:feature", "p1", "status:drafted"]});
+		const ready = child({number: 4301, labels: ["type:feature", "p1", "status:ready"]});
+		const digest = await digestOver(
+			[
+				[EPIC, ONE_CHILD_EPIC],
+				[SUBS, subIssues(4301)],
+				[CHILD, drafted],
+				[CYCLE, cycleDoc],
+			],
+			{env, config},
+		);
+		const {outcome, calls, bodies} = await run(
+			digest,
+			[
+				...claimed(digest),
+				...ledger(drafted, ready),
+				[LABELS, labelSet("status:drafted", "status:ready", "ready-for:agent", "type:feature")],
+				[ADD, SERVED_LABELS],
+				[REMOVE, SERVED_LABELS],
+				[ADD_EPIC, SERVED_LABELS],
+				[REMOVE_EPIC, SERVED_LABELS],
+			],
+			config,
+		);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({terminal: "flipped-all", flipped: 1});
+		expect(JSON.parse(bodies[calls.findIndex((line) => ADD.test(line))] ?? "{}")).toEqual({
+			labels: ["status:ready"],
+		});
+		expect(calls.find((line) => REMOVE.test(line))).toContain("status%3Adrafted");
+	});
+
+	it("refuses a config that gives no board on 11, writing nothing", async () => {
+		const {outcome, calls} = await run(
+			"4d90e1bb27ac",
+			[...claimed("4d90e1bb27ac"), ...ledger(PLANNED, TRIAGED)],
+			JSON.stringify({boardVocabulary: {statuses: "ready"}}),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain(
+			"plan flip: cannot read .fabrika.jsonc's board vocabulary",
+		);
+		expect(calls.some((line) => LABEL_WRITE.test(line))).toBe(false);
+	});
+
 	it("flips a planned child and reports the OBSERVED results as a count plus histogram", async () => {
 		const digest = await digestOf(CLEAN_READ);
 		const {outcome} = await run(digest, [

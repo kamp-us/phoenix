@@ -565,7 +565,15 @@ const release = leafCommand(
 	"release",
 	{pr: prArg, repo: repoFlag, json: jsonFlag},
 	Effect.fn(function* ({pr, repo, json}) {
-		yield* emit(yield* runRelease({pr, repo: Option.getOrNull(repo), json, env: process.env}));
+		yield* emit(
+			yield* runRelease({
+				pr,
+				repo: Option.getOrNull(repo),
+				json,
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Detect a dark ship and queue its issue for release."),
@@ -574,7 +582,7 @@ const release = leafCommand(
 			"\n  7: the PR is absent, or has no changed files" +
 			"\n  8: the label write or its re-read failed; escalate" +
 			"\n  9: the label landed and the read-back does not show it" +
-			"\n  11: the diff, body, registry or linked issue could not be read; UNKNOWN" +
+			"\n  11: the board vocabulary, diff, body, registry or linked issue was unreadable; UNKNOWN" +
 			"\n  13: the changed-file list hit GitHub's 3000-file ceiling, so it is partial" +
 			"\n  23: the release label is absent from the repository's taxonomy" +
 			'\n  Derivation: the ship skill\'s contract.md, "ship release"',

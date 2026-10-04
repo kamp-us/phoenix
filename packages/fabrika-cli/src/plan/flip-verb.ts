@@ -34,11 +34,11 @@ import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {requireCallerToken, requireClaim, requireSession} from "../build/claim.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
+import type {StatusNames} from "../config/board.ts";
 import {cycleDocOr} from "../config/paths.ts";
 import {type ReasonHistogram, reasonHistogram} from "../evidence.ts";
 import {addLabels, getIssue, listLabels, removeLabel} from "../io/issues.ts";
-import {PLANNED, TRIAGED} from "../labels.ts";
-import {missingLabelRemedy, readBoard} from "../status/label-remedy.ts";
+import {missingLabelRemedy} from "../status/label-remedy.ts";
 import {
 	audienceSettled,
 	audienceWrites,
@@ -56,13 +56,14 @@ import {
 	PRECONDITION_UNKNOWN,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
-import {DIGEST_RE, FLIP_LABELS} from "./digest.ts";
+import {DIGEST_RE, flipLabels} from "./digest.ts";
 import {getChild} from "./github.ts";
 import {
 	deriveFloorFor,
 	FAN_OUT,
 	loadLedger,
 	type PlanMessages,
+	readBoardVocabulary,
 	readContainmentVocabulary,
 	requireEpic,
 	scannedChildren,
@@ -107,9 +108,10 @@ export interface FlipOptions {
 export const classify = (
 	before: ReadonlyArray<string>,
 	observed: ReadonlyArray<string>,
+	{planned, triaged}: StatusNames,
 ): FlipResult => {
-	if (!before.includes(PLANNED)) return before.includes(TRIAGED) ? "already" : "not-planned";
-	return observed.includes(TRIAGED) && !observed.includes(PLANNED) ? "flipped" : "unchanged";
+	if (!before.includes(planned)) return before.includes(triaged) ? "already" : "not-planned";
+	return observed.includes(triaged) && !observed.includes(planned) ? "flipped" : "unchanged";
 };
 
 /**
@@ -167,6 +169,10 @@ export const runFlip = (
 		const vocabulary = yield* readContainmentVocabulary(MESSAGES, options.cwd);
 		if (vocabulary._tag === "Refused") return vocabulary.outcome;
 
+		const board = yield* readBoardVocabulary(MESSAGES, options.cwd);
+		if (board._tag === "Refused") return board.outcome;
+		const {statuses} = board.read.resolved.board;
+
 		const cycle = yield* cycleDocOr(
 			VERB,
 			options.cwd,
@@ -180,6 +186,7 @@ export const runFlip = (
 			target.issue,
 			cycle.path,
 			vocabulary.vocabulary,
+			statuses,
 			options.env,
 		);
 		if (read._tag === "Refused") return read.outcome;
@@ -216,12 +223,12 @@ export const runFlip = (
 			);
 		}
 
-		const planned = ledger.children.filter((child) => child.labels.includes(PLANNED));
+		const planned = ledger.children.filter((child) => child.labels.includes(statuses.planned));
 		const audience = audienceWrites(target.issue.labels);
 		// Only the labels this run would POST are guarded: it is the POST that mints an unknown label,
 		// and a DELETE of a label the repo never defined removes nothing.
 		const required = [
-			...(planned.length > 0 ? FLIP_LABELS : []),
+			...(planned.length > 0 ? flipLabels(statuses) : []),
 			...(audience.add ? [AUDIENCE_AGENT] : []),
 		];
 		if (required.length > 0) {
@@ -235,7 +242,7 @@ export const runFlip = (
 			}
 			for (const label of required) {
 				if (labels.value.includes(label)) continue;
-				const remedy = missingLabelRemedy(label, yield* readBoard(options.cwd));
+				const remedy = missingLabelRemedy(label, board.read);
 				return refuse(
 					LABEL_ABSENT,
 					`${VERB}: label "${label}" is absent from ${repo}'s taxonomy — refusing to create it. ${remedy}`,
@@ -249,9 +256,9 @@ export const runFlip = (
 			planned,
 			(child) =>
 				Effect.gen(function* () {
-					const added = yield* addLabels(repo, child.number, [TRIAGED]);
+					const added = yield* addLabels(repo, child.number, [statuses.triaged]);
 					if (added._tag === "Ok") writes += 1;
-					const removed = yield* removeLabel(repo, child.number, PLANNED);
+					const removed = yield* removeLabel(repo, child.number, statuses.planned);
 					if (removed._tag === "Ok") writes += 1;
 				}),
 			{concurrency: FAN_OUT, discard: true},
@@ -276,7 +283,11 @@ export const runFlip = (
 				);
 			}
 			const observed = [...found.value.labels].sort();
-			rows.push({number: child.number, observed, result: classify(child.labels, observed)});
+			rows.push({
+				number: child.number,
+				observed,
+				result: classify(child.labels, observed, statuses),
+			});
 		}
 
 		const unchanged = rows.filter((row) => row.result === "unchanged");

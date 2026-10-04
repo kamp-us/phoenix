@@ -3,8 +3,8 @@
  * inputs the floor read.
  *
  * **The flip is digest-neutral by construction, and this file is where that invariant lives.** The
- * only two labels `plan flip` writes — `status:planned` and `status:triaged` — are excluded from the
- * child serialization, so a digest taken at check time still binds after the flip and a verdict
+ * only two labels `plan flip` writes — the board's planned and triaged statuses, `status:planned`
+ * and `status:triaged` unless the repo renamed them — are excluded from the child serialization, so a digest taken at check time still binds after the flip and a verdict
  * posted afterwards attests the scope the floor actually scanned. Without the exclusion the digest
  * would be invalidated by the very write it guards, and every clean verdict would bind a scope no
  * floor had checked. Neither label is a floor trigger either: `MISSING_LABEL` requires *a* `status:`
@@ -17,14 +17,17 @@
  */
 
 import {createHash} from "node:crypto";
-import {PLANNED, TRIAGED} from "../labels.ts";
+import type {StatusNames} from "../config/board.ts";
 import type {ChildLedger, Ledger} from "./model.ts";
 
 /** Everything the digest is taken over — the ledger minus the digest it is about to carry. */
 export type LedgerScope = Omit<Ledger, "digest">;
 
 /** The two labels the flip writes, excluded from the serialization. See the module docblock. */
-export const FLIP_LABELS: ReadonlyArray<string> = [PLANNED, TRIAGED];
+export const flipLabels = (statuses: StatusNames): ReadonlyArray<string> => [
+	statuses.planned,
+	statuses.triaged,
+];
 
 export const DIGEST_LENGTH = 12;
 
@@ -33,8 +36,8 @@ export const DIGEST_RE = /^[0-9a-f]{12}$/;
 
 const ascending = (values: ReadonlyArray<string>): string => [...values].sort().join(",");
 
-const childLine = (child: ChildLedger): string => {
-	const labels = ascending(child.labels.filter((label) => !FLIP_LABELS.includes(label)));
+const childLine = (child: ChildLedger, flip: ReadonlyArray<string>): string => {
+	const labels = ascending(child.labels.filter((label) => !flip.includes(label)));
 	const assignees = child.assigneesObserved ? ascending(child.assignees ?? []) : "?";
 	const ac = child.criteria === "found" ? String(child.criteriaCount) : "?";
 	const stories =
@@ -76,11 +79,18 @@ const criteriaComponent = (ledger: LedgerScope): string =>
 	ledger.epicCriteria.length === 0 ? "" : `|ac=${JSON.stringify(ledger.epicCriteria)}`;
 
 /** The canonical serialization: one line per child ascending, then the epic line, joined by `\n`. */
-export const serializeScope = (ledger: LedgerScope): string =>
-	[
-		...[...ledger.children].sort((a, b) => a.number - b.number).map(childLine),
+export const serializeScope = (ledger: LedgerScope, statuses: StatusNames): string => {
+	const flip = flipLabels(statuses);
+	return [
+		...[...ledger.children]
+			.sort((a, b) => a.number - b.number)
+			.map((child) => childLine(child, flip)),
 		epicLine(ledger),
 	].join("\n");
+};
 
-export const scopeDigest = (ledger: LedgerScope): string =>
-	createHash("sha256").update(serializeScope(ledger), "utf8").digest("hex").slice(0, DIGEST_LENGTH);
+export const scopeDigest = (ledger: LedgerScope, statuses: StatusNames): string =>
+	createHash("sha256")
+		.update(serializeScope(ledger, statuses), "utf8")
+		.digest("hex")
+		.slice(0, DIGEST_LENGTH);

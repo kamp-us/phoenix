@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import {DEFAULT_STATUS_NAMES} from "../labels.ts";
 import {
 	AUDIENCE_NOT_AGENT,
 	NO_ACCEPTANCE_CRITERIA,
@@ -460,7 +461,7 @@ describe("admissionOf", () => {
 		it("is the same predicate the pool filters on", () => {
 			for (const candidate of [decision, epic]) {
 				const listed = {...candidate, title: "", body: "", assigned: false, isPullRequest: false};
-				expect(isCandidate(listed)).toBe(false);
+				expect(isCandidate(listed, DEFAULT_STATUS_NAMES)).toBe(false);
 				expect(admissionOf(candidate)._tag).toBe("TypeNotBuildable");
 			}
 		});

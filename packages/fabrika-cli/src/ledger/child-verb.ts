@@ -40,10 +40,9 @@ import {resolve} from "../config/load.ts";
 import {loadRepoConfig} from "../config/working-root.ts";
 import {listLabels, listOpenMilestones} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {PLANNED} from "../labels.ts";
 import {listSubIssues} from "../plan/github.ts";
-import {missingLabelRemedy, readBoard} from "../status/label-remedy.ts";
-import {readStandingLanes} from "../triage/standing-lanes.ts";
+import {missingLabelRemedy} from "../status/label-remedy.ts";
+import {BOARD_SUBJECT, readBoard, refusalReason} from "../status/repo-board.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {composeChildBody} from "./child-body.ts";
 import {
@@ -157,19 +156,19 @@ export const runChild = (
 				`${VERB}: --priority ${options.priority} is off the closed set (${PRIORITIES.join(", ")}).`,
 			);
 		}
+		const board = yield* readBoard(options.cwd);
+		if (board._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, MESSAGES.unreadable(BOARD_SUBJECT, refusalReason(board)));
+		}
+		const {statuses, standingLanes} = board.resolved.board;
+
 		// A home is a milestone or a standing lane, and the lanes are the one set every reader takes
-		// from the repo's declaration. A milestone answers the question alone, so the read is skipped.
-		if (options.milestone === null) {
-			const lanes = yield* readStandingLanes(options.cwd);
-			if (lanes._tag === "Refused") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					MESSAGES.unreadable(`${CONFIG_PATH}'s standing lanes`, lanes.reason.replace(/\.$/, "")),
-				);
-			}
-			if (!options.labels.some((label) => lanes.value.includes(label))) {
-				return refuse(OFF_VOCABULARY, homelessRefusal(lanes.value));
-			}
+		// from the repo's declaration.
+		if (
+			options.milestone === null &&
+			!options.labels.some((label) => standingLanes.includes(label))
+		) {
+			return refuse(OFF_VOCABULARY, homelessRefusal(standingLanes));
 		}
 
 		const authored = readAuthored(
@@ -212,7 +211,7 @@ export const runChild = (
 		const labels = [
 			options.type,
 			options.priority,
-			PLANNED,
+			statuses.planned,
 			`ready-for:${options.readyFor}`,
 			...options.labels,
 		];
@@ -226,7 +225,7 @@ export const runChild = (
 		}
 		for (const label of labels) {
 			if (taxonomy.value.includes(label)) continue;
-			const remedy = missingLabelRemedy(label, yield* readBoard(options.cwd));
+			const remedy = missingLabelRemedy(label, board);
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: label "${label}" is absent from ${repo}'s taxonomy — refusing to create it. ${remedy}`,

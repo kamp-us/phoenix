@@ -27,7 +27,7 @@ import {
 import {type Attempt, ok} from "../io/git.ts";
 import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {AWAITING_RELEASE, PLANNED, STATUSES} from "../labels.ts";
+import {AWAITING_RELEASE, DEFAULT_STATUS_NAMES, PLANNED, STATUSES} from "../labels.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
@@ -37,11 +37,11 @@ import {ANSWER} from "../verb.ts";
 import {
 	absentLabels,
 	type BoardRead,
-	BUCKETS,
 	type Bucket,
 	boardState,
 	IN_FLIGHT,
 	LABEL_TAXONOMY_COMMAND,
+	labelBuckets,
 	readBoard,
 	runBoard,
 } from "./board-verb.ts";
@@ -491,21 +491,26 @@ describe("status board", () => {
 		const ISSUES = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\?state=open&labels=/;
 		const PULLS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\?state=open/;
 		const served = (body: unknown): HttpReply => ({status: 200, body: JSON.stringify(body)});
+		const BUCKETS = labelBuckets(DEFAULT_STATUS_NAMES);
 		const BOARD_LABELS = BUCKETS.map((bucket) => bucket.label);
 
-		const read = (labels: HttpReply) => {
+		const observed = (labels: HttpReply, config?: Record<string, unknown>) => {
 			const seams = fakeSeams([
 				[LABELS, labels],
 				[ISSUES, served([{number: 1, title: "one"}])],
 				[PULLS, served([{number: 9}])],
 			]);
+			const fs = fakeFs({
+				files: config === undefined ? {} : {"/repo/.fabrika.jsonc": JSON.stringify(config)},
+			});
 			return Effect.runPromise(
 				Effect.provide(
-					readBoard("o/r", () => new Date("2026-08-09T14:22:03Z")),
-					seams.layer,
+					readBoard("o/r", "/repo", () => new Date("2026-08-09T14:22:03Z")),
+					Layer.merge(seams.layer, fs.layer),
 				),
-			);
+			).then((board) => ({board, requests: seams.requests}));
 		};
+		const read = (labels: HttpReply) => observed(labels).then(({board}) => board);
 		const states = (board: BoardRead) =>
 			board._tag === "Read"
 				? Object.fromEntries(board.buckets.map((bucket) => [bucket.name, bucket.reading._tag]))
@@ -522,6 +527,28 @@ describe("status board", () => {
 				p2: "Absent",
 			});
 			expect(board._tag === "Read" && boardState(board.buckets)).toBe("absent");
+		});
+
+		it("counts the triaged bucket under the label a repo renamed it to, never the shipped name", async () => {
+			const {board, requests} = await observed(
+				served(["status:needs-triage", "status:triaged", "state:ready"].map((name) => ({name}))),
+				{boardVocabulary: {statuses: {triaged: "state:ready"}}},
+			);
+			expect(states(board)).toMatchObject({"needs-triage": "Counted", triaged: "Counted"});
+			expect(requests.some((line) => line.includes("labels=state%3Aready"))).toBe(true);
+			expect(requests.some((line) => line.includes("labels=status%3Atriaged"))).toBe(false);
+		});
+
+		it("fails the whole board on a config that gives no board, reading no label", async () => {
+			const {board, requests} = await observed(served([{name: "status:triaged"}]), {
+				boardVocabulary: {statuses: "triaged"},
+			});
+			expect(board._tag).toBe("Failed");
+			expect(board._tag === "Failed" && board.reason).toContain(
+				".fabrika.jsonc's board vocabulary is refused",
+			);
+			expect(requests).toEqual([]);
+			expect(runBoard({read: board, json: false}).code).toBe(PRECONDITION_UNKNOWN);
 		});
 
 		it("reads a fully unlabelled board as absent, and names every missing label with the fix", async () => {

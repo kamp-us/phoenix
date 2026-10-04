@@ -254,10 +254,34 @@ describe("runChild", () => {
 			[`${DIR}/${CONFIG_PATH}`]: JSON.stringify({boardVocabulary: LANE}),
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
-		expect(outcome.stderr.at(-1)).toContain("standing lanes");
+		expect(outcome.stderr.at(-1)).toContain(
+			`ledger child: cannot read ${CONFIG_PATH}'s board vocabulary`,
+		);
 		expect(outcome.stderr.at(-1)).not.toContain("a child needs a home");
 		expect(calls).toEqual([]);
 		expect(written.size).toBe(0);
+	});
+
+	it("births a child under the label a repo renamed planned to, never the shipped name", async () => {
+		const labels = MINTED_LABELS.map((label) =>
+			label === "status:planned" ? "state:planned" : label,
+		);
+		const minted = await run(
+			{},
+			[
+				...HAPPY.filter(([pattern]) => pattern !== LABELS && pattern !== READBACK),
+				[LABELS, labelSet(...DEFAULT_LABELS, "state:planned")],
+				[READBACK, childIssue({number: 4301, labels, milestone: HOME})],
+			],
+			{
+				[runJsonPath(DIR)]: RUN_JSON(),
+				[`${DIR}/${CONFIG_PATH}`]: JSON.stringify({
+					boardVocabulary: {statuses: {planned: "state:planned"}},
+				}),
+			},
+		);
+		expect(minted.outcome.code).toBe(0);
+		expect(sent(minted, CREATE).labels).toEqual(labels);
 	});
 
 	it("mints a milestone-homed child", async () => {

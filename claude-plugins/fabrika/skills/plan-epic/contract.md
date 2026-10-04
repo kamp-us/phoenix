@@ -747,13 +747,18 @@ EOF
 ```
 
 **Every birth attribute lands in the one `POST /issues` call** — `title`, `body`, every label
-(`--type`, `--priority`, `status:planned`, `ready-for:<v>`, each `--label`), `milestone` and
+(`--type`, `--priority`, the board's planned status, `ready-for:<v>`, each `--label`), `milestone` and
 `assignees`. This is the whole reason the verb exists: v1's create hardcoded exactly three
 `labels[]` with no pass-through and set no milestone, so a fourth required label could only be
 applied by a follow-up PATCH — and a follow-up PATCH opens a window in which the child exists with
 **no** `ready-for:` value, which is the fail-open shape the ruling forbids, where an absent label
 reads as a permissive default rather than an unknown. v1's own sibling script knows the hazard by
 name and warns that patching a fresh child "reopens the label-less-orphan window".
+
+**The planned status and the standing lanes come off one read of `.fabrika.jsonc`'s board
+vocabulary.** The status is `boardVocabulary.statuses.planned` — `status:planned` where the repo
+declares none — and a home is checked against `boardVocabulary.standingLanes`. A board vocabulary
+that does not resolve is `11` before anything is read from GitHub, with or without `--milestone`.
 
 **A home is required and is never defaulted**: the call names an open milestone, or a
 `--label` from the standing lanes the repo declares (`boardVocabulary.standingLanes` in

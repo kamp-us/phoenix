@@ -26,7 +26,7 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `unusable.ts` | `unusableReason(load)` — the one reason no value of this config may be used, which is what a gate keys on instead of the refusal arm |
 | `containment.ts` | The triage-facet containment invariant, checked over declared data |
 | `board.ts` | The board vocabulary's shape (`BoardVocabulary`, `StatusNames`) and how a facet's delete authority is composed from it — pure, so `triage/facets.ts` can build the shipped default off it |
-| `resolve-board.ts` | `resolveBoard(load, shipped)` — joins `boardVocabulary` and `triageFacets` into one table and re-runs containment over the join |
+| `resolve-board.ts` | `resolveBoard(load, shipped)` — joins `boardVocabulary` and `triageFacets` into one table and re-runs containment over the join. Every verb that writes or reads a board label goes through it ([below](#the-boards-statuses-on-the-write-side-and-the-read-side)) |
 | `ci-producer.ts` | `producerFor(...)` — the "does this repo produce CI at all" rule `review ci` and `ship checks` both decide through, over a workflow count and `ci.noProducer` |
 | `paths.ts` | One reader per path key off the working tree — the value, where it came from, and the refusal a verb prints verbatim |
 
@@ -149,6 +149,49 @@ exists nowhere but a working tree. Two readers open it today: `loadRepoConfig`, 
 which reads both layers through `repoConfigLayers` (or `readConfigLayers` under `--root`) into
 `loadLayeredConfig` and never calls `loadRepoConfig`. A rule about the local layer is enforced in the
 load (`loadLayeredConfig`), which both readers share, not in either opener.
+
+## The board's statuses, on the write side and the read side
+
+`boardVocabulary.statuses` drives both sides of the board through the one `resolveBoard`
+([#6428](https://github.com/kamp-us/phoenix/issues/6428#issuecomment-5363116003)). A repo that
+renames a status gets the new label created, written, queried and flipped under the same name.
+
+| Side | Verbs | Door |
+|---|---|---|
+| write | `status bootstrap` | `resolveBoard(loadConfig(source), FACET_VOCABULARY)` in `status/bootstrap-verb.ts` |
+| write | `triage apply`, `triage park` | `guardConfig` in `triage/config-guard.ts` |
+| read | `build pick`, `status board`, `ship release`, `ledger child` | `readBoard(cwd)` in `status/repo-board.ts` |
+| read | `plan flip` and every `plan` verb that computes the scope digest | `readBoardVocabulary` in `plan/load.ts`, over the same `readBoard` |
+
+Four rules hold for a verb that reads a status.
+
+**Take the name off the resolved board by its role.** `board.statuses.triaged`, never an import of
+`TRIAGED` from `labels.ts`. Those constants are the shipped default (`DEFAULT_STATUS_NAMES`) and
+nothing else. No verb indexes `statusList()` by position; using it as a set is fine, as
+`build pick` does to tell that an issue carries a second status.
+
+**A refused board refuses the verb.** `Refused` never falls back to the shipped names. A repo that
+renamed a status carries no issue under the old label, so a query under it comes back empty on
+exit `0` and reads as "no work". Each reading verb words the refusal in its own voice, naming
+`.fabrika.jsonc's board vocabulary` and the reason, and seats it on its own `11` before it queries
+or writes a label. The two triage writers refuse on `18` (`CONFIG_REFUSED`), because their gate also
+runs `unusableReason` over the whole config.
+
+**Pure code takes the statuses as a parameter.** `plan/digest.ts` leaves the two labels `plan flip`
+writes out of the scope digest, so `scopeDigest(ledger, statuses)` and `flipLabels(statuses)` take
+the role record from the verb that read the board. A pure module that imported the names could only
+ever exclude the shipped pair.
+
+**One read per run.** A verb that needs two things off the board takes both from one `readBoard`:
+`build pick` and `ledger child` read the status and the standing lanes together, and `plan flip`
+hands the same read to `missingLabelRemedy`. Two loads of one file can disagree if it changes
+between them.
+
+Not every reader is on the resolved board yet. The homing and pitch guards, the plan floor's
+`status:` prefix test, `triage queue`, `triage split`, `graduate emit` and `report` still select the
+shipped names; [#8854](https://github.com/kamp-us/phoenix/issues/8854) owns them. `ledger adopt`,
+the table agenda and the main alarm do too, reported as
+[#10427](https://github.com/kamp-us/phoenix/issues/10427).
 
 ## The machine-local layer
 

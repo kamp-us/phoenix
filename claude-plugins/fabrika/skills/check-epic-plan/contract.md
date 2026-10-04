@@ -253,7 +253,10 @@ epic=<number>|stories=<ids ascending comma-joined, or "" when the epic declares 
 <a id="flip-neutral"></a>
 **The flip is digest-neutral and floor-neutral by construction — this is the invariant the whole
 gate rests on.** The only two labels `plan flip` writes on a **child** are `status:planned` and
-`status:triaged`, and both are **excluded from the digest serialization**. Neither is a floor trigger
+`status:triaged`, and both are **excluded from the digest serialization**. The pair is read by role
+off `.fabrika.jsonc`'s `boardVocabulary.statuses` (`planned`, `triaged`), so a repo that renamed them
+flips between, and excludes, its own two names; a board vocabulary that does not resolve is `11` on
+every verb that computes the digest, and `plan flip` writes nothing. Neither is a floor trigger
 either: `MISSING_LABEL` requires *a* `status:` prefix, which both satisfy, and `NEEDS_TRIAGE_LABEL`
 names `status:needs-triage`, which the flip never writes. The audience labels it writes on the
 **epic** are neutral for a stronger reason: the epic line carries no labels field at all, and every

@@ -2285,6 +2285,9 @@ PR, and reading it has queued a phantom release. No signal → `n/a`; a signal w
 linked issue → `no-issue` (see Output — a proven answer, never `n/a`).
 The label write is read back; a failed or unconfirmed write is `8`/`9`, never `queued` —
 v1's unverified label POST could report a release queued that no human would ever find.
+The label is the board's awaiting-release status: `status:awaiting-release` unless
+`.fabrika.jsonc` renames it under `boardVocabulary.statuses.awaitingRelease`, read before the pull
+request is, so a board vocabulary that does not resolve is `11` on every path.
 The write is taxonomy-guarded first: `status:awaiting-release` absent from the repo's labels
 refuses on `23` rather than let GitHub's POST mint it, and the taxonomy is read
 only on the path that would post — `n/a` and `no-issue` read none.
@@ -2296,7 +2299,7 @@ only on the path that would post — `n/a` and `no-issue` read none.
 | `7` | the PR is proven absent (404), or the enumerated changed-file list is empty — a zero carries no declaration to find, and `n/a` there would be a dark ship nobody queued |
 | `8` | the label write, or its confirming re-read, failed — UNKNOWN; the release queue may be missing a real dark ship, say so loudly |
 | `9` | the label write landed but the read-back does not show it |
-| `11` | the diff, body, flag registry, or linked issue could not be read — dark-ship-ness is UNKNOWN, never `n/a` |
+| `11` | `.fabrika.jsonc`'s board vocabulary, the diff, body, flag registry, or linked issue could not be read — dark-ship-ness is UNKNOWN, never `n/a` |
 | `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a flag declaration could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
 | `23` | `status:awaiting-release` is absent from the repository's taxonomy — refused rather than let the POST mint it; guarded only on the path that would post, so `n/a` and `no-issue` read no taxonomy |
 
