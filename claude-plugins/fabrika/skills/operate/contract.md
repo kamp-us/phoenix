@@ -81,8 +81,10 @@ append it, and refuse on the prover's own code with the log byte-identical. The 
 - A repeatable `--class` lands the lane classes standing at the event on the same line. It is the
   fact the machine's `class:<name>` arms route on: `--class ui` on a WIP sends the lane to
   `build:ui`, and it stands until another event names a different set. `ui` beside a text class
-  (`code`, `doc`, `skill`) sends it to `build:mixed` instead, and sends a FAIL out of `review` or
-  `review:ui` back there: the machine reads `mixed` off the standing set, so no flag value names it.
+  (`code`, `doc`, `skill`) sends it to `build:mixed` instead, and sends a FAIL back there out of
+  `review` or `review:ui` on a single-issue lane and out of `review` or `integrate` on an epic
+  child. An epic tail has no `build:mixed` and repairs in `build`. The machine reads `mixed` off the
+  standing set, so no flag value names it.
 - `38` — `--class` is outside the closed lane-class set.
 
 ## `lane status`

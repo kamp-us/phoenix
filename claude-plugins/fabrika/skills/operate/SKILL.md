@@ -1289,11 +1289,16 @@ prints it; a single-task lane tolerates omission.)
 **`--class` is how a UI lane reaches its own shells.** The machine's `build:ui` and `review:ui`
 states are entered by a guarded arm reading the classes standing over the task, and those classes
 ride the event line the way `--cause` does. **`build:mixed` has no class of its own to relay**: the
-machine enters it when `ui` stands beside a text class (`code`, `doc`, `skill`), on the first build
-and on a FAIL out of `review` or `review:ui`, so relaying the rows below is the whole act and
-`--class mixed` is refused at exit `38`. Every other route back to construction lands a mixed lane
-in `build`, as it does any lane: a FAIL out of `ship`, `ship:queued` or `human:cp-approval`, and the
-`base-conflicted` lap.
+machine enters it when `ui` stands beside a text class (`code`, `doc`, `skill`), so relaying the rows
+below is the whole act and `--class mixed` is refused at exit `38`. Which events enter it depends on
+the lane kind:
+
+- **A single-issue lane** — a `WIP` out of `queued`, and a FAIL out of `review` or `review:ui`. Its
+  other routes back to construction land a mixed lane in `build`, as they do any lane: a FAIL out of
+  `ship`, `ship:queued` or `human:cp-approval`, and the `base-conflicted` lap.
+- **An epic child** — a `WIP` out of `queued`, and a FAIL out of `review` or `integrate`. A child has
+  no `review:ui`.
+- **An epic tail** — never. It repairs in its one `build` cell whatever classes stand.
 
 **A head decides the classes wherever one exists; the ticket's stamp decides only the first build.**
 That is the ruling the decision record *The head's diff decides the classes a review round owes*
@@ -1366,7 +1371,7 @@ can neither ship nor park honestly: `lane recover`'s spawn sweep proves only a d
 never parks a lane standing in `review`, and `lane stale` lists the row without moving it, because
 re-spawning the reviewer reaches the same exit `23`.
 A tail rendered FAIL repairs in the tail's one `build` cell, briefed on the assembly branch beside
-the run's PR; there is no `build:ui` at the tail.
+the run's PR; there is no `build:ui` and no `build:mixed` at the tail.
 
 **On a single-issue lane, a merged PR that closed nothing sends the lane round rather than folding
 it.** A `LANDED` whose merge carried `Part of #N` records its `DONE` as always, and the machine takes
