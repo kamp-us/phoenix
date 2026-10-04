@@ -35,6 +35,16 @@ merge a passing child into it, push it, and open the one draft PR (step 2's `int
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
 branch — that one is `ship`'s, once, at the tail.
 
+**A multi-stage run boots a lane ledger before its first spawn.** Any run that spawns fabrika
+shells for more than one stage — build, review, review-ui, ship, in any combination — is driven
+through this skill, off a ledger step 1 boots before the first shell starts. An ad-hoc in-memory
+chain over those shells, a script or a session awaiting one stage and then naming the next, is out
+of contract. The failure it stops: the chain's host dies, the child finishes and saves its handoff,
+and the parent reads that handoff and states it is recovering — having dispatched nothing, because
+the remaining stages lived only in the lost continuation. A driver that finds itself mid-run
+off-ledger has two moves: boot a lane on the issue and re-drive from the ledger (step 1), or stop
+and name the blocker. A progress claim with neither a dispatch nor a named blocker is not a report.
+
 **The bar this skill is held to: a lane reaches its terminal with zero founder asks about the
 engine.** You are the human seat for every non-product cause — a collision, a drift, a dead shell, a
 park no recipe covers — and the founder is reached only when the cause is a product ruling. A spent
