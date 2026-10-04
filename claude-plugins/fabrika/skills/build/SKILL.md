@@ -556,7 +556,9 @@ that refusal is a human saying they decide this one, and re-making the identical
 different tool, a script or a shell command spends the decision without ever asking for it. So do
 not re-attempt it. Stop where you stand, quote the denied action verbatim in a `fabrika build note`
 so the driver reads it before anything is pushed, and end `STOPPED` — `lane report` maps that token
-to a `BLOCKED` event, which is already the routing a denial wants, so no sixth terminal is needed.
+to a `BLOCKED` event, so no sixth terminal is needed. A denial has no cause token, so that report
+is refused at exit `52` under the shipped `parkCause.uncaused: "refuse"` and lands as a park only
+where the repo declares `record`; the cause section below says what to do with the refusal.
 The content being legitimate changes nothing: a change nobody could have refused and a
 bypass read the same in the transcript, which is the whole reason the denial is worth reporting.
 
