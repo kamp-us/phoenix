@@ -386,8 +386,8 @@ re-proving code its diff never reached, and CI runs that suite against the merge
 
 **Every run also sweeps the shipped local-tree guards, whatever the surface**, so a guard that would
 red in CI reds here first. A passing member is named in the green's `ran` as `guard <name> <leaf>`; a
-failing one reds the whole run on `18` and the failing line names it — fix that guard's finding like
-any other red. A member that **refused** — zero scope, or a read it could not make — lands in the
+failing one reds the whole run on `18`. The sweep still runs every guard, and the last line names
+each red one with its diagnostics above it — fix every guard it names before you re-run. A member that **refused** — zero scope, or a read it could not make — lands in the
 green's `skipped` array as `<name> (<reason>)` and on stderr. **A skip is not a pass**: it says CI's
 own gate will answer that one, so read the line rather than treating the green as covering it.
 A `skipped` line reading `<name> (turned off: …)` is the one skip CI answers the same way: this
