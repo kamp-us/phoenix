@@ -197,10 +197,18 @@ pitch-ruled: #<n> · ruling:https://github.com/<owner>/<repo>/issues/<m>#issueco
 
 Leave the body as it is: the comment is the pitch's whole trace, so a discharge without one is a
 missing pitch. `guard pitch-guard check` reads that first line and verifies the ruling behind it, so
-a comment that links the ruling in free prose passes nothing and the feature stays red. Done when
-`fabrika guard pitch-guard check --issue <n>` lists the feature with its ruling; a red names the
-check the ruling missed, and [the comment's contract](contract.md#the-pitch-ruled-comment) says what
-each one is. A feature a ruling only implies, however plainly, still owes its pitch. Take an existing
+a comment that links the ruling in free prose passes nothing and the feature stays red.
+**The guard accepts two rulings, and it is narrower than the arc above.** One is a desk ruling on
+the feature's own issue, recorded by `fabrika decision rule`. The other is a founder comment on
+another issue that names the feature as `#<n>`, where that issue and the feature share one open
+milestone. It never passes a "same epic" ruling, and never a feature on a standing lane over a
+ruling on another issue. Done when `fabrika guard pitch-guard check --issue <n>` lists the feature
+with its ruling. On a red, the report names the check the ruling missed, and the guard's contract
+lists each check
+(`fabrika wire doc-section --heading "pitch-guard check" < <skill-base>/../../docs/guard-contract.md`).
+A feature the guard refuses still owes its pitch: draft it as for any parentless feature, and never
+re-word the comment to get past the check. A feature a ruling only implies, however plainly, still
+owes its pitch. Take an existing
 home: **triage never creates a milestone**, and `wayfinder:backlog` is bounded to genuine fog rather
 than work you would rather not decide about.
 **A board-wide homing breach is swept by a verb, never by raw `gh`.** When `guard homing-guard check`

@@ -377,15 +377,9 @@ drifted one is counted in `disregarded` rather than dropped.
 ### `pitch-ruling`
 
 A parentless feature that a founder ruling names by number needs no pitch. This format is the comment
-triage posts on that feature to say where the ruling is:
-
-```text
-pitch-ruled: #<n> · ruling:https://github.com/<owner>/<repo>/issues/<m>#issuecomment-<comment-id>
-```
-
-It is the comment's first line, and anything below it is free prose. The number is the feature the
-comment is posted on, and the URL is the comment the ruling is written in, on that feature or on
-another issue.
+triage posts on that feature to say where the ruling is. It carries the feature the comment is
+posted on and the comment the ruling is written in, on that feature or on another issue; the shape
+is in the owner module.
 
 The comment is a pointer and carries no authority: anyone who can comment can post it, so its author
 and its agent stamp are not read. `guard pitch-guard check` reads it and then verifies the ruling it

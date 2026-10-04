@@ -7,8 +7,10 @@ section by its heading:
 
 `fabrika wire doc-section --heading "readme-guard check" < <plugin-root>/docs/guard-contract.md`
 
-Every leaf except `design-inventory generate` shares one output shape: a one-line all-clear on
-stdout, and on a red the report on stderr with GitHub `::error` annotations beside it under Actions.
+Every leaf except `design-inventory generate` shares one output shape: an all-clear on stdout, and
+on a red the report on stderr with GitHub `::error` annotations beside it under Actions. The
+all-clear is one line, except `pitch-guard check`'s, which lists each feature that passed by ruling
+under it.
 `design-inventory generate` is a write, so it prints the file it wrote and its primitive count
 instead of an all-clear, and it never reds on a violation. Every leaf, that one included, reds on
 zero scope rather than passing vacuously. The shared verdict taxonomy is

@@ -280,15 +280,12 @@ const pitchCheck = leafCommand(
 	Command.withDescription(
 		leafHelp("pitch-guard check", [
 			"Prints an all-clear when every lane-entering issue carries a founder-approved pitch.",
-			"  A parentless feature also passes on a founder ruling that names it by number, linked by a",
-			"  `pitch-ruled: #<n> · ruling:<comment-url>` comment; the all-clear counts those and lists",
-			"  each with its ruling.",
+			"  A parentless feature also passes on a linked founder ruling.",
 			"  Binds at intake only; it is never wired to red a pull request.",
 			"  A red puts the per-issue remedy on stderr, with ::error annotations under Actions.",
 			"  7: zero scope: the backlog sweep found no lane-entering issue",
-			"  11: the board, the label set, an issue, its comments, a ruling a `pitch-ruled:` comment",
-			"      links or .fabrika.jsonc was unreadable (UNKNOWN)",
-			"  12: a pickable bet carries no founder-approved pitch and no founder ruling that names it",
+			"  11: the board, labels, an issue, its comments, a linked ruling or .fabrika.jsonc unread (UNKNOWN)",
+			"  12: a pickable bet carries no founder-approved pitch",
 		]),
 	),
 	Command.withExamples([{command: "fabrika guard pitch-guard check --issue 4312"}]),
