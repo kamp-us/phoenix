@@ -1175,10 +1175,12 @@ announcement that does not read is `11`. So `--no-preview` is never the caller's
   refusal still holds; an absent text verdict does not refuse.
 - `hand-check` needs the owner's hand-check. **The owner's hand-check is admissible evidence here**:
   a comment on this PR, by an account on the control-plane roster `.github/CODEOWNERS` names, that
-  names the PR's exact head (a 7–40 hex prefix of it) and carries at least one screenshot. The verb
-  reads the PR's comments and stands on the newest one that passes all four facts; with none, it
-  refuses on `21`. `--hand-check <comment>` pins one instead, and a pinned comment that fails a fact
-  refuses on `22`. It stands in for the render the way a desk run does, so it rests on a standing
+  names the PR's exact head (a 7–40 hex prefix of it) and carries at least one screenshot. Two kinds
+  of comment pass those four facts and are refused as an agent's: the builder's own `ui evidence`
+  comment, recognised by the header that verb writes, and a comment carrying an agent stamp, read
+  over the body with its screenshots removed. The verb reads the PR's comments and stands on the
+  newest one it admits; with none, it refuses on `21`. `--hand-check <comment>` pins one instead,
+  and a pinned comment that fails a fact or is one of the two refused kinds refuses on `22`. It stands in for the render the way a desk run does, so it rests on a standing
   `review-code` PASS at `--sha` too (`20` without one). The record carries `basis:hand-check` and a
   closing line naming the comment and its author. Under a `skip` mode a pinned hand-check is checked
   the same way and recorded as `hand-check`.
@@ -1209,7 +1211,7 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `12` | the live head moved past `--sha` — the diff you read is gone; or a `ui`-class file changed between `--verified-at` and `--sha`, so the hand-verification is spent |
 | `20` | the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on `--verified-at` or an owner's hand-check has no `review-code` verdict binding that head |
 | `21` | a `--no-preview` route the repo's `reviewUi.whenNoPreview` rules do not admit: the PR resolves `require-render`, or `hand-check` with no owner's hand-check at the head on the PR |
-| `22` | the `--hand-check` comment is not an owner's hand-check: not on this PR, not by a control-plane account, naming no head this PR is at, or carrying no screenshot |
+| `22` | the `--hand-check` comment is not an owner's hand-check: not on this PR, not by a control-plane account, naming no head this PR is at, carrying no screenshot, the builder's own `ui evidence` comment, or carrying an agent stamp |
 | `23` | a `--no-preview` route over a PR that announces a preview, at the head, behind it, or for several apps |
 
 **Errors**

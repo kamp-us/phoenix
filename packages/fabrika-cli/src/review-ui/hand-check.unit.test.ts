@@ -1,10 +1,15 @@
 import {describe, expect, it} from "vitest";
 import type {CommentRecord} from "../io/issues.ts";
+import {composeEvidence} from "../ui/evidence-verb.ts";
 import {admitHandCheck, findHandCheck, handCheckCommentId} from "./hand-check.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const OWNERS = new Set(["owner"]);
-const SHOT = "![row](https://github.com/user-attachments/assets/1234)";
+// A hosted attachment's path ends in a UUID, the same shape as a session id in an agent stamp.
+const ASSET = "https://github.com/user-attachments/assets/0a1b2c3d-4e5f-6789-abcd-ef0123456789";
+const SHOT = `![row](${ASSET})`;
+const EVIDENCE = composeEvidence([{surface: "/board", before: null, after: ASSET}], HEAD);
+const STAMPED = `Hand-checked at ${HEAD}.\n\n${SHOT}\n\n<sub>Filed by an agent · branch \`main\`</sub>`;
 
 const comment = (body: string, author = "owner", id = 7001): CommentRecord => ({
 	id,
@@ -35,7 +40,16 @@ describe("admitHandCheck", () => {
 		}
 	});
 
+	it("admits an owner's screenshot pasted as a bare attachment URL or an <img> tag", () => {
+		for (const shot of [ASSET, `<img width="400" src="${ASSET}">`]) {
+			const found = [comment(`Hand-checked at ${HEAD}.\n\n${shot}`)];
+			expect(admitHandCheck(7001, found, HEAD, OWNERS)._tag).toBe("Admitted");
+		}
+	});
+
 	it.each([
+		["the builder's own ui evidence", [comment(EVIDENCE)], "builder's own ui evidence"],
+		["a comment carrying an agent stamp", [comment(STAMPED)], "carries an agent stamp"],
 		["a comment not on the PR", [comment(`at ${HEAD} ${SHOT}`, "owner", 1)], "not on this PR"],
 		["a non-owner's comment", [comment(`at ${HEAD} ${SHOT}`, "agent")], "not on the control plane"],
 		["a comment naming another head", [comment(`at 9fe12ab04f ${SHOT}`)], "does not name the head"],
@@ -53,6 +67,11 @@ describe("findHandCheck", () => {
 		const newer = {...comment(`at ${HEAD} ${SHOT}`, "owner", 2), updatedAt: "2026-09-29T01:00:00Z"};
 		const agent = {...comment(`at ${HEAD} ${SHOT}`, "agent", 3), updatedAt: "2026-09-29T02:00:00Z"};
 		expect(findHandCheck([older, newer, agent], HEAD, OWNERS)?.id).toBe(2);
+	});
+
+	it("passes over the builder's evidence and an agent-stamped comment by an owner account", () => {
+		const found = [comment(EVIDENCE, "owner", 1), comment(STAMPED, "owner", 2)];
+		expect(findHandCheck(found, HEAD, OWNERS)).toBeNull();
 	});
 
 	it("finds none where no comment passes all four facts", () => {

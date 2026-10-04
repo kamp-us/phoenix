@@ -41,6 +41,7 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
+import {evidenceHeader} from "./evidence-comment.ts";
 import {requireUiLane} from "./lane.ts";
 import {decodePng, sha256Of} from "./png.ts";
 import {pullHeadRef} from "./pull-head.ts";
@@ -100,7 +101,7 @@ export const composeEvidence = (
 			? `### \`${surface}\` — new surface\n\n![after](${after})`
 			: `### \`${surface}\`\n\n| before | after |\n| --- | --- |\n| ![before](${before}) | ![after](${after}) |`,
 	);
-	return [`**UI evidence** — rendered at head \`${head}\`.`, "", ...rows].join("\n");
+	return [evidenceHeader(head), "", ...rows].join("\n");
 };
 
 const readCapture = (
