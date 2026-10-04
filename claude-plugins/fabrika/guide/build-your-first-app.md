@@ -65,6 +65,10 @@ Its answer began:
 Done. The design rules file is written and checked: `design-system-manifest.md` at the repo root, with green (`#1B7F45`) as the streak colour.
 ```
 
+The reply may go on to ask you a question, such as an offer to commit the file for you, and it may
+name a command to run next. Do not answer the question and do not run that command. This lesson
+commits the file in step 3 and gives you each command when you need it.
+
 Open `design-system-manifest.md` and read it. It is short, and it is the whole brief the builder
 gets for how Streakly looks. The file is on your machine only. Step 3 puts it on GitHub.
 
@@ -106,10 +110,14 @@ Describe the first page in two sentences. In Claude Code, type:
 /fabrika:report The app has no screen yet. I want the first page of Streakly: one web page, plain HTML and CSS in index.html, that shows a list of three example habits (Read, Walk, Water) with a streak count next to each, following the design rules file.
 ```
 
+Its answer began:
+
 ```
 Filed: #3 <issue-url>
 
 It's waiting for triage. I didn't build the page — report only files the request.
+
+One gap I noted in the issue: you didn't give streak numbers, so the builder will pick sample ones.
 ```
 
 One page is one issue. You do not need to split it up or plan it first.
@@ -122,7 +130,7 @@ Triage turns your two sentences into something a builder can pick up cold. Type:
 /fabrika:triage 3
 ```
 
-It takes about two minutes. In this run it ended with:
+It takes about two minutes. In this run its answer was:
 
 ````
 Issue 3 is triaged. It is a new feature, priced p1, meaning it is worth pulling next, because nothing else can be built until a page exists.
