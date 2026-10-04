@@ -441,6 +441,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	triage: SHARED_SEATS,
 	review: SHARED_SEATS,
 	"review-ui": REVIEW_UI_SEATS,
+	setup: SHARED_SEATS,
 	ship: SHARED_SEATS,
 	spend: SPEND_SEATS,
 	spike: SPIKE_SEATS,

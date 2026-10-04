@@ -23,7 +23,7 @@ import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import type {Attempt} from "../io/git.ts";
 import {resolveRepo} from "../io/issues.ts";
-import {readStdin} from "../io/stdin.ts";
+import {readStdin, type StdinRead} from "../io/stdin.ts";
 import {readOriginHead, resolveTrunk} from "../io/trunk.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
@@ -51,7 +51,7 @@ import {type RosterSources, readRoster} from "./roster.ts";
 import {runSettings, settingRows} from "./settings-verb.ts";
 import {readWiringSource, repoWiringSource, runWiring, wiringOf} from "./wiring-verb.ts";
 
-const repoFlag = Flag.string("repo").pipe(
+export const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,
 	Flag.withDescription(
 		"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
@@ -130,6 +130,29 @@ const readTrunkState = (
 			trunk: trunk.value,
 			originHead: yield* readOriginHead,
 		};
+	});
+
+/**
+ * One bootstrap step against the repository above the cwd. `status bootstrap` and `fabrika setup`
+ * both run a step through here, so the two read one world and a step answers the same under either.
+ */
+export const bootstrapStep = (step: {
+	readonly surfaceId: string;
+	readonly path: string | null;
+	readonly repo: string | null;
+	readonly json: boolean;
+	readonly stdin: Effect.Effect<StdinRead>;
+}) =>
+	Effect.gen(function* () {
+		return yield* runBootstrap({
+			surfaceId: step.surfaceId,
+			path: step.path,
+			json: step.json,
+			repoRoot: yield* repositoryRoot,
+			configSource: yield* repoConfigSource(process.cwd()),
+			repo: yield* resolveTarget(step.repo),
+			stdin: step.stdin,
+		});
 	});
 
 const menu = leafCommand(
@@ -316,13 +339,11 @@ const bootstrap = leafCommand(
 	},
 	Effect.fn(function* ({surface, path, repo, json}) {
 		yield* emit(
-			yield* runBootstrap({
+			yield* bootstrapStep({
 				surfaceId: surface,
 				path: Option.getOrNull(path),
+				repo: Option.getOrNull(repo),
 				json,
-				repoRoot: yield* repositoryRoot,
-				configSource: yield* repoConfigSource(process.cwd()),
-				repo: yield* resolveTarget(Option.getOrNull(repo)),
 				stdin: Effect.sync(readStdin),
 			}),
 		);
