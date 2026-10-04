@@ -97,6 +97,14 @@ Resolve each real hit in step 4 — supersede where this ADR replaces it outrigh
 the rest still stands. Where you only refine your own earlier ADR's mechanics and its ruling holds,
 append a dated `- **#NNNN — <what changed> (YYYY-MM-DD).**` line under its `## Amendments` instead.
 
+**An amendment on a subject the parent's `title` does not name re-titles the parent, in the same
+pull request.** Rewrite the frontmatter `title` and the H1 together so they name every ruling the
+file carries, and add the new subject to `tags`. Keep the id and the filename, so every existing
+citation still resolves. Discovery reads filenames plus frontmatter, so a ruling the title omits is
+one a reader finds only by grepping the body — and a correct citation of it reads as a mis-citation.
+A re-titled parent holds one clause per ruling, which is the one case step 2's one-clause shape
+gives way.
+
 ## 4 — Resolve every reference, then edit the status lines
 
 ```bash

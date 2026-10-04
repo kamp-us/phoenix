@@ -1,12 +1,12 @@
 ---
 id: 0313
-title: A clean PR still in the merge queue is a wait the driver re-folds, not a human park
+title: A clean PR still in the merge queue is a wait the driver re-folds, and an epic lane already on disk drains on the machine it was emitted with
 status: amended-in-part by [0451](0451-parked-lane-rereviews-refreshed-head.md)
 date: 2026-08-20
-tags: [fabrika, lane, pipeline, ship, state-machine]
+tags: [fabrika, lane, pipeline, ship, state-machine, epic, lane-emit]
 ---
 
-# 0313 — A clean PR still in the merge queue is a wait the driver re-folds, not a human park
+# 0313 — A clean PR still in the merge queue is a wait the driver re-folds, and an epic lane already on disk drains on the machine it was emitted with
 
 **What this decides:** the coder machine gains a non-human wait cell out of `ship`. A shipper that
 ends with the PR still in the merge queue records `WIP`, the lane folds to `ship:queued`, and the
@@ -297,3 +297,28 @@ The mechanism is authorised here and written in
 [`operate/SKILL.md`](../claude-plugins/fabrika/skills/operate/SKILL.md)'s `ship:queued` and
 `Terminal vocabulary` sections. Nothing in code moves: `LANE-WAITING` is a driver's spoken terminal,
 not a `lane report` token, and the refusal itself is already `WAIT_TOO_SOON = 55`.
+
+## Amendment — 2026-09-10: the title names both rulings this record carries
+
+Founder ruling, [2026-09-10](https://github.com/kamp-us/phoenix/issues/9084#issuecomment-5625299964),
+on [#9084](https://github.com/kamp-us/phoenix/issues/9084). This amendment transcribes it.
+
+This record carries two rulings on two subjects. The first is the queue wait. The second sits in the
+2026-08-20 amendment above: an epic lane already on disk drains on the machine it was emitted with,
+and `lane emit`'s refusal over an existing lane stays absolute. Until now the `title`, the `tags`
+and the filename named the first alone. Discovery in this repo is filenames plus frontmatter, so a
+reader checking a citation of this record for the second ruling read the title and called a correct
+citation wrong — the governance verdict on
+[#9083](https://github.com/kamp-us/phoenix/pull/9083#issuecomment-5623052578) did exactly that.
+
+**The title now names both rulings, and the second ruling stays here.** The frontmatter `title` and
+the H1 are re-titled together, and the `tags` gain the second subject. The id and the filename are
+unchanged, so every existing citation of ADR 0313 still resolves. No new record is minted.
+
+**The rule this sets for the corpus:** an amendment that rules on a subject its parent's title does
+not name re-titles the parent in the same change. The author-facing statement of that rule lives in
+[`adr/SKILL.md`](../claude-plugins/fabrika/skills/adr/SKILL.md), step 3.
+
+**Splitting the second ruling into its own record was the other arm, and it was rejected.** It moves
+a settled ruling's address, and every existing citation of ADR 0313 for the no-re-emit rule becomes
+wrong.
