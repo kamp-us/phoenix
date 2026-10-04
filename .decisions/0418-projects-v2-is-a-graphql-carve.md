@@ -1,7 +1,7 @@
 ---
 id: 0418
 title: fabrika-cli reaches GitHub Projects (v2) through GraphQL, the fourth carve from its REST default
-status: amended-in-part by [0431](0431-batched-issue-reads-graphql-carve.md)
+status: amended-in-part by [0431](0431-batched-issue-reads-graphql-carve.md), [0471](0471-pitch-guard-table-read-token.md)
 date: 2026-09-27
 tags: [fabrika-cli, github, graphql, betting-table]
 ---

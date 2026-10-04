@@ -5,7 +5,11 @@
  * A graph read that fails makes the whole read `Unknown`, because a group with a member missing
  * would approve fewer issues than the table said yes to, or more.
  *
+ * A `tableToken` reads the project's items and nothing else. The issue graph is repository data, so
+ * it stays on the ambient credential: a token minted for the project may not be able to read it.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9913
+ * @ruling https://github.com/kamp-us/phoenix/issues/9982
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -59,14 +63,18 @@ const vanished = (issue: number): IssueNode => ({
 export const readBetRows = (
 	cwd: string,
 	repo: string,
+	tableToken: string | null = null,
 ): Effect.Effect<
 	TableRead<ReadonlyArray<BetRow>>,
 	never,
 	FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > =>
 	Effect.gen(function* () {
-		const items = yield* readTableWith(cwd, repo, (token, projectId) =>
-			readItems(token, projectId),
+		const items = yield* readTableWith(
+			cwd,
+			repo,
+			(token, projectId) => readItems(token, projectId),
+			tableToken,
 		);
 		if (items._tag !== "Read") return items;
 		const cells = betCellsOf(items.value, repo);

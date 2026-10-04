@@ -8,7 +8,15 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeHttpBy,
+	fakeSeams,
+	fakeShell,
+	type HttpReply,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {emit as emitRuling, markedIssue, rulingUrl, scopeDigest} from "../wire/decision-ruling.ts";
 import {markerTime} from "../wire/grill-marker.ts";
@@ -666,5 +674,181 @@ describe("runPitchGuard — a founder ruling stands in for a parentless feature'
 		);
 		expect(outcome.code).toBe(VIOLATION);
 		expect(requests).toHaveLength(3);
+	});
+});
+
+describe("runPitchGuard — which token makes each read", () => {
+	const SIZED = PITCH.replace("2 cycles", "M");
+	/** The ambient credential every scripted run resolves, set in `vitest.config.ts`. */
+	const AMBIENT = "token ghp_vitest_scripted";
+	const TABLE = "token ghp_table_only";
+	const GRAPHQL = /^POST .*\/graphql$/;
+	const GRAPH_EDGES = /^GET .*\/repos\/o\/r\/issues\/9\/(sub_issues|dependencies\/blocked_by)/;
+
+	const graphql = (data: unknown): HttpReply => ({status: 200, body: JSON.stringify({data})});
+
+	const LOCATED = graphql({
+		repository: {
+			id: "R_1",
+			owner: {id: "O_1", login: "o"},
+			projectsV2: {
+				pageInfo: {hasNextPage: false},
+				nodes: [{id: "PVT_1", number: 7, title: "r table", closed: false}],
+			},
+		},
+	});
+
+	const option = (field: string, name: string) => ({
+		__typename: "ProjectV2ItemFieldSingleSelectValue",
+		name,
+		optionId: `${field}:${name}`,
+		creator: {login: "founder"},
+		updatedAt: "2026-09-27T00:00:00Z",
+		field: {id: `F_${field}`, name: field},
+	});
+
+	/** A table whose one row is issue 9, Stage `bet` and Size M, both set by `founder`. */
+	const ITEMS = graphql({
+		node: {
+			items: {
+				pageInfo: {hasNextPage: false},
+				nodes: [
+					{
+						id: "PVTI_9",
+						content: {__typename: "Issue", number: 9, repository: {nameWithOwner: "o/r"}},
+						fieldValues: {
+							pageInfo: {hasNextPage: false},
+							nodes: [option("Stage", "bet"), option("Size", "M")],
+						},
+					},
+				],
+			},
+		},
+	});
+
+	/** What a token without the `project` scope is answered on any Projects read. */
+	const NO_PROJECT_SCOPE: HttpReply = {
+		status: 200,
+		body: JSON.stringify({
+			errors: [{type: "INSUFFICIENT_SCOPES", message: "the token lacks the project scope"}],
+		}),
+	};
+
+	const APPROVED_M = {author: "founder", body: "pitch-approved: appetite M · 2026-08-18T00:00:00Z"};
+
+	/** The shipped table reader over a scripted GitHub, with each request's credential beside it. */
+	const runShipped = async (
+		env: Record<string, string | undefined>,
+		table: "readable" | "no-project-scope",
+		commentsOn9: HttpReply,
+	) => {
+		const http = fakeHttpBy((line, body) => {
+			if (GRAPHQL.test(line)) {
+				if (table === "no-project-scope") return NO_PROJECT_SCOPE;
+				return body.includes("TableRepository") ? LOCATED : ITEMS;
+			}
+			if (GRAPH_EDGES.test(line)) return EMPTY;
+			if (COMMENTS(9).test(line)) return commentsOn9;
+			if (ONE(9).test(line)) return one({number: 9, body: SIZED});
+			if (PERM("founder").test(line)) return permission("admin");
+			return {status: 500, body: '{"message":"unscripted request"}'};
+		});
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runPitchGuard({issue: 9, repo: null, cwd: ROOT, env}),
+				Layer.mergeAll(fakeFs({}).layer, fakeShell([]).layer, http.layer),
+			),
+		);
+		const sent = http.calls.map((line, index) => ({
+			line,
+			credential: http.headers[index]?.authorization,
+		}));
+		const credentialsOf = (pattern: RegExp) =>
+			sent.filter((request) => pattern.test(request.line)).map((request) => request.credential);
+		return {outcome, sent, credentialsOf};
+	};
+
+	it("reads the table with TABLE_READ_TOKEN and everything else with the ambient token", async () => {
+		const {outcome, sent, credentialsOf} = await runShipped(
+			{...ENV, TABLE_READ_TOKEN: "ghp_table_only"},
+			"readable",
+			comments(APPROVED_M),
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stderr[0]).toContain("bet arm read the table o#7 — 1 `bet` row(s)");
+
+		// Both Projects reads: finding the project, then its items.
+		expect(credentialsOf(GRAPHQL)).toEqual([TABLE, TABLE]);
+
+		expect(credentialsOf(ONE(9)).length).toBeGreaterThan(0);
+		expect(credentialsOf(COMMENTS(9)).length).toBeGreaterThan(0);
+		expect(credentialsOf(PERM("founder")).length).toBeGreaterThan(0);
+		expect(credentialsOf(GRAPH_EDGES)).toHaveLength(2);
+		const repositoryReads = sent.filter((request) => !GRAPHQL.test(request.line));
+		expect(repositoryReads.every((request) => request.credential === AMBIENT)).toBe(true);
+	});
+
+	it("reads a commenter's permission with the ambient token, so a comment approval counts beside a table token", async () => {
+		// The regression: under one table-only token the permission read failed closed and a
+		// `pitch-approved:` comment stopped counting. The table read fails here, so the pass is the
+		// comment's alone.
+		const {outcome, credentialsOf} = await runShipped(
+			{...ENV, TABLE_READ_TOKEN: "ghp_table_only"},
+			"no-project-scope",
+			comments(APPROVED_M),
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stderr[0]).toContain("bet arm unread");
+		expect(credentialsOf(PERM("founder"))).toEqual([AMBIENT]);
+	});
+
+	for (const [label, env] of [
+		["unset", ENV],
+		["empty, as an unset Actions secret arrives", {...ENV, TABLE_READ_TOKEN: ""}],
+		["blank", {...ENV, TABLE_READ_TOKEN: "  "}],
+	] as const) {
+		it(`makes every read with the ambient token when TABLE_READ_TOKEN is ${label}`, async () => {
+			const {outcome, sent, credentialsOf} = await runShipped(
+				env,
+				"no-project-scope",
+				comments(APPROVED_M),
+			);
+			// The ambient token has no `project` scope, so the table is unread and the comment approves.
+			expect(outcome.code).toBe(0);
+			expect(outcome.stderr[0]).toContain("bet arm unread");
+
+			expect(credentialsOf(GRAPHQL).length).toBeGreaterThan(0);
+			expect(credentialsOf(ONE(9)).length).toBeGreaterThan(0);
+			expect(credentialsOf(COMMENTS(9)).length).toBeGreaterThan(0);
+			expect(credentialsOf(PERM("founder")).length).toBeGreaterThan(0);
+			expect(sent.every((request) => request.credential === AMBIENT)).toBe(true);
+		});
+	}
+
+	it("reds a bet-only issue when TABLE_READ_TOKEN is unset and the ambient token cannot read the table", async () => {
+		const {outcome, sent} = await runShipped(ENV, "no-project-scope", EMPTY);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr[0]).toContain("bet arm unread");
+		expect(sent.every((request) => request.credential === AMBIENT)).toBe(true);
+	});
+
+	it("hands the table reader the table token, or null without one", async () => {
+		const seen: Array<string | null> = [];
+		const watched: BetRowsReader = (_cwd, _repo, tableToken) =>
+			Effect.sync(() => {
+				seen.push(tableToken);
+				return {_tag: "NoTable", note: "unused"} as const;
+			});
+		const script: ReadonlyArray<Scripted> = [
+			[ONE(9), one({number: 9, body: SIZED})],
+			[COMMENTS(9), EMPTY],
+		];
+		await run(script, {
+			issue: 9,
+			betRows: watched,
+			env: {...ENV, TABLE_READ_TOKEN: "ghp_table_only"},
+		});
+		await run(script, {issue: 9, betRows: watched});
+		expect(seen).toEqual(["ghp_table_only", null]);
 	});
 });
