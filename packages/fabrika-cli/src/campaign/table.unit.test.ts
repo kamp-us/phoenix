@@ -56,6 +56,22 @@ describe("appendRow", () => {
 		expect(next.split("\n").slice(0, 8)).toEqual(TWO_ROWS.split("\n").slice(0, 8));
 	});
 
+	it("keeps an active-at-creation footnote below the row it appends", () => {
+		const footnote =
+			"fabrika everywhere — active at creation, authorized by https://example.com/ruling";
+		const footnoted = TWO_ROWS.replace(
+			"\n## Dependency graph",
+			`\n${footnote}\n\n## Dependency graph`,
+		);
+		const lines = appendRow(footnoted, "Mecmua reading layout", 52).split("\n");
+		expect(lines.indexOf("| Mecmua reading layout | #52 | paused |")).toBe(
+			lines.indexOf("| fabrika everywhere | #47 | active |") + 1,
+		);
+		expect(lines.indexOf(footnote)).toBeGreaterThan(
+			lines.indexOf("| Mecmua reading layout | #52 | paused |"),
+		);
+	});
+
 	it("writes the row immediately after the separator when the table has no rows", () => {
 		const empty = "## Campaigns\n\n| Campaign | Milestone | State |\n|---|---|---|\n\n## Next\n";
 		const next = appendRow(empty, "First", 1);
