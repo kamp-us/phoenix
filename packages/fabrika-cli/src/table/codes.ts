@@ -46,3 +46,9 @@ export const NOT_SET_UP = 23;
  * asks are undecidable, so nothing was written.
  */
 export const MALFORMED_RECORD = 24;
+
+/**
+ * Proven: the environment variable the `digest` block names is unset, empty or holds no http(s)
+ * URL. Nothing was read from GitHub and nothing was sent.
+ */
+export const NO_WEBHOOK = 25;
