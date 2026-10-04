@@ -359,8 +359,8 @@ the `governance` skill; the flag only makes the seam mechanical.
 
 **`governance` is a fourth-root answer, and it is why `harness` must not be read as one.** The line
 is `touchesGovernanceRoot` over the same file list, against the **declared** governance roots
-(`governedRoots`, whose shipped value is five roots: the decision corpus, the three `harness` roots and
-`.fabrika.jsonc` itself) — the
+(`governedRoots`, whose shipped value is four roots: the decision corpus, `.claude/`, `.github/` and
+`.fabrika.jsonc` itself — a repo that governs its own plugin tree declares it) — the
 one derivation `governance scope` prints, imported rather than recomputed. So a
 decision-corpus-only diff prints `harness\tfalse` and `governance\trequired`, which is exactly the
 pair a reviewer keying the governance obligation off `harness` gets wrong: a clean PASS,

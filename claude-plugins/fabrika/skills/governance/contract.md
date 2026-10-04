@@ -385,15 +385,15 @@ skill reads the root set off `fabrika status settings`, never off this field),
 event — the one change to the corpus an `added`/`modified` pair cannot express at all.
 
 **The root set is a path prefix list the repo declares — `governedRoots` in `.fabrika.jsonc` — and a
-repo that declares nothing gets the shipped default, whose five entries are the kinds below. Read
-the resolved list off `fabrika status settings`, never off this table:**
+repo that declares nothing gets the shipped default, whose four entries are the kinds below. A
+repo that keeps governed text anywhere else, such as a plugin tree of its own, declares that root.
+Read the resolved list off `fabrika status settings`, never off this table:**
 
 | Root | Why it is governance-bearing |
 |---|---|
 | the decision corpus (`decisionsDir`) | the records themselves — commonly outside CODEOWNERS, so this is the guard that stays |
 | `.claude/` | agent and skill definitions the harness executes |
 | `.github/` | workflows, CODEOWNERS and rulesets — the enforcement layer |
-| `claude-plugins/` | every plugin's skills, contracts and rubrics, at any depth, whatever the extension |
 | `.fabrika.jsonc` | the config that declares this very list, plus every other gate's scope |
 
 **Two declarations are refused rather than honoured, and both at load.** An empty list would read as
@@ -408,9 +408,9 @@ coverage, not the file type** — the v1 §CP definition learned this the hard w
 skill-dir list plus an any-depth `*.sh` clause left a non-`.sh` file beside a gated script
 proven-ordinary and auto-mergeable at zero approvals. `self` is true when any changed path is under the
 resolved skill root — the same `*/fabrika/skills/governance/SKILL.md` resolution `governance base`
-states below, plugin segment included, **never hardcoded to one repo's install path**. That
-directory is always a subset of
-`claude-plugins/`, so this skill's own diff derives its own namespace by construction.
+states below, plugin segment included, **never hardcoded to one repo's install path**. The
+shipped roots do not cover that directory, so this skill's own diff derives its own namespace only
+in a repo that carries the plugin in its tree and declares that tree as a root.
 
 **This is not the §CP answer and the verb says so on stderr**, once, on every run:
 `governance scope: this is the governance-namespace derivation, not a §CP classification — §CP is CODEOWNERS' answer.`
@@ -484,7 +484,7 @@ $ fabrika governance scope 4 --json
   verb does not try to fill that gap with a content regex; it derives a *separate* namespace whose
   verdict is the skill's judgment, and leaves §CP to CODEOWNERS.
 - The v1 §CP boundary's recorded holes — the enumerated skill-dir list, the `**/*.sh` clause, the
-  `.claude-plugin/` hyphen miss — are why the root set is four directory prefixes and not a file-type
+  `.claude-plugin/` hyphen miss — are why the root set is a list of directory prefixes and not a file-type
   or an enumeration that can rot as surfaces are added.
 - v1's `class-probe` read 0 files and classified `has-code` at exit 0; the zero-file case
   here is a `7` refusal.

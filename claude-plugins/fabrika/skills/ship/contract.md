@@ -329,8 +329,8 @@ gates is vacuously green.
 
 **`governance` is appended to that set, not mapped from a class.** A diff with at least one
 changed path under one of the repo's governed roots — `governedRoots` in `.fabrika.jsonc`, whose
-shipped default names the decision corpus, the agent-config directories, the workflow directory,
-the plugin tree and the config file itself — additionally
+shipped default names the decision corpus, the agent-config directory, the workflow directory
+and the config file itself — additionally
 derives `namespace\tgovernance`; a diff under none of those roots derives exactly the
 namespaces it derived before, unchanged. Those paths already carry a file class, so this is a
 second, orthogonal question about the same files rather than a fifth class — and the predicate

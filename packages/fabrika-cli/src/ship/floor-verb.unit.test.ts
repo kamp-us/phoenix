@@ -43,10 +43,10 @@ const permissionServed = (permission: string): HttpReply => ({
 	body: JSON.stringify({permission}),
 });
 
-/** A fabrika-tree diff — `claude-plugins/` is one of the shipped governance roots. */
+/** A skill diff under `.claude/`, one of the shipped governance roots. */
 const FABRIKA_TREE = [
 	FILES,
-	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/site/src/b.ts")),
+	served(files(".claude/skills/ship/SKILL.md", "apps/site/src/b.ts")),
 ] as const;
 
 const options = {pr: 4321, sha: HEAD, repo: null, json: false, cwd: "/repo", env: ENV};

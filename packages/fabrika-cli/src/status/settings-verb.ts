@@ -6,8 +6,8 @@
  * Both layers are read: the tracked `.fabrika.jsonc` and, over it, the gitignored
  * `.fabrika.local.jsonc` a machine may declare an allow-listed key in.
  *
- * **Provenance is the load-bearing column.** "the governance roots are the five shipped defaults"
- * and "the governance roots are five values this repo declared" are different facts, and an agent
+ * **Provenance is the load-bearing column.** "the governance roots are the four shipped defaults"
+ * and "the governance roots are four values this repo declared" are different facts, and an agent
  * reading a bare value cannot tell whether the repo made a choice. So each row says which — and a
  * declared row's detail cell names which of the two files declared it, because a machine-local
  * value is invisible in `git status` and would otherwise be a number an operator debugs blind.
