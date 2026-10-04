@@ -1062,9 +1062,8 @@ when that job never reported, the roll-up is the only context that shows the fai
 signature table (`signatures.ts`) and answers why one log cannot be read as a defect of its own;
 `classify` prints it once per failing context. The second belongs to `heal-ci diagnose`'s stall
 vocabulary (`stall.ts`) and answers why one pull request is stuck, once per pull request, off a
-SHA-bound review-gate verdict. Neither
-token appears in the other's union, and a pull request whose only failing context is `derived` is
-not thereby `gate-failed`.
+SHA-bound review-gate verdict. Neither token appears in the other's union, and a pull request whose
+only failing context is `derived` is not thereby `gate-failed`.
 
 **The taxonomy is a single-sourced, ORDERED table, and it is data.** Each row carries a stable id,
 a class, a literal pattern and a rationale, in one module, with the table under unit test against
