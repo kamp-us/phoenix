@@ -19,7 +19,6 @@ describe("the `status` group registers each verb", () => {
 		"settings",
 		"wiring",
 		"menu",
-		"readout",
 		"board",
 		"bootstrap",
 	])("resolves `status %s` to a leaf", (verb) => {

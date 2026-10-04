@@ -71,7 +71,7 @@ the regex.
 
 A repo may choose to give its decision-record directory no CODEOWNERS row, so that an
 entirely-decision-record change set classifies `not-control-plane` and owes no code-owner review. Where a repo
-makes that choice, four things hold:
+makes that choice, three things hold:
 
 - **A mixed PR is unaffected.** A change set touching the corpus alongside a team-owned path is
   `control-plane` by that other path.
@@ -81,10 +81,7 @@ makes that choice, four things hold:
   every review round, with the floor reported through a check run.
 - **The sweep that stays is machine-run**: the citation-independent contradiction sweep run by
   [`governance`](../skills/governance/SKILL.md) (its corpus half, `§2`).
-- **The visibility half**: a periodic, non-blocking readout of landed decision records, ranked for
-  consequence and tension by the `governance` skill and surfaced on the front door.
-
-That trade is a machine gate plus after-the-fact visibility standing in for a human approval. It
+That trade is a machine gate standing in for a human approval. It
 removes a human approval, not a gate — a repo that drops the machine half as well has removed the
 review, not relocated it.
 

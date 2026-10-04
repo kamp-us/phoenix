@@ -711,10 +711,9 @@ none of those roots requires exactly what it required before. When the floor fir
 
 This is the whole ruling, and it is what a §CP row would otherwise have had to enforce.
 The plugin tree is deliberately **not** control-plane — no CODEOWNERS row, no boundary
-widening. The protection is this machine floor plus the §CP digest readout that carries every
-plugin-tree landing to a human: **visibility after landing replaces blocking before it**, and the
-trade is explicit — the readout makes a gate-weakening landing *visible*, not *impossible*, and the
-machine chain has been observed missing one. `.github/**`, CODEOWNERS included, and everything
+widening. The protection is this machine floor alone, with no
+after-the-fact readout beside it, and the trade is explicit — a gate-weakening landing the floor misses is caught only when someone notices it,
+and the machine chain has been observed missing one. `.github/**`, CODEOWNERS included, and everything
 the existing §CP boundary already covers stay §CP, unchanged and enforced server-side regardless.
 
 The floor is `governance` only. Deriving the whole `review-*` set here would be a second answer to

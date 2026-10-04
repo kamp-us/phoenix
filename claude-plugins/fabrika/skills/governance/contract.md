@@ -27,12 +27,10 @@ access per
 | Verb | Purpose | Split test |
 |---|---|---|
 | `governance scope` | whether the diff derives the governance namespace, over which harness roots, with the bound head, the `self` flag, and the decision records the diff touches | matching changed paths against a fixed root set and binding them to a commit is a total function; whether a change weakens a guard is the whole judgment |
-| `governance sweep` | the uncited live-`accepted` records whose decision domain a subject touches, ranked, for a subject read out of a bound commit or out of the corpus | the ranking is arithmetic over a corpus; reading the shortlist, and reading the domain the ranking cannot see, is judgment |
+| `governance sweep` | the uncited live-`accepted` records whose decision domain a subject touches, ranked, for a subject read out of a bound commit | the ranking is arithmetic over a corpus; reading the shortlist, and reading the domain the ranking cannot see, is judgment |
 | `governance guards` | the anchored invariants the bound diff removes or modifies, and the guard-bearing files it touches | detecting an anchor's removal or mutation in a diff is textual and mechanical; whether the change *weakens* the invariant is judgment |
 | `governance base` | this skill's own text at the merge-base of a PR that edits it — the self fence's bytes | resolving a merge base and reading named paths at it is mechanical; judging the PR by those rules rather than the head's is the judgment |
 | `governance post` | the single sanctioned emit of the `governance` namespace verdict: compose through the `verdict-marker` wire format, re-resolve the head, append into one comment per head, leak-scan, read back, then re-fire the floor check at that head | marker composition, head re-resolution, the derived-namespace fence and the read-back are a protocol; the polarity and clause are judgment |
-| `governance digest` | the decision records that landed in a window, each with its id, title, status, landing commit and whether its diff carried anchored-invariant changes | enumerating merges in a window and reading each record's frontmatter is mechanical; ranking tension and blast radius is judgment |
-| `governance readout` | the digest-publishing protocol: compose the ranked rows through the `governance-digest` wire format, upsert them into the durable artifact, read them back | composition, upsert and read-back are a protocol; the rows and their order are judgment |
 
 ### Considered and deliberately not derived
 
@@ -56,7 +54,7 @@ same tracked debt the sibling contracts carry.)
   `packages/fabrika-cli/src/adr/sweep.ts` — `decisionBearingText`, `tokenize`, the idf scoring and
   `RARITY_FLOOR` — rather than restating any of it. A second lexical sweep would be a rival answer
   to a solved question. What this verb adds is the subject source: `adr sweep` can only read a local
-  draft, and a review-time or digest-time subject lives in a **commit**.
+  draft, and a review-time subject lives in a **commit**.
 - **A citation-resolution verb.** `fabrika adr resolve` already answers
   `live` / `landed` / `in-flight` / `absent` against a freshly fetched base ref. The skill invokes it
   directly. A `governance resolve` would be a wrapper whose only behaviour is relaying an upstream
@@ -73,8 +71,6 @@ same tracked debt the sibling contracts carry.)
 - **A verdict-conjunction or enqueue verb.** `fabrika ship gate` folds the required namespaces into
   one fail-closed enqueue decision and is the single merge authority. This group emits one
   namespace's verdict and reads none of the others.
-- **A blocking digest.** The readout gates nothing, by founder ruling.
-  A verb that could red on a digest row would re-create the human gate the ruling retired.
 
 ### Nothing here recomputes an enforced answer
 
@@ -120,7 +116,7 @@ Stated once rather than repeated per block.
 
 ### The shared exit taxonomy
 
-All seven verbs allocate from one internal table (`packages/fabrika-cli/src/governance/codes.ts`), so
+All five verbs allocate from one internal table (`packages/fabrika-cli/src/governance/codes.ts`), so
 a code means one thing across *this group*. Every shared seat is **imported**, never restated as a
 numeral — a restated numeral is a second source that can drift silently, and an import cannot.
 Import exactly as `packages/fabrika-cli/src/review/codes.ts` does, from the modules that actually own
@@ -139,25 +135,25 @@ in the `TABLES` record in `packages/fabrika-cli/src/exit-code-alignment.unit.tes
 not one; registering only the first leaves that test red. Codes were read from the **shipped
 package**, never from a sibling `contract.md`.
 
-| Code | Meaning | scope | sweep | guards | base | post | digest | readout |
-|---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `1` | usage error, unresolvable repo, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `3` | stdin was read and held nothing | — | — | — | — | ✓ | — | ✓ |
-| `4` | *(deliberate gap — `report file`'s body-section seat; no verb here composes body sections)* | — | — | — | — | — | — | — |
-| `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ | — | ✓ |
-| `6` | the **authored** text is a bare `@` path reference — not redactable | — | — | — | — | ✓ | — | ✓ |
-| `7` | zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files — declared, or in the local three-dot read a verb derives from — the corpus holds zero decision records, the window holds zero landings, or the readout artifact is proven absent — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `8` | the write itself failed — the outcome is **UNKNOWN** | — | — | — | — | ✓ | — | ✓ |
-| `9` | the write landed but the read-back does not match | — | — | — | — | ✓ | — | ✓ |
-| `10` | a supplied value is off the closed vocabulary — a bad `--polarity`, a `--sha` that is not a head SHA, an unparseable `--since`, a `--record` that is not a four-digit id, a `--path` outside this skill's own resolved directory | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| `13` | refused: the read completed but its scope is **provably incomplete** — a truncated changed-file list or diff, a comment enumeration short of its declared count. A local read short of GitHub's `changed_files` is **not** that proof anywhere in this group | ✓ | — | ✓ | — | — | ✓ | ✓ |
-| `14` | refused: this PR's diff derives **no** governance namespace — a verdict in a namespace the diff did not require | — | — | — | — | ✓ | — | — |
-| `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head — ranged, over this range — and `--supersede` was not passed; nothing written | — | — | — | — | ✓ | — | — |
-| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Code | Meaning | scope | sweep | guards | base | post |
+|---|---|:--:|:--:|:--:|:--:|:--:|
+| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `1` | usage error, unresolvable repo, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `3` | stdin was read and held nothing | — | — | — | — | ✓ |
+| `4` | *(deliberate gap — `report file`'s body-section seat; no verb here composes body sections)* | — | — | — | — | — |
+| `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ |
+| `6` | the **authored** text is a bare `@` path reference — not redactable | — | — | — | — | ✓ |
+| `7` | zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files — declared, or in the local three-dot read a verb derives from — or the corpus holds zero decision records — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `8` | the write itself failed — the outcome is **UNKNOWN** | — | — | — | — | ✓ |
+| `9` | the write landed but the read-back does not match | — | — | — | — | ✓ |
+| `10` | a supplied value is off the closed vocabulary — a bad `--polarity`, a `--sha` that is not a head SHA, a `--record` that is not a four-digit id, a `--path` outside this skill's own resolved directory | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `13` | refused: the read completed but its scope is **provably incomplete** — a truncated changed-file list or diff. A local read short of GitHub's `changed_files` is **not** that proof anywhere in this group | ✓ | — | ✓ | — | — |
+| `14` | refused: this PR's diff derives **no** governance namespace — a verdict in a namespace the diff did not require | — | — | — | — | ✓ |
+| `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head — ranged, over this range — and `--supersede` was not passed; nothing written | — | — | — | — | ✓ |
+| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **The export names `governance/codes.ts` must ship**, because `checkAlignment`
 (`packages/fabrika-cli/src/exit-code-alignment.ts`) keys on export *names* and not on numerals — a
@@ -224,25 +220,25 @@ the head's instruction files are never on disk to be loaded.
 
 ### Read-backs compare normalized text, not bytes
 
-`governance post` and `governance readout` re-read their target and compare through
+`governance post` re-reads its target and compares through
 **`normalizeForReadback` from `packages/fabrika-cli/src/report/compose.ts`** — import it; its third
 step (strip trailing newlines) is the one a re-derivation drops, and dropping it fires exit `9` on
 clean runs.
 
 ### Machine-local path detection
 
-`governance post` and `governance readout` share the leak predicate **already implemented** at
+`governance post` uses the leak predicate **already implemented** at
 `packages/fabrika-cli/src/report/leaks.ts` — import it, never re-derive it. Follow the shipped
 wrapper shape at `packages/fabrika-cli/src/review/authored.ts` and
 `packages/fabrika-cli/src/triage/authored.ts`: a `readAuthored(surface, read)` plus a
 `leakRefusal(...)`.
 
-### Three shipped-surface changes this group requires
+### The shipped-surface changes this group requires
 
 All are additive; none changes how any existing marker, namespace or verdict reads. Each is a
 change to a surface this group does not own, so each names the file and the exact edit. **Changes 1,
 1b and 2 have landed** — they are kept here, in landed state, because they are still the surfaces
-this group's fail-closed property rests on. Change 3 is the only one still outstanding.
+this group's fail-closed property rests on.
 
 **1. `ship`'s required-namespace vocabulary must admit `governance` — without this the whole
 fail-closed property is decoration. LANDED.**
@@ -283,13 +279,12 @@ why the alternatives were rejected are recorded once, in
 [its check-run section](../ship/contract.md#publish-check).
 
 **The founder ruled this instead of a §CP row** (2026-08-10): the plugin tree gets **no** CODEOWNERS
-row and **no** §CP-boundary widening. The model
-is *machine gate plus human awareness, not a human click* — this floor blocks the enqueue, and the
-§CP digest readout (producer: this skill; display: the front door) carries every plugin-tree
-landing to the founder. **Visibility after landing replaces blocking before it**, with the limit
-recorded rather than glossed: the readout makes a gate-weakening landing *visible*, not
-*impossible*, and the machine chain has already missed one. `.github/**` — CODEOWNERS included — and
-everything the existing §CP boundary already covers stay §CP, enforced server-side regardless.
+row and **no** §CP-boundary widening. The model is *machine gate, not a human click*: this floor
+blocks the enqueue, and nothing after landing stands in for the approval. The
+limit is recorded rather than glossed: a gate-weakening landing the machine chain misses is caught
+only when someone notices it, and the machine chain has already missed one. `.github/**` —
+CODEOWNERS included — and everything the existing §CP boundary already covers stay §CP, enforced
+server-side regardless.
 
 **2. The `verdict-marker` namespace class must admit `governance`. LANDED, with one
 residual.** `packages/fabrika-cli/src/wire/verdict-marker.ts` now declares
@@ -302,40 +297,6 @@ widening used; widening one and not the other would have been the defect. **The 
 registry's `verdict-marker` row (`packages/fabrika-cli/src/wire/registry.ts:68`) still carries only
 `review-code` round-trip and malformed fixtures, so `wire/conformance.ts` drives no `governance`
 arm — adding those fixture rows is what remains of this change.
-
-**3. A new registered format `governance-digest`.** One row in
-`packages/fabrika-cli/src/wire/registry.ts` plus a sibling schema module
-`packages/fabrika-cli/src/wire/governance-digest.ts` — never a branch inside a verb, which is that
-registry's stated law. Producer `governance`, consumer the front door. The artifact is a fenced
-block under a
-`## Governance readout` heading whose rows are the **stdin row grammar `governance readout` accepts**
-— `row\t<NNNN>\t<tension|blast|routine>\t<one-line note>` — and **not** that verb's own stdout line,
-which reports the write rather than carrying the digest. `emit` / `read` / fixtures / brands as the
-registry's `WireFormat` requires.
-
-**The artifact's bytes, in full, because an implementer writes `emit` and `read` against these and
-nothing else in this spec shows them:**
-
-````markdown
-## Governance readout
-
-```governance-digest
-row	0398	tension	sits against ADR 0173 on whether a pending required check blocks admission
-row	0401	blast	every cache key in the system gains a tenant component
-row	0396	routine	no tension found
-```
-````
-
-`emit` composes exactly that block from the rows; `read` is total over any artifact — `Found` with
-the rows in file order, `Absent` when no `## Governance readout` heading with a `governance-digest`
-fence is present, and `Malformed` when the heading and fence are present but a line is not a
-conforming `row` (a drifted heading level, a fourth field, an off-vocabulary kind, a non-four-digit
-id). The round-trip fixture is the three rows above; the malformed fixtures are, at minimum, a
-drifted heading level, a fence holding prose instead of rows, and a row whose kind is off the closed
-set. The note is the only free-text field and it never carries a directive — a receiver re-fetches
-the record the id names and reads it there. The digest is a
-**closed-vocabulary** artifact for exactly the AC-5 reason: the front door re-fetches and re-reads it
-rather than trusting anything a coordination message carried.
 
 ---
 
@@ -502,16 +463,14 @@ $ fabrika governance scope 4 --json
 
 ```
 fabrika governance sweep 4321 --record 0240 [--sha <head>] [--dir <path>] [--limit <n>] [--repo <owner/name>] [--json]
-fabrika governance sweep --landed 0240 [--dir <path>] [--limit <n>] [--json]
 ```
 
 **Inputs**
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| *(positional)* | integer | no | — | the pull-request number the subject record lives in; required unless `--landed` is given |
-| `--record` | string | no | — | the four-digit id of the decision record in that PR to sweep; required with the positional |
-| `--landed` | string | no | — | sweep a record already in `--dir` instead of one in a PR — the digest-time mode; mutually exclusive with the positional and `--record` |
+| *(positional)* | integer | yes | — | the pull-request number the subject record lives in |
+| `--record` | string | yes | — | the four-digit id of the decision record in that PR to sweep |
 | `--sha` | string | no | the PR's live head | the head to read the subject record at; see the binding step above |
 | `--dir` | string | no | `.decisions` | the corpus to rank against |
 | `--limit` | integer | no | `8` | the maximum shortlist entries |
@@ -538,8 +497,7 @@ stderr reason names which of the two.
 
 **The ranking core is imported, not restated.** `decisionBearingText`, `tokenize`, the idf scoring,
 `RARITY_FLOOR` and `DEFAULT_LIMIT` come from `packages/fabrika-cli/src/adr/sweep.ts`. This verb owns
-only the subject acquisition: `git show <bound-head>:<path>` for the PR mode, a corpus read for
-`--landed`. Two runs of the two verbs over the same bytes therefore produce the same ranking by
+only the subject acquisition: `git show <bound-head>:<path>`. Two runs of the two verbs over the same bytes therefore produce the same ranking by
 construction rather than by agreement.
 
 **Every score this spec prints is derivable from that module** — score is the sum over shared terms
@@ -552,7 +510,7 @@ implementer reproduces scores from the imported module, never from this document
 | Code | Trigger |
 |---|---|
 | `7` | `--dir` was read and held zero decision records — zero scope, refused fail-closed; or the PR is proven absent (404) or closed, or its local three-dot range changes no path |
-| `10` | `--record` / `--landed` is not a four-digit id; `--sha` is not a head SHA; `--limit` is negative; or the positional and `--landed` were both given |
+| `10` | `--record` is not a four-digit id; `--sha` is not a head SHA; or `--limit` is negative |
 | `11` | the subject record could not be read at the bound commit, the commit could not be bound, **or a corpus member exists and could not be read** — an incomplete corpus is UNKNOWN |
 | `12` | `--sha` is not the PR's head |
 
@@ -565,7 +523,6 @@ implementer reproduces scores from the imported module, never from this document
 | `governance sweep: --record "<v>" is not a four-digit decision id.` | 10 | refusal |
 | `governance sweep: --sha "<v>" is not a head SHA — expected 7–40 lowercase hex characters.` | 10 | refusal |
 | `governance sweep: --limit <v> is negative — a shortlist cannot be shorter than empty.` | 10 | refusal |
-| `governance sweep: pass a PR with --record, or --landed, never both.` | 10 | refusal |
 | `governance sweep: #<n> at <sha> carries no decision record <id> — nothing to sweep.` | 11 | refusal |
 | `governance sweep: cannot read <dir>/<file>: <reason> — an incomplete corpus is UNKNOWN, never "no-overlap".` | 11 | refusal |
 | `governance sweep: <what> — the subject cannot be bound to a commit, so what it says is UNKNOWN.` | 11 | refusal |
@@ -575,8 +532,8 @@ implementer reproduces scores from the imported module, never from this document
 | `governance sweep: ranked <k> uncited live-accepted records of <m> in scope.` | 0 | notice |
 | `governance sweep: only <k> live-accepted records in <dir> (rarity needs at least 10) — the run carries no information.` | 0 | notice |
 
-**Scope** — the live-`accepted` records in `--dir`, minus those the subject already cites. On the PR
-path the file set proving `--record` is in this PR is the local three-dot read, shared with
+**Scope** — the live-`accepted` records in `--dir`, minus those the subject already cites. The
+file set proving `--record` is in this PR is the local three-dot read, shared with
 `governance scope` and `governance guards`; GitHub's `changed_files` is reported beside it and
 never refused on. The scope line names the corpus size and the in-scope count on stderr, because
 the outcome is only readable against them. Zero records is a refusal; a corpus below the rarity
@@ -592,12 +549,12 @@ shortlist
 ```
 
 ```
-$ fabrika governance sweep --landed 0240 --json
+$ fabrika governance sweep 4321 --record 0240 --json
 {"outcome":"no-overlap","subject":"0240","entries":[],"reason":"no uncited live-accepted record shares a distinctive term with the subject — this is not a clearance: a record that disagrees about what a label means shares no vocabulary and never appears here","scanned":241,"inScope":232,"cited":9}
 ```
 
 ```
-$ fabrika governance sweep --landed 0240 --dir claude-plugins/fabrika/skills/governance/evals/fixtures/small-corpus
+$ fabrika governance sweep 4321 --record 0240 --dir claude-plugins/fabrika/skills/governance/evals/fixtures/small-corpus
 governance sweep: only 4 live-accepted records in claude-plugins/fabrika/skills/governance/evals/fixtures/small-corpus (rarity needs at least 10) — the run carries no information.
 indeterminate
 $ echo $?
@@ -1153,201 +1110,6 @@ $ echo $?
 - The `14` refusal is the fail-closed condition's write-seam half. Absence of a verdict on a
   required diff is a refusal downstream; presence of one on a non-required diff is a refusal here.
   Both directions exist so the namespace means exactly one thing.
-
----
-
-## `governance digest`
-
-**Invocation**
-
-```
-fabrika governance digest --since 2026-08-02 [--until <YYYY-MM-DD>] [--dir <path>] [--base <ref>] [--json]
-```
-
-**Inputs**
-
-| Flag | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `--since` | string | yes | — | the window's inclusive start, `YYYY-MM-DD` |
-| `--until` | string | no | now | the window's inclusive end, `YYYY-MM-DD` |
-| `--dir` | string | no | `.decisions` | the corpus whose landings are listed |
-| `--base` | string | no | the trunk | the ref whose history is walked; fetched before the walk. With none named, the trunk (`origin/<the repo's GitHub default branch>`) is resolved after the window is validated, and an unresolvable one is `11` |
-| `--json` | boolean | no | `false` | emit the result object |
-
-**Output** — machine channel. First line: `digest\t<landed|none>\t<count>`. Then one line per landed
-record, oldest first:
-`landed\t<NNNN>\t<status>\t<commit>\t<YYYY-MM-DD>\t<anchors-touched>\t<title>` — where
-`<anchors-touched>` is the number of anchored invariants the landing commit's own diff changed, the
-blast-radius input the ranking needs.
-
-With `--json`:
-`{"outcome":"landed"|"none","count":<n>,"records":[{"id","status","commit","date","anchorsTouched","title","path"}…],"window":{"since","until"},"base":"origin/main"}`.
-
-`none` is a **proven** answer at exit 0 — the window was walked and nothing landed in it. Empty
-stdout would be byte-identical to a verb that never ran, which is the v1 scar this group's shared
-conventions name.
-
-**The `status` field is reported, never interpreted.** It is the frontmatter line as written. A corpus
-can hold records that read `proposed` while being enforced at a live gate,
-so a consumer that treats `proposed` as "not law" is reading a claim as an observation. The verb
-prints what is there and the skill judges what it means.
-
-**This verb ranks nothing.** Tension and blast radius are the two ruled ranking dimensions and both
-are judgment; a ranking verb would be a second judgement wearing a verb's clothes, and would also
-grow the rubric past what the founder's ruling authorized.
-
-**Exit status**
-
-| Code | Trigger |
-|---|---|
-| `7` | `--dir` is proven absent, or holds zero decision records — zero scope, refused fail-closed |
-| `10` | `--since` or `--until` is not `YYYY-MM-DD`, or `--until` precedes `--since` |
-| `11` | `--base` could not be fetched or resolved, or a landing commit could not be read — the window is UNKNOWN, never `none` |
-| `13` | the history walk is provably incomplete — a shallow clone whose graft boundary falls inside the window |
-
-**Errors**
-
-| Message (stderr) | Code | Kind |
-|---|---|---|
-| `governance digest: scanned <dir>, 0 decision records — refusing to answer.` | 7 | refusal |
-| `governance digest: --since "<v>" is not a YYYY-MM-DD date.` | 10 | refusal |
-| `governance digest: --until <b> precedes --since <a> — an empty window is a usage error, not a result.` | 10 | refusal |
-| `governance digest: cannot fetch or resolve <base>: <reason> — what landed is UNKNOWN, never "none".` | 11 | refusal |
-| `governance digest: cannot read landing commit <sha>: <reason> — the window is UNKNOWN.` | 11 | refusal |
-| `governance digest: the history is shallow and its boundary <sha> falls inside the window — refusing a partial landing list.` | 13 | refusal |
-| `governance digest: walked <base> from <since> to <until>, <k> commits touching <dir>.` | 0 | notice |
-
-**Scope** — the commits on `--base` between `--since` and `--until` that touch `--dir`, and for each
-landed record its frontmatter and its landing commit's anchor delta. The scope line names the base,
-the window and the commit count, because `none` is only readable against them.
-
-**Examples**
-
-```
-$ fabrika governance digest --since 2026-08-02
-digest	landed	2
-landed	0238	accepted	aab2adea	2026-08-06	0	fabrika reimplements v1, never calls it
-landed	0240	accepted	1f8e83b1	2026-08-08	2	Only landed ADRs may be cited
-```
-
-```
-$ fabrika governance digest --since 2026-08-09 --until 2026-08-09 --json
-{"outcome":"none","count":0,"records":[],"window":{"since":"2026-08-09","until":"2026-08-09"},"base":"origin/main"}
-```
-
-The window is inclusive at both ends, so this second example is `none` only because neither landing
-above falls on `2026-08-09` — `0240` lands on `2026-08-08` and would be inside a window ending there.
-
-**Grounding**
-
-- The founder's condition for retiring the human gate on decision records: a periodic,
-  non-blocking digest of landed decisions, ranked by this skill. Without the readout,
-  overrule-later is fiction, and that half is not droppable. This verb is the listing mechanics that
-  ruling required to be a verb rather than prose in a skill.
-- `status:` does not track what is binding; the field is reported verbatim and the
-  hazard is stated rather than silently normalized.
-- The base is fetched before the walk, because a stale checkout is how withdrawn doctrine
-  gets applied after its withdrawal.
-- `none` over a corpus that could not be read is not `none`; the read failure is `11`.
-
----
-
-## `governance readout`
-
-**Invocation**
-
-```
-fabrika governance readout [<issue>] [--repo <owner/name>] [--json]
-```
-
-The ranked rows arrive on **stdin** — one row per line in the `governance-digest` line grammar.
-
-**Inputs**
-
-| Flag | Type | Required | Default | Description |
-|---|---|---|---|---|
-| *(positional)* | integer | no | resolved, see below | the issue number of the durable readout artifact the front door reads. **Not a constant**: resolve it from `$FABRIKA_GOVERNANCE_READOUT_ISSUE`, else the single open issue in the target repo titled exactly `Governance readout`; a caller may always pass it explicitly. Unset and unresolvable is exit `7` naming both lookups — never a guessed number, which would publish the digest onto somebody else's issue |
-| `--repo` | string | no | resolved | the repository |
-| `--json` | boolean | no | `false` | emit the result object |
-| stdin | text | yes | — | the ranked rows: `row\t<NNNN>\t<tension\|blast\|routine>\t<one-line note>`, highest consequence first |
-
-**Output** — machine channel. One line:
-`readout\t<issue>\t<row-count>\t<created|edited>\t<comment-url>`.
-With `--json`: `{"outcome":"readout","issue":…,"rows":<n>,"upsert":"created"|"edited","commentUrl":…}`.
-
-**The row vocabulary is closed**, and the verb refuses a row outside it. The three kinds are
-`tension` (the record sits against standing law), `blast` (wide reach, no tension found) and
-`routine`. Free prose is confined to the one-line note, and the note is a *pointer*, not a
-judgement a receiver acts on: the front door re-fetches the referenced records and reads them
-itself. That is what keeps a coordination artifact from steering its receiver.
-
-**Non-blocking by construction.** This verb writes a comment and nothing else. It sets no label,
-touches no PR, and has no exit code meaning "the corpus is in a bad state" — because a digest that
-could red would be the human gate the founder's ruling retired, wearing a new name. Every outcome here
-is either "the readout landed" or "the readout did not land".
-
-**The operation:** compose the rows through the `governance-digest` wire format's `emit`;
-leak-scan the assembled body; upsert the single comment on the artifact issue whose first non-blank
-line reads as this format; re-fetch and read it back through the format's `read`, requiring the same
-rows in the same order, then compare the whole body through `normalizeForReadback`.
-
-**Exit status**
-
-| Code | Trigger |
-|---|---|
-| `3` | stdin was read and held nothing — an empty readout is not a readout |
-| `5` | the assembled body carries a machine-local path |
-| `6` | the body is a bare `@` path reference |
-| `7` | the artifact issue is proven absent (404) or closed — the readout has nowhere durable to land |
-| `8` | the create/edit failed — UNKNOWN whether the readout landed |
-| `9` | it landed but the read-back does not yield the same rows in the same order |
-| `10` | a row's kind is outside `tension` / `blast` / `routine`, or a row's id is not four digits |
-| `11` | the issue or its comments could not be read — nothing was written |
-| `13` | the comment enumeration is provably short of its declared count, so the upsert target is unknown |
-
-**Errors**
-
-| Message (stderr) | Code | Kind |
-|---|---|---|
-| `governance readout: no rows on stdin — an empty readout is not a readout.` | 3 | refusal |
-| `governance readout: the assembled body carries a machine-local path at line <k> (<class>) — cite it repo-relative.` | 5 | refusal |
-| `governance readout: the body is a bare "@" path reference — the rows never arrived. Send them on stdin.` | 6 | refusal |
-| `governance readout: issue #<n> not found in <repo> — the readout artifact is absent; front-door creates it.` | 7 | refusal |
-| ``governance readout: no artifact issue given, `$FABRIKA_GOVERNANCE_READOUT_ISSUE` is unset, and <repo> has no open issue titled "Governance readout" — refusing to guess where the digest lands.`` | 7 | refusal |
-| `governance readout: issue #<n> is closed — a readout nobody reads is not a readout.` | 7 | refusal |
-| `governance readout: row <k>'s kind "<v>" is outside tension/blast/routine.` | 10 | refusal |
-| `governance readout: row <k>'s id "<v>" is not a four-digit decision id.` | 10 | refusal |
-| `governance readout: cannot read #<n>: <reason> — nothing was written.` | 11 | refusal |
-| `governance readout: received <k> of <m> comments on #<n> — refusing to upsert against a partial sweep.` | 13 | refusal |
-| `governance readout: create/edit failed: <reason> — UNKNOWN whether the readout landed; re-read #<n> before retrying.` | 8 | refusal |
-| `governance readout: landed, but the read-back does not yield the same rows — inspect comment <id>.` | 9 | refusal |
-
-**Scope** — one issue and its comments, plus the caller's stdin. The artifact is one comment,
-upserted, so a reader always finds exactly one current readout rather than an append stream.
-
-**Examples**
-
-```
-$ printf 'row\t0240\ttension\tsits against record 0058 on whether a verdict may bind an unread head\nrow\t0238\troutine\tno tension found\n' | fabrika governance readout 4952
-readout	4952	2	edited	https://github.com/<owner>/<repo>/issues/4952#issuecomment-5229900001
-```
-
-```
-$ printf 'row\t0240\troutine\tno tension found\n' | fabrika governance readout 4952 --json
-{"outcome":"readout","issue":4952,"rows":1,"upsert":"edited","commentUrl":"https://github.com/<owner>/<repo>/issues/4952#issuecomment-5229900001"}
-```
-
-**Grounding**
-
-- The readout is the non-droppable condition on retiring the human gate over decision records. The
-  producer half is this verb; the display half is the front door's.
-- The marker rule's second half — upsert, never append: one current record rather than a stream a
-  timestamp decides between. The same reasoning applies to a readout as to a verdict.
-- A periodic sweep re-files what a standing ruling already killed unless something stops it.
-  The rows are authored per run by the skill, which cites the ruling and drops the row; this verb
-  refuses nothing on that basis, because a verb that judged a row's novelty would be judging.
-- Where skill routing cannot reach the front door at all, this artifact is still reachable: it is an
-  issue precisely so it needs no routing.
 
 ---
 

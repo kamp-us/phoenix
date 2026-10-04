@@ -98,20 +98,19 @@ fabrika status open
 ```
 
 ```
-status open: roster fabrika/skills (cache); repo you/your-repo; 7 field(s) rendered, 0 unknown.
-open	7
+status open: roster fabrika/skills (cache); repo you/your-repo; 6 field(s) rendered, 0 unknown.
+open	6
 field	menu	ready	28 skills	fabrika/skills	2026-10-03T21:14:56Z
 field	settings	resolved	35 keys, 0 declared	.fabrika.jsonc	2026-10-03T21:14:56Z
 field	wiring	unwired	no .claude/settings.json — no fabrika skill can load in a session here	.claude/settings.json	2026-10-03T21:14:56Z
 field	board	absent	missing status:needs-triage,status:triaged,p0,p1,p2 — create them with fabrika status bootstrap label-taxonomy	you/your-repo	2026-10-03T21:14:58Z
-field	readout	absent	no readout artifact	you/your-repo	unknown
 field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-10-03T21:14:56Z
 field	trunk	agrees	origin/main; origin/HEAD agrees	you/your-repo	2026-10-03T21:14:56Z
 ```
 
-Seven fields: `menu`, `settings`, `wiring`, `board`, `readout`, `lanes` and `trunk`. Two of them
+Six fields: `menu`, `settings`, `wiring`, `board`, `lanes` and `trunk`. Two of them
 need you now. `wiring` says `unwired`, which step 4 fixes, and `board` says `absent`, which step 5
-fixes. The `readout` row stays `absent` for this whole lesson.
+fixes.
 
 Inside Claude Code the `front-door` skill gives you this same readout: type `/fabrika:front-door`.
 
@@ -387,13 +386,12 @@ fabrika status open
 ```
 
 ```
-status open: roster fabrika/skills (cache); repo you/your-repo; 7 field(s) rendered, 0 unknown.
-open	7
+status open: roster fabrika/skills (cache); repo you/your-repo; 6 field(s) rendered, 0 unknown.
+open	6
 field	menu	ready	28 skills	fabrika/skills	2026-10-03T21:17:14Z
 field	settings	resolved	35 keys, 0 declared	.fabrika.jsonc	2026-10-03T21:17:14Z
 field	wiring	wired	fabrika@kampus is enabled — sessions in this repo load fabrika's skills	.claude/settings.json	2026-10-03T21:17:14Z
 field	board	counted	0 needs-triage, 0 triaged	you/your-repo	2026-10-03T21:17:14Z
-field	readout	absent	no readout artifact	you/your-repo	unknown
 field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-10-03T21:17:14Z
 field	trunk	agrees	origin/main; origin/HEAD agrees	you/your-repo	2026-10-03T21:17:14Z
 ```

@@ -68,8 +68,6 @@ import {
 	NOT_BUILDABLE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH,
-	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {noAsOf, oneLine, readNow} from "./fields.ts";
@@ -79,11 +77,9 @@ import {
 	boardField,
 	lanesField,
 	menuField,
-	readoutField,
 	runOpen,
 	settingsField,
 } from "./open-verb.ts";
-import {ARTIFACT_TITLE, digestComment, issueNumberOf, runReadout} from "./readout-verb.ts";
 import {
 	IN_REPO_ROSTER,
 	PLUGIN_MANIFEST,
@@ -584,43 +580,6 @@ describe("status board", () => {
 	});
 });
 
-describe("status readout", () => {
-	it("takes the MOST RECENTLY UPDATED comment carrying the heading, so staleness cannot hide", () => {
-		const picked = digestComment([
-			{body: "## Governance readout\nold", updatedAt: "2026-08-01T00:00:00Z"},
-			{body: "## Governance readout\nnew", updatedAt: "2026-08-09T00:00:00Z"},
-			{body: "unrelated", updatedAt: "2026-08-10T00:00:00Z"},
-		]);
-		expect(picked?.body).toContain("new");
-	});
-
-	it("resolves no digest comment to null rather than to an empty one", () => {
-		expect(digestComment([{body: "unrelated", updatedAt: "2026-08-10T00:00:00Z"}])).toBeNull();
-	});
-
-	it("reads only a positive integer as an issue number", () => {
-		expect(issueNumberOf("9412")).toBe(9412);
-		expect(issueNumberOf("abc")).toBeNull();
-		expect(issueNumberOf("0")).toBeNull();
-		expect(issueNumberOf("-3")).toBeNull();
-	});
-
-	/** An unbuilt decoder is a failed read, not a proven-empty artifact. */
-	it("refuses on 11 with the unregistered-format reason, and never reports `absent`", () => {
-		const out = runReadout({read: {_tag: "NoFormat"}, json: false});
-		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toContain("is not registered");
-		expect(out.stderr.join("\n")).toContain("never absent");
-	});
-
-	it("renders a proven-absent artifact as `absent` at exit 0 — a fact the caller acts on", () => {
-		const out = runReadout({read: {_tag: "NoArtifact", repo: "acme/storefront"}, json: false});
-		expect(out.code).toBe(ANSWER);
-		expect(out.stdout).toBe("readout\tabsent\t0\tacme/storefront\tunknown\n");
-	});
-});
-
 describe("status bootstrap", () => {
 	it("refuses an id outside the registry on 12, naming what IS buildable", async () => {
 		const fs = fakeFs({});
@@ -641,7 +600,7 @@ describe("status bootstrap", () => {
 		expect(outcome.code).toBe(NOT_BUILDABLE);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.at(-1)).toBe(
-			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule.',
+			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, settings-patch, dep-pin, fabrika-config, hand-check-rule.',
 		);
 		expect(fs.written.size).toBe(0);
 	});
@@ -1769,87 +1728,6 @@ describe("the roadmap-focus pin check", () => {
 });
 
 /**
- * The read-back re-scanned the eventually-consistent issues *list*, so a correct first
- * creation reported `READBACK_MISMATCH`. Every case here scripts that list to stay empty after the
- * write — the branch is proven only when the outcome no longer depends on it.
- */
-describe("the readout-artifact read-back reads the created issue by number", () => {
-	const LIST = /GET .*\/repos\/o\/r\/issues\?state=open/;
-	const CREATE = /POST .*\/repos\/o\/r\/issues$/;
-	const READBACK = /GET .*\/repos\/o\/r\/issues\/3$/;
-	const CREATED: HttpReply = {
-		status: 201,
-		body: JSON.stringify({number: 3, html_url: "https://github.com/o/r/issues/3"}),
-	};
-
-	const artifact = (overrides: Readonly<Record<string, unknown>> = {}): HttpReply => ({
-		status: 200,
-		body: JSON.stringify({
-			number: 3,
-			title: ARTIFACT_TITLE,
-			body: "",
-			state: "open",
-			labels: [],
-			html_url: "https://github.com/o/r/issues/3",
-			...overrides,
-		}),
-	});
-
-	const run = (readback: HttpReply) => {
-		const seams = fakeSeams([
-			[LIST, {status: 200, body: "[]"}],
-			[CREATE, CREATED],
-			[READBACK, readback],
-		]);
-		const fs = fakeFs({files: {}});
-		return Effect.runPromise(
-			Effect.provide(
-				runBootstrap({
-					surfaceId: "readout-artifact",
-					path: null,
-					json: true,
-					repoRoot: "/repo",
-					configSource: {_tag: "Absent"},
-					repo: ok("o/r"),
-					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
-				}),
-				Layer.mergeAll(seams.layer, fs.layer),
-			),
-		).then((outcome) => ({outcome, calls: seams.requests}));
-	};
-
-	it("reports created off the issue's own resource, never a second list read", async () => {
-		const {outcome, calls} = await run(artifact());
-		expect(outcome.code).toBe(ANSWER);
-		expect(JSON.parse(outcome.stdout)).toEqual({
-			outcome: "created",
-			surfaceId: "readout-artifact",
-			target: "o/r#3",
-			readback: "ok",
-		});
-		expect(calls.filter((line) => LIST.test(line))).toHaveLength(1);
-		expect(calls.filter((line) => READBACK.test(line))).toHaveLength(1);
-	});
-
-	it("spends READBACK_MISMATCH only on a proven 404", async () => {
-		const {outcome} = await run({status: 404, body: '{"message":"Not Found"}'});
-		expect(outcome.code).toBe(READBACK_MISMATCH);
-	});
-
-	it("reads an unreadable re-read as WRITE_UNKNOWN, never as a mismatch", async () => {
-		const {outcome} = await run({status: 502, body: "{}"});
-		expect(outcome.code).toBe(WRITE_UNKNOWN);
-	});
-
-	it("proves the artifact, not merely that the number resolves", async () => {
-		const wrongTitle = await run(artifact({title: "Something else"}));
-		expect(wrongTitle.outcome.code).toBe(READBACK_MISMATCH);
-		const closed = await run(artifact({state: "closed"}));
-		expect(closed.outcome.code).toBe(READBACK_MISMATCH);
-	});
-});
-
-/**
  * The taxonomy once carried five of the sixteen names the verbs write, so a bootstrapped repo hit
  * the correct missing-label refusal on the first `triage apply`. These bind the derivation, not the
  * current spelling — widen `TYPES` or `AUDIENCES` and a restated copy of this set fails here.
@@ -1939,7 +1817,7 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 });
 
 describe("status open is TOTAL — every unreadable source is a field state, never a refusal", () => {
-	it("renders five fields at exit 0 when EVERY source failed", () => {
+	it("renders four fields at exit 0 when EVERY source failed", () => {
 		const fields = [
 			menuField({_tag: "Failed", path: "/x", display: "x", reason: "EACCES"}, AS_OF),
 			settingsField(
@@ -1948,7 +1826,6 @@ describe("status open is TOTAL — every unreadable source is a field state, nev
 				AS_OF,
 			),
 			boardField({_tag: "Failed", repo: "acme/storefront", reason: "EAI_AGAIN"}),
-			readoutField({_tag: "NoFormat"}),
 			lanesField(
 				{code: 11, stdout: "", stderr: ["fabrika lane stale: cannot list .fabrika/lanes"]},
 				[DEFAULT_LANES_ROOT, DEFAULT_CHORES_ROOT],
@@ -1957,8 +1834,8 @@ describe("status open is TOTAL — every unreadable source is a field state, nev
 		];
 		const out = runOpen({fields, json: false, scope: "roster x; repo acme/storefront"});
 		expect(out.code).toBe(ANSWER);
-		expect(out.stdout.split("\n")[0]).toBe("open\t5");
-		expect(out.stdout.split("\n").filter((l) => l.startsWith("field\t"))).toHaveLength(5);
+		expect(out.stdout.split("\n")[0]).toBe("open\t4");
+		expect(out.stdout.split("\n").filter((l) => l.startsWith("field\t"))).toHaveLength(4);
 		for (const field of fields) expect(field.state).toBe("unknown");
 	});
 

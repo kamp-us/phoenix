@@ -1,5 +1,5 @@
 /**
- * `status open` — the composite front-door readout: seven fields, each with its own state, source
+ * `status open` — the composite front-door readout: six fields, each with its own state, source
  * and freshness.
  *
  * **This verb has no zero-scope seat and no failed-read seat at all.** It is the command the skill
@@ -33,7 +33,6 @@ import {
 import {OFF_VOCABULARY} from "./codes.ts";
 import {type AsOf, asOfToken, detail, noAsOf, row} from "./fields.ts";
 import {menuState} from "./menu-verb.ts";
-import {type ReadoutRead, readingOf} from "./readout-verb.ts";
 import type {RosterRead} from "./roster.ts";
 import {type SettingRow, settingsState} from "./settings-verb.ts";
 import {SETTINGS_PATH, type WiringRead} from "./wiring-verb.ts";
@@ -41,7 +40,7 @@ import {SETTINGS_PATH, type WiringRead} from "./wiring-verb.ts";
 const VERB = "status open";
 
 /** The closed `--field` vocabulary. Any other value is off-vocabulary. */
-export const FIELDS = ["menu", "settings", "wiring", "board", "readout", "lanes", "trunk"] as const;
+export const FIELDS = ["menu", "settings", "wiring", "board", "lanes", "trunk"] as const;
 export type FieldName = (typeof FIELDS)[number];
 
 export interface Field {
@@ -166,42 +165,6 @@ export const boardField = (read: BoardRead): Field => {
 		state: UNKNOWN,
 		detail: detail(`${unknown.map((bucket) => bucket.name).join(",")}: ${reason ?? "unreadable"}`),
 		source: read.repo,
-		asOf: noAsOf,
-	};
-};
-
-/**
- * **A proven-absent artifact is `absent` inside the composite, never `unknown`** — an absence the
- * repository proves is a fact. Only a failed *read* is `unknown`, which is why an unregistered
- * decoder lands there: an unbuilt decoder proves nothing about whether a digest exists.
- */
-export const readoutField = (read: ReadoutRead): Field => {
-	const reading = readingOf(read);
-	if (reading !== null) {
-		return {
-			name: "readout",
-			state: reading.state,
-			detail: reading.detail,
-			source: reading.source,
-			asOf: reading.asOf,
-		};
-	}
-	return {
-		name: "readout",
-		state: UNKNOWN,
-		detail: detail(
-			read._tag === "NoFormat"
-				? "the governance-digest format is not registered — a failed read, not an absent digest"
-				: read._tag === "Unfetchable"
-					? `${read.reason} — a failed read, not an absent digest`
-					: "the digest could not be read",
-		),
-		source:
-			read._tag === "Unfetchable" && read.issue !== null
-				? `${read.repo}#${read.issue}`
-				: read._tag === "NoFormat"
-					? "unknown"
-					: read.repo,
 		asOf: noAsOf,
 	};
 };

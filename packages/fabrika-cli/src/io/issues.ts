@@ -131,10 +131,9 @@ const capped = (): string =>
  *
  * There is no proof-dropping sibling on purpose. `gh api --paginate` had no page cap, so a short
  * list was not a state it could produce; this transport caps at {@link PAGE_CAP}, so it is. Handing
- * the entries on without the flag turns a truncated read into a clean `Ok`, and eight callers seat
- * proven negatives on it — the duplicate check in `openIssuesTitled`, the twin scan in
- * `issueTimeline`, the dedup sweep in `openIssuesWithLabel` — where a short list is a wrong answer
- * rather than a short one.
+ * the entries on without the flag turns a truncated read into a clean `Ok`, and its callers seat
+ * proven negatives on it — the twin scan in `issueTimeline`, the dedup sweep in
+ * `openIssuesWithLabel` — where a short list is a wrong answer rather than a short one.
  */
 const provenList = (
 	token: string,
@@ -267,27 +266,6 @@ export const issueDocuments = (
 				? fail("GitHub returned malformed issue documents")
 				: ok(decoded.success);
 		}),
-	);
-
-/**
- * Open issues in `repo` whose title is **exactly** `title`, paged, pull requests filtered out.
- *
- * Matched over the issues endpoint rather than through the search index on purpose: search is
- * eventually consistent and caps its result set, so a durable artifact created moments ago can read
- * back as absent — and "absent" is the one answer an artifact lookup must never get wrong.
- */
-export const openIssuesTitled = (
-	repo: string,
-	title: string,
-): Shell<Attempt<ReadonlyArray<IssueRow>>> =>
-	withToken((token) =>
-		Effect.map(provenList(token, `repos/${repo}/issues?state=open`), (read) =>
-			then(read, (entries) =>
-				then(issueRows(withoutPullRequests(entries)), (rows) =>
-					ok(rows.filter((row) => row.title === title)),
-				),
-			),
-		),
 	);
 
 /**

@@ -1,6 +1,5 @@
 /**
- * The guard over **authored** text — the bytes this run just wrote — for `governance post` and
- * `governance readout`.
+ * The guard over **authored** text — the bytes this run just wrote — for `governance post`.
  *
  * The predicates are the shipped `../report/leaks.ts` ones, imported; only the message text is this
  * group's, because each refusal names one correctable thing in its own verb's words. A second leak

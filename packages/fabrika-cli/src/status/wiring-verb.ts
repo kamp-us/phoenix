@@ -214,7 +214,7 @@ export interface WiringInput {
 
 /**
  * **`unwired` is an answer at exit `0`, `unknown` is a refusal.** A proven-off plugin is a fact the
- * caller acts on — the same seat `status board`'s proven `0` and `status readout`'s `absent` take —
+ * caller acts on — the same seat `status board`'s proven `0` takes —
  * while a probe that could not be performed has no answer to seat, so it refuses on the group's
  * UNKNOWN code rather than printing a state it did not establish.
  */

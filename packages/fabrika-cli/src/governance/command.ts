@@ -1,5 +1,5 @@
 /**
- * The `governance` verb group — `fabrika governance <scope|sweep|guards|base|post|digest|readout>`,
+ * The `governance` verb group — `fabrika governance <scope|sweep|guards|base|post>`,
  * the `governance` skill's machine half.
  *
  * The adapter and nothing else: it declares the flags (`--help` is the interface, so every flag
@@ -21,14 +21,11 @@ import {corpusOverride, decisionsDirOr} from "../config/paths.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import {TRUNK_DEFAULT_HELP} from "../io/trunk.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {runBase} from "./base-verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {runDigest} from "./digest-verb.ts";
 import {runGuards} from "./guards-verb.ts";
 import {runPost} from "./post-verb.ts";
-import {runReadout} from "./readout-verb.ts";
 import {runScope} from "./scope-verb.ts";
 import {runSweep} from "./sweep-verb.ts";
 
@@ -161,20 +158,10 @@ const sweep = leafCommand(
 	"sweep",
 	{
 		pr: Argument.integer("pr").pipe(
-			Argument.optional,
-			Argument.withDescription(
-				"the pull-request the subject record lives in; required unless --landed is given",
-			),
+			Argument.withDescription("the pull-request the subject record lives in"),
 		),
 		record: Flag.string("record").pipe(
-			Flag.optional,
 			Flag.withDescription("the four-digit id of the decision record in that PR to sweep"),
-		),
-		landed: Flag.string("landed").pipe(
-			Flag.optional,
-			Flag.withDescription(
-				"sweep a record already in --dir instead of one in a PR — the digest-time mode; never combined with the positional",
-			),
 		),
 		sha: shaFlag,
 		dir: dirFlag,
@@ -185,14 +172,13 @@ const sweep = leafCommand(
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({pr, record, landed, sha, dir, limit, repo, json}) {
+	Effect.fn(function* ({pr, record, sha, dir, limit, repo, json}) {
 		const corpus = yield* corpusFor("governance sweep", dir);
 		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
 		yield* emit(
 			yield* runSweep({
-				pr: Option.getOrNull(pr),
-				record: Option.getOrNull(record),
-				landed: Option.getOrNull(landed),
+				pr,
+				record,
 				sha: Option.getOrNull(sha),
 				dir: corpus.dir,
 				limit,
@@ -208,16 +194,13 @@ const sweep = leafCommand(
 		[
 			"Prints shortlist, no-overlap or indeterminate (none a clearance), then a line per ranked record.",
 			"  7: the corpus holds no record, or the PR is absent, closed or empty",
-			"  10: a malformed id, --sha or --limit, or a PR beside --landed",
+			"  10: a malformed id, --sha or --limit",
 			"  11: a read failed; an incomplete corpus is UNKNOWN",
 			"  12: --sha is not the PR's head",
 			'  Derivation: the governance skill\'s contract.md, "governance sweep"',
 		].join("\n"),
 	),
-	Command.withExamples([
-		{command: "fabrika governance sweep 4321 --record 0240"},
-		{command: "fabrika governance sweep --landed 0240"},
-	]),
+	Command.withExamples([{command: "fabrika governance sweep 4321 --record 0240"}]),
 );
 
 const guards = leafCommand(
@@ -384,107 +367,10 @@ const post = leafCommand(
 	]),
 );
 
-const digest = leafCommand(
-	"digest",
-	{
-		since: Flag.string("since").pipe(
-			Flag.withDescription("the window's inclusive start, YYYY-MM-DD"),
-		),
-		until: Flag.string("until").pipe(
-			Flag.optional,
-			Flag.withDescription("the window's inclusive end, YYYY-MM-DD; defaults to today"),
-		),
-		dir: dirFlag,
-		base: Flag.string("base").pipe(
-			Flag.optional,
-			Flag.withDescription(
-				`the ref whose history is walked; fetched before the walk (default: ${TRUNK_DEFAULT_HELP})`,
-			),
-		),
-		json: jsonFlag,
-	},
-	Effect.fn(function* ({since, until, dir, base: ref, json}) {
-		const corpus = yield* corpusFor("governance digest", dir);
-		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
-		yield* emit(
-			yield* runDigest({
-				since,
-				until: Option.getOrNull(until),
-				dir: corpus.dir,
-				base: Option.getOrNull(ref),
-				env: process.env,
-				json,
-				now: Effect.sync(() => Date.now()),
-			}),
-		);
-	}),
-).pipe(
-	Command.withShortDescription("The decision records that landed in a window."),
-	Command.withDescription(
-		[
-			"Prints `digest\\t<landed|none>\\t<count>`, then a `landed` line per record landed in the window.",
-			"  7: --dir is absent or holds zero records",
-			"  10: a malformed date, or --until before --since",
-			"  11: a fetch or read failed (UNKNOWN, never none)",
-			"  13: a shallow clone's graft cuts the window",
-			'  Derivation: the governance skill\'s contract.md, "governance digest"',
-		].join("\n"),
-	),
-	Command.withExamples([{command: "fabrika governance digest --since 2026-08-02"}]),
-);
-
-const readout = leafCommand(
-	"readout",
-	{
-		issue: Argument.integer("issue").pipe(
-			Argument.optional,
-			Argument.withDescription(
-				'the durable readout artifact\'s issue number; resolved from $FABRIKA_GOVERNANCE_READOUT_ISSUE, else the single open issue titled "Governance readout", when omitted',
-			),
-		),
-		repo: repoFlag,
-		json: jsonFlag,
-	},
-	Effect.fn(function* ({issue, repo, json}) {
-		yield* emit(
-			yield* runReadout({
-				issue: Option.getOrNull(issue),
-				repo: Option.getOrNull(repo),
-				json,
-				env: process.env,
-				stdin: Effect.sync(readStdin),
-			}),
-		);
-	}),
-).pipe(
-	Command.withShortDescription("Publish the ranked rows on stdin to the durable readout."),
-	Command.withDescription(
-		[
-			"Publishes the rows on stdin and prints `readout\\t<issue>\\t<rows>\\t<created|edited>\\t<url>`.",
-			"  3: stdin held nothing",
-			"  5: a machine-local path",
-			"  6: a bare @ reference",
-			"  7: the readout issue is absent, closed or unresolvable",
-			"  8: the write is unproven",
-			"  9: the read-back differs",
-			"  10: a row's kind or id is off the vocabulary",
-			"  11: a read failed; nothing was written",
-			"  13: the comment list is provably short",
-			'  Derivation: the governance skill\'s contract.md, "governance readout"',
-		].join("\n"),
-	),
-	Command.withExamples([
-		{
-			command:
-				"printf 'row\\t0240\\troutine\\tno tension found\\n' | fabrika governance readout 4952",
-		},
-	]),
-);
-
 export const governanceCommand = Command.make("governance").pipe(
-	Command.withSubcommands([scope, sweep, guards, base, post, digest, readout]),
+	Command.withSubcommands([scope, sweep, guards, base, post]),
 	Command.withShortDescription("Keep the governance corpus honest across a diff."),
 	Command.withDescription(
-		"Keep the governance corpus honest: derive the namespace a diff requires, rank the records it may contradict, scan the anchored invariants it moves, read this skill's own text at the merge base, emit the one verdict, and publish the periodic non-blocking readout",
+		"Keep the governance corpus honest: derive the namespace a diff requires, rank the records it may contradict, scan the anchored invariants it moves, read this skill's own text at the merge base, and emit the one verdict",
 	),
 );
