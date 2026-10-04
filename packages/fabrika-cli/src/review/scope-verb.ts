@@ -45,10 +45,10 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import type {ReviewSubsystem} from "../config/keys/review-subsystems.ts";
-import {noUiSurfaces, reviewFilterExclusionsOr, reviewFilterUnexcludeOr} from "../config/paths.ts";
+import {reviewFilterExclusionsOr, reviewFilterUnexcludeOr} from "../config/paths.ts";
 import {diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {classConfigAtCommits} from "./class-config.ts";
+import {classConfigAtCommits, uiDerivationLine} from "./class-config.ts";
 import {
 	issueRefOf,
 	partition,
@@ -182,9 +182,7 @@ export const runScope = (
 			boundLine(VERB, head),
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared by GitHub`),
 			`${VERB}: governance derived over ${classConfig.governedRoots.length} root(s) — ${classConfig.notes.governedRoots}.`,
-			classConfig.uiPrefixes.length === 0
-				? noUiSurfaces(VERB)
-				: `${VERB}: ui derived over ${classConfig.uiPrefixes.length} prefix(es) — ${classConfig.notes.uiSurfaces}.`,
+			uiDerivationLine(VERB, classConfig),
 			// Stated only when the key carries rows: an absent or empty list leaves this readout, and
 			// the whole emission below it, byte-identical to a repo that never declared the key.
 			...(classConfig.subsystems.length > 0

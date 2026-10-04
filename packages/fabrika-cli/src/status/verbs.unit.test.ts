@@ -16,9 +16,10 @@ import {CI} from "../config/keys/ci.ts";
 import {CODE_VALIDATORS} from "../config/keys/code-validators.ts";
 import {DEPENDENCY_RECONCILER} from "../config/keys/dependency-reconciler.ts";
 import {reviewUiKey} from "../config/keys/review-ui.ts";
-import {UI_SURFACES} from "../config/keys/ui-surfaces.ts";
+import {UI_SURFACES, uiSurfacesKey} from "../config/keys/ui-surfaces.ts";
 import {type ConfigLayers, loadConfig} from "../config/load.ts";
 import {readFromLoad} from "../config/read-key.ts";
+import {raisedPrefixes, screenReviewOf, unmatchedMode} from "../config/screen-review.ts";
 import * as report from "../exit-codes.ts";
 import {
 	fakeFs,
@@ -35,6 +36,7 @@ import {AWAITING_RELEASE, DEFAULT_STATUS_NAMES, PLANNED, STATUSES} from "../labe
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
+import {isUiSurface} from "../review/classes.ts";
 import {noPreviewMode} from "../review-ui/no-preview.ts";
 import {AUDIENCES, PRIORITIES, parkedFacets, TYPES, triagedFacets} from "../triage/facets.ts";
 import {ANSWER} from "../verb.ts";
@@ -62,7 +64,9 @@ import {
 	taxonomy as taxonomyFor,
 } from "./bootstrap-verb.ts";
 import {
+	NO_SCREENS,
 	NOT_BUILDABLE,
+	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
@@ -958,19 +962,24 @@ describe("the settings-patch surface", () => {
 
 /**
  * hand-check-rule edits a file a person annotates, so what it must not do matters as much as what
- * it writes: no second rule over a repo's own, no lost comment, no mode but `hand-check`.
+ * it writes: nothing over a repo's own answer, no lost comment, no mode but `hand-check` — and
+ * never an `ok` in a repo where no pull request could trigger it.
  */
 describe("the hand-check-rule surface", () => {
 	const CONFIG = "/repo/.fabrika.jsonc";
 	const SCREEN_FILES = ["src/app/page.tsx", "src/app/habits/row.tsx"];
 
-	const bootstrapWith = (files: Record<string, string | null>) => {
+	const bootstrapWith = (
+		files: Record<string, string | null>,
+		screens: ReadonlyArray<string> = [],
+	) => {
 		const fs = fakeFs({files});
 		return Effect.runPromise(
 			Effect.provide(
 				runBootstrap({
 					surfaceId: "hand-check-rule",
 					path: null,
+					screens,
 					json: true,
 					repoRoot: "/repo",
 					configSource: {_tag: "Absent"},
@@ -982,15 +991,38 @@ describe("the hand-check-rule surface", () => {
 		).then((outcome) => ({outcome, text: fs.written.get(CONFIG), written: fs.written}));
 	};
 
-	/** The mode `review-ui route --no-preview` resolves over a config file's bytes. */
+	/**
+	 * What a pull request changing {@link SCREEN_FILES} with no preview meets over a config file's
+	 * bytes: `null` where none of them raises the ui class, else the mode
+	 * `review-ui route --no-preview` resolves.
+	 */
 	const routedMode = (text: string) => {
-		const rules = readFromLoad(loadConfig({_tag: "Text", text}), reviewUiKey);
-		if (rules._tag === "Refused") throw new Error(rules.reason);
-		return noPreviewMode(rules.value.whenNoPreview, SCREEN_FILES);
+		const load = loadConfig({_tag: "Text", text});
+		const reviewUi = readFromLoad(load, reviewUiKey);
+		const surfaces = readFromLoad(load, uiSurfacesKey);
+		if (reviewUi._tag === "Refused") throw new Error(reviewUi.reason);
+		if (surfaces._tag === "Refused") throw new Error(surfaces.reason);
+		const review = screenReviewOf(reviewUi.value, surfaces.value);
+		const ui = SCREEN_FILES.filter((file) => isUiSurface(file, raisedPrefixes(review)));
+		return ui.length === 0
+			? null
+			: noPreviewMode(reviewUi.value.whenNoPreview, ui, unmatchedMode(review.mode));
 	};
 
-	it("creates the file with one hand-check rule, which the no-preview route then resolves", async () => {
-		const {outcome, text} = await bootstrapWith({});
+	it("refuses in a repo that names no screen file, with one sentence naming what to add", async () => {
+		for (const files of [{}, {[CONFIG]: '{\n\t"uiSurfaces": []\n}\n'}]) {
+			const {outcome, written} = await bootstrapWith(files);
+			expect(outcome.code).toBe(NO_SCREENS);
+			expect(outcome.stdout).toBe("");
+			expect(outcome.stderr).toEqual([
+				'status bootstrap: .fabrika.jsonc names no screen files (no `uiSurfaces` row and no `reviewUi.screens` path), so no pull request could trigger a hand-check — run this again with `--screens <path>`, where <path> is the folder your screens live in, ending in "/", or one file such as index.html. Nothing was written.',
+			]);
+			expect(written.size).toBe(0);
+		}
+	});
+
+	it("records where the screens live with no start command, and a screen change then stops for a hand-check", async () => {
+		const {outcome, text = ""} = await bootstrapWith({}, ["src/app/", "index.html"]);
 		expect(outcome.code).toBe(ANSWER);
 		expect(JSON.parse(outcome.stdout)).toEqual({
 			outcome: "created",
@@ -999,16 +1031,55 @@ describe("the hand-check-rule surface", () => {
 			readback: "ok",
 		});
 		expect(outcome.stderr).toEqual([
-			"status bootstrap: created .fabrika.jsonc for hand-check-rule with one hand-check rule, read-back conformed.",
+			"status bootstrap: created .fabrika.jsonc for hand-check-rule with `reviewUi.mode` hand-check and 2 `reviewUi.screens` path(s), read-back conformed.",
 		]);
-		expect(JSON.parse(text ?? "")).toEqual({
-			reviewUi: {whenNoPreview: [{paths: ["**"], mode: "hand-check"}]},
+		expect(JSON.parse(text)).toEqual({
+			reviewUi: {mode: "hand-check", screens: ["src/app/", "index.html"]},
 		});
-		expect(routedMode("{}")).toBe("require-render");
-		expect(routedMode(text ?? "")).toBe("hand-check");
+		expect(routedMode("{}")).toBeNull();
+		expect(routedMode(text)).toBe("hand-check");
 	});
 
-	it("adds the rule to a present file and keeps its other keys and every comment", async () => {
+	it("turns a repo that said skip on, and says exists on the second run", async () => {
+		const before = '{\n\t"reviewUi": {"mode": "skip", "screens": ["src/app/"]}\n}\n';
+		const {outcome, text = ""} = await bootstrapWith({[CONFIG]: before});
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: added `reviewUi.mode` hand-check to .fabrika.jsonc for hand-check-rule, read-back conformed.",
+		]);
+		expect(routedMode(before)).toBeNull();
+		expect(routedMode(text)).toBe("hand-check");
+
+		const again = await bootstrapWith({[CONFIG]: text});
+		expect(JSON.parse(again.outcome.stdout).outcome).toBe("exists");
+		expect(again.outcome.stderr).toEqual([
+			"status bootstrap: .fabrika.jsonc already declares `reviewUi.mode` hand-check — nothing written.",
+		]);
+		expect(again.written.size).toBe(0);
+	});
+
+	it("leaves a repo that answered preview alone", async () => {
+		const {outcome, written} = await bootstrapWith(
+			{[CONFIG]: '{\n\t"reviewUi": {"mode": "preview"}\n}\n'},
+			["src/app/"],
+		);
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout).outcome).toBe("exists");
+		expect(written.size).toBe(0);
+	});
+
+	it.each([
+		["an absolute path", "/src/app/"],
+		["a path through ..", "../app/"],
+		["a pattern", "src/**"],
+	])("refuses --screens given %s, writing nothing", async (_, screen) => {
+		const {outcome, written} = await bootstrapWith({}, [screen]);
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain(`--screens ${JSON.stringify(screen)}`);
+		expect(written.size).toBe(0);
+	});
+
+	it("adds the mode to a present file and keeps its other keys and every comment", async () => {
 		const before = [
 			"// fabrika config for the habit tracker",
 			"{",
@@ -1024,7 +1095,7 @@ describe("the hand-check-rule surface", () => {
 		const {outcome, text = ""} = await bootstrapWith({[CONFIG]: before});
 		expect(outcome.code).toBe(ANSWER);
 		expect(outcome.stderr).toEqual([
-			"status bootstrap: added one hand-check rule to .fabrika.jsonc for hand-check-rule, read-back conformed.",
+			"status bootstrap: added `reviewUi.mode` hand-check to .fabrika.jsonc for hand-check-rule, read-back conformed.",
 		]);
 		for (const comment of [
 			"// fabrika config for the habit tracker",
@@ -1037,18 +1108,19 @@ describe("the hand-check-rule surface", () => {
 		const [was, is] = [before, text].map(
 			(source) => JSON.parse(stripJsonComments(source)) as Record<string, unknown>,
 		);
-		expect(is).toEqual({...was, reviewUi: {whenNoPreview: [{paths: ["**"], mode: "hand-check"}]}});
+		expect(is).toEqual({...was, reviewUi: {whenNoPreview: [], mode: "hand-check"}});
+		expect(routedMode(before)).toBe("require-render");
 		expect(routedMode(text)).toBe("hand-check");
 	});
 
 	it("keeps a commented-out rule that sits inside the empty list", async () => {
 		const commentedOut = '// {"paths": ["apps/admin/**"], "mode": "hand-check"}';
 		const before = `{\n\t"reviewUi": {\n\t\t"whenNoPreview": [\n\t\t\t${commentedOut}\n\t\t]\n\t}\n}\n`;
-		const {outcome, text = ""} = await bootstrapWith({[CONFIG]: before});
+		const {outcome, text = ""} = await bootstrapWith({[CONFIG]: before}, ["src/app/"]);
 		expect(outcome.code).toBe(ANSWER);
-		expect(text).toContain(`"whenNoPreview": [\n\t\t\t${commentedOut}\n\t\t\t{`);
+		expect(text).toContain(`"whenNoPreview": [\n\t\t\t${commentedOut}\n\t\t]`);
 		expect(JSON.parse(stripJsonComments(text))).toEqual({
-			reviewUi: {whenNoPreview: [{paths: ["**"], mode: "hand-check"}]},
+			reviewUi: {whenNoPreview: [], mode: "hand-check", screens: ["src/app/"]},
 		});
 		expect(routedMode(text)).toBe("hand-check");
 	});
@@ -1058,7 +1130,7 @@ describe("the hand-check-rule surface", () => {
 		["a looser rule", "skip"],
 	])("writes nothing over %s the repo already declared, and says the rule exists", async (_, mode) => {
 		const {outcome, written} = await bootstrapWith({
-			[CONFIG]: `{\n\t"reviewUi": {"whenNoPreview": [{"paths": ["docs/**"], "mode": "${mode}"}]}\n}\n`,
+			[CONFIG]: `{\n\t"uiSurfaces": [{"name": "web", "prefix": "src/", "mount": "/", "command": "pnpm dev --port {{port}}"}],\n\t"reviewUi": {"whenNoPreview": [{"paths": ["docs/**"], "mode": "${mode}"}]}\n}\n`,
 		});
 		expect(outcome.code).toBe(ANSWER);
 		expect(JSON.parse(outcome.stdout).outcome).toBe("exists");
@@ -1087,13 +1159,18 @@ describe("the fabrika-config surface", () => {
 	const CONFIG = "/repo/.fabrika.jsonc";
 	const STARTER_KEYS = [CODE_VALIDATORS, DEPENDENCY_RECONCILER, UI_SURFACES, CI];
 
-	const bootstrapWith = (surfaceId: string, files: Record<string, string | null>) => {
+	const bootstrapWith = (
+		surfaceId: string,
+		files: Record<string, string | null>,
+		screens: ReadonlyArray<string> = [],
+	) => {
 		const fs = fakeFs({files});
 		return Effect.runPromise(
 			Effect.provide(
 				runBootstrap({
 					surfaceId,
 					path: null,
+					screens,
 					json: true,
 					repoRoot: "/repo",
 					configSource: {_tag: "Absent"},
@@ -1158,7 +1235,9 @@ describe("the fabrika-config surface", () => {
 	// The two surfaces share one file, and setup runs them in this order.
 	it("takes the hand-check rule afterwards with every starter comment kept", async () => {
 		const {text: starter = ""} = await bootstrapWith("fabrika-config", {});
-		const {outcome, text = ""} = await bootstrapWith("hand-check-rule", {[CONFIG]: starter});
+		const {outcome, text = ""} = await bootstrapWith("hand-check-rule", {[CONFIG]: starter}, [
+			"index.html",
+		]);
 		expect(outcome.code).toBe(ANSWER);
 		expect(JSON.parse(outcome.stdout).outcome).toBe("created");
 		const comments = starter.split("\n").filter((line) => line.trim().startsWith("//"));
@@ -1166,8 +1245,16 @@ describe("the fabrika-config surface", () => {
 		for (const comment of comments) expect(text).toContain(comment);
 		expect(JSON.parse(stripJsonComments(text))).toEqual({
 			...(JSON.parse(stripJsonComments(starter)) as Record<string, unknown>),
-			reviewUi: {whenNoPreview: [{paths: ["**"], mode: "hand-check"}]},
+			reviewUi: {mode: "hand-check", screens: ["index.html"]},
 		});
+	});
+
+	// The starter declares `uiSurfaces` as an empty list, which names no screen file.
+	it("refuses the hand-check rule over the bare starter, which names no screen file", async () => {
+		const {text: starter = ""} = await bootstrapWith("fabrika-config", {});
+		const {outcome, written} = await bootstrapWith("hand-check-rule", {[CONFIG]: starter});
+		expect(outcome.code).toBe(NO_SCREENS);
+		expect(written.size).toBe(0);
 	});
 });
 

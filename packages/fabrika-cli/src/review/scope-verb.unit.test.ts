@@ -139,10 +139,12 @@ describe("runScope", () => {
 		expect(out.stdout).toContain("routed\treview-ui");
 	});
 
-	it("derives no ui class and says why when the repo declares no uiSurfaces row", async () => {
+	it("derives no ui class and says screen review is not set up when the repo declares nothing", async () => {
 		const out = await run(over("apps/site/src/App.tsx", "README.md"));
 		expect(out.stdout).not.toContain("class\tui");
-		expect(out.stderr.join("\n")).toContain("declares no `uiSurfaces` rows");
+		expect(out.stderr.join("\n")).toContain(
+			"review scope: screen review is not set up, so no path raises the ui class and no rendered review is owed",
+		);
 	});
 
 	it("refuses rather than deriving when the config cannot be decoded", async () => {

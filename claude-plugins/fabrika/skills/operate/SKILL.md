@@ -92,6 +92,12 @@ fabrika leaves no `node_modules` copy in the repo, and the absolute path you run
 carries a home directory into a public comment. Read the note back before you post it; done when it
 holds no literal `<fabrika>`, no other angle-bracket placeholder and no file path to the CLI.
 
+**A sentence a verb printed for the person is relayed as printed, and this rule does not reach it.**
+The one such sentence is `lane record`'s `screenCheck` (step 4's terminal record). It carries
+`--screens <path>` and says in its own words what goes there, because only the person knows where
+their screens live. Leave its `<path>` as it is: the read-back above checks the commands you wrote,
+never that sentence.
+
 **The chat is all the person sees, so the run says where it is.** A stage can work for most of an
 hour, and a person reading only the chat cannot tell a working run from a dead one. Two lines close
 that. Each is one line of a sentence or two, printed to the person in the chat and written nowhere
@@ -2190,6 +2196,19 @@ that did land answers `unchanged`. Do not re-run on `4` or `9`. `4` means a reco
 read back as this terminal's record, so a re-run meets the same bytes. Name the code in your terminal
 line for a person. Every other non-zero is UNKNOWN; name the code.
 
+**When the answer carries `screenCheck`, your closing message says it, in the verb's words.** The
+key is one sentence: the screen check was skipped because screen review is not set up in this repo,
+and the one command that turns it on. It appears when the run's log names a pull request, the
+repo's screen review resolves `skip`, and a screen was involved: the issue carried `class:ui`, or a
+pull request of the lane changed a file under a path the repo names a screen under. `lane record`
+runs on every terminal fold, so a run that ended without merging carries it too. It is absent at
+`preview`, at `hand-check`, on a run that touched no screen and on a run that opened no pull
+request. Put the sentence, unchanged, on the "what happened" line of the two plain
+lines below, straight after the outcome. Do not compose it, shorten it or reword it, and do not
+write one where the key is absent: whether a screen went unreviewed is the verb's read, never yours.
+A stderr line saying the screen check is UNKNOWN means a read failed; say that the run could not
+tell whether the screen check was skipped.
+
 **Which terminal line the run ends on is the fold's.** Every terminal fold ends `LANE-TERMINAL`
 except a `tripped` one whose error task sits in a park with a door, so on `tripped` read which state
 its error task sits in. On `human:budget-spent` and on `frozen` the run ends `LANE-PARKED` with the
@@ -2424,7 +2443,9 @@ requires: what happened, and what the person does next. Write both on each of th
 `STOPPED` and `LANE-HELD` included, and word them as that section says. On `LANE-PARKED` the second
 line is the one thing the person does to get the run moving, with the issue's full URL. A parked
 chore lane has no issue, so there the line names the chore and that one thing, with no URL. On
-`LANE-WAITING` it gives the time after which to start the run again. A command in either line is
+`LANE-WAITING` it gives the time after which to start the run again. When `lane record` answered
+with a `screenCheck` sentence (step 4's terminal record), the first line carries it as printed,
+after the outcome, `<path>` included. A command you write in either line is
 one they can paste ("A command you write for a person", above). Codes, `kept` and `left` lines and
 everything else this skill has you name for your caller go above those two lines, and the lines say
 what each code means.

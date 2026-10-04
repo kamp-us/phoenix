@@ -41,6 +41,23 @@ describe("noPreviewMode", () => {
 
 	it("resolves an empty file list to require-render, the answer that loosens nothing", () => {
 		expect(noPreviewMode([DOCS], [])).toBe("require-render");
+		expect(noPreviewMode([DOCS], [], "hand-check")).toBe("require-render");
+	});
+
+	it("reads an unmatched file as the repo's own mode where the caller names one", () => {
+		expect(noPreviewMode([], ["apps/site/src/page.tsx"], "hand-check")).toBe("hand-check");
+		expect(noPreviewMode([ADMIN], ["apps/site/src/page.tsx"], "hand-check")).toBe("hand-check");
+		expect(fileMode([DOCS], "apps/site/src/docs/intro.mdx", "hand-check")).toBe("skip");
+	});
+
+	it("still takes the strictest file over a hand-check mode", () => {
+		const strict: NoPreviewRule = {paths: ["apps/pay/**"], mode: "require-render"};
+		expect(noPreviewMode([strict], ["apps/site/a.tsx", "apps/pay/b.tsx"], "hand-check")).toBe(
+			"require-render",
+		);
+		expect(
+			filesAtMode([strict], ["apps/site/a.tsx", "apps/pay/b.tsx"], "hand-check", "hand-check"),
+		).toEqual(["apps/site/a.tsx"]);
 	});
 });
 

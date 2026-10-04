@@ -360,7 +360,7 @@ const route = leafCommand(
 		noPreview: Flag.boolean("no-preview").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				"the PR has no preview deploy: route under the repo's reviewUi.whenNoPreview rules — skip posts a record flagged basis:skip, hand-check posts one flagged basis:hand-check over the newest owner account's hand-check at this head the verb finds on the PR (refused at 21 when there is none), require-render is refused at 21; the verb reads the PR's preview announcement itself and refuses at 23 when one is there",
+				"the PR has no preview deploy: route under the repo's reviewUi.whenNoPreview rules, and under reviewUi.mode for a file no rule matches — skip posts a record flagged basis:skip, hand-check posts one flagged basis:hand-check over the newest owner account's hand-check at this head the verb finds on the PR (refused at 21 when there is none), require-render is refused at 21; the verb reads the PR's preview announcement itself and refuses at 23 when one is there",
 			),
 		),
 		handCheck: Flag.string("hand-check").pipe(
@@ -384,7 +384,7 @@ const route = leafCommand(
 				yield* emit(refuse(PRECONDITION_UNKNOWN, rules.message));
 				return;
 			}
-			request = {rules: rules.rules, handCheck: offered};
+			request = {rules: rules.rules, unmatched: rules.unmatched, handCheck: offered};
 		}
 		yield* emit(
 			yield* runRoute({

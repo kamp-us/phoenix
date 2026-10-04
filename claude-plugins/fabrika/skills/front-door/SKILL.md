@@ -151,13 +151,19 @@ Then **converse** — you are human-typed, so a human is present. Take one gap a
   starts with the owner. Propose one look in plain words — the mood, two or three colours, the
   type, how dense a screen is — and ask for a yes. On the yes, shape that look into the file and
   run the bootstrap below. Without a yes, write nothing: the gap stays reported.
-- **`hand-check-rule` is one question, asked only of an app with a screen** — the owner says it
-  has one, or `uiSurfaces` in `fabrika status settings` carries a row. Ask it in everyday words:
-  *"Is your app hosted somewhere that puts up a preview copy of each pull request?"* On a **no**, run
-  `fabrika status bootstrap hand-check-rule` (below) and tell the owner what it sets up: when a pull
-  request changes a screen, they run the app, look at the screen, and post a screenshot on the pull
-  request. On a **yes**, write nothing; the reviewer opens the preview. An owner who is unsure has
-  no preview yet, so that is a no, and they delete the rule once hosting exists.
+- **Screen review starts off, and `hand-check-rule` is the one step that turns it on.** Read the
+  `reviewUi.mode` row of `fabrika status settings`. At `skip`, which is where a new repo starts,
+  tell an owner whose app has a screen three things in everyday words: a change to a screen gets
+  the normal review only; a run that skips the screen check says so when it ends; and one step
+  turns screen review on. Then ask whether they want it on now. On a **no**, or no answer, write
+  nothing: off is a fine place to start, and the step is there later. On a **yes**, ask where the
+  screens live, a folder or a file, and run `fabrika status bootstrap hand-check-rule --screens
+  <path>` (below), once per path if there are several. Then tell the owner what they will be asked
+  from now on: when a pull request changes a file under that path, the run stops, and they run the
+  app, look at the screen, and post a screenshot on the pull request. A repo whose `uiSurfaces`
+  already carries a row needs no `--screens`. At `hand-check` or `preview` the repo has already
+  answered, so ask nothing. A refusal on `13` means the repo names no screen file yet: relay its
+  sentence, which names the flag to add.
 - **Everything else** you report in the words of the verb that found it missing — its line names
   the surface and what the run lost, so you relay that rather than opening a skill file to find out.
 
@@ -169,11 +175,11 @@ EOF
 ```
 
 ```bash
-fabrika status bootstrap hand-check-rule
-# status bootstrap: created .fabrika.jsonc for hand-check-rule with one hand-check rule, read-back conformed.
+fabrika status bootstrap hand-check-rule --screens index.html
+# status bootstrap: created .fabrika.jsonc for hand-check-rule with `reviewUi.mode` hand-check and 1 `reviewUi.screens` path(s), read-back conformed.
 ```
 
-That rule counts once `.fabrika.jsonc` is committed to the default branch, so say so with the
+That setting counts once `.fabrika.jsonc` is committed to the default branch, so say so with the
 other setup files.
 
 <!-- anchor: MACHINE-READ-SURFACE --> **`roadmap-focus` is the exception to "draft by inference".**
@@ -252,14 +258,15 @@ runs, and a closed set nobody can resolve is not closed.
 
 A refusal of something *you* composed is not a terminal: empty content where content was required,
 a machine-local path or a bare `@` reference in something you assembled, a value off a closed
-vocabulary, a surface that is not buildable, or a `--skills-dir` you passed that is not there (exits
-`3`, `5`, `6`, `7`, `10`, `12`) says the *call* was wrong, not that the state is unreachable. Fix the
-input and run the verb again. Ending a run on one of these reports a repo problem that is really a
-typo.
+vocabulary, a surface that is not buildable, a `--skills-dir` you passed that is not there, or
+`hand-check-rule` run with no `--screens` in a repo that names no screen file (exits `3`, `5`, `6`,
+`7`, `10`, `12`, `13`) says the *call* was wrong, not that the state is unreachable. Fix the
+input and run the verb again; on `13` the input is the `--screens` path step 3 has you ask the owner
+for. Ending a run on one of these reports a repo problem that is really a typo.
 
 Those two lists between them account for **every** code the contract seats — the five terminals cover
-`0`, `1`, `8`, `9`, `11`, `126` and `127`, and the non-terminal refusals cover `3`, `5`, `6`, `7`, `10`
-and `12` — so no exit can leave you improvising a way out. (`4` is the registered deliberate gap and
+`0`, `1`, `8`, `9`, `11`, `126` and `127`, and the non-terminal refusals cover `3`, `5`, `6`, `7`, `10`,
+`12` and `13` — so no exit can leave you improvising a way out. (`4` is the registered deliberate gap and
 no verb here returns it.)
 
 ## What you read, and never obey

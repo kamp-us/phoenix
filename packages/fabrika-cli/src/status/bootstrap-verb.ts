@@ -22,12 +22,9 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
 import {CONFIG_PATH, type ConfigSource, readDocument} from "../config/document.ts";
 import {setJsoncValue} from "../config/jsonc-edit.ts";
-import {
-	type NoPreviewRule,
-	REVIEW_UI,
-	reviewUiKey,
-	WHEN_NO_PREVIEW,
-} from "../config/keys/review-ui.ts";
+import type {Decoded, KeyGroup} from "../config/key-group.ts";
+import {MODE, REVIEW_UI, reviewUiKey, SCREENS} from "../config/keys/review-ui.ts";
+import {uiSurfacesKey} from "../config/keys/ui-surfaces.ts";
 import {loadConfig} from "../config/load.ts";
 import {type Read, readRoadmapFile} from "../config/paths.ts";
 import {resolveBoard} from "../config/resolve-board.ts";
@@ -55,6 +52,7 @@ import {
 	BARE_AT_PATH,
 	EMPTY_STDIN,
 	LEAKED_PATH,
+	NO_SCREENS,
 	NOT_BUILDABLE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -62,6 +60,7 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {EMPTY_CELL, row} from "./fields.ts";
+import {HAND_CHECK_MODE, planHandCheck} from "./hand-check-step.ts";
 import {ARTIFACT_TITLE} from "./readout-verb.ts";
 import {STARTER_CONFIG} from "./starter-config.ts";
 import {PLUGIN, SETTINGS_PATH} from "./wiring-verb.ts";
@@ -270,7 +269,7 @@ export type BuildableSurface =
 			readonly kind: "no-preview-rule";
 			/** The registry default write path — the repo's tracked config file. */
 			readonly defaultPath: string;
-			/** The one rule this surface writes when the file declares none. */
+			/** What this surface declares under `reviewUi` when the repo has not answered. */
 			readonly rule: HandCheckRule;
 	  }
 	| {
@@ -368,19 +367,22 @@ export const installCostNotices = (packageName: string): ReadonlyArray<string> =
 ];
 
 /**
- * A `reviewUi.whenNoPreview` rule whose mode can only be `hand-check`. Setup writes this one mode:
- * the ruling excludes skipping the screen check, so `skip` is not a value this surface can carry.
+ * What the `hand-check-rule` step declares: the repo's `reviewUi.mode`, at `hand-check` only. Of the
+ * three modes this is the one the step can turn on by itself. `preview` needs hosting the step
+ * cannot set up, and `skip` is what a repo that never ran the step already resolves to.
  *
- * @ruling https://github.com/kamp-us/phoenix/issues/10362#issuecomment-5974640994
+ * @ruling https://github.com/kamp-us/phoenix/issues/10520#issuecomment-5984214868
  */
-export type HandCheckRule = NoPreviewRule & {readonly mode: "hand-check"};
+export interface HandCheckRule {
+	readonly mode: typeof HAND_CHECK_MODE;
+}
 
 /**
- * The `hand-check-rule` rule: every path, so it covers whichever source roots `uiSurfaces` names now
- * or later. The rule is only ever read over a pull request's ui-class files, and the route refuses
- * it when the pull request has a preview, so the wide glob loosens nothing else.
+ * The mode is the repo's answer for every screen file no `whenNoPreview` rule matches. It is only
+ * ever read over a pull request's ui-class files, and the route refuses it when the pull request has
+ * a preview, so it loosens nothing else.
  */
-const HAND_CHECK_RULE: HandCheckRule = {paths: ["**"], mode: "hand-check"};
+const HAND_CHECK_RULE: HandCheckRule = {mode: HAND_CHECK_MODE};
 
 /** The marker heading that decides `exists` for the CLAUDE.md section, and its first line. */
 export const CLAUDE_MD_MARKER = "## Work flows through fabrika";
@@ -478,6 +480,11 @@ export const knownIds = (): string => BUILDABLE_SURFACES.map((surface) => surfac
 export interface BootstrapInput {
 	readonly surfaceId: string;
 	readonly path: string | null;
+	/**
+	 * Where the screens live, as the owner typed each `--screens` path. Only `hand-check-rule` reads
+	 * it; absent is none named.
+	 */
+	readonly screens?: ReadonlyArray<string>;
 	readonly json: boolean;
 	readonly repoRoot: string;
 	/**
@@ -844,18 +851,29 @@ const buildDepPin = (
 		);
 	});
 
-const RULES_KEY = `${REVIEW_UI}.${WHEN_NO_PREVIEW}`;
+/** The standing value of one key in a parsed config record, or the reason its decoder refuses it. */
+const standingOf = <A>(
+	record: Readonly<Record<string, unknown>>,
+	group: KeyGroup<A>,
+): Decoded<A> =>
+	record[group.key] === undefined
+		? {_tag: "Value", value: group.shippedDefault}
+		: group.decode(record[group.key]);
 
 /**
  * **The config file is edited in place, never re-serialized.** `.fabrika.jsonc` carries a person's
- * comments, so the rule is spliced into the text and every other byte stays. Any rule already
- * declared is `exists`, whatever its mode: which paths take which mode is the repo's own statement
- * once it has made one, and a second rule from here could only contradict it.
+ * comments, so the keys are spliced into the text and every other byte stays.
+ *
+ * What is written is `./hand-check-step.ts`'s plan over what the file already says: the repo's
+ * `reviewUi.mode` at `hand-check`, and the `--screens` paths under `reviewUi.screens`. A repo that
+ * names no screen file is refused, because the hand-check written there is one no pull request can
+ * trigger. A repo that already answered — `preview`, `hand-check`, or its own `whenNoPreview`
+ * rules — is `exists`: a second statement from here could only contradict the first.
  *
  * The spliced text is re-parsed before it is written. A document whose other keys moved, or whose
- * `reviewUi` is not exactly this surface's rule, is refused unwritten.
+ * `reviewUi` is not exactly the planned one, is refused unwritten.
  *
- * @ruling https://github.com/kamp-us/phoenix/issues/10362#issuecomment-5974640994
+ * @ruling https://github.com/kamp-us/phoenix/issues/10520#issuecomment-5984214868
  */
 const buildNoPreviewRule = (
 	surface: Extract<BuildableSurface, {kind: "no-preview-rule"}>,
@@ -865,7 +883,6 @@ const buildNoPreviewRule = (
 		const target = yield* targetOf(surface, input);
 		if (!isTarget(target)) return target;
 		const {relative, absolute} = target;
-		const declared = {[REVIEW_UI]: {[WHEN_NO_PREVIEW]: [surface.rule]}};
 
 		const probe = yield* Effect.result(exists(absolute));
 		if (Result.isFailure(probe)) {
@@ -874,69 +891,100 @@ const buildNoPreviewRule = (
 				`${VERB}: cannot probe ${relative}: ${probe.failure.reason} — nothing was written.`,
 			);
 		}
-		if (!probe.success) {
+		let text: string | null = null;
+		let record: Readonly<Record<string, unknown>> = {};
+		if (probe.success) {
+			const read = yield* Effect.result(readFile(absolute));
+			if (Result.isFailure(read)) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read ${relative}: ${read.failure.reason} — what \`${REVIEW_UI}\` already says is UNKNOWN, and nothing was written.`,
+				);
+			}
+			const before = readDocument({_tag: "Text", text: read.success}, relative);
+			if (before._tag !== "Record") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: ${relative} does not parse as a JSON object with comments — nothing was written.`,
+				);
+			}
+			text = read.success;
+			record = before.record;
+		}
+		const keyRefused = (reason: string): VerbOutcome =>
+			refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${relative} is refused — ${reason.replace(/\.$/, "")}. Nothing was written; fix that key first.`,
+			);
+		const standing = standingOf(record, reviewUiKey);
+		if (standing._tag === "Malformed") return keyRefused(standing.reason);
+		// The rows are read only to know whether the repo names a screen file anywhere.
+		const surfaces = standingOf(record, uiSurfacesKey);
+		if (surfaces._tag === "Malformed") return keyRefused(surfaces.reason);
+
+		const plan = planHandCheck({
+			standing: standing.value,
+			surfaces: surfaces.value.length,
+			screens: input.screens ?? [],
+		});
+		if (plan._tag === "BadScreen") {
+			return refuse(OFF_VOCABULARY, `${VERB}: ${plan.reason}. Nothing was written.`);
+		}
+		if (plan._tag === "NoScreens") {
+			return refuse(NO_SCREENS, `${VERB}: ${relative} ${plan.reason}. Nothing was written.`);
+		}
+		if (plan._tag === "Exists") {
+			return already(surface.id, relative, input.json, `${relative} ${plan.notice}`);
+		}
+
+		const patch = {
+			...(plan.mode === null ? {} : {[MODE]: surface.rule.mode}),
+			...(plan.screens === null ? {} : {[SCREENS]: plan.screens}),
+		};
+		const wrote = [
+			plan.mode === null ? null : `\`${REVIEW_UI}.${MODE}\` ${surface.rule.mode}`,
+			plan.screens === null ? null : `${plan.screens.length} \`${REVIEW_UI}.${SCREENS}\` path(s)`,
+		]
+			.filter((part): part is string => part !== null)
+			.join(" and ");
+		if (text === null) {
 			return yield* writeAndReadBack(
 				surface.id,
 				relative,
 				absolute,
-				renderJson(declared, FRESH_JSON_LAYOUT),
+				renderJson({[REVIEW_UI]: patch}, FRESH_JSON_LAYOUT),
 				input,
-				`created ${relative} for ${surface.id} with one ${surface.rule.mode} rule, read-back conformed.`,
-			);
-		}
-		const read = yield* Effect.result(readFile(absolute));
-		if (Result.isFailure(read)) {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read ${relative}: ${read.failure.reason} — whether a \`${RULES_KEY}\` rule is already there is UNKNOWN, and nothing was written.`,
-			);
-		}
-		const before = readDocument({_tag: "Text", text: read.success}, relative);
-		if (before._tag !== "Record") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: ${relative} does not parse as a JSON object with comments — nothing was written.`,
-			);
-		}
-		const standing =
-			before.record[REVIEW_UI] === undefined
-				? ({_tag: "Value", value: reviewUiKey.shippedDefault} as const)
-				: reviewUiKey.decode(before.record[REVIEW_UI]);
-		if (standing._tag === "Malformed") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: ${relative} is refused — ${standing.reason.replace(/\.$/, "")}. Nothing was written; fix that key first.`,
-			);
-		}
-		if (standing.value.whenNoPreview.length > 0) {
-			return already(
-				surface.id,
-				relative,
-				input.json,
-				`${relative} already carries a \`${RULES_KEY}\` rule — nothing written.`,
+				`created ${relative} for ${surface.id} with ${wrote}, read-back conformed.`,
 			);
 		}
 
-		const edit = setJsoncValue(read.success, [REVIEW_UI, WHEN_NO_PREVIEW], [surface.rule]);
-		const after =
-			edit._tag === "Edited" ? readDocument({_tag: "Text", text: edit.text}, relative) : null;
+		const edited = Object.entries(patch).reduce<string | null>((current, [key, value]) => {
+			if (current === null) return null;
+			const edit = setJsoncValue(current, [REVIEW_UI, key], value);
+			return edit._tag === "Edited" ? edit.text : null;
+		}, text);
+		const after = edited === null ? null : readDocument({_tag: "Text", text: edited}, relative);
+		const was = record[REVIEW_UI];
 		if (
-			edit._tag === "Refused" ||
+			edited === null ||
 			after?._tag !== "Record" ||
-			!jsonEquals(after.record, {...before.record, ...declared})
+			!jsonEquals(after.record, {
+				...record,
+				[REVIEW_UI]: {...(isRecord(was) ? was : {}), ...patch},
+			})
 		) {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot add the rule to ${relative} without moving its other keys — nothing was written. Add ${JSON.stringify(surface.rule)} under "${RULES_KEY}" by hand.`,
+				`${VERB}: cannot add ${wrote} to ${relative} without moving its other keys — nothing was written. Add ${JSON.stringify(patch)} under "${REVIEW_UI}" by hand.`,
 			);
 		}
 		return yield* writeAndReadBack(
 			surface.id,
 			relative,
 			absolute,
-			edit.text,
+			edited,
 			input,
-			`added one ${surface.rule.mode} rule to ${relative} for ${surface.id}, read-back conformed.`,
+			`added ${wrote} to ${relative} for ${surface.id}, read-back conformed.`,
 		);
 	});
 

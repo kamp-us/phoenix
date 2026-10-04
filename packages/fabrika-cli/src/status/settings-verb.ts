@@ -15,11 +15,25 @@
  * See `status settings --help` for results and exit codes. On refusal, omit resolved rows so they
  * cannot be mistaken for a complete answer.
  *
+ * **One row is derived, not registered: `reviewUi.mode`.** An unset mode resolves off a second key
+ * (`../config/screen-review.ts`), so the `reviewUi` row alone cannot say whether this repo reviews
+ * its screens by preview, by hand-check, or not at all. The derived row prints that one answer.
+ *
  * It reads. It writes nothing.
  */
 
 import {CONFIG_PATH, type ConfigLayer, layerPath} from "../config/document.ts";
-import {type ConfigLayers, loadLayeredConfig, type Resolved, resolveAll} from "../config/load.ts";
+import {MODE, REVIEW_UI, reviewUiKey} from "../config/keys/review-ui.ts";
+import {uiSurfacesKey} from "../config/keys/ui-surfaces.ts";
+import {
+	type ConfigLayers,
+	type Load,
+	loadLayeredConfig,
+	type Resolved,
+	resolve,
+	resolveAll,
+} from "../config/load.ts";
+import {screenReviewOf} from "../config/screen-review.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {type AsOf, asOfToken, detail, row} from "./fields.ts";
@@ -84,9 +98,53 @@ const rowOf = ({key, resolution}: Resolved): SettingRow => {
 	}
 };
 
-/** Every registered key, resolved against both config layers as their caller found them. */
-export const settingRows = (layers: ConfigLayers): ReadonlyArray<SettingRow> =>
-	resolveAll(loadLayeredConfig(layers)).map(rowOf);
+/** The derived row's key: the one sub-key whose unset value no single key resolves. */
+export const SCREEN_REVIEW_ROW = `${REVIEW_UI}.${MODE}`;
+
+/**
+ * What screen review resolves to, or `null` where either key it is read off did not resolve. The
+ * `reviewUi` and `uiSurfaces` rows already carry that UNKNOWN and its reason, so a third row
+ * restating it would only make one unread key look like two.
+ */
+const screenReviewRow = (load: Load): SettingRow | null => {
+	const reviewUi = resolve(load, reviewUiKey);
+	const surfaces = resolve(load, uiSurfacesKey);
+	if (reviewUi._tag === "Malformed" || reviewUi._tag === "Unknown") return null;
+	if (surfaces._tag === "Malformed" || surfaces._tag === "Unknown") return null;
+	const review = screenReviewOf(reviewUi.value, surfaces.value);
+	if (review.declared && reviewUi._tag === "Declared") {
+		return {
+			key: SCREEN_REVIEW_ROW,
+			provenance: "declared",
+			layer: reviewUi.layer,
+			value: review.mode,
+			detail: detail(`declared in ${layerPath(reviewUi.layer)}`),
+		};
+	}
+	return {
+		key: SCREEN_REVIEW_ROW,
+		provenance: "default",
+		value: review.mode,
+		detail: detail(
+			review.mode === "skip"
+				? "no mode, uiSurfaces row, screens path or whenNoPreview rule is declared: screen review is not set up"
+				: "no mode is declared, and a uiSurfaces row, screens path or whenNoPreview rule is: reviewed by preview",
+		),
+	};
+};
+
+/**
+ * Every registered key, resolved against both config layers as their caller found them, with the
+ * derived {@link SCREEN_REVIEW_ROW} directly under the `reviewUi` row it explains.
+ */
+export const settingRows = (layers: ConfigLayers): ReadonlyArray<SettingRow> => {
+	const load = loadLayeredConfig(layers);
+	const derived = screenReviewRow(load);
+	return resolveAll(load).flatMap((resolved) => {
+		const one = rowOf(resolved);
+		return resolved.key === REVIEW_UI && derived !== null ? [one, derived] : [one];
+	});
+};
 
 export const settingsState = (rows: ReadonlyArray<SettingRow>): SettingsState =>
 	rows.some((one) => one.provenance === "unknown") ? "unknown" : "resolved";

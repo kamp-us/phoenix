@@ -12,19 +12,70 @@ const declared = (value: unknown) => resolve(load({[REVIEW_UI]: value}), reviewU
 const rules = (...entries: ReadonlyArray<unknown>) => declared({whenNoPreview: entries});
 
 describe("the shipped default", () => {
-	it("is no rules on both no-file and no-key, so every file still needs a render", () => {
-		expect(resolve(loadConfig({_tag: "Absent"}), reviewUiKey)).toMatchObject({
-			_tag: "Default",
-			value: {whenNoPreview: []},
-		});
-		expect(resolve(load({}), reviewUiKey)).toMatchObject({
-			_tag: "Default",
-			value: {whenNoPreview: []},
-		});
+	it("is no mode, no screens path and no rules on both no-file and no-key", () => {
+		const shipped = {mode: null, screens: [], whenNoPreview: []};
+		expect(resolve(loadConfig({_tag: "Absent"}), reviewUiKey)).toEqual(
+			expect.objectContaining({_tag: "Default", value: shipped}),
+		);
+		expect(resolve(load({}), reviewUiKey)).toEqual(
+			expect.objectContaining({_tag: "Default", value: shipped}),
+		);
 	});
 
 	it("reads an empty reviewUi object as no rules", () => {
 		expect(declared({})).toMatchObject({_tag: "Declared", value: {whenNoPreview: []}});
+	});
+});
+
+describe("a declared reviewUi.mode", () => {
+	it.each(["preview", "hand-check", "skip"])("carries %s through", (mode) => {
+		expect(declared({mode})).toMatchObject({_tag: "Declared", value: {mode}});
+	});
+
+	it("refuses a value outside the three in one sentence naming the allowed ones", () => {
+		expect(declared({mode: "off"})).toEqual({
+			_tag: "Malformed",
+			reason: '"reviewUi.mode" is "off", not one of preview, hand-check, skip',
+		});
+		expect(declared({mode: "require-render"})).toMatchObject({_tag: "Malformed"});
+		expect(declared({mode: true})).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("refuses skip beside a whenNoPreview rule, since the two cannot both hold", () => {
+		const answer = declared({
+			mode: "skip",
+			whenNoPreview: [{paths: ["docs/**"], mode: "hand-check"}],
+		});
+		expect(answer).toMatchObject({_tag: "Malformed"});
+		if (answer._tag === "Malformed") {
+			expect(answer.reason).toContain('"reviewUi.mode" is skip');
+			expect(answer.reason).toContain("drop the rules, or set mode to preview or hand-check");
+		}
+		expect(declared({mode: "skip", whenNoPreview: []})).toMatchObject({_tag: "Declared"});
+		expect(
+			declared({mode: "hand-check", whenNoPreview: [{paths: ["docs/**"], mode: "skip"}]}),
+		).toMatchObject({_tag: "Declared"});
+	});
+});
+
+describe("a declared reviewUi.screens", () => {
+	it("carries folders and single files through, deduplicated in order", () => {
+		expect(declared({screens: ["src/app/", "index.html", "src/app/"]})).toMatchObject({
+			_tag: "Declared",
+			value: {mode: null, screens: ["src/app/", "index.html"]},
+		});
+	});
+
+	it.each([
+		["a non-list", "src/"],
+		["a blank entry", [""]],
+		["an absolute path", ["/src/"]],
+		["a path through ..", ["../src/"]],
+		["a pattern", ["src/**"]],
+	])("refuses %s, naming the key", (_, screens) => {
+		const answer = declared({screens});
+		expect(answer).toMatchObject({_tag: "Malformed"});
+		if (answer._tag === "Malformed") expect(answer.reason).toContain("reviewUi.screens");
 	});
 });
 

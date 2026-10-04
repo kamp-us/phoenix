@@ -73,27 +73,31 @@ the route can post; exit `11` naming the ceiling, or naming the two heads as div
 flag where there is no hand-verification, and never derive the range by hand — a condition you check
 by eye is one the next gate checks differently.
 
-**A PR with no preview routes only as far as the repo's `reviewUi.whenNoPreview` rules allow.**
+**A PR with no preview routes only as far as the repo's `reviewUi` settings allow.**
 When `render` finds no preview (exit `16`), run `fabrika review-ui route $pr_number --sha <head>
 --no-preview --clause "<why>"` before anything else, and before you end CANT-SEE. The verb checks
 for itself that no preview is announced, and refuses on `23` when one is: render it, or wait for it
-to reach the head. It then resolves the mode over the PR's `ui` files:
+to reach the head. It then resolves the mode over the PR's `ui` files. A file takes the first
+`reviewUi.whenNoPreview` rule that matches it. A file no rule matches takes the repo's own
+`reviewUi.mode`: `require-render` in a repo set to `preview`, `hand-check` in one set to
+`hand-check`. A repo at `skip` never reaches this gate, because none of its files raises the `ui`
+class.
 
 - `skip` posts a record flagged `basis:skip`. The repo's rules owe no render for these files.
-- `hand-check` posts a record flagged `basis:hand-check`. **When a `hand-check` rule matches, the
-  owner account's hand-check is admissible evidence**: a comment on the PR by a control-plane account that
+- `hand-check` posts a record flagged `basis:hand-check`. **When the files resolve `hand-check`,
+  by a rule or by the repo's mode, the owner account's hand-check is admissible evidence**: a comment on the PR by a control-plane account that
   names the exact head and carries screenshots. The verb reads the PR's comments, stands on the
   newest one it admits, and names it in its answer's `handCheck`. You do not look for it yourself.
   With none at this head it refuses on `21`. `--hand-check <comment-id>` pins one comment instead,
   and `22` says why it is not admitted.
-- `require-render` refuses on `21`: the rules owe a render. **Where that is because no rule
-  matched**, add the setup command below the printed note. `fabrika status settings` prints
-  `reviewUi` as `default` in a repo that declares no rule at all: name
+- `require-render` refuses on `21`: the settings owe a render. **Where that is because no rule
+  matched**, add the setup command below the printed note. `fabrika status settings` prints the
+  `reviewUi.mode` row as `default` in a repo that never chose a mode: name
   `fabrika status bootstrap hand-check-rule` there, the one the
   [getting-started tutorial](../../guide/getting-started.md#if-your-app-is-not-hosted-yet) gives,
-  and say it lets the owner check the screen and post a screenshot. Where the repo declares rules
-  and none covers these files, that command answers `exists`, so the printed note's files and
-  `reviewUi.whenNoPreview` are the whole answer. Naming the command is all you do with it: the
+  and say it lets the owner check the screen and post a screenshot. Where the repo declares
+  `preview` or its own rules, that command answers `exists`, so the printed note's files and the
+  repo's `reviewUi` key are the whole answer. Naming the command is all you do with it: the
   write is the owner's.
 
 **A `21` or `22` prints the note the owner reads, and you post it as printed.** It sits on stderr
@@ -110,8 +114,9 @@ only the builder's `ui evidence` comment and a comment carrying an agent stamp, 
 agents post under an owner account no check enforces it
 ([why](../../guide/how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)).
 
-**Which no-preview route comes first.** The `--no-preview` route above always runs first. Where a
-`hand-check` or `skip` rule matches, its answer is the route, and the builder's desk run
+**Which no-preview route comes first.** The `--no-preview` route above always runs first. Where the
+files resolve `hand-check` or `skip`, by a `reviewUi.whenNoPreview` rule or by the repo's
+`reviewUi.mode`, its answer is the route, and the builder's desk run
 (`--verified-at`) does not stand in for those files. Only where it refuses on `21` for
 `require-render` does the desk-run route above remain what it was before the rules existed. Where
 that does not apply either, end CANT-SEE.
@@ -428,8 +433,8 @@ design law — routed to front-door, nothing posted; cause `no-design-manifest`)
 **ROUTED-ELSEWHERE** (this gate owes no verdict at the head; the `routed-elsewhere` record posted,
 or nothing posted when the diff raised no `ui` class to route. Two grounds, two causes: no rendered
 delta, so the verdict is `review`'s, cause `no-rendered-delta`; or a PR with no preview that the
-repo's `reviewUi.whenNoPreview` rules routed, on `basis:skip` or `basis:hand-check`, cause
-`no-preview-routed`). Success is a *landed, read-back verdict*; a
+repo's `reviewUi.whenNoPreview` rules or its `reviewUi.mode` routed, on `basis:skip` or
+`basis:hand-check`, cause `no-preview-routed`). Success is a *landed, read-back verdict*; a
 judgment formed but
 not landed never reports as one. Cross-lane signals are closed-vocabulary — kind + action +
 branded ref, no free prose; receivers re-fetch from the PR.
