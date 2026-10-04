@@ -82,16 +82,36 @@ holds no literal `<fabrika>`, no other angle-bracket placeholder and no file pat
 
 **The chat is all the person sees, so the run says where it is.** A stage can work for most of an
 hour, and a person reading only the chat cannot tell a working run from a dead one. Two lines close
-that. Each is one sentence, printed to the person in the chat and written nowhere else:
+that. Each is one line of a sentence or two, printed to the person in the chat and written nowhere
+else:
 
 - **The opening line**, once a run, before that run's first spawn: what is about to happen, roughly
   how long it can take, and the driven issue's full URL as the place where notes appear. The time is
   the budget step 3's `spawn-dead` passage gives the stage about to start. The URL is the `epic:`
-  field of the brief's `## Ground` where it prints one, and its `issue:` field otherwise.
+  field of the brief's `## Ground` where it prints one, and its `issue:` field otherwise. Step 4's
+  `verdict-owed` gate is spawned with no brief, so a run whose first spawn is that gate names the
+  pull request's full URL and a review's time.
 - **A stage line**, each time a spawned stage returns: which stage finished, how it ended, and what
-  starts next with that stage's time, or that nothing does and the run is ending. On an epic lane it
-  says which child. It is written from the return and the fresh `lane status` step 3 already takes,
-  so it adds no read.
+  happens next. On an epic lane it says which child.
+
+**A stage line reports the ledger, so it waits for the record.** How the stage ended is the event
+recorded for that return, never the token the spawn printed. Where step 3's fresh `lane status`
+shows a moved fold, write from it. Where it does not — a record that never landed, a dead spawn —
+record what step 3 has you record first, and write from that event. A report refused at `72`
+records nothing, so its line says the stage reported late and the run goes on from where it already
+stood. What happens next is the route step 2 takes on that same fold, named one of three ways:
+
+- **a spawned stage**, with its time from the same budget;
+- **an act of your own** — landing a child on the epic's branch, re-reading the merge queue, a
+  recipe verb — in everyday words and with no time, because nothing budgets it;
+- **nothing** — the run is ending, or it stops for a person, and the line says which and gives the
+  issue's full URL.
+
+**It is the one line a return owes the person.** A dispatch has no line of its own: the opening
+line names everything dispatched with the run's first spawn, and a stage line everything dispatched
+after its return. Print the line after `lane dispatched` and before the spawn (step 2); when the
+return leads to no spawn, print the stage line before your own next act. A `lane dispatched`
+refusal code rides that same line, with what it means beside it.
 
 Both lines are written in **everyday words**: "writing the change" for a build, "checking it" for a
 review, "merging it" for a ship, "it needs a person" for a park. A pipeline word — lane, fold, park,
@@ -101,6 +121,8 @@ They read like this, with the real URL where the placeholder stands:
 ```text
 Starting on issue 12: writing the change now, which can take up to about 40 minutes. Notes appear at <the issue's full URL> as each step finishes.
 Writing the change finished and opened a pull request. Checking it starts now, up to about 15 minutes.
+Merging it finished: the pull request is in the merge queue. The run looks at the queue next, which has no set time.
+Checking it stopped before it reported a result. The run stops here and needs a person; the reason is at <the issue's full URL>.
 ```
 
 ## 1 — Read the seats, claim the lane, then boot or resume
@@ -538,10 +560,10 @@ node <fabrika> lane dispatched $lane_key --task <name>
 It writes the task's state and the shell that state routes to beside the ledger, so the lane names
 the shell you started for as long as it works — the builder adds its claim token and worktree once
 its claim wins. It records no event, so the fold does not move. A refusal here does not hold the
-spawn: `40` is a held ledger lock, so run it again, and name any other code in your dispatch line.
+spawn: `40` is a held ledger lock, so run it again, and name any other code in the line below.
 
-**Before this run's first spawn, print the opening line** to the person ("The chat is all the person
-sees", above), off the brief you hold.
+**Then print this pass's line to the person, before the spawn** ("The chat is all the person sees",
+above): the opening line where this run has spawned nothing yet, the stage line otherwise.
 
 On Claude, the spawn flag is still yours: **`isolation: worktree`, no exceptions** — a non-isolated subagent
 shares the primary checkout and can mutate its git state, and no bytes in a prompt can enforce that
@@ -646,8 +668,9 @@ never reach for `lane migrate`.
 returns its result to you, so that return *is* the wait. The rule and both incidents behind it are
 [the skill conventions' "a skill never sleeps and never polls on a timer"](../../docs/skill-conventions.md);
 the one thing it adds for you is that a timed `lane status` is the same defect wearing a fabrika
-verb, so it is banned on the same terms as a bare `sleep`. So dispatch every task the fold routed,
-say in one line what you dispatched, and end the turn. Your next move is
+verb, so it is banned on the same terms as a bare `sleep`. So dispatch every task the fold routed
+and end the turn; the line you printed before the spawn is all you say about the dispatch. Your next
+move is
 [§3](#3--verify-the-record-landed-and-record-what-no-shell-can)'s fresh `lane status`, once a spawn
 has returned.
 
@@ -1171,8 +1194,8 @@ of yours. **That verb proves before it appends**: it runs `lane prove`'s read on
 and refuses on `lane prove`'s own codes, so a shell-recorded `DONE` or `PASS` reaches the ledger
 only with its artifact behind it, exactly as one you record does. So when a spawn returns, your
 first move is a fresh `lane status`: a moved fold is a recorded terminal, and you route from it.
-With that fold in hand, print the stage line for the return ("The chat is all the person sees",
-above) before you route.
+The return's stage line ("The chat is all the person sees", above) reports that recorded terminal,
+so in the two reads below it waits for the event you record.
 Two reads stay yours, because no shell can take them:
 
 - **a spawn that printed a terminal the fold does not show** — its record never landed (a missing
