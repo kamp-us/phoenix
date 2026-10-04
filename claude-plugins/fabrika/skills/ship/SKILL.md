@@ -53,6 +53,11 @@ is one another seat moves mid-drive, which silently changes which build of these
 executes, so the spawn flag is a request and this is the fact. It costs one `git rev-parse` inside
 the verb and writes nothing, so **you type no git, ever** still holds for you. Exit `11` here means the read failed and nothing is proven — also a stop.
 
+**A `33` is this verb's refusal alone: the merge path is not closed, and it is never a reason to
+merge another way.** A repo that ships from its one checkout lifts it with the `.fabrika.jsonc` key
+the refusal names. That edit is the repo owner's, never yours, so name the key in your stop message
+as the second thing the person can do.
+
 Already `merged` is an idempotent success — run step 8, report it and end. `draft`/`closed` is a refusal.
 The verb prints the head SHA, the class set with its **required namespaces** (your gate checklist —
 all of them), the control-plane state, and the linked issue: `code`/`skill` classes require

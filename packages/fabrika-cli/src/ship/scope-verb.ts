@@ -27,6 +27,12 @@
  * deliberately does not carry it: clearing a stale merge intent is safe from any tree, and refusing
  * there would cost the run the one act that protects it.
  *
+ * **A repo may lift that refusal for itself, and only in its tracked config.** `shipScope`'s
+ * `mainWorkingTree` ships as `refuse`; a repo that keeps one checkout, or ships by hand, declares
+ * `allow`, and the read proceeds from the main working tree with a notice saying so. The key is read
+ * off the checkout the verb stands in, and only once git proves that checkout is the main working
+ * tree, so a shipper in a linked worktree never refuses over a key it does not weigh.
+ *
  * **Which runs it binds is {@link ScopeCaller}, and the caller states it.** The refusal is about the
  * shipper's seat, not about the derivation, so an in-process relay that stands on no lane branch and
  * writes to no tree passes `relay` and skips the read entirely — see that type for why a default
@@ -51,11 +57,15 @@
  * derives over the same head.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
+ * @ruling https://github.com/kamp-us/phoenix/issues/10034#issuecomment-5974043005
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {CONFIG_PATH} from "../config/document.ts";
+import {SHIP_SCOPE_ALLOW_DECLARATION, shipScopeKey} from "../config/keys/ship-scope.ts";
 import {noUiSurfaces} from "../config/paths.ts";
+import {readKey} from "../config/read-key.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {standingInLinkedWorktree} from "../lane/assembly.ts";
 import {classConfigOfPull} from "../review/class-config.ts";
@@ -74,7 +84,8 @@ const VERB = "ship scope";
  * Who is running this read, and so whether the main-working-tree refusal binds it.
  *
  * `shipper` is a dispatched shipper's own run — the `ship scope` command, where the spawn's
- * `isolation: worktree` request is proven a fact or refused `33`.
+ * `isolation: worktree` request is proven a fact or refused `33`. It carries the checkout it stands
+ * in, because that is where `shipScope` is read once the checkout proves to be the main tree.
  *
  * `relay` is an in-process caller that reads this derivation for its own answer, pushes nothing and
  * stands on no lane branch: `recipe unpark`, which a driver runs from its own checkout on purpose.
@@ -84,7 +95,9 @@ const VERB = "ship scope";
  * Stated at every call site rather than defaulted, because the two seats are the whole question this
  * field answers and a default is how a future caller inherits an answer nobody chose.
  */
-export type ScopeCaller = "shipper" | "relay";
+export type ScopeCaller =
+	| {readonly _tag: "shipper"; readonly cwd: string}
+	| {readonly _tag: "relay"};
 
 export interface ScopeOptions {
 	readonly pr: number;
@@ -94,6 +107,66 @@ export interface ScopeOptions {
 	/** Whether this run is a shipper's own, and so whether the worktree refusal binds it. */
 	readonly caller: ScopeCaller;
 }
+
+/** A caller's seat, settled: the refusal to return, or the notices a permitted read carries. */
+type Seat =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Seated"; readonly notices: ReadonlyArray<string>};
+
+const SEATED: Seat = {_tag: "Seated", notices: []};
+
+/**
+ * Where a shipper's own run stands, and whether it may read from there.
+ *
+ * The config is opened only after git proves this is the main working tree: a linked worktree is
+ * the seat the refusal asks for, and it has no reason to refuse over a key it never weighs.
+ */
+const seatOfShipper = (
+	cwd: string,
+): Effect.Effect<
+	Seat,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
+	Effect.gen(function* () {
+		const linked = yield* standingInLinkedWorktree;
+		if (linked._tag === "Failure") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot tell whether this tree is a linked worktree: ${linked.reason} — whether this shipper stands in the driver's checkout is UNKNOWN, and nothing was read.`,
+				),
+			};
+		}
+		if (linked.value) return SEATED;
+
+		const setting = yield* readKey(cwd, shipScopeKey);
+		if (setting._tag === "Refused") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: this is the repository's main working tree, and whether this repo allows a read from it is UNKNOWN: ${setting.reason}. Nothing was read.`,
+				),
+			};
+		}
+		if (setting.value.mainWorkingTree === "refuse") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					PRIMARY_CHECKOUT,
+					`${VERB}: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with \`isolation: worktree\`. A repo that ships from its one checkout declares \`${SHIP_SCOPE_ALLOW_DECLARATION}\` in ${CONFIG_PATH}. Nothing was read.`,
+				),
+			};
+		}
+		return {
+			_tag: "Seated",
+			notices: [
+				`${VERB}: reading from the repository's main working tree — ${setting.note} allows it.`,
+			],
+		};
+	});
 
 /** `open` / `draft` / `merged` / `closed` — four lifecycle words over two REST fields. */
 const lifecycleOf = (merged: boolean, draft: boolean, state: string): string =>
@@ -114,21 +187,9 @@ export const runScope = (
 		const bad = badNumber(VERB, "a pull-request number", pr);
 		if (bad !== null) return bad;
 
-		if (options.caller === "shipper") {
-			const linked = yield* standingInLinkedWorktree;
-			if (linked._tag === "Failure") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot tell whether this tree is a linked worktree: ${linked.reason} — whether this shipper stands in the driver's checkout is UNKNOWN, and nothing was read.`,
-				);
-			}
-			if (!linked.value) {
-				return refuse(
-					PRIMARY_CHECKOUT,
-					`${VERB}: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with \`isolation: worktree\`. Nothing was read.`,
-				);
-			}
-		}
+		const seat =
+			options.caller._tag === "shipper" ? yield* seatOfShipper(options.caller.cwd) : SEATED;
+		if (seat._tag === "Refused") return seat.outcome;
 
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
@@ -166,6 +227,7 @@ export const runScope = (
 		}
 		const files = listed.set.files;
 		const diagnostics = [
+			...seat.notices,
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared`),
 			...(listed.set.disagreement === null ? [] : [listed.set.disagreement]),
 			classConfig.uiPrefixes.length === 0

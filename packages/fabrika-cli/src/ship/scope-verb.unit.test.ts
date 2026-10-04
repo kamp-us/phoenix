@@ -2,6 +2,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
 	configOnPlatform,
+	fakeFs,
 	fakeSeams,
 	type HttpReply,
 	mergeBaseOnPlatform,
@@ -48,10 +49,20 @@ const options: ScopeOptions = {
 	repo: null,
 	json: false,
 	env: ENV,
-	caller: "shipper",
+	caller: {_tag: "shipper", cwd: "/repo"},
 };
 
 const REV_PARSE = /^git rev-parse/;
+
+/** `git rev-parse --git-dir --git-common-dir` as git answers it in the main working tree. */
+const MAIN_WORKING_TREE: Scripted = [
+	REV_PARSE,
+	{ok: true, stdout: "/repo/.git\n/repo/.git\n", reason: ""},
+];
+
+/** A `/repo` tree whose tracked config declares `shipScope` as given. */
+const shipScopeDeclared = (shipScope: unknown) =>
+	fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify({shipScope})}}).layer;
 
 const run = (
 	script: ReadonlyArray<Scripted>,
@@ -309,20 +320,81 @@ describe("runScope", () => {
 	});
 
 	describe("the checkout this run stands in", () => {
-		it("refuses the main working tree on 33, before the PR is read", async () => {
-			const seams = fakeSeams([
-				[REV_PARSE, {ok: true, stdout: "/repo/.git\n/repo/.git\n", reason: ""}],
-				[PULL, served(pull())],
-			]);
+		it("refuses the main working tree on 33, before the PR is read, naming the key that lifts it", async () => {
+			const seams = fakeSeams([MAIN_WORKING_TREE, [PULL, served(pull())]]);
 			const out = await Effect.runPromise(
 				Effect.provide(runScope(options), Layer.merge(seams.layer, unconfigured)),
 			);
 			expect(out.code).toBe(PRIMARY_CHECKOUT);
 			expect(out.stdout).toBe("");
 			expect(out.stderr.at(-1)).toBe(
-				"ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. Nothing was read.",
+				'ship scope: this is the repository\'s main working tree — a shipper reads from a worktree of its own, never from the driver\'s checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. A repo that ships from its one checkout declares `"shipScope": {"mainWorkingTree": "allow"}` in .fabrika.jsonc. Nothing was read.',
 			);
 			expect(seams.requests).toEqual([]);
+		});
+
+		it("answers from the main working tree when the repo declares `allow`, and says which file allowed it", async () => {
+			const out = await Effect.runPromise(
+				Effect.provide(
+					runScope(options),
+					Layer.merge(
+						fakeSeams([
+							MAIN_WORKING_TREE,
+							[PULL, served(pull())],
+							[FILES, served(files("apps/site/worker/cart.ts", "README.md"))],
+							[OWNERS, raw(CODEOWNERS)],
+							[RULES, served(branchRules("pull_request"))],
+							[REPO, repositoryServed()],
+							...unconfiguredOnPlatform(),
+						]).layer,
+						shipScopeDeclared({mainWorkingTree: "allow"}),
+					),
+				),
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\topen\tfixes:4287`);
+			expect(out.stderr[0]).toBe(
+				"ship scope: reading from the repository's main working tree — `shipScope` as declared in .fabrika.jsonc allows it.",
+			);
+		});
+
+		// A typo must not land on either arm: falling to `refuse` hides the declaration the repo
+		// believes it made, and falling to `allow` lifts the refusal on a value nobody decoded.
+		it("refuses an undecodable `shipScope` on 11 in the main working tree, before the PR is read", async () => {
+			const seams = fakeSeams([MAIN_WORKING_TREE, [PULL, served(pull())]]);
+			const out = await Effect.runPromise(
+				Effect.provide(
+					runScope(options),
+					Layer.merge(seams.layer, shipScopeDeclared({mainWorkingTree: "yes"})),
+				),
+			);
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stdout).toBe("");
+			expect(out.stderr.at(-1)).toBe(
+				"ship scope: this is the repository's main working tree, and whether this repo allows a read from it is UNKNOWN: `shipScope`'s `mainWorkingTree` is not one of refuse, allow. Nothing was read.",
+			);
+			expect(seams.requests).toEqual([]);
+		});
+
+		it("never weighs `shipScope` from a linked worktree — an undecodable key there refuses nothing", async () => {
+			const out = await Effect.runPromise(
+				Effect.provide(
+					runScope(options),
+					Layer.merge(
+						fakeSeams([
+							[PULL, served(pull())],
+							[FILES, served(files("apps/site/worker/cart.ts", "README.md"))],
+							[OWNERS, raw(CODEOWNERS)],
+							[RULES, served(branchRules("pull_request"))],
+							[REPO, repositoryServed()],
+							...unconfiguredOnPlatform(),
+							LINKED_WORKTREE,
+						]).layer,
+						shipScopeDeclared({mainWorkingTree: "yes"}),
+					),
+				),
+			);
+			expect(out.code).toBe(0);
 		});
 
 		it("passes a linked worktree through to the normal scope answer", async () => {
@@ -355,13 +427,13 @@ describe("runScope", () => {
 		it("answers a `relay` caller from the main working tree — the seat is the shipper's, not the derivation's", async () => {
 			const out = await run(
 				[
-					[REV_PARSE, {ok: true, stdout: "/repo/.git\n/repo/.git\n", reason: ""}],
+					MAIN_WORKING_TREE,
 					[PULL, served(pull())],
 					[FILES, served(files("apps/site/worker/cart.ts", "README.md"))],
 					[OWNERS, raw(CODEOWNERS)],
 					[RULES, served(branchRules("pull_request"))],
 				],
-				{caller: "relay"},
+				{caller: {_tag: "relay"}},
 				[[REPO, repositoryServed()]],
 			);
 			expect(out.code).toBe(0);

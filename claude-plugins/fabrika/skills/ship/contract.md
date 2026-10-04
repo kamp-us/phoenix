@@ -221,7 +221,7 @@ authority.
 | `19` | refused: the repository permits **no merge method at all** — squash, merge-commit and rebase are all disabled, so nothing can land directly. Its own seat rather than a fold into `16`, because the two route opposite ways: `16` sends the run to `ship enqueue`, `19` ends it at a human with repository-settings access | `merge` |
 | `22` | refused: the PR was opened by an author outside the repo's own accounts and **no valid takeover grant** stands on it — it is its author's to land, and nothing was armed or merged | `enqueue`, `merge` |
 | `23` | refused: a label this run would POST is absent from the repository's taxonomy — `plan flip`'s seat, imported, because both verbs prove one fact over one board's labels | `release` |
-| `33` | refused: the verb is standing in the repository's **main working tree** — the driver's own checkout, not a worktree of the shipper's own. `lane push`'s seat, imported, because both prove one fact off one read (`standingInLinkedWorktree`, git's `--git-dir`/`--git-common-dir` pair) and `lane` already documents it as *the branch is in the wrong tree* | `scope` |
+| `33` | refused: the verb is standing in the repository's **main working tree** — the driver's own checkout, not a worktree of the shipper's own — in a repo whose `shipScope.mainWorkingTree` is `refuse`, the shipped value. `lane push`'s seat, imported, because both prove one fact off one read (`standingInLinkedWorktree`, git's `--git-dir`/`--git-common-dir` pair) and `lane` already documents it as *the branch is in the wrong tree* | `scope` |
 | `127` | the verb never ran (unresolved binary) | all |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every
@@ -310,8 +310,19 @@ act that protects it. `recipe unpark` calls this verb **in process** for the hea
 namespace set behind its red-CI row, and a driver runs that verb from its own checkout on purpose —
 it pushes nothing, stands on no lane branch, and telling it to respawn a shipper it never dispatched
 would name the wrong actor for a park it can clear. The seat is stated at each call site rather than
-inferred (`caller: "shipper" | "relay"` in `packages/fabrika-cli/src/ship/scope-verb.ts`), so a
-future in-process caller picks an answer instead of inheriting one.
+inferred (`caller`, tagged `shipper` or `relay`, in `packages/fabrika-cli/src/ship/scope-verb.ts`),
+so a future in-process caller picks an answer instead of inheriting one.
+
+**A repo lifts that refusal for itself with one tracked config key.** `shipScope`'s
+`mainWorkingTree` is `refuse` or `allow`, and ships as `refuse`, so a repo declaring nothing keeps
+the `33`. A repo that keeps one checkout, or whose people ship by hand, declares
+`"shipScope": {"mainWorkingTree": "allow"}` in `.fabrika.jsonc`; the verb then reads the pull
+request from the main working tree and prints one notice naming the file that allowed it. There is
+no command-line override. The key is read from the checkout the verb stands in, and only after git
+proves that checkout is the main working tree, so a run in a linked worktree never opens it. A value
+that does not decode, or a config file that cannot be read, is `11` with nothing read — never the
+shipped `refuse`, which would hide a declaration the repo believes it made, and never `allow`. The
+key is not machine-local: `.fabrika.local.jsonc` cannot declare it.
 
 **A `merged` PR is an answer, not a refusal** — the skill reports idempotent success and ends.
 `draft` and `closed` are likewise answers here; this verb reports state, the skill acts on it.
@@ -408,9 +419,9 @@ downstream verb consumes, and that verb guards itself.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404); or the enumerated changed-file list is empty; or its non-empty diff derives zero required namespaces — a vacuous conjunction |
-| `11` | the PR, its file list, the §CP boundary, the worktree fact, the merge base, or `.fabrika.jsonc` at the head or the merge base could not be read or decoded — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
+| `11` | the PR, its file list, the §CP boundary, the worktree fact, the merge base, or `.fabrika.jsonc` at the head or the merge base could not be read or decoded — the scope is UNKNOWN. Also, in the main working tree only, a `shipScope` this checkout's config could not yield. **Not** the landing read, which degrades to `unknown` |
 | `13` | the changed-file list came back at GitHub's own 3000-file ceiling, where the Link header ends as a complete read ends — a class, a namespace or a §CP path could sit in the part the platform never served. The list against the pull-request record's `changed_files` is **not** that proof and no longer refuses here |
-| `33` | the verb is standing in the repository's main working tree — the driver's checkout, not the shipper's own worktree. Proven before anything is read, and only on a shipper's own run: `recipe unpark`'s in-process call is exempt |
+| `33` | the verb is standing in the repository's main working tree — the driver's checkout, not the shipper's own worktree — and the repo's `shipScope.mainWorkingTree` is `refuse`, declared or shipped. Proven before the PR is read, and only on a shipper's own run: `recipe unpark`'s in-process call is exempt |
 
 **Errors**
 
@@ -424,13 +435,16 @@ downstream verb consumes, and that verb guards itself.
 | `ship scope: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
 | `ship scope: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a class, a namespace or a §CP path could sit in the part the platform never served.` | 13 | refusal |
 | `ship scope: cannot tell whether this tree is a linked worktree: <reason> — whether this shipper stands in the driver's checkout is UNKNOWN, and nothing was read.` | 11 | refusal |
-| `ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. Nothing was read.` | 33 | refusal |
+| `ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. A repo that ships from its one checkout declares `"shipScope": {"mainWorkingTree": "allow"}` in .fabrika.jsonc. Nothing was read.` | 33 | refusal |
+| `ship scope: this is the repository's main working tree, and whether this repo allows a read from it is UNKNOWN: <reason>. Nothing was read.` | 11 | refusal |
+| `ship scope: reading from the repository's main working tree — <where `shipScope` came from> allows it.` | 0 | notice |
 
 **Scope** — on a shipper's own run, one `git rev-parse --git-dir --git-common-dir` in the checkout
 the verb runs in, then one PR's metadata; the class config, which is one
 `compare/<base>...<head>?per_page=1` for the merge base and `.fabrika.jsonc` through the contents
 API at the head and at that merge base; the changed-file list, paginated to exhaustion; and one
-boundary read from the PR's base ref. No `.fabrika.jsonc` is read from the checkout. The partition is
+boundary read from the PR's base ref. The checkout's own `.fabrika.jsonc` is read for one key,
+`shipScope`, and only when that checkout is the main working tree; the classes never derive over it. The partition is
 taken over that enumerated list rather than over the pull-request record's `changed_files`: GitHub
 computes the record's count against a base it cached at the PR's last push, so a disagreement is
 reported and never refused on. What still refuses is the list arriving at GitHub's own 3000-file
@@ -467,9 +481,25 @@ $ echo $?
 
 ```
 $ fabrika ship scope 4321
-ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. Nothing was read.
+ship scope: this is the repository's main working tree — a shipper reads from a worktree of its own, never from the driver's checkout, whose branch another seat can move mid-drive. Respawn the shipper with `isolation: worktree`. A repo that ships from its one checkout declares `"shipScope": {"mainWorkingTree": "allow"}` in .fabrika.jsonc. Nothing was read.
 $ echo $?
 33
+```
+
+The same run in a repo whose `.fabrika.jsonc` declares `"shipScope": {"mainWorkingTree": "allow"}` —
+the notice is on stderr, and stdout is the scope alone:
+
+```
+$ fabrika ship scope 4321
+ship scope: reading from the repository's main working tree — `shipScope` as declared in .fabrika.jsonc allows it.
+scoped	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	open	fixes:4287
+class	code	3
+class	doc	1
+namespace	review-code
+namespace	review-doc
+cp	not-control-plane
+landing	direct	squash
+files	4
 ```
 
 **Grounding**

@@ -102,7 +102,7 @@ const reviewScopeOver =
 const reviewScope = reviewScopeOver(twoApps);
 
 /**
- * `caller: "shipper"` with the worktree read scripted, because that is the run whose answer the
+ * The `shipper` caller with the worktree read scripted, because that is the run whose answer the
  * review side has to agree with — a `relay` seat would compare against a read no shipper performs.
  */
 const shipScopeOver =
@@ -115,7 +115,7 @@ const shipScopeOver =
 					repo: null,
 					json: false,
 					env: ENV,
-					caller: "shipper",
+					caller: {_tag: "shipper", cwd: "/repo"},
 				}),
 				Layer.merge(
 					fakeSeams([

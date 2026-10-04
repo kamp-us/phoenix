@@ -76,7 +76,7 @@ const scope = leafCommand(
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
-				caller: "shipper",
+				caller: {_tag: "shipper", cwd: process.cwd()},
 			}),
 		);
 	}),
@@ -87,7 +87,7 @@ const scope = leafCommand(
 			"\n  7: the PR is absent, has no changed files, or its diff derives no namespace" +
 			"\n  11: a read failed; the scope is UNKNOWN" +
 			"\n  13: the changed-file list hit GitHub's 3000-file ceiling, so it is partial" +
-			"\n  33: this is the main working tree; respawn the shipper with `isolation: worktree`" +
+			"\n  33: the main working tree, and `shipScope.mainWorkingTree` is not `allow`" +
 			'\n  Derivation: the ship skill\'s contract.md, "ship scope"',
 	),
 	Command.withExamples([{command: "fabrika ship scope 4321"}]),
