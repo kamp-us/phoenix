@@ -78,12 +78,18 @@ jobs:
       # consequence: an issue event has no merge path, so nothing is blocked. Remediation (triage
       # drafts the five fields, the founder approves with a `pitch-approved:` comment or a `bet` on
       # the table, set by him or by an agent on his say-so at the size the pitch states, ADR 0425)
-      # is printed by the guard itself. `github.token` carries no `project` scope, so here
-      # the table's bet arm reads as unread and only the comments approve. 7 is an empty backlog
-      # sweep, 11 an unreadable board, 12 an unpitched bet.
+      # is printed by the guard itself. 7 is an empty backlog sweep, 11 an unreadable board, 12 an
+      # unpitched bet.
+      #
+      # The repo secret `TABLE_READ_TOKEN` reads the table: it carries the `project` scope that
+      # `github.token` cannot be given, and the guard takes one token, so every read in this step
+      # goes through it. Where the secret is unset or withheld (a fork's own Actions run gets no
+      # repo secrets) the expression below is empty on its left side and falls back to
+      # `github.token`: the bet arm then reads as unread and only the comments approve, so a
+      # bet-only issue reds on 12 there. The `permissions:` block above scopes that fallback only.
       - name: pitch-guard check
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.TABLE_READ_TOKEN || github.token }}
           ISSUE: ${{ github.event.issue.number || inputs.issue }}
         run: |
           if [ -n "$ISSUE" ]; then
