@@ -99,7 +99,7 @@ describe("classConfigOf, over screen review", () => {
 	it("owes no review-ui over a screen file at skip, and keeps the text review whole", () => {
 		const skip = text({...rows, reviewUi: {mode: "skip"}});
 		const {config, namespaces} = owed(skip, skip);
-		expect(config.screenReview).toMatchObject({mode: "skip", skippedScreens: ["apps/shop/"]});
+		expect(config.screenReview.mode).toBe("skip");
 		expect(config.uiPrefixes).toEqual([]);
 		expect(namespaces).toEqual(["review-code"]);
 		expect(uiDerivationLine("v", config)).toContain("v: screen review is not set up");
@@ -107,13 +107,13 @@ describe("classConfigOf, over screen review", () => {
 
 	it("resolves a repo that declares nothing to skip on both commits", () => {
 		const {config, namespaces} = owed({_tag: "Absent"}, text({}));
-		expect(config.screenReview).toMatchObject({mode: "skip", skippedScreens: []});
+		expect(config.screenReview.mode).toBe("skip");
 		expect(namespaces).toEqual(["review-code"]);
 	});
 
 	it("leaves a repo with rows and no mode owing review-ui, as before the key existed", () => {
 		const {config, namespaces} = owed(text(rows), text(rows));
-		expect(config.screenReview).toMatchObject({mode: "preview", skippedScreens: []});
+		expect(config.screenReview.mode).toBe("preview");
 		expect(namespaces).toEqual(["review-code", "review-ui"]);
 		expect(uiDerivationLine("v", config)).toContain("v: ui derived over 1 prefix(es)");
 	});

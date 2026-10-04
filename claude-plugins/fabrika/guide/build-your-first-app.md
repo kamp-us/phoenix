@@ -20,8 +20,17 @@ This lesson writes one file that step 9 of getting started also writes: the desi
 did that step and the file is already on GitHub, read step 2 and then begin at step 4.
 
 The lesson runs with screen review off, which is where a new repo starts. If you turned it on in
-getting started, your run stops in step 7 to ask you for a screenshot, and step 9 says what to do
-then.
+getting started, the path you gave there does not cover this lesson's page: Streakly's screen is
+`index.html` at the root of the repo, and getting started's example named `src/`. Left like that,
+your run does not stop for a screenshot, and it prints no line about a skipped screen check either.
+To have it stop, add the page as a screen path now, then commit and push `.fabrika.jsonc`:
+
+```bash
+fabrika status bootstrap hand-check-rule --screens index.html
+```
+
+With that on `main`, your run stops in step 7 to ask you for a screenshot, and the end of step 9
+says what to do then.
 
 Run every command from the root of your clone, on `main`. A command that starts with `/` is typed
 into Claude Code, opened in that clone, not into a shell.

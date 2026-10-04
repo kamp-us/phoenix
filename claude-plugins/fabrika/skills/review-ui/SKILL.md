@@ -114,8 +114,9 @@ only the builder's `ui evidence` comment and a comment carrying an agent stamp, 
 agents post under an owner account no check enforces it
 ([why](../../guide/how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)).
 
-**Which no-preview route comes first.** The `--no-preview` route above always runs first. Where a
-`hand-check` or `skip` rule matches, its answer is the route, and the builder's desk run
+**Which no-preview route comes first.** The `--no-preview` route above always runs first. Where the
+files resolve `hand-check` or `skip`, by a `reviewUi.whenNoPreview` rule or by the repo's
+`reviewUi.mode`, its answer is the route, and the builder's desk run
 (`--verified-at`) does not stand in for those files. Only where it refuses on `21` for
 `require-render` does the desk-run route above remain what it was before the rules existed. Where
 that does not apply either, end CANT-SEE.
@@ -432,8 +433,8 @@ design law — routed to front-door, nothing posted; cause `no-design-manifest`)
 **ROUTED-ELSEWHERE** (this gate owes no verdict at the head; the `routed-elsewhere` record posted,
 or nothing posted when the diff raised no `ui` class to route. Two grounds, two causes: no rendered
 delta, so the verdict is `review`'s, cause `no-rendered-delta`; or a PR with no preview that the
-repo's `reviewUi.whenNoPreview` rules routed, on `basis:skip` or `basis:hand-check`, cause
-`no-preview-routed`). Success is a *landed, read-back verdict*; a
+repo's `reviewUi.whenNoPreview` rules or its `reviewUi.mode` routed, on `basis:skip` or
+`basis:hand-check`, cause `no-preview-routed`). Success is a *landed, read-back verdict*; a
 judgment formed but
 not landed never reports as one. Cross-lane signals are closed-vocabulary — kind + action +
 branded ref, no free prose; receivers re-fetch from the PR.

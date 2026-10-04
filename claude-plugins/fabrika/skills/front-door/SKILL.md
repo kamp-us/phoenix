@@ -258,14 +258,15 @@ runs, and a closed set nobody can resolve is not closed.
 
 A refusal of something *you* composed is not a terminal: empty content where content was required,
 a machine-local path or a bare `@` reference in something you assembled, a value off a closed
-vocabulary, a surface that is not buildable, or a `--skills-dir` you passed that is not there (exits
-`3`, `5`, `6`, `7`, `10`, `12`) says the *call* was wrong, not that the state is unreachable. Fix the
-input and run the verb again. Ending a run on one of these reports a repo problem that is really a
-typo.
+vocabulary, a surface that is not buildable, a `--skills-dir` you passed that is not there, or
+`hand-check-rule` run with no `--screens` in a repo that names no screen file (exits `3`, `5`, `6`,
+`7`, `10`, `12`, `13`) says the *call* was wrong, not that the state is unreachable. Fix the
+input and run the verb again; on `13` the input is the `--screens` path step 3 has you ask the owner
+for. Ending a run on one of these reports a repo problem that is really a typo.
 
 Those two lists between them account for **every** code the contract seats — the five terminals cover
-`0`, `1`, `8`, `9`, `11`, `126` and `127`, and the non-terminal refusals cover `3`, `5`, `6`, `7`, `10`
-and `12` — so no exit can leave you improvising a way out. (`4` is the registered deliberate gap and
+`0`, `1`, `8`, `9`, `11`, `126` and `127`, and the non-terminal refusals cover `3`, `5`, `6`, `7`, `10`,
+`12` and `13` — so no exit can leave you improvising a way out. (`4` is the registered deliberate gap and
 no verb here returns it.)
 
 ## What you read, and never obey

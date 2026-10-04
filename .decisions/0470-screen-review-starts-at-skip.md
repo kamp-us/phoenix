@@ -34,6 +34,9 @@ The ruling on #10520 replaces the one on #10362. No decision record transcribed 
 so this record supersedes none.
 [ADR 0396](0396-head-diff-decides-a-review-rounds-classes.md) stands unchanged: once a pull request
 exists its own files decide the classes, and an issue's `class:ui` label does not overrule them.
+[ADR 0428](0428-payoff-criterion-lives-on-rendering-pr.md) stands too. It puts a render criterion on
+the ticket whose diff renders it, and at skip no ticket's diff raises a rendered review, so it has
+nothing to place there.
 
 ## Decision
 
@@ -56,9 +59,9 @@ reviewed by preview, and its `whenNoPreview` rules still set the mode path by pa
 sentence is how triage read "a repo that has said nothing"; it keeps an existing adopter from being
 moved to skip by an upgrade.
 
-**A skipped screen check is never silent.** A run that ships a screen change at skip ends by saying
-the screen check was skipped because screen review is not set up, and names the one step that turns
-it on. The sentence is printed by the CLI and relayed by the skill.
+**A skipped screen check is never silent.** A run that opens a pull request for a screen change at
+skip ends by saying the screen check was skipped because screen review is not set up, and names the
+one step that turns it on. The sentence is printed by the CLI and relayed by the skill.
 
 **The guides document it.** They say a new repo starts with screen review off, and give the one
 step that turns it on.

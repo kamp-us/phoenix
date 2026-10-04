@@ -70,11 +70,6 @@ export interface ClassConfig {
 	/** How this PR's screens are reviewed: the stricter of its head's answer and its merge base's. */
 	readonly screenReview: {
 		readonly mode: ScreenReviewMode;
-		/**
-		 * At `skip`, the source roots the config names a screen under and reviews nothing over — what
-		 * a verb reads to say a changed screen went unreviewed. Empty at every other mode.
-		 */
-		readonly skippedScreens: ReadonlyArray<string>;
 		/** Why each ref resolves the mode it does, one clause per ref. */
 		readonly note: string;
 	};
@@ -195,13 +190,6 @@ export const classConfigOf = (
 			),
 			screenReview: {
 				mode,
-				skippedScreens:
-					mode === "skip"
-						? union(
-								sides.flatMap((side) => side.screenReview.screens),
-								(root) => root,
-							)
-						: [],
 				note: noteOf((side) => side.screenReview.reason),
 			},
 			subsystems: union(
