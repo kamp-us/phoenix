@@ -2206,7 +2206,7 @@ const recover = leafCommand(
 		spawns: Flag.boolean("spawns").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				`also park every lane whose builder is provably gone: a build claim standing past the ${SHELL_BUDGETS.build.minutes}-minute build budget, no lane branch in this clone, and nothing on the surface that lane's role publishes to — an open PR linking the issue on a single lane or an epic tail, the lane branch itself on an epic child, which opens no PR. Recorded as BLOCKED --cause spawn-dead. It retracts nothing here; the spawn-dead unpark row ends the claim on the same proof, one verb later and with no human between the two. Costs board reads per lane standing in build or build:ui, which is why it is opt-in`,
+				`also park every lane whose builder is provably gone: a build claim standing past the ${SHELL_BUDGETS.build.minutes}-minute build budget, no lane branch in this clone, and nothing on the surface that lane's role publishes to — an open PR linking the issue on a single lane or an epic tail, the lane branch itself on an epic child, which opens no PR. Recorded as BLOCKED --cause spawn-dead. It retracts nothing here; the spawn-dead unpark row ends the claim on the same proof, one verb later and with no human between the two. Costs board reads per lane standing in build, build:ui or build:mixed, which is why it is opt-in`,
 			),
 		),
 		repo: Flag.string("repo").pipe(

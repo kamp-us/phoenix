@@ -16,7 +16,8 @@
  *     ship-cell conflict to `build` while the machinery that only moved a head still self-targets.
  *     `class:<name>` reads the lane class the event carried (see {@link TaskState}) and spends
  *     nothing: it picks which shell serves the round, and picking is not repairing. It is read two
- *     ways, told apart by what follows it: alone above a single fallthrough it IS the cell, and
+ *     ways, told apart by what follows it: above a single fallthrough the class arms ARE the cell —
+ *     one arm or several, the first whose class stands taken — and
  *     leading a budget pair it is a ROUTE like `lap:<cause>` — the budget still decides whether the
  *     loop is taken, the class only decides which cell it re-enters. That second reading is what
  *     sends a rendered child's FAIL back to `build:ui` while a spent one still parks.
@@ -57,6 +58,7 @@ import {budgetWith} from "../cap-clearance.ts";
 import {MACHINERY_LAP_BUDGET, RETRY_BUDGET} from "../retry-budget.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
+import {classStands} from "./routing-class.ts";
 
 /**
  * The machinery event — a lap the pipeline spent on itself, not a round the artifact owes.
@@ -338,8 +340,8 @@ type Cell = (state: TaskState, msg: LaneMsg) => readonly [TaskState, readonly ne
 
 /**
  * The first guard spelling the compiler reads: `class:<name>` takes the arm when `<name>` stands
- * over the task — as the whole cell here, or as a leading route ({@link classRoutesOf}) when a
- * budget pair follows it. Anything the two routing spellings do not match — `retriesRemaining`, a per-task
+ * over the task — as the whole cell ({@link classCellOf}), or as a leading route
+ * ({@link classRoutesOf}) when a budget pair follows it. Anything the two routing spellings do not match — `retriesRemaining`, a per-task
  * spelling, a name nobody defined — is the budget guard, whose counter the event's polarity picks,
  * which is what keeps every document written before this shape existed compiling byte-for-byte the
  * same.
@@ -349,6 +351,37 @@ const CLASS_GUARD = /^class:([a-z][a-z0-9-]*)$/;
 const classGuardOf = (arm: unknown): string | undefined => {
 	if (!isRecord(arm) || typeof arm.guard !== "string") return undefined;
 	return CLASS_GUARD.exec(arm.guard)?.[1];
+};
+
+const targetOf = (arm: unknown): string | undefined =>
+	isRecord(arm) && typeof arm.target === "string" ? arm.target : undefined;
+
+/**
+ * A guarded array that is class arms above one fallthrough — the cell that picks which shell serves
+ * the round and spends nothing.
+ *
+ * Every arm but the last carries a `class:<name>` guard, and the first whose class stands wins, so
+ * the arms' order is the precedence: a class that implies another is declared above it. Anything
+ * else is not this cell — a non-final arm without a class guard leaves the array to the budget
+ * pair's reading, which refuses whatever does not end in exactly two arms.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/6900
+ */
+const classCellOf = (
+	transition: ReadonlyArray<unknown>,
+):
+	| {
+			readonly arms: ReadonlyArray<{readonly name: string; readonly target: string | undefined}>;
+			readonly fallthrough: string | undefined;
+	  }
+	| undefined => {
+	const arms: Array<{name: string; target: string | undefined}> = [];
+	for (const arm of transition.slice(0, -1)) {
+		const name = classGuardOf(arm);
+		if (name === undefined) return undefined;
+		arms.push({name, target: targetOf(arm)});
+	}
+	return arms.length === 0 ? undefined : {arms, fallthrough: targetOf(transition.at(-1))};
 };
 
 /**
@@ -416,8 +449,8 @@ const lapRoutesOf = (
  * the loop is taken at all.
  *
  * Read only where the arms after it are exactly the two-arm budget pair, which is what keeps the
- * older two-arm form ({@link classGuardOf}'s own cell, spending nothing) reading as it always did:
- * there the class arm's remainder is one arm, not two.
+ * class cell ({@link classCellOf}, spending nothing) reading as it always did: there the class
+ * arms' remainder is one arm, not two.
  *
  * Repeats like {@link LAP_GUARD} and for the same reason — a state may route one class one way and
  * another another — and the first arm whose name stands over the task wins.
@@ -570,6 +603,29 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 				continue;
 			}
 			if (Array.isArray(transition)) {
+				const classCell = classCellOf(transition);
+				if (classCell !== undefined) {
+					const {arms, fallthrough} = classCell;
+					if (fallthrough === undefined || arms.some((arm) => arm.target === undefined)) {
+						defects.push(
+							`task "${taskId}": guarded "${eventName}" carries a "class:<name>" arm or a fallthrough with no \`target\` — an arm that names no state routes nowhere`,
+						);
+						continue;
+					}
+					const routed = arms.map((arm) => [arm.name, arm.target as string] as const);
+					for (const target of [...routed.map(([, to]) => to), fallthrough]) {
+						if (states[target] === undefined) {
+							defects.push(`task "${taskId}": "${eventName}" targets unknown state "${target}"`);
+						}
+					}
+					cells[msg] = (s, m) => {
+						const c = withPayload(s, m);
+						const target =
+							routed.find(([name]) => classStands(c.classes, name))?.[1] ?? fallthrough;
+						return [{...c, type: target, was: c.type}, []];
+					};
+					continue;
+				}
 				const routes = lapRoutesOf(transition);
 				if (routes.length > 0 && msg !== MACHINERY_EVENT) {
 					defects.push(
@@ -603,15 +659,6 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					if (states[target] === undefined) {
 						defects.push(`task "${taskId}": "${eventName}" targets unknown state "${target}"`);
 					}
-				}
-				const laneClass = classRoutes.length > 0 ? undefined : classGuardOf(transition[0]);
-				if (laneClass !== undefined) {
-					cells[msg] = (s, m) => {
-						const c = withPayload(s, m);
-						const target = c.classes.includes(laneClass) ? taken : fallthrough;
-						return [{...c, type: target, was: c.type}, []];
-					};
-					continue;
 				}
 				if (diagnosisGuarded(transition[0])) {
 					// Recorded before the cell, and off `states` rather than `finals`, because `finals` is
@@ -665,7 +712,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					(route) => [route.name, route.target as string] as const,
 				);
 				const loopTarget = (state: TaskState): string =>
-					classTargets.find(([name]) => state.classes.includes(name))?.[1] ?? taken;
+					classTargets.find(([name]) => classStands(state.classes, name))?.[1] ?? taken;
 				if (msg === "FAIL") {
 					cells[msg] = (s, m) => {
 						const c = withPayload(s, m);

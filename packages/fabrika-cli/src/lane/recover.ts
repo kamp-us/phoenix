@@ -22,7 +22,7 @@
  *   reviewer's run reached **no** verdict. A negative like that is proven by the absence of a
  *   contradiction rather than by an artifact somebody posted, so the sweep would park every lane
  *   whose reviewer has simply not finished yet.
- * - A `DONE` out of `build` or `build:ui` claims `OpenPull`, which `./prove-verb.ts` answers `proven` for on the
+ * - A `DONE` out of `build`, `build:ui` or `build:mixed` claims `OpenPull`, which `./prove-verb.ts` answers `proven` for on the
  *   existence of one open PR whose body links the issue — a fact about the PR being *open*, never
  *   about the builder being *done* with it. A lane in a repair round carries exactly that PR for the
  *   whole round, so the sweep would move it to `review` while the builder is still pushing. The
@@ -137,11 +137,11 @@ export const DEAD_SPAWN_CAUSE = "spawn-dead";
  * earn an event nobody recorded", but "is the shell that took this leaf gone, leaving the lane
  * holding a seat nothing will ever move".
  *
- * `build:ui` is in, because a killed rendered-surface builder strands a lane exactly as a text one
- * does; the membership is read off {@link isBuildState} rather than a list here, so a sixth shell
- * state cannot join one reading and not the other. An epic child region is in for the same reason
- * and arrives by a different route — `./prove.ts`'s `issueOf` resolves an `issue_<n>` task — so what
- * this walk returns spans two leaves and three roles, and {@link publicationOf} is what keeps the
+ * `build:ui` and `build:mixed` are in, because a killed rendered-surface or mixed builder strands a
+ * lane exactly as a text one does; the membership is read off {@link isBuildState} rather than a
+ * list here, so a new shell state cannot join one reading and not the other. An epic child region is
+ * in for the same reason and arrives by a different route — `./prove.ts`'s `issueOf` resolves an
+ * `issue_<n>` task — so what this walk returns spans three leaves and three roles, and {@link publicationOf} is what keeps the
  * arm's third read answerable for every one of them.
  *
  * Empty on a terminal lane for {@link owedBy}'s reason: a done lane holds no seat, and asking the

@@ -71,6 +71,7 @@ const brief = (ground: LaneGround, fabrika: string, state: LaneBrief["state"]): 
 const GROUNDS: ReadonlyArray<readonly [string, LaneGround, LaneBrief["state"]]> = [
 	["Pull, mid-construction", {_tag: "Pull", pr: null}, "build"],
 	["Pull, mid-UI-construction", {_tag: "Pull", pr: null}, "build:ui"],
+	["Pull, mid-mixed-construction", {_tag: "Pull", pr: null}, "build:mixed"],
 	["Pull, with the lane's PR", {_tag: "Pull", pr: PR}, "review"],
 	["Pull, at the rendered review", {_tag: "Pull", pr: PR}, "review:ui"],
 	["Tail", {_tag: "Tail", pr: PR, epic: EPIC}, "review"],
@@ -79,11 +80,12 @@ const GROUNDS: ReadonlyArray<readonly [string, LaneGround, LaneBrief["state"]]> 
 	["Epic child UI build", {_tag: "Epic", epic: EPIC, branch: ref("epic/40")}, "build:ui"],
 ];
 
-describe("the five shell states route through one table", () => {
+describe("the six shell states route through one table", () => {
 	it("routes every state the format admits, and nothing else", () => {
 		expect(SHELL_STATES.map((state) => [state, shellOf(state)])).toEqual([
 			["build", "builder"],
 			["build:ui", "ui-builder"],
+			["build:mixed", "mixed-builder"],
 			["review", "reviewer"],
 			["review:ui", "ui-reviewer"],
 			["ship", "shipper"],

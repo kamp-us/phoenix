@@ -473,7 +473,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | Leaf state | Action |
 | --- | --- |
 | `queued` | record `WIP` — the task enters build |
-| `build` / `build:ui` / `review` / `review:ui` / `ship` | dispatch through `lane brief` — below. On an epic lane, `build` is a child's construction **or** the tail's repair round, and the brief says which: a tail repair's `## Ground` names the assembly branch beside the run's one PR |
+| `build` / `build:ui` / `build:mixed` / `review` / `review:ui` / `ship` | dispatch through `lane brief` — below. On an epic lane, `build` is a child's construction **or** the tail's repair round, and the brief says which: a tail repair's `## Ground` names the assembly branch beside the run's one PR |
 | `ship:queued` | the PR is in the merge queue and nothing is wrong — re-read the queue yourself, below. Never a park, and never a shell |
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
@@ -493,8 +493,8 @@ node <fabrika> lane brief $lane_key --task <name>
 
 For Claude, its stdout is the whole prompt — send those bytes to the spawn verbatim and add nothing to them. For Codex, use the dispatch adapter below; it preserves this brief inside a fixed skill preload envelope. The brief
 derives every value: the state from the same fold you just read, the shell from its own routing
-table (`build` → builder, `build:ui` → ui-builder, `review` → reviewer, `review:ui` → ui-reviewer,
-`ship` → shipper), the issue and PR URLs off the
+table (`build` → builder, `build:ui` → ui-builder, `build:mixed` → mixed-builder, `review` →
+reviewer, `review:ui` → ui-reviewer, `ship` → shipper), the issue and PR URLs off the
 board, your lanes root resolved absolute so the shell's `lane report` addresses this ledger rather
 than its own worktree's, the fabrika entrypoint resolved for this repo so the shell runs a
 path that exists there, and its rules from byte-fixed text the `lane-brief` wire format owns
@@ -600,8 +600,8 @@ node <fabrika> lane transition $lane_key WIP --task <name>
 ```
 
 A `WIP` out of either review cell folds the task back to `queued` and spends no retry and no lap, so
-the next pass records the ordinary `WIP` and `queued` routes a `class:ui` lane to `build:ui` and any
-other to `build`. The rewind is proven, not taken on your word: `lane transition` reads the issue and
+the next pass records the ordinary `WIP` and `queued` routes the lane by its standing classes — a
+mixed one to `build:mixed`, a `class:ui` one to `build:ui`, any other to `build`. The rewind is proven, not taken on your word: `lane transition` reads the issue and
 runs the same nominator `lane brief` did, and refuses at `24`, log unappended, while any open PR still
 links the issue **or the issue is closed**. A hand merge past the ledger also leaves zero open PRs, so
 the closed issue is what tells finished work from a re-pointed PR: on that `24`, run `lane settle`
@@ -1288,7 +1288,17 @@ prints it; a single-task lane tolerates omission.)
 
 **`--class` is how a UI lane reaches its own shells.** The machine's `build:ui` and `review:ui`
 states are entered by a guarded arm reading the classes standing over the task, and those classes
-ride the event line the way `--cause` does.
+ride the event line the way `--cause` does. **`build:mixed` has no class of its own to relay**: the
+machine enters it when `ui` stands beside a text class (`code`, `doc`, `skill`), so relaying the rows
+below is the whole act and `--class mixed` is refused at exit `38`. Which events enter it depends on
+the lane kind:
+
+- **A single-issue lane** — a `WIP` out of `queued`, and a FAIL out of `review` or `review:ui`. Its
+  other routes back to construction land a mixed lane in `build`, as they do any lane: a FAIL out of
+  `ship`, `ship:queued` or `human:cp-approval`, and the `base-conflicted` lap.
+- **An epic child** — a `WIP` out of `queued`, and a FAIL out of `review` or `integrate`. A child has
+  no `review:ui`.
+- **An epic tail** — never. It repairs in its one `build` cell whatever classes stand.
 
 **A head decides the classes wherever one exists; the ticket's stamp decides only the first build.**
 That is the ruling the decision record *The head's diff decides the classes a review round owes*
@@ -1361,7 +1371,7 @@ can neither ship nor park honestly: `lane recover`'s spawn sweep proves only a d
 never parks a lane standing in `review`, and `lane stale` lists the row without moving it, because
 re-spawning the reviewer reaches the same exit `23`.
 A tail rendered FAIL repairs in the tail's one `build` cell, briefed on the assembly branch beside
-the run's PR; there is no `build:ui` at the tail.
+the run's PR; there is no `build:ui` and no `build:mixed` at the tail.
 
 **On a single-issue lane, a merged PR that closed nothing sends the lane round rather than folding
 it.** A `LANDED` whose merge carried `Part of #N` records its `DONE` as always, and the machine takes
@@ -1472,13 +1482,14 @@ names it. A cause outside the set is exit `35` with the log unappended, as it is
 **The cell has to be there, and on an epic lane one key decides whether it is.**
 `.fabrika.jsonc`'s `machineryLaps.onEmit` ships `off` and is read by `lane emit` alone. An epic
 machine emitted under `off` holds no `LAP` cell at all; one emitted under `on` holds it in each
-child region's `build`, `review` and `integrate` — plus a rendered child's `build:ui` — and in the
+child region's `build`, `review` and `integrate` — plus a rendered child's `build:ui` and a mixed
+child's `build:mixed` — and in the
 tail's `build`, `review`, `review:ui`, `ship` and `ship:queued`. Every state that dispatches a shell
 carries it on both sides of that list, so a `SHELL-DEAD` is recordable wherever a shell was
 dispatched. A single-issue lane is a different document: it boots from the committed coder template
 ([`coder.workflow.json`](../../../../packages/fabrika-cli/src/lane/templates/coder.workflow.json)),
-which the key does not gate and which carries the cell in `build`, `build:ui`, `review`,
-`review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no
+which the key does not gate and which carries the cell in `build`, `build:ui`, `build:mixed`,
+`review`, `review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no
 `LAP` cell is `lane report` exit `12` with the log unappended — not a token to retype. Record the
 pre-lap park instead, naming the same cause the table above gives it (`BLOCKED --cause
 replay-conflict` for a `REPLAY-COLLIDED` an epic machine cannot take), and accept what that costs: a
@@ -2080,7 +2091,7 @@ node <fabrika> lane stale
 ```
 
 `lane recover --spawns` records the park itself for the one shape it can prove, and that shape is a
-dead **builder**: a lane standing in `build` or `build:ui` — including an epic lane's child regions —
+dead **builder**: a lane standing in `build`, `build:ui` or `build:mixed` — including an epic lane's child regions —
 whose claim has outlived the builder's own budget with nothing left behind anywhere. Lane 7778 sat
 in that state for five days holding a seat against the cap, because recording its
 `BLOCKED --cause spawn-dead` was a driver's act and its driver was gone. The whole sweep is below,

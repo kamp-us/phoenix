@@ -297,6 +297,19 @@ describe("lane brief", () => {
 		});
 	});
 
+	it("briefs the mixed-builder shell on a `build:mixed` state, still with no PR", async () => {
+		const out = await run(lane("5751", ["WIP"], ["code", "ui"]), [
+			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+			[PR_CLOSERS, closingPulls()],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {state: "build:mixed", shell: "mixed-builder", ground: {_tag: "Pull", pr: null}},
+		});
+	});
+
 	/**
 	 * The seed's whole point: the class stands at the FIRST `WIP`, off the document, with no event
 	 * carrying it. Before a producer existed this lane built in the plain `builder` and reached
