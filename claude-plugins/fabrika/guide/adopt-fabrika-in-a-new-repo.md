@@ -43,14 +43,14 @@ setup is finished**, and nothing in that verb's output says so.
 
 ## 3. Create the surfaces the CLI can create
 
-Ten surface ids are buildable today. Read them off the verb rather than off any prose:
+Eleven surface ids are buildable today. Read them off the verb rather than off any prose:
 
 ```bash
 fabrika status bootstrap --help
 ```
 
 ```
-surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule
+surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule
 ```
 
 One id per invocation. A surface whose content is already in place is `exists` at exit 0, and
@@ -74,7 +74,9 @@ brings in Playwright, adds a few hundred lockfile lines, and the package's `post
 headless Chromium (~130MB) for `fabrika ui render`. pnpm 10 skips that `postinstall` until you
 approve it: run `pnpm approve-builds` and pick `@kampus/fabrika-cli`, or add it to
 `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`. Skip the approval and `ui render`
-refuses with exit `11` until the browser is set up. `hand-check-rule` writes one
+refuses with exit `11` until the browser is set up. `fabrika-config` writes a starting
+`.fabrika.jsonc` when the repo has none and reads no stdin; a file already there is `exists`,
+whatever it holds. [Step 9](#9-add-the-config-file) says what is in it. `hand-check-rule` writes one
 `reviewUi.whenNoPreview` rule into `.fabrika.jsonc` and reads no stdin. A `.fabrika.jsonc` already
 there is edited in place: the rule goes into the text, and every other key and comment stays where
 it was. It is `exists` once the file declares any `reviewUi.whenNoPreview` rule, and a file that
@@ -208,9 +210,26 @@ writing `"standingLanes": []` are the same answer: zero lanes, every issue homes
 `.fabrika.jsonc` at your repo root carries the keys the CLI reads; `fabrika status settings` lists
 every one with its resolved value and whether it came from your file or the shipped default. A key
 you leave out falls back to its shipped default. An absent file, an absent key, an empty array
-and a malformed entry all give the narrowest behaviour, never the permissive one. **Narrowest is
-safe, but it is not always enough to finish a lane.** For the rows below, the default makes a verb
-refuse partway through real work, so write them before your first lane:
+and a malformed entry all give the narrowest behaviour, never the permissive one.
+
+One command writes a starting file when your repo has none:
+
+```bash
+fabrika status bootstrap fabrika-config
+```
+
+```
+bootstrap	created	fabrika-config	.fabrika.jsonc	ok
+```
+
+The file names `codeValidators`, `dependencyReconciler`, `uiSurfaces` and `ci.noProducer`, each at
+its shipped default, with a comment over each saying what that default holds back and what a first
+value looks like. Writing it changes nothing until you edit a value. A `.fabrika.jsonc` already
+there is `exists` at exit 0 and is left as it is. Run it before `hand-check-rule` (below): that
+command also creates the file when it is absent, and then this one has nothing to write.
+
+**Narrowest is safe, but it is not always enough to finish a lane.** For the rows below, the default
+makes a verb refuse partway through real work, so write them before your first lane:
 
 | Key or file | What happens without it | Exit | A first value |
 |---|---|---|---|
