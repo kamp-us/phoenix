@@ -39,7 +39,7 @@ import {
 } from "../guard/codeowners-cp.ts";
 import {CODEOWNERS} from "../guard/codeowners-cp-verb.ts";
 import {CONTROL_PLANE_RE} from "../guard/control-plane-re.ts";
-import {appendText, exists, readFile, writeFile} from "../io/fs.ts";
+import {appendText, exists, readDir, readFile, writeFile} from "../io/fs.ts";
 import type {Attempt, Shell} from "../io/git.ts";
 import {
 	createLabel,
@@ -300,6 +300,14 @@ export type BuildableSurface =
 	  }
 	| {
 			readonly id: string;
+			readonly kind: "workflow";
+			/** GitHub runs a workflow from this file's directory only, so `--path` does not move it. */
+			readonly defaultPath: string;
+			/** The whole file, fixed in the registry. */
+			readonly content: string;
+	  }
+	| {
+			readonly id: string;
 			readonly kind: "labels";
 			/**
 			 * Derived from the resolved board rather than fixed, so a repo that declared its own
@@ -465,7 +473,34 @@ export const OWNERS_FILE_LOCATIONS: ReadonlyArray<string> = [
 	"docs/CODEOWNERS",
 ];
 
-/** Thirteen ids. A fourteenth is a change to this table, not a new rule. */
+/** The one directory GitHub runs workflows from. */
+export const WORKFLOWS_DIR = ".github/workflows";
+
+/**
+ * A workflow file as GitHub reads one: a `.yml` or `.yaml` entry directly in {@link WORKFLOWS_DIR}.
+ * GitHub's "Workflow syntax for GitHub Actions" names both extensions and that one directory.
+ */
+const isWorkflowFile = (name: string): boolean => /\.ya?ml$/.test(name);
+
+/**
+ * The starter CI workflow: one job, run on every pull request, that passes when `README.md` holds
+ * something. The merge step needs one CI run on a pull request, and this is the smallest check a
+ * new repo can pass.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10498
+ */
+export const STARTER_CI_WORKFLOW = `name: ci
+on:
+  pull_request:
+jobs:
+  readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: test -s README.md
+`;
+
+/** Fourteen ids. A fifteenth is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
@@ -504,6 +539,12 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "hand-check-rule", kind: "no-preview-rule", defaultPath: CONFIG_PATH, rule: HAND_CHECK_RULE},
 	{id: "first-milestone", kind: "milestone", title: FIRST_MILESTONE_TITLE},
 	{id: "owners-file", kind: "owners", defaultPath: CODEOWNERS},
+	{
+		id: "ci-file",
+		kind: "workflow",
+		defaultPath: `${WORKFLOWS_DIR}/ci.yml`,
+		content: STARTER_CI_WORKFLOW,
+	},
 ];
 
 const findSurface = (id: string): BuildableSurface | undefined =>
@@ -1100,6 +1141,43 @@ const buildOwners = (
 	});
 
 /**
+ * **A repo with any workflow of its own never gets a second one.** The collision guard is the
+ * directory GitHub runs workflows from, not the target path: a workflow file under any name there is
+ * `exists`, named in the row, and is never read, merged or judged. A directory that is absent, or
+ * holds no workflow file, is the gap the starter is written into.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10498
+ */
+const buildWorkflow = (
+	surface: Extract<BuildableSurface, {kind: "workflow"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		const listed = yield* Effect.result(readDir(path.resolve(input.repoRoot, WORKFLOWS_DIR)));
+		if (Result.isFailure(listed) && !listed.failure.notFound) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot list ${WORKFLOWS_DIR}: ${listed.failure.reason} — whether the repo has a workflow is UNKNOWN, and nothing was written.`,
+			);
+		}
+		const standing = Result.isFailure(listed)
+			? undefined
+			: listed.success.filter(isWorkflowFile).sort()[0];
+		if (standing !== undefined) {
+			return already(surface.id, `${WORKFLOWS_DIR}/${standing}`, input.json);
+		}
+		return yield* writeAndReadBack(
+			surface.id,
+			surface.defaultPath,
+			path.resolve(input.repoRoot, surface.defaultPath),
+			surface.content,
+			input,
+			`created ${surface.defaultPath} for ${surface.id}, read-back conformed.`,
+		);
+	});
+
+/**
  * One write, one re-read, one comparison — the protocol every byte-writing arm here runs. The notice
  * prefix (`created …` / `merged …`) is the caller's, because the arms differ in what landed; extra
  * notices ride the same channel, which is how dep-pin hands over the install command.
@@ -1427,5 +1505,6 @@ export const runBootstrap = (
 	if (surface.kind === "no-preview-rule") return buildNoPreviewRule(surface, input);
 	if (surface.kind === "milestone") return buildMilestone(surface, input);
 	if (surface.kind === "owners") return buildOwners(surface, input);
+	if (surface.kind === "workflow") return buildWorkflow(surface, input);
 	return surface.kind === "labels" ? buildLabels(surface, input) : buildArtifact(surface, input);
 };

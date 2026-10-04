@@ -25,6 +25,13 @@ export const ROADMAP_STEP = "roadmap-focus";
  */
 export const OWNERS_STEP = "owners-file";
 
+/**
+ * The step that writes the starter CI file into a repo with no workflow of its own.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10498
+ */
+export const CI_STEP = "ci-file";
+
 /** The steps every run walks, in order. */
 export const SETUP_STEPS = [
 	"settings-patch",
@@ -34,6 +41,7 @@ export const SETUP_STEPS = [
 	MILESTONE_STEP,
 	ROADMAP_STEP,
 	OWNERS_STEP,
+	CI_STEP,
 ] as const;
 
 /** The step `--hand-check` adds after the others. Without the flag it is never run. */
