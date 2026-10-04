@@ -12,7 +12,13 @@
  *
  * A blocker two chains share is a member of both: nothing here limits an issue to one group.
  *
+ * **A bet keeps its own row.** A row whose Stage is `bet` is a member of no other row's group: an
+ * epic row leaves a bet sub-issue out, and a chain stops at a bet blocker without walking on to that
+ * blocker's own blockers. The bet row still heads its own group, so its spend is counted once, on
+ * the bet. An issue that also reaches the head by a path with no bet on it is still a member.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9856#issuecomment-5852710907
+ * @ruling https://github.com/kamp-us/phoenix/issues/9972#issuecomment-5974135601
  */
 
 /** What the graph says about one issue, as far as groups are concerned. */
@@ -26,6 +32,9 @@ export interface IssueNode {
 }
 
 export type IssueGraph = ReadonlyMap<number, IssueNode>;
+
+/** The issues whose row's Stage is `bet`. Read off the table, since the issue graph cannot say. */
+export type Bets = ReadonlySet<number>;
 
 export const graphOf = (nodes: Iterable<IssueNode>): IssueGraph =>
 	new Map([...nodes].map((node) => [node.number, node] as const));
@@ -68,20 +77,21 @@ const incomplete = (missing: Iterable<number>): Membership => ({
 	missing: ascending(new Set(missing)),
 });
 
-const epicOf = (head: IssueNode, graph: IssueGraph): Membership => {
-	const missing = head.subIssues.filter((child) => !graph.has(child));
+const epicOf = (head: IssueNode, graph: IssueGraph, bets: Bets): Membership => {
+	const own = head.subIssues.filter((child) => !bets.has(child));
+	const missing = own.filter((child) => !graph.has(child));
 	if (missing.length > 0) return incomplete(missing);
-	const members = head.subIssues.filter((child) => graph.get(child)?.open === true);
+	const members = own.filter((child) => graph.get(child)?.open === true);
 	return {_tag: "Derived", group: {_tag: "Epic", head: head.number, members: ascending(members)}};
 };
 
-const chainOf = (head: IssueNode, graph: IssueGraph): Membership => {
+const chainOf = (head: IssueNode, graph: IssueGraph, bets: Bets): Membership => {
 	const members = new Set<number>();
 	const missing = new Set<number>();
 	const queue = [...head.blockedBy];
 	while (queue.length > 0) {
 		const next = queue.shift() as number;
-		if (next === head.number || members.has(next)) continue;
+		if (next === head.number || members.has(next) || bets.has(next)) continue;
 		const node = graph.get(next);
 		if (node === undefined) {
 			missing.add(next);
@@ -105,9 +115,10 @@ const chainOf = (head: IssueNode, graph: IssueGraph): Membership => {
 /**
  * The group `head`'s row stands for, derived from the graph alone. An issue with sub-issues heads
  * an epic row; otherwise one with an open blocker heads a chain row; otherwise it stands alone.
+ * No issue in `bets` is a member, whichever row is asked about; `head` may itself be one.
  */
-export const groupOf = (head: number, graph: IssueGraph): Membership => {
+export const groupOf = (head: number, graph: IssueGraph, bets: Bets): Membership => {
 	const node = graph.get(head);
 	if (node === undefined) return incomplete([head]);
-	return node.subIssues.length > 0 ? epicOf(node, graph) : chainOf(node, graph);
+	return node.subIssues.length > 0 ? epicOf(node, graph, bets) : chainOf(node, graph, bets);
 };

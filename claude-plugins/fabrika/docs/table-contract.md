@@ -143,6 +143,12 @@ chain row for its open `blocked_by` issues followed transitively, both read off 
 run. An open issue with no row gets one: always a real issue item, never a draft, and never a closed
 issue.
 
+A row whose Stage is `bet` is a member of no other row's group. An epic row leaves a `bet` sub-issue
+out, and a chain stops at a `bet` blocker without following that blocker's own blockers. The `bet`
+row keeps its Section and heads its own group, so its spend is counted once, on the bet, and the row
+it blocks or hangs under does not sum it. `table prep`, `table flags` and pitch-guard's bet arm read
+the same groups.
+
 **What it writes per row.**
 
 - Stage `in lane`, or `shipped` once a pull request its records name has merged, but only over an
@@ -282,10 +288,11 @@ Rec (only into an empty cell; see **Rec**) and an In plain words line — the is
 A candidate with open `blocked_by` issues is one chain row over them (followed transitively), and an
 epic one row over its open sub-issues. The row counts once toward the cap, its Size and Rec cover
 every issue in it, its members are added as rows with no Section so they show only in the Group
-members view, and a chosen row a later chain covers moves inside it. For a row where any issue
-carries `ready-for:human`, the Rec prep writes into an empty cell is "needs your pick" with the
-options the issue lists (under an Options heading, or as "Option A: …" lines), never "yes"; a Rec
-the row already holds stays as it reads (see **Rec**).
+members view, and a chosen row a later chain covers moves inside it. A `bet` row is never such a
+member (see **Groups** under `table sync`), so prep leaves its Section as it reads. For a row where
+any issue carries `ready-for:human`, the Rec prep writes into an empty cell is "needs your pick"
+with the options the issue lists (under an Options heading, or as "Option A: …" lines), never "yes";
+a Rec the row already holds stays as it reads (see **Rec**).
 
 An untriaged Customers report (`status:needs-triage` or no label) is never proposed: it is listed
 under `triageFirst` for the driver to triage and proposed on the next run, and one on

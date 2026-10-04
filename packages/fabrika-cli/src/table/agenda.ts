@@ -13,7 +13,8 @@
  * - **A row and its open blockers are one chain row.** Its group comes from {@link groupOf}, so it
  *   counts once toward the cap, its members carry no Section and show only in the members view, and
  *   no candidate is left off because it has blockers. A candidate a chosen row already covers is
- *   not proposed again, and a chosen row a later chain covers moves inside that chain.
+ *   not proposed again, and a chosen row a later chain covers moves inside that chain. A `bet` row
+ *   is the exception: no group takes it as a member, so prep leaves its Section alone.
  * - **A person's answer stands.** A row already `bet`, `not now`, in a lane, shipped or up for its
  *   check is never re-proposed. The one exception is a running bet with a flag: it comes back to
  *   Tails with the flag's rec, its Stage and Size untouched.
@@ -25,6 +26,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  * @ruling https://github.com/kamp-us/phoenix/issues/9989
  * @ruling https://github.com/kamp-us/phoenix/issues/9872#issuecomment-5852556900
+ * @ruling https://github.com/kamp-us/phoenix/issues/9972#issuecomment-5974135601
  */
 
 import type {AppetiteSizes, Size} from "../config/keys/appetite-sizes.ts";

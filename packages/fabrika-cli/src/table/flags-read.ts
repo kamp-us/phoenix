@@ -16,7 +16,7 @@ import {PRECONDITION_UNKNOWN, SCOPE_MISSING} from "./codes.ts";
 import {type HeadRow, type StageCell, sizeOf} from "./flags.ts";
 import {membersOf} from "./group.ts";
 import {FIELD, productBoard} from "./shape.ts";
-import type {Row, SyncNode} from "./sync.ts";
+import {betsOf, type Row, type SyncNode} from "./sync.ts";
 import {type Refusal, readRecords, readScope, rowsOf, type TableBoard} from "./sync-verb.ts";
 
 export interface Heads {
@@ -79,7 +79,7 @@ export const readHeads = <R>(
 		const rows = rowsOf(items.value, repo);
 		const onTable = new Set(rows.keys());
 		const seeds = issues.length > 0 ? issues : [...onTable].sort((a, b) => a - b);
-		const scoped = yield* readScope(board, verb, repo, seeds, onTable);
+		const scoped = yield* readScope(board, verb, repo, seeds, onTable, betsOf(rows));
 		if (scoped._tag === "Refused") return scoped;
 		const read = yield* readRecords(board, verb, repo, scoped, onTable);
 		if (read._tag === "Refused") return read;
