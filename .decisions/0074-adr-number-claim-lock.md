@@ -1,7 +1,7 @@
 ---
 id: 0074
 title: '`/adr` claims its number with an in-flight reservation lock (label akin to ADR 0059), not next-free-on-disk — detect-and-serialize against open ADR PRs, with the ADR 0066 CI dup-check as the backstop'
-status: accepted
+status: amended-in-part by [0456](0456-branch-refs-reserve-adr-ids.md)
 date: 2026-06-16
 tags: [pipeline, skills, adr, decisions, concurrency, agents]
 ---
