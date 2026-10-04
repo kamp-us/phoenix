@@ -353,6 +353,16 @@ describe("every park cause carries a route", () => {
 		expect(routeForCause(cause)).toBe("driver");
 	});
 
+	// Under `parkCause.driverRouted: "clear"` a driver route is one a rationale clears, so either of
+	// these routed `driver` would let a driver clear a wait on the founder by saying so.
+	it.each([
+		"ruling-owed",
+		"founder-act-owed",
+	])("routes %s to the founder, with no verb that removes it", (cause) => {
+		expect(routeForCause(cause)).toBe("founder");
+		expect(remedyForCause(cause)).toBeNull();
+	});
+
 	// Fail-closed: a park nothing named cannot be attributed to machinery, so the derivation may not
 	// claim a driver can work it.
 	it.each([null, "not-a-cause"])("routes an unnamed park (%p) to the founder", (cause) => {

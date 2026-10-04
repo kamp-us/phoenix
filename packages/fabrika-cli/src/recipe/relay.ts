@@ -14,6 +14,7 @@ import {
 	READBACK_MISMATCH as BUILD_READBACK_MISMATCH,
 	WRITE_UNKNOWN as BUILD_WRITE_UNKNOWN,
 } from "../build/codes.ts";
+import {NO_TARGET as DECISION_NO_TARGET} from "../decision/codes.ts";
 import {
 	LANE_ABSENT,
 	APPEND_UNKNOWN as LANE_APPEND_UNKNOWN,
@@ -82,6 +83,16 @@ export const buildExit = (code: number): number => {
 			return PRECONDITION_UNKNOWN;
 	}
 };
+
+/**
+ * This group's seat for a `decision` verb's refusal — today, `decision ruling`'s.
+ *
+ * A proven-absent issue carries across, because both tables import the same base constant for it.
+ * Everything else is {@link PRECONDITION_UNKNOWN}: a roster or a comment list that did not read
+ * says nothing about whether anyone ruled, so the park it was read for holds.
+ */
+export const decisionExit = (code: number): number =>
+	code === DECISION_NO_TARGET ? TARGET_ABSENT : PRECONDITION_UNKNOWN;
 
 /**
  * Re-seat a relayed refusal, keeping the relayed verb's own diagnostics verbatim beneath a line

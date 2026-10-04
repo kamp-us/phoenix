@@ -95,13 +95,14 @@ import {gateOnProof} from "./proof-gate.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {
-	axisIssueForCause,
 	type ConditionalTerminal,
 	causeForEvent,
 	classesForEvent,
 	conditionalTerminal,
 	eventForToken,
 	floorQueueWait,
+	type ParkEvidence,
+	parkEvidenceForCause,
 	serviceAt,
 	tokenCause,
 } from "./report.ts";
@@ -125,6 +126,16 @@ export interface ReportOptions extends LaneRef {
 	 * with any other ([`report.ts`](report.ts)'s `axisIssueForCause`).
 	 */
 	readonly axisIssue: number | null;
+	/**
+	 * The issue a `ruling-owed` park's ruling is owed on; required with that cause and refused with
+	 * any other ([`report.ts`](report.ts)'s `parkEvidenceForCause`).
+	 */
+	readonly rulingIssue: number | null;
+	/**
+	 * The step a `founder-act-owed` park waits on the founder to take; required with that cause and
+	 * refused with any other ([`report.ts`](report.ts)'s `parkEvidenceForCause`).
+	 */
+	readonly founderAct: string | null;
 	/**
 	 * The `lane integrate` exit and the assembly head a `FAIL` out of an epic child's `integrate`
 	 * failed against — required there, refused on every other line
@@ -293,12 +304,9 @@ export const runReport = <R>(
 		if (caused._tag === "Required") {
 			return refuse(PARK_UNCAUSED, `${VERB}: refused (log unappended): ${caused.reason}.`);
 		}
-		const axis = axisIssueForCause(
-			options.axisIssue,
-			caused._tag === "Caused" ? caused.cause : null,
-		);
-		if (axis._tag === "Rejected") {
-			return refuse(CAUSE_UNRECOGNISED, `${VERB}: refused (log unappended): ${axis.reason}.`);
+		const named = parkEvidenceForCause(options, caused._tag === "Caused" ? caused.cause : null);
+		if (named._tag === "Rejected") {
+			return refuse(CAUSE_UNRECOGNISED, `${VERB}: refused (log unappended): ${named.reason}.`);
 		}
 		const classed = classesForEvent(options.classes);
 		if (classed._tag === "Rejected") {
@@ -366,7 +374,7 @@ export const runReport = <R>(
 		// refused for having passed one, because at the moment it typed the flag the park was the only
 		// reading its token had. The line records the route instead.
 		const cause = advanced === null && caused._tag === "Caused" ? caused.cause : null;
-		const axisIssue = cause === null ? null : axis.axisIssue;
+		const parkEvidence: ParkEvidence = cause === null ? {} : named.evidence;
 		const misplaced = integrateEvidenceRefusal(leaf, event, integrate);
 		if (misplaced !== null) {
 			return refuse(INTEGRATE_EVIDENCE, `${VERB}: refused (log unappended): ${misplaced}.`);
@@ -504,7 +512,7 @@ export const runReport = <R>(
 					...(options.pr === null ? {} : {pr: options.pr}),
 					...(options.comment === null ? {} : {comment: options.comment}),
 					...(cause === null ? {} : {cause}),
-					...(axisIssue === null ? {} : {axisIssue}),
+					...parkEvidence,
 					...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 					...(proved.routed.length === 0 ? {} : {routed: proved.routed}),
 					...(proved.routedBasis === undefined ? {} : {routedBasis: proved.routedBasis}),
@@ -530,7 +538,7 @@ export const runReport = <R>(
 							...(options.pr === null ? {} : {pr: options.pr}),
 							...(options.comment === null ? {} : {comment: options.comment}),
 							...(cause === null ? {} : {cause}),
-							...(axisIssue === null ? {} : {axisIssue}),
+							...parkEvidence,
 							...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 							...(proved.routed.length === 0 ? {} : {routed: proved.routed}),
 							...(proved.routedBasis === undefined ? {} : {routedBasis: proved.routedBasis}),

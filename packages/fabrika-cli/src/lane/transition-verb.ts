@@ -48,12 +48,12 @@ import {gateOnProof} from "./proof-gate.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {
-	axisIssueForCause,
 	type CauseResolution,
 	causeForEvent,
 	classesForEvent,
 	type GrantResolution,
 	grantForEvent,
+	parkEvidenceForCause,
 	type RationaleResolution,
 	rationaleForEvent,
 } from "./report.ts";
@@ -79,6 +79,16 @@ export interface TransitionOptions extends LaneRef {
 	 * with any other ([`report.ts`](report.ts)'s `axisIssueForCause`).
 	 */
 	readonly axisIssue: number | null;
+	/**
+	 * The issue a `ruling-owed` park's ruling is owed on; required with that cause and refused with
+	 * any other ([`report.ts`](report.ts)'s `parkEvidenceForCause`).
+	 */
+	readonly rulingIssue: number | null;
+	/**
+	 * The step a `founder-act-owed` park waits on the founder to take; required with that cause and
+	 * refused with any other ([`report.ts`](report.ts)'s `parkEvidenceForCause`).
+	 */
+	readonly founderAct: string | null;
 	/**
 	 * The repo's declared `parkCause`, read by the adapter off the `.fabrika.jsonc` of the repository
 	 * that OWNS the cwd — never the cwd's own copy. The rule is weighed against the shared lane ledger,
@@ -156,12 +166,9 @@ export const runTransition = <R>(
 		if (caused._tag === "Required") {
 			return refuse(PARK_UNCAUSED, `${VERB}: refused (log unappended): ${caused.reason}.`);
 		}
-		const axis = axisIssueForCause(
-			options.axisIssue,
-			caused._tag === "Caused" ? caused.cause : null,
-		);
-		if (axis._tag === "Rejected") {
-			return refuse(CAUSE_UNRECOGNISED, `${VERB}: refused (log unappended): ${axis.reason}.`);
+		const named = parkEvidenceForCause(options, caused._tag === "Caused" ? caused.cause : null);
+		if (named._tag === "Rejected") {
+			return refuse(CAUSE_UNRECOGNISED, `${VERB}: refused (log unappended): ${named.reason}.`);
 		}
 		const classed = classesForEvent(options.classes);
 		if (classed._tag === "Rejected") {
@@ -261,7 +268,7 @@ export const runTransition = <R>(
 				const entry: LogEntry = {
 					...reapplied.entry,
 					...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
-					...(axis.axisIssue === null ? {} : {axisIssue: axis.axisIssue}),
+					...named.evidence,
 					...(reasoned.rationale === null ? {} : {rationale: reasoned.rationale}),
 					...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 					...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
@@ -282,7 +289,7 @@ export const runTransition = <R>(
 							taskAffected: freshTask.taskId,
 							...(classed.classes === null ? {} : {classes: classed.classes}),
 							...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
-							...(axis.axisIssue === null ? {} : {axisIssue: axis.axisIssue}),
+							...named.evidence,
 							...(granted.grant === null ? {} : {waitGrant: granted.grant}),
 							...(reasoned.rationale === null ? {} : {rationale: reasoned.rationale}),
 							...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),

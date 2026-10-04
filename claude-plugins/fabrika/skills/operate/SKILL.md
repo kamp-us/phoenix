@@ -1726,6 +1726,27 @@ an owner-approval wait yourself, name it:
 `lane transition <lane> BLOCKED --task <task> --cause awaiting-cp-approval`. A `ship` park with no
 cause matches no `human:cp-approval` row, so it never clears by reading an approval nobody asked for.
 
+**A lane whose remaining work waits on the founder parks on one of two causes, by what it waits
+for.** The arrival is a builder that backs off with nothing built because the rest of the issue is
+the founder's, often after a `Part of` merge folded the lane back to `queued`. Park it rather than
+spawn a second builder into the same wall:
+
+- **An answer nobody has given**, such as an open question filed elsewhere or two criteria that
+  cannot both hold: `ruling-owed`, with the issue the ruling is owed on, which may be the lane's own.
+  `recipe unpark` clears it once a ruling newer than the park stands on that issue.
+- **A step only the founder may take by hand**, such as a command no agent may run:
+  `founder-act-owed`, with the step in your own words. No read clears it, so `recipe unpark` answers
+  `12` quoting the step, and the lane leaves on a person's `UNBLOCKED`.
+
+```bash
+node <fabrika> lane transition <lane> BLOCKED --task <task> --cause ruling-owed --ruling-issue <n>
+node <fabrika> lane transition <lane> BLOCKED --task <task> --cause founder-act-owed --founder-act "<the step>"
+```
+
+Each cause takes its own flag and refuses the other's. Where the last row can close either way,
+name the one that matches what your park comment asks for. A `type:decision` lane waiting on its
+own ruling uses neither: that wait has its own token.
+
 **A `verdict-owed` park needs a verdict before it needs a clear.** A namespace the ship gate
 requires has no binding verdict at the PR's head, usually because the head moved after review. The
 fold reads `human:cp-approval`, and no cell out of it reaches `review`: `UNBLOCKED` returns to
@@ -1757,13 +1778,14 @@ verb reads the cause for you:
 node <fabrika> recipe unpark <lane-key> --task <task>
 ```
 
-The table it keys on holds twelve rows today: `human:cp-approval` twice — once keyed on
+The table it keys on holds thirteen rows today: `human:cp-approval` twice — once keyed on
 `awaiting-cp-approval`, the owner-approval wait, and once on `head-ci-red`, which is the shipper's
 route to `heal-ci` folding to the same leaf —
 `human:queue-stall`, and `blocked` carrying one of `head-ci-red` (a reviewer that parked on a red
 head, cleared on a green one with no verdict read), `worktree-holds-branch`, `spawn-dead`,
 `no-rendered-delta`, `no-preview-routed`, `render-axis-missing` (a rendered review that could
-not reach a state, cleared once the axis issue it names is closed), `tree-hijacked`,
+not reach a state, cleared once the axis issue it names is closed), `ruling-owed` (cleared once a
+ruling newer than the park stands on the issue it names), `tree-hijacked`,
 `claim-stranded`, or `campaign-paused`, a legacy row that
 clears a lane parked on it before campaigns became themes and that no park records now. Reading which one
 matched is the verb's answer, not a list you maintain here — the rows live in

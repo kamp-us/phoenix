@@ -801,6 +801,57 @@ export const PARK_CAUSES = {
 		route: "founder",
 		remedy: null,
 	},
+	/**
+	 * What is left of the lane's issue cannot be built until somebody rules on it, and nobody has: an
+	 * open question filed elsewhere, or two criteria on its own issue that cannot both hold. The
+	 * builder backs off with nothing built, and a second builder sent in meets the same wall.
+	 *
+	 * This is not the decision-lane token, which the second issue cited below asks for. A
+	 * `type:decision` lane waiting on its own ruling comment keeps a separate token with a separate
+	 * clearing read, because `build claim` there needs a ruling that is still current to cite. Every
+	 * other lane type parks on this one.
+	 *
+	 * The park line names the issue the ruling is owed on ({@link RULING_ISSUE_CAUSES}), which may be
+	 * the lane's own. Its `KNOWN_PARKS` row clears once a ruling marker newer than the park stands on
+	 * that issue.
+	 *
+	 * No remedy: a verb that removed this cause would be making the ruling.
+	 *
+	 * Route `founder`: a ruling is a product call, and no driver may make one.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10290#issuecomment-5974131397
+	 * @ruling https://github.com/kamp-us/phoenix/issues/8983 asks for the decision-lane token.
+	 */
+	"ruling-owed": {
+		meaning:
+			"the lane's remaining work waits on a ruling nobody has made yet, on the issue the park names",
+		route: "founder",
+		remedy: null,
+	},
+	/**
+	 * What is left of the lane's issue is a step only the founder may do by hand — the lane-9281
+	 * shape, whose last row is a credential rotation no agent may run. Nothing is undecided: the
+	 * step is known, and the only thing missing is the founder doing it.
+	 *
+	 * Distinct from `ruling-owed`, which waits on an answer. A lane whose last row can close either
+	 * way takes whichever of the two matches what its driver is asking for.
+	 *
+	 * The park line records the step itself ({@link FOUNDER_ACT_CAUSES}), so the park says what it
+	 * waits on without anyone reading the issue. It carries no `KNOWN_PARKS` row on purpose: no read
+	 * proves a person ran a command, so the park leaves only on a person's own `UNBLOCKED`.
+	 *
+	 * No remedy: a verb that removed this cause would be running the step no agent may run.
+	 *
+	 * Route `founder`: the step is the founder's own to take.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10290
+	 */
+	"founder-act-owed": {
+		meaning:
+			"the lane's remaining work is a step only the founder may do by hand, which the park names",
+		route: "founder",
+		remedy: null,
+	},
 } as const satisfies Record<string, ParkCauseEntry>;
 
 export type ParkCause = keyof typeof PARK_CAUSES;
@@ -918,35 +969,188 @@ export type AxisIssueResolution =
 	| {readonly _tag: "Named"; readonly axisIssue: number | null}
 	| {readonly _tag: "Rejected"; readonly reason: string};
 
+/** One issue-pointer flag: the causes that take it, and what its issue is, for a refusal to quote. */
+interface IssuePointer {
+	readonly flag: string;
+	readonly causes: ReadonlySet<ParkCause>;
+	/** What the park waits on and how to name it, completing `"<cause>" waits on …`. */
+	readonly waitsOn: string;
+}
+
+type IssuePointerResolution =
+	| {readonly _tag: "Named"; readonly issue: number | null}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
 /**
- * Resolve one `--axis-issue` against the cause the same line records.
+ * Resolve one issue-pointer flag against the cause the same line records.
  *
- * Both directions refuse. A cause in {@link AXIS_ISSUE_CAUSES} with no issue is a park nothing can
- * clear, because the row has no issue to read. An issue beside any other cause is seated on a line
- * no row reads, so it records a claim nothing will check.
+ * Both directions refuse. A cause that takes the pointer with no issue is a park nothing can clear,
+ * because the row has no issue to read. An issue beside any other cause is seated on a line no row
+ * reads, so it records a claim nothing will check.
  */
-export const axisIssueForCause = (
+const issuePointerFor = (
+	pointer: IssuePointer,
 	raw: number | null,
 	cause: ParkCause | null,
-): AxisIssueResolution => {
-	const takes = causeTakesAxisIssue(cause);
+): IssuePointerResolution => {
+	const takes = cause !== null && pointer.causes.has(cause);
 	if (raw === null) {
 		return takes
-			? {
-					_tag: "Rejected",
-					reason: `"${cause}" waits on the open issue that tracks the missing render axis — pass --axis-issue <number>, filing that issue first if none exists`,
-				}
-			: {_tag: "Named", axisIssue: null};
+			? {_tag: "Rejected", reason: `"${cause}" waits on ${pointer.waitsOn}`}
+			: {_tag: "Named", issue: null};
 	}
 	if (!takes) {
 		return {
 			_tag: "Rejected",
-			reason: `--axis-issue names the issue a ${[...AXIS_ISSUE_CAUSES].join("/")} park waits on, and this line records ${cause === null ? "no cause" : `"${cause}"`} — drop --axis-issue ${raw}`,
+			reason: `${pointer.flag} names the issue a ${[...pointer.causes].join("/")} park waits on, and this line records ${cause === null ? "no cause" : `"${cause}"`} — drop ${pointer.flag} ${raw}`,
 		};
 	}
 	return Number.isInteger(raw) && raw > 0
-		? {_tag: "Named", axisIssue: raw}
-		: {_tag: "Rejected", reason: `--axis-issue ${raw} is no issue number`};
+		? {_tag: "Named", issue: raw}
+		: {_tag: "Rejected", reason: `${pointer.flag} ${raw} is no issue number`};
+};
+
+/** Resolve one `--axis-issue` against the cause the same line records ({@link issuePointerFor}). */
+export const axisIssueForCause = (
+	raw: number | null,
+	cause: ParkCause | null,
+): AxisIssueResolution => {
+	const resolved = issuePointerFor(
+		{
+			flag: "--axis-issue",
+			causes: AXIS_ISSUE_CAUSES,
+			waitsOn:
+				"the open issue that tracks the missing render axis — pass --axis-issue <number>, filing that issue first if none exists",
+		},
+		raw,
+		cause,
+	);
+	return resolved._tag === "Named" ? {_tag: "Named", axisIssue: resolved.issue} : resolved;
+};
+
+/**
+ * The causes whose park waits on a ruling, so the park line names the issue that ruling is owed on
+ * as `rulingIssue` — required with one of these causes and refused with any other.
+ *
+ * Its own field rather than `axisIssue`, because the two are read differently: an axis issue clears
+ * its park by closing, and a ruling issue by carrying a ruling marker newer than the park. One field
+ * for both would let a row read the wrong one.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10290#issuecomment-5974131397
+ */
+export const RULING_ISSUE_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>(["ruling-owed"]);
+
+/** Whether a recorded cause makes its park line carry a `rulingIssue`. */
+export const causeTakesRulingIssue = (cause: string | null): boolean =>
+	cause !== null && RULING_ISSUE_CAUSES.has(cause as ParkCause);
+
+/**
+ * The causes whose park waits on a step the founder takes by hand, so the park line records that
+ * step as `founderAct` — required with one of these causes and refused with any other.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10290
+ */
+export const FOUNDER_ACT_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>(["founder-act-owed"]);
+
+/** Whether a recorded cause makes its park line carry a `founderAct`. */
+export const causeTakesFounderAct = (cause: string | null): boolean =>
+	cause !== null && FOUNDER_ACT_CAUSES.has(cause as ParkCause);
+
+/**
+ * What a park line carries beside its cause — the facts a later read of that park needs and the
+ * cause token alone cannot hold. Each field is present exactly when the cause takes it.
+ */
+export interface ParkEvidence {
+	readonly axisIssue?: number;
+	readonly rulingIssue?: number;
+	readonly founderAct?: string;
+}
+
+/** The evidence flags as a recorder passed them, `null` where a flag was left off. */
+export interface ParkEvidenceFlags {
+	readonly axisIssue: number | null;
+	readonly rulingIssue: number | null;
+	readonly founderAct: string | null;
+}
+
+/** The flags of a line that records no park evidence — every event but a park one of these names. */
+export const NO_PARK_EVIDENCE: ParkEvidenceFlags = {
+	axisIssue: null,
+	rulingIssue: null,
+	founderAct: null,
+};
+
+export type ParkEvidenceResolution =
+	| {readonly _tag: "Named"; readonly evidence: ParkEvidence}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+type FounderActResolution =
+	| {readonly _tag: "Named"; readonly founderAct: string | null}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+/**
+ * Resolve one `--founder-act` against the cause the same line records.
+ *
+ * A blank step is refused as an absent one: the field exists so the park says what it waits on, and
+ * a line naming a step of nothing says nothing.
+ */
+const founderActForCause = (raw: string | null, cause: ParkCause | null): FounderActResolution => {
+	const takes = causeTakesFounderAct(cause);
+	const step = raw === null ? null : raw.trim();
+	if (step === null || step === "") {
+		if (takes) {
+			return {
+				_tag: "Rejected",
+				reason: `"${cause}" waits on a step the founder takes by hand — pass --founder-act "<the step>" saying what that step is`,
+			};
+		}
+		return step === null
+			? {_tag: "Named", founderAct: null}
+			: {_tag: "Rejected", reason: "--founder-act says nothing — drop it"};
+	}
+	if (!takes) {
+		return {
+			_tag: "Rejected",
+			reason: `--founder-act records the step a ${[...FOUNDER_ACT_CAUSES].join("/")} park waits on, and this line records ${cause === null ? "no cause" : `"${cause}"`} — drop --founder-act`,
+		};
+	}
+	return {_tag: "Named", founderAct: step};
+};
+
+/**
+ * Resolve every evidence flag against the cause the same line records.
+ *
+ * Each flag belongs to its own causes and to no other, in both directions, which is what keeps one
+ * token from standing in for another: a ruling park cannot be recorded with a step in place of its
+ * issue, and a founder's-step park cannot be recorded with an issue in place of its step.
+ */
+export const parkEvidenceForCause = (
+	flags: ParkEvidenceFlags,
+	cause: ParkCause | null,
+): ParkEvidenceResolution => {
+	const axis = axisIssueForCause(flags.axisIssue, cause);
+	if (axis._tag === "Rejected") return axis;
+	const ruling = issuePointerFor(
+		{
+			flag: "--ruling-issue",
+			causes: RULING_ISSUE_CAUSES,
+			waitsOn:
+				"a ruling on one issue — pass --ruling-issue <number> naming the issue the ruling is owed on, which may be the lane's own",
+		},
+		flags.rulingIssue,
+		cause,
+	);
+	if (ruling._tag === "Rejected") return ruling;
+	const act = founderActForCause(flags.founderAct, cause);
+	if (act._tag === "Rejected") return act;
+	return {
+		_tag: "Named",
+		evidence: {
+			...(axis.axisIssue === null ? {} : {axisIssue: axis.axisIssue}),
+			...(ruling.issue === null ? {} : {rulingIssue: ruling.issue}),
+			...(act.founderAct === null ? {} : {founderAct: act.founderAct}),
+		},
+	};
 };
 
 /** The causes a recorder may pass, for a refusal's listing — sorted so the listing is deterministic. */

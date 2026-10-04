@@ -130,12 +130,25 @@ describe("the closed park-cause set --cause advertises", () => {
 		);
 	});
 
-	it("offers the two spent-budget parks, the two base machinery causes, the queue ejection, the red head, the rendered gate's five, the unlanded write, the builder's two mechanical stops, the owner-approval wait, the verdict the head owes and the size stop beside the six that predate them", () => {
+	it.each([
+		"transition",
+		"report",
+	])("lane %s offers a flag for each of the two parks that wait on the founder", (leaf) => {
+		const help = flagHelp(leafNamed(leaf));
+
+		expect(help).toMatch(/issue the ruling[^"]*required with --cause ruling-owed/);
+		expect(help).toMatch(
+			/step only the founder may take[^"]*required with --cause founder-act-owed/,
+		);
+	});
+
+	it("offers the two spent-budget parks, the two base machinery causes, the queue ejection, the red head, the rendered gate's five, the unlanded write, the builder's two mechanical stops, the owner-approval wait, the verdict the head owes, the size stop and the two waits on the founder beside the six that predate them", () => {
 		expect([...PARK_CAUSE_TOKENS]).toEqual([
 			"assembly-conflict",
 			"awaiting-cp-approval",
 			"base-conflicted",
 			"claim-stranded",
+			"founder-act-owed",
 			"head-behind-base",
 			"head-ci-red",
 			"no-design-manifest",
@@ -147,6 +160,7 @@ describe("the closed park-cause set --cause advertises", () => {
 			"repair-budget-spent",
 			"replay-budget-spent",
 			"replay-conflict",
+			"ruling-owed",
 			"size-stop",
 			"spawn-dead",
 			"tree-hijacked",

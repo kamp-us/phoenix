@@ -48,6 +48,8 @@ const run = (fs: ReturnType<typeof fakeFs>) =>
 					task: null,
 					cause: null,
 					axisIssue: null,
+					rulingIssue: null,
+					founderAct: null,
 					parkCause: parkCauseRead(),
 					classes: [],
 					waitGrant: null,

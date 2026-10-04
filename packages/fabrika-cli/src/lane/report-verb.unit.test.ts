@@ -72,6 +72,8 @@ const run = (
 		comment?: string | null;
 		cause?: string | null;
 		axisIssue?: number | null;
+		rulingIssue?: number | null;
+		founderAct?: string | null;
 		parkCause?: Read<ParkCauseSurface>;
 		classes?: ReadonlyArray<string>;
 		prover?: ReturnType<typeof fakeProver> | ReturnType<typeof fakeProverByEvent>;
@@ -93,6 +95,8 @@ const run = (
 					comment: extra.comment ?? null,
 					cause: extra.cause ?? null,
 					axisIssue: extra.axisIssue ?? null,
+					rulingIssue: extra.rulingIssue ?? null,
+					founderAct: extra.founderAct ?? null,
 					integrateExit: extra.integrateExit ?? null,
 					assemblyHead: extra.assemblyHead ?? null,
 					parkCause: extra.parkCause ?? parkCauseRead(),
@@ -596,6 +600,54 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 		const fs = laneAt(LOG_AT["review:ui"]);
 
 		const out = await run(fs, "CANT-SEE", {cause: "render-axis-missing"});
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("records a builder's STOPPED that waits on a ruling, with the issue it is owed on", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "STOPPED", {
+			parkCause: strict,
+			cause: "ruling-owed",
+			rulingIssue: 42,
+		});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "ruling-owed",
+			rulingIssue: 42,
+		});
+	});
+
+	it("records a builder's STOPPED that waits on the founder's own step, with the step", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "STOPPED", {
+			parkCause: strict,
+			cause: "founder-act-owed",
+			founderAct: "run the timed reap pass on the operator clone",
+		});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "founder-act-owed",
+			founderAct: "run the timed reap pass on the operator clone",
+		});
+	});
+
+	it.each([
+		["ruling-owed", {}],
+		["ruling-owed", {founderAct: "rotate the logins"}],
+		["founder-act-owed", {}],
+		["founder-act-owed", {rulingIssue: 42}],
+	] as const)("refuses a STOPPED on %s carrying %j, log unappended", async (cause, owed) => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "STOPPED", {parkCause: strict, cause, ...owed});
 
 		expect(out.code).toBe(CAUSE_UNRECOGNISED);
 		expect(fs.written.size).toBe(0);

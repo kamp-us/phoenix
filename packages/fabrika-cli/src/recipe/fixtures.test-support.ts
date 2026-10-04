@@ -151,6 +151,28 @@ export const PARKED_ON_RENDER_AXIS = [
 	.map((entry) => `${JSON.stringify(entry)}\n`)
 	.join("");
 
+/**
+ * queued → build → blocked on `ruling-owed`, naming `rulingIssue` and parked at `at` — the time a
+ * ruling marker has to be newer than for the park to clear.
+ */
+export const parkedOnRuling = (rulingIssue: number, at: string): string =>
+	eventLog("WIP") +
+	`${JSON.stringify({task: "issue", event: "ISSUE.BLOCKED", at, cause: "ruling-owed", rulingIssue})}\n`;
+
+/** The step {@link PARKED_ON_FOUNDER_ACT} waits on — the lane-9281 shape, a command no agent runs. */
+export const FOUNDER_ACT = "node packages/preview-seed/src/bin.ts rotate-logins";
+
+/** queued → build → blocked on `founder-act-owed`, recording {@link FOUNDER_ACT}. */
+export const PARKED_ON_FOUNDER_ACT =
+	eventLog("WIP") +
+	`${JSON.stringify({
+		task: "issue",
+		event: "ISSUE.BLOCKED",
+		at: "2026-08-16T00:01:00.000Z",
+		cause: "founder-act-owed",
+		founderAct: FOUNDER_ACT,
+	})}\n`;
+
 /** The milestone {@link LANE}'s issue is homed on, and the one a campaign row pins. */
 export const LANE_MILESTONE = 49;
 

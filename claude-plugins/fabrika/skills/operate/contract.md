@@ -73,9 +73,20 @@ append it, and refuse on the prover's own code with the log byte-identical. The 
   it costs a human UNBLOCKED.
 - `--axis-issue <n>` names the open issue a `render-axis-missing` park waits on, and lands on the
   same line as `axisIssue`. That cause requires it, and every other cause refuses it.
+- `--ruling-issue <n>` names the issue a `ruling-owed` park's ruling is owed on, which may be the
+  lane's own, and lands on the same line as `rulingIssue`. That cause requires it, and every other
+  cause refuses it.
+- `--founder-act "<step>"` records the step a `founder-act-owed` park waits on the founder to take,
+  trimmed, and lands on the same line as `founderAct`. That cause requires it, a blank one counts as
+  missing, and every other cause refuses it.
+- The two causes are separate on purpose and neither stands in for the other: `ruling-owed` beside a
+  step, and `founder-act-owed` beside an issue, both refuse. Neither is the token for a
+  `type:decision` lane waiting on its own ruling.
 - `35` — `--cause` is outside the closed park-cause set, or rides on an event that is neither
   BLOCKED nor the machinery LAP; or `--axis-issue` is missing beside `render-axis-missing`, present
-  beside any other cause, or no issue number.
+  beside any other cause, or no issue number; or `--ruling-issue` fails the same three ways beside
+  `ruling-owed`; or `--founder-act` is missing or blank beside `founder-act-owed`, or present beside
+  any other cause.
 - `52` — a BLOCKED names no cause at all, under a repo declaring `parkCause.uncaused: "refuse"`.
   Name one from the closed set; the log is unappended.
 - A repeatable `--class` lands the lane classes standing at the event on the same line. It is the
@@ -2177,6 +2188,19 @@ nothing and is novel.
   `mechanism` of `axis-closed:#<issue>`, so the reviewer renders again with the axis built. Open is
   `13` with nothing written, a park naming no axis issue or an axis issue proven absent is `7`, and
   a read that fails is `11`.
+- The ruling park (`blocked` keyed `ruling-owed`) waits on a ruling, on the issue the park line
+  names as `rulingIssue`. Its read is `decision ruling <rulingIssue>` relayed, and what decides is
+  the `state` and `at` on that verb's stdout, never its exit code, which is `0` on `absent` too. It
+  clears when the marker's `at` is later than the park line's own `at`, in `state: current` or
+  `state: stale`, back into the state the lane parked out of, with a `mechanism` of
+  `ruling-made:#<issue> <state> at <at>`. `stale` clears because re-triaging an issue after its
+  ruling rewrites the body the marker bound. `absent`, and a marker not later than the park, are
+  `13` with nothing written: an issue can already carry an older ruling when its lane parks. A
+  roster or a comment list that cannot be read, and an answer whose `state` or `at` does not read,
+  are `11`. A park naming no ruling issue, or one proven absent, is `7`.
+- The founder's-step park (`blocked` keyed `founder-act-owed`) has no row and never clears here,
+  whatever `parkCause.driverRouted` says: no read proves a person took a step by hand. It refuses at
+  `12` naming the cause and quoting the recorded step, and leaves on a person's `UNBLOCKED`.
 - The `queue-stall` park is the one row whose clear also GRANTS. Its read is `ship reconcile`'s
   answer relayed, where `landed` and `ejected` clear and `unresolved` is exit `13`. Because the park
   IS a spent wait budget, the clear records the waits it buys on the very same `UNBLOCKED` — one
@@ -2210,7 +2234,7 @@ a clear that granted and `rationale` on one the driver named. `clearance` is the
 | Code | Trigger |
 |---|---|
 | `4` | a lane record was read in full and is not the shape |
-| `7` | no lane there; the PR the park waits on is proven absent, or closed where the row needs it open — the `queue-stall` row nominates at open-or-merged scope, since a landed PR is closed; or the lane's issue is absent, homed on no milestone, or homed on one no `## Campaigns` row pins; or a `render-axis-missing` park names no axis issue, or the one it names is proven absent |
+| `7` | no lane there; the PR the park waits on is proven absent, or closed where the row needs it open — the `queue-stall` row nominates at open-or-merged scope, since a landed PR is closed; or the lane's issue is absent, homed on no milestone, or homed on one no `## Campaigns` row pins; or a `render-axis-missing` park names no axis issue, or the one it names is proven absent; or a `ruling-owed` park names no ruling issue, or the one it names is proven absent |
 | `8` | the `UNBLOCKED` or `FAIL` append did not land — it is NOT recorded |
 | `9` | the append landed and the re-fold does not prove the clear or the repair route — the lane needs a human |
 | `11` | a precondition could not be read — UNKNOWN, never cleared. `parkCause` itself is one, and so is the repository identity its owning root is derived from, since a cwd whose repository will not read leaves the declaration unresolved rather than guessed at the cwd |

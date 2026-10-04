@@ -22,6 +22,12 @@ export type LeafRead =
 			readonly cause: string | null;
 			/** The issue the park waits on, off `context.<task>.axisIssue`; `null` where none stands. */
 			readonly axisIssue: number | null;
+			/** The issue the park's ruling is owed on, off `context.<task>.rulingIssue`; else `null`. */
+			readonly rulingIssue: number | null;
+			/** When that ruling park was recorded, off `context.<task>.parkedAt`; else `null`. */
+			readonly parkedAt: string | null;
+			/** The founder's step the park waits on, off `context.<task>.founderAct`; else `null`. */
+			readonly founderAct: string | null;
 	  }
 	| {readonly _tag: "Finished"; readonly terminal: string}
 	| {readonly _tag: "Unreadable"; readonly reason: string};
@@ -47,10 +53,24 @@ const causeOf = (parsed: Readonly<Record<string, unknown>>, task: string): strin
 	return entry !== null && typeof entry.cause === "string" ? entry.cause : null;
 };
 
-/** The axis issue `lane status` folded onto one task, or `null`, read as {@link causeOf} reads. */
-const axisIssueOf = (parsed: Readonly<Record<string, unknown>>, task: string): number | null => {
+/** One issue number `lane status` folded onto a task, or `null`, read as {@link causeOf} reads. */
+const issueOn = (
+	parsed: Readonly<Record<string, unknown>>,
+	task: string,
+	field: "axisIssue" | "rulingIssue",
+): number | null => {
 	const entry = contextOf(parsed, task);
-	return entry !== null && Number.isInteger(entry.axisIssue) ? (entry.axisIssue as number) : null;
+	return entry !== null && Number.isInteger(entry[field]) ? (entry[field] as number) : null;
+};
+
+/** One line of text `lane status` folded onto a task, or `null`, read as {@link causeOf} reads. */
+const textOn = (
+	parsed: Readonly<Record<string, unknown>>,
+	task: string,
+	field: "parkedAt" | "founderAct",
+): string | null => {
+	const entry = contextOf(parsed, task);
+	return entry !== null && typeof entry[field] === "string" ? (entry[field] as string) : null;
 };
 
 const contextOf = (
@@ -97,7 +117,10 @@ export const leafOf = (stdout: string, requested: string | null): LeafRead => {
 				task,
 				leaf,
 				cause: causeOf(parsed, task),
-				axisIssue: axisIssueOf(parsed, task),
+				axisIssue: issueOn(parsed, task, "axisIssue"),
+				rulingIssue: issueOn(parsed, task, "rulingIssue"),
+				parkedAt: textOn(parsed, task, "parkedAt"),
+				founderAct: textOn(parsed, task, "founderAct"),
 			}
 		: {_tag: "Unreadable", reason: `task "${task}" carries no leaf state`};
 };

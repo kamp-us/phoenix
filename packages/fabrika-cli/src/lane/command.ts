@@ -85,7 +85,13 @@ import {recordBoard, runRecord} from "./record-verb.ts";
 import {queueReadOf, runRecover} from "./recover-verb.ts";
 import {runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
-import {AXIS_ISSUE_CAUSES, classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
+import {
+	AXIS_ISSUE_CAUSES,
+	classesForEvent,
+	FOUNDER_ACT_CAUSES,
+	PARK_CAUSE_TOKENS,
+	RULING_ISSUE_CAUSES,
+} from "./report.ts";
 import {issueCloser, runReport} from "./report-verb.ts";
 import {runRetrigger} from "./retrigger-verb.ts";
 import {runLaneScratch} from "./scratch-verb.ts";
@@ -247,6 +253,22 @@ const axisIssueFlag = Flag.integer("axis-issue").pipe(
 	),
 );
 
+/** The issue a `ruling-owed` park's ruling is owed on, on the same two verbs `--cause` rides. */
+const rulingIssueFlag = Flag.integer("ruling-issue").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		`the issue the ruling this park waits on is owed on, which may be the lane's own — required with --cause ${[...RULING_ISSUE_CAUSES].join("/")} and refused with any other cause, both at exit 35 with the log unappended. \`recipe unpark\` reads \`decision ruling\` on it and clears the park once a ruling newer than the park stands there.`,
+	),
+);
+
+/** The step a `founder-act-owed` park waits on, on the same two verbs `--cause` rides. */
+const founderActFlag = Flag.string("founder-act").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		`the step only the founder may take that this park waits on, in your own words (the command, or the act) — required with --cause ${[...FOUNDER_ACT_CAUSES].join("/")} and refused with any other cause, both at exit 35 with the log unappended. No read proves the step was taken, so \`recipe unpark\` never clears this park: it quotes the step and routes to a person.`,
+	),
+);
+
 /**
  * The lane classes standing at the event being recorded, on the same two appending verbs.
  *
@@ -298,6 +320,8 @@ const transition = leafCommand(
 		),
 		cause: causeFlag,
 		axisIssue: axisIssueFlag,
+		rulingIssue: rulingIssueFlag,
+		founderAct: founderActFlag,
 		classes: classFlag,
 		grantWait: Flag.integer("grant-wait").pipe(
 			Flag.optional,
@@ -320,6 +344,8 @@ const transition = leafCommand(
 		task,
 		cause,
 		axisIssue,
+		rulingIssue,
+		founderAct,
 		classes,
 		grantWait,
 		rationale,
@@ -340,6 +366,8 @@ const transition = leafCommand(
 						task: Option.getOrNull(task),
 						cause: Option.getOrNull(cause),
 						axisIssue: Option.getOrNull(axisIssue),
+						rulingIssue: Option.getOrNull(rulingIssue),
+						founderAct: Option.getOrNull(founderAct),
 						parkCause,
 						classes,
 						waitGrant: Option.getOrNull(grantWait),
@@ -547,6 +575,8 @@ const report = leafCommand(
 		),
 		cause: causeFlag,
 		axisIssue: axisIssueFlag,
+		rulingIssue: rulingIssueFlag,
+		founderAct: founderActFlag,
 		classes: classFlag,
 		integrateExit: Flag.integer("integrate-exit").pipe(
 			Flag.optional,
@@ -576,6 +606,8 @@ const report = leafCommand(
 		comment,
 		cause,
 		axisIssue,
+		rulingIssue,
+		founderAct,
 		classes,
 		integrateExit,
 		assemblyHead,
@@ -598,6 +630,8 @@ const report = leafCommand(
 						comment: Option.getOrNull(comment),
 						cause: Option.getOrNull(cause),
 						axisIssue: Option.getOrNull(axisIssue),
+						rulingIssue: Option.getOrNull(rulingIssue),
+						founderAct: Option.getOrNull(founderAct),
 						integrateExit: Option.getOrNull(integrateExit),
 						assemblyHead: Option.getOrNull(assemblyHead),
 						parkCause,

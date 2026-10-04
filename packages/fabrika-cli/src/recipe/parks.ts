@@ -40,7 +40,8 @@ export type Clearance =
 	| "ci-green"
 	| "head-green"
 	| "route-satisfied"
-	| "axis-closed";
+	| "axis-closed"
+	| "ruling-made";
 
 export interface ParkRecipe {
 	/** The lane leaf state this recipe clears. */
@@ -95,7 +96,7 @@ export interface ParkRecipe {
 export const QUEUE_MOVED_GRANT = 1;
 
 /**
- * The parks with a fixed fix today: one keyed by its leaf, eleven by their cause.
+ * The parks with a fixed fix today: one keyed by its leaf, twelve by their cause.
  *
  * `human:cp-approval` + `awaiting-cp-approval`'s clearance is `ship cp-approval`'s own discharge
  * table, relayed rather than re-derived — the §CP cardinality question has exactly one answer in this
@@ -179,6 +180,17 @@ export const QUEUE_MOVED_GRANT = 1;
  * `axis-closed` clears once that issue reads closed. A retry before then re-dispatches `review:ui`
  * into the same gap, which is why this park does not clear on a driver's rationale. It names no
  * remedy: building the axis is that issue's own work.
+ *
+ * `blocked` + `ruling-owed` reads another issue too, and reads it differently: the park line names
+ * the issue a ruling is owed on (`rulingIssue`), and `ruling-made` relays `decision ruling` on it.
+ * It clears on a ruling marker dated after the park, in `current` or `stale` — an issue can carry an
+ * older ruling when the lane parks, so a marker alone would clear the park the moment it is
+ * recorded. It names no remedy: a recipe that "removed" this cause would be making the ruling.
+ *
+ * `founder-act-owed` has no row, and that is the decision rather than a gap: no read proves a
+ * person took a step by hand, so that park leaves on a person's `UNBLOCKED` and nothing else.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10290#issuecomment-5974131397
  */
 /**
  * One row, with its route and its remedy read off the cause table rather than written down a second
@@ -273,6 +285,12 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		clearance: "axis-closed",
 		waitingOn:
 			"the issue tracking the render axis this review could not reach to close, so the render can reach the state",
+	}),
+	row({
+		park: "blocked",
+		cause: "ruling-owed",
+		clearance: "ruling-made",
+		waitingOn: "a ruling made after the lane parked, on the issue the park names",
 	}),
 ];
 

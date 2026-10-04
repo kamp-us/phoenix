@@ -31,7 +31,13 @@ import {
 	OPERATOR_EVENTS,
 	type TaskState,
 } from "./machine.ts";
-import {causeTakesAxisIssue, ROUTED_MACHINERY_CAUSES} from "./report.ts";
+import {
+	causeTakesAxisIssue,
+	causeTakesFounderAct,
+	causeTakesRulingIssue,
+	type ParkEvidence,
+	ROUTED_MACHINERY_CAUSES,
+} from "./report.ts";
 
 /**
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
@@ -102,6 +108,17 @@ export interface LogEntry {
 	 * cause is one `report.ts`'s `AXIS_ISSUE_CAUSES` names.
 	 */
 	readonly axisIssue?: number;
+	/**
+	 * The issue a `ruling-owed` park's ruling is owed on — the number `recipe unpark` reads a ruling
+	 * marker off. Present exactly when the line's cause is one `report.ts`'s `RULING_ISSUE_CAUSES`
+	 * names.
+	 */
+	readonly rulingIssue?: number;
+	/**
+	 * The step a `founder-act-owed` park waits on the founder to take, in the recorder's own words.
+	 * Present exactly when the line's cause is one `report.ts`'s `FOUNDER_ACT_CAUSES` names.
+	 */
+	readonly founderAct?: string;
 	readonly round?: number;
 	readonly classes?: ReadonlyArray<string>;
 	readonly deferred?: ReadonlyArray<string>;
@@ -237,6 +254,8 @@ export const parseLog = (text: string): ParseLogResult => {
 			cause?: unknown;
 			rationale?: unknown;
 			axisIssue?: unknown;
+			rulingIssue?: unknown;
+			founderAct?: unknown;
 			round?: unknown;
 			classes?: unknown;
 			deferred?: unknown;
@@ -284,7 +303,8 @@ export const parseLog = (text: string): ParseLogResult => {
 		}
 		// The axis issue is what the park's clear reads, so a line whose cause takes one and carries
 		// none is a park nothing can clear, and one riding any other cause is a claim nothing checks.
-		const takesAxis = causeTakesAxisIssue(typeof record.cause === "string" ? record.cause : null);
+		const parkedOn = typeof record.cause === "string" ? record.cause : null;
+		const takesAxis = causeTakesAxisIssue(parkedOn);
 		if (
 			record.axisIssue !== undefined &&
 			!(Number.isInteger(record.axisIssue) && (record.axisIssue as number) > 0)
@@ -297,6 +317,40 @@ export const parseLog = (text: string): ParseLogResult => {
 				takesAxis
 					? `line ${index + 1} parks on "${String(record.cause)}" and names no \`axisIssue\` — the issue that park waits on`
 					: `line ${index + 1} carries \`axisIssue\` beside a cause that waits on no issue`,
+			);
+			continue;
+		}
+		// The ruling park's two fields hold to the axis issue's rule, for its reason: the row reads the
+		// issue, and a person reads the step.
+		const takesRuling = causeTakesRulingIssue(parkedOn);
+		if (
+			record.rulingIssue !== undefined &&
+			!(Number.isInteger(record.rulingIssue) && (record.rulingIssue as number) > 0)
+		) {
+			defects.push(`line ${index + 1} carries a \`rulingIssue\` that is no issue number`);
+			continue;
+		}
+		if (takesRuling !== (record.rulingIssue !== undefined)) {
+			defects.push(
+				takesRuling
+					? `line ${index + 1} parks on "${String(record.cause)}" and names no \`rulingIssue\` — the issue that ruling is owed on`
+					: `line ${index + 1} carries \`rulingIssue\` beside a cause that waits on no ruling`,
+			);
+			continue;
+		}
+		const takesAct = causeTakesFounderAct(parkedOn);
+		if (
+			record.founderAct !== undefined &&
+			!(typeof record.founderAct === "string" && record.founderAct.trim() !== "")
+		) {
+			defects.push(`line ${index + 1} carries a \`founderAct\` field that says nothing`);
+			continue;
+		}
+		if (takesAct !== (record.founderAct !== undefined)) {
+			defects.push(
+				takesAct
+					? `line ${index + 1} parks on "${String(record.cause)}" and names no \`founderAct\` — the step that park waits on`
+					: `line ${index + 1} carries \`founderAct\` beside a cause that waits on no founder's step`,
 			);
 			continue;
 		}
@@ -544,6 +598,8 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.cause === undefined ? {} : {cause: record.cause}),
 			...(record.rationale === undefined ? {} : {rationale: record.rationale as string}),
 			...(record.axisIssue === undefined ? {} : {axisIssue: record.axisIssue as number}),
+			...(record.rulingIssue === undefined ? {} : {rulingIssue: record.rulingIssue as number}),
+			...(record.founderAct === undefined ? {} : {founderAct: record.founderAct as string}),
 			...(record.round === undefined ? {} : {round: record.round as number}),
 			...(record.classes === undefined ? {} : {classes: record.classes as ReadonlyArray<string>}),
 			...(record.deferred === undefined
@@ -748,26 +804,53 @@ export const standingRationales = (
 ): Readonly<Record<string, string>> => standingField(entries, "rationale");
 
 /**
- * The axis issue standing over each task — the `axisIssue` on that task's latest entry, when it
- * carries one. It stands exactly while the park that named it does, derived the way
- * {@link standingCauses} is.
+ * A standing park's evidence as the status carries it: the fields the park line recorded, and
+ * `parkedAt` beside a `rulingIssue`, because that park clears on a ruling newer than the park itself
+ * and the time it parked is the other half of that comparison.
  */
-export const standingAxisIssues = (
-	entries: ReadonlyArray<LogEntry>,
-): Readonly<Record<string, number>> => standingField(entries, "axisIssue");
+export interface StandingParkEvidence extends ParkEvidence {
+	readonly parkedAt?: string;
+}
 
-const standingField = <K extends "cause" | "rationale" | "axisIssue">(
+/**
+ * The park evidence standing over each task — what that task's latest entry recorded beside its
+ * cause. It stands exactly while the park that named it does, derived the way
+ * {@link standingCauses} is. A task whose latest entry carries none has no key here.
+ */
+export const standingParkEvidence = (
 	entries: ReadonlyArray<LogEntry>,
-	field: K,
-): Readonly<Record<string, NonNullable<LogEntry[K]>>> => {
+): Readonly<Record<string, StandingParkEvidence>> => {
+	const standing: Record<string, StandingParkEvidence> = {};
+	for (const [task, entry] of Object.entries(latestEntries(entries))) {
+		const evidence: StandingParkEvidence = {
+			...(entry.axisIssue === undefined ? {} : {axisIssue: entry.axisIssue}),
+			...(entry.rulingIssue === undefined
+				? {}
+				: {rulingIssue: entry.rulingIssue, parkedAt: entry.at}),
+			...(entry.founderAct === undefined ? {} : {founderAct: entry.founderAct}),
+		};
+		if (Object.keys(evidence).length > 0) standing[task] = evidence;
+	}
+	return standing;
+};
+
+/** Each task's latest entry that says something about the task itself. */
+const latestEntries = (entries: ReadonlyArray<LogEntry>): Readonly<Record<string, LogEntry>> => {
 	const latest: Record<string, LogEntry> = {};
 	for (const entry of entries) {
 		const bare = bareEvent(entry.event);
 		if (bare === CLEARED_EVENT || bare === CORRECTED_EVENT || bare === AMENDED_EVENT) continue;
 		latest[entry.task] = entry;
 	}
+	return latest;
+};
+
+const standingField = <K extends "cause" | "rationale">(
+	entries: ReadonlyArray<LogEntry>,
+	field: K,
+): Readonly<Record<string, NonNullable<LogEntry[K]>>> => {
 	const standing: Record<string, NonNullable<LogEntry[K]>> = {};
-	for (const [task, entry] of Object.entries(latest)) {
+	for (const [task, entry] of Object.entries(latestEntries(entries))) {
 		const value = entry[field];
 		if (value !== undefined) standing[task] = value as NonNullable<LogEntry[K]>;
 	}
@@ -786,7 +869,7 @@ export const deriveStatus = (
 	states: Readonly<Record<string, TaskState>>,
 	causes: Readonly<Record<string, string>> = {},
 	rationales: Readonly<Record<string, string>> = {},
-	axisIssues: Readonly<Record<string, number>> = {},
+	parkEvidence: Readonly<Record<string, StandingParkEvidence>> = {},
 ): LaneStatus => {
 	const errors = Object.entries(states)
 		.filter(([taskId, state]) => taskIn(lane, taskId).errorFinals.has(state.type))
@@ -795,7 +878,6 @@ export const deriveStatus = (
 	for (const [taskId, state] of Object.entries(states)) {
 		const cause = causes[taskId];
 		const rationale = rationales[taskId];
-		const axisIssue = axisIssues[taskId];
 		context[taskId] = {
 			retries: state.retries,
 			maxRetries: state.maxRetries,
@@ -814,7 +896,7 @@ export const deriveStatus = (
 			...taskIn(lane, taskId).extras,
 			...(cause === undefined ? {} : {cause}),
 			...(rationale === undefined ? {} : {rationale}),
-			...(axisIssue === undefined ? {} : {axisIssue}),
+			...parkEvidence[taskId],
 		};
 	}
 	context.errors = errors;

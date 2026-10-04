@@ -2,6 +2,19 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
+import {bodyDigest} from "../decision/digest.ts";
+import {
+	acl,
+	BODY,
+	issueRead,
+	RULER,
+	COMMENTS as RULING_COMMENTS,
+	ISSUE as RULING_ISSUE,
+	ISSUE_READ as RULING_ISSUE_READ,
+	MEMBERS as RULING_MEMBERS,
+	RULING_URL,
+	comments as rulingComments,
+} from "../decision/fixtures.test-support.ts";
 import {
 	configOnPlatform,
 	errOut,
@@ -38,6 +51,8 @@ import {
 } from "../ship/fixtures.test-support.ts";
 import {ADDED} from "../ship/queue.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
+import {emit as emitRuling, markedIssue, rulingUrl, scopeDigest} from "../wire/decision-ruling.ts";
+import {markerTime} from "../wire/grill-marker.ts";
 import {
 	NOT_PARKED,
 	PARK_HOLDS,
@@ -56,6 +71,7 @@ import {
 	closingPulls,
 	closingPullsIn,
 	eventLog,
+	FOUNDER_ACT,
 	httpError,
 	LANE,
 	LANE_BRANCH,
@@ -72,11 +88,13 @@ import {
 	PARKED_IN_REVIEW_ON_CI_RED,
 	PARKED_ON_CAMPAIGN,
 	PARKED_ON_CI_RED,
+	PARKED_ON_FOUNDER_ACT,
 	PARKED_ON_RENDER_AXIS,
 	PARKED_ON_ROUTED_UI,
 	PARKED_ON_SPAWN,
 	PARKED_ON_WORKTREE,
 	parkedBlockedOn,
+	parkedOnRuling,
 	WORKFLOW,
 	worktreeList,
 } from "./fixtures.test-support.ts";
@@ -1656,6 +1674,108 @@ describe("recipe unpark — a render-axis park clears once its axis issue closes
 		const out = await run(fs, [], [[AXIS, httpError(500)]]);
 
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("recipe unpark — a ruling park clears once a ruling newer than the park stands", () => {
+	const BEFORE_RULING = "2026-08-16T00:01:00.000Z";
+	const AFTER_RULING = "2026-08-21T00:00:00.000Z";
+	const ruled = (digest: string): string =>
+		emitRuling({
+			issue: markedIssue(RULING_ISSUE) ?? (0 as never),
+			digest: scopeDigest(digest) ?? ("" as never),
+			ruling: rulingUrl(RULING_URL) ?? ("" as never),
+			supersedes: null,
+			at: markerTime("2026-08-20T05:11:02Z") ?? ("" as never),
+		});
+	const board = (
+		...rows: ReadonlyArray<readonly [number, string, string]>
+	): ReadonlyArray<Scripted> => [
+		[RULING_ISSUE_READ, issueRead(["type:bug"])],
+		[RULING_COMMENTS, rulingComments(...rows)],
+		...acl,
+	];
+	const MARKER = [900002, RULER, ruled(bodyDigest(BODY))] as const;
+
+	it("clears back into build on a current marker dated after the park", async () => {
+		const fs = lane(parkedOnRuling(RULING_ISSUE, BEFORE_RULING));
+
+		const out = await run(fs, [], board(MARKER));
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "ruling-made",
+			mechanism: `ruling-made:#${RULING_ISSUE} current at 2026-08-20T05:11:02Z`,
+			current: "build",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	// Re-triage after a ruling rewrites the body the marker bound, which is the ordinary path: the
+	// ruling the lane waited for was made, so a stale read still clears.
+	it("clears on a stale marker dated after the park", async () => {
+		const fs = lane(parkedOnRuling(RULING_ISSUE, BEFORE_RULING));
+
+		const out = await run(fs, [], board([900002, RULER, ruled("aaaaaaaaaaaa")]));
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).mechanism).toContain("stale");
+	});
+
+	it("is PARK_HOLDS, never the bare-BLOCKED refusal, while nobody has ruled", async () => {
+		const fs = lane(parkedOnRuling(RULING_ISSUE, BEFORE_RULING));
+
+		const out = await run(fs, [], board([900002, RULER, "Still thinking.\n"]));
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toContain("no ruling marker stands");
+		expect(out.stderr.join("\n")).not.toContain("a bare BLOCKED park");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_HOLDS on a marker older than the park — the ruling the issue already carried", async () => {
+		const fs = lane(parkedOnRuling(RULING_ISSUE, AFTER_RULING));
+
+		const out = await run(fs, [], board(MARKER));
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toContain("not later than the park");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it.each([
+		["the roster", RULING_MEMBERS],
+		["the comment list", RULING_COMMENTS],
+	])("is UNKNOWN when %s cannot be read — never a cleared park", async (_name, unread) => {
+		const fs = lane(parkedOnRuling(RULING_ISSUE, BEFORE_RULING));
+
+		const out = await run(fs, [], [[unread, httpError(502)], ...board(MARKER)]);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("recipe unpark — a park on the founder's own step never clears on a read", () => {
+	it.each([
+		["a founder-routed repo", parkCauseRead(), null],
+		[
+			"a repo that lets drivers clear, with a rationale",
+			parkCauseRead("record", "clear"),
+			"he ran it",
+		],
+	])("is PARK_NOVEL naming the cause and the step under %s", async (_name, parkCause, rationale) => {
+		const fs = lane(PARKED_ON_FOUNDER_ACT);
+
+		const out = await run(fs, [], [], null, parkCause, rationale);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		const said = out.stderr.join("\n");
+		expect(said).toContain('"founder-act-owed"');
+		expect(said).toContain(FOUNDER_ACT);
+		expect(said).not.toContain("a bare BLOCKED park");
 		expect(fs.written.size).toBe(0);
 	});
 });
