@@ -33,9 +33,16 @@ export interface NoteSubject {
 
 const nearMissLine = (subject: NoteSubject, miss: NearMiss): string => {
 	const link = `[This comment](https://github.com/${subject.repo}/pull/${subject.pr}#issuecomment-${miss.comment.id}) by \`${miss.comment.author}\``;
-	return miss.fact === "screenshot"
-		? `- ${link} names the right commit but has no screenshot image.`
-		: `- ${link} names the right commit and has a screenshot, but \`${miss.comment.author}\` is not an owner.`;
+	switch (miss.fact) {
+		case "screenshot":
+			return `- ${link} names the right commit but has no screenshot image.`;
+		case "author":
+			return `- ${link} names the right commit and has a screenshot, but \`${miss.comment.author}\` is not an owner.`;
+		case "evidence":
+			return `- ${link} names the right commit and has a screenshot, but it is the builder's own evidence comment, which an agent posts.`;
+		case "stamp":
+			return `- ${link} names the right commit and has a screenshot, but it carries an agent's stamp, so an agent posted it.`;
+	}
 };
 
 /** The note under a `hand-check` rule with no admitted comment at `head`. */

@@ -49,6 +49,19 @@ describe("handCheckNote", () => {
 		expect(note).toContain("#issuecomment-12) by `agent`");
 		expect(note).toContain("`agent` is not an owner");
 	});
+
+	it("says when an owner account's comment was refused as an agent's", () => {
+		const note = handCheckNote(SUBJECT, HEAD, [
+			{comment: comment("", "owner", 13), fact: "evidence"},
+			{comment: comment("", "owner", 14), fact: "stamp"},
+		]);
+		expect(note).toContain(
+			"#issuecomment-13) by `owner` names the right commit and has a screenshot, but it is the builder's own evidence comment",
+		);
+		expect(note).toContain(
+			"#issuecomment-14) by `owner` names the right commit and has a screenshot, but it carries an agent's stamp",
+		);
+	});
 });
 
 describe("noteLines", () => {

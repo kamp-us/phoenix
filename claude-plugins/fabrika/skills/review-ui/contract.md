@@ -1122,7 +1122,7 @@ heads have diverged, because the platform's three-dot compare then answers from 
 the range was never read at all. With `--no-preview`, the mode is resolved right after the `ui`
 class (`21` on `require-render`); the comments read then checks that no preview is announced
 (`23`, or `11` when the announcement does not read) and, under `hand-check`, admits the owner's
-hand-check (`21` with none found, `22` when a pinned one fails a fact), both before the text
+hand-check (`21` with none found, `22` when a pinned one is not admitted), both before the text
 verdict. Compose the record's first
 line through the `routed-elsewhere` wire format, leak-scan the assembled comment (`5`/`6`), upsert
 one record for this namespace on the emitter's own comment, and read it back from live state (`9` on
@@ -1175,13 +1175,16 @@ announcement that does not read is `11`. So `--no-preview` is never the caller's
   refusal still holds; an absent text verdict does not refuse.
 - `hand-check` needs the owner's hand-check. **The owner's hand-check is admissible evidence here**:
   a comment on this PR, by an account on the control-plane roster `.github/CODEOWNERS` names, that
-  names the PR's exact head (a 7–40 hex prefix of it) and carries at least one screenshot. The verb
-  reads the PR's comments and stands on the newest one that passes all four facts; with none, it
-  refuses on `21`. `--hand-check <comment>` pins one instead, and a pinned comment that fails a fact
-  refuses on `22`. It stands in for the render the way a desk run does, so it rests on a standing
-  `review-code` PASS at `--sha` too (`20` without one). The record carries `basis:hand-check` and a
-  closing line naming the comment and its author. Under a `skip` mode a pinned hand-check is checked
-  the same way and recorded as `hand-check`.
+  names the PR's exact head (a 7–40 hex prefix of it) and carries at least one screenshot. Two kinds
+  of comment pass those four facts and are refused as an agent's: the builder's own `ui evidence`
+  comment, recognised by the header that verb writes, and a comment carrying an agent stamp, read
+  over the body with its screenshots removed. The verb reads the PR's comments and stands on the
+  newest one it admits; with none, it refuses on `21`. `--hand-check <comment>` pins one instead,
+  and a pinned comment that fails a fact or is one of the two refused kinds refuses on `22`. It
+  stands in for the render the way a desk run does, so it rests on a standing `review-code` PASS at
+  `--sha` too (`20` without one). The record carries `basis:hand-check` and a closing line naming
+  the comment and its author. Under a `skip` mode a pinned hand-check is checked the same way and
+  recorded as `hand-check`.
 
 **A `21`, and a `22`, carries the note for the PR on stderr.** The lines between
 `----- note begins -----` and `----- note ends -----` are the body the skill sends to
@@ -1189,9 +1192,10 @@ announcement that does not read is `11`. So `--no-preview` is never the caller's
 `hand-check` it carries a comment to paste with the live head filled in, says that the comment needs
 a screenshot image, that an owner posts it and an agent does not, and that a new push needs a new
 one. It then lists up to three of the newest comments that name the head and fail exactly one other
-fact, each with the fact it failed: an owner's comment with no screenshot, or a screenshot from an
-account off the roster. A comment that fails both is not an attempt and is not listed, and neither is
-a verdict or an earlier copy of this note. The pasteable comment holds a text placeholder where the
+thing, each with what it failed: an owner's comment with no screenshot, a screenshot from an
+account off the roster, or an owner account's screenshot that is one of the two kinds refused as an
+agent's. A comment that fails more than one is not an attempt and is not listed, and neither is a
+verdict or an earlier copy of this note. The pasteable comment holds a text placeholder where the
 image goes, never image markup, so the note cannot be admitted as the hand-check it asks for. Under
 `require-render` the note names the files that set the mode and lists the four ways through: a
 preview deploy, the builder's own run of the app, a `hand-check` rule, a `skip` rule.
@@ -1222,7 +1226,7 @@ relocate the defect. This verb takes the judgment as `--clause` plus a body and 
 | `12` | the live head moved past `--sha` — the diff you read is gone; or a `ui`-class file changed between `--verified-at` and `--sha`, so the hand-verification is spent |
 | `20` | the `review-code` verdict in force at `--sha` is a FAIL, or a route resting on `--verified-at` or an owner's hand-check has no `review-code` verdict binding that head |
 | `21` | a `--no-preview` route the repo's `reviewUi.whenNoPreview` rules do not admit: the PR resolves `require-render`, or `hand-check` with no owner's hand-check at the head on the PR |
-| `22` | the `--hand-check` comment is not an owner's hand-check: not on this PR, not by a control-plane account, naming no head this PR is at, or carrying no screenshot |
+| `22` | the `--hand-check` comment is not an owner's hand-check: not on this PR, not by a control-plane account, naming no head this PR is at, carrying no screenshot, the builder's own `ui evidence` comment, or carrying an agent stamp |
 | `23` | a `--no-preview` route over a PR that announces a preview, at the head, behind it, or for several apps |
 
 **Errors**

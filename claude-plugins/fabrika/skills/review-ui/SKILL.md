@@ -83,15 +83,15 @@ to reach the head. It then resolves the mode over the PR's `ui` files:
 - `hand-check` posts a record flagged `basis:hand-check`. **When a `hand-check` rule matches, the
   owner's hand-check is admissible evidence**: a comment on the PR by a control-plane account that
   names the exact head and carries screenshots. The verb reads the PR's comments, stands on the
-  newest one that passes all four facts, and names it in its answer's `handCheck`. You do not look
-  for it yourself. With none at this head it refuses on `21`. `--hand-check <comment-id>` pins
-  one comment instead, and `22` says which fact it fails.
+  newest one it admits, and names it in its answer's `handCheck`. You do not look for it yourself.
+  With none at this head it refuses on `21`. `--hand-check <comment-id>` pins one comment instead,
+  and `22` says why it is not admitted.
 - `require-render` refuses on `21`: the rules owe a render.
 
 **A `21` or `22` prints the note the owner reads, and you post it as printed.** It sits on stderr
 between `----- note begins -----` and `----- note ends -----`: what is owed in everyday words, and
 under `hand-check` a comment to paste with the head filled in plus the newest comments that came
-close, up to three, and the fact each failed. When you end CANT-SEE on that refusal, send those lines to
+close, up to three, and why each did not count. When you end CANT-SEE on that refusal, send those lines to
 `fabrika review-ui note $pr_number` unchanged, and add what you observed below them, never in
 place of them.
 

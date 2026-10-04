@@ -110,6 +110,14 @@ the refusal reads exactly as it does above, and either way you never invoke anot
 mid-run to cover a law you lack — a ticket whose class the seed got wrong stops here and the lane
 re-spawns the right shell.
 
+**When the rendered-visual refusal fires, your stop note is read by a person at a prompt.** Say in
+plain words why you stopped — the issue has a screen, and this command builds text only — then give
+one next step: the command `/fabrika:operate <n>`, written with the issue's real number, which picks
+the builder from the issue's labels. That command is the note's whole next step. An agent shell is
+not something a person can type, so the note names none as a thing to run or re-spawn — not
+`fabrika:mixed-builder`, not `fabrika:ui-builder`. You do not run `operate` or `build-ui` yourself:
+release any claim you hold and end `STOPPED`.
+
 This skill is not a router: on its own text surfaces
 it executes the whole loop itself. In pick mode neither the argument nor your caller gave you a
 number, so the one `pick` returned stands in its place everywhere below. Then gate your choice:

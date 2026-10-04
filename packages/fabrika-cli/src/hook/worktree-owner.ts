@@ -63,7 +63,7 @@ const VERB = "fabrika hook worktree-create";
 
 /** The hook's own budget is 600s; each child gets most of it, so a slow install is not a timeout. */
 export const GIT_TIMEOUT_SECONDS = 540;
-export const CAPTURE_BYTES = 64 * 1024;
+const CAPTURE_BYTES = 64 * 1024;
 
 /** The proof deps landed. The install writes the virtual store; a clean SKIP writes nothing. */
 const VIRTUAL_STORE = "node_modules/.pnpm";
@@ -71,7 +71,7 @@ const VIRTUAL_STORE = "node_modules/.pnpm";
 export type Requirements = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem;
 
 /** The child's diagnostics, trimmed to one quotable line for the refusal that names them. */
-export const firstLine = (bytes: Uint8Array): string => {
+const firstLine = (bytes: Uint8Array): string => {
 	const text = new TextDecoder().decode(bytes);
 	return (text.split("\n").find((line) => line.trim() !== "") ?? "").trim();
 };
