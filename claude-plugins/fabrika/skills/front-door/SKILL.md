@@ -75,8 +75,8 @@ The readout carries only two headline counts, so the other buckets are **not see
 until you run this. Report them that way.
 
 A `board` field of `absent` is a proven negative, not an unread source: the label set was read and
-the labels it names are not on it. That is a gap to build in step 3 with
-`fabrika status bootstrap label-taxonomy`, never the unreadable-source terminal.
+the labels it names are not on it. That is a gap to build in step 3 with `fabrika setup`, whose
+label steps create them, never the unreadable-source terminal.
 
 **The lanes field's deeper read is `fabrika lane stale --claims`.** It additionally pairs each
 non-terminal lane with the claim standing on its issue, which is the other half a dead session
@@ -139,6 +139,22 @@ Two readings that are easy to collapse and must not be:
   once, and so is the label taxonomy. What you can build is the contract's buildable-surface registry
   (`fabrika wire doc-section --heading "status bootstrap" < <skill-base>/contract.md`), nothing else.
 
+<!-- anchor: SETUP-FIRST --> **A repo that is not set up gets `fabrika setup` first.** When the
+readout shows `wiring` at `unwired` or `board` at `absent`, run it before anything else here:
+
+```bash
+fabrika setup
+```
+
+It runs the six steps that need no answer from the owner, in order: `settings-patch`,
+`label-taxonomy`, `issue-shape-markers`, `gitignore-row`, `owners-file` and `ci-file`. A step
+already in place reads `exists`, so a part-set-up repo is safe. Relay its closing to the person as
+it printed it: what happened, the three lines to paste, and the home step. It commits nothing, so
+those lines are the person's to run. A step that refuses stops the run on that step's own code, and
+the terminals below read it as they read a `status bootstrap` refusal (the codes:
+`fabrika wire doc-section --heading "setup" < <skill-base>/contract.md`). Each step stays
+reachable alone as `fabrika status bootstrap <step>`.
+
 Then **converse** — you are human-typed, so a human is present. Take one gap at a time:
 
 - **A gap you can build**, you build. Draft the content by **inference from what the repo already
@@ -157,8 +173,12 @@ Then **converse** — you are human-typed, so a human is present. Take one gap a
   the normal review only; a run that skips the screen check says so when it ends; and one step
   turns screen review on. Then ask whether they want it on now. On a **no**, or no answer, write
   nothing: off is a fine place to start, and the step is there later. On a **yes**, ask where the
-  screens live, a folder or a file, and run `fabrika status bootstrap hand-check-rule --screens
-  <path>` (below), once per path if there are several. Then tell the owner what they will be asked
+  screens live, a folder or a file, and run `fabrika setup --hand-check --screens <path>` (below),
+  with one `--screens` per path if there are several. That run is the six setup steps plus
+  `hand-check-rule`. Any of the six already in place reads `exists`, and any still missing is
+  written now, which can happen when `SETUP-FIRST` did not run: the owners file, the CI file, the
+  ignore row or the marker labels. Relay the closing's rows and lines exactly as this run printed
+  them; its add line names `.fabrika.jsonc`. Then tell the owner what they will be asked
   from now on: when a pull request changes a file under that path, the run stops, and they run the
   app, look at the screen, and post a screenshot on the pull request. A repo whose `uiSurfaces`
   already carries a row needs no `--screens`. At `hand-check` or `preview` the repo has already
@@ -175,30 +195,20 @@ EOF
 ```
 
 ```bash
-fabrika status bootstrap hand-check-rule --screens index.html
+fabrika setup --hand-check --screens index.html
 # status bootstrap: created .fabrika.jsonc for hand-check-rule with `reviewUi.mode` hand-check and 1 `reviewUi.screens` path(s), read-back conformed.
 ```
 
 That setting counts once `.fabrika.jsonc` is committed to the default branch, so say so with the
 other setup files.
 
-<!-- anchor: MACHINE-READ-SURFACE --> **`roadmap-focus` is the exception to "draft by inference".**
-`ROADMAP.md` is read by machine — `triage homes` joins the repo's open milestones to its `## Arcs`
-and `## Campaigns` rows by the `#<number>` in each row's **second** cell, never by the title — so a
-plausible-looking draft joins nothing. The content (which arcs, which campaigns) is still yours and
-the human's; the *shape* is not. Read the grammar before drafting — it is stated in full in the same
-section the registry lives in (`fabrika wire doc-section --heading "status bootstrap" <
-<skill-base>/contract.md`) — then read the row count back off the notice:
-
-```bash
-fabrika status bootstrap roadmap-focus <<'EOF'
-…the roadmap you and the human settled on…
-EOF
-# status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 1 arc, 0 campaigns.
-```
-
-`0 arcs` is written and conformed, and it is also a roadmap nothing can join — fix it now rather
-than leaving `triage homes` to refuse over it in some later session.
+<!-- anchor: NO-MILESTONE-NO-ROADMAP --> **You open no milestone and write no roadmap.** Giving work
+a home is the owner's own step, by hand: `fabrika setup` leaves it out on purpose, and its closing
+names that step. When the owner asks about it, or `triage homes` refuses
+for want of an open milestone, point them at the getting-started guide's step
+["Give the board a home to put work in"](../../guide/getting-started.md#5-give-the-board-a-home-to-put-work-in).
+It opens the milestone with `gh api`, writes `ROADMAP.md` with the owner's arc in it, and checks
+the result with `fabrika triage homes`.
 
 <!-- anchor: DESIGN-LAW-IS-REPO-CONTENT --> **The design law is repo content, never skill content.**
 A design manifest is one repo's own instance. Write what *this* repo's evidence supports; a pillar
@@ -227,7 +237,8 @@ never held.
 
 <!-- anchor: CAPABILITIES --> This skill **opens no pull request, creates no branch, pushes nothing
 and merges nothing** — every terminal below leaves the branch untouched, because it cannot touch one.
-It holds a shell and a repo-scoped token. Its only writes are `status bootstrap`'s — a repo file, the
+It holds a shell and a repo-scoped token. Its only writes are `status bootstrap`'s, run alone or
+through `fabrika setup` — a repo file, the
 board label set, or the durable readout artifact — each read back after writing, and it emits no
 cross-lane signal. The first `fabrika status open` call is read-only: it takes no stdin and writes
 nothing.
