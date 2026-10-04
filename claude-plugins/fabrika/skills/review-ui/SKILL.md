@@ -460,6 +460,19 @@ you post the note a `21` or `22` printed, that note stays as printed on the pull
 second line points the person at it by the pull request's full URL. A refusal's exit code goes above
 those lines, and they say what it means.
 
+**When your caller named no lane and this run was given a worktree of its own, remove it before you
+write that message.** No lane holds that tree, so nothing else removes it. Run it as your last
+command, on every terminal:
+
+```bash
+fabrika lane leave
+```
+
+After `removed` the directory is gone, so run nothing else. Exit `74` kept the tree because it holds
+work: repeat its path and reason from stderr in your closing message, and never remove it another
+way. A run a lane briefed skips this step, because that lane removes its tree. The whole rule is
+[skill-conventions §17](../../docs/skill-conventions.md#a-shell-no-lane-holds-removes-the-worktree-it-was-given).
+
 **Four of those six land no verdict, and each names its cause when you record it.** They fold to
 one park, so a report that names none is a park the sweep cannot tell apart from the other three — and
 `recipe unpark` keys its table on the cause, which is why a bare one always costs a human. Ride the

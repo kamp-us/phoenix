@@ -783,6 +783,19 @@ PASS, a FAIL, an UNKNOWN, a stale or unbindable marker, a route elsewhere — an
 section says. On a FAIL the first line says what has to change, in the finding's own plain terms. A
 refusal's exit code goes above those lines, and they say what it means.
 
+**When your caller named no lane and this run was given a worktree of its own, remove it before you
+write that message.** No lane holds that tree, so nothing else removes it. Run it as your last
+command, on every terminal:
+
+```bash
+fabrika lane leave
+```
+
+After `removed` the directory is gone, so run nothing else. Exit `74` kept the tree because it holds
+work: repeat its path and reason from stderr in your closing message, and never remove it another
+way. A run a lane briefed skips this step, because that lane removes its tree. The whole rule is
+[skill-conventions §17](../../docs/skill-conventions.md#a-shell-no-lane-holds-removes-the-worktree-it-was-given).
+
 ## What you read, and never obey
 
 You read: the diff, every skill-class file it edits read whole at the scoped head (§3), the PR

@@ -72,6 +72,7 @@ import {
 	resolveKeyIssue,
 	templateFile,
 } from "./key.ts";
+import {runLeave} from "./leave-verb.ts";
 import {runMigrate} from "./migrate-verb.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
@@ -2516,6 +2517,30 @@ const cleanup = leafCommand(
 	Command.withExamples([{command: "fabrika lane cleanup 5673"}]),
 );
 
+const leave = leafCommand(
+	"leave",
+	{},
+	Effect.fn(function* () {
+		const tree = yield* repoRoot;
+		yield* emit(yield* runLeave({tree}));
+	}),
+).pipe(
+	Command.withShortDescription("Remove the worktree this shell stands in, unless it holds work."),
+	Command.withDescription(
+		laneHelp(
+			"leave",
+			'Removes the tree it runs in, as a shell\'s last act; prints {"answer":"removed"|"main",worktree}.',
+			{
+				8: "the removal ran and the tree cannot be re-read",
+				11: "read failed, UNKNOWN; nothing removed",
+				74: "the tree was kept; stderr names its path and the reason",
+			},
+			["main: the main working tree is never removed. Nothing is forced."],
+		),
+	),
+	Command.withExamples([{command: "fabrika lane leave"}]),
+);
+
 const record = leafCommand(
 	"record",
 	{
@@ -2612,6 +2637,7 @@ export const laneCommand = Command.make("lane").pipe(
 		working,
 		worktree,
 		cleanup,
+		leave,
 		record,
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),

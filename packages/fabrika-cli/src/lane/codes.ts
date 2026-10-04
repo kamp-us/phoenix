@@ -739,6 +739,8 @@ export const NOT_DIAGNOSED = 73;
  * declined the plain removal. Every kept tree is named on
  * stderr with its reason, and every other recorded tree was still removed. Nothing was forced.
  *
+ * `lane leave` answers the same code when it kept the one tree it runs in, under the same rule.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/10340
  */
 export const TREES_KEPT = 74;

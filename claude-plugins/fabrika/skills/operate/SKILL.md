@@ -31,7 +31,8 @@ comment), the driven issue's row fields on the Projects table that `lane record`
 writes through `table sync`, the `ship disarm --site post-enqueue` a `parked` read at
 `ship:queued` owes, whatever a recipe verb writes on
 its own account (step 3's chore row), the removal of the worktrees the lane recorded through
-`lane cleanup` (step 4), and, **on an epic lane only**, that run's assembly branch: you
+`lane cleanup` and of the one this run was given through `lane leave` (step 4), and, **on an epic
+lane only**, that run's assembly branch: you
 merge a passing child into it, push it, and open the one draft PR (step 2's `integrate`). Never a
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
 branch — that one is `ship`'s, once, at the tail.
@@ -1766,20 +1767,22 @@ removes it.
 
 Exit `0` removed every recorded tree it could reach. Exit `74` kept at least one, because it still
 holds work or its shell is still in flight, and removed the rest. Your own tree prints as `left`,
-because no process removes the tree it runs in. A tree an earlier driver of this lane recorded prints as `left` too: nothing here
-proves that driver's shell returned, so its own caller removes it. The epic assembly worktree is
-outside this verb and keeps the rule above.
-**Copy every `kept` and `left` line from stderr into your closing line**, path and reason, on either
-exit: a `left` tree is handed to your caller, who is outside it, and a `kept` one holds work
-somebody has to look at or a shell that is still running. A kept tree is neither a park nor a retry. **Every other non-zero exit is
+because you still stand in it: you remove it yourself after the release, below. A tree an earlier
+driver of this lane recorded prints as `left` too: nothing here proves that driver's shell returned,
+and that driver removes its own when its run ends. The epic assembly worktree is outside this verb
+and keeps the rule above.
+**Copy every `kept` line from stderr into your closing line**, path and reason, on either exit, and
+every `left` line that names a tree other than your own: a `kept` one holds work somebody has to
+look at or a shell that is still running, and another driver's tree is one the person may have to
+chase. A kept tree is neither a park nor a retry. **Every other non-zero exit is
 named in your closing line and the release still runs**: `8` and `11` are UNKNOWN, `7` is a claim
 held over a lane that never booted (step 1's `lane open` exit `51`), which recorded no tree, and
 `4`, `21`, `39` and `65` removed nothing. The keep rule and the exits are the verb's
 section (`fabrika wire doc-section --heading "lane cleanup" < <skill-base>/contract.md`).
 
-Both ends of the loop release the claim, and it is the **last** thing the run does — after the park
-comment or the record has landed, so a successor that wins the lane the moment you let go finds
-the artifact already there:
+Both ends of the loop release the claim, and it is the **last** thing the run does to the lane —
+after the park comment or the record has landed, so a successor that wins the lane the moment you
+let go finds the artifact already there:
 
 ```bash
 node <fabrika> lane release $lane_key --token <lane-claim-token>
@@ -1797,9 +1800,28 @@ release you cannot prove. A `STOPPED` run releases too, and so does a `LANE-WAIT
 floor — a claim outliving the driver that took it is the same lane nobody can pick up, and a lane
 handed back for a later re-read has to be claimable by whoever takes that pass. Step 1's *pre-claim*
 `LANE-WAITING` is the one ending that reaches no release at all: the seat read ended the run before
-`lane claim`, so there is no marker of yours to retract and no worktree to give back. The cap's
-other ending is the opposite — `lane open`'s exit `51` meets the same cap one step later, holding a
-claim, and step 1 routes it here precisely to hand that claim back.
+`lane claim`, so there is no marker of yours to retract and no assembly worktree to give back. The
+cap's other ending is the opposite — `lane open`'s exit `51` meets the same cap one step later,
+holding a claim, and step 1 routes it here precisely to hand that claim back.
+
+**Then remove the worktree this run was given. It is the last command of every run**, whichever way
+the run ends: a terminal, a park, a wait (the pre-claim one included) or `STOPPED`. No lane cleans
+up after a driver, so a tree you leave stays on disk until a person finds it:
+
+```bash
+node <fabrika> lane leave
+```
+
+It takes no lane: the tree is the one the command runs in. `removed` means the directory is gone, so
+run no command after it and go straight to your closing message. `main` means you stand in the main
+working tree, which is never removed. Exit `74` kept the tree because it holds uncommitted paths or
+commits on no remote ref, or could not be read. Nothing is forced. **Repeat the kept tree's path and
+reason from stderr in your closing message**, so the person knows a tree is still there and why. `8`
+and `11` are UNKNOWN: name the code in your closing message. No exit here changes your terminal.
+A run a person started in a checkout they work in skips this step, because that tree is theirs
+([skill-conventions §17](../../docs/skill-conventions.md#a-shell-no-lane-holds-removes-the-worktree-it-was-given)).
+The keep rule and the exits are the verb's section
+(`fabrika wire doc-section --heading "lane leave" < <skill-base>/contract.md`).
 
 
 **A run never ends `LANE-PARKED` while the fold reads a non-parked state.** `human:*`, `blocked`
@@ -1895,7 +1917,9 @@ serves the generated machine above. Run the owing gate first, then clear, in thi
    `review-*` namespace, `/fabrika:review-ui <pr>` for `review-ui`, `/fabrika:governance <pr>` for
    `governance`. No brief exists for a park, so this is the one spawn without `lane brief` output.
    The invocation is the whole prompt, so you still compose nothing. With no lane named, the gate
-   posts its verdict on the PR and records nothing on the ledger.
+   posts its verdict on the PR and records nothing on the ledger. No lane holds its worktree
+   either, so the gate removes its own as its last command: each of the three skills ends on
+   `lane leave` when its caller named no lane.
 3. When the spawn returns, run `node <fabrika> build verdicts --pr <pr>`. Go on only when each owed
    gate has a row with `"current": true`. `PASS` or `FAIL` makes no difference here: the shipper
    routes a `FAIL` to repair itself. No current row means the verdict is still owed, so do not

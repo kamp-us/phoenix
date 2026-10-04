@@ -115,11 +115,16 @@ const localOnly = <R>(
 		return {_tag: "LocalOnly", count, why: misses.join("; ")} as const;
 	});
 
-/** Read one live linked worktree: what it holds uncommitted, and where its commits live. */
-const readTree = <R>(
+/**
+ * Read one live linked worktree: what it holds uncommitted, and where its commits live.
+ *
+ * `settle` answers for commits on no remote ref, given the tree's `HEAD` and their count. It is the
+ * one part of the read that differs by caller: a lane has merged pull requests to ask, and a shell
+ * that serves no lane has none.
+ */
+export const readTree = <R>(
 	path: string,
-	pulls: ReadonlyArray<number>,
-	read: PullReader<R>,
+	settle: (head: string, count: number) => Effect.Effect<Commits, never, R>,
 ): Effect.Effect<TreeState, never, R | ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const status = yield* execCapture("git", ["-C", path, "status", "--porcelain"]);
@@ -152,7 +157,7 @@ const readTree = <R>(
 		if (!head.ok || !isObjectName(head.stdout)) {
 			return {_tag: "Unreadable", reason: `its HEAD could not be read: ${head.reason}`} as const;
 		}
-		const commits = yield* localOnly(head.stdout.trim(), count, pulls, read);
+		const commits = yield* settle(head.stdout.trim(), count);
 		return {_tag: "Read", uncommitted, commits} as const;
 	});
 
@@ -180,9 +185,10 @@ interface Judged {
 }
 
 const LEFT_BECAUSE: Record<Extract<Disposition, {_tag: "Left"}>["reason"], string> = {
-	caller: "this verb runs in it; it is the caller's to remove from outside",
+	caller:
+		"this verb runs in it; a driver removes its own with `lane leave` as its last act, and a shell's is removed by its lane's next cleanup",
 	driver:
-		"a driver recorded it and nothing proves its shell returned; it is that driver's caller's to remove",
+		"a driver recorded it and nothing proves its shell returned; that driver removes it with `lane leave` when its run ends",
 	"main-working-tree": "the main working tree is no lane's to remove",
 };
 
@@ -280,7 +286,9 @@ export const runCleanup = <R>(
 			const seat = seatOf({...tree, worktree: resolved}, before, caller, flight);
 			const state: TreeState =
 				seat._tag === "Linked"
-					? yield* readTree(tree.worktree, pulls, options.pull)
+					? yield* readTree(tree.worktree, (head, count) =>
+							localOnly(head, count, pulls, options.pull),
+						)
 					: seat._tag === "Unregistered"
 						? yield* probe(tree.worktree, seat.prunable)
 						: seat;
