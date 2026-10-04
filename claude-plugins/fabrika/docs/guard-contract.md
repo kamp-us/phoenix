@@ -186,6 +186,22 @@ pnpm `catalog:` or a `workspace:` ref, never a hardcoded version string, because
 one dependency breaks frozen-lockfile CI downstream. A genuinely unavoidable exception lives in the
 guard's explicit reasoned allowlist, never a silent tolerance.
 
+The `catalogGuard` key in `.fabrika.jsonc` turns the guard on or off per repo, and it ships `on`.
+The guard reads the key at the root it scans, before it opens `pnpm-workspace.yaml` or any manifest:
+
+- `off` judges no manifest. The verb exits `0` and its one stdout line says the guard was turned
+  off and that this is not a pass. `build check` lists it under `skipped`, never under `ran`.
+- An absent file or key is `on`. Only a declared `off` turns the guard off.
+- A value other than `on` or `off`, a config that does not parse, and a config nobody could read
+  are all UNKNOWN (`11`), never `off`.
+
+The guard does not read `pnpm-workspace.yaml` to decide whether the rule applies, and the key
+governs no other guard.
+
+Every red — a violation (`12`), zero scope (`7`) or UNKNOWN (`11`) — ends with the same three lines:
+what the rule is, that this repo may simply not use a pnpm catalog, and the declaration that turns
+the guard off. Each `::error` annotation on a pinned dependency names the declaration too.
+
 ## fanout-guard check
 
 Three invariants over the worker's `Fate.mutation` set:
