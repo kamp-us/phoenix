@@ -80,6 +80,29 @@ fabrika leaves no `node_modules` copy in the repo, and the absolute path you run
 carries a home directory into a public comment. Read the note back before you post it; done when it
 holds no literal `<fabrika>`, no other angle-bracket placeholder and no file path to the CLI.
 
+**The chat is all the person sees, so the run says where it is.** A stage can work for most of an
+hour, and a person reading only the chat cannot tell a working run from a dead one. Two lines close
+that. Each is one sentence, printed to the person in the chat and written nowhere else:
+
+- **The opening line**, once a run, before that run's first spawn: what is about to happen, roughly
+  how long it can take, and the driven issue's full URL as the place where notes appear. The time is
+  the budget step 3's `spawn-dead` passage gives the stage about to start. The URL is the `epic:`
+  field of the brief's `## Ground` where it prints one, and its `issue:` field otherwise.
+- **A stage line**, each time a spawned stage returns: which stage finished, how it ended, and what
+  starts next with that stage's time, or that nothing does and the run is ending. On an epic lane it
+  says which child. It is written from the return and the fresh `lane status` step 3 already takes,
+  so it adds no read.
+
+Both lines are written in **everyday words**: "writing the change" for a build, "checking it" for a
+review, "merging it" for a ship, "it needs a person" for a park. A pipeline word — lane, fold, park,
+shell, spawn, dispatch, a state name, a terminal token — is left out or explained in the same line.
+They read like this, with the real URL where the placeholder stands:
+
+```text
+Starting on issue 12: writing the change now, which can take up to about 40 minutes. Notes appear at <the issue's full URL> as each step finishes.
+Writing the change finished and opened a pull request. Checking it starts now, up to about 15 minutes.
+```
+
 ## 1 — Read the seats, claim the lane, then boot or resume
 
 The lane you were invoked on is `$lane_key`, and every command below carries it — an issue number,
@@ -516,6 +539,9 @@ It writes the task's state and the shell that state routes to beside the ledger,
 the shell you started for as long as it works — the builder adds its claim token and worktree once
 its claim wins. It records no event, so the fold does not move. A refusal here does not hold the
 spawn: `40` is a held ledger lock, so run it again, and name any other code in your dispatch line.
+
+**Before this run's first spawn, print the opening line** to the person ("The chat is all the person
+sees", above), off the brief you hold.
 
 On Claude, the spawn flag is still yours: **`isolation: worktree`, no exceptions** — a non-isolated subagent
 shares the primary checkout and can mutate its git state, and no bytes in a prompt can enforce that
@@ -1145,6 +1171,8 @@ of yours. **That verb proves before it appends**: it runs `lane prove`'s read on
 and refuses on `lane prove`'s own codes, so a shell-recorded `DONE` or `PASS` reaches the ledger
 only with its artifact behind it, exactly as one you record does. So when a spawn returns, your
 first move is a fresh `lane status`: a moved fold is a recorded terminal, and you route from it.
+With that fold in hand, print the stage line for the return ("The chat is all the person sees",
+above) before you route.
 Two reads stay yours, because no shell can take them:
 
 - **a spawn that printed a terminal the fold does not show** — its record never landed (a missing
