@@ -26,6 +26,7 @@ import {runDiff} from "./diff-verb.ts";
 import type {FilterPlacement} from "./filter-spike.ts";
 import {runPost} from "./post-verb.ts";
 import {runPreview} from "./preview-verb.ts";
+import {runReport} from "./report-verb.ts";
 import {runScope} from "./scope-verb.ts";
 import {runScratch} from "./scratch-verb.ts";
 import {runSeat} from "./seat-verb.ts";
@@ -348,6 +349,31 @@ const deviations = leafCommand(
 		{
 			command: "fabrika review deviations 4321 --sha 03135b91",
 			description: "Read the disclosure at the head under review",
+		},
+	]),
+);
+
+const report = leafCommand(
+	"report",
+	{pr: prArg, repo: repoFlag, json: jsonFlag},
+	Effect.fn(function* ({pr, repo, json}) {
+		yield* emit(yield* runReport({pr, repo: Option.getOrNull(repo), json, env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription("The PR body's Report section state and text."),
+	Command.withDescription(
+		[
+			"Prints `report\\t<state>`, then the text of a PR body's `## Report` section when it is found.",
+			"  State: found, absent or malformed; the reason for the last two is on stderr",
+			"  7: PR proven absent",
+			"  11: the body could not be read (UNKNOWN, never `absent`)",
+			'  Derivation: the review skill\'s contract.md, "review report"',
+		].join("\n"),
+	),
+	Command.withExamples([
+		{
+			command: "fabrika review report 4321",
+			description: "Read the author's report a criterion asks for",
 		},
 	]),
 );
@@ -750,6 +776,7 @@ export const reviewCommand = Command.make("review").pipe(
 		ci,
 		verdicts,
 		deviations,
+		report,
 		preview,
 		post,
 		appendCriterion,
@@ -758,6 +785,6 @@ export const reviewCommand = Command.make("review").pipe(
 	]),
 	Command.withShortDescription("Read what a text review needs off one pull request."),
 	Command.withDescription(
-		"Read everything a text review needs off one pull request — scope, diff, criteria, CI, verdicts, deviations — allocate the per-lane scratch path its staged reads go under, seat an epic child's reviewer at the range tip it judges, and emit the verdict or a reviewer-authored criterion through the one sanctioned write path",
+		"Read everything a text review needs off one pull request — scope, diff, criteria, CI, verdicts, deviations, the author's report — allocate the per-lane scratch path its staged reads go under, seat an epic child's reviewer at the range tip it judges, and emit the verdict or a reviewer-authored criterion through the one sanctioned write path",
 	),
 );

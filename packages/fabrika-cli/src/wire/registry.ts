@@ -39,6 +39,7 @@ import * as mapTicket from "./map-ticket.ts";
 import * as pitchRuling from "./pitch-ruling.ts";
 import * as planApproval from "./plan-approval.ts";
 import * as rangeVerdictMarker from "./range-verdict-marker.ts";
+import * as report from "./report.ts";
 import * as routedElsewhere from "./routed-elsewhere.ts";
 import * as takeoverGrant from "./takeover-grant.ts";
 import * as verdictMarker from "./verdict-marker.ts";
@@ -291,6 +292,57 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			why: true,
 			disposition: true,
 		}),
+	},
+	{
+		key: "report",
+		purpose:
+			"what a PR author states in answer to a criterion that asks for a report, carried in the PR body under `## Report` as free prose",
+		module: "packages/fabrika-cli/src/wire/report.ts",
+		producers: ["build", "build-ui"],
+		consumers: ["review"],
+		emit: report.emitFromFields,
+		read: report.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "Audit scope: every caller of the helper.\n\nRetained duplication: none.\n",
+				values: ["Audit scope: every caller of the helper.", "Retained duplication: none."],
+			},
+			found: [
+				{
+					shape:
+						"the section between a summary and the deviations, with a subheading of the author's own",
+					artifact:
+						"The editor keeps focus across a save.\n\n## Report\n\n### Audit scope\n\nEvery caller of the helper.\n\n## Deviations\n\nNone.\n\nFixes #8\n",
+					values: ["### Audit scope", "Every caller of the helper."],
+				},
+				{
+					shape: "the section beside a heading that carries Report as one comma-separated part",
+					artifact:
+						"## Summary, Report\n\nwhat changed\n\n## Report\n\nNo overlap with the reference tickets.\n",
+					values: ["No overlap with the reference tickets."],
+				},
+			],
+			absent: "Fixes #8\n\n## Test report\n\nall green\n\n## Deviations\n\nNone.\n",
+			malformed: [
+				{
+					drift: "the heading level drifted",
+					artifact: "### Report\n\nAudit scope: every caller.\n",
+				},
+				{
+					drift: "the heading spelling drifted",
+					artifact: "## report\n\nAudit scope: every caller.\n",
+				},
+				{
+					drift: "the heading is present over an empty section",
+					artifact: "## Report\n\n## Deviations\n\nNone.\n",
+				},
+				{
+					drift: "two headings reach for the section",
+					artifact: "## Report\n\none\n\n## Reports\n\ntwo\n",
+				},
+			],
+		},
+		brands: brandWitnesses<report.Report>({text: true}),
 	},
 	{
 		key: "verdict-marker",

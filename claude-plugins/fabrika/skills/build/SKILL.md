@@ -82,8 +82,9 @@ thing that opens it: when the issue carries a founder ruling comment that alread
 the deciding is done and the writing is all that is left, so claim it and transcribe — turn that
 ruling into the ADR or amendment it names, nothing more. **The citation goes inside the artifact you
 write** — the ADR or amendment names the ruling comment's URL in its own text, so it lands in the
-diff, which is a surface `review diff` serves; free prose in the PR body is read by no verb, so a URL
-that lives only there is invisible to every gate. Name it in the PR body as well, so the merge
+diff, which is a surface `review diff` serves. No verb reads the PR body for a ruling's citation —
+the only body prose one serves is `## Deviations` and `## Report` (step 5), and neither is where a
+gate looks for it — so a URL that lives only in the body is invisible to every gate. Name it in the PR body as well, so the merge
 record carries the citation too.
 **With no citable ruling comment the refusal stands exactly as it reads above.** You never judge a
 decision settled yourself: "this looks settled" is not a citation, a converged thread is not a
@@ -228,8 +229,10 @@ a pre-fix artifact, a runtime observation — and stderr quotes every marked row
 one. Do that verification and write what you observed into the PR body, naming the source the
 criterion named: `review post` refuses a `PASS` whose verdict body cites no evidence for a marked
 criterion (exit `19`), so a row you left unevidenced costs the lane a repair round on a PR that is
-otherwise fine. An `evidence` of `null` is the proven absence of a marker, and that row is
-discharged by the diff exactly as it always was.
+otherwise fine. An `evidence` of `null` is the proven absence of a marker, and what discharges that
+row is what it asks for: a row that asks you to report something is discharged by the `## Report`
+section step 5 has you write, and every other unmarked row by the diff. An epic child writes no
+such section, and step 5 says what it does with that row.
 
 **Neither `absent` nor `malformed` is a token you build past.** The verb's three tokens are
 three different facts, and only `found` is a contract: `absent` says no heading reaches for the
@@ -501,6 +504,21 @@ brevity. Everything else goes: sweep methodology, a "what I deliberately kept" s
 per row defending a choice nobody attacked. Same no-op test as the prose — delete a sentence whose
 absence would change no reviewer behaviour.
 
+**A criterion that asks you to report something earns a third: `## Report`.** An audit's scope, why
+a duplication was kept, the overlap with another ticket — state each in that section, one statement
+per criterion that asks. Such a row carries no evidence marker and needs none: the section is what
+discharges it. Its grammar is the registered `report` wire format
+([`wire/report.ts`](../../../../packages/fabrika-cli/src/wire/report.ts)), which the verb that opens
+the PR and the gate that reads it back both resolve, so a heading that drifted is refused when you
+post the body. It is the only body prose besides `## Deviations` the reviewer is
+served ([`review report`](../review/SKILL.md)), and a report-shaped criterion over a body without
+the section is a FAIL.
+
+**An epic child has no PR body, so it writes no `## Report`.** No verb serves a report on a child
+yet. Name each report-shaped row in your `build note` as a row no verb serves on a child, and write
+the report nowhere else: the reviewer grades that row UNKNOWN, as the
+[review skill](../review/SKILL.md) says, and a report left in a comment is not an input it reads.
+
 ```bash
 fabrika build push <<'EOF'
 …body…
@@ -508,7 +526,7 @@ EOF
 ```
 
 The verb is the guard, and it runs in this order. It checks the body first and refuses leaks, stray
-closing keywords and a Deviations section the review gate would read as malformed. A refused body
+closing keywords and a Deviations or Report section the review gate would read as malformed. A refused body
 pushes nothing. Then it pushes, reads the remote ref back, and opens the PR, reading back what
 landed. If an open PR for this branch already exists, it answers `existing` and opens no second one.
 
@@ -848,7 +866,7 @@ round's work — each one you verify is still unfixed, because nothing retires a
 **When the whole fix is the PR body, the route is `fabrika build pr-body <pr>` and nothing else.**
 The recurring one is a FAIL reading `deviations malformed`: the head does not need to move, so a
 push is the wrong tool and a raw `gh` call runs none of the guards `build push` runs on a create. This
-verb runs all of them over the rewrite — leak scan, the `## Deviations` shape, the closing-keyword
+verb runs all of them over the rewrite — leak scan, the `## Deviations` and `## Report` shapes, the closing-keyword
 target read off the PR's own head branch, the classification check — and reads the landed body back.
 Re-send the corrected body on stdin, then answer the finding in a `fabrika build note` and
 release; no commit, no `build check`, no `build push`.

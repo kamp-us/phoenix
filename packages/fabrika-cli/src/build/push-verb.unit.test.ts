@@ -361,6 +361,11 @@ describe("runPush — a fresh lane opens its PR in the same step (#10015)", () =
 			BODY.replace("## Deviations", "Also closes #999.\n\n## Deviations"),
 			BAD_SECTIONS,
 		],
+		[
+			"a malformed Report section",
+			BODY.replace("## Deviations", "### Report\n\nscope: all\n\n## Deviations"),
+			BAD_SECTIONS,
+		],
 		["an empty body", "  \n", EMPTY_STDIN],
 	])("refuses %s as build pr does, and pushes and opens nothing", async (_, body, code) => {
 		const seams = fakeSeams([...LANE_READS, ...moves(), ...PR_OPENS]);

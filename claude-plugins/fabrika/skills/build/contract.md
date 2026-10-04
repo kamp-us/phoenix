@@ -3051,7 +3051,11 @@ The guards, in order, all before any write:
    naming that line. "None." is content, silence is not,
    and a prose bullet is refused here rather than a review round later (the *truth* of the
    section stays the skill's — a verb can force the author to write, not to be
-   honest); exactly one closing-keyword line, targeting `<number>` and matching `--partial`
+   honest); a `## Report` section, when a heading reaches for one, reads `Found` through the
+   registered `report` wire format
+   ([`packages/fabrika-cli/src/wire/report.ts`](../../../../packages/fabrika-cli/src/wire/report.ts)),
+   the module `review report` reads, and a body with no such heading passes, since most PRs owe
+   no report; exactly one closing-keyword line, targeting `<number>` and matching `--partial`
    (`Fixes #<n>` without `--partial`, `Part of #<n>` with it); no second closing keyword aimed
    at any other issue, since a stray one auto-closes a ticket the PR does not fix.
 4. **no forbidden classification** (`10`), by a closed pattern set, checked outside code fences,
@@ -3083,7 +3087,7 @@ posts the literal string.
 | Code | Trigger |
 |---|---|
 | `3` | stdin held nothing |
-| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format — absent, empty, a drifted heading, or an entry short a field — or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
+| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format — absent, empty, a drifted heading, or an entry short a field — or a `## Report` section reads `Malformed` through the `report` wire format, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
 | `5` | the body carries a machine-local path |
 | `6` | the body is a bare `@` path reference |
 | `7` | the issue is proven absent or closed |
@@ -3100,6 +3104,7 @@ posts the literal string.
 |---|---|---|
 | `build pr: stdin held nothing — the body is the input.` | 3 | refusal |
 | `build pr: the body's "## Deviations" section is not readable — <the wire format's reason>. State each deviation as an entry, or state "None."` | 4 | refusal |
+| `build pr: the body's "## Report" section is not readable — <the wire format's reason and the heading it judged>. Write the report under "## Report", or rename a heading that is not the report.` | 4 | refusal |
 | `build pr: the body says "Fixes #<n>" but --partial was given — a partial PR must say "Part of #<n>".` | 4 | refusal |
 | `build pr: the body carries a closing keyword aimed at #<m> — this PR serves #<n>.` | 4 | refusal |
 | `build pr: the body carries a machine-local path: <first hit> — redact before posting.` | 5 | refusal |
@@ -3215,7 +3220,7 @@ argv value, never `-f body=@file`, which posts the literal string.
 | Code | Trigger |
 |---|---|
 | `3` | stdin held nothing |
-| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
+| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format, or a `## Report` section reads `Malformed` through the `report` wire format, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
 | `5` | the body carries a machine-local path |
 | `6` | the body is a bare `@` path reference |
 | `7` | the PR is proven absent, closed or merged |
@@ -3232,6 +3237,7 @@ argv value, never `-f body=@file`, which posts the literal string.
 |---|---|---|
 | `build pr-body: stdin held nothing — the body is the input.` | 3 | refusal |
 | `build pr-body: the body's "## Deviations" section is not readable — <the wire format's reason>. State each deviation as an entry, or state "None."` | 4 | refusal |
+| `build pr-body: the body's "## Report" section is not readable — <the wire format's reason and the heading it judged>. Write the report under "## Report", or rename a heading that is not the report.` | 4 | refusal |
 | `build pr-body: the body carries a closing keyword aimed at #<m> — this PR serves #<n>.` | 4 | refusal |
 | `build pr-body: the body carries a machine-local path: <first hit> — redact before posting.` | 5 | refusal |
 | `build pr-body: the body is a bare @ path reference — write the body, not a pointer to it.` | 6 | refusal |

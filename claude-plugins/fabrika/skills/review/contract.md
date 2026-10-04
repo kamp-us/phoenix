@@ -27,6 +27,7 @@ Named because a spec that leaves the substrate open makes the implementer guess.
 | `review ci` | the live CI check-run rollup at a head, fail-closed on incomplete enumeration | classifying check runs and proving the enumeration complete is mechanical; weighing a red check is judgment |
 | `review verdicts` | every verdict marker on the PR, per namespace, each with its `Current` / `Stale` / `Unbindable` binding against the live head and the content it bound | comment sweep + registered parse + `bindToContent` is mechanical; what a stale marker means for this round is judgment |
 | `review deviations` | the PR body's `## Deviations` section state (found / absent / malformed), its entries, and the Tier-M token scan over the diff | section detection and token scanning are mechanical; matching entry *substance* against findings is judgment (Tier R) |
+| `review report` | the PR body's `## Report` section state (found / absent / malformed) and, on `found`, the author's text under it | section detection is mechanical; whether a criterion asks for a report, and whether the text answers it, is judgment |
 | `review post` | the single sanctioned verdict emit: compose through the `verdict-marker` wire format, bind to the inspected head at post time, post one comment per namespace at that head, read it back | marker composition, head re-resolution, leak scan and read-back are a protocol; the polarity and clause are judgment |
 | `review append-criterion` | append one reviewer-authored acceptance criterion to the linked issue under the four fences (append-only · ACL-gated fail-closed · frozen at `src/retry-budget.ts`'s `CAP_ROUND`), with a provenance tag naming the PR or, on an epic child, the range | the fences and the diff-guarded append are mechanical; whether a finding is in-scope is judgment |
 | `review scratch` | the per-lane directory this reviewer's staged files go under, allocated fail-closed | deriving a namespace no second lane resolves to, and refusing when it cannot be derived, is mechanical; what to stage there is judgment |
@@ -1317,6 +1318,90 @@ tier-m	removed-assertion	src/cart.test.ts:14	expect(renderTotal(10)).toBe("10.00
   declared `changed_files`: GitHub computes over its own merge base with its own rename detection,
   which counts two files where git's list carries one path. So the disagreement is reported in the
   diagnostics and never refused on, and the `13` rests on git alone.
+
+---
+
+## `review report`
+
+**Invocation**
+
+```
+fabrika review report 4321 [--repo <owner/name>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the pull-request number |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+
+**Output** — machine channel. First line: `report\t<found|absent|malformed>`. On `found`, every
+line after it is the section's text, verbatim: outer blank lines dropped, interior lines untouched.
+With `--json`: `{"outcome":…,"text":<string|null>}`, `text` being `null` off `found`.
+
+The three states are the answers of the registered `report` wire format
+([`packages/fabrika-cli/src/wire/report.ts`](../../../../packages/fabrika-cli/src/wire/report.ts)),
+which owns the section's grammar. `build push`, `build pr` and `build pr-body` run the same read
+before they post a body and refuse a `malformed` section, so a body those verbs accepted reads
+`found` or `absent` here. What this verb's caller needs from that grammar:
+
+- `found` — the body under the one heading `## Report`, up to the next heading of level 1 or 2
+  outside a code fence, so an author's `###` subheadings stay inside it. A trailing closing-keyword
+  line (`Fixes #N`) is the PR's link and is left out.
+- `absent` — no heading reaches for the section. `## Test report` and `## Reporting` are an
+  author's own headings and do not.
+- `malformed` — a heading reaches for it and the section cannot be served: the level or spelling
+  drifted, more than one heading reaches for it, or the section is empty. A body edited outside the
+  build verbs is how this state still arrives.
+
+On `absent` and `malformed` the reason goes to stderr. Both answer at exit `0`: each is a proven
+fact about a body that was read, which is what lets the skill grade a criterion on it. A body that
+could not be read is exit `11` with nothing on stdout.
+
+**The read binds no commit.** A PR body is not part of any tree, so this verb takes no `--sha` and
+reads the body as it stands when the verb runs.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | the PR is proven absent (404) |
+| `11` | the PR body could not be read — the report state is UNKNOWN |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review report: PR #<n> not found in <repo>.` | 7 | refusal |
+| `review report: cannot read #<n>'s body: <reason> — the report state is UNKNOWN, never "absent".` | 11 | refusal |
+
+**Scope** — one PR body's `## Report` section. Body prose outside that section and outside
+`## Deviations` stays unserved. Whether a criterion asks for a report, and whether the text answers
+it, are the skill's judgment; this verb reports a state and the author's words, never a grade.
+
+**Examples**
+
+```
+$ fabrika review report 4321
+report	found
+Audit scope: every caller of `refocus()`. Retained duplication: none.
+```
+
+```
+$ fabrika review report 4322
+report	absent
+```
+
+**Grounding**
+
+- **The founder ruling on the read gap**, cited by the `@ruling` tag on
+  [`report-verb.ts`](../../../../packages/fabrika-cli/src/review/report-verb.ts). A criterion that
+  asks the author to report something had no channel the gate could read, so a clean PR ended
+  UNKNOWN: the reviewer could not PASS a report it never saw, and unseen is not absent, so it could
+  not FAIL one either. The ruling widens the read by one named section instead of narrowing what a
+  criterion may ask.
 
 ---
 

@@ -1,13 +1,16 @@
 /**
  * The mechanical guards over an authored PR body. *Authoring* stays the skill's; these check shape.
  *
- * Three defects, each with a scar behind it:
+ * Four defects, each with a scar behind it:
  *
  * - **A `## Deviations` section the review gate cannot read**. The check blocks rather
  *   than warns, and "None." counts while silence does not — the verb can force the author to *write*,
  *   never to be honest, so the section's truth stays the skill's problem and its shape is this one's.
  *   The shape itself is not restated here: it is `../wire/deviations.ts`, the same registered format
  *   `review deviations` reads, so a body this verb accepts cannot fail that gate as malformed.
+ * - **A `## Report` section the review gate cannot read**. Most bodies owe no report, so an absent
+ *   section passes; one that reaches for the heading and misses is refused here, through
+ *   `../wire/report.ts`, the same registered format `review report` reads.
  * - **A stray closing keyword**. One closing line, aimed at this PR's own issue; a second
  *   aimed anywhere else auto-closed an issue the PR did not fix.
  * - **A classification claim**. CODEOWNERS decides control-plane membership at the merge gate
@@ -24,6 +27,7 @@
 
 import {closingKeywords} from "../wire/closing-keyword.ts";
 import {read as readDeviations} from "../wire/deviations.ts";
+import {read as readReport} from "../wire/report.ts";
 
 const PART_OF_RE = /\bpart of\s+#(\d+)\b/i;
 
@@ -66,6 +70,15 @@ export const deviationsDefect = (body: string): string | null => {
 };
 
 /**
+ * Why the body's `## Report` section is not readable, or `null`. A body with no such section is not
+ * a defect: only a heading that reaches for it and misses is.
+ */
+export const reportDefect = (body: string): string | null => {
+	const result = readReport(body);
+	return result._tag === "Malformed" ? `${result.reason} — ${result.evidence}` : null;
+};
+
+/**
  * Every issue number a closing keyword in `prose` aims at, in order. A body may carry exactly one,
  * aimed at its own issue.
  */
@@ -85,6 +98,8 @@ export const classificationIn = (prose: string): string | null =>
 export type BodyDefect =
 	/** The section is absent, or present in a shape the review gate reads as malformed. */
 	| {readonly _tag: "NoDeviations"; readonly reason: string}
+	/** A heading reaches for `## Report` in a shape the review gate reads as malformed. */
+	| {readonly _tag: "MalformedReport"; readonly reason: string}
 	/** A closing keyword aimed somewhere other than this PR's issue. */
 	| {readonly _tag: "StrayClosing"; readonly target: number}
 	/** `--partial` was given and the body still auto-closes. */
@@ -103,6 +118,9 @@ export type BodyDefect =
 export const bodyDefect = (body: string, issue: number, partial: boolean): BodyDefect | null => {
 	const deviations = deviationsDefect(body);
 	if (deviations !== null) return {_tag: "NoDeviations", reason: deviations};
+
+	const report = reportDefect(body);
+	if (report !== null) return {_tag: "MalformedReport", reason: report};
 
 	const prose = proseOf(body);
 	const targets = closingTargets(prose);
