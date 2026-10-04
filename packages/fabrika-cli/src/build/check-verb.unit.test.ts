@@ -1378,6 +1378,84 @@ describe("runCheck — the local-tree guard sweep", () => {
 		expect(out.stderr).toContain("patches/effect.patch has no @patch-pin marker");
 	});
 
+	describe("a member that reds does not end the sweep", () => {
+		const red = (line: string): VerbOutcome => ({code: 12, stdout: "", stderr: [line]});
+
+		// The layout: the members that passed, then each red member's diagnostics under its own label,
+		// then one verdict line naming every red member.
+		it("runs the members after it and lays every red one out under its own label", async () => {
+			const seen: string[] = [];
+			const out = await sweepRun([
+				guard("patch-guard", red("patches/effect.patch has no @patch-pin marker"), "check", seen),
+				guard("decisions-index", clean, "validate", seen),
+				guard("portability-guard", red("docs/a.md names a machine-local path"), "check", seen),
+				guard("i18n-guard", clean, "check", seen),
+			]);
+			expect(seen).toEqual([
+				"patch-guard check",
+				"decisions-index validate",
+				"portability-guard check",
+				"i18n-guard check",
+			]);
+			expect(out.code).toBe(VALIDATION_RED);
+			expect(out.stdout).toBe("");
+			expect(out.stderr.slice(-6)).toEqual([
+				"build check: passed: guard decisions-index validate, guard i18n-guard check.",
+				"build check: guard patch-guard check:",
+				"patches/effect.patch has no @patch-pin marker",
+				"build check: guard portability-guard check:",
+				"docs/a.md names a machine-local path",
+				"build check: red — guard patch-guard check, guard portability-guard check failed; diagnostics above.",
+			]);
+		});
+
+		it("reports a member that refused after it as `skipped:`, never as a pass", async () => {
+			const out = await sweepRun([
+				guard("patch-guard", red("patches/effect.patch has no @patch-pin marker")),
+				guard("readme-guard", {
+					code: ZERO_SCOPE,
+					stdout: "",
+					stderr: ["readme-guard: no workspace member was scanned."],
+				}),
+				guard("i18n-guard", {
+					code: PRECONDITION_UNKNOWN,
+					stdout: "",
+					stderr: ["i18n-guard: the allow-list could not be read."],
+				}),
+			]);
+			expect(out.code).toBe(VALIDATION_RED);
+			expect(out.stdout).toBe("");
+			expect(out.stderr).toContain(
+				"build check: skipped: readme-guard (zero scope: readme-guard: no workspace member was scanned.) — not a pass; CI's own gate answers this one.",
+			);
+			expect(out.stderr).toContain(
+				"build check: skipped: i18n-guard (UNKNOWN read: i18n-guard: the allow-list could not be read.) — not a pass; CI's own gate answers this one.",
+			);
+			expect(out.stderr.some((line) => line.startsWith("build check: passed:"))).toBe(false);
+			expect(out.stderr.at(-1)).toBe(
+				"build check: red — guard patch-guard check failed; diagnostics above.",
+			);
+		});
+
+		it("refuses before the repo's declared validators are started", async () => {
+			const shell = fakeSeams([
+				...LANE_OK,
+				[DIFF, okOut("src/app/App.tsx\n")],
+				[TYPECHECK, okOut("")],
+				[LINT, okOut("")],
+			]);
+			const out = await Effect.runPromise(
+				Effect.provide(
+					runCheck({...options, guards: [guard("patch-guard", red("no @patch-pin marker"))]}),
+					Layer.merge(shell.layer, fakeFs({files: CODE_CONFIG}).layer),
+				),
+			);
+			expect(out.code).toBe(VALIDATION_RED);
+			expect(shell.calls).not.toContain("pnpm typecheck --force");
+			expect(shell.calls).not.toContain("pnpm lint:worktree");
+		});
+	});
+
 	it("reports a member's exit 7 as `skipped:`, never as a pass", async () => {
 		const out = await sweepRun([
 			guard("readme-guard", {

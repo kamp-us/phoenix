@@ -2538,12 +2538,21 @@ argument-free, reads only the checked-out tree, and needs no PR number, no board
 membership is declared beside each guard's registration in
 `packages/fabrika-cli/src/guard/command.ts` and nowhere else. Each member that passed is named in
 `ran` as `guard <name> <leaf>` — the leaf is not always `check`, `decisions-index`'s is `validate` —
-and a member that failed reds the whole run on `18`, with `build check: red — guard <name> <leaf>
-failed; diagnostics above.` naming it. A member that **refused** — zero scope (`7`) or an UNKNOWN
-read (`11`) — is reported as `skipped: <name> (<reason>)` in the JSON's `skipped` array and on
-stderr, and is never folded into the green: a skip is a disclosure, read as *CI will answer this
-one*. The repo's own fail-closed-on-zero-scope rule for its CI gates is untouched by it — this is a
-local predictor with no authority to answer for a gate.
+and a member that failed reds the whole run on `18`. A member that **refused** — zero scope (`7`) or
+an UNKNOWN read (`11`) — is reported as `skipped: <name> (<reason>)` in the JSON's `skipped` array
+and on stderr, and is never folded into the green: a skip is a disclosure, read as *CI will answer
+this one*. The repo's own fail-closed-on-zero-scope rule for its CI gates is untouched by it — this
+is a local predictor with no authority to answer for a gate.
+
+**A red member does not end the sweep.** Every member runs whether or not an earlier one failed, so
+one run shows every red guard. The refusal's stderr reads, in order: each `skipped:` line, then one
+`build check: passed: guard <name> <leaf>, …` line naming the members that passed (omitted when none
+did), then each red member's own diagnostics under a `build check: guard <name> <leaf>:` line, and
+last `build check: red — guard <name> <leaf>, guard <name> <leaf> failed; diagnostics above.` naming
+every red member in sweep order. A member that refused in a red run is still a `skipped:` line and
+never appears on the `passed:` line. Stdout stays empty. The repo's declared validators — the
+`configValidators` entries and the surface's own — are not started behind a red sweep, so a red
+among them shows on the run after the guards are fixed.
 
 A member this repo's config **turned off** exits `0` without judging anything, so its exit code
 alone would read as a pass. Its outcome names the declaration that turned it off, and the sweep
@@ -2759,7 +2768,7 @@ the tree root is the only precondition: no session, no lane branch and no claim 
 | `11` | a validator could not be executed, a changed file could not be read for a reason other than absence, or the lane's claim could not be read; under `--probe`, also a `codeValidators` list that is absent, empty or unreadable — the verdict is UNKNOWN, never green |
 | `14` | lane run only — proven: the checked-out branch is not this lane's (lane-identity rule) |
 | `15` | lane run only — proven: the lane's claim is held by another session |
-| `18` | proven red — the failing runner and its diagnostics are on stderr; under `--probe`, every other entry still ran first |
+| `18` | proven red — the failing runner and its diagnostics are on stderr; a red guard sweep ran every guard first and names each red one; under `--probe`, every other entry still ran first |
 | `22` | proven: no changed file falls in any surface's validators or any declared config validator's `reads` — nothing to run, never a green |
 
 **Errors**
@@ -2787,9 +2796,11 @@ the tree root is the only precondition: no session, no lane branch and no claim 
 | `build check: --surface prose, but the diff changes no markdown file — the surface is provably wrong.` | 10 | refusal |
 | `build check: the diff against <base> is empty — nothing to validate.` | 7 | refusal |
 | `build check: red — <runner> failed; diagnostics above.` | 18 | refusal |
-| `build check: red — guard <name> <leaf> failed; diagnostics above.` | 18 | refusal |
-| `build check: skipped: <name> (<reason>) — not a pass; CI's own gate answers this one.` | 0 | disclosure beside a green |
-| `build check: skipped: <name> (turned off: <declaration> in <file>) — not a pass; this repo's config turned the guard off, so nothing was judged.` | 0 | disclosure beside a green |
+| `build check: red — guard <name> <leaf>[, guard <name> <leaf>…] failed; diagnostics above.` | 18 | refusal naming every red guard, each one's diagnostics above it |
+| `build check: guard <name> <leaf>:` | 0 | per-guard note in a red sweep, heading that guard's diagnostics; the verdict is `18` |
+| `build check: passed: guard <name> <leaf>[, guard <name> <leaf>…].` | 0 | note in a red sweep naming the guards that passed; the verdict is `18` |
+| `build check: skipped: <name> (<reason>) — not a pass; CI's own gate answers this one.` | 0 | disclosure beside a green or a red sweep |
+| `build check: skipped: <name> (turned off: <declaration> in <file>) — not a pass; this repo's config turned the guard off, so nothing was judged.` | 0 | disclosure beside a green or a red sweep |
 | `build check: no surface validates any of the <n> changed file(s) (<files>) — there is nothing here to run, so the verdict is a refusal, never green.` | 22 | refusal |
 | `build check: <n> changed file(s) --surface <surface> does not validate — NOT covered by this verdict: <files>.` | 0 | scope note beside a green |
 | `build check: probe: <entry> — green.` | 0 | per-entry note under `--probe` |
