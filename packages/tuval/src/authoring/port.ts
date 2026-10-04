@@ -136,8 +136,8 @@ export const compilePort = <D extends AnyPortDecl>(
 						direction: "in",
 						accepts: admits(decl.input),
 						bound: decl.bound,
-						// A request arrives as its input, so that is the schema the row publishes — what a
-						// `Program.shape` reading this row compares on the in side (#8887, #8770).
+						// A request arrives as its input, so that is the schema the row publishes (#8887). A
+						// `Program.shape` does not compare it: a shape naming a request is refused (#8770).
 						schema: decl.input,
 						// The output schema is kept, not dropped: it is the only check an answer's shape
 						// gets, and the kernel runs it where the answer is handed back (#8756).

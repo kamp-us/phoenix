@@ -102,15 +102,21 @@ export interface ShapeSource {
 /** A compiled port is the one with the kernel's predicate on it; a declaration has no `accepts`. */
 const isCompiled = (port: ShapePort): port is PortSchema => "accepts" in port;
 
-/** The in-side schema of a port, or `undefined` for one that does not offer a comparable payload. */
-const inSignature = (port: ShapePort): PortCodec<any> | undefined => {
-	if (isCompiled(port)) return port.direction === "in" ? port.schema : undefined;
-	return port.direction === "in"
-		? port.schema
-		: port.direction === "request"
-			? port.input
-			: undefined;
-};
+/**
+ * A port that answers its caller, in either form: `port.request` as declared, or the in-port a
+ * compiled row carries it as, which is the one with `answers` on it (`../registry/program.ts`).
+ */
+const isRequest = (port: ShapePort): boolean =>
+	isCompiled(port)
+		? port.direction === "in" && port.answers !== undefined
+		: port.direction === "request";
+
+/**
+ * The in-side schema of a port, or `undefined` for one that does not offer a comparable payload. A
+ * request offers none: `fitSide` refuses a shape that names one.
+ */
+const inSignature = (port: ShapePort): PortCodec<any> | undefined =>
+	port.direction === "in" && !isRequest(port) ? port.schema : undefined;
 
 const outSignature = (port: ShapePort): PortCodec<any> | undefined => {
 	if (isCompiled(port)) return port.direction === "out" ? port.schema : undefined;
@@ -147,12 +153,26 @@ const fitSide = (
 	offered: AnyProgramShape,
 	side: ShapeSide,
 	context: FitContext,
-	published: ReadonlySet<string>,
+	published: Readonly<Record<string, ShapePort>>,
 ): ShapeMismatch | undefined => {
 	const own = side === "in" ? offered.in : offered.out;
 	const other = side === "in" ? offered.out : offered.in;
 	for (const [port, signature] of Object.entries(declared)) {
 		const candidate = own[port];
+		const publishedPort = Object.hasOwn(published, port) ? published[port] : undefined;
+		if (publishedPort !== undefined && isRequest(publishedPort)) {
+			// A shape has two sides and a request has two schemas, so a request read under `in` would
+			// fit by its input alone and answer anything at all: the reply schema is unreachable from
+			// a shape on purpose. Matching the reply on the in side as well was rejected, because it
+			// keeps a request filed under `in`, the framing that hid the reply in the first place
+			// (https://github.com/kamp-us/phoenix/issues/8770#issuecomment-5625040922).
+			return new ShapeMismatch({
+				...context,
+				port,
+				side,
+				reason: `the program declares "${port}" as a request, and a shape cannot name a request port`,
+			});
+		}
 		if (candidate === undefined) {
 			// A port the source publishes yet neither side of its shape holds is one with no schema
 			// behind it, and saying "no such port" about a port that is right there would send the
@@ -160,7 +180,7 @@ const fitSide = (
 			const reason =
 				other[port] !== undefined
 					? `the program declares "${port}" on its ${side === "in" ? "out" : "in"} side`
-					: published.has(port)
+					: publishedPort !== undefined
 						? `the program declares "${port}" but publishes no payload schema for it, so nothing can be compared with it (#8887)`
 						: `the program declares no ${side}-port named "${port}"`;
 			return new ShapeMismatch({...context, port, side, reason});
@@ -188,7 +208,7 @@ export const fitsShape = (
 	context: FitContext,
 ): Result.Result<ShapeSource, ShapeMismatch> => {
 	const offered = shapeOf(source);
-	const published = new Set(Object.keys(source.ports ?? {}));
+	const published = source.ports ?? {};
 	const mismatch =
 		fitSide(shapeDecl.in, offered, "in", context, published) ??
 		fitSide(shapeDecl.out, offered, "out", context, published);

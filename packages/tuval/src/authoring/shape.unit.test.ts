@@ -35,6 +35,9 @@ const codexSession: ShapeSource = {
 
 const context = {arg: "reviewer", program: "codex-session"};
 
+/** A shape author reading this would take it as a promise about the whole `ask` port. */
+const asking = Program.shape({in: {ask: Prompt}, out: {}});
+
 describe("authoring.Program.shape", () => {
 	it("answers a value describing only the two port records", () => {
 		expect(Object.keys(reviewer).sort()).toEqual(["_tag", "in", "out"]);
@@ -42,12 +45,12 @@ describe("authoring.Program.shape", () => {
 		expect(Object.keys(reviewer.out)).toEqual(["result"]);
 	});
 
-	it("reads a program's own declarations as a shape, with a request port on the in side", () => {
+	it("reads a program's own declarations as a shape, with a request port on neither side", () => {
 		const offered = shapeOf({
 			id: "asker",
-			ports: {ask: port.request(Prompt, Verdict), said: port.out(Verdict)},
+			ports: {ask: port.request(Prompt, Verdict), heard: port.in(Prompt), said: port.out(Verdict)},
 		});
-		expect(Object.keys(offered.in)).toEqual(["ask"]);
+		expect(Object.keys(offered.in)).toEqual(["heard"]);
 		expect(Object.keys(offered.out)).toEqual(["said"]);
 	});
 });
@@ -173,6 +176,24 @@ describe("authoring.fitsShape", () => {
 		expect(failure?.port).toBe("prompt");
 		expect(failure?.message).toContain('declares "prompt" on its out side');
 	});
+
+	it("refuses a shape naming a port the program declares as a request", () => {
+		const asker: ShapeSource = {id: "asker", ports: {ask: port.request(Prompt, Verdict)}};
+		const fit = fitsShape(asking, asker, {arg: "reviewer", program: "asker"});
+		const failure = Result.isFailure(fit) ? fit.failure : undefined;
+		expect(failure).toBeInstanceOf(ShapeMismatch);
+		expect(failure?.port).toBe("ask");
+		expect(failure?.side).toBe("in");
+		expect(failure?.reason).toBe(
+			'the program declares "ask" as a request, and a shape cannot name a request port',
+		);
+	});
+
+	it("fits the same shape when the program declares that port as an in-port", () => {
+		const listener: ShapeSource = {id: "listener", ports: {ask: port.in(Prompt)}};
+		const fit = fitsShape(asking, listener, {arg: "reviewer", program: "listener"});
+		expect(Result.isSuccess(fit)).toBe(true);
+	});
 });
 
 /**
@@ -285,6 +306,13 @@ const shippedReviewer = defineProgram({
 
 const shipped = {arg: "reviewer", program: shippedReviewer.id};
 
+const shippedAsker = defineProgram({
+	id: "shipped-asker",
+	ports: {ask: port.request(Prompt, Verdict)},
+	init: (): number => 0,
+	update: {ask: (state: number) => [state, []]},
+});
+
 describe("authoring.shapeOf on a compiled row", () => {
 	it("reads a shipped row's ports, each on the side the row declares it", () => {
 		const offered = shapeOf(shippedReviewer);
@@ -292,19 +320,21 @@ describe("authoring.shapeOf on a compiled row", () => {
 		expect(Object.keys(offered.out)).toEqual(["result"]);
 	});
 
-	it("reads a compiled request port on the in side, by its input schema", () => {
-		const asker = defineProgram({
-			id: "shipped-asker",
-			ports: {ask: port.request(Prompt, Verdict)},
-			init: (): number => 0,
-			update: {ask: (state: number) => [state, []]},
-		});
-		const offered = shapeOf(asker);
-		expect(Object.keys(offered.in)).toEqual(["ask"]);
+	it("reads a compiled request port on neither side", () => {
+		const offered = shapeOf(shippedAsker);
+		expect(Object.keys(offered.in)).toEqual([]);
 		expect(Object.keys(offered.out)).toEqual([]);
-		const ask = offered.in.ask;
-		if (ask === undefined) throw new Error('no in-side signature for "ask"');
-		expect(payloadFits(Prompt, ask)).toBe(true);
+	});
+
+	it("refuses a shape naming a compiled request port, though the input payload fits", () => {
+		const fit = fitsShape(asking, shippedAsker, {arg: "reviewer", program: shippedAsker.id});
+		const failure = Result.isFailure(fit) ? fit.failure : undefined;
+		expect(failure).toBeInstanceOf(ShapeMismatch);
+		expect(failure?.port).toBe("ask");
+		expect(failure?.side).toBe("in");
+		expect(failure?.reason).toBe(
+			'the program declares "ask" as a request, and a shape cannot name a request port',
+		);
 	});
 
 	it("accepts a shipped row whose ports fit the declared shape", () => {
