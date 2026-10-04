@@ -1,7 +1,7 @@
 ---
 id: 0154
 title: The integration tier is CI-only — no local agent runs, no local fake
-status: accepted
+status: amended-in-part by [0461](0461-ci-only-follows-deploy-credentials.md)
 date: 2026-07-04
 tags: [testing, integration, ci, cloudflare, pipeline, product-development-framework]
 ---
@@ -71,3 +71,7 @@ Reference this decision by **slug** in code comments
 does not break the link.
 
 Built on ADR 0082 (which established the tier). Forcing case: #2061.
+
+Amended-in-part by [0461](0461-ci-only-follows-deploy-credentials.md): the CI-only rule above binds
+the `integration` suites that need a Cloudflare deploy token, and stands for them unchanged. 0461
+says where a credential-free `integration` suite may run.

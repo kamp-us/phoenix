@@ -48,7 +48,7 @@ This record is that ruling written down, per
 harness's knob.**
 
 - **The rule lives once, in the conventions.** Its home is
-  [`skill-conventions.md` §15](../claude-plugins/fabrika/docs/skill-conventions.md#15-the-plain-rule-first-then-the-harness-beside-its-knob).
+  [`skill-conventions.md` §16](../claude-plugins/fabrika/docs/skill-conventions.md#the-plain-rule-first-then-the-harness-beside-its-knob).
   A skill follows it and does not restate it.
 - **The shape is rule, then instance.** The harness-free rule comes first. The harness-named
   instance follows, and carries every number that belongs to the knob.

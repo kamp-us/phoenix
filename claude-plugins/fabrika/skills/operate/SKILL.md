@@ -137,14 +137,15 @@ is the event the act recorded, or the answer it read where it recorded none. Wha
 the spawned stage, with its time. So step 2's "the stage line otherwise" always names the last thing
 that finished since the line before it: the returned stage, or your own act where the return's line
 already went out. An act of yours that leads to no spawn prints no line under this passage; how a
-run stops or ends is step 4's to say.
+run stops or ends is the closing message's to say (Terminal vocabulary, below).
 
 A `lane dispatched` refusal code rides the line printed before the spawn it was recorded for, with
 what it means beside it.
 
 Both lines are written in **everyday words**: "writing the change" for a build, "checking it" for a
-review, "merging it" for a ship, "it needs a person" for a park. A pipeline word — lane, fold, park,
-shell, spawn, dispatch, a state name, a terminal token — is left out or explained in the same line.
+review, "merging it" for a ship, "it needs a person" for a park. A pipeline word is handled as
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+says, which holds the list of them.
 They read like this, with the real URL where the placeholder stands:
 
 ```text
@@ -2376,3 +2377,15 @@ is `founder`. A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
 lane you are only driving.
+
+**Close in plain words, on every ending.** Directly above the terminal token, your final message
+ends with the two plain lines
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+requires: what happened, and what the person does next. Write both on each of the five terminals,
+`STOPPED` and `LANE-HELD` included, and word them as that section says. On `LANE-PARKED` the second
+line is the one thing the person does to get the run moving, with the issue's full URL. A parked
+chore lane has no issue, so there the line names the chore and that one thing, with no URL. On
+`LANE-WAITING` it gives the time after which to start the run again. A command in either line is
+one they can paste ("A command you write for a person", above). Codes, `kept` and `left` lines and
+everything else this skill has you name for your caller go above those two lines, and the lines say
+what each code means.

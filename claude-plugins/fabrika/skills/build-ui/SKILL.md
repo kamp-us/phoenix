@@ -231,8 +231,15 @@ in code ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrik
 a token outside it is refused (exit `32`) rather than interpreted, and the verb proves the event
 before it records it — a `SHIPPED-PR` lands only against an open PR the board shows linking the
 issue. On any refusal, print the token and name the exit code; the operator re-reads and routes.
-Then print the token as the last line either way; a run whose caller named no lane prints the token
-only and records nothing.
+Then print the token as the last line either way; a run whose caller named no lane records nothing,
+and still writes the next paragraph's two plain lines above the token.
+
+**Close in plain words, on every ending.** Directly above the token, your closing message ends with
+the two plain lines
+[skill-conventions §15](../../docs/skill-conventions.md#a-closing-message-ends-in-two-plain-lines)
+requires: what happened, and what the person does next. Write both whichever of the five terminals
+you end on, a `STOPPED` and a `BLOCKED-NO-MANIFEST` included, and word them as that section says. A
+refusal's exit code goes above those lines, and they say what it means.
 
 ## Repair
 
