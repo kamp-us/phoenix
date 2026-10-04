@@ -489,6 +489,8 @@ went from a sentence you typed to a merged pull request, and the pipeline wrote 
 
 Where to go next:
 
+- [`build-your-first-app.md`](build-your-first-app.md): take an app idea to its first working
+  page, in this same repo.
 - [`adopt-fabrika-in-a-new-repo.md`](adopt-fabrika-in-a-new-repo.md): the same setup as a
   checklist for a repo that already has a board, a history and its own conventions. Its
   [step 2](adopt-fabrika-in-a-new-repo.md#2-find-out-what-your-repo-is-missing) shows what your
