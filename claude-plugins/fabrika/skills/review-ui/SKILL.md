@@ -86,7 +86,15 @@ to reach the head. It then resolves the mode over the PR's `ui` files:
   newest one it admits, and names it in its answer's `handCheck`. You do not look for it yourself.
   With none at this head it refuses on `21`. `--hand-check <comment-id>` pins one comment instead,
   and `22` says why it is not admitted.
-- `require-render` refuses on `21`: the rules owe a render.
+- `require-render` refuses on `21`: the rules owe a render. **Where that is because no rule
+  matched**, add the setup command below the printed note. `fabrika status settings` prints
+  `reviewUi` as `default` in a repo that declares no rule at all: name
+  `fabrika status bootstrap hand-check-rule` there, the one the
+  [getting-started tutorial](../../guide/getting-started.md#if-your-app-is-not-hosted-yet) gives,
+  and say it lets the owner check the screen and post a screenshot. Where the repo declares rules
+  and none covers these files, that command answers `exists`, so the printed note's files and
+  `reviewUi.whenNoPreview` are the whole answer. Naming the command is all you do with it: the
+  write is the owner's.
 
 **A `21` or `22` prints the note the owner reads, and you post it as printed.** It sits on stderr
 between `----- note begins -----` and `----- note ends -----`: what is owed in everyday words, and

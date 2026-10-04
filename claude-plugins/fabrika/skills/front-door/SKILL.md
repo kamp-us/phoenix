@@ -153,6 +153,13 @@ Then **converse** — you are human-typed, so a human is present. Take one gap a
   starts with the owner. Propose one look in plain words — the mood, two or three colours, the
   type, how dense a screen is — and ask for a yes. On the yes, shape that look into the file and
   run the bootstrap below. Without a yes, write nothing: the gap stays reported.
+- **`hand-check-rule` is one question, asked only of an app with a screen** — the owner says it
+  has one, or `uiSurfaces` in `fabrika status settings` carries a row. Ask it in everyday words:
+  *"Is your app hosted somewhere that puts up a preview copy of each pull request?"* On a **no**, run
+  `fabrika status bootstrap hand-check-rule` (below) and tell the owner what it sets up: when a pull
+  request changes a screen, they run the app, look at the screen, and post a screenshot on the pull
+  request. On a **yes**, write nothing; the reviewer opens the preview. An owner who is unsure has
+  no preview yet, so that is a no, and they delete the rule once hosting exists.
 - **Everything else** you report with its disposition and what that surface is — a `surface` row
   carries both, so you relay them rather than opening a skill file to find out.
 
@@ -162,6 +169,14 @@ fabrika status bootstrap design-manifest <<'EOF'
 …the draft you and the human settled on…
 EOF
 ```
+
+```bash
+fabrika status bootstrap hand-check-rule
+# status bootstrap: created .fabrika.jsonc for hand-check-rule with one hand-check rule, read-back conformed.
+```
+
+That rule counts once `.fabrika.jsonc` is committed to the default branch, so say so with the
+other setup files.
 
 <!-- anchor: MACHINE-READ-SURFACE --> **`roadmap-focus` is the exception to "draft by inference".**
 `ROADMAP.md` is read by machine — `triage homes` joins the repo's open milestones to its `## Arcs`

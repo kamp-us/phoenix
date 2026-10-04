@@ -316,7 +316,7 @@ const bootstrap = leafCommand(
 		path: Flag.string("path").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"override the target path for a file, line, json or dep-pin surface; must resolve inside the repository root",
+				"override the target path for a file, line, json, dep-pin or hand-check-rule surface; must resolve inside the repository root",
 			),
 		),
 		repo: repoFlag,

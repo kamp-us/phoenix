@@ -20,7 +20,14 @@
 import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
-import {CONFIG_PATH, type ConfigSource} from "../config/document.ts";
+import {CONFIG_PATH, type ConfigSource, readDocument} from "../config/document.ts";
+import {setJsoncValue} from "../config/jsonc-edit.ts";
+import {
+	type NoPreviewRule,
+	REVIEW_UI,
+	reviewUiKey,
+	WHEN_NO_PREVIEW,
+} from "../config/keys/review-ui.ts";
 import {loadConfig} from "../config/load.ts";
 import {type Read, readRoadmapFile} from "../config/paths.ts";
 import {resolveBoard} from "../config/resolve-board.ts";
@@ -259,6 +266,14 @@ export type BuildableSurface =
 	  }
 	| {
 			readonly id: string;
+			readonly kind: "no-preview-rule";
+			/** The registry default write path — the repo's tracked config file. */
+			readonly defaultPath: string;
+			/** The one rule this surface writes when the file declares none. */
+			readonly rule: HandCheckRule;
+	  }
+	| {
+			readonly id: string;
 			readonly kind: "labels";
 			/**
 			 * Derived from the resolved board rather than fixed, so a repo that declared its own
@@ -343,6 +358,21 @@ export const installCostNotices = (packageName: string): ReadonlyArray<string> =
 	`${VERB}: pnpm 10 skips that postinstall until you approve it — run \`pnpm approve-builds\` and pick ${packageName}, or add ${packageName} to \`onlyBuiltDependencies\` and run \`pnpm rebuild ${packageName}\`; approving it is what lets \`ui render\`'s browser setup run.`,
 ];
 
+/**
+ * A `reviewUi.whenNoPreview` rule whose mode can only be `hand-check`. Setup writes this one mode:
+ * the ruling excludes skipping the screen check, so `skip` is not a value this surface can carry.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10362#issuecomment-5974640994
+ */
+export type HandCheckRule = NoPreviewRule & {readonly mode: "hand-check"};
+
+/**
+ * The `hand-check-rule` rule: every path, so it covers whichever source roots `uiSurfaces` names now
+ * or later. The rule is only ever read over a pull request's ui-class files, and the route refuses
+ * it when the pull request has a preview, so the wide glob loosens nothing else.
+ */
+const HAND_CHECK_RULE: HandCheckRule = {paths: ["**"], mode: "hand-check"};
+
 /** The marker heading that decides `exists` for the CLAUDE.md section, and its first line. */
 export const CLAUDE_MD_MARKER = "## Work flows through fabrika";
 
@@ -378,7 +408,7 @@ The per-stage shells are surgical — resume a half-dead lane, re-run one gate, 
 never the normal entry point: \`build\` (**builder**), \`review\` (**reviewer**), \`ship\`
 (**shipper**), and \`heal-ci\` for a PR that is green but going nowhere.`;
 
-/** Nine ids. A tenth is a change to this table, not a new rule. */
+/** Ten ids. An eleventh is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
@@ -413,6 +443,7 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 		defaultPath: "package.json",
 		packageName: FABRIKA_CLI_PACKAGE,
 	},
+	{id: "hand-check-rule", kind: "no-preview-rule", defaultPath: CONFIG_PATH, rule: HAND_CHECK_RULE},
 ];
 
 const findSurface = (id: string): BuildableSurface | undefined =>
@@ -470,13 +501,16 @@ const created = (
 	return answer(stdout, [notice, ...(extraNotices ?? [])]);
 };
 
-const already = (surfaceId: string, target: string, json: boolean): VerbOutcome => {
+const already = (
+	surfaceId: string,
+	target: string,
+	json: boolean,
+	notice = `${target} is already present for ${surfaceId} — nothing written.`,
+): VerbOutcome => {
 	const stdout = json
 		? `${JSON.stringify({outcome: "exists", surfaceId, target, readback: EMPTY_CELL})}\n`
 		: `${row("bootstrap", "exists", surfaceId, target, EMPTY_CELL)}\n`;
-	return answer(stdout, [
-		`${VERB}: ${target} is already present for ${surfaceId} — nothing written.`,
-	]);
+	return answer(stdout, [`${VERB}: ${notice}`]);
 };
 
 /** The stdin content, or the refusal its three variants owe. `Failed` is `1`; empty is `3`. */
@@ -800,6 +834,102 @@ const buildDepPin = (
 		);
 	});
 
+const RULES_KEY = `${REVIEW_UI}.${WHEN_NO_PREVIEW}`;
+
+/**
+ * **The config file is edited in place, never re-serialized.** `.fabrika.jsonc` carries a person's
+ * comments, so the rule is spliced into the text and every other byte stays. Any rule already
+ * declared is `exists`, whatever its mode: which paths take which mode is the repo's own statement
+ * once it has made one, and a second rule from here could only contradict it.
+ *
+ * The spliced text is re-parsed before it is written. A document whose other keys moved, or whose
+ * `reviewUi` is not exactly this surface's rule, is refused unwritten.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10362#issuecomment-5974640994
+ */
+const buildNoPreviewRule = (
+	surface: Extract<BuildableSurface, {kind: "no-preview-rule"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const target = yield* targetOf(surface, input);
+		if (!isTarget(target)) return target;
+		const {relative, absolute} = target;
+		const declared = {[REVIEW_UI]: {[WHEN_NO_PREVIEW]: [surface.rule]}};
+
+		const probe = yield* Effect.result(exists(absolute));
+		if (Result.isFailure(probe)) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot probe ${relative}: ${probe.failure.reason} — nothing was written.`,
+			);
+		}
+		if (!probe.success) {
+			return yield* writeAndReadBack(
+				surface.id,
+				relative,
+				absolute,
+				renderJson(declared, FRESH_JSON_LAYOUT),
+				input,
+				`created ${relative} for ${surface.id} with one ${surface.rule.mode} rule, read-back conformed.`,
+			);
+		}
+		const read = yield* Effect.result(readFile(absolute));
+		if (Result.isFailure(read)) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read ${relative}: ${read.failure.reason} — whether a \`${RULES_KEY}\` rule is already there is UNKNOWN, and nothing was written.`,
+			);
+		}
+		const before = readDocument({_tag: "Text", text: read.success}, relative);
+		if (before._tag !== "Record") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${relative} does not parse as a JSON object with comments — nothing was written.`,
+			);
+		}
+		const standing =
+			before.record[REVIEW_UI] === undefined
+				? ({_tag: "Value", value: reviewUiKey.shippedDefault} as const)
+				: reviewUiKey.decode(before.record[REVIEW_UI]);
+		if (standing._tag === "Malformed") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${relative} is refused — ${standing.reason.replace(/\.$/, "")}. Nothing was written; fix that key first.`,
+			);
+		}
+		if (standing.value.whenNoPreview.length > 0) {
+			return already(
+				surface.id,
+				relative,
+				input.json,
+				`${relative} already carries a \`${RULES_KEY}\` rule — nothing written.`,
+			);
+		}
+
+		const edit = setJsoncValue(read.success, [REVIEW_UI, WHEN_NO_PREVIEW], [surface.rule]);
+		const after =
+			edit._tag === "Edited" ? readDocument({_tag: "Text", text: edit.text}, relative) : null;
+		if (
+			edit._tag === "Refused" ||
+			after?._tag !== "Record" ||
+			!jsonEquals(after.record, {...before.record, ...declared})
+		) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot add the rule to ${relative} without moving its other keys — nothing was written. Add ${JSON.stringify(surface.rule)} under "${RULES_KEY}" by hand.`,
+			);
+		}
+		return yield* writeAndReadBack(
+			surface.id,
+			relative,
+			absolute,
+			edit.text,
+			input,
+			`added one ${surface.rule.mode} rule to ${relative} for ${surface.id}, read-back conformed.`,
+		);
+	});
+
 /**
  * One write, one re-read, one comparison — the protocol every byte-writing arm here runs. The notice
  * prefix (`created …` / `merged …`) is the caller's, because the arms differ in what landed; extra
@@ -1056,5 +1186,6 @@ export const runBootstrap = (
 	if (surface.kind === "line") return buildLine(surface, input);
 	if (surface.kind === "json") return buildJsonPatch(surface, input);
 	if (surface.kind === "dep-pin") return buildDepPin(surface, input);
+	if (surface.kind === "no-preview-rule") return buildNoPreviewRule(surface, input);
 	return surface.kind === "labels" ? buildLabels(surface, input) : buildArtifact(surface, input);
 };

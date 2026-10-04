@@ -721,6 +721,7 @@
 					"issue-dependencies",
 					"settings-patch",
 					"dep-pin",
+					"hand-check-rule",
 					"label-taxonomy",
 					"issue-shape-markers",
 					"standing-lanes",

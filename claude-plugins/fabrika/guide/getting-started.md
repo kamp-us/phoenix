@@ -294,6 +294,32 @@ The last line it prints starts with the file's name:
 {"manifest":"design-system-manifest.md","registry":null,"inventory":null,"goldenPointer":null,"uiSurfaces":[],"lawSource":"manifest-prose"}
 ```
 
+### If your app is not hosted yet
+
+When a pull request changes a screen, fabrika's reviewer wants to see that screen. By default it
+opens a preview: a hosted copy of the app that your hosting puts up for each pull request. A new
+app has no hosting, so there is nothing to open, and the pull request would stop at review.
+
+If nothing puts up a preview for each pull request, say now that you will check the screen
+yourself:
+
+```bash
+fabrika status bootstrap hand-check-rule
+```
+
+```
+status bootstrap: created .fabrika.jsonc for hand-check-rule with one hand-check rule, read-back conformed.
+bootstrap	created	hand-check-rule	.fabrika.jsonc	ok
+```
+
+That writes one rule into `.fabrika.jsonc`, with the mode `hand-check`. From then on, when a pull
+request changes a screen, you run the app, look at the screen, and post a screenshot in a comment
+on the pull request. The reviewer reads your comment in place of a preview.
+
+If your app already has a preview for each pull request, skip this.
+[If your app has no preview deploys](adopt-fabrika-in-a-new-repo.md#if-your-app-has-no-preview-deploys)
+has the details.
+
 ## 10. Commit the setup
 
 ```bash
@@ -304,6 +330,12 @@ If you wrote the design rules in step 9, add them too:
 
 ```bash
 git add design-system-manifest.md
+```
+
+And if you wrote the hand-check rule there:
+
+```bash
+git add .fabrika.jsonc
 ```
 
 Then commit:
