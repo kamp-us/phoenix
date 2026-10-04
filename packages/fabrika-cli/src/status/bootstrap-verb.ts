@@ -63,6 +63,7 @@ import {
 } from "./codes.ts";
 import {EMPTY_CELL, row} from "./fields.ts";
 import {ARTIFACT_TITLE} from "./readout-verb.ts";
+import {STARTER_CONFIG} from "./starter-config.ts";
 import {PLUGIN, SETTINGS_PATH} from "./wiring-verb.ts";
 
 const VERB = "status bootstrap";
@@ -274,6 +275,14 @@ export type BuildableSurface =
 	  }
 	| {
 			readonly id: string;
+			readonly kind: "starter";
+			/** The registry default write path — where this lands in a repo that declares nothing. */
+			readonly defaultPath: string;
+			/** The whole file, fixed in the registry and written only when the target is absent. */
+			readonly content: string;
+	  }
+	| {
+			readonly id: string;
 			readonly kind: "labels";
 			/**
 			 * Derived from the resolved board rather than fixed, so a repo that declared its own
@@ -408,7 +417,7 @@ The per-stage shells are surgical — resume a half-dead lane, re-run one gate, 
 never the normal entry point: \`build\` (**builder**), \`review\` (**reviewer**), \`ship\`
 (**shipper**), and \`heal-ci\` for a PR that is green but going nowhere.`;
 
-/** Ten ids. An eleventh is a change to this table, not a new rule. */
+/** Eleven ids. A twelfth is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
@@ -443,6 +452,7 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 		defaultPath: "package.json",
 		packageName: FABRIKA_CLI_PACKAGE,
 	},
+	{id: "fabrika-config", kind: "starter", defaultPath: CONFIG_PATH, content: STARTER_CONFIG},
 	{id: "hand-check-rule", kind: "no-preview-rule", defaultPath: CONFIG_PATH, rule: HAND_CHECK_RULE},
 ];
 
@@ -931,6 +941,37 @@ const buildNoPreviewRule = (
 	});
 
 /**
+ * **A starter surface writes its own file whole, and only into a gap.** The target's existence is
+ * the collision guard, as it is for a file surface: whatever is already there is the repo's own
+ * statement and is never read, merged or judged.
+ */
+const buildStarter = (
+	surface: Extract<BuildableSurface, {kind: "starter"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const target = yield* targetOf(surface, input);
+		if (!isTarget(target)) return target;
+		const {relative, absolute} = target;
+		const probe = yield* Effect.result(exists(absolute));
+		if (Result.isFailure(probe)) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot probe ${relative}: ${probe.failure.reason} — nothing was written.`,
+			);
+		}
+		if (probe.success) return already(surface.id, relative, input.json);
+		return yield* writeAndReadBack(
+			surface.id,
+			relative,
+			absolute,
+			surface.content,
+			input,
+			`created ${relative} for ${surface.id}, read-back conformed.`,
+		);
+	});
+
+/**
  * One write, one re-read, one comparison — the protocol every byte-writing arm here runs. The notice
  * prefix (`created …` / `merged …`) is the caller's, because the arms differ in what landed; extra
  * notices ride the same channel, which is how dep-pin hands over the install command.
@@ -1186,6 +1227,7 @@ export const runBootstrap = (
 	if (surface.kind === "line") return buildLine(surface, input);
 	if (surface.kind === "json") return buildJsonPatch(surface, input);
 	if (surface.kind === "dep-pin") return buildDepPin(surface, input);
+	if (surface.kind === "starter") return buildStarter(surface, input);
 	if (surface.kind === "no-preview-rule") return buildNoPreviewRule(surface, input);
 	return surface.kind === "labels" ? buildLabels(surface, input) : buildArtifact(surface, input);
 };
