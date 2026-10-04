@@ -263,6 +263,21 @@ describe("runPick", () => {
 		expect(JSON.parse(out.stdout).pool[0].home).toBeNull();
 	});
 
+	it("refuses a lane declaration nobody could read on 11 — never ranked as a repo with no lane", async () => {
+		const seams = fakeSeams([...LANE_CANDIDATE, NO_BLOCKERS, NO_TABLE]);
+		const fs = fakeFs({
+			files: {"/repo/.fabrika.jsonc": JSON.stringify({boardVocabulary: "wayfinder:backlog"})},
+		});
+		const out = await Effect.runPromise(
+			Effect.provide(runPick(options), Layer.merge(seams.layer, fs.layer)),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("build pick: cannot read the standing lanes");
+		expect(out.stderr.at(-1)).toContain("which label is a home here is UNKNOWN, never none");
+		expect(seams.requests.filter((line) => line.includes("labels=status%3Atriaged"))).toEqual([]);
+	});
+
 	it("prints an empty pool as a FACT on exit 0, with the scanned counts beside it", async () => {
 		const out = await run([
 			[bucket("p0"), EMPTY],

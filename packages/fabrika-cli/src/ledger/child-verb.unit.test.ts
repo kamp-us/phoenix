@@ -247,6 +247,19 @@ describe("runChild", () => {
 		expect(calls).toEqual([]);
 	});
 
+	/** An unreadable declaration is not "no lanes": that reading refuses a valid lane child on `10`. */
+	it("refuses on 11 when the lane declaration cannot be read, and reads no board", async () => {
+		const {outcome, calls, written} = await run({milestone: null, labels: [LANE]}, HAPPY, {
+			[runJsonPath(DIR)]: RUN_JSON(),
+			[`${DIR}/${CONFIG_PATH}`]: JSON.stringify({boardVocabulary: LANE}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain("standing lanes");
+		expect(outcome.stderr.at(-1)).not.toContain("a child needs a home");
+		expect(calls).toEqual([]);
+		expect(written.size).toBe(0);
+	});
+
 	it("mints a milestone-homed child", async () => {
 		const minted = await run({milestone: HOME});
 		expect(minted.outcome.code).toBe(0);
