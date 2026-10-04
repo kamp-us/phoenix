@@ -426,7 +426,7 @@ Four events carry a claim, and which artifact answers them is the task's shape.
 
 **On an epic run's child, which opens no PR at all:**
 
-- A DONE out of `build` or `build:ui` claims the commits its lane branch adds over `epic/<n>` in
+- A DONE out of `build`, `build:ui` or `build:mixed` claims the commits its lane branch adds over `epic/<n>` in
   THIS tree.
 - A PASS out of `review` claims a range-scoped verdict on the child issue still bound to the content
   that range carries now, for every namespace that range derives except the routed one. A child's

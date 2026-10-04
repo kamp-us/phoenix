@@ -1289,9 +1289,11 @@ prints it; a single-task lane tolerates omission.)
 **`--class` is how a UI lane reaches its own shells.** The machine's `build:ui` and `review:ui`
 states are entered by a guarded arm reading the classes standing over the task, and those classes
 ride the event line the way `--cause` does. **`build:mixed` has no class of its own to relay**: the
-machine enters it whenever `ui` stands beside a text class (`code`, `doc`, `skill`), on the first
-build and on every repair round, so relaying the rows below is the whole act and `--class mixed` is
-refused at exit `38`.
+machine enters it when `ui` stands beside a text class (`code`, `doc`, `skill`), on the first build
+and on a FAIL out of `review` or `review:ui`, so relaying the rows below is the whole act and
+`--class mixed` is refused at exit `38`. Every other route back to construction lands a mixed lane
+in `build`, as it does any lane: a FAIL out of `ship`, `ship:queued` or `human:cp-approval`, and the
+`base-conflicted` lap.
 
 **A head decides the classes wherever one exists; the ticket's stamp decides only the first build.**
 That is the ruling the decision record *The head's diff decides the classes a review round owes*
@@ -1475,13 +1477,14 @@ names it. A cause outside the set is exit `35` with the log unappended, as it is
 **The cell has to be there, and on an epic lane one key decides whether it is.**
 `.fabrika.jsonc`'s `machineryLaps.onEmit` ships `off` and is read by `lane emit` alone. An epic
 machine emitted under `off` holds no `LAP` cell at all; one emitted under `on` holds it in each
-child region's `build`, `review` and `integrate` — plus a rendered child's `build:ui` — and in the
+child region's `build`, `review` and `integrate` — plus a rendered child's `build:ui` and a mixed
+child's `build:mixed` — and in the
 tail's `build`, `review`, `review:ui`, `ship` and `ship:queued`. Every state that dispatches a shell
 carries it on both sides of that list, so a `SHELL-DEAD` is recordable wherever a shell was
 dispatched. A single-issue lane is a different document: it boots from the committed coder template
 ([`coder.workflow.json`](../../../../packages/fabrika-cli/src/lane/templates/coder.workflow.json)),
-which the key does not gate and which carries the cell in `build`, `build:ui`, `review`,
-`review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no
+which the key does not gate and which carries the cell in `build`, `build:ui`, `build:mixed`,
+`review`, `review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no
 `LAP` cell is `lane report` exit `12` with the log unappended — not a token to retype. Record the
 pre-lap park instead, naming the same cause the table above gives it (`BLOCKED --cause
 replay-conflict` for a `REPLAY-COLLIDED` an epic machine cannot take), and accept what that costs: a

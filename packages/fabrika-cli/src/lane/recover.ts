@@ -22,7 +22,7 @@
  *   reviewer's run reached **no** verdict. A negative like that is proven by the absence of a
  *   contradiction rather than by an artifact somebody posted, so the sweep would park every lane
  *   whose reviewer has simply not finished yet.
- * - A `DONE` out of `build` or `build:ui` claims `OpenPull`, which `./prove-verb.ts` answers `proven` for on the
+ * - A `DONE` out of `build`, `build:ui` or `build:mixed` claims `OpenPull`, which `./prove-verb.ts` answers `proven` for on the
  *   existence of one open PR whose body links the issue — a fact about the PR being *open*, never
  *   about the builder being *done* with it. A lane in a repair round carries exactly that PR for the
  *   whole round, so the sweep would move it to `review` while the builder is still pushing. The
