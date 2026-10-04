@@ -68,9 +68,12 @@ alone**, over the roots this repo declares in `.fabrika.jsonc`'s `governedRoots`
 - **Independent of who reviewed.** The predicate consults neither which skill ran nor what it
   concluded, so a `review` PASS discharges nothing and a `review` run that forgot to fire you leaves
   the namespace required — the omission surfaces as a refusal rather than as silence.
-- **Self-covering.** A diff editing this skill, its contract or the root set sits under
-  `claude-plugins/` and derives its own namespace. `claude-plugins/fabrika/` carries no CODEOWNERS
-  row, so nothing else would catch it.
+- **Self-covering, where the repo declares it.** A diff editing the root set touches
+  `.fabrika.jsonc`, a shipped root, so it always derives its own namespace. A diff editing this
+  skill or its contract derives it only in a repo that carries the plugin in its tree and declares
+  that tree as a root: the shipped roots do not cover the skill's directory. A repo that keeps the
+  plugin in its tree with no CODEOWNERS row over it declares that root, because nothing else would
+  catch the edit.
 
 <!-- anchor: HARNESS-IS-NOT-CP --> **Harness-touching is not control-plane.** Control-plane asks
 *who must approve*, from `.github/CODEOWNERS`, enforced by GitHub
