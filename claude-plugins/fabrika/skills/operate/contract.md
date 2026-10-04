@@ -80,7 +80,9 @@ append it, and refuse on the prover's own code with the log byte-identical. The 
   Name one from the closed set; the log is unappended.
 - A repeatable `--class` lands the lane classes standing at the event on the same line. It is the
   fact the machine's `class:<name>` arms route on: `--class ui` on a WIP sends the lane to
-  `build:ui`, and it stands until another event names a different set.
+  `build:ui`, and it stands until another event names a different set. `ui` beside a text class
+  (`code`, `doc`, `skill`) sends it to `build:mixed` instead, and sends a FAIL out of `review` or
+  `review:ui` back there: the machine reads `mixed` off the standing set, so no flag value names it.
 - `38` — `--class` is outside the closed lane-class set.
 
 ## `lane status`
@@ -340,7 +342,7 @@ at all, and `issueClose` where it answered `closes`.
   That pair is the only record a repair builder's `build claim --lane` reads an integrate FAIL off,
   and it lands on the line as `integrate`.
 - `72` — no group that owns the token serves the task's current leaf state: builder `build` /
-  `build:ui`, reviewer `review`, ui-reviewer `review:ui`, shipper `ship` / `ship:queued`,
+  `build:ui` / `build:mixed`, reviewer `review`, ui-reviewer `review:ui`, shipper `ship` / `ship:queued`,
   integrator `integrate`, machinery any state. A token several groups share is accepted when any
   owner serves the leaf. The refusal names the token, the leaf and the owners, and the log is
   unappended. It is a late or misrouted terminal: the lane already moved past the state that shell
@@ -401,7 +403,7 @@ Four events carry a claim, and which artifact answers them is the task's shape.
 
 **On a single-issue lane and on an epic run's tail:**
 
-- A DONE out of `build` or `build:ui` claims an open PR whose body links the task's issue. When
+- A DONE out of `build`, `build:ui` or `build:mixed` claims an open PR whose body links the task's issue. When
   no PR links it, it claims instead a comment a no-PR builder posted on the issue since the task
   entered build, whatever the issue's type, which is the one arm that answers a `diagnosis` field
   beside the proof. `lane
@@ -1427,7 +1429,7 @@ out, for one reason: a shell that is merely still working satisfies each of them
 - The BLOCKED a reviewer's park claims is negative ("the run reached no verdict"), proven by the
   absence of a contradiction rather than by an artifact anyone posted. A sweep standing on it would
   park every lane whose reviewer is still running.
-- The DONE out of `build` or `build:ui` claims OpenPull, which proves on the existence of one open PR
+- The DONE out of `build`, `build:ui` or `build:mixed` claims OpenPull, which proves on the existence of one open PR
   linking the issue: a fact about the PR being open, never about the builder being done with it. A
   lane in a repair round carries exactly that PR for the whole round, so a sweep standing on it would
   move the lane to review under the live builder.
@@ -1441,7 +1443,7 @@ the lane byte-identical and land as their own row, so an unreadable board is a r
 than a lane moved on a read nobody made. The queue arm records on a `landed` or `ejected` answer from
 `ship reconcile` and on nothing else, as that arm's section says.
 
-**`--spawns` parks rather than finishes.** A lane standing in `build` or `build:ui` whose build claim
+**`--spawns` parks rather than finishes.** A lane standing in `build`, `build:ui` or `build:mixed` whose build claim
 has outlived the builder's own budget, with NO lane branch in this clone and NOTHING on the surface
 that lane's role publishes to, is a lane whose shell is gone and which will never move again. Lane
 7778 held a seat against the concurrency cap for five days because recording its

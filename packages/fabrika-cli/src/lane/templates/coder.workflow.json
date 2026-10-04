@@ -17,6 +17,7 @@
 							"queued": {
 								"on": {
 									"ISSUE.WIP": [
+										{ "target": "build:mixed", "guard": "class:mixed" },
 										{ "target": "build:ui", "guard": "class:ui" },
 										{ "target": "build" }
 									],
@@ -54,6 +55,20 @@
 									]
 								}
 							},
+							"build:mixed": {
+								"on": {
+									"ISSUE.DONE": "review",
+									"ISSUE.BLOCKED": "blocked",
+									"ISSUE.LAP": [
+										{
+											"target": "build:mixed",
+											"guard": "lapsRemaining",
+											"actions": "incrementLaps"
+										},
+										{ "target": "human:machinery-stall" }
+									]
+								}
+							},
 							"review": {
 								"on": {
 									"ISSUE.PASS": [
@@ -70,6 +85,7 @@
 										{ "target": "human:machinery-stall" }
 									],
 									"ISSUE.FAIL": [
+										{ "target": "build:mixed", "guard": "class:mixed" },
 										{
 											"target": "build",
 											"guard": "retriesRemaining",
@@ -93,6 +109,7 @@
 										{ "target": "human:machinery-stall" }
 									],
 									"ISSUE.FAIL": [
+										{ "target": "build:mixed", "guard": "class:mixed" },
 										{
 											"target": "build:ui",
 											"guard": "retriesRemaining",

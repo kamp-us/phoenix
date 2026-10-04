@@ -115,24 +115,39 @@ export const epicBranch = (epic: number): GitRef => `epic/${epic}` as GitRef;
 export type ReviewRange = CommitRange<HeadSha>;
 
 /**
- * The five leaf states that route to a shell. Every other state is a refusal, never a guess.
+ * The six leaf states that route to a shell. Every other state is a refusal, never a guess.
  *
- * A UI-class lane runs its construction and its rendered review in shells of their own,
+ * A UI-class lane runs its construction and its rendered review in shells of their own, a mixed
+ * lane constructs in the shell carrying both construction laws,
  * and the state name is what carries the class — the routing stays a 1:1 state → shell map rather
  * than a diff a brief would have to read, which a `build` state has no PR to read anyway.
  */
-export const SHELL_STATES = ["build", "build:ui", "review", "review:ui", "ship"] as const;
+export const SHELL_STATES = [
+	"build",
+	"build:ui",
+	"build:mixed",
+	"review",
+	"review:ui",
+	"ship",
+] as const;
 
 export type ShellState = (typeof SHELL_STATES)[number];
 
-export type LaneShell = "builder" | "ui-builder" | "reviewer" | "ui-reviewer" | "shipper";
+export type LaneShell =
+	| "builder"
+	| "ui-builder"
+	| "mixed-builder"
+	| "reviewer"
+	| "ui-reviewer"
+	| "shipper";
 
-// The two UI shells are named for the actor, not the skill they preload: `build-ui` / `review-ui`
+// The UI and mixed shells are named for the actor, not the skill they preload: `build-ui` / `review-ui`
 // are the SKILL names, and an agent whose `name:` is the bare spelling of its skill collides with
 // that skill. `claude-plugins/fabrika/agents/` is authoritative here.
 const SHELLS: Readonly<Record<ShellState, LaneShell>> = {
 	build: "builder",
 	"build:ui": "ui-builder",
+	"build:mixed": "mixed-builder",
 	review: "reviewer",
 	"review:ui": "ui-reviewer",
 	ship: "shipper",
@@ -144,12 +159,13 @@ export const shellOf = (state: ShellState): LaneShell => SHELLS[state];
 /**
  * Whether a state constructs, and whether it judges — the two questions the ground rules ask.
  *
- * They ask about the *round*, not the shell: a `build:ui` brief carries no PR for the same reason a
- * `build` one does not, and a `review:ui` child brief needs the same resolved range a `review` one
- * does. Written as predicates so a sixth state cannot answer one of the two by accident.
+ * They ask about the *round*, not the shell: a `build:ui` or `build:mixed` brief carries no PR for
+ * the same reason a `build` one does not, and a `review:ui` child brief needs the same resolved
+ * range a `review` one does. Written as predicates so a seventh state cannot answer one of the two
+ * by accident.
  */
 export const isBuildState = (state: ShellState): boolean =>
-	state === "build" || state === "build:ui";
+	state === "build" || state === "build:ui" || state === "build:mixed";
 
 export const isReviewState = (state: ShellState): boolean =>
 	state === "review" || state === "review:ui";
