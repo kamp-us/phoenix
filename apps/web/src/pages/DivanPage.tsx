@@ -5,15 +5,27 @@
  *   which `<Screen>` renders as "yetkin yok". Deliberately no client-side role check.
  * - It reads ONLY the `sandboxBacklogWhere` destination, never the inline `{mod, author}`
  *   filter, so çaylak work stays visible only inside the divan.
+ *
+ * The section comes from the route, never from component state (#8776): `/divan` is the
+ * roster and `/divan/raporlar` the reports pane, so both panes are addressable by URL and
+ * the switch survives a reload. `divanSection.ts` owns the resolution, including the
+ * moderator fold.
  */
 
 import {Alert, Button} from "@kampus/design";
-import {useEffect, useMemo, useState} from "react";
+import {useCallback, useEffect, useMemo, useState} from "react";
+import {useNavigate} from "react-router";
 import {useMe} from "../auth/useMe";
 import {CaylakDetail} from "../components/divan/CaylakDetail";
 import {DecisionFeed} from "../components/divan/DecisionFeed";
 import {DivanRoster} from "../components/divan/DivanRoster";
 import {useSetDivanSubnavContent} from "../components/divan/DivanSubnavLayout";
+import {
+	type DivanSection,
+	divanSectionFromFilterId,
+	divanSectionHref,
+	visibleDivanSection,
+} from "../components/divan/divanSection";
 import {Raporlar} from "../components/divan/Raporlar";
 import {TriageLoop} from "../components/divan/TriageLoop";
 import type {SubnavFilter} from "../components/layout/Subnav";
@@ -26,12 +38,17 @@ const DIVAN_SECTION_KEYS: ReadonlyArray<{readonly id: string; readonly labelKey:
 	{id: "raporlar", labelKey: "divan.nav.raporlar"},
 ];
 
-export function DivanPage() {
-	return <DivanWorkspace />;
+/**
+ * `section` is supplied by the route that mounted the page — `App.tsx` mounts `/divan`
+ * plainly and `/divan/raporlar` with `section="raporlar"`, so no path parsing lives here.
+ */
+export function DivanPage({section = "caylaklar"}: {readonly section?: DivanSection}) {
+	return <DivanWorkspace routeSection={section} />;
 }
 
-function DivanWorkspace() {
+function DivanWorkspace({routeSection}: {readonly routeSection: DivanSection}) {
 	const t = useT();
+	const navigate = useNavigate();
 	const {me} = useMe();
 	// The open çaylak carries the roster row's viewer-scoped `viewerVouched` with it, so the
 	// detail's "kefil oldun" state comes off the roster's batched read rather than a second
@@ -43,13 +60,22 @@ function DivanWorkspace() {
 	const selectedId = selected?.authorId ?? null;
 	// Gate raporlar on the server-side isModerator signal, never on tier.
 	const raporlarVisible = me?.isModerator ?? false;
-	const [section, setSection] = useState<"caylaklar" | "raporlar">("caylaklar");
-	const showRaporlarPane = raporlarVisible && section === "raporlar";
+	const section = visibleDivanSection(routeSection, raporlarVisible);
+	const showRaporlarPane = section === "raporlar";
 	// The loop is the product, the grid its Esc fallback — see ADR 0138.
 	const [raporlarMode, setRaporlarMode] = useState<"loop" | "grid">("loop");
+	// Switching sections is a navigation, so a shared link and a reload both land back here.
+	const goToSection = useCallback(
+		(next: DivanSection) => {
+			if (next === "raporlar") setRaporlarMode("loop");
+			navigate(divanSectionHref(next));
+		},
+		[navigate],
+	);
 
-	// The page owns the switch state, so it publishes the switchers UP into divan's persistent
-	// Subnav zone. No zone ancestor ⇒ setter null ⇒ the in-page nav below renders instead.
+	// The page knows which section is live, so it publishes the switchers UP into divan's
+	// persistent Subnav zone. No zone ancestor ⇒ setter null ⇒ the in-page nav below renders
+	// instead.
 	const setDivanSubnav = useSetDivanSubnavContent();
 	const inZone = setDivanSubnav != null;
 
@@ -65,18 +91,11 @@ function DivanWorkspace() {
 				? {
 						filters: sectionFilters,
 						activeFilter: section,
-						onFilterChange: (id) => {
-							if (id === "raporlar") {
-								setSection("raporlar");
-								setRaporlarMode("loop");
-							} else {
-								setSection("caylaklar");
-							}
-						},
+						onFilterChange: (id) => goToSection(divanSectionFromFilterId(id)),
 					}
 				: null,
 		);
-	}, [inZone, setDivanSubnav, raporlarVisible, section, sectionFilters]);
+	}, [inZone, setDivanSubnav, raporlarVisible, section, sectionFilters, goToSection]);
 	useEffect(() => {
 		return () => setDivanSubnav?.(null);
 	}, [setDivanSubnav]);
@@ -97,7 +116,7 @@ function DivanWorkspace() {
 							size="sm"
 							className="kp-divan__nav-tab"
 							aria-current={section === "caylaklar" ? "true" : undefined}
-							onClick={() => setSection("caylaklar")}
+							onClick={() => goToSection("caylaklar")}
 							data-testid="divan-nav-caylaklar"
 						>
 							{t("divan.nav.caylaklar")}
@@ -108,10 +127,7 @@ function DivanWorkspace() {
 							size="sm"
 							className="kp-divan__nav-tab"
 							aria-current={section === "raporlar" ? "true" : undefined}
-							onClick={() => {
-								setSection("raporlar");
-								setRaporlarMode("loop");
-							}}
+							onClick={() => goToSection("raporlar")}
 							data-testid="divan-nav-raporlar"
 						>
 							{t("divan.nav.raporlar")}

@@ -28,6 +28,26 @@ Routes fall into two visibility classes:
 
 `/lab/*` is a third, deliberately-public class — see below.
 
+### A product's sections are path segments, not page state
+
+A product zone that switches between sections gives each one a URL under the product's
+segment. `/divan` is the çaylak roster and `/divan/raporlar` the reports pane; `App.tsx`
+mounts both off the `DIVAN_PATH` / `DIVAN_RAPORLAR_PATH` constants in
+[`divanSection.ts`](../apps/web/src/components/divan/divanSection.ts), passing the section
+down as a prop, so the page parses no path itself. The in-page and Subnav switchers
+navigate rather than set state.
+
+Two things this buys, and one it does not:
+
+- A moderator can link or reload into raporlar.
+- `review-ui` can paint the pane. Its renderer navigates and never clicks, so a section
+  held in `useState` is invisible to the design gate however the preview is seeded —
+  that is the defect this shape retired (#8776).
+- It buys **no entitlement**. `visibleDivanSection` folds a raporlar URL down to the roster
+  whenever the server's `isModerator` is not true, and the fold is a render decision, not a
+  redirect: `me` reads `false` while it is still unread, so a redirect would spend a
+  moderator's own URL on the loading frame.
+
 ## Per-product Subnav zones — nested layout routes
 
 Each product (`/sozluk`, `/pano`, `/mecmua`, `/divan`) mounts its routes under a
