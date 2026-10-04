@@ -551,7 +551,7 @@ describe("review-ui route --no-preview", () => {
 		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
 	});
 
-	it("refuses on 21 under hand-check when no owner's hand-check at this head is on the PR", async () => {
+	it("refuses on 21 under hand-check when no owner account's hand-check at this head is on the PR", async () => {
 		const {outcome, requests} = await run(
 			script(
 				[handCheck("agent"), handCheck(OWNER, `Hand-checked at ${MOVED}.\n\n${SHOT}`)],
@@ -561,7 +561,9 @@ describe("review-ui route --no-preview", () => {
 			under("hand-check"),
 		);
 		expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
-		expect(outcome.stderr.join("\n")).toContain("no comment on it is an owner's hand-check");
+		expect(outcome.stderr.join("\n")).toContain(
+			"no comment on it is an owner account's hand-check",
+		);
 		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
@@ -589,7 +591,7 @@ describe("review-ui route --no-preview", () => {
 		expect(outcome.stderr.join("\n")).not.toContain("came close");
 	});
 
-	it("finds the owner's hand-check itself when none is named", async () => {
+	it("finds the owner account's hand-check itself when none is named", async () => {
 		const {outcome, requests, bodies} = await run(
 			script([handCheck(), textVerdict("PASS")], flagged("hand-check", HAND_CHECK_TAIL), roster),
 			under("hand-check"),
@@ -619,7 +621,7 @@ describe("review-ui route --no-preview", () => {
 		expect(bodies[at]).toContain(`Hand-check: comment ${HAND_CHECK_ID} by ${OWNER}`);
 	});
 
-	it("refuses on 22 when the hand-check is not an owner's", async () => {
+	it("refuses on 22 when the hand-check is not an owner account's", async () => {
 		const {outcome, requests} = await run(
 			script([handCheck("agent"), textVerdict("PASS")], flagged("hand-check"), roster),
 			under("hand-check", String(HAND_CHECK_ID)),

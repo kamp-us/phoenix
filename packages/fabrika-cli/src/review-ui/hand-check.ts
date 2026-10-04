@@ -1,5 +1,6 @@
 /**
- * Whether a PR comment is an owner's hand-check the ui gate may stand on in place of a render.
+ * Whether a PR comment is an owner account's hand-check the ui gate may stand on in place of a
+ * render.
  *
  * Four facts, all read off the comment, and all required: it is on this PR, a control-plane account
  * wrote it, it names the PR's exact head, and it carries a screenshot. The head is what keeps the
@@ -73,21 +74,21 @@ export const admitHandCheck = (
 		return {
 			_tag: "Inadmissible",
 			fact: "author",
-			reason: `comment ${id} is by ${comment.author}, who is not on the control plane — only an owner's hand-check stands in for a render`,
+			reason: `comment ${id} is by ${comment.author}, an account that is not on the control plane — only an owner account's hand-check stands in for a render`,
 		};
 	}
 	if (isUiEvidence(comment.body)) {
 		return {
 			_tag: "Inadmissible",
 			fact: "evidence",
-			reason: `comment ${id} is the builder's own ui evidence — the builder's captures are not an owner's hand-check`,
+			reason: `comment ${id} is the builder's own ui evidence — the builder's captures are not an owner account's hand-check`,
 		};
 	}
 	if (carriesAgentStamp(comment.body)) {
 		return {
 			_tag: "Inadmissible",
 			fact: "stamp",
-			reason: `comment ${id} carries an agent stamp — a comment an agent posted is not an owner's hand-check`,
+			reason: `comment ${id} carries an agent stamp — a stamped comment is not an owner account's hand-check`,
 		};
 	}
 	if (!namesHead(comment.body, head)) {

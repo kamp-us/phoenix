@@ -85,6 +85,12 @@ fabrika ship cp-approval $pr_number --sha 03135b91
 before it is solicited, a base-drift notice from the verb routes rebase → re-gate → re-bank first,
 so the approval is never spent on a head that must move.
 
+**Giving the approval is the owner's, and leaving it to them is your rule to keep.** The verb reads
+the approving account: a non-author owner's review, or on a repo with one owner that account's
+`control-plane-self-approval @ <sha>` comment on its own PR. Where you run under that account no
+check stops you from posting it
+([why](../../guide/how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)).
+
 **`base-conflicted` → disarm and report `BASE-CONFLICTED`, never `AWAITING-CP-APPROVAL`.** The verb
 answers it instead of `stop` when no approval binds the head and GitHub definitely reads the head
 `dirty` against its base. Nobody should approve bytes the rebase will replace, so the lane goes to a
@@ -112,7 +118,7 @@ head merges clean, so `head-behind-base` never names a conflicting head; that on
 `--cause`: the token itself records `awaiting-cp-approval`, which is the park `recipe unpark` clears
 by re-reading the approval. <!-- anchor: NO-REBASE-AFTER-APPROVAL -->
 Once a control-plane approval exists, **never rebase or force-push the head**: a moved head means
-re-approval, patch-identical or not. **That is the human approval only.** A fabrika `review-*` or
+re-approval, patch-identical or not. **That is the control-plane approval only.** A fabrika `review-*` or
 `governance` marker binds the content it judged as well as the head, so a branch update leaving the
 diff and every changed file byte-identical keeps it; the control-plane approval and GitHub's own
 review object do not. A control-plane PR whose latest verdict is FAIL routes to

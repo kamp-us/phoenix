@@ -254,8 +254,12 @@ Which hand-verification counts is yours to say, by path, with `reviewUi.whenNoPr
 - `require-render` is what every file no rule matches gets. The only hand-verification it takes is
   the builder's own run of the app at the head, which the ui reviewer routes with
   `review-ui route --verified-at <head>`.
-- `hand-check` lets your own comment on the PR stand in for the render: screenshots, naming the PR's
-  exact head, from an account on your control-plane `CODEOWNERS` row.
+- `hand-check` lets a comment on the PR stand in for the render: screenshots, naming the PR's
+  exact head, from an account on your control-plane `CODEOWNERS` row. The check is on the account,
+  not on who typed the comment, so where your agents post under your account it is theirs to leave
+  to you. [Why an owner-only step confirms an account](how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)
+  explains it, and [Run agents under a second GitHub account](run-agents-under-a-second-account.md)
+  makes the check refuse them.
 - `skip` means no rendered review is owed for those files.
 
 **A repo with no rule yet gets its first one from one command.** Run it when your app has a screen
@@ -346,6 +350,11 @@ The `table` verbs are not the only readers. `lane brief` reads the table for the
 `lane record` runs `fabrika table sync` after it posts, `build pick` reads it to put bets first, and
 `pitch-guard` reads it because a `bet` row approves a pitch. So give the scope to every token that
 drives lanes, not only yours.
+
+That approval is checked on the account: `pitch-guard` counts a `bet` set by any account with write
+access. [Why an owner-only step confirms an account](how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)
+explains it. A [second GitHub account for agents](run-agents-under-a-second-account.md) does not
+change this one, because that account has write access too.
 
 A token without the scope never stops a lane: `lane brief` and `build pick` go on without the
 table and print the fix above. Other failed reads differ: until a `table` block (11.4) is declared

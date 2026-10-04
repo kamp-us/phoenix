@@ -118,6 +118,7 @@ const cpApproval = leafCommand(
 	Command.withShortDescription("Whether the control-plane approval is discharged at a head."),
 	Command.withDescription(
 		"Prints one PR's §CP approval answer at a head: discharge, stop, base-conflicted or n/a, and how." +
+			"\n  discharge: an owner account approved this head; who typed it is not read" +
 			"\n  base-conflicted: no approval, and the head conflicts with its base; report BASE-CONFLICTED" +
 			"\n  7: the PR is absent or closed, or has no changed files" +
 			"\n  11: the boundary, roster, reviews, markers, live head or mergeability could not be read" +

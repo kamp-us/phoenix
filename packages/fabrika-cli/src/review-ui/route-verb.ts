@@ -55,7 +55,7 @@
  * **A PR with no preview routes only as far as the repo's `reviewUi.whenNoPreview` rules allow.**
  * `--no-preview` resolves the mode over the PR's ui files (`./no-preview.ts`): `require-render`
  * refuses, `skip` posts a record flagged `basis:skip`, and `hand-check` posts one flagged
- * `basis:hand-check` only over an owner's comment that names this head and carries screenshots
+ * `basis:hand-check` only over an owner account's comment that names this head and carries screenshots
  * (`./hand-check.ts`). A hand-check stands in for the render exactly as a desk run does, so it rests
  * on a standing text PASS too. Both flags ride the record's first line, so `ship gate` and the
  * lane's proof say the namespace was not rendered. The verb does not take `--no-preview` on the
@@ -149,7 +149,7 @@ export interface NoPreviewRequest {
 	/** The repo's `reviewUi.whenNoPreview` rules, resolved by the caller off the tree it stands in. */
 	readonly rules: ReadonlyArray<NoPreviewRule>;
 	/**
-	 * The owner's hand-check comment, by id or URL, or `null` to let the verb find the newest
+	 * The owner account's hand-check comment, by id or URL, or `null` to let the verb find the newest
 	 * admissible one on the PR itself.
 	 */
 	readonly handCheck: string | null;
@@ -396,7 +396,7 @@ export const runRoute = (
 			if (roster._tag === "Unknown") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read ${roster.reason} — whether an owner's hand-check stands on #${pr} is UNKNOWN; nothing was posted.`,
+					`${VERB}: cannot read ${roster.reason} — whether an owner account's hand-check stands on #${pr} is UNKNOWN; nothing was posted.`,
 					diagnostics,
 				);
 			}
@@ -419,7 +419,7 @@ export const runRoute = (
 				if (found === null) {
 					return refuse(
 						NO_PREVIEW_MODE_UNMET,
-						`${VERB}: reviewUi.whenNoPreview resolves hand-check for #${pr}, and no comment on it is an owner's hand-check at ${live} — a control-plane account's screenshots naming this head; with none posted, the PR is CANT-SEE.`,
+						`${VERB}: reviewUi.whenNoPreview resolves hand-check for #${pr}, and no comment on it is an owner account's hand-check at ${live} — a control-plane account's screenshots naming this head; with none posted, the PR is CANT-SEE.`,
 						owed(),
 					);
 				}
@@ -436,7 +436,7 @@ export const runRoute = (
 				admitted = named.comment;
 			}
 			diagnostics.push(
-				`${VERB}: stands on comment ${admitted.id} by ${admitted.author}, an owner's hand-check at ${live}.`,
+				`${VERB}: stands on comment ${admitted.id} by ${admitted.author}, an owner account's hand-check at ${live}.`,
 			);
 			handCheckComment = admitted.id;
 			handCheckLine = `\nHand-check: comment ${admitted.id} by ${admitted.author}, at ${live}.\n`;
