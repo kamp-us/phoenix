@@ -287,5 +287,16 @@
 			},
 			"project": { "owner": "kamp-us", "number": 21 }
 		}
+	},
+
+	// The daily report of issues past their response target (#10527), posted to Discord by
+	// `.github/workflows/table-digest.yml`. `sections` is written out because leaving it out asks for
+	// `on-call` too, and that section reads the on-call board and the table, which the default
+	// Actions token cannot read for an organization: a failed read refuses the whole run, so every
+	// scheduled run would go red. Add `on-call` once a token that can read both projects is saved as
+	// the `FABRIKA_DIGEST_TOKEN` secret.
+	"digest": {
+		"tool": "discord",
+		"sections": ["triage"]
 	}
 }
