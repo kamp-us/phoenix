@@ -377,6 +377,9 @@ SHIPPED-PR
 
 Above that word it prints the pull request's URL. Use the pull request's number in the next step.
 
+This issue only changes text. An issue with a screen is built with `/fabrika:operate <n>` instead,
+where `<n>` is the issue's number: `/fabrika:build` builds text only and stops on a screen.
+
 ## 13. Review it, then merge it
 
 ```
