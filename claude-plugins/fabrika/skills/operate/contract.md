@@ -2009,12 +2009,13 @@ Each recorded tree gets one answer, in this order:
    when no directory stands there. A directory that still stands is kept: git reads `prunable` off
    the tree's `.git` file, so the directory can still hold work. A probe that fails is kept as
    `unreadable`.
-3. **left, `caller`** — the path is the tree this verb runs in. No process removes its own tree, so
-   the caller hands it to whoever is outside it.
+3. **left, `caller`** — the path is the tree this verb runs in. Its shell still stands in it, so it
+   is not this verb's to take. A driver removes its own afterwards with [`lane leave`](#lane-leave);
+   a shipper's is removed by the next `lane cleanup` its lane's driver runs.
 4. **left, `driver`** — the tree was recorded with no task, which is how a driver records its own,
    and it is not the tree this verb runs in. A driver outlives the shells it spawns, the shipper
    that runs this verb included, and nothing on this machine proves its shell returned. Nothing in
-   the tree is read. It is that driver's caller's to remove.
+   the tree is read. That driver removes it with [`lane leave`](#lane-leave) when its run ends.
 5. **kept, `in-flight`** — a shell is still in flight in the tree, by either of two records in
    `in-flight.jsonl`. A builder's standing `working` record names the tree. Or the tree's `handed`
    line is dated at or after its task's standing `dispatched` record. A dispatch stands until an
@@ -2060,6 +2061,52 @@ The epic assembly worktree is never recorded here, so this verb never removes it
 - `74` — at least one tree was kept. stdout is empty; stderr names every tree and each kept one's
   reason. Every tree the rule allowed was still removed.
 - `39`, `65` — [the lanes root](#the-lanes-root).
+
+## `lane leave`
+
+### Output
+
+Removes the worktree the verb runs in. It takes no lane and no argument: the tree is the git tree
+the process stands in, read off git, so it can name no other tree. It is the last command of a shell
+no lane cleans up after: a shell that serves no lane, and a lane's own driver, whose tree
+[`lane cleanup`](#lane-cleanup) answers `left`.
+
+The keep rule is `lane cleanup`'s, through the same code: the tree is read exactly as that verb
+reads a linked tree, and the same decision answers it. One tree gets one answer, in this order:
+
+1. **main** — the tree is the main working tree. Nothing is read further and nothing is touched.
+2. **kept, `unregistered`** — git lists no live working tree at the path, or marks it prunable. The
+   process stands in the directory, so it is there and may hold work.
+3. **kept, `uncommitted`** — `git status --porcelain` in the tree printed a path. Ignored paths do
+   not count, so installed packages never hold a tree.
+4. **kept, `unpublished`** — `git rev-list --count HEAD --not --remotes` in the tree is above zero.
+   No lane is named, so no merged pull request is asked to account for those commits.
+5. **kept, `unreadable`** — one of those reads failed.
+6. **removed**, or **kept, `remove-refused`** — the removal ran and the working trees were listed
+   again. A tree still listed, or whose directory still stands, is kept with git's own reason.
+
+The removal is a plain `git -C <main working tree> worktree remove <path>`, run as this process's
+child. Nothing is forced, and no local branch is deleted. A process can remove the tree it stands in
+this way because git changes into the main working tree before it reads anything, so no step of the
+removal resolves the calling process's directory. The list that follows is addressed the same way,
+because the calling process then stands in a directory that is gone. For the same reason a shell
+runs nothing after a `removed` answer.
+
+No lane record is written. A tree a lane recorded keeps its `handed` line, and that lane's next
+`lane cleanup` answers it `gone` and retires the line then.
+
+stdout is `{answer, worktree}`, where `answer` is `removed` or `main`. stderr carries one line:
+`fabrika lane leave: removed <path>`, `fabrika lane leave: kept <path> — <reason>: <detail>`, or the
+main working tree's.
+
+### Exit status
+
+- `0` — the tree was removed, or it is the main working tree and nothing was touched.
+- `8` — the removal ran and the working trees or the directory could not be read again, so whether
+  it landed is UNKNOWN.
+- `11` — which tree this runs in, or the repository's working trees, could not be read. Nothing was
+  removed.
+- `74` — the tree was kept. stdout is empty; stderr names its path and the reason.
 
 ## `lane record`
 

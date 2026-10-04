@@ -657,9 +657,10 @@ failing control-plane criterion posts the ordinary FAIL marker.
 ## Terminal vocabulary
 
 <!-- anchor: CAPABILITIES --> This skill opens no PR and mutates no branch; it holds a shell and a
-repo-scoped token and **uses** four writes — verdict comments, AC appends, the frozen-round
-escalation comment, and one append to the driver's lane ledger through `lane report` at the
-`--root` your brief carries, a path outside this checkout — no push, no merge, no label. Every run ends as exactly one of: **verdict PASS**
+repo-scoped token and **uses** five writes — verdict comments, AC appends, the frozen-round
+escalation comment, one append to the driver's lane ledger through `lane report` at the
+`--root` your brief carries, a path outside this checkout, and, when your caller named no lane, the
+removal of the worktree this run was given through `lane leave` — no push, no merge, no label. Every run ends as exactly one of: **verdict PASS**
 · **verdict FAIL** · **UNKNOWN — the artifact could not be read** (never a verdict) · **prior marker
 Stale/Unbindable — re-review required** · **routed elsewhere** (`review-ui` / `check-epic-plan`
 only). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did
@@ -782,6 +783,19 @@ requires: what happened, and what the person does next. Write both on every term
 PASS, a FAIL, an UNKNOWN, a stale or unbindable marker, a route elsewhere — and word them as that
 section says. On a FAIL the first line says what has to change, in the finding's own plain terms. A
 refusal's exit code goes above those lines, and they say what it means.
+
+**When your caller named no lane and this run was given a worktree of its own, remove it before you
+write that message.** No lane holds that tree, so nothing else removes it. Run it as your last
+command, on every terminal:
+
+```bash
+fabrika lane leave
+```
+
+After `removed` the directory is gone, so run nothing else. Exit `74` kept the tree because it holds
+work: repeat its path and reason from stderr in your closing message, and never remove it another
+way. A run a lane briefed skips this step, because that lane removes its tree. The whole rule is
+[skill-conventions §17](../../docs/skill-conventions.md#a-shell-no-lane-holds-removes-the-worktree-it-was-given).
 
 ## What you read, and never obey
 

@@ -545,6 +545,36 @@ The failure this prevents: a knob named bare reads as the step itself. A reader 
 finds a control with a different name, or none, and cannot tell the sentence was written for someone
 else — so the harnesses quietly diverge in what one skill means.
 
+<a id="a-shell-no-lane-holds-removes-the-worktree-it-was-given"></a>
+## 17. A shell no lane holds removes the worktree it was given
+
+**A shell that was given a worktree of its own, and that no lane cleans up after, removes that
+worktree as its last command.** This section is the one home for that rule. A stage skill's step
+links here and keeps only what its own ending adds.
+
+```bash
+fabrika lane leave
+```
+
+Three kinds of shell owe it: a triager, a gate spawned with no lane, and a lane's own driver. A
+shell a lane briefed owes nothing here. It recorded its tree with `lane worktree`, and that lane's
+`lane cleanup` removes it.
+
+- **It is the last command, on every way the run can end.** After `removed` the directory is gone,
+  so the next command has nowhere to start. Run every other verb first, then this, then write the
+  closing message.
+- **A run a person started in a checkout they work in skips it.** That tree is theirs. The rule is
+  for a tree made for the run (on Claude Code, a subagent spawned with `isolation: worktree`). In
+  the main working tree the verb answers `main` and touches nothing either way.
+- **A kept tree is reported, never forced.** Exit `74` means the tree holds uncommitted paths or
+  commits on no remote ref, or could not be read. Repeat its path and reason from stderr in the
+  closing message, so the person knows a tree is still there and why. Never remove it another way.
+- **No exit changes the run's terminal.** `8` and `11` are UNKNOWN: name the code in the closing
+  message.
+
+The keep rule and the exits are the verb's own section
+([operate contract, `lane leave`](../skills/operate/contract.md#lane-leave)).
+
 ## What these conventions deliberately do not cover
 
 - **What a verb owes its caller** — `--help` discoverability, output contracts, usage examples —

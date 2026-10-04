@@ -497,6 +497,20 @@ on every way a run can end: a triaged issue, a park, a kill, a claim another run
 that refused. Where step 6's pitch ask applies, that ask with its four parts is what the person does
 next. A sweep closes once, after its per-issue lines.
 
+**Before you write that message, remove the worktree this run was given.** No lane cleans up after
+a triager, so a tree you leave stays on disk. It is your last command on every way the run can end:
+a triaged issue, a park, a kill, a claim another run holds, and a verb that refused.
+
+```bash
+fabrika lane leave
+```
+
+After `removed` the directory is gone, so run nothing else. Exit `74` kept the tree because it holds
+work: repeat its path and reason from stderr in your closing message, and never remove it another
+way. A run a person started in a checkout they work in skips this step. The whole rule is
+[skill-conventions §17](../../docs/skill-conventions.md#a-shell-no-lane-holds-removes-the-worktree-it-was-given).
+A sweep's own session runs it once, after its last per-issue line.
+
 Done when the message ends on the two lines and names what triage decided: the type and the priority
 where triage set them, and each change. A park, a kill, a claim another run holds and a verb that
 refused can end with no type or priority set, and then the message owes neither.

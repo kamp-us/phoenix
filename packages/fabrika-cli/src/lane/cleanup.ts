@@ -18,9 +18,10 @@
  * else, and the lane is ending.
  *
  * Three trees are never judged at all: the main working tree, which is no lane's to remove, the
- * tree the verb runs in, which no process can remove from inside, and a tree a driver recorded. A
- * driver outlives every shell it spawns, the shipper that runs this verb included, and nothing on
- * this machine says its shell has returned, so its tree is its own caller's to remove.
+ * tree the verb runs in, whose shell still stands in it, and a tree a driver recorded. A driver
+ * outlives every shell it spawns, the shipper that runs this verb included, and nothing on this
+ * machine says its shell has returned. A driver removes its own tree as its last act, with
+ * `lane leave`.
  *
  * Git's `prunable` flag is read off a tree's `.git` file, never its directory, so it does not say
  * the directory is gone. Only a probe of the path does.

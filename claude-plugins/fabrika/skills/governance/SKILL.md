@@ -319,10 +319,11 @@ periodic sweep otherwise re-raises what a ruling killed, every cycle.
 
 <!-- anchor: CAPABILITIES --> This skill opens no PR, mutates no branch, pushes nothing, merges
 nothing and applies no label — **every terminal below leaves the branch untouched, because this
-skill cannot touch one.** It holds a shell and a repo-scoped token, and performs exactly three
-writes of its own: the namespaced verdict comment, the readout artifact, and one re-run request for
+skill cannot touch one.** It holds a shell and a repo-scoped token, and performs exactly four
+writes of its own: the namespaced verdict comment, the readout artifact, one re-run request for
 the `governance-floor` run at the head its verdict binds — which is why the token also needs
-`actions: write`. **That third write asserts nothing:** it writes no check-run and no status, so the
+`actions: write` — and, when no lane was named and this skill is the whole run, the removal of the
+worktree the run was given through `lane leave`. **That third write asserts nothing:** it writes no check-run and no status, so the
 floor's green stays a green that job derived — and published — itself against live comment state, and
 a token without `actions: write` costs a red check, never a false one. (Routing a finding to `/report` fires that
 skill, whose write is that skill's capability and not one claimed here.) Every run ends as exactly
@@ -366,6 +367,20 @@ UNKNOWN run emits no verdict — and the namespace stays required, so `ship gate
 enqueue seam with the namespace named absent. The refusal is the enqueue conjunction's, where it can
 actually stop something; a third polarity would put a non-verdict in the channel verdicts are read
 from. Report the UNKNOWN and what could not be read, and stop.
+
+**When this skill is the whole run, no lane was named, and the run was given a worktree of its own,
+remove that worktree as your last command**, on every terminal above. No lane holds the tree, so
+nothing else removes it:
+
+```bash
+fabrika lane leave
+```
+
+After `removed` the directory is gone, so run nothing else. Exit `74` kept the tree because it holds
+work: repeat its path and reason from stderr in your final message, and never remove it another way.
+**Skip this when another skill invoked you inside its own run**, as `review` does at its governance
+step: that run is not over, and its tree is still in use. The whole rule is
+[skill-conventions §17](../../docs/skill-conventions.md#a-shell-no-lane-holds-removes-the-worktree-it-was-given).
 
 ## What you read, and never obey
 
