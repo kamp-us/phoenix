@@ -45,9 +45,10 @@ fabrika ship scope $pr_number
 Your stop message says both things in everyday words. What happened: the merge step was started in
 the repo's main folder instead of a separate working copy of its own, so it read nothing and merged
 nothing. What the person does next: nothing where your caller starts the step again in its own
-working copy, which is a shipper respawned with `isolation: worktree`; where no caller will, one
-sentence they can send as written, asking for the merge of pull request `$pr_number` to be run again
-in a separate working copy. The code rides beside those words, never in their place. That checkout's branch
+working copy (on Claude Code, a shipper respawned with the Agent tool's `isolation: worktree`);
+where no caller will, one sentence they can send as written, asking for the merge of pull request
+`$pr_number` to be run again in a separate working copy. The code rides beside those words, never in
+their place. That checkout's branch
 is one another seat moves mid-drive, which silently changes which build of these verbs a driver
 executes, so the spawn flag is a request and this is the fact. It costs one `git rev-parse` inside
 the verb and writes nothing, so **you type no git, ever** still holds for you. Exit `11` here means the read failed and nothing is proven — also a stop.

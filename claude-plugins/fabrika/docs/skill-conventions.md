@@ -517,6 +517,34 @@ the stage tell the person or its caller goes above the two lines.
 A narrower rule in a skill adds to this one: a command written for a person is one they can paste,
 and a note a verb prints for the person is posted as printed. The two lines hold beside each.
 
+<a id="the-plain-rule-first-then-the-harness-beside-its-knob"></a>
+## 16. The plain rule first, then the harness beside its knob
+
+**Shared skill text states the rule in words every supported harness can act on, and names the
+harness whenever it names that harness's knob.** A knob is a control one harness owns and the step
+tells the reader to operate: a tool, a tool parameter, a spawn flag, a typed command, an environment
+variable, a config key. The skills are the stage contract on every harness fabrika supports, so a
+reader on any of them finishes the step from the plain rule alone.
+
+The shape is two parts, in this order:
+
+1. **The rule, harness-free** — what must hold, as a condition the reader can check: *give the call
+   a caller-side deadline above its budget*.
+2. **The instance, harness-named** — *on Claude Code, that deadline is the Bash tool's `timeout`*.
+   Every number that belongs to the knob — a ceiling, a default, a unit — sits in this part.
+
+**The unit is the instance part, not the sentence.** The part opens by naming its harness, once, and
+that naming covers every knob the part goes on to name. An instance is as long as it needs to be: a
+parenthesis inside the rule's own sentence, or a paragraph after it. Its end is the end of that
+parenthesis or paragraph, and a knob named past it is bare again.
+
+Write an instance for a harness once someone has run the step there; until then that harness reads
+the rule alone.
+
+The failure this prevents: a knob named bare reads as the step itself. A reader on another harness
+finds a control with a different name, or none, and cannot tell the sentence was written for someone
+else — so the harnesses quietly diverge in what one skill means.
+
 ## What these conventions deliberately do not cover
 
 - **What a verb owes its caller** — `--help` discoverability, output contracts, usage examples —

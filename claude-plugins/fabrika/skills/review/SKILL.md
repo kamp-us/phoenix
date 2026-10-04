@@ -421,18 +421,21 @@ The verb owns the loop only for as long as its process lives: a shell that wraps
 timeout shorter than the budget kills the CLI mid-poll, so none of the five `settle` tokens comes
 back and the class ends `UNKNOWN` with the head unread. One reviewer shell did exactly that with a
 120-second timeout over the 600-second default, and was killed at 120s with CI still running.
+The rule is the inequality, on every harness: the deadline your shell gives the call sits above the
+budget, with room for the `gh` reads to land inside. Where your shell's deadline has a ceiling, the
+budget comes down to fit under it, because a budget at or past the ceiling is one nothing can wait
+out.
 
-**The deadline is the Bash tool's own `timeout`, in milliseconds, and it has a ceiling you cannot
-ask past.** That ceiling is `600000` ms, raised only when the environment sets `BASH_MAX_TIMEOUT_MS`
-above it; a larger request is neither honoured nor refused, it is silently reduced to the ceiling.
-So asking for half an hour on a stock shell buys 600 seconds — exactly the default budget, not above
-it — and leaves the same race the paragraph above exists to end, now behind a number that reads like
-headroom. Raising the deadline alone cannot work, so **pair the two numbers**: `timeout: 600000` on
-the tool call against the `--budget-seconds 480` the block above already carries, which puts the
-deadline two minutes clear of the budget for the `gh` reads to land inside. That is a practical
+**On Claude Code, that deadline is the Bash tool's `timeout`, in milliseconds, and it has a ceiling
+you cannot ask past.** That ceiling is `600000` ms, raised only when the environment sets
+`BASH_MAX_TIMEOUT_MS` above it; a larger request is neither honoured nor refused, it is silently
+reduced to the ceiling. So asking for half an hour on a stock shell buys 600 seconds — exactly the
+default budget, not above it — and leaves the same race the paragraph above exists to end, now
+behind a number that reads like headroom. Raising the deadline alone cannot work there, so **pair
+the two numbers**: `timeout: 600000` on the tool call against the `--budget-seconds 480` the block
+above already carries, which puts the deadline two minutes clear of the budget. That is a practical
 pairing, not a guaranteed CLI maximum — the verb promises only that it stops polling at its budget —
-and the rule that generalises is the inequality, not either number: a budget raised past the ceiling
-needs `BASH_MAX_TIMEOUT_MS` raised with it, or it is a budget nothing can wait out.
+and a budget raised past the ceiling needs `BASH_MAX_TIMEOUT_MS` raised with it.
 
 **On a `governance: required` diff, fire §6's governance skill before you wait on CI.** The floor
 check-run at the head cannot go green until a governance verdict binds there, and you are the shell

@@ -1877,12 +1877,12 @@ first hands a shipper the same missing verdict, and it parks the lane again. The
 serves the generated machine above. Run the owing gate first, then clear, in this order:
 
 1. Read the owed namespace off the parking shipper's report, which names each `blocked` line.
-2. Spawn the gate that owns it, `isolation: worktree`, with no lane. The whole prompt is the skill's
-   invocation and the PR number: `/fabrika:review <pr>` for a `review-*` namespace,
-   `/fabrika:review-ui <pr>` for `review-ui`, `/fabrika:governance <pr>` for `governance`. No brief
-   exists for a park, so this is the one spawn without `lane brief` output. The invocation is the
-   whole prompt, so you still compose nothing. With no lane named, the gate posts its verdict on
-   the PR and records nothing on the ledger.
+2. Spawn the gate that owns it in a worktree of its own (on Claude, `isolation: worktree`), with no
+   lane. The whole prompt is the skill's invocation and the PR number: `/fabrika:review <pr>` for a
+   `review-*` namespace, `/fabrika:review-ui <pr>` for `review-ui`, `/fabrika:governance <pr>` for
+   `governance`. No brief exists for a park, so this is the one spawn without `lane brief` output.
+   The invocation is the whole prompt, so you still compose nothing. With no lane named, the gate
+   posts its verdict on the PR and records nothing on the ledger.
 3. When the spawn returns, run `node <fabrika> build verdicts --pr <pr>`. Go on only when each owed
    gate has a row with `"current": true`. `PASS` or `FAIL` makes no difference here: the shipper
    routes a `FAIL` to repair itself. No current row means the verdict is still owed, so do not
