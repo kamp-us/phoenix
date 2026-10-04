@@ -128,6 +128,21 @@ describe("the guard lives in the verb, and trusts nothing it was told", () => {
 		expect(out.code).toBe(OFF_VOCABULARY);
 	});
 
+	it.each([
+		["assertion-failure", "logic"],
+		["typecheck-failure", "logic"],
+		["lint-failure", "logic"],
+		["build-failure", "logic"],
+		["roll-up-verdict", "derived"],
+	])("refuses `%s` on 10 before any read, naming its %s class", async (signature, signatureClass) => {
+		const out = await run([], {signature});
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			`--signature ${signature} is a ${signatureClass} signature`,
+		);
+	});
+
 	it("refuses a run proven absent on 7", async () => {
 		const out = await run([
 			[PULL, reply(pull())],

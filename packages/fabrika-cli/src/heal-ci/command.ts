@@ -27,7 +27,7 @@ import {runLogs} from "./logs-verb.ts";
 import {runNote} from "./note-verb.ts";
 import {runRerun} from "./rerun-verb.ts";
 import {runScratch} from "./scratch-verb.ts";
-import {SIGNATURE_IDS} from "./signatures.ts";
+import {RERUNNABLE_SIGNATURE_IDS} from "./signatures.ts";
 import {STALL_TOKENS} from "./stall.ts";
 import {runSurface} from "./surface-verb.ts";
 import {runSweep} from "./sweep-verb.ts";
@@ -288,7 +288,7 @@ const classify = leafCommand(
 	Command.withDescription(
 		[
 			"Classifies log text on stdin; prints `classified\\t<n>`, then one `class` line per context.",
-			"  Line: `class\\t<context>\\t<transient|logic|unclassified>\\t<signature-id>\\t<matched-line>`",
+			"  Line: `class\\t<context>\\t<transient|logic|derived|unclassified>\\t<signature-id>\\t<matched-line>`",
 			"  Pure, and it reads `heal-ci logs` framing; an unframed body is one block under context `-`.",
 			"  3: stdin was empty",
 			'  Derivation: the heal-ci skill\'s contract.md, "heal-ci classify"',
@@ -311,7 +311,7 @@ const rerun = leafCommand(
 		),
 		signature: Flag.string("signature").pipe(
 			Flag.withDescription(
-				`the classify signature id justifying the rerun, recorded in the durable marker: one of ${SIGNATURE_IDS.join(", ")}`,
+				`the transient classify signature id justifying the rerun, recorded in the durable marker: one of ${RERUNNABLE_SIGNATURE_IDS.join(", ")}`,
 			),
 		),
 		repo: repoFlag,
@@ -338,7 +338,7 @@ const rerun = leafCommand(
 			"  7: the PR or run is absent",
 			"  8: the request or its re-read failed (UNKNOWN), no marker written",
 			"  9: the marker read-back does not match",
-			"  10: --signature is off the classify table",
+			"  10: --signature names no transient classify row",
 			"  11: a precondition read failed; nothing was requested",
 			"  12: the live head moved past --sha",
 			"  13: the comment enumeration never proved complete",
