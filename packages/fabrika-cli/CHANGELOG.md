@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.10.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.9.0...fabrika-cli-v0.10.0) (2026-10-04)
+
+
+### Features
+
+* A finished lane leaves its worktrees on disk: 537 on one machine ([#10355](https://github.com/kamp-us/phoenix/issues/10355)) ([89231bd](https://github.com/kamp-us/phoenix/commit/89231bd7bbab8dcaf38730edb1764781aeda2958))
+* **epic:** Run a test-audit subsystem sweep over every test surface in the repo ([#10122](https://github.com/kamp-us/phoenix/issues/10122)) ([e9210e4](https://github.com/kamp-us/phoenix/commit/e9210e418cf0913607579d1cc8420ac7a9a6ff32))
+* On-call clocks and routing follow when prep ran, not when the issue arrived ([#10303](https://github.com/kamp-us/phoenix/issues/10303)) ([a3cf4e3](https://github.com/kamp-us/phoenix/commit/a3cf4e329d0204fe07e16aee9319de61e5e01828))
+* **table:** table route --dry-run plans its on-call adds, cells and table-row deletes without sending them ([#10305](https://github.com/kamp-us/phoenix/issues/10305)) ([#10306](https://github.com/kamp-us/phoenix/issues/10306)) ([3e4eae4](https://github.com/kamp-us/phoenix/commit/3e4eae4a2a4e4f6469d52142c183a69a2185d33c))
+* The mixed-builder shell has no lane state, so the machine can never spawn it ([#10392](https://github.com/kamp-us/phoenix/issues/10392)) ([7779414](https://github.com/kamp-us/phoenix/commit/777941434c5c015402850a6da03e5dc9bd5a7838))
+
+
+### Bug Fixes
+
+* A lane whose remaining work waits on a founder ruling has no park cause, so the driver cannot park it ([#10395](https://github.com/kamp-us/phoenix/issues/10395)) ([11e394c](https://github.com/kamp-us/phoenix/commit/11e394c8e20013c6821655d7bb3b005fee17f632))
+* build reap cannot drain the worktree backlog: its per-spawn run outlasts its 120s budget and it keeps 351 trees a branch already covers ([#10367](https://github.com/kamp-us/phoenix/issues/10367)) ([03b8f17](https://github.com/kamp-us/phoenix/commit/03b8f1729086d5048f222ed77b38da320cde4a16))
+* **hook:** worktree-create no longer runs build reap before it provisions ([#10342](https://github.com/kamp-us/phoenix/issues/10342)) ([#10352](https://github.com/kamp-us/phoenix/issues/10352)) ([fc80a96](https://github.com/kamp-us/phoenix/commit/fc80a96af89993ec82473229bb0472b1a8b002ca))
+* lane brief and review criteria drop an owner ruling posted as a plain comment ([#10399](https://github.com/kamp-us/phoenix/issues/10399)) ([d8ac988](https://github.com/kamp-us/phoenix/commit/d8ac988bc73595c9eb7421871e78312139dffc86))
+* No preview D1 carries a test account, so every :auth render refuses and signed-in surfaces are unjudgeable ([#10341](https://github.com/kamp-us/phoenix/issues/10341)) ([6cee27a](https://github.com/kamp-us/phoenix/commit/6cee27a708e83e43eb745ddff41be06632288daf))
+* pitch-guard still reds a parentless feature whose pitch a named founder ruling discharged ([#10393](https://github.com/kamp-us/phoenix/issues/10393)) ([3f469ec](https://github.com/kamp-us/phoenix/commit/3f469ec23584c4b2417c1eb9c2ed157c22292d82))
+* review-ui route counts the builder's own UI evidence comment as the owner's hand-check ([#10377](https://github.com/kamp-us/phoenix/issues/10377)) ([4c89a83](https://github.com/kamp-us/phoenix/commit/4c89a835f20b1f9411ab4acb6f908a2c1bed419c))
+* **status:** setup writes the hand-check rule for an app with no hosting ([#10362](https://github.com/kamp-us/phoenix/issues/10362)) ([#10384](https://github.com/kamp-us/phoenix/issues/10384)) ([bef2f05](https://github.com/kamp-us/phoenix/commit/bef2f058a3018f0c17ae97fc9ed50b545afd0f6d))
+* The shipped governedRoots default names phoenix's claude-plugins/ directory ([#10383](https://github.com/kamp-us/phoenix/issues/10383)) ([277a42d](https://github.com/kamp-us/phoenix/commit/277a42d20f5dcfc03990fe7e03cc87792b5b6f5d))
+* The UI review's stop note does not tell the owner exactly what to post to clear it ([#10379](https://github.com/kamp-us/phoenix/issues/10379)) ([40e48f1](https://github.com/kamp-us/phoenix/commit/40e48f14a02163357572c982bcec0a68ca11b411))
+* **ui:** missing design manifest routes to /fabrika:front-door, and setup creates the file ([#10361](https://github.com/kamp-us/phoenix/issues/10361)) ([#10371](https://github.com/kamp-us/phoenix/issues/10371)) ([7ca7830](https://github.com/kamp-us/phoenix/commit/7ca78309b3c1e4565b329686dff9c5190da8a489))
+
 ## [0.9.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.8.1...fabrika-cli-v0.9.0) (2026-09-30)
 
 
