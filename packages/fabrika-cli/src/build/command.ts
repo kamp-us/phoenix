@@ -796,7 +796,7 @@ const check = leafCommand(
 			"  11: a validator cannot start, no codeValidators, or a read failed (UNKNOWN)",
 			"  14: the branch is not this lane's",
 			"  15: the claim is held by another lane",
-			"  18: red; the failing validator or guard is named on stderr",
+			"  18: red; every guard runs, and each red validator or guard is named on stderr",
 			"  22: no validator covers any changed file",
 			`  Derivation: the build skill's contract.md, "build check"`,
 		].join("\n"),

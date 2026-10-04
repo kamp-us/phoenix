@@ -554,7 +554,7 @@ const SKIP_REASONS: ReadonlyMap<number, string> = new Map([
 	[PRECONDITION_UNKNOWN, "UNKNOWN read"],
 ]);
 
-/** What a clean sweep contributes to the answer: the members that passed, and the ones that refused. */
+/** What a sweep contributes to the answer: the members that passed, and the ones that refused. */
 export interface GuardSweep {
 	/** One `guard <name> <leaf>` label per member that ran and passed, folded into the green's `ran`. */
 	readonly ran: ReadonlyArray<string>;
@@ -562,14 +562,30 @@ export interface GuardSweep {
 	readonly skipped: ReadonlyArray<string>;
 }
 
+/** One member that ran and failed: its `guard <name> <leaf>` label and what it printed. */
+interface RedGuard {
+	readonly label: string;
+	readonly output: string;
+}
+
+/** `Red` holds at least one member by construction, and still carries what the rest of the sweep found. */
 type SweepOutcome =
 	| {readonly _tag: "Swept"; readonly sweep: GuardSweep; readonly notes: ReadonlyArray<string>}
 	| {
 			readonly _tag: "Red";
-			readonly label: string;
+			readonly reds: readonly [RedGuard, ...RedGuard[]];
+			readonly sweep: GuardSweep;
 			readonly notes: ReadonlyArray<string>;
-			readonly output: string;
 	  };
+
+/**
+ * A red sweep's refusal lines: the members that passed, then each red member's diagnostics under its
+ * own label. `--probe` lays several red entries out the same way.
+ */
+const redSweepLines = (reds: ReadonlyArray<RedGuard>, sweep: GuardSweep): ReadonlyArray<string> => [
+	...(sweep.ran.length === 0 ? [] : [`${VERB}: passed: ${sweep.ran.join(", ")}.`]),
+	...reds.flatMap((red) => [`${VERB}: ${red.label}:`, ...diagnostics(red.output)]),
+];
 
 /**
  * Run every local-tree guard over this tree, on every surface, and name each one in the answer.
@@ -584,8 +600,11 @@ type SweepOutcome =
  * (`readme-guard`) narrows to them, so a consumer tree that predates the rule is not red on every
  * lane; the rest ignore them.
  *
- * The first red stops the sweep: the builder has a guard to fix, and the sixteen that would have
- * run after it say nothing about that.
+ * A red member does not end the sweep. Every member runs, and a red sweep carries every member that
+ * failed, so one run shows the whole set a builder has to fix. A member that refused after an earlier
+ * one went red is still a skip, never a pass.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9639#issuecomment-5983099465
  */
 const sweepLocalTreeGuards = (
 	guards: ReadonlyArray<LocalTreeGuard>,
@@ -601,6 +620,7 @@ const sweepLocalTreeGuards = (
 		const ran: string[] = [];
 		const skipped: string[] = [];
 		const notes: string[] = [];
+		const reds: RedGuard[] = [];
 		for (const guard of guards) {
 			const label = `guard ${guard.name} ${guard.leaf}`;
 			const outcome = yield* guard.run({root, env, changed});
@@ -619,13 +639,18 @@ const sweepLocalTreeGuards = (
 			}
 			const reason = SKIP_REASONS.get(outcome.code);
 			if (reason === undefined) {
-				return {_tag: "Red", label, notes, output: outcome.stderr.join("\n")} as const;
+				reds.push({label, output: outcome.stderr.join("\n")});
+				continue;
 			}
 			const line = `${guard.name} (${reason}: ${outcome.stderr.at(-1) ?? `exit ${outcome.code}`})`;
 			skipped.push(line);
 			notes.push(`${VERB}: skipped: ${line} — not a pass; CI's own gate answers this one.`);
 		}
-		return {_tag: "Swept", sweep: {ran, skipped}, notes} as const;
+		const sweep: GuardSweep = {ran, skipped};
+		const [first, ...rest] = reds;
+		return first === undefined
+			? ({_tag: "Swept", sweep, notes} as const)
+			: ({_tag: "Red", reds: [first, ...rest], sweep, notes} as const);
 	});
 
 /** The declared config validators, or why which ones exist is UNKNOWN. */
@@ -1164,11 +1189,14 @@ export const runCheck = (
 
 		const swept = yield* sweepLocalTreeGuards(options.guards, lane.root, options.env, files);
 		const noted = [...covered, ...swept.notes];
+		// A red sweep refuses before the repo's declared validators run: the ruling covers the sweep,
+		// and whether those validators also run behind a red guard is not ruled.
 		if (swept._tag === "Red") {
-			return refuse(VALIDATION_RED, `${VERB}: red — ${swept.label} failed; diagnostics above.`, [
-				...noted,
-				...diagnostics(swept.output),
-			]);
+			return refuse(
+				VALIDATION_RED,
+				`${VERB}: red — ${swept.reds.map((red) => red.label).join(", ")} failed; diagnostics above.`,
+				[...noted, ...redSweepLines(swept.reds, swept.sweep)],
+			);
 		}
 		const configRun = yield* runConfigValidators(declared.validators, classes.config, noted);
 		if (configRun._tag === "Refused") return configRun.outcome;
