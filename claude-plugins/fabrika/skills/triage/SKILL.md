@@ -205,7 +205,7 @@ milestone. It never passes a "same epic" ruling, and never a feature on a standi
 ruling on another issue. Done when `fabrika guard pitch-guard check --issue <n>` lists the feature
 with its ruling. On a red, the report names the check the ruling missed, and the guard's contract
 lists each check
-(`fabrika wire doc-section --heading "pitch-guard check" < <skill-base>/../../docs/guard-contract.md`).
+(`fabrika wire doc-section --heading "pitch-guard check" < <plugin-root>/docs/guard-contract.md`).
 A feature the guard refuses still owes its pitch: draft it as for any parentless feature, and never
 re-word the comment to get past the check. A feature a ruling only implies, however plainly, still
 owes its pitch. Take an existing
