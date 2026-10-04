@@ -80,8 +80,8 @@ append it, and refuse on the prover's own code with the log byte-identical. The 
   trimmed, and lands on the same line as `founderAct`. That cause requires it, a blank one counts as
   missing, and every other cause refuses it.
 - The two causes are separate on purpose and neither stands in for the other: `ruling-owed` beside a
-  step, and `founder-act-owed` beside an issue, both refuse. Neither is the token for a
-  `type:decision` lane waiting on its own ruling.
+  step, and `founder-act-owed` beside an issue, both refuse. Neither covers a
+  `type:decision` lane waiting on its own ruling: that wait has no token yet.
 - `35` — `--cause` is outside the closed park-cause set, or rides on an event that is neither
   BLOCKED nor the machinery LAP; or `--axis-issue` is missing beside `render-axis-missing`, present
   beside any other cause, or no issue number; or `--ruling-issue` fails the same three ways beside

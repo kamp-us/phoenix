@@ -1743,9 +1743,11 @@ node <fabrika> lane transition <lane> BLOCKED --task <task> --cause ruling-owed 
 node <fabrika> lane transition <lane> BLOCKED --task <task> --cause founder-act-owed --founder-act "<the step>"
 ```
 
-Each cause takes its own flag and refuses the other's. Where the last row can close either way,
-name the one that matches what your park comment asks for. A `type:decision` lane waiting on its
-own ruling uses neither: that wait has its own token.
+Each cause takes its own flag and refuses the other's. Where what is left can close by either a
+ruling or a step, name the one that matches what your park comment asks for. A `type:decision` lane
+waiting on its own ruling uses neither: that wait has no token yet, so do not borrow one of these
+two. You are type-blind, so that the lane is a decision lane is a fact your caller's brief relays,
+never one you read off a label.
 
 **A `verdict-owed` park needs a verdict before it needs a clear.** A namespace the ship gate
 requires has no binding verdict at the PR's head, usually because the head moved after review. The

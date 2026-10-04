@@ -806,10 +806,10 @@ export const PARK_CAUSES = {
 	 * open question filed elsewhere, or two criteria on its own issue that cannot both hold. The
 	 * builder backs off with nothing built, and a second builder sent in meets the same wall.
 	 *
-	 * This is not the decision-lane token, which the second issue cited below asks for. A
-	 * `type:decision` lane waiting on its own ruling comment keeps a separate token with a separate
-	 * clearing read, because `build claim` there needs a ruling that is still current to cite. Every
-	 * other lane type parks on this one.
+	 * This is not the decision-lane token. A `type:decision` lane waiting on its own ruling comment
+	 * has no token yet: the second issue cited below asks for one with its own clearing read, because
+	 * `build claim` there needs a ruling that is still current to cite. Until that lands, such a lane
+	 * does not borrow this one. Every other lane type parks on this one.
 	 *
 	 * The park line names the issue the ruling is owed on ({@link RULING_ISSUE_CAUSES}), which may be
 	 * the lane's own. Its `KNOWN_PARKS` row clears once a ruling marker newer than the park stands on
