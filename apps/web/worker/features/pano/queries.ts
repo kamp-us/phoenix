@@ -13,7 +13,7 @@ import {PHOENIX_PANO_STAMP_WAVE} from "../../../src/flags/keys.ts";
 import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
-import {currentSandboxViewer} from "../kunye/sandbox.ts";
+import {currentInPlaceSandboxViewer} from "../kunye/sandbox.ts";
 import {currentMutedIds} from "../mute/read-mask.ts";
 import {Pano} from "./Pano.ts";
 import {toComment, toPostFromPage} from "./shapers.ts";
@@ -37,7 +37,7 @@ export const queries = {
 			// A çaylak-sandboxed post is visible to its author, a moderator, or the opted-in
 			// in-place reader of #6423 — the rule is `sandboxVisibleWhere` in
 			// lifecycle/SandboxVisibility.ts (#1205).
-			const sandboxViewer = yield* currentSandboxViewer;
+			const sandboxViewer = yield* currentInPlaceSandboxViewer;
 			const viewerId = sandboxViewer.viewerId;
 			// Mute read-mask (#3113): default-off `member-mute` ⇒ empty set ⇒ unchanged.
 			const mutedIds = yield* currentMutedIds;

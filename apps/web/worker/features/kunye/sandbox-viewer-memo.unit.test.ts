@@ -18,7 +18,12 @@ import {Flags} from "../flagship/Flags.ts";
 import {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Kunye} from "./Kunye.ts";
-import {currentSandboxViewer, makeSandboxViewerMemo, SandboxViewerMemo} from "./sandbox.ts";
+import {
+	currentInPlaceSandboxViewer,
+	currentSandboxViewer,
+	makeSandboxViewerMemo,
+	SandboxViewerMemo,
+} from "./sandbox.ts";
 
 const VIEWER = {id: "yzr", email: "kaan@kamp.us", name: "kaan", image: null};
 
@@ -100,13 +105,15 @@ const underOneRequest = <A>(
 const freshCounts = (): Counts => ({moderatorProbe: 0, tierOf: 0, preference: 0});
 
 describe("the per-request sandbox-viewer memo (#6457)", () => {
+	// One of each path: the narrow default and the explicit widening (#6467) read the same
+	// memo, so a request mixing them still resolves once.
 	it.effect("two call sites in one request resolve the viewer once", () => {
 		const counts = freshCounts();
 		return Effect.gen(function* () {
 			const [first, second] = yield* underOneRequest(
 				counts,
 				Effect.gen(function* () {
-					const a = yield* currentSandboxViewer;
+					const a = yield* currentInPlaceSandboxViewer;
 					const b = yield* currentSandboxViewer;
 					return [a, b] as const;
 				}),
@@ -117,7 +124,7 @@ describe("the per-request sandbox-viewer memo (#6457)", () => {
 				canSeeSandboxed: false,
 				seesSandboxedInPlace: true,
 			} satisfies SandboxViewer);
-			assert.deepStrictEqual(second, first);
+			assert.deepStrictEqual(second, {...first, seesSandboxedInPlace: false});
 		});
 	});
 

@@ -102,7 +102,7 @@ const moderatesStore = (holders: ReadonlySet<string>) =>
 			),
 	}) as never;
 
-// The full request context `currentSandboxViewer` resolves from: the signed-in user
+// The full request context `currentInPlaceSandboxViewer` resolves from: the signed-in user
 // (`CurrentUser`), the actor + moderation ports the `Moderate.over(platform)` probe
 // discharges against (`CurrentActor`/`AgentAuthority`/`RelationStore`), plus the
 // in-place-visibility deps with the flag dark (#6423). Anonymous ⇒ `{user: undefined}`
@@ -223,7 +223,7 @@ it.effect(
 );
 
 it.effect(
-	"profileSource.byId threads the resolved currentSandboxViewer into lookupProfileById",
+	"profileSource.byId threads the resolved currentInPlaceSandboxViewer into lookupProfileById",
 	() =>
 		Effect.gen(function* () {
 			// Threading the viewer (vs. calling the loader sandbox-blind) is what makes the

@@ -3,14 +3,17 @@
  * the moderation capability (ADR 0107) meet the content paths, kept out of the
  * sözlük/pano domain services so they stay vocabulary-free about authorship.
  *
- * Four helpers, all resolver-level:
+ * The helpers, all resolver-level:
  *   - {@link sandboxedAtForAuthor} — the create-time decision: should a new piece
  *     of content by this author land sandboxed? Decided by tier (çaylak ⇒ sandboxed,
  *     yazar ⇒ live).
- *   - {@link currentSandboxViewer} — the read-time viewer: the signed-in id, a
- *     non-throwing moderator probe of `Moderate.over(platform)`, and the flag-gated
- *     in-place opt-in (#6423), handed to the `SandboxVisibility` predicates. Resolved
- *     once per `POST /fate` request through {@link SandboxViewerMemo} (#6457).
+ *   - {@link currentSandboxViewer} — the read-time viewer: the signed-in id and a
+ *     non-throwing moderator probe of `Moderate.over(platform)`, handed to the
+ *     `SandboxVisibility` predicates. Narrow by default: it never carries the #6423
+ *     in-place opt-in (ADR 0453).
+ *   - {@link currentInPlaceSandboxViewer} — the same viewer with the flag-gated in-place
+ *     opt-in (#6423), requested by name at each in-place read. Both resolve once per
+ *     `POST /fate` request through {@link SandboxViewerMemo} (#6457).
  *   - {@link moderatorSandboxViewer} — the same viewer for an already-`Moderate`-gated
  *     read, taken off the discharged grant instead of re-probing for it (#6472).
  *   - {@link PublishDecision} / {@link decidePublish} / {@link alwaysLive} — the
@@ -103,10 +106,28 @@ export const SandboxViewerMemo = Context.Reference<SandboxViewerResolution>(
 export const makeSandboxViewerMemo: Effect.Effect<SandboxViewerResolution> =
 	Effect.cached(resolveSandboxViewer);
 
-/** @see {@link resolveSandboxViewer} — this reads it through the request's {@link SandboxViewerMemo}. */
-export const currentSandboxViewer: SandboxViewerResolution = Effect.gen(function* () {
+/**
+ * The explicit request for the #6423 in-place widening — the request's whole
+ * {@link resolveSandboxViewer} resolution, read through its {@link SandboxViewerMemo}. A
+ * read takes this only where a row is met where it lives: a post in its feed, a
+ * definition on its term page.
+ *
+ * Grepping this name enumerates every widened read (ADR 0453).
+ */
+export const currentInPlaceSandboxViewer: SandboxViewerResolution = Effect.gen(function* () {
 	return yield* yield* SandboxViewerMemo;
 });
+
+/**
+ * The default viewer, narrow by construction: the same memoized resolution with the #6423
+ * in-place widening dropped, so a resolver written from this line cannot surface sandboxed
+ * content to an opted-in yazar. Identity and moderator authority survive — an author still
+ * reads their own sandboxed rows, a moderator still reads everything.
+ */
+export const currentSandboxViewer: SandboxViewerResolution = Effect.map(
+	currentInPlaceSandboxViewer,
+	(viewer) => ({...viewer, seesSandboxedInPlace: false}) satisfies SandboxViewer,
+);
 
 /**
  * The sandbox viewer a `Moderate`-gated read runs under (#6472). `Moderate` sits in R,

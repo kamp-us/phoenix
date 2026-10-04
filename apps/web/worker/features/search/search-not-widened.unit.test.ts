@@ -5,9 +5,10 @@
  * page. Search is discovery: it ranks over a corpus, so admitting sandboxed rows there
  * would surface newcomer content out of context and shift the bm25 ranking of everything
  * around it. `searchPosts` masks through the shared `postVisibleWhere` seam, so nothing
- * inside `Search` could refuse the widening — the narrowing has to happen where the
- * viewer is resolved, and this asserts it does: the resolver hands `Search` a viewer with
- * `seesSandboxedInPlace: false` even for an opted-in yazar the flag is on for.
+ * inside `Search` could refuse the widening — it is kept out where the viewer is resolved:
+ * the default viewer is narrow (#6467, ADR 0453), and this asserts the resolver hands
+ * `Search` a viewer with `seesSandboxedInPlace: false` even for an opted-in yazar the flag
+ * is on for.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {AgentAuthority, CurrentActor, human, RelationStore} from "@kampus/authz";
