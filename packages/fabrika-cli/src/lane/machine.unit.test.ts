@@ -1065,8 +1065,9 @@ describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", (
 		});
 	});
 
-	// No `KNOWN_PARKS` row exists for this cause and none is owed yet: clearing it needs a verb that
-	// merges the base into the head, and `build` ships none. Novel-naming-the-cause is the answer.
+	// No `KNOWN_PARKS` row exists for this cause and none is owed: a behind head that merges clean
+	// lands through the merge queue, so only an old ledger carries it. Novel-naming-the-cause is the
+	// answer.
 	it("reads as a novel park that names its cause, never as the approval-wait §CP row", () => {
 		const classified = classifyPark("human:cp-approval", "head-behind-base");
 

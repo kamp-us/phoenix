@@ -538,10 +538,11 @@ export const pullTimeline = (repo: string, pr: number): Shell<Attempt<TimelineRe
 	);
 
 /**
- * How far the inspected head sits behind the base — the base-drift notice.
+ * How far the inspected head sits behind the base — reported as a fact, never as a reason to move it.
  *
- * An approval solicited on a head that must move is destroyed by the rebase that moves it, three at
- * a time when a night's PRs all drift together, so the notice fires before one is asked for.
+ * A head behind its base that merges clean lands through the merge queue as it is, so `ship
+ * cp-approval` prints the count and asks for nothing. `heal-ci diagnose` reads the same count as one
+ * of its stale-claim proofs.
  */
 export const behindBase = (repo: string, base: string, sha: string): Shell<Attempt<number>> =>
 	authed((token) =>

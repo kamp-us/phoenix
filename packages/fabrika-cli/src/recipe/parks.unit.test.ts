@@ -32,10 +32,11 @@ describe("the park table", () => {
 		expect(rowless).toContain("head-behind-base");
 	});
 
-	// A rowless cause still carries the verb that removes it: naming and clearing are decoupled, and
-	// `head-behind-base` names `lane refresh` without buying the autonomous clear a row would.
-	it("lets a rowless cause name its remedy, since naming is not what a row buys", () => {
-		expect(PARK_CAUSES["head-behind-base"].remedy).toBe("fabrika lane refresh");
+	// The merge queue lands a behind head that merges clean, so the cause stays a name old ledgers
+	// carry: no row clears it and no verb removes it.
+	it("gives a behind head no row and no remedy", () => {
+		expect(KNOWN_PARKS.some((row) => row.cause === "head-behind-base")).toBe(false);
+		expect(PARK_CAUSES["head-behind-base"].remedy).toBeNull();
 	});
 });
 

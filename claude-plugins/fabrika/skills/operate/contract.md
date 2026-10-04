@@ -326,9 +326,9 @@ passes, and the refusal names the seconds still to run.
 
 Two groups of tokens belong to no shell. The integrator group is the one `FAIL` a driver relays
 from `lane integrate`'s `42`, `43` or `44` out of an epic child's `integrate`. The other is the
-machinery group (`REPLAY-COLLIDED`, `BASE-DRIFTED`,
-`BASE-CONFLICTED`, `QUEUE-EJECTED`, `SEAT-DIRTY`, `SHELL-DEAD`), which a driver records about the
-pipeline itself. Each maps to the machine's LAP event, spending the lap budget instead of the repair
+machinery group (`REPLAY-COLLIDED`, `BASE-CONFLICTED`, `QUEUE-EJECTED`, `SEAT-DIRTY`,
+`SHELL-DEAD`), which a driver records about the pipeline itself. `BASE-DRIFTED` still maps there for
+a recorder holding the old token, and no skill records it. Each maps to the machine's LAP event, spending the lap budget instead of the repair
 one. Each carries its own cause off the same closed set with no `--cause` typed; pass one to
 override it, and a cause outside the set still refuses at `35`.
 
