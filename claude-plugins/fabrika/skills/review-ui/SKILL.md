@@ -81,7 +81,7 @@ to reach the head. It then resolves the mode over the PR's `ui` files:
 
 - `skip` posts a record flagged `basis:skip`. The repo's rules owe no render for these files.
 - `hand-check` posts a record flagged `basis:hand-check`. **When a `hand-check` rule matches, the
-  owner's hand-check is admissible evidence**: a comment on the PR by a control-plane account that
+  owner account's hand-check is admissible evidence**: a comment on the PR by a control-plane account that
   names the exact head and carries screenshots. The verb reads the PR's comments, stands on the
   newest one it admits, and names it in its answer's `handCheck`. You do not look for it yourself.
   With none at this head it refuses on `21`. `--hand-check <comment-id>` pins one comment instead,
@@ -104,8 +104,11 @@ close, up to three, and why each did not count. When you end CANT-SEE on that re
 place of them.
 
 Either posted record ends **ROUTED-ELSEWHERE** with cause `no-preview-routed` (Terminal vocabulary
-below). Never write a hand-check yourself, and never pass a builder's or another agent's comment as
-one.
+below). Leave the hand-check to the owner: write none yourself, and pass no builder's or other agent's
+comment as one. **That rule is yours to keep.** The verb reads the comment's account and refuses
+only the builder's `ui evidence` comment and a comment carrying an agent stamp, so on a repo where
+agents post under an owner account no check enforces it
+([why](../../guide/how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)).
 
 **Which no-preview route comes first.** The `--no-preview` route above always runs first. Where a
 `hand-check` or `skip` rule matches, its answer is the route, and the builder's desk run
@@ -118,8 +121,8 @@ means the `review-code` verdict in force at `--sha` is a **FAIL**: the record wo
 PASS that is not there, and the polarity-free format leaves no later reader able to falsify it. That
 is not yours to route around — the text lane repairs, and you route at the head it passes. The same
 `20` covers an **absent** text verdict on a `--verified-at` route, because the exception's clause
-names both halves, and on a `--no-preview` route that resolves `hand-check`, which rests on a person
-checking the render the same way. A prose-only route with no text verdict posts, and so does a
+names both halves, and on a `--no-preview` route that resolves `hand-check`, which stands in
+for the render the same way. A prose-only route with no text verdict posts, and so does a
 `--no-preview` route that resolves `skip`; the answer's `textReview` field says which of the two it
 rested on. The verdict is read before the `--verified-at` range, so a
 route that is both spent at `--verified-at` and standing-FAIL at `--sha` meets `20` rather than
@@ -484,7 +487,7 @@ lets the driver read the failure, or a recipe row clear it, rather than an anony
 
 **`ROUTED-ELSEWHERE` is the one that may not park at all, and that is the verb's call rather than
 yours.** Your route is a *completed* review: of a diff that renders nothing, or of a no-preview PR
-the repo's rules skip or an owner hand-checked. `lane prove` reads either as satisfying `review-ui` — so when every other required namespace already holds a
+the repo's rules skip or an owner account hand-checked. `lane prove` reads either as satisfying `review-ui` — so when every other required namespace already holds a
 verdict binding this head, `lane report` records the `PASS` that finish earns and the lane walks to
 `ship`. It proves that before it records it, and it falls back to the park on anything short: an
 absent, stale, unauthorized or unreadable route, a review still outstanding, a standing `FAIL`. So
@@ -501,7 +504,7 @@ guess.
 You read: the diff (via `review diff`), the PR body's Deviations section (via `review deviations`),
 the linked issue's acceptance criteria (via `review criteria`), PR comments (prior verdict markers
 via `review verdicts`; the preview-deploy comment via `review-ui render`, and via `review-ui route
---no-preview`, which also reads the owner's hand-check comment: a posted route hands back only the
+--no-preview`, which also reads the owner account's hand-check comment: a posted route hands back only the
 id it admitted, and a `21` or `22` hands back the printed note, which names the id and author of
 each comment that came close, up to three; a comment's body is never returned), CI check output (via
 `review ci` for the rollup and `heal-ci surface` for the named gates), **rendered page content** (the preview's pixels and text, read multimodally) and

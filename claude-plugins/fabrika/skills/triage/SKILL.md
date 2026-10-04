@@ -182,13 +182,16 @@ reach here: a split leaves no survivor to fold the original into, so nothing lic
 
 **Every issue leaves with a home** — an open milestone, or one of the two standing lanes.
 Lane-entering work (an epic, or a parentless feature) additionally carries a `## Pitch` whose `Arc`
-*is* that home — inside your rewrite for a feature, on stdin for an epic. **The founder approves a
-pitch, never triage**: by a `pitch-approved:` comment, or by setting the issue's betting-table row to
-Stage `bet` — his own write or an agent's on his instruction, with the row's Size matching the
-pitch's Appetite.
+*is* that home — inside your rewrite for a feature, on stdin for an epic. **Approving a pitch is the
+founder's, and triage leaves it to him**: by a `pitch-approved:` comment, or by setting the issue's
+betting-table row to Stage `bet` — his own write or an agent's on his instruction, with the row's
+Size matching the pitch's Appetite. **That rule is yours to keep.** The guard reads the approving
+account's write access and refuses a comment carrying an agent stamp; it does not read who typed,
+so on a repo where agents post under the founder's account no check enforces it
+([why](../../guide/how-fabrika-works.md#an-owner-only-step-confirms-an-account-not-a-person)).
 **An issue that leaves triage with a pitch nobody has approved yet ends your closing message on the
-ask, complete enough to act on cold.** Triage posts no approval itself, and an agent-posted line
-never counts, so the message is the whole hand-off. It carries four things:
+ask, complete enough to act on cold.** Triage posts no approval itself, so the message is the
+whole hand-off. It carries four things:
 
 - the full approval line with the pitch's own size filled in — `pitch-approved: appetite S` for a
   pitch whose Appetite is `S`. A comment of any other shape approves nothing;
@@ -376,7 +379,7 @@ another human round-trip. No such comment, and the default above stands: `human`
 comment rather than judging the question settled yourself, and a ruling that left a gap open is
 still a judgment, so it stays `human`. An issue already parked on `human` needs no triage re-run to
 come back:
-`fabrika decision rule <n>` is how a control-plane human records the ruling and flips the audience —
+`fabrika decision rule <n>` is how a control-plane account records the ruling and flips the audience —
 `--cites <url>` over a comment that is already there, `--authorization <file>` over a ruling given in
 conversation — and its contract is that verb's `--help`, not this page.
 
