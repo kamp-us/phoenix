@@ -433,10 +433,11 @@ SHIPPED-PR
 
 Above that word it prints the pull request's URL. Use the pull request's number in the next step.
 
-The build also leaves your clone on no branch: `git status` now says `HEAD (no branch)`. That is
-expected. The builder steps off its own branch when it finishes, so a later fix can pick that branch
-up again, and it leaves your files as they are. Nothing is lost. `git switch main` returns to main
-whenever you want, and you do not need to switch back before the next step.
+The build also leaves your clone on no branch. `git status` now opens with
+`HEAD detached at <commit id>`, which is git's way of saying the clone sits on a commit and not on a
+branch. That is expected. The builder steps off its own branch when it finishes, so a later fix can
+pick that branch up again, and it leaves your files as they are. Nothing is lost. `git switch main`
+returns to main whenever you want, and you do not need to switch back before the next step.
 
 This issue only changes text. An issue with a screen is built with `/fabrika:operate <n>` instead,
 where `<n>` is the issue's number: `/fabrika:build` builds text only and stops on a screen.

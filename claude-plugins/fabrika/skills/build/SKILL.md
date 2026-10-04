@@ -650,12 +650,12 @@ a run whose caller named no lane prints the token only and records nothing.
 it just released, and its answer's `freed` field names that branch, or is `null` when it moved
 nothing. When `freed` names a branch and this tree is the clone's main working tree — `git rev-parse
 --git-dir` and `git rev-parse --git-common-dir` name one directory — a person opens that clone next
-and finds `git status` reading `HEAD (no branch)`. So your closing message, above the token, tells
-them three things in plain words: the clone is on no branch, nothing is lost because the files and
-commits are as the run left them, and the one command that returns to the branch they started on,
-`git switch <starting-branch>`. The starting branch is the one this clone held before this run
-checked out its lane branch, whether `build branch` cut that branch or resumed it — the `from` side
-of that checkout in `git reflog HEAD`.
+and finds `git status` opening with `HEAD detached at <commit id>`. So your closing message, above
+the token, tells them three things in plain words: the clone is on no branch, nothing is lost
+because the files and commits are as the run left them, and the one command that returns to the
+branch they started on, `git switch <starting-branch>`. The starting branch is the one this clone
+held before this run checked out its lane branch, whether `build branch` cut that branch or resumed
+it — the `from` side of that checkout in `git reflog HEAD`.
 
 **That `from` side is a branch only when the clone stood on one.** A repair run, or a second build
 by a person who never switched back, starts in a clone the earlier run already left on no branch,
