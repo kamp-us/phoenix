@@ -1805,7 +1805,8 @@ cap's other ending is the opposite — `lane open`'s exit `51` meets the same ca
 holding a claim, and step 1 routes it here precisely to hand that claim back.
 
 **Then remove the worktree this run was given. It is the last command of every run**, whichever way
-the run ends: a terminal, a park, a wait (the pre-claim one included) or `STOPPED`. No lane cleans
+the run ends: a terminal, a park, a wait (the pre-claim one included), `STOPPED`, or the
+`LANE-HELD` a lost claim ends on in step 1. No lane cleans
 up after a driver, so a tree you leave stays on disk until a person finds it:
 
 ```bash
