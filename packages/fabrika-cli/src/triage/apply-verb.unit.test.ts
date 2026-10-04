@@ -116,6 +116,11 @@ const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options>
 		Effect.provide(runApply({...options, ...overrides}), triageContext(guardedShell(script))),
 	);
 
+/** A config declaring two standing lanes — a fixture, since a repo that declares none runs none. */
+const LANED_CONFIG = JSON.stringify({
+	boardVocabulary: {standingLanes: ["wayfinder:backlog", "axis:pipeline-hardening"]},
+});
+
 /** A config whose priority facet declares a value `/^p\d+$/` cannot own — that break, as data. */
 const VIOLATING_CONFIG = JSON.stringify({
 	triageFacets: [{name: "priority", owns: "^p\\d+$", values: ["p0", "p1", "urgent"]}],
@@ -251,7 +256,7 @@ describe("runApply", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runApply({...options, home: null, lane: "wayfinder:backlog"}),
-				triageContext(shell),
+				triageContext(shell, LANED_CONFIG),
 			),
 		);
 		expect(out.code).toBe(0);
@@ -292,22 +297,42 @@ describe("runApply", () => {
 		expect(shell.requests).toEqual([]);
 	});
 
+	it("refuses a lane outside the declared set, enumerating the set", async () => {
+		const shell = guardedShell(happy());
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runApply({...options, home: null, lane: "axis:whatever"}),
+				triageContext(shell, LANED_CONFIG),
+			),
+		);
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toContain(
+			"--lane must be wayfinder:backlog or axis:pipeline-hardening",
+		);
+		expect(shell.requests).toEqual([]);
+	});
+
 	/**
-	 * A repo declaring `standingLanes: []` runs none, so the enumerating message would render
+	 * A repo that declares no lane runs none, so the enumerating message would render
 	 * `--lane must be  — got "x"` and send the caller hunting for a value that does not
-	 * exist.
+	 * exist. An absent key and an empty list are that one answer.
 	 */
-	it("refuses --lane over a repo that declares no lane, naming the empty key", async () => {
+	it.each([
+		["an empty list", JSON.stringify({boardVocabulary: {standingLanes: []}})],
+		["an absent key", JSON.stringify({boardVocabulary: {priorities: ["p0", "p1", "p2"]}})],
+		["no config at all", undefined],
+	])("refuses --lane over a repo that declares no lane (%s), naming the key", async (_case, config) => {
 		const shell = guardedShell(happy());
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runApply({...options, home: null, lane: "wayfinder:backlog"}),
-				triageContext(shell, JSON.stringify({boardVocabulary: {standingLanes: []}})),
+				triageContext(shell, config),
 			),
 		);
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("this repo declares no standing lane");
+		expect(out.stderr.at(-1)).toContain("`boardVocabulary.standingLanes`");
 		expect(shell.requests).toEqual([]);
 	});
 

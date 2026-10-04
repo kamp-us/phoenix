@@ -3,16 +3,14 @@
  * labels the board actually carries.
  *
  * Two questions, deliberately joined here. `boardVocabulary.standingLanes` says which lanes this
- * repo runs, and it has a shipped default, so a repo that declares nothing still resolves to
- * a shipped pair. That default is a claim about someone else's board: in a repo where neither label
- * exists, `triage homes` offered both anyway and a triager took one, classified the whole issue, and
- * only then hit a failed label write naming a label rather than the real cause. So the
- * declared set is a candidate list, never the answer — a lane is offered only once the board is
- * observed to carry its label, which is the same evidence the later write depends on.
+ * repo runs, and config is its only source: nothing is shipped for it, so a repo that declares none
+ * runs none. A declared lane is still a name the config asserts and the board may not carry yet, and
+ * offering one whose label does not exist fails a step later, at a label write naming the label
+ * rather than the real cause. So the declared set is a candidate list, never the answer — a lane is
+ * offered only once the board is observed to carry its label, which is the same evidence the later
+ * write depends on.
  *
- * The source is config, with no shipped default. The default survives until the `boardVocabulary`
- * eviction lands — the presence filter is what contains it in
- * the meantime, and `"standingLanes": []` is how a repo says it runs none.
+ * @ruling https://github.com/kamp-us/phoenix/issues/6469
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -26,17 +24,12 @@ export interface StandingLane {
 }
 
 /**
- * What routing to each of the shipped default's lanes means.
+ * What every offered lane's `meaning` says.
  *
- * Constants rather than the repo's live label descriptions, so a description edit cannot change a
- * machine-channel answer. A lane outside this map is one some repo declared, and no source here can
- * say what it means — {@link DECLARED_MEANING} says exactly that instead of inventing a gloss.
+ * One constant rather than the repo's live label descriptions, so a description edit cannot change a
+ * machine-channel answer. A lane is a name some repo declared, and no source here can say what
+ * routing to it means, so this says exactly that instead of inventing a gloss.
  */
-const SHIPPED_MEANINGS: Readonly<Record<string, string>> = {
-	"wayfinder:backlog": "fog — uncharted work upstream of any arc",
-	"axis:pipeline-hardening": "the standing pipeline and reliability lane",
-};
-
 export const DECLARED_MEANING = "a standing lane this repo declares";
 
 /** The lanes this repo declares, or the one refusal a reader of them prints. */
@@ -62,4 +55,4 @@ export const offeredLanes = (
 ): ReadonlyArray<StandingLane> =>
 	declared
 		.filter((label) => present.has(label))
-		.map((label) => ({label, meaning: SHIPPED_MEANINGS[label] ?? DECLARED_MEANING}));
+		.map((label) => ({label, meaning: DECLARED_MEANING}));

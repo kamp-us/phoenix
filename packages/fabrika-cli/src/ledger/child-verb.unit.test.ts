@@ -106,6 +106,14 @@ const run = (
 	}));
 };
 
+/** The run's files in a repo whose `.fabrika.jsonc` declares two standing lanes. */
+const LANED: Readonly<Record<string, string | null>> = {
+	[runJsonPath(DIR)]: RUN_JSON(),
+	[`${DIR}/${CONFIG_PATH}`]: JSON.stringify({
+		boardVocabulary: {standingLanes: ["wayfinder:backlog", LANE]},
+	}),
+};
+
 /** The JSON a matching request carried — where every write's fields travel now. */
 const sent = (
 	run: {requests: ReadonlyArray<string>; bodies: ReadonlyArray<string>},
@@ -221,13 +229,35 @@ describe("runChild", () => {
 	 * A child with neither an open milestone nor a standing lane groups under nothing on the board.
 	 * The three cases are the whole homing axis.
 	 */
-	it("refuses a homeless child before it reads anything, naming both remedies", async () => {
-		const {outcome, calls} = await run({milestone: null});
+	it("refuses a homeless child before it reads the board, naming both remedies", async () => {
+		const {outcome, calls} = await run({milestone: null}, HAPPY, LANED);
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toBe(
 			"ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child groups under no campaign and no lane, so nothing on the board shows where it belongs.",
 		);
 		expect(calls).toEqual([]);
+	});
+
+	/** A lane label is a home only where the repo declares it, so here a milestone is the one remedy. */
+	it("refuses a lane-labelled child in a repo that declares no lane, naming the milestone alone", async () => {
+		const {outcome, calls} = await run({milestone: null, labels: [LANE]});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toContain("this repo declares no standing lane");
+		expect(outcome.stderr.at(-1)).not.toContain(LANE);
+		expect(calls).toEqual([]);
+	});
+
+	/** An unreadable declaration is not "no lanes": that reading refuses a valid lane child on `10`. */
+	it("refuses on 11 when the lane declaration cannot be read, and reads no board", async () => {
+		const {outcome, calls, written} = await run({milestone: null, labels: [LANE]}, HAPPY, {
+			[runJsonPath(DIR)]: RUN_JSON(),
+			[`${DIR}/${CONFIG_PATH}`]: JSON.stringify({boardVocabulary: LANE}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain("standing lanes");
+		expect(outcome.stderr.at(-1)).not.toContain("a child needs a home");
+		expect(calls).toEqual([]);
+		expect(written.size).toBe(0);
 	});
 
 	it("mints a milestone-homed child", async () => {
@@ -238,11 +268,15 @@ describe("runChild", () => {
 
 	/** The lane exemption holds here too — homing is never collapsed into "milestone required". */
 	it("mints a lane-homed child carrying no milestone", async () => {
-		const minted = await run({milestone: null, labels: [LANE]}, [
-			...HAPPY.filter(([pattern]) => pattern !== LABELS && pattern !== READBACK),
-			[LABELS, labelSet(...DEFAULT_LABELS, LANE)],
-			[READBACK, childIssue({number: 4301, labels: [...MINTED_LABELS, LANE]})],
-		]);
+		const minted = await run(
+			{milestone: null, labels: [LANE]},
+			[
+				...HAPPY.filter(([pattern]) => pattern !== LABELS && pattern !== READBACK),
+				[LABELS, labelSet(...DEFAULT_LABELS, LANE)],
+				[READBACK, childIssue({number: 4301, labels: [...MINTED_LABELS, LANE]})],
+			],
+			LANED,
+		);
 		expect(minted.outcome.code).toBe(0);
 		expect(JSON.parse(minted.outcome.stdout).observed.milestone).toBe(null);
 		expect(sent(minted, CREATE).labels).toContain(LANE);

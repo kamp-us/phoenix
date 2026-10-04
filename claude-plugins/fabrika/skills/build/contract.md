@@ -253,8 +253,8 @@ until one of them has run.
 - **The issue's body** — for the criteria block.
 
 Those four are the whole input set. `homeOf` derives a home separately — the open
-milestone's number, or a standing-lane label (`wayfinder:backlog`, `axis:pipeline-hardening`) — but
-only `build pick`'s ranking and its histogram rows read it.
+milestone's number, or a standing-lane label the repo declares under `boardVocabulary.standingLanes`
+— but only `build pick`'s ranking and its histogram rows read it.
 
 **The outcomes — state words, never a boolean.** The admission test returns exactly one across all
 three axes, and every refusal carries its reason and names which axis refused:
@@ -489,9 +489,10 @@ fabrika build pick [--repo <owner/name>] [--limit <n>]
 **Output** — machine. One JSON object:
 `{"pool": [...], "excluded": {...}, "unread": n, "scanned": {"p0": n, "p1": n, "p2": n}, "bets": {...}}`.
 Each pool entry: `{"number", "title", "priority", "type", "home", "bet"}` — `home` is the open
-milestone's number as a string, or the standing-lane label (`wayfinder:backlog` /
-`axis:pipeline-hardening`) for an issue with no milestone; `bet` says whether the table in force
-bet on it. **Bets first**, then `p0` → `p1` → `p2`, milestone order within a bucket (below).
+milestone's number as a string, or the standing-lane label for an issue with no milestone, or `null`.
+The lanes are the ones `.fabrika.jsonc` declares under `boardVocabulary.standingLanes`; a repo that
+declares none has no lane home, and a declaration that could not be read refuses on `11`. `bet` says
+whether the table in force bet on it. **Bets first**, then `p0` → `p1` → `p2`, milestone order within a bucket (below).
 **An empty pool is a fact and prints `{"pool": [], ...}` on exit 0** with the scanned counts proving
 what was searched — never an empty stdout (interface convention rule 2).
 
@@ -610,7 +611,7 @@ on top of that, unpaginated. Here either every bucket was read in full or the an
 
 | Code | Trigger |
 |---|---|
-| `11` | any bucket read failed or came back truncated, or the table project could not be read in a repository that declares a `table` block — for any reason but a missing `project` scope — the pool is UNKNOWN, never partial and never ranked as if nothing were bet on |
+| `11` | any bucket read failed or came back truncated, `.fabrika.jsonc`'s standing-lane declaration could not be read, or the table project could not be read in a repository that declares a `table` block — for any reason but a missing `project` scope — the pool is UNKNOWN, never partial and never ranked as if nothing were bet on |
 
 A malformed `--limit` is a plain usage error: `1`, per the reserved table. `21`, `30` and `32` are
 **not** reachable here: a refusal on the browse path is an exclusion with a reason, not the verb's
@@ -622,6 +623,7 @@ verdict — the pool still answers on `0`. Those codes are the claim seam's.
 |---|---|---|
 | `build pick: cannot read the <bucket> bucket: <reason> — the pool is UNKNOWN, never partial.` | 11 | refusal |
 | `build pick: cannot read the bets: <reason> — the pool order is UNKNOWN, never ranked as if nothing were bet on.` | 11 | refusal |
+| `build pick: cannot read the standing lanes: <reason> — which label is a home here is UNKNOWN, never none.` | 11 | refusal |
 | `build pick: --limit "<value>" is not a positive integer.` | 1 | usage error |
 
 **Scope** — every open issue in `--repo` carrying `status:triaged`, read via paginated REST; the

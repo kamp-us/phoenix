@@ -19,7 +19,8 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {TRIAGED_LABEL, UNHOMED_REMEDY} from "../guard/homing.ts";
+import type {Read} from "../config/read-key.ts";
+import {TRIAGED_LABEL, unhomedRemedy} from "../guard/homing.ts";
 import {toTriaged} from "../guard/homing-verb.ts";
 import {
 	clearMilestone,
@@ -64,6 +65,8 @@ export type SweepMode = "dry-run" | "apply";
 
 export interface SweepHomesOptions {
 	readonly mode: SweepMode;
+	/** The lanes this repo declares, as read from `.fabrika.jsonc` by the delivery layer. */
+	readonly standingLanes: Read<ReadonlyArray<string>>;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -108,6 +111,7 @@ const sweepOne = (
 	repo: string,
 	breach: DoubleMarked,
 	trail: string,
+	lanes: ReadonlyArray<string>,
 ): Effect.Effect<Row | Halt, never, Shell> =>
 	Effect.gen(function* () {
 		const n = breach.number;
@@ -121,7 +125,7 @@ const sweepOne = (
 		if (fresh._tag === "Absent" || fresh.value.state !== "open") {
 			return {outcome: "moved", breach, reason: "the issue left the open board mid-sweep"};
 		}
-		if (!stillDoubleMarked(toTriaged(fresh.value), breach)) {
+		if (!stillDoubleMarked(toTriaged(fresh.value), breach, lanes)) {
 			return {
 				outcome: "moved",
 				breach,
@@ -169,7 +173,7 @@ const sweepOne = (
 				}) — inspect it before continuing.`,
 			};
 		}
-		if (!landedExempt(toTriaged(back.value), breach)) {
+		if (!landedExempt(toTriaged(back.value), breach, lanes)) {
 			return {
 				code: READBACK_MISMATCH,
 				reason: `#${n}'s read-back is not milestone-less with ${breach.lanes.join(", ")} kept — inspect it before continuing.`,
@@ -194,6 +198,16 @@ export const runSweepHomes = (
 		}
 		const repo = repoAttempt.value;
 
+		// An unreadable declaration is never "no lanes": that reading plans every lane-homed issue
+		// as un-homed and finds no double mark to clear.
+		if (options.standingLanes._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read the standing lanes this repo declares: ${options.standingLanes.reason.replace(/\.$/, "")} — nothing was written; the sweep is UNKNOWN, never clean.`,
+			);
+		}
+		const declared = options.standingLanes.value;
+
 		let citation = "";
 		if (mode === "apply") {
 			const authored = readAuthored(SURFACE, yield* options.stdin);
@@ -209,7 +223,7 @@ export const runSweepHomes = (
 			);
 		}
 		const scanned = scannedLine(VERB, repo, read.value.length, `open ${TRIAGED_LABEL} issue`);
-		const plan = planSweep(read.value.map(toTriaged));
+		const plan = planSweep(read.value.map(toTriaged), declared);
 		if (plan._tag === "ZeroScope") {
 			return refuse(
 				ZERO_SCOPE,
@@ -235,7 +249,7 @@ export const runSweepHomes = (
 				rows.push({outcome: "would-clear", breach});
 				continue;
 			}
-			const step = yield* sweepOne(repo, breach, trails[index] ?? "");
+			const step = yield* sweepOne(repo, breach, trails[index] ?? "", declared);
 			if (isHalt(step)) {
 				return refuse(step.code, `${VERB}: ${step.reason}`, [
 					scanned,
@@ -250,7 +264,7 @@ export const runSweepHomes = (
 		if (plan.unhomed.length > 0) {
 			return refuse(
 				UNHOMED_REMAIN,
-				`${VERB}: ${plan.unhomed.length} un-homed issue(s) left untouched — choosing a home is triage's call, not this sweep's.\n${UNHOMED_REMEDY}`,
+				`${VERB}: ${plan.unhomed.length} un-homed issue(s) left untouched — choosing a home is triage's call, not this sweep's.\n${unhomedRemedy(declared)}`,
 				[scanned, tally, ...lines, ...plan.unhomed.map(unhomedLine)],
 			);
 		}

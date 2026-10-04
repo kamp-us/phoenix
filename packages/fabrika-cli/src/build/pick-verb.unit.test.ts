@@ -233,16 +233,49 @@ describe("runPick", () => {
 		expect(pool(out)).toEqual([]);
 	});
 
-	it("names a standing lane as the home when there is no milestone", async () => {
-		const out = await run([
-			[
-				bucket("p0"),
-				candidatePage({number: 500, labels: [...TRIAGED, "p0", "axis:pipeline-hardening"]}),
-			],
-			[bucket("p1"), EMPTY],
-			[bucket("p2"), EMPTY],
-		]);
+	/** One lane-labelled, milestone-less candidate; whether the label is a home is the repo's call. */
+	const LANE_CANDIDATE: ReadonlyArray<Scripted> = [
+		[
+			bucket("p0"),
+			candidatePage({number: 500, labels: [...TRIAGED, "p0", "axis:pipeline-hardening"]}),
+		],
+		[bucket("p1"), EMPTY],
+		[bucket("p2"), EMPTY],
+	];
+
+	it("names a declared standing lane as the home when there is no milestone", async () => {
+		const out = await run(
+			LANE_CANDIDATE,
+			{},
+			fakeFs({
+				files: {
+					"/repo/.fabrika.jsonc": JSON.stringify({
+						boardVocabulary: {standingLanes: ["axis:pipeline-hardening"]},
+					}),
+				},
+			}),
+		);
 		expect(JSON.parse(out.stdout).pool[0].home).toBe("axis:pipeline-hardening");
+	});
+
+	it("reads no home off that label in a repo that declares no lane", async () => {
+		const out = await run(LANE_CANDIDATE);
+		expect(JSON.parse(out.stdout).pool[0].home).toBeNull();
+	});
+
+	it("refuses a lane declaration nobody could read on 11 — never ranked as a repo with no lane", async () => {
+		const seams = fakeSeams([...LANE_CANDIDATE, NO_BLOCKERS, NO_TABLE]);
+		const fs = fakeFs({
+			files: {"/repo/.fabrika.jsonc": JSON.stringify({boardVocabulary: "wayfinder:backlog"})},
+		});
+		const out = await Effect.runPromise(
+			Effect.provide(runPick(options), Layer.merge(seams.layer, fs.layer)),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("build pick: cannot read the standing lanes");
+		expect(out.stderr.at(-1)).toContain("which label is a home here is UNKNOWN, never none");
+		expect(seams.requests.filter((line) => line.includes("labels=status%3Atriaged"))).toEqual([]);
 	});
 
 	it("prints an empty pool as a FACT on exit 0, with the scanned counts beside it", async () => {

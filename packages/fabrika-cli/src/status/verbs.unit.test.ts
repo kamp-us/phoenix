@@ -33,14 +33,7 @@ import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import {noPreviewMode} from "../review-ui/no-preview.ts";
-import {
-	AUDIENCES,
-	PRIORITIES,
-	parkedFacets,
-	STANDING_LANES,
-	TYPES,
-	triagedFacets,
-} from "../triage/facets.ts";
+import {AUDIENCES, PRIORITIES, parkedFacets, TYPES, triagedFacets} from "../triage/facets.ts";
 import {ANSWER} from "../verb.ts";
 import {
 	absentLabels,
@@ -1664,6 +1657,8 @@ describe("the readout-artifact read-back reads the created issue by number", () 
  */
 describe("the bootstrap taxonomy is derived from the vocabularies the verbs write", () => {
 	const names = new Set(TAXONOMY.map((label) => label.name));
+	/** The lanes some repo declares, as a fixture: a keep set can carry one, and none is shipped. */
+	const LANES = ["wayfinder:backlog", "axis:pipeline-hardening"];
 
 	/** Every label any facet keep set can produce, over the whole vocabulary cross-product. */
 	const keepable = (): ReadonlyArray<string> => {
@@ -1672,7 +1667,7 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 			...TYPES.flatMap((type) =>
 				PRIORITIES.flatMap((priority) =>
 					AUDIENCES.flatMap((readyFor) =>
-						[null, ...STANDING_LANES].map((lane) =>
+						[null, ...LANES].map((lane) =>
 							triagedFacets({type, priority, readyFor, lane, classes: []}),
 						),
 					),
@@ -1684,9 +1679,9 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 
 	it("mints every label a facet keep set can produce, bar the per-repo standing lanes", () => {
 		// The lanes are the one deliberate exclusion: a lane is the host repo's own home vocabulary,
-		// declared in its ROADMAP, not a pipeline state every repo is born with.
+		// declared in its `.fabrika.jsonc`, not a pipeline state every repo is born with.
 		const outside = keepable().filter((label) => !names.has(label));
-		expect(outside.slice().sort()).toEqual([...STANDING_LANES].sort());
+		expect(outside.slice().sort()).toEqual([...LANES].sort());
 	});
 
 	it("mints one label per member of TYPES and of AUDIENCES, and no thirteenth", () => {

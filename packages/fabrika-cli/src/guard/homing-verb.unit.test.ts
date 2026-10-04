@@ -7,6 +7,7 @@
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import type {Read} from "../config/read-key.ts";
 import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
@@ -48,15 +49,28 @@ const labels = (...names: ReadonlyArray<string>): HttpReply => ({
 	body: JSON.stringify(names.map((name) => ({name}))),
 });
 
+/** The delivery layer's config read, as a fixture: this repo declares the two lanes below. */
+const DECLARED: Read<ReadonlyArray<string>> = {
+	_tag: "Value",
+	value: ["wayfinder:backlog", "axis:pipeline-hardening"],
+	note: "declared",
+};
+
 const run = (
 	script: ReadonlyArray<Scripted>,
-	options: {issue?: number; repo?: string | null; env?: Record<string, string | undefined>} = {},
+	options: {
+		issue?: number;
+		repo?: string | null;
+		env?: Record<string, string | undefined>;
+		standingLanes?: Read<ReadonlyArray<string>>;
+	} = {},
 ) => {
 	const seams = fakeSeams(script);
 	return Effect.runPromise(
 		Effect.provide(
 			runHomingGuard({
 				issue: options.issue ?? null,
+				standingLanes: options.standingLanes ?? DECLARED,
 				repo: options.repo ?? null,
 				env: options.env ?? ENV,
 			}),
@@ -112,6 +126,26 @@ describe("runHomingGuard — the backlog sweep", () => {
 		expect(report).toContain("banned outright");
 		expect(report).toContain("drop the MILESTONE");
 		expect(report).toContain("drop the STANDING-LANE LABEL");
+	});
+
+	it("exempts nothing where the repo declares no lane — the label alone is not a home", async () => {
+		const {outcome} = await run(
+			[[BACKLOG, board({number: 2, labels: ["status:triaged", "wayfinder:backlog"]})]],
+			{standingLanes: {_tag: "Value", value: [], note: "shipped"}},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		const report = outcome.stderr.join("\n");
+		expect(report).toContain("#2 issue 2");
+		expect(report).toContain("this repo declares none");
+	});
+
+	it("is UNKNOWN on a lane declaration nobody could read, and scans nothing", async () => {
+		const {outcome, requests} = await run([], {
+			standingLanes: {_tag: "Refused", reason: "`boardVocabulary` is not an object."},
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("`boardVocabulary` is not an object");
+		expect(requests).toEqual([]);
 	});
 
 	it("reds 7 on an empty sweep — a vacuous pass would hide every floater", async () => {

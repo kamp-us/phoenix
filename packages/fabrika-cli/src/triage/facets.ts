@@ -30,20 +30,6 @@ import {DEFAULT_STATUS_NAMES} from "../labels.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 
 /**
- * The two standing lanes, taking their values from the contract's `triage homes` table — the one
- * place in that spec that enumerates them.
- *
- * They live here only until `triage homes` lands and exports them; this list then moves to that
- * module and every reader re-points at it. It is defined in exactly one place even so: the contract's
- * own `park` facet table re-enumerates the same two labels as a regex, and a second copy is precisely
- * the drift a shared engine exists to prevent.
- */
-export const STANDING_LANES: ReadonlyArray<string> = [
-	"wayfinder:backlog",
-	"axis:pipeline-hardening",
-];
-
-/**
  * The shipped default `--type` vocabulary, and the default of `boardVocabulary`'s `types`.
  *
  * Open, not closed: a repo declares its own and the compile-time narrowing goes with it. The refusal
@@ -95,13 +81,18 @@ export const AUDIENCES: ReadonlyArray<string> = ["human", "agent"];
  *
  * Assembled from the lists above and `../labels.ts` rather than restated, so widening `TYPES`
  * widens what a bare repo accepts, bootstraps and reconciles in one edit.
+ *
+ * `standingLanes` is the one member with no shipped value: a lane name is the repo's own board
+ * vocabulary, so a repo that declares none runs none.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/6469
  */
 export const DEFAULT_BOARD_VOCABULARY: BoardVocabulary = {
 	statuses: DEFAULT_STATUS_NAMES,
 	types: TYPES,
 	priorities: PRIORITIES,
 	audiences: AUDIENCES,
-	standingLanes: STANDING_LANES,
+	standingLanes: [],
 };
 
 export const decodeMember = <A extends string>(
@@ -133,6 +124,10 @@ export const TRIAGE_STATUSES: ReadonlyArray<string> = triageStatuses(DEFAULT_STA
  * `triageFacets` key's shipped default (`../config/keys/triage-facets.ts`), so what a bare repo
  * enforces and what a declaring repo enforces are one shape.
  *
+ * The `lane` row owns nothing and keeps nothing. The lane facet owns exactly the lanes a repo
+ * declares, so the row here is the seat a composed table (`../config/board.ts`) fills from that
+ * declaration, and a repo that declares none reconciles no lane label at all.
+ *
  * The invariant itself lives at `../config/containment.ts`, which runs it at load.
  */
 export const FACET_VOCABULARY: ReadonlyArray<FacetVocabulary> = [
@@ -144,7 +139,7 @@ export const FACET_VOCABULARY: ReadonlyArray<FacetVocabulary> = [
 		owns: {_tag: "Pattern", source: "^ready-for:"},
 		values: AUDIENCES.map(audienceLabel),
 	},
-	{name: "lane", owns: {_tag: "Set", labels: STANDING_LANES}, values: [...STANDING_LANES]},
+	{name: "lane", owns: {_tag: "Set", labels: []}, values: []},
 	{name: "class", owns: {_tag: "Pattern", source: "^class:"}, values: CLASSES.map(classLabel)},
 ];
 
@@ -195,7 +190,7 @@ export const audienceKeep = (type: string, readyFor: string): ReadonlyArray<stri
  *
  * The containment invariant, stated where a future editor adding a facet will read it: **the set of
  * values an input can produce must be a subset of what its facet owns.** `PRIORITIES` ⊂ `/^p\d+$/`,
- * `TYPES` ⊂ `type:*`, `AUDIENCES` ⊂ `ready-for:*`, `STANDING_LANES` ⊂ itself, `CLASSES` ⊂ `class:*`. Widening a pattern past
+ * `TYPES` ⊂ `type:*`, `AUDIENCES` ⊂ `ready-for:*`, the declared lanes ⊂ themselves, `CLASSES` ⊂ `class:*`. Widening a pattern past
  * its input — which is what v1 did — is what makes a correct value look superseded.
  * `facets.unit.test.ts` re-derives the containment rather than trusting this note, and
  * {@link FACET_VOCABULARY} is what puts the same derivation on a loaded config.

@@ -10,11 +10,16 @@
  * be triaged: without that read an empty result cannot be told from a repo that never defined
  * `status:triaged`, and the seam guard would report clean forever having checked nothing.
  *
+ * The standing lanes arrive as the delivery layer's config read, refusal included: an unreadable
+ * declaration cannot say which labels exempt an issue, so it is UNKNOWN here and never "no lanes",
+ * which would red every lane-homed issue as un-homed.
+ *
  * The whole decision lives in `./homing.ts`; this file resolves the repo, reads, and emits.
  */
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import type {Read} from "../config/read-key.ts";
 import {getIssue, type IssueRecord, openIssuesWithLabelRecords, resolveRepo} from "../io/issues.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -31,6 +36,8 @@ import {emitVerdict, type GuardVerdict, unknown} from "./verdict.ts";
 export interface HomingGuardOptions {
 	/** One issue to scope the scan to, or `null` for the whole open `status:triaged` backlog. */
 	readonly issue: number | null;
+	/** The lanes this repo declares, as read from `.fabrika.jsonc` by the delivery layer. */
+	readonly standingLanes: Read<ReadonlyArray<string>>;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
@@ -109,6 +116,15 @@ export const runHomingGuard = (
 		if (options.issue !== null && !(Number.isInteger(options.issue) && options.issue > 0)) {
 			return refuse(FAILED, `${VERB}: ${options.issue} is not an issue number.`);
 		}
+		const lanes = options.standingLanes;
+		if (lanes._tag === "Refused") {
+			return emitVerdict(
+				unknown(
+					`${VERB}: cannot read the standing lanes this repo declares: ${lanes.reason.replace(/\.$/, "")} — which labels exempt an issue is unread. Nothing was scanned, so the verdict is UNKNOWN.`,
+				),
+				options.env,
+			);
+		}
 		const target = yield* resolveRepo(options.repo, options.env);
 		if (target._tag === "Failure") {
 			return emitVerdict(
@@ -122,7 +138,9 @@ export const runHomingGuard = (
 			? backlogScan(target.value)
 			: issueScan(target.value, options.issue);
 		return emitVerdict(
-			scan._tag === "Refused" ? scan.verdict : toGuardVerdict(judge(scan.issues, scan.scope)),
+			scan._tag === "Refused"
+				? scan.verdict
+				: toGuardVerdict(judge(scan.issues, lanes.value, scan.scope)),
 			options.env,
 		);
 	});

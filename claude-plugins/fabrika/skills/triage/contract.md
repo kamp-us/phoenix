@@ -870,19 +870,12 @@ config that could not be read or decoded refuses `11` on the same terms as `road
 **Output** — machine channel. The first line is the outcome token `homes`. Then one tab-separated
 line per candidate — `<kind>`, `<key>`, `<label-or-title>` — where `<kind>` is `milestone` or `lane`.
 A `milestone` row's `<key>` is its **number** (the value `triage apply --home` takes) and its third
-column is the milestone title; a `lane` row's `<key>` is its label name and its third column is a
-fixed meaning string:
+column is the milestone title; a `lane` row's `<key>` is its label name and its third column is the
+fixed meaning string `a standing lane this repo declares`, verbatim, for every lane.
 
-| Lane | Third column, verbatim |
-|---|---|
-| `wayfinder:backlog` | `fog — uncharted work upstream of any arc` |
-| `axis:pipeline-hardening` | `the standing pipeline and reliability lane` |
-| any other declared lane | `a standing lane this repo declares` |
-
-**This table is the only place in this spec that enumerates a lane meaning.** The strings are
-constants here rather than the repo's live label descriptions, so a description edit cannot change a
-machine-channel answer — and no source this verb reads can gloss a lane some other repo declared, so
-the third row says that instead of inventing one.
+**No lane has a meaning of its own here.** The string is one constant rather than the repo's live
+label description, so a description edit cannot change a machine-channel answer — and no source this
+verb reads can gloss a lane a repo declared, so the column says that instead of inventing one.
 
 Milestone rows come first, ordered by number, then the lanes in the order the config declares them.
 
@@ -920,29 +913,29 @@ pinning a milestone that is closed or absent from the open set marks no row and 
 row to hide.
 
 **A lane row is offered only where this repo BOTH declares the lane and carries its label.** The
-declared set is `boardVocabulary.standingLanes` in `.fabrika.jsonc`, whose shipped default is a
-two-lane pair; the verb then reads the repo's own label set and drops every declared lane the board
-does not carry. Both halves are load-bearing. The declaration alone is a claim about a board — on a
-board where neither label exists, the pair printed as assignable homes and a triager took one,
-classified the whole issue, and only then hit a failed label write naming a label rather than the
-real cause. So the presence read is the same evidence the later `triage apply --lane`
-write depends on, taken before the menu is printed rather than after the work is done.
+declared set is `boardVocabulary.standingLanes` in `.fabrika.jsonc`, and config is its only source:
+nothing is shipped for it. The verb then reads the repo's own label set and drops every declared
+lane the board does not carry. Both halves are load-bearing. A declaration alone is a name the
+config asserts and the board may not carry yet — offered anyway, a triager takes it, classifies the
+whole issue, and only then hits a failed label write naming a label rather than the real cause. So
+the presence read is the same evidence the later `triage apply --lane` write depends on, taken
+before the menu is printed rather than after the work is done.
 
-**A repo declares no lanes by writing `"standingLanes": []`**, and then reads no labels at all —
-there is nothing to filter — and prints no lane row. The empty list is the one explicitly-empty
-`boardVocabulary` sub-key that decodes rather than refusing: the other four turn a gate off, while
-zero lanes turns nothing off and says every issue homes on a milestone. An **absent** key is not the
-same declaration — it falls to the shipped pair. `triage apply --lane` refuses over an empty set on
-`10`, naming the empty key rather than enumerating nothing.
+**A repo that declares no lanes runs none.** An absent `standingLanes` key and `"standingLanes": []`
+are one declaration: the verb reads no labels at all — there is nothing to filter — and prints no
+lane row. The empty list is the one explicitly-empty `boardVocabulary` sub-key that decodes rather
+than refusing: the other four turn a gate off, while zero lanes turns nothing off and says every
+issue homes on a milestone. `triage apply --lane` refuses over that set on `10`, naming the key
+rather than enumerating nothing.
 
 Neither case is a refusal: a home list over milestones alone is the right answer, and stderr carries
 which lanes were declared and which of them the board carries:
 
 | Declared set | stderr |
 |---|---|
-| empty | `triage homes: standing lanes: this repo declares none.` |
+| absent or empty | `triage homes: standing lanes: this repo declares none.` |
 | all present | `triage homes: standing lanes: 2 of 2 declared carry a label in <repo>.` |
-| some absent | `triage homes: standing lanes: 0 of 2 declared carry a label in <repo> — not offered: wayfinder:backlog, axis:pipeline-hardening.` |
+| some absent | `triage homes: standing lanes: 0 of 2 declared carry a label in <repo> — not offered: <lane>, <lane>.` |
 
 The dropped labels are named, not merely counted: the gap between what the config asserts and what
 the board carries is the defect, and a bare `0 of 2` sends the reader back to the config to find out
@@ -951,15 +944,6 @@ which names it meant.
 **An unreadable label list is `11`, never "this repo has no lanes."** That reading silently shortens
 the menu, which is the failure this whole surface is built against — a caller cannot tell a repo with
 no lanes from a repo it could not look at.
-
-This follows the standing ruling that lanes come from the repo, with one departure: that ruling puts
-them under a `lanes` key with **no** shipped default, and the key that exists today is
-`boardVocabulary.standingLanes`, which falls back to a built-in pair on an absent key. Evicting that
-default is tracked work of its own — the `lanes` key, the compiled-in label/meaning enumeration, and
-the readers that go with the set.
-Until it lands, two things contain the default: the presence filter, so it asserts nothing about a
-board that never created the labels, and the empty declaration, so a repo can say outright that it
-runs none.
 
 **The join, stated rather than left to the implementer** — this is the verb's whole split test, so it
 is the one thing that must not be inferred. `ROADMAP.md`'s `## Arcs` and `## Campaigns` tables are
@@ -1039,13 +1023,13 @@ $ fabrika triage homes
 homes
 milestone	47	Search and discovery
 milestone	52	Merge-Gate Reliability	running: p0/p1 or blocker
-lane	wayfinder:backlog	fog — uncharted work upstream of any arc
-lane	axis:pipeline-hardening	the standing pipeline and reliability lane
+lane	wayfinder:backlog	a standing lane this repo declares
+lane	axis:pipeline-hardening	a standing lane this repo declares
 ```
 
 ```
 $ fabrika triage homes --json
-{"outcome":"homes","milestones":[{"number":47,"title":"Search and discovery","roadmapRow":"Gateway"},{"number":52,"title":"Merge-Gate Reliability","roadmapRow":null,"running":"running: p0/p1 or blocker"}],"lanes":[{"label":"wayfinder:backlog","meaning":"fog — uncharted work upstream of any arc"},{"label":"axis:pipeline-hardening","meaning":"the standing pipeline and reliability lane"}],"scanned":2}
+{"outcome":"homes","milestones":[{"number":47,"title":"Search and discovery","roadmapRow":"Gateway"},{"number":52,"title":"Merge-Gate Reliability","roadmapRow":null,"running":"running: p0/p1 or blocker"}],"lanes":[{"label":"wayfinder:backlog","meaning":"a standing lane this repo declares"},{"label":"axis:pipeline-hardening","meaning":"a standing lane this repo declares"}],"scanned":2}
 ```
 
 **Grounding**
@@ -2015,7 +1999,7 @@ in the keep set. So the ownership rule is stated here rather than left for an im
 | priority | `^p\d+$` | `<--priority>` |
 | status | `^status:(needs-triage\|triaged\|needs-info)$` | `status:triaged` |
 | audience | `^ready-for:` | `ready-for:<--ready-for>`, or **none** with `--type epic --ready-for agent` |
-| lane | the two lane labels `triage homes` lists | `<--lane>`, or none when `--home` was given |
+| lane | exactly the labels `boardVocabulary.standingLanes` declares — nothing in a repo that declares none | `<--lane>`, or none when `--home` was given |
 | class | `^class:` | `class:<--class>` for each, or **none** when the flag was not passed |
 | **milestone** | the issue's milestone, whatever it is | `--home`'s number, or **none** when `--lane` was given |
 
@@ -2092,7 +2076,8 @@ stamp.
 | `triage apply: --priority must be one of p0, p1, p2 — got "<v>". Refusing to apply it as a label.` | 10 | refusal |
 | `triage apply: --ready-for must be human or agent — got "<v>".` | 10 | refusal |
 | `triage apply: --type must be one of bug, feature, chore, decision, investigation, epic — got "<v>".` | 10 | refusal |
-| `triage apply: --lane must be wayfinder:backlog or axis:pipeline-hardening — got "<v>".` | 10 | refusal |
+| `triage apply: --lane must be <lane> or <lane> — got "<v>".` (the lanes are the ones `boardVocabulary.standingLanes` declares, in declared order) | 10 | refusal |
+| ``triage apply: this repo declares no standing lane — `boardVocabulary.standingLanes` in `.fabrika.jsonc` is absent or empty, so every issue homes on a milestone. Got "<v>".`` | 10 | refusal |
 | `triage apply: milestone <n> is not an open milestone in <repo>.` | 10 | refusal |
 | `triage apply: give exactly one of --home or --lane; an issue cannot be both homed and lane-exempt.` | 1 | usage error |
 | `triage apply: label <name> does not exist in <repo> — refusing to write, because the API would create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
@@ -2251,7 +2236,7 @@ without any misuse: a re-park, or an issue parked after an earlier `apply`, arri
 | type | `^type:` | none |
 | priority | `^p\d+$` | none |
 | audience | `^ready-for:` | none |
-| lane | `^(wayfinder:backlog\|axis:pipeline-hardening)$` | none |
+| lane | exactly the labels `boardVocabulary.standingLanes` declares — nothing in a repo that declares none | none |
 | milestone | the issue's milestone | none — cleared |
 
 Every label matching an owned pattern is removed unless it is the one kept; every label matching no
@@ -2594,9 +2579,11 @@ Passing both `--dry-run` and `--apply` exits `1`. A dry run never reads stdin.
 `triage sweep-homes: <d> double-marked, <u> un-homed, <h> homed, <e> exempt.`
 
 **The decision is the guard's.** The verb reads the open `status:triaged` set with the guard's own
-read and record mapping, and judges it with `judge`/`resolve` from `guard/homing.ts`. It never parses
-the guard's report. So this verb computes no second homing verdict, and the refusal of a
-`triage homing-check` verb above still holds.
+read and record mapping, and judges it with `judge`/`resolve` from `guard/homing.ts`, against the
+same lanes — the ones `boardVocabulary.standingLanes` declares. It never parses the guard's report.
+So this verb computes no second homing verdict, and the refusal of a `triage homing-check` verb
+above still holds. A repo that declares no lane has no double-marked issue to clear, and a
+declaration that could not be read is `11`, never "no lanes".
 
 **Which breach it applies.** A double-marked issue has one mechanical remedy: a standing lane is
 milestone-less by design, so the milestone goes and the lane stays. An un-homed issue has three
@@ -2635,7 +2622,7 @@ write.
 | the open `status:triaged` set is empty — fail-closed, never a clean sweep | 7 |
 | a trail or milestone write failed; the message says which, and a re-run is safe | 8 |
 | the read-back after a clear is not milestone-less with the lanes kept | 9 |
-| the backlog, a re-read issue or its comments could not be read | 11 |
+| the backlog, a re-read issue, its comments or `.fabrika.jsonc`'s lane declaration could not be read | 11 |
 | un-homed issues remain, listed on stderr and untouched | 27 |
 
 A halt on `8`, `9` or `11` mid-sweep prints each row already done on stderr, prefixed

@@ -8,7 +8,7 @@ tags: [fabrika, config, triage, plugin-portability, pipeline]
 
 # 0286 — Standing lanes come from a repo's `.fabrika.jsonc` `lanes` key, never a CLI literal
 
-**What this decides:** fabrika reads the list of standing lanes out of the repo's own `.fabrika.jsonc`. A repo that declares no lanes has none — `triage homes` offers none there and `triage apply --lane` accepts none — and phoenix declares its own two (`wayfinder:backlog`, `axis:pipeline-hardening`) in its own file.
+**What this decides:** fabrika reads the list of standing lanes out of the repo's own `.fabrika.jsonc`. A repo that declares no lanes has none — `triage homes` offers none there and `triage apply --lane` accepts none — and phoenix declares its own two (`wayfinder:backlog`, `axis:pipeline-hardening`) in its own file. The key this record calls `lanes` ships as `boardVocabulary.standingLanes` ([Amendments](#amendments)).
 
 ## Context
 
@@ -55,6 +55,25 @@ phoenix becomes an ordinary fabrika consumer on this surface: its two lanes are 
 The cost is that a declared lane is a name the config asserts and the board may not carry yet — the pitch grammar can name a lane before someone creates the label. That mismatch was already possible with the compiled literals and is not made worse; it is a separate question from where the list is read.
 
 `.fabrika.jsonc` is a governed path under #5631, so removing phoenix's lanes is a diff that owes a governance verdict rather than a silent edit.
+
+## Amendments
+
+- **#6469 — the eviction is built, and the key is `boardVocabulary.standingLanes` (2026-10-03).**
+  The epic this record folded the work into closed with the compiled lane lists and a shipped
+  default still in place, so the constraints above were not true of the code. The
+  [founder ruling](https://github.com/kamp-us/phoenix/issues/6469#issuecomment-5362198420) on
+  [#6469](https://github.com/kamp-us/phoenix/issues/6469) chose to do the eviction over amending
+  this record to bless the interim. That ruling changes nothing this record decides. It is now
+  built: no `packages/fabrika-cli/src/**` module names a lane label, an absent key and an empty
+  list both resolve to zero lanes, and phoenix's own `.fabrika.jsonc` declares its two.
+
+  One name is settled here. This record writes the key as `lanes`; the key that ships, and the one
+  an adopting repo already declares, is `standingLanes` under `boardVocabulary`. They are one
+  declaration, and wherever this record says "the `lanes` key" it means
+  `boardVocabulary.standingLanes`. Every reader of the set takes it from that key: `triage homes`,
+  `triage apply --lane`, `triage sweep-homes`, `build pick`'s home, the homing guard's exempt set
+  and `ledger child`'s home check. Each refuses on a declaration it could not read, and none falls
+  back to a lane of its own.
 
 ## Records
 

@@ -22,16 +22,21 @@ const issue = (
 });
 
 const LANE = "axis:pipeline-hardening";
+/** The lanes the swept repo declares, as a fixture. */
+const LANES = ["wayfinder:backlog", LANE];
 
 describe("planSweep", () => {
 	it("plans a clear for each double-marked issue and lists each un-homed one untouched", () => {
-		const plan = planSweep([
-			issue(1, 17),
-			issue(2, null, LANE),
-			issue(3, 17, LANE),
-			issue(4, null),
-			issue(5, 9, "wayfinder:backlog"),
-		]);
+		const plan = planSweep(
+			[
+				issue(1, 17),
+				issue(2, null, LANE),
+				issue(3, 17, LANE),
+				issue(4, null),
+				issue(5, 9, "wayfinder:backlog"),
+			],
+			LANES,
+		);
 		expect(plan).toEqual({
 			_tag: "Planned",
 			scanned: 5,
@@ -57,10 +62,10 @@ describe("planSweep", () => {
 	 */
 	it("plans no clear over the board a completed sweep leaves behind", () => {
 		const before = [issue(1, 17), issue(3, 17, LANE)];
-		const first = planSweep(before);
+		const first = planSweep(before, LANES);
 		expect(first._tag === "Planned" && first.clears.length).toBe(1);
 		const after = [issue(1, 17), issue(3, null, LANE)];
-		expect(planSweep(after)).toEqual({
+		expect(planSweep(after, LANES)).toEqual({
 			_tag: "Planned",
 			scanned: 2,
 			homed: 1,
@@ -81,16 +86,16 @@ const BREACH: DoubleMarked = {
 
 describe("the per-issue checks", () => {
 	it("keeps a breach that still stands and drops one that moved", () => {
-		expect(stillDoubleMarked(issue(3, 17, LANE), BREACH)).toBe(true);
-		expect(stillDoubleMarked(issue(3, null, LANE), BREACH)).toBe(false);
-		expect(stillDoubleMarked(issue(3, 18, LANE), BREACH)).toBe(false);
-		expect(stillDoubleMarked(issue(3, 17), BREACH)).toBe(false);
+		expect(stillDoubleMarked(issue(3, 17, LANE), BREACH, LANES)).toBe(true);
+		expect(stillDoubleMarked(issue(3, null, LANE), BREACH, LANES)).toBe(false);
+		expect(stillDoubleMarked(issue(3, 18, LANE), BREACH, LANES)).toBe(false);
+		expect(stillDoubleMarked(issue(3, 17), BREACH, LANES)).toBe(false);
 	});
 
 	it("reads a clear as landed only when the milestone is gone and the lane is kept", () => {
-		expect(landedExempt(issue(3, null, LANE), BREACH)).toBe(true);
-		expect(landedExempt(issue(3, 17, LANE), BREACH)).toBe(false);
-		expect(landedExempt(issue(3, null), BREACH)).toBe(false);
+		expect(landedExempt(issue(3, null, LANE), BREACH, LANES)).toBe(true);
+		expect(landedExempt(issue(3, 17, LANE), BREACH, LANES)).toBe(false);
+		expect(landedExempt(issue(3, null), BREACH, LANES)).toBe(false);
 	});
 });
 

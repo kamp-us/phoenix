@@ -75,7 +75,14 @@ const run = (
 	const seams = fakeSeams(script);
 	return Effect.runPromise(
 		Effect.provide(
-			runSweepHomes({mode, repo: null, json: false, env: ENV, stdin: Effect.succeed(stdin)}),
+			runSweepHomes({
+				mode,
+				standingLanes: {_tag: "Value", value: [LANE], note: "declared"},
+				repo: null,
+				json: false,
+				env: ENV,
+				stdin: Effect.succeed(stdin),
+			}),
 			seams.layer,
 		),
 	).then((outcome) => ({outcome, requests: seams.requests, bodies: seams.bodies}));
@@ -280,6 +287,32 @@ describe("runSweepHomes — what it refuses", () => {
 		const {outcome} = await run([[BACKLOG, board()]], "dry-run");
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stdout).toBe("");
+	});
+
+	it.each<SweepMode>([
+		"dry-run",
+		"apply",
+	])("reads a lane declaration nobody could read as UNKNOWN on %s, and requests nothing", async (mode) => {
+		const seams = fakeSeams([[BACKLOG, board(DOUBLE)]]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runSweepHomes({
+					mode,
+					standingLanes: {_tag: "Refused", reason: "`boardVocabulary` is not an object."},
+					repo: null,
+					json: false,
+					env: ENV,
+					stdin: Effect.succeed(text("Per the homing decision.")),
+				}),
+				seams.layer,
+			),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.at(-1)).toContain("cannot read the standing lanes this repo declares");
+		expect(outcome.stderr.at(-1)).toContain("`boardVocabulary` is not an object");
+		expect(outcome.stderr.at(-1)).toContain("the sweep is UNKNOWN, never clean");
+		expect(seams.requests).toEqual([]);
 	});
 
 	it("reads an unreadable backlog as UNKNOWN, never clean", async () => {

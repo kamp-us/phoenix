@@ -1,16 +1,13 @@
 import {describe, expect, it} from "vitest";
-import {
-	AUDIENCES,
-	FACET_VOCABULARY,
-	PRIORITIES,
-	STANDING_LANES,
-	TYPES,
-} from "../../triage/facets.ts";
+import {AUDIENCES, FACET_VOCABULARY, PRIORITIES, TYPES} from "../../triage/facets.ts";
 import {loadConfig, resolve} from "../load.ts";
 import {TRIAGE_FACETS, triageFacetsKey} from "./triage-facets.ts";
 
 const load = (config: unknown) =>
 	loadConfig({_tag: "Text", text: JSON.stringify({[TRIAGE_FACETS]: config})});
+
+/** The lanes the conforming table's repo declares — a fixture, since none is shipped. */
+const LANES = ["wayfinder:backlog", "axis:pipeline-hardening"];
 
 /** The conforming table, as a config would write it. Every violating case below is one edit off it. */
 const CONFORMING = [
@@ -26,7 +23,7 @@ const CONFORMING = [
 		owns: "^ready-for:",
 		values: AUDIENCES.map((audience) => `ready-for:${audience}`),
 	},
-	{name: "lane", ownsLabels: [...STANDING_LANES], values: [...STANDING_LANES]},
+	{name: "lane", ownsLabels: [...LANES], values: [...LANES]},
 ];
 
 const edited = (name: string, over: Record<string, unknown>): ReadonlyArray<unknown> =>

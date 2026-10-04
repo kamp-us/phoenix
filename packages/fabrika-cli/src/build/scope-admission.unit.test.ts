@@ -36,7 +36,6 @@ import {
 	purposeScopeLine,
 	readCampaigns,
 	repairClaimOf,
-	STANDING_LANE_LABELS,
 	scopeSubjectOf,
 	typeAxisBinds,
 	typeAxisOf,
@@ -209,13 +208,21 @@ describe("admissionOf", () => {
 		expect(exclusionReasonOf(out)).toBeNull();
 	});
 
-	for (const lane of STANDING_LANE_LABELS) {
-		it(`reads ${lane} as the home of an issue carrying no milestone`, () => {
+	/** A repo's declared lanes, as a fixture: the admission test carries no lane of its own. */
+	const LANES = ["wayfinder:backlog", "axis:pipeline-hardening"];
+
+	for (const lane of LANES) {
+		it(`reads the declared lane ${lane} as the home of an issue carrying no milestone`, () => {
 			const standing = issue({milestone: null, labels: ["ready-for:agent", "p2", lane]});
-			expect(homeOf(standing)).toBe(lane);
+			expect(homeOf(standing, LANES)).toBe(lane);
 			expect(admissionOf(standing)._tag).toBe("Admitted");
 		});
 	}
+
+	it("reads no lane home off a label the repo did not declare", () => {
+		const standing = issue({milestone: null, labels: ["ready-for:agent", "wayfinder:backlog"]});
+		expect(homeOf(standing, [])).toBeNull();
+	});
 
 	it("refuses ready-for:human on the audience axis, at 21", () => {
 		const out = admissionOf(issue({labels: ["ready-for:human"]}));

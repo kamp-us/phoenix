@@ -51,6 +51,7 @@ import {reasonHistogram} from "../evidence.ts";
 import {TRIAGED} from "../labels.ts";
 import {betsFirst} from "../table/bets.ts";
 import {type BetsRead, readBets} from "../table/bets-read.ts";
+import {readStandingLanes} from "../triage/standing-lanes.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {readDischargedGate} from "./discharge.ts";
@@ -207,6 +208,14 @@ export const runPick = (
 			);
 		}
 
+		const lanes = yield* readStandingLanes(options.cwd);
+		if (lanes._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read the standing lanes: ${lanes.reason.replace(/\.$/, "")} — which label is a home here is UNKNOWN, never none.`,
+			);
+		}
+
 		const scanned: Record<Bucket, number> = {p0: 0, p1: 0, p2: 0};
 		const admitted: PoolEntry[] = [];
 		const excluded: ExclusionEntry[] = [];
@@ -223,7 +232,7 @@ export const runPick = (
 			for (const issue of listed.value.filter(isCandidate)) {
 				const reason = exclusionReasonOf(admissionOf(issue));
 				if (reason !== null) {
-					excluded.push({number: issue.number, home: homeOf(issue), reason});
+					excluded.push({number: issue.number, home: homeOf(issue, lanes.value), reason});
 					continue;
 				}
 				entries.push({
@@ -231,7 +240,7 @@ export const runPick = (
 					title: issue.title,
 					priority: bucket,
 					type: typeOf(issue),
-					home: homeOf(issue),
+					home: homeOf(issue, lanes.value),
 				});
 			}
 			admitted.push(...entries.sort(rankWithinBucket));

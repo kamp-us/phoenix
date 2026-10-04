@@ -216,14 +216,15 @@ fabrika triage homes
 
 ```
 triage homes: scanned 1 open milestone in you/your-repo.
-triage homes: standing lanes: 0 of 2 declared carry a label in you/your-repo — not offered: wayfinder:backlog, axis:pipeline-hardening.
+triage homes: standing lanes: this repo declares none.
 triage homes: campaigns: none active.
 homes
 milestone	1	First arc
 ```
 
-Your milestone is the `milestone` row. The `standing lanes` line is expected on a new repo; the
-adoption guide says [what a standing lane is](adopt-fabrika-in-a-new-repo.md#8-the-lane-rows-if-you-get-any).
+Your milestone is the `milestone` row. The `standing lanes` line says you have declared none, which
+is right for a new repo: every issue homes on a milestone. The adoption guide says
+[what a standing lane is](adopt-fabrika-in-a-new-repo.md#8-the-lane-rows-if-you-get-any).
 
 ## 8. Name an owner and add a CI check
 

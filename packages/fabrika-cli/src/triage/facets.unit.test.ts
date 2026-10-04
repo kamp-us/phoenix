@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import {declaredBoard} from "../status/board.test-support.ts";
 import {
 	AUDIENCES,
 	type Change,
@@ -8,11 +9,16 @@ import {
 	parkedFacets,
 	planReconcile,
 	renderShape,
-	STANDING_LANES,
 	shapeViolations,
 	TYPES,
 	triagedFacets,
 } from "./facets.ts";
+
+/** A repo's declared lanes, as a fixture: the engine ships none, so a lane case needs a board. */
+const LANES = ["wayfinder:backlog", "axis:pipeline-hardening"];
+const declared = declaredBoard({boardVocabulary: {standingLanes: LANES}});
+if (declared._tag !== "Resolved") throw new Error(declared.reason);
+const BOARD = declared.resolved;
 
 const triaged = triagedFacets({
 	type: "bug",
@@ -104,29 +110,41 @@ describe("the containment invariant", () => {
 		expect(facets.find((f) => f.name === "audience")?.keep).toEqual(["ready-for:agent"]);
 	});
 
-	it.each(STANDING_LANES)("keeps %s under the facet that owns the standing lanes", (lane) => {
-		const facets = triagedFacets({
-			type: "bug",
-			priority: "p2",
-			readyFor: "agent",
-			lane,
-			classes: [],
-		});
+	it.each(
+		LANES,
+	)("keeps the declared lane %s under the facet that owns the standing lanes", (lane) => {
+		const facets = triagedFacets(
+			{type: "bug", priority: "p2", readyFor: "agent", lane, classes: []},
+			BOARD,
+		);
 		const facet = facets.find((f) => f.name === "lane");
 		expect(facet?.keep).toEqual([lane]);
 		expect(facet?.owns(lane)).toBe(true);
 	});
 
+	it("owns no lane label on the shipped board — an undeclared one is preserved, never stripped", () => {
+		const plan = planReconcile(
+			{labels: ["wayfinder:backlog", "p1"], milestone: null},
+			parkedFacets(),
+			null,
+		);
+		expect(plan.preserved).toEqual(["wayfinder:backlog"]);
+		expect(plan.removed).toEqual(["p1"]);
+	});
+
 	it("holds for every keep label of every facet, in both tables", () => {
 		const tables = [
-			triagedFacets({
-				type: "epic",
-				priority: "p0",
-				readyFor: "human",
-				lane: "wayfinder:backlog",
-				classes: [],
-			}),
-			parkedFacets(),
+			triagedFacets(
+				{
+					type: "epic",
+					priority: "p0",
+					readyFor: "human",
+					lane: "wayfinder:backlog",
+					classes: [],
+				},
+				BOARD,
+			),
+			parkedFacets(BOARD),
 		];
 		for (const table of tables) {
 			for (const facet of table) {
@@ -181,9 +199,9 @@ describe("decodeMember", () => {
 	// The lanes are an open set once they are configuration, so the refusal is this decode
 	// against the resolved list rather than a compile-time narrowing.
 	it("recognises exactly the lanes it is handed, and nothing adjacent", () => {
-		expect(decodeMember(STANDING_LANES, "wayfinder:backlog")).toBe("wayfinder:backlog");
-		expect(decodeMember(STANDING_LANES, "axis:pipeline-hardening")).toBe("axis:pipeline-hardening");
-		expect(decodeMember(STANDING_LANES, "wayfinder:backlog ")).toBeNull();
+		expect(decodeMember(LANES, "wayfinder:backlog")).toBe("wayfinder:backlog");
+		expect(decodeMember(LANES, "axis:pipeline-hardening")).toBe("axis:pipeline-hardening");
+		expect(decodeMember(LANES, "wayfinder:backlog ")).toBeNull();
 		expect(decodeMember(["team:infra"], "wayfinder:backlog")).toBeNull();
 	});
 });
@@ -247,13 +265,16 @@ describe("planReconcile — the #4285 removal mechanism", () => {
 	});
 
 	it("clears the milestone when the home is a standing lane", () => {
-		const facets = triagedFacets({
-			type: "chore",
-			priority: "p2",
-			readyFor: "agent",
-			lane: "axis:pipeline-hardening",
-			classes: [],
-		});
+		const facets = triagedFacets(
+			{
+				type: "chore",
+				priority: "p2",
+				readyFor: "agent",
+				lane: "axis:pipeline-hardening",
+				classes: [],
+			},
+			BOARD,
+		);
 		const plan = planReconcile({labels: [], milestone: 47}, facets, null);
 		expect(plan.changes[0]).toEqual({_tag: "ClearMilestone"});
 		expect(plan.added).toContain("axis:pipeline-hardening");
@@ -267,13 +288,16 @@ describe("planReconcile — the #4285 removal mechanism", () => {
 	});
 
 	it("swaps the other standing lane out rather than letting both stand", () => {
-		const facets = triagedFacets({
-			type: "chore",
-			priority: "p2",
-			readyFor: "agent",
-			lane: "axis:pipeline-hardening",
-			classes: [],
-		});
+		const facets = triagedFacets(
+			{
+				type: "chore",
+				priority: "p2",
+				readyFor: "agent",
+				lane: "axis:pipeline-hardening",
+				classes: [],
+			},
+			BOARD,
+		);
 		const plan = planReconcile({labels: ["wayfinder:backlog"], milestone: null}, facets, null);
 		expect(plan.removed).toEqual(["wayfinder:backlog"]);
 		expect(plan.added).toContain("axis:pipeline-hardening");
@@ -281,7 +305,7 @@ describe("planReconcile — the #4285 removal mechanism", () => {
 });
 
 describe("planReconcile — a park", () => {
-	const parked = parkedFacets();
+	const parked = parkedFacets(BOARD);
 
 	it("strips every priced facet and leaves only the parked status", () => {
 		const plan = planReconcile(
@@ -359,13 +383,16 @@ describe("shapeViolations — the read-back's positive proof", () => {
 	});
 
 	it("names the milestone when a lane-exempt issue is still homed", () => {
-		const facets = triagedFacets({
-			type: "chore",
-			priority: "p2",
-			readyFor: "agent",
-			lane: "wayfinder:backlog",
-			classes: [],
-		});
+		const facets = triagedFacets(
+			{
+				type: "chore",
+				priority: "p2",
+				readyFor: "agent",
+				lane: "wayfinder:backlog",
+				classes: [],
+			},
+			BOARD,
+		);
 		const observed = {
 			labels: ["type:chore", "p2", "status:triaged", "ready-for:agent", "wayfinder:backlog"],
 			milestone: 47,
