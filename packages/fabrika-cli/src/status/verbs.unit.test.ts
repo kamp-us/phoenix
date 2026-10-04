@@ -11,9 +11,13 @@ import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {describe, expect, it} from "vitest";
 import type {BoardVocabulary} from "../config/board.ts";
-import {stripJsonComments} from "../config/document.ts";
+import {type ConfigSource, stripJsonComments} from "../config/document.ts";
+import {CI} from "../config/keys/ci.ts";
+import {CODE_VALIDATORS} from "../config/keys/code-validators.ts";
+import {DEPENDENCY_RECONCILER} from "../config/keys/dependency-reconciler.ts";
 import {reviewUiKey} from "../config/keys/review-ui.ts";
-import {loadConfig} from "../config/load.ts";
+import {UI_SURFACES} from "../config/keys/ui-surfaces.ts";
+import {type ConfigLayers, loadConfig} from "../config/load.ts";
 import {readFromLoad} from "../config/read-key.ts";
 import * as report from "../exit-codes.ts";
 import {
@@ -87,6 +91,7 @@ import {
 	resolveRosterPath,
 	skillFrom,
 } from "./roster.ts";
+import {runSettings, type SettingRow, settingRows} from "./settings-verb.ts";
 
 const AS_OF = readNow("2026-08-09T14:22:03Z");
 
@@ -632,7 +637,7 @@ describe("status bootstrap", () => {
 		expect(outcome.code).toBe(NOT_BUILDABLE);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.at(-1)).toBe(
-			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule, first-milestone.',
+			'status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone.',
 		);
 		expect(fs.written.size).toBe(0);
 	});
@@ -1071,6 +1076,98 @@ describe("the hand-check-rule surface", () => {
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toMatch(/[Nn]othing was written/);
 		expect(written.size).toBe(0);
+	});
+});
+
+/**
+ * fabrika-config writes a file every verb then reads, so the file is tested by reading it: through
+ * `status settings`, which resolves each registered key over the bytes just written.
+ */
+describe("the fabrika-config surface", () => {
+	const CONFIG = "/repo/.fabrika.jsonc";
+	const STARTER_KEYS = [CODE_VALIDATORS, DEPENDENCY_RECONCILER, UI_SURFACES, CI];
+
+	const bootstrapWith = (surfaceId: string, files: Record<string, string | null>) => {
+		const fs = fakeFs({files});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId,
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		).then((outcome) => ({outcome, text: fs.written.get(CONFIG), written: fs.written}));
+	};
+
+	const layersOf = (source: ConfigSource): ConfigLayers => ({
+		tracked: source,
+		local: {_tag: "Absent"},
+	});
+
+	const settingValue = (rows: ReadonlyArray<SettingRow>, key: string): unknown => {
+		const found = rows.find((one) => one.key === key);
+		return found !== undefined && found.provenance !== "unknown" ? found.value : undefined;
+	};
+
+	it("writes a file `status settings` resolves whole, each named key declared at its shipped default", async () => {
+		const {outcome, text = ""} = await bootstrapWith("fabrika-config", {});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "fabrika-config",
+			target: ".fabrika.jsonc",
+			readback: "ok",
+		});
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: created .fabrika.jsonc for fabrika-config, read-back conformed.",
+		]);
+
+		const layers = layersOf({_tag: "Text", text});
+		const rows = settingRows(layers);
+		expect(runSettings({layers, rows, asOf: AS_OF, json: false}).code).toBe(ANSWER);
+		expect(rows.filter((one) => one.provenance === "unknown")).toEqual([]);
+		const declared = rows.filter((one) => one.provenance === "declared").map((one) => one.key);
+		expect(declared.sort()).toEqual([...STARTER_KEYS].sort());
+
+		const undeclared = settingRows(layersOf({_tag: "Absent"}));
+		for (const key of STARTER_KEYS) {
+			expect(settingValue(rows, key)).toEqual(settingValue(undeclared, key));
+		}
+	});
+
+	it("says exists over a file already there and leaves it untouched", async () => {
+		const {outcome, written} = await bootstrapWith("fabrika-config", {
+			[CONFIG]: '{"codeValidators": [{"command": ["pnpm", "typecheck"]}]}\n',
+		});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "exists",
+			surfaceId: "fabrika-config",
+			target: ".fabrika.jsonc",
+			readback: "-",
+		});
+		expect(written.size).toBe(0);
+	});
+
+	// The two surfaces share one file, and setup runs them in this order.
+	it("takes the hand-check rule afterwards with every starter comment kept", async () => {
+		const {text: starter = ""} = await bootstrapWith("fabrika-config", {});
+		const {outcome, text = ""} = await bootstrapWith("hand-check-rule", {[CONFIG]: starter});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout).outcome).toBe("created");
+		const comments = starter.split("\n").filter((line) => line.trim().startsWith("//"));
+		expect(comments.length).toBeGreaterThan(0);
+		for (const comment of comments) expect(text).toContain(comment);
+		expect(JSON.parse(stripJsonComments(text))).toEqual({
+			...(JSON.parse(stripJsonComments(starter)) as Record<string, unknown>),
+			reviewUi: {whenNoPreview: [{paths: ["**"], mode: "hand-check"}]},
+		});
 	});
 });
 

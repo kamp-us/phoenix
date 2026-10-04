@@ -1099,8 +1099,8 @@ surface merges into a file that is already there instead. The content is the
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
-here, not inferred from any declaration. Eleven ids, and
-a twelfth is a change to this table, not a new rule.
+here, not inferred from any declaration. Twelve ids, and
+a thirteenth is a change to this table, not a new rule.
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
@@ -1113,6 +1113,7 @@ a twelfth is a change to this table, not a new rule.
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
 | `settings-patch` | `--path`, default `.claude/settings.json` at the repo root | **none** — the two keys [fixed below](#json-key-merge), merged into the object a present file parses to, written whole into a file that is absent | a present file re-reads to the merged object — every undeclared key intact, the declared keys at their registry values — through `normalizeForReadback` |
 | `dep-pin` | `--path`, default `package.json` at the repo root | **none** — the `devDependencies.@kampus/fabrika-cli` row at the version npm's registry currently [publishes](#json-key-merge), merged into the object a present manifest parses to, written whole into a manifest that is absent | a present manifest re-reads to the merged object — every undeclared key intact, the row at exactly the resolved version — through `normalizeForReadback`; an unreachable registry refuses unwritten |
+| `fabrika-config` | `--path`, default `.fabrika.jsonc` at the repo root | **none** — the starting config file [fixed below](#fabrika-config), written whole into a file that is absent; a file already there is `exists` and is never read | the file's bytes match the fixed text through `normalizeForReadback` |
 | `hand-check-rule` | `--path`, default `.fabrika.jsonc` at the repo root | **none** — the one `reviewUi.whenNoPreview` rule [fixed below](#hand-check-rule), spliced into a present file's text, written whole into a file that is absent | the re-read matches the spliced text through `normalizeForReadback` — the rule in, every other key and every comment where it was |
 | `first-milestone` | one open milestone in the repo | **none** — title exactly `First arc`, opened only when the repo has [no open milestone](#first-milestone) | the milestone's own resource resolves open under that exact title |
 
@@ -1311,6 +1312,51 @@ Playwright and a headless Chromium download, and pnpm 10 skips the package's `po
 repo approves it (`pnpm approve-builds`, or an `onlyBuiltDependencies` entry plus
 `pnpm rebuild @kampus/fabrika-cli`) — that `postinstall` is what sets up `ui render`'s browser.
 
+<a id="fabrika-config"></a>**`fabrika-config` writes the starting `.fabrika.jsonc`, for a repo that
+has none.** The file names the four keys whose shipped default stops or narrows a lane, each at
+that shipped default, so writing it changes no verb's answer. The key names and values are read off
+the key modules rather than restated: `codeValidators`, `dependencyReconciler`, `uiSurfaces`, and
+`noProducer` under `ci`. What the file adds is a comment over each key saying what the default holds
+back and the shape of a first value. The bytes, fixed here so no clause defers to source:
+
+```jsonc
+// fabrika's config for this repo. Every key is optional: one you leave out takes its shipped default.
+// The keys below are written at their shipped defaults, so this file changes nothing until you edit it.
+// `fabrika status settings` prints what every key resolves to and where the value came from.
+{
+	// The commands that compile and lint this repo's code, for example
+	// [{"command": ["pnpm", "typecheck"]}, {"command": ["pnpm", "lint"]}] with your own script names.
+	// While this list is empty, `fabrika build check --surface code` and `fabrika lane integrate` refuse.
+	"codeValidators": [],
+
+	// The command that installs what the lockfile pins, for example
+	// {"command": ["pnpm", "install", "--frozen-lockfile"]}.
+	// No verb refuses without it. `fabrika lane integrate` skips the install, so a change that moves
+	// the lockfile is validated against the old install and can fail there.
+	"dependencyReconciler": null,
+
+	// One row per app this repo renders, for example
+	// [{"name": "web", "prefix": "src/", "mount": "/", "command": "pnpm dev --port {{port}}"}].
+	// While this list is empty, `fabrika ui render` and `fabrika ui evidence` refuse, and a change to
+	// a screen is reviewed as text only. Leave it empty for a repo that renders nothing.
+	"uiSurfaces": [],
+
+	"ci": {
+		// What a repo with no workflow of its own in .github/workflows/ gets: "refuse" or "degrade".
+		// Under "refuse", `fabrika review ci` and `fabrika ship checks` refuse in such a repo.
+		// Write "degrade" only for a repo that runs no Actions on purpose.
+		"noProducer": "refuse"
+	}
+}
+```
+
+**A file already there is `exists`, whatever it holds.** The target's existence is the whole
+collision guard: a present file is the repo's own statement, so it is not read, merged or judged,
+and a file that does not parse is `exists` too. That makes the order with `hand-check-rule` matter,
+because both default to the one path: `hand-check-rule` creates the file when it is absent, and
+`fabrika-config` then finds it present and writes nothing. Run `fabrika-config` first and
+`hand-check-rule` splices its rule into the starting file with every comment kept.
+
 <a id="hand-check-rule"></a>**`hand-check-rule` writes one rule, for a repo whose app has a screen
 and no preview deploy.** A repo that declares no `reviewUi.whenNoPreview` rule resolves every ui file
 to `require-render`, so its first screen change ends `CANT-SEE` with nothing to render. The rule,
@@ -1370,7 +1416,7 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | string | yes | — | one `<surface-id>` from the registry above |
-| `--path` | string | no | the registry default | override the target path for a file, line, json, dep-pin or hand-check-rule surface; must resolve inside the repository root |
+| `--path` | string | no | the registry default | override the target path for a file, line, json, dep-pin, fabrika-config or hand-check-rule surface; must resolve inside the repository root |
 | `--repo` | string | no | resolved | the repository the four GitHub surfaces (`label-taxonomy`, `issue-shape-markers`, `readout-artifact`, `first-milestone`) write to, and the one whose open milestones the `roadmap-focus` [pin check](#roadmap-pin-check) reads |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes for `design-manifest` and `roadmap-focus` | — | the content. `NoStdin` and `Text("")` are exit `3`; a **failed** stdin read is exit `1` — the content is UNKNOWN, never empty, the split `packages/fabrika-cli/src/report/file-verb.ts` already ships |
@@ -1443,7 +1489,7 @@ the shape this seat exists to prevent. The skill loops.
 | `status bootstrap: appending <marker> to <target> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
-| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule, first-milestone.
+| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone.
 | ``status bootstrap: cannot read <target>: <reason> — whether a `reviewUi.whenNoPreview` rule is already there is UNKNOWN, and nothing was written.`` | 11 | refusal |
 | `status bootstrap: <target> does not parse as a JSON object with comments — nothing was written.` | 11 | refusal |
 | `status bootstrap: <target> is refused — <the reviewUi key's reason>. Nothing was written; fix that key first.` | 11 | refusal |
@@ -1545,6 +1591,18 @@ no package manager ever spawns and no lockfile moves. A re-run with the row alre
 `{"outcome":"exists",…}`; a re-run over an older pin moves it forward.
 
 ```
+$ fabrika status bootstrap fabrika-config
+bootstrap	created	fabrika-config	.fabrika.jsonc	ok
+status bootstrap: created .fabrika.jsonc for fabrika-config, read-back conformed.
+$ fabrika status bootstrap fabrika-config
+bootstrap	exists	fabrika-config	.fabrika.jsonc	-
+status bootstrap: .fabrika.jsonc is already present for fabrika-config — nothing written.
+```
+
+The repo had no config file, so the starting one landed whole. The second run found it and wrote
+nothing, as it would over any file at that path.
+
+```
 $ fabrika status bootstrap hand-check-rule
 bootstrap	created	hand-check-rule	.fabrika.jsonc	ok
 status bootstrap: added one hand-check rule to .fabrika.jsonc for hand-check-rule, read-back conformed.
@@ -1567,7 +1625,7 @@ status bootstrap: acme/storefront already has 1 open milestone — nothing writt
 
 ```
 $ fabrika status bootstrap merge-queue
-status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule, first-milestone.
+status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone.
 $ echo $?
 12
 ```
