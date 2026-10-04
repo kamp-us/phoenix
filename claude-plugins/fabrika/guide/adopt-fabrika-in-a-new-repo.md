@@ -43,14 +43,14 @@ setup is finished**, and nothing in that verb's output says so.
 
 ## 3. Create the surfaces the CLI can create
 
-Ten surface ids are buildable today. Read them off the verb rather than off any prose:
+Eleven surface ids are buildable today. Read them off the verb rather than off any prose:
 
 ```bash
 fabrika status bootstrap --help
 ```
 
 ```
-surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule
+surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, hand-check-rule, first-milestone
 ```
 
 One id per invocation. A surface whose content is already in place is `exists` at exit 0, and
@@ -80,8 +80,9 @@ there is edited in place: the rule goes into the text, and every other key and c
 it was. It is `exists` once the file declares any `reviewUi.whenNoPreview` rule, and a file that
 does not parse is refused unwritten. With no file, it creates one holding the rule alone.
 [If your app has no preview deploys](#if-your-app-has-no-preview-deploys) says when to run it.
-`label-taxonomy`,
-`issue-shape-markers` and `readout-artifact` write to GitHub and need a resolvable repo —
+`first-milestone` opens a milestone titled `First arc` when the repo has no open milestone, and is
+`exists` over any open one. `label-taxonomy`, `issue-shape-markers`, `readout-artifact` and
+`first-milestone` write to GitHub and need a resolvable repo —
 `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote.
 
 ## 4. Create the labels

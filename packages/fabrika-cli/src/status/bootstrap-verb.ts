@@ -35,8 +35,10 @@ import {appendText, exists, readFile, writeFile} from "../io/fs.ts";
 import type {Attempt, Shell} from "../io/git.ts";
 import {
 	createLabel,
+	createMilestone,
 	createUnlabelledIssue,
 	getIssue,
+	getMilestone,
 	listLabels,
 	listOpenMilestones,
 	openIssuesTitled,
@@ -282,7 +284,27 @@ export type BuildableSurface =
 			 */
 			readonly labels: (board: BoardVocabulary) => ReadonlyArray<LabelSpec>;
 	  }
+	| {
+			readonly id: string;
+			readonly kind: "milestone";
+			/** The title of the milestone opened when the repo has none open. */
+			readonly title: string;
+	  }
 	| {readonly id: string; readonly kind: "issue"};
+
+/** The title `first-milestone` opens a milestone under, and the arc name a starter roadmap pins it by. */
+export const FIRST_MILESTONE_TITLE = "First arc";
+
+/**
+ * A milestone row's target cell, and its inverse. A milestone's number is its own sequence, not an
+ * issue number, so the cell never takes the `<owner/name>#<n>` form an issue row carries.
+ */
+export const milestoneTarget = (number: number): string => `milestone #${number}`;
+
+export const milestoneOfTarget = (target: string): number | null => {
+	const number = /^milestone #(\d+)$/.exec(target)?.[1];
+	return number === undefined ? null : Number.parseInt(number, 10);
+};
 
 /** The `.gitignore` row that keeps `fabrika lane`'s per-checkout state out of shared history. */
 export const FABRIKA_IGNORE_ROW = "/.fabrika/";
@@ -408,7 +430,7 @@ The per-stage shells are surgical — resume a half-dead lane, re-run one gate, 
 never the normal entry point: \`build\` (**builder**), \`review\` (**reviewer**), \`ship\`
 (**shipper**), and \`heal-ci\` for a PR that is green but going nowhere.`;
 
-/** Ten ids. An eleventh is a change to this table, not a new rule. */
+/** Eleven ids. A twelfth is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
@@ -444,6 +466,7 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 		packageName: FABRIKA_CLI_PACKAGE,
 	},
 	{id: "hand-check-rule", kind: "no-preview-rule", defaultPath: CONFIG_PATH, rule: HAND_CHECK_RULE},
+	{id: "first-milestone", kind: "milestone", title: FIRST_MILESTONE_TITLE},
 ];
 
 const findSurface = (id: string): BuildableSurface | undefined =>
@@ -1173,6 +1196,74 @@ const buildArtifact = (
 	});
 
 /**
+ * **Any open milestone is `exists`, whatever its title.** The surface is "the repo has a milestone
+ * to home work on", so a repo that opened its own is done and none is opened beside it. Among
+ * several the row names the lowest number, so a re-run names the same one.
+ *
+ * The read-back is the created milestone's own resource, for the reason {@link buildArtifact} reads
+ * the created issue by number: the number is in hand, so no list has to have caught up.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10496
+ */
+const buildMilestone = (
+	surface: Extract<BuildableSurface, {kind: "milestone"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		if (input.repo._tag === "Failure") return UNRESOLVED_REPO;
+		const repo = input.repo.value;
+
+		const before = yield* listOpenMilestones(repo);
+		if (before._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot probe ${repo}'s open milestones: ${before.reason} — nothing was written.`,
+			);
+		}
+		const standing = [...before.value].sort((a, b) => a.number - b.number)[0];
+		if (standing !== undefined) {
+			return already(
+				surface.id,
+				milestoneTarget(standing.number),
+				input.json,
+				`${repo} already has ${plural(before.value.length, "open milestone")} — nothing written.`,
+			);
+		}
+
+		const write = yield* createMilestone(repo, surface.title);
+		if (write._tag === "Failure") {
+			return refuse(
+				WRITE_UNKNOWN,
+				`${VERB}: opening the milestone "${surface.title}" in ${repo} failed: ${write.reason} — whether it landed is UNKNOWN. Re-read before retrying.`,
+			);
+		}
+		const target = milestoneTarget(write.value.number);
+		const back = yield* getMilestone(repo, write.value.number);
+		if (back._tag === "Unknown") {
+			return refuse(
+				WRITE_UNKNOWN,
+				`${VERB}: opened ${target} in ${repo} and it could not be read back: ${back.reason} — the outcome is UNKNOWN.`,
+			);
+		}
+		if (
+			back._tag === "Absent" ||
+			back.value.title !== surface.title ||
+			back.value.state !== "open"
+		) {
+			return refuse(
+				READBACK_MISMATCH,
+				`${VERB}: opened ${target} in ${repo} and the read-back differs — it does not resolve open under the title "${surface.title}".`,
+			);
+		}
+		return created(
+			surface.id,
+			target,
+			input.json,
+			`${VERB}: opened ${target} in ${repo} titled "${surface.title}" for ${surface.id}, read-back conformed.`,
+		);
+	});
+
+/**
  * One surface per invocation, deliberately: a run spanning several surfaces can write some and fail
  * on the rest, and there is no honest single answer for that.
  */
@@ -1193,5 +1284,6 @@ export const runBootstrap = (
 	if (surface.kind === "json") return buildJsonPatch(surface, input);
 	if (surface.kind === "dep-pin") return buildDepPin(surface, input);
 	if (surface.kind === "no-preview-rule") return buildNoPreviewRule(surface, input);
+	if (surface.kind === "milestone") return buildMilestone(surface, input);
 	return surface.kind === "labels" ? buildLabels(surface, input) : buildArtifact(surface, input);
 };
