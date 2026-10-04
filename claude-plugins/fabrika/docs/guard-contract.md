@@ -119,6 +119,25 @@ body appetite that differs from the approved one needs re-approval. Approval is 
 GitHub ACL, write or above only and fail-closed, and a marker stamped with agent provenance never
 counts. A `.fabrika.jsonc` that refuses to read leaves the verdict UNKNOWN.
 
+A parentless `type:feature` passes a third way, with no pitch at all: a founder ruling that names it
+by number. The guard finds the ruling through a
+[`pitch-ruled:` comment](wire-formats.md#pitch-ruling) on the feature and checks it before it reads
+the body. An epic never takes this route. The comment has to name the feature's own number and link
+an issue comment in the same repository, and who posted it is not read. The linked comment counts as
+a ruling in one of two ways:
+
+- **On the feature itself**: a `decision-ruled:` marker on the feature cites that comment, and the
+  marker's author is on the control-plane roster. The marker's digest is not compared, so a body
+  rewritten after the ruling still passes.
+- **On another issue**: a write+ collaborator wrote it, it carries no agent stamp, its text names
+  the feature as `#<n>`, and that issue and the feature are on the same open milestone. A feature
+  with no milestone never passes this way, a shared standing-lane label included.
+
+A pass by ruling is counted apart from the pitched issues, and the report lists each such feature
+with its ruling URL. A pointer that fails any check is named in that feature's failure line beside
+the pitch's own miss. A linked comment, issue, milestone list or roster that cannot be read passes
+nothing: the report names what went unread, and a run with nothing proven unpitched exits `11`.
+
 `--issue N` scopes the scan to the issue triage just stamped, which is the intake point the
 requirement binds at; a bare run sweeps the whole open lane-entering backlog. This guard binds at
 intake only and is never wired to red a pull request. Zero scope is a backlog sweep that found no

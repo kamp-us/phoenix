@@ -36,6 +36,7 @@ import * as handoffPack from "./handoff-pack.ts";
 import * as laneBrief from "./lane-brief.ts";
 import * as laneRecord from "./lane-record.ts";
 import * as mapTicket from "./map-ticket.ts";
+import * as pitchRuling from "./pitch-ruling.ts";
 import * as planApproval from "./plan-approval.ts";
 import * as rangeVerdictMarker from "./range-verdict-marker.ts";
 import * as routedElsewhere from "./routed-elsewhere.ts";
@@ -1154,6 +1155,57 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<decisionRuling.DecisionRuling>({digest: true, ruling: true, at: true}),
+	},
+	{
+		key: "pitch-ruling",
+		purpose:
+			"triage's pointer on a parentless feature to the founder ruling that covers its pitch — the feature's number and the comment the ruling is written in, which the pitch guard then verifies",
+		module: "packages/fabrika-cli/src/wire/pitch-ruling.ts",
+		producers: ["triage"],
+		consumers: ["guard pitch-guard check"],
+		emit: pitchRuling.emitFromFields,
+		read: pitchRuling.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: `issue: 8\nruling: ${RULING_COMMENT_URL}\n`,
+				values: ["8", RULING_COMMENT_URL],
+			},
+			found: [
+				{
+					shape:
+						"the pointer as triage posts it, first line of a comment that then explains itself",
+					artifact: `pitch-ruled: #8 · ruling:${RULING_COMMENT_URL}\n\nThe founder ruled this feature by number, so it carries no pitch.\n`,
+					values: ["8", RULING_COMMENT_URL],
+				},
+				{
+					shape:
+						"a pointer at a ruling written on another issue, bolded by the skill that posted it",
+					artifact: `**pitch-ruled: #9 · ruling:${RULING_COMMENT_URL}**\n`,
+					values: ["9", RULING_COMMENT_URL],
+				},
+			],
+			absent:
+				"The founder's ruling on the epic covers this feature's pitch — see the amendment thread for the wording.\n",
+			malformed: [
+				{
+					drift: "the pointer names no issue, so it could be quoted onto any feature",
+					artifact: `pitch-ruled: ruling:${RULING_COMMENT_URL}\n`,
+				},
+				{
+					drift: "the ruling field lost its prefix, so the URL is not named as the ruling",
+					artifact: `pitch-ruled: #8 · ${RULING_COMMENT_URL}\n`,
+				},
+				{
+					drift: "the link is to the issue, not to the comment the ruling is written in",
+					artifact: `pitch-ruled: #8 · ruling:${RULING_COMMENT_URL.replace(/#.*$/, "")}\n`,
+				},
+				{
+					drift: "a third field the format does not have rides after the ruling",
+					artifact: `pitch-ruled: #8 · ruling:${RULING_COMMENT_URL} · 2026-08-20T05:11:02Z\n`,
+				},
+			],
+		},
+		brands: brandWitnesses<pitchRuling.PitchRuling>({ruling: true}),
 	},
 	{
 		key: "routed-elsewhere",

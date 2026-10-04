@@ -1,6 +1,6 @@
 /**
  * `guard pitch-guard check` — the decision: does every pickable piece of lane-entering work carry a
- * well-formed, founder-approved pitch?
+ * well-formed, founder-approved pitch, or a founder ruling that names it?
  *
  * The invariant and the five-field set are defined once in `.glossary/TERMS.md` (§pitch, a founder
  * ruling); this module is that contract's teeth, not a second definition of it.
@@ -17,6 +17,10 @@ import {
 	SIZES,
 	type Size,
 } from "../config/keys/appetite-sizes.ts";
+import type {RulingScan} from "../decision/ruling.ts";
+import {type RulingUrl, rulingComment, rulingIssue, rulingRepo} from "../wire/decision-ruling.ts";
+import type {NonEmptyReadonlyArray} from "../wire/format.ts";
+import {POINTER_GRAMMAR, KEY as POINTER_KEY, read as readPointer} from "../wire/pitch-ruling.ts";
 import type {LabelUniverse} from "./label-universe.ts";
 import {clean, type GuardVerdict, unknown, violation, zeroScope} from "./verdict.ts";
 
@@ -62,9 +66,97 @@ export interface Candidate {
 	readonly labels: ReadonlyArray<string>;
 	/** True when the issue is a sub-issue — it inherits its epic's pitch and needs none. */
 	readonly hasParent: boolean;
+	/** The milestone the issue is homed on, or `null` on a standing lane. */
+	readonly milestone: number | null;
 	readonly body: string;
 	readonly comments: ReadonlyArray<Comment>;
+	/**
+	 * Each `pitch-ruled:` comment with the ruling behind it as the IO shell read it — one per
+	 * {@link rulingPointers} entry, and empty for anything but a parentless feature.
+	 */
+	readonly rulings: ReadonlyArray<PointedRuling>;
 }
+
+/**
+ * One `pitch-ruled:` comment, reduced to where its ruling has to be read. The first three arms need
+ * no read: the pointer already fails on its own bytes.
+ */
+export type RulingPointer =
+	| {readonly _tag: "malformed"; readonly reason: string}
+	| {readonly _tag: "misnumbered"; readonly names: number}
+	| {readonly _tag: "foreign"; readonly url: RulingUrl}
+	/** The ruling is a comment on the feature's own issue: a desk ruling, with a marker beside it. */
+	| {readonly _tag: "own"; readonly url: RulingUrl}
+	/** The ruling is a comment on another issue of this repository. */
+	| {
+			readonly _tag: "other";
+			readonly url: RulingUrl;
+			readonly issue: number;
+			readonly comment: number;
+	  };
+
+/** What stands behind a pointer at the feature's own issue. */
+export type OwnRulingRead =
+	/** `standingRulings`' scan of the feature: every marker whose author the roster resolved. */
+	| {readonly _tag: "scanned"; readonly scan: RulingScan}
+	| {readonly _tag: "unread"; readonly reason: string};
+
+/** What stands behind a pointer at a comment on another issue. */
+export type OtherRulingRead =
+	| {
+			readonly _tag: "read";
+			/** The linked comment's author at the GitHub ACL — `write+` only, fail-closed. */
+			readonly authorized: boolean;
+			readonly body: string;
+			/** The milestone the linked issue is homed on, and whether it is open. */
+			readonly milestone: {readonly number: number; readonly open: boolean} | null;
+	  }
+	/** The linked issue carries no comment with the id the URL names. */
+	| {readonly _tag: "missing"}
+	| {readonly _tag: "unread"; readonly reason: string};
+
+export type PointedRuling =
+	| Exclude<RulingPointer, {readonly _tag: "own" | "other"}>
+	| {readonly _tag: "own"; readonly url: RulingUrl; readonly read: OwnRulingRead}
+	| {
+			readonly _tag: "other";
+			readonly url: RulingUrl;
+			readonly issue: number;
+			readonly read: OtherRulingRead;
+	  };
+
+/**
+ * The pointers among an issue's comments, each bound to this issue and this repository. A pointer's
+ * author and agent stamp are not read: anyone may post one, and only the ruling behind it counts.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10294#issuecomment-5974132205
+ */
+export const rulingPointers = (
+	number: number,
+	comments: ReadonlyArray<Pick<Comment, "body">>,
+	repo: string,
+): ReadonlyArray<RulingPointer> => {
+	const pointers: Array<RulingPointer> = [];
+	for (const comment of comments) {
+		const found = readPointer(comment.body);
+		if (found._tag === "Absent") continue;
+		if (found._tag === "Malformed") {
+			pointers.push({_tag: "malformed", reason: found.reason});
+			continue;
+		}
+		const {issue, ruling: url} = found.value;
+		if (issue !== number) {
+			pointers.push({_tag: "misnumbered", names: issue});
+		} else if (rulingRepo(url).toLowerCase() !== repo.toLowerCase()) {
+			pointers.push({_tag: "foreign", url});
+		} else if (rulingIssue(url) === number) {
+			pointers.push({_tag: "own", url});
+		} else {
+			pointers.push({_tag: "other", url, issue: rulingIssue(url), comment: rulingComment(url)});
+		}
+	}
+	return pointers;
+};
 
 /**
  * What the guard scanned. `backlog` is the whole open lane-entering `status:triaged` set; `issue` is
@@ -463,10 +555,124 @@ export const isLaneEntering = (candidate: Candidate): boolean => {
 	return candidate.labels.includes("type:feature") && !candidate.hasParent;
 };
 
+/**
+ * The one issue kind a founder ruling can stand in for a pitch on. An epic is lane-entering too and
+ * always owes its pitch.
+ */
+export const takesPitchRuling = (candidate: Pick<Candidate, "labels" | "hasParent">): boolean =>
+	candidate.labels.includes(TRIAGED_LABEL) &&
+	candidate.labels.includes("type:feature") &&
+	!candidate.labels.includes("type:epic") &&
+	!candidate.hasParent;
+
+export type PitchRulingRoute =
+	| {readonly _tag: "ruled"; readonly ruling: RulingUrl}
+	/** No comment reaches for the pointer, so the pitch is judged exactly as without this route. */
+	| {readonly _tag: "none"}
+	/** A pointer links a ruling that could not be read: neither a pass nor a missing pitch. */
+	| {readonly _tag: "unread"; readonly detail: string}
+	| {readonly _tag: "missed"; readonly detail: string};
+
+/**
+ * `#<n>` as a whole number: a longer number that starts with these digits names another issue, and
+ * `<owner>/<repo>#<n>` names another repository's.
+ */
+const namesIssue = (text: string, number: number): boolean =>
+	new RegExp(`(?<![\\w/])#${number}(?!\\d)`).test(text);
+
+const POINTER = `\`${POINTER_KEY}:\` comment`;
+
+const judgeRuling = (
+	candidate: Candidate,
+	pointed: PointedRuling,
+): Exclude<PitchRulingRoute, {_tag: "none"}> => {
+	const missed = (detail: string) => ({_tag: "missed" as const, detail});
+	switch (pointed._tag) {
+		case "malformed":
+			return missed(`its ${POINTER} does not read as \`${POINTER_GRAMMAR}\`: ${pointed.reason}`);
+		case "misnumbered":
+			return missed(`its ${POINTER} names #${pointed.names}, not #${candidate.number}`);
+		case "foreign":
+			return missed(
+				`its ${POINTER} links ${pointed.url}, which is not an issue comment in this repository`,
+			);
+		case "own": {
+			const read = pointed.read;
+			if (read._tag === "unread") {
+				return {_tag: "unread", detail: `its ${POINTER} links ${pointed.url}, but ${read.reason}`};
+			}
+			return read.scan.all.some((standing) => standing.ruling.ruling === pointed.url)
+				? {_tag: "ruled", ruling: pointed.url}
+				: missed(
+						`its ${POINTER} links ${pointed.url}, but no \`decision-ruled:\` marker from a control-plane account cites that comment`,
+					);
+		}
+		case "other": {
+			const read = pointed.read;
+			const linked = `its ${POINTER} links ${pointed.url}`;
+			if (read._tag === "unread") return {_tag: "unread", detail: `${linked}, but ${read.reason}`};
+			if (read._tag === "missing") {
+				return missed(`${linked}, but #${pointed.issue} carries no comment with that id`);
+			}
+			if (!read.authorized) {
+				return missed(`${linked}, whose author is not a write+ collaborator`);
+			}
+			if (isAgentStamped(read.body)) {
+				return missed(
+					`${linked}, which is agent-provenance-stamped — a ruling is a founder seat, never agent-satisfiable`,
+				);
+			}
+			if (!namesIssue(read.body, candidate.number)) {
+				return missed(`${linked}, which does not name #${candidate.number}`);
+			}
+			if (candidate.milestone === null) {
+				return missed(
+					`${linked}, but #${candidate.number} is on no milestone — a ruling on another issue counts only inside one shared open milestone`,
+				);
+			}
+			if (read.milestone?.number !== candidate.milestone || !read.milestone.open) {
+				return missed(
+					`${linked}, but #${pointed.issue} and #${candidate.number} do not share an open milestone`,
+				);
+			}
+			return {_tag: "ruled", ruling: pointed.url};
+		}
+	}
+};
+
+/**
+ * Resolve the ruling route for one parentless feature: any verified ruling passes it. Ordered so the
+ * report names the nearest miss, and an unread ruling outranks a failed one because it may yet pass.
+ *
+ * A ruling on the feature's own issue counts on a control-plane account's `decision-ruled:` marker
+ * citing it, whatever the marker's digest: the digest dates the issue body, and the ruling named the
+ * feature by number, not by its wording. A ruling on another issue is a plain comment with no
+ * marker, so it is held to its author, its text and the milestone the two issues share.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/8113#issuecomment-5556193662
+ * @ruling https://github.com/kamp-us/phoenix/issues/10294#issuecomment-5974132205
+ */
+export const resolvePitchRuling = (candidate: Candidate): PitchRulingRoute => {
+	if (!takesPitchRuling(candidate)) return {_tag: "none"};
+	let unread: PitchRulingRoute | null = null;
+	let missed: PitchRulingRoute | null = null;
+	for (const pointed of candidate.rulings) {
+		const judged = judgeRuling(candidate, pointed);
+		if (judged._tag === "ruled") return judged;
+		if (judged._tag === "unread") unread ??= judged;
+		else missed ??= judged;
+	}
+	return unread ?? missed ?? {_tag: "none"};
+};
+
 export type Disposition =
 	| {readonly _tag: "out-of-scope"}
 	| {readonly _tag: "pitched"; readonly appetite: Appetite}
-	| {readonly _tag: "unpitched"; readonly detail: string};
+	/** A parentless feature a founder ruling names by number: it passes with no approved pitch. */
+	| {readonly _tag: "ruled"; readonly ruling: RulingUrl}
+	| {readonly _tag: "unpitched"; readonly detail: string}
+	/** Whether a founder ruling covers the pitch could not be read. */
+	| {readonly _tag: "unread"; readonly detail: string};
 
 const APPROVAL_DETAIL: {
 	readonly [K in Exclude<Approval["_tag"], "approved" | "appetite-mismatch">]: string;
@@ -485,12 +691,10 @@ const commentDetail = (approval: Exclude<Approval, {_tag: "approved"}>): string 
 		: APPROVAL_DETAIL[approval._tag];
 
 /** Either carrier approves: a `pitch-approved:` comment, or a `bet` row on the table. */
-export const disposition = (
+const pitchDisposition = (
 	candidate: Candidate,
-	table: BetTable = TABLE_NOT_CONSULTED,
-): Disposition => {
-	if (!isLaneEntering(candidate)) return {_tag: "out-of-scope"};
-
+	table: BetTable,
+): Extract<Disposition, {_tag: "pitched" | "unpitched"}> => {
 	const read = readPitch(candidate.body);
 	if (read._tag === "absent") return {_tag: "unpitched", detail: "has no `## Pitch` section"};
 	if (read._tag === "malformed") {
@@ -509,10 +713,39 @@ export const disposition = (
 	return {_tag: "unpitched", detail: onTable === null ? detail : `${detail}; and ${onTable}`};
 };
 
+/**
+ * Three ways through: a founder ruling that names a parentless feature, read before the body so it
+ * passes with no pitch at all, then either approval carrier over a well-formed pitch.
+ */
+export const disposition = (
+	candidate: Candidate,
+	table: BetTable = TABLE_NOT_CONSULTED,
+): Disposition => {
+	if (!isLaneEntering(candidate)) return {_tag: "out-of-scope"};
+
+	const route = resolvePitchRuling(candidate);
+	if (route._tag === "ruled") return route;
+	const pitch = pitchDisposition(candidate, table);
+	if (pitch._tag === "pitched" || route._tag === "none") return pitch;
+	return route._tag === "unread"
+		? {
+				_tag: "unread",
+				detail: `${route.detail} — whether a founder ruling covers its pitch is UNKNOWN`,
+			}
+		: {_tag: "unpitched", detail: `${pitch.detail}; and ${route.detail}`};
+};
+
 export interface Unpitched {
 	readonly number: number;
 	readonly title: string;
 	readonly detail: string;
+}
+
+/** One feature that passed on a founder ruling, with the comment the ruling is written in. */
+export interface Ruled {
+	readonly number: number;
+	readonly title: string;
+	readonly ruling: RulingUrl;
 }
 
 export type PitchVerdict =
@@ -520,7 +753,9 @@ export type PitchVerdict =
 			readonly pass: true;
 			readonly scope: Scope;
 			readonly scanned: number;
+			/** Issues carrying a founder-approved pitch; a ruled feature is counted in `ruled`. */
 			readonly pitched: number;
+			readonly ruled: ReadonlyArray<Ruled>;
 	  }
 	/** No lane-entering work in scope — fail closed, never a vacuous pass. */
 	| {readonly pass: false; readonly reason: "zero-scope"; readonly scope: Scope}
@@ -537,7 +772,19 @@ export type PitchVerdict =
 			readonly scope: Scope;
 			readonly scanned: number;
 			readonly pitched: number;
-			readonly unpitched: ReadonlyArray<Unpitched>;
+			readonly ruled: ReadonlyArray<Ruled>;
+			readonly unpitched: NonEmptyReadonlyArray<Unpitched>;
+			readonly unread: ReadonlyArray<Unpitched>;
+	  }
+	/** Nothing is proven unpitched, but a linked ruling went unread — UNKNOWN, never clean. */
+	| {
+			readonly pass: false;
+			readonly reason: "unread";
+			readonly scope: Scope;
+			readonly scanned: number;
+			readonly pitched: number;
+			readonly ruled: ReadonlyArray<Ruled>;
+			readonly unread: NonEmptyReadonlyArray<Unpitched>;
 	  };
 
 /**
@@ -560,23 +807,39 @@ export const judge = (
 		if (scope._tag === "backlog") return {pass: false, reason: "zero-scope", scope};
 		return scope.universe._tag === "absent"
 			? {pass: false, reason: "vocabulary-absent", scope, missing: scope.universe.missing}
-			: {pass: true, scope, scanned: 0, pitched: 0};
+			: {pass: true, scope, scanned: 0, pitched: 0, ruled: []};
 	}
 
 	const unpitched: Array<Unpitched> = [];
+	const unread: Array<Unpitched> = [];
+	const ruled: Array<Ruled> = [];
 	let pitched = 0;
 	for (const candidate of inScope) {
+		const {number, title} = candidate;
 		const resolved = disposition(candidate, table);
 		if (resolved._tag === "pitched") pitched++;
-		else if (resolved._tag === "unpitched") {
-			unpitched.push({number: candidate.number, title: candidate.title, detail: resolved.detail});
-		}
+		else if (resolved._tag === "ruled") ruled.push({number, title, ruling: resolved.ruling});
+		else if (resolved._tag === "unpitched")
+			unpitched.push({number, title, detail: resolved.detail});
+		else if (resolved._tag === "unread") unread.push({number, title, detail: resolved.detail});
 	}
 
-	if (unpitched.length > 0) {
-		return {pass: false, reason: "unpitched", scope, scanned: inScope.length, pitched, unpitched};
+	const counted = {scope, scanned: inScope.length, pitched, ruled};
+	const [firstUnpitched, ...moreUnpitched] = unpitched;
+	if (firstUnpitched !== undefined) {
+		return {
+			pass: false,
+			reason: "unpitched",
+			...counted,
+			unpitched: [firstUnpitched, ...moreUnpitched],
+			unread,
+		};
 	}
-	return {pass: true, scope, scanned: inScope.length, pitched};
+	const [firstUnread, ...moreUnread] = unread;
+	if (firstUnread !== undefined) {
+		return {pass: false, reason: "unread", ...counted, unread: [firstUnread, ...moreUnread]};
+	}
+	return {pass: true, ...counted};
 };
 
 const scopeLabel = (scope: Scope): string =>
@@ -599,7 +862,27 @@ const remedy = (sizes: AppetiteSizes): string =>
 	"       the founder's token on his say-so;\n" +
 	"     - or a `pitch-approved: appetite <S|M|L> · <ISO-8601-UTC>` comment naming the same size the\n" +
 	"       body declares (a legacy `<N> cycles` pitch approves only this way, as\n" +
-	"       `appetite <N> cycles`). An agent never posts this comment.";
+	"       `appetite <N> cycles`). An agent never posts this comment.\n" +
+	"A parentless feature passes a third way, with no pitch at all: a founder ruling that names it\n" +
+	`by number. Triage posts \`${POINTER_GRAMMAR}\`\n` +
+	"as the first line of a comment on the feature, and this guard verifies the ruling it links:\n" +
+	"  - a comment on the feature itself counts when a `decision-ruled:` marker from a control-plane\n" +
+	"    account cites it (`fabrika decision rule` posts that marker);\n" +
+	"  - a comment on another issue counts when a write+ collaborator wrote it with no agent stamp,\n" +
+	"    it names the feature as `#<n>`, and both issues are on the same open milestone.\n" +
+	"A comment that links the ruling in free prose is not read.";
+
+const ruledLine = (one: Ruled): string =>
+	`  #${one.number} ${one.title}\n      ruling: ${one.ruling}`;
+
+/** The features that passed on a founder ruling, each with its ruling, or nothing when none did. */
+const ruledSection = (ruled: ReadonlyArray<Ruled>): string =>
+	ruled.length === 0
+		? ""
+		: `\n\nPassed by a founder ruling that names the feature (${ruled.length}):\n${ruled.map(ruledLine).join("\n")}`;
+
+const unpitchedLine = (one: Unpitched): string =>
+	`  #${one.number} ${one.title}\n      ${one.detail}`;
 
 /** Render the report for a verdict — always emit what you scanned, never a bare all-clear. */
 export const renderReport = (verdict: PitchVerdict, sizes: AppetiteSizes): string => {
@@ -609,7 +892,8 @@ export const renderReport = (verdict: PitchVerdict, sizes: AppetiteSizes): strin
 		}
 		return (
 			`pitch-guard: ${scopeLabel(verdict.scope)} is fully pitched — scanned ${verdict.scanned} ` +
-			`lane-entering issue(s), ${verdict.pitched} carrying a founder-approved pitch, 0 unpitched.`
+			`lane-entering issue(s), ${verdict.pitched} carrying a founder-approved pitch, ` +
+			`${verdict.ruled.length} passed by a founder ruling, 0 unpitched.${ruledSection(verdict.ruled)}`
 		);
 	}
 	if (verdict.reason === "zero-scope") {
@@ -627,13 +911,24 @@ export const renderReport = (verdict: PitchVerdict, sizes: AppetiteSizes): strin
 			"pipeline means adopting its taxonomy."
 		);
 	}
-	const lines = verdict.unpitched.map(
-		(one) => `  #${one.number} ${one.title}\n      ${one.detail}`,
-	);
+	const counts = `${verdict.pitched} pitched, ${verdict.ruled.length} passed by a founder ruling`;
+	const unread = verdict.unread.map(unpitchedLine).join("\n");
+	if (verdict.reason === "unread") {
+		return (
+			`pitch-guard: ${verdict.unread.length} of ${verdict.scanned} lane-entering issue(s) in ` +
+			`${scopeLabel(verdict.scope)} could not be judged — each links a founder ruling that could ` +
+			`not be read, so the verdict is UNKNOWN: not clean, and not a missing pitch (${counts}):\n` +
+			`${unread}${ruledSection(verdict.ruled)}`
+		);
+	}
 	return (
 		`pitch-guard: ${verdict.unpitched.length} of ${verdict.scanned} lane-entering issue(s) in ` +
 		`${scopeLabel(verdict.scope)} are pickable without a founder-approved pitch ` +
-		`(${verdict.pitched} pitched):\n${lines.join("\n")}\n\n${remedy(sizes)}`
+		`(${counts}):\n${verdict.unpitched.map(unpitchedLine).join("\n")}` +
+		(verdict.unread.length === 0
+			? ""
+			: `\n\n${verdict.unread.length} more could not be judged — each links a founder ruling that could not be read:\n${unread}`) +
+		`${ruledSection(verdict.ruled)}\n\n${remedy(sizes)}`
 	);
 };
 
@@ -646,6 +941,7 @@ export const toGuardVerdict = (verdict: PitchVerdict, sizes: AppetiteSizes): Gua
 		case "zero-scope":
 			return zeroScope(report);
 		case "vocabulary-absent":
+		case "unread":
 			return unknown(report);
 		case "unpitched":
 			return violation(report);

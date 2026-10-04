@@ -3,7 +3,9 @@
  *
  * Three reads compose one candidate, and the order is the cost control: the label-narrowed sweep
  * shortlists, each shortlisted issue is then re-read singly because the list endpoint omits the
- * parent link, and only then are its comments and their authors' permissions resolved.
+ * parent link, and only then are its comments and their authors' permissions resolved. A parentless
+ * feature carrying a `pitch-ruled:` comment costs the reads behind that comment's ruling, and
+ * nothing else does.
  *
  * The ACL resolution is fail-closed at the boundary: a permission that cannot be read
  * resolves NOT authorized, so an unverifiable approval stops counting rather than passing.
@@ -16,10 +18,12 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {CONFIG_PATH} from "../config/document.ts";
 import {appetiteSizesKey} from "../config/keys/appetite-sizes.ts";
 import {readKey} from "../config/read-key.ts";
+import {standingRulings} from "../decision/standing-rulings.ts";
 import {
 	getIssue,
 	type IssueRecord,
 	listComments,
+	listOpenMilestones,
 	openIssuesWithLabelRecords,
 	resolveRepo,
 } from "../io/issues.ts";
@@ -40,9 +44,15 @@ import {
 	isLaneEntering,
 	judge,
 	LANE_ENTERING_TYPES,
+	type OtherRulingRead,
+	type OwnRulingRead,
+	type PointedRuling,
+	type RulingPointer,
+	rulingPointers,
 	SCOPE_LABELS,
 	type Scope,
 	TRIAGED_LABEL,
+	takesPitchRuling,
 	toGuardVerdict,
 	VERB,
 } from "./pitch.ts";
@@ -95,6 +105,82 @@ type Hydrated =
 	| {readonly _tag: "Candidate"; readonly candidate: Candidate}
 	| {readonly _tag: "Unreadable"; readonly reason: string};
 
+/**
+ * The ruling behind a pointer at the feature's own issue: the one roster-gated marker read every
+ * "who ruled this issue" question goes through.
+ */
+const readOwnRuling = (
+	repo: string,
+	feature: number,
+): Effect.Effect<OwnRulingRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.map(standingRulings(repo, feature), (rulings) =>
+		rulings._tag === "Unknown"
+			? {_tag: "unread", reason: rulings.reason}
+			: {_tag: "scanned", scan: rulings.scan},
+	);
+
+/**
+ * The ruling behind a pointer at a comment on another issue. The comment is found in that issue's
+ * own comment list rather than fetched by id, because an id alone does not prove which issue the
+ * comment is on, and the milestone check is about that issue.
+ */
+const readOtherRuling = (
+	repo: string,
+	pointer: Extract<RulingPointer, {_tag: "other"}>,
+): Effect.Effect<OtherRulingRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const unread = (reason: string): OtherRulingRead => ({_tag: "unread", reason});
+		const comments = yield* listComments(repo, pointer.issue);
+		if (comments._tag === "Failure") {
+			return unread(`the comments on #${pointer.issue} could not be read: ${comments.reason}`);
+		}
+		const linked = comments.value.find((comment) => comment.id === pointer.comment);
+		if (linked === undefined) return {_tag: "missing"};
+
+		const issue = yield* getIssue(repo, pointer.issue);
+		if (issue._tag !== "Present") {
+			return unread(
+				`issue #${pointer.issue} could not be read: ${issue._tag === "Unknown" ? issue.reason : "it does not exist"}`,
+			);
+		}
+		const homed = issue.value.milestone;
+		let milestone: {readonly number: number; readonly open: boolean} | null = null;
+		if (homed !== null) {
+			const open = yield* listOpenMilestones(repo);
+			if (open._tag === "Failure") {
+				return unread(`the open milestones of ${repo} could not be read: ${open.reason}`);
+			}
+			milestone = {number: homed, open: open.value.some((one) => one.number === homed)};
+		}
+		return {
+			_tag: "read",
+			authorized: yield* isWritePlus(repo, linked.author),
+			body: linked.body,
+			milestone,
+		};
+	});
+
+const readRuling = (
+	repo: string,
+	feature: number,
+	pointer: RulingPointer,
+): Effect.Effect<PointedRuling, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		switch (pointer._tag) {
+			case "own":
+				return {...pointer, read: yield* readOwnRuling(repo, feature)};
+			case "other":
+				return {
+					_tag: "other",
+					url: pointer.url,
+					issue: pointer.issue,
+					read: yield* readOtherRuling(repo, pointer),
+				};
+			default:
+				return pointer;
+		}
+	});
+
 const hydrate = (
 	repo: string,
 	record: IssueRecord,
@@ -115,15 +201,26 @@ const hydrate = (
 			authorized: authorized.get(comment.author) ?? false,
 			body: comment.body,
 		}));
+		const hasParent = record.parent._tag !== "None";
+		// Only a parentless feature's pointers are read, and each read sits behind a pointer: an
+		// issue with none costs no call beyond the three above.
+		const rulings: Array<PointedRuling> = [];
+		if (takesPitchRuling({labels: record.labels, hasParent})) {
+			for (const pointer of rulingPointers(record.number, resolved, repo)) {
+				rulings.push(yield* readRuling(repo, record.number, pointer));
+			}
+		}
 		return {
 			_tag: "Candidate",
 			candidate: {
 				number: record.number,
 				title: record.title,
 				labels: record.labels,
-				hasParent: record.parent._tag !== "None",
+				hasParent,
+				milestone: record.milestone,
 				body: record.body,
 				comments: resolved,
+				rulings,
 			},
 		};
 	});

@@ -279,12 +279,16 @@ const pitchCheck = leafCommand(
 	Command.withShortDescription("Red unless every pickable bet carries a founder-approved pitch."),
 	Command.withDescription(
 		leafHelp("pitch-guard check", [
-			"Prints a one-line all-clear when every lane-entering issue carries a founder-approved pitch.",
+			"Prints an all-clear when every lane-entering issue carries a founder-approved pitch.",
+			"  A parentless feature also passes on a founder ruling that names it by number, linked by a",
+			"  `pitch-ruled: #<n> · ruling:<comment-url>` comment; the all-clear counts those and lists",
+			"  each with its ruling.",
 			"  Binds at intake only; it is never wired to red a pull request.",
 			"  A red puts the per-issue remedy on stderr, with ::error annotations under Actions.",
 			"  7: zero scope: the backlog sweep found no lane-entering issue",
-			"  11: the board, the label set, an issue, its comments or .fabrika.jsonc was unreadable (UNKNOWN)",
-			"  12: a pickable bet carries no founder-approved pitch",
+			"  11: the board, the label set, an issue, its comments, a ruling a `pitch-ruled:` comment",
+			"      links or .fabrika.jsonc was unreadable (UNKNOWN)",
+			"  12: a pickable bet carries no founder-approved pitch and no founder ruling that names it",
 		]),
 	),
 	Command.withExamples([{command: "fabrika guard pitch-guard check --issue 4312"}]),
@@ -294,7 +298,7 @@ const pitchGuard = Command.make("pitch-guard").pipe(
 	Command.withSubcommands([pitchCheck]),
 	Command.withShortDescription("Lane-entering work becomes pickable only with an approved pitch."),
 	Command.withDescription(
-		"Direction binds at intake: an epic or a standalone feature only becomes pickable carrying a five-field pitch the founder approved. The pitch is drafted by triage and approved by the founder — never by an agent.",
+		"Direction binds at intake: an epic or a standalone feature only becomes pickable carrying a five-field pitch the founder approved. The pitch is drafted by triage and approved by the founder — never by an agent. A standalone feature a founder ruling names by number needs no pitch.",
 	),
 );
 

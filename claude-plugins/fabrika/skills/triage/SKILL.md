@@ -188,9 +188,19 @@ Stage `bet` — his own write or an agent's on his instruction, with the row's S
 pitch's Appetite.
 **A founder ruling that names a parentless feature by its number discharges that feature's pitch**,
 when the feature is homed in the ruling's own arc — the same milestone or the same epic. Link the
-ruling in a comment on the feature, and leave the body as it is: the comment is the pitch's whole
-trace, so a discharge without one is a missing pitch. A feature a ruling only implies, however
-plainly, still owes its pitch. Take an existing
+ruling in a comment on the feature whose first line is exactly this, with the feature's own number
+and the URL of the comment the ruling is written in:
+
+```text
+pitch-ruled: #<n> · ruling:https://github.com/<owner>/<repo>/issues/<m>#issuecomment-<comment-id>
+```
+
+Leave the body as it is: the comment is the pitch's whole trace, so a discharge without one is a
+missing pitch. `guard pitch-guard check` reads that first line and verifies the ruling behind it, so
+a comment that links the ruling in free prose passes nothing and the feature stays red. Done when
+`fabrika guard pitch-guard check --issue <n>` lists the feature with its ruling; a red names the
+check the ruling missed, and [the comment's contract](contract.md#the-pitch-ruled-comment) says what
+each one is. A feature a ruling only implies, however plainly, still owes its pitch. Take an existing
 home: **triage never creates a milestone**, and `wayfinder:backlog` is bounded to genuine fog rather
 than work you would rather not decide about.
 **A board-wide homing breach is swept by a verb, never by raw `gh`.** When `guard homing-guard check`
