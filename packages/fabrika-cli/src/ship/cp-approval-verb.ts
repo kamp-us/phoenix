@@ -36,8 +36,13 @@
  * so no approval is spent here. An unread or still-indefinite mergeability is `11`, because whether
  * the lane waits on a person or a builder is then unknown.
  *
+ * **A head behind its base that merges clean changes nothing here.** The merge queue tests the base
+ * plus the diff, so such a head lands as it is: the outcome is the one a level head gets, and the
+ * commit count leaves as a plain fact with no instruction on it.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/9322#issuecomment-5703498377
  * @ruling https://github.com/kamp-us/phoenix/issues/9990
+ * @ruling https://github.com/kamp-us/phoenix/issues/6918#issuecomment-5983098094
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -168,7 +173,7 @@ export const runCpApproval = (
 		const behind = drift._tag === "Ok" ? drift.value : 0;
 		if (behind > 0) {
 			diagnostics.push(
-				`${VERB}: base-drift: head is ${behind} commits behind ${pull.baseRef} — rebase, re-gate and re-bank BEFORE soliciting an approval, or the rebase destroys it.`,
+				`${VERB}: head is ${behind} commits behind ${pull.baseRef} — a fact, not a finding: a head that merges clean ships as it is.`,
 			);
 		}
 

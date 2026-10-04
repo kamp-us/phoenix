@@ -92,9 +92,7 @@ fabrika ship cp-approval $pr_number --sha 03135b91
 ```
 
 `discharge` → continue, and pass `--cp` to step 3's gate. `stop` → disarm, post
-`awaiting control-plane approval` via `note`, and end — soliciting the approval is a human's;
-before it is solicited, a base-drift notice from the verb routes rebase → re-gate → re-bank first,
-so the approval is never spent on a head that must move.
+`awaiting control-plane approval` via `note`, and end — soliciting the approval is a human's.
 
 **Giving the approval is the owner's, and leaving it to them is your rule to keep.** The verb reads
 the approving account: a non-author owner's review, or on a repo with one owner that account's
@@ -112,29 +110,27 @@ builder, not a person. Record it exactly as step 6 records `ship enqueue`'s `21`
 node <fabrika> lane report <lane> --root <root> --task <task> --token BASE-CONFLICTED --pr <pr-url>
 ```
 
-**On a `stop`, the terminal is `AWAITING-CP-APPROVAL` and a base-drift notice never changes that.**
-The notice says what has to happen before the approval is solicited; it is not a second outcome, and
-the verb's own emitted outcome stays `stop` on the `behind > 0` branch. So a base-drift diagnostic on
-a `stop` is never reported as `ROUTED-REPAIR` — that token folds `ISSUE.FAIL` and charges a repair
-retry to a lane with no defect in it, which freezes the lane on a repair nobody can make. Name the
-cause when you record it, so the park is one a sweep can read:
+**A head behind its base that merges clean ships as it is.** The merge queue tests the base plus
+the diff, so the verb answers such a head exactly as it answers a level one, and its stderr line
+`head is <k> commits behind <base>` is a fact with no step attached. On `discharge` or `n/a`,
+continue to step 3's gate and step 6's enqueue and record no park. On `stop`, the note you post asks
+the owner for the approval and nothing else, and the terminal is plain `AWAITING-CP-APPROVAL`:
 
 ```bash
-node <fabrika> lane report <lane> --root <root> --task <task> --token AWAITING-CP-APPROVAL --cause head-behind-base --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --task <task> --token AWAITING-CP-APPROVAL --pr <pr-url>
 ```
 
-Pass it only on a `stop` whose head is still behind at the moment you record. A `stop` means the
-head merges clean, so `head-behind-base` never names a conflicting head; that one answered
-`base-conflicted` above. A `stop` with no drift needs no
-`--cause`: the token itself records `awaiting-cp-approval`, which is the park `recipe unpark` clears
-by re-reading the approval. <!-- anchor: NO-REBASE-AFTER-APPROVAL -->
+The token itself records `awaiting-cp-approval`, which is the park `recipe unpark` clears by
+re-reading the approval, so it takes no `--cause`. A `stop` is never `ROUTED-REPAIR` either: that
+token folds `ISSUE.FAIL` and charges a repair retry to a lane with no defect in it. A head that
+conflicts answered `base-conflicted` above. <!-- anchor: NO-REBASE-AFTER-APPROVAL -->
 Once a control-plane approval exists, **never rebase or force-push the head**: a moved head means
 re-approval, patch-identical or not. **That is the control-plane approval only.** A fabrika `review-*` or
 `governance` marker binds the content it judged as well as the head, so a branch update leaving the
 diff and every changed file byte-identical keeps it; the control-plane approval and GitHub's own
 review object do not. A control-plane PR whose latest verdict is FAIL routes to
 repair exactly as an ordinary FAIL; the advisory carrier is a PASS path only. The roster resolution,
-the base-drift notice and every refusal on this path are the verb's section
+the behind-base line and every refusal on this path are the verb's section
 (`fabrika wire doc-section --heading "ship cp-approval" < <skill-base>/contract.md`).
 
 ## 3 — The verdict conjunction

@@ -951,6 +951,27 @@ describe("the park cause a BLOCKED carries", () => {
 		expect(Object.hasOwn(status.context.issue as object, "cause")).toBe(false);
 	});
 
+	// Nothing records a behind head any more, and a lane keeps its own ledger on disk: the park and
+	// the lap written under the old cause have to read back exactly as they did.
+	it("still folds a ledger holding a head-behind-base park and a BASE-DRIFTED lap", () => {
+		const compiled = lane(coderWorkflow());
+		const toShip = ["WIP", "DONE", "PASS"].map((event) => entry("issue", event));
+		const lines = [
+			...toShip,
+			caused("issue", "LAP", "head-behind-base"),
+			caused("issue", "BLOCKED", "head-behind-base"),
+		];
+		const parsed = parseLog(`${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
+		if (parsed._tag !== "Parsed") throw new Error(parsed.defects.join("; "));
+
+		const folded = foldLog(compiled, parsed.entries);
+		if (folded._tag !== "Folded") throw new Error(folded.defects.join("; "));
+		const status = deriveStatus(compiled, folded.states, standingCauses(parsed.entries));
+
+		expect(status.stateValue).toEqual({pipeline: {issue: "human:cp-approval"}});
+		expect(status.context.issue).toMatchObject({cause: "head-behind-base"});
+	});
+
 	it("leaves a park's cause standing across a grant — CLEARED supersedes nothing", () => {
 		const granted: LogEntry = {...entry("issue", CLEARED_EVENT), round: CAP_ROUND};
 

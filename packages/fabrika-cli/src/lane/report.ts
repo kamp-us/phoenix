@@ -76,6 +76,8 @@ export const SHELL_VOCABULARIES = {
 	// carries a cause" structural rather than a recorder's discipline.
 	machinery: {
 		"REPLAY-COLLIDED": "LAP",
+		// Kept so a recorder holding the old token still maps: no skill records it, because a head
+		// behind its base that merges clean is no machinery failure.
 		"BASE-DRIFTED": "LAP",
 		"BASE-CONFLICTED": "LAP",
 		"QUEUE-EJECTED": "LAP",
@@ -388,28 +390,32 @@ export const PARK_CAUSES = {
 		remedy: "fabrika build retire",
 	},
 	/**
-	 * `ship cp-approval` stops on a head behind its base, and the head must move before
-	 * an approval is solicited. The park spends neither budget, and reporting it as
-	 * `ROUTED-REPAIR` charged a repair retry for a trip through a stage that owns no verb that can
-	 * move a branch.
+	 * A name kept for the ledgers that already carry it, and one no skill records any more. A shipper
+	 * used to park a `ship cp-approval` `stop` under it whenever the head was behind its base, on the
+	 * reading that the head had to move before an approval was asked for. A head that is behind and
+	 * merges clean lands through the merge queue as it is, so that `stop` is the ordinary
+	 * `awaiting-cp-approval` wait and a `discharge` goes on to the gate. A head that conflicts is
+	 * `base-conflicted`, never this.
 	 *
-	 * Its remedy is `lane refresh`, which merges the base into an epic run's assembly branch and
-	 * proves the head it lands on. It still carries no `KNOWN_PARKS` row: a row is what buys an
-	 * autonomous clear, and that costs a proving read of the moved head this cause does not yet have.
+	 * No remedy: nothing has to be removed, because a behind head that merges clean needs no move.
+	 * No `KNOWN_PARKS` row either, so a lane still parked under it leaves on its driver's rationale.
 	 *
-	 * Route `driver`: moving a head onto its base is machinery, and no product call is in it.
+	 * Route `driver`: a lane parked under it waits on no product call, so its driver clears it.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/6918#issuecomment-5983098094
 	 */
 	"head-behind-base": {
-		meaning: "the PR's head is behind its base and must move before an approval is solicited",
+		meaning:
+			"the PR's head was behind its base when the lane parked, which no longer parks a head that merges clean",
 		route: "driver",
-		remedy: "fabrika lane refresh",
+		remedy: null,
 	},
 	/**
 	 * `ship cp-approval` stopped because the control-plane approval the head owes is absent: its
 	 * owners were read and none approved at this head. This is the ordinary wait on a §CP PR, and the
 	 * one cause a shipper's `AWAITING-CP-APPROVAL` carries without being typed
-	 * ({@link TERMINAL_PARK_CAUSES}). A recorder passes `head-behind-base` instead only when the head
-	 * is still behind, because moving the head comes before soliciting the approval.
+	 * ({@link TERMINAL_PARK_CAUSES}). A head behind its base that merges clean carries it too: the
+	 * merge queue lands that head as it is, so the wait is on the approval and on nothing else.
 	 *
 	 * Named rather than left `null` so the §CP recipe row can key on it: `ship`'s `BLOCKED` folds to
 	 * `human:cp-approval` whatever the block was, so a row keyed on no cause would read an approval
@@ -663,8 +669,9 @@ export const PARK_CAUSES = {
 	 * under the branch and the merge now conflicts. Nothing about the artifact was judged, so the
 	 * round it owes is not one the repair budget is bounding.
 	 *
-	 * Distinct from `head-behind-base`, which is a head merely *behind* its base: that one merges
-	 * clean and only needs moving. This one has a hunk two sides both edited, so it needs a builder.
+	 * Distinct from a head merely *behind* its base: that one merges clean, parks nothing and lands
+	 * through the merge queue as it is. This one has a hunk two sides both edited, so it needs a
+	 * builder.
 	 * The re-review is owed with it — a dirty base moves the merge-base blob every verdict's content
 	 * digest covers (`../review/content-binding.ts`), so every verdict on the PR is void — which is
 	 * why this cause routes the lap to `build` rather than back to `ship`.
@@ -902,8 +909,8 @@ export const machineryCause = (token: string): ParkCause | null =>
  * `--cause` still lands a caused `BLOCKED` — the park-side twin of {@link MACHINERY_CAUSES}.
  *
  * Only a token with exactly one reason belongs here. `AWAITING-CP-APPROVAL` is `ship cp-approval`'s
- * `stop`, which says the owners' approval is absent; a `--cause` still overrides it, which is how a
- * shipper standing on a head behind its base says `head-behind-base` instead. `ROUTED-REVIEW` is
+ * `stop`, which says the owners' approval is absent, and a head behind its base that merges clean
+ * is no second reason: it takes this cause with no `--cause` typed. `ROUTED-REVIEW` is
  * `ship gate`'s absence arm and nothing else — a required namespace with no binding verdict at the
  * head — so it carries `verdict-owed`. `REFUSED` and `UNKNOWN` fold to the same leaf for other
  * reasons, so they carry nothing here, and a shipper names `ROUTED-HEAL-CI`'s cause by hand.

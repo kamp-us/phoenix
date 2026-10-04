@@ -1934,7 +1934,7 @@ describe("recipe unpark — a driver-routed park clears on the driver's own rati
 	/** A driver-routed cause with no `KNOWN_PARKS` row: no read proves it gone, because none exists. */
 	const PARKED_ON_HEAD_BEHIND = parkedBlockedOn("head-behind-base");
 
-	const WHY = "merged main into the head, so the approval can be solicited";
+	const WHY = "the head merges clean, so the merge queue lands it as it is";
 
 	it("clears a park no row covers when its cause routes to the driver", async () => {
 		const fs = lane(PARKED_ON_HEAD_BEHIND);

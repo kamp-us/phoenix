@@ -550,7 +550,8 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 		});
 	});
 
-	it("lets a typed cause override the approval wait on a head still behind its base", async () => {
+	// No skill types this cause any more; the override stays so a ledger that carries it still reads.
+	it("still lets a typed head-behind-base override the approval wait", async () => {
 		const fs = laneAt(LOG_AT.ship);
 
 		const out = await run(fs, "AWAITING-CP-APPROVAL", {
