@@ -1783,6 +1783,13 @@ owing gate first, then clear, in this order:
    `--rationale` naming the verdict the gate posted at the head. Any other answer is read as below.
    The lane returns to `ship`, and the next shipper merges or routes the `FAIL`.
 
+**On Codex, leave this park for a person.** Step 2 is a Claude Agent-tool spawn, and Codex has no
+isolated route to it: `lane dispatch` runs only a task active in the lane's state, and this park
+briefs no shell. So a Codex driver runs step 1 and stops there. It spawns no gate, and it runs no
+`recipe unpark` while the verdict is owed, the try-first rule below included. Post a park comment
+that names the PR and each owed namespace and says a person runs steps 2 to 4 from a Claude
+session, then end `LANE-PARKED`.
+
 **So try `recipe unpark` before you post a park comment**, whenever the fold reads `blocked` or
 `human:*` — a park comment is the founder-routed answer, and you do not know the route until this
 verb reads the cause for you:
