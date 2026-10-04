@@ -90,14 +90,15 @@ export interface SetupInput<R> {
 const COMMIT_MESSAGE = "chore: set up fabrika";
 
 /**
- * The step setup leaves to the owner, after the paste lines. It names the guide's by-hand step and
- * promises nothing of `triage homes`, which refuses in a repo with no open milestone.
+ * The step setup leaves to the owner, after the paste lines. It names the guide's by-hand step by its
+ * title and no number, since the guide renumbers its steps without a CLI release. It promises nothing
+ * of `triage homes`, which refuses in a repo with no open milestone.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/10518
  */
 export const HOME_NEXT = [
-	"Then give work a home: open one milestone and write a roadmap that names it, by hand, as step 7",
-	'of the getting-started guide, "Give the board a home to put work in", shows.',
+	"Then give work a home: open one milestone and write a roadmap that names it, by hand, as the",
+	'getting-started guide\'s step "Give the board a home to put work in" shows.',
 ];
 
 const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" : "s"}`;

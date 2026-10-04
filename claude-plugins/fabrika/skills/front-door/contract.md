@@ -1820,9 +1820,10 @@ what happened, then what to do next. A caller that parses the answer keeps the l
   command does not read whether an earlier run's files were committed. The examples below show the
   add line and cut the other two to `…`, which never vary.
 - **Then the home step**, two lines after the paste lines: give work a home by opening one
-  milestone and writing a roadmap that names it, by hand, as the getting-started guide's step 7
-  shows. The closing promises nothing of `triage homes`, which refuses in a repo with no open
-  milestone.
+  milestone and writing a roadmap that names it, by hand, as the getting-started guide's step
+  "Give the board a home to put work in" shows. It names that step by its title and no number, so
+  renumbering the guide never needs a CLI release. The closing promises nothing of `triage homes`,
+  which refuses in a repo with no open milestone.
 
 Each step's notices go to stderr as the step printed them.
 
@@ -1876,8 +1877,8 @@ Setup finished: 6 steps made changes and 0 were already done. Nothing is committ
 What to do next: paste these lines to commit and push the setup files:
   git add .claude/settings.json .gitignore .github/CODEOWNERS .github/workflows/ci.yml
   …
-Then give work a home: open one milestone and write a roadmap that names it, by hand, as step 7
-of the getting-started guide, "Give the board a home to put work in", shows.
+Then give work a home: open one milestone and write a roadmap that names it, by hand, as the
+getting-started guide's step "Give the board a home to put work in" shows.
 ```
 
 The same repo, run again:

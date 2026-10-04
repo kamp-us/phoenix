@@ -97,6 +97,14 @@ is `exists`, and nothing is written. `label-taxonomy`, `issue-shape-markers` and
 `readout-artifact` write to GitHub and need a resolvable repo —
 `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote.
 
+**`fabrika setup` runs six of these in one go:** `settings-patch`, `label-taxonomy`,
+`issue-shape-markers`, `gitignore-row`, `owners-file` and `ci-file`, in that order. It prints each
+step's row, then the lines to commit and push the files it wrote. `--hand-check` with one
+`--screens <path>` per screen path adds `hand-check-rule` after the six. A step already in place
+reads `exists`, so it is safe on a repo that has some of them. It opens no milestone and writes no
+roadmap: steps 6 and 7 stay by hand. Steps 4 and 5 below are the same work one step at a time, for
+when you want to run, or skip, a single one.
+
 ## 4. Create the labels
 
 **Writes to GitHub:** both commands create labels in your repo.

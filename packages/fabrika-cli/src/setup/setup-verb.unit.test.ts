@@ -97,8 +97,8 @@ const ADD_LINE =
 	"  git add .claude/settings.json .gitignore .github/CODEOWNERS .github/workflows/ci.yml";
 
 const HOME_LINES = [
-	"Then give work a home: open one milestone and write a roadmap that names it, by hand, as step 7",
-	'of the getting-started guide, "Give the board a home to put work in", shows.',
+	"Then give work a home: open one milestone and write a roadmap that names it, by hand, as the",
+	'getting-started guide\'s step "Give the board a home to put work in" shows.',
 ];
 
 describe("fabrika setup", () => {
