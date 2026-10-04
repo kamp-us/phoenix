@@ -125,7 +125,7 @@ as the sibling contracts do):
   group derives no second verdict; `ledger draft`, `ledger child` and `ledger topology` each
   validate *the document they are composing* so a defect is caught at authoring time, which is a
   different question from grading a finished ledger.
-- **A `status:triaged` flip.** The gate's, unconditionally. No verb here writes it.
+- **A flip to the board's triaged status.** The gate's, unconditionally. No verb here writes it.
 - **A pickability predicate.** `build`'s picker question, and still open there.
 - **A reachability check.** `reachability-guard` answers a flag-graduation question at the
   `/release` seam; nothing in planning needs it, and its v1 shape is pinned to one app's paths.

@@ -463,7 +463,7 @@ absent or non-conforming. `topology` is the imported `readTopology` parse. `cycl
 | `4` | the epic body's `## Dependencies` is `Unparseable`; a ledger section appears more than once; a child's `**Stories:**` or `**Containment:**` field line appears more than once; or a **non-empty** `### User stories` list is not contiguous from 1 |
 | `7` | the epic is proven absent (404) or closed, or it has zero sub-issue children |
 | `10` | the issue is not a `type:epic` |
-| `11` | the epic, the sub-issue list, or a child could not be read (when this was written this row also named the `product-development-cycle.md` probe, so the premise is stale and the conclusion is not — the probe is total and answers `unknown` on a failed read, which the output schema above carries and `plan check` names in `skipped`; `11` stays reachable by the three reads named here) |
+| `11` | the epic, the sub-issue list, or a child could not be read; or `.fabrika.jsonc` could not be read or decoded for one of the three keys this verb takes from it — `containmentVocabulary`, the board vocabulary (`boardVocabulary`, whose planned and triaged statuses the digest leaves out), or the declared cycle-doc path. The probe for the cycle doc itself is not among them: it is total and answers `unknown` on a failed read, which the output schema above carries and `plan check` names in `skipped` |
 
 An **absent** `## Dependencies` block is *not* `4` — it is defect `MISSING_DEPS_SECTION`, which
 `plan check` derives. `4` is the unparseable, duplicated and mis-numbered cases only.
