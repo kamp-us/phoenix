@@ -26,7 +26,8 @@ stop unchecked, `table` block or not, and names the fix (`gh auth refresh -h git
 on stderr.
 Writes used — lane-ledger appends, a booted lane's own machine document brought up to the committed
 template through `lane migrate <lane>`, which is the form that writes that lane and no other,
-comments on the driven issue, the driven issue's row fields on the Projects table that `lane record`
+comments on the driven issue and, on an epic lane, on a child's own issue (step 2's late-fact
+comment), the driven issue's row fields on the Projects table that `lane record`
 writes through `table sync`, the `ship disarm --site post-enqueue` a `parked` read at
 `ship:queued` owes, whatever a recipe verb writes on
 its own account (step 3's chore row), the removal of the worktrees the lane recorded through
@@ -581,6 +582,18 @@ never restatements, and the brief's own `fabrika:` entrypoint for every verb rat
 binstub (now in the spawned tree). They are in the brief because a prompt written per
 dispatch is a prompt two drivers write differently. A fourth has the shell record its worktree on
 the lane with `lane worktree`, which is the set step 4's `lane cleanup` removes.
+
+**A fact that postdates the issue body goes on the issue as a comment, and that comment is the one
+sanctioned channel for it.** A body is a snapshot, so you can hold a fact it does not carry —
+typically a PR that landed after the body was written and already discharged part of its criteria.
+Post it as a comment on the issue the task you are about to brief reads, **before you run
+`lane brief`**: state the fact in a sentence and link the artifact that proves it. That issue is the
+one the brief prints as `issue:` in `## Ground`. On a single-issue lane it is the driven issue. On an
+epic lane's `issue_<n>` task it is child `<n>`'s own issue, never the epic: the brief reads comments
+off the child, so a fact posted on the epic reaches no child's shell. The brief then stays the verb's
+bytes, and on a build or review state it lists a control-plane account's comment under
+`owner-comments` in `## Ground`, beside a rule telling the shell to read it. Done when the comment's
+URL is in hand, and, where your account is on that roster, when the brief you print names it.
 
 **Record the dispatch, then spawn.** With the brief in hand, and before either spawn below:
 
