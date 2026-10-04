@@ -54,7 +54,8 @@ labelled "yeni girdiler", and the build is parked.**
 - **The affordance is wanted.** A live feed tells its reader that new rows arrived.
 - **The shape is the pill.** Live arrivals buffer behind a "yeni girdiler" pill and do not insert
   into the open list. A click on the pill reveals them, and the reveal fetches the pending rows
-  through the normal read path. A lighter divider or count is not the shape.
+  through the normal read path. A lighter divider or count is not the shape. "yeni girdiler" is
+  the pill's Turkish copy, the `tr` string; the constraint below says what the `en` locale reads.
 - **The build is parked.** It is not built at current traffic. It is revisited when traffic
   justifies it. No feed-UI build leaves #6470 today, and this record changes no product code.
 
@@ -63,7 +64,11 @@ the founder, and so is the pill's visual design.
 
 **Binding constraints.**
 
-- The label is the Turkish product copy `yeni girdiler`, lowercase.
+- The label is product copy, so it renders in the reader's locale from the typed catalogs of ADR
+  [0347](0347-web-copy-behind-i18n-catalog.md). The `tr` catalog string is `yeni girdiler`,
+  lowercase. The `en` string is not set by this ruling: `yeni girdiler` is not one of the five
+  names ADR [0414](0414-five-product-names-stay-turkish.md) keeps Turkish, so it is translated
+  under that record when the pill is built.
 - When the pill is built, its reveal goes through the normal read path. It does not render row
   payloads carried on the broadcast.
 - Until it is built, a viewer-derived field on a live row keeps the #6462 arrangement: viewer-blind
@@ -87,5 +92,5 @@ on top of that delivery.
 - Related: [#6462](https://github.com/kamp-us/phoenix/issues/6462) and its ruling comment,
   [#4313](https://github.com/kamp-us/phoenix/issues/4313),
   [#2613](https://github.com/kamp-us/phoenix/issues/2613).
-- No vocabulary impact: `yeni girdiler` is product copy for a surface that is not built, and no
-  term is coined or redefined.
+- No vocabulary impact: `yeni girdiler` is `tr` product copy for a surface that is not built, no
+  term is coined or redefined, and no name joins ADR 0414's five-name list.
