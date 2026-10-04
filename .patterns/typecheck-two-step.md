@@ -15,21 +15,10 @@ installed its dependencies has the whole gate — there is no install-time state
 
 ## Why two commands and not one patched compiler
 
-Until [#7804](https://github.com/kamp-us/phoenix/issues/7804) the Effect diagnostics came from a
-*patched* `tsc`: a root `postinstall` ran `effect-tsgo patch`, which swapped the native compiler
-binary inside `node_modules` for the Effect Language Service build (ADR
-[0271](../.decisions/0271-one-compiler-effect-patched-tsc.md)). That patch was state in
-`node_modules`, not in git, so whether a checkout saw Effect diagnostics depended on whether one
-postinstall step happened to run in it.
-
-In a fabrika agent worktree it did not. `lefthook.yml`'s `post-checkout` `bootstrap-deps` runs
-`pnpm install --prefer-offline --ignore-scripts`, which skips the root `postinstall`. The worktree
-got a complete, lockfile-correct `node_modules` and a pristine compiler that dropped every Effect
-diagnostic and exited 0. Nothing anywhere said the compiler was unpatched. On epic #7499 that cost
-child #7560 two review rounds against a false green.
-
-The two-step script has no such variable. CI, an agent worktree and a developer's machine all run
-the same two commands over the same installed binaries.
+ADR [0459](../.decisions/0459-typecheck-two-step-no-install-patch.md) records the decision and the
+false green that forced it. It supersedes ADR
+[0271](../.decisions/0271-one-compiler-effect-patched-tsc.md), under which a root `postinstall`
+swapped the `tsc` binary for the Effect build.
 
 ## The flags are load-bearing
 
