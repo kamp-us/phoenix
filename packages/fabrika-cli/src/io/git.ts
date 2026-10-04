@@ -611,11 +611,15 @@ export const pathsOffBase = (baseSha: string, dir: string): Shell<Attempt<Readon
 	});
 
 /**
- * The stable patch identities of a stream of diffs, read by handing the bytes to `git patch-id`.
+ * The byte-exact patch identities of a stream of diffs, read by handing the bytes to `git patch-id`.
  *
- * `--stable` is load-bearing: the default id depends on the order git happened to emit the file
- * hunks in, so two runs over the same content can disagree, and a comparison across two *different*
- * commands (a branch's own diff against a trunk commit's) would be comparing nothing.
+ * `--verbatim` is load-bearing twice. It implies `--stable` (git-patch-id(1)): the default id
+ * depends on the order git happened to emit the file hunks in, so a comparison across two
+ * *different* commands (a branch's own diff against a trunk commit's) would be comparing nothing.
+ * And it hashes whitespace, which `--stable` on its own strips: a caller moves a ref on a match, so
+ * a branch that differs from its landing by whitespace alone has to read as unmatched.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9040
  *
  * The bytes are piped in rather than shelled through a `|`, so no shell is spawned and the input is
  * whatever the caller read — there is no second command whose flags could drift from the first's.
@@ -623,7 +627,7 @@ export const pathsOffBase = (baseSha: string, dir: string): Shell<Attempt<Readon
 export const patchIdsOf = (diffs: string): Shell<Attempt<ReadonlyArray<PatchIdentity>>> =>
 	Effect.gen(function* () {
 		if (diffs.trim() === "") return ok([]);
-		const r = yield* execCaptureInput("git", ["patch-id", "--stable"], diffs);
+		const r = yield* execCaptureInput("git", ["patch-id", "--verbatim"], diffs);
 		return r.ok ? ok(parsePatchIds(r.stdout)) : fail(r.reason);
 	});
 
