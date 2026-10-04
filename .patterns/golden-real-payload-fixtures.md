@@ -58,9 +58,46 @@ the spec real.
    (today `claude-plugins/fabrika/hooks.json`) — else a hook-only edit skips the gate and the
    guard never runs on the very change class it exists to catch.
 
+## The one scoped exception: a captured payload inside a declaration-derived envelope
+
+Some fixtures under `packages/tuval-claude/src/history/fixtures/` are not whole captures. Each
+holds a payload excerpted from an operator's own Claude CLI session transcript, inside an
+envelope whose keys were re-keyed against the SDK's type declaration at the catalog pin. Their
+[`PROVENANCE.md`](../packages/tuval-claude/src/history/fixtures/PROVENANCE.md) names every such
+fixture and records, per fixture, which part is verbatim and which is re-keyed.
+
+**This is an exception to the pattern above, not a second fixture class.** The founder ruled
+the source for those fixtures on
+[#8151](https://github.com/kamp-us/phoenix/issues/8151#issuecomment-5556626806). Asked on
+#8256 whether a declaration-derived envelope around a captured payload becomes a general
+fixture policy, the founder
+[ruled no](https://github.com/kamp-us/phoenix/issues/8256#issuecomment-5567694173), and
+[the issue's recorded ruling](https://github.com/kamp-us/phoenix/issues/8256#issuecomment-5625047600)
+sends the scoped exception here. ADR 0180 is unchanged: capture-only stays the law.
+
+- The exception covers the fixtures that `PROVENANCE.md` records under the #8151 ruling, and
+  nothing else.
+- A fixture with a declaration-derived envelope anywhere else needs its own cited human
+  ruling. Without one, steps 1–5 hold and the envelope is captured.
+- One run that did not emit an artifact is not evidence that no run can. "Unforceable" is a
+  claim the provenance record has to argue, per fixture.
+
+The two parts of such a fixture prove different things, and neither borrows the other's claim:
+
+| Part | Where it comes from | Proves | Does not prove |
+|---|---|---|---|
+| Captured payload values | the runtime's own record, verbatim | the code under test reads values the runtime really wrote | anything about the envelope around them |
+| Declaration-derived envelope keys | the type declaration at the pin | the fixture agrees with that declaration at that pin | that the runtime emits that envelope, which is the claim ADR 0180 says a declaration or a doc cannot settle |
+
+Which keys of a given fixture count as captured is a per-fixture fact, and `PROVENANCE.md` is
+its record. A declaration-derived envelope is never a captured runtime artifact and is never
+labelled one: a test that rests on those keys has not passed ADR 0180's blocking gate for them.
+They stay unproven until a live capture replaces them, and taking that capture is the operator
+act ADR 0180 §4 describes.
+
 ## The rule, one line
 
 Capture the real payload before coding to any doc-defined contract; commit it as a golden
 fixture; load it verbatim; assert the handler against it; make the test blocking and ensure
 its CI job runs whenever the handler's source changes. No `--force`, no fabricated-payload
-fallback.
+fallback. The scoped exception above is cited to its rulings and licenses no new fixture.
