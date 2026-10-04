@@ -465,13 +465,31 @@ On a PASS, merge it:
 /fabrika:ship 2
 ```
 
-In this run it answered:
+The first time, it stops and merges nothing. The merge step wants a separate working copy of the
+repo, and typed here it starts in your clone. It refuses with exit `33`. Its answer ends like this:
+
+```text
+**What happened:** the merge step was started in the repo's main folder instead of its own working copy, so it read nothing and merged nothing.
+
+**What you do next:** send me "Run the merge of pull request 2 again in a separate working copy." Or, if this repo should ship from its one folder, add `"shipScope": {"mainWorkingTree": "allow"}` to `.fabrika.jsonc` — that edit is yours, not mine.
+
+**refused — started in the main working tree (exit 33)**
+```
+
+Nothing is wrong with your pull request. Send the sentence it gives you as your next message:
+
+```
+Run the merge of pull request 2 again in a separate working copy.
+```
+
+This time it merges:
 
 ```
 **LANDED.** PR #2 is merged: https://github.com/you/your-repo/pull/2
 ```
 
-The shipper mentions an exit `33` and restarts itself on the way. It needs nothing from you.
+The `.fabrika.jsonc` key in that closing is the repo owner's to add, for a repo that merges from
+its one folder, and this page does not need it.
 
 Your clone is still on no branch, as the build left it. Go back to main and pull the merge:
 
