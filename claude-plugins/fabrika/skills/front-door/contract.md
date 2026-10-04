@@ -1360,8 +1360,8 @@ object, an empty list — is the gap this surface fills.
 
 **`.fabrika.jsonc` is edited in place, never re-serialized.** The file carries a person's comments,
 so the rule is spliced into the text: a missing `reviewUi` is appended after the last top-level key,
-a missing `whenNoPreview` after the last key inside `reviewUi`, and an empty list is replaced where
-it stands. Every other byte stays, comments included. Before writing, the spliced text is parsed
+a missing `whenNoPreview` goes inside `reviewUi`, and an empty list is filled where it stands, with
+the rule after any comment between its brackets. Every other byte stays, comments included. Before writing, the spliced text is parsed
 again and must equal the old document plus the rule; a file that does not parse as a JSON object
 with comments, a `reviewUi` the key itself refuses, and a splice that would move another key are each
 exit `11` with nothing written. Absent, the file is created holding the rule alone.

@@ -63,8 +63,8 @@ surface-id string    one id from the buildable-surface registry: design-manifest
 One id per invocation. A surface whose content is already in place is `exists` at exit 0, and
 nothing is written. `design-manifest` and `roadmap-focus` take their content on stdin, and a target
 already present is `exists`. `gitignore-row` and `claude-md-section` append their own row/block and
-read no stdin. `settings-patch` and `dep-pin` are the two that merge into a file already there.
-`settings-patch` merges the `kampus` marketplace registration and the `fabrika@kampus` flip into a
+read no stdin. Three ids change a file already there: `settings-patch` and `dep-pin` merge into it,
+and `hand-check-rule` edits it in place. `settings-patch` merges the `kampus` marketplace registration and the `fabrika@kampus` flip into a
 `.claude/settings.json` that is already there — unknown keys preserved, unparseable bytes refused
 unwritten — and creates the file when it is absent; it reads no stdin either way. `dep-pin` pins the
 `@kampus/fabrika-cli` row under `devDependencies` to the version npm's registry publishes at run
@@ -82,7 +82,10 @@ headless Chromium (~130MB) for `fabrika ui render`. pnpm 10 skips that `postinst
 approve it: run `pnpm approve-builds` and pick `@kampus/fabrika-cli`, or add it to
 `onlyBuiltDependencies` and run `pnpm rebuild @kampus/fabrika-cli`. Skip the approval and `ui render`
 refuses with exit `11` until the browser is set up. `hand-check-rule` writes one
-`reviewUi.whenNoPreview` rule into `.fabrika.jsonc` and reads no stdin;
+`reviewUi.whenNoPreview` rule into `.fabrika.jsonc` and reads no stdin. A `.fabrika.jsonc` already
+there is edited in place: the rule goes into the text, and every other key and comment stays where
+it was. It is `exists` once the file declares any `reviewUi.whenNoPreview` rule, and a file that
+does not parse is refused unwritten. With no file, it creates one holding the rule alone.
 [If your app has no preview deploys](#if-your-app-has-no-preview-deploys) says when to run it.
 `label-taxonomy`,
 `issue-shape-markers` and `readout-artifact` write to GitHub and need a resolvable repo —

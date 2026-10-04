@@ -61,6 +61,57 @@ describe("setJsoncValue", () => {
 		expect(parsed(after)).toEqual({reviewUi: {whenNoPreview: RULES}, trunk: "main"});
 	});
 
+	it("fills an empty list after the comments inside its brackets, keeping each one", () => {
+		const before = [
+			"{",
+			'\t"reviewUi": {',
+			'\t\t"whenNoPreview": [',
+			'\t\t\t// {"paths": ["apps/admin/**"], "mode": "hand-check"}',
+			"\t\t]",
+			"\t}",
+			"}",
+			"",
+		].join("\n");
+		expect(edited(before, ["reviewUi", "whenNoPreview"], RULES)).toBe(
+			[
+				"{",
+				'\t"reviewUi": {',
+				'\t\t"whenNoPreview": [',
+				'\t\t\t// {"paths": ["apps/admin/**"], "mode": "hand-check"}',
+				"\t\t\t{",
+				'\t\t\t\t"paths": [',
+				'\t\t\t\t\t"**"',
+				"\t\t\t\t],",
+				'\t\t\t\t"mode": "hand-check"',
+				"\t\t\t}",
+				"\t\t]",
+				"\t}",
+				"}",
+				"",
+			].join("\n"),
+		);
+	});
+
+	it("keeps a block comment that shares the empty list's line", () => {
+		const before = '{"reviewUi": {"whenNoPreview": [ /* none yet */ ]}}';
+		const after = edited(before, ["reviewUi", "whenNoPreview"], RULES);
+		expect(after).toContain("[ /* none yet */\n");
+		expect(parsed(after)).toEqual({reviewUi: {whenNoPreview: RULES}});
+	});
+
+	it("refuses to replace a value whose content carries a comment", () => {
+		const before = '{"trunk": "main", "paths": [\n\t"a/**" // the app\n]}';
+		expect(setJsoncValue(before, ["paths"], ["b/**"])).toEqual({
+			_tag: "Refused",
+			reason: 'replacing "paths" would delete a comment inside it',
+		});
+	});
+
+	it("replaces a value whose string holds a comment marker", () => {
+		const before = '{"docs": "https://example.test/a//b"}';
+		expect(parsed(edited(before, ["docs"], "none"))).toEqual({docs: "none"});
+	});
+
 	it("reads comment markers and braces inside a string as part of the string", () => {
 		const before = '{"docs": "https://example.test/a//b", "note": "} // not a comment"}';
 		expect(parsed(edited(before, ["reviewUi"], {whenNoPreview: RULES}))).toEqual({

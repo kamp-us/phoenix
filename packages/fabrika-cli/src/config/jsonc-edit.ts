@@ -164,6 +164,45 @@ const appendMember = (
 	return `${head}${kept}\n${indent}${member}\n${base}${text.slice(object.close)}`;
 };
 
+/** Whether a comment opens between `from` and `to`. A `//` inside a string is not one. */
+const holdsComment = (text: string, from: number, to: number): boolean => {
+	let index = from;
+	while (index < to) {
+		const char = text[index];
+		if (char === '"') {
+			index = stringEnd(text, index) ?? to;
+		} else if (char === "/" && (text[index + 1] === "/" || text[index + 1] === "*")) {
+			return true;
+		} else {
+			index += 1;
+		}
+	}
+	return false;
+};
+
+/**
+ * The text for a commented value that keeps its comments, or `null` when no such text exists. Only
+ * an empty list being filled has one: the comments stay between the brackets and the new elements
+ * go after them. Any other commented value holds content the new value replaces, so its comments
+ * have nowhere to stay.
+ */
+const fillEmptyList = (
+	text: string,
+	member: Member,
+	value: unknown,
+	indent: string,
+	unit: string,
+): string | null => {
+	const close = member.end - 1;
+	const isEmptyList = text[member.start] === "[" && skipTrivia(text, member.start + 1) === close;
+	if (!isEmptyList || !Array.isArray(value)) return null;
+	if (value.length === 0) return text.slice(member.start, member.end);
+	const inner = `${indent}${unit}`;
+	const kept = text.slice(member.start, close).trimEnd();
+	const elements = value.map((element) => `\n${inner}${render(element, inner, unit)}`).join(",");
+	return `${kept}${elements}\n${indent}]`;
+};
+
 type KeyPath = readonly [string, ...ReadonlyArray<string>];
 
 const setIn = (
@@ -180,11 +219,19 @@ const setIn = (
 	}
 	const [next, ...deeper] = rest;
 	if (next === undefined) {
-		const rendered = render(value, lineIndent(text, member.keyStart), unit);
-		return {
-			_tag: "Edited",
-			text: `${text.slice(0, member.start)}${rendered}${text.slice(member.end)}`,
-		};
+		const indent = lineIndent(text, member.keyStart);
+		const replaced = holdsComment(text, member.start, member.end)
+			? fillEmptyList(text, member, value, indent, unit)
+			: render(value, indent, unit);
+		return replaced === null
+			? {
+					_tag: "Refused",
+					reason: `replacing "${[...walked, key].join(".")}" would delete a comment inside it`,
+				}
+			: {
+					_tag: "Edited",
+					text: `${text.slice(0, member.start)}${replaced}${text.slice(member.end)}`,
+				};
 	}
 	const inner = objectAt(text, member.start);
 	return inner === null
@@ -197,7 +244,9 @@ const setIn = (
  *
  * A member already there has its value replaced; a missing one is appended to the deepest object the
  * path reaches, carrying whatever of the path is left. A step through a value that is not an object
- * is refused: replacing it would delete something the path never named.
+ * is refused: replacing it would delete something the path never named. So is replacing a value
+ * that holds a comment, except an empty list being filled, which keeps its comments ahead of the
+ * new elements.
  */
 export const setJsoncValue = (text: string, path: KeyPath, value: unknown): JsoncEdit => {
 	const root = objectAt(text, skipTrivia(text, 0));

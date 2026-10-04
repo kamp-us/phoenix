@@ -1028,6 +1028,18 @@ describe("the hand-check-rule surface", () => {
 		expect(routedMode(text)).toBe("hand-check");
 	});
 
+	it("keeps a commented-out rule that sits inside the empty list", async () => {
+		const commentedOut = '// {"paths": ["apps/admin/**"], "mode": "hand-check"}';
+		const before = `{\n\t"reviewUi": {\n\t\t"whenNoPreview": [\n\t\t\t${commentedOut}\n\t\t]\n\t}\n}\n`;
+		const {outcome, text = ""} = await bootstrapWith({[CONFIG]: before});
+		expect(outcome.code).toBe(ANSWER);
+		expect(text).toContain(`"whenNoPreview": [\n\t\t\t${commentedOut}\n\t\t\t{`);
+		expect(JSON.parse(stripJsonComments(text))).toEqual({
+			reviewUi: {whenNoPreview: [{paths: ["**"], mode: "hand-check"}]},
+		});
+		expect(routedMode(text)).toBe("hand-check");
+	});
+
 	it.each([
 		["a stricter rule", "require-render"],
 		["a looser rule", "skip"],
