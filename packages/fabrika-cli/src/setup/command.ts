@@ -13,8 +13,15 @@ import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
+import type {StdinRead} from "../io/stdin.ts";
 import {bootstrapStep, repoFlag} from "../status/command.ts";
-import {runSetup} from "./setup-verb.ts";
+import {handCheckOf, runSetup} from "./setup-verb.ts";
+
+/**
+ * What a step is handed in place of fd 0. No step here takes content, so nothing reads this; a step
+ * that did would refuse on its empty-content code instead of waiting on a terminal.
+ */
+const NO_STDIN: StdinRead = {_tag: "NoStdin", reason: "fabrika setup reads nothing from stdin"};
 
 export const setupCommand = leafCommand(
 	"setup",
@@ -25,19 +32,31 @@ export const setupCommand = leafCommand(
 				"also run the hand-check-rule step, which writes one rule into .fabrika.jsonc (default: not run)",
 			),
 		),
+		screens: Flag.string("screens").pipe(
+			Flag.atLeast(0),
+			Flag.withDescription(
+				'with --hand-check only: where the app\'s screens live — a folder ending in "/", or one file such as index.html; repeat it for several. Needed in a repo with no uiSurfaces row',
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({handCheck, repo}) {
+	Effect.fn(function* ({handCheck: flag, screens, repo}) {
+		const handCheck = handCheckOf(flag, screens);
+		if (handCheck._tag === "Refused") {
+			yield* emit(handCheck.outcome);
+			return;
+		}
 		yield* emit(
 			yield* runSetup({
 				handCheck,
-				runStep: (surfaceId, content) =>
+				runStep: (surfaceId, stepScreens) =>
 					bootstrapStep({
 						surfaceId,
 						path: null,
 						repo: Option.getOrNull(repo),
+						screens: stepScreens,
 						json: false,
-						stdin: Effect.succeed(content),
+						stdin: Effect.succeed(NO_STDIN),
 					}),
 			}),
 		);
@@ -52,9 +71,14 @@ export const setupCommand = leafCommand(
 			"  A refusing step stops the run on its own code, after the finished steps' rows.",
 			"  8: a step's write failed (UNKNOWN)",
 			"  9: a step's read-back differs",
+			"  10: --screens without --hand-check, or a --screens path is refused; nothing written",
 			"  11: a step's precondition read failed; that step wrote nothing",
+			"  13: --hand-check in a repo that names no screen file; pass --screens",
 			'  Derivation: the front-door skill\'s contract.md, "setup"',
 		].join("\n"),
 	),
-	Command.withExamples([{command: "fabrika setup"}]),
+	Command.withExamples([
+		{command: "fabrika setup"},
+		{command: "fabrika setup --hand-check --screens index.html"},
+	]),
 );

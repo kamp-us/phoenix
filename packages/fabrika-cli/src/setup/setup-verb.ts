@@ -8,15 +8,9 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/10494
  */
 import {Effect} from "effect";
-import type {StdinRead} from "../io/stdin.ts";
-import {defaultFileOf, FIRST_MILESTONE_TITLE, milestoneOfTarget} from "../status/bootstrap-verb.ts";
-import {ANSWER, answer, type VerbOutcome} from "../verb.ts";
-
-/** The step that makes sure the repo has an open milestone. */
-export const MILESTONE_STEP = "first-milestone";
-
-/** The step that writes the roadmap, handed {@link starterRoadmap} over {@link MILESTONE_STEP}'s milestone. */
-export const ROADMAP_STEP = "roadmap-focus";
+import {defaultFileOf} from "../status/bootstrap-verb.ts";
+import {OFF_VOCABULARY} from "../status/codes.ts";
+import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 
 /**
  * The step that writes the owners file, each row owned by the signed-in login.
@@ -32,14 +26,17 @@ export const OWNERS_STEP = "owners-file";
  */
 export const CI_STEP = "ci-file";
 
-/** The steps every run walks, in order. */
+/**
+ * The steps every run walks, in order. None opens a milestone or writes a roadmap: giving work a
+ * home is the owner's by-hand step, named in the {@link closing}.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10518
+ */
 export const SETUP_STEPS = [
 	"settings-patch",
 	"label-taxonomy",
 	"issue-shape-markers",
 	"gitignore-row",
-	MILESTONE_STEP,
-	ROADMAP_STEP,
 	OWNERS_STEP,
 	CI_STEP,
 ] as const;
@@ -49,35 +46,59 @@ export const HAND_CHECK_STEP = "hand-check-rule";
 
 export type SetupStep = (typeof SETUP_STEPS)[number] | typeof HAND_CHECK_STEP;
 
-export const stepsFor = (handCheck: boolean): ReadonlyArray<SetupStep> =>
-	handCheck ? [...SETUP_STEPS, HAND_CHECK_STEP] : SETUP_STEPS;
-
-export interface SetupInput<R> {
-	readonly handCheck: boolean;
-	/** `content` is what the step is handed in place of fd 0, which no step here reads. */
-	readonly runStep: (step: SetupStep, content: StdinRead) => Effect.Effect<VerbOutcome, never, R>;
-}
+/**
+ * Whether a run adds {@link HAND_CHECK_STEP}, and the screen paths that step is handed. There is no
+ * value for screen paths without the step, so a `--screens` nothing would read cannot be carried.
+ */
+export type HandCheck =
+	| {readonly _tag: "Off"}
+	| {readonly _tag: "On"; readonly screens: ReadonlyArray<string>};
 
 /**
- * A new repo's roadmap: one arc row pinning `milestone` by its number, which is the key
- * `triage homes` joins on.
+ * The two flags as one {@link HandCheck}, or the refusal of `--screens` without `--hand-check`:
+ * dropping those paths silently would let the owner believe a screen rule was written.
  *
- * @ruling https://github.com/kamp-us/phoenix/issues/10496
+ * @ruling https://github.com/kamp-us/phoenix/issues/10537#issuecomment-5985334799
  */
-export const starterRoadmap = (milestone: number): string =>
-	[
-		"## Arcs",
-		"",
-		"| Arc | Milestone | State |",
-		"|---|---|---|",
-		`| ${FIRST_MILESTONE_TITLE} | #${milestone} | active |`,
-		"",
-	].join("\n");
+export const handCheckOf = (
+	flag: boolean,
+	screens: ReadonlyArray<string>,
+): HandCheck | {readonly _tag: "Refused"; readonly outcome: VerbOutcome} => {
+	if (flag) return {_tag: "On", screens};
+	if (screens.length === 0) return {_tag: "Off"};
+	return {
+		_tag: "Refused",
+		outcome: refuse(
+			OFF_VOCABULARY,
+			"setup: --screens is read only by the hand-check-rule step, which runs under --hand-check. Pass both, or neither. Nothing was written.",
+		),
+	};
+};
 
-/** A step that takes no content would refuse on its empty-content code rather than wait on a terminal. */
-const NO_CONTENT: StdinRead = {_tag: "NoStdin", reason: "fabrika setup reads nothing from stdin"};
+export const stepsFor = (handCheck: HandCheck): ReadonlyArray<SetupStep> =>
+	handCheck._tag === "On" ? [...SETUP_STEPS, HAND_CHECK_STEP] : SETUP_STEPS;
+
+export interface SetupInput<R> {
+	readonly handCheck: HandCheck;
+	/** `screens` is empty for every step but {@link HAND_CHECK_STEP}. No step reads stdin. */
+	readonly runStep: (
+		step: SetupStep,
+		screens: ReadonlyArray<string>,
+	) => Effect.Effect<VerbOutcome, never, R>;
+}
 
 const COMMIT_MESSAGE = "chore: set up fabrika";
+
+/**
+ * The step setup leaves to the owner, after the paste lines. It names the guide's by-hand step and
+ * promises nothing of `triage homes`, which refuses in a repo with no open milestone.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10518
+ */
+export const HOME_NEXT = [
+	"Then give work a home: open one milestone and write a roadmap that names it, by hand, as step 7",
+	'of the getting-started guide, "Give the board a home to put work in", shows.',
+];
 
 const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
@@ -94,19 +115,8 @@ const cellsOf = (row: string): StepRow => {
 };
 
 /**
- * What `step` is handed. Only the roadmap takes content, and its one row names the milestone the
- * milestone step's own row answered with, so the number it pins is one that step proved open.
- */
-const contentFor = (step: SetupStep, rows: ReadonlyArray<string>): StdinRead => {
-	if (step !== ROADMAP_STEP) return NO_CONTENT;
-	const target = rows.map(cellsOf).find((row) => row.step === MILESTONE_STEP)?.target;
-	const milestone = target === undefined ? null : milestoneOfTarget(target);
-	return milestone === null ? NO_CONTENT : {_tag: "Text", text: starterRoadmap(milestone)};
-};
-
-/**
  * The closing of a finished run: what happened, then what to do next. The add line names the file
- * each file-writing step answered with, so it follows a roadmap the repo declared at its own path.
+ * each file-writing step answered with, so it follows a target the repo declared at its own path.
  */
 export const closing = (steps: ReadonlyArray<SetupStep>, rows: ReadonlyArray<string>): string => {
 	const answered = rows.map(cellsOf);
@@ -129,16 +139,18 @@ export const closing = (steps: ReadonlyArray<SetupStep>, rows: ReadonlyArray<str
 					`Setup finished: ${plural(made, "step")} made changes and ${steps.length - made} ${steps.length - made === 1 ? "was" : "were"} already done. Nothing is committed or pushed yet.`,
 					"What to do next: paste these lines to commit and push the setup files:",
 				];
-	return ["", ...lines, ...paste].join("\n");
+	return ["", ...lines, ...paste, ...HOME_NEXT].join("\n");
 };
 
 export const runSetup = <R>(input: SetupInput<R>): Effect.Effect<VerbOutcome, never, R> =>
 	Effect.gen(function* () {
-		const steps = stepsFor(input.handCheck);
+		const {handCheck} = input;
+		const steps = stepsFor(handCheck);
 		const rows: Array<string> = [];
 		const notices: Array<string> = [];
 		for (const step of steps) {
-			const outcome = yield* input.runStep(step, contentFor(step, rows));
+			const screens = step === HAND_CHECK_STEP && handCheck._tag === "On" ? handCheck.screens : [];
+			const outcome = yield* input.runStep(step, screens);
 			notices.push(...outcome.stderr);
 			if (outcome.code !== ANSWER) {
 				// The finished steps' rows stay on stdout beside the refusing step's code: each is a write

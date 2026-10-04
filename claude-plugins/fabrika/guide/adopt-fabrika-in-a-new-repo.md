@@ -43,14 +43,14 @@ setup is finished**, and nothing in that verb's output says so.
 
 ## 3. Create the surfaces the CLI can create
 
-Fourteen surface ids are buildable today. Read them off the verb rather than off any prose:
+Thirteen surface ids are buildable today. Read them off the verb rather than off any prose:
 
 ```bash
 fabrika status bootstrap --help
 ```
 
 ```
-surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, first-milestone, owners-file, ci-file
+surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin, fabrika-config, hand-check-rule, owners-file, ci-file
 ```
 
 One id per invocation. A surface whose content is already in place is `exists` at exit 0, and
@@ -84,14 +84,13 @@ it was. It is `exists` once the file answers how screens are reviewed, it refuse
 that names no screen file, and a file that
 does not parse is refused unwritten. With no file, it creates one holding those keys alone.
 [If your app has no preview deploys](#if-your-app-has-no-preview-deploys) says when to run it.
-`first-milestone` opens a milestone titled `First arc` when the repo has no open milestone, and is
-`exists` over any open one. `owners-file` writes `.github/CODEOWNERS` when the repo has no owners
+`owners-file` writes `.github/CODEOWNERS` when the repo has no owners
 file: one row per path `fabrika guard codeowners-cp check` demands, each owned by the login the CLI
 is signed in as. An owners file already there is `exists` and is left as it is. `ci-file` writes
 `.github/workflows/ci.yml` when the repo has no workflow file: one job that runs on every pull
 request and checks that `README.md` is not empty. Any workflow file already in `.github/workflows/`
-is `exists`, and nothing is written. `label-taxonomy`, `issue-shape-markers`, `readout-artifact` and
-`first-milestone` write to GitHub and need a resolvable repo —
+is `exists`, and nothing is written. `label-taxonomy`, `issue-shape-markers` and
+`readout-artifact` write to GitHub and need a resolvable repo —
 `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote.
 
 ## 4. Create the labels
@@ -128,23 +127,12 @@ spelling reads as `exists`. Commit the change before running a lane.
 
 ## 6. Open at least one milestone
 
-**Writes to GitHub:** the command opens a milestone in your repo when it has no open one.
-
-```bash
-fabrika status bootstrap first-milestone
-```
-
-```
-bootstrap	created	first-milestone	milestone #1	ok
-```
+**Writes to GitHub:** you create a milestone in your repo, by hand. No fabrika verb does this, so a
+permission tool that asks before outside writes will ask here.
 
 `triage homes` offers only **open** milestones joined to a roadmap row, and zero open milestones is a
 refusal (exit 7), not an empty answer. It creates none — curating the milestone set is a human act.
-`first-milestone` opens one titled `First arc` only when the repo has no open milestone. Over any
-open one it prints `exists` and opens nothing, so a set you already keep is never added to.
-
-Note the number in the row's `milestone #<n>` target: the roadmap you write next pins it. To start
-under a title of your own, open the milestone on GitHub by hand instead and note that number.
+Open one on GitHub and note its number: the roadmap you write next pins it.
 
 ## 7. Write a `ROADMAP.md`
 
