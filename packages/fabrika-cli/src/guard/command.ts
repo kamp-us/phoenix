@@ -285,7 +285,6 @@ const pitchCheck = leafCommand(
 			"Prints an all-clear when every lane-entering issue carries a founder-approved pitch.",
 			"  A parentless feature also passes on a linked founder ruling.",
 			"  Binds at intake only; it is never wired to red a pull request.",
-			"  TABLE_READ_TOKEN, when set, reads the table project; every other read uses the usual token.",
 			"  A red puts the per-issue remedy on stderr, with ::error annotations under Actions.",
 			"  7: zero scope: the backlog sweep found no lane-entering issue",
 			"  11: the board, labels, an issue, its comments, a linked ruling or .fabrika.jsonc unread (UNKNOWN)",
