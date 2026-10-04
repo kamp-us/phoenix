@@ -5,6 +5,7 @@
  * broke it. Scope and the fail-closed floor are covered in `catalog-verb.unit.test.ts`.
  */
 import {describe, expect, it} from "vitest";
+import {CATALOG_GUARD} from "../config/keys/catalog-guard.ts";
 import {
 	type AllowlistEntry,
 	cleanSummary,
@@ -101,6 +102,32 @@ describe("the reports", () => {
 		expect(report).toContain("packages/a/package.json: dependencies `bar` pins `^1.2.3`");
 		expect(report).toContain("breaks frozen-lockfile CI");
 		expect(report).toContain("pnpm-workspace.yaml");
+	});
+
+	// The adopter that never took up a catalog has to learn three things from the red itself.
+	it("states the rule, that the repo may not use a catalog, and the key that turns it off", () => {
+		const report = violationReport(
+			VERB,
+			[{path: "packages/a/package.json", field: "dependencies", name: "bar", value: "^1.2.3"}],
+			3,
+		);
+		expect(report).toContain(
+			"The rule: every dependency in a workspace package.json takes its version from the pnpm catalog (`catalog:`) or names a workspace package (`workspace:`)",
+		);
+		expect(report).toContain("This repo may simply not use a pnpm catalog.");
+		expect(report).toContain(CATALOG_GUARD);
+		expect(report.split("\n").at(-1)).toBe(
+			'To turn this guard off, set "catalogGuard": "off" in .fabrika.jsonc.',
+		);
+	});
+
+	it("keeps the count line first, so a fallback annotation still leads with the finding", () => {
+		const report = violationReport(
+			VERB,
+			[{path: "package.json", field: "dependencies", name: "bar", value: "^1.2.3"}],
+			1,
+		);
+		expect(report.split("\n")[0]).toContain("1 dependency pin a hardcoded version");
 	});
 });
 

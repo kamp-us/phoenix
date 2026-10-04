@@ -555,10 +555,15 @@ rather than parking on a person asked to approve a head the rebase will replace.
 only where the answer would otherwise be `stop`: `discharge` and `n/a` never read it, and `ship
 enqueue`'s own `21` still catches a `dirty` head after its approval, so no approval is spent. A
 mergeability read that fails, or stays indefinite past the window, is `11` — whether the lane waits
-on a person or a builder is then unknown, so neither answer is given. A stderr notice
-`base-drift: head is <k> commits behind <base>` fires when the banked head is behind the live
-base — the skill routes rebase → re-gate → re-bank *before* an approval is solicited, so the
-approval is never spent on a head that must move.
+on a person or a builder is then unknown, so neither answer is given.
+
+**A head behind its base that merges clean is answered exactly as a level one.** The merge queue
+tests the base plus the diff, so such a head lands as it is and its outcome and mechanism are
+unchanged. The verb reports the count as a fact: a stderr line `head is <k> commits behind <base>`
+when `<k>` is above zero, and `baseDrift` under `--json`. A `stop` there is the ordinary approval
+wait: the shipper records plain `AWAITING-CP-APPROVAL` with no `--cause`, so the park carries
+`awaiting-cp-approval`, and the note it posts asks the owner for the approval alone. A `discharge`
+or `n/a` there continues to the gate and the enqueue with no park recorded.
 
 With `--json`: `{"outcome":…,"mechanism":…,"sha":…,"roster":<n>,"baseDrift":<k|0>}`.
 
@@ -609,6 +614,7 @@ approval scan.
 | `ship cp-approval: PR #<n> is closed — nothing to discharge.` | 7 | refusal |
 | `ship cp-approval: cannot read <what>: <reason> — the discharge is UNRESOLVED, not "awaiting approval".` | 11 | refusal |
 | `ship cp-approval: PR #<n> has zero changed files — whether it crosses the §CP boundary is unanswerable.` | 7 | refusal |
+| `ship cp-approval: head is <k> commits behind <base> — a fact, not a finding: a head that merges clean ships as it is.` | 0 | notice |
 | `ship cp-approval: GitHub's file list for #<n> holds <k> paths against the <m> its own pull-request record declares — the record's count is computed against a base cached at the last push; reported, never refused on.` | 0 | notice |
 | `ship cp-approval: GitHub's file list for #<n> came back at its 3000-file ceiling, so the list is provably partial — a control-plane path could sit in the part the platform never served.` | 13 | refusal |
 | ``ship cp-approval: #<n>'s mergeable_state is still indefinite after <k> polls over <s>s — whether the head conflicts with <base> is UNKNOWN, so neither `stop` nor `base-conflicted` is proven.`` | 11 | refusal |
@@ -650,8 +656,10 @@ cp-approval	base-conflicted	mergeable-state:dirty
   designed out: a typed SHA, and `11` on any failed read.
 - **Head-binding is checked here** rather than delegated to `dismiss_stale_reviews_on_push`,
   because a live counterexample showed a patch-changing push surviving approval.
-- **The base-drift notice.** An approval spent on a must-move head is destroyed by the rebase —
-  three control-plane approvals were lost in one night to exactly this.
+- **A behind head that merges clean is left to the merge queue.** The verb used to tell the shipper
+  to rebase, re-gate and re-bank before an approval was asked for, and each such lane then parked
+  on a driver who cleared it by hand. That park is gone, and no verb merges the base into a
+  single-issue lane's branch.
 - **The approval-aware gate and the cardinality table** this transcribes are ruled elsewhere; this
   verb transcribes them and decides nothing.
 

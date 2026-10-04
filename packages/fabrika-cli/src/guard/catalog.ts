@@ -11,6 +11,8 @@
  * touches disk and never decides what a scan covered.
  */
 
+import {CONFIG_PATH} from "../config/document.ts";
+import {CATALOG_GUARD} from "../config/keys/catalog-guard.ts";
 import {type Annotation, atFile, atLine} from "./annotate.ts";
 
 /** One dependency entry from a manifest, reduced to the facts the decision needs. */
@@ -101,24 +103,58 @@ export const findViolations = (
 
 const WHY = "a second version of a dep breaks frozen-lockfile CI";
 
+/**
+ * The declaration that turns the guard off and the file it goes in, as a repo writes it. Always the
+ * tracked file: the key is barred from the machine-local layer.
+ */
+export const OFF_DECLARATION = `"${CATALOG_GUARD}": "off" in ${CONFIG_PATH}`;
+
+/**
+ * What every red carries after its own finding: the rule, that the rule may not apply to this repo
+ * at all, and the key that turns the guard off.
+ *
+ * An adopter that never took up a pnpm catalog meets this guard as a wall of findings it did not
+ * cause. These lines are what tell it the findings are not a defect to fix one by one.
+ */
+export const RULE_EXPLANATION: ReadonlyArray<string> = [
+	"The rule: every dependency in a workspace package.json takes its version from the pnpm catalog (`catalog:`) or names a workspace package (`workspace:`), so each dependency has one version, declared once in pnpm-workspace.yaml.",
+	"This repo may simply not use a pnpm catalog. Then the rule does not apply here and nothing above needs fixing.",
+	`To turn this guard off, set ${OFF_DECLARATION}.`,
+];
+
+/** A red's own report, followed by {@link RULE_EXPLANATION}. */
+export const explained = (report: string): string => [report, ...RULE_EXPLANATION].join("\n");
+
+/** The one-line hint a per-dependency annotation carries, since the report is not beside it. */
+const OFF_HINT = `No pnpm catalog in this repo? Set ${OFF_DECLARATION}.`;
+
 /** The one-line summary of a scan that found nothing. */
 export const cleanSummary = (verb: string, scanned: number): string =>
 	`${verb}: all deps in ${scanned} workspace manifest${scanned === 1 ? "" : "s"} are on catalog:/workspace:`;
 
-/** The report for the offending deps — one `<what's wrong> — <why>. Fix: <step>.` line each. */
+/** The one-line answer of a guard this repo turned off. */
+export const offSummary = (verb: string): string =>
+	`${verb}: turned off by ${OFF_DECLARATION} — no manifest was judged, so this is not a pass.`;
+
+/**
+ * The offending deps — one `<what's wrong> — <why>. Fix: <step>.` line each — then the rule and
+ * the key that turns the guard off.
+ */
 export const violationReport = (
 	verb: string,
 	violations: ReadonlyArray<CatalogViolation>,
 	scanned: number,
 ): string =>
-	[
-		`${verb}: ${violations.length} dependenc${violations.length === 1 ? "y" : "ies"} pin a hardcoded version instead of catalog: (of ${scanned} manifests scanned):`,
-		...violations.map(
-			(v) =>
-				`  ${v.path}: ${v.field} \`${v.name}\` pins \`${v.value}\` instead of \`catalog:\` — ${WHY}. ` +
-				`Fix: add \`${v.name}\` to the catalog: block in pnpm-workspace.yaml and set the dep value to \`catalog:\`.`,
-		),
-	].join("\n");
+	explained(
+		[
+			`${verb}: ${violations.length} dependenc${violations.length === 1 ? "y" : "ies"} pin a hardcoded version instead of catalog: (of ${scanned} manifests scanned):`,
+			...violations.map(
+				(v) =>
+					`  ${v.path}: ${v.field} \`${v.name}\` pins \`${v.value}\` instead of \`catalog:\` — ${WHY}. ` +
+					`Fix: add \`${v.name}\` to the catalog: block in pnpm-workspace.yaml and set the dep value to \`catalog:\`.`,
+			),
+		].join("\n"),
+	);
 
 /**
  * One annotation per violation, on the manifest line that pins the version when `lineOf` can find
@@ -129,7 +165,7 @@ export const violationAnnotations = (
 	lineOf: (violation: CatalogViolation) => number | null = () => null,
 ): ReadonlyArray<Annotation> =>
 	violations.map((v) => {
-		const message = `${v.field} \`${v.name}\` pins \`${v.value}\` instead of \`catalog:\` — ${WHY}.`;
+		const message = `${v.field} \`${v.name}\` pins \`${v.value}\` instead of \`catalog:\` — ${WHY}. ${OFF_HINT}`;
 		const line = lineOf(v);
 		return line === null
 			? atFile("error", v.path, message)

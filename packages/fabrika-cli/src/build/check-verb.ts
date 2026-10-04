@@ -15,7 +15,8 @@
  * **Every lane run also sweeps the shipped local-tree guards, whatever the surface.** A guard that only
  * needs the checked-out tree runs here so it reds on the builder's machine before it reds in CI, and
  * each member is named in the answer — `guard <name> <leaf>` in `ran`, or `skipped: <name>
- * (<reason>)` for one that refused, which is a disclosure and never a pass. Membership is declared
+ * (<reason>)` for one that refused or that this repo's config turned off, which is a disclosure
+ * and never a pass. Membership is declared
  * beside each guard's registration in `guard/command.ts` and nowhere else; see
  * {@link sweepLocalTreeGuards}.
  *
@@ -557,7 +558,7 @@ const SKIP_REASONS: ReadonlyMap<number, string> = new Map([
 export interface GuardSweep {
 	/** One `guard <name> <leaf>` label per member that ran and passed, folded into the green's `ran`. */
 	readonly ran: ReadonlyArray<string>;
-	/** One `<name> (<reason>)` line per member that refused — never a pass. */
+	/** One `<name> (<reason>)` line per member that refused or was turned off — never a pass. */
 	readonly skipped: ReadonlyArray<string>;
 }
 
@@ -604,7 +605,16 @@ const sweepLocalTreeGuards = (
 			const label = `guard ${guard.name} ${guard.leaf}`;
 			const outcome = yield* guard.run({root, env, changed});
 			if (outcome.code === ANSWER) {
-				ran.push(label);
+				if (outcome.turnedOff === undefined) {
+					ran.push(label);
+					continue;
+				}
+				// Exit 0 from a guard that judged nothing is not a pass, so it never reaches `ran`.
+				const line = `${guard.name} (turned off: ${outcome.turnedOff})`;
+				skipped.push(line);
+				notes.push(
+					`${VERB}: skipped: ${line} — not a pass; this repo's config turned the guard off, so nothing was judged.`,
+				);
 				continue;
 			}
 			const reason = SKIP_REASONS.get(outcome.code);

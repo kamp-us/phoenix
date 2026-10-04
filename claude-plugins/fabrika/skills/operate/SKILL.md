@@ -1535,26 +1535,27 @@ refused at `20` and the only move left was a `BLOCKED` over a lane that had fini
 A `SHIPPED-PR` and an epic child's `BUILT-NO-PR` carry no such field and fold to `review` exactly as
 they always did.
 
-**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Six terminal tokens
+**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Five terminal tokens
 belong to no shell's vocabulary — `lane report` groups them as `machinery` in
 [`report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)'s `SHELL_VOCABULARIES` — and each
 one says the pipeline carrying the artifact failed while nothing about the artifact was judged. All
-six map to the machine's `LAP` event, and each names exactly one park cause:
+five map to the machine's `LAP` event, and each names exactly one park cause:
 
 | Token | The observed failure | The cause it carries |
 | --- | --- | --- |
 | `REPLAY-COLLIDED` | a child's replay onto the assembly tip hit a hunk that is not a plain keep-both, so the collision owes a judgment about content — `lane integrate` exit `42`'s replay arm | `replay-conflict` |
-| `BASE-DRIFTED` | the PR's head is behind its base and must move before an approval is solicited | `head-behind-base` |
 | `BASE-CONFLICTED` | the PR's base moved under it and the merge now conflicts — `ship enqueue`'s pre-arm read at exit `21`. The head owes a rebase and the re-review that comes with it, so this is the one lap out of `ship` that folds the task to `build` | `base-conflicted` |
 | `QUEUE-EJECTED` | the merge queue ejected the PR before it merged — a sibling's red, a base that moved under the batch, a queue timeout — and no verdict against it changed | `queue-ejected` |
 | `SEAT-DIRTY` | a working tree still holds the lane branch this build or replay must stand on — `lane integrate` exit `54`, `build branch --resume-lane` exit `11` | `worktree-holds-branch` |
 | `SHELL-DEAD` | the shell driving this lane's stage was killed by its provider before it recorded a terminal | `spawn-dead` |
 
-Three of the six are yours because no shell observes them — the two `integrate` rows and the dead
-spawn. The other three have a shell in front of them, and where its own terminal already recorded
-the failure you record nothing second: `ship` reports `QUEUE-EJECTED` and `BASE-CONFLICTED` itself,
-and reports a base drift as `AWAITING-CP-APPROVAL --cause head-behind-base`, which is
-`BASE-DRIFTED`'s pre-lap form.
+Three of the five are yours because no shell observes them — the two `integrate` rows and the dead
+spawn. The other two have a shell in front of them, and where its own terminal already recorded
+the failure you record nothing second: `ship` reports `QUEUE-EJECTED` and `BASE-CONFLICTED` itself.
+
+**A head behind its base that merges clean is no machinery failure.** The merge queue lands it as it
+is, so it earns no lap and no park. `BASE-DRIFTED` and the `head-behind-base` cause stay in
+`report.ts` as names an older ledger carries.
 
 **One is recorded *instead of* the stage's own `FAIL`, never beside it.** A `FAIL` is a verdict
 against the work and spends the task's repair budget; a lap says the machinery spent a round and

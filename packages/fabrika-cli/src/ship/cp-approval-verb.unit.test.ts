@@ -22,7 +22,7 @@ const members = (...logins: ReadonlyArray<string>): HttpReply => ({
 	body: JSON.stringify(logins.map((login) => ({login}))),
 });
 
-/** The compare read the base-drift notice is derived from: how far the head sits behind. */
+/** The compare read the behind count is derived from: how far the head sits behind. */
 const behind = (commits: number): HttpReply => ({
 	status: 200,
 	body: JSON.stringify({behind_by: commits}),
@@ -307,20 +307,64 @@ describe("runCpApproval", () => {
 		expect(out.stderr.at(-1)).toContain('the discharge is UNRESOLVED, not "awaiting approval"');
 	});
 
-	it("notices base drift so the approval is not spent on a head that must move", async () => {
-		const out = await run(
-			[
-				[PULL, served(pull())],
-				[FILES, served(files("apps/site/src/App.tsx", "README.md"))],
-			],
-			[
-				[OWNERS, OWNED],
-				[COMPARE, behind(7)],
-			],
+	// The merge queue tests the base plus the diff, so a head that is behind and merges clean lands as
+	// it is: the count is a fact the verb reports, and no outcome or instruction hangs on it.
+	describe("a head behind its base that merges clean (#6918)", () => {
+		const MOVE_THE_HEAD = /rebase|re-gate|re-bank/i;
+		const behindAndClean = served(
+			pull({author: "usirin", mergeable: true, mergeableState: "behind"}),
 		);
-		expect(
-			out.stderr.some((line) => line.includes("base-drift: head is 7 commits behind main")),
-		).toBe(true);
+		const approved = reviewPage([{login: "cansirin", state: "APPROVED", commit: HEAD}]);
+
+		const cpRun = (commits: number, reviews: HttpReply, options: {json?: boolean} = {}) =>
+			run(
+				[
+					[PULL, behindAndClean],
+					[FILES, CP_FILES],
+				],
+				[
+					[OWNERS, OWNED],
+					[COMPARE, behind(commits)],
+					[ROSTER, members("usirin", "cansirin")],
+					[REVIEWS, reviews],
+				],
+				options,
+			);
+
+		it("answers the stop a level head gets, with no instruction to move the head", async () => {
+			const level = await cpRun(0, reviewPage([]));
+			const drifted = await cpRun(7, reviewPage([]));
+
+			expect(drifted.code).toBe(0);
+			expect(drifted.stdout).toBe("cp-approval\tstop\tawaiting-approval\n");
+			expect(drifted.stdout).toBe(level.stdout);
+			expect(drifted.stderr.join("\n")).not.toMatch(MOVE_THE_HEAD);
+		});
+
+		it("answers the discharge a level head gets, with no instruction to move the head", async () => {
+			const level = await cpRun(0, approved);
+			const drifted = await cpRun(7, approved);
+
+			expect(drifted.code).toBe(0);
+			expect(drifted.stdout).toBe(`cp-approval\tdischarge\tmember-approval:cansirin@${HEAD}\n`);
+			expect(drifted.stdout).toBe(level.stdout);
+			expect(drifted.stderr.join("\n")).not.toMatch(MOVE_THE_HEAD);
+		});
+
+		it("reports the count as a plain fact, on stderr and in --json", async () => {
+			const out = await cpRun(7, reviewPage([]), {json: true});
+
+			expect(out.stderr).toContain(
+				"ship cp-approval: head is 7 commits behind main — a fact, not a finding: a head that merges clean ships as it is.",
+			);
+			expect(JSON.parse(out.stdout)).toMatchObject({outcome: "stop", baseDrift: 7});
+		});
+
+		it("says nothing about the base on a level head", async () => {
+			const out = await cpRun(0, reviewPage([]));
+
+			expect(out.stderr.join("\n")).not.toContain("behind main");
+		});
 	});
 
 	// A conflicting head is a builder's, so asking a person to approve it spends an approval the
@@ -370,7 +414,7 @@ describe("runCpApproval", () => {
 			});
 		});
 
-		it("keeps stop plus the base-drift notice on a head that is behind but merges clean", async () => {
+		it("keeps stop on a head that is behind but merges clean", async () => {
 			const out = await run(
 				[
 					[PULL, conflicted({mergeable: true, mergeableState: "behind"})],
@@ -385,7 +429,6 @@ describe("runCpApproval", () => {
 			);
 			expect(out.code).toBe(0);
 			expect(out.stdout).toBe("cp-approval\tstop\tawaiting-approval\n");
-			expect(out.stderr.join("\n")).toContain("base-drift: head is 7 commits behind main");
 		});
 
 		it("still discharges a dirty head that already has its approval — ship enqueue catches the conflict", async () => {

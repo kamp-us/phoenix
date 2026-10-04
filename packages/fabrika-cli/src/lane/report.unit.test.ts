@@ -378,10 +378,10 @@ describe("every park cause carries a route", () => {
 });
 
 describe("remedyForCause", () => {
-	// The four-year-old "clearing it needs a verb that merges the base into the head, and `build`
-	// ships none" is what `lane refresh` retires. The cause is where that verb is written down.
-	it("names lane refresh for head-behind-base, which is the verb that moves a head onto its base", () => {
-		expect(remedyForCause("head-behind-base")).toBe("fabrika lane refresh");
+	// A head behind its base that merges clean lands through the merge queue as it is, so the cause
+	// old ledgers carry has nothing a verb would remove.
+	it("names no verb for head-behind-base — a behind head that merges clean needs no move", () => {
+		expect(remedyForCause("head-behind-base")).toBeNull();
 	});
 
 	it("names no verb for assembly-conflict — resolving content is a judgment none may make", () => {
