@@ -32,9 +32,12 @@ const namesHead = (body: string, head: string): boolean =>
 		return token !== null && head.toLowerCase().startsWith(token);
 	});
 
+/** Which of the four facts a comment failed first, in the order they are checked. */
+export type FailedFact = "absent" | "author" | "head" | "screenshot";
+
 export type HandCheck =
 	| {readonly _tag: "Admitted"; readonly comment: CommentRecord}
-	| {readonly _tag: "Inadmissible"; readonly reason: string};
+	| {readonly _tag: "Inadmissible"; readonly fact: FailedFact; readonly reason: string};
 
 export const admitHandCheck = (
 	id: number,
@@ -44,23 +47,26 @@ export const admitHandCheck = (
 ): HandCheck => {
 	const comment = comments.find((candidate) => candidate.id === id);
 	if (comment === undefined) {
-		return {_tag: "Inadmissible", reason: `comment ${id} is not on this PR`};
+		return {_tag: "Inadmissible", fact: "absent", reason: `comment ${id} is not on this PR`};
 	}
 	if (!owners.has(comment.author)) {
 		return {
 			_tag: "Inadmissible",
+			fact: "author",
 			reason: `comment ${id} is by ${comment.author}, who is not on the control plane — only an owner's hand-check stands in for a render`,
 		};
 	}
 	if (!namesHead(comment.body, head)) {
 		return {
 			_tag: "Inadmissible",
+			fact: "head",
 			reason: `comment ${id} does not name the head ${head} — a hand-check of another tree says nothing about this one`,
 		};
 	}
 	if (!SCREENSHOT.test(comment.body)) {
 		return {
 			_tag: "Inadmissible",
+			fact: "screenshot",
 			reason: `comment ${id} carries no screenshot — a hand-check is the screenshots that stand in for the render`,
 		};
 	}
@@ -88,3 +94,29 @@ export const findHandCheck = (
 		return comment.id > newest.id ? comment : newest;
 	}, null);
 };
+
+/** The one fact a comment naming the head failed. */
+export type NearMissFact = "author" | "screenshot";
+
+export interface NearMiss {
+	readonly comment: CommentRecord;
+	readonly fact: NearMissFact;
+}
+
+/**
+ * The comments that name `head` and fail exactly one other fact, in the order given — somebody's
+ * attempt at a hand-check, as opposed to a comment that merely mentions the commit. A comment
+ * failing both is left out: every agent note that cites the head would otherwise be listed as a
+ * failed attempt.
+ */
+export const nearMisses = (
+	comments: ReadonlyArray<CommentRecord>,
+	head: string,
+	owners: ReadonlySet<string>,
+): ReadonlyArray<NearMiss> =>
+	comments.flatMap((comment): ReadonlyArray<NearMiss> => {
+		if (!namesHead(comment.body, head)) return [];
+		const owner = owners.has(comment.author);
+		if (owner === SCREENSHOT.test(comment.body)) return [];
+		return [{comment, fact: owner ? "screenshot" : "author"}];
+	});

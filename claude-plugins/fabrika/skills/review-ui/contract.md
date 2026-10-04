@@ -1183,6 +1183,19 @@ announcement that does not read is `11`. So `--no-preview` is never the caller's
   closing line naming the comment and its author. Under a `skip` mode a pinned hand-check is checked
   the same way and recorded as `hand-check`.
 
+**A `21`, and a `22`, carries the note for the PR on stderr.** The lines between
+`----- note begins -----` and `----- note ends -----` are the body the skill sends to
+`review-ui note` unchanged, composed in `review-ui/cant-see-note.ts` from what this run read. Under
+`hand-check` it carries a comment to paste with the live head filled in, says that the comment needs
+a screenshot image, that an owner posts it and an agent does not, and that a new push needs a new
+one. It then lists up to three of the newest comments that name the head and fail exactly one other
+fact, each with the fact it failed: an owner's comment with no screenshot, or a screenshot from an
+account off the roster. A comment that fails both is not an attempt and is not listed, and neither is
+a verdict or an earlier copy of this note. The pasteable comment holds a text placeholder where the
+image goes, never image markup, so the note cannot be admitted as the hand-check it asks for. Under
+`require-render` the note names the files that set the mode and lists the four ways through: a
+preview deploy, the builder's own run of the app, a `hand-check` rule, a `skip` rule.
+
 Both flags ride the record's first line, so `ship gate` still reads the namespace as `routed` and
 flags the row with the basis, and `lane prove` carries it onto the namespace row it records. `lane
 report` writes it on the `PASS` line as `routedBasis`, and `table flags` raises `not-rendered` on the
