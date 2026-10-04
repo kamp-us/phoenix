@@ -43,6 +43,12 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 export const NOT_BUILDABLE = 12;
 
 /**
+ * Refused: `status bootstrap hand-check-rule` in a repo that names no screen file. The hand-check it
+ * would turn on is one no pull request could trigger, so nothing is written until a path is named.
+ */
+export const NO_SCREENS = 13;
+
+/**
  * The aligned body-section seat, held empty: no verb here composes body sections, so the gap is
  * registered rather than silently absent.
  */

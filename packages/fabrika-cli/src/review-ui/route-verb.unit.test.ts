@@ -621,6 +621,51 @@ describe("review-ui route --no-preview", () => {
 		expect(bodies[at]).toContain(`Hand-check: comment ${HAND_CHECK_ID} by ${OWNER}`);
 	});
 
+	// The repo's `reviewUi.mode` is what a file no rule matches takes, so a repo set to hand-check
+	// with no rule at all routes exactly as one whose rule matched.
+	describe("with no rule matching, under the repo's mode", () => {
+		const byMode = (unmatched: "require-render" | "hand-check") => ({
+			noPreview: {rules: [], unmatched, handCheck: null},
+		});
+
+		it("posts the same basis:hand-check record in a repo set to hand-check", async () => {
+			const {outcome, requests, bodies} = await run(
+				script([handCheck(), textVerdict("PASS")], flagged("hand-check", HAND_CHECK_TAIL), roster),
+				byMode("hand-check"),
+			);
+			expect(outcome.code).toBe(0);
+			expect(JSON.parse(outcome.stdout)).toMatchObject({
+				answer: "routed",
+				basis: "hand-check",
+				handCheck: HAND_CHECK_ID,
+			});
+			const at = requests.findIndex((request) => CREATE.test(request));
+			expect(bodies[at]).toContain(`review-ui @ ${HEAD} basis:hand-check —`);
+		});
+
+		it("stops on 21 for the owner's screenshot in a repo set to hand-check", async () => {
+			const {outcome, requests} = await run(
+				script([], flagged("hand-check"), roster),
+				byMode("hand-check"),
+			);
+			expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
+			expect(outcome.stderr.join("\n")).toContain(
+				"no comment on it is an owner account's hand-check",
+			);
+			expect(requests.some((request) => CREATE.test(request))).toBe(false);
+		});
+
+		it("refuses on 21 in a repo set to preview, as require-render always did", async () => {
+			const {outcome, requests} = await run(
+				script([handCheck(), textVerdict("PASS")], flagged("hand-check"), roster),
+				byMode("require-render"),
+			);
+			expect(outcome.code).toBe(NO_PREVIEW_MODE_UNMET);
+			expect(outcome.stderr.join("\n")).toContain("a render is owed");
+			expect(requests.some((request) => CREATE.test(request))).toBe(false);
+		});
+	});
+
 	it("refuses on 22 when the hand-check is not an owner account's", async () => {
 		const {outcome, requests} = await run(
 			script([handCheck("agent"), textVerdict("PASS")], flagged("hand-check"), roster),

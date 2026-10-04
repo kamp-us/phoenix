@@ -73,27 +73,31 @@ the route can post; exit `11` naming the ceiling, or naming the two heads as div
 flag where there is no hand-verification, and never derive the range by hand — a condition you check
 by eye is one the next gate checks differently.
 
-**A PR with no preview routes only as far as the repo's `reviewUi.whenNoPreview` rules allow.**
+**A PR with no preview routes only as far as the repo's `reviewUi` settings allow.**
 When `render` finds no preview (exit `16`), run `fabrika review-ui route $pr_number --sha <head>
 --no-preview --clause "<why>"` before anything else, and before you end CANT-SEE. The verb checks
 for itself that no preview is announced, and refuses on `23` when one is: render it, or wait for it
-to reach the head. It then resolves the mode over the PR's `ui` files:
+to reach the head. It then resolves the mode over the PR's `ui` files. A file takes the first
+`reviewUi.whenNoPreview` rule that matches it. A file no rule matches takes the repo's own
+`reviewUi.mode`: `require-render` in a repo set to `preview`, `hand-check` in one set to
+`hand-check`. A repo at `skip` never reaches this gate, because none of its files raises the `ui`
+class.
 
 - `skip` posts a record flagged `basis:skip`. The repo's rules owe no render for these files.
-- `hand-check` posts a record flagged `basis:hand-check`. **When a `hand-check` rule matches, the
-  owner account's hand-check is admissible evidence**: a comment on the PR by a control-plane account that
+- `hand-check` posts a record flagged `basis:hand-check`. **When the files resolve `hand-check`,
+  by a rule or by the repo's mode, the owner account's hand-check is admissible evidence**: a comment on the PR by a control-plane account that
   names the exact head and carries screenshots. The verb reads the PR's comments, stands on the
   newest one it admits, and names it in its answer's `handCheck`. You do not look for it yourself.
   With none at this head it refuses on `21`. `--hand-check <comment-id>` pins one comment instead,
   and `22` says why it is not admitted.
-- `require-render` refuses on `21`: the rules owe a render. **Where that is because no rule
-  matched**, add the setup command below the printed note. `fabrika status settings` prints
-  `reviewUi` as `default` in a repo that declares no rule at all: name
+- `require-render` refuses on `21`: the settings owe a render. **Where that is because no rule
+  matched**, add the setup command below the printed note. `fabrika status settings` prints the
+  `reviewUi.mode` row as `default` in a repo that never chose a mode: name
   `fabrika status bootstrap hand-check-rule` there, the one the
   [getting-started tutorial](../../guide/getting-started.md#if-your-app-is-not-hosted-yet) gives,
-  and say it lets the owner check the screen and post a screenshot. Where the repo declares rules
-  and none covers these files, that command answers `exists`, so the printed note's files and
-  `reviewUi.whenNoPreview` are the whole answer. Naming the command is all you do with it: the
+  and say it lets the owner check the screen and post a screenshot. Where the repo declares
+  `preview` or its own rules, that command answers `exists`, so the printed note's files and the
+  repo's `reviewUi` key are the whole answer. Naming the command is all you do with it: the
   write is the owner's.
 
 **A `21` or `22` prints the note the owner reads, and you post it as printed.** It sits on stderr

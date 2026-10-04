@@ -12,11 +12,18 @@ import type {ConfigSource} from "../config/document.ts";
 import {CAP_CLEAR_AUTHORS} from "../config/keys/cap-clear-authors.ts";
 import {GOVERNED_ROOTS, SHIPPED_GOVERNED_ROOTS} from "../config/keys/governed-roots.ts";
 import {PARK_CAUSE} from "../config/keys/park-cause.ts";
+import {REVIEW_UI} from "../config/keys/review-ui.ts";
 import type {ConfigLayers} from "../config/load.ts";
 import {readConfigLayers} from "../config/source.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {readNow} from "./fields.ts";
-import {runSettings, type SettingRow, settingRows, UNKNOWN_VALUE} from "./settings-verb.ts";
+import {
+	runSettings,
+	SCREEN_REVIEW_ROW,
+	type SettingRow,
+	settingRows,
+	UNKNOWN_VALUE,
+} from "./settings-verb.ts";
 
 const AS_OF = readNow("2026-08-18T00:00:00Z");
 
@@ -117,6 +124,59 @@ describe("settingRows", () => {
 		const roots = rowFor(rows, GOVERNED_ROOTS);
 		expect(roots.provenance).toBe("unknown");
 		expect(roots).not.toHaveProperty("value");
+	});
+});
+
+/** The one derived row: what screen review resolves to, which no single key can say. */
+describe("the reviewUi.mode row", () => {
+	const ROW = {name: "web", prefix: "src/", mount: "/", command: "pnpm dev --port {{port}}"};
+	const modeOf = (config: Record<string, unknown> | null) =>
+		rowFor(
+			settingRows(
+				tracked(config === null ? {_tag: "Absent"} : {_tag: "Text", text: JSON.stringify(config)}),
+			),
+			SCREEN_REVIEW_ROW,
+		);
+
+	it("prints skip as a default for a repo that declares nothing", () => {
+		for (const config of [null, {}, {uiSurfaces: []}]) {
+			expect(modeOf(config)).toMatchObject({provenance: "default", value: "skip"});
+		}
+		expect(modeOf(null).detail).toContain("screen review is not set up");
+	});
+
+	it("prints preview as a default for a repo that declares rows or rules and no mode", () => {
+		expect(modeOf({uiSurfaces: [ROW]})).toMatchObject({provenance: "default", value: "preview"});
+		expect(
+			modeOf({reviewUi: {whenNoPreview: [{paths: ["**"], mode: "hand-check"}]}}),
+		).toMatchObject({provenance: "default", value: "preview"});
+	});
+
+	it.each(["preview", "hand-check", "skip"])("prints a declared %s as declared", (mode) => {
+		expect(modeOf({uiSurfaces: [ROW], reviewUi: {mode}})).toMatchObject({
+			provenance: "declared",
+			layer: "tracked",
+			value: mode,
+		});
+	});
+
+	it("sits directly under the reviewUi row, on the line grammar", () => {
+		const outcome = run({_tag: "Text", text: JSON.stringify({reviewUi: {mode: "hand-check"}})});
+		expect(outcome.code).toBe(0);
+		const lines = outcome.stdout.trimEnd().split("\n");
+		const at = lines.findIndex((one) => one.startsWith(`setting\t${REVIEW_UI}\t`));
+		expect(lines[at + 1]).toMatch(/^setting\treviewUi\.mode\tdeclared\t"hand-check"\t/);
+	});
+
+	it("refuses a value outside the three in one sentence naming the allowed ones, and prints no row for it", () => {
+		const source: ConfigSource = {_tag: "Text", text: '{"reviewUi": {"mode": "off"}}'};
+		const outcome = run(source);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.join("\n")).toContain(
+			'"reviewUi.mode" is "off", not one of preview, hand-check, skip',
+		);
+		expect(settingRows(tracked(source)).some((one) => one.key === SCREEN_REVIEW_ROW)).toBe(false);
 	});
 });
 

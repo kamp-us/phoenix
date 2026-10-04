@@ -1160,8 +1160,12 @@ judges what its own clause claims.
 path, what this gate needs when a PR has no preview deploy (`.fabrika.jsonc`,
 `reviewUi.whenNoPreview`: a list of `{paths, mode}` rules). `--no-preview` resolves the mode over
 the PR's `ui`-class files: the first rule whose glob matches a file sets its mode, a file no rule
-matches is `require-render`, and the PR takes the strictest — `require-render`, then `hand-check`,
-then `skip`. The verb then acts on it:
+matches takes the repo's `reviewUi.mode` — `require-render` where that resolves `preview`,
+`hand-check` where it resolves `hand-check` — and the PR takes the strictest: `require-render`, then
+`hand-check`, then `skip`. The rules and the mode are read off the checkout the verb stands in. A
+repo whose mode resolves `skip` raises no `ui` class, so its PRs answer `none` before any mode is
+read; a checkout at `skip` that disagrees with the PR's own config is read as `require-render`. The
+verb then acts on it:
 
 **The verb checks the "no preview" itself.** Before it routes, it reads the PR's preview
 announcement through the same resolver `review-ui render` uses for its exit `16`, and it routes only

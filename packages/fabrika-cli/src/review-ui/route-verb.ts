@@ -52,8 +52,9 @@
  * nothing about the text lane, so an absent verdict there is stated on stderr rather than refused.
  * The reader is `review verdicts`'s and the ordering `ship gate`'s — see `./text-verdict.ts`.
  *
- * **A PR with no preview routes only as far as the repo's `reviewUi.whenNoPreview` rules allow.**
- * `--no-preview` resolves the mode over the PR's ui files (`./no-preview.ts`): `require-render`
+ * **A PR with no preview routes only as far as the repo's `reviewUi` settings allow.**
+ * `--no-preview` resolves the mode over the PR's ui files (`./no-preview.ts`) — a `whenNoPreview`
+ * rule where one matches the file, the repo's `reviewUi.mode` where none does: `require-render`
  * refuses, `skip` posts a record flagged `basis:skip`, and `hand-check` posts one flagged
  * `basis:hand-check` only over an owner account's comment that names this head and carries screenshots
  * (`./hand-check.ts`). A hand-check stands in for the render exactly as a desk run does, so it rests
@@ -148,6 +149,11 @@ export interface RouteOptions {
 export interface NoPreviewRequest {
 	/** The repo's `reviewUi.whenNoPreview` rules, resolved by the caller off the tree it stands in. */
 	readonly rules: ReadonlyArray<NoPreviewRule>;
+	/**
+	 * The mode a ui file takes when no rule matches it — the repo's `reviewUi.mode`, resolved by the
+	 * caller beside the rules. Absent is a repo reviewed by preview: a render.
+	 */
+	readonly unmatched?: NoPreviewMode;
 	/**
 	 * The owner account's hand-check comment, by id or URL, or `null` to let the verb find the newest
 	 * admissible one on the PR itself.
@@ -359,7 +365,7 @@ export const runRoute = (
 
 		let basis: RouteBasis | null = null;
 		if (noPreview !== null) {
-			const mode = noPreviewMode(noPreview.rules, ui);
+			const mode = noPreviewMode(noPreview.rules, ui, noPreview.unmatched);
 			diagnostics.push(
 				`${VERB}: reviewUi.whenNoPreview resolves ${mode} over #${pr}'s ${ui.length} ui file(s).`,
 			);
@@ -367,7 +373,7 @@ export const runRoute = (
 				mode,
 				handCheckId !== null,
 				pr,
-				filesAtMode(noPreview.rules, ui, mode),
+				filesAtMode(noPreview.rules, ui, mode, noPreview.unmatched),
 			);
 			if (under._tag === "Unmet") {
 				return refuse(NO_PREVIEW_MODE_UNMET, `${VERB}: ${under.why}`, [

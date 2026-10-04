@@ -15,6 +15,11 @@
  * working-tree file is; a config that does not decode, or a read that failed, refuses and names the
  * ref — the union of an answer and UNKNOWN is UNKNOWN.
  *
+ * **Screen review is resolved per ref and the stricter answer wins.** A ref whose config resolves
+ * `skip` (`../config/screen-review.ts`) names no path that raises the `ui` class, so a PR raises it
+ * only off a ref that reviews screens. That is the same union: a PR that sets `skip` on its own head
+ * still faces the gate its merge base declares, and one that turns screen review on is judged by it.
+ *
  * Only the tracked file exists at a ref, so {@link loadConfig}'s tracked-only door is the one taken:
  * a machine-local layer can never reach a class derivation.
  *
@@ -25,15 +30,24 @@
  * two commits to {@link classConfigOf}, so the transport cannot change an answer.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/10031
+ * @ruling https://github.com/kamp-us/phoenix/issues/10520#issuecomment-5984214868
  */
 
 import {Effect} from "effect";
 import {CONFIG_PATH, type ConfigSource} from "../config/document.ts";
 import {governedRootsKey} from "../config/keys/governed-roots.ts";
 import {type ReviewSubsystem, reviewSubsystemsKey} from "../config/keys/review-subsystems.ts";
-import {prefixesOf, type UiSurface, uiSurfacesKey} from "../config/keys/ui-surfaces.ts";
+import {type ReviewUi, reviewUiKey} from "../config/keys/review-ui.ts";
+import {NO_UI_SURFACES, type UiSurface, uiSurfacesKey} from "../config/keys/ui-surfaces.ts";
 import {loadConfig} from "../config/load.ts";
 import {type Read, readFromLoad} from "../config/read-key.ts";
+import {
+	raisedPrefixes,
+	type ScreenReview,
+	type ScreenReviewMode,
+	screenReviewOf,
+	strictestMode,
+} from "../config/screen-review.ts";
 import {execCapture} from "../io/exec.ts";
 import {readFileAt, type Shell} from "../io/git.ts";
 import {mergeBaseOf} from "../io/pulls.ts";
@@ -53,6 +67,17 @@ export interface ConfigAt {
 export interface ClassConfig {
 	readonly governedRoots: ReadonlyArray<string>;
 	readonly uiPrefixes: ReadonlyArray<string>;
+	/** How this PR's screens are reviewed: the stricter of its head's answer and its merge base's. */
+	readonly screenReview: {
+		readonly mode: ScreenReviewMode;
+		/**
+		 * At `skip`, the source roots the config names a screen under and reviews nothing over — what
+		 * a verb reads to say a changed screen went unreviewed. Empty at every other mode.
+		 */
+		readonly skippedScreens: ReadonlyArray<string>;
+		/** Why each ref resolves the mode it does, one clause per ref. */
+		readonly note: string;
+	};
 	readonly subsystems: ReadonlyArray<ReviewSubsystem>;
 	/** Where each value came from, one sentence per key, for a verb's diagnostics. */
 	readonly notes: {
@@ -99,19 +124,31 @@ interface Side {
 	readonly at: ConfigAt;
 	readonly governed: Value<ReadonlyArray<string>>;
 	readonly surfaces: Value<ReadonlyArray<UiSurface>>;
+	readonly reviewUi: Value<ReviewUi>;
+	readonly screenReview: ScreenReview;
 	readonly subsystems: Value<ReadonlyArray<ReviewSubsystem>>;
 }
 
-/** One commit's three keys, or the first reason one of them has no value. */
+/** One commit's four keys, or the first reason one of them has no value. */
 const sideOf = (at: ConfigAt): Side | Extract<Read<never>, {readonly _tag: "Refused"}> => {
 	const load = loadConfig(at.source);
 	const governed = readFromLoad(load, governedRootsKey);
 	if (governed._tag === "Refused") return governed;
 	const surfaces = readFromLoad(load, uiSurfacesKey);
 	if (surfaces._tag === "Refused") return surfaces;
+	const reviewUi = readFromLoad(load, reviewUiKey);
+	if (reviewUi._tag === "Refused") return reviewUi;
 	const subsystems = readFromLoad(load, reviewSubsystemsKey);
 	if (subsystems._tag === "Refused") return subsystems;
-	return {_tag: "Side", at, governed, surfaces, subsystems};
+	return {
+		_tag: "Side",
+		at,
+		governed,
+		surfaces,
+		reviewUi,
+		screenReview: screenReviewOf(reviewUi.value, surfaces.value),
+		subsystems,
+	};
 };
 
 /**
@@ -140,6 +177,11 @@ export const classConfigOf = (
 	}
 	const noteOf = (note: (side: Side) => string): string =>
 		sides.map((side) => `at ${sideName(side.at)}, ${note(side)}`).join("; ");
+	const [first, ...rest] = sides.map((side) => side.screenReview.mode) as [
+		ScreenReviewMode,
+		...ScreenReviewMode[],
+	];
+	const mode = strictestMode(first, ...rest);
 	return {
 		_tag: "Config",
 		config: {
@@ -148,9 +190,20 @@ export const classConfigOf = (
 				(root) => root,
 			),
 			uiPrefixes: union(
-				sides.flatMap((side) => prefixesOf(side.surfaces.value)),
+				sides.flatMap((side) => raisedPrefixes(side.screenReview)),
 				(prefix) => prefix,
 			),
+			screenReview: {
+				mode,
+				skippedScreens:
+					mode === "skip"
+						? union(
+								sides.flatMap((side) => side.screenReview.screens),
+								(root) => root,
+							)
+						: [],
+				note: noteOf((side) => side.screenReview.reason),
+			},
 			subsystems: union(
 				sides.flatMap((side) => side.subsystems.value),
 				(entry) => JSON.stringify([entry.subsystem, entry.pattern, entry.constraint]),
@@ -162,6 +215,20 @@ export const classConfigOf = (
 			},
 		},
 	};
+};
+
+/**
+ * The one stderr line a scope verb prints about the `ui` class: the prefixes it derived the class
+ * over, or why it derived none. At `skip` it says screen review is not set up, so a repo's unreviewed
+ * screens are stated on every scope read rather than left for a reader to infer from an empty set.
+ */
+export const uiDerivationLine = (verb: string, config: ClassConfig): string => {
+	if (config.screenReview.mode === "skip") {
+		return `${verb}: screen review is not set up, so no path raises the ui class and no rendered review is owed — ${config.screenReview.note}.`;
+	}
+	return config.uiPrefixes.length === 0
+		? `${verb}: ${NO_UI_SURFACES}.`
+		: `${verb}: ui derived over ${config.uiPrefixes.length} prefix(es) — ${config.notes.uiSurfaces}.`;
 };
 
 /**

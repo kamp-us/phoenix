@@ -82,7 +82,7 @@ import {pullsReader} from "./pulls-reader.ts";
 import {runPush} from "./push-verb.ts";
 import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
 import {LEDGER_SPEND} from "./record.ts";
-import {recordBoard, runRecord} from "./record-verb.ts";
+import {recordBoard, recordScreenCheck, runRecord} from "./record-verb.ts";
 import {queueReadOf, runRecover} from "./recover-verb.ts";
 import {runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
@@ -2571,6 +2571,7 @@ const record = leafCommand(
 							board: syncBoard,
 							dryRun: false,
 						}),
+					screenCheck: recordScreenCheck(Option.getOrNull(repo), process.cwd(), process.env),
 				}),
 			),
 		);
@@ -2594,6 +2595,7 @@ const record = leafCommand(
 				69: "the lane is not terminal",
 				...ROOT_EXITS,
 			},
+			["`screenCheck` rides the answer when a screen check was skipped: relay it."],
 		),
 	),
 	Command.withExamples([{command: "fabrika lane record 5673"}]),

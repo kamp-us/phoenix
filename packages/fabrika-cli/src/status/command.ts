@@ -311,14 +311,21 @@ const bootstrap = leafCommand(
 				"override the target path for a file, line, json, dep-pin, fabrika-config or hand-check-rule surface; must resolve inside the repository root",
 			),
 		),
+		screens: Flag.string("screens").pipe(
+			Flag.atLeast(0),
+			Flag.withDescription(
+				'hand-check-rule only: where the app\'s screens live — a folder ending in "/", or one file such as index.html; repeat it for several. Needed in a repo with no uiSurfaces row, and no start command is asked for',
+			),
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({surface, path, repo, json}) {
+	Effect.fn(function* ({surface, path, screens, repo, json}) {
 		yield* emit(
 			yield* runBootstrap({
 				surfaceId: surface,
 				path: Option.getOrNull(path),
+				screens,
 				json,
 				repoRoot: yield* repositoryRoot,
 				configSource: yield* repoConfigSource(process.cwd()),
@@ -333,15 +340,16 @@ const bootstrap = leafCommand(
 		[
 			"Creates one missing repo surface from the buildable-surface registry and reads it back.",
 			"  stdout: `bootstrap\\t<created|exists>\\t<surface-id>\\t<target>\\t<readback>`",
-			"  Only a file surface reads its content on stdin.",
+			"  Only a file surface reads stdin.",
 			"  3: stdin held nothing",
-			"  5: the content carries a machine-local path",
+			"  5: the content has a machine-local path",
 			"  6: the content is a bare @ path reference",
 			"  8: the write failed (UNKNOWN)",
 			"  9: the read-back differs",
-			"  10: --path resolves outside the repository root",
-			"  11: a precondition read failed; nothing written",
+			"  10: --path or --screens is refused",
+			"  11: a read failed; nothing written",
 			"  12: the surface is not in the registry",
+			"  13: no screen file named; pass --screens",
 			'  Derivation: the front-door skill\'s contract.md, "status bootstrap"',
 		].join("\n"),
 	),

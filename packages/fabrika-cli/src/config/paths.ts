@@ -17,7 +17,7 @@ import {
 	type PathValue,
 	roadmapFileKey,
 } from "./keys/paths.ts";
-import {type NoPreviewRule, reviewUiKey} from "./keys/review-ui.ts";
+import {type NoPreviewMode, type NoPreviewRule, reviewUiKey} from "./keys/review-ui.ts";
 import {
 	NO_UI_SURFACES,
 	prefixesOf,
@@ -27,6 +27,7 @@ import {
 	uiSurfacesKey,
 } from "./keys/ui-surfaces.ts";
 import {type Read, readKey} from "./read-key.ts";
+import {type ScreenReview, screenReviewOf, unmatchedMode} from "./screen-review.ts";
 
 export type {Read};
 
@@ -252,27 +253,61 @@ export const uiCaptureOr = (
 				},
 	);
 
+export type ScreenReviewRead =
+	| {
+			readonly _tag: "Review";
+			readonly review: ScreenReview;
+			readonly rules: ReadonlyArray<NoPreviewRule>;
+	  }
+	| {readonly _tag: "Refused"; readonly message: string};
+
+/**
+ * What screen review resolves to in the checkout a verb stands in, beside the `whenNoPreview` rules
+ * read off the same bytes — or the one refusal sentence its readers print.
+ *
+ * Two keys are read because an unset `reviewUi.mode` resolves off `uiSurfaces` too
+ * (`./screen-review.ts`); either one unread leaves the answer UNKNOWN.
+ */
+export const screenReviewOr = (
+	verb: string,
+	cwd: string,
+	consequence: string,
+): Effect.Effect<ScreenReviewRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const refused = (reason: string) => ({
+			_tag: "Refused" as const,
+			message: `${verb}: ${CONFIG_PATH} is refused — ${reason.replace(/\.$/, "")}, so ${consequence}`,
+		});
+		const reviewUi = yield* readKey(cwd, reviewUiKey);
+		if (reviewUi._tag === "Refused") return refused(reviewUi.reason);
+		const surfaces = yield* readUiSurfaces(cwd);
+		if (surfaces._tag === "Refused") return refused(surfaces.reason);
+		return {
+			_tag: "Review" as const,
+			review: screenReviewOf(reviewUi.value, surfaces.value),
+			rules: reviewUi.value.whenNoPreview,
+		};
+	});
+
 export type NoPreviewRulesRead =
 	| {
 			readonly _tag: "Rules";
 			readonly rules: ReadonlyArray<NoPreviewRule>;
-			readonly note: string;
+			/** The mode a ui file takes when no rule matches it, off the repo's `reviewUi.mode`. */
+			readonly unmatched: NoPreviewMode;
 	  }
 	| {readonly _tag: "Refused"; readonly message: string};
 
-/** The `reviewUi.whenNoPreview` rules, or the refusal their readers print. */
+/** The `reviewUi.whenNoPreview` rules and the mode behind them, or the refusal their readers print. */
 export const noPreviewRulesOr = (
 	verb: string,
 	cwd: string,
 	consequence: string,
 ): Effect.Effect<NoPreviewRulesRead, never, FileSystem.FileSystem | Path.Path> =>
-	Effect.map(readKey(cwd, reviewUiKey), (read) =>
-		read._tag === "Value"
-			? {_tag: "Rules" as const, rules: read.value.whenNoPreview, note: read.note}
-			: {
-					_tag: "Refused" as const,
-					message: `${verb}: ${CONFIG_PATH} is refused — ${read.reason.replace(/\.$/, "")}, so ${consequence}`,
-				},
+	Effect.map(screenReviewOr(verb, cwd, consequence), (read) =>
+		read._tag === "Review"
+			? {_tag: "Rules" as const, rules: read.rules, unmatched: unmatchedMode(read.review.mode)}
+			: read,
 	);
 
 /** The one sentence a verb prints when the declared list is empty — stated, never silent. */

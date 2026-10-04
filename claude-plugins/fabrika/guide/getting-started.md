@@ -321,29 +321,37 @@ The last line it prints starts with the file's name:
 
 ### If your app is not hosted yet
 
-When a pull request changes a screen, fabrika's reviewer wants to see that screen. By default it
-opens a preview: a hosted copy of the app that your hosting puts up for each pull request. A new
-app has no hosting, so there is nothing to open, and the pull request would stop at review.
+A new repo starts with screen review off. A pull request that changes a screen gets the same
+review as any other change: fabrika reads the files, and nobody looks at the screen. You do
+nothing to get this. When a run skips the screen check, it says so in its closing message:
 
-If nothing puts up a preview for each pull request, say now that you will check the screen
-yourself:
+```
+The screen check was skipped because screen review is not set up in this repo; to turn it on, run `fabrika status bootstrap hand-check-rule --screens <path>`, where <path> is the folder or file your screens live in.
+```
+
+That is a fine place to start. Skip the rest of this section if you want to leave it there.
+
+One step turns screen review on. It says that you will check each screen change yourself, and
+where your screens live. Give it the folder, ending in `/`, or one file:
 
 ```bash
-fabrika status bootstrap hand-check-rule
+fabrika status bootstrap hand-check-rule --screens src/
 ```
 
 ```
-status bootstrap: created .fabrika.jsonc for hand-check-rule with one hand-check rule, read-back conformed.
+status bootstrap: created .fabrika.jsonc for hand-check-rule with `reviewUi.mode` hand-check and 1 `reviewUi.screens` path(s), read-back conformed.
 bootstrap	created	hand-check-rule	.fabrika.jsonc	ok
 ```
 
-That writes one rule into `.fabrika.jsonc`, with the mode `hand-check`. From then on, when a pull
-request changes a screen, you run the app, look at the screen, and post a screenshot in a comment
-on the pull request. The reviewer reads your comment in place of a preview.
+That writes the setting into `.fabrika.jsonc`. It asks for no command to start your app. Once the
+file is on your main branch, a pull request that changes a file under that path stops at review.
+You run the app, look at the screen, and post a screenshot in a comment on the pull request. The
+reviewer reads your comment in place of a hosted copy.
 
-If your app already has a preview for each pull request, skip this.
+If your hosting puts up a copy of the app for each pull request, the reviewer can open that copy
+and you post nothing.
 [If your app has no preview deploys](adopt-fabrika-in-a-new-repo.md#if-your-app-has-no-preview-deploys)
-has the details.
+has the three settings and how to choose.
 
 ## 10. Commit the setup
 
@@ -357,7 +365,7 @@ If you wrote the design rules in step 9, add them too:
 git add design-system-manifest.md
 ```
 
-And if you wrote the hand-check rule there:
+And if you turned screen review on there:
 
 ```bash
 git add .fabrika.jsonc

@@ -151,13 +151,19 @@ Then **converse** — you are human-typed, so a human is present. Take one gap a
   starts with the owner. Propose one look in plain words — the mood, two or three colours, the
   type, how dense a screen is — and ask for a yes. On the yes, shape that look into the file and
   run the bootstrap below. Without a yes, write nothing: the gap stays reported.
-- **`hand-check-rule` is one question, asked only of an app with a screen** — the owner says it
-  has one, or `uiSurfaces` in `fabrika status settings` carries a row. Ask it in everyday words:
-  *"Is your app hosted somewhere that puts up a preview copy of each pull request?"* On a **no**, run
-  `fabrika status bootstrap hand-check-rule` (below) and tell the owner what it sets up: when a pull
-  request changes a screen, they run the app, look at the screen, and post a screenshot on the pull
-  request. On a **yes**, write nothing; the reviewer opens the preview. An owner who is unsure has
-  no preview yet, so that is a no, and they delete the rule once hosting exists.
+- **Screen review starts off, and `hand-check-rule` is the one step that turns it on.** Read the
+  `reviewUi.mode` row of `fabrika status settings`. At `skip`, which is where a new repo starts,
+  tell an owner whose app has a screen three things in everyday words: a change to a screen gets
+  the normal review only; a run that skips the screen check says so when it ends; and one step
+  turns screen review on. Then ask whether they want it on now. On a **no**, or no answer, write
+  nothing: off is a fine place to start, and the step is there later. On a **yes**, ask where the
+  screens live, a folder or a file, and run `fabrika status bootstrap hand-check-rule --screens
+  <path>` (below), once per path if there are several. Then tell the owner what they will be asked
+  from now on: when a pull request changes a file under that path, the run stops, and they run the
+  app, look at the screen, and post a screenshot on the pull request. A repo whose `uiSurfaces`
+  already carries a row needs no `--screens`. At `hand-check` or `preview` the repo has already
+  answered, so ask nothing. A refusal on `13` means the repo names no screen file yet: relay its
+  sentence, which names the flag to add.
 - **Everything else** you report in the words of the verb that found it missing — its line names
   the surface and what the run lost, so you relay that rather than opening a skill file to find out.
 
@@ -169,11 +175,11 @@ EOF
 ```
 
 ```bash
-fabrika status bootstrap hand-check-rule
-# status bootstrap: created .fabrika.jsonc for hand-check-rule with one hand-check rule, read-back conformed.
+fabrika status bootstrap hand-check-rule --screens index.html
+# status bootstrap: created .fabrika.jsonc for hand-check-rule with `reviewUi.mode` hand-check and 1 `reviewUi.screens` path(s), read-back conformed.
 ```
 
-That rule counts once `.fabrika.jsonc` is committed to the default branch, so say so with the
+That setting counts once `.fabrika.jsonc` is committed to the default branch, so say so with the
 other setup files.
 
 <!-- anchor: MACHINE-READ-SURFACE --> **`roadmap-focus` is the exception to "draft by inference".**

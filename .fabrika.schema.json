@@ -716,11 +716,29 @@
 		},
 		"reviewUi": {
 			"type": "object",
-			"description": "What the rendered-review gate (`review-ui`) needs from a PR that has no preview deploy. Absent changes nothing: a PR with no preview ends CANT-SEE.",
+			"description": "How this repo reviews a change to a screen. A repo that declares no `mode`, no `screens`, no `whenNoPreview` rule and no `uiSurfaces` row has screen review off.",
 			"properties": {
+				"mode": {
+					"type": "string",
+					"enum": [
+						"preview",
+						"hand-check",
+						"skip"
+					],
+					"description": "`preview`: the reviewer opens a hosted copy of each pull request, and a screen change with no preview ends CANT-SEE. `hand-check`: an owner's screenshots on the pull request stand in for the render. `skip`: screen review is not set up — a screen change gets the text review only, and the run says the screen check was skipped. Unset resolves to `skip` in a repo that declares no `screens`, no `whenNoPreview` rule and no `uiSurfaces` row, and to `preview` otherwise. `skip` beside a `whenNoPreview` rule is refused."
+				},
+				"screens": {
+					"type": "array",
+					"description": "Where the screens live, for a repo with no `uiSurfaces` row to name them: repo-relative source roots that raise the ui class. Ending in `/` a root is a directory covering every file under it; otherwise it names exactly one file. No start command is needed.",
+					"items": {
+						"type": "string",
+						"minLength": 1,
+						"pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$))\\S(.*\\S)?$"
+					}
+				},
 				"whenNoPreview": {
 					"type": "array",
-					"description": "Path rules for a PR with no preview deploy. The first rule whose glob matches a ui-class file sets that file's mode; a file no rule matches needs a render (`require-render`). A PR whose ui files land in different modes takes the strictest: require-render, then hand-check, then skip.",
+					"description": "Path rules for a PR with no preview deploy. The first rule whose glob matches a ui-class file sets that file's mode; a file no rule matches takes the repo's `mode` (`preview` needs a render, `hand-check` an owner's screenshots). A PR whose ui files land in different modes takes the strictest: require-render, then hand-check, then skip.",
 					"items": {
 						"type": "object",
 						"properties": {
