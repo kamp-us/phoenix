@@ -33,11 +33,11 @@ fabrika governance scope $pr_number
 ```
 
 **On an epic child there is no PR, and the subject is the range instead.** An epic run opens one
-tail PR at the end rather than one per child, so mid-run the child branch is all there is. A
-documentation epic's children sit under a governance root by construction wherever this repo homes
-its skills, and this namespace is owed at **every** review round on such a diff, never only the
-first, so the range is the normal subject on a documentation epic, not an edge. Drop the positional
-and name the two ends your caller gave you; the answer is the same four fields, with
+tail PR at the end rather than one per child, so mid-run the child branch is all there is. Where
+this repo's skills home is one of its governed roots, a documentation epic's children sit under
+that root, and this namespace is owed at **every** review round on such a diff, never only the
+first, so there the range is the normal subject on a documentation epic, not an edge. Drop the
+positional and name the two ends your caller gave you; the answer is the same four fields, with
 `<base>..<tip>` where a head SHA would be:
 
 ```bash
