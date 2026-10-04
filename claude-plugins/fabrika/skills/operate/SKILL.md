@@ -582,6 +582,15 @@ binstub (now in the spawned tree). They are in the brief because a prompt writte
 dispatch is a prompt two drivers write differently. A fourth has the shell record its worktree on
 the lane with `lane worktree`, which is the set step 4's `lane cleanup` removes.
 
+**A fact that postdates the issue body goes on the issue as a comment, and that comment is the one
+sanctioned channel for it.** A body is a snapshot, so you can hold a fact it does not carry —
+typically a PR that landed after the body was written and already discharged part of its criteria.
+Post it as a comment on the driven issue **before you run `lane brief`**: state the fact in a
+sentence and link the artifact that proves it. The brief then stays the verb's bytes, and on a build
+or review state it lists a control-plane account's comment under `owner-comments` in `## Ground`,
+beside a rule telling the shell to read it. Done when the comment's URL is in hand, and, where your
+account is on that roster, when the brief you print names it.
+
 **Record the dispatch, then spawn.** With the brief in hand, and before either spawn below:
 
 ```bash
