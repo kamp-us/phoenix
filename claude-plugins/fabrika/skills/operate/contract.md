@@ -69,8 +69,9 @@ append it, and refuse on the prover's own code with the log byte-identical. The 
 
 - An optional `--cause` lands on a BLOCKED's event line and is what `recipe unpark` keys its recipe
   table on. Every cause also carries a route, `driver` or `founder`, saying whose failure the park
-  is. A BLOCKED with no cause is the bare park it always was: it is novel and routes to a human, so
-  it costs a human UNBLOCKED.
+  is. A BLOCKED with no cause is refused at `52` unless the repo declares
+  `parkCause.uncaused: "record"`; recorded there, it is novel and routes to a human, so it costs a
+  human UNBLOCKED.
 - `--axis-issue <n>` names the open issue a `render-axis-missing` park waits on, and lands on the
   same line as `axisIssue`. That cause requires it, and every other cause refuses it.
 - `--ruling-issue <n>` names the issue a `ruling-owed` park's ruling is owed on, which may be the
@@ -87,8 +88,9 @@ append it, and refuse on the prover's own code with the log byte-identical. The 
   beside any other cause, or no issue number; or `--ruling-issue` fails the same three ways beside
   `ruling-owed`; or `--founder-act` is missing or blank beside `founder-act-owed`, or present beside
   any other cause.
-- `52` — a BLOCKED names no cause at all, under a repo declaring `parkCause.uncaused: "refuse"`.
-  Name one from the closed set; the log is unappended.
+- `52` — a BLOCKED names no cause at all. `parkCause.uncaused` ships `refuse`, so this is what a
+  repo declaring nothing gets; a repo declaring `"uncaused": "record"` records the bare park
+  instead. Name one from the closed set; the log is unappended.
 - A repeatable `--class` lands the lane classes standing at the event on the same line. It is the
   fact the machine's `class:<name>` arms route on: `--class ui` on a WIP sends the lane to
   `build:ui`, and it stands until another event names a different set. `ui` beside a text class
@@ -267,9 +269,9 @@ first and refused unappended otherwise.
 Optional `--pr` and `--comment` refs land on the event line itself, so the event names its evidence,
 visible through `lane history`. `--pr` is also what the closure read reads: the ref is handed to the
 prover as well as recorded on the line, because the closure is judged off exactly that PR.
-`--cause` and `--class` follow [park causes and lane classes](#park-causes-and-lane-classes); a repo
-that declares `parkCause.uncaused: "refuse"` refuses a cause-less BLOCKED at `52` rather than
-recording one.
+`--cause` and `--class` follow [park causes and lane classes](#park-causes-and-lane-classes): a
+cause-less BLOCKED is refused at `52` rather than recorded, unless the repo declares
+`parkCause.uncaused: "record"`.
 
 These fields land on the line too, and none is a flag. Each is the prover's, except `issueClose`,
 which records what this verb did with the prover's issue read:

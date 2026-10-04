@@ -27,6 +27,7 @@ import {
 	fakeProver,
 	fakeProverByEvent,
 	laneWrites,
+	parkCauseDeclared,
 	parkCauseRead,
 } from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
@@ -470,6 +471,31 @@ describe("lane report — the park cause a BLOCKED carries", () => {
 		expect(out.code).toBe(CAUSE_UNRECOGNISED);
 		expect(prover.asked).toEqual([]);
 		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("lane report — a cause-less park under the repo's own `.fabrika.jsonc`", () => {
+	it("is refused unappended where the file declares no `parkCause`, naming the setting", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "STOPPED", {parkCause: parkCauseDeclared("{}")});
+
+		expect(out.code).toBe(PARK_UNCAUSED);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join(" ")).toContain("`parkCause.uncaused`");
+		expect(out.stderr.join(" ")).toContain('"parkCause": {"uncaused": "record"}');
+	});
+
+	it("is recorded bare where the file declares `uncaused: record`", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const declared = parkCauseDeclared('{"parkCause": {"uncaused": "record"}}');
+
+		const out = await run(fs, "STOPPED", {parkCause: declared});
+
+		expect(out.code).toBe(0);
+		const appended = JSON.parse(appendedLine(fs));
+		expect(appended.event).toBe("ISSUE.BLOCKED");
+		expect(Object.hasOwn(appended, "cause")).toBe(false);
 	});
 });
 

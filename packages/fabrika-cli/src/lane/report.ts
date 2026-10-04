@@ -12,7 +12,8 @@
  * cause, the lane classes, the wait grant, and {@link floorQueueWait}, the elapsed-time floor a
  * queue re-fold clears before it may spend a wait.
  */
-import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
+import {CONFIG_PATH} from "../config/document.ts";
+import {PARK_CAUSE, type ParkCauseSurface} from "../config/keys/park-cause.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
 import {INTEGRATE_STATE} from "./integrate-failure.ts";
@@ -1228,7 +1229,7 @@ export const classesForEvent = (raw: ReadonlyArray<string>): ClassResolution => 
 export type CauseResolution =
 	| {readonly _tag: "Uncaused"}
 	| {readonly _tag: "Caused"; readonly cause: ParkCause}
-	/** A `BLOCKED` carrying no cause, under a repo that declared cause-less parks unrecordable. */
+	/** A `BLOCKED` carrying no cause, under a repo whose `parkCause.uncaused` resolves `refuse`. */
 	| {readonly _tag: "Required"; readonly reason: string}
 	| {readonly _tag: "Rejected"; readonly reason: string};
 
@@ -1241,10 +1242,11 @@ const isParkCause = (token: string): token is ParkCause => Object.hasOwn(PARK_CA
  * gone, so a `DONE` carrying one is a caller that misunderstood the field, and recording it would
  * seat a cause on a line no unpark will ever read.
  *
- * **An absent cause on a `BLOCKED` is the axis `requireCause` turns.** Off — the shipped default —
- * it is `Uncaused` exactly as it always was, and the bare park routes to a human. On, it is
- * `Required`: a park recorded with no cause folds to a `Novel` no verb can clear, so recording it
- * spends a person to say a thing the recorder already knew.
+ * **An absent cause on a `BLOCKED` is the axis `requireCause` turns.** On — the shipped default —
+ * it is `Required`: a park recorded with no cause folds to a `Novel` no verb can clear, so recording
+ * it spends a person to say a thing the recorder already knew. Off, in a repo that declared
+ * `parkCause.uncaused: "record"`, it is `Uncaused` and the bare park routes to a human. The
+ * `Required` reason names that setting, so a caller reading only the refusal can find it.
  *
  * **A machinery lap requires one under every rule.** The whole difference between a lap and a repair
  * round is which machinery spent it, and a lap recorded with none says only that the pipeline failed
@@ -1266,7 +1268,7 @@ export const causeForEvent = (
 		return requireCause && event === "BLOCKED"
 			? {
 					_tag: "Required",
-					reason: `a park must name why it parked — pass --cause with one of: ${PARK_CAUSE_TOKENS.join(", ")}`,
+					reason: `a park must name why it parked — pass --cause with one of: ${PARK_CAUSE_TOKENS.join(", ")}. This repo's \`${PARK_CAUSE}.uncaused\` resolves \`refuse\`, the shipped value; a repo that keeps bare parks declares \`"${PARK_CAUSE}": {"uncaused": "record"}\` in ${CONFIG_PATH}`,
 				}
 			: {_tag: "Uncaused"};
 	}

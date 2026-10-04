@@ -577,7 +577,9 @@ identical change through a different tool, a script or a shell command spends th
 ever asking for it. So do not re-attempt it. Stop where you stand, quote the denied action verbatim
 in a `fabrika build note`
 so the driver reads it before anything is pushed, and end `STOPPED` — `lane report` maps that token
-to a `BLOCKED` event, which is already the routing a denial wants, so no sixth terminal is needed.
+to a `BLOCKED` event, so no sixth terminal is needed. A denial has no cause token, so that report
+is refused at exit `52` under the shipped `parkCause.uncaused: "refuse"` and lands as a park only
+where the repo declares `record`; the cause section below says what to do with the refusal.
 The content being legitimate changes nothing: a change nobody could have refused and a
 bypass read the same in the transcript, which is the whole reason the denial is worth reporting.
 
@@ -640,7 +642,7 @@ returning — is your driver's, and the driver records that park.
 
 `repair-budget-spent` belongs on the `ESCALATED` you take when the repair fold reads
 `capReached: true`. **It is not optional there**: a repair-cap `ESCALATED` always has this cause to
-name, and a repo that declares `parkCause.uncaused: "refuse"` refuses it without one:
+name, and `parkCause.uncaused` ships `refuse`, so the verb refuses it without one:
 
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token ESCALATED --cause repair-budget-spent --pr <pr-url>
@@ -653,9 +655,9 @@ routes to a human `UNBLOCKED`. The vocabulary is closed and lives in code
 `lane report --help` prints it, and a token outside it is exit `35` with the log unappended, so
 there is none to compose and none to guess. A stop no token covers — a denied tool call, an
 UNKNOWN verdict — has no token to name, and what an uncaused park does is the repo's
-`parkCause.uncaused` setting, not yours: under `record`, the shipped default, it lands as a novel
-park that routes to a human; under `refuse` it is refused at exit `52` with the log unappended,
-and that refusal is handled like any other below. What is never right is reaching for a token
+`parkCause.uncaused` setting, not yours: under `refuse`, the shipped default, it is refused at exit
+`52` with the log unappended, and that refusal is handled like any other below; under `record` it
+lands as a novel park that routes to a human. What is never right is reaching for a token
 because it is nearby rather than because it is what happened.
 
 The verb refuses a token outside this vocabulary (exit `32`) rather than
@@ -782,8 +784,8 @@ The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
 escalation via `fabrika build note <repair-pr> --token <claim-token>` instead of another push.
 Record that terminal with `--token ESCALATED --cause repair-budget-spent` on the `lane report`
-line; without the cause, a repo declaring `parkCause.uncaused: "refuse"` refuses it at exit `52`
-and it never lands.
+line; without the cause it is refused at exit `52` and never lands, unless the repo declares
+`parkCause.uncaused: "record"`.
 
 **A CI red is produced from the merge ref, not from your head — reproduce it there before you call
 it false.** A `pull_request`-triggered workflow runs with `GITHUB_REF` set to `refs/pull/<n>/merge`

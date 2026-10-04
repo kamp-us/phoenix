@@ -16,7 +16,12 @@ import {
 	RATIONALE_REFUSED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
-import {coderTemplateText, fakeProver, parkCauseRead} from "./fixtures.test-support.ts";
+import {
+	coderTemplateText,
+	fakeProver,
+	parkCauseDeclared,
+	parkCauseRead,
+} from "./fixtures.test-support.ts";
 import {foldLog, parseLog} from "./fold.ts";
 import {compileText} from "./machine.ts";
 import {PARK_CAUSE_TOKENS} from "./report.ts";
@@ -301,6 +306,31 @@ describe("lane transition — the park cause a driver-originated BLOCKED carries
 		expect(out.code).toBe(0);
 		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
 		expect(Object.keys(appended).sort()).toEqual(["at", "event", "task"]);
+	});
+});
+
+describe("lane transition — a cause-less park under the repo's own `.fabrika.jsonc`", () => {
+	it("is refused unappended where the file declares no `parkCause`, naming the setting", async () => {
+		const fs = freshLane(logLine("WIP"));
+
+		const out = await run(fs, "BLOCKED", null, null, [], null, parkCauseDeclared("{}"));
+
+		expect(out.code).toBe(PARK_UNCAUSED);
+		expect(fs.written.has(LOG)).toBe(false);
+		expect(out.stderr.join(" ")).toContain("`parkCause.uncaused`");
+		expect(out.stderr.join(" ")).toContain('"parkCause": {"uncaused": "record"}');
+	});
+
+	it("is recorded bare where the file declares `uncaused: record`", async () => {
+		const fs = freshLane(logLine("WIP"));
+		const declared = parkCauseDeclared('{"parkCause": {"uncaused": "record"}}');
+
+		const out = await run(fs, "BLOCKED", null, null, [], null, declared);
+
+		expect(out.code).toBe(0);
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended.event).toBe("ISSUE.BLOCKED");
+		expect(Object.hasOwn(appended, "cause")).toBe(false);
 	});
 });
 
