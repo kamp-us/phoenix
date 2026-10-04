@@ -756,11 +756,13 @@ reads as a permissive default rather than an unknown. v1's own sibling script kn
 name and warns that patching a fresh child "reopens the label-less-orphan window".
 
 **A home is required and is never defaulted**: the call names an open milestone, or a
-`--label` from the standing-lane set (`STANDING_LANE_LABELS`) — a child carrying neither groups under
-no campaign and no lane, so nothing on the board shows where it belongs, and the refusal sits at the
-mint, where nothing has been written yet. The lane set is *imported* from `build/scope-admission.ts`,
-never re-listed here in code: two copies is how two readers drift into disagreeing about what a home
-is.
+`--label` from the standing lanes the repo declares (`boardVocabulary.standingLanes` in
+`.fabrika.jsonc`) — a child carrying neither groups under no campaign and no lane, so nothing on the
+board shows where it belongs, and the refusal sits at the mint, where nothing has been written yet.
+The lane set is read from that one declaration, the same one `build pick` and the homing guard read,
+and never listed in code: two copies is how two readers drift into disagreeing about what a home is.
+A repo that declares no lane has one home to offer, the milestone, and a declaration that could not
+be read is `11`.
 
 **`--ready-for` is required and has no default**: a child must never inherit its audience
 by omission. **`--ready-for human` requires `--assignee`**: the label is the routing
@@ -856,7 +858,8 @@ link, deliberately** — see step 5.
 | `ledger child: --type type:decision with --ready-for agent is refused — a child minted now carries no ruling comment of its own, and the citation that opens a decision claim names a comment on the decision issue itself, so the first builder refuses it on the type axis. Mint it --ready-for human with --assignee, record the ruling on the child, then flip it with \`fabrika decision rule <n> --cites <child-comment-url>\`.` | 10 | refusal |
 | `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 10 | refusal |
 | `ledger child: milestone "<title>" is not an open milestone of <repo>.` | 10 | refusal |
-| `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built.` | 10 | refusal |
+| `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (<the declared lanes, comma-joined>). A homeless child groups under no campaign and no lane, so nothing on the board shows where it belongs.` | 10 | refusal |
+| ``ledger child: a child needs a home — pass --milestone <open milestone title>; this repo declares no standing lane (`boardVocabulary.standingLanes`), so a milestone is the only home. A homeless child groups under no campaign and no lane, so nothing on the board shows where it belongs.`` | 10 | refusal |
 | `ledger child: --priority <v> is off the closed set (p0, p1, p2).` | 10 | refusal |
 | `ledger child: cannot read <what>: <reason> — nothing was created.` | 11 | refusal |
 | `ledger child: this lane does not hold #<n>'s claim.` | 15 | refusal |

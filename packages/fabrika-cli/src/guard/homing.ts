@@ -3,30 +3,25 @@
  * exactly one home?
  *
  * Home and exemption are MUTUALLY EXCLUSIVE: a triaged issue carries an arc/campaign milestone, or
- * one of exactly two standing-lane labels, never both, which is banned outright.
+ * one of the standing-lane labels its repo declares, never both, which is banned outright.
  *
  * **Both directions red here.** Enforcing only the neither-marked half read as full coverage
  * downstream while double-marked issues landed in the `homed` count — a burndown that counts an
  * issue which also claims exemption from it.
  *
- * IO-free and total; the board read lives in `./homing-verb.ts`.
+ * **The exempt set is an input, never a constant.** A standing lane is milestone-less BY DESIGN,
+ * and which labels are one is the repo's own declaration: every decision below takes `lanes`, and
+ * in a repo that declares none nothing is exempt — a milestone is the only home.
+ *
+ * IO-free and total; the board and config reads live in `./homing-verb.ts`.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/6469
  */
 
 import type {LabelUniverse} from "./label-universe.ts";
 import {clean, type GuardVerdict, unknown, violation, zeroScope} from "./verdict.ts";
 
 export const VERB = "guard homing-guard check";
-
-/**
- * The two standing-lane labels, exactly. A standing lane is milestone-less BY DESIGN — fog
- * (`wayfinder:backlog`) homes when it gets charted, pipeline hardening never completes into a
- * milestone. Extending this set needs a founder ruling, so it is a frozen literal,
- * never a config surface or a pattern match.
- */
-export const EXEMPT_LABELS: ReadonlyArray<string> = [
-	"wayfinder:backlog",
-	"axis:pipeline-hardening",
-];
 
 /** The label that puts an issue in scope: the invariant binds at the moment triage stamps it. */
 export const TRIAGED_LABEL = "status:triaged";
@@ -105,6 +100,8 @@ export type HomingVerdict =
 			readonly homed: number;
 			readonly exempt: number;
 			readonly violations: ReadonlyArray<Violation>;
+			/** The declared lanes the scan judged against — what the un-homed remedy may offer. */
+			readonly lanes: ReadonlyArray<string>;
 	  };
 
 /**
@@ -113,28 +110,31 @@ export type HomingVerdict =
  */
 export type Resolution = {readonly kind: "homed"} | {readonly kind: "exempt"} | Violation;
 
-/** The standing-lane labels this issue carries (exactly two, no prefix matching). */
-export const standingLanes = (issue: TriagedIssue): ReadonlyArray<string> =>
-	issue.labels.filter((l) => EXEMPT_LABELS.includes(l));
+/** The declared standing-lane labels this issue carries — exact names, no prefix matching. */
+export const standingLanes = (
+	issue: TriagedIssue,
+	lanes: ReadonlyArray<string>,
+): ReadonlyArray<string> => issue.labels.filter((l) => lanes.includes(l));
 
 /**
- * Resolve one issue against home-xor-exempt. A milestone homes it and a standing-lane label exempts
- * it, but carrying both is `double-marked` — that combination is banned outright, and
+ * Resolve one issue against home-xor-exempt. A milestone homes it and a declared standing-lane label
+ * exempts it, but carrying both is `double-marked` — that combination is banned outright, and
  * it never counts as homed.
  */
-export const resolve = (issue: TriagedIssue): Resolution => {
-	const lanes = standingLanes(issue);
+export const resolve = (issue: TriagedIssue, lanes: ReadonlyArray<string>): Resolution => {
+	const carried = standingLanes(issue, lanes);
 	const {number, title} = issue;
 	if (issue.milestone !== null) {
-		return lanes.length > 0
-			? {kind: "double-marked", number, title, milestone: issue.milestone, lanes}
+		return carried.length > 0
+			? {kind: "double-marked", number, title, milestone: issue.milestone, lanes: carried}
 			: {kind: "homed"};
 	}
-	return lanes.length > 0 ? {kind: "exempt"} : {kind: "unhomed", number, title};
+	return carried.length > 0 ? {kind: "exempt"} : {kind: "unhomed", number, title};
 };
 
 /** The bare outcome of {@link resolve} — the four-way answer, without the offender detail. */
-export const disposition = (issue: TriagedIssue): Disposition => resolve(issue).kind;
+export const disposition = (issue: TriagedIssue, lanes: ReadonlyArray<string>): Disposition =>
+	resolve(issue, lanes).kind;
 
 /**
  * Judge the scanned set.
@@ -151,6 +151,7 @@ export const disposition = (issue: TriagedIssue): Disposition => resolve(issue).
  */
 export const judge = (
 	issues: ReadonlyArray<TriagedIssue>,
+	lanes: ReadonlyArray<string>,
 	scope: Scope = {_tag: "backlog"},
 ): HomingVerdict => {
 	if (issues.length === 0) {
@@ -164,7 +165,7 @@ export const judge = (
 	let homed = 0;
 	let exempt = 0;
 	for (const issue of issues) {
-		const resolution = resolve(issue);
+		const resolution = resolve(issue, lanes);
 		switch (resolution.kind) {
 			case "homed":
 				homed++;
@@ -187,6 +188,7 @@ export const judge = (
 			homed,
 			exempt,
 			violations,
+			lanes,
 		};
 	}
 	return {pass: true, scope, scanned: issues.length, homed, exempt};
@@ -198,22 +200,27 @@ const scopeLabel = (scope: Scope): string =>
 /**
  * The un-homed remediation, stated once — the three outcomes the triage rubric allows. Exported so
  * `triage sweep-homes` refuses an un-homed issue with the same remedy this guard prints.
+ *
+ * The lane outcome names the declared set, and says so where the repo declares none: an operator
+ * sent looking for a lane label that does not exist here is the misdirection a compiled list made.
  */
-export const UNHOMED_REMEDY =
+export const unhomedRemedy = (lanes: ReadonlyArray<string>): string =>
 	"Each issue above left triage un-homed. Give it one of the three home-or-exempt-or-kill outcomes\n" +
 	"(claude-plugins/fabrika/skills/triage/SKILL.md):\n" +
 	"  1. home it in an EXISTING open arc/campaign milestone from ROADMAP.md (triage never creates one);\n" +
-	`  2. label it a standing lane — ${EXEMPT_LABELS.join(" or ")} — when it is milestone-less by design;\n` +
+	(lanes.length === 0
+		? "  2. label it a standing lane when it is milestone-less by design — this repo declares none\n" +
+			"     (`boardVocabulary.standingLanes` in `.fabrika.jsonc`), so that outcome is closed here;\n"
+		: `  2. label it a standing lane — ${lanes.join(" or ")} — when it is milestone-less by design;\n`) +
 	"  3. kill it (close not-planned) when it does not move anything forward — agent-filed issues only,\n" +
 	"     a human-filed issue is never auto-closed.";
 
 /** The double-marked remediation: home and exemption are exclusive, so exactly one mark goes. */
 const DOUBLE_MARKED_REMEDY =
-	"Each issue above claims BOTH a home and a standing-lane exemption, which is banned outright\n" +
-	'(Banned: "Milestones on wayfinder:backlog fog … or on axis:pipeline-hardening items"). A standing\n' +
-	"lane is milestone-less BY DESIGN, so the two marks cannot both be true. Drop exactly one:\n" +
-	"  1. drop the MILESTONE when the issue really is a standing lane — fog homes when it gets\n" +
-	"     charted, and pipeline hardening never completes into an arc;\n" +
+	"Each issue above claims BOTH a home and a standing-lane exemption, which is banned outright.\n" +
+	"A standing lane is milestone-less BY DESIGN, so the two marks cannot both be true. Drop exactly one:\n" +
+	"  1. drop the MILESTONE when the issue really is standing-lane work, which never completes\n" +
+	"     into an arc;\n" +
 	"  2. drop the STANDING-LANE LABEL when the issue is genuinely homed in that arc/campaign.\n" +
 	"Leaving both makes the milestone burndown count an issue that also claims exemption from it.";
 
@@ -261,7 +268,7 @@ export const renderReport = (verdict: HomingVerdict): string => {
 	const sections = [
 		unhomed === ""
 			? ""
-			: `Left triage with NEITHER a milestone nor a standing-lane label:\n${unhomed}\n\n${UNHOMED_REMEDY}`,
+			: `Left triage with NEITHER a milestone nor a standing-lane label:\n${unhomed}\n\n${unhomedRemedy(verdict.lanes)}`,
 		doubleMarked === ""
 			? ""
 			: `Carry BOTH a milestone and a standing-lane label:\n${doubleMarked}\n\n${DOUBLE_MARKED_REMEDY}`,

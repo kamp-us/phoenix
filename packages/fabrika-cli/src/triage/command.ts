@@ -32,7 +32,7 @@ import {runClaim} from "./claim-verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runCodes} from "./codes-verb.ts";
 import {runEnrich} from "./enrich-verb.ts";
-import {AUDIENCES, CLASSES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
+import {AUDIENCES, CLASSES, PRIORITIES, TYPES} from "./facets.ts";
 import {runHomes} from "./homes-verb.ts";
 import {runKill} from "./kill-verb.ts";
 import {runPark} from "./park-verb.ts";
@@ -248,7 +248,7 @@ const apply = leafCommand(
 		lane: Flag.string("lane").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				`a standing lane instead of a milestone; this repo's own set, defaulting to ${STANDING_LANES.join(" or ")}; exactly one of --home or --lane`,
+				"a standing lane instead of a milestone; one this repo declares under boardVocabulary.standingLanes, and none is declared by default; exactly one of --home or --lane",
 			),
 		),
 		classes: Flag.string("class").pipe(
@@ -790,6 +790,7 @@ const sweepHomes = leafCommand(
 		yield* emit(
 			yield* runSweepHomes({
 				mode: apply ? "apply" : "dry-run",
+				standingLanes: yield* readStandingLanes(process.cwd()),
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,

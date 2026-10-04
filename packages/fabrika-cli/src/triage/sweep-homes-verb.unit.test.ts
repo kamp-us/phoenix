@@ -75,7 +75,14 @@ const run = (
 	const seams = fakeSeams(script);
 	return Effect.runPromise(
 		Effect.provide(
-			runSweepHomes({mode, repo: null, json: false, env: ENV, stdin: Effect.succeed(stdin)}),
+			runSweepHomes({
+				mode,
+				standingLanes: {_tag: "Value", value: [LANE], note: "declared"},
+				repo: null,
+				json: false,
+				env: ENV,
+				stdin: Effect.succeed(stdin),
+			}),
 			seams.layer,
 		),
 	).then((outcome) => ({outcome, requests: seams.requests, bodies: seams.bodies}));

@@ -175,7 +175,7 @@
 				},
 				"standingLanes": {
 					"type": "array",
-					"description": "The standing-lane labels; an empty list means every issue homes on a milestone.",
+					"description": "The standing-lane labels this repo runs. Nothing is shipped for it: an absent key and an empty list both mean every issue homes on a milestone.",
 					"items": {
 						"type": "string",
 						"minLength": 1

@@ -18,6 +18,7 @@ import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
+import {readStandingLanes} from "../triage/standing-lanes.ts";
 import {runCatalogGuard} from "./catalog-verb.ts";
 import {runChangeDetectGuard} from "./change-detect-verb.ts";
 import {runCodeownersCpGuard} from "./codeowners-cp-verb.ts";
@@ -226,6 +227,7 @@ const homingCheck = leafCommand(
 		yield* emit(
 			yield* runHomingGuard({
 				issue: Option.getOrNull(issue),
+				standingLanes: yield* readStandingLanes(process.cwd()),
 				repo: Option.getOrNull(repo),
 				env: process.env,
 			}),
@@ -236,10 +238,11 @@ const homingCheck = leafCommand(
 	Command.withDescription(
 		leafHelp("homing-guard check", [
 			"Prints a one-line all-clear when every status:triaged issue carries exactly one home.",
-			"  A home is an arc/campaign milestone or one standing-lane label, never both.",
+			"  A home is an arc/campaign milestone or one declared standing-lane label, never both.",
+			"  The lanes are boardVocabulary.standingLanes; none declared exempts nothing.",
 			"  A red puts the per-class remedy on stderr, with ::error annotations under Actions.",
 			"  7: zero scope: the backlog sweep found no triaged issue",
-			"  11: the board, the label set or the issue was unreadable (UNKNOWN)",
+			"  11: the board, labels, issue or lane config was unreadable (UNKNOWN)",
 			"  12: an issue has no home, or claims two",
 		]),
 	),
@@ -250,7 +253,7 @@ const homingGuard = Command.make("homing-guard").pipe(
 	Command.withSubcommands([homingCheck]),
 	Command.withShortDescription("Every triaged issue leaves triage with exactly one home."),
 	Command.withDescription(
-		"Every issue that leaves triage carries exactly one home: an arc/campaign milestone, or one of exactly two standing-lane labels. A standing lane is milestone-less by design, so the two marks cannot both be true.",
+		"Every issue that leaves triage carries exactly one home: an arc/campaign milestone, or one of the standing-lane labels the repo declares. A standing lane is milestone-less by design, so the two marks cannot both be true.",
 	),
 );
 

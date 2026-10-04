@@ -45,17 +45,6 @@ import {
 	TYPE_NOT_BUILDABLE,
 } from "./codes.ts";
 
-/**
- * The labels that are a home in their own right, for an issue that carries no milestone.
- *
- * A standing lane is milestone-less **by design**, so a home keyed on milestone-presence alone would
- * call every such issue homeless. The home is the label match and nothing else: bare
- * milestone-absence never confers it, and the set is closed — a third lane is a founder ruling and a
- * deliberate edit here, never a pattern match.
- */
-export const STANDING_LANE_LABELS = ["wayfinder:backlog", "axis:pipeline-hardening"] as const;
-export type StandingLaneLabel = (typeof STANDING_LANE_LABELS)[number];
-
 /** The one audience an agent lane may open against — defined once in `../triage/audience.ts`. */
 export {READY_FOR_AGENT};
 
@@ -268,11 +257,18 @@ export const scopeSubjectOf = (
 		: {_tag: "Served", number, kind: refs.kind};
 };
 
-/** An issue's home: its open milestone's number as a string, or its standing lane. */
-export const homeOf = (issue: IssueFacts): string | null =>
+/**
+ * An issue's home: its open milestone's number as a string, or its standing lane.
+ *
+ * `lanes` is the set the repo declares, and the only labels that are a home in their own right. A
+ * standing lane is milestone-less **by design**, so a home keyed on milestone-presence alone would
+ * call every such issue homeless — and bare milestone-absence never confers one, so a repo that
+ * declares no lane has no lane home at all.
+ */
+export const homeOf = (issue: IssueFacts, lanes: ReadonlyArray<string>): string | null =>
 	issue.milestone !== null
 		? String(issue.milestone)
-		: (STANDING_LANE_LABELS.find((lane) => issue.labels.includes(lane)) ?? null);
+		: (lanes.find((lane) => issue.labels.includes(lane)) ?? null);
 
 /**
  * The lifecycle cell of a `## Campaigns` row.

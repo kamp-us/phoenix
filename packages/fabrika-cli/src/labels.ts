@@ -6,9 +6,9 @@
  * the sixteen labels the verbs require and could not triage, park, flip a plan or mark a dark ship
  * One name in one place is what makes the bootstrap's set derivable rather than restated.
  *
- * The closed *facet* vocabularies — `TYPES`, `PRIORITIES`, `AUDIENCES`, `STANDING_LANES` — stay in
- * `triage/facets.ts`, because those are decode targets for a flag as well as label stems; this file
- * holds only the names that are labels and nothing else.
+ * The *facet* vocabularies — `TYPES`, `PRIORITIES`, `AUDIENCES` — stay in `triage/facets.ts`,
+ * because those are decode targets for a flag as well as label stems; this file holds only the
+ * names that are labels and nothing else. Standing lanes are in neither: a repo declares its own.
  */
 
 import {classLabel, type StatusNames, statusList} from "./config/board.ts";

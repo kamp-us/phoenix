@@ -20,11 +20,11 @@ const milestones = (
 	...rows: ReadonlyArray<{readonly number: number; readonly title: string}>
 ): HttpReply => ({status: 200, body: JSON.stringify(rows)});
 
-/** The shipped default lane set — what a repo declaring no `boardVocabulary` resolves to. */
-const DEFAULT_LANES = ["wayfinder:backlog", "axis:pipeline-hardening"];
+/** The lanes this repo declares, as the delivery layer hands them over — a fixture, none is shipped. */
+const DECLARED_LANES = ["wayfinder:backlog", "axis:pipeline-hardening"];
 
 /** A board carrying both lane labels, so the presence filter offers both. */
-const bothLabels = [LABELS, labels("type:bug", ...DEFAULT_LANES)] as const;
+const bothLabels = [LABELS, labels("type:bug", ...DECLARED_LANES)] as const;
 
 const ARC_MILESTONE = 24;
 const CAMPAIGN_MILESTONE = 44;
@@ -44,7 +44,7 @@ const ROADMAP = `## Arcs
 
 const options = {
 	roadmap: "ROADMAP.md",
-	standingLanes: DEFAULT_LANES as ReadonlyArray<string>,
+	standingLanes: DECLARED_LANES as ReadonlyArray<string>,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
@@ -81,8 +81,8 @@ describe("runHomes", () => {
 			"homes",
 			"milestone\t24\tSearch and discovery",
 			"milestone\t44\tfabrika",
-			"lane\twayfinder:backlog\tfog — uncharted work upstream of any arc",
-			"lane\taxis:pipeline-hardening\tthe standing pipeline and reliability lane",
+			"lane\twayfinder:backlog\ta standing lane this repo declares",
+			"lane\taxis:pipeline-hardening\ta standing lane this repo declares",
 		]);
 	});
 
@@ -159,8 +159,8 @@ describe("runHomes", () => {
 			"homes",
 			"milestone\t24\tSearch and discovery",
 			"milestone\t44\tfabrika",
-			"lane\twayfinder:backlog\tfog — uncharted work upstream of any arc",
-			"lane\taxis:pipeline-hardening\tthe standing pipeline and reliability lane",
+			"lane\twayfinder:backlog\ta standing lane this repo declares",
+			"lane\taxis:pipeline-hardening\ta standing lane this repo declares",
 		]);
 	});
 
@@ -254,8 +254,8 @@ describe("runHomes and the running-campaign marker", () => {
 			"homes",
 			"milestone\t24\tSearch and discovery",
 			`milestone\t44\tfabrika\t${RUNNING_MARKER}`,
-			"lane\twayfinder:backlog\tfog — uncharted work upstream of any arc",
-			"lane\taxis:pipeline-hardening\tthe standing pipeline and reliability lane",
+			"lane\twayfinder:backlog\ta standing lane this repo declares",
+			"lane\taxis:pipeline-hardening\ta standing lane this repo declares",
 		]);
 	});
 
@@ -311,8 +311,8 @@ describe("runHomes and the standing lanes the host repo carries", () => {
 	it("still offers both in a repo carrying both", async () => {
 		const out = await run([twoMilestones]);
 		expect(out.stdout.trimEnd().split("\n").slice(-2)).toEqual([
-			"lane\twayfinder:backlog\tfog — uncharted work upstream of any arc",
-			"lane\taxis:pipeline-hardening\tthe standing pipeline and reliability lane",
+			"lane\twayfinder:backlog\ta standing lane this repo declares",
+			"lane\taxis:pipeline-hardening\ta standing lane this repo declares",
 		]);
 	});
 
@@ -332,7 +332,7 @@ describe("runHomes and the standing lanes the host repo carries", () => {
 	it("carries the offered lanes, not the declared set, into the --json payload", async () => {
 		const out = await run([twoMilestones, [LABELS, labels("wayfinder:backlog")]], {}, {json: true});
 		expect(JSON.parse(out.stdout).lanes).toEqual(
-			offeredLanes(DEFAULT_LANES, new Set(["wayfinder:backlog"])),
+			offeredLanes(DECLARED_LANES, new Set(["wayfinder:backlog"])),
 		);
 	});
 

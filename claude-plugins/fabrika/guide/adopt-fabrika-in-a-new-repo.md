@@ -185,29 +185,30 @@ not match `^#(\d+)$`.
 
 `triage homes` also prints a `lane` row per **standing lane** — a label that is a home in its own
 right, for work no milestone owns. You get one only where your repo both declares the lane and
-carries its label. A fresh repo declares both — the CLI ships a pair of defaults — but carries
-neither label, so you get none, and stderr says so:
+carries its label. The CLI ships no lane, so a fresh repo declares none and gets none, and stderr
+says so:
 
 ```
-triage homes: standing lanes: 0 of 2 declared carry a label in you/your-repo — not offered: wayfinder:backlog, axis:pipeline-hardening.
+triage homes: standing lanes: this repo declares none.
 ```
 
-That is the correct answer, not a gap to fix. Home everything to a milestone and skip `--lane`.
+That is the correct answer, not a gap to fix. Home everything to a milestone and skip `--lane`:
+`triage apply --lane` refuses on `10` here, naming the key, and `ledger child` takes a milestone as
+the only home.
 
 If you do want a standing lane: create the label on your board (**writes to GitHub**: a label you
 create by hand), then declare it under
 `boardVocabulary.standingLanes` in `.fabrika.jsonc` (next section). Both halves are required — a
 declared lane whose label does not exist is not offered, which is what stops `triage apply --lane`
-from failing a write at the end of a full triage run.
+from failing a write at the end of a full triage run. `triage homes` names each declared lane the
+board lacks:
 
-If you want none at all, say so: `"standingLanes": []` under `boardVocabulary`. Then `triage homes`
-reads no labels, offers no lane, and prints `standing lanes: this repo declares none.` — every issue
-homes on a milestone, and `triage apply --lane` refuses. Leaving the key out is a different answer:
-it falls to the shipped pair, which then gets filtered against your board.
+```
+triage homes: standing lanes: 0 of 1 declared carry a label in you/your-repo — not offered: lane:ops.
+```
 
-Standing lanes come from your repo, never from a CLI literal. The shipped default is still there
-until a later change evicts it, and it reaches no board that has not created the labels, so the
-empty declaration above is how you opt out of it entirely.
+Standing lanes come from your repo's `.fabrika.jsonc` and nowhere else. Leaving the key out and
+writing `"standingLanes": []` are the same answer: zero lanes, every issue homes on a milestone.
 
 ## 9. Add the config file
 

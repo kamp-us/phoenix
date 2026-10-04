@@ -5,7 +5,6 @@ import {
 	DEFAULT_BOARD_VOCABULARY,
 	FACET_VOCABULARY,
 	PRIORITIES,
-	STANDING_LANES,
 	TYPES,
 } from "../../triage/facets.ts";
 import {statusList} from "../board.ts";
@@ -36,8 +35,14 @@ describe("the shipped default board", () => {
 		expect(resolved.value.types).toEqual(TYPES);
 		expect(resolved.value.priorities).toEqual(PRIORITIES);
 		expect(resolved.value.audiences).toEqual(AUDIENCES);
-		expect(resolved.value.standingLanes).toEqual(STANDING_LANES);
 		expect(statusList(resolved.value.statuses)).toEqual(STATUSES);
+	});
+
+	it("ships no standing lane — a repo with no config at all runs none", () => {
+		const resolved = resolve(loadConfig({_tag: "Absent"}), boardVocabularyKey);
+		expect(resolved._tag).toBe("Default");
+		if (resolved._tag !== "Default") return;
+		expect(resolved.value.standingLanes).toEqual([]);
 	});
 
 	it("composes to the facet table `triageFacets` ships, patterns and all", () => {
@@ -81,6 +86,16 @@ describe("a declared vocabulary", () => {
 		if (resolved._tag !== "Declared") return;
 		expect(resolved.value.standingLanes).toEqual([]);
 		expect(resolved.value.priorities).toEqual(PRIORITIES);
+	});
+
+	it("resolves an absent standingLanes to the same zero lanes as an empty one", () => {
+		const absent = declared({types: ["task", "epic"]});
+		const empty = declared({types: ["task", "epic"], standingLanes: []});
+		expect(absent._tag).toBe("Declared");
+		expect(empty._tag).toBe("Declared");
+		if (absent._tag !== "Declared" || empty._tag !== "Declared") return;
+		expect(absent.value.standingLanes).toEqual([]);
+		expect(absent.value.standingLanes).toEqual(empty.value.standingLanes);
 	});
 
 	it("refuses a sub-key nobody reads, rather than ignoring it", () => {
@@ -127,13 +142,13 @@ describe("composing the board with the facet table", () => {
 
 	it("takes ownership from `triageFacets` where a repo declared it", () => {
 		const read = board({
-			[BOARD_VOCABULARY]: {priorities: ["sev1"]},
+			[BOARD_VOCABULARY]: {priorities: ["sev1"], standingLanes: ["team:infra"]},
 			[TRIAGE_FACETS]: [
 				{name: "priority", owns: "^sev\\d+$", values: ["sev1"]},
 				{name: "type", owns: "^type:", values: TYPES.map((t) => `type:${t}`)},
 				{name: "status", owns: "^status:", values: [...STATUSES]},
 				{name: "audience", owns: "^ready-for:", values: AUDIENCES.map((a) => `ready-for:${a}`)},
-				{name: "lane", ownsLabels: [...STANDING_LANES], values: [...STANDING_LANES]},
+				{name: "lane", ownsLabels: ["team:infra"], values: ["team:infra"]},
 			],
 		});
 		expect(owns(read, "priority")).toEqual({_tag: "Pattern", source: "^sev\\d+$"});
