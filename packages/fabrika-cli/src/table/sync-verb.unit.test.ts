@@ -459,6 +459,72 @@ describe("a chain row", () => {
 	});
 });
 
+describe("a bet row that blocks, or hangs under, another row", () => {
+	const chain = (bet: Record<string, string | number> = {Stage: "bet", Section: "New bets"}) =>
+		world(
+			{
+				1: {blockedBy: [2], records: [laneRecord(1, {usd: 1})]},
+				2: {blockedBy: [3], records: [laneRecord(2, {usd: 2, founderParks: 1})]},
+				3: {records: [laneRecord(3, {usd: 3, founderParks: 1})]},
+			},
+			[
+				{number: 1, values: {Stage: "proposed", Section: "Tails"}},
+				{number: 2, values: bet},
+			],
+		);
+
+	it("keeps its Section and goes untouched when sync is seeded from the row it blocks", async () => {
+		const table = chain();
+
+		const outcome = await sync(table.board, [1]);
+
+		expect(table.valuesOf(2)).toEqual({Stage: "bet", Section: "New bets"});
+		expect(table.valuesOf(1)).toMatchObject({"Spent $": 1, Asks: 0});
+		expect(table.items.some((item) => item.number === 3)).toBe(false);
+		expect(JSON.parse(outcome.stdout).groups).toEqual([]);
+	});
+
+	it("keeps its Section and sums its own blockers when sync is seeded from it", async () => {
+		const table = chain();
+
+		const outcome = await sync(table.board, [2]);
+
+		expect(table.valuesOf(2)).toMatchObject({Section: "New bets", "Spent $": 5, Asks: 2});
+		expect(table.valuesOf(1)).toMatchObject({Section: "Tails", "Spent $": 1, Asks: 0});
+		expect(table.valuesOf(3).Section).toBeUndefined();
+		expect(JSON.parse(outcome.stdout).groups).toEqual([{head: 2, kind: "chain", members: [3]}]);
+	});
+
+	it("is not given a Section back when it had lost one", async () => {
+		const table = chain({Stage: "bet"});
+
+		await sync(table.board, [1, 2]);
+
+		expect(table.valuesOf(2).Section).toBeUndefined();
+	});
+
+	it("keeps its Section under an epic row, which sums its other children only", async () => {
+		const table = world(
+			{
+				10: {subIssues: [11, 12]},
+				11: {parent: 10, records: [laneRecord(11, {usd: 4})]},
+				12: {parent: 10, records: [laneRecord(12, {usd: 9, founderParks: 1})]},
+			},
+			[
+				{number: 10, values: {Stage: "proposed", Section: "New bets"}},
+				{number: 11, values: {Section: "Tails"}},
+				{number: 12, values: {Stage: "bet", Section: "Tails"}},
+			],
+		);
+
+		await sync(table.board, [11, 12]);
+
+		expect(table.valuesOf(12)).toMatchObject({Section: "Tails", "Spent $": 9, Asks: 1});
+		expect(table.valuesOf(10)).toMatchObject({"Spent $": 4, Asks: 0});
+		expect(table.valuesOf(11).Section).toBeUndefined();
+	});
+});
+
 describe("rows are real, open issues", () => {
 	it("never adds a closed issue as a new row, and adds no draft", async () => {
 		const table = world({42: {open: false, records: [laneRecord(42)]}}, [
@@ -582,7 +648,9 @@ describe("reading a 200-row table", () => {
 		};
 		const rows = new Set(numbers);
 
-		const scoped = await Effect.runPromise(readScope(board, "table flags", REPO, numbers, rows));
+		const scoped = await Effect.runPromise(
+			readScope(board, "table flags", REPO, numbers, rows, new Set()),
+		);
 		if (scoped._tag !== "Graph") throw new Error(scoped.reason);
 		const read = await Effect.runPromise(readRecords(board, "table flags", REPO, scoped, rows));
 		if (read._tag !== "Records") throw new Error(read.reason);
@@ -615,7 +683,7 @@ describe("reading a 200-row table", () => {
 		const board: SyncBoard<never> = {...wideTable().board, node};
 
 		const scoped = await Effect.runPromise(
-			readScope(board, "table flags", REPO, numbers, new Set(numbers)),
+			readScope(board, "table flags", REPO, numbers, new Set(numbers), new Set()),
 		);
 
 		expect(scoped._tag).toBe("Graph");
@@ -687,7 +755,9 @@ describe("reading a 200-row table", () => {
 				}),
 		};
 
-		const scoped = await Effect.runPromise(readScope(board, "table sync", REPO, seeds, new Set()));
+		const scoped = await Effect.runPromise(
+			readScope(board, "table sync", REPO, seeds, new Set(), new Set()),
+		);
 
 		expect(scoped._tag).toBe("Refused");
 		if (scoped._tag !== "Refused") return;

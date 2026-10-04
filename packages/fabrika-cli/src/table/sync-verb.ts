@@ -69,9 +69,10 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {describePlanned, dryRunSync} from "./dry-run.ts";
-import {kindOf, membersOf} from "./group.ts";
+import {type Bets, kindOf, membersOf} from "./group.ts";
 import {type BoardTarget, productBoard} from "./shape.ts";
 import {
+	betsOf,
 	describeWrite,
 	planSync,
 	type Row,
@@ -294,10 +295,11 @@ export const readScope = <R>(
 	repo: string,
 	seeds: ReadonlyArray<number>,
 	rows: ReadonlySet<number>,
+	bets: Bets,
 ): Effect.Effect<Scoped | Refusal, never, R> =>
 	Effect.gen(function* () {
 		const graph = new Map<number, SyncNode>();
-		let scoped: Scope = scope(seeds, rows, graph);
+		let scoped: Scope = scope(seeds, rows, bets, graph);
 		let wanted: ReadonlyArray<number> = scoped._tag === "Incomplete" ? scoped.missing : [];
 		while (wanted.length > 0) {
 			if (graph.size + wanted.length > GRAPH_CAP) {
@@ -326,7 +328,7 @@ export const readScope = <R>(
 				}
 				graph.set(issue, read.value);
 			}
-			scoped = scope(seeds, rows, graph);
+			scoped = scope(seeds, rows, bets, graph);
 			wanted = scoped._tag === "Incomplete" ? scoped.missing.filter((n) => !graph.has(n)) : [];
 		}
 		if (scoped._tag !== "Scoped") {
@@ -386,9 +388,10 @@ const readWorld = <R>(
 	repo: string,
 	seeds: ReadonlyArray<number>,
 	rows: ReadonlySet<number>,
+	bets: Bets,
 ): Effect.Effect<World | Refusal, never, R> =>
 	Effect.gen(function* () {
-		const scoped = yield* readScope(board, VERB, repo, seeds, rows);
+		const scoped = yield* readScope(board, VERB, repo, seeds, rows, bets);
 		if (scoped._tag === "Refused") return scoped;
 		const read = yield* readRecords(board, VERB, repo, scoped, rows);
 		if (read._tag === "Refused") return read;
@@ -495,7 +498,7 @@ const converge = <R>(
 		}
 		const first = opened.value;
 		const seeds = issues.length > 0 ? issues : [...first.keys()].sort((a, b) => a - b);
-		const world = yield* readWorld(board, repo, seeds, new Set(first.keys()));
+		const world = yield* readWorld(board, repo, seeds, new Set(first.keys()), betsOf(first));
 		if (world._tag === "Refused") return world;
 
 		const landed: string[] = [];

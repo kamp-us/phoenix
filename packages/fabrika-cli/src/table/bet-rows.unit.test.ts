@@ -85,6 +85,24 @@ describe("betRowsOf", () => {
 		});
 	});
 
+	it("keeps one bet row out of another bet row's group", () => {
+		const graph = graphOf([node(20, {blockedBy: [21]}), node(21, {blockedBy: [22]}), node(22)]);
+		const rows = betRowsOf(
+			[
+				{head: 20, size: "M", setter: "founder"},
+				{head: 21, size: "S", setter: "founder"},
+			],
+			graph,
+		);
+		expect(rows).toEqual({
+			_tag: "Derived",
+			rows: [
+				{head: 20, size: "M", setter: "founder", kind: null, covers: [20]},
+				{head: 21, size: "S", setter: "founder", kind: "chain", covers: [21, 22]},
+			],
+		});
+	});
+
 	it("names the nodes it still needs rather than guessing a group", () => {
 		const rows = betRowsOf(
 			[{head: 20, size: "M", setter: "founder"}],
