@@ -7,6 +7,11 @@
  * the sign-off holds the park again, and only when its author is on the control-plane roster
  * (`./roster.ts`), whether or not the PR touches a control-plane path.
  *
+ * A comment carrying an agent stamp never counts, whoever wrote it. Where an agent posts under a
+ * roster account the author cannot tell it from the owner, so the body is what refuses it. An
+ * unstamped comment an agent posts still passes: the stamp catches an agent that signs its work,
+ * and nothing here proves a person acted.
+ *
  * It is not a control-plane approval and never stands in for one. `ship cp-approval` reads its own
  * `control-plane-self-approval` marker and nothing here, so a sign-off grants no §CP discharge, and
  * this read never counts that marker, so an approval clears no owner's-step park.
@@ -15,9 +20,11 @@
  * that held as "not signed yet" would look like a wait on the owner when it is a wait on nobody.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/10316#issuecomment-5974128227
+ * @ruling https://github.com/kamp-us/phoenix/issues/10591
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {isAgentStamped} from "../guard/pitch.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import type {PullRecord} from "../io/pulls.ts";
 import {controlPlaneRoster} from "./roster.ts";
@@ -41,6 +48,7 @@ export type OwnerSignoff =
  *
  * An empty roster is a proven answer and holds: nobody may sign off. A sign-off at another SHA is
  * named in the hold, because the owner's next move is a fresh sign-off at the head, not a first one.
+ * A stamped sign-off at the head is named ahead of a stale one, because it is the nearer miss.
  */
 export const signoffAt = (
 	comments: ReadonlyArray<Pick<CommentRecord, "author" | "body">>,
@@ -53,13 +61,25 @@ export const signoffAt = (
 			reason: "the control-plane roster resolves to nobody, so no sign-off can count",
 		};
 	}
+	let stamped: string | null = null;
 	let stale: {readonly login: string; readonly sha: string} | null = null;
 	for (const comment of comments) {
 		if (!roster.has(comment.author)) continue;
 		const sha = OWNER_SIGNOFF.exec(comment.body)?.[1];
 		if (sha === undefined) continue;
-		if (prefixMatch(sha, head)) return {_tag: "Signed", login: comment.author, sha};
+		const atHead = prefixMatch(sha, head);
+		if (isAgentStamped(comment.body)) {
+			if (atHead) stamped = comment.author;
+			continue;
+		}
+		if (atHead) return {_tag: "Signed", login: comment.author, sha};
 		stale = {login: comment.author, sha};
+	}
+	if (stamped !== null) {
+		return {
+			_tag: "Unsigned",
+			reason: `${stamped}'s sign-off at ${head} carries an agent stamp, and a stamped comment is not an owner's sign-off`,
+		};
 	}
 	return stale === null
 		? {

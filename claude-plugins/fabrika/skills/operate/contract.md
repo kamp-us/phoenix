@@ -2379,7 +2379,8 @@ nothing and is novel.
   control-plane and on one that is not, with a `mechanism` of `owner-signoff:<login>@<head>`. The
   clear approves nothing: a control-plane PR still owes `ship cp-approval` on the shipper's next
   run, and that verb never reads this marker. No sign-off, one at an earlier head, one by an
-  account off the roster, a `control-plane-self-approval` comment, and an empty roster are each
+  account off the roster, one whose comment carries an agent stamp, a `control-plane-self-approval`
+  comment, and an empty roster are each
   `13` with nothing written, naming the cause and the recorded step. A roster that cannot be read,
   and a comment list that cannot be read or comes back shorter than the PR's own count, are `11`.
   No open PR is `7`.

@@ -78,25 +78,27 @@ than after — asking after the plan is written turns an answer into a re-plan.
 
 ## An owner-only step confirms an account, not a person
 
-fabrika keeps six steps for the repo's owner: the UI hand-check, the `pitch-approved:` comment, the
-`bet` row on the betting table, `plan approve`, `decision rule`, and the sole-owner self-approval of
-a control-plane pull request. Each is meant as a person's judgement. What each one checks is
-smaller than that: which GitHub account acted.
+fabrika keeps seven steps for the repo's owner: the UI hand-check, the `pitch-approved:` comment,
+the `bet` row on the betting table, `plan approve`, `decision rule`, the sole-owner self-approval of
+a control-plane pull request, and the owner's sign-off that clears an `owner-action-required` park.
+Each is meant as a person's judgement. What each one checks is smaller than that: which GitHub
+account acted.
 
 That is all GitHub can show a tool. A comment has an author, a table field has an account that set
 it, and a command runs under a token that belongs to an account. None of them records who was at
-the keyboard. So the hand-check, `plan approve`, `decision rule` and the self-approval ask whether
-the account is one the control-plane rows of `.github/CODEOWNERS` name, and the `pitch-approved:`
-comment and the `bet` row ask whether the account has write access. Two of them also refuse a
-comment that carries an agent's stamp, which catches an agent that signs its work and nothing else.
+the keyboard. So the hand-check, `plan approve`, `decision rule`, the self-approval and the sign-off
+ask whether the account is one the control-plane rows of `.github/CODEOWNERS` name, and the
+`pitch-approved:` comment and the `bet` row ask whether the account has write access. Three of them,
+the hand-check, the sign-off and the `pitch-approved:` comment, also refuse a comment that carries
+an agent's stamp, which catches an agent that signs its work and nothing else.
 
 On a repo with one GitHub account, agents act as that account, so an agent can pass every one of
-the six. The line between owner and agent is then a rule the agents keep, written into their
+the seven. The line between owner and agent is then a rule the agents keep, written into their
 skills, and no check holds it. fabrika says this plainly instead of adding a proof step, because a
 proof an agent on the same account cannot also produce does not exist on GitHub, and one that
 pretends otherwise would be worse than none: the owner would trust a check that is not there.
 
-A second GitHub account for agents turns four of the six into real checks, since an account that is
+A second GitHub account for agents turns five of the seven into real checks, since an account that is
 off the control-plane rows fails the roster. The two that read write access still pass it.
 [Run agents under a second GitHub account](run-agents-under-a-second-account.md) has the steps. It
 is optional, and a one-account repo works without it.

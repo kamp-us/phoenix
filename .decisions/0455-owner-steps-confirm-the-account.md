@@ -15,9 +15,10 @@ separation, and nobody has to do it.
 
 ## Context
 
-fabrika has six steps it calls owner-only: the UI hand-check, the `pitch-approved:` comment, the
-`bet` row on the betting table, `fabrika plan approve`, `fabrika decision rule`, and the sole-owner
-self-approval of a control-plane pull request. Each one reads a GitHub account: the author of a
+fabrika has seven steps it calls owner-only: the UI hand-check, the `pitch-approved:` comment, the
+`bet` row on the betting table, `fabrika plan approve`, `fabrika decision rule`, the sole-owner
+self-approval of a control-plane pull request, and the owner's sign-off that clears an
+`owner-action-required` park. Each one reads a GitHub account: the author of a
 comment, the account that set a field, or the account a token belongs to.
 
 On a repo with one GitHub account, agents post as that account. A usability test on 2026-10-03
@@ -63,18 +64,19 @@ describes one says account.**
   | `fabrika plan approve` | the account running the verb | on the control-plane roster |
   | `fabrika decision rule` | the account running the verb | on the control-plane roster |
   | sole-owner self-approval | the comment's author | the one control-plane owner, who also authored the pull request |
+  | owner sign-off (`owner-action-signoff @ <sha>`) | the comment's author | on the control-plane roster |
   | `pitch-approved:` comment | the comment's author | write access |
   | `bet` row | the account that set the Stage | write access |
 
   The control-plane roster is the set of accounts the control-plane rows of `.github/CODEOWNERS`
-  resolve to. The hand-check and the `pitch-approved:` comment also refuse a comment that carries an
-  agent stamp. A comment with no stamp passes on its author alone.
+  resolve to. The hand-check, the owner sign-off and the `pitch-approved:` comment also refuse a
+  comment that carries an agent stamp. A comment with no stamp passes on its author alone.
 - **The rule about who performs the step is the agent's to keep.** An agent still leaves an owner
   step to the owner, or performs it only on the owner's instruction where an earlier record allows
   that. On a one-account repo no check enforces this. The skills say so in those words.
 - **A second GitHub account for agents is the opt-in.** The agent account stays off the
-  control-plane rows of `CODEOWNERS`. The hand-check, `plan approve`, `decision rule` and the
-  control-plane approval then refuse it. The `pitch-approved:` comment and the `bet` row read write
+  control-plane rows of `CODEOWNERS`. The hand-check, the owner sign-off, `plan approve`,
+  `decision rule` and the control-plane approval then refuse it. The `pitch-approved:` comment and the `bet` row read write
   access, and an agent account that pushes branches has it, so those two still pass.
 - **GitHub enforces one check itself.** A pull request's author cannot approve it. Where two or more
   control-plane owners exist, the approval a control-plane pull request needs is a review from an
@@ -107,5 +109,17 @@ ruled here, and a later record decides it if anyone asks.
 - The explanation is in
   [`how-fabrika-works.md`](../claude-plugins/fabrika/guide/how-fabrika-works.md), and the how-to is
   [`run-agents-under-a-second-account.md`](../claude-plugins/fabrika/guide/run-agents-under-a-second-account.md).
+
+## Amendments
+
+- **#10591 — the owner sign-off is a seventh owner-only step, and it refuses a stamp
+  (2026-10-05).** The `owner-action-signoff @ <sha>` comment that clears an `owner-action-required`
+  park landed after this record and reads the comment's author against the control-plane roster. It
+  counted a comment carrying an agent stamp, unlike the hand-check and the `pitch-approved:`
+  comment. [#10591](https://github.com/kamp-us/phoenix/issues/10591) makes it skip a stamped
+  comment through the same stamp read those two use, and adds it to the table above. This is a
+  behaviour change to one check, so "the checks stay exactly as they are" no longer holds for the
+  sign-off. No new proof that a person acted is added: an unstamped comment still passes on its
+  author alone.
 
 Vocabulary impact: none coined.

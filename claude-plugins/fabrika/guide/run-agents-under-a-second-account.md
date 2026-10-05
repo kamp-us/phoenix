@@ -64,12 +64,13 @@ and ship. Commit the file to your default branch.
 
 ## 5. Do the owner-only steps from your own account
 
-Your agents now run as an account the roster does not name. These four steps refuse it, so you do
+Your agents now run as an account the roster does not name. These five steps refuse it, so you do
 them yourself, under your own login:
 
 | Step | What the agent account gets | How you do it |
 |---|---|---|
 | UI hand-check | `review-ui route` does not count its comment. A pinned one refuses at exit `22`; with no other comment at the head, the route refuses at `21`. | Post the screenshot comment from your own account. |
+| Owner sign-off | `recipe unpark` does not count its `owner-action-signoff @ <sha>` comment, and the `owner-action-required` park holds at exit `13`. | Comment `owner-action-signoff @ <sha>` at the pull request's current head from your own account. |
 | `fabrika plan approve` | exit `24` | Run it in a terminal that uses your own token. |
 | `fabrika decision rule` | exit `20` | Run it in a terminal that uses your own token. |
 | Control-plane approval | A pull request the agent account opened has no self-approval path. `ship cp-approval` answers `stop` until an owner account approves. | Approve the pull request at its current head with a GitHub review. |
