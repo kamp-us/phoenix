@@ -1197,7 +1197,13 @@ describe("emitMachine — the tail's rendered review cell", () => {
 		expect(tailRegion(false)["review:ui"]?.on).not.toHaveProperty("EPIC_4300.LAP");
 		expect(tailRegion(true)["review:ui"]?.on["EPIC_4300.LAP"]).toEqual([
 			{target: "review", guard: "lap:text-review-stale"},
+			{target: "build", guard: "lap:base-conflicted"},
 			{target: "review:ui", guard: "lapsRemaining", actions: "incrementLaps"},
+			{target: "human:machinery-stall"},
+		]);
+		expect(tailRegion(true).review?.on["EPIC_4300.LAP"]).toEqual([
+			{target: "build", guard: "lap:base-conflicted"},
+			{target: "review", guard: "lapsRemaining", actions: "incrementLaps"},
 			{target: "human:machinery-stall"},
 		]);
 		expect(

@@ -182,15 +182,29 @@ const AT_REVIEW_UI: ReadonlyArray<CausedStep> = [
  * Every compiled cell of one task, driven and rendered — `state event classes retries -> next
  * retries`. The topology alone lists which events a state answers; this also pins where each
  * answer *goes*, which is what a routing change has to move.
+ *
+ * A lap a state routes by its cause gets one more set of rows per routed cause, its event spelled
+ * `LAP:<cause>`; a cause the state does not route is refused before its cell runs, so it has no row.
  */
 const cellTable = (lane: CompiledLane, taskId: string): string => {
-	const update = defined(lane.tasks[taskId]).machine.update as Record<
+	const task = defined(lane.tasks[taskId]);
+	const update = task.machine.update as Record<
 		string,
 		Record<string, (state: TaskState, msg: LaneMsg) => readonly [TaskState, unknown]>
 	>;
 	const rows: string[] = [];
 	for (const [state, cells] of Object.entries(update)) {
-		for (const event of Object.keys(cells)) {
+		const reads = Object.keys(cells).flatMap((event) => [
+			{event, label: event, cause: undefined as string | undefined},
+			...(event === MACHINERY_EVENT
+				? [...(task.lapRoutes.get(state) ?? [])].map((cause) => ({
+						event,
+						label: `${event}:${cause}`,
+						cause,
+					}))
+				: []),
+		]);
+		for (const {event, label, cause} of reads) {
 			for (const classes of [[] as ReadonlyArray<string>, ["ui"], ["code", "ui"]]) {
 				for (const retries of [0, RETRY_BUDGET]) {
 					// One "spent" axis drives all three counters, so the spent rows pin the fallthrough of a
@@ -207,10 +221,12 @@ const cellTable = (lane: CompiledLane, taskId: string): string => {
 						maxLaps: MACHINERY_LAP_BUDGET,
 						was: "review",
 					};
-					const [next] = defined(cells[event])(from, {type: event, classes});
+					const msg: LaneMsg =
+						cause === undefined ? {type: event, classes} : {type: event, classes, cause};
+					const [next] = defined(cells[event])(from, msg);
 					const carried = classes.length === 0 ? "-" : classes.join(",");
 					rows.push(
-						`${state}\t${event}\t${carried}\t${retries}/${RETRY_BUDGET}\t-> ${next.type}\t${next.retries}/${RETRY_BUDGET}\t${next.laps}/${MACHINERY_LAP_BUDGET}`,
+						`${state}\t${label}\t${carried}\t${retries}/${RETRY_BUDGET}\t-> ${next.type}\t${next.retries}/${RETRY_BUDGET}\t${next.laps}/${MACHINERY_LAP_BUDGET}`,
 					);
 				}
 			}
@@ -452,6 +468,53 @@ describe("the compiler — structural recognition", () => {
 		expect(causedSteps(lane, "issue", AT_REVIEW_UI).type).toBe("review:ui");
 		expect(lapped("text-review-stale")).toMatchObject({type: "review", retries: 0, laps: 1});
 		expect(lapped("spawn-dead")).toMatchObject({type: "review:ui", retries: 0, laps: 1});
+	});
+
+	// A PR that conflicts with its base while it waits in review gets no CI run for a reviewer to
+	// read, so the round is a builder's: each review cell routes the lap to its own builder, spending
+	// a lap and no retry, and every other lap cause still loops the review cell it came from.
+	it("folds a base-conflicted lap at review to build and at review:ui to build:ui, spending a lap and no retry", () => {
+		const lane = compiled(coderWorkflow());
+		const AT_REVIEW: ReadonlyArray<CausedStep> = [{event: "WIP"}, {event: "DONE"}];
+		const lapped = (at: ReadonlyArray<CausedStep>, cause: string) =>
+			causedSteps(lane, "issue", [...at, {event: MACHINERY_EVENT, cause}]);
+
+		expect(causedSteps(lane, "issue", AT_REVIEW).type).toBe("review");
+		expect(lapped(AT_REVIEW, "base-conflicted")).toMatchObject({
+			type: "build",
+			retries: 0,
+			laps: 1,
+		});
+		expect(lapped(AT_REVIEW_UI, "base-conflicted")).toMatchObject({
+			type: "build:ui",
+			retries: 0,
+			laps: 1,
+		});
+		for (const cause of ["spawn-dead", "queue-ejected"]) {
+			expect(lapped(AT_REVIEW, cause)).toMatchObject({type: "review", retries: 0, laps: 1});
+			expect(lapped(AT_REVIEW_UI, cause)).toMatchObject({type: "review:ui", retries: 0, laps: 1});
+		}
+	});
+
+	it("parks a base-conflicted lap out of a review cell on machinery-stall once the laps are spent", () => {
+		const lane = compiled(coderWorkflow());
+		// Each round: the conflict sends the lane to a builder, whose `DONE` hands it back to review.
+		const round: ReadonlyArray<CausedStep> = [
+			{event: MACHINERY_EVENT, cause: "base-conflicted"},
+			{event: "DONE"},
+		];
+		const spent = causedSteps(lane, "issue", [
+			{event: "WIP"},
+			{event: "DONE"},
+			...Array.from({length: MACHINERY_LAP_BUDGET}, () => round).flat(),
+			{event: MACHINERY_EVENT, cause: "base-conflicted"},
+		]);
+
+		expect(spent).toMatchObject({
+			type: "human:machinery-stall",
+			retries: 0,
+			laps: MACHINERY_LAP_BUDGET,
+		});
 	});
 
 	// After the stale-verdict lap, `review` is an ordinary review round: a `PASS` raising `ui` walks

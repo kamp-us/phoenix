@@ -147,6 +147,18 @@ export const preStaleRouteTemplate = (): string => {
 	return JSON.stringify(document, null, "\t");
 };
 
+/** The coder machine a lane booted before `review` and `review:ui` routed a `base-conflicted` lap. */
+export const preReviewConflictRouteTemplate = (): string => {
+	const document = JSON.parse(coderTemplateText());
+	const cells = document.machine.states.pipeline.states.issue.states;
+	for (const state of ["review", "review:ui"]) {
+		cells[state].on["ISSUE.LAP"] = cells[state].on["ISSUE.LAP"].filter(
+			(arm: {guard?: string}) => arm.guard !== "lap:base-conflicted",
+		);
+	}
+	return JSON.stringify(document, null, "\t");
+};
+
 export const choreTemplateText = (): string =>
 	readGoldenFixture(import.meta.url, "./templates/chore.workflow.json");
 

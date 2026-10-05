@@ -329,8 +329,8 @@ from `lane integrate`'s `42`, `43` or `44` out of an epic child's `integrate`. T
 machinery group (`REPLAY-COLLIDED`, `BASE-CONFLICTED`, `TEXT-REVIEW-STALE`, `QUEUE-EJECTED`,
 `SEAT-DIRTY`, `SHELL-DEAD`, `BASE-RED`), which a driver records about the pipeline itself.
 `BASE-CONFLICTED` and `TEXT-REVIEW-STALE` route their lap to another stage, so each records only in
-the one cell holding its arm (`ship` and `review:ui`) and refuses at `12` anywhere else, log
-unappended. `BASE-DRIFTED` still maps there for
+the cells holding its arm (`ship`, `review` and `review:ui` for the first, `review:ui` for the
+second) and refuses at `12` anywhere else, log unappended. `BASE-DRIFTED` still maps there for
 a recorder holding the old token, and no skill records it. Each maps to the machine's LAP event, spending the lap budget instead of the repair
 one. Each carries its own cause off the same closed set with no `--cause` typed; pass one to
 override it, and a cause outside the set still refuses at `35`.
