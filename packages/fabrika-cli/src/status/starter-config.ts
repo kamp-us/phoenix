@@ -1,7 +1,7 @@
 /**
  * The starting `.fabrika.jsonc` `status bootstrap fabrika-config` writes into a repo that has none.
  *
- * It names the four keys whose shipped default stops or narrows a lane, each **at that shipped
+ * It names the five keys whose shipped default stops or narrows a lane, each **at that shipped
  * default**: the key names and values are read off the key modules, so the file states what the repo
  * already runs on and writing it changes no verb's answer. What it adds is the comments: which verb
  * a key holds back, and the shape of a first value.
@@ -12,6 +12,7 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/10041#issuecomment-5983080892
  */
 import type {KeyGroup} from "../config/key-group.ts";
+import {catalogGuardKey} from "../config/keys/catalog-guard.ts";
 import {CI, SHIPPED_CI} from "../config/keys/ci.ts";
 import {codeValidatorsKey} from "../config/keys/code-validators.ts";
 import {dependencyReconcilerKey} from "../config/keys/dependency-reconciler.ts";
@@ -43,6 +44,12 @@ export const STARTER_CONFIG = `// fabrika's config for this repo. Every key is o
 	// While this list is empty, \`fabrika ui render\` and \`fabrika ui evidence\` refuse, and a change to
 	// a screen is reviewed as text only. Leave it empty for a repo that renders nothing.
 	${shipped(uiSurfacesKey)},
+
+	// Whether \`fabrika guard catalog-guard check\` runs: "on" or "off".
+	// Under "on", every dependency in a workspace package.json must be a pnpm \`catalog:\` or a
+	// \`workspace:\` reference, so in a repo that does not use a pnpm \`catalog:\` the guard reds every
+	// lane's \`fabrika build check\`, on dependencies no lane touched. Write "off" to turn it off.
+	${shipped(catalogGuardKey)},
 
 	"${CI}": {
 		// What a repo with no workflow of its own in .github/workflows/ gets: "refuse" or "degrade".

@@ -12,6 +12,7 @@ import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {describe, expect, it} from "vitest";
 import type {BoardVocabulary} from "../config/board.ts";
 import {type ConfigSource, stripJsonComments} from "../config/document.ts";
+import {CATALOG_GUARD} from "../config/keys/catalog-guard.ts";
 import {CI} from "../config/keys/ci.ts";
 import {CODE_VALIDATORS} from "../config/keys/code-validators.ts";
 import {DEPENDENCY_RECONCILER} from "../config/keys/dependency-reconciler.ts";
@@ -1116,7 +1117,7 @@ describe("the hand-check-rule surface", () => {
  */
 describe("the fabrika-config surface", () => {
 	const CONFIG = "/repo/.fabrika.jsonc";
-	const STARTER_KEYS = [CODE_VALIDATORS, DEPENDENCY_RECONCILER, UI_SURFACES, CI];
+	const STARTER_KEYS = [CODE_VALIDATORS, DEPENDENCY_RECONCILER, UI_SURFACES, CATALOG_GUARD, CI];
 
 	const bootstrapWith = (
 		surfaceId: string,
@@ -1175,6 +1176,13 @@ describe("the fabrika-config surface", () => {
 		for (const key of STARTER_KEYS) {
 			expect(settingValue(rows, key)).toEqual(settingValue(undeclared, key));
 		}
+	});
+
+	it("declares catalogGuard at on, the guard's shipped default", async () => {
+		const {text = ""} = await bootstrapWith("fabrika-config", {});
+		const declared = JSON.parse(stripJsonComments(text)) as Record<string, unknown>;
+		expect(declared[CATALOG_GUARD]).toBe("on");
+		expect(settingValue(settingRows(layersOf({_tag: "Text", text})), CATALOG_GUARD)).toBe("on");
 	});
 
 	it("says exists over a file already there and leaves it untouched", async () => {
