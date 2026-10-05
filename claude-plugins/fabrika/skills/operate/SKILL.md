@@ -802,11 +802,13 @@ install that cannot honour the merged lockfile is exit `43` and a `FAIL`, and so
 
 Read which `FAIL` you have off the exit code, because they take different repairs: `42` with no
 replay attempted, the child conflicts and nothing was installed; `43` the merged lockfile does not
-install or the install changed a tracked file; `44` the merged tree failed a validator — the
-semantic collision, two ranges that each passed alone and do not hold together. Those three are the
-whole `FAIL` set — `42`'s replay arm is the park, not a fourth — and they are the
-only exits that judge the merged tree, and every other one says something about the lane record, the
-worktrees or this checkout, which is never the child's to repair. **Exit `45` is the one that looks
+install or the install changed a tracked file; `44` the merged tree failed a validator that passed
+over the pre-merge head — the semantic collision, two ranges that each passed alone and do not hold
+together. Those three are the whole `FAIL` set — `42`'s replay arm is the park, not a fourth. Exit
+`75` judges the merged tree too, but the same validator failed over the pre-merge head, so the base
+was broken before the child arrived: that is the `BASE-RED` machinery lap, never the child's to
+repair. Every other exit says something about the lane record, the worktrees or this checkout,
+which is never the child's to repair either. **Exit `45` is the one that looks
 like a `FAIL` and is not**: the seat already held modified tracked files, so the merge was never
 attempted — dirt on the driver's tree reads as the child's conflict or its bad lockfile if you let
 it. Clean the seat, then integrate the same
@@ -1541,11 +1543,11 @@ refused at `20` and the only move left was a `BLOCKED` over a lane that had fini
 A `SHIPPED-PR` and an epic child's `BUILT-NO-PR` carry no such field and fold to `review` exactly as
 they always did.
 
-**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Five terminal tokens
+**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Six terminal tokens
 belong to no shell's vocabulary — `lane report` groups them as `machinery` in
 [`report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)'s `SHELL_VOCABULARIES` — and each
 one says the pipeline carrying the artifact failed while nothing about the artifact was judged. All
-five map to the machine's `LAP` event, and each names exactly one park cause:
+six map to the machine's `LAP` event, and each names exactly one park cause:
 
 | Token | The observed failure | The cause it carries |
 | --- | --- | --- |
@@ -1554,10 +1556,20 @@ five map to the machine's `LAP` event, and each names exactly one park cause:
 | `QUEUE-EJECTED` | the merge queue ejected the PR before it merged — a sibling's red, a base that moved under the batch, a queue timeout — and no verdict against it changed | `queue-ejected` |
 | `SEAT-DIRTY` | a working tree still holds the lane branch this build or replay must stand on — `lane integrate` exit `54`, `build branch --resume-lane` exit `11` | `worktree-holds-branch` |
 | `SHELL-DEAD` | the shell driving this lane's stage was killed by its provider before it recorded a terminal | `spawn-dead` |
+| `BASE-RED` | a code validator failed over the merged tree and over the pre-merge assembly head too, so the base was broken before the child arrived — `lane integrate` exit `75` | `assembly-base-red` |
 
-Three of the five are yours because no shell observes them — the two `integrate` rows and the dead
+Four of the six are yours because no shell observes them — the three `integrate` rows and the dead
 spawn. The other two have a shell in front of them, and where its own terminal already recorded
 the failure you record nothing second: `ship` reports `QUEUE-EJECTED` and `BASE-CONFLICTED` itself.
+
+**`BASE-RED` is the one lap you cannot record on your own word.** It takes
+`--integrate-exit 75 --assembly-head <sha>`, and `lane report` lands it only when the record
+`lane integrate` wrote says its re-run over that head was red. The line carries the validator and
+what it printed over the base, for whoever fixes the base. A task gets `baseRedLaps` of these free
+(`.fabrika.jsonc`, shipped `2`) since its last `UNBLOCKED` or `DONE`; past that the same report
+lands the `BLOCKED` park on `assembly-base-red` instead, and the lane waits for the base to be fixed.
+It lands that park too where the task's state holds no `LAP` cell, so this is the one machinery
+token with no pre-lap park for you to type.
 
 **A head behind its base that merges clean is no machinery failure.** The merge queue lands it as it
 is, so it earns no lap and no park. `BASE-DRIFTED` and the `head-behind-base` cause stay in
@@ -1596,7 +1608,8 @@ dispatched. A single-issue lane is a different document: it boots from the commi
 ([`coder.workflow.json`](../../../../packages/fabrika-cli/src/lane/templates/coder.workflow.json)),
 which the key does not gate and which carries the cell in `build`, `build:ui`, `build:mixed`,
 `review`, `review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no
-`LAP` cell is `lane report` exit `12` with the log unappended — not a token to retype. Record the
+`LAP` cell is `lane report` exit `12` with the log unappended — not a token to retype. `BASE-RED` is
+the one exception: the same report lands its park itself. For every other token, record the
 pre-lap park instead, naming the same cause the table above gives it (`BLOCKED --cause
 replay-conflict` for a `REPLAY-COLLIDED` an epic machine cannot take), and accept what that costs: a
 `BLOCKED` arm carries no `incrementRetries` in either region of `emit.ts` or in the coder template,
@@ -1605,7 +1618,7 @@ task moves at all. The machine is fixed at emission, so flipping the key moves n
 disk.
 
 **An `integrate` has no spawn to report**, so its row is `lane integrate`'s own exit, and this table
-is the one home for that mapping — the verb exits fourteen ways and every one is here, so there is
+is the one home for that mapping — the verb exits sixteen ways and every one is here, so there is
 no code left over for a catch-all to guess at. Exit `0` takes two rows because its two verdicts owe
 different next moves, and the verdict line is what tells them apart:
 
@@ -1616,16 +1629,19 @@ different next moves, and the verdict line is what tells them apart:
 | `42` | the child conflicts and no replay was attempted — the repo declares `assemblyReplay.onCollision: "off"` | `FAIL --integrate-exit 42 --assembly-head <sha>` |
 | `42` | a replay ran and hit a hunk that is not a plain keep-both — the branch was reset and proved back | `REPLAY-COLLIDED` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause replay-conflict` |
 | `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL --integrate-exit 43 --assembly-head <sha>` |
-| `44` | the merged tree failed a code validator | `FAIL --integrate-exit 44 --assembly-head <sha>` |
+| `44` | the merged tree failed a code validator, and that validator passed over the pre-merge head, so the red is the child's | `FAIL --integrate-exit 44 --assembly-head <sha>` |
+| `75` | the merged tree failed a code validator, and that validator failed over the pre-merge head too, so the base was already broken | `BASE-RED --integrate-exit 75 --assembly-head <sha>` — the machinery lap above, its cause derived. The same report lands the `assembly-base-red` park past `baseRedLaps`, and where the task's state holds no `LAP` cell, so there is no pre-lap park to type |
 | `54` | the replay landed and the child's branch would not follow it — nothing was merged, and a working tree standing on that branch is the usual reason | `SEAT-DIRTY` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause worktree-holds-branch` |
-| `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` | the lane record, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
+| `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` · `65` | the lane record, the lanes root, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
 
 The bottom row is the whole reason this table is closed. Only `42`'s no-replay arm, `43` and `44`
 judge the child's content, so only those three may spend its retry budget. `42`'s other arm is the
 line to read twice: a replay that hit a hunk it may not resolve is the machinery failing, not the
 child, and a `FAIL` there charges the child's repair budget for it — the exact thing the corpus
 forbids, in the one table a driver routes off. That is what `REPLAY-COLLIDED` and `SEAT-DIRTY`
-record instead, and neither is ever recorded beside the `FAIL` it replaces.
+record instead, and neither is ever recorded beside the `FAIL` it replaces. `75` is the same
+line for a red validator: the verb re-ran it over the pre-merge head, so `44` and `75` are its
+answer about whose red it is, never yours.
 
 **Each of those three `FAIL`s names its exit and the assembly head on the line.** `<sha>` is the head
 the refusal says it put the seat back to (`is back at <sha>` on a `42`, `reset <path> back to <sha>`

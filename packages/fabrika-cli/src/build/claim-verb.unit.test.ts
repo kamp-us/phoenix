@@ -2043,6 +2043,38 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 			expect(stderr).toContain("--resume-lane");
 		});
 
+		it("hands a 44's validator and kept output to the repair builder, off the lane's own record", async () => {
+			const red = {
+				validator: "pnpm test",
+				output: {
+					stdout: {lines: ["FAIL merged.test.ts > it breaks"], omitted: 120},
+					stderr: {lines: ["WARN deprecated"], omitted: 0},
+				},
+			};
+			// Its own script: `once` spends on the shared `WINS`, which the test above already ran.
+			const wins: ReadonlyArray<Scripted> = [
+				[ISSUE, CLAIMABLE],
+				unclaimed(),
+				[once(COMMENTS), comments({id: 8801, body: rangeVerdict("PASS")})],
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), WRITES],
+			];
+			const out = await run(
+				runClaim,
+				wins,
+				{...LEDGER, resume: true},
+				ledgerFs([
+					...INTEGRATE_FAILED.slice(0, 3),
+					line("FAIL", {integrate: {exit: 44, head: HEAD, red}}),
+				]),
+			);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({integrate: {exit: 44, head: HEAD, red}});
+			expect(out.stderr.join("\n")).toContain("the validator was `pnpm test`");
+		});
+
 		it("refuses a fresh claim on that child, pointing at resume-child with the ledger flags", async () => {
 			const out = await run(
 				runClaim,

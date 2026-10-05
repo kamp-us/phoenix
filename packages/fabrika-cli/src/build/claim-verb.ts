@@ -257,7 +257,7 @@ const INTEGRATE_REPAIR: Readonly<Record<IntegrateFailure["exit"], string>> = {
 };
 
 const integrateClause = (failure: IntegrateFailure): string =>
-	`lane integrate exit ${failure.exit} against assembly head ${failure.head} (${INTEGRATE_REPAIR[failure.exit]})`;
+	`lane integrate exit ${failure.exit} against assembly head ${failure.head} (${INTEGRATE_REPAIR[failure.exit]}${failure.exit === 44 && failure.red !== undefined ? `; the validator was \`${failure.red.validator}\`` : ""})`;
 
 /**
  * The gate a fresh build claim on an epic child clears: has this child already been built and graded?

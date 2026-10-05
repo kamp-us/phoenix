@@ -974,7 +974,9 @@ refuses on `31` naming the integrate exit and head and pointing at
 `build resume-child <n> --lane <lane> --lane-root <root>`, and that entry opens the repair, printing
 `"integrate":{"exit","head"}` in its answer. There is no verdict for `verdicts --issue` to print, so
 that pair is your finding: `42` is a conflict with the assembly branch, `43` a lockfile the merged
-tree cannot install, `44` a validator the merged tree fails. Make the range hold on that head, then
+tree cannot install, `44` a validator the merged tree fails. A `44` also carries `red`: the
+validator command that failed and the end of what it printed on each stream, so read it there
+rather than re-running the validator to find out. Make the range hold on that head, then
 `build check`, `build commit` and `BUILT-NO-PR` as for any child repair. A later `DONE` retires the
 `FAIL`, so a lane that already repaired it refuses `--resume` on `31` like any finished child.
 

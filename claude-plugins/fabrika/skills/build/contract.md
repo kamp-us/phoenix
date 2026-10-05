@@ -1227,7 +1227,9 @@ appends, and the claim reads the log with every correction resolved, so the two 
 integrate `FAIL` counts as a repair round beside a standing `FAIL` verdict — a fresh claim refuses on
 `31` naming the exit and head and pointing at `build resume-child <n> --lane <lane> --lane-root
 <root>`, and `--resume` admits, printing `"integrate":{"exit":42|43|44,"head":"<sha>"}` in its
-answer. A child with no standing integrate `FAIL` reads exactly as it did without the flags. The
+answer. A `44` that `lane report` recorded off `lane integrate`'s own record also carries `red`:
+`{"validator":"<command>","output":{"stdout":{"lines","omitted"},"stderr":{"lines","omitted"}}}`,
+the end of each stream the failed validator printed over the merged tree. A child with no standing integrate `FAIL` reads exactly as it did without the flags. The
 ledger read is fail-closed: an absent, unreadable or malformed lane is `11`, never "no integrate
 FAIL", and a lane holding no task for this child is `14`.
 

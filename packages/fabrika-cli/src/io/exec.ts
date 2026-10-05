@@ -258,8 +258,17 @@ export const execCapture = (file: string, args: ReadonlyArray<string>): Exec =>
  * for a binary that is not on `PATH`; a child that starts and exits non-zero never reaches it.
  */
 export type ExecStatus =
-	/** `output` is the child's diagnostics — stderr when it wrote any, else stdout. */
-	| {readonly _tag: "Ran"; readonly ok: boolean; readonly output: string}
+	/**
+	 * `output` is the child's diagnostics — stderr when it wrote any, else stdout. `stdout` and
+	 * `stderr` are both streams whole, for a caller that must lose neither.
+	 */
+	| {
+			readonly _tag: "Ran";
+			readonly ok: boolean;
+			readonly output: string;
+			readonly stdout: string;
+			readonly stderr: string;
+	  }
 	| {readonly _tag: "Unstartable"; readonly reason: string};
 
 /**
@@ -291,6 +300,8 @@ export const execStatus = (
 				_tag: "Ran" as const,
 				ok: exitCode === 0,
 				output: output.trim() === "" ? `${file} exited ${exitCode}` : output,
+				stdout,
+				stderr,
 			};
 		}),
 	).pipe(

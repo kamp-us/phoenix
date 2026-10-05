@@ -15,6 +15,7 @@ import {claimReader} from "../build/claimants-verb.ts";
 import {claimStanding} from "../build/dead-claim.ts";
 import {childLaneBranches} from "../build/lane.ts";
 import {assemblyRefreshKey} from "../config/keys/assembly-refresh.ts";
+import {baseRedLapsKey} from "../config/keys/base-red-laps.ts";
 import {laneConcurrencyCapKey} from "../config/keys/lane-concurrency-cap.ts";
 import {machineryLapsKey} from "../config/keys/machinery-laps.ts";
 import {parkCauseKey} from "../config/keys/park-cause.ts";
@@ -582,7 +583,7 @@ const report = leafCommand(
 		integrateExit: Flag.integer("integrate-exit").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"the lane integrate exit (42, 43 or 44) a FAIL out of an epic child's integrate cell stands on; required there with --assembly-head, refused on every other line",
+				"the lane integrate exit (42, 43 or 44) a FAIL out of an epic child's integrate cell stands on, or 75 on a BASE-RED lap; required on those with --assembly-head, refused on every other line. A 44 and a 75 are checked against integrate's own record",
 			),
 		),
 		assemblyHead: Flag.string("assembly-head").pipe(
@@ -620,6 +621,7 @@ const report = leafCommand(
 			return;
 		}
 		const parkCause = yield* readKey(configRoot, parkCauseKey);
+		const baseRedLaps = yield* readKey(configRoot, baseRedLapsKey);
 		yield* emit(
 			yield* onKey("report", lane, root, (_key, ref) =>
 				runReport(
@@ -636,6 +638,7 @@ const report = leafCommand(
 						integrateExit: Option.getOrNull(integrateExit),
 						assemblyHead: Option.getOrNull(assemblyHead),
 						parkCause,
+						baseRedLaps,
 						classes,
 						repo: Option.getOrNull(repo),
 						cwd: process.cwd(),
@@ -681,6 +684,10 @@ const report = leafCommand(
 	Command.withExamples([
 		{command: "fabrika lane report 5736 --token SHIPPED-PR --pr <pr-url>"},
 		{command: "fabrika lane report 8810 --task issue_8819 --token REPLAY-COLLIDED"},
+		{
+			command:
+				"fabrika lane report 8810 --task issue_8819 --token BASE-RED --integrate-exit 75 --assembly-head 03135b9",
+		},
 	]),
 );
 
@@ -1224,7 +1231,7 @@ const integrate = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"integrate",
-			"Merges a reviewed child into the assembly worktree and validates it; ends on INTEGRATE-VERDICT.",
+			"Merges a reviewed child into the assembly, validates it, ends on INTEGRATE-VERDICT.",
 			{
 				4: "bad lane record",
 				7: "no lane",
@@ -1235,11 +1242,12 @@ const integrate = leafCommand(
 				39: ROOT_EXITS[39],
 				41: "no worktree holds epic/<n>",
 				42: "child conflicts, reset",
-				43: "merged lockfile does not install",
-				44: "merged tree fails a validator",
-				45: "assembly worktree was dirty",
-				54: "child branch did not follow the replay",
+				43: "merged lockfile won't install",
+				44: "validator red, base green",
+				45: "assembly worktree dirty",
+				54: "child branch missed the replay",
 				65: ROOT_EXITS[65],
+				75: "validator red on base too",
 			},
 		),
 	),

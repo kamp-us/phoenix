@@ -82,6 +82,7 @@ const run = (
 		integrateExit?: number | null;
 		assemblyHead?: string | null;
 		closer?: ReturnType<typeof fakeCloser>;
+		baseRedLaps?: Read<number>;
 	} = {},
 ) =>
 	Effect.runPromise(
@@ -101,6 +102,7 @@ const run = (
 					integrateExit: extra.integrateExit ?? null,
 					assemblyHead: extra.assemblyHead ?? null,
 					parkCause: extra.parkCause ?? parkCauseRead(),
+					baseRedLaps: extra.baseRedLaps ?? {_tag: "Value", value: 2, note: "the shipped value"},
 					classes: extra.classes ?? [],
 					repo: "o/r",
 					cwd: "/repo",
@@ -137,7 +139,8 @@ const earned = () =>
 
 describe("lane report — every shell terminal token maps to one operator event", () => {
 	// The integrator group reports out of an epic child's `integrate`, which the coder lane has no
-	// cell for; its one token is proven in the integrate describe block below.
+	// cell for; its one token is proven in the integrate describe block below, and so is the one
+	// machinery token that stands on integrate's record, `BASE-RED`.
 	const stateFor: Readonly<
 		Record<Exclude<keyof typeof SHELL_VOCABULARIES, "integrator">, keyof typeof LOG_AT>
 	> = {
@@ -151,6 +154,7 @@ describe("lane report — every shell terminal token maps to one operator event"
 	for (const [shell, vocabulary] of Object.entries(SHELL_VOCABULARIES)) {
 		if (shell === "integrator") continue;
 		for (const [token, event] of Object.entries(vocabulary)) {
+			if (token === "BASE-RED") continue;
 			it(`${shell} ${token} records ${event}`, async () => {
 				const fs = laneAt(LOG_AT[stateFor[shell as keyof typeof stateFor]]);
 
@@ -1312,22 +1316,49 @@ describe("lane report — an integrate FAIL carries the exit and head it failed 
 	const EPIC_LOG = `${ROOT}/${EPIC}/events.jsonl`;
 	const HEAD = "9f2c1ab4d5e6f708192a3b4c5d6e7f8091a2b3c4";
 
+	const RECORDS = `${ROOT}/${EPIC}/integrate-red.jsonl`;
+	const output = (text: string) => ({
+		stdout: {lines: [text], omitted: 41},
+		stderr: {lines: ["a warning"], omitted: 0},
+	});
+	/** The record `lane integrate` writes after re-running the red validator over the base. */
+	const record = (base: "green" | "red") =>
+		`${JSON.stringify({
+			at: "2026-10-04T00:00:00.000Z",
+			child: `build/${CHILD}-merge-check-1234abcd`,
+			head: HEAD,
+			merged: {validator: "pnpm test", output: output("FAIL merged.test.ts")},
+			base:
+				base === "green"
+					? {verdict: "green"}
+					: {verdict: "red", output: output("FAIL base.test.ts")},
+		})}\n`;
+
+	type Line = string | {readonly event: string; readonly [field: string]: unknown};
+
 	/** An emitted epic lane whose one child has folded to the leaf the events walk it into. */
-	const epicAt = (events: ReadonlyArray<string>) => {
-		const emitted = emitMachine(Number(EPIC), `## Dependencies\n\n- phase 1: #${CHILD}\n`, [
-			{number: CHILD, state: "open", stateReason: null, classes: []},
-		]);
+	const epicAt = (
+		events: ReadonlyArray<Line>,
+		options: {readonly records?: string; readonly machinery?: boolean} = {},
+	) => {
+		const emitted = emitMachine(
+			Number(EPIC),
+			`## Dependencies\n\n- phase 1: #${CHILD}\n`,
+			[{number: CHILD, state: "open", stateReason: null, classes: []}],
+			{machinery: options.machinery === true},
+		);
 		if (emitted._tag !== "Emitted")
 			throw new Error(`the epic fixture did not emit: ${emitted._tag}`);
 		return fakeFs({
 			files: {
 				[`${ROOT}/${EPIC}/workflow.json`]: emitted.text,
 				[EPIC_LOG]: events
-					.map(
-						(event) =>
-							`${JSON.stringify({task: TASK, event: `${TASK.toUpperCase()}.${event}`, at: "2026-09-26T00:00:00.000Z"})}\n`,
-					)
+					.map((line) => {
+						const {event, ...fields} = typeof line === "string" ? {event: line} : line;
+						return `${JSON.stringify({task: TASK, event: `${TASK.toUpperCase()}.${event}`, at: "2026-09-26T00:00:00.000Z", ...fields})}\n`;
+					})
 					.join(""),
+				...(options.records === undefined ? {} : {[RECORDS]: options.records}),
 			},
 		});
 	};
@@ -1341,16 +1372,53 @@ describe("lane report — an integrate FAIL carries the exit and head it failed 
 		const out = await run(fs, "FAIL", {
 			lane: EPIC,
 			task: TASK,
-			integrateExit: 44,
+			integrateExit: 43,
 			assemblyHead: HEAD,
 		});
 
 		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toMatchObject({integrate: {exit: 44, head: HEAD}});
+		expect(JSON.parse(out.stdout)).toMatchObject({integrate: {exit: 43, head: HEAD}});
 		expect(appendedTo(fs)).toMatchObject({
 			event: `${TASK.toUpperCase()}.FAIL`,
-			integrate: {exit: 44, head: HEAD},
+			integrate: {exit: 43, head: HEAD},
 		});
+	});
+
+	it("lands a 44 over a green base with the validator and its kept output off integrate's record", async () => {
+		const fs = epicAt(AT_INTEGRATE, {records: record("green")});
+
+		const out = await run(fs, "FAIL", {
+			lane: EPIC,
+			task: TASK,
+			integrateExit: 44,
+			assemblyHead: HEAD.slice(0, 7),
+		});
+
+		expect(out.code).toBe(0);
+		expect(appendedTo(fs)).toMatchObject({
+			event: `${TASK.toUpperCase()}.FAIL`,
+			integrate: {
+				exit: 44,
+				head: HEAD.slice(0, 7),
+				red: {validator: "pnpm test", output: output("FAIL merged.test.ts")},
+			},
+		});
+	});
+
+	it("refuses a 44 with no record, and a 44 the record says was red on the base too", async () => {
+		const bare = epicAt(AT_INTEGRATE);
+		const baseRed = epicAt(AT_INTEGRATE, {records: record("red")});
+		const flags = {lane: EPIC, task: TASK, integrateExit: 44, assemblyHead: HEAD};
+
+		const unrecorded = await run(bare, "FAIL", flags);
+		const machinery = await run(baseRed, "FAIL", flags);
+
+		expect(unrecorded.code).toBe(INTEGRATE_EVIDENCE);
+		expect(unrecorded.stderr.at(-1)).toContain("wrote no red-validator record");
+		expect(machinery.code).toBe(INTEGRATE_EVIDENCE);
+		expect(machinery.stderr.at(-1)).toContain("record BASE-RED");
+		expect(laneWrites(bare.written)).toEqual([]);
+		expect(laneWrites(baseRed.written)).toEqual([]);
 	});
 
 	it("refuses a FAIL out of integrate that names neither, log unappended", async () => {
@@ -1395,5 +1463,123 @@ describe("lane report — an integrate FAIL carries the exit and head it failed 
 		expect(half.stderr.at(-1)).toContain("pass both or neither");
 		expect(offCode.code).toBe(INTEGRATE_EVIDENCE);
 		expect(offCode.stderr.at(-1)).toContain("42, 43, 44");
+	});
+
+	describe("a red base is a lap off integrate's record, never a FAIL", () => {
+		const BASE_RED = {lane: EPIC, task: TASK, integrateExit: 75, assemblyHead: HEAD};
+		const lap = {event: "LAP", cause: "assembly-base-red"};
+
+		it("records the lap with the base run's output and leaves the repair tries alone", async () => {
+			const fs = epicAt(AT_INTEGRATE, {records: record("red"), machinery: true});
+
+			const out = await run(fs, "BASE-RED", BASE_RED);
+
+			expect(out.code).toBe(0);
+			const line = appendedTo(fs) as Record<string, unknown>;
+			expect(line).toMatchObject({
+				event: `${TASK.toUpperCase()}.LAP`,
+				cause: "assembly-base-red",
+				baseRed: {head: HEAD, red: {validator: "pnpm test", output: output("FAIL base.test.ts")}},
+			});
+			expect(line.integrate).toBeUndefined();
+			expect(JSON.stringify(JSON.parse(out.stdout).current)).not.toContain("budget-spent");
+			expect(out.stderr.join("\n")).toContain("red-base lap 1 of 2");
+		});
+
+		it("refuses the lap on the driver's word: no record, or a record whose base was green", async () => {
+			const bare = await run(epicAt(AT_INTEGRATE, {machinery: true}), "BASE-RED", BASE_RED);
+			const green = await run(
+				epicAt(AT_INTEGRATE, {records: record("green"), machinery: true}),
+				"BASE-RED",
+				BASE_RED,
+			);
+			const noPair = await run(
+				epicAt(AT_INTEGRATE, {records: record("red"), machinery: true}),
+				"BASE-RED",
+				{
+					lane: EPIC,
+					task: TASK,
+				},
+			);
+
+			expect(bare.code).toBe(INTEGRATE_EVIDENCE);
+			expect(green.code).toBe(INTEGRATE_EVIDENCE);
+			expect(green.stderr.at(-1)).toContain("FAIL --integrate-exit 44");
+			expect(noPair.code).toBe(INTEGRATE_EVIDENCE);
+			expect(noPair.stderr.at(-1)).toContain("--integrate-exit 75");
+		});
+
+		it("parks on the same cause once the task spent its free laps, counting again after an UNBLOCKED", async () => {
+			const spent = epicAt([...AT_INTEGRATE, lap, "PASS", lap, "PASS"], {
+				records: record("red"),
+				machinery: true,
+			});
+			const reopened = epicAt(
+				[
+					...AT_INTEGRATE,
+					lap,
+					"PASS",
+					lap,
+					"PASS",
+					{event: "BLOCKED", cause: "assembly-base-red"},
+					"UNBLOCKED",
+				],
+				{
+					records: record("red"),
+					machinery: true,
+				},
+			);
+
+			const parked = await run(spent, "BASE-RED", BASE_RED);
+			const fresh = await run(reopened, "BASE-RED", BASE_RED);
+
+			expect(parked.code).toBe(0);
+			expect(appendedTo(spent)).toMatchObject({
+				event: `${TASK.toUpperCase()}.BLOCKED`,
+				cause: "assembly-base-red",
+				baseRed: {head: HEAD},
+			});
+			expect(parked.stderr.join("\n")).toContain("cap of 2");
+			expect(fresh.code).toBe(0);
+			expect(appendedTo(reopened)).toMatchObject({event: `${TASK.toUpperCase()}.LAP`});
+		});
+
+		it("parks where the machine holds no LAP cell, still off integrate's record", async () => {
+			const paired = epicAt(AT_INTEGRATE, {records: record("red")});
+			const bare = epicAt(AT_INTEGRATE);
+
+			const parked = await run(paired, "BASE-RED", BASE_RED);
+			const refused = await run(bare, "BASE-RED", BASE_RED);
+
+			expect(parked.code).toBe(0);
+			expect(appendedTo(paired)).toMatchObject({
+				event: `${TASK.toUpperCase()}.BLOCKED`,
+				cause: "assembly-base-red",
+				baseRed: {head: HEAD},
+			});
+			expect(parked.stderr.join("\n")).toContain("no LAP cell");
+			expect(refused.code).toBe(INTEGRATE_EVIDENCE);
+			expect(laneWrites(bare.written)).toEqual([]);
+		});
+
+		it("reads the cap off the repo's declared baseRedLaps, and refuses an unreadable one", async () => {
+			const zero = epicAt(AT_INTEGRATE, {records: record("red"), machinery: true});
+			const parked = await run(zero, "BASE-RED", {
+				...BASE_RED,
+				baseRedLaps: {_tag: "Value", value: 0, note: "declared"},
+			});
+			const unread = await run(
+				epicAt(AT_INTEGRATE, {records: record("red"), machinery: true}),
+				"BASE-RED",
+				{
+					...BASE_RED,
+					baseRedLaps: {_tag: "Refused", reason: "not a number"},
+				},
+			);
+
+			expect(parked.code).toBe(0);
+			expect(appendedTo(zero)).toMatchObject({event: `${TASK.toUpperCase()}.BLOCKED`});
+			expect(unread.code).toBe(LANE_UNREADABLE);
+		});
 	});
 });

@@ -327,10 +327,22 @@ passes, and the refusal names the seconds still to run.
 Two groups of tokens belong to no shell. The integrator group is the one `FAIL` a driver relays
 from `lane integrate`'s `42`, `43` or `44` out of an epic child's `integrate`. The other is the
 machinery group (`REPLAY-COLLIDED`, `BASE-CONFLICTED`, `QUEUE-EJECTED`, `SEAT-DIRTY`,
-`SHELL-DEAD`), which a driver records about the pipeline itself. `BASE-DRIFTED` still maps there for
+`SHELL-DEAD`, `BASE-RED`), which a driver records about the pipeline itself. `BASE-DRIFTED` still maps there for
 a recorder holding the old token, and no skill records it. Each maps to the machine's LAP event, spending the lap budget instead of the repair
 one. Each carries its own cause off the same closed set with no `--cause` typed; pass one to
 override it, and a cause outside the set still refuses at `35`.
+
+`lane integrate` writes one record per red validator run to `integrate-red.jsonl` in the lane's
+directory, and two lines are taken off it rather than off the flags. A `FAIL --integrate-exit 44`
+lands only over a record whose re-run over the pre-merge head was green, and its `integrate` then
+carries `red: {validator, output}`, the merged run's kept output. `BASE-RED` takes
+`--integrate-exit 75 --assembly-head <sha>`, lands only over a record whose re-run was red, and
+carries `baseRed: {head, red: {validator, output}}`, the base run's kept output. A record that is
+missing or says the other thing refuses at `68`. `BASE-RED` and its cause `assembly-base-red` are
+recorded out of `integrate` only. Once the task has spent `baseRedLaps` of those laps since its
+last UNBLOCKED or DONE (`.fabrika.jsonc`, shipped `2`), or where the task's state holds no `LAP`
+cell, `BASE-RED` lands as the BLOCKED park on the same cause instead of the lap, over the same
+record.
 
 stdout is `{token, previous, event, current, taskAffected}` plus the refs, plus `deferred` when the
 proof deferred anything, `routed` when it stood on a route, `routedBasis` when that route carried a
@@ -341,7 +353,8 @@ at all, and `issueClose` where it answered `closes`.
 ### Exit status
 
 - `4`, `7`, `8`, `11`, `13`, `21` — the [shared exits](#the-shared-read-and-record-exits). On `11`,
-  whether the event is proven is UNKNOWN.
+  whether the event is proven is UNKNOWN. That includes a `BASE-RED` whose `baseRedLaps` or
+  integrate record cannot be read.
 - `12` — the mapped event is refused and the log is unappended. That includes a machinery lap whose
   cause this lane's own machine holds no arm for, which a lane opened before that cause existed
   would otherwise loop the stage on.
@@ -353,7 +366,8 @@ at all, and `issueClose` where it answered `closes`.
   last line reads as no date. The log is unappended and the wait unspent, and the only remedy on
   the first is time.
 - `68` — `--integrate-exit` and `--assembly-head` are missing on a FAIL out of an epic child's
-  `integrate` cell, malformed, only half given, or given on any other line. The log is unappended.
+  `integrate` cell or on a `BASE-RED` line, malformed, only half given, or given on any other line;
+  or a `44` or `75` that `lane integrate`'s record does not back. The log is unappended.
   That pair is the only record a repair builder's `build claim --lane` reads an integrate FAIL off,
   and it lands on the line as `integrate`.
 - `72` — no group that owns the token serves the task's current leaf state: builder `build` /
@@ -1035,6 +1049,15 @@ existed still holds the pre-merge install. Every refusal below the merge resets 
 to `ORIG_HEAD` and reads its head back, so a recorded FAIL names a branch that never carried the bad
 merge. Nothing is ever pushed here: that is `lane push`, and recording the DONE is the driver's.
 
+**A red validator is re-run before anyone is charged for it.** After the reset, the verb runs the
+reconciler again over the pre-merge head, so the re-run reads that head's own install, then re-runs
+the one validator that failed. Green there answers `44`: the merge broke it. Red there answers `75`:
+the base was already broken. Either way it appends one record of both runs, each stream's last 40
+non-blank lines kept, to `integrate-red.jsonl` in the lane's directory, and prints the kept output
+on stderr. `lane report` takes the `44` FAIL and the `BASE-RED` lap off that record. A re-run that
+cannot start, a base install that does not run clean, or a seat the re-run moved is UNKNOWN, never
+`44` and never `75`.
+
 **A textual collision is not always the end of the run.** Under `assemblyReplay.onCollision`
 (shipped `off`), the child's commits are replayed onto the tip:
 
@@ -1060,9 +1083,11 @@ reads `unspent`, because a replay is machinery working rather than the child fai
 
 - `4`, `7` — the [shared read exits](#the-shared-read-and-record-exits). On `7`, emit the run's
   machine first.
-- `8` — a restore or a head read-back did not land. UNKNOWN, so nothing may be recorded.
+- `8` — a restore or a head read-back did not land, the re-run left the seat off the pre-merge head
+  or dirty, or the record of a red run did not land. UNKNOWN, so nothing may be recorded.
 - `11` — the working trees, the branches, the head, `.fabrika.jsonc` or a validator could not be
-  read, or the repo declares no `codeValidators`. UNKNOWN, never green.
+  read, the repo declares no `codeValidators`, or a red validator's re-run over the pre-merge head
+  could not start or that head's install did not run clean. UNKNOWN, never green.
 - `22` — no branch by that name. Take it off `lane prove`'s evidence.
 - `33` — `epic/<n>` is checked out in the main working tree.
 - `41` — no working tree holds `epic/<n>`. Place it with `lane assembly`.
@@ -1071,13 +1096,16 @@ reads `unspent`, because a replay is machinery working rather than the child fai
   could not start, or wrote beyond the lockfiles, and the branch was reset and proved back.
 - `43` — the merged lockfile does not install, the reconciler could not be run, or it changed a
   tracked file.
-- `44` — the merged tree failed a code validator: the semantic collision.
+- `44` — the merged tree failed a code validator that passes over the pre-merge head: the semantic
+  collision.
 - `45` — the assembly worktree already held modified tracked files before the merge, so nothing was
   merged, installed or validated. That dirt is the driver's tree and not the child's range; clean the
   seat and integrate again.
 - `54` — the replay landed and the child's branch would not follow it onto the replayed range,
   usually because a working tree still stands on that branch. Nothing was merged and the seat is
   back, so free the branch with `fabrika build retire` or park on `--cause worktree-holds-branch`.
+- `75` — the merged tree failed a code validator, and that validator failed over the pre-merge head
+  too. The base was broken before the child arrived, so the red is machinery: record `BASE-RED`.
 - `39`, `65` — [the lanes root](#the-lanes-root).
 
 ## `lane refresh`

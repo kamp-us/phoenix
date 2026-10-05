@@ -4,10 +4,11 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeShell, okOut, once, type ScriptedExec} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	APPEND_UNKNOWN,
+	ASSEMBLY_BASE_RED,
 	ASSEMBLY_DIRTY,
 	ASSEMBLY_RED,
 	ASSEMBLY_UNSEATED,
@@ -363,19 +364,203 @@ describe("runIntegrate", () => {
 			[MERGE, okOut("")],
 			[RECONCILE, okOut("")],
 			[STATUS, okOut("")],
-			[VALIDATE, errOut("src/x.ts(3,1): error TS2345")],
+			[once(VALIDATE), errOut("src/x.ts(3,1): error TS2345")],
 			[RESET, okOut("")],
 			[HEAD, okOut(BEFORE)],
+			[VALIDATE, okOut("")],
 		]);
 
 		expect(outcome.code).toBe(ASSEMBLY_RED);
 		expect(outcome.stderr.join("\n")).toContain("TS2345");
+		// The red is re-run over the pre-merge head, with that head's own install, before it is
+		// charged to the child — and only the validator that failed is re-run.
 		expect(staged(calls)).toEqual([
 			`git -C ${SEAT} merge --no-ff ${CHILD}`,
 			INSTALL,
 			TYPECHECK,
 			`git -C ${SEAT} reset --hard ORIG_HEAD`,
+			INSTALL,
+			TYPECHECK,
 		]);
+	});
+
+	describe("a red validator is re-run over the pre-merge head before it is charged", () => {
+		const RECORDS = `${ROOT}/${EPIC}/integrate-red.jsonl`;
+		const LINT = "pnpm lint";
+		const TWO_VALIDATORS = {
+			...LANE_FILES,
+			[`${SEAT}/.fabrika.jsonc`]: JSON.stringify({
+				dependencyReconciler: {command: ["pnpm", "install", "--frozen-lockfile"]},
+				codeValidators: [{command: ["pnpm", "lint"]}, {command: ["pnpm", "typecheck", "--force"]}],
+			}),
+		};
+		/** A red whose failures sit on stdout past line 40, with one warning on stderr beside them. */
+		const noisyRed = (failure: string): ScriptedExec => ({
+			ok: false,
+			stdout: [...Array.from({length: 60}, (_, i) => `preamble ${i}`), failure].join("\n"),
+			reason: "WARN deprecated flag",
+		});
+		const runWith = async (
+			script: ReadonlyArray<readonly [RegExp, ScriptedExec]>,
+			files: Record<string, string> = LANE_FILES,
+			unstartable: ReadonlyArray<RegExp> = [],
+		) => {
+			const shell = fakeShell(script, undefined, unstartable);
+			const fs = fakeFs({files});
+			const outcome = await Effect.runPromise(
+				Effect.provide(
+					runIntegrate({epic: EPIC, child: CHILD, root: ROOT, lane: String(EPIC)}),
+					Layer.merge(shell.layer, fs.layer),
+				),
+			);
+			const written = fs.written.get(RECORDS);
+			return {
+				outcome,
+				calls: shell.calls,
+				record: written === undefined ? null : JSON.parse(written.trim()),
+			};
+		};
+		const mergedRed = (base: ScriptedExec) => [
+			...upToMerge(),
+			[MERGE, okOut("")] as const,
+			[RECONCILE, okOut("")] as const,
+			[STATUS, okOut("")] as const,
+			[once(VALIDATE), noisyRed("FAIL merged.test.ts > it breaks")] as const,
+			[RESET, okOut("")] as const,
+			[HEAD, okOut(BEFORE)] as const,
+			[VALIDATE, base] as const,
+		];
+
+		it("answers 75 when the base is red too, and records both runs for the lap", async () => {
+			const {outcome, record} = await runWith(
+				mergedRed(noisyRed("FAIL base.test.ts > it was broken")),
+			);
+
+			expect(outcome.code).toBe(ASSEMBLY_BASE_RED);
+			expect(outcome.stdout).toBe("");
+			expect(outcome.stderr.at(-1)).toContain("BASE-RED --integrate-exit 75");
+			expect(outcome.stderr.join("\n")).toContain("FAIL base.test.ts");
+			expect(record).toMatchObject({
+				child: CHILD,
+				head: BEFORE,
+				merged: {validator: TYPECHECK},
+				base: {verdict: "red"},
+			});
+			expect(record.base.output.stdout.lines.at(-1)).toBe("FAIL base.test.ts > it was broken");
+		});
+
+		it("answers 44 when the base is green, keeping the end of stdout beside a non-empty stderr", async () => {
+			const {outcome, record} = await runWith(mergedRed(okOut("")));
+
+			expect(outcome.code).toBe(ASSEMBLY_RED);
+			expect(outcome.stderr.at(-1)).toContain(`FAIL --integrate-exit 44 --assembly-head ${BEFORE}`);
+			const kept = record.merged.output;
+			// The failure is line 61 of stdout: a head-40 cut dropped it, and a stderr-first read never
+			// looked at stdout at all.
+			expect(kept.stdout.lines.at(-1)).toBe("FAIL merged.test.ts > it breaks");
+			expect(kept.stdout.lines).toHaveLength(40);
+			expect(kept.stdout.omitted).toBe(21);
+			expect(kept.stderr.lines).toEqual(["WARN deprecated flag"]);
+			expect(record.base).toEqual({verdict: "green"});
+			expect(outcome.stderr.join("\n")).toContain("FAIL merged.test.ts > it breaks");
+		});
+
+		it("re-runs only the validator that failed", async () => {
+			const {calls} = await runWith(
+				[
+					...upToMerge(),
+					[MERGE, okOut("")],
+					[RECONCILE, okOut("")],
+					[STATUS, okOut("")],
+					[/^pnpm lint$/, okOut("")],
+					[once(VALIDATE), errOut("red")],
+					[RESET, okOut("")],
+					[HEAD, okOut(BEFORE)],
+					[VALIDATE, errOut("red")],
+				],
+				TWO_VALIDATORS,
+			);
+
+			expect(calls.filter((line) => line === LINT)).toHaveLength(1);
+			expect(calls.filter((line) => line === TYPECHECK)).toHaveLength(2);
+		});
+
+		it("is UNKNOWN, never a red base, when the re-run cannot start", async () => {
+			// Starts the first time and is gone the second: only the re-run is unstartable.
+			const secondRun = new RegExp(VALIDATE.source);
+			let seen = 0;
+			secondRun.test = (line: string): boolean =>
+				RegExp.prototype.test.call(VALIDATE, line) ? ++seen === 2 : false;
+
+			const {outcome, record} = await runWith(
+				[
+					...upToMerge(),
+					[MERGE, okOut("")],
+					[RECONCILE, okOut("")],
+					[STATUS, okOut("")],
+					[VALIDATE, errOut("red")],
+					[RESET, okOut("")],
+					[HEAD, okOut(BEFORE)],
+				],
+				LANE_FILES,
+				[secondRun],
+			);
+
+			expect(outcome.code).toBe(LANE_UNREADABLE);
+			expect(outcome.stderr.at(-1)).toContain("could not be executed");
+			expect(record).toBeNull();
+		});
+
+		it("is UNKNOWN when the pre-merge head's own install fails, and writes no record", async () => {
+			const {outcome, record} = await runWith([
+				...upToMerge(),
+				[MERGE, okOut("")],
+				[once(RECONCILE), okOut("")],
+				[STATUS, okOut("")],
+				[once(VALIDATE), errOut("red")],
+				[RESET, okOut("")],
+				[HEAD, okOut(BEFORE)],
+				[RECONCILE, errOut("ERR_PNPM_OUTDATED_LOCKFILE")],
+			]);
+
+			expect(outcome.code).toBe(LANE_UNREADABLE);
+			expect(outcome.stderr.at(-1)).toContain("UNKNOWN");
+			expect(record).toBeNull();
+		});
+
+		it("is UNKNOWN when the seat cannot be put back, and never re-runs over a moved tree", async () => {
+			const {outcome, calls, record} = await runWith([
+				...upToMerge(),
+				[MERGE, okOut("")],
+				[RECONCILE, okOut("")],
+				[STATUS, okOut("")],
+				[once(VALIDATE), errOut("red")],
+				[RESET, errOut("fatal: Unable to write new index file")],
+				[HEAD, okOut(AFTER)],
+			]);
+
+			expect(outcome.code).toBe(APPEND_UNKNOWN);
+			expect(calls.filter((line) => line === TYPECHECK)).toHaveLength(1);
+			expect(record).toBeNull();
+		});
+
+		it("is UNKNOWN when the re-run leaves a tracked change behind", async () => {
+			const {outcome, record} = await runWith([
+				...upToMerge(),
+				[MERGE, okOut("")],
+				[RECONCILE, okOut("")],
+				[once(STATUS), okOut("")],
+				[once(STATUS), okOut("")],
+				[STATUS, okOut(" M src/generated.ts")],
+				[once(VALIDATE), errOut("red")],
+				[RESET, okOut("")],
+				[HEAD, okOut(BEFORE)],
+				[VALIDATE, errOut("red")],
+			]);
+
+			expect(outcome.code).toBe(APPEND_UNKNOWN);
+			expect(record).toBeNull();
+		});
 	});
 
 	it("is UNKNOWN, never a FAIL, when the reset leaves the merge on the branch", async () => {
@@ -477,11 +662,13 @@ describe("runIntegrate", () => {
 		it("restores through the captured head, not ORIG_HEAD, when the replay's validators red", async () => {
 			const {outcome, calls} = await run(
 				[
-					...replayScript([[VALIDATE, errOut("src/x.ts(3,1): error TS2345")]]),
+					...replayScript([[once(VALIDATE), errOut("src/x.ts(3,1): error TS2345")]]),
 					[RESET_TO_HEAD, okOut("")],
 					[once(HEAD), okOut(BEFORE)],
 					[NAME_REPLAY, okOut("")],
 					[CHILD_REV, okOut(GRADED)],
+					[VALIDATE, okOut("")],
+					[HEAD, okOut(BEFORE)],
 				],
 				REPLAY_FILES,
 			);

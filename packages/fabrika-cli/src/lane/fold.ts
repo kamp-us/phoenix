@@ -14,7 +14,13 @@ import {acceptsOf, applyCell, foldMsgs, msgKeysOf, NoCellError} from "@demlik/te
 import {type RoutedBasis, readRoutedBasis} from "../wire/routed-elsewhere.ts";
 import {ISSUE_CLOSES, type IssueClose, isIssueClose} from "./closing-merge.ts";
 import {type Deferral, deferredTasks, resolveDeferrals} from "./deferral.ts";
-import {type IntegrateFailure, isIntegrateFailure} from "./integrate-failure.ts";
+import {
+	BASE_RED_CAUSE,
+	type BaseRedEvidence,
+	type IntegrateFailure,
+	isBaseRedEvidence,
+	isIntegrateFailure,
+} from "./integrate-failure.ts";
 import {
 	AMENDED_EVENT,
 	BOARD_TERMINALS,
@@ -201,6 +207,12 @@ export interface LogEntry {
 	 * ([`integrate-failure.ts`](integrate-failure.ts)).
 	 */
 	readonly integrate?: IntegrateFailure;
+	/**
+	 * A red base's evidence — the pre-merge head `lane integrate` re-ran the failed validator over,
+	 * and what it printed there — on the lap or park caused `assembly-base-red`
+	 * ([`integrate-failure.ts`](integrate-failure.ts)).
+	 */
+	readonly baseRed?: BaseRedEvidence;
 }
 
 /**
@@ -273,6 +285,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			sha?: unknown;
 			assertedBy?: unknown;
 			integrate?: unknown;
+			baseRed?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -583,6 +596,18 @@ export const parseLog = (text: string): ParseLogResult => {
 			);
 			continue;
 		}
+		if (record.baseRed !== undefined && !isBaseRedEvidence(record.baseRed)) {
+			defects.push(
+				`line ${index + 1} carries a \`baseRed\` field that is not {head: <sha>, red: {validator, output}}`,
+			);
+			continue;
+		}
+		if (record.baseRed !== undefined && record.cause !== BASE_RED_CAUSE) {
+			defects.push(
+				`line ${index + 1} carries \`baseRed\` on a line caused "${String(record.cause ?? "nothing")}" — only a ${BASE_RED_CAUSE} line names the red base lane integrate proved`,
+			);
+			continue;
+		}
 		if (!corrected && record.corrects !== undefined) {
 			defects.push(
 				`line ${index + 1} carries \`corrects\` on a "${bareEvent(record.event)}" event — only a ${CORRECTED_EVENT} supersedes another line`,
@@ -619,6 +644,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.sha === undefined ? {} : {sha: record.sha as string}),
 			...(record.assertedBy === undefined ? {} : {assertedBy: record.assertedBy as string}),
 			...(record.integrate === undefined ? {} : {integrate: record.integrate as IntegrateFailure}),
+			...(record.baseRed === undefined ? {} : {baseRed: record.baseRed as BaseRedEvidence}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
