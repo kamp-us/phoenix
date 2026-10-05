@@ -129,6 +129,55 @@ const driven = (
 	return {state: defined(statesOf()[task]), cause: standingCauses(log)[task]};
 };
 
+/** One event carrying the classes and the cause `lane report` would hand `applyEvent`. */
+interface CausedStep {
+	readonly event: string;
+	readonly classes?: ReadonlyArray<string>;
+	readonly cause?: string;
+}
+
+/**
+ * Drive one task with each step's own cause handed to `applyEvent` and written on its line, as
+ * `lane report` does, and answer with the task's folded state. {@link driven} only writes the cause
+ * on the line, so it never meets the routed-cause refusal.
+ */
+const causedSteps = (
+	lane: CompiledLane,
+	task: string,
+	steps: ReadonlyArray<CausedStep>,
+): TaskState => {
+	const log: LogEntry[] = [];
+	const statesOf = () => {
+		const fold = foldLog(lane, log);
+		if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+		return fold.states;
+	};
+	for (const step of steps) {
+		const applied = applyEvent(
+			lane,
+			statesOf(),
+			task,
+			step.event,
+			"2026-10-04T00:00:00.000Z",
+			step.classes ?? null,
+			null,
+			null,
+			null,
+			step.cause ?? null,
+		);
+		if (applied._tag !== "Applied") throw new Error(`${task} ${step.event}: ${applied.reason}`);
+		log.push(step.cause === undefined ? applied.entry : {...applied.entry, cause: step.cause});
+	}
+	return defined(statesOf()[task]);
+};
+
+/** The coder lane's walk into `review:ui`: a `ui` build, then the review `PASS` into the gate. */
+const AT_REVIEW_UI: ReadonlyArray<CausedStep> = [
+	{event: "WIP", classes: ["ui"]},
+	{event: "DONE"},
+	{event: "PASS"},
+];
+
 /**
  * Every compiled cell of one task, driven and rendered — `state event classes retries -> next
  * retries`. The topology alone lists which events a state answers; this also pins where each
@@ -390,6 +439,46 @@ describe("the compiler — structural recognition", () => {
 
 		expect(conflicted.state).toMatchObject({type: "build", retries: 0, laps: 1});
 		expect(drifted.state).toMatchObject({type: "ship", retries: 0, laps: 1});
+	});
+
+	// A `review:ui` `PASS` refused at `23` over a stale text verdict owes a text review, not a repair:
+	// the lap folds the lane to `review`, spending a lap and no retry, and every other lap cause
+	// still loops the rendered gate.
+	it("folds a text-review-stale lap at review:ui to review, spending a lap and no retry", () => {
+		const lane = compiled(coderWorkflow());
+		const lapped = (cause: string) =>
+			causedSteps(lane, "issue", [...AT_REVIEW_UI, {event: MACHINERY_EVENT, cause}]);
+
+		expect(causedSteps(lane, "issue", AT_REVIEW_UI).type).toBe("review:ui");
+		expect(lapped("text-review-stale")).toMatchObject({type: "review", retries: 0, laps: 1});
+		expect(lapped("spawn-dead")).toMatchObject({type: "review:ui", retries: 0, laps: 1});
+	});
+
+	// After the stale-verdict lap, `review` is an ordinary review round: a `PASS` raising `ui` walks
+	// back into the rendered gate, and a `FAIL` is a repair round that spends one retry.
+	it("answers the text round after a text-review-stale lap the way review always answers", () => {
+		const lane = compiled(coderWorkflow());
+		const after = (last: CausedStep) =>
+			causedSteps(lane, "issue", [
+				...AT_REVIEW_UI,
+				{event: MACHINERY_EVENT, cause: "text-review-stale"},
+				last,
+			]);
+
+		expect(after({event: "PASS", classes: ["ui"]})).toMatchObject({
+			type: "review:ui",
+			retries: 0,
+			laps: 1,
+		});
+		expect(after({event: "FAIL", classes: ["ui"]})).toMatchObject({
+			type: "build",
+			retries: 1,
+			laps: 1,
+		});
+		expect(after({event: "FAIL", classes: ["ui", "code"]})).toMatchObject({
+			type: "build:mixed",
+			retries: 1,
+		});
 	});
 
 	it("routes a UI-class lane through build:ui and review:ui, and back to build:ui on a FAIL", () => {

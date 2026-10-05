@@ -137,6 +137,16 @@ export const coderTemplateText = (): string =>
 
 export const coderWorkflow = (): unknown => JSON.parse(coderTemplateText());
 
+/** The coder machine a lane booted before `review:ui` routed a `text-review-stale` lap to `review`. */
+export const preStaleRouteTemplate = (): string => {
+	const document = JSON.parse(coderTemplateText());
+	const lap = document.machine.states.pipeline.states.issue.states["review:ui"].on["ISSUE.LAP"];
+	document.machine.states.pipeline.states.issue.states["review:ui"].on["ISSUE.LAP"] = lap.filter(
+		(arm: {guard?: string}) => arm.guard !== "lap:text-review-stale",
+	);
+	return JSON.stringify(document, null, "\t");
+};
+
 export const choreTemplateText = (): string =>
 	readGoldenFixture(import.meta.url, "./templates/chore.workflow.json");
 

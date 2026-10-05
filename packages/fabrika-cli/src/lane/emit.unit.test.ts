@@ -1196,6 +1196,7 @@ describe("emitMachine — the tail's rendered review cell", () => {
 	it("takes the tail review:ui LAP under machinery, and holds no LAP arm without it", () => {
 		expect(tailRegion(false)["review:ui"]?.on).not.toHaveProperty("EPIC_4300.LAP");
 		expect(tailRegion(true)["review:ui"]?.on["EPIC_4300.LAP"]).toEqual([
+			{target: "review", guard: "lap:text-review-stale"},
 			{target: "review:ui", guard: "lapsRemaining", actions: "incrementLaps"},
 			{target: "human:machinery-stall"},
 		]);

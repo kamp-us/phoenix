@@ -149,6 +149,15 @@ const lapArm = (
 const SHIP_LAP_ROUTES: Readonly<Record<string, string>> = {"base-conflicted": "build"};
 
 /**
+ * A tail `PASS` out of `review:ui` was refused at `23` because a text verdict stopped binding when
+ * the base moved, so the round is `review`'s — the coder template's same route, since the tail's
+ * `review:ui` owes the same whole derived set.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10452#issuecomment-5983095196
+ */
+const REVIEW_UI_LAP_ROUTES: Readonly<Record<string, string>> = {"text-review-stale": "review"};
+
+/**
  * A child's repair arm: go round again while retries remain, else park on `human:budget-spent`, with
  * a rendered child's round re-entering `build:ui` instead of `build`.
  *
@@ -368,7 +377,7 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:budget-spent"},
 				],
-				...(machinery ? {[`${ns}.LAP`]: lapArm("review:ui")} : {}),
+				...(machinery ? {[`${ns}.LAP`]: lapArm("review:ui", REVIEW_UI_LAP_ROUTES)} : {}),
 			},
 		},
 		ship: {
