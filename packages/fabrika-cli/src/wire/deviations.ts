@@ -341,6 +341,45 @@ export const read = (body: string): DeviationsRead => {
 	return {_tag: "Found", value: {_tag: "Entries", entries: [head, ...rest]}};
 };
 
+/** What {@link repairHeadingLevel} did to a body. Line numbers are 1-based. */
+export type HeadingLevelRepair =
+	| {
+			readonly _tag: "Repaired";
+			/** The whole body, with the one heading line rewritten and every other byte unchanged. */
+			readonly body: string;
+			readonly line: number;
+			readonly fromLevel: number;
+	  }
+	| {readonly _tag: "Untouched"};
+
+/**
+ * Rewrite a deviations heading whose text is exactly {@link HEADING_TEXT} and whose only defect is
+ * its level — `### Deviations` becomes `## Deviations` — and touch nothing else.
+ *
+ * The repair is the acceptance-criteria heading's level repair, applied to this section. Text is
+ * never rewritten: a heading whose text drifted is left for {@link read} to refuse, because turning
+ * `## Deviation notes` into the disclosure is a guess about what the author meant. A body that
+ * already carries a conforming heading is left alone, and so is one carrying two exact-text
+ * headings at the wrong level, since which of them is the disclosure is undecidable.
+ *
+ * The repaired body is not required to read `Found`. Whatever else is wrong with the section is
+ * still the reader's to name, and naming it over the repaired body is what spares the author a
+ * second refusal for the level they already got wrong once.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10035#issuecomment-5983080227
+ */
+export const repairHeadingLevel = (body: string): HeadingLevelRepair => {
+	const lines = body.split("\n");
+	const headings = scanHeadings(lines);
+	if (headings.some(conforms)) return {_tag: "Untouched"};
+	const named = headings.filter((heading) => heading.text === HEADING_TEXT);
+	const [only, ...others] = named;
+	if (only === undefined || others.length > 0) return {_tag: "Untouched"};
+	const repaired = [...lines];
+	repaired[only.line - 1] = `${"#".repeat(HEADING_LEVEL)} ${HEADING_TEXT}`;
+	return {_tag: "Repaired", body: repaired.join("\n"), line: only.line, fromLevel: only.level};
+};
+
 const entryLine = (entry: DeviationEntry): string => {
 	const lead = CLASSES.find(([label]) => label === entry.label)?.[1] ?? null;
 	const fields = FIELDS.map((key) => `**${fieldLabel(key)}:** ${entry[key]}`).join(" ");

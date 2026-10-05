@@ -61,7 +61,13 @@ export interface PushOptions {
 /** What the push does after the ref moves: open this lane's PR, or nothing on a repair lane. */
 type PullStep =
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
-	| {readonly _tag: "Open"; readonly issue: IssueRecord; readonly body: string}
+	| {
+			readonly _tag: "Open";
+			readonly issue: IssueRecord;
+			readonly body: string;
+			/** What vetting the body did to it — the Deviations heading-level repair, when one was made. */
+			readonly notes: ReadonlyArray<string>;
+	  }
 	| {readonly _tag: "Repair"};
 
 /** Every read and guard the PR create needs before a write, run before the push. */
@@ -93,7 +99,7 @@ const pullStep = (
 			(reason) => `${VERB}: cannot read #${number}: ${reason} — nothing was pushed.`,
 		);
 		if (target._tag === "Refused") return target;
-		return {_tag: "Open" as const, issue: target.issue, body: vetted.text};
+		return {_tag: "Open" as const, issue: target.issue, body: vetted.text, notes: vetted.notes};
 	});
 
 export const runPush = (
@@ -140,7 +146,7 @@ export const runPush = (
 				lane.notes,
 			);
 		}
-		const notes = [...lane.notes];
+		const notes = [...(step._tag === "Open" ? step.notes : []), ...lane.notes];
 
 		// The containment test runs on BOTH paths, and that is the whole fix. It used to be
 		// guarded by `!forceWithLease`, so the repair path — which mandates the lease — got no

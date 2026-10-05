@@ -29,6 +29,7 @@ import type {StdinRead} from "../io/stdin.ts";
 import {resolveTrunk, trunkUnresolved} from "../io/trunk.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {HEADING_LEVEL, HEADING_TEXT, repairHeadingLevel} from "../wire/deviations.ts";
 import {leakRefusal, readAuthored} from "./authored.ts";
 import {requireSession} from "./claim.ts";
 import {
@@ -131,14 +132,46 @@ const classificationRefusal = (verb: string, body: string): VerbOutcome | null =
 	);
 };
 
+/**
+ * The body with a Deviations heading at the wrong level repaired, and the stderr line saying so.
+ *
+ * It runs ahead of the shape guard on every write path, so the guard, the write and the read-back
+ * all see the repaired bytes, and a body with nothing to repair passes through unchanged.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10035#issuecomment-5983080227
+ */
+const levelDeviations = (
+	verb: string,
+	body: string,
+): {readonly text: string; readonly notes: ReadonlyArray<string>} => {
+	const repair = repairHeadingLevel(body);
+	if (repair._tag === "Untouched") return {text: body, notes: []};
+	return {
+		text: repair.body,
+		notes: [
+			`${verb}: line ${repair.line}: "${"#".repeat(repair.fromLevel)} ${HEADING_TEXT}" repaired to "${"#".repeat(HEADING_LEVEL)} ${HEADING_TEXT}" — only the heading's level moved.`,
+		],
+	};
+};
+
+/** A refusal carrying the repair line ahead of its own reason, so a refused body still says it. */
+const withNotes = (outcome: VerbOutcome, notes: ReadonlyArray<string>): VerbOutcome =>
+	notes.length === 0 ? outcome : {...outcome, stderr: [...notes, ...outcome.stderr]};
+
 /** A body that passed every guard the create path runs before its first read, or the refusal. */
 export type VettedBody =
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
-	| {readonly _tag: "Body"; readonly text: string};
+	| {
+			readonly _tag: "Body";
+			/** The body to write — the authored one, with a wrong-level Deviations heading repaired. */
+			readonly text: string;
+			/** The repair line, when one was made; empty otherwise. */
+			readonly notes: ReadonlyArray<string>;
+	  };
 
 /**
- * The create path's body guards, in order: stdin (`3`), machine-local path (`5` / `6`), shape (`4`),
- * classification (`10`). `build pr` and `build push` both run this one function, so a body one of
+ * The create path's body guards, in order: stdin (`3`), machine-local path (`5` / `6`), the
+ * Deviations heading-level repair, shape (`4`), classification (`10`). `build pr` and `build push` both run this one function, so a body one of
  * them refuses is a body the other refuses.
  */
 export const vetBody = (
@@ -149,20 +182,20 @@ export const vetBody = (
 ): VettedBody => {
 	const authored = readAuthored(surfaceFor(verb), read);
 	if (authored._tag === "Refused") return authored;
-	const body = authored.text;
 
-	const leaked = leakRefusal(verb, body);
+	const leaked = leakRefusal(verb, authored.text);
 	if (leaked !== null) return {_tag: "Refused", outcome: leaked};
 
+	const {text: body, notes} = levelDeviations(verb, authored.text);
 	const defect = bodyDefect(body, issue, partial);
 	if (defect !== null) {
-		return {_tag: "Refused", outcome: shapeRefusal(verb, defect, issue, partial)};
+		return {_tag: "Refused", outcome: withNotes(shapeRefusal(verb, defect, issue, partial), notes)};
 	}
 
 	const classified = classificationRefusal(verb, body);
-	if (classified !== null) return {_tag: "Refused", outcome: classified};
+	if (classified !== null) return {_tag: "Refused", outcome: withNotes(classified, notes)};
 
-	return {_tag: "Body", text: body};
+	return {_tag: "Body", text: body, notes};
 };
 
 export type LanePull =
@@ -288,6 +321,7 @@ export const runPr = (
 		const lane = yield* requireLane(VERB, repo, session.id, number);
 		if (lane._tag === "Refused") return lane.outcome;
 
+		const notes = [...vetted.notes, ...lane.notes];
 		const pull = yield* openLanePull({
 			verb: VERB,
 			env: options.env,
@@ -295,9 +329,9 @@ export const runPr = (
 			head: lane.branch,
 			issue: target.issue,
 			body: vetted.text,
-			notes: lane.notes,
+			notes,
 		});
-		return pull._tag === "Refused" ? pull.outcome : answer(pullAnswerLine(pull), lane.notes);
+		return pull._tag === "Refused" ? pull.outcome : answer(pullAnswerLine(pull), notes);
 	});
 
 /**
@@ -325,13 +359,13 @@ export const runPrBody = (
 
 		const authored = readAuthored(BODY_SURFACE, yield* options.stdin);
 		if (authored._tag === "Refused") return authored.outcome;
-		const body = authored.text;
 
-		const leaked = leakRefusal(BODY_VERB, body);
+		const leaked = leakRefusal(BODY_VERB, authored.text);
 		if (leaked !== null) return leaked;
 
+		const {text: body, notes: repaired} = levelDeviations(BODY_VERB, authored.text);
 		const classified = classificationRefusal(BODY_VERB, body);
-		if (classified !== null) return classified;
+		if (classified !== null) return withNotes(classified, repaired);
 
 		const session = requireSession(BODY_VERB, options.env);
 		if (session._tag === "Refused") return session.outcome;
@@ -363,17 +397,19 @@ export const runPrBody = (
 		}
 
 		const defect = bodyDefect(body, issue, partial);
-		if (defect !== null) return shapeRefusal(BODY_VERB, defect, issue, partial);
+		if (defect !== null)
+			return withNotes(shapeRefusal(BODY_VERB, defect, issue, partial), repaired);
 
 		const lane = yield* requireLane(BODY_VERB, repo, session.id, null);
 		if (lane._tag === "Refused") return lane.outcome;
+		const notes = [...repaired, ...lane.notes];
 		const addressed =
 			lane.lane._tag === "Resume" ? lane.lane.pr === pr : lane.branch === head.value.ref;
 		if (!addressed) {
 			return refuse(
 				WRONG_LANE,
 				`${BODY_VERB}: the checked-out branch "${lane.branch}" does not serve PR #${pr} — wrong lane.`,
-				lane.notes,
+				notes,
 			);
 		}
 
@@ -382,7 +418,7 @@ export const runPrBody = (
 			return refuse(
 				WRITE_UNKNOWN,
 				`${BODY_VERB}: the update failed: ${updated.reason} — it may or may not have landed; re-read PR #${pr} before retrying.`,
-				lane.notes,
+				notes,
 			);
 		}
 
@@ -397,11 +433,11 @@ export const runPrBody = (
 						number: updated.value.number,
 						url: updated.value.url,
 					}),
-					lane.notes,
+					notes,
 				)
 			: refuse(
 					READBACK_MISMATCH,
 					`${BODY_VERB}: PR #${pr}'s body was replaced but does not read back as sent — it needs a human eye.`,
-					lane.notes,
+					notes,
 				);
 	});

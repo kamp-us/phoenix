@@ -163,6 +163,56 @@ describe("runPr — the body guards run before any write", () => {
 	});
 });
 
+describe("runPr — a Deviations heading at the wrong level is repaired, never its text (#10513)", () => {
+	const LEVEL_3 = BODY.replace("## Deviations", "### Deviations");
+	const REPAIR_LINE =
+		'build pr: line 5: "### Deviations" repaired to "## Deviations" — only the heading\'s level moved.';
+
+	it("opens the PR with the heading at level 2, says so, and moves no other byte", async () => {
+		const shell = fakeSeams([
+			...LANE_OK,
+			[OPEN_PULLS, served([])],
+			[REPO_META, served({default_branch: "main"})],
+			[CREATE, served({number: 4318, html_url: "https://example.test/o/r/pull/4318"})],
+			[READ_BACK, pull({body: BODY})],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runPr({...options, ...withBody(LEVEL_3)}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).answer).toBe("opened");
+		expect(out.stderr).toContain(REPAIR_LINE);
+		const create = shell.requests.findIndex((line) => CREATE.test(line));
+		expect(JSON.parse(shell.bodies[create] ?? "null")).toMatchObject({body: BODY});
+	});
+
+	it("still refuses a heading whose text drifted, on 4, writing nothing", async () => {
+		const shell = fakeSeams(LANE_OK);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runPr({...options, ...withBody(BODY.replace("## Deviations", "### deviations"))}),
+				shell.layer,
+			),
+		);
+		expect(out.code).toBe(BAD_SECTIONS);
+		expect(out.stderr.at(-1)).toContain('heading text "deviations", expected "Deviations"');
+		expect(out.stderr.some((line) => line.includes("repaired"))).toBe(false);
+		expect(shell.requests.some((line) => CREATE.test(line))).toBe(false);
+	});
+
+	it("names the repair beside a refusal the repaired body still earns", async () => {
+		const out = await run(
+			[],
+			withBody("Fixes #4312\n\n### Deviations\n\n- narrowed the scope a bit.\n"),
+		);
+		expect(out.code).toBe(BAD_SECTIONS);
+		expect(out.stderr[0]).toBe(
+			'build pr: line 3: "### Deviations" repaired to "## Deviations" — only the heading\'s level moved.',
+		);
+		expect(out.stderr.at(-1)).toContain("an entry carries no **Said:**");
+	});
+});
+
 describe("runPr — the write path", () => {
 	it("opens the PR and reads its body back", async () => {
 		const out = await run([
@@ -423,6 +473,33 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 		expect(out.code).toBe(BAD_SECTIONS);
 		expect(out.stderr.at(-1)).toContain('build pr-body: the body\'s "## Deviations" section');
 		expect(shell.requests.some((line) => PATCH_BODY.test(line))).toBe(false);
+	});
+
+	it("repairs a Deviations heading at the wrong level before the PATCH (#10513)", async () => {
+		const shell = fakeSeams([
+			...LANE_ONLY,
+			head(),
+			[PATCH_BODY, PATCHED],
+			[READ_BACK, pull({body: BODY})],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runPrBody({
+					...bodyOptions,
+					stdin: Effect.succeed<StdinRead>({
+						_tag: "Text",
+						text: BODY.replace("## Deviations", "### Deviations"),
+					}),
+				}),
+				shell.layer,
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stderr).toContain(
+			'build pr-body: line 5: "### Deviations" repaired to "## Deviations" — only the heading\'s level moved.',
+		);
+		const patch = shell.requests.findIndex((line) => PATCH_BODY.test(line));
+		expect(JSON.parse(shell.bodies[patch] ?? "null")).toEqual({body: BODY});
 	});
 
 	it("refuses a malformed Report section on 4, and writes nothing", async () => {
