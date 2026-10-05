@@ -279,6 +279,26 @@ describe("the lines a verb prints about its authority", () => {
 		]);
 		expect(reportedLine("ship checks", set, [red("ci-required")])).toEqual([]);
 	});
+
+	it("says a red a failing required roll-up names blocks through it, and keeps the rest reported", () => {
+		const set = blockingSet(["all checks"]);
+		const red = (name: string) => ({name, status: "completed", conclusion: "failure"});
+		const runs = [red("all checks"), red("e2e"), red("Analyze (python)")];
+		expect(
+			reportedLine("heal-ci logs", set, runs, {
+				_tag: "Read",
+				through: new Map([["e2e", "all checks"]]),
+			}),
+		).toEqual([
+			"heal-ci logs: failing outside the required set: Analyze (python) — reported, never blocking.",
+			"heal-ci logs: failing outside the required set: e2e — blocks through the failing required context all checks.",
+		]);
+		expect(
+			reportedLine("heal-ci diagnose", set, runs, {_tag: "Unknown", reason: "the run list: 502"}),
+		).toEqual([
+			"heal-ci diagnose: failing outside the required set: Analyze (python), e2e — whether a failing required context names it is UNKNOWN: the run list: 502.",
+		]);
+	});
 });
 
 /**

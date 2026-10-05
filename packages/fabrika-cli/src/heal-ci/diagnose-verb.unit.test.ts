@@ -22,6 +22,9 @@ import {
 	files,
 	HEAD,
 	httpError,
+	JOB_LOG,
+	JOBS,
+	jobs,
 	OTHER_HEAD,
 	PROTECTION,
 	planGated,
@@ -29,6 +32,7 @@ import {
 	pull,
 	RULES,
 	rules,
+	runsAtHead,
 	runsTotal,
 	workflows,
 } from "./fixtures.test-support.ts";
@@ -43,6 +47,7 @@ const TIMELINE = /^GET .*\/repos\/o\/r\/issues\/4321\/timeline\?/;
 const REVIEWS = /^GET .*\/repos\/o\/r\/pulls\/4321\/reviews\?/;
 const COMPARE = /^GET .*\/repos\/o\/r\/compare\/main\.\.\.[0-9a-f]+$/;
 const PERMISSION = /^GET .*\/repos\/o\/r\/collaborators\/\S+\/permission$/;
+const RUNS_AT_HEAD = /^GET .*\/repos\/o\/r\/actions\/runs\?head_sha=[0-9a-f]+&per_page=100/;
 
 /** The shared payload fixtures speak `gh`'s `ExecResult`; the seam now serves the same bytes. */
 const reply = (result: ExecResult, status = 200): HttpReply => ({status, body: result.stdout});
@@ -438,6 +443,77 @@ describe("runDiagnose answers", () => {
 		expect(out.stderr.join("\n")).toContain(
 			"failing outside the required set: Analyze (python) — reported, never blocking.",
 		);
+	});
+
+	// A job that blocks only through a required roll-up is no "never blocking" red: the roll-up's FAIL
+	// line names it, so the line says which required context it blocks through.
+	it("says a red a failing required roll-up names blocks through it, and leaves an unnamed one reported", async () => {
+		const out = await run(
+			script([
+				[
+					CHECK_RUNS,
+					reply(
+						checkRuns(3, [
+							{name: "all checks", status: "completed", conclusion: "failure", check_suite_id: 77},
+							{name: "e2e", status: "completed", conclusion: "failure", check_suite_id: 77},
+							{
+								name: "Analyze (python)",
+								status: "completed",
+								conclusion: "failure",
+								check_suite_id: 99,
+							},
+						]),
+					),
+				],
+				[RULES, rules("all checks")],
+				[RUNS_AT_HEAD, reply(runsAtHead(1, [{id: 77, path: ".github/workflows/ci.yml"}]))],
+				[
+					JOBS,
+					jobs(2, [
+						{id: 441, name: "all checks"},
+						{id: 442, name: "e2e"},
+					]),
+				],
+				[
+					/\/contents\/\.github\/workflows\/ci\.yml\?ref=/,
+					{status: 200, body: "jobs:\n  e2e: {}\n  all-checks:\n    name: all checks\n"},
+				],
+				[JOB_LOG, {status: 200, body: "e2e: should_run=true result=failure → FAIL"}],
+			]),
+		);
+		expect(out.code).toBe(0);
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toContain(
+			"heal-ci diagnose: failing outside the required set: e2e — blocks through the failing required context all checks.",
+		);
+		expect(stderr).toContain(
+			"heal-ci diagnose: failing outside the required set: Analyze (python) — reported, never blocking.",
+		);
+	});
+
+	it("names a roll-up read it could not make as UNKNOWN, never as never blocking", async () => {
+		const out = await run(
+			script([
+				[
+					CHECK_RUNS,
+					reply(
+						checkRuns(2, [
+							{name: "all checks", status: "completed", conclusion: "failure"},
+							{name: "e2e", status: "completed", conclusion: "failure"},
+						]),
+					),
+				],
+				[RULES, rules("all checks")],
+				[RUNS_AT_HEAD, httpError(502, "Bad gateway")],
+			]),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`stall\tred\t${HEAD}\t35`);
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toContain(
+			"failing outside the required set: e2e — whether a failing required context names it is UNKNOWN",
+		);
+		expect(stderr).not.toContain("e2e — reported, never blocking");
 	});
 
 	it("still answers red when the failing run is one the base branch declares required", async () => {

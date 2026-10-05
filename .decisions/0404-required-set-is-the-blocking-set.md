@@ -114,6 +114,7 @@ every run at the head. The required-set read has to fail closed rather than sile
 
 - Ruling: [issue 9570, founder comment](https://github.com/kamp-us/phoenix/issues/9570#issuecomment-5753839456).
 - Amendment ruling: [issue 9597, ruling comment](https://github.com/kamp-us/phoenix/issues/9597#issuecomment-5754418554).
+- Amendment ruling: [issue 10432, ruling comment](https://github.com/kamp-us/phoenix/issues/10432#issuecomment-5983093271).
 - Amends in part: [ADR 0061](0061-ship-it-gating-check-set.md).
 - no vocabulary impact
 
@@ -157,8 +158,36 @@ named there — `fabrika ship checks`, `fabrika heal-ci diagnose`, `fabrika heal
 `fabrika review ci` — because the two zero-signal states are part of the one answer those verbs
 share, not a per-verb detail.
 
+## Amendment (2026-10-04, #10432) — a job a failing required roll-up names is read by `heal-ci`
+
+A required roll-up context restates other jobs' verdicts and goes red when one of them fails. Those
+jobs are not required by their own names, so under the Decision above `heal-ci logs` dropped their
+logs and both `logs` and `diagnose` called them "reported, never blocking" — while they stopped the
+merge through the roll-up. The healer held only the roll-up's restatement, so it could not classify
+the real failure, and a flake behind the roll-up parked its lane on a person.
+
+The founder ruled on
+[the ruling comment on issue 10432](https://github.com/kamp-us/phoenix/issues/10432#issuecomment-5983093271),
+2026-10-04: `heal-ci` follows a failing required roll-up to the jobs it names and reads their logs.
+The other option, adding each such job to the ruleset by name, was not taken.
+
+**A job named by a failing required roll-up is read by `heal-ci`.** `heal-ci logs` emits its log
+right after the roll-up's, so `heal-ci classify` classes it, and `logs` and `diagnose` say it blocks
+through that roll-up rather than never. The roll-up is found by its log's per-job `FAIL` lines,
+never by a configured name. The job key a `FAIL` line names is tied to a check-run name only
+through the workflow file the roll-up's run executed; a key that cannot be tied that way is named on
+stderr and no other job's log is read in its place.
+
+**What stays.** The required set is still the only source of blocking authority: the named job
+blocks because a required context does. A red that no failing required roll-up names is still
+reported, never fetched and never routed. `ship checks` and `review ci` are unchanged, since they
+read check colours and no logs.
+
 ## Amendments
 
+- **#10432 — a job a failing required roll-up names is read by `heal-ci` (2026-10-04).** See the
+  amendment section above; ruling:
+  [issue 10432](https://github.com/kamp-us/phoenix/issues/10432#issuecomment-5983093271).
 - **#9841 — the run-evidence bundle is retired (2026-09-26).** [ADR 0410](0410-ship-checks-is-ship-ci-trust.md)
   retired the run-evidence bundle and superseded ADR 0054, so the bundle's standing as the SHA-bound
   authority, which this record's Context leaves untouched, has ended. What replaced the bundle is

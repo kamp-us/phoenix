@@ -231,7 +231,23 @@ export const reportingNote = (
 };
 
 /**
- * The runs failing outside the blocking set, by name: real reds a caller reports rather than routes.
+ * Which reds outside the blocking set a failing required roll-up names, as far as a verb read it.
+ *
+ * Such a red still stops the merge — through the roll-up, which is required — so it is no
+ * "never blocking" red. `Read` maps each such check-run name to the roll-up context naming it; a
+ * verb that does not follow roll-ups passes {@link UNFOLLOWED}.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10432#issuecomment-5983093271
+ */
+export type RollupReach =
+	| {readonly _tag: "Read"; readonly through: ReadonlyMap<string, string>}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+export const UNFOLLOWED: RollupReach = {_tag: "Read", through: new Map()};
+
+/**
+ * The runs failing outside the blocking set, by name: real reds a caller reports rather than routes,
+ * unless a failing required roll-up names them.
  *
  * The selection lives here rather than at each caller so every verb that reads a head names the same
  * reds as non-blocking; a caller that filtered for itself could drift from `set.blocks`.
@@ -240,13 +256,30 @@ export const reportedLine = (
 	verb: string,
 	set: BlockingSet,
 	runs: ReadonlyArray<RollupRun & {readonly name: string}>,
+	reach: RollupReach = UNFOLLOWED,
 ): ReadonlyArray<string> => {
 	const names = runs
 		.filter((run) => !set.blocks(run.name) && isFailing(run))
-		.map((run) => run.name);
-	return names.length === 0
-		? []
-		: [
-				`${verb}: failing outside the required set: ${names.sort().join(", ")} — reported, never blocking.`,
-			];
+		.map((run) => run.name)
+		.sort();
+	if (names.length === 0) return [];
+	if (reach._tag === "Unknown") {
+		return [
+			`${verb}: failing outside the required set: ${names.join(", ")} — whether a failing required context names it is UNKNOWN: ${reach.reason}.`,
+		];
+	}
+	const plain = names.filter((name) => !reach.through.has(name));
+	return [
+		...(plain.length === 0
+			? []
+			: [
+					`${verb}: failing outside the required set: ${plain.join(", ")} — reported, never blocking.`,
+				]),
+		...names
+			.filter((name) => reach.through.has(name))
+			.map(
+				(name) =>
+					`${verb}: failing outside the required set: ${name} — blocks through the failing required context ${reach.through.get(name)}.`,
+			),
+	];
 };

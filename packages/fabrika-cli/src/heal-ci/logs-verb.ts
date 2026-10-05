@@ -4,6 +4,10 @@
  * Every failing context is read, not the first: v1 took `.failing[0]` and discarded the rest with no
  * record in any output field, so an N-context red silently became one routed action and N−1 losses.
  *
+ * **A failing required roll-up brings the jobs its FAIL lines name.** Those jobs block only through
+ * the roll-up, so each one's frame follows the roll-up's, tied by `./named-jobs.ts` and never by a
+ * guess; a red no required roll-up names is still reported and never fetched.
+ *
  * **No diagnostic is ever written to stdout.** The log body *is* the answer channel, and v1 wrote its
  * own English error text onto the same stream, interleaved with the log — so a caller
  * pattern-matching for failure signatures matched heal-ci's own prose as if it were CI output.
@@ -27,6 +31,7 @@ import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, LOGS_EXPIRED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {type LogFrame, renderFrame} from "./frames.ts";
 import {fetchJobLog, listRunJobs} from "./github.ts";
+import {isFailedJob, namedJobsOf, untiedLine} from "./named-jobs.ts";
 
 const VERB = "heal-ci logs";
 
@@ -119,7 +124,8 @@ export const runLogs = (
 			);
 		}
 		// The blocking authority is read before anything is fetched, so a failure the base branch does
-		// not require never enters this lane — it leaves named on the notices channel instead.
+		// not require enters this lane only when a failing required roll-up names it — otherwise it
+		// leaves named on the notices channel instead.
 		const authority = yield* readBlockingSet(repo, target.pull.baseRef);
 		if (authority._tag !== "Set") {
 			return refuse(
@@ -130,7 +136,6 @@ export const runLogs = (
 		}
 		const latest = latestPerContext(enumerated.value.runs);
 		notices.push(authorityNote(VERB, target.pull.baseRef, authority.set));
-		notices.push(...reportedLine(VERB, authority.set, latest));
 		const failing = latest
 			.filter((run) => authority.set.blocks(run.name))
 			.filter((run) => run.status === "completed" && statusOf(run) !== "success")
@@ -166,6 +171,44 @@ export const runLogs = (
 		}
 
 		const frames: LogFrame[] = [];
+		const emitted = new Set<string>();
+		const through = new Map<string, string>();
+
+		/** One job's log as a frame, answering its full text, or the refusal its read earned. */
+		const frameOf = (context: string, jobId: number) =>
+			Effect.gen(function* () {
+				const log = yield* fetchJobLog(repo, jobId);
+				if (log._tag === "Expired") {
+					return refuse(
+						LOGS_EXPIRED,
+						`${VERB}: run ${jobId}'s logs are expired — the platform no longer holds them; classify from the check-run summary or re-run to regenerate.`,
+						notices,
+					);
+				}
+				if (log._tag === "Failed") {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						unreadable(`job ${jobId}'s log`, bound, log.reason),
+						notices,
+					);
+				}
+				const tail = tailBytes(log.text, options.maxBytes);
+				if (tail.truncated) {
+					notices.push(
+						`${VERB}: context ${context} truncated to the last ${tail.bytes} bytes of ${new TextEncoder().encode(log.text).length}.`,
+					);
+				}
+				emitted.add(context);
+				frames.push({
+					context,
+					jobId: String(jobId),
+					bytes: tail.bytes,
+					truncated: tail.truncated,
+					text: tail.text,
+				});
+				return log.text;
+			});
+
 		for (const check of selected) {
 			let job: {readonly id: number; readonly name: string} | null = null;
 			for (const run of runs.value.runs) {
@@ -208,35 +251,51 @@ export const runLogs = (
 				continue;
 			}
 
-			const log = yield* fetchJobLog(repo, job.id);
-			if (log._tag === "Expired") {
+			const text = yield* frameOf(check.name, job.id);
+			if (typeof text !== "string") return text;
+
+			// A required roll-up's FAIL lines name jobs that block only through it. Each one's frame
+			// follows the roll-up's, so `classify` prints the class of the job a `derived` line names.
+			const named = yield* namedJobsOf(repo, bound, check, text, runs.value.runs);
+			if (named._tag === "Unknown") {
+				return refuse(PRECONDITION_UNKNOWN, unreadable(named.what, bound, named.reason), notices);
+			}
+			if (named._tag === "Incomplete") {
 				return refuse(
-					LOGS_EXPIRED,
-					`${VERB}: run ${job.id}'s logs are expired — the platform no longer holds them; classify from the check-run summary or re-run to regenerate.`,
+					INCOMPLETE_SCAN,
+					`${VERB}: received ${named.received} of ${named.declared} declared jobs — refusing a partial failure set.`,
 					notices,
 				);
 			}
-			if (log._tag === "Failed") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					unreadable(`job ${job.id}'s log`, bound, log.reason),
-					notices,
-				);
+			for (const untied of named.untied) notices.push(untiedLine(VERB, check.name, untied));
+			for (const {key, job: tied} of named.tied) {
+				if (authority.set.blocks(tied.name)) continue;
+				if (!isFailedJob(tied)) {
+					notices.push(
+						`${VERB}: ${check.name} names job ${key} (${tied.name}), which concluded ${tied.conclusion ?? tied.status} — no failure log to read.`,
+					);
+					continue;
+				}
+				through.set(tied.name, check.name);
+				if (emitted.has(tied.name)) continue;
+				const followed = yield* frameOf(tied.name, tied.id);
+				if (typeof followed !== "string") return followed;
 			}
-			const tail = tailBytes(log.text, options.maxBytes);
-			if (tail.truncated) {
-				notices.push(
-					`${VERB}: context ${check.name} truncated to the last ${tail.bytes} bytes of ${new TextEncoder().encode(log.text).length}.`,
-				);
-			}
-			frames.push({
-				context: check.name,
-				jobId: String(job.id),
-				bytes: tail.bytes,
-				truncated: tail.truncated,
-				text: tail.text,
-			});
 		}
+
+		notices.push(
+			...reportedLine(
+				VERB,
+				authority.set,
+				latest,
+				selected.length < failing.length
+					? {
+							_tag: "Unknown",
+							reason: "--context narrowed the read past the other failing gating contexts",
+						}
+					: {_tag: "Read", through},
+			),
+		);
 
 		return options.json
 			? answer(

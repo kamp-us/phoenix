@@ -2,6 +2,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {runClassify} from "./classify-verb.ts";
 import {INCOMPLETE_SCAN, LOGS_EXPIRED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	checkRuns,
@@ -262,5 +263,132 @@ describe("runLogs refuses rather than answering `no failed steps`", () => {
 		);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("failing contexts are: unit tests");
+	});
+});
+
+describe("runLogs follows a failing required roll-up to the jobs its FAIL lines name", () => {
+	const ROLLUP = "all checks";
+	const WORKFLOW = ".github/workflows/ci.yml";
+	const CONTENTS = /^GET .*\/repos\/o\/r\/contents\/\.github\/workflows\/ci\.yml\?ref=/;
+	const logOf = (job: number) => new RegExp(`/actions/jobs/${job}/logs$`);
+	const workflowFile = (yaml: string): HttpReply => ({status: 200, body: yaml});
+
+	const YAML = [
+		"jobs:",
+		"  unit:",
+		"    name: unit + client tests",
+		"  packages-tests:",
+		"    name: packages unit tests",
+		"  lint:",
+		"    strategy:",
+		"      matrix:",
+		"        node: [22, 24]",
+		"  all-checks:",
+		`    name: ${ROLLUP}`,
+	].join("\n");
+
+	const rollupLog = (...lines: ReadonlyArray<string>) =>
+		[
+			"2026-10-04T00:54:02.31Z packages-tests: should_run=true result=success → required-pass",
+			...lines,
+			`2026-10-04T00:54:02.33Z ##[error]${ROLLUP} FAILED — see per-job verdicts above`,
+		].join("\n");
+
+	const script = (log: string): ReadonlyArray<Scripted> => [
+		[RULES, rules(ROLLUP)],
+		[PROTECTION, protection()],
+		[PULL, reply(pull())],
+		[
+			CHECK_RUNS,
+			reply(
+				checkRuns(3, [
+					{...failed(ROLLUP), id: 10, check_suite_id: 77},
+					{...failed("unit + client tests"), id: 11, check_suite_id: 77},
+					{...failed("Analyze (python)"), id: 12, check_suite_id: 99},
+				]),
+			),
+		],
+		[RUNS_AT_HEAD, reply(runsAtHead(1, [{id: 77, path: WORKFLOW}]))],
+		[
+			JOBS,
+			jobs(3, [
+				{id: 441, name: ROLLUP},
+				{id: 442, name: "unit + client tests"},
+				{id: 443, name: "packages unit tests", conclusion: "success"},
+			]),
+		],
+		[CONTENTS, workflowFile(YAML)],
+		[logOf(441), logText(log)],
+		[logOf(442), logText("AssertionError: expected [] to deeply equal [ '/tmp/x' ]")],
+	];
+
+	const UNIT_FAILED =
+		"2026-10-04T00:54:02.32Z ##[error]unit: should_run=true result=failure → FAIL (a should-have-run gating job did not succeed — silent no-op)";
+
+	it("emits the named job's frame right after the roll-up's, and classify classes both", async () => {
+		const out = await run(script(rollupLog(UNIT_FAILED)));
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`logs\t2\t${HEAD}`);
+		const headers = out.stdout.split("\n").filter((line) => line.startsWith("==== context"));
+		expect(headers.map((line) => line.split(" bytes ")[0])).toEqual([
+			`==== context ${ROLLUP} job 441`,
+			"==== context unit + client tests job 442",
+		]);
+
+		const classified = await Effect.runPromise(
+			runClassify({json: false, stdin: Effect.succeed({_tag: "Text", text: out.stdout})}),
+		);
+		const classes = classified.stdout.split("\n").filter((line) => line.startsWith("class\t"));
+		expect(classes.map((line) => line.split("\t").slice(1, 3))).toEqual([
+			[ROLLUP, "derived"],
+			["unit + client tests", "logic"],
+		]);
+	});
+
+	it("says the named job blocks through the roll-up, and keeps an unnamed red reported and unfetched", async () => {
+		const out = await run(script(rollupLog(UNIT_FAILED)));
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toContain(
+			`failing outside the required set: unit + client tests — blocks through the failing required context ${ROLLUP}.`,
+		);
+		expect(stderr).toContain(
+			"failing outside the required set: Analyze (python) — reported, never blocking.",
+		);
+		expect(stderr).not.toContain("unit + client tests — reported, never blocking");
+		expect(out.stdout).not.toContain("Analyze (python)");
+	});
+
+	it("reports a named key it cannot tie on stderr, by its key, and reads no other job's log", async () => {
+		const out = await run(
+			script(
+				rollupLog(
+					"2026-10-04T00:54:02.32Z ##[error]lint: should_run=true result=failure → FAIL (…)",
+					"2026-10-04T00:54:02.32Z ##[error]ghost: should_run=true result=cancelled → FAIL (…)",
+				),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`logs\t1\t${HEAD}`);
+		expect(out.stdout).not.toContain("==== context unit + client tests");
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toContain(
+			`${ROLLUP} names job lint, which cannot be tied to a check run: it is a matrix job, whose check runs carry a composed name — no log is read in its place.`,
+		);
+		expect(stderr).toContain(
+			`${ROLLUP} names job ghost, which cannot be tied to a check run: the workflow file declares no job by that key — no log is read in its place.`,
+		);
+		// Nothing tied to it, so the job that did fail stays a reported red.
+		expect(stderr).toContain(
+			"failing outside the required set: Analyze (python), unit + client tests — reported, never blocking.",
+		);
+	});
+
+	it("refuses on 11 when the roll-up's workflow file cannot be read", async () => {
+		const out = await run([
+			[CONTENTS, httpError(500, "Server Error")],
+			...script(rollupLog(UNIT_FAILED)),
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain(`cannot read ${WORKFLOW} at`);
 	});
 });

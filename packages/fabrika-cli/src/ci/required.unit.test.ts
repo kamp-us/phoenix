@@ -2,6 +2,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {
 	type CiRequiredInput,
 	envPrefix,
+	failedJobKeys,
 	inputFromEnv,
 	type JobResult,
 	judge,
@@ -253,5 +254,34 @@ describe("inputFromEnv — an unreadable job scope fails closed, never passes ov
 		assert.deepStrictEqual(verdict.scopeReasons, []);
 		assert.strictEqual(verdict.jobs.find((j) => j.name === "bundle-size")?.verdict, "FAIL");
 		assert.isFalse(verdict.pass);
+	});
+});
+
+describe("failedJobKeys — reads back the FAIL lines judge prints", () => {
+	it("names every FAIL row's key, behind a runner's prefix, and no passing row", () => {
+		const verdict = judge(
+			inputFromEnv(
+				env({
+					UNIT_REQUIRED: "true",
+					UNIT_RESULT: "failure",
+					PACKAGES_TESTS_RESULT: "cancelled",
+					CHANGES_RESULT: "failure",
+				}),
+			),
+		);
+		const rendered = [...verdict.jobs, ...(verdict.changesReport ? [verdict.changesReport] : [])]
+			.map((job) => `2026-10-04T00:54:02.3107401Z ##[error]${job.reason}`)
+			.join("\n");
+		assert.deepStrictEqual(failedJobKeys(rendered), ["unit", "packages-tests", "changes"]);
+	});
+
+	it("names nothing in a log that is no roll-up's, and each key once", () => {
+		assert.deepStrictEqual(failedJobKeys("AssertionError: expected 3 to be 2"), []);
+		assert.deepStrictEqual(
+			failedJobKeys(
+				"e2e: should_run=true result=failure → FAIL\ne2e: should_run=true result=failure → FAIL",
+			),
+			["e2e"],
+		);
 	});
 });

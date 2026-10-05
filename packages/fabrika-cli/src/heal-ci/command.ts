@@ -265,10 +265,11 @@ const logs = leafCommand(
 	Command.withDescription(
 		[
 			"Prints `logs\\t<count>\\t<sha>`, then the framed failed-job log of every failing gating context.",
+			"  A failing required roll-up's frame is followed by one frame per failed job its FAIL lines name.",
 			"  Frame: `==== context <name> job <id> bytes <k> truncated <bool> ====`, the log bytes,",
 			"  then `==== end <name> ====`; `logs 0 <sha>` means nothing gating is failing.",
 			"  7: the PR or --sha commit is absent, or --context names no failing gating context",
-			"  11: a check-run, run, log or required-set read failed (UNKNOWN, never empty)",
+			"  11: a check-run, run, log, workflow-file or required-set read failed (UNKNOWN, never empty)",
 			"  13: an enumeration is provably short",
 			"  15: the platform expired the run's logs",
 			'  Derivation: the heal-ci skill\'s contract.md, "heal-ci logs"',

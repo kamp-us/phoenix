@@ -105,6 +105,8 @@ export const runsAtHead = (
 		name?: string;
 		status?: string;
 		conclusion?: string | null;
+		/** The workflow file the run executed — what a roll-up's job keys are tied through. */
+		path?: string;
 	}>,
 ): ExecResult =>
 	okOut(
@@ -113,6 +115,7 @@ export const runsAtHead = (
 			workflow_runs: rows.map((row) => ({
 				id: row.id,
 				name: row.name ?? "ci",
+				...(row.path === undefined ? {} : {path: row.path}),
 				workflow_id: 1,
 				check_suite_id: row.id,
 				status: row.status ?? "completed",
