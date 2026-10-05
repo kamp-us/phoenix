@@ -1613,7 +1613,7 @@ task moves at all. The machine is fixed at emission, so flipping the key moves n
 disk.
 
 **An `integrate` has no spawn to report**, so its row is `lane integrate`'s own exit, and this table
-is the one home for that mapping — the verb exits fifteen ways and every one is here, so there is
+is the one home for that mapping — the verb exits sixteen ways and every one is here, so there is
 no code left over for a catch-all to guess at. Exit `0` takes two rows because its two verdicts owe
 different next moves, and the verdict line is what tells them apart:
 
@@ -1627,7 +1627,7 @@ different next moves, and the verdict line is what tells them apart:
 | `44` | the merged tree failed a code validator, and that validator passed over the pre-merge head, so the red is the child's | `FAIL --integrate-exit 44 --assembly-head <sha>` |
 | `75` | the merged tree failed a code validator, and that validator failed over the pre-merge head too, so the base was already broken | `BASE-RED --integrate-exit 75 --assembly-head <sha>` — the machinery lap above, its cause derived; past `baseRedLaps` the same report lands the park. Where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause assembly-base-red` |
 | `54` | the replay landed and the child's branch would not follow it — nothing was merged, and a working tree standing on that branch is the usual reason | `SEAT-DIRTY` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause worktree-holds-branch` |
-| `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` | the lane record, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
+| `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` · `65` | the lane record, the lanes root, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
 
 The bottom row is the whole reason this table is closed. Only `42`'s no-replay arm, `43` and `44`
 judge the child's content, so only those three may spend its retry budget. `42`'s other arm is the
