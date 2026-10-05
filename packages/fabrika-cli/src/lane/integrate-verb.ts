@@ -23,10 +23,16 @@
  * puts that branch back too, so a replay this verb did not keep leaves the graded range where its
  * reviewer left it — see {@link restore}.
  *
+ * A red validator is not charged on sight. The seat goes back to the pre-merge head, that head's own
+ * install runs, and the one validator that failed runs again: green there is the child's `44`, red
+ * there is the base's `75` ({@link judgeRed}). Both runs' output lands in the lane's
+ * `integrate-red.jsonl`, the one file this verb writes beside the log, and `lane report` takes the
+ * `44` and the red-base lap off it.
+ *
  * Publishing the merged head is `lane push`'s job; the driver records `DONE`. This verb neither
  * pushes nor writes the lane log. See ./command.ts help for its report format.
  */
-import {Effect, type FileSystem, type Path} from "effect";
+import {Effect, FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {CONFIG_PATH} from "../config/document.ts";
 import {ASSEMBLY_REPLAY, assemblyReplayKey} from "../config/keys/assembly-replay.ts";
@@ -46,9 +52,12 @@ import {execCapture, execStatus} from "../io/exec.ts";
 import {localBranches} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
+import {instant} from "../wire/lane-record.ts";
+import {withLedgerLock} from "./append-lock.ts";
 import {assemblySeat, worktrees} from "./assembly.ts";
 import {
 	APPEND_UNKNOWN,
+	ASSEMBLY_BASE_RED,
 	ASSEMBLY_DIRTY,
 	ASSEMBLY_RED,
 	ASSEMBLY_UNSEATED,
@@ -59,6 +68,14 @@ import {
 	PROOF_ABSENT,
 	RECONCILE_REFUSED,
 } from "./codes.ts";
+import {
+	appendRedRecord,
+	type BaseRun,
+	describeOutput,
+	INTEGRATE_RED_FILE,
+	keepOutput,
+	type RedRun,
+} from "./integrate-red.ts";
 import {loadRefusal} from "./refusals.ts";
 import {type MovedRange, REPLAY_PARK_CAUSE, replayChild} from "./replay.ts";
 import {type LaneRef, loadLane} from "./store.ts";
@@ -462,31 +479,173 @@ const reconcile = (
 		};
 	});
 
+type Validation =
+	| {readonly _tag: "Green"}
+	/** The first validator that went red, and what it printed on both streams. */
+	| {readonly _tag: "Red"; readonly argv: CodeValidator["argv"]; readonly run: RedRun}
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
 /** Run the repo's declared code validators over the merged tree; the first red is the answer. */
 const validate = (
 	path: string,
 	validators: ReadonlyArray<CodeValidator>,
-): Effect.Effect<VerbOutcome | null, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<Validation, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		for (const {argv} of validators) {
 			const label = argv.join(" ");
 			const [binary, ...args] = argv;
 			const ran = yield* execStatus(binary, args, path);
 			if (ran._tag === "Unstartable") {
-				return refuse(
-					LANE_UNREADABLE,
-					`${VERB}: ${label} could not be executed in ${path}: ${ran.reason} — whether the merged tree holds together is UNKNOWN, never green.`,
-				);
+				return {
+					_tag: "Refused",
+					outcome: refuse(
+						LANE_UNREADABLE,
+						`${VERB}: ${label} could not be executed in ${path}: ${ran.reason} — whether the merged tree holds together is UNKNOWN, never green.`,
+					),
+				} as const;
 			}
 			if (!ran.ok) {
-				return refuse(
-					ASSEMBLY_RED,
-					`${VERB}: red — ${label} failed over the merged tree; diagnostics above.`,
-					diagnostics(ran.output),
-				);
+				return {
+					_tag: "Red",
+					argv,
+					run: {validator: label, output: keepOutput(ran.stdout, ran.stderr)},
+				} as const;
 			}
 		}
-		return null;
+		return {_tag: "Green"} as const;
+	});
+
+interface JudgeRed {
+	readonly path: string;
+	readonly lane: LaneRef;
+	readonly child: string;
+	readonly head: string;
+	readonly resetRef: string;
+	readonly reseat: Reseat;
+	readonly reconciler: DependencyReconciler;
+	readonly notes: ReadonlyArray<string>;
+	readonly red: Extract<Validation, {readonly _tag: "Red"}>;
+}
+
+/**
+ * A validator went red over the merged tree: put the seat back, re-run that one validator over the
+ * pre-merge head with the head's own install, record what both runs printed, and answer whose red it
+ * is.
+ *
+ * The re-run is the whole proof that a red belongs to the base rather than the child, so only a
+ * re-run that ran and came back red answers {@link ASSEMBLY_BASE_RED}. A seat that would not go back,
+ * an install the base itself refuses, a validator that could not start or a seat the re-run moved are
+ * each UNKNOWN, never "red on the base too" and never the child's `44`.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10257#issuecomment-5974130674
+ */
+const judgeRed = (
+	options: JudgeRed,
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
+	Effect.gen(function* () {
+		const {path, child, head, red} = options;
+		const label = red.run.validator;
+		const merged = [
+			...options.notes,
+			`${VERB}: red — ${label} failed over the merged tree:`,
+			...describeOutput(red.run.output),
+		];
+		const restored = yield* restore(
+			path,
+			options.resetRef,
+			head,
+			{code: ASSEMBLY_RED, stdout: "", stderr: merged},
+			options.reseat,
+		);
+		if (restored.code !== ASSEMBLY_RED) return restored;
+		const back = restored.stderr;
+
+		const unknown = (code: number, why: string, extra: ReadonlyArray<string> = []) =>
+			refuse(
+				code,
+				`${VERB}: ${label} was red over the merged tree, and ${why} — whether the base was red too is UNKNOWN, so neither ${ASSEMBLY_RED} nor ${ASSEMBLY_BASE_RED} is answered.`,
+				[...back, ...extra],
+			);
+
+		const installed = yield* reconcile(path, options.reconciler);
+		if (installed._tag === "Refused") {
+			return unknown(
+				LANE_UNREADABLE,
+				`the pre-merge head ${head}'s own install did not run clean`,
+				installed.outcome.stderr,
+			);
+		}
+		const [binary, ...args] = red.argv;
+		const rerun = yield* execStatus(binary, args, path);
+		if (rerun._tag === "Unstartable") {
+			return unknown(
+				LANE_UNREADABLE,
+				`its re-run over the pre-merge head ${head} could not be executed: ${rerun.reason}`,
+			);
+		}
+		const after = yield* headOf(path);
+		const tracked = yield* trackedChanges(path);
+		if (
+			after._tag === "Unreadable" ||
+			after.sha !== head ||
+			tracked._tag === "Unreadable" ||
+			tracked.paths.length > 0
+		) {
+			return unknown(
+				APPEND_UNKNOWN,
+				`after its re-run ${path} is not proven back at ${head} with nothing tracked changed`,
+			);
+		}
+
+		const at = instant(yield* Effect.sync(() => new Date().toISOString()));
+		const base: BaseRun = rerun.ok
+			? {verdict: "green"}
+			: {verdict: "red", output: keepOutput(rerun.stdout, rerun.stderr)};
+		const fs = yield* FileSystem.FileSystem;
+		const pathService = yield* Path.Path;
+		const dir = pathService.join(options.lane.root, options.lane.lane);
+		const wrote =
+			at === null
+				? ({_tag: "Unwritten", reason: "the clock read as no instant"} as const)
+				: yield* withLedgerLock(
+						{fs, path: pathService, dir, verb: VERB},
+						Effect.map(appendRedRecord(dir, {at, child, head, merged: red.run, base}), (result) =>
+							Result.isFailure(result)
+								? ({_tag: "Unwritten", reason: result.failure.reason} as const)
+								: ({_tag: "Written"} as const),
+						),
+						{
+							onAbsent: (absent) => ({_tag: "Unwritten", reason: `no lane at ${absent}`}) as const,
+							onLocked: (_lockDir, reason) => ({_tag: "Unwritten", reason}) as const,
+						},
+					);
+		if (wrote._tag === "Unwritten") {
+			return unknown(
+				APPEND_UNKNOWN,
+				`the record of both runs did not land in ${dir}/${INTEGRATE_RED_FILE}: ${wrote.reason} — run integrate again`,
+			);
+		}
+
+		if (base.verdict === "green") {
+			return refuse(
+				ASSEMBLY_RED,
+				`${VERB}: red — ${label} failed over the merged tree and passed over the pre-merge head ${head}, so the merge of ${child} broke it. Record FAIL --integrate-exit ${ASSEMBLY_RED} --assembly-head ${head}; the line carries the validator and its output.`,
+				[...back, `${VERB}: re-ran ${label} over ${head} with its own install: green.`],
+			);
+		}
+		return refuse(
+			ASSEMBLY_BASE_RED,
+			`${VERB}: base red — ${label} failed over the merged tree and over the pre-merge head ${head} too, without ${child}, so the base was broken before the child arrived. Record BASE-RED --integrate-exit ${ASSEMBLY_BASE_RED} --assembly-head ${head}; it spends no repair try.`,
+			[
+				...back,
+				`${VERB}: re-ran ${label} over ${head} with its own install: red there too:`,
+				...describeOutput(base.output),
+			],
+		);
 	});
 
 export const runIntegrate = (
@@ -631,15 +790,28 @@ export const runIntegrate = (
 				reseat,
 			);
 		}
-		const red = yield* validate(path, declared.value);
-		if (red !== null) {
+		const validation = yield* validate(path, declared.value);
+		if (validation._tag === "Refused") {
 			return yield* restore(
 				path,
 				resetRef,
 				head,
-				{...red, stderr: [...notes, ...red.stderr]},
+				{...validation.outcome, stderr: [...notes, ...validation.outcome.stderr]},
 				reseat,
 			);
+		}
+		if (validation._tag === "Red") {
+			return yield* judgeRed({
+				path,
+				lane: options,
+				child: options.child,
+				head,
+				resetRef,
+				reseat,
+				reconciler: reconciler.value,
+				notes,
+				red: validation,
+			});
 		}
 
 		const landed = yield* headOf(path);

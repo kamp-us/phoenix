@@ -112,6 +112,11 @@
 				"pattern": "\\.md$"
 			}
 		},
+		"baseRedLaps": {
+			"type": "integer",
+			"description": "How many free laps one epic child's task gets when `lane integrate` proves the assembly base was already red (exit 75), counted since the task's last UNBLOCKED or DONE. Past it, `lane report` records the `assembly-base-red` park instead of the lap. Shipped default 2; 0 parks every red base at once.",
+			"minimum": 0
+		},
 		"boardVocabulary": {
 			"type": "object",
 			"description": "The statuses, types, priorities, audiences and standing lanes this repo's board runs on. Every sub-key is independently optional.",

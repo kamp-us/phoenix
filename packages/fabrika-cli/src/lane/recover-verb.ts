@@ -742,6 +742,12 @@ const recoverLane = <R>(
 							integrateExit: null,
 							assemblyHead: null,
 							parkCause: options.parkCause,
+							// A settlement token is never a red-base lap, so this read is never taken; were
+							// one to arrive, it refuses rather than guess a cap.
+							baseRedLaps: {
+								_tag: "Refused",
+								reason: "lane recover records a ship settlement only, never a red-base lap",
+							},
 							classes: [],
 							repo: options.repo,
 							cwd: options.cwd,

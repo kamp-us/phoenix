@@ -20,7 +20,13 @@ import {NodeServices} from "@effect/platform-node";
 import {Effect} from "effect";
 import {afterEach, describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
-import {ASSEMBLY_RED, CHILD_UNSEATED, MERGE_CONFLICT, RECONCILE_REFUSED} from "./codes.ts";
+import {
+	ASSEMBLY_BASE_RED,
+	ASSEMBLY_RED,
+	CHILD_UNSEATED,
+	MERGE_CONFLICT,
+	RECONCILE_REFUSED,
+} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 import {runIntegrate} from "./integrate-verb.ts";
 
@@ -56,7 +62,7 @@ interface Fixture {
  * A repo whose assembly worktree was placed before the child existed, so its `.installed` is the
  * pre-merge one — exactly the state that lane was in when it merged.
  */
-const fixture = (reconciler: string | null): Fixture => {
+const fixture = (reconciler: string | null, validate = VALIDATE): Fixture => {
 	const root = join(mkdtempSync(join(tmpdir(), "lane-integrate-")), "checkout");
 	mkdirSync(root, {recursive: true});
 	git(root, "init", "--initial-branch=main", ".");
@@ -66,7 +72,7 @@ const fixture = (reconciler: string | null): Fixture => {
 	writeFileSync(join(root, "lock.txt"), "v1");
 	writeFileSync(join(root, "install.sh"), INSTALL);
 	writeFileSync(join(root, "rewriting-install.sh"), REWRITING_INSTALL);
-	writeFileSync(join(root, "validate.sh"), VALIDATE);
+	writeFileSync(join(root, "validate.sh"), validate);
 	writeFileSync(join(root, ".fabrika.jsonc"), config(reconciler));
 	git(root, "add", "-A");
 	git(root, "commit", "-m", "base");
@@ -185,6 +191,39 @@ describe("lane integrate over a real assembly worktree", {
 		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.base);
 	});
 
+	it("answers 75 when the failed validator is red on the pre-merge head too, and puts the seat back clean", async () => {
+		const tree = fixture("install.sh", "echo 'FAIL base.test.ts'\nexit 1\n");
+
+		const {code, stdout} = await integrate(tree);
+
+		expect(code).toBe(ASSEMBLY_BASE_RED);
+		expect(stdout).toBe("");
+		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.base);
+		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
+		const record = JSON.parse(
+			readFileSync(join(tree.lanes, String(EPIC), "integrate-red.jsonl"), "utf8").trim(),
+		) as {head: string; base: {verdict: string; output: {stdout: {lines: Array<string>}}}};
+		expect(record.head).toBe(tree.base);
+		expect(record.base.verdict).toBe("red");
+		expect(record.base.output.stdout.lines).toEqual(["FAIL base.test.ts"]);
+	});
+
+	it("re-runs over the pre-merge head with that head's own install, and charges the child when it is green there", async () => {
+		// Red only while the child's package is in the tree, and only against an install that matches
+		// the lockfile beside it — so a re-run over the merged lockfile's install could not go green.
+		const tree = fixture(
+			"install.sh",
+			"cmp -s lock.txt .installed && ! test -e pkg/package.json\n",
+		);
+
+		const {code} = await integrate(tree);
+
+		expect(code).toBe(ASSEMBLY_RED);
+		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.base);
+		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
+		expect(readFileSync(join(tree.seat, ".installed"), "utf8")).toBe("v1");
+	});
+
 	it("refuses an install that rewrote the lockfile, leaving the branch unpublished and reset", async () => {
 		const tree = fixture("rewriting-install.sh");
 
@@ -270,7 +309,8 @@ describe("a cross-child collision over a real assembly worktree", {
 
 		const {code} = await integrate(tree);
 
-		expect(code).toBe(ASSEMBLY_RED);
+		// `exit 1` is red over the pre-merge tip too, so the answer is the red base.
+		expect(code).toBe(ASSEMBLY_BASE_RED);
 		expect(git(tree.seat, "rev-parse", "HEAD")).toBe(tree.tip);
 		expect(git(tree.seat, "status", "--porcelain", "--untracked-files=no")).toBe("");
 		// The child's branch is the other half. The replay moved it onto the replayed range before

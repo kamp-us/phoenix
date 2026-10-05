@@ -142,8 +142,9 @@ describe("the closed park-cause set --cause advertises", () => {
 		);
 	});
 
-	it("offers the two spent-budget parks, the two base machinery causes, the queue ejection, the red head, the rendered gate's five, the unlanded write, the builder's two mechanical stops, the owner-approval wait, the verdict the head owes, the size stop and the two waits on the founder beside the six that predate them", () => {
+	it("offers the two spent-budget parks, the two base machinery causes, the red assembly base, the queue ejection, the red head, the rendered gate's five, the unlanded write, the builder's two mechanical stops, the owner-approval wait, the verdict the head owes, the size stop and the two waits on the founder beside the six that predate them", () => {
 		expect([...PARK_CAUSE_TOKENS]).toEqual([
+			"assembly-base-red",
 			"assembly-conflict",
 			"awaiting-cp-approval",
 			"base-conflicted",

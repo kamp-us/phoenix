@@ -1541,11 +1541,11 @@ refused at `20` and the only move left was a `BLOCKED` over a lane that had fini
 A `SHIPPED-PR` and an epic child's `BUILT-NO-PR` carry no such field and fold to `review` exactly as
 they always did.
 
-**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Five terminal tokens
+**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Six terminal tokens
 belong to no shell's vocabulary — `lane report` groups them as `machinery` in
 [`report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)'s `SHELL_VOCABULARIES` — and each
 one says the pipeline carrying the artifact failed while nothing about the artifact was judged. All
-five map to the machine's `LAP` event, and each names exactly one park cause:
+six map to the machine's `LAP` event, and each names exactly one park cause:
 
 | Token | The observed failure | The cause it carries |
 | --- | --- | --- |
@@ -1554,10 +1554,18 @@ five map to the machine's `LAP` event, and each names exactly one park cause:
 | `QUEUE-EJECTED` | the merge queue ejected the PR before it merged — a sibling's red, a base that moved under the batch, a queue timeout — and no verdict against it changed | `queue-ejected` |
 | `SEAT-DIRTY` | a working tree still holds the lane branch this build or replay must stand on — `lane integrate` exit `54`, `build branch --resume-lane` exit `11` | `worktree-holds-branch` |
 | `SHELL-DEAD` | the shell driving this lane's stage was killed by its provider before it recorded a terminal | `spawn-dead` |
+| `BASE-RED` | a code validator failed over the merged tree and over the pre-merge assembly head too, so the base was broken before the child arrived — `lane integrate` exit `75` | `assembly-base-red` |
 
-Three of the five are yours because no shell observes them — the two `integrate` rows and the dead
+Four of the six are yours because no shell observes them — the three `integrate` rows and the dead
 spawn. The other two have a shell in front of them, and where its own terminal already recorded
 the failure you record nothing second: `ship` reports `QUEUE-EJECTED` and `BASE-CONFLICTED` itself.
+
+**`BASE-RED` is the one lap you cannot record on your own word.** It takes
+`--integrate-exit 75 --assembly-head <sha>`, and `lane report` lands it only when the record
+`lane integrate` wrote says its re-run over that head was red. The line carries the validator and
+what it printed over the base, for whoever fixes the base. A task gets `baseRedLaps` of these free
+(`.fabrika.jsonc`, shipped `2`) since its last `UNBLOCKED` or `DONE`; past that the same report
+lands the `BLOCKED` park on `assembly-base-red` instead, and the lane waits for the base to be fixed.
 
 **A head behind its base that merges clean is no machinery failure.** The merge queue lands it as it
 is, so it earns no lap and no park. `BASE-DRIFTED` and the `head-behind-base` cause stay in
@@ -1605,7 +1613,7 @@ task moves at all. The machine is fixed at emission, so flipping the key moves n
 disk.
 
 **An `integrate` has no spawn to report**, so its row is `lane integrate`'s own exit, and this table
-is the one home for that mapping — the verb exits fourteen ways and every one is here, so there is
+is the one home for that mapping — the verb exits fifteen ways and every one is here, so there is
 no code left over for a catch-all to guess at. Exit `0` takes two rows because its two verdicts owe
 different next moves, and the verdict line is what tells them apart:
 
@@ -1616,7 +1624,8 @@ different next moves, and the verdict line is what tells them apart:
 | `42` | the child conflicts and no replay was attempted — the repo declares `assemblyReplay.onCollision: "off"` | `FAIL --integrate-exit 42 --assembly-head <sha>` |
 | `42` | a replay ran and hit a hunk that is not a plain keep-both — the branch was reset and proved back | `REPLAY-COLLIDED` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause replay-conflict` |
 | `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL --integrate-exit 43 --assembly-head <sha>` |
-| `44` | the merged tree failed a code validator | `FAIL --integrate-exit 44 --assembly-head <sha>` |
+| `44` | the merged tree failed a code validator, and that validator passed over the pre-merge head, so the red is the child's | `FAIL --integrate-exit 44 --assembly-head <sha>` |
+| `75` | the merged tree failed a code validator, and that validator failed over the pre-merge head too, so the base was already broken | `BASE-RED --integrate-exit 75 --assembly-head <sha>` — the machinery lap above, its cause derived; past `baseRedLaps` the same report lands the park. Where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause assembly-base-red` |
 | `54` | the replay landed and the child's branch would not follow it — nothing was merged, and a working tree standing on that branch is the usual reason | `SEAT-DIRTY` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause worktree-holds-branch` |
 | `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` | the lane record, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
 
@@ -1625,7 +1634,9 @@ judge the child's content, so only those three may spend its retry budget. `42`'
 line to read twice: a replay that hit a hunk it may not resolve is the machinery failing, not the
 child, and a `FAIL` there charges the child's repair budget for it — the exact thing the corpus
 forbids, in the one table a driver routes off. That is what `REPLAY-COLLIDED` and `SEAT-DIRTY`
-record instead, and neither is ever recorded beside the `FAIL` it replaces.
+record instead, and neither is ever recorded beside the `FAIL` it replaces. `75` is the same
+line for a red validator: the verb re-ran it over the pre-merge head, so `44` and `75` are its
+answer about whose red it is, never yours.
 
 **Each of those three `FAIL`s names its exit and the assembly head on the line.** `<sha>` is the head
 the refusal says it put the seat back to (`is back at <sha>` on a `42`, `reset <path> back to <sha>`

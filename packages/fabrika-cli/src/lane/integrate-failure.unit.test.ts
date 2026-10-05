@@ -1,10 +1,15 @@
 import {describe, expect, it} from "vitest";
+import {instant} from "../wire/lane-record.ts";
 import {applyCorrections, parseLog} from "./fold.ts";
 import {
+	BASE_RED_CAUSE,
 	integrateEvidenceRefusal,
+	readIntegrateClaim,
 	readIntegrateEvidence,
+	resolveIntegrateClaim,
 	standingIntegrateFailure,
 } from "./integrate-failure.ts";
+import type {IntegrateRedRecord} from "./integrate-red.ts";
 
 const HEAD = "9f2c1ab4d5e6f708192a3b4c5d6e7f8091a2b3c4";
 const TASK = "issue_5828";
@@ -66,18 +71,121 @@ describe("readIntegrateEvidence", () => {
 });
 
 describe("integrateEvidenceRefusal", () => {
-	const evidence = {exit: 44, head: HEAD} as const;
+	const evidence = {_tag: "Fail", failure: {exit: 44, head: HEAD}} as const;
+	const baseRed = {_tag: "BaseRed", head: HEAD} as const;
 
 	it("requires the evidence on a FAIL out of integrate and admits it there", () => {
-		expect(integrateEvidenceRefusal("integrate", "FAIL", null)).toContain("--integrate-exit");
-		expect(integrateEvidenceRefusal("integrate", "FAIL", evidence)).toBeNull();
+		expect(integrateEvidenceRefusal("integrate", "FAIL", null, null)).toContain("--integrate-exit");
+		expect(integrateEvidenceRefusal("integrate", "FAIL", null, evidence)).toBeNull();
 	});
 
 	it("refuses it on every other line, and asks nothing of lines without it", () => {
-		expect(integrateEvidenceRefusal("review", "FAIL", evidence)).toContain('out of "review"');
-		expect(integrateEvidenceRefusal("integrate", "DONE", evidence)).not.toBeNull();
-		expect(integrateEvidenceRefusal("review", "FAIL", null)).toBeNull();
-		expect(integrateEvidenceRefusal("integrate", "DONE", null)).toBeNull();
+		expect(integrateEvidenceRefusal("review", "FAIL", null, evidence)).toContain('out of "review"');
+		expect(integrateEvidenceRefusal("integrate", "DONE", null, evidence)).not.toBeNull();
+		expect(integrateEvidenceRefusal("review", "FAIL", null, null)).toBeNull();
+		expect(integrateEvidenceRefusal("integrate", "DONE", null, null)).toBeNull();
+	});
+
+	it("admits the red-base exit on the red-base lap and its park out of integrate, and nowhere else", () => {
+		expect(integrateEvidenceRefusal("integrate", "LAP", BASE_RED_CAUSE, baseRed)).toBeNull();
+		expect(integrateEvidenceRefusal("integrate", "BLOCKED", BASE_RED_CAUSE, baseRed)).toBeNull();
+		expect(integrateEvidenceRefusal("review", "LAP", BASE_RED_CAUSE, baseRed)).toContain(
+			'out of "integrate" only',
+		);
+		expect(integrateEvidenceRefusal("integrate", "FAIL", null, baseRed)).toContain("BASE-RED");
+		expect(integrateEvidenceRefusal("integrate", "LAP", "spawn-dead", baseRed)).not.toBeNull();
+	});
+
+	it("refuses the red-base cause typed without the exit integrate printed", () => {
+		expect(integrateEvidenceRefusal("integrate", "LAP", BASE_RED_CAUSE, null)).toContain(
+			"--integrate-exit 75",
+		);
+		expect(integrateEvidenceRefusal("integrate", "BLOCKED", BASE_RED_CAUSE, evidence)).toContain(
+			"--integrate-exit 75",
+		);
+	});
+});
+
+describe("readIntegrateClaim", () => {
+	it("reads a FAIL exit as a FAIL and the red-base exit as a red base", () => {
+		expect(readIntegrateClaim(44, HEAD)).toEqual({
+			_tag: "Read",
+			claim: {_tag: "Fail", failure: {exit: 44, head: HEAD}},
+		});
+		expect(readIntegrateClaim(75, HEAD)).toEqual({
+			_tag: "Read",
+			claim: {_tag: "BaseRed", head: HEAD},
+		});
+	});
+
+	it("refuses any other exit, and the attach reader still refuses the red-base exit", () => {
+		expect(readIntegrateClaim(45, HEAD)._tag).toBe("Rejected");
+		expect(readIntegrateEvidence(75, HEAD)._tag).toBe("Rejected");
+	});
+});
+
+describe("resolveIntegrateClaim — the record decides whose red it is", () => {
+	const output = (text: string) => ({
+		stdout: {lines: [text], omitted: 0},
+		stderr: {lines: [], omitted: 0},
+	});
+	const at = instant("2026-10-04T00:00:00.000Z");
+	if (at === null) throw new Error("the fixture instant does not parse");
+	const record = (
+		base: IntegrateRedRecord["base"],
+		child = "build/5828-a-1234abcd",
+	): IntegrateRedRecord => ({
+		at,
+		child,
+		head: HEAD,
+		merged: {validator: "pnpm test", output: output("merged red")},
+		base,
+	});
+	const green = record({verdict: "green"});
+	const red = record({verdict: "red", output: output("base red")});
+	const fail44 = {_tag: "Fail", failure: {exit: 44, head: HEAD.slice(0, 7)}} as const;
+	const baseRed = {_tag: "BaseRed", head: HEAD.slice(0, 7)} as const;
+
+	it("lands a 44 over a green base, carrying the merged run's validator and output", () => {
+		expect(resolveIntegrateClaim(fail44, [green], 5828)).toEqual({
+			_tag: "Failure",
+			failure: {exit: 44, head: HEAD.slice(0, 7), red: green.merged},
+		});
+	});
+
+	it("refuses a 44 over a red base, and a red base over a green one", () => {
+		expect(resolveIntegrateClaim(fail44, [red], 5828)).toMatchObject({_tag: "Refused"});
+		expect(resolveIntegrateClaim(baseRed, [green], 5828)).toMatchObject({_tag: "Refused"});
+	});
+
+	it("lands a red base carrying the base run's output", () => {
+		expect(resolveIntegrateClaim(baseRed, [red], 5828)).toEqual({
+			_tag: "BaseRed",
+			baseRed: {
+				head: HEAD.slice(0, 7),
+				red: {validator: "pnpm test", output: output("base red")},
+			},
+		});
+	});
+
+	it("refuses with no record for this child, and reads the latest one that is", () => {
+		expect(resolveIntegrateClaim(baseRed, [], 5828)).toMatchObject({_tag: "Refused"});
+		expect(
+			resolveIntegrateClaim(
+				baseRed,
+				[record({verdict: "red", output: output("x")}, "build/9-b-1234abcd")],
+				5828,
+			),
+		).toMatchObject({_tag: "Refused"});
+		expect(resolveIntegrateClaim(baseRed, [green, red], 5828)._tag).toBe("BaseRed");
+	});
+
+	it("takes a 42 or a 43 off the pair alone", () => {
+		const fail43 = {_tag: "Fail", failure: {exit: 43, head: HEAD}} as const;
+		expect(resolveIntegrateClaim(fail43, [], null)).toEqual({
+			_tag: "Failure",
+			failure: {exit: 43, head: HEAD},
+		});
 	});
 });
 
@@ -88,6 +196,38 @@ describe("parseLog — the integrate field", () => {
 	it("carries a well-formed integrate FAIL through", () => {
 		const parsed = parseLog(text(failed(42)));
 		expect(parsed).toMatchObject({_tag: "Parsed", entries: [{integrate: {exit: 42, head: HEAD}}]});
+	});
+
+	it("carries a 44's validator and output through, and refuses them on a 42", () => {
+		const red = {
+			validator: "pnpm test",
+			output: {stdout: {lines: ["FAIL a.test.ts"], omitted: 3}, stderr: {lines: [], omitted: 0}},
+		};
+		expect(parseLog(text(line("FAIL", {integrate: {exit: 44, head: HEAD, red}})))).toMatchObject({
+			_tag: "Parsed",
+			entries: [{integrate: {exit: 44, red}}],
+		});
+		expect(parseLog(text(line("FAIL", {integrate: {exit: 42, head: HEAD, red}})))._tag).toBe(
+			"Malformed",
+		);
+	});
+
+	it("carries a red base's evidence on its own cause only", () => {
+		const baseRed = {
+			head: HEAD,
+			red: {
+				validator: "pnpm test",
+				output: {stdout: {lines: [], omitted: 0}, stderr: {lines: ["boom"], omitted: 0}},
+			},
+		};
+		expect(parseLog(text(line("LAP", {cause: BASE_RED_CAUSE, baseRed})))).toMatchObject({
+			_tag: "Parsed",
+			entries: [{baseRed}],
+		});
+		expect(parseLog(text(line("LAP", {cause: "spawn-dead", baseRed})))._tag).toBe("Malformed");
+		expect(parseLog(text(line("LAP", {cause: BASE_RED_CAUSE, baseRed: {head: HEAD}})))._tag).toBe(
+			"Malformed",
+		);
 	});
 
 	it("refuses a malformed record and one riding any event but FAIL", () => {

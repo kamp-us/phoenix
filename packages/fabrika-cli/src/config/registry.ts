@@ -11,6 +11,7 @@ import {appetiteSizesKey} from "./keys/appetite-sizes.ts";
 import {assemblyRefreshKey} from "./keys/assembly-refresh.ts";
 import {assemblyReplayKey} from "./keys/assembly-replay.ts";
 import {auditCatalogsKey} from "./keys/audit-catalogs.ts";
+import {baseRedLapsKey} from "./keys/base-red-laps.ts";
 import {boardVocabularyKey} from "./keys/board-vocabulary.ts";
 import {boardsKey} from "./keys/boards.ts";
 import {campaignAuthorsKey} from "./keys/campaign-authors.ts";
@@ -46,6 +47,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(assemblyRefreshKey),
 	register(assemblyReplayKey),
 	register(auditCatalogsKey),
+	register(baseRedLapsKey),
 	register(boardVocabularyKey),
 	register(boardsKey),
 	register(campaignAuthorsKey),

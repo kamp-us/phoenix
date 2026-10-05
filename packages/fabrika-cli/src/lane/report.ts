@@ -16,8 +16,14 @@ import {CONFIG_PATH} from "../config/document.ts";
 import {PARK_CAUSE, type ParkCauseSurface} from "../config/keys/park-cause.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {WAIT_FLOOR_SECONDS} from "../wait-budget.ts";
-import {INTEGRATE_STATE} from "./integrate-failure.ts";
-import {type CompiledLane, MACHINERY_EVENT, type OperatorEvent, type TaskState} from "./machine.ts";
+import {BASE_RED_CAUSE, INTEGRATE_STATE} from "./integrate-failure.ts";
+import {
+	bareEvent,
+	type CompiledLane,
+	MACHINERY_EVENT,
+	type OperatorEvent,
+	type TaskState,
+} from "./machine.ts";
 import {BUILD_STATES, REVIEW_STATE, REVIEW_UI_STATE, SHIP_STATES} from "./prove.ts";
 
 /**
@@ -86,6 +92,11 @@ export const SHELL_VOCABULARIES = {
 		// the artifact was judged, so a death that spent a repair round would be charging the ticket
 		// for the pipeline's failure.
 		"SHELL-DEAD": "LAP",
+		// `lane integrate` exit `75`: the validator that failed over the merged tree failed over the
+		// pre-merge head too, so the base was broken before the child arrived. It is the one lap whose
+		// evidence is integrate's own record, and past `machineryLaps.baseRedLaps` it lands as the park
+		// on the same cause instead ({@link baseRedEvent}).
+		"BASE-RED": "LAP",
 	},
 	shipper: {
 		"ALREADY-MERGED": "DONE",
@@ -792,6 +803,29 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
+	 * `lane integrate` exit `75`: a code validator failed over the merged tree, and the same validator
+	 * failed over the pre-merge assembly head with the child's merge not in it. The base was broken
+	 * before the child arrived, so the red is machinery and charges the child no repair try. The
+	 * `BASE-RED` lap carries it, and so does the park that lap becomes once the task has spent
+	 * `machineryLaps.baseRedLaps` of them since its last `UNBLOCKED` or `DONE`.
+	 *
+	 * The line names the validator and keeps what it printed over the base, off integrate's own
+	 * record, so whoever fixes the base reads what failed there.
+	 *
+	 * No remedy: fixing a broken assembly branch is repair work, and no verb removes it by reading.
+	 *
+	 * Route `driver`: the assembly branch is the run's own machinery, and no product call is in it.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10257#issuecomment-5974130674
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10257#issuecomment-5983173740
+	 */
+	"assembly-base-red": {
+		meaning:
+			"a code validator failed over the pre-merge assembly head as well as over the merged tree, so the base was broken before the child arrived",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * `lane brief` refused at `71`: a table row standing for this lane's issue has spent the stop
 	 * multiple of its size, so no next shell is briefed. It is the one stop the table's rulings allow;
 	 * everything short of it is a flag and the lane keeps going.
@@ -880,6 +914,46 @@ export const MACHINERY_CAUSES: Readonly<Record<string, ParkCause>> = {
 	"QUEUE-EJECTED": "queue-ejected",
 	"SEAT-DIRTY": "worktree-holds-branch",
 	"SHELL-DEAD": "spawn-dead",
+	"BASE-RED": BASE_RED_CAUSE,
+};
+
+interface CountedLine {
+	readonly task: string;
+	readonly event: string;
+	readonly cause?: string;
+}
+
+/** What a `BASE-RED` lap lands as, and how many red-base laps this task already spent. */
+export interface BaseRedLanding {
+	readonly event: "LAP" | "BLOCKED";
+	readonly spent: number;
+	readonly cap: number;
+}
+
+/**
+ * The event a `BASE-RED` lap lands as: the lap while the task has free laps on a red base left, and
+ * the park on the same cause once it has spent `cap` of them.
+ *
+ * A broken base is rarely a fluke, so a free lap mostly fails again, and the lap budget alone would
+ * let a task run every check twice per lap until all its laps are gone. The count starts again after
+ * the task's latest `UNBLOCKED` or `DONE`: a person who reopened the park, or a child that landed,
+ * says the base was looked at.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10257#issuecomment-5983173740
+ */
+export const baseRedEvent = (
+	entries: ReadonlyArray<CountedLine>,
+	task: string,
+	cap: number,
+): BaseRedLanding => {
+	let spent = 0;
+	for (const entry of entries) {
+		if (entry.task !== task) continue;
+		const event = bareEvent(entry.event);
+		if (event === "UNBLOCKED" || event === "DONE") spent = 0;
+		else if (event === MACHINERY_EVENT && entry.cause === BASE_RED_CAUSE) spent += 1;
+	}
+	return {event: spent < cap ? MACHINERY_EVENT : "BLOCKED", spent, cap};
 };
 
 /**

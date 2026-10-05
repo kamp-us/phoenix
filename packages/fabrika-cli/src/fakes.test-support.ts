@@ -453,7 +453,9 @@ export const fakeShell = (
 				return ChildProcessSpawner.makeHandle({
 					pid: ChildProcessSpawner.ProcessId(1),
 					stdin: Sink.drain,
-					stdout: Stream.fromIterable([enc.encode(result.ok ? result.stdout : "")]),
+					// A failing child may write to both streams; every scripted failure that writes nothing
+					// to stdout carries `stdout: ""`, so passing it through is the same bytes for them.
+					stdout: Stream.fromIterable([enc.encode(result.stdout)]),
 					stderr: Stream.fromIterable([enc.encode(result.ok ? "" : result.reason)]),
 					all: Stream.fromIterable([enc.encode(result.ok ? result.stdout : result.reason)]),
 					exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(exitCodeOf(result))),

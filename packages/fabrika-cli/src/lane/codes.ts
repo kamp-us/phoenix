@@ -745,3 +745,15 @@ export const NOT_DIAGNOSED = 73;
  * @ruling https://github.com/kamp-us/phoenix/issues/10340
  */
 export const TREES_KEPT = 74;
+
+/**
+ * The merged tree failed a code validator, and that same validator failed over the pre-merge
+ * assembly head too, with the child's merge not in the tree. The base was already broken, so the red
+ * is machinery and not the child's: record the `BASE-RED` lap, which spends no repair try. The seat
+ * is back at the pre-merge head, with that head's own install.
+ *
+ * Its own seat rather than {@link ASSEMBLY_RED}'s, so a driver tells the two apart by the exit alone.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10257#issuecomment-5974130674
+ */
+export const ASSEMBLY_BASE_RED = 75;

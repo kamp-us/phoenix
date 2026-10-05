@@ -61,6 +61,7 @@
  */
 import {Effect, FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {BASE_RED_LAPS} from "../config/keys/base-red-laps.ts";
 import type {ParkCauseSurface} from "../config/keys/park-cause.ts";
 import type {Read} from "../config/read-key.ts";
 import {appendText} from "../io/fs.ts";
@@ -81,20 +82,32 @@ import {
 	CONCURRENT_WRITE,
 	EVENT_REFUSED,
 	INTEGRATE_EVIDENCE,
+	LANE_UNREADABLE,
 	PARK_UNCAUSED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
 	TOKEN_UNSERVED,
 	WAIT_TOO_SOON,
 } from "./codes.ts";
+import {taskIdChild} from "./emit.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
-import {integrateEvidenceRefusal, readIntegrateEvidence} from "./integrate-failure.ts";
-import type {CompiledLane, OperatorEvent, TaskState} from "./machine.ts";
+import {
+	BASE_RED_CAUSE,
+	type BaseRedEvidence,
+	type IntegrateClaim,
+	type IntegrateFailure,
+	integrateEvidenceRefusal,
+	readIntegrateClaim,
+	resolveIntegrateClaim,
+} from "./integrate-failure.ts";
+import {loadRedRecords} from "./integrate-red.ts";
+import {type CompiledLane, MACHINERY_EVENT, type OperatorEvent, type TaskState} from "./machine.ts";
 import {parkCauseRefusal} from "./park-cause-rule.ts";
 import {gateOnProof} from "./proof-gate.ts";
 import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {
+	baseRedEvent,
 	type ConditionalTerminal,
 	causeForEvent,
 	classesForEvent,
@@ -138,8 +151,9 @@ export interface ReportOptions extends LaneRef {
 	readonly founderAct: string | null;
 	/**
 	 * The `lane integrate` exit and the assembly head a `FAIL` out of an epic child's `integrate`
-	 * failed against — required there, refused on every other line
-	 * ([`integrate-failure.ts`](integrate-failure.ts)).
+	 * failed against, or the red-base exit and head a `BASE-RED` lap stands on — required on those,
+	 * refused on every other line ([`integrate-failure.ts`](integrate-failure.ts)). A `44` and a red
+	 * base are resolved against integrate's own record before the line lands.
 	 */
 	readonly integrateExit: number | null;
 	readonly assemblyHead: string | null;
@@ -153,6 +167,11 @@ export interface ReportOptions extends LaneRef {
 	 * stays offline, and the one config read belongs to the adapter that already knows the checkout.
 	 */
 	readonly parkCause: Read<ParkCauseSurface>;
+	/**
+	 * The repo's declared `baseRedLaps`, read off the same repository as {@link parkCause}. Only a
+	 * `BASE-RED` lap reads it, so a refused read refuses that token and nothing else.
+	 */
+	readonly baseRedLaps: Read<number>;
 	/** The lane classes standing at this event, relayed onto the event line. */
 	readonly classes: ReadonlyArray<string>;
 	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
@@ -279,6 +298,91 @@ const tryAdvance = <R>(input: AdvanceInput<R>): Effect.Effect<Advance, never, R>
 		};
 	});
 
+type Landing =
+	| {readonly _tag: "Event"; readonly event: OperatorEvent; readonly note: string | null}
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/**
+ * The event this report lands as. Every token but a `BASE-RED` lap lands as the event it maps to;
+ * that lap lands as the park on its own cause once the task has spent `baseRedLaps` of them.
+ */
+const landBaseRed = (
+	event: OperatorEvent,
+	cause: string | null,
+	entries: ReadonlyArray<LogEntry>,
+	taskId: string,
+	cap: Read<number>,
+): Landing => {
+	if (cause !== BASE_RED_CAUSE || event !== MACHINERY_EVENT) {
+		return {_tag: "Event", event, note: null};
+	}
+	if (cap._tag === "Refused") {
+		return {
+			_tag: "Refused",
+			outcome: refuse(
+				LANE_UNREADABLE,
+				`${VERB}: refused (log unappended): cannot read \`${BASE_RED_LAPS}\` (${cap.reason}) — whether this red base still earns a free lap is UNKNOWN.`,
+			),
+		};
+	}
+	const landed = baseRedEvent(entries, taskId, cap.value);
+	return {
+		_tag: "Event",
+		event: landed.event,
+		note:
+			landed.event === MACHINERY_EVENT
+				? `${VERB}: red-base lap ${landed.spent + 1} of ${landed.cap} on task "${taskId}" (${cap.note}) — no repair try is spent.`
+				: `${VERB}: task "${taskId}" already spent ${landed.spent} red-base lap(s), the cap of ${landed.cap} (${cap.note}) — recording the ${BASE_RED_CAUSE} park instead of another lap; the base needs fixing before UNBLOCKED.`,
+	};
+};
+
+type Evidence =
+	| {
+			readonly _tag: "Read";
+			readonly integrate: IntegrateFailure | null;
+			readonly baseRed: BaseRedEvidence | null;
+	  }
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/** Resolve the pair against `lane integrate`'s own record, reading that record only when it must. */
+const resolveEvidence = (
+	options: LaneRef,
+	claim: IntegrateClaim | null,
+	taskId: string,
+): Effect.Effect<Evidence, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		if (claim === null) return {_tag: "Read", integrate: null, baseRed: null} as const;
+		if (claim._tag === "Fail" && claim.failure.exit !== 44) {
+			return {_tag: "Read", integrate: claim.failure, baseRed: null} as const;
+		}
+		const dir = (yield* Path.Path).join(options.root, options.lane);
+		const records = yield* loadRedRecords(dir);
+		if (records._tag === "Unreadable") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					LANE_UNREADABLE,
+					`${VERB}: refused (log unappended): cannot read lane integrate's record at ${records.path}: ${records.reason} — whether the base was red too is UNKNOWN.`,
+				),
+			} as const;
+		}
+		const resolved = resolveIntegrateClaim(claim, records.records, taskIdChild(taskId));
+		switch (resolved._tag) {
+			case "Refused":
+				return {
+					_tag: "Refused",
+					outcome: refuse(
+						INTEGRATE_EVIDENCE,
+						`${VERB}: refused (log unappended): ${resolved.reason}.`,
+					),
+				} as const;
+			case "Failure":
+				return {_tag: "Read", integrate: resolved.failure, baseRed: null} as const;
+			case "BaseRed":
+				return {_tag: "Read", integrate: null, baseRed: resolved.baseRed} as const;
+		}
+	});
+
 export const runReport = <R>(
 	options: ReportOptions,
 	prove: (options: ProveOptions) => Effect.Effect<ProofOutcome, never, R>,
@@ -312,11 +416,11 @@ export const runReport = <R>(
 		if (classed._tag === "Rejected") {
 			return refuse(CLASS_UNRECOGNISED, `${VERB}: refused (log unappended): ${classed.reason}.`);
 		}
-		const evidence = readIntegrateEvidence(options.integrateExit, options.assemblyHead);
-		if (evidence._tag === "Rejected") {
-			return refuse(INTEGRATE_EVIDENCE, `${VERB}: refused (log unappended): ${evidence.reason}.`);
+		const pair = readIntegrateClaim(options.integrateExit, options.assemblyHead);
+		if (pair._tag === "Rejected") {
+			return refuse(INTEGRATE_EVIDENCE, `${VERB}: refused (log unappended): ${pair.reason}.`);
 		}
-		const integrate = evidence._tag === "Read" ? evidence.failure : null;
+		const claim = pair._tag === "Read" ? pair.claim : null;
 		const loaded = yield* loadLane(options);
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
 		const task = resolveTask(loaded.lane, options.task);
@@ -369,16 +473,29 @@ export const runReport = <R>(
 						token: resolved.token,
 					});
 		const advanced = attempt?._tag === "Advanced" ? attempt : null;
-		const event: OperatorEvent = advanced?.event ?? resolved.event;
 		// A cause names why a lane parked, so the advanced arm carries none — and the caller is not
 		// refused for having passed one, because at the moment it typed the flag the park was the only
 		// reading its token had. The line records the route instead.
 		const cause = advanced === null && caused._tag === "Caused" ? caused.cause : null;
+		const landing = landBaseRed(
+			advanced?.event ?? resolved.event,
+			cause,
+			loaded.entries,
+			task.taskId,
+			options.baseRedLaps,
+		);
+		if (landing._tag === "Refused") return landing.outcome;
+		const event: OperatorEvent = landing.event;
 		const parkEvidence: ParkEvidence = cause === null ? {} : named.evidence;
-		const misplaced = integrateEvidenceRefusal(leaf, event, integrate);
+		const misplaced = integrateEvidenceRefusal(leaf, event, cause, claim);
 		if (misplaced !== null) {
 			return refuse(INTEGRATE_EVIDENCE, `${VERB}: refused (log unappended): ${misplaced}.`);
 		}
+		// A `44` and a red base are taken off the record `lane integrate` wrote, never off the pair
+		// alone: only that record says what the re-run over the pre-merge head found.
+		const evidence = yield* resolveEvidence(options, claim, task.taskId);
+		if (evidence._tag === "Refused") return evidence.outcome;
+		const {integrate, baseRed} = evidence;
 
 		const applied = applyEvent(
 			loaded.lane,
@@ -461,10 +578,27 @@ export const runReport = <R>(
 				// Keyed on the leaf like the conditional reading above, and re-read under the lock for the
 				// same reason: a task another writer moved out of `integrate` is not the cell this evidence
 				// names.
+				// The red-base count is read off the bytes that decide too: another writer's lap landing
+				// between the two passes is one this task has spent.
+				const freshLanding = landBaseRed(
+					advanced?.event ?? resolved.event,
+					cause,
+					fresh.entries,
+					freshTask.taskId,
+					options.baseRedLaps,
+				);
+				if (freshLanding._tag === "Refused") return freshLanding.outcome;
+				if (freshLanding.event !== event) {
+					return refuse(
+						EVENT_REFUSED,
+						`${VERB}: refused (log unappended): another red-base lap on task "${freshTask.taskId}" landed while this one was being proven, so it now lands as ${freshLanding.event}, not ${event} — re-read the lane and report again.`,
+					);
+				}
 				const freshMisplaced = integrateEvidenceRefusal(
 					freshLeafOf(freshFold, freshTask.taskId),
 					event,
-					integrate,
+					cause,
+					claim,
 				);
 				if (freshMisplaced !== null) {
 					return refuse(
@@ -519,6 +653,7 @@ export const runReport = <R>(
 					...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
 					...(settled === null ? {} : {issueClose: settled.close}),
 					...(integrate === null ? {} : {integrate}),
+					...(baseRed === null ? {} : {baseRed}),
 				};
 				const wrote = yield* Effect.result(appendText(fresh.logPath, `${JSON.stringify(entry)}\n`));
 				if (Result.isFailure(wrote)) {
@@ -547,12 +682,14 @@ export const runReport = <R>(
 							...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
 							...(settled === null ? {} : {issueClose: settled.close}),
 							...(integrate === null ? {} : {integrate}),
+							...(baseRed === null ? {} : {baseRed}),
 						},
 						null,
 						2,
 					),
 					[
 						...conditionalNotes,
+						...(landing.note === null ? [] : [landing.note]),
 						...proved.stderr,
 						...(settled === null ? [] : [`${VERB}: ${settled.note}`]),
 						`${VERB}: appended ${entry.event} (token ${resolved.token}) to ${fresh.logPath}, proven first.`,
