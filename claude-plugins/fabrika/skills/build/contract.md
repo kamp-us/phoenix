@@ -3450,7 +3450,7 @@ comment reads back, so a write that then fails can never destroy the standing di
 | Code | Trigger |
 |---|---|
 | `3` | stdin held nothing |
-| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format — absent, empty, a heading whose text drifted (a level-only drift is repaired first), or an entry short a field |
+| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format — absent, empty, a drifted heading (a heading at the wrong level included, since this verb repairs no level), or an entry short a field |
 | `5` | the composed comment carries a machine-local path |
 | `6` | the disclosure is a bare `@` path reference |
 | `7` | the issue is proven absent or closed |
