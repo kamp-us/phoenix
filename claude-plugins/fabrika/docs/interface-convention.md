@@ -354,16 +354,27 @@ node <fabrika> <group> <verb> …
 ```
 
 `<fabrika>` is a placeholder written into the command textually, like `<verb>`, never a shell
-variable, so the string still passes the literal rule above. It is one of two paths:
+variable, so the string still passes the literal rule above. Which path it stands for depends on
+where the repo gets fabrika from, and there are three cases:
 
 - **A checkout of fabrika's own repo**: the in-tree source, repo-relative,
   `packages/fabrika-cli/src/bin.ts`, so each worktree runs its own copy.
-- **Any repo that installs fabrika**: the installed bin, absolute,
-  `<repo>/node_modules/@kampus/fabrika-cli/dist/bin.js`, because a worktree carries no
+- **A repo that lists `@kampus/fabrika-cli` in its own `package.json`**: the installed bin,
+  absolute, `<repo>/node_modules/@kampus/fabrika-cli/dist/bin.js`, because a worktree carries no
   `node_modules` of its own.
+- **A repo with only a global install**, which is what the
+  [getting-started guide](../guide/getting-started.md) sets up: there is no path to write. A global
+  install leaves no `node_modules` copy in the repo, so the second path is not on disk. The driver
+  runs the plain `fabrika` command instead, writing `fabrika <group> <verb> …` wherever this section
+  writes `node <fabrika> <group> <verb> …`. The hazard above does not apply: the global install is
+  the only copy there is, so no other tree's code can answer. It prints the
+  [warning](../guide/delegation.md#the-warnings-text) that the repo has no install of its own, and
+  that warning is expected here.
 
-`fabrika lane brief` resolves the same two paths and prints the answer in every spawn prompt's
-`fabrika:` field, so a spawned shell is handed its path rather than working it out.
+`fabrika lane brief` prints the path of the copy that ran it in every spawn prompt's `fabrika:`
+field, so a spawned shell is handed its path rather than working it out. Under a global-only install
+that is the global copy's own bin, an absolute path outside the repo, and `node <that path>` runs the
+same code as the plain `fabrika` command.
 
 **The exception's scope**, which is the whole of it:
 
