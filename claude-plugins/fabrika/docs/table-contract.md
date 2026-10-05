@@ -398,13 +398,18 @@ by the same rule.
 A rule matches when the issue matches every attribute the rule names: one of its `origins` (the
 Origin on the issue's table row, plus `customer` when its filer only uses the product), one of its
 `types` as a `type:` label, and one of its `labels`. An attribute a rule leaves out does not narrow
-it. The shipped route is two rules: a `type:bug` at `p0` or `p1`, and a `type:bug` with the origin
-`customer` at any priority. So a `p2` bug no customer filed, a customer's issue of any other type,
-and an issue with no `type:` label stay on the table, where the agenda proposes a customer's ask
-under Customers and lists an untyped customer report to triage first. A repository can declare any
-other list, such as `[{"origins": ["customer"]}, {"types": ["bug"]}]` for every customer report and
-every bug. A rule that names no attribute, an attribute with an empty list, or a `route` that is not
-a list refuses the whole `boards` block, naming the key.
+it. The shipped route is `[{"origins": ["customer"]}, {"types": ["bug"]}]`: every customer report
+and every `type:bug`. A repository that wants a smaller on-call declares its own list. For example,
+`[{"types": ["bug"], "labels": ["p0", "p1"]}, {"types": ["bug"], "origins": ["customer"]}]` routes a
+bug at `p0` or `p1` and a bug a customer reported at any priority. Under it a `p2` bug no customer
+filed, a customer's issue of any other type, and an issue with no `type:` label stay on the table,
+where the agenda proposes a customer's ask under Customers and lists an untyped customer report to
+triage first. A rule that names no attribute, an attribute with an empty list, or a `route` that is
+neither a list nor the older object form refuses the whole `boards` block, naming the key.
+
+The older object form, `{"origins": [...], "types": [...], "labels": [...]}`, still decodes. It
+routes an issue that matches any one listed origin, type or label, and a list it leaves out keeps
+`["customer"]` for `origins`, `["bug"]` for `types` and none for `labels`, as it always did.
 
 Each one is added to the on-call board (`table setup` must have made it) in issue order, with the
 Response target its labels pick now (the first `responseTargets.byLabel` target whose labels it

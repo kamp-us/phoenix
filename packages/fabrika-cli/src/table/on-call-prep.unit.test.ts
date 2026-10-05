@@ -70,6 +70,15 @@ const FIELDS = {
 
 const CUSTOMER = {association: "NONE", author: "a-user"} as const;
 
+/** A repository's narrower route: a bug at p0 or p1, and a bug a customer reported at any priority. */
+const NARROW = {
+	...SHIPPED_ON_CALL,
+	route: [
+		{types: ["bug"], labels: ["p0", "p1"]},
+		{types: ["bug"], origins: ["customer"]},
+	],
+};
+
 describe("onCallIssuesOf", () => {
 	it("holds every open issue the rule routes there, in arrival order", () => {
 		const open = byNumber([
@@ -83,7 +92,7 @@ describe("onCallIssuesOf", () => {
 		).toEqual([4, 9]);
 	});
 
-	it("routes p0 and p1 bugs and customer bugs, never p2 bugs, other types or untyped issues", () => {
+	it("routes, under a narrower route, p0 and p1 bugs and customer bugs, never p2 bugs, other types or untyped issues", () => {
 		const open = byNumber([
 			issue(1, {labels: ["type:bug", "p0"]}),
 			issue(2, {labels: ["type:bug", "p1"], author: "agent[bot]", association: "NONE"}),
@@ -97,24 +106,24 @@ describe("onCallIssuesOf", () => {
 			issue(11, {labels: ["p0"]}),
 		]);
 
-		expect(
-			onCallIssuesOf(open, new Map(), [], SHIPPED_ON_CALL, []).map((one) => one.number),
-		).toEqual([1, 2, 3, 4]);
+		expect(onCallIssuesOf(open, new Map(), [], NARROW, []).map((one) => one.number)).toEqual([
+			1, 2, 3, 4,
+		]);
 	});
 
-	it("plans no add and no Response target for a p2 bug the rule leaves on the table", () => {
+	it("plans no add and no Response target for a p2 bug a narrower route leaves on the table", () => {
 		const routed = onCallIssuesOf(
 			byNumber([issue(5, {labels: ["type:bug", "p2"]})]),
 			new Map(),
 			[],
-			SHIPPED_ON_CALL,
+			NARROW,
 			[],
 		);
 
 		expect(routed).toEqual([]);
-		expect(
-			planOnCall({fields: FIELDS, settings: SHIPPED_ON_CALL, rows: new Map(), issues: routed}),
-		).toEqual([]);
+		expect(planOnCall({fields: FIELDS, settings: NARROW, rows: new Map(), issues: routed})).toEqual(
+			[],
+		);
 	});
 
 	it("hands a customer's ask back to the table, where the agenda proposes it under Customers", () => {
@@ -123,7 +132,7 @@ describe("onCallIssuesOf", () => {
 			issue(3, {...CUSTOMER, labels: ["type:bug", "status:triaged"]}),
 		]);
 		const onCall = new Set(
-			onCallIssuesOf(open, new Map(), [], SHIPPED_ON_CALL, []).map((one) => one.number),
+			onCallIssuesOf(open, new Map(), [], NARROW, []).map((one) => one.number),
 		);
 
 		expect([...onCall]).toEqual([3]);
@@ -140,17 +149,16 @@ describe("onCallIssuesOf", () => {
 		expect(candidates.map((one) => `${one.section} #${one.issue}`)).toEqual(["Customers #7"]);
 	});
 
-	it("routes by the rule a repository declares, the old any-one rule included", () => {
-		const settings = {...SHIPPED_ON_CALL, route: [{origins: ["customer"]}, {types: ["bug"]}]};
+	it("routes every bug and every customer report under the shipped route", () => {
 		const open = byNumber([
 			issue(5, {labels: ["type:bug", "p2"]}),
 			issue(7, {...CUSTOMER, labels: ["type:feature"]}),
 			issue(8, {labels: ["type:feature"]}),
 		]);
 
-		expect(onCallIssuesOf(open, new Map(), [], settings, []).map((one) => one.number)).toEqual([
-			5, 7,
-		]);
+		expect(
+			onCallIssuesOf(open, new Map(), [], SHIPPED_ON_CALL, []).map((one) => one.number),
+		).toEqual([5, 7]);
 	});
 
 	it("routes a customer's report by the default route even after a lane wrote its Origin", () => {

@@ -564,9 +564,9 @@ own board, declare `boards.onCall`, then re-run `fabrika table setup` to create 
 `route` decides what leaves the table for on-call. It is a list of rules, and an issue that matches
 any one rule goes to on-call. A rule matches when the issue matches every attribute it names: one
 of its `origins`, one of its `types` as a `type:` label, and one of its `labels`. The example routes
-a bug at p0 or p1, a bug a customer reported at any priority, and anything labeled `ci-broken`.
-Leave `route` out for the first two rules alone, which keep a p2 bug and an untyped report on the
-table. Each issue lands on exactly one board. A row the table already reads as `bet`,
+a bug at p0 or p1, a bug a customer reported at any priority, and anything labeled `ci-broken`, so
+a p2 bug and an untyped report stay on the table. Leave `route` out to send every bug and every
+customer report. Each issue lands on exactly one board. A row the table already reads as `bet`,
 `not now` or `check` stays put. From then on `fabrika table route` fills the on-call board and flags
 reads it. Route touches no agenda, so run it as often as you want new reports placed
 ([the `table route` contract](../docs/table-contract.md#table-route)). Its first run moves every
