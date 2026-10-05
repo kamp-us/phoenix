@@ -163,7 +163,7 @@ const pick = leafCommand(
 	Command.withDescription(
 		[
 			"Prints the ranked pool of issues a lane may claim, with every exclusion counted by reason.",
-			'  {"pool":[{…,"bet"}],"excluded":{"<reason>":n},"unread":n,"scanned":{"p0","p1","p2"},"bets":{…}}',
+			'  {"pool":[{…,"bet"}],"excluded":{"<reason>":n},"unread":n,"scanned":{"<priority>":n},"bets":{…}}',
 			"  Stage-bet issues on the table project lead the pool; no campaign state excludes anything.",
 			"  blocked_by is read in rank order until --limit survive; unread counts the rest.",
 			"  A token without the project scope degrades to the pool's own order and names the fix.",
