@@ -27,6 +27,7 @@ import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {runClaimants} from "./claimants-verb.ts";
 import {type DocumentRead, runClear} from "./clear-verb.ts";
 import {NO_SERVED_ISSUE, OFF_VOCABULARY} from "./codes.ts";
+import {runComments} from "./comments-verb.ts";
 import {runCommit} from "./commit-verb.ts";
 import {runDeviations} from "./deviations-verb.ts";
 import {runEligible} from "./eligible-verb.ts";
@@ -539,6 +540,28 @@ const issue = leafCommand(
 		].join("\n"),
 	),
 	Command.withExamples([{command: "fabrika build issue 4312"}]),
+);
+
+const comments = leafCommand(
+	"comments",
+	{number: issueArg, repo: repoFlag},
+	Effect.fn(function* ({number, repo}) {
+		yield* emit(yield* runComments({number, repo: Option.getOrNull(repo), env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription("One issue's comment thread, oldest first; open or closed."),
+	Command.withDescription(
+		[
+			"Prints every comment on one open or closed issue, oldest first, as one JSON object.",
+			'  {"number","state","comments":[{"id","author","createdAt","updatedAt","url","body"}]}',
+			"  url is the comment's own link, https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<id>",
+			"  An issue with no comments answers an empty comments list; the verb writes nothing",
+			"  7: the issue is proven absent",
+			"  11: the issue or its comments could not be read; the thread is UNKNOWN",
+			`  Derivation: the build skill's contract.md, "build comments"`,
+		].join("\n"),
+	),
+	Command.withExamples([{command: "fabrika build comments 7814"}]),
 );
 
 const branch = leafCommand(
@@ -1296,6 +1319,7 @@ export const buildCommand = Command.make("build").pipe(
 		retireBranch,
 		reap,
 		issue,
+		comments,
 		branch,
 		resumeChild,
 		scratch,
