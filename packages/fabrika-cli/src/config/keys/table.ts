@@ -122,6 +122,11 @@ export interface TableSettings {
 	/** Agenda sections in agenda order. Unique, and always holding every {@link REQUIRED_SECTIONS} name. */
 	readonly sections: ReadonlyArray<string>;
 	readonly agendaCap: number;
+	/**
+	 * Rows of {@link agendaCap} prep holds for the Customers section, from 0 up to `agendaCap`. A row
+	 * Customers does not fill goes back to the other sections.
+	 */
+	readonly customerRows: number;
 	/** The Stage a ruled row arrives at. At `bet`, only while the running bets leave agenda rows free. */
 	readonly ruledStage: RuledStage;
 	/** At more than this multiple of its size a lane is flagged over size. At least 1, below {@link stopMultiple}. */
@@ -148,6 +153,7 @@ export const SHIPPED_TABLE: TableSettings = {
 	timeZone: "UTC",
 	sections: [TAILS, CUSTOMERS, NEW_BETS, OUTSIDE_THE_BETS],
 	agendaCap: 25,
+	customerRows: 0,
 	ruledStage: "proposed",
 	flagMultiple: 1,
 	stopMultiple: 2,
@@ -187,6 +193,11 @@ const positiveInteger: Field<number> = (raw, path) =>
 	typeof raw === "number" && Number.isInteger(raw) && raw >= 1
 		? {_tag: "Value", value: raw}
 		: malformed(`${named(path)} is not a positive integer`);
+
+const wholeNumber: Field<number> = (raw, path) =>
+	typeof raw === "number" && Number.isInteger(raw) && raw >= 0
+		? {_tag: "Value", value: raw}
+		: malformed(`${named(path)} is not a whole number of 0 or more`);
 
 const percent: Field<number> = (raw, path) =>
 	typeof raw === "number" && Number.isFinite(raw) && raw > 0 && raw <= 100
@@ -369,6 +380,7 @@ const SUB_KEYS: {readonly [K in keyof TableSettings]: Field<TableSettings[K]>} =
 	timeZone,
 	sections: sectionList,
 	agendaCap: positiveInteger,
+	customerRows: wholeNumber,
 	ruledStage: oneOf(RULED_STAGES),
 	flagMultiple: flagPoint,
 	stopMultiple: multiple,
@@ -391,7 +403,12 @@ const decode = (raw: unknown): Decoded<TableSettings> => {
 	if (asRecord(raw) === null) return malformed(`\`${TABLE}\` is not an object`);
 	const decoded = objectOf<TableSettings>(SUB_KEYS, SHIPPED_TABLE)(raw, "");
 	if (decoded._tag === "Malformed") return decoded;
-	const {flagMultiple, stopMultiple} = decoded.value;
+	const {flagMultiple, stopMultiple, agendaCap, customerRows} = decoded.value;
+	if (customerRows > agendaCap) {
+		return malformed(
+			`${named("customerRows")} (${customerRows}) is above ${named("agendaCap")} (${agendaCap}) — prep cannot hold more rows for Customers than the agenda has`,
+		);
+	}
 	if (flagMultiple >= stopMultiple) {
 		return malformed(
 			`${named("flagMultiple")} (${flagMultiple}) is not below ${named("stopMultiple")} (${stopMultiple}) — the stop is read off the over-size flag, so a lane must be flagged before it stops`,
@@ -448,6 +465,10 @@ export const tableKey: KeyGroup<TableSettings> = {
 				description: `Agenda sections in agenda order. Default ${REQUIRED_SECTIONS.join(", ")}. Must include all four: prep files each proposal under ${TAILS}, ${CUSTOMERS} or ${NEW_BETS}, and un-bet lanes land in "${OUTSIDE_THE_BETS}". Reorder them or add your own.`,
 			},
 			agendaCap: integer("The most proposed rows agenda prep adds for one table. Default 25."),
+			customerRows: integer(
+				"How many of the `agendaCap` rows `table prep` holds for the Customers section, from 0 up to `agendaCap`. Default 0: prep admits every section in `sections` order under the one cap. Above 0, the sections ahead of Customers stop short of the held rows, so a long Tails list cannot keep a customer's ask off the agenda. A held row Customers does not fill goes back to the other sections in `sections` order, and Customers candidates past the held rows wait for the rows left, as without the hold. A row already on this table's agenda keeps its place, and a Customers one among them counts toward the held rows.",
+				0,
+			),
 			ruledStage: {
 				type: "string",
 				enum: [...RULED_STAGES],

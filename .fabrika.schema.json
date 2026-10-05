@@ -891,6 +891,11 @@
 					"minimum": 1,
 					"description": "The most proposed rows agenda prep adds for one table. Default 25."
 				},
+				"customerRows": {
+					"type": "integer",
+					"minimum": 0,
+					"description": "How many of the `agendaCap` rows `table prep` holds for the Customers section, from 0 up to `agendaCap`. Default 0: prep admits every section in `sections` order under the one cap. Above 0, the sections ahead of Customers stop short of the held rows, so a long Tails list cannot keep a customer's ask off the agenda. A held row Customers does not fill goes back to the other sections in `sections` order, and Customers candidates past the held rows wait for the rows left, as without the hold. A row already on this table's agenda keeps its place, and a Customers one among them counts toward the held rows."
+				},
 				"ruledStage": {
 					"type": "string",
 					"enum": [

@@ -21,6 +21,7 @@ import {
 	pickRec,
 	planPrep,
 	prepPlan,
+	selectAgenda,
 	sizeOfGroup,
 } from "./agenda.ts";
 import type {Group} from "./group.ts";
@@ -210,6 +211,155 @@ describe("admit", () => {
 
 		expect(selection.chosen.map((one) => one.candidate.issue)).toEqual([1, 4]);
 		expect(selection.overflow).toEqual([5]);
+	});
+});
+
+describe("selectAgenda: rows held for Customers", () => {
+	const offer = (
+		number: number,
+		section: string,
+		reason: Candidate["reason"],
+		group: Group = single(number),
+	): Chosen => ({candidate: {issue: number, section, reason}, group});
+	const tail = (number: number) =>
+		offer(number, "Tails", {_tag: "Ruled", ruledAt: "2026-09-01T00:00:00Z"});
+	const customer = (number: number, group?: Group) =>
+		offer(number, "Customers", {_tag: "Customer"}, group);
+	const pitched = (number: number) => offer(number, "New bets", {_tag: "Pitched", appetite: "S"});
+	const standing = (number: number, section: string) => offer(number, section, {_tag: "Standing"});
+	const range = (from: number, count: number) =>
+		Array.from({length: count}, (_, index) => from + index);
+	const picked = (offers: ReadonlyArray<Chosen>, cap: number, held: number) => {
+		const selection = selectAgenda(offers, cap, held);
+		return {
+			chosen: selection.chosen.map((one) => one.candidate.issue),
+			overflow: selection.overflow,
+		};
+	};
+
+	it("admits exactly as the plain cap does at 0", () => {
+		const offers = [...range(100, 30).map(tail), ...range(200, 6).map((n) => customer(n))];
+		const plain = offers.reduce(
+			(selection, one) => admit(selection, one.candidate, one.group, 25),
+			EMPTY_SELECTION,
+		);
+
+		expect(selectAgenda(offers, 25, 0)).toEqual(plain);
+	});
+
+	it("holds the reserved rows for Customers past a Tails list longer than the cap, and never passes the cap", () => {
+		const offers = [...range(100, 30).map(tail), ...range(200, 12).map((n) => customer(n))];
+		const {chosen, overflow} = picked(offers, 25, 10);
+
+		expect(chosen).toHaveLength(25);
+		expect(chosen.filter((n) => n >= 200)).toEqual(range(200, 10));
+		expect(chosen.filter((n) => n < 200)).toEqual(range(100, 15));
+		expect(overflow).toEqual([...range(115, 15), 210, 211]);
+	});
+
+	it("reserves nothing for New bets: past a full Tails list it gets no row", () => {
+		const offers = [
+			...range(100, 30).map(tail),
+			...range(200, 10).map((n) => customer(n)),
+			...range(300, 3).map(pitched),
+		];
+		const {chosen, overflow} = picked(offers, 25, 10);
+
+		expect(chosen.some((n) => n >= 300)).toBe(false);
+		expect(overflow).toEqual(expect.arrayContaining(range(300, 3)));
+	});
+
+	it("gives the rows Customers does not take back to the other sections, in section order", () => {
+		const offers = [
+			...range(100, 22).map(tail),
+			...range(200, 2).map((n) => customer(n)),
+			...range(300, 3).map(pitched),
+		];
+		const {chosen, overflow} = picked(offers, 25, 10);
+
+		expect(chosen).toEqual([...range(100, 22), 200, 201, 300]);
+		expect(overflow).toEqual([301, 302]);
+	});
+
+	it("admits Customers past the reserved rows only into rows the sections ahead left", () => {
+		const longTails = picked(
+			[...range(100, 30).map(tail), ...range(200, 8).map((n) => customer(n))],
+			25,
+			5,
+		);
+		expect(longTails.chosen.filter((n) => n >= 200)).toEqual(range(200, 5));
+
+		const shortTails = picked(
+			[...range(100, 10).map(tail), ...range(200, 8).map((n) => customer(n))],
+			25,
+			5,
+		);
+		expect(shortTails.chosen).toEqual([...range(100, 10), ...range(200, 8)]);
+	});
+
+	it("keeps every standing row in place, and counts a standing Customers row toward the reserve", () => {
+		const offers = [
+			standing(1, "Tails"),
+			standing(2, "Customers"),
+			standing(3, "New bets"),
+			...range(100, 10).map(tail),
+			...range(200, 5).map((n) => customer(n)),
+		];
+		const {chosen, overflow} = picked(offers, 8, 3);
+
+		expect(chosen).toEqual([1, 2, 3, 100, 101, 102, 200, 201]);
+		expect(overflow).toEqual([...range(103, 7), 202, 203, 204]);
+	});
+
+	it("counts a Customers candidate heading a chain or an epic as one reserved row", () => {
+		const offers = [
+			...range(100, 10).map(tail),
+			customer(200, chain(200, 201, 202)),
+			customer(210, {_tag: "Epic", head: 210, members: [211, 212]}),
+		];
+		const {chosen} = picked(offers, 5, 2);
+
+		expect(chosen).toEqual([100, 101, 102, 200, 210]);
+	});
+
+	it("takes no reserved row for a customer report on-call holds or one still untriaged", () => {
+		const report = (number: number, labels: ReadonlyArray<string>) =>
+			issue(number, {association: "NONE", author: "user", labels});
+		const decision = (number: number) =>
+			issue(number, {labels: ["type:decision", "status:triaged", "ready-for:agent"]});
+		const ruledNumbers = range(100, 6);
+		const {candidates, triageFirst} = candidatesOf({
+			settings: SHIPPED_TABLE,
+			open: new Map(
+				[
+					...ruledNumbers.map(decision),
+					report(200, ["status:triaged"]),
+					report(201, ["status:triaged"]),
+					report(202, []),
+				].map((one) => [one.number, one] as const),
+			),
+			rows: new Map(),
+			followUps: [],
+			flagged: new Map(),
+			ruled: ruledUnbuiltOf(
+				ruledNumbers.map(
+					(n) =>
+						[n, [rulingComment("acme/widgets", n, "2026-09-01T00:00:00Z", "founder")]] as const,
+				),
+				new Set(["founder"]),
+			),
+			target: NEXT,
+			onCall: new Set([200]),
+		});
+		const {chosen, overflow} = picked(
+			candidates.map((one) => ({candidate: one, group: single(one.issue)})),
+			5,
+			3,
+		);
+
+		expect(chosen).toEqual([100, 101, 102, 103, 201]);
+		expect(overflow).toEqual([104, 105]);
+		expect(triageFirst).toEqual([{issue: 202, waitingOnFiler: false}]);
 	});
 });
 

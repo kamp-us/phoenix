@@ -901,6 +901,52 @@ describe("table prep's ruled-unbuilt Tails", () => {
 		expect(String(answer.changes)).not.toContain("#100");
 	});
 
+	it.each([
+		"proposed",
+		"bet",
+	])("holds customerRows for Customers past a Tails list that fills the cap, at ruledStage %s", async (ruledStage) => {
+		const {board, items} = world(RULED);
+		const held = fakeFs({
+			files: {
+				"/repo/.fabrika.jsonc": JSON.stringify({
+					table: {ruledStage, agendaCap: 3, customerRows: 1},
+				}),
+			},
+		}).layer;
+		const out = await prep(board, held);
+		const answer = JSON.parse(out.stdout);
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		expect(
+			(answer.agenda as ReadonlyArray<AgendaOut>).map((row) => `${row.section} #${row.issue}`),
+		).toEqual(["Tails #70", "Tails #101", "Customers #30"]);
+		expect(answer.agenda.find((row: AgendaOut) => row.issue === 30)).toMatchObject({
+			kind: "chain",
+			members: [31, 32],
+		});
+		expect(answer.overflow).toEqual([100, 11, 20, 60]);
+		expect(out.stderr).toContain(
+			"table prep: 3 agenda row(s) of 3; left for a later table: #100, #11, #20, #60.",
+		);
+		expect(items.has(100)).toBe(false);
+		expect(answer.triageFirst).toEqual(
+			expect.arrayContaining([expect.objectContaining({issue: 40})]),
+		);
+	});
+
+	it("gives a row held for Customers that no customer fills back to the sections in order", async () => {
+		const {board} = world(RULED);
+		const held = fakeFs({
+			files: {"/repo/.fabrika.jsonc": JSON.stringify({table: {agendaCap: 4, customerRows: 3}})},
+		}).layer;
+		const answer = JSON.parse((await prep(board, held)).stdout);
+
+		expect((answer.agenda as ReadonlyArray<AgendaOut>).map((row) => row.issue)).toEqual([
+			70, 101, 100, 30,
+		]);
+		expect(answer.overflow).toEqual([11, 20, 60]);
+	});
+
 	it("refuses on the not-set-up code and writes nothing on a board whose Stage has no bet option", async () => {
 		const {board, posts, items} = world(RULED);
 		const noBet: ProjectSnapshot = {

@@ -63,9 +63,9 @@ import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	type AgendaRow,
-	admit,
 	agendaOf,
 	CHECK_STAGE,
+	type Chosen,
 	candidatesOf,
 	cellsOfRow,
 	closedProposals,
@@ -79,6 +79,7 @@ import {
 	planPrep,
 	prepPlan,
 	type Selection,
+	selectAgenda,
 	type TriageFirst,
 	textOf,
 } from "./agenda.ts";
@@ -491,11 +492,13 @@ export const runPrep = <R>(
 				bets,
 				sorted.candidates.map((candidate) => candidate.issue),
 			);
+			const offers: Chosen[] = [];
 			for (const candidate of sorted.candidates) {
 				const group = yield* groupFor(board, repo, graph, bets, candidate.issue);
 				if (group._tag === "Refused") return refuse(group.code, group.reason);
-				selection = admit(selection, candidate, group, table.agendaCap);
+				offers.push({candidate, group});
 			}
+			selection = selectAgenda(offers, table.agendaCap, table.customerRows);
 			const onAgendaNow = new Set(selection.chosen.map((chosen) => chosen.candidate.issue));
 			rollover = running.filter((head) => !onAgendaNow.has(head)).sort((a, b) => a - b);
 

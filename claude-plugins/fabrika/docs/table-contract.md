@@ -279,6 +279,16 @@ a real, open issue, never a draft:
   COLLABORATOR, and only once triaged;
 - New bets — `type:epic` issues with a pitch.
 
+**Rows held for Customers.** `table.customerRows` (0 by default, at most `table.agendaCap`) holds
+that many of the agenda's rows for Customers. The sections ahead of Customers stop short of the
+held rows, so a long Tails list cannot keep a customer's ask off the agenda. Only Customers gets
+held rows. A held row Customers does not fill goes back to the other sections, in section order.
+Customers candidates past the held rows get only the rows the sections ahead of them left. A row
+already on this table's agenda keeps its place, and a Customers one among them counts toward the
+held rows. A chain or epic row counts as one. An issue on-call holds or an untriaged report is no
+Customers candidate, so it takes no held row. A candidate the hold leaves out goes to `overflow`
+like any other. At 0 every section shares the one cap in section order.
+
 A row already `bet`, `not now`, `in lane`, `shipped` or `check` is never proposed again, except a
 flagged running bet, which moves to Tails with its Stage and Size untouched. Each proposed row gets
 Stage `proposed` (a ruled row may get `bet`, below), its Section, the table's Table day, a Size (only when unset: an epic is L,

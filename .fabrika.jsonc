@@ -266,11 +266,14 @@
 	// holds the rows. The table meets Saturdays, on stream, so `table prep` targets the rows whose
 	// Table day is the next Saturday. The founder reads the board in Pacific time, so "today" is
 	// read there. A Tails row the founder already ruled on arrives as `bet`, up to the rows the
-	// running bets leave free (#10351, ADR 0475).
+	// running bets leave free (#10351, ADR 0475). Ten of the 25 agenda rows are held for customer
+	// asks, so the ruled backlog cannot keep them off the table; a row no customer fills goes back
+	// to the other sections (#10167).
 	"table": {
 		"day": "saturday",
 		"timeZone": "America/Los_Angeles",
 		"ruledStage": "bet",
+		"customerRows": 10,
 		"project": { "owner": "kamp-us", "number": 20 }
 	},
 
