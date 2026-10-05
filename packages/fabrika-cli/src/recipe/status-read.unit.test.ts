@@ -16,6 +16,7 @@ describe("leafOf", () => {
 			rulingIssue: null,
 			parkedAt: null,
 			founderAct: null,
+			ownerStep: null,
 		});
 	});
 
@@ -34,6 +35,7 @@ describe("leafOf", () => {
 			rulingIssue: null,
 			parkedAt: null,
 			founderAct: null,
+			ownerStep: null,
 		});
 	});
 

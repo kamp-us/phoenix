@@ -921,6 +921,32 @@ export const PARK_CAUSES = {
 		route: "founder",
 		remedy: null,
 	},
+	/**
+	 * The pull request is reviewed, green and ready to merge, and merging it waits on a step its
+	 * owner must do by hand outside the pipeline first — a shared-database migration, a secret, a DNS
+	 * change. Merging first would break what that step sets up.
+	 *
+	 * Distinct from `awaiting-cp-approval`, which waits on an approval of the head's bytes and covers
+	 * only a control-plane PR. This one waits on an act outside the repository, on any PR. Distinct
+	 * from `founder-act-owed` too: that park has work still to build and no read that clears it, and
+	 * this one has a PR whose merge is all that is left.
+	 *
+	 * The park line records the step itself ({@link OWNER_STEP_CAUSES}). Its `KNOWN_PARKS` row
+	 * clears once a control-plane owner signs off on the PR at its live head, so a push after the
+	 * sign-off holds the park again.
+	 *
+	 * No remedy: a verb that removed this cause would be taking the owner's step.
+	 *
+	 * Route `founder`: the step and the sign-off are the owner's own to take.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10316#issuecomment-5974128227
+	 */
+	"owner-action-required": {
+		meaning:
+			"the PR is ready to merge and waits on a step its owner must do by hand outside the pipeline, which the park names",
+		route: "founder",
+		remedy: null,
+	},
 } as const satisfies Record<string, ParkCauseEntry>;
 
 export type ParkCause = keyof typeof PARK_CAUSES;
@@ -1177,6 +1203,24 @@ export const causeTakesFounderAct = (cause: string | null): boolean =>
 	cause !== null && FOUNDER_ACT_CAUSES.has(cause as ParkCause);
 
 /**
+ * The causes whose park waits on a step the PR's owner takes by hand before merge, so the park line
+ * records that step as `ownerStep` — required with one of these causes and refused with any other.
+ *
+ * Its own field rather than `founderAct`, because the two parks clear differently: this one on an
+ * owner's sign-off at the PR head, that one on nothing a read can prove. One field for both would
+ * let either cause be recorded with the other's evidence.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10316#issuecomment-5974128227
+ */
+export const OWNER_STEP_CAUSES: ReadonlySet<ParkCause> = new Set<ParkCause>([
+	"owner-action-required",
+]);
+
+/** Whether a recorded cause makes its park line carry an `ownerStep`. */
+export const causeTakesOwnerStep = (cause: string | null): boolean =>
+	cause !== null && OWNER_STEP_CAUSES.has(cause as ParkCause);
+
+/**
  * What a park line carries beside its cause — the facts a later read of that park needs and the
  * cause token alone cannot hold. Each field is present exactly when the cause takes it.
  */
@@ -1184,6 +1228,7 @@ export interface ParkEvidence {
 	readonly axisIssue?: number;
 	readonly rulingIssue?: number;
 	readonly founderAct?: string;
+	readonly ownerStep?: string;
 }
 
 /** The evidence flags as a recorder passed them, `null` where a flag was left off. */
@@ -1191,6 +1236,7 @@ export interface ParkEvidenceFlags {
 	readonly axisIssue: number | null;
 	readonly rulingIssue: number | null;
 	readonly founderAct: string | null;
+	readonly ownerStep: string | null;
 }
 
 /** The flags of a line that records no park evidence — every event but a park one of these names. */
@@ -1198,43 +1244,57 @@ export const NO_PARK_EVIDENCE: ParkEvidenceFlags = {
 	axisIssue: null,
 	rulingIssue: null,
 	founderAct: null,
+	ownerStep: null,
 };
 
 export type ParkEvidenceResolution =
 	| {readonly _tag: "Named"; readonly evidence: ParkEvidence}
 	| {readonly _tag: "Rejected"; readonly reason: string};
 
-type FounderActResolution =
-	| {readonly _tag: "Named"; readonly founderAct: string | null}
+/** One step flag: the causes that take it, and whose step it is, for a refusal to quote. */
+interface StepPointer {
+	readonly flag: string;
+	readonly causes: ReadonlySet<ParkCause>;
+	/** Who takes the step by hand, completing `"<cause>" waits on a step … takes by hand`. */
+	readonly taker: string;
+}
+
+type StepResolution =
+	| {readonly _tag: "Named"; readonly step: string | null}
 	| {readonly _tag: "Rejected"; readonly reason: string};
 
 /**
- * Resolve one `--founder-act` against the cause the same line records.
+ * Resolve one step flag against the cause the same line records, in both directions as
+ * {@link issuePointerFor} does.
  *
  * A blank step is refused as an absent one: the field exists so the park says what it waits on, and
  * a line naming a step of nothing says nothing.
  */
-const founderActForCause = (raw: string | null, cause: ParkCause | null): FounderActResolution => {
-	const takes = causeTakesFounderAct(cause);
+const stepPointerFor = (
+	pointer: StepPointer,
+	raw: string | null,
+	cause: ParkCause | null,
+): StepResolution => {
+	const takes = cause !== null && pointer.causes.has(cause);
 	const step = raw === null ? null : raw.trim();
 	if (step === null || step === "") {
 		if (takes) {
 			return {
 				_tag: "Rejected",
-				reason: `"${cause}" waits on a step the founder takes by hand — pass --founder-act "<the step>" saying what that step is`,
+				reason: `"${cause}" waits on a step ${pointer.taker} takes by hand — pass ${pointer.flag} "<the step>" saying what that step is`,
 			};
 		}
 		return step === null
-			? {_tag: "Named", founderAct: null}
-			: {_tag: "Rejected", reason: "--founder-act says nothing — drop it"};
+			? {_tag: "Named", step: null}
+			: {_tag: "Rejected", reason: `${pointer.flag} says nothing — drop it`};
 	}
 	if (!takes) {
 		return {
 			_tag: "Rejected",
-			reason: `--founder-act records the step a ${[...FOUNDER_ACT_CAUSES].join("/")} park waits on, and this line records ${cause === null ? "no cause" : `"${cause}"`} — drop --founder-act`,
+			reason: `${pointer.flag} records the step a ${[...pointer.causes].join("/")} park waits on, and this line records ${cause === null ? "no cause" : `"${cause}"`} — drop ${pointer.flag}`,
 		};
 	}
-	return {_tag: "Named", founderAct: step};
+	return {_tag: "Named", step};
 };
 
 /**
@@ -1242,7 +1302,8 @@ const founderActForCause = (raw: string | null, cause: ParkCause | null): Founde
  *
  * Each flag belongs to its own causes and to no other, in both directions, which is what keeps one
  * token from standing in for another: a ruling park cannot be recorded with a step in place of its
- * issue, and a founder's-step park cannot be recorded with an issue in place of its step.
+ * issue, a founder's-step park cannot be recorded with an issue in place of its step, and neither
+ * step park can be recorded with the other's step.
  */
 export const parkEvidenceForCause = (
 	flags: ParkEvidenceFlags,
@@ -1261,14 +1322,25 @@ export const parkEvidenceForCause = (
 		cause,
 	);
 	if (ruling._tag === "Rejected") return ruling;
-	const act = founderActForCause(flags.founderAct, cause);
+	const act = stepPointerFor(
+		{flag: "--founder-act", causes: FOUNDER_ACT_CAUSES, taker: "the founder"},
+		flags.founderAct,
+		cause,
+	);
 	if (act._tag === "Rejected") return act;
+	const owner = stepPointerFor(
+		{flag: "--owner-step", causes: OWNER_STEP_CAUSES, taker: "the PR's owner"},
+		flags.ownerStep,
+		cause,
+	);
+	if (owner._tag === "Rejected") return owner;
 	return {
 		_tag: "Named",
 		evidence: {
 			...(axis.axisIssue === null ? {} : {axisIssue: axis.axisIssue}),
 			...(ruling.issue === null ? {} : {rulingIssue: ruling.issue}),
-			...(act.founderAct === null ? {} : {founderAct: act.founderAct}),
+			...(act.step === null ? {} : {founderAct: act.step}),
+			...(owner.step === null ? {} : {ownerStep: owner.step}),
 		},
 	};
 };

@@ -190,6 +190,26 @@ describe("runCpApproval", () => {
 		expect(out.stdout).toBe(`cp-approval\tdischarge\tself-approval-marker@${HEAD}\n`);
 	});
 
+	// An owner's sign-off clears an owner's-step park and says nothing about the head's bytes.
+	it("does NOT discharge on an owner's sign-off at the head — it is no control-plane approval", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull({author: "usirin", comments: 1}))],
+				[FILES, CP_FILES],
+				[
+					COMMENTS,
+					served(comments({id: 1, author: "usirin", body: `owner-action-signoff @ ${HEAD}`})),
+				],
+			],
+			[
+				[OWNERS, OWNED],
+				[COMPARE, behind(0)],
+				[ROSTER, members("usirin")],
+			],
+		);
+		expect(out.stdout).toBe("cp-approval\tstop\tawaiting-approval\n");
+	});
+
 	it("stops on zero-owners when CODEOWNERS names no resolvable owner at all", async () => {
 		const out = await run(
 			[

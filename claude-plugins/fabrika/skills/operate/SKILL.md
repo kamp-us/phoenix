@@ -1950,6 +1950,24 @@ waiting on its own ruling uses neither: that wait has no token yet, so do not bo
 two. You are type-blind, so that the lane is a decision lane is a fact your caller's brief relays,
 never one you read off a label.
 
+**A reviewed, green PR whose merge waits on a step its owner does by hand parks on
+`owner-action-required`.** The step lives outside the pipeline, such as a shared-database
+migration, a secret or a DNS change, and merging first would break what it sets up. Park it out of
+`ship` with the step in your own words:
+
+```bash
+node <fabrika> lane transition <lane> BLOCKED --task <task> --cause owner-action-required --owner-step "<the step>"
+```
+
+In the park comment, ask the owner to do the step, then comment `owner-action-signoff @ <head sha>`
+on the PR. Any account on the control-plane roster in `.github/CODEOWNERS` may sign off, whether or
+not the PR touches a control-plane path. `recipe unpark` clears the park once that sign-off stands
+at the PR's live head; a push after it needs a fresh one. The sign-off is not a control-plane
+approval, so a control-plane PR still owes that approval when the shipper runs again. Do not name
+`awaiting-cp-approval` for this wait: on a PR that is not control-plane its recipe refuses at `12`.
+A lane that still has work to build, where the step is the founder's, takes `founder-act-owed`
+above instead, and neither cause's flag is accepted beside the other.
+
 **A `human:cp-approval` park whose head moved re-enters `review`, and the event is yours to
 record.** A head refreshed while the lane waits, by a merge of its base or a rebase, binds none of
 the verdicts the park was reached on. Read them:
@@ -2015,9 +2033,10 @@ verb reads the cause for you:
 node <fabrika> recipe unpark <lane-key> --task <task>
 ```
 
-The table it keys on holds thirteen rows today: `human:cp-approval` twice — once keyed on
-`awaiting-cp-approval`, the owner-approval wait, and once on `head-ci-red`, which is the shipper's
-route to `heal-ci` folding to the same leaf —
+The table it keys on holds fourteen rows today: `human:cp-approval` three times — once keyed on
+`awaiting-cp-approval`, the owner-approval wait, once on `head-ci-red`, which is the shipper's
+route to `heal-ci` folding to the same leaf, and once on `owner-action-required` (cleared once a
+control-plane owner signs off at the PR's live head) —
 `human:queue-stall`, and `blocked` carrying one of `head-ci-red` (a reviewer that parked on a red
 head, cleared on a green one with no verdict read), `worktree-holds-branch`, `spawn-dead`,
 `no-rendered-delta`, `no-preview-routed`, `render-axis-missing` (a rendered review that could
@@ -2092,8 +2111,10 @@ off `parkCause.repairBudgetSpent` as well, and a `founder` route is exit `12` an
 below, exactly as before.
 
 **A founder-routed park is the one you cannot clear by hand**: post on the driven issue what is
-needed and from whom (the parking spawn's report names both; for `human:cp-approval` it is a
-control-plane approval at the PR's current head). That is the whole of the prohibition now — it
+needed and from whom (the parking spawn's report names both). On `human:cp-approval` the ask
+follows the cause: `awaiting-cp-approval` needs a control-plane approval at the PR's current head,
+and `owner-action-required` needs the recorded step done and the owner's sign-off at that head,
+which is not a control-plane approval. That is the whole of the prohibition now — it
 binds a cause whose route is `founder`, and a cause-less park, which routes `founder` fail-closed.
 A driver-routed cause is yours by the two paragraphs above, and reaching for the park comment on one
 of those hands the founder an engine failure that was never theirs.

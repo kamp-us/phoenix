@@ -77,6 +77,7 @@ const run = (
 		axisIssue?: number | null;
 		rulingIssue?: number | null;
 		founderAct?: string | null;
+		ownerStep?: string | null;
 		parkCause?: Read<ParkCauseSurface>;
 		classes?: ReadonlyArray<string>;
 		prover?: ReturnType<typeof fakeProver> | ReturnType<typeof fakeProverByEvent>;
@@ -101,6 +102,7 @@ const run = (
 					axisIssue: extra.axisIssue ?? null,
 					rulingIssue: extra.rulingIssue ?? null,
 					founderAct: extra.founderAct ?? null,
+					ownerStep: extra.ownerStep ?? null,
 					integrateExit: extra.integrateExit ?? null,
 					assemblyHead: extra.assemblyHead ?? null,
 					parkCause: extra.parkCause ?? parkCauseRead(),
@@ -681,12 +683,51 @@ describe("lane report — a cause-less park under `parkCause.uncaused: refuse`",
 		["ruling-owed", {founderAct: "rotate the logins"}],
 		["founder-act-owed", {}],
 		["founder-act-owed", {rulingIssue: 42}],
+		["founder-act-owed", {founderAct: "rotate the logins", ownerStep: "rotate the logins"}],
 	] as const)("refuses a STOPPED on %s carrying %j, log unappended", async (cause, owed) => {
 		const fs = laneAt(LOG_AT.build);
 
 		const out = await run(fs, "STOPPED", {parkCause: strict, cause, ...owed});
 
 		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("records a shipper's park on the owner's own step, with the step, on human:cp-approval", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "REFUSED", {
+			parkCause: strict,
+			cause: "owner-action-required",
+			ownerStep: "apply the shared-database migration",
+		});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			current: {pipeline: {issue: "human:cp-approval"}},
+		});
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "owner-action-required",
+			ownerStep: "apply the shared-database migration",
+		});
+	});
+
+	it.each([
+		[{}, "--owner-step"],
+		[{ownerStep: " "}, "--owner-step"],
+		[{founderAct: "apply the shared-database migration"}, "drop --founder-act"],
+	] as const)("refuses a shipper's owner's-step park carrying %j, log unappended", async (owed, names) => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "REFUSED", {
+			parkCause: strict,
+			cause: "owner-action-required",
+			...owed,
+		});
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(out.stderr.join(" ")).toContain(names);
 		expect(fs.written.size).toBe(0);
 	});
 

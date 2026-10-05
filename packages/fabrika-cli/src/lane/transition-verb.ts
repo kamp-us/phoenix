@@ -90,6 +90,11 @@ export interface TransitionOptions extends LaneRef {
 	 */
 	readonly founderAct: string | null;
 	/**
+	 * The step an `owner-action-required` park waits on the PR's owner to take before merge; required
+	 * with that cause and refused with any other ([`report.ts`](report.ts)'s `parkEvidenceForCause`).
+	 */
+	readonly ownerStep: string | null;
+	/**
 	 * The repo's declared `parkCause`, read by the adapter off the `.fabrika.jsonc` of the repository
 	 * that OWNS the cwd — never the cwd's own copy. The rule is weighed against the shared lane ledger,
 	 * which a linked worktree and its primary checkout derive alike, so the worktree's tracked copy

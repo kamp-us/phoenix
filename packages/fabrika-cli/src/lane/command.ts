@@ -92,6 +92,7 @@ import {
 	AXIS_ISSUE_CAUSES,
 	classesForEvent,
 	FOUNDER_ACT_CAUSES,
+	OWNER_STEP_CAUSES,
 	PARK_CAUSE_TOKENS,
 	RULING_ISSUE_CAUSES,
 } from "./report.ts";
@@ -272,6 +273,14 @@ const founderActFlag = Flag.string("founder-act").pipe(
 	),
 );
 
+/** The step an `owner-action-required` park waits on, on the same two verbs `--cause` rides. */
+const ownerStepFlag = Flag.string("owner-step").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		`the step the PR's owner must take by hand outside the pipeline before it merges, in your own words (the command, or the act) — required with --cause ${[...OWNER_STEP_CAUSES].join("/")} and refused with any other cause, both at exit 35 with the log unappended. \`recipe unpark\` clears this park once a control-plane owner comments \`owner-action-signoff @ <sha>\` on the PR at its live head.`,
+	),
+);
+
 /**
  * The lane classes standing at the event being recorded, on the same two appending verbs.
  *
@@ -325,6 +334,7 @@ const transition = leafCommand(
 		axisIssue: axisIssueFlag,
 		rulingIssue: rulingIssueFlag,
 		founderAct: founderActFlag,
+		ownerStep: ownerStepFlag,
 		classes: classFlag,
 		grantWait: Flag.integer("grant-wait").pipe(
 			Flag.optional,
@@ -349,6 +359,7 @@ const transition = leafCommand(
 		axisIssue,
 		rulingIssue,
 		founderAct,
+		ownerStep,
 		classes,
 		grantWait,
 		rationale,
@@ -371,6 +382,7 @@ const transition = leafCommand(
 						axisIssue: Option.getOrNull(axisIssue),
 						rulingIssue: Option.getOrNull(rulingIssue),
 						founderAct: Option.getOrNull(founderAct),
+						ownerStep: Option.getOrNull(ownerStep),
 						parkCause,
 						classes,
 						waitGrant: Option.getOrNull(grantWait),
@@ -580,6 +592,7 @@ const report = leafCommand(
 		axisIssue: axisIssueFlag,
 		rulingIssue: rulingIssueFlag,
 		founderAct: founderActFlag,
+		ownerStep: ownerStepFlag,
 		classes: classFlag,
 		integrateExit: Flag.integer("integrate-exit").pipe(
 			Flag.optional,
@@ -611,6 +624,7 @@ const report = leafCommand(
 		axisIssue,
 		rulingIssue,
 		founderAct,
+		ownerStep,
 		classes,
 		integrateExit,
 		assemblyHead,
@@ -636,6 +650,7 @@ const report = leafCommand(
 						axisIssue: Option.getOrNull(axisIssue),
 						rulingIssue: Option.getOrNull(rulingIssue),
 						founderAct: Option.getOrNull(founderAct),
+						ownerStep: Option.getOrNull(ownerStep),
 						integrateExit: Option.getOrNull(integrateExit),
 						assemblyHead: Option.getOrNull(assemblyHead),
 						parkCause,

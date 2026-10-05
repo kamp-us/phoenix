@@ -66,6 +66,7 @@ import {runChecks} from "../ship/checks-verb.ts";
 import {runCpApproval} from "../ship/cp-approval-verb.ts";
 import {runGate} from "../ship/gate-verb.ts";
 import {MERGEABILITY_WINDOW_SECONDS} from "../ship/mergeability.ts";
+import {readOwnerSignoff} from "../ship/owner-signoff.ts";
 import {runReconcile} from "../ship/reconcile-verb.ts";
 import {runScope} from "../ship/scope-verb.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -362,6 +363,8 @@ const clear = (
 			return clearRulingMade(options, recipe, read.rulingIssue, read.parkedAt);
 		case "cp-approval":
 			return clearCpApproval(options, task, recipe);
+		case "owner-signoff":
+			return clearOwnerSignoff(options, task, recipe, read.ownerStep);
 		case "branch-free":
 			return clearBranchFree(options, task, recipe);
 		case "campaign-active":
@@ -626,6 +629,81 @@ const clearCpApproval = (
 						[scope],
 					),
 				);
+		}
+	});
+
+/**
+ * Read whether the owner's-step park's cause is gone: a control-plane owner signed off on the PR at
+ * its live head ([`../ship/owner-signoff.ts`](../ship/owner-signoff.ts)).
+ *
+ * The PR is resolved the way the §CP row resolves it, and nothing here reads whether it is
+ * control-plane: the sign-off clears either kind, and a §CP PR still owes `ship cp-approval` on the
+ * shipper's next run. Every hold quotes the step the park line recorded, so the person reading the
+ * refusal knows what the owner was asked to do without opening the issue.
+ */
+const clearOwnerSignoff = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+	ownerStep: string | null,
+): Effect.Effect<Clearance, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+		const step = ownerStep === null ? "" : ` — the step "${ownerStep}"`;
+		const waiting = `"${recipe.park}" parked on "${recipe.cause}" still waits on ${recipe.waitingOn}${step}`;
+
+		const issue = issueOf(options.lane, task);
+		if (issue === null) {
+			return no(
+				refuse(
+					TASK_UNRESOLVED,
+					`${VERB}: neither task "${task}" nor lane "${options.lane}" names an issue number, so the park's PR cannot be resolved.`,
+				),
+			);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return no(resolved.outcome);
+		const repo = resolved.repo;
+
+		const nominated = yield* soleParkedPull(repo, issue, recipe, "the park");
+		if (nominated._tag === "Refused") return no(nominated.outcome);
+		const pr = nominated.pr;
+
+		const target = yield* openPull(
+			VERB,
+			repo,
+			pr,
+			(reason) =>
+				`${VERB}: cannot read PR #${pr}: ${reason} — whether the owner signed off is UNKNOWN, never cleared.`,
+		);
+		if (target._tag === "Refused") return no(target.outcome);
+		const head = target.pull.headSha;
+		const scope = scannedLine(VERB, 1, "pull request", `#${pr} at ${head}`);
+
+		const signoff = yield* readOwnerSignoff(repo, target.pull);
+		switch (signoff._tag) {
+			case "Unreadable":
+				return no(
+					refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot read ${signoff.reason} — whether the owner signed off on #${pr} is UNKNOWN, never cleared; ${waiting}.`,
+						[scope],
+					),
+				);
+			case "Unsigned":
+				return no(
+					refuse(
+						PARK_HOLDS,
+						`${VERB}: ${waiting} — on PR #${pr}, ${signoff.reason}; nothing was written.`,
+						[scope],
+					),
+				);
+			case "Signed":
+				return {
+					_tag: "Cleared",
+					mechanism: `owner-signoff:${signoff.login}@${head}`,
+					waitGrant: null,
+				};
 		}
 	});
 

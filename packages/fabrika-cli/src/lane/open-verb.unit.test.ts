@@ -573,6 +573,7 @@ describe("lane open", () => {
 							axisIssue: null,
 							rulingIssue: null,
 							founderAct: null,
+							ownerStep: null,
 							parkCause: parkCauseRead(),
 							classes: [],
 							waitGrant: null,

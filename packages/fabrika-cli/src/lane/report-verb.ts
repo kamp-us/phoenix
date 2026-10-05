@@ -150,6 +150,11 @@ export interface ReportOptions extends LaneRef {
 	 */
 	readonly founderAct: string | null;
 	/**
+	 * The step an `owner-action-required` park waits on the PR's owner to take before merge; required
+	 * with that cause and refused with any other ([`report.ts`](report.ts)'s `parkEvidenceForCause`).
+	 */
+	readonly ownerStep: string | null;
+	/**
 	 * The `lane integrate` exit and the assembly head a `FAIL` out of an epic child's `integrate`
 	 * failed against, or the red-base exit and head a `BASE-RED` lap stands on — required on those,
 	 * refused on every other line ([`integrate-failure.ts`](integrate-failure.ts)). A `44` and a red

@@ -358,6 +358,7 @@ describe("every park cause carries a route", () => {
 	it.each([
 		"ruling-owed",
 		"founder-act-owed",
+		"owner-action-required",
 	])("routes %s to the founder, with no verb that removes it", (cause) => {
 		expect(routeForCause(cause)).toBe("founder");
 		expect(remedyForCause(cause)).toBeNull();

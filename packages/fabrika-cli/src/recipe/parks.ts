@@ -41,7 +41,8 @@ export type Clearance =
 	| "head-green"
 	| "route-satisfied"
 	| "axis-closed"
-	| "ruling-made";
+	| "ruling-made"
+	| "owner-signoff";
 
 export interface ParkRecipe {
 	/** The lane leaf state this recipe clears. */
@@ -96,7 +97,7 @@ export interface ParkRecipe {
 export const QUEUE_MOVED_GRANT = 1;
 
 /**
- * The parks with a fixed fix today: one keyed by its leaf, twelve by their cause.
+ * The parks with a fixed fix today: one keyed by its leaf, thirteen by their cause.
  *
  * `human:cp-approval` + `awaiting-cp-approval`'s clearance is `ship cp-approval`'s own discharge
  * table, relayed rather than re-derived — the §CP cardinality question has exactly one answer in this
@@ -190,7 +191,17 @@ export const QUEUE_MOVED_GRANT = 1;
  * `founder-act-owed` has no row, and that is the decision rather than a gap: no read proves a
  * person took a step by hand, so that park leaves on a person's `UNBLOCKED` and nothing else.
  *
+ * `human:cp-approval` + `owner-action-required` is the third row on that leaf, and the cause key
+ * keeps it apart from the §CP row for the reason it keeps `head-ci-red` apart. Its clearance,
+ * `owner-signoff`, reads the PR's comments for an `owner-action-signoff @ <sha>` marker by a
+ * control-plane owner at the live head (`../ship/owner-signoff.ts`). The owner's step itself is
+ * still unprovable, as it is for `founder-act-owed`; what this park waits on is the owner saying
+ * the step is done, and that is a read. It clears on a PR that is control-plane and on one that is
+ * not, and a §CP PR still owes `ship cp-approval` on the shipper's next run, so the clear approves
+ * nothing. It names no remedy: a recipe that "removed" this cause would be taking the owner's step.
+ *
  * @ruling https://github.com/kamp-us/phoenix/issues/10290#issuecomment-5974131397
+ * @ruling https://github.com/kamp-us/phoenix/issues/10316#issuecomment-5974128227
  */
 /**
  * One row, with its route and its remedy read off the cause table rather than written down a second
@@ -291,6 +302,13 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		cause: "ruling-owed",
 		clearance: "ruling-made",
 		waitingOn: "a ruling made after the lane parked, on the issue the park names",
+	}),
+	row({
+		park: "human:cp-approval",
+		cause: "owner-action-required",
+		clearance: "owner-signoff",
+		waitingOn:
+			"the PR's owner to take the step the park names and sign off on the PR at its live head",
 	}),
 ];
 
