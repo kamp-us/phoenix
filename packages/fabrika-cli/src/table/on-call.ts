@@ -4,16 +4,23 @@
  * an issue lands on is a property of this module, not of a live run.
  *
  * **Every issue lands on exactly one board.** {@link boardOf} answers `on-call` when any one routing
- * attribute matches and `product` otherwise, so no issue is on neither and none is on both.
+ * rule matches and `product` otherwise, so no issue is on neither and none is on both.
  *
  * **An on-call item carries a response target, never a size.** Work there is not bet on; it is pulled
  * in the order it arrives, and the target says how long it may wait before the table hears of it.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9914
+ * @ruling https://github.com/kamp-us/phoenix/issues/10353
  */
 
 import {typeLabel} from "../config/board.ts";
-import type {OnCallBoard, ResponseTarget, ResponseTargets, Route} from "../config/keys/boards.ts";
+import type {
+	OnCallBoard,
+	ResponseTarget,
+	ResponseTargets,
+	Route,
+	RouteRule,
+} from "../config/keys/boards.ts";
 import {type BoardTarget, FIELD, type TableShape, type ViewShape} from "./shape.ts";
 
 export type BoardName = "product" | "on-call";
@@ -30,13 +37,15 @@ export interface RouteFacts {
 	readonly labels: ReadonlyArray<string>;
 }
 
-/** The board `facts` land on under `route`: on-call when any origin, its type or any label matches. */
-export const boardOf = (facts: RouteFacts, route: Route): BoardName => {
-	const byOrigin = facts.origins.some((origin) => route.origins.includes(origin));
-	const byType = route.types.some((type) => facts.labels.includes(typeLabel(type)));
-	const byLabel = route.labels.some((label) => facts.labels.includes(label));
-	return byOrigin || byType || byLabel ? "on-call" : "product";
-};
+/** Whether `facts` match every attribute `rule` names; an attribute it leaves out does not narrow it. */
+export const matchesRule = (facts: RouteFacts, rule: RouteRule): boolean =>
+	(rule.origins === undefined || rule.origins.some((origin) => facts.origins.includes(origin))) &&
+	(rule.types === undefined || rule.types.some((type) => facts.labels.includes(typeLabel(type)))) &&
+	(rule.labels === undefined || rule.labels.some((label) => facts.labels.includes(label)));
+
+/** The board `facts` land on under `route`: on-call when any one rule matches. */
+export const boardOf = (facts: RouteFacts, route: Route): BoardName =>
+	route.some((rule) => matchesRule(facts, rule)) ? "on-call" : "product";
 
 /** Every target, in the order they are matched: the labeled ones, then the fallback. */
 export const targetsOf = (targets: ResponseTargets): ReadonlyArray<ResponseTarget> => [
@@ -68,6 +77,27 @@ const hoursWords = (hours: number): string => `${hours} hour${hours === 1 ? "" :
 const listed = (names: ReadonlyArray<string>): string =>
 	names.length === 0 ? "none" : names.map((name) => `\`${name}\``).join(", ");
 
+const ruleWords = (rule: RouteRule): string => {
+	const parts = [
+		rule.types === undefined ? null : `typed ${oneOf(rule.types)}`,
+		rule.labels === undefined ? null : `labeled ${oneOf(rule.labels)}`,
+		rule.origins === undefined ? null : `with the origin ${oneOf(rule.origins)}`,
+	].filter((part): part is string => part !== null);
+	return `- An issue ${parts.join(", and ")}.`;
+};
+
+const oneOf = (names: ReadonlyArray<string>): string =>
+	names.length === 1 ? listed(names) : `one of ${listed(names)}`;
+
+/** The README's routing section: one line per rule, matched when any one rule matches. */
+const routeWords = (route: Route): ReadonlyArray<string> =>
+	route.length === 0
+		? ["No rule sends an issue here; everything stays on the table unless a person adds it."]
+		: [
+				"An issue comes here when it matches any one of these; everything else stays on the table.",
+				...route.map(ruleWords),
+			];
+
 export const ON_CALL_VIEWS: ReadonlyArray<ViewShape> = [
 	{
 		name: "Queue",
@@ -92,10 +122,7 @@ export const renderOnCallReadme = (settings: OnCallBoard): string => {
 		"- The table reviews on-call as one section of its status update, not row by row.",
 		"",
 		"## What sends an issue here",
-		"An issue comes here when any one of these matches; everything else stays on the table.",
-		`- Origin: ${listed(route.origins)}`,
-		`- Type: ${listed(route.types)}`,
-		`- Label: ${listed(route.labels)}`,
+		...routeWords(route),
 		"",
 		"---",
 		"",

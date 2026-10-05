@@ -389,11 +389,22 @@ with `onCall` only under a `boards` block and `planned` only under `--dry-run`. 
 
 Run as often as on-call needs: it closes no agenda, dates no row and posts no update, so a daily or
 hourly run never moves the table. With a `boards.onCall` block, every open issue
-`boards.onCall.route` sends to on-call (the Origin on its table row, else `customer` when its filer
-only uses the product; any `type:` in `route.types`; any label in `route.labels`) goes to the
-on-call board, except one whose table row reads `bet`, `not now` or `check`, a member of a group
-whose head reads one, or a bet shipped long enough ago that prep brings it back as a check. These
-are the same issues prep leaves off the agenda, read by the same rule.
+`boards.onCall.route` sends to on-call goes to the on-call board, except one whose table row reads
+`bet`, `not now` or `check`, a member of a group whose head reads one, or a bet shipped long enough
+ago that prep brings it back as a check. These are the same issues prep leaves off the agenda, read
+by the same rule.
+
+`boards.onCall.route` is a list of rules, and an issue goes to on-call when any one rule matches it.
+A rule matches when the issue matches every attribute the rule names: one of its `origins` (the
+Origin on the issue's table row, plus `customer` when its filer only uses the product), one of its
+`types` as a `type:` label, and one of its `labels`. An attribute a rule leaves out does not narrow
+it. The shipped route is two rules: a `type:bug` at `p0` or `p1`, and a `type:bug` with the origin
+`customer` at any priority. So a `p2` bug no customer filed, a customer's issue of any other type,
+and an issue with no `type:` label stay on the table, where the agenda proposes a customer's ask
+under Customers and lists an untyped customer report to triage first. A repository can declare any
+other list, such as `[{"origins": ["customer"]}, {"types": ["bug"]}]` for every customer report and
+every bug. A rule that names no attribute, an attribute with an empty list, or a `route` that is not
+a list refuses the whole `boards` block, naming the key.
 
 Each one is added to the on-call board (`table setup` must have made it) in issue order, with the
 Response target its labels pick now (the first `responseTargets.byLabel` target whose labels it

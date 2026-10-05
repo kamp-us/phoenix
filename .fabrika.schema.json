@@ -199,38 +199,46 @@
 					"description": "The on-call board. `\"onCall\": {}` splits on the shipped values; declare only the sub-keys you want to change.",
 					"properties": {
 						"route": {
-							"type": "object",
-							"description": "Which issues land on the on-call board: an issue whose origin, type or any label matches goes there; everything else stays on the product board. Default: origin customer, type bug, no label.",
-							"properties": {
-								"origins": {
-									"type": "array",
-									"items": {
-										"type": "string",
-										"minLength": 1
+							"type": "array",
+							"description": "Which issues land on the on-call board: an issue that matches any one rule goes there; everything else stays on the product board. Default: a bug at the first or second priority label (p0, p1), and a bug a customer reported at any priority. An issue with no `type:` label matches neither default rule, so an untriaged report stays off on-call.",
+							"items": {
+								"type": "object",
+								"description": "One rule. An issue matches it when it matches every attribute the rule names; an attribute left out does not narrow it, and a rule must name at least one.",
+								"properties": {
+									"origins": {
+										"type": "array",
+										"items": {
+											"type": "string",
+											"minLength": 1
+										},
+										"uniqueItems": true,
+										"description": "Origins, one of which the issue must be known by, as the Origin field names them (customer, hand-start, driver pick, found mid-lane, experiment, bet). An issue reads as customer when its filer only uses the product.",
+										"minItems": 1
 									},
-									"uniqueItems": true,
-									"description": "Origins that route an issue to on-call, as the Origin field names them (customer, hand-start, driver pick, found mid-lane, experiment, bet). An issue with no row reads as customer when its filer only uses the product. Default customer."
+									"types": {
+										"type": "array",
+										"items": {
+											"type": "string",
+											"minLength": 1
+										},
+										"uniqueItems": true,
+										"description": "Type names, without the `type:` prefix, one of which the issue must carry as a `type:` label.",
+										"minItems": 1
+									},
+									"labels": {
+										"type": "array",
+										"items": {
+											"type": "string",
+											"minLength": 1
+										},
+										"uniqueItems": true,
+										"description": "Labels, one of which the issue must carry.",
+										"minItems": 1
+									}
 								},
-								"types": {
-									"type": "array",
-									"items": {
-										"type": "string",
-										"minLength": 1
-									},
-									"uniqueItems": true,
-									"description": "Type names, without the `type:` prefix, that route an issue to on-call. Default bug."
-								},
-								"labels": {
-									"type": "array",
-									"items": {
-										"type": "string",
-										"minLength": 1
-									},
-									"uniqueItems": true,
-									"description": "Labels that route an issue to on-call. Default none."
-								}
-							},
-							"additionalProperties": false
+								"minProperties": 1,
+								"additionalProperties": false
+							}
 						},
 						"responseTargets": {
 							"type": "object",

@@ -976,8 +976,11 @@ describe("table prep with no fabrika-share label", () => {
 });
 
 describe("table prep with a boards block", () => {
+	// Routes every customer report and every bug, so the untyped customer reports in ISSUES reach
+	// on-call; the shipped rule's own cases live in on-call-prep.unit.test.ts.
+	const ANY_ONE = [{origins: ["customer"]}, {types: ["bug"]}];
 	const SPLIT = fakeFs({
-		files: {"/repo/.fabrika.jsonc": JSON.stringify({boards: {onCall: {}}})},
+		files: {"/repo/.fabrika.jsonc": JSON.stringify({boards: {onCall: {route: ANY_ONE}}})},
 	}).layer;
 	const issues: Readonly<Record<number, IssueSpec>> = {
 		...ISSUES,

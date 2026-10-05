@@ -25,7 +25,10 @@ describe("a declared on-call board", () => {
 			value: {_tag: "Split", onCall: SHIPPED_ON_CALL},
 		});
 		expect(SHIPPED_ON_CALL).toEqual({
-			route: {origins: ["customer"], types: ["bug"], labels: []},
+			route: [
+				{types: ["bug"], labels: ["p0", "p1"]},
+				{types: ["bug"], origins: ["customer"]},
+			],
 			responseTargets: {
 				byLabel: [{name: "same day", hours: 24, labels: ["p0"]}],
 				otherwise: {name: "this week", hours: 168},
@@ -35,11 +38,22 @@ describe("a declared on-call board", () => {
 		});
 	});
 
+	it("takes a declared route whole, the old any-one rule included", () => {
+		const old = [{origins: ["customer"]}, {types: ["bug"]}];
+		expect(declared({onCall: {route: old}})).toMatchObject({
+			_tag: "Declared",
+			value: {_tag: "Split", onCall: {route: old}},
+		});
+		expect(declared({onCall: {route: []}})).toMatchObject({
+			value: {_tag: "Split", onCall: {route: []}},
+		});
+	});
+
 	it("takes each sub-key the repo wrote and the shipped value for the rest", () => {
 		expect(
 			declared({
 				onCall: {
-					route: {labels: ["ci-broken"]},
+					route: [{labels: ["ci-broken"]}],
 					responseTargets: {
 						byLabel: [{name: "now", hours: 2, labels: ["outage"]}],
 						otherwise: {name: "soon", hours: 48},
@@ -54,7 +68,7 @@ describe("a declared on-call board", () => {
 			value: {
 				_tag: "Split",
 				onCall: {
-					route: {origins: ["customer"], types: ["bug"], labels: ["ci-broken"]},
+					route: [{labels: ["ci-broken"]}],
 					responseTargets: {
 						byLabel: [{name: "now", hours: 2, labels: ["outage"]}],
 						otherwise: {name: "soon", hours: 48},
@@ -71,7 +85,7 @@ describe("a declared on-call board", () => {
 		["a stray top-level key", {onCall: {}, product: {}}],
 		["a stray on-call key", {onCall: {size: "S"}}],
 		["a route list that is not a list", {onCall: {route: {types: "bug"}}}],
-		["a route naming one label twice", {onCall: {route: {labels: ["a", "a"]}}}],
+		["a route naming one label twice", {onCall: {route: [{labels: ["a", "a"]}]}}],
 		["a zero-hour target", {onCall: {responseTargets: {otherwise: {name: "never", hours: 0}}}}],
 		[
 			"a labeled target naming no label",
@@ -93,6 +107,32 @@ describe("a declared on-call board", () => {
 		["a project number that is not a positive integer", {onCall: {project: {number: 0}}}],
 	])("refuses %s whole", (_name, value) => {
 		expect(declared(value)).toMatchObject({_tag: "Malformed"});
+	});
+
+	it.each([
+		["the old object form", {types: ["bug"]}, "`boards.onCall.route` is not a list of rules"],
+		["a rule that is not an object", ["bug"], "`boards.onCall.route[0]` is not an object"],
+		[
+			"a rule naming nothing",
+			[{types: ["bug"]}, {}],
+			"`boards.onCall.route[1]` names no origin, type or label",
+		],
+		["a rule with an empty list", [{labels: []}], "`boards.onCall.route[0].labels` names no"],
+		[
+			"a rule with a stray key",
+			[{types: ["bug"], priority: "p0"}],
+			"`boards.onCall.route[0].priority` is not a setting",
+		],
+		["a type that is not a name", [{types: [""]}], "`boards.onCall.route[0].types`"],
+		[
+			"an origin list that is not a list",
+			[{origins: "customer"}],
+			"`boards.onCall.route[0].origins`",
+		],
+	])("refuses a route with %s, naming the key", (_name, route, reason) => {
+		const read = declared({onCall: {route}});
+		expect(read).toMatchObject({_tag: "Malformed"});
+		expect(read._tag === "Malformed" ? read.reason : "").toContain(reason);
 	});
 
 	it("names no path, repository, issue number or login in its shipped values", () => {
