@@ -6,6 +6,10 @@
  * HTTP 200 with `[]` — so the label's existence is checked against the repository's label set and a
  * typo reds on {@link ZERO_SCOPE} rather than reporting the queue drained.
  *
+ * **The queue is the board's needs-triage status unless `--label` names another.** A named label is
+ * that run's queue and is checked like any other; an omitted one over an unreadable board refuses
+ * rather than reading the shipped name, which a renamed board would answer as an empty queue.
+ *
  * **An open issue carrying no label at all is intake too**, listed beside the labelled ones, because
  * an issue filed without the queue label is otherwise one triage never sees. That read has no label
  * to prove, so its guard is the read itself: a failure is UNKNOWN, never an empty half of the queue.
@@ -25,22 +29,23 @@ import {
 	resolveRepo,
 } from "../io/issues.ts";
 import {missingLabelRemedy} from "../status/label-remedy.ts";
+import {intakeLabel} from "../status/repo-board.ts";
 import {answer, FAILED, refuse} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {scannedLine} from "./scope.ts";
 
-export const DEFAULT_QUEUE_LABEL = "status:needs-triage";
 export const DEFAULT_QUEUE_LIMIT = 100;
 
 const DAY_MS = 86_400_000;
 
 export interface QueueOptions {
-	readonly label: string;
+	/** The `--label` the operator named, or `null` for the board's needs-triage status. */
+	readonly label: string | null;
 	readonly limit: number;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
-	/** The board a missing-label refusal reads its `status bootstrap` remedy against. */
+	/** The board the default queue label and a missing-label remedy are read against. */
 	readonly board: BoardRead;
 	readonly now: () => Date;
 }
@@ -103,9 +108,18 @@ export const labelPrecondition = Effect.fn("labelPrecondition")(function* (
 });
 
 export const runQueue = Effect.fn("runQueue")(function* (options: QueueOptions) {
-	const {label, limit, json} = options;
+	const {limit, json} = options;
 
 	if (limit < 1) return refuse(FAILED, "triage queue: --limit must be 1 or greater.");
+
+	const chosen = intakeLabel(options.label, options.board);
+	if (chosen._tag === "Refused") {
+		return refuse(
+			PRECONDITION_UNKNOWN,
+			`triage queue: ${chosen.reason}. Nothing was read; pass --label to name the queue.`,
+		);
+	}
+	const {label} = chosen;
 
 	const repoAttempt = yield* resolveRepo(options.repo, options.env);
 	if (repoAttempt._tag === "Failure") {

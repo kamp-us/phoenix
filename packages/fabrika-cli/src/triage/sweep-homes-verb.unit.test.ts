@@ -7,6 +7,7 @@ import {Effect} from "effect";
 import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {declaredBoard} from "../status/board.test-support.ts";
 import {
 	EMPTY_STDIN,
 	PRECONDITION_UNKNOWN,
@@ -71,13 +72,14 @@ const run = (
 	script: ReadonlyArray<Scripted>,
 	mode: SweepMode,
 	stdin: StdinRead = text("Per the homing decision."),
+	repoBoard = declaredBoard({boardVocabulary: {standingLanes: [LANE]}}),
 ) => {
 	const seams = fakeSeams(script);
 	return Effect.runPromise(
 		Effect.provide(
 			runSweepHomes({
 				mode,
-				standingLanes: {_tag: "Value", value: [LANE], note: "declared"},
+				board: repoBoard,
 				repo: null,
 				json: false,
 				env: ENV,
@@ -104,6 +106,21 @@ describe("runSweepHomes — the dry run", () => {
 	it("reads no stdin, so a dry run needs no citation", async () => {
 		const {outcome} = await run([[BACKLOG, board(DOUBLE)]], "dry-run", text(""));
 		expect(outcome.code).toBe(0);
+	});
+
+	it("sweeps the board's renamed triaged status, never the shipped name", async () => {
+		const renamed = /^GET .*\/repos\/o\/r\/issues\?state=open&labels=state%3Aready/;
+		const {outcome, requests} = await run(
+			[[renamed, board(DOUBLE)]],
+			"dry-run",
+			text(""),
+			declaredBoard({
+				boardVocabulary: {statuses: {triaged: "state:ready"}, standingLanes: [LANE]},
+			}),
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toBe(`planned\t1\nwould-clear\t3\t17\t${LANE}\n`);
+		expect(requests.some((line) => line.includes("labels=status%3Atriaged"))).toBe(false);
 	});
 });
 
@@ -292,13 +309,13 @@ describe("runSweepHomes — what it refuses", () => {
 	it.each<SweepMode>([
 		"dry-run",
 		"apply",
-	])("reads a lane declaration nobody could read as UNKNOWN on %s, and requests nothing", async (mode) => {
+	])("reads a board nobody could read as UNKNOWN on %s, and requests nothing", async (mode) => {
 		const seams = fakeSeams([[BACKLOG, board(DOUBLE)]]);
 		const outcome = await Effect.runPromise(
 			Effect.provide(
 				runSweepHomes({
 					mode,
-					standingLanes: {_tag: "Refused", reason: "`boardVocabulary` is not an object."},
+					board: declaredBoard({boardVocabulary: "wayfinder:backlog"}),
 					repo: null,
 					json: false,
 					env: ENV,
@@ -309,7 +326,7 @@ describe("runSweepHomes — what it refuses", () => {
 		);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stdout).toBe("");
-		expect(outcome.stderr.at(-1)).toContain("cannot read the standing lanes this repo declares");
+		expect(outcome.stderr.at(-1)).toContain("cannot read .fabrika.jsonc's board vocabulary");
 		expect(outcome.stderr.at(-1)).toContain("`boardVocabulary` is not an object");
 		expect(outcome.stderr.at(-1)).toContain("the sweep is UNKNOWN, never clean");
 		expect(seams.requests).toEqual([]);

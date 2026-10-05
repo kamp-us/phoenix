@@ -19,13 +19,14 @@
  * @ruling https://github.com/kamp-us/phoenix/issues/8556#issuecomment-5625029977
  */
 
+import type {BoardVocabulary} from "../config/board.ts";
 import {
 	type ContainmentVocabulary,
 	containmentGap,
 	readContainment,
 } from "../config/keys/containment-vocabulary.ts";
 import {PLANNED, TRIAGED} from "../labels.ts";
-import {HELD_LABEL, missingLabelKinds, NEEDS_TRIAGE_LABEL} from "../plan/defects.ts";
+import {HELD_LABEL, missingLabelKinds} from "../plan/defects.ts";
 import {CONTAINMENT_FIELD, fieldLines, readChildStories, STORIES_FIELD} from "../plan/ledger.ts";
 import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {read as readAcceptanceCriteria} from "../wire/acceptance-criteria.ts";
@@ -54,6 +55,8 @@ export interface AdoptionInput {
 	readonly assignees: ReadonlyArray<string>;
 	readonly cycleDoc: CycleDoc;
 	readonly vocabulary: ContainmentVocabulary;
+	/** The repo's resolved board: the floor's label checks read its statuses and priorities. */
+	readonly board: BoardVocabulary;
 	readonly stories: {readonly _tag: "Ids"; readonly ids: ReadonlyArray<number>} | null;
 	/** The raw `--containment` value; a trailing parenthetical is the planner's and is kept. */
 	readonly containment: string | null;
@@ -94,13 +97,14 @@ export const judgeAdoption = (input: AdoptionInput): Adoption => {
 	if (input.labels.includes(EPIC_TYPE_LABEL)) {
 		return refused(OFF_VOCABULARY, "it is a type:epic — an epic is never another epic's child.");
 	}
-	if (input.labels.includes(NEEDS_TRIAGE_LABEL)) {
+	const {needsTriage} = input.board.statuses;
+	if (input.labels.includes(needsTriage)) {
 		return refused(
 			OFF_VOCABULARY,
-			`it still carries ${NEEDS_TRIAGE_LABEL} — an untriaged issue is not a plannable child.`,
+			`it still carries ${needsTriage} — an untriaged issue is not a plannable child.`,
 		);
 	}
-	const missing = missingLabelKinds(input.labels);
+	const missing = missingLabelKinds(input.labels, input.board);
 	if (missing.length > 0) {
 		return refused(
 			OFF_VOCABULARY,

@@ -149,7 +149,7 @@ const child = leafCommand(
 		),
 		priority: Flag.string("priority").pipe(
 			Flag.withDescription(
-				"the child's priority label: p0 | p1 | p2 (p3 is retired, not admitted)",
+				"the child's priority label: one of boardVocabulary.priorities (default p0 | p1 | p2; p3 is retired, not admitted)",
 			),
 		),
 		readyFor: Flag.string("ready-for").pipe(

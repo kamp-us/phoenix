@@ -852,3 +852,60 @@ describe("runPitchGuard — which token makes each read", () => {
 		expect(seen).toEqual(["ghp_table_only", null]);
 	});
 });
+
+describe("runPitchGuard — a board that renamed its triaged status", () => {
+	const RENAMED = JSON.stringify({boardVocabulary: {statuses: {triaged: "state:ready"}}});
+	const RENAMED_SWEEP = /^GET .*\/repos\/o\/r\/issues\?state=open&labels=state%3Aready/;
+	const READY = ["state:ready", "type:feature"];
+
+	it("sweeps the renamed label and reds an unpitched bet it finds there", async () => {
+		const {outcome, requests} = await run(
+			[
+				[RENAMED_SWEEP, sweep({number: 11, labels: READY})],
+				[ONE(11), one({number: 11, labels: READY, body: "no pitch"})],
+				[COMMENTS(11), EMPTY],
+			],
+			{config: RENAMED},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr.join("\n")).toContain("#11");
+		expect(requests.some((line) => line.includes("labels=status%3Atriaged"))).toBe(false);
+	});
+
+	it("judges a named issue carrying the renamed label while the old label still exists", async () => {
+		const {outcome, requests} = await run(
+			[
+				[ONE(9), one({number: 9, labels: READY, body: "no pitch"})],
+				[COMMENTS(9), EMPTY],
+				[LABELS, labelSet("status:triaged", "state:ready", "type:epic", "type:feature")],
+			],
+			{issue: 9, config: RENAMED},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr.join("\n")).toContain("#9");
+		expect(requests.some((line) => LABELS.test(line))).toBe(false);
+	});
+
+	it("reads an issue carrying only the old label as out of scope on this board", async () => {
+		const {outcome} = await run(
+			[
+				[ONE(9), one({number: 9, labels: ["status:triaged", "type:feature"], body: "no pitch"})],
+				[LABELS, labelSet("status:triaged", "state:ready", "type:epic", "type:feature")],
+			],
+			{issue: 9, config: RENAMED},
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toContain("is not lane-entering work");
+	});
+
+	it("is UNKNOWN on a board nobody could read, and reads nothing", async () => {
+		const {outcome, requests} = await run([], {
+			config: JSON.stringify({boardVocabulary: {statuses: {triaged: ""}}}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		const report = outcome.stderr.join("\n");
+		expect(report).toContain("cannot read .fabrika.jsonc's board vocabulary");
+		expect(report).toContain("never the shipped name");
+		expect(requests).toEqual([]);
+	});
+});

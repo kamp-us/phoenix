@@ -1,6 +1,8 @@
 import {describe, expect, it} from "vitest";
 import type {RequiredEdge} from "../build/dependencies.ts";
+import type {BoardVocabulary} from "../config/board.ts";
 import {SHIPPED_CONTAINMENT_VOCABULARY} from "../config/keys/containment-vocabulary.ts";
+import {DEFAULT_BOARD_VOCABULARY} from "../triage/facets.ts";
 import {DEFECT_TYPES, type DefectType, deriveFloor, refsToProbe} from "./defects.ts";
 import type {LedgerScope} from "./digest.ts";
 import type {ChildLedger} from "./model.ts";
@@ -35,6 +37,8 @@ interface Graph {
 	readonly observed?: Readonly<Record<number, ReadonlyArray<number>>>;
 	/** The epic's own open blockers, as the verb's `readBlockedness` hands them over. */
 	readonly epicBlockers?: ReadonlyArray<number>;
+	/** The board the repo resolves to; the shipped one unless a test renames it. */
+	readonly board?: BoardVocabulary;
 }
 
 const floorOf = (
@@ -54,6 +58,7 @@ const floorOf = (
 		),
 		epicBlockers: graph.epicBlockers ?? [],
 		vocabulary: SHIPPED_CONTAINMENT_VOCABULARY,
+		board: graph.board ?? DEFAULT_BOARD_VOCABULARY,
 	});
 
 const types = (
@@ -234,7 +239,7 @@ describe("each of the fifteen types fires on its own condition", () => {
 
 	it.each([
 		[["p1", "status:planned"], "missing a type: label"],
-		[["p1", "type:feature"], "missing a status: label"],
+		[["p1", "type:feature"], "missing a status label"],
 		[["status:planned", "type:feature"], "missing a priority label"],
 	])("MISSING_LABEL for %s", (labels, detail) => {
 		const found = floorOf({children: [child({labels})]}).defects.find(
@@ -350,5 +355,46 @@ describe("refsToProbe", () => {
 				}),
 			),
 		).toEqual([9999]);
+	});
+});
+
+describe("a board that renamed its statuses and priorities", () => {
+	const RENAMED: BoardVocabulary = {
+		...DEFAULT_BOARD_VOCABULARY,
+		statuses: {
+			...DEFAULT_BOARD_VOCABULARY.statuses,
+			needsTriage: "state:new",
+			triaged: "state:ready",
+			planned: "state:planned",
+		},
+		priorities: ["sev1", "sev2"],
+	};
+	const on = (labels: ReadonlyArray<string>) =>
+		floorOf({children: [child({labels})]}, [], {board: RENAMED}).defects;
+
+	it("accepts a child carrying the board's own status and priority", () => {
+		expect(on(["sev1", "state:planned", "type:feature"])).toEqual([]);
+	});
+
+	it("reds a shipped priority the board does not run on", () => {
+		expect(on(["p1", "state:planned", "type:feature"]).map((d) => d.detail)).toEqual([
+			"missing a priority label",
+		]);
+	});
+
+	it("reds a child with no status the board names", () => {
+		expect(on(["sev1", "type:feature"]).map((d) => d.detail)).toEqual(["missing a status label"]);
+	});
+
+	it("detects the configured needs-triage role, and names it", () => {
+		const found = on(["sev1", "state:new", "type:feature"]).find(
+			(d) => d.type === "NEEDS_TRIAGE_LABEL",
+		);
+		expect(found?.detail).toBe("still carries state:new");
+	});
+
+	it("reads the shipped needs-triage label as no role of this board's", () => {
+		const defects = on(["sev1", "state:planned", "status:needs-triage", "type:feature"]);
+		expect(defects.map((d) => d.type)).not.toContain("NEEDS_TRIAGE_LABEL");
 	});
 });

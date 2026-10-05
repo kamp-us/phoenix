@@ -1,6 +1,6 @@
 /**
- * `guard homing-guard check` — the decision: did every `status:triaged` issue leave triage with
- * exactly one home?
+ * `guard homing-guard check` — the decision: did every triaged issue leave triage with exactly one
+ * home?
  *
  * Home and exemption are MUTUALLY EXCLUSIVE: a triaged issue carries an arc/campaign milestone, or
  * one of the standing-lane labels its repo declares, never both, which is banned outright.
@@ -23,10 +23,7 @@ import {clean, type GuardVerdict, unknown, violation, zeroScope} from "./verdict
 
 export const VERB = "guard homing-guard check";
 
-/** The label that puts an issue in scope: the invariant binds at the moment triage stamps it. */
-export const TRIAGED_LABEL = "status:triaged";
-
-/** One open `status:triaged` issue reduced to the two facts the invariant reads. */
+/** One open triaged issue reduced to the two facts the invariant reads. */
 export interface TriagedIssue {
 	readonly number: number;
 	readonly title: string;
@@ -36,9 +33,12 @@ export interface TriagedIssue {
 }
 
 /**
- * What the guard scanned. `backlog` is the whole open `status:triaged` set (the CI/sweep surface);
- * `issue` is one named issue (the per-issue seam check a triage sweep runs right after it labels).
- * The two differ only in how an empty scope resolves — see {@link judge}.
+ * What the guard scanned. `backlog` is the whole open triaged set (the CI/sweep surface); `issue` is
+ * one named issue (the per-issue seam check a triage sweep runs right after it labels). The two
+ * differ only in how an empty scope resolves — see {@link judge}.
+ *
+ * Both carry `triaged`, the board's triaged status label the scan was cut by — the label triage
+ * stamps, so the invariant binds at the moment it lands, whatever the repo renamed it to.
  *
  * Issue scope carries the label `universe` because an empty issue scope has TWO readings and the
  * verb cannot tell them apart from the issue alone: "this issue is not triaged" (ordinary, a pass)
@@ -47,8 +47,13 @@ export interface TriagedIssue {
  * merely unchecked.
  */
 export type Scope =
-	| {readonly _tag: "backlog"}
-	| {readonly _tag: "issue"; readonly number: number; readonly universe: LabelUniverse};
+	| {readonly _tag: "backlog"; readonly triaged: string}
+	| {
+			readonly _tag: "issue";
+			readonly triaged: string;
+			readonly number: number;
+			readonly universe: LabelUniverse;
+	  };
 
 /** How one triaged issue resolves against home-xor-exempt. The two right-hand cases are defects. */
 export type Disposition = "homed" | "exempt" | "unhomed" | "double-marked";
@@ -142,8 +147,8 @@ export const disposition = (issue: TriagedIssue, lanes: ReadonlyArray<string>): 
  * Zero scope forks on what was scanned. Over the whole **backlog**, an empty triaged set is
  * indistinguishable from a broken query (a renamed label, a lost token, a bad repo) — the exact
  * silent-no-op every guard here fails closed on. Over a single **issue**, empty is the ordinary answer
- * "that issue is not `status:triaged`", so it passes; the caller filters the fetched issue by label,
- * so an out-of-scope issue arrives here as an empty set.
+ * "that issue is not triaged", so it passes; the caller filters the fetched issue by the scope's
+ * label, so an out-of-scope issue arrives here as an empty set.
  *
  * The issue fork passes ONLY when the scoping label exists in the repo. Where it does not, every
  * issue takes that fork and the seam guard reports clean forever, having checked nothing — the
@@ -152,7 +157,7 @@ export const disposition = (issue: TriagedIssue, lanes: ReadonlyArray<string>): 
 export const judge = (
 	issues: ReadonlyArray<TriagedIssue>,
 	lanes: ReadonlyArray<string>,
-	scope: Scope = {_tag: "backlog"},
+	scope: Scope,
 ): HomingVerdict => {
 	if (issues.length === 0) {
 		if (scope._tag === "backlog") return {pass: false, reason: "zero-scope", scope};
@@ -195,7 +200,7 @@ export const judge = (
 };
 
 const scopeLabel = (scope: Scope): string =>
-	scope._tag === "backlog" ? "the open status:triaged backlog" : `issue #${scope.number}`;
+	scope._tag === "backlog" ? `the open ${scope.triaged} backlog` : `issue #${scope.number}`;
 
 /**
  * The un-homed remediation, stated once — the three outcomes the triage rubric allows. Exported so
@@ -238,7 +243,7 @@ const violationLines = (violations: ReadonlyArray<Violation>, kind: Violation["k
 export const renderReport = (verdict: HomingVerdict): string => {
 	if (verdict.pass) {
 		if (verdict.scanned === 0) {
-			return `${VERB}: ${scopeLabel(verdict.scope)} is not status:triaged — out of scope, nothing to check.`;
+			return `${VERB}: ${scopeLabel(verdict.scope)} is not ${verdict.scope.triaged} — out of scope, nothing to check.`;
 		}
 		return (
 			`${VERB}: ${scopeLabel(verdict.scope)} is fully homed — scanned ${verdict.scanned} triaged issue(s): ` +
@@ -247,7 +252,7 @@ export const renderReport = (verdict: HomingVerdict): string => {
 	}
 	if (verdict.reason === "zero-scope") {
 		return (
-			`${VERB}: scanned ${scopeLabel(verdict.scope)} and found ZERO status:triaged issues — ` +
+			`${VERB}: scanned ${scopeLabel(verdict.scope)} and found ZERO ${verdict.scope.triaged} issues — ` +
 			"fail-closed. An empty triaged set is indistinguishable from a broken read " +
 			"(renamed label, missing token, wrong repo), and a vacuous pass would hide every floater."
 		);

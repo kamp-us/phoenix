@@ -26,7 +26,7 @@ makes the implementer guess.
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `triage queue` | the claimable `status:needs-triage` queue plus every open issue with no label, with the counts it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
+| `triage queue` | the claimable needs-triage queue plus every open issue with no label, with the counts it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
 | `triage claim` | take one lane's claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
 | `triage scratch` | the per-lane directory this lane's working files go under | keying a namespace on the claim nonce is mechanical; what the file holds is judgment |
 | `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
@@ -316,7 +316,7 @@ fabrika triage queue [--label <name>] [--limit <n>] [--repo <owner/name>] [--jso
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--label` | string | no | `status:needs-triage` | the intake-queue label; the queue is its open issues plus every open issue carrying no label at all |
+| `--label` | string | no | the board's needs-triage status (`boardVocabulary.statuses.needsTriage`, `status:needs-triage` where the repo declares none) | the intake-queue label; the queue is its open issues plus every open issue carrying no label at all. A named label is that run's queue whatever the board says, and is still checked against the repository's labels |
 | `--limit` | integer | no | `100` | the maximum number of rows to print; must be ≥ 1 |
 | `--repo` | string | no | resolved (see Shared conventions) | the repository to read |
 | `--json` | boolean | no | `false` | emit the full result object instead of the line grammar |
@@ -338,7 +338,7 @@ so a PR could appear as a triageable row.
 | Code | Trigger |
 |---|---|
 | `7` | `--label` does not exist in the repository — the labelled read would scan nothing |
-| `11` | the labelled read or the unlabeled read failed — the outcome is UNKNOWN, never `empty` |
+| `11` | the labelled read or the unlabeled read failed — the outcome is UNKNOWN, never `empty` — or `--label` is omitted and the board vocabulary does not resolve, so nothing is read |
 
 **Errors**
 
@@ -347,6 +347,7 @@ so a PR could appear as a triageable row.
 | `triage queue: cannot read the <label> queue in <repo>: <reason> — the outcome is UNKNOWN, never "empty".` | 11 | refusal |
 | `triage queue: cannot read the open issues in <repo> that carry no label: <reason> — the outcome is UNKNOWN, never "empty".` | 11 | refusal |
 | `triage queue: label <label> does not exist in <repo> — refusing to report an empty queue over zero scope. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
+| `triage queue: cannot read .fabrika.jsonc's board vocabulary: <reason> — which label is the intake queue is UNKNOWN, never the shipped name. Nothing was read; pass --label to name the queue.` | 11 | refusal |
 | `triage queue: --limit must be 1 or greater.` | 1 | usage error |
 
 **Scope** — every open issue in `--repo` carrying `--label`, plus every open issue carrying no
@@ -1081,8 +1082,8 @@ path reaches a public issue while the poster reads success. A shell redirect is 
 prints and stops before step 4, so no cross-link is attempted. The parent was cross-linked when the
 child was first created. A caller must not read `"crossLinked":false` on a `reused` as a broken link.
 
-**What the operation does, in order.** (1) Assert `status:needs-triage` exists in `--repo` (see
-Scope). (2) Read the scope below. (3) On a match, print `reused` and stop — **the existing child's
+**What the operation does, in order.** (1) Assert the board's needs-triage status exists in
+`--repo` (see Scope). (2) Read the scope below. (3) On a match, print `reused` and stop — **the existing child's
 body is not updated from stdin**, because a reuse is an idempotency answer, not an edit, and silently
 rewriting a child someone may have already triaged would lose their work. (4) On no match, compose
 and create the child. (5) Post a `split into #<child>` comment on the parent.
@@ -1101,10 +1102,15 @@ every caller regex a number back out of prose.
 An earlier revision never said. Two things broke silently as a result, and both are why the shape is
 pinned here rather than left to an implementer.
 
-**The child carries `status:needs-triage`.** Without it the child is invisible to read 1 below — this
+**The child carries the board's needs-triage status** — `boardVocabulary.statuses.needsTriage`,
+`status:needs-triage` where the repo declares none, written `status:needs-triage` below. The
+precondition, read 1, the create and the read-back all take that one label from one board read, and
+a board vocabulary that does not resolve is `11` before anything is read. Without the label the
+child is invisible to read 1 below — this
 verb's own primary create-once read — so the read could never match anything this verb produced, and
 every re-run would fire a fresh twin. The label is what makes read 1 load-bearing rather than dead
-code against its own output. It is also simply correct: a freshly split child has not been triaged.
+code against its own output, which is why the read-back checks the child carries it. It is also
+simply correct: a freshly split child has not been triaged.
 
 **The child carries the agent footer.** Without it `triage provenance` answers `human` and
 `triage kill` refuses the child **forever** on `12` — a split child could never be killed, not even
@@ -1161,7 +1167,8 @@ a silent lost split, in the one direction v1's own module says it refuses.
 | `triage split: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
-| `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
+| `triage split: cannot read .fabrika.jsonc's board vocabulary: <reason> — which label is the intake queue is UNKNOWN, never the shipped name. Nothing was created.` | 11 | refusal |
+| `triage split: label <needs-triage> does not exist in <repo> — refusing to create a child over a queue that would scan nothing. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `triage split: the child body carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage split: the child body is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage split: cannot read <what> in <repo>: <reason> — UNKNOWN whether a child already exists; refusing to create a possible twin.` | 11 | refusal |
@@ -1172,8 +1179,8 @@ a silent lost split, in the one direction v1's own module says it refuses.
 **Scope** — a zero-scope precondition, then two REST reads, neither of them the search index.
 
 **The precondition.** Before read 1, the verb asserts `status:needs-triage` exists in `--repo`'s label
-set. Read 1's label is a hardcoded literal while `--repo` is generic, so a renamed label or a
-scope-limited token returns HTTP 200 with `[]` — **not** a read failure, and therefore not `11`. The
+set. Read 1's label comes from this checkout's board while `--repo` is generic, so a label the
+target repo lacks or a scope-limited token returns HTTP 200 with `[]` — **not** a read failure, and therefore not `11`. The
 verb would fall straight through to `created` and mint a twin. Without this check the one verb built
 to be fail-closed answers over zero scope — the fail-open it exists to prevent. Absent label ⇒ `7`,
 with the same shape of message `triage queue` uses.
@@ -2578,12 +2585,13 @@ Passing both `--dry-run` and `--apply` exits `1`. A dry run never reads stdin.
 `reason` where the row has one). Stderr carries the scanned line and a tally line,
 `triage sweep-homes: <d> double-marked, <u> un-homed, <h> homed, <e> exempt.`
 
-**The decision is the guard's.** The verb reads the open `status:triaged` set with the guard's own
-read and record mapping, and judges it with `judge`/`resolve` from `guard/homing.ts`, against the
-same lanes — the ones `boardVocabulary.standingLanes` declares. It never parses the guard's report.
-So this verb computes no second homing verdict, and the refusal of a `triage homing-check` verb
-above still holds. A repo that declares no lane has no double-marked issue to clear, and a
-declaration that could not be read is `11`, never "no lanes".
+**The decision is the guard's.** The verb reads the open set under the board's triaged status
+(`boardVocabulary.statuses.triaged`, `status:triaged` where the repo declares none) with the guard's
+own read and record mapping, and judges it with `judge`/`resolve` from `guard/homing.ts`, against
+the same lanes — the ones `boardVocabulary.standingLanes` declares. It never parses the guard's
+report. So this verb computes no second homing verdict, and the refusal of a `triage homing-check`
+verb above still holds. A repo that declares no lane has no double-marked issue to clear, and a
+board vocabulary that could not be read is `11`, never "no lanes" nor the shipped triaged name.
 
 **Which breach it applies.** A double-marked issue has one mechanical remedy: a standing lane is
 milestone-less by design, so the milestone goes and the lane stays. An un-homed issue has three
@@ -2622,7 +2630,7 @@ write.
 | the open `status:triaged` set is empty — fail-closed, never a clean sweep | 7 |
 | a trail or milestone write failed; the message says which, and a re-run is safe | 8 |
 | the read-back after a clear is not milestone-less with the lanes kept | 9 |
-| the backlog, a re-read issue, its comments or `.fabrika.jsonc`'s lane declaration could not be read | 11 |
+| the backlog, a re-read issue, its comments or `.fabrika.jsonc`'s board vocabulary could not be read | 11 |
 | un-homed issues remain, listed on stderr and untouched | 27 |
 
 A halt on `8`, `9` or `11` mid-sweep prints each row already done on stderr, prefixed

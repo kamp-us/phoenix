@@ -7,8 +7,9 @@
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import type {Read} from "../config/read-key.ts";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {declaredBoard} from "../status/board.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 import {runHomingGuard} from "./homing-verb.ts";
@@ -49,12 +50,10 @@ const labels = (...names: ReadonlyArray<string>): HttpReply => ({
 	body: JSON.stringify(names.map((name) => ({name}))),
 });
 
-/** The delivery layer's config read, as a fixture: this repo declares the two lanes below. */
-const DECLARED: Read<ReadonlyArray<string>> = {
-	_tag: "Value",
-	value: ["wayfinder:backlog", "axis:pipeline-hardening"],
-	note: "declared",
-};
+/** The delivery layer's board read, as a fixture: this repo declares the two lanes below. */
+const DECLARED: BoardRead = declaredBoard({
+	boardVocabulary: {standingLanes: ["wayfinder:backlog", "axis:pipeline-hardening"]},
+});
 
 const run = (
 	script: ReadonlyArray<Scripted>,
@@ -62,7 +61,7 @@ const run = (
 		issue?: number;
 		repo?: string | null;
 		env?: Record<string, string | undefined>;
-		standingLanes?: Read<ReadonlyArray<string>>;
+		board?: BoardRead;
 	} = {},
 ) => {
 	const seams = fakeSeams(script);
@@ -70,7 +69,7 @@ const run = (
 		Effect.provide(
 			runHomingGuard({
 				issue: options.issue ?? null,
-				standingLanes: options.standingLanes ?? DECLARED,
+				board: options.board ?? DECLARED,
 				repo: options.repo ?? null,
 				env: options.env ?? ENV,
 			}),
@@ -131,7 +130,7 @@ describe("runHomingGuard — the backlog sweep", () => {
 	it("exempts nothing where the repo declares no lane — the label alone is not a home", async () => {
 		const {outcome} = await run(
 			[[BACKLOG, board({number: 2, labels: ["status:triaged", "wayfinder:backlog"]})]],
-			{standingLanes: {_tag: "Value", value: [], note: "shipped"}},
+			{board: declaredBoard({})},
 		);
 		expect(outcome.code).toBe(VIOLATION);
 		const report = outcome.stderr.join("\n");
@@ -139,12 +138,15 @@ describe("runHomingGuard — the backlog sweep", () => {
 		expect(report).toContain("this repo declares none");
 	});
 
-	it("is UNKNOWN on a lane declaration nobody could read, and scans nothing", async () => {
+	it("is UNKNOWN on a board nobody could read, and scans nothing under the shipped name", async () => {
 		const {outcome, requests} = await run([], {
-			standingLanes: {_tag: "Refused", reason: "`boardVocabulary` is not an object."},
+			board: declaredBoard({boardVocabulary: "wayfinder:backlog"}),
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
-		expect(outcome.stderr.join("\n")).toContain("`boardVocabulary` is not an object");
+		const report = outcome.stderr.join("\n");
+		expect(report).toContain("cannot read .fabrika.jsonc's board vocabulary");
+		expect(report).toContain("`boardVocabulary` is not an object");
+		expect(report).toContain("never the shipped names");
 		expect(requests).toEqual([]);
 	});
 
@@ -260,5 +262,70 @@ describe("runHomingGuard — the repo", () => {
 			{repo: "other/x"},
 		);
 		expect(requests[0]).toContain("repos/other/x/issues");
+	});
+});
+
+describe("runHomingGuard — a board that renamed its triaged status", () => {
+	const RENAMED = declaredBoard({
+		boardVocabulary: {
+			statuses: {triaged: "state:ready"},
+			standingLanes: ["wayfinder:backlog"],
+		},
+	});
+	const RENAMED_BACKLOG = /^GET .*\/repos\/o\/r\/issues\?state=open&labels=state%3Aready/;
+
+	it("sweeps the renamed label and judges what it finds — only that query is scripted", async () => {
+		const {outcome, requests} = await run(
+			[[RENAMED_BACKLOG, board({number: 2, labels: ["state:ready"]})]],
+			{board: RENAMED},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr.join("\n")).toContain("#2 issue 2");
+		expect(requests.some((line) => line.includes("labels=status%3Atriaged"))).toBe(false);
+	});
+
+	it("names the renamed label when the sweep comes back empty", async () => {
+		const {outcome} = await run([[RENAMED_BACKLOG, {status: 200, body: "[]"}]], {
+			board: RENAMED,
+		});
+		expect(outcome.code).toBe(ZERO_SCOPE);
+		expect(outcome.stderr.join("\n")).toContain("ZERO state:ready issues");
+	});
+
+	it("judges a named issue carrying the renamed label while the old label still exists", async () => {
+		const {outcome, requests} = await run(
+			[
+				[ONE, one({number: 9, labels: ["state:ready"]})],
+				[LABELS, labels("status:triaged", "state:ready")],
+			],
+			{issue: 9, board: RENAMED},
+		);
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stderr.join("\n")).toContain("#9 issue 9");
+		expect(requests.some((line) => LABELS.test(line))).toBe(false);
+	});
+
+	it("reads an issue carrying only the old label as not triaged on this board", async () => {
+		const {outcome} = await run(
+			[
+				[ONE, one({number: 9, labels: ["status:triaged"]})],
+				[LABELS, labels("status:triaged", "state:ready")],
+			],
+			{issue: 9, board: RENAMED},
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toContain("issue #9 is not state:ready");
+	});
+
+	it("reds 11 naming the renamed label when the repo never defined it", async () => {
+		const {outcome} = await run(
+			[
+				[ONE, one({number: 9, labels: ["status:triaged"]})],
+				[LABELS, labels("status:triaged")],
+			],
+			{issue: 9, board: RENAMED},
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("do not exist in this repo at all: state:ready");
 	});
 });

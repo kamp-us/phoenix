@@ -241,6 +241,11 @@ Runtime invocation, flags and exit codes are in `fabrika report dedup --help`.
 
 ### Corpus and freshness
 
+The intake label is `--label` when given — that run's queue, still checked like any other — and
+otherwise the board's needs-triage status (`boardVocabulary.statuses.needsTriage`,
+`status:needs-triage` where the repo declares none). With `--label` omitted, a board vocabulary
+that does not resolve names no queue at all, so it is exit 27 before anything is read.
+
 Read the repository label set first. A missing intake label is exit 7; an unreadable label set
 is exit 27. Neither produces a negative answer over an undefined queue.
 
@@ -431,7 +436,7 @@ The six authored sections arrive on **stdin** as markdown.
 |---|---|---|---|---|
 | `--title` | string | yes | — | the issue title: a short, specific, type-neutral summary of the observation |
 | `--redact` | boolean | no | `false` | mask each leak in the body — a path down to its class marker, an email or a configured name whole — and file the masked body, instead of refusing |
-| `--label` | string | no | `status:needs-triage` | the single intake-queue label the new issue carries |
+| `--label` | string | no | the board's needs-triage status (`boardVocabulary.statuses.needsTriage`, `status:needs-triage` where the repo declares none) | the single intake-queue label the new issue carries; with it omitted, a board vocabulary that does not resolve is `11` and nothing is filed |
 | `--repo` | string | no | resolved (see Shared conventions) | the repository to file into |
 | `--json` | boolean | no | `false` | emit the full filing record instead of the line grammar |
 | stdin | markdown | yes | — | the six authored sections, in order |

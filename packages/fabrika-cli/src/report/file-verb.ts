@@ -13,6 +13,7 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {LEAK_NAMES, type LeakNames} from "../config/keys/leak-names.ts";
 import type {Read} from "../config/read-key.ts";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {
 	createIssue,
 	currentBranch,
@@ -24,6 +25,7 @@ import {
 } from "../io/issues.ts";
 import {sessionIdFrom} from "../io/session-id.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {intakeLabel} from "../status/repo-board.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	BAD_SECTIONS,
@@ -50,7 +52,10 @@ import {isBareAtReference, redactionTally, renderLeaks, scanBody} from "./leaks.
 
 export interface FileOptions {
 	readonly title: string;
-	readonly label: string;
+	/** The `--label` the operator named, or `null` for the board's needs-triage status. */
+	readonly label: string | null;
+	/** The board the omitted `--label` is read off, by the adapter; a refused read posts nothing. */
+	readonly board: BoardRead;
 	readonly redact: boolean;
 	/** The `leakNames` this checkout declares, read by the adapter; a refused read posts nothing. */
 	readonly leakNames: Read<LeakNames>;
@@ -97,11 +102,20 @@ export const runFile = (
 	options: FileOptions,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const {label, json, title} = options;
+		const {json, title} = options;
 
 		if (title.trim() === "") {
 			return refuse(FAILED, "report file: --title is empty — refusing to file an untitled report.");
 		}
+
+		const chosen = intakeLabel(options.label, options.board);
+		if (chosen._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`report file: ${chosen.reason}, so nothing was filed. Pass --label to name the queue.`,
+			);
+		}
+		const {label} = chosen;
 
 		const repoAttempt = yield* resolveRepo(options.repo, options.env);
 		if (repoAttempt._tag === "Failure") {

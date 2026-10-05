@@ -204,9 +204,9 @@ prose — the templates are the third column.
 | 8 | `UNCOVERED_STORY` | a story the epic declares that no child claims | `story <k> is claimed by no child` |
 | 9 | `ZERO_AC` | a child's acceptance-criteria read is not `Found`, or is `Found` with zero criteria | `acceptance criteria read as <absent\|malformed\|empty>` |
 | 10 | `MISSING_STORY` | the epic declares stories and the child's `**Stories:**` line is absent or non-conforming | `no **Stories:** line` / `**Stories:** value does not conform: "<value>"` |
-| 11 | `MISSING_LABEL` | a child lacks a `type:` label, a `status:` label, or one of `p0` / `p1` / `p2` | `missing a <type:\|status:\|priority> label` |
+| 11 | `MISSING_LABEL` | a child lacks a `type:` label, a status (one the board names, or any `status:` label), or one of the board's priorities (`p0` / `p1` / `p2` by default) | `missing a <type:\|status\|priority> label` |
 | 12 | `MISSING_CONTAINMENT` | `cycleDoc` is `present`, the child carries a type the repo's `containmentVocabulary` asks, and its containment is off that vocabulary's values | `<asked type> with containment <keyword\|unset>` |
-| 13 | `NEEDS_TRIAGE_LABEL` | a child still carries `status:needs-triage` | `still carries status:needs-triage` |
+| 13 | `NEEDS_TRIAGE_LABEL` | a child still carries the board's needs-triage status (`status:needs-triage` by default) | `still carries <that label>` |
 | 14 | `UNVERIFIABLE_ASSIGNEE` | the child payload's `assignees` key was **not observed** — an unread field is UNKNOWN, never "unassigned is fine" | `the assignees field was not observed` |
 | 15 | `HELD_CHILD_UNASSIGNED` | a child carries `ready-for:human` and its observed assignee list is empty | `ready-for:human with an empty assignee slot` |
 
@@ -257,10 +257,10 @@ triaged statuses, and both are **excluded from the digest serialization**. The p
 off `.fabrika.jsonc`'s `boardVocabulary.statuses` (`planned`, `triaged`): `status:planned` and
 `status:triaged` where the repo declares none, and its own two names where it renamed them. A board
 vocabulary that does not resolve is `11` on every verb that computes the digest, and `plan flip`
-writes nothing. **A renamed pair has to stay under `status:`.** Neither label is a floor trigger
-while it does: `MISSING_LABEL` tests that literal prefix on every child, so a pair renamed outside
-it reds `plan check` and `plan flip` refuses. `NEEDS_TRIAGE_LABEL` names `status:needs-triage`,
-which the flip never writes. The audience labels it writes on the
+writes nothing. Neither label is a floor trigger: `MISSING_LABEL` counts any status the board names
+(or any `status:` label) as a child's status, so a renamed pair satisfies it under any prefix, and
+`NEEDS_TRIAGE_LABEL` names the board's needs-triage status, which the flip never writes. The
+audience labels it writes on the
 **epic** are neutral for a stronger reason: the epic line carries no labels field at all, and every
 defect in the enum is derived from a child, so nothing about the epic's own labels reaches either the
 digest or the floor. So a digest taken at check time still binds
@@ -612,7 +612,8 @@ $ echo $?
   failure. The machine channel plus `plan flip`'s own `20` refusal is that hole closed.
 - This verb is the *whole* pass/fail decision; the advisory layer above it cannot change the answer.
 - Zero scope reds, and the scanned set is stated on both arms.
-- The priority set is `{p0,p1,p2}`; `p3` is retired, not admitted.
+- The priority set is the board's `boardVocabulary.priorities`: `{p0,p1,p2}` where the repo
+  declares none, and `p3` is retired, not admitted.
 
 ---
 
@@ -635,9 +636,9 @@ fabrika plan flip 3 --digest 4d90e1bb27ac --token <claim-token>
 
 **`status:planned` and `status:triaged` below name the board's planned and triaged statuses.** The
 verb takes both by role off `.fabrika.jsonc`'s `boardVocabulary.statuses`, so on a board that renamed
-them every rule in this section holds for the renamed pair, and the pair has to stay under `status:`
-for the [floor](#flip-neutral) to pass. A board vocabulary that does not resolve is `11`, and nothing
-is written.
+them every rule in this section holds for the renamed pair, which the [floor](#flip-neutral) reads
+as a status under any prefix. A board vocabulary that does not resolve is `11`, and nothing is
+written.
 
 **Output** — machine. The **observed** results over the children and for the epic, never the
 intended ones:
@@ -665,8 +666,8 @@ child carried `status:planned`, the labels moved, and the re-read proves it) · 
 `status:triaged` with no `status:planned` — an idempotent no-op, outside the write scope) ·
 `unchanged` (the child carried `status:planned` and the write did not take) · `not-planned` (the
 child carried neither label — a clean floor permits this, since `MISSING_LABEL` requires only *a*
-`status:` prefix and `NEEDS_TRIAGE_LABEL` bars only `status:needs-triage`, so a child may sit on
-some other `status:` value; the flip does not consider it and does not touch it).
+status and `NEEDS_TRIAGE_LABEL` bars only the board's needs-triage status, so a child may sit on
+some other status; the flip does not consider it and does not touch it).
 
 `terminal` is a closed token the skill reads rather than deriving from counters, and **it has
 exactly two values, because it only ever appears on the answer channel**: `flipped-all` (something
@@ -716,8 +717,8 @@ Order of operations, each guard designed against a named v1 failure:
    **`status:triaged` is added first and `status:planned` removed second, always.** That order is
    load-bearing, not stylistic: it is what keeps the [floor-neutral invariant](#flip-neutral) true
    *mid-write*. A child caught between the two calls carries **both** labels, which still satisfies
-   `MISSING_LABEL`'s "a `status:` prefix" and neither of which is in the digest; under the reverse
-   order a child between the calls carries **no** `status:` label, `MISSING_LABEL` flips true, and
+   `MISSING_LABEL`'s "a status" and neither of which is in the digest; under the reverse
+   order a child between the calls carries **no** status, `MISSING_LABEL` flips true, and
    `plan verdict` would then re-derive a defective floor on a run the gate believes clean. Label
    removal is 404-benign through the imported `removeLabel`. **A failing child does not abort its
    siblings**; every child is attempted.

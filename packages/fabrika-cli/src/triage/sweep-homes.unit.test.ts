@@ -36,6 +36,7 @@ describe("planSweep", () => {
 				issue(5, 9, "wayfinder:backlog"),
 			],
 			LANES,
+			"status:triaged",
 		);
 		expect(plan).toEqual({
 			_tag: "Planned",
@@ -62,10 +63,10 @@ describe("planSweep", () => {
 	 */
 	it("plans no clear over the board a completed sweep leaves behind", () => {
 		const before = [issue(1, 17), issue(3, 17, LANE)];
-		const first = planSweep(before, LANES);
+		const first = planSweep(before, LANES, "status:triaged");
 		expect(first._tag === "Planned" && first.clears.length).toBe(1);
 		const after = [issue(1, 17), issue(3, null, LANE)];
-		expect(planSweep(after, LANES)).toEqual({
+		expect(planSweep(after, LANES, "status:triaged")).toEqual({
 			_tag: "Planned",
 			scanned: 2,
 			homed: 1,

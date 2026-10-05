@@ -5,9 +5,11 @@
  * create, its read-back, and the parent comment. Splitting them would hand a caller the chance to
  * skip one, and the one most worth skipping is the read that prevents a twin.
  *
- * **Where the guarantee lives.** Read 1 — the `status:needs-triage` queue — is the create-once read:
- * it is the read-after-write-consistent source, and every child this verb makes carries that label by
- * construction, so the read can see its own output. Read 2 — the parent's timeline — is
+ * **Where the guarantee lives.** Read 1 — the queue under the board's needs-triage status — is the
+ * create-once read: it is the read-after-write-consistent source, and every child this verb makes
+ * carries that label by construction, so the read can see its own output. That holds only while the
+ * read and the create name one label, so both take it from one board read, and a board nobody could
+ * read refuses rather than reading one name and filing under another. Read 2 — the parent's timeline — is
  * supplementary: it reaches children already triaged out of the queue, and it lags by an observed
  * 30–60 minutes, which is why it widens the net and carries nothing.
  *
@@ -36,6 +38,7 @@ import {sessionIdFrom} from "../io/session-id.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback, renderFooter} from "../report/compose.ts";
 import {missingLabelRemedy} from "../status/label-remedy.ts";
+import {intakeLabel} from "../status/repo-board.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -50,7 +53,6 @@ import {
 import {guardTarget} from "./target-guard.ts";
 
 const VERB = "triage split";
-export const QUEUE_LABEL = "status:needs-triage";
 
 const SURFACE: AuthoredSurface = {
 	verb: VERB,
@@ -65,7 +67,7 @@ export interface SplitOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
-	/** The board a missing-label refusal reads its `status bootstrap` remedy against. */
+	/** The board whose needs-triage status the child is filed under and the queue is read by. */
 	readonly board: BoardRead;
 	/** The claim token `triage claim` handed this lane — which lane of the session is asking. */
 	readonly token: string | null;
@@ -123,13 +125,20 @@ const reused = (
 			)
 		: answer(`reused\t${child.number}\t${child.url}`, diagnostics);
 
-/** What the read-back found wrong, or `null` when the child landed as composed. */
+/**
+ * What the read-back found wrong, or `null` when the child landed as composed — under `queueLabel`
+ * too, because the next run's create-once read finds the child only through that label.
+ */
 export const readbackMismatch = (
 	landed: Existence<IssueRecord>,
 	composed: string,
+	queueLabel: string,
 ): string | null => {
 	if (landed._tag === "Absent") return "the child is not readable after the create";
 	if (landed._tag === "Unknown") return `the read-back itself failed: ${landed.reason}`;
+	if (!landed.value.labels.includes(queueLabel)) {
+		return `the child carries labels [${landed.value.labels.join(", ")}] without ${queueLabel}`;
+	}
 	return normalizeForReadback(landed.value.body) === normalizeForReadback(composed)
 		? null
 		: "the landed body differs from what was composed";
@@ -157,6 +166,12 @@ export const runSplit = Effect.fn(function* (options: SplitOptions) {
 		);
 	}
 	const repo = repoAttempt.value;
+
+	const intake = intakeLabel(null, options.board);
+	if (intake._tag === "Refused") {
+		return refuse(PRECONDITION_UNKNOWN, `${VERB}: ${intake.reason}. Nothing was created.`);
+	}
+	const queueLabel = intake.label;
 
 	const authored = readAuthored(SURFACE, yield* options.stdin);
 	if (authored._tag === "Refused") return authored.outcome;
@@ -191,24 +206,24 @@ export const runSplit = Effect.fn(function* (options: SplitOptions) {
 	});
 	if (guarded !== null) return guarded;
 
-	// Read 1's label is a hardcoded literal while --repo is generic, so a renamed label or a
-	// scope-limited token returns HTTP 200 with `[]` — not a read failure, and therefore not 11. The
+	// Read 1's label comes from this checkout's board while --repo is generic, so a label the target
+	// repo lacks or a scope-limited token returns HTTP 200 with `[]` — not a read failure, and therefore not 11. The
 	// verb would fall through to `created` and mint a twin, which makes the one verb built to be
 	// fail-closed the zero-scope fail-open.
 	const labels = yield* listLabels(repo);
 	if (labels._tag === "Failure") {
 		return unreadable("the label set", repo, labels.reason, []);
 	}
-	if (!labels.value.includes(QUEUE_LABEL)) {
+	if (!labels.value.includes(queueLabel)) {
 		return refuse(
 			ZERO_SCOPE,
-			`${VERB}: label ${QUEUE_LABEL} does not exist in ${repo} — refusing to create a child over a queue that would scan nothing. ${missingLabelRemedy(QUEUE_LABEL, options.board)}`,
+			`${VERB}: label ${queueLabel} does not exist in ${repo} — refusing to create a child over a queue that would scan nothing. ${missingLabelRemedy(queueLabel, options.board)}`,
 		);
 	}
 
-	const queue = yield* openIssuesWithLabel(repo, QUEUE_LABEL);
+	const queue = yield* openIssuesWithLabel(repo, queueLabel);
 	if (queue._tag === "Failure") {
-		return unreadable(`the ${QUEUE_LABEL} queue`, repo, queue.reason, []);
+		return unreadable(`the ${queueLabel} queue`, repo, queue.reason, []);
 	}
 	const wanted = normalizeTitle(title);
 	// The list read carries titles and no bodies, so the match runs in two stages: narrow on the title
@@ -220,7 +235,7 @@ export const runSplit = Effect.fn(function* (options: SplitOptions) {
 			VERB,
 			repo,
 			queue.value.length,
-			`open ${QUEUE_LABEL} issue`,
+			`open ${queueLabel} issue`,
 			`${survivors.length} title match(es)`,
 		),
 	];
@@ -265,7 +280,7 @@ export const runSplit = Effect.fn(function* (options: SplitOptions) {
 		}
 	}
 
-	const created = yield* createIssue(repo, title, composed, QUEUE_LABEL);
+	const created = yield* createIssue(repo, title, composed, queueLabel);
 	if (created._tag === "Failure") {
 		return refuse(
 			WRITE_UNKNOWN,
@@ -277,7 +292,7 @@ export const runSplit = Effect.fn(function* (options: SplitOptions) {
 	// A create call's own response is the server echoing the request; a fresh read is the only
 	// evidence the child carries the back-reference the next run keys on.
 	const landed = yield* getIssue(repo, created.value.number);
-	const mismatch = readbackMismatch(landed, composed);
+	const mismatch = readbackMismatch(landed, composed, queueLabel);
 	if (mismatch !== null) {
 		return refuse(
 			READBACK_MISMATCH,
