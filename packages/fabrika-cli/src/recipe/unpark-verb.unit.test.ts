@@ -1831,6 +1831,11 @@ describe("recipe unpark — an owner's-step park clears on an owner's sign-off a
 			"no control-plane owner",
 		],
 		[
+			"the sign-off carries an agent stamp",
+			[{...SIGNED, body: `owner-action-signoff @ ${HEAD}\n\n<sub>Filed by an agent</sub>`}],
+			"carries an agent stamp",
+		],
+		[
 			"the comment is a control-plane self-approval",
 			[{...SIGNED, body: `control-plane-self-approval @ ${HEAD}`}],
 			"no control-plane owner",
