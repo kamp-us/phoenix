@@ -106,7 +106,7 @@ has been read at main.
 | `type:bug` | **Behavior diverges from intent.** Something built does the wrong thing; a "supposed to" is violated. |
 | `type:feature` | **A new capability, directly implementable.** It does not exist, the path is clear, it fits in a PR or a few. |
 | `type:chore` | **No behavior change.** Refactor, rename, dep bump, doc edit — observable behavior is identical after. |
-| `type:decision` | **One question; the output is a recorded choice.** The deliverable is "we decided X", not "we built X". |
+| `type:decision` | **One question; the output is a recorded choice.** Until someone rules, the deliverable is "we decided X", not "we built X". Once a founder ruling is on the issue, its lane builds the record and any code the ruling calls for (step 7). |
 | `type:investigation` | **An unknown; the output is knowledge.** You cannot say what to build because nobody knows what is wrong. |
 | `type:epic` | **Too big for one PR; it spawns children.** The deliverable is a plan plus sub-issues. |
 
