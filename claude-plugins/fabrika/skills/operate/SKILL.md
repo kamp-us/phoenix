@@ -2111,8 +2111,10 @@ off `parkCause.repairBudgetSpent` as well, and a `founder` route is exit `12` an
 below, exactly as before.
 
 **A founder-routed park is the one you cannot clear by hand**: post on the driven issue what is
-needed and from whom (the parking spawn's report names both; for `human:cp-approval` it is a
-control-plane approval at the PR's current head). That is the whole of the prohibition now — it
+needed and from whom (the parking spawn's report names both). On `human:cp-approval` the ask
+follows the cause: `awaiting-cp-approval` needs a control-plane approval at the PR's current head,
+and `owner-action-required` needs the recorded step done and the owner's sign-off at that head,
+which is not a control-plane approval. That is the whole of the prohibition now — it
 binds a cause whose route is `founder`, and a cause-less park, which routes `founder` fail-closed.
 A driver-routed cause is yours by the two paragraphs above, and reaching for the park comment on one
 of those hands the founder an engine failure that was never theirs.

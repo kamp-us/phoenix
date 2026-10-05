@@ -2314,7 +2314,7 @@ nothing and is novel.
   its cause alone. A shipper that routed to `heal-ci` and one that stopped on an approval both fold
   to that state, so the row keyed `head-ci-red` clears the first and the row keyed
   `awaiting-cp-approval` — the cause `lane report` reads off an `AWAITING-CP-APPROVAL` on its own —
-  clears the second. A `ship` park naming neither cause matches neither row and is novel. Its read is
+  clears the second. A `ship` park naming no cause a `human:cp-approval` row keys on matches no row and is novel. Its read is
   the shipper's own step 4 taken again — `ship checks`'s rollup at the live head, where only `green`
   clears and every other word is exit `13` — conjoined with the floor that step stood on: `ship scope`
   for the PR still being open and not a draft, and `ship gate` (with no `--cp`, which is the
