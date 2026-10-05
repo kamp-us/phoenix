@@ -851,6 +851,7 @@ const push = leafCommand(
 	Command.withDescription(
 		[
 			"Vets the PR body on stdin, pushes, proves the ref moved, then opens the lane's PR.",
+			"  A Deviations heading at the wrong level is repaired to ## Deviations, with a stderr line.",
 			"  3: a build pr guard refuses the body (so do 4, 5, 6, 10)",
 			"  7: the issue is absent or closed",
 			"  8: pushed, then the ref read-back or PR create failed (UNKNOWN); re-run",
@@ -899,6 +900,7 @@ const pr = leafCommand(
 	Command.withDescription(
 		[
 			'Opens the PR from the body on stdin and prints {"answer":"opened"|"existing","number","url"}.',
+			"  A Deviations heading at the wrong level is repaired to ## Deviations, with a stderr line.",
 			"  3: stdin held nothing",
 			"  4: ## Deviations or the closing-keyword line is missing or malformed",
 			"  5: a machine-local path",
@@ -946,6 +948,7 @@ const prBody = leafCommand(
 	Command.withDescription(
 		[
 			'Replaces an open PR\'s body from stdin and prints {"answer":"updated","number","url"}.',
+			"  A Deviations heading at the wrong level is repaired to ## Deviations, with a stderr line.",
 			"  3: stdin held nothing",
 			"  4: ## Deviations or the closing-keyword line is missing or malformed",
 			"  5: a machine-local path",

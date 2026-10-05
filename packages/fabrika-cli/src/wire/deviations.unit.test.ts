@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {droppedEntries, parseFields, read} from "./deviations.ts";
+import {droppedEntries, parseFields, read, repairHeadingLevel} from "./deviations.ts";
 
 const ENTRY =
 	"- **Scope narrowing** — **Said:** four gates. **Did:** three plus a bounce. **Why:** the fourth emits a trivial verdict. **Disposition:** stated here.";
@@ -149,5 +149,49 @@ describe("droppedEntries", () => {
 		expect(
 			droppedEntries(disclose("## Deviations\n\nNone.\n"), disclose(`## Deviations\n\n${ENTRY}\n`)),
 		).toEqual([]);
+	});
+});
+
+describe("repairHeadingLevel", () => {
+	it("rewrites an exact-text heading at the wrong level to `## Deviations`, and nothing else", () => {
+		const body = `Fixes #4\n\nSummary.\n\n### Deviations\n\n${ENTRY}\n`;
+		const repair = repairHeadingLevel(body);
+		expect(repair).toEqual({
+			_tag: "Repaired",
+			body: body.replace("### Deviations", "## Deviations"),
+			line: 5,
+			fromLevel: 3,
+		});
+		expect(repair._tag === "Repaired" && read(repair.body)._tag).toBe("Found");
+	});
+
+	it("repairs a level that is too shallow as well as one too deep", () => {
+		const repair = repairHeadingLevel("# Deviations\n\nNone.\n");
+		expect(repair._tag === "Repaired" && repair.body).toBe("## Deviations\n\nNone.\n");
+	});
+
+	it("never rewrites a heading whose text drifted, at any level", () => {
+		expect(repairHeadingLevel("### deviations\n\nNone.\n")).toEqual({_tag: "Untouched"});
+		expect(repairHeadingLevel("### Deviation notes\n\nNone.\n")).toEqual({_tag: "Untouched"});
+		expect(read("### deviations\n\nNone.\n")._tag).toBe("Malformed");
+	});
+
+	it("leaves a conforming heading, an absent section and a fenced example alone", () => {
+		expect(repairHeadingLevel("## Deviations\n\nNone.\n")).toEqual({_tag: "Untouched"});
+		expect(repairHeadingLevel("Fixes #4\n")).toEqual({_tag: "Untouched"});
+		expect(repairHeadingLevel("```\n### Deviations\n```\n")).toEqual({_tag: "Untouched"});
+	});
+
+	it("refuses to pick between two exact-text headings at the wrong level", () => {
+		expect(repairHeadingLevel("### Deviations\n\nNone.\n\n### Deviations\n\nNone.\n")).toEqual({
+			_tag: "Untouched",
+		});
+	});
+
+	it("repairs the level even when the section has another defect, leaving that one to the reader", () => {
+		const repair = repairHeadingLevel("### Deviations\n\n- narrowed the scope a bit.\n");
+		if (repair._tag !== "Repaired") throw new Error("expected Repaired");
+		const back = read(repair.body);
+		expect(back._tag === "Malformed" && back.reason).toContain("an entry carries no **Said:**");
 	});
 });

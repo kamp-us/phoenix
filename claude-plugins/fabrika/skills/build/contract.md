@@ -2,6 +2,8 @@
 
 **Skill:** [`build`](SKILL.md) · **Date:** 2026-08-08
 
+**Amended 2026-10-04** — `build pr`, `build pr-body` and `build push` repair a Deviations heading whose text is exactly `Deviations` and whose only defect is its level, rewriting it to `## Deviations` before the shape guard runs, and name the repair on stderr. A heading whose text drifted is still refused (`4`), never rewritten. The Acceptance criteria heading already had this repair; the Deviations heading now has the same one.
+
 **Amended 2026-09-29** — `build pick` ranks before it reads the `blocked_by` graph and stops once `--limit` candidates survive: a new `unread` count names the admitted candidates it never read, and `excluded` and `inPool` count read candidates only.
 
 **Amended 2026-09-28** — `build pick` keeps its own order on a token without the `project` scope, with or without a `table` block, instead of refusing at `11`.
@@ -3057,6 +3059,14 @@ The guards, in order, all before any write:
 
 1. **stdin non-empty** (`3`).
 2. **no machine-local path** — the imported `leaks.ts` predicates (`5`, `6`).
+   Then the **heading-level repair**: when no heading conforms and exactly one heading outside a
+   fence has the exact text `Deviations` at another level, that one line is rewritten to
+   `## Deviations` and stderr names it —
+   `build pr: line <n>: "### Deviations" repaired to "## Deviations" — only the heading's level moved.`
+   Every later guard, the create and the read-back see the repaired body. Heading text is never
+   rewritten, so `### deviations` or `## Deviation notes` is refused at step 3 as before, and
+   nothing under the heading moves
+   ([`repairHeadingLevel`](../../../../packages/fabrika-cli/src/wire/deviations.ts)).
 3. **body shape** (`4`): the `## Deviations` section reads `Found` through the registered
    `deviations` wire format
    ([`packages/fabrika-cli/src/wire/deviations.ts`](../../../../packages/fabrika-cli/src/wire/deviations.ts)) —
@@ -3105,7 +3115,7 @@ posts the literal string.
 | Code | Trigger |
 |---|---|
 | `3` | stdin held nothing |
-| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format — absent, empty, a drifted heading, or an entry short a field — or a `## Report` section reads `Malformed` through the `report` wire format, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
+| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format — absent, empty, a heading whose text drifted (a level-only drift is repaired first), or an entry short a field — or a `## Report` section reads `Malformed` through the `report` wire format, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
 | `5` | the body carries a machine-local path |
 | `6` | the body is a bare `@` path reference |
 | `7` | the issue is proven absent or closed |
@@ -3224,7 +3234,9 @@ which is what the ordering is for.
    source**: the closing keyword is the thing being checked, so reading the issue off it would let a
    mistargeted body validate itself.
 4. **Body shape** (`4`) against that issue — identical to `build pr`'s step 3, same `deviations` wire
-   format, same closing-keyword and `--partial` rules.
+   format, same closing-keyword and `--partial` rules. The body it judges, and the one written, has
+   already been through `build pr`'s heading-level repair, which runs right after the
+   machine-local path guard and names any repair on stderr as `build pr-body: line <n>: …`.
 5. **Claim confirmed and this lane addresses this PR** (`15`/`11`/`14`): the checked-out branch is a
    lane whose claim this session holds, and it serves this PR — the resume branch names it, or the
    create branch *is* its head ref.
@@ -3438,7 +3450,7 @@ comment reads back, so a write that then fails can never destroy the standing di
 | Code | Trigger |
 |---|---|
 | `3` | stdin held nothing |
-| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format — absent, empty, a drifted heading, or an entry short a field |
+| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format — absent, empty, a heading whose text drifted (a level-only drift is repaired first), or an entry short a field |
 | `5` | the composed comment carries a machine-local path |
 | `6` | the disclosure is a bare `@` path reference |
 | `7` | the issue is proven absent or closed |

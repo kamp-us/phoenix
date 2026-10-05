@@ -337,6 +337,22 @@ describe("runPush — a fresh lane opens its PR in the same step (#10015)", () =
 		expect(JSON.parse(seams.bodies[create] ?? "null")).toMatchObject({body: BODY, head: LANE});
 	});
 
+	it("opens the PR with a wrong-level Deviations heading repaired to level 2 (#10513)", async () => {
+		const seams = fakeSeams([...LANE_READS, ...moves(), ...PR_OPENS]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runPush({...options, ...withBody(BODY.replace("## Deviations", "#### Deviations"))}),
+				seams.layer,
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stderr).toContain(
+			'build push: line 5: "#### Deviations" repaired to "## Deviations" — only the heading\'s level moved.',
+		);
+		const create = seams.requests.findIndex((line) => CREATE.test(line));
+		expect(JSON.parse(seams.bodies[create] ?? "null")).toMatchObject({body: BODY});
+	});
+
 	it("answers `existing` on a re-run over an open PR, and opens no second one", async () => {
 		const seams = fakeSeams([...LANE_READS, ...moves(), ...PR_EXISTS]);
 		const out = await Effect.runPromise(Effect.provide(runPush(options), seams.layer));
