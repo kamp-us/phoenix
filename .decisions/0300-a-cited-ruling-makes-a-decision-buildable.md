@@ -1,7 +1,7 @@
 ---
 id: 0300
 title: A recorded founder ruling makes a decision issue buildable as transcription, never as judgement
-status: amended-in-part by [0400](0400-a-relayed-founder-ruling-counts-as-a-quoted-authorization.md)
+status: amended-in-part by [0400](0400-a-relayed-founder-ruling-counts-as-a-quoted-authorization.md), [0473](0473-a-ruled-decision-lane-ships-its-code.md)
 date: 2026-08-19
 tags: [fabrika, pipeline, decisions, agents]
 ---
@@ -34,6 +34,9 @@ because a blind pick has nothing to cite. A cited-ruling decision issue is enter
 **A `type:decision` issue is claimable by an agent when, and only when, the build can cite a founder
 ruling comment recorded on that issue; the deliverable is transcribing that ruling into the ADR or
 amendment it names.**
+
+> Amended in part by [0473](0473-a-ruled-decision-lane-ships-its-code.md): the lane also builds the
+> code the ruling calls for, and the "transcribes only" constraint below reads as that record states.
 
 The citation is the fence, and it is what keeps deciding human-only. The comment exists on the board
 before the claim, written by a human, and the builder's whole judgement is reading it — not deciding

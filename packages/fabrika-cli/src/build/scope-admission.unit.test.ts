@@ -472,6 +472,12 @@ describe("admissionOf", () => {
 			expect(typeScopeLine("build claim", typeAxisOf(issue()))).toBeNull();
 		});
 
+		it("admits a ruled decision to its record and its code, not the record alone", () => {
+			const line = typeScopeLine("build claim", typeAxisOf(decision), ruling);
+			expect(line).toContain("the code it calls for");
+			expect(line).not.toContain("nothing more");
+		});
+
 		it("seats 30 in the shared exit table, so a consuming verb's --help lists it", () => {
 			const seat = ADMISSION_EXIT_CODES.find((row) => row.code === TYPE_NOT_BUILDABLE);
 			expect(seat?.condition).toContain(DECISION_TYPE_LABEL);

@@ -38,7 +38,7 @@ export interface ResumeChildOptions {
 	 */
 	readonly token: string | null;
 	/**
-	 * The founder-ruling comment a `type:decision` child's repair transcribes — `null` on every other
+	 * The founder-ruling comment a `type:decision` child's repair acts on — `null` on every other
 	 * type, and on a decision whose ruling nobody cited.
 	 *
 	 * Forwarded unchanged to the claim step and read by nothing else here. `build claim` binds the URL

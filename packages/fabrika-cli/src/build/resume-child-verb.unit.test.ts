@@ -502,9 +502,7 @@ describe("runResumeChild — the ruled decision child's repair", () => {
 			root: "/repo/trees/lane-a",
 			claim: {number: CHILD, nonce: NONCE},
 		});
-		expect(outcome.stderr.join("\n")).toContain(
-			`admitted as transcription of the founder ruling at ${RULING}`,
-		);
+		expect(outcome.stderr.join("\n")).toContain(`admitted on the founder ruling at ${RULING}`);
 		expect(shell.calls).toContain(`git branch -m ${PRIOR} ${RESUMED}`);
 		expect(shell.calls).toContain(`git switch ${RESUMED}`);
 	});

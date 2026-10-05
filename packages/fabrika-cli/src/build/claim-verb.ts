@@ -57,7 +57,7 @@
  * `type:decision` the audience axis does not bind, because triage routes a decision to
  * `ready-for:human` by default and a repair lane would otherwise fail a fence it had no way to
  * satisfy. The default is not an exclusion — a decision issue carrying a founder ruling
- * comment is buildable as transcription — so the exemption is read off the target being
+ * comment is buildable, record and code alike — so the exemption is read off the target being
  * a PR, never off the pairing being impossible.
  */
 import {Effect, type FileSystem, type Path} from "effect";
@@ -147,7 +147,7 @@ export interface ClaimOptions {
 	/** The lane an override is taken for — required with an override, refused without one. */
 	readonly overrideLane: string | null;
 	/**
-	 * The founder ruling comment this build transcribes, or `null` — the type axis's one arm.
+	 * The founder ruling comment this build acts on, or `null` — the type axis's one arm.
 	 *
 	 * It is not an override and never seats one: an override admits a refusal, while a citation says
 	 * the refusal does not apply, because the choosing this issue asked for already happened on the

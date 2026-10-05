@@ -80,8 +80,10 @@ Two refusals before claiming: a `type:decision`'s deliverable is a recorded choi
 opens only when `build-ui` is loaded beside you, which is the composition clause below; with that
 skill absent it is unconditional. The decision refusal's arm is a citation, and that is the only
 thing that opens it: when the issue carries a founder ruling comment that already made the choice,
-the deciding is done and the writing is all that is left, so claim it and transcribe — turn that
-ruling into the ADR or amendment it names, nothing more. **The citation goes inside the artifact you
+the deciding is done, so claim it and build what the issue's acceptance criteria ask for — the ADR
+or amendment that records the ruling, and the code the ruling calls for, in this one lane. Push with
+`Fixes #<n>` once every criterion is met, so the merge closes the issue and the lane ends; a round
+that leaves a criterion unmet pushes `--partial`, and the lane's next round builds the rest. **The citation goes inside the record you
 write** — the ADR or amendment names the ruling comment's URL in its own text, so it lands in the
 diff, which is a surface `review diff` serves. No verb reads the PR body for a ruling's citation —
 the only body prose one serves is `## Deviations` and `## Report` (step 5), and neither is where a
@@ -733,9 +735,9 @@ admitted; the two-subject
 work with §2's `lane working`, under the PR claim's token.
 
 **Step 1's refusal of a `type:decision` is about picking one up fresh, and it does not reach here.**
-A decision-record PR is served by a decision issue, and repairing it is the ordinary path: the claim
-admits it with no flag and no `--override`, and says so on its purpose line — no citation needed, since
-the PR being in flight is already the proof a ruling was transcribed. Everything else still refuses —
+A PR serving a decision issue, whether it carries the record, the code, or both, is repaired on the
+ordinary path: the claim admits it with no flag and no `--override`, and says so on its purpose line —
+no citation needed, since the PR being in flight is already the proof a ruling was cited. Everything else still refuses —
 the same decision issue claimed by its own number reads its own audience label and is `21` on a
 `ready-for:human`.
 

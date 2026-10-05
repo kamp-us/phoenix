@@ -106,7 +106,7 @@ has been read at main.
 | `type:bug` | **Behavior diverges from intent.** Something built does the wrong thing; a "supposed to" is violated. |
 | `type:feature` | **A new capability, directly implementable.** It does not exist, the path is clear, it fits in a PR or a few. |
 | `type:chore` | **No behavior change.** Refactor, rename, dep bump, doc edit — observable behavior is identical after. |
-| `type:decision` | **One question; the output is a recorded choice.** The deliverable is "we decided X", not "we built X". |
+| `type:decision` | **One question; the output is a recorded choice.** Until someone rules, the deliverable is "we decided X", not "we built X". Once a founder ruling is on the issue, its lane builds the record and any code the ruling calls for (step 7). |
 | `type:investigation` | **An unknown; the output is knowledge.** You cannot say what to build because nobody knows what is wrong. |
 | `type:epic` | **Too big for one PR; it spawns children.** The deliverable is a plan plus sub-issues. |
 
@@ -384,8 +384,9 @@ anything resting on a product call nobody has made. Get it wrong and a document 
 lands in a builder's candidate pool.
 
 **A `type:decision` goes to `agent` when the choice is already recorded on it.** Send it there when
-the issue carries a founder ruling comment that made the call: the deliverable is then transcription
-— write that ruling into the ADR or amendment it names — and transcription executes cold. This is
+the issue carries a founder ruling comment that made the call: the deliverable is then the ADR or
+amendment recording that ruling plus any code the ruling calls for, built in one lane, and that
+executes cold. This is
 the stamp `build`'s citation arm reads; without it the arm is unreachable and the ruling costs
 another human round-trip. No such comment, and the default above stands: `human`. You cite the
 comment rather than judging the question settled yourself, and a ruling that left a gap open is
