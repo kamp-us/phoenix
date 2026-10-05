@@ -64,9 +64,10 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	type AgendaRow,
 	admit,
+	agendaOf,
 	CHECK_STAGE,
 	candidatesOf,
-	cellsOf,
+	cellsOfRow,
 	closedProposals,
 	EMPTY_SELECTION,
 	type FollowUp,
@@ -203,7 +204,7 @@ export const prepFields = (project: ProjectSnapshot, settings: TableSettings): R
 		}
 		return field.id;
 	};
-	const stage = select(FIELD.stage, [PROPOSED, CHECK_STAGE]);
+	const stage = select(FIELD.stage, [PROPOSED, BET_STAGE, CHECK_STAGE]);
 	const section = select(FIELD.section, settings.sections);
 	const size = select(FIELD.size, ["S", "M", "L"]);
 	const rec = text(FIELD.rec);
@@ -450,6 +451,9 @@ export const runPrep = <R>(
 		for (const flag of rowFlags) flagged.set(flag.head, [...(flagged.get(flag.head) ?? []), flag]);
 
 		const removals = closedProposals(heads.table, openSet);
+		const running = heads.rows
+			.filter((row) => row.stage?.name === BET_STAGE && openSet.has(row.group.head))
+			.map((row) => row.group.head);
 		let selection: Selection = EMPTY_SELECTION;
 		let triageFirst: ReadonlyArray<TriageFirst> = [];
 		let rollover: ReadonlyArray<number> = [];
@@ -493,15 +497,7 @@ export const runPrep = <R>(
 				selection = admit(selection, candidate, group, table.agendaCap);
 			}
 			const onAgendaNow = new Set(selection.chosen.map((chosen) => chosen.candidate.issue));
-			rollover = heads.rows
-				.filter(
-					(row) =>
-						row.stage?.name === BET_STAGE &&
-						openSet.has(row.group.head) &&
-						!onAgendaNow.has(row.group.head),
-				)
-				.map((row) => row.group.head)
-				.sort((a, b) => a - b);
+			rollover = running.filter((head) => !onAgendaNow.has(head)).sort((a, b) => a - b);
 
 			const gathered = yield* gatherChecks(board, {
 				verb: VERB,
@@ -517,16 +513,13 @@ export const runPrep = <R>(
 			({checks, vanished} = gathered);
 		}
 
-		const agenda: ReadonlyArray<AgendaRow> = selection.chosen.map((chosen) => ({
-			issue: chosen.candidate.issue,
-			section: chosen.candidate.section,
-			group: chosen.group,
-			flaggedBet: chosen.candidate.reason._tag === "Flagged",
-			cells:
-				chosen.candidate.reason._tag === "Standing"
-					? null
-					: cellsOf(chosen, open, table, sizes.value),
-		}));
+		const agenda: ReadonlyArray<AgendaRow> = agendaOf(
+			selection.chosen,
+			open,
+			table,
+			sizes.value,
+			running.length,
+		);
 		const outside = outsideOf(heads.table, openSet, onCallIssues);
 
 		const commented: number[] = [];
@@ -571,7 +564,7 @@ export const runPrep = <R>(
 						share: split.settings.spendShare,
 					};
 
-		const flaggedBets = agenda.filter((row) => row.flaggedBet).length;
+		const flaggedBets = agenda.filter((row) => row._tag === "Flagged").length;
 		const health = healthOf({
 			window,
 			records: heads.records,
@@ -625,15 +618,18 @@ export const runPrep = <R>(
 						rec: textOf(row, FIELD.rec),
 						plainWords: textOf(row, FIELD.plainWords),
 					}))
-			: agenda.map((row) => ({
-					issue: row.issue,
-					section: row.section,
-					kind: kindOf(row.group),
-					members: membersOf(row.group),
-					size: row.cells?.size ?? optionOf(heads.table.get(row.issue), FIELD.size),
-					rec: textOf(heads.table.get(row.issue), FIELD.rec) ?? row.cells?.rec ?? null,
-					plainWords: row.cells?.plainWords ?? textOf(heads.table.get(row.issue), FIELD.plainWords),
-				}));
+			: agenda.map((row) => {
+					const cells = cellsOfRow(row);
+					return {
+						issue: row.issue,
+						section: row.section,
+						kind: kindOf(row.group),
+						members: membersOf(row.group),
+						size: cells?.size ?? optionOf(heads.table.get(row.issue), FIELD.size),
+						rec: textOf(heads.table.get(row.issue), FIELD.rec) ?? cells?.rec ?? null,
+						plainWords: cells?.plainWords ?? textOf(heads.table.get(row.issue), FIELD.plainWords),
+					};
+				});
 		const wrote = changes.length > 0 || commented.length > 0 || posted;
 		const planned = dry?.planned() ?? null;
 		const notes = [
@@ -726,7 +722,7 @@ export const runPrep = <R>(
 				overflow: selection.overflow,
 				rollover: {
 					continuing: rollover,
-					flagged: agenda.filter((row) => row.flaggedBet).map((row) => row.issue),
+					flagged: agenda.filter((row) => row._tag === "Flagged").map((row) => row.issue),
 				},
 				removed: removals,
 				checks: checks.map((check) => ({

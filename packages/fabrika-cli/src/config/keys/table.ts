@@ -94,6 +94,14 @@ export interface EvidenceSource {
 	readonly timeoutSeconds: number;
 }
 
+/**
+ * The Stage a ruled Tails row arrives at. A `bet` is the table's yes and approves the row's pitch,
+ * so a repository opts in to it; the shipped `proposed` asks for that yes at the table.
+ */
+export type RuledStage = "proposed" | "bet";
+
+export const RULED_STAGES: ReadonlyArray<RuledStage> = ["proposed", "bet"];
+
 export const EVIDENCE_TIMEOUT_DEFAULT = 60;
 export const EVIDENCE_TIMEOUT_MAX = 600;
 
@@ -114,6 +122,8 @@ export interface TableSettings {
 	/** Agenda sections in agenda order. Unique, and always holding every {@link REQUIRED_SECTIONS} name. */
 	readonly sections: ReadonlyArray<string>;
 	readonly agendaCap: number;
+	/** The Stage a ruled row arrives at. At `bet`, only while the running bets leave agenda rows free. */
+	readonly ruledStage: RuledStage;
 	/** At more than this multiple of its size a lane is flagged over size. At least 1, below {@link stopMultiple}. */
 	readonly flagMultiple: number;
 	/** A lane over its size keeps going; at this multiple of its size it stops. */
@@ -138,6 +148,7 @@ export const SHIPPED_TABLE: TableSettings = {
 	timeZone: "UTC",
 	sections: [TAILS, CUSTOMERS, NEW_BETS, OUTSIDE_THE_BETS],
 	agendaCap: 25,
+	ruledStage: "proposed",
 	flagMultiple: 1,
 	stopMultiple: 2,
 	asksFlag: 3,
@@ -358,6 +369,7 @@ const SUB_KEYS: {readonly [K in keyof TableSettings]: Field<TableSettings[K]>} =
 	timeZone,
 	sections: sectionList,
 	agendaCap: positiveInteger,
+	ruledStage: oneOf(RULED_STAGES),
 	flagMultiple: flagPoint,
 	stopMultiple: multiple,
 	asksFlag: positiveInteger,
@@ -436,6 +448,12 @@ export const tableKey: KeyGroup<TableSettings> = {
 				description: `Agenda sections in agenda order. Default ${REQUIRED_SECTIONS.join(", ")}. Must include all four: prep files each proposal under ${TAILS}, ${CUSTOMERS} or ${NEW_BETS}, and un-bet lanes land in "${OUTSIDE_THE_BETS}". Reorder them or add your own.`,
 			},
 			agendaCap: integer("The most proposed rows agenda prep adds for one table. Default 25."),
+			ruledStage: {
+				type: "string",
+				enum: [...RULED_STAGES],
+				description:
+					"The Stage `table prep` gives a Tails row whose issue already carries a ruling. Default proposed: the row waits for a yes at the table. At bet the row arrives as that yes, which also approves its pitch, so choose it only when a ruling already is the yes. At bet a ruled row arrives as bet only while the running bets leave rows of `agendaCap` free; the rest, and a row that still needs a pick, arrive proposed.",
+			},
 			flagMultiple: {
 				type: "number",
 				minimum: 1,

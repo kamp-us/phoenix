@@ -1,7 +1,7 @@
 ---
 id: 0425
 title: A table bet set on the founder's say-so approves a pitch at the size its pitch states, never at the Size cell alone
-status: accepted
+status: amended-in-part by [0475](0475-a-ruled-tails-row-arrives-as-bet.md)
 date: 2026-09-27
 tags: [fabrika, governance, roadmap, pipeline]
 ---

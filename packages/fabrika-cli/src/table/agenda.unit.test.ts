@@ -9,7 +9,9 @@ import type {ListedIssue} from "../io/issues.ts";
 import type {ItemFieldValue} from "../io/projects.ts";
 import {
 	admit,
+	agendaOf,
 	type Candidate,
+	type Chosen,
 	candidatesOf,
 	closedProposals,
 	EMPTY_SELECTION,
@@ -267,7 +269,7 @@ const select = (name: string, options: ReadonlyArray<string>) => ({
 	options: new Map(options.map((option) => [option, `${name}:${option}`] as const)),
 });
 const FIELDS = {
-	stage: select("Stage", ["proposed", "check"]),
+	stage: select("Stage", ["proposed", "bet", "check"]),
 	section: select("Section", SHIPPED_TABLE.sections),
 	size: select("Size", ["S", "M", "L"]),
 	rec: "F_rec",
@@ -304,7 +306,7 @@ describe("planPrep with an on-call board", () => {
 	it("never adds a routed chain member to the table", () => {
 		const writes = plan({
 			open: new Set([1, 2, 3]),
-			agenda: [{issue: 1, section: "Tails", group: chain(1, 2, 3), flaggedBet: false, cells}],
+			agenda: [{issue: 1, section: "Tails", group: chain(1, 2, 3), _tag: "Proposed", cells}],
 			onCall: new Set([2]),
 		});
 
@@ -366,7 +368,7 @@ describe("prepPlan writes Rec only into an empty cell", () => {
 			input({
 				rows: new Map([[1, withRec(stageRow(1, "proposed"), "no: wait for the audit.")]]),
 				open: new Set([1]),
-				agenda: [{issue: 1, section: "Tails", group: single(1), flaggedBet: false, cells}],
+				agenda: [{issue: 1, section: "Tails", group: single(1), _tag: "Proposed", cells}],
 			}),
 		);
 
@@ -395,7 +397,7 @@ describe("prepPlan writes Rec only into an empty cell", () => {
 					[6, stageRow(6, "shipped")],
 				]),
 				open: new Set([1, 6]),
-				agenda: [{issue: 1, section: "Tails", group: single(1), flaggedBet: false, cells}],
+				agenda: [{issue: 1, section: "Tails", group: single(1), _tag: "Proposed", cells}],
 				checks: [{issue: 6, section: "Tails", rec: "check it.", plainWords: "Issue 6"}],
 			}),
 		);
@@ -412,11 +414,132 @@ describe("prepPlan writes Rec only into an empty cell", () => {
 			input({
 				rows: new Map([[1, withRec(stageRow(1, "proposed"), "yes.")]]),
 				open: new Set([1]),
-				agenda: [{issue: 1, section: "Tails", group: single(1), flaggedBet: false, cells}],
+				agenda: [{issue: 1, section: "Tails", group: single(1), _tag: "Proposed", cells}],
 			}),
 		);
 
 		expect(recWrites(plan)).toEqual([]);
 		expect(plan.kept).toEqual([]);
+	});
+});
+
+describe("agendaOf: the Stage each row arrives at", () => {
+	const RULED = {_tag: "Ruled", ruledAt: "2026-09-02T00:00:00Z"} as const;
+	const chosenOf = (issue: number, reason: Candidate["reason"]): Chosen => ({
+		candidate: {issue, section: "Tails", reason},
+		group: single(issue),
+	});
+	const CHOSEN: ReadonlyArray<Chosen> = [
+		chosenOf(7, {_tag: "Flagged", flags: []}),
+		chosenOf(8, {_tag: "Standing"}),
+		chosenOf(1, RULED),
+		chosenOf(2, RULED),
+		chosenOf(3, RULED),
+		chosenOf(4, {_tag: "FollowUp", epic: 40}),
+		chosenOf(5, {_tag: "Customer"}),
+		chosenOf(6, {_tag: "Pitched", appetite: "S"}),
+	];
+	const OPEN = new Map(
+		[1, 2, 3, 4, 5, 6, 7, 8].map((number) => [
+			number,
+			issue(number, number === 2 ? {labels: ["ready-for:human"]} : {}),
+		]),
+	);
+	const arrivals = (ruledStage: "proposed" | "bet", agendaCap: number, running: number) =>
+		agendaOf(
+			CHOSEN,
+			OPEN,
+			{...SHIPPED_TABLE, ruledStage, agendaCap},
+			SHIPPED_APPETITE_SIZES,
+			running,
+		).map((row) => `#${row.issue} ${row._tag}`);
+
+	it("brings a ruled row in as bet, never a follow-up, customer or pitched row, and leaves flagged and standing rows as they are", () => {
+		expect(arrivals("bet", 25, 0)).toEqual([
+			"#7 Flagged",
+			"#8 Standing",
+			"#1 Bet",
+			"#2 Proposed",
+			"#3 Bet",
+			"#4 Proposed",
+			"#5 Proposed",
+			"#6 Proposed",
+		]);
+	});
+
+	it("keeps a ruled row that needs a pick at proposed", () => {
+		expect(arrivals("bet", 25, 0)).toContain("#2 Proposed");
+	});
+
+	it("brings only as many in as bet as the running bets leave rows of the cap free, oldest ruling first", () => {
+		expect(arrivals("bet", 25, 24)).toEqual(expect.arrayContaining(["#1 Bet", "#3 Proposed"]));
+		expect(arrivals("bet", 25, 25).filter((row) => row.endsWith("Bet"))).toEqual([]);
+		expect(arrivals("bet", 25, 30).filter((row) => row.endsWith("Bet"))).toEqual([]);
+	});
+
+	it("brings every ruled row in as proposed on the shipped setting", () => {
+		expect(SHIPPED_TABLE.ruledStage).toBe("proposed");
+		expect(arrivals("proposed", 25, 0).filter((row) => row.endsWith("Bet"))).toEqual([]);
+	});
+
+	it("carries the ruling on a bet row", () => {
+		const bet = agendaOf(
+			CHOSEN,
+			OPEN,
+			{...SHIPPED_TABLE, ruledStage: "bet"},
+			SHIPPED_APPETITE_SIZES,
+			0,
+		).find((row) => row._tag === "Bet");
+		expect(bet).toMatchObject({issue: 1, ruling: RULED});
+	});
+});
+
+describe("prepPlan writes the Stage a row arrives at", () => {
+	const ruling = {_tag: "Ruled", ruledAt: "2026-09-02T00:00:00Z"} as const;
+	const stageWrites = (plan: ReturnType<typeof prepPlan>) =>
+		plan.writes.filter(
+			(write) => write._tag !== "Add" && write._tag !== "Delete" && write.field === "Stage",
+		);
+
+	it("sets a bet row's Stage to bet and a proposed row's to proposed", () => {
+		const plan = prepPlan(
+			input({
+				rows: new Map([
+					[1, stageRow(1, "proposed")],
+					[4, {itemId: "PVTI_4", issue: 4, values: []}],
+				]),
+				open: new Set([1, 4]),
+				agenda: [
+					{issue: 1, section: "Tails", group: single(1), _tag: "Bet", cells, ruling},
+					{issue: 4, section: "Tails", group: single(4), _tag: "Proposed", cells},
+				],
+			}),
+		);
+
+		expect(stageWrites(plan)).toMatchObject([
+			{issue: 1, value: {_tag: "Option", optionId: "Stage:bet"}, shown: "bet"},
+			{issue: 4, value: {_tag: "Option", optionId: "Stage:proposed"}, shown: "proposed"},
+		]);
+	});
+
+	it("writes no Stage to a row already at bet, a flagged bet or a standing row", () => {
+		const plan = prepPlan(
+			input({
+				rows: new Map([
+					[1, stageRow(1, "bet")],
+					[7, stageRow(7, "bet")],
+					[8, stageRow(8, "bet")],
+				]),
+				open: new Set([1, 7, 8]),
+				agenda: [
+					{issue: 1, section: "Tails", group: single(1), _tag: "Bet", cells, ruling},
+					{issue: 7, section: "Tails", group: single(7), _tag: "Flagged", cells},
+					{issue: 8, section: "Tails", group: single(8), _tag: "Standing"},
+				],
+			}),
+		);
+
+		expect(stageWrites(plan)).toEqual([]);
+		expect(plan.writes.some((write) => write._tag !== "Add" && write.issue === 8)).toBe(false);
 	});
 });

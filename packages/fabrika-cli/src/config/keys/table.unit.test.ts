@@ -17,6 +17,7 @@ describe("the shipped table", () => {
 			timeZone: "UTC",
 			sections: ["Tails", "Customers", "New bets", "Outside the bets"],
 			agendaCap: 25,
+			ruledStage: "proposed",
 			flagMultiple: 1,
 			stopMultiple: 2,
 			asksFlag: 3,
@@ -97,6 +98,16 @@ describe("a declared table block", () => {
 			labels: [],
 		});
 		expect(resolved.value.stuckDays).toBe(SHIPPED_TABLE.stuckDays);
+	});
+
+	it("takes bet as the Stage a ruled row arrives at, and refuses any other word", () => {
+		const resolved = declared({ruledStage: "bet"});
+
+		expect(resolved._tag === "Declared" && resolved.value.ruledStage).toBe("bet");
+		expect(declared({ruledStage: "yes"})).toMatchObject({
+			_tag: "Malformed",
+			reason: expect.stringContaining("`table.ruledStage` is not one of proposed, bet"),
+		});
 	});
 
 	it("takes the labels that mark fabrika's own work", () => {

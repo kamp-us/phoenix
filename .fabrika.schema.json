@@ -891,6 +891,14 @@
 					"minimum": 1,
 					"description": "The most proposed rows agenda prep adds for one table. Default 25."
 				},
+				"ruledStage": {
+					"type": "string",
+					"enum": [
+						"proposed",
+						"bet"
+					],
+					"description": "The Stage `table prep` gives a Tails row whose issue already carries a ruling. Default proposed: the row waits for a yes at the table. At bet the row arrives as that yes, which also approves its pitch, so choose it only when a ruling already is the yes. At bet a ruled row arrives as bet only while the running bets leave rows of `agendaCap` free; the rest, and a row that still needs a pick, arrive proposed."
+				},
 				"flagMultiple": {
 					"type": "number",
 					"minimum": 1,

@@ -238,7 +238,13 @@ export const renderReadme = (
 		`One row is one piece of work. The table meets ${cadenceWords[settings.cadence]}${settings.cadence === "on-demand" ? "" : ` on ${day}`} and decides what gets bet on; everything else stays in the issue backlog. Anything can still start anytime; it just shows up under "${OUTSIDE_THE_BETS}".`,
 		"",
 		"## Before the table (fabrika does this)",
-		`- Adds up to ${settings.agendaCap} **proposed** rows, each with a size, a rec and a line in plain words.`,
+		...(settings.ruledStage === "bet"
+			? [
+					`- Adds up to ${settings.agendaCap} rows, each with a size, a rec and a line in plain words. A row you already ruled on arrives as **bet** while the running bets leave rows free; every other row arrives **proposed**.`,
+				]
+			: [
+					`- Adds up to ${settings.agendaCap} **proposed** rows, each with a size, a rec and a line in plain words.`,
+				]),
 		"- Carries every running bet into the new week. Only a flagged one comes back on the agenda; the rest keep going quietly, with no rec.",
 		`- Brings back every bet **shipped** ${settings.checkDelayDays} days ago or more as a **check**, with its evidence posted on the issue. A bet is a row whose **${FIELD.origin}** reads \`bet\`; a row that ran without a bet stays where it is.`,
 		"- Posts the health numbers as the project's **status update**.",
@@ -247,7 +253,7 @@ export const renderReadme = (
 		"## At the table",
 		"1. Read the latest status update: click the status badge at the top of the project.",
 		`2. Open **Agenda** and go top to bottom: ${agendaOrder}.`,
-		`3. Per row: read **${FIELD.plainWords}** and the **${FIELD.rec}**, then set **${FIELD.stage}** to \`bet\` or \`not now\`. Open the issue only if that isn't enough.`,
+		`3. Per row: read **${FIELD.plainWords}** and the **${FIELD.rec}**, then set **${FIELD.stage}** to \`bet\` or \`not now\`.${settings.ruledStage === "bet" ? " A row that arrived as `bet` needs nothing unless you pull it." : ""} Open the issue only if that isn't enough.`,
 		`4. Per **check** row: read the check comment on its issue, then set **${FIELD.outcome}** to ${OUTCOMES.map((outcome) => `\`${outcome.name}\``).join(", ")}.`,
 		`5. Open **${OUTSIDE_THE_BETS}**: for each thing that ran without a bet, say keep, finish, or drop.`,
 		"",
