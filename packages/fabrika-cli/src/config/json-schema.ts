@@ -46,6 +46,7 @@ export interface JsonSchema {
 	readonly items?: JsonSchema;
 	readonly oneOf?: ReadonlyArray<JsonSchema>;
 	readonly minItems?: number;
+	readonly minProperties?: number;
 	readonly uniqueItems?: boolean;
 }
 

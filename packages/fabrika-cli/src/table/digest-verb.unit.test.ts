@@ -230,9 +230,9 @@ describe("a repository that opted in", () => {
 
 	it("follows the routing rule the block declares", async () => {
 		const {board} = world({table: [], onCall: []});
-		const byLabel = {onCall: {...SPLIT.onCall, route: {origins: [], types: [], labels: ["p0"]}}};
+		const byLabel = {onCall: {...SPLIT.onCall, route: [{labels: ["p0"]}]}};
 		const out = await digest(board, config({digest: {tool: "slack"}, boards: byLabel}));
-		const none = {onCall: {...SPLIT.onCall, route: {origins: [], types: [], labels: []}}};
+		const none = {onCall: {...SPLIT.onCall, route: []}};
 		const quiet = await digest(board, config({digest: {tool: "slack"}, boards: none}));
 
 		expect(

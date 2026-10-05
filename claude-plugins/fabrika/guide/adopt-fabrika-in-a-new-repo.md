@@ -546,7 +546,11 @@ own board, declare `boards.onCall`, then re-run `fabrika table setup` to create 
 {
   "boards": {
     "onCall": {
-      "route": {"origins": ["customer"], "types": ["bug"], "labels": ["ci-broken"]},
+      "route": [
+        {"types": ["bug"], "labels": ["p0", "p1"]},
+        {"types": ["bug"], "origins": ["customer"]},
+        {"labels": ["ci-broken"]}
+      ],
       "responseTargets": {
         "byLabel": [{"name": "same day", "hours": 24, "labels": ["p0"]}],
         "otherwise": {"name": "this week", "hours": 168}
@@ -557,8 +561,12 @@ own board, declare `boards.onCall`, then re-run `fabrika table setup` to create 
 }
 ```
 
-`route` decides what leaves the table for on-call. Each issue lands on exactly one board: a match on
-any one origin, type or label sends it to on-call. A row the table already reads as `bet`,
+`route` decides what leaves the table for on-call. It is a list of rules, and an issue that matches
+any one rule goes to on-call. A rule matches when the issue matches every attribute it names: one
+of its `origins`, one of its `types` as a `type:` label, and one of its `labels`. The example routes
+a bug at p0 or p1, a bug a customer reported at any priority, and anything labeled `ci-broken`, so
+a p2 bug and an untyped report stay on the table. Leave `route` out to send every bug and every
+customer report. Each issue lands on exactly one board. A row the table already reads as `bet`,
 `not now` or `check` stays put. From then on `fabrika table route` fills the on-call board and flags
 reads it. Route touches no agenda, so run it as often as you want new reports placed
 ([the `table route` contract](../docs/table-contract.md#table-route)). Its first run moves every

@@ -199,38 +199,85 @@
 					"description": "The on-call board. `\"onCall\": {}` splits on the shipped values; declare only the sub-keys you want to change.",
 					"properties": {
 						"route": {
-							"type": "object",
-							"description": "Which issues land on the on-call board: an issue whose origin, type or any label matches goes there; everything else stays on the product board. Default: origin customer, type bug, no label.",
-							"properties": {
-								"origins": {
+							"description": "Which issues land on the on-call board: an issue that matches any one rule goes there; everything else stays on the product board. Default: every customer report and every bug, `[{\"origins\": [\"customer\"]}, {\"types\": [\"bug\"]}]`. For a smaller on-call, declare rules that each name several attributes, e.g. `[{\"types\": [\"bug\"], \"labels\": [\"p0\", \"p1\"]}, {\"types\": [\"bug\"], \"origins\": [\"customer\"]}]` keeps a p2 bug nobody outside filed, a customer's ask and an untyped report on the table.",
+							"oneOf": [
+								{
 									"type": "array",
+									"description": "A list of rules; an issue that matches any one goes to on-call.",
 									"items": {
-										"type": "string",
-										"minLength": 1
-									},
-									"uniqueItems": true,
-									"description": "Origins that route an issue to on-call, as the Origin field names them (customer, hand-start, driver pick, found mid-lane, experiment, bet). An issue with no row reads as customer when its filer only uses the product. Default customer."
+										"type": "object",
+										"description": "One rule. An issue matches it when it matches every attribute the rule names; an attribute left out does not narrow it, and a rule must name at least one.",
+										"properties": {
+											"origins": {
+												"type": "array",
+												"items": {
+													"type": "string",
+													"minLength": 1
+												},
+												"uniqueItems": true,
+												"description": "Origins, one of which the issue must be known by, as the Origin field names them (customer, hand-start, driver pick, found mid-lane, experiment, bet). An issue reads as customer when its filer only uses the product.",
+												"minItems": 1
+											},
+											"types": {
+												"type": "array",
+												"items": {
+													"type": "string",
+													"minLength": 1
+												},
+												"uniqueItems": true,
+												"description": "Type names, without the `type:` prefix, one of which the issue must carry as a `type:` label.",
+												"minItems": 1
+											},
+											"labels": {
+												"type": "array",
+												"items": {
+													"type": "string",
+													"minLength": 1
+												},
+												"uniqueItems": true,
+												"description": "Labels, one of which the issue must carry.",
+												"minItems": 1
+											}
+										},
+										"minProperties": 1,
+										"additionalProperties": false
+									}
 								},
-								"types": {
-									"type": "array",
-									"items": {
-										"type": "string",
-										"minLength": 1
+								{
+									"type": "object",
+									"description": "The older form: an issue whose origin, type or any label matches goes to on-call. A list left out keeps origin customer, type bug, no label. Prefer the list of rules.",
+									"properties": {
+										"origins": {
+											"type": "array",
+											"items": {
+												"type": "string",
+												"minLength": 1
+											},
+											"uniqueItems": true,
+											"description": "Origins that route an issue to on-call. Default customer."
+										},
+										"types": {
+											"type": "array",
+											"items": {
+												"type": "string",
+												"minLength": 1
+											},
+											"uniqueItems": true,
+											"description": "Type names, without the `type:` prefix, that route an issue to on-call. Default bug."
+										},
+										"labels": {
+											"type": "array",
+											"items": {
+												"type": "string",
+												"minLength": 1
+											},
+											"uniqueItems": true,
+											"description": "Labels that route an issue to on-call. Default none."
+										}
 									},
-									"uniqueItems": true,
-									"description": "Type names, without the `type:` prefix, that route an issue to on-call. Default bug."
-								},
-								"labels": {
-									"type": "array",
-									"items": {
-										"type": "string",
-										"minLength": 1
-									},
-									"uniqueItems": true,
-									"description": "Labels that route an issue to on-call. Default none."
+									"additionalProperties": false
 								}
-							},
-							"additionalProperties": false
+							]
 						},
 						"responseTargets": {
 							"type": "object",

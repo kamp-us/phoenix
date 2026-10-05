@@ -12,10 +12,15 @@
  * `table` block does, because a routing rule silently restored to the shipped one sends work to a
  * board the operator did not choose.
  *
+ * The shipped route sends every customer report and every bug. A repository that wants a smaller
+ * on-call declares its own rules, each of which can require several attributes at once. The older
+ * object form of `route` still decodes, as the one-attribute rules it always meant.
+ *
  * No shipped value names a repository, path, issue number or login: the on-call project, like the
  * table's, defaults to the one `table setup` finds or creates on the repository's own owner.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9914
+ * @ruling https://github.com/kamp-us/phoenix/issues/10353
  */
 
 import {PRIORITIES} from "../../triage/facets.ts";
@@ -26,16 +31,24 @@ import type {ProjectTarget} from "./table.ts";
 export const BOARDS = "boards";
 
 /**
- * Which issues land on the on-call board. An issue goes there when any one attribute matches: its
- * origin, its `type:` label, or any label it carries. Everything else stays on the product board.
+ * One way an issue reaches the on-call board. It names one or more attributes, and an issue matches it
+ * when it matches every attribute named: one of `origins`, one of `types` as a `type:` label, and one
+ * of `labels`. An attribute the rule leaves out does not narrow it, and the decoder refuses a rule
+ * that names none, since that rule would send every issue.
  */
-export interface Route {
+export interface RouteRule {
 	/** Origins as the Origin field names them, e.g. `customer`. */
-	readonly origins: ReadonlyArray<string>;
+	readonly origins?: ReadonlyArray<string>;
 	/** Type names without the `type:` prefix, e.g. `bug`. */
-	readonly types: ReadonlyArray<string>;
-	readonly labels: ReadonlyArray<string>;
+	readonly types?: ReadonlyArray<string>;
+	readonly labels?: ReadonlyArray<string>;
 }
+
+/**
+ * Which issues land on the on-call board: an issue goes there when any one rule matches it.
+ * Everything else stays on the product board, so an empty route sends nothing.
+ */
+export type Route = ReadonlyArray<RouteRule>;
 
 /** How long an on-call item may wait before it is flagged. */
 export interface ResponseTarget {
@@ -72,7 +85,7 @@ export type Boards =
 export const ONE_BOARD: Boards = {_tag: "One"};
 
 export const SHIPPED_ON_CALL: OnCallBoard = {
-	route: {origins: ["customer"], types: ["bug"], labels: []},
+	route: [{origins: ["customer"]}, {types: ["bug"]}],
 	responseTargets: {
 		byLabel: [{name: "same day", hours: 24, labels: [PRIORITIES[0] as string]}],
 		otherwise: {name: "this week", hours: 168},
@@ -127,22 +140,76 @@ const nameList = (
 	return {_tag: "Value", value: names};
 };
 
+const ROUTE_ATTRIBUTES = [
+	["origins", "origin"],
+	["types", "type name"],
+	["labels", "label name"],
+] as const;
+
+const routeRule = (raw: unknown, path: string): Decoded<RouteRule> => {
+	const read = recordOf(
+		raw,
+		path,
+		ROUTE_ATTRIBUTES.map(([key]) => key),
+	);
+	if (read._tag === "Malformed") return read;
+	const rule: {-readonly [K in keyof RouteRule]: RouteRule[K]} = {};
+	for (const [key, what] of ROUTE_ATTRIBUTES) {
+		if (read.value[key] === undefined) continue;
+		const decoded = nameList(read.value[key], `${path}.${key}`, what, []);
+		if (decoded._tag === "Malformed") return decoded;
+		if (decoded.value.length === 0) {
+			return malformed(`${named(`${path}.${key}`)} names no ${what} — leave it out to match any`);
+		}
+		rule[key] = decoded.value;
+	}
+	return Object.keys(rule).length === 0
+		? malformed(`${named(path)} names no origin, type or label, so it would send every issue`)
+		: {_tag: "Value", value: rule};
+};
+
+/**
+ * What an older config's object form always meant: an issue routes when any one listed attribute
+ * matches, and a list it leaves out keeps the value that form shipped with. Each non-empty list is
+ * one single-attribute rule, so the object routes exactly the issues it routed before rules existed.
+ */
+const LEGACY_ROUTE: {readonly [K in keyof RouteRule]-?: ReadonlyArray<string>} = {
+	origins: ["customer"],
+	types: ["bug"],
+	labels: [],
+};
+
+const legacyRoute = (raw: unknown, path: string): Decoded<Route> => {
+	const read = recordOf(
+		raw,
+		path,
+		ROUTE_ATTRIBUTES.map(([key]) => key),
+	);
+	if (read._tag === "Malformed") return read;
+	const rules: RouteRule[] = [];
+	for (const [key, what] of ROUTE_ATTRIBUTES) {
+		const decoded = nameList(read.value[key], `${path}.${key}`, what, LEGACY_ROUTE[key]);
+		if (decoded._tag === "Malformed") return decoded;
+		if (decoded.value.length > 0) rules.push({[key]: decoded.value});
+	}
+	return {_tag: "Value", value: rules};
+};
+
 const route = (raw: unknown): Decoded<Route> => {
 	if (raw === undefined) return {_tag: "Value", value: SHIPPED_ON_CALL.route};
-	const read = recordOf(raw, "onCall.route", ["origins", "types", "labels"]);
-	if (read._tag === "Malformed") return read;
-	const record = read.value;
-	const fields = {} as {-readonly [K in keyof Route]: Route[K]};
-	for (const [key, what] of [
-		["origins", "origin"],
-		["types", "type name"],
-		["labels", "label name"],
-	] as const) {
-		const decoded = nameList(record[key], `onCall.route.${key}`, what, SHIPPED_ON_CALL.route[key]);
-		if (decoded._tag === "Malformed") return decoded;
-		fields[key] = decoded.value;
+	const path = "onCall.route";
+	if (!Array.isArray(raw)) {
+		return asRecord(raw) === null
+			? malformed(`${named(path)} is not a list of rules`)
+			: legacyRoute(raw, path);
 	}
-	return {_tag: "Value", value: fields};
+	const rules: RouteRule[] = [];
+	for (const [index, entry] of raw.entries()) {
+		const decoded = routeRule(entry, `${path}[${index}]`);
+		if (decoded._tag === "Malformed") return decoded;
+		rules.push(decoded.value);
+	}
+	return {_tag: "Value", value: rules};
 };
 
 const target = (raw: unknown, path: string, labeled: boolean): Decoded<LabeledTarget> => {
@@ -297,19 +364,52 @@ export const boardsKey: KeyGroup<Boards> = {
 					'The on-call board. `"onCall": {}` splits on the shipped values; declare only the sub-keys you want to change.',
 				properties: {
 					route: {
-						type: "object",
 						description:
-							"Which issues land on the on-call board: an issue whose origin, type or any label matches goes there; everything else stays on the product board. Default: origin customer, type bug, no label.",
-						properties: {
-							origins: names(
-								"Origins that route an issue to on-call, as the Origin field names them (customer, hand-start, driver pick, found mid-lane, experiment, bet). An issue with no row reads as customer when its filer only uses the product. Default customer.",
-							),
-							types: names(
-								"Type names, without the `type:` prefix, that route an issue to on-call. Default bug.",
-							),
-							labels: names("Labels that route an issue to on-call. Default none."),
-						},
-						additionalProperties: false,
+							'Which issues land on the on-call board: an issue that matches any one rule goes there; everything else stays on the product board. Default: every customer report and every bug, `[{"origins": ["customer"]}, {"types": ["bug"]}]`. For a smaller on-call, declare rules that each name several attributes, e.g. `[{"types": ["bug"], "labels": ["p0", "p1"]}, {"types": ["bug"], "origins": ["customer"]}]` keeps a p2 bug nobody outside filed, a customer\'s ask and an untyped report on the table.',
+						oneOf: [
+							{
+								type: "array",
+								description: "A list of rules; an issue that matches any one goes to on-call.",
+								items: {
+									type: "object",
+									description:
+										"One rule. An issue matches it when it matches every attribute the rule names; an attribute left out does not narrow it, and a rule must name at least one.",
+									properties: {
+										origins: {
+											...names(
+												"Origins, one of which the issue must be known by, as the Origin field names them (customer, hand-start, driver pick, found mid-lane, experiment, bet). An issue reads as customer when its filer only uses the product.",
+											),
+											minItems: 1,
+										},
+										types: {
+											...names(
+												"Type names, without the `type:` prefix, one of which the issue must carry as a `type:` label.",
+											),
+											minItems: 1,
+										},
+										labels: {
+											...names("Labels, one of which the issue must carry."),
+											minItems: 1,
+										},
+									},
+									minProperties: 1,
+									additionalProperties: false,
+								},
+							},
+							{
+								type: "object",
+								description:
+									"The older form: an issue whose origin, type or any label matches goes to on-call. A list left out keeps origin customer, type bug, no label. Prefer the list of rules.",
+								properties: {
+									origins: names("Origins that route an issue to on-call. Default customer."),
+									types: names(
+										"Type names, without the `type:` prefix, that route an issue to on-call. Default bug.",
+									),
+									labels: names("Labels that route an issue to on-call. Default none."),
+								},
+								additionalProperties: false,
+							},
+						],
 					},
 					responseTargets: {
 						type: "object",

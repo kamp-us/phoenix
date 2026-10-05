@@ -275,9 +275,15 @@
 	// The on-call board (#9914), adopted from the example built for R27.1. Its Response target
 	// options are the three the board already carries, so setup keeps their descriptions as written
 	// instead of wanting a second set of options. `p0` answers in 4 hours, `p1` within a day, the
-	// rest within 3 days.
+	// rest within 3 days. On-call holds only bugs at p0 or p1 and bugs a customer reported, at any
+	// priority (#10353): a p2 bug nobody outside filed, a customer's ask and an untyped report stay on
+	// the table. This is phoenix's own choice; fabrika's shipped route sends every bug.
 	"boards": {
 		"onCall": {
+			"route": [
+				{ "types": ["bug"], "labels": ["p0", "p1"] },
+				{ "types": ["bug"], "origins": ["customer"] }
+			],
 			"responseTargets": {
 				"byLabel": [
 					{ "name": "4h", "hours": 4, "labels": ["p0"] },

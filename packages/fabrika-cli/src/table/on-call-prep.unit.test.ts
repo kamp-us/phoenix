@@ -3,12 +3,15 @@
  */
 import {describe, expect, it} from "vitest";
 import {SHIPPED_ON_CALL} from "../config/keys/boards.ts";
+import {SHIPPED_TABLE} from "../config/keys/table.ts";
 import type {ListedIssue} from "../io/issues.ts";
 import type {ItemFieldValue} from "../io/projects.ts";
+import {candidatesOf} from "./agenda.ts";
 import {dueChecks} from "./check.ts";
 import type {HeadRow} from "./flags.ts";
 import {onCallIssuesOf, onCallItemsOf, originsFor, planOnCall} from "./on-call-prep.ts";
 import type {Row} from "./sync.ts";
+import {parseTableDay, type TableDay} from "./table-day.ts";
 
 const NOW = new Date("2026-09-27T12:00:00.000Z");
 
@@ -54,12 +57,34 @@ describe("originsFor", () => {
 	});
 });
 
+const FIELDS = {
+	responseTarget: {
+		id: "F_target",
+		options: new Map([
+			["same day", "T_same"],
+			["this week", "T_week"],
+		]),
+	},
+	plainWords: "F_plain",
+};
+
+const CUSTOMER = {association: "NONE", author: "a-user"} as const;
+
+/** A repository's narrower route: a bug at p0 or p1, and a bug a customer reported at any priority. */
+const NARROW = {
+	...SHIPPED_ON_CALL,
+	route: [
+		{types: ["bug"], labels: ["p0", "p1"]},
+		{types: ["bug"], origins: ["customer"]},
+	],
+};
+
 describe("onCallIssuesOf", () => {
 	it("holds every open issue the rule routes there, in arrival order", () => {
 		const open = byNumber([
-			issue(9, {labels: ["type:bug"]}),
-			issue(4, {association: "NONE", author: "a-user"}),
-			issue(5, {labels: ["type:feature"]}),
+			issue(9, {labels: ["type:bug", "p1"]}),
+			issue(4, {...CUSTOMER, labels: ["type:bug", "p2"]}),
+			issue(5, {labels: ["type:feature", "p0"]}),
 		]);
 
 		expect(
@@ -67,8 +92,77 @@ describe("onCallIssuesOf", () => {
 		).toEqual([4, 9]);
 	});
 
+	it("routes, under a narrower route, p0 and p1 bugs and customer bugs, never p2 bugs, other types or untyped issues", () => {
+		const open = byNumber([
+			issue(1, {labels: ["type:bug", "p0"]}),
+			issue(2, {labels: ["type:bug", "p1"], author: "agent[bot]", association: "NONE"}),
+			issue(3, {...CUSTOMER, labels: ["type:bug", "p2"]}),
+			issue(4, {...CUSTOMER, labels: ["type:bug"]}),
+			issue(5, {labels: ["type:bug", "p2"]}),
+			issue(6, {labels: ["type:bug"]}),
+			issue(7, {...CUSTOMER, labels: ["type:feature", "p0"]}),
+			issue(8, {...CUSTOMER, labels: []}),
+			issue(10, {...CUSTOMER, labels: ["status:needs-triage", "p0"]}),
+			issue(11, {labels: ["p0"]}),
+		]);
+
+		expect(onCallIssuesOf(open, new Map(), [], NARROW, []).map((one) => one.number)).toEqual([
+			1, 2, 3, 4,
+		]);
+	});
+
+	it("plans no add and no Response target for a p2 bug a narrower route leaves on the table", () => {
+		const routed = onCallIssuesOf(
+			byNumber([issue(5, {labels: ["type:bug", "p2"]})]),
+			new Map(),
+			[],
+			NARROW,
+			[],
+		);
+
+		expect(routed).toEqual([]);
+		expect(planOnCall({fields: FIELDS, settings: NARROW, rows: new Map(), issues: routed})).toEqual(
+			[],
+		);
+	});
+
+	it("hands a customer's ask back to the table, where the agenda proposes it under Customers", () => {
+		const open = byNumber([
+			issue(7, {...CUSTOMER, labels: ["type:feature", "status:triaged"]}),
+			issue(3, {...CUSTOMER, labels: ["type:bug", "status:triaged"]}),
+		]);
+		const onCall = new Set(
+			onCallIssuesOf(open, new Map(), [], NARROW, []).map((one) => one.number),
+		);
+
+		expect([...onCall]).toEqual([3]);
+		const {candidates} = candidatesOf({
+			settings: SHIPPED_TABLE,
+			open,
+			rows: new Map(),
+			followUps: [],
+			flagged: new Map(),
+			ruled: [],
+			target: parseTableDay("2026-10-03") as TableDay,
+			onCall,
+		});
+		expect(candidates.map((one) => `${one.section} #${one.issue}`)).toEqual(["Customers #7"]);
+	});
+
+	it("routes every bug and every customer report under the shipped route", () => {
+		const open = byNumber([
+			issue(5, {labels: ["type:bug", "p2"]}),
+			issue(7, {...CUSTOMER, labels: ["type:feature"]}),
+			issue(8, {labels: ["type:feature"]}),
+		]);
+
+		expect(
+			onCallIssuesOf(open, new Map(), [], SHIPPED_ON_CALL, []).map((one) => one.number),
+		).toEqual([5, 7]);
+	});
+
 	it("routes a customer's report by the default route even after a lane wrote its Origin", () => {
-		const open = byNumber([issue(4, {association: "NONE", author: "a-user"})]);
+		const open = byNumber([issue(4, {...CUSTOMER, labels: ["type:bug"]})]);
 		const table = new Map([[4, row(4, [option("Origin", "driver pick")])]]);
 
 		expect(onCallIssuesOf(open, table, [], SHIPPED_ON_CALL, []).map((one) => one.number)).toEqual([
@@ -77,10 +171,13 @@ describe("onCallIssuesOf", () => {
 	});
 
 	it("leaves an issue the table answered on the table, whatever the rule says", () => {
-		const open = byNumber([issue(1, {labels: ["type:bug"]}), issue(2, {labels: ["type:bug"]})]);
+		const bug = (number: number) => issue(number, {labels: ["type:bug", "p1"]});
+		const open = byNumber([bug(1), bug(2), bug(3), bug(4)]);
 		const table = new Map([
 			[1, row(1, [option("Stage", "bet")])],
 			[2, row(2, [option("Stage", "in lane")])],
+			[3, row(3, [option("Stage", "not now")])],
+			[4, row(4, [option("Stage", "check")])],
 		]);
 
 		expect(onCallIssuesOf(open, table, [], SHIPPED_ON_CALL, []).map((one) => one.number)).toEqual([
@@ -91,8 +188,8 @@ describe("onCallIssuesOf", () => {
 	it("leaves the members of a bet group on the table with their head", () => {
 		const open = byNumber([
 			issue(1),
-			issue(2, {labels: ["type:bug"]}),
-			issue(3, {labels: ["type:bug"]}),
+			issue(2, {labels: ["type:bug", "p1"]}),
+			issue(3, {labels: ["type:bug", "p1"]}),
 		]);
 		const heads = [
 			{
@@ -107,7 +204,10 @@ describe("onCallIssuesOf", () => {
 	});
 
 	it("leaves a shipped bet due its check on the table, so it lands on one board", () => {
-		const open = byNumber([issue(1, {labels: ["type:bug"]}), issue(2, {labels: ["type:bug"]})]);
+		const open = byNumber([
+			issue(1, {labels: ["type:bug", "p1"]}),
+			issue(2, {labels: ["type:bug", "p1"]}),
+		]);
 		const shipped = (head: number, setAt: string): HeadRow => ({
 			group: {_tag: "Single", head},
 			stage: {name: "shipped", setter: "owner", setAt},
@@ -125,17 +225,6 @@ describe("onCallIssuesOf", () => {
 		).toEqual([2]);
 	});
 });
-
-const FIELDS = {
-	responseTarget: {
-		id: "F_target",
-		options: new Map([
-			["same day", "T_same"],
-			["this week", "T_week"],
-		]),
-	},
-	plainWords: "F_plain",
-};
 
 describe("planOnCall", () => {
 	it("adds an issue with no item, then sets its target and its plain words", () => {
