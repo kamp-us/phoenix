@@ -547,7 +547,7 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | `heal-ci diagnose: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `heal-ci diagnose: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `heal-ci diagnose: failing outside the required set: <job> — blocks through the failing required context <roll-up>.` | 0 | notice |
-| `heal-ci diagnose: failing outside the required set: <list> — whether a failing required context names it is UNKNOWN: <reason>.` | 0 | notice |
+| `heal-ci diagnose: failing outside the required set: <list> — whether a failing required context names it is UNKNOWN: <reason>.` — `<reason>` names the roll-up read that failed, or, per untied key, `<roll-up> names job <key>, which no check run could be tied to` | 0 | notice |
 | `heal-ci diagnose: <roll-up> names job <key>, which cannot be tied to a check run: <reason> — no log is read in its place.` | 0 | notice |
 | `heal-ci diagnose: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `heal-ci diagnose: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
@@ -557,7 +557,8 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 reviews and timeline, each paginated to exhaustion, plus its base branch's declared required
 contexts. Where a red outside that set stands beside a failing required context, it also reads that
 context's log and its run's workflow file, to say whether the red blocks through a roll-up that names
-it; a read there that fails names the question UNKNOWN on stderr and changes no class. Every one
+it; a read there that fails, or a job key it names that cannot be tied to a check run (see
+`heal-ci logs`), names the question UNKNOWN on stderr and changes no class. Every one
 of those but the changed-file list is also count-checked: GitHub computes the pull-request record's
 `changed_files` against a base it cached at the last push, so the file list is taken as the file set
 and the disagreement is reported. An **empty** list still refuses — this is the verb an operator
@@ -907,8 +908,8 @@ fabrika heal-ci logs 9412 [--sha 03135b91] [--context <name>] [--max-bytes 65536
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line: `logs\t<count>\t<sha>` — the number of frames that
-follow: one per failing gating context, plus one per job a failing required roll-up names. Then, per context, a header line and the log bytes delimited so a
-consumer can split without guessing:
+follow: one per failing gating context, plus one per job a failing required roll-up names. Then,
+per context, a header line and the log bytes delimited so a consumer can split without guessing:
 
 ```
 ==== context <name> job <id> bytes <k> truncated <true|false> ====
@@ -946,8 +947,10 @@ the key itself when there is none, as GitHub names such a job. The name must the
 job of that same run. A key whose name the platform composes at run time — an expression in
 `name:`, a matrix job, a reusable-workflow call — or that matches no job or several, is untied: it
 is named on stderr by its key with the reason, and no other job's log is emitted in its place.
-A forged `FAIL` line in a log can only name a job of the same run, whose failing log this verb would
-read anyway.
+While an untied key stands, every failing red outside the required set that no tied job accounts
+for may be that job — a matrix job `lint` fails as the check run `lint (22)` — so it gets the
+UNKNOWN line naming the untied key, never "reported, never blocking". A forged `FAIL` line in a log
+can only name a job of the same run, whose failing log this verb would read anyway.
 
 **A failing context with no job behind it is an answer, not a refusal.** A check run posted by an
 app or an external service has no workflow job and therefore no log. Such a context is emitted with
@@ -985,7 +988,7 @@ bytes it never saw.
 | `heal-ci logs: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `heal-ci logs: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
 | `heal-ci logs: failing outside the required set: <job> — blocks through the failing required context <roll-up>.` | 0 | notice |
-| `heal-ci logs: failing outside the required set: <list> — whether a failing required context names it is UNKNOWN: --context narrowed the read past the other failing gating contexts.` | 0 | notice |
+| `heal-ci logs: failing outside the required set: <list> — whether a failing required context names it is UNKNOWN: <reason>.` — `<reason>` is `--context narrowed the read past the other failing gating contexts`, or, per untied key, `<roll-up> names job <key>, which no check run could be tied to` | 0 | notice |
 | `heal-ci logs: <roll-up> names job <key>, which cannot be tied to a check run: <reason> — no log is read in its place.` | 0 | notice |
 | `heal-ci logs: <roll-up> names job <key> (<job>), which concluded <conclusion> — no failure log to read.` | 0 | notice |
 | `heal-ci logs: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
@@ -996,9 +999,10 @@ bytes it never saw.
 failing context, and, behind a failing roll-up, its run's workflow file and one log per job it names,
 each read paginated and count-checked. The base branch's declared required set is read before
 anything is fetched, so a failure outside it enters this lane only when a failing required roll-up
-names it — any other leaves named on stderr instead. A base branch declaring nothing required falls back to the informational-name
-denylist, and so does a plan-gated base (see `surface`), whose branch cannot declare a required
-check; a required set that could not be read is `11` naming that read as the cause.
+names it — any other leaves named on stderr instead. A base branch declaring nothing required falls
+back to the informational-name denylist, and so does a plan-gated base (see `surface`), whose branch
+cannot declare a required check; a required set that could not be read is `11` naming that read as
+the cause.
 
 **Examples**
 

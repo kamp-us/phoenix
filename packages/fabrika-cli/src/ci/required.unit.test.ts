@@ -284,4 +284,8 @@ describe("failedJobKeys — reads back the FAIL lines judge prints", () => {
 			["e2e"],
 		);
 	});
+
+	it("reads the ASCII arrow classify's roll-up row also reads, so the two never disagree", () => {
+		assert.deepStrictEqual(failedJobKeys("e2e: should_run=true result=failure -> FAIL"), ["e2e"]);
+	});
 });

@@ -16,7 +16,13 @@ import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {commitExists} from "../io/pulls.ts";
-import {authorityNote, readBlockingSet, reportedLine, unreadableCause} from "../review/blocking.ts";
+import {
+	authorityNote,
+	readBlockingSet,
+	reportedLine,
+	type UntiedKey,
+	unreadableCause,
+} from "../review/blocking.ts";
 import {statusOf} from "../review/rollup.ts";
 import {latestPerContext, listRunsAtHead, listShipCheckRuns} from "../ship/github.ts";
 import {
@@ -173,6 +179,7 @@ export const runLogs = (
 		const frames: LogFrame[] = [];
 		const emitted = new Set<string>();
 		const through = new Map<string, string>();
+		const untiedKeys: UntiedKey[] = [];
 
 		/** One job's log as a frame, answering its full text, or the refusal its read earned. */
 		const frameOf = (context: string, jobId: number) =>
@@ -267,7 +274,10 @@ export const runLogs = (
 					notices,
 				);
 			}
-			for (const untied of named.untied) notices.push(untiedLine(VERB, check.name, untied));
+			for (const untied of named.untied) {
+				notices.push(untiedLine(VERB, check.name, untied));
+				untiedKeys.push({rollup: check.name, key: untied.key});
+			}
 			for (const {key, job: tied} of named.tied) {
 				if (authority.set.blocks(tied.name)) continue;
 				if (!isFailedJob(tied)) {
@@ -293,7 +303,7 @@ export const runLogs = (
 							_tag: "Unknown",
 							reason: "--context narrowed the read past the other failing gating contexts",
 						}
-					: {_tag: "Read", through},
+					: {_tag: "Read", through, untied: untiedKeys},
 			),
 		);
 

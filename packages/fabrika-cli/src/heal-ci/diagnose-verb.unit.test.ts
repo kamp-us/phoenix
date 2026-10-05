@@ -491,6 +491,50 @@ describe("runDiagnose answers", () => {
 		);
 	});
 
+	// A matrix job's check runs carry a composed name (`lint (22)`), so its key cannot be tied. That
+	// red may still be the job the roll-up names, so it is UNKNOWN, not never blocking.
+	it("names every outside red UNKNOWN while a key the roll-up named stays untied", async () => {
+		const out = await run(
+			script([
+				[
+					CHECK_RUNS,
+					reply(
+						checkRuns(2, [
+							{name: "all checks", status: "completed", conclusion: "failure", check_suite_id: 77},
+							{name: "lint (22)", status: "completed", conclusion: "failure", check_suite_id: 77},
+						]),
+					),
+				],
+				[RULES, rules("all checks")],
+				[RUNS_AT_HEAD, reply(runsAtHead(1, [{id: 77, path: ".github/workflows/ci.yml"}]))],
+				[
+					JOBS,
+					jobs(2, [
+						{id: 441, name: "all checks"},
+						{id: 442, name: "lint (22)"},
+					]),
+				],
+				[
+					/\/contents\/\.github\/workflows\/ci\.yml\?ref=/,
+					{
+						status: 200,
+						body: "jobs:\n  lint:\n    strategy:\n      matrix:\n        node: [22]\n  all-checks:\n    name: all checks\n",
+					},
+				],
+				[JOB_LOG, {status: 200, body: "lint: should_run=true result=failure → FAIL"}],
+			]),
+		);
+		expect(out.code).toBe(0);
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toContain(
+			"heal-ci diagnose: all checks names job lint, which cannot be tied to a check run: it is a matrix job",
+		);
+		expect(stderr).toContain(
+			"heal-ci diagnose: failing outside the required set: lint (22) — whether a failing required context names it is UNKNOWN: all checks names job lint, which no check run could be tied to.",
+		);
+		expect(stderr).not.toMatch(/failing outside the required set: .* — reported, never blocking/);
+	});
+
 	it("names a roll-up read it could not make as UNKNOWN, never as never blocking", async () => {
 		const out = await run(
 			script([

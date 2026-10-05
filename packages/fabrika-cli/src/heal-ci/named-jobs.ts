@@ -25,7 +25,7 @@ import {parse} from "yaml";
 import {failedJobKeys} from "../ci/required.ts";
 import type {Shell} from "../io/git.ts";
 import {isRecord} from "../io/json.ts";
-import type {RollupReach} from "../review/blocking.ts";
+import type {RollupReach, UntiedKey} from "../review/blocking.ts";
 import {
 	listRunsAtHead,
 	readFileAtRef,
@@ -201,11 +201,14 @@ export const rollupReach = (
 	Effect.gen(function* () {
 		const notices: string[] = [];
 		const through = new Map<string, string>();
+		const untiedKeys: UntiedKey[] = [];
 		const unknown = (reason: string) => ({
 			reach: {_tag: "Unknown" as const, reason},
 			notices,
 		});
-		if (failingRequired.length === 0) return {reach: {_tag: "Read" as const, through}, notices};
+		if (failingRequired.length === 0) {
+			return {reach: {_tag: "Read" as const, through, untied: untiedKeys}, notices};
+		}
 
 		const runs = yield* listRunsAtHead(repo, sha);
 		if (runs._tag === "Failure") return unknown(`the run list could not be read: ${runs.reason}`);
@@ -242,12 +245,15 @@ export const rollupReach = (
 			if (named._tag === "Incomplete") {
 				return unknown(`received ${named.received} of ${named.declared} declared jobs`);
 			}
-			for (const untied of named.untied) notices.push(untiedLine(verb, rollup.name, untied));
+			for (const untied of named.untied) {
+				notices.push(untiedLine(verb, rollup.name, untied));
+				untiedKeys.push({rollup: rollup.name, key: untied.key});
+			}
 			for (const tied of named.tied) {
 				if (!blocks(tied.job.name) && isFailedJob(tied.job)) {
 					through.set(tied.job.name, rollup.name);
 				}
 			}
 		}
-		return {reach: {_tag: "Read" as const, through}, notices};
+		return {reach: {_tag: "Read" as const, through, untied: untiedKeys}, notices};
 	});

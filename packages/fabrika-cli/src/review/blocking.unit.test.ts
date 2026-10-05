@@ -288,9 +288,20 @@ describe("the lines a verb prints about its authority", () => {
 			reportedLine("heal-ci logs", set, runs, {
 				_tag: "Read",
 				through: new Map([["e2e", "all checks"]]),
+				untied: [],
 			}),
 		).toEqual([
 			"heal-ci logs: failing outside the required set: Analyze (python) — reported, never blocking.",
+			"heal-ci logs: failing outside the required set: e2e — blocks through the failing required context all checks.",
+		]);
+		expect(
+			reportedLine("heal-ci logs", set, runs, {
+				_tag: "Read",
+				through: new Map([["e2e", "all checks"]]),
+				untied: [{rollup: "all checks", key: "lint"}],
+			}),
+		).toEqual([
+			"heal-ci logs: failing outside the required set: Analyze (python) — whether a failing required context names it is UNKNOWN: all checks names job lint, which no check run could be tied to.",
 			"heal-ci logs: failing outside the required set: e2e — blocks through the failing required context all checks.",
 		]);
 		expect(

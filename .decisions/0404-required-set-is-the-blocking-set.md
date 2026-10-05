@@ -10,7 +10,8 @@ tags: [pipeline, fabrika, ship, heal-ci, review, ci]
 
 **What this decides:** a red check that GitHub does not require on the base branch is reported as a
 note and nothing more — it never parks a lane, never routes to `heal-ci`, and never makes a verb
-call the pull request red.
+call the pull request red. A job a failing required roll-up names is read by `heal-ci` and blocks
+through that roll-up: ruled since, in the Amendment of 2026-10-04 (#10432) below.
 
 ## Context
 
@@ -56,6 +57,8 @@ standing as the SHA-bound authority ([ADR 0054](0054-run-evidence-bundle.md)) ar
 The required set is read from the base branch the pull request targets, the same read
 `heal-ci surface` already performs. A red check outside that set is reported as a note on the pull
 request. It never parks a lane, never routes to `heal-ci`, and never makes `diagnose` answer `red`.
+A job a failing required roll-up names is the exception for `heal-ci`: ruled since, in the
+Amendment of 2026-10-04 (#10432) below.
 
 The ruling is one definition for every reader of it, not a `heal-ci` local fix. It binds
 `fabrika ship checks`, `fabrika heal-ci diagnose`, `fabrika heal-ci logs` and `fabrika review ci`
@@ -70,7 +73,9 @@ check surfaces only as a note. A check that should block gets added to the requi
 **Binding constraints.**
 
 - The base branch's declared required set is the only source of blocking authority.
-- A red outside that set is reported, never blocking, in every verb that reads a head's checks.
+- A red outside that set is reported, never blocking, in every verb that reads a head's checks —
+  unless a failing required roll-up names it, ruled since in the Amendment of 2026-10-04 (#10432)
+  below.
 - Making a check blocking means adding its context to the ruleset, not to a list in this repository.
 
 **Alternatives not taken.**
@@ -176,7 +181,9 @@ right after the roll-up's, so `heal-ci classify` classes it, and `logs` and `dia
 through that roll-up rather than never. The roll-up is found by its log's per-job `FAIL` lines,
 never by a configured name. The job key a `FAIL` line names is tied to a check-run name only
 through the workflow file the roll-up's run executed; a key that cannot be tied that way is named on
-stderr and no other job's log is read in its place.
+stderr and no other job's log is read in its place. While such a key stands, any other red outside
+the required set may be that job, so `logs` and `diagnose` call it UNKNOWN rather than never
+blocking.
 
 **What stays.** The required set is still the only source of blocking authority: the named job
 blocks because a required context does. A red that no failing required roll-up names is still

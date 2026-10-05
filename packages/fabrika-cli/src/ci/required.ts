@@ -105,7 +105,7 @@ export const judgeJob = (job: JobInput): JobReport => {
  * and never a fragment of prose.
  */
 const FAIL_LINE =
-	/(?:^|[\s\]])([A-Za-z_][A-Za-z0-9_-]*): (?:should_run=(?:true|false) )?result=\S+ → FAIL\b/;
+	/(?:^|[\s\]])([A-Za-z_][A-Za-z0-9_-]*): (?:should_run=(?:true|false) )?result=\S+ (?:→|->) FAIL\b/;
 
 /**
  * The job keys a roll-up log names on its `FAIL` lines, in first-seen order, each once.

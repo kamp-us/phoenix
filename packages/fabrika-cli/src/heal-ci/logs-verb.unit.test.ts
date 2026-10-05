@@ -294,17 +294,21 @@ describe("runLogs follows a failing required roll-up to the jobs its FAIL lines 
 			`2026-10-04T00:54:02.33Z ##[error]${ROLLUP} FAILED — see per-job verdicts above`,
 		].join("\n");
 
-	const script = (log: string): ReadonlyArray<Scripted> => [
+	const script = (
+		log: string,
+		extra: ReadonlyArray<Parameters<typeof checkRuns>[1][number]> = [],
+	): ReadonlyArray<Scripted> => [
 		[RULES, rules(ROLLUP)],
 		[PROTECTION, protection()],
 		[PULL, reply(pull())],
 		[
 			CHECK_RUNS,
 			reply(
-				checkRuns(3, [
+				checkRuns(3 + extra.length, [
 					{...failed(ROLLUP), id: 10, check_suite_id: 77},
 					{...failed("unit + client tests"), id: 11, check_suite_id: 77},
 					{...failed("Analyze (python)"), id: 12, check_suite_id: 99},
+					...extra,
 				]),
 			),
 		],
@@ -365,11 +369,13 @@ describe("runLogs follows a failing required roll-up to the jobs its FAIL lines 
 					"2026-10-04T00:54:02.32Z ##[error]lint: should_run=true result=failure → FAIL (…)",
 					"2026-10-04T00:54:02.32Z ##[error]ghost: should_run=true result=cancelled → FAIL (…)",
 				),
+				[{...failed("lint (22)"), id: 13, check_suite_id: 77}],
 			),
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`logs\t1\t${HEAD}`);
 		expect(out.stdout).not.toContain("==== context unit + client tests");
+		expect(out.stdout).not.toContain("==== context lint (22)");
 		const stderr = out.stderr.join("\n");
 		expect(stderr).toContain(
 			`${ROLLUP} names job lint, which cannot be tied to a check run: it is a matrix job, whose check runs carry a composed name — no log is read in its place.`,
@@ -377,9 +383,11 @@ describe("runLogs follows a failing required roll-up to the jobs its FAIL lines 
 		expect(stderr).toContain(
 			`${ROLLUP} names job ghost, which cannot be tied to a check run: the workflow file declares no job by that key — no log is read in its place.`,
 		);
-		// Nothing tied to it, so the job that did fail stays a reported red.
+		// An untied key may be any red outside the set — the matrix run `lint (22)` is one — so none
+		// of them is called never blocking.
+		expect(stderr).not.toMatch(/failing outside the required set: .* — reported, never blocking/);
 		expect(stderr).toContain(
-			"failing outside the required set: Analyze (python), unit + client tests — reported, never blocking.",
+			`failing outside the required set: Analyze (python), lint (22), unit + client tests — whether a failing required context names it is UNKNOWN: ${ROLLUP} names job lint, which no check run could be tied to; ${ROLLUP} names job ghost, which no check run could be tied to.`,
 		);
 	});
 
