@@ -228,9 +228,9 @@ fabrika status bootstrap fabrika-config
 bootstrap	created	fabrika-config	.fabrika.jsonc	ok
 ```
 
-The file names `codeValidators`, `dependencyReconciler`, `uiSurfaces` and `ci.noProducer`, each at
-its shipped default, with a comment over each saying what that default holds back and what a first
-value looks like. Writing it changes nothing until you edit a value. A `.fabrika.jsonc` already
+The file names `codeValidators`, `dependencyReconciler`, `uiSurfaces`, `catalogGuard` and
+`ci.noProducer`, each at its shipped default, with a comment over each saying what that default
+holds back and what a first value looks like. Writing it changes nothing until you edit a value. A `.fabrika.jsonc` already
 there is `exists` at exit 0 and is left as it is. Run it before `hand-check-rule` (below): that
 command also creates the file when it is absent, and then this one has nothing to write.
 
@@ -241,6 +241,7 @@ makes a verb refuse partway through real work, so write them before your first l
 |---|---|---|---|
 | `codeValidators` | `lane integrate` merges the child into `epic/<n>`, then refuses and resets the branch. `build check --surface code` refuses too. | `11` from both | `[{"command": ["pnpm", "typecheck"]}, {"command": ["pnpm", "lint"]}]`, with your own script names |
 | `dependencyReconciler` | No verb refuses. `lane integrate` skips the install and says so on stderr, so a child that changes the lockfile is validated against the old install and can fail there. | none; `44` from `lane integrate` when a validator then fails | `{"command": ["pnpm", "install", "--frozen-lockfile"]}` |
+| `catalogGuard` | It ships `"on"`, so `catalog-guard` requires every dependency in a workspace `package.json` to be a pnpm `catalog:` or `workspace:` reference. In a repo with no pnpm catalog, such as an npm or yarn repo, every `build check` reds on dependencies no lane touched. | `18` from `build check` | `"catalogGuard": "off"` in a repo with no pnpm catalog; leave it `"on"` in one that has one |
 | `.github/CODEOWNERS` | `plan approve` refuses every account. `ship cp-approval` answers `stop zero-owners`, so every PR waits for an approval nobody can give. | `24` from `plan approve`; `ship cp-approval` exits `0` with the stop | `/.github/ @your-login` and `/.fabrika.jsonc @your-login`. A row that owns everything (`*`) is a hold, not an owner. |
 | a CI workflow in `.github/workflows/`, or `"ci": {"noProducer": "degrade"}` | `ship checks` and `review ci` refuse. | `7` from both | a `ci.yml` that runs your validators on `pull_request`; `degrade` only for a repo that runs no Actions on purpose |
 | `parkCause` | Its three sub-keys ship as `uncaused: "refuse"`, `driverRouted: "refuse"` and `repairBudgetSpent: "driver"`. Under the first, a `lane transition <n> BLOCKED` or a `lane report` park that names no `--cause` is refused and nothing is appended to the lane log. | `52` from both | none needed: name a `--cause` on every park. `{"uncaused": "record"}` keeps cause-less parks. |

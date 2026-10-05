@@ -1139,10 +1139,10 @@ repo approves it (`pnpm approve-builds`, or an `onlyBuiltDependencies` entry plu
 `pnpm rebuild @kampus/fabrika-cli`) — that `postinstall` is what sets up `ui render`'s browser.
 
 <a id="fabrika-config"></a>**`fabrika-config` writes the starting `.fabrika.jsonc`, for a repo that
-has none.** The file names the four keys whose shipped default stops or narrows a lane, each at
+has none.** The file names the five keys whose shipped default stops or narrows a lane, each at
 that shipped default, so writing it changes no verb's answer. The key names and values are read off
-the key modules rather than restated: `codeValidators`, `dependencyReconciler`, `uiSurfaces`, and
-`noProducer` under `ci`. What the file adds is a comment over each key saying what the default holds
+the key modules rather than restated: `codeValidators`, `dependencyReconciler`, `uiSurfaces`,
+`catalogGuard`, and `noProducer` under `ci`. What the file adds is a comment over each key saying what the default holds
 back and the shape of a first value. The bytes, fixed here so no clause defers to source:
 
 ```jsonc
@@ -1166,6 +1166,12 @@ back and the shape of a first value. The bytes, fixed here so no clause defers t
 	// While this list is empty, `fabrika ui render` and `fabrika ui evidence` refuse, and a change to
 	// a screen is reviewed as text only. Leave it empty for a repo that renders nothing.
 	"uiSurfaces": [],
+
+	// Whether `fabrika guard catalog-guard check` runs: "on" or "off".
+	// Under "on", every dependency in a workspace package.json must be a pnpm `catalog:` or a
+	// `workspace:` reference, so in a repo that does not use a pnpm `catalog:` the guard reds every
+	// lane's `fabrika build check`, on dependencies no lane touched. Write "off" to turn it off.
+	"catalogGuard": "on",
 
 	"ci": {
 		// What a repo with no workflow of its own in .github/workflows/ gets: "refuse" or "degrade".
