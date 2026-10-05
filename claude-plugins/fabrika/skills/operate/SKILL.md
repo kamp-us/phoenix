@@ -451,23 +451,29 @@ came after the last merge, it boots a second lane at a full budget. When it stil
 refusal names which of those facts failed, so that `63` is a real stop. When the finished lane is
 still in the key, the boot answers `14` instead; the reopened-issue passage in step 4 has the verbs.
 
-**One shape of that `63` is not a stop, and it is the one a second operator account produces.** When
-the prior ledger was written on another machine it is unreachable forever, so no clearance can
-produce it and driving the PR through a lane is exactly what you cannot do. That case re-runs the
+**Two shapes of that `63` are not a stop.** One is what a second operator account produces: the
+prior ledger was written on another machine, so it is unreachable forever, no clearance can produce
+it, and driving the PR through a lane is exactly what you cannot do. The other is a PR a builder
+opened outside any lane, which nobody has reviewed yet, so no ledger ever drove it. Both re-run the
 boot under the flag, which reads the board instead of trusting you:
 
 ```bash
 node <fabrika> lane open $lane_key --from-board
 ```
 
-It admits the boot only on what the board proves — one open pull request, every namespace its head
-derives answered — and everything short of that is `63` again carrying the board's own reason, so a
-second `63` here is the real stop. On admission it records the adoption as a comment on the issue
-and places the lane with its **repair budget declared spent**: nothing proves how many rounds the
-prior lane burned, so a `FAIL` parks at `human:budget-spent` until `lane clear` grants one. The
-lane lands at its initial state rather than at a stage — walk it forward with `lane transition`,
-which proves each event against the board before recording it. End `STOPPED` naming the code only
-when the flag's own read refuses.
+It admits the boot only on what the board proves, and it records the adoption as a comment on the
+issue before it writes. One open pull request with no review on it at all (no verdict marker, no
+routed-elsewhere record, no control-plane advisory, at any head) boots at the **repair budget its
+template declares**, so its review and repair rounds run inside the lane. One open pull request with
+every namespace its head derives answered boots with its **repair budget declared spent**: nothing
+proves how many rounds the prior lane burned, so a `FAIL` parks at `human:budget-spent` until
+`lane clear` grants one. Anything short of those, including a reviewed PR that is not verified, is
+`63` again carrying the board's own reason, so a second `63` here is the real stop. The answer's
+`fromBoard.seat` says which seat it took, and the seat says where the lane lands. An unreviewed seat
+lands at `review`, so your next shell is the reviewer, never a builder over work nobody has graded.
+A verified seat lands at its initial state rather than at a stage, so walk it forward with
+`lane transition`, which proves each event against the board before recording it. End `STOPPED`
+naming the code only when the flag's own read refuses.
 
 Both verbs live beside `status`/`transition`/`history`/`print` in
 `packages/fabrika-cli/src/lane/`, and each verb's `--help` is its interface. Any other exit is a stop, not a fallback: `4` is a record read in full and not

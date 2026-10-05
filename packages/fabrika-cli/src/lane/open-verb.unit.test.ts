@@ -2,8 +2,14 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
-import type {VerbOutcome} from "../verb.ts";
-import type {BoardRecord, BoardRecorder, BoardSeat, BoardSeatReader} from "./board-seat.ts";
+import {answer, type VerbOutcome} from "../verb.ts";
+import {
+	type BoardRecord,
+	type BoardRecorder,
+	type BoardSeat,
+	type BoardSeatReader,
+	seatAtReview,
+} from "./board-seat.ts";
 import {
 	APPEND_UNKNOWN,
 	CLASS_UNRECOGNISED,
@@ -16,17 +22,24 @@ import {
 } from "./codes.ts";
 import {emitMachine} from "./emit.ts";
 import type {ExpectationRead} from "./expectation.ts";
-import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
+import {
+	choreTemplateText,
+	coderTemplateText,
+	fakeProverByEvent,
+	parkCauseRead,
+} from "./fixtures.test-support.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
 import type {PriorLane} from "./prior-lane.ts";
 import type {ReopenRead} from "./reopen.ts";
 import {runStatus} from "./status-verb.ts";
 import {DEFAULT_CHORES_ROOT} from "./store.ts";
+import {runTransition} from "./transition-verb.ts";
 
 const ROOT = ".fabrika/lanes";
 const DIR = `${ROOT}/42`;
 const WORKFLOW = `${DIR}/workflow.json`;
+const LOG = `${DIR}/events.jsonl`;
 const TEMPLATE = "/pkg/src/lane/templates/coder.workflow.json";
 
 const reads = (read: ExpectationRead) => () => Effect.succeed(read);
@@ -392,6 +405,20 @@ describe("lane open", () => {
 		expect(out.stderr.join("\n")).toContain("fabrika lane open 42 --from-board");
 	});
 
+	it("names the unreviewed pull request as a way through, beside the verified one", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(
+			fs,
+			runOpen({...OPTIONS, priorLane: drove({_tag: "Prior", pulls: [7991]})}),
+		);
+		const stderr = out.stderr.join("\n");
+
+		expect(out.code).toBe(PRIOR_LANE);
+		expect(stderr).toContain("opened outside any lane");
+		expect(stderr).toContain("no review has touched yet, seated at its declared repair budget");
+		expect(stderr).not.toContain("which only a driven lane opens");
+	});
+
 	describe("--from-board", () => {
 		const drivenBy = (...pulls: ReadonlyArray<number>) => drove({_tag: "Prior", pulls: [...pulls]});
 		const seats =
@@ -440,6 +467,131 @@ describe("lane open", () => {
 			expect(posted[0]).toContain("#7991");
 		});
 
+		describe("an open pull request no review has touched", () => {
+			const unreviewed = seats({_tag: "Unreviewed", pr: 7991, head: "77aa05b"});
+
+			it("boots at the budget its template declares, never at the spent one", async () => {
+				const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+				const posted: string[] = [];
+				const out = await run(
+					fs,
+					runOpen({
+						...OPTIONS,
+						priorLane: drivenBy(7991),
+						fromBoard: true,
+						boardSeat: unreviewed,
+						record: recorder(posted),
+					}),
+				);
+				const printed = await run(fs, runPrint({root: ROOT, lane: "42"}));
+				const answered = JSON.parse(out.stdout);
+				const template = JSON.parse(coderTemplateText()) as {
+					machine: {context: {issue: {maxRetries: number}}};
+				};
+
+				const atReview = seatAtReview(coderTemplateText());
+				if (atReview._tag !== "AtReview") throw new Error(atReview.reason);
+
+				expect(out.code).toBe(0);
+				expect(fs.written.get(WORKFLOW)).toBe(atReview.text);
+				expect(answered).toMatchObject({
+					answer: "opened",
+					fromBoard: {
+						seat: "unreviewed",
+						pr: 7991,
+						head: "77aa05b",
+						budget: "declared",
+						at: "review",
+					},
+				});
+				expect(answered.fromBoard).not.toHaveProperty("maxRetries");
+				expect(template.machine.context.issue.maxRetries).toBeGreaterThan(0);
+				expect(JSON.parse(printed.stdout)).toMatchObject({
+					tasks: {issue: {maxRetries: template.machine.context.issue.maxRetries}},
+				});
+				expect(out.stderr.join("\n")).toContain("which no review has touched");
+			});
+
+			it("records an adoption that says no verdict was found, before anything lands on disk", async () => {
+				const posted: string[] = [];
+				const refused = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+				const out = await run(
+					refused,
+					runOpen({
+						...OPTIONS,
+						priorLane: drivenBy(7991),
+						fromBoard: true,
+						boardSeat: unreviewed,
+						record: recorder(posted, {_tag: "Unrecorded", reason: "the API answered 502"}),
+					}),
+				);
+
+				expect(out.code).toBe(LANE_UNREADABLE);
+				expect(refused.written.size).toBe(0);
+				expect(posted).toHaveLength(1);
+				expect(posted[0]).toContain("#7991");
+				expect(posted[0]).toContain("77aa05b");
+				expect(posted[0]).toContain("no verdict was found");
+				expect(posted[0]).toContain("repair budget its template declares");
+				expect(posted[0]).toContain("starts at review, not at build");
+				expect(posted[0]).not.toContain("no repair budget");
+			});
+
+			it("boots the lane at review with no event, so its first FAIL spends one declared round and goes to build", async () => {
+				const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+				const out = await run(
+					fs,
+					runOpen({
+						...OPTIONS,
+						priorLane: drivenBy(7991),
+						fromBoard: true,
+						boardSeat: unreviewed,
+						record: recorder([]),
+					}),
+				);
+
+				expect(out.stderr.join("\n")).toContain("The lane stands at review, not at build");
+				expect(fs.written.has(LOG)).toBe(false);
+				const status = await run(fs, runStatus({root: ROOT, lane: "42"}));
+				expect(JSON.parse(status.stdout)).toMatchObject({
+					stateValue: {pipeline: {issue: "review"}},
+					context: {issue: {retries: 0}},
+				});
+
+				const board = fakeProverByEvent({
+					FAIL: {outcome: answer(JSON.stringify({proof: "proven", event: "FAIL", issue: 42}))},
+				});
+				const failed = await run(
+					fs,
+					runTransition(
+						{
+							root: ROOT,
+							lane: "42",
+							event: "FAIL",
+							task: null,
+							cause: null,
+							axisIssue: null,
+							rulingIssue: null,
+							founderAct: null,
+							parkCause: parkCauseRead(),
+							classes: [],
+							waitGrant: null,
+							rationale: null,
+							repo: "o/r",
+							cwd: "/checkout",
+							env: {},
+						},
+						board.prove,
+					),
+				);
+
+				expect(failed.code).toBe(0);
+				expect(JSON.parse(failed.stdout)).toMatchObject({current: {pipeline: {issue: "build"}}});
+				const after = await run(fs, runStatus({root: ROOT, lane: "42"}));
+				expect(JSON.parse(after.stdout)).toMatchObject({context: {issue: {retries: 1}}});
+			});
+		});
+
 		it("records the adoption on the board before anything lands on disk", async () => {
 			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
 			const posted: string[] = [];
@@ -477,6 +629,8 @@ describe("lane open", () => {
 			expect(fs.written.size).toBe(0);
 			expect(posted).toHaveLength(0);
 			expect(out.stderr.join("\n")).toContain("#7991 holds a FAIL that still binds");
+			expect(out.stderr.join("\n")).toContain("an open pull request no review has touched");
+			expect(out.stderr.join("\n")).not.toContain("from a verified pull request or from nothing");
 		});
 
 		it("refuses an unreadable seat as UNKNOWN, never as a verified one", async () => {

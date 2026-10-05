@@ -1,7 +1,7 @@
 ---
 id: 0403
 title: A stranded lane re-boots from what the board proves
-status: accepted
+status: amended-in-part by [0478](0478-unreviewed-pr-seats-at-declared-budget.md)
 date: 2026-09-20
 tags: [lane, fabrika-cli, operate]
 ---

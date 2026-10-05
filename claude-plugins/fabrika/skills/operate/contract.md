@@ -564,7 +564,8 @@ time.
 Boots one lane: creates `<root>/<key>/` and places the committed template the key selects as its
 `workflow.json`, the coder template for an issue number and the chore template for a
 `chore:<name>` key. The lane is placed at its initial state, not at a stage: walk it with
-`lane transition`, which proves each event against the board before it records one.
+`lane transition`, which proves each event against the board before it records one. The one
+exception is `--from-board`'s unreviewed seat, below, which boots its task at `review`.
 
 **Class seeding.** For an issue, its `class:<name>` labels seed `machine.context.issue.classes`.
 Without class labels, the template stays byte-identical. Unsupported class names refuse at `38`
@@ -597,13 +598,14 @@ The parent edge rides the issue read already made, so the type and the two link 
 between them. A `chore:<name>` key drives no issue and is never asked.
 
 **The prior-lane check.** An issue key whose lane directory is absent is then asked whether the
-board already hangs a pull request off that issue, one only a driven lane opens. A hit is refused at
+board already hangs a pull request off that issue. A hit is refused at
 `63` with nothing written. A ledger is a lane's whole state and `.fabrika/` is gitignored, so
 removing the directory and booting again would restore a spent repair budget and record no granted
 round anywhere. The refusal names the pull request to drive, and the one door out of a spent budget:
 a recorded round grant, `build clear` on the lane's PR or `lane clear` on a lane that has none. For
-the prior ledger no clearance can produce, because it was written on another operator's machine, it
-names `--from-board`. The check is asked only over an absent directory, so an existing lane still
+a pull request no ledger here can drive, it names `--from-board`: the prior ledger was written on
+another operator's machine, so no clearance can produce it, or the pull request was opened outside
+any lane and nobody has reviewed it yet. The check is asked only over an absent directory, so an existing lane still
 answers `14` and a re-run reads as the resume it is. An unreadable answer is `11`, never "no prior
 lane".
 
@@ -616,15 +618,26 @@ fails, `63` names which one. An unread board is `11`, never a reopen. A `complet
 the key answers `14`, and that `14` names `fabrika lane archive <n> --reopened`, which sets it aside.
 
 **`--from-board`** reaches that refusal and nothing else, and it reads the board rather than
-trusting itself: exactly one pull request hangs off the issue, it is open, and every namespace its
-head derives has answered on the same fold `lane prove` takes for a PASS. Anything short of that is
-`63` again with its own reason: a standing FAIL (a repair is owed, and how many rounds the prior lane
-spent is what nothing here can prove), a verdict that no longer binds the head, several pull
-requests, or a merged or closed one. An unread board is `11`, never a seat. On admission the boot
-does two things no ordinary boot does. It places the document with `maxRetries: 0`, so this lane
-mints no repair budget the board did not prove, and a FAIL parks at `human:budget-spent` until
-`lane clear` grants a round. And it records the adoption as a comment on the issue BEFORE anything
-lands on disk, so a seat nobody can review is never taken.
+trusting itself. Exactly one pull request hangs off the issue, it is open, and it takes one of two
+seats:
+
+- **Unreviewed.** No comment on it reads as a verdict marker, a routed-elsewhere record or a
+  control-plane advisory, in any namespace and at any head, so no repair round was ever spent. A
+  stale verdict counts as a review, and so does a carrier that drifted. The boot places the template
+  at the repair budget it declares and boots its task at `review`, so the lane's first shell is the
+  reviewer and the log starts empty. The answer carries
+  `fromBoard: {seat: "unreviewed", pr, head, budget: "declared", at: "review", record}`.
+- **Verified.** Every namespace its head derives has answered on the same fold `lane prove` takes for
+  a PASS. The boot places the document with `maxRetries: 0`, so this lane mints no repair budget the
+  board did not prove, and a FAIL parks at `human:budget-spent` until `lane clear` grants a round.
+  The answer carries `fromBoard: {seat: "verified", pr, head, maxRetries: 0, record}`.
+
+A pull request a review has touched is held to the verified seat. Anything short of both is `63`
+again with its own reason: a standing FAIL (a repair is owed, and how many rounds the prior lane spent
+is what nothing here can prove), a verdict that no longer binds the head, several pull requests, or a
+merged or closed one. An unread board, the pull request's comments included, is `11`, never a seat.
+Either seat records the adoption as a comment on the issue BEFORE anything lands on disk, so a seat
+nobody can review is never taken, and the comment states the budget that seat carries.
 
 So an issue key costs two board reads about the issue itself, its type and links and then the
 prior-lane read (three when that read finds a prior lane and the reopen check runs), and the cap gate adds one claim-marker read per candidate lane it counts.
@@ -646,8 +659,8 @@ as `driver-pick`.
 
 - `8` — the write did not land, so the lane is NOT booted; or the machine was placed and the origin
   fact did not land, which the line says, and the lane then reads as `driver-pick`.
-- `11` — the template, the lane dir's existence, the issue's child list, the prior-lane read or the
-  reopen read could not be read. UNKNOWN, never a boot.
+- `11` — the template, the lane dir's existence, the issue's child list, the prior-lane read, the
+  reopen read or the `--from-board` seat read could not be read. UNKNOWN, never a boot.
 - `14` — the lane already exists.
 - `21` — the key is not a lane key.
 - `38` — an unsupported class label; nothing written.
