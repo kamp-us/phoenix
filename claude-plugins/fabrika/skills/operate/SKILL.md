@@ -64,8 +64,10 @@ exception, in the next paragraph. How to invoke fabrika, which path
 `<fabrika>` stands for, and why this skill writes that form are one rule, owned by
 [interface-convention §5](../../docs/interface-convention.md#5-every-documented-invocation-is-a-plain-literal-command-string)
 and its [scratch-copy exception](../../docs/interface-convention.md#the-scratch-copy-exception).
-Work out the path there once, before your first verb. `lane brief` resolves the same path and puts it
-in every spawn prompt's `fabrika:` field, so you never write it into a prompt by hand.
+Work out the path there once, before your first verb. In a repo with only a global install there is
+no path to work out: the repo holds no copy of fabrika, so run the plain `fabrika` command, as §5
+says. `lane brief` puts the path of the copy that ran it in every spawn prompt's `fabrika:` field,
+so you never write it into a prompt by hand.
 
 **A command you write for a person is one they can paste.** A park comment, a stop note and your
 final message are read by someone at a prompt, so every command in one is printed with each

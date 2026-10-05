@@ -340,7 +340,7 @@ because a newly cut one often has no install of its own. What the short form doe
   you stand in answers.
 - **It has none**: the short form runs the global install, which is not this tree's code, and says so
   loudly on stderr, naming the repo root and both versions in play — the global's and the one the
-  repo's manifest declares.
+  repo's manifest declares, or that it declares none.
 - **The copy you invoked belongs to a different repository** from the one you stand in: it refuses
   and exits `126`.
 
@@ -354,22 +354,35 @@ node <fabrika> <group> <verb> …
 ```
 
 `<fabrika>` is a placeholder written into the command textually, like `<verb>`, never a shell
-variable, so the string still passes the literal rule above. It is one of two paths:
+variable, so the string still passes the literal rule above. Which path it stands for depends on
+where the repo gets fabrika from, and there are three cases:
 
 - **A checkout of fabrika's own repo**: the in-tree source, repo-relative,
   `packages/fabrika-cli/src/bin.ts`, so each worktree runs its own copy.
-- **Any repo that installs fabrika**: the installed bin, absolute,
-  `<repo>/node_modules/@kampus/fabrika-cli/dist/bin.js`, because a worktree carries no
+- **A repo that lists `@kampus/fabrika-cli` in its own `package.json`**: the installed bin,
+  absolute, `<repo>/node_modules/@kampus/fabrika-cli/dist/bin.js`, because a worktree carries no
   `node_modules` of its own.
+- **A repo with only a global install**, which is what the
+  [getting-started guide](../guide/getting-started.md) sets up: there is no path to write. A global
+  install leaves no `node_modules` copy in the repo, so the second path is not on disk. The driver
+  runs the plain `fabrika` command instead, writing `fabrika <group> <verb> …` wherever this section
+  writes `node <fabrika> <group> <verb> …`. The hazard above does not apply: the global install is
+  the only copy there is, so no other tree's code can answer. It prints the
+  [warning](../guide/delegation.md#the-warnings-text) that the repo has no install of its own, and
+  that warning is expected here.
 
-`fabrika lane brief` resolves the same two paths and prints the answer in every spawn prompt's
-`fabrika:` field, so a spawned shell is handed its path rather than working it out.
+`fabrika lane brief` prints the path of the copy that ran it in every spawn prompt's `fabrika:`
+field, so a spawned shell is handed its path rather than working it out. Under a global-only install
+that is the global copy's own bin, an absolute path outside the repo, and `node <that path>` runs the
+same code as the plain `fabrika` command.
 
 **The exception's scope**, which is the whole of it:
 
 - **`operate` writes every command its driver runs in the resolved form.** The driver works out
-  `<fabrika>` once, before its first verb, and runs every verb through it. A command `operate` has
-  the driver write for a person is the last bullet's.
+  `<fabrika>` once, before its first verb, and runs every verb through it. In a repo with only a
+  global install there is no path to work out, so the driver runs every verb as plain `fabrika`, as
+  the third case above says. A command `operate` has the driver write for a person is the last
+  bullet's.
 - **The stage skills write the resolved form only on the lane verbs that take a spawn brief's
   fields**: `lane working`, `lane report` and `lane cleanup` in `build`, `build-ui`, `review`,
   `review-ui` and `ship`. `heal-ci` names the driver's own `recipe unpark` the way `operate` writes
@@ -397,13 +410,15 @@ Both installs are real installed packages, and neither is chosen by testing whet
 and guessing that it will run. Tiers that can only be right or loudly absent are fine; tiers that
 can be quietly wrong are the defect.
 
-The branch that makes that concrete is the degenerate one. **A repo root that pins the package but
-has not installed it, or whose install is corrupt, runs the global and says so loudly** — naming the
-global's version beside the version the root manifest declared, silenceable with
-`FABRIKA_GLOBAL_WARNING_DISABLED`. It is not an error: the worst outcome is that the global runs.
-**No repo root at all is the one silent branch**, deliberately, so a global-only invocation stays
-quiet. Separating those two is the whole point — collapsing them is what makes a delegation quietly
-wrong.
+The branch that makes that concrete is the degenerate one. **A repo root with no usable local
+install runs the global and says so loudly**, whether the repo never lists the package, lists it but
+has not installed it, or has a corrupt install. The warning names the global's version beside the
+version the root manifest declares, or says it declares none, and `FABRIKA_GLOBAL_WARNING_DISABLED`
+silences it. It is not an
+error: the worst outcome is that the global runs. A repo with only a global install takes this
+branch on every call, so its warning is expected there. **An invocation outside any repo is the one
+silent branch**, deliberately, so the global still works where there is no repo to resolve against.
+Separating those two is the whole point — collapsing them is what makes a delegation quietly wrong.
 
 Three environment variables belong to the delivery layer rather than to any verb, and none of them
 locates the binary, so none weakens rule 5: `FABRIKA_DEBUG` prints one stderr line naming which copy
