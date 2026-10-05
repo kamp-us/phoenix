@@ -1,5 +1,5 @@
-import {expect, type Page, test} from "@playwright/test";
-import {isCloudflarePlaceholder404} from "../integration/_edge-ready";
+import {expect, test} from "@playwright/test";
+import {gotoSpaReady, SPA_READY_DEADLINE_MS} from "./_helpers/spa-ready";
 
 /**
  * atölye smoke journey (#3096, capstone of epic #2473) — the reachability guarantee for the
@@ -13,23 +13,6 @@ import {isCloudflarePlaceholder404} from "../integration/_edge-ready";
  * the registry, with a `variant` enum knob whose value lands on `data-variant` on the rendered
  * button — a directly observable render change and a serializable URL param in one.
  */
-
-// Public route served by the SPA fallback: a fresh Playwright context's first paint can hit a cold
-// Cloudflare edge PoP the preview-ready warm gate never touched, which serves the typed
-// placeholder-404 (ADR 0127). Poll THROUGH that bounded window; a structured worker 404 or any
-// other response returns at once for the caller's assertion to judge — same shape as 00-smoke.
-const SPA_READY_DEADLINE_MS = 30_000;
-const SPA_READY_POLL_MS = 1_500;
-
-async function gotoSpaReady(page: Page, route: string): Promise<void> {
-	const deadline = Date.now() + SPA_READY_DEADLINE_MS;
-	while (Date.now() < deadline) {
-		const res = await page.goto(route);
-		if (!res || res.status() !== 404) return;
-		if (!isCloudflarePlaceholder404(res.status(), await res.text())) return;
-		await page.waitForTimeout(SPA_READY_POLL_MS);
-	}
-}
 
 test("atölye smoke journey: index lists exhibits → open exhibit → change knob updates render", async ({
 	page,
