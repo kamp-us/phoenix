@@ -28,6 +28,8 @@ export type LeafRead =
 			readonly parkedAt: string | null;
 			/** The founder's step the park waits on, off `context.<task>.founderAct`; else `null`. */
 			readonly founderAct: string | null;
+			/** The owner's step the park waits on, off `context.<task>.ownerStep`; else `null`. */
+			readonly ownerStep: string | null;
 	  }
 	| {readonly _tag: "Finished"; readonly terminal: string}
 	| {readonly _tag: "Unreadable"; readonly reason: string};
@@ -67,7 +69,7 @@ const issueOn = (
 const textOn = (
 	parsed: Readonly<Record<string, unknown>>,
 	task: string,
-	field: "parkedAt" | "founderAct",
+	field: "parkedAt" | "founderAct" | "ownerStep",
 ): string | null => {
 	const entry = contextOf(parsed, task);
 	return entry !== null && typeof entry[field] === "string" ? (entry[field] as string) : null;
@@ -121,6 +123,7 @@ export const leafOf = (stdout: string, requested: string | null): LeafRead => {
 				rulingIssue: issueOn(parsed, task, "rulingIssue"),
 				parkedAt: textOn(parsed, task, "parkedAt"),
 				founderAct: textOn(parsed, task, "founderAct"),
+				ownerStep: textOn(parsed, task, "ownerStep"),
 			}
 		: {_tag: "Unreadable", reason: `task "${task}" carries no leaf state`};
 };

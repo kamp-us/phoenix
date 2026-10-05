@@ -173,6 +173,31 @@ export const PARKED_ON_FOUNDER_ACT =
 		founderAct: FOUNDER_ACT,
 	})}\n`;
 
+/** The step {@link PARKED_ON_OWNER_STEP} waits on — an owner-only act no agent may take. */
+export const OWNER_STEP = "apply the shared-database migration the PR's views need";
+
+/** queued → build → review → ship → `human:cp-approval` on `owner-action-required`. */
+export const PARKED_ON_OWNER_STEP =
+	eventLog("WIP", "DONE", "PASS") +
+	`${JSON.stringify({
+		task: "issue",
+		event: "ISSUE.BLOCKED",
+		at: "2026-08-16T00:03:00.000Z",
+		cause: "owner-action-required",
+		ownerStep: OWNER_STEP,
+	})}\n`;
+
+/** The founder-hands park recorded at `ship`, where it folds to the same leaf as the owner's step. */
+export const PARKED_AT_CP_ON_FOUNDER_ACT =
+	eventLog("WIP", "DONE", "PASS") +
+	`${JSON.stringify({
+		task: "issue",
+		event: "ISSUE.BLOCKED",
+		at: "2026-08-16T00:03:00.000Z",
+		cause: "founder-act-owed",
+		founderAct: FOUNDER_ACT,
+	})}\n`;
+
 /** The milestone {@link LANE}'s issue is homed on, and the one a campaign row pins. */
 export const LANE_MILESTONE = 49;
 

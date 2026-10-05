@@ -46,7 +46,11 @@ const run = (
 	rationale: string | null = null,
 	prover: ReturnType<typeof fakeProver> = fakeProver(),
 	axisIssue: number | null = null,
-	owed: {readonly rulingIssue?: number; readonly founderAct?: string} = {},
+	owed: {
+		readonly rulingIssue?: number;
+		readonly founderAct?: string;
+		readonly ownerStep?: string;
+	} = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
@@ -60,6 +64,7 @@ const run = (
 					axisIssue,
 					rulingIssue: owed.rulingIssue ?? null,
 					founderAct: owed.founderAct ?? null,
+					ownerStep: owed.ownerStep ?? null,
 					parkCause,
 					classes,
 					waitGrant,
@@ -285,6 +290,10 @@ describe("lane transition — the park cause a driver-originated BLOCKED carries
 		[{cause: "founder-act-owed"}, /names no `founderAct`/],
 		[{cause: "founder-act-owed", rulingIssue: 42}, /waits on no ruling/],
 		[{cause: "founder-act-owed", founderAct: " "}, /says nothing/],
+		[{cause: "owner-action-required"}, /names no `ownerStep`/],
+		[{cause: "owner-action-required", founderAct: "migrate"}, /waits on no founder's step/],
+		[{cause: "founder-act-owed", founderAct: "rotate", ownerStep: "rotate"}, /no owner's step/],
+		[{cause: "owner-action-required", ownerStep: " "}, /says nothing/],
 	])("reads %j as a malformed line, never a park", (fields, defect) => {
 		const line = JSON.stringify({
 			task: "issue",
@@ -475,6 +484,72 @@ describe("lane transition — a park that waits on the founder", () => {
 
 		expect(out.code).toBe(CAUSE_UNRECOGNISED);
 		expect(out.stderr.join(" ")).toContain(names);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * A reviewed, green PR whose merge waits on a step its owner takes by hand outside the pipeline.
+ * The reported arrival: a lane at `ship` under `parkCause.uncaused: "refuse"`, where the nearest
+ * cause used to be `awaiting-cp-approval` and its recipe refused a PR that is not control-plane.
+ */
+describe("lane transition — a park at ship that waits on the owner's own step", () => {
+	const strict = parkCauseRead("refuse");
+	const atShip = logLine("WIP") + logLine("DONE") + logLine("PASS");
+	const STEP = "apply the shared-database migration the PR's views need";
+	const park = (
+		fs: ReturnType<typeof fakeFs>,
+		owed: {readonly founderAct?: string; readonly ownerStep?: string},
+		cause = "owner-action-required",
+	) => run(fs, "BLOCKED", null, cause, [], null, strict, null, undefined, null, owed);
+	const statusOf = async (fs: ReturnType<typeof fakeFs>) =>
+		JSON.parse(
+			(await Effect.runPromise(Effect.provide(runStatus({root: ROOT, lane: "42"}), fs.layer)))
+				.stdout,
+		);
+
+	it("records the park on human:cp-approval with the step on the line", async () => {
+		const fs = freshLane(atShip);
+
+		expect((await statusOf(fs)).stateValue).toEqual({pipeline: {issue: "ship"}});
+		const out = await park(fs, {ownerStep: ` ${STEP} `});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			previous: {pipeline: {issue: "ship"}},
+			current: {pipeline: {issue: "human:cp-approval"}},
+			cause: "owner-action-required",
+			ownerStep: STEP,
+		});
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended).toMatchObject({cause: "owner-action-required", ownerStep: STEP});
+		expect((await statusOf(fs)).context.issue).toMatchObject({
+			cause: "owner-action-required",
+			ownerStep: STEP,
+		});
+	});
+
+	it.each([
+		["no step", {}, "--owner-step"],
+		["a blank step", {ownerStep: " "}, "--owner-step"],
+		["the founder's step in place of its own", {founderAct: STEP}, "drop --founder-act"],
+	] as const)("refuses the park with %s, log byte-identical", async (_name, owed, names) => {
+		const fs = freshLane(atShip);
+
+		const out = await park(fs, owed);
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(out.stderr.join(" ")).toContain(names);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses the owner's step beside the founder-hands cause, log byte-identical", async () => {
+		const fs = freshLane(atShip);
+
+		const out = await park(fs, {founderAct: STEP, ownerStep: STEP}, "founder-act-owed");
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(out.stderr.join(" ")).toContain("drop --owner-step");
 		expect(fs.written.size).toBe(0);
 	});
 });

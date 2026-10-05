@@ -40,6 +40,7 @@ import {
 import {
 	causeTakesAxisIssue,
 	causeTakesFounderAct,
+	causeTakesOwnerStep,
 	causeTakesRulingIssue,
 	type ParkEvidence,
 	ROUTED_MACHINERY_CAUSES,
@@ -125,6 +126,12 @@ export interface LogEntry {
 	 * Present exactly when the line's cause is one `report.ts`'s `FOUNDER_ACT_CAUSES` names.
 	 */
 	readonly founderAct?: string;
+	/**
+	 * The step an `owner-action-required` park waits on the PR's owner to take before merge, in the
+	 * recorder's own words. Present exactly when the line's cause is one `report.ts`'s
+	 * `OWNER_STEP_CAUSES` names.
+	 */
+	readonly ownerStep?: string;
 	readonly round?: number;
 	readonly classes?: ReadonlyArray<string>;
 	readonly deferred?: ReadonlyArray<string>;
@@ -268,6 +275,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			axisIssue?: unknown;
 			rulingIssue?: unknown;
 			founderAct?: unknown;
+			ownerStep?: unknown;
 			round?: unknown;
 			classes?: unknown;
 			deferred?: unknown;
@@ -364,6 +372,22 @@ export const parseLog = (text: string): ParseLogResult => {
 				takesAct
 					? `line ${index + 1} parks on "${String(record.cause)}" and names no \`founderAct\` — the step that park waits on`
 					: `line ${index + 1} carries \`founderAct\` beside a cause that waits on no founder's step`,
+			);
+			continue;
+		}
+		const takesOwnerStep = causeTakesOwnerStep(parkedOn);
+		if (
+			record.ownerStep !== undefined &&
+			!(typeof record.ownerStep === "string" && record.ownerStep.trim() !== "")
+		) {
+			defects.push(`line ${index + 1} carries an \`ownerStep\` field that says nothing`);
+			continue;
+		}
+		if (takesOwnerStep !== (record.ownerStep !== undefined)) {
+			defects.push(
+				takesOwnerStep
+					? `line ${index + 1} parks on "${String(record.cause)}" and names no \`ownerStep\` — the step that park waits on`
+					: `line ${index + 1} carries \`ownerStep\` beside a cause that waits on no owner's step`,
 			);
 			continue;
 		}
@@ -625,6 +649,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.axisIssue === undefined ? {} : {axisIssue: record.axisIssue as number}),
 			...(record.rulingIssue === undefined ? {} : {rulingIssue: record.rulingIssue as number}),
 			...(record.founderAct === undefined ? {} : {founderAct: record.founderAct as string}),
+			...(record.ownerStep === undefined ? {} : {ownerStep: record.ownerStep as string}),
 			...(record.round === undefined ? {} : {round: record.round as number}),
 			...(record.classes === undefined ? {} : {classes: record.classes as ReadonlyArray<string>}),
 			...(record.deferred === undefined
@@ -854,6 +879,7 @@ export const standingParkEvidence = (
 				? {}
 				: {rulingIssue: entry.rulingIssue, parkedAt: entry.at}),
 			...(entry.founderAct === undefined ? {} : {founderAct: entry.founderAct}),
+			...(entry.ownerStep === undefined ? {} : {ownerStep: entry.ownerStep}),
 		};
 		if (Object.keys(evidence).length > 0) standing[task] = evidence;
 	}

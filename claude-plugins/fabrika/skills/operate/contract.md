@@ -83,11 +83,16 @@ append it, and refuse on the prover's own code with the log byte-identical. The 
 - The two causes are separate on purpose and neither stands in for the other: `ruling-owed` beside a
   step, and `founder-act-owed` beside an issue, both refuse. Neither covers a
   `type:decision` lane waiting on its own ruling: that wait has no token yet.
+- `--owner-step "<step>"` records the step an `owner-action-required` park waits on the PR's owner
+  to take by hand before merge, trimmed, and lands on the same line as `ownerStep`. That cause
+  requires it, a blank one counts as missing, and every other cause refuses it. It is not
+  `--founder-act`: `owner-action-required` beside a founder's step, and `founder-act-owed` beside an
+  owner's step, both refuse.
 - `35` — `--cause` is outside the closed park-cause set, or rides on an event that is neither
   BLOCKED nor the machinery LAP; or `--axis-issue` is missing beside `render-axis-missing`, present
   beside any other cause, or no issue number; or `--ruling-issue` fails the same three ways beside
   `ruling-owed`; or `--founder-act` is missing or blank beside `founder-act-owed`, or present beside
-  any other cause.
+  any other cause; or `--owner-step` fails the same way beside `owner-action-required`.
 - `52` — a BLOCKED names no cause at all. `parkCause.uncaused` ships `refuse`, so this is what a
   repo declaring nothing gets; a repo declaring `"uncaused": "record"` records the bare park
   instead. Name one from the closed set; the log is unappended.
@@ -2366,6 +2371,18 @@ nothing and is novel.
 - The founder's-step park (`blocked` keyed `founder-act-owed`) has no row and never clears here,
   whatever `parkCause.driverRouted` says: no read proves a person took a step by hand. It refuses at
   `12` naming the cause and quoting the recorded step, and leaves on a person's `UNBLOCKED`.
+- The owner's-step park (`human:cp-approval` keyed `owner-action-required`) waits on the PR's owner
+  to take the step the park line names as `ownerStep`, then sign off. Its read is the open PR the
+  lane's issue resolves to, its live head, the control-plane roster off `.github/CODEOWNERS` on the
+  default branch, and every comment on the PR. It clears back into `ship` when a roster member has
+  commented `owner-action-signoff @ <sha>` with `<sha>` the live head, on a PR that is
+  control-plane and on one that is not, with a `mechanism` of `owner-signoff:<login>@<head>`. The
+  clear approves nothing: a control-plane PR still owes `ship cp-approval` on the shipper's next
+  run, and that verb never reads this marker. No sign-off, one at an earlier head, one by an
+  account off the roster, a `control-plane-self-approval` comment, and an empty roster are each
+  `13` with nothing written, naming the cause and the recorded step. A roster that cannot be read,
+  and a comment list that cannot be read or comes back shorter than the PR's own count, are `11`.
+  No open PR is `7`.
 - The `queue-stall` park is the one row whose clear also GRANTS. Its read is `ship reconcile`'s
   answer relayed, where `landed` and `ejected` clear and `unresolved` is exit `13`. Because the park
   IS a spent wait budget, the clear records the waits it buys on the very same `UNBLOCKED` — one

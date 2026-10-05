@@ -142,7 +142,16 @@ describe("the closed park-cause set --cause advertises", () => {
 		);
 	});
 
-	it("offers the two spent-budget parks, the two base machinery causes, the stale text review, the red assembly base, the queue ejection, the red head, the rendered gate's five, the unlanded write, the builder's two mechanical stops, the owner-approval wait, the verdict the head owes, the size stop and the two waits on the founder beside the six that predate them", () => {
+	it.each([
+		"transition",
+		"report",
+	])("lane %s offers --owner-step for the park on the owner's own step", (leaf) => {
+		expect(flagHelp(leafNamed(leaf))).toMatch(
+			/step the PR's owner must take[^"]*required with --cause owner-action-required/,
+		);
+	});
+
+	it("offers the two spent-budget parks, the two base machinery causes, the stale text review, the red assembly base, the queue ejection, the red head, the rendered gate's five, the unlanded write, the builder's two mechanical stops, the owner-approval wait, the verdict the head owes, the size stop, the two waits on the founder and the wait on the owner's own step beside the six that predate them", () => {
 		expect([...PARK_CAUSE_TOKENS]).toEqual([
 			"assembly-base-red",
 			"assembly-conflict",
@@ -156,6 +165,7 @@ describe("the closed park-cause set --cause advertises", () => {
 			"no-preview-render",
 			"no-preview-routed",
 			"no-rendered-delta",
+			"owner-action-required",
 			"queue-ejected",
 			"render-axis-missing",
 			"repair-budget-spent",

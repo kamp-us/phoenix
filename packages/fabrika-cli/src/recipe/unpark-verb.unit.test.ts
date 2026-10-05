@@ -80,8 +80,10 @@ import {
 	LOG,
 	laneTemplate,
 	nominatedPulls,
+	OWNER_STEP,
 	PARKED_AT_CP,
 	PARKED_AT_CP_ON,
+	PARKED_AT_CP_ON_FOUNDER_ACT,
 	PARKED_AT_CP_UNCAUSED,
 	PARKED_AT_QUEUE_STALL,
 	PARKED_BLOCKED,
@@ -89,6 +91,7 @@ import {
 	PARKED_ON_CAMPAIGN,
 	PARKED_ON_CI_RED,
 	PARKED_ON_FOUNDER_ACT,
+	PARKED_ON_OWNER_STEP,
 	PARKED_ON_RENDER_AXIS,
 	PARKED_ON_ROUTED_UI,
 	PARKED_ON_SPAWN,
@@ -1776,6 +1779,136 @@ describe("recipe unpark — a park on the founder's own step never clears on a r
 		expect(said).toContain('"founder-act-owed"');
 		expect(said).toContain(FOUNDER_ACT);
 		expect(said).not.toContain("a bare BLOCKED park");
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("recipe unpark — an owner's-step park clears on an owner's sign-off at the live head", () => {
+	const SIGNED = {id: 1, author: RULER, body: `owner-action-signoff @ ${HEAD}`};
+	const ORDINARY_FILES = reply(files("apps/site/src/App.tsx", "README.md"));
+	const onPull = (
+		changed: HttpReply,
+		...rows: ReadonlyArray<{id: number; body: string; author?: string}>
+	): ReadonlyArray<Scripted> => [
+		[CLOSERS, reply(closingPulls(4321))],
+		[PULL, reply(pull({comments: rows.length}))],
+		[FILES, changed],
+		[PR_COMMENTS, reply(comments(...rows))],
+	];
+
+	it.each([
+		["a PR that is not control-plane", ORDINARY_FILES],
+		["a control-plane PR", CP_FILES],
+	])("clears back to ship on %s", async (_name, changed) => {
+		const fs = lane(PARKED_ON_OWNER_STEP);
+
+		const out = await run(fs, onPull(changed, SIGNED), acl);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "human:cp-approval",
+			clearance: "owner-signoff",
+			mechanism: `owner-signoff:${RULER}@${HEAD}`,
+			current: "ship",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it.each([
+		[
+			"no sign-off stands",
+			[{id: 1, author: RULER, body: "Ran it, will sign soon.\n"}],
+			"no control-plane owner",
+		],
+		[
+			"the sign-off binds an earlier head",
+			[{...SIGNED, body: `owner-action-signoff @ ${OTHER_HEAD}`}],
+			"not the live head",
+		],
+		[
+			"the sign-off's author is off the roster",
+			[{...SIGNED, author: "outsider"}],
+			"no control-plane owner",
+		],
+		[
+			"the comment is a control-plane self-approval",
+			[{...SIGNED, body: `control-plane-self-approval @ ${HEAD}`}],
+			"no control-plane owner",
+		],
+	] as const)("is PARK_HOLDS naming the cause and the step when %s", async (_name, rows, why) => {
+		const fs = lane(PARKED_ON_OWNER_STEP);
+
+		const out = await run(fs, onPull(ORDINARY_FILES, ...rows), acl);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		const said = out.stderr.join("\n");
+		expect(said).toContain('"owner-action-required"');
+		expect(said).toContain(OWNER_STEP);
+		expect(said).toContain(why);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_HOLDS on an empty roster, naming it", async () => {
+		const fs = lane(PARKED_ON_OWNER_STEP);
+
+		const out = await run(fs, onPull(ORDINARY_FILES, SIGNED), [
+			[RULING_MEMBERS, {status: 200, body: "[]"}],
+			...acl,
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toContain("roster resolves to nobody");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it.each([
+		["the roster", [[RULING_MEMBERS, httpError(502)]], "the control-plane roster"],
+		["the comment list", [[PR_COMMENTS, httpError(502)]], "#4321's comments"],
+	] as const)("is UNKNOWN when %s cannot be read, naming it", async (_name, unread, what) => {
+		const fs = lane(PARKED_ON_OWNER_STEP);
+
+		const out = await run(fs, [...unread, ...onPull(ORDINARY_FILES, SIGNED)], acl);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain(`cannot read ${what}`);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is UNKNOWN on a partial comment list — a sign-off could sit in the unread part", async () => {
+		const fs = lane(PARKED_ON_OWNER_STEP);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull({comments: 2}))],
+				[PR_COMMENTS, reply(comments(SIGNED))],
+			],
+			acl,
+		);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain("received 1 of 2");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("holds on a lane with no open PR, naming that there is nothing to read", async () => {
+		const fs = lane(PARKED_ON_OWNER_STEP);
+
+		const out = await run(fs, [[CLOSERS, reply(closingPulls())]], acl);
+
+		expect(out.code).toBe(TARGET_ABSENT);
+		expect(out.stderr.join("\n")).toContain("no subject to read");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("never clears the founder-hands park on a sign-off — that cause is no stand-in", async () => {
+		const fs = lane(PARKED_AT_CP_ON_FOUNDER_ACT);
+
+		const out = await run(fs, onPull(ORDINARY_FILES, SIGNED), acl);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(out.stderr.join("\n")).toContain('"founder-act-owed"');
 		expect(fs.written.size).toBe(0);
 	});
 });

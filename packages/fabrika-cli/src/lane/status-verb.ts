@@ -7,9 +7,10 @@
  * it as `context.<task>.cause` — the key `recipe unpark` seats a park against — beside the
  * evidence that park recorded: the `context.<task>.axisIssue` a `render-axis-missing` park waits on,
  * the `context.<task>.rulingIssue` a `ruling-owed` park's ruling is owed on with the `parkedAt` it
- * parked at, and the `context.<task>.founderAct` a `founder-act-owed` park waits on. A task with
- * lane classes standing carries them as `context.<task>.classes`, which is what a driver relays onto
- * the next event's `--class`.
+ * parked at, the `context.<task>.founderAct` a `founder-act-owed` park waits on, and the
+ * `context.<task>.ownerStep` an `owner-action-required` park waits on. A task with lane classes
+ * standing carries them as `context.<task>.classes`, which is what a driver relays onto the next
+ * event's `--class`.
  *
  * A `deferred` array rides beside it on a lane that has one, and it is the only part of the answer
  * not derived from the machine: a task an amendment deferred is gone from the machine, so nothing in
