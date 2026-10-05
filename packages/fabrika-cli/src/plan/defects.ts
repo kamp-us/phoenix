@@ -29,10 +29,14 @@
  * only `unknown` puts it in {@link Floor.skipped}. v1 fused `absent` and `unknown` through a stderr
  * substring match, so a transient probe failure silently switched the whole class off for a run.
  *
- * The priority set is exactly `{p0, p1, p2}` — `p3` was ruled *retired*, not widened.
+ * **The board's labels are an input, never a constant.** A child's status, priority and
+ * needs-triage marks are read against the repo's resolved board vocabulary, so a board that renamed
+ * them is judged on its own names. The shipped priority set is `{p0, p1, p2}` — `p3` was ruled
+ * *retired*, not widened — and a repo that declares none runs on it.
  */
 
 import type {RequiredEdge} from "../build/dependencies.ts";
+import {type BoardVocabulary, statusList} from "../config/board.ts";
 import {type ContainmentVocabulary, containmentGap} from "../config/keys/containment-vocabulary.ts";
 import type {LedgerScope} from "./digest.ts";
 import type {ChildLedger} from "./model.ts";
@@ -71,9 +75,7 @@ export interface Floor {
 	readonly skipped: ReadonlyArray<DefectType>;
 }
 
-export const PRIORITY_LABELS: ReadonlyArray<string> = ["p0", "p1", "p2"];
 export const HELD_LABEL = "ready-for:human";
-export const NEEDS_TRIAGE_LABEL = "status:needs-triage";
 
 const issueNumber = (ref: string): number | null => {
 	const matched = /^#(\d+)$/.exec(ref);
@@ -205,11 +207,24 @@ const carriedDown = (
 		.sort((a, b) => a - b);
 };
 
-export const missingLabelKinds = (labels: ReadonlyArray<string>): ReadonlyArray<string> => {
+/**
+ * The label kinds a child lacks, read against the board it runs on.
+ *
+ * A status is a label the board names as one or any label under `status:` — the same reading
+ * `build pick` takes: a renamed status keeps no prefix to be recognised by, and a stray `status:`
+ * label still says the issue has been given a state. A priority is a member of the board's set.
+ */
+export const missingLabelKinds = (
+	labels: ReadonlyArray<string>,
+	board: BoardVocabulary,
+): ReadonlyArray<string> => {
+	const statuses = statusList(board.statuses);
 	const missing: string[] = [];
 	if (!labels.some((label) => label.startsWith("type:"))) missing.push("type:");
-	if (!labels.some((label) => label.startsWith("status:"))) missing.push("status:");
-	if (!labels.some((label) => PRIORITY_LABELS.includes(label))) missing.push("priority");
+	if (!labels.some((label) => label.startsWith("status:") || statuses.includes(label))) {
+		missing.push("status");
+	}
+	if (!labels.some((label) => board.priorities.includes(label))) missing.push("priority");
 	return missing;
 };
 
@@ -254,6 +269,8 @@ export interface FloorInput {
 	 * rather than a field of the ledger the scope digest is taken over.
 	 */
 	readonly vocabulary: ContainmentVocabulary;
+	/** The resolved board vocabulary — config too — whose statuses and priorities a child must carry. */
+	readonly board: BoardVocabulary;
 }
 
 export const deriveFloor = ({
@@ -263,7 +280,9 @@ export const deriveFloor = ({
 	observed,
 	epicBlockers,
 	vocabulary,
+	board,
 }: FloorInput): Floor => {
+	const {needsTriage} = board.statuses;
 	const defects: Defect[] = [];
 
 	if (ledger.dependenciesAbsent) {
@@ -366,7 +385,7 @@ export const deriveFloor = ({
 			});
 		}
 
-		for (const kind of missingLabelKinds(child.labels)) {
+		for (const kind of missingLabelKinds(child.labels, board)) {
 			defects.push({
 				type: "MISSING_LABEL",
 				refs: [child.number],
@@ -386,11 +405,11 @@ export const deriveFloor = ({
 			});
 		}
 
-		if (child.labels.includes(NEEDS_TRIAGE_LABEL)) {
+		if (child.labels.includes(needsTriage)) {
 			defects.push({
 				type: "NEEDS_TRIAGE_LABEL",
 				refs: [child.number],
-				detail: `still carries ${NEEDS_TRIAGE_LABEL}`,
+				detail: `still carries ${needsTriage}`,
 			});
 		}
 

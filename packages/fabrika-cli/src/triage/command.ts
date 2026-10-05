@@ -37,7 +37,7 @@ import {runHomes} from "./homes-verb.ts";
 import {runKill} from "./kill-verb.ts";
 import {runPark} from "./park-verb.ts";
 import {runProvenance} from "./provenance-verb.ts";
-import {DEFAULT_QUEUE_LABEL, DEFAULT_QUEUE_LIMIT, runQueue} from "./queue-verb.ts";
+import {DEFAULT_QUEUE_LIMIT, runQueue} from "./queue-verb.ts";
 import {runRepairCriteria} from "./repair-criteria-verb.ts";
 import {ROADMAP_FILE} from "./roadmap.ts";
 import {runScratch} from "./scratch-verb.ts";
@@ -194,13 +194,14 @@ const split = leafCommand(
 	Command.withDescription(
 		[
 			"Creates one cross-linked split child from stdin, once; prints `<created|reused>\\t<number>\\t<url>`.",
+			"  The child carries boardVocabulary.statuses.needsTriage.",
 			"  3: stdin was empty",
 			"  5: the body carries a machine-local path",
 			"  6: the body is a bare @ reference",
 			"  7: the parent is absent or closed, or the queue label does not exist",
 			"  8: the create failed (UNKNOWN)",
 			"  9: the read-back does not match",
-			"  11: a precondition read failed, the claim included; nothing was created",
+			"  11: a precondition read failed (claim and board included); nothing was created",
 			"  17: another session or lane holds the claim on the parent",
 			'  Derivation: the triage skill\'s contract.md, "triage split"',
 		].join("\n"),
@@ -407,9 +408,9 @@ const queue = leafCommand(
 	"queue",
 	{
 		label: Flag.string("label").pipe(
-			Flag.withDefault(DEFAULT_QUEUE_LABEL),
+			Flag.optional,
 			Flag.withDescription(
-				`the intake-queue label; the queue is its open issues plus every open issue with no labels (default: ${DEFAULT_QUEUE_LABEL})`,
+				"the intake-queue label; the queue is its open issues plus every open issue with no labels (default: boardVocabulary.statuses.needsTriage, shipped as status:needs-triage)",
 			),
 		),
 		limit: Flag.integer("limit").pipe(
@@ -422,7 +423,7 @@ const queue = leafCommand(
 	Effect.fn(function* ({label, limit, repo, json}) {
 		yield* emit(
 			yield* runQueue({
-				label,
+				label: Option.getOrNull(label),
 				limit,
 				repo: Option.getOrNull(repo),
 				json,
@@ -440,7 +441,7 @@ const queue = leafCommand(
 			"  The queue is every open issue carrying --label plus every open issue with no label at all.",
 			"  Each queued issue is one `<number>\\t<age-days>\\t<title>` line; both scanned counts are on stderr.",
 			"  7: --label does not exist",
-			"  11: the labelled or the unlabelled read failed (UNKNOWN, never empty)",
+			"  11: a read failed, or --label is omitted and the board vocabulary is unreadable (UNKNOWN)",
 			'  Derivation: the triage skill\'s contract.md, "triage queue"',
 		].join("\n"),
 	),
@@ -790,7 +791,7 @@ const sweepHomes = leafCommand(
 		yield* emit(
 			yield* runSweepHomes({
 				mode: apply ? "apply" : "dry-run",
-				standingLanes: yield* readStandingLanes(process.cwd()),
+				board: yield* readBoard(process.cwd()),
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,

@@ -37,14 +37,16 @@ export type SweepPlan =
 	  };
 
 /**
- * Plan a sweep over the open `status:triaged` backlog, through the guard's own verdict. `lanes` is
- * the set the repo declares, the same one the guard judges against.
+ * Plan a sweep over the open triaged backlog, through the guard's own verdict. `lanes` is the set
+ * the repo declares and `triaged` the board's triaged status the backlog was read under — the two
+ * the guard judges against.
  */
 export const planSweep = (
 	issues: ReadonlyArray<TriagedIssue>,
 	lanes: ReadonlyArray<string>,
+	triaged: string,
 ): SweepPlan => {
-	const verdict = judge(issues, lanes, {_tag: "backlog"});
+	const verdict = judge(issues, lanes, {_tag: "backlog", triaged});
 	if (verdict.pass) {
 		const {scanned, homed, exempt} = verdict;
 		return {_tag: "Planned", scanned, homed, exempt, clears: [], unhomed: []};

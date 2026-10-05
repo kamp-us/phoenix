@@ -160,8 +160,9 @@ renames a status gets the new label created, written, queried and flipped under 
 |---|---|---|
 | write | `status bootstrap` | `resolveBoard(loadConfig(source), FACET_VOCABULARY)` in `status/bootstrap-verb.ts` |
 | write | `triage apply`, `triage park` | `guardConfig` in `triage/config-guard.ts` |
-| read | `build pick`, `status board`, `ship release`, `ledger child` | `readBoard(cwd)` in `status/repo-board.ts` |
-| read | `plan flip` and every `plan` verb that computes the scope digest | `readBoardVocabulary` in `plan/load.ts`, over the same `readBoard` |
+| read | `build pick`, `status board`, `ship release`, `ledger child`, `ledger adopt`, `guard pitch-guard check` | `readBoard(cwd)` in `status/repo-board.ts` |
+| read | `guard homing-guard check`, `triage sweep-homes`, `triage queue`, `triage split`, `graduate emit`, `report dedup`, `report file` | the same `readBoard`, taken by the command adapter and handed to the verb as a `BoardRead` |
+| read | `plan flip` and every `plan` verb that computes the scope digest or the floor | `readBoardVocabulary` in `plan/load.ts`, over the same `readBoard` |
 
 Four rules hold for a verb that reads a status.
 
@@ -180,17 +181,25 @@ runs `unusableReason` over the whole config.
 **Pure code takes the statuses as a parameter.** `plan/digest.ts` leaves the two labels `plan flip`
 writes out of the scope digest, so `scopeDigest(ledger, statuses)` and `flipLabels(statuses)` take
 the role record from the verb that read the board. A pure module that imported the names could only
-ever exclude the shipped pair.
+ever exclude the shipped pair. The plan floor takes the whole `BoardVocabulary` the same way, for
+its status, priority and needs-triage checks, and the homing and pitch guards carry the triaged label
+on their `Scope`. Where the pure core judges one issue, the IO shell resolves the fact instead:
+the pitch guard's `Candidate.triaged` is set against the board, as `authorized` is at the ACL.
+
+**An intake label the operator names wins; an omitted one is the board's.** `intakeLabel` in
+`status/repo-board.ts` returns a `--label` as given and otherwise the board's `needsTriage`. Only
+the omitted case reads the board, so only it refuses on a board that did not resolve. A verb that
+both reads and writes the intake queue (`triage split`, `graduate emit`) takes the label once and
+uses that one value for the label check, the queue read, the create and the read-back.
 
 **One read per run.** A verb that needs two things off the board takes both from one `readBoard`:
 `build pick` and `ledger child` read the status and the standing lanes together, and `plan flip`
 hands the same read to `missingLabelRemedy`. Two loads of one file can disagree if it changes
 between them.
 
-Not every reader is on the resolved board yet. The homing and pitch guards, the plan floor's
-`status:` prefix test, `triage queue`, `triage split`, `graduate emit` and `report` still select the
-shipped names; [#8854](https://github.com/kamp-us/phoenix/issues/8854) owns them. `ledger adopt`,
-the table agenda and the main alarm do too, reported as
+Not every reader is on the resolved board yet. `ledger adopt` reads its needs-triage, status and
+priority checks off the board but still parks under the shipped triaged and planned names, and the
+table agenda and the main alarm still use the shipped names; all three are reported as
 [#10427](https://github.com/kamp-us/phoenix/issues/10427).
 
 ## The machine-local layer

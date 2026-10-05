@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {type HttpReply, okOut, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {renderFooter} from "../report/compose.ts";
-import {SHIPPED_BOARD} from "../status/board.test-support.ts";
+import {declaredBoard, SHIPPED_BOARD} from "../status/board.test-support.ts";
 import {COMMENTS, claimPage, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
 import {
 	EMPTY_STDIN,
@@ -141,6 +141,69 @@ const run = (steps: ReadonlyArray<Scripted> = base, over: Partial<typeof options
 		}),
 	);
 };
+
+describe("runSplit — the board's needs-triage status is the one queue label", () => {
+	const RENAMED = declaredBoard({boardVocabulary: {statuses: {needsTriage: "state:new"}}});
+	const RENAMED_QUEUE = /GET .*\/repos\/o\/r\/issues\?state=open&labels=state%3Anew/;
+
+	it("checks, reads, creates and reads back under the renamed label", async () => {
+		const {outcome, requests, bodies} = await run(
+			script(
+				[LABELS, labels("status:needs-triage", "state:new")],
+				[RENAMED_QUEUE, queue()],
+				[issueRead(4321), issue({labels: [{name: "state:new"}]})],
+			),
+			{board: RENAMED},
+		);
+		expect(outcome.code).toBe(0);
+		expect(bodyOf(requests, bodies, CREATE)).toContain('"labels":["state:new"]');
+		expect(requests.some((line) => line.includes("labels=status%3Aneeds-triage"))).toBe(false);
+	});
+
+	it("reuses a child the renamed queue already holds rather than minting a twin", async () => {
+		const {outcome, requests} = await run(
+			script(
+				[LABELS, labels("status:needs-triage", "state:new")],
+				[RENAMED_QUEUE, queue({number: 4321, title: TITLE})],
+				[issueRead(4321), issue({labels: [{name: "state:new"}]})],
+			),
+			{board: RENAMED},
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toContain("reused\t4321");
+		expect(requests.some((line) => CREATE.test(line))).toBe(false);
+	});
+
+	it("reds a read-back that landed without the renamed label", async () => {
+		const {outcome} = await run(
+			script([LABELS, labels("status:needs-triage", "state:new")], [RENAMED_QUEUE, queue()]),
+			{board: RENAMED},
+		);
+		expect(outcome.code).toBe(READBACK_MISMATCH);
+		expect(outcome.stderr.join("\n")).toContain("without state:new");
+	});
+
+	it("names the renamed label, never the old one, when the repo lacks it", async () => {
+		const {outcome, requests} = await run(
+			script([LABELS, labels("status:needs-triage", "type:bug")]),
+			{board: RENAMED},
+		);
+		expect(outcome.code).toBe(ZERO_SCOPE);
+		const said = outcome.stderr.join("\n");
+		expect(said).toContain("label state:new does not exist");
+		expect(said).not.toContain("status:needs-triage");
+		expect(requests.some((line) => CREATE.test(line))).toBe(false);
+	});
+
+	it("refuses a board nobody could read before creating anything", async () => {
+		const {outcome, requests} = await run(base, {
+			board: declaredBoard({boardVocabulary: {statuses: {needsTriage: 1}}}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain("cannot read .fabrika.jsonc's board vocabulary");
+		expect(requests).toEqual([]);
+	});
+});
 
 describe("runSplit — the created path", () => {
 	it("prints the outcome token, the number and the url, tab-separated", async () => {

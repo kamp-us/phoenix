@@ -23,6 +23,7 @@ import {readKey} from "../config/read-key.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
+import {readBoard} from "../status/repo-board.ts";
 import {runAmend} from "./amend-verb.ts";
 import {DEFAULT_LIMIT} from "./dedup.ts";
 import {runDedup} from "./dedup-verb.ts";
@@ -31,7 +32,8 @@ import {DEFAULT_CLOSED_DAYS} from "./issue-index.ts";
 import {runNote} from "./note-verb.ts";
 import {runScratch} from "./scratch-verb.ts";
 
-const DEFAULT_LABEL = "status:needs-triage";
+/** What an omitted `--label` resolves to, named once for both flags' help. */
+const DEFAULT_LABEL_HELP = "boardVocabulary.statuses.needsTriage, shipped as status:needs-triage";
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,
@@ -71,9 +73,9 @@ const dedup = leafCommand(
 			),
 		),
 		label: Flag.string("label").pipe(
-			Flag.withDefault(DEFAULT_LABEL),
+			Flag.optional,
 			Flag.withDescription(
-				`the intake-queue label whose open issues are read (default: ${DEFAULT_LABEL})`,
+				`the intake-queue label whose open issues are read (default: ${DEFAULT_LABEL_HELP})`,
 			),
 		),
 		limit: Flag.integer("limit").pipe(
@@ -97,7 +99,8 @@ const dedup = leafCommand(
 				query,
 				closedDays,
 				refresh,
-				label,
+				label: Option.getOrNull(label),
+				board: yield* readBoard(process.cwd()),
 				limit,
 				exclude: Option.getOrNull(exclude),
 				repo: Option.getOrNull(repo),
@@ -115,7 +118,7 @@ const dedup = leafCommand(
 			"Prints candidates, none or indeterminate, each an answer, then one line per candidate issue.",
 			"  Matches are advisory.",
 			"  7: --label does not exist, so the queue half would scan nothing",
-			"  27: the queue is unreadable",
+			"  27: the queue is unreadable, or --label is omitted and the board vocabulary is unreadable",
 			"  28: the issue corpus is unreadable",
 			'  Derivation: the report skill\'s contract.md, "report dedup"',
 		].join("\n"),
@@ -135,9 +138,9 @@ const fileCmd = leafCommand(
 			Flag.withDescription("the issue title: a short, specific, type-neutral summary"),
 		),
 		label: Flag.string("label").pipe(
-			Flag.withDefault(DEFAULT_LABEL),
+			Flag.optional,
 			Flag.withDescription(
-				`the single intake-queue label the new issue carries (default: ${DEFAULT_LABEL})`,
+				`the single intake-queue label the new issue carries (default: ${DEFAULT_LABEL_HELP})`,
 			),
 		),
 		redact: redactFlag,
@@ -149,7 +152,8 @@ const fileCmd = leafCommand(
 			yield* runFile({
 				leakNames: yield* readKey(process.cwd(), leakNamesKey),
 				title,
-				label,
+				label: Option.getOrNull(label),
+				board: yield* readBoard(process.cwd()),
 				redact,
 				repo: Option.getOrNull(repo),
 				json,
@@ -172,7 +176,7 @@ const fileCmd = leafCommand(
 			"  8: the create failed (UNKNOWN)",
 			"  9: the read-back differs",
 			"  10: the title or label classifies",
-			"  11: the label set or `leakNames` is unreadable",
+			"  11: the label set, `leakNames`, or (with --label omitted) the board vocabulary is unreadable",
 			'  Derivation: the report skill\'s contract.md, "report file"',
 		].join("\n"),
 	),

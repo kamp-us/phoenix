@@ -1,7 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
-import {SHIPPED_BOARD} from "../status/board.test-support.ts";
+import {declaredBoard, SHIPPED_BOARD} from "../status/board.test-support.ts";
 import {ANSWER, FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {ageDays, runQueue, toRows} from "./queue-verb.ts";
@@ -13,7 +13,7 @@ const UNLABELED = /GET .*\/repos\/o\/r\/issues\?state=open&per_page=/;
 const NOW = new Date("2026-08-03T00:00:00Z");
 
 const options = {
-	label: "status:needs-triage",
+	label: "status:needs-triage" as string | null,
 	limit: 100,
 	repo: null,
 	json: false,
@@ -55,6 +55,52 @@ const queued = (...rows: ReadonlyArray<unknown>): HttpReply => ({
 });
 
 const BAD_GATEWAY: HttpReply = {status: 502, body: "{}"};
+
+describe("runQueue — the queue label", () => {
+	const RENAMED = declaredBoard({boardVocabulary: {statuses: {needsTriage: "state:new"}}});
+
+	it("reads the board's needs-triage status when --label is omitted", async () => {
+		const seams = fakeSeams([
+			[LABELS, labels("status:needs-triage", "state:new")],
+			[/labels=state%3Anew/, queued(row(7, "2026-08-01T00:00:00Z", "new report", ["state:new"]))],
+			noUnlabeled,
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runQueue({...options, label: null, board: RENAMED}), seams.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("7\t");
+		expect(seams.requests.some((line) => line.includes("labels=status%3Aneeds-triage"))).toBe(
+			false,
+		);
+	});
+
+	it("keeps an explicit --label as that run's queue, and still proves it exists", async () => {
+		const out = await run([[LABELS, labels("state:new")]], {
+			label: "status:needs-triage",
+			board: RENAMED,
+		});
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.join("\n")).toContain("label status:needs-triage does not exist");
+	});
+
+	it("refuses an omitted --label over a board nobody could read, reading nothing", async () => {
+		const seams = fakeSeams([]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runQueue({
+					...options,
+					label: null,
+					board: declaredBoard({boardVocabulary: {statuses: "x"}}),
+				}),
+				seams.layer,
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("cannot read .fabrika.jsonc's board vocabulary");
+		expect(seams.requests).toEqual([]);
+	});
+});
 
 describe("ageDays", () => {
 	it("floors to whole days", () => {

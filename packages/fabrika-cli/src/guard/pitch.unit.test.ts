@@ -40,8 +40,8 @@ import {
 	resolveApproval,
 	resolveBetApproval,
 	rulingPointers,
-	SCOPE_LABELS,
 	type Scope,
+	scopeLabels,
 	toGuardVerdict,
 } from "./pitch.ts";
 
@@ -70,25 +70,33 @@ const cycles = (n: number): Appetite => ({_tag: "cycles", cycles: n});
 const size = (letter: "S" | "M" | "L"): Appetite => ({_tag: "size", size: letter});
 const SIZES = SHIPPED_APPETITE_SIZES;
 
-const candidate = (over: Partial<Candidate> = {}): Candidate => ({
-	number: 4312,
-	title: "product search",
-	labels: ["status:triaged", "type:feature"],
-	hasParent: false,
-	milestone: null,
-	body: GOOD_PITCH,
-	comments: [APPROVED],
-	rulings: [],
-	...over,
-});
+const TRIAGED = "status:triaged";
 
-const BACKLOG: Scope = {_tag: "backlog"};
+/** A candidate whose `triaged` is read off its labels, as the IO shell resolves it on a shipped board. */
+const candidate = (over: Partial<Candidate> = {}): Candidate => {
+	const labels = over.labels ?? [TRIAGED, "type:feature"];
+	return {
+		number: 4312,
+		title: "product search",
+		labels,
+		triaged: labels.includes(TRIAGED),
+		hasParent: false,
+		milestone: null,
+		body: GOOD_PITCH,
+		comments: [APPROVED],
+		rulings: [],
+		...over,
+	};
+};
+
+const BACKLOG: Scope = {_tag: "backlog", triaged: TRIAGED};
 const issueScope = (number: number, universe: LabelUniverse = PRESENT): Scope => ({
 	_tag: "issue",
+	triaged: TRIAGED,
 	number,
 	universe,
 });
-const ABSENT: LabelUniverse = {_tag: "absent", missing: [...SCOPE_LABELS]};
+const ABSENT: LabelUniverse = {_tag: "absent", missing: [...scopeLabels(TRIAGED)]};
 
 describe("the frozen scope literals", () => {
 	it("names EXACTLY the two lane-entering types — widening it is a founder call", () => {
@@ -99,8 +107,9 @@ describe("the frozen scope literals", () => {
 		expect([...PITCH_FIELDS]).toEqual(["Problem", "Arc", "Appetite", "Rabbit-holes", "No-gos"]);
 	});
 
-	it("scopes an issue check on the triaged label plus both lane-entering types", () => {
-		expect([...SCOPE_LABELS]).toEqual(["status:triaged", "type:epic", "type:feature"]);
+	it("scopes an issue check on the board's triaged label plus both lane-entering types", () => {
+		expect([...scopeLabels(TRIAGED)]).toEqual([TRIAGED, "type:epic", "type:feature"]);
+		expect([...scopeLabels("state:ready")]).toEqual(["state:ready", "type:epic", "type:feature"]);
 	});
 });
 
@@ -119,6 +128,13 @@ describe("isLaneEntering", () => {
 
 	it("excludes an un-triaged issue — the requirement binds when triage makes it pickable", () => {
 		expect(isLaneEntering(candidate({labels: ["type:feature"]}))).toBe(false);
+	});
+
+	it("reads triage off the resolved fact, never off a status label of its own", () => {
+		const renamed = candidate({labels: ["state:ready", "type:feature"], triaged: true});
+		expect(isLaneEntering(renamed)).toBe(true);
+		const stale = candidate({labels: [TRIAGED, "type:feature"], triaged: false});
+		expect(isLaneEntering(stale)).toBe(false);
 	});
 
 	it("excludes maintenance and questions — they are not bets", () => {
@@ -280,7 +296,7 @@ describe("judge", () => {
 		expect(judge([], issueScope(9, ABSENT))).toMatchObject({
 			pass: false,
 			reason: "vocabulary-absent",
-			missing: SCOPE_LABELS,
+			missing: scopeLabels(TRIAGED),
 		});
 	});
 

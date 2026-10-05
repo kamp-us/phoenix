@@ -31,3 +31,25 @@ export const readBoard = (
 /** A refused board's reason, fit to sit mid-sentence: each key words its own, period or not. */
 export const refusalReason = (read: Extract<BoardRead, {readonly _tag: "Refused"}>): string =>
 	read.reason.replace(/\.$/, "");
+
+/** The intake label a verb reads or files under, or why none may be used. */
+export type IntakeLabel =
+	| {readonly _tag: "Label"; readonly label: string}
+	| {readonly _tag: "Refused"; readonly reason: string};
+
+/**
+ * The intake label: the one the operator named, else the board's needs-triage status.
+ *
+ * A named label needs no board — it is the operator's choice for that run, and the verb still proves
+ * it exists. An omitted one over a board nobody could read has no answer: the shipped name is a
+ * queue a renamed board does not use, so the reason is named instead of substituting it.
+ */
+export const intakeLabel = (named: string | null, board: BoardRead): IntakeLabel => {
+	if (named !== null) return {_tag: "Label", label: named};
+	return board._tag === "Refused"
+		? {
+				_tag: "Refused",
+				reason: `cannot read ${BOARD_SUBJECT}: ${refusalReason(board)} — which label is the intake queue is UNKNOWN, never the shipped name`,
+			}
+		: {_tag: "Label", label: board.resolved.board.statuses.needsTriage};
+};

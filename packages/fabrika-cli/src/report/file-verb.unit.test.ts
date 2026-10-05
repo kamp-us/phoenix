@@ -4,6 +4,7 @@ import {type LeakNames, NO_LEAK_NAMES} from "../config/keys/leak-names.ts";
 import type {Read} from "../config/read-key.ts";
 import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {declaredBoard, SHIPPED_BOARD} from "../status/board.test-support.ts";
 import {
 	BAD_SECTIONS,
 	BARE_AT_PATH,
@@ -59,7 +60,8 @@ const landed = (
 
 const options = {
 	title: "Retry helper in the http worker swallows the abort reason",
-	label: "status:needs-triage",
+	label: "status:needs-triage" as string | null,
+	board: SHIPPED_BOARD,
 	redact: false,
 	leakNames: noNames as Read<LeakNames>,
 	repo: null,
@@ -86,6 +88,64 @@ const happy: ReadonlyArray<Scripted> = [
 
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(Effect.provide(runFile({...options, ...overrides}), fakeSeams(script).layer));
+
+describe("runFile — the intake label", () => {
+	const RENAMED = declaredBoard({boardVocabulary: {statuses: {needsTriage: "state:new"}}});
+
+	it("files under the board's needs-triage status when --label is omitted, and reads it back", async () => {
+		const seams = fakeSeams([
+			[READBACK, landed(composed, ["state:new"])],
+			[CREATE, created],
+			[LABELS, labelSet("status:needs-triage", "state:new", "type:bug", "p0")],
+			branchDetached,
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runFile({...options, label: null, board: RENAMED, json: true}), seams.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).label).toBe("state:new");
+		const create = seams.bodies[seams.requests.findIndex((c) => CREATE.test(c))] ?? "";
+		expect(JSON.parse(create).labels).toEqual(["state:new"]);
+	});
+
+	it("reds a read-back that landed under the shipped name on a renamed board", async () => {
+		const out = await run(
+			[
+				[READBACK, landed(composed, ["status:needs-triage"])],
+				[CREATE, created],
+				[LABELS, labelSet("status:needs-triage", "state:new")],
+				branchDetached,
+			],
+			{label: null, board: RENAMED},
+		);
+		expect(out.code).toBe(READBACK_MISMATCH);
+	});
+
+	it("keeps an explicit --label for that run, still checked against the label set", async () => {
+		const out = await run([[LABELS, labelSet("state:new")], branchDetached], {
+			label: "status:needs-triage",
+			board: RENAMED,
+		});
+		expect(out.code).toBe(NO_TARGET);
+	});
+
+	it("refuses an omitted --label over a board nobody could read, filing nothing", async () => {
+		const seams = fakeSeams(happy);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runFile({
+					...options,
+					label: null,
+					board: declaredBoard({boardVocabulary: {priorities: []}}),
+				}),
+				seams.layer,
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("cannot read .fabrika.jsonc's board vocabulary");
+		expect(seams.requests.some((c) => CREATE.test(c) || LABELS.test(c))).toBe(false);
+	});
+});
 
 describe("runFile", () => {
 	it("files, reads back, and prints a bare tab-separated number and url", async () => {

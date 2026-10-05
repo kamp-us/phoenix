@@ -38,6 +38,7 @@ import {
 import {classifyingPrefix, deriveVocabulary, normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
 import {missingLabelRemedy} from "../status/label-remedy.ts";
+import {intakeLabel} from "../status/repo-board.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import * as graduateEmitted from "../wire/graduate-emitted.ts";
 import {stampOf} from "../wire/grill-marker.ts";
@@ -74,9 +75,6 @@ const never = (what: string): never => {
 	throw new Error(`graduate emit: ${what} did not build — the verb's own invariant broke`);
 };
 
-/** The one label a spec leaves carrying, and the only one this verb may apply. */
-export const INTAKE_LABEL = "status:needs-triage";
-
 export interface EmitOptions<R = never> {
 	readonly source: number;
 	readonly specPath: string;
@@ -84,7 +82,10 @@ export interface EmitOptions<R = never> {
 	readonly title: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
-	/** The board a missing-label refusal reads its `status bootstrap` remedy against. */
+	/**
+	 * The board whose needs-triage status is the one label a spec leaves carrying, and the only one
+	 * this verb may apply.
+	 */
 	readonly board: BoardRead;
 	/** The footer's timestamp, injected so a filing is byte-reproducible in a test. */
 	readonly now: () => Date;
@@ -101,14 +102,15 @@ const VERB = "graduate emit";
  */
 export const readbackMismatch = (
 	landed: Existence<IssueRecord>,
+	intake: string,
 	title: string,
 	composed: string,
 ): string | null => {
 	if (landed._tag === "Absent") return "the issue is not readable after the create";
 	if (landed._tag === "Unknown") return `the read-back itself failed: ${landed.reason}`;
 	const issue = landed.value;
-	if (issue.labels.length !== 1 || issue.labels[0] !== INTAKE_LABEL) {
-		return `it carries labels [${issue.labels.join(", ")}] rather than exactly "${INTAKE_LABEL}"`;
+	if (issue.labels.length !== 1 || issue.labels[0] !== intake) {
+		return `it carries labels [${issue.labels.join(", ")}] rather than exactly "${intake}"`;
 	}
 	if (issue.title !== title) return `its title is "${issue.title}" rather than what --title gave`;
 	const missing = SPEC_SECTIONS.find((heading) => !issue.body.includes(heading));
@@ -141,6 +143,12 @@ export const runEmit = <R = never>(
 			);
 		}
 		const repo = repoAttempt.value;
+
+		const chosen = intakeLabel(null, options.board);
+		if (chosen._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, `${VERB}: ${chosen.reason}. Nothing was filed.`);
+		}
+		const intake = chosen.label;
 
 		const document = yield* options.spec;
 		if (document._tag === "Failed") {
@@ -277,14 +285,14 @@ export const runEmit = <R = never>(
 		if (labels._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the label set of ${repo}: ${labels.reason} — whether "${INTAKE_LABEL}" exists is UNKNOWN. Nothing was filed.`,
+				`${VERB}: cannot read the label set of ${repo}: ${labels.reason} — whether "${intake}" exists is UNKNOWN. Nothing was filed.`,
 				[scope],
 			);
 		}
-		if (!labels.value.includes(INTAKE_LABEL)) {
+		if (!labels.value.includes(intake)) {
 			return refuse(
 				NO_TARGET,
-				`${VERB}: label "${INTAKE_LABEL}" does not exist in ${repo} — refusing to file a spec no triage run can find. ${missingLabelRemedy(INTAKE_LABEL, options.board)}`,
+				`${VERB}: label "${intake}" does not exist in ${repo} — refusing to file a spec no triage run can find. ${missingLabelRemedy(intake, options.board)}`,
 				[scope],
 			);
 		}
@@ -317,7 +325,7 @@ export const runEmit = <R = never>(
 			);
 		}
 
-		const created = yield* createIssue(repo, title, composed, INTAKE_LABEL);
+		const created = yield* createIssue(repo, title, composed, intake);
 		if (created._tag === "Failure") {
 			return refuse(
 				WRITE_UNKNOWN,
@@ -326,7 +334,12 @@ export const runEmit = <R = never>(
 			);
 		}
 
-		const mismatch = readbackMismatch(yield* getIssue(repo, created.value.number), title, composed);
+		const mismatch = readbackMismatch(
+			yield* getIssue(repo, created.value.number),
+			intake,
+			title,
+			composed,
+		);
 		if (mismatch !== null) {
 			return refuse(
 				READBACK_MISMATCH,
@@ -361,7 +374,7 @@ export const runEmit = <R = never>(
 				issue: created.value.number,
 				url: created.value.url,
 				specDigest,
-				labels: [INTAKE_LABEL],
+				labels: [intake],
 				marker: marker.value.id,
 			}),
 			[scope, `${VERB}: ${covered.length} decision(s) covered; spec digest ${specDigest}.`],

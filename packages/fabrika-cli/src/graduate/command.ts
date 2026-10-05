@@ -150,7 +150,7 @@ const emit = leafCommand(
 			"  4: bad --spec sections",
 			"  5: a machine-local path",
 			"  6: a bare @ reference",
-			"  7: no such source, or no status:needs-triage label",
+			"  7: no such source, or no board needs-triage label",
 			"  8: a write failed (UNKNOWN)",
 			"  9: the read-back differs",
 			"  10: --title classifies",
@@ -197,6 +197,6 @@ export const graduateCommand = Command.make("graduate").pipe(
 	Command.withSubcommands([trail, compose, emit, read]),
 	Command.withShortDescription("Turn a cleared decision trail into one buildable spec issue."),
 	Command.withDescription(
-		"Turn a cleared decision trail into ONE buildable spec issue: resolve a grilling session or a wayfinding map through its own sibling reader, render a spec whose ## Decisions section separates what the founder ruled from what an agent established, file it at status:needs-triage, and record the emission on the source",
+		"Turn a cleared decision trail into ONE buildable spec issue: resolve a grilling session or a wayfinding map through its own sibling reader, render a spec whose ## Decisions section separates what the founder ruled from what an agent established, file it at the board's needs-triage status, and record the emission on the source",
 	),
 );

@@ -16,6 +16,8 @@ import {
 } from "./homing.ts";
 import {PRESENT} from "./label-universe.ts";
 
+const TRIAGED = "status:triaged";
+
 const issue = (
 	number: number,
 	milestone: number | null,
@@ -24,11 +26,17 @@ const issue = (
 	number,
 	title: `issue ${number}`,
 	milestone,
-	labels: ["status:triaged", ...labels],
+	labels: [TRIAGED, ...labels],
 });
 
 // Issue scope in a repo that HAS the label — the ordinary case.
-const issueScope = (number: number): Scope => ({_tag: "issue", number, universe: PRESENT});
+const issueScope = (number: number): Scope => ({
+	_tag: "issue",
+	triaged: TRIAGED,
+	number,
+	universe: PRESENT,
+});
+const BACKLOG: Scope = {_tag: "backlog", triaged: TRIAGED};
 
 /** A repo's declared lanes, as a fixture: the decision carries no lane of its own. */
 const LANES: ReadonlyArray<string> = ["wayfinder:backlog", "axis:pipeline-hardening"];
@@ -96,6 +104,7 @@ describe("judge — pass", () => {
 				issue(4, null, ["axis:pipeline-hardening"]),
 			],
 			LANES,
+			BACKLOG,
 		);
 		expect(v.pass).toBe(true);
 		if (v.pass) {
@@ -108,7 +117,7 @@ describe("judge — pass", () => {
 
 describe("judge — violations", () => {
 	it("FAILS and names every un-homed issue, not just the first", () => {
-		const v = judge([issue(1, 17), issue(2, null), issue(3, null, ["p0"])], LANES);
+		const v = judge([issue(1, 17), issue(2, null), issue(3, null, ["p0"])], LANES, BACKLOG);
 		expect(v.pass).toBe(false);
 		if (!v.pass && v.reason === "violations") {
 			expect(v.violations.map((u) => u.number)).toEqual([2, 3]);
@@ -127,7 +136,7 @@ describe("judge — violations", () => {
 	});
 
 	it("FAILS on a double-marked issue and keeps it OUT of the homed count", () => {
-		const v = judge([issue(1, 17), issue(2, 24, ["axis:pipeline-hardening"])], LANES);
+		const v = judge([issue(1, 17), issue(2, 24, ["axis:pipeline-hardening"])], LANES, BACKLOG);
 		expect(v.pass).toBe(false);
 		if (!v.pass && v.reason === "violations") {
 			expect(v.homed).toBe(1);
@@ -154,7 +163,11 @@ describe("judge — violations", () => {
 	});
 
 	it("carries BOTH defect classes in one verdict — neither hides the other", () => {
-		const v = judge([issue(1, null), issue(2, 24, ["wayfinder:backlog"]), issue(3, 17)], LANES);
+		const v = judge(
+			[issue(1, null), issue(2, 24, ["wayfinder:backlog"]), issue(3, 17)],
+			LANES,
+			BACKLOG,
+		);
 		expect(v.pass).toBe(false);
 		if (!v.pass && v.reason === "violations") {
 			expect(v.violations.map((x) => [x.kind, x.number])).toEqual([
@@ -167,8 +180,8 @@ describe("judge — violations", () => {
 });
 
 describe("judge — zero scope", () => {
-	it("defaults to backlog scope, so a bare empty scan still fails closed", () => {
-		const v = judge([], LANES);
+	it("fails closed on an empty backlog scan", () => {
+		const v = judge([], LANES, BACKLOG);
 		expect(v.pass).toBe(false);
 	});
 });
@@ -176,7 +189,7 @@ describe("judge — zero scope", () => {
 describe("renderReport", () => {
 	it("separates the two defect classes, each under its own remedy", () => {
 		const report = renderReport(
-			judge([issue(1, null), issue(2, 24, ["wayfinder:backlog"])], LANES),
+			judge([issue(1, null), issue(2, 24, ["wayfinder:backlog"])], LANES, BACKLOG),
 		);
 		expect(report).toContain("2 of 2 triaged issue(s)");
 		expect(report).toContain("Left triage with NEITHER a milestone nor a standing-lane label");
@@ -185,16 +198,16 @@ describe("renderReport", () => {
 	});
 
 	it("prints ONLY the class that fired — no empty section for the other", () => {
-		const report = renderReport(judge([issue(1, null)], LANES));
+		const report = renderReport(judge([issue(1, null)], LANES, BACKLOG));
 		expect(report).toContain("Left triage with NEITHER");
 		expect(report).not.toContain("Carry BOTH");
 	});
 
 	it("offers the declared lanes in the un-homed remedy, and says so when the repo declares none", () => {
-		expect(renderReport(judge([issue(1, null)], LANES))).toContain(
+		expect(renderReport(judge([issue(1, null)], LANES, BACKLOG))).toContain(
 			"label it a standing lane — wayfinder:backlog or axis:pipeline-hardening —",
 		);
-		const none = renderReport(judge([issue(1, null)], []));
+		const none = renderReport(judge([issue(1, null)], [], BACKLOG));
 		expect(none).toContain("this repo declares none");
 		expect(none).not.toContain("wayfinder:backlog");
 	});
@@ -209,7 +222,7 @@ describe("toGuardVerdict", () => {
 
 	it("reports the backlog's own scanned count on a clean sweep", () => {
 		const verdict = toGuardVerdict(
-			judge([issue(1, 17), issue(2, null, ["wayfinder:backlog"])], LANES),
+			judge([issue(1, 17), issue(2, null, ["wayfinder:backlog"])], LANES, BACKLOG),
 		);
 		expect(verdict._tag).toBe("Clean");
 		if (verdict._tag === "Clean") expect(verdict.scanned).toBe(2);

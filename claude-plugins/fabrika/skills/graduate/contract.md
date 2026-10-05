@@ -112,7 +112,7 @@ section constant, its orchestration, and its own read-back assertions, spelled o
 **This group's read-back, stated because it is not inherited.** After the create, `graduate emit`
 re-reads the issue and asserts all four, comparing with `normalizeForReadback` rather than byte-for-
 byte: the body carries the four spec headings in order; the body ends with this group's footer line;
-the title equals `--title` as given; and the label set is **exactly** `["status:needs-triage"]`. Any
+the title equals `--title` as given; and the label set is **exactly** the board's needs-triage status. Any
 miss is `9`.
 
 <!-- anchor: REPORT-SECTIONS-NOT-WIDENED --> **`report`'s `REQUIRED_SECTIONS` is deliberately NOT
@@ -401,7 +401,7 @@ triggers. `0`, `1`, `126` and `127` are stated **here and only here**, and every
 | `4` | `BAD_SECTIONS` — an authored section is missing, out of order, or empty; or (on `trail`) the map body does not parse | ✓ | ✓ | ✓ | — |
 | `5` | `LEAKED_PATH` — the text carries a machine-local path | — | ✓ | ✓ | — |
 | `6` | `BARE_AT_PATH` — the text is a bare `@` path reference | — | ✓ | ✓ | — |
-| `7` | `NO_TARGET` — the named target does not exist: the source issue (`trail`, `read`, `emit`), or the `status:needs-triage` label (`emit` only) | ✓ | — | ✓ | ✓ |
+| `7` | `NO_TARGET` — the named target does not exist: the source issue (`trail`, `read`, `emit`), or the board's needs-triage label (`emit` only) | ✓ | — | ✓ | ✓ |
 | `8` | `WRITE_UNKNOWN` — the write failed, so the outcome is UNKNOWN | — | — | ✓ | — |
 | `9` | `READBACK_MISMATCH` — the write landed, the read-back differs | — | — | ✓ | — |
 | `10` | `CLASSIFIED` — the `--title` carries a type or priority classification | — | — | ✓ | — |
@@ -746,7 +746,9 @@ it or its provenance or rendered text has changed** (refs on the trail but *abse
 remainder and are legal); computes the **spec digest** over the re-derived entries for exactly those
 refs; reads the source's emission markers and refuses at `15` if one already binds that spec digest;
 **appends the footer** carrying that digest; leak-scans the **composed whole, footer included**;
-creates the issue; applies **exactly** `status:needs-triage`; reads the issue back; then posts the
+creates the issue; applies **exactly** the board's needs-triage status (`boardVocabulary.statuses.needsTriage`,
+`status:needs-triage` where the repo declares none — one board read supplies it to the label check,
+the create, the read-back and the answer); reads the issue back; then posts the
 marker carrying the digest and the covered refs.
 
 The text comparison uses compose's one-line whitespace normalization. Digests still cover the
@@ -800,7 +802,7 @@ positional, and everything else is re-derived from the source itself.
 | `issue` | integer | the spec issue this call filed |
 | `url` | string | the spec issue's HTML URL |
 | `specDigest` | string | the 12-hex spec digest bound into the marker — equal to the trail digest exactly when the spec covers every decision on the trail |
-| `labels` | array | always exactly `["status:needs-triage"]` — present so a reader never infers the absence of board state from an absent key |
+| `labels` | array | always exactly the board's needs-triage status, `["status:needs-triage"]` where the repo declares none — present so a reader never infers the absence of board state from an absent key |
 | `marker` | integer | the id of the marker comment on the source |
 
 **Errors**
@@ -813,7 +815,8 @@ positional, and everything else is re-derived from the source itself.
 | `graduate emit: the spec carries a machine-local path: <path> — refusing to file it.` | 5 | refusal |
 | `graduate emit: the spec is a bare @ path reference — not redactable, refusing to file it.` | 6 | refusal |
 | `graduate emit: #<n> does not exist.` | 7 | refusal |
-| `graduate emit: label "status:needs-triage" does not exist in <repo> — refusing to file a spec no triage run can find. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
+| `graduate emit: cannot read .fabrika.jsonc's board vocabulary: <reason> — which label is the intake queue is UNKNOWN, never the shipped name. Nothing was filed.` | 11 | refusal |
+| `graduate emit: label "<needs-triage>" does not exist in <repo> — refusing to file a spec no triage run can find. <remedy>` (`<remedy>` names the `fabrika status bootstrap <surface>` command that creates the label on this repo's board, says no surface creates it, or says which one is UNKNOWN when `.fabrika.jsonc` is refused) | 7 | refusal |
 | `graduate emit: the create failed, so whether a spec issue exists is UNKNOWN — check <repo> before re-running.` | 8 | refusal |
 | `graduate emit: filed #<n> and the marker write failed — the spec EXISTS but #<source> does not record it, so a re-run would file a second. Post the marker or check #<source> before re-running.` | 8 | refusal |
 | `graduate emit: filed #<n> but the read-back does not match what was sent.` | 9 | refusal |

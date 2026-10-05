@@ -1,13 +1,17 @@
 import {describe, expect, it} from "vitest";
 import {BOARD_VOCABULARY} from "../config/keys/board-vocabulary.ts";
-import {INTAKE_LABEL} from "../graduate/emit-verb.ts";
 import {SESSION_LABEL} from "../grill/session.ts";
-import {AWAITING_RELEASE, KILL_LABEL, NEEDS_INFO, PLANNED, TRIAGED} from "../labels.ts";
+import {
+	AWAITING_RELEASE,
+	KILL_LABEL,
+	NEEDS_INFO,
+	NEEDS_TRIAGE,
+	PLANNED,
+	TRIAGED,
+} from "../labels.ts";
 import {MAP_LABEL} from "../map/frontier.ts";
 import {SPIKE_LABEL} from "../spike/bodies.ts";
 import {READY_FOR_AGENT} from "../triage/audience.ts";
-import {DEFAULT_QUEUE_LABEL} from "../triage/queue-verb.ts";
-import {QUEUE_LABEL} from "../triage/split-verb.ts";
 import {declaredBoard, SHIPPED_BOARD} from "./board.test-support.ts";
 import {BUILDABLE_SURFACES, labelSurface} from "./bootstrap-verb.ts";
 import {missingLabelRemedy} from "./label-remedy.ts";
@@ -26,9 +30,9 @@ const REFUSED_WHEN_MISSING: ReadonlyArray<readonly [string, string]> = [
 	["decision rule", READY_FOR_AGENT],
 	["triage kill", KILL_LABEL],
 	["triage park", NEEDS_INFO],
-	["triage queue", DEFAULT_QUEUE_LABEL],
-	["triage split", QUEUE_LABEL],
-	["graduate emit", INTAKE_LABEL],
+	["triage queue", NEEDS_TRIAGE],
+	["triage split", NEEDS_TRIAGE],
+	["graduate emit", NEEDS_TRIAGE],
 	["ship release", AWAITING_RELEASE],
 	["grill open", SESSION_LABEL],
 	["map open", MAP_LABEL],

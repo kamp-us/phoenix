@@ -1,43 +1,38 @@
 /**
  * `guard homing-guard check [--issue N]` — the board read behind the home-xor-exempt decision.
  *
- * Two scopes, and the difference is what an empty one means. The bare sweep reads the whole open
- * `status:triaged` set and reds on an empty one, like every guard here; `--issue N` is the per-issue
- * seam check a triage sweep runs right after it stamps the label, and an issue that is simply not
- * triaged is a pass over a scan of one.
+ * Two scopes, and the difference is what an empty one means. The bare sweep reads the whole open set
+ * under the board's triaged status and reds on an empty one, like every guard here; `--issue N` is
+ * the per-issue seam check a triage sweep runs right after it stamps the label, and an issue that is
+ * simply not triaged is a pass over a scan of one.
  *
  * The `--issue` fork reads the repository's label set too, but only when the issue turns out not to
- * be triaged: without that read an empty result cannot be told from a repo that never defined
- * `status:triaged`, and the seam guard would report clean forever having checked nothing.
+ * be triaged: without that read an empty result cannot be told from a repo that never defined its
+ * triaged label, and the seam guard would report clean forever having checked nothing.
  *
- * The standing lanes arrive as the delivery layer's config read, refusal included: an unreadable
- * declaration cannot say which labels exempt an issue, so it is UNKNOWN here and never "no lanes",
- * which would red every lane-homed issue as un-homed.
+ * The triaged status and the standing lanes arrive as the delivery layer's board read, refusal
+ * included. A board nobody could read cannot say which label scopes the scan — the shipped name
+ * would scope a renamed board to nothing and pass — nor which labels exempt an issue, so it is
+ * UNKNOWN here and never the shipped names or "no lanes".
  *
  * The whole decision lives in `./homing.ts`; this file resolves the repo, reads, and emits.
  */
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import type {Read} from "../config/read-key.ts";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {getIssue, type IssueRecord, openIssuesWithLabelRecords, resolveRepo} from "../io/issues.ts";
+import {BOARD_SUBJECT, refusalReason} from "../status/repo-board.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
-import {
-	judge,
-	type Scope,
-	TRIAGED_LABEL,
-	type TriagedIssue,
-	toGuardVerdict,
-	VERB,
-} from "./homing.ts";
+import {judge, type Scope, type TriagedIssue, toGuardVerdict, VERB} from "./homing.ts";
 import {PRESENT, universeOf} from "./label-universe.ts";
 import {emitVerdict, type GuardVerdict, unknown} from "./verdict.ts";
 
 export interface HomingGuardOptions {
-	/** One issue to scope the scan to, or `null` for the whole open `status:triaged` backlog. */
+	/** One issue to scope the scan to, or `null` for the whole open triaged backlog. */
 	readonly issue: number | null;
-	/** The lanes this repo declares, as read from `.fabrika.jsonc` by the delivery layer. */
-	readonly standingLanes: Read<ReadonlyArray<string>>;
+	/** The board this repo declares — its triaged status and standing lanes — read by the adapter. */
+	readonly board: BoardRead;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
@@ -59,22 +54,24 @@ export const toTriaged = (record: IssueRecord): TriagedIssue => ({
 
 const backlogScan = (
 	repo: string,
+	triaged: string,
 ): Effect.Effect<Scan, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const attempt = yield* openIssuesWithLabelRecords(repo, TRIAGED_LABEL);
+		const attempt = yield* openIssuesWithLabelRecords(repo, triaged);
 		return attempt._tag === "Failure"
 			? refused(
-					`${VERB}: cannot read the open ${TRIAGED_LABEL} set in ${repo}: ${attempt.reason} — the scan could not be completed, so the verdict is UNKNOWN, never clean.`,
+					`${VERB}: cannot read the open ${triaged} set in ${repo}: ${attempt.reason} — the scan could not be completed, so the verdict is UNKNOWN, never clean.`,
 				)
 			: {
 					_tag: "Scanned",
 					issues: attempt.value.map(toTriaged),
-					scope: {_tag: "backlog"},
+					scope: {_tag: "backlog", triaged},
 				};
 	});
 
 const issueScan = (
 	repo: string,
+	triaged: string,
 	number: number,
 ): Effect.Effect<Scan, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
@@ -97,16 +94,20 @@ const issueScan = (
 			);
 		}
 		const one = toTriaged(found.value);
-		if (one.labels.includes(TRIAGED_LABEL)) {
-			return {_tag: "Scanned", issues: [one], scope: {_tag: "issue", number, universe: PRESENT}};
+		if (one.labels.includes(triaged)) {
+			return {
+				_tag: "Scanned",
+				issues: [one],
+				scope: {_tag: "issue", triaged, number, universe: PRESENT},
+			};
 		}
 		// Read only here: this is the one fork where an empty scope is ambiguous.
-		const universe = yield* universeOf(repo, [TRIAGED_LABEL]);
+		const universe = yield* universeOf(repo, [triaged]);
 		return universe === null
 			? refused(
-					`${VERB}: issue #${number} is not ${TRIAGED_LABEL}, and the label set of ${repo} could not be read to tell that from a repo that never defined it — the verdict is UNKNOWN, never clean.`,
+					`${VERB}: issue #${number} is not ${triaged}, and the label set of ${repo} could not be read to tell that from a repo that never defined it — the verdict is UNKNOWN, never clean.`,
 				)
-			: {_tag: "Scanned", issues: [], scope: {_tag: "issue", number, universe}};
+			: {_tag: "Scanned", issues: [], scope: {_tag: "issue", triaged, number, universe}};
 	});
 
 export const runHomingGuard = (
@@ -116,15 +117,16 @@ export const runHomingGuard = (
 		if (options.issue !== null && !(Number.isInteger(options.issue) && options.issue > 0)) {
 			return refuse(FAILED, `${VERB}: ${options.issue} is not an issue number.`);
 		}
-		const lanes = options.standingLanes;
-		if (lanes._tag === "Refused") {
+		const board = options.board;
+		if (board._tag === "Refused") {
 			return emitVerdict(
 				unknown(
-					`${VERB}: cannot read the standing lanes this repo declares: ${lanes.reason.replace(/\.$/, "")} — which labels exempt an issue is unread. Nothing was scanned, so the verdict is UNKNOWN.`,
+					`${VERB}: cannot read ${BOARD_SUBJECT}: ${refusalReason(board)} — which label is the triaged status and which labels exempt an issue are unread, never the shipped names. Nothing was scanned, so the verdict is UNKNOWN.`,
 				),
 				options.env,
 			);
 		}
+		const {statuses, standingLanes} = board.resolved.board;
 		const target = yield* resolveRepo(options.repo, options.env);
 		if (target._tag === "Failure") {
 			return emitVerdict(
@@ -135,12 +137,12 @@ export const runHomingGuard = (
 			);
 		}
 		const scan = yield* options.issue === null
-			? backlogScan(target.value)
-			: issueScan(target.value, options.issue);
+			? backlogScan(target.value, statuses.triaged)
+			: issueScan(target.value, statuses.triaged, options.issue);
 		return emitVerdict(
 			scan._tag === "Refused"
 				? scan.verdict
-				: toGuardVerdict(judge(scan.issues, lanes.value, scan.scope)),
+				: toGuardVerdict(judge(scan.issues, standingLanes, scan.scope)),
 			options.env,
 		);
 	});

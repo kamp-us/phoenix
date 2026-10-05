@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {SHIPPED_CONTAINMENT_VOCABULARY} from "../config/keys/containment-vocabulary.ts";
+import {DEFAULT_BOARD_VOCABULARY} from "../triage/facets.ts";
 import {type AdoptionInput, judgeAdoption, parseStoriesFlag} from "./adoption.ts";
 import {BAD_SECTIONS, OFF_VOCABULARY} from "./codes.ts";
 
@@ -11,6 +12,7 @@ const input = (overrides: Partial<AdoptionInput> = {}): AdoptionInput => ({
 	assignees: [],
 	cycleDoc: "absent",
 	vocabulary: SHIPPED_CONTAINMENT_VOCABULARY,
+	board: DEFAULT_BOARD_VOCABULARY,
 	stories: {_tag: "Ids", ids: [1]},
 	containment: null,
 	...overrides,
@@ -64,6 +66,21 @@ describe("judgeAdoption", () => {
 		["a held issue with nobody assigned", ["type:bug", "p1", "status:triaged", "ready-for:human"]],
 	])("refuses %s on 10", (_, labels) => {
 		expect(judgeAdoption(input({labels}))).toMatchObject({_tag: "Refused", code: OFF_VOCABULARY});
+	});
+
+	it("reads the needs-triage role and the priorities off the board it is handed", () => {
+		const board = {
+			...DEFAULT_BOARD_VOCABULARY,
+			statuses: {...DEFAULT_BOARD_VOCABULARY.statuses, needsTriage: "state:new"},
+			priorities: ["sev1"],
+		};
+		expect(judgeAdoption(input({board, labels: ["type:bug", "sev1", "state:new"]}))).toMatchObject({
+			_tag: "Refused",
+			reason: "it still carries state:new — an untriaged issue is not a plannable child.",
+		});
+		expect(
+			judgeAdoption(input({board, labels: ["type:bug", "p1", "status:triaged"]})),
+		).toMatchObject({_tag: "Refused", reason: expect.stringContaining("missing a priority label")});
 	});
 
 	it("names the labels it never adds when one is missing", () => {

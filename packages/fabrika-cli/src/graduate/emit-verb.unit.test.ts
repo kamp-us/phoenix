@@ -9,7 +9,7 @@ import {
 	roundDigestOf,
 	rulingComment,
 } from "../grill/fixtures.test-support.ts";
-import {SHIPPED_BOARD} from "../status/board.test-support.ts";
+import {declaredBoard, SHIPPED_BOARD} from "../status/board.test-support.ts";
 import * as graduateEmitted from "../wire/graduate-emitted.ts";
 import {markerTime} from "../wire/grill-marker.ts";
 import {
@@ -18,11 +18,12 @@ import {
 	CLASSIFIED,
 	DECISIONS_STALE,
 	NO_TARGET,
+	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {type DocumentRead, runCompose} from "./compose-verb.ts";
-import {INTAKE_LABEL, runEmit} from "./emit-verb.ts";
+import {runEmit} from "./emit-verb.ts";
 import {
 	AUTHORED,
 	CLEARED_DECISIONS,
@@ -62,10 +63,14 @@ const LANDED = withFooter(
 );
 const TITLE = "Cap moderation weight per topic";
 
+/** The shipped board's needs-triage status: the one label a spec leaves carrying. */
+const INTAKE_LABEL = "status:needs-triage";
+
 const emit = (
 	script: ReadonlyArray<Scripted>,
 	spec: DocumentRead = {_tag: "Text", text: SPEC},
 	title = TITLE,
+	board = SHIPPED_BOARD,
 ) => {
 	const seams = fakeSeams(script);
 	return Effect.runPromise(
@@ -77,7 +82,7 @@ const emit = (
 				title,
 				repo: null,
 				env: {CLAUDE_PIPELINE_REPO: REPO},
-				board: SHIPPED_BOARD,
+				board,
 				now: () => NOW,
 			}),
 			seams.layer,
@@ -205,6 +210,65 @@ describe("the whole transaction", () => {
 		const create = bodyOf(seams, CREATE);
 		expect(create).toContain(`spec ${SPEC_DIGEST}`);
 		expect(create).toContain("Filed by an agent");
+	});
+});
+
+describe("the intake label is the board's needs-triage status", () => {
+	const RENAMED = declaredBoard({boardVocabulary: {statuses: {needsTriage: "state:new"}}});
+	const renamed = (labels: ReadonlyArray<string>, landed: ReadonlyArray<string>) =>
+		healthy().map(([pattern, reply]): Scripted => {
+			if (pattern === LABELS) return [LABELS, labelSet(...labels)];
+			if (pattern === CREATED_ISSUE) {
+				return [
+					CREATED_ISSUE,
+					served(issueJson({number: 9520, title: TITLE, body: LANDED, labels: landed})),
+				];
+			}
+			return [pattern, reply];
+		});
+
+	it("files, reads back and reports the renamed label while the old one still exists", async () => {
+		const {outcome, seams} = await emit(
+			renamed([INTAKE_LABEL, "state:new", "type:feature"], ["state:new"]),
+			undefined,
+			TITLE,
+			RENAMED,
+		);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(bodyOf(seams, CREATE)).labels).toEqual(["state:new"]);
+		expect(JSON.parse(outcome.stdout).labels).toEqual(["state:new"]);
+	});
+
+	it("reds a read-back carrying the shipped name instead", async () => {
+		const {outcome} = await emit(
+			renamed([INTAKE_LABEL, "state:new"], [INTAKE_LABEL]),
+			undefined,
+			TITLE,
+			RENAMED,
+		);
+		expect(outcome.code).toBe(READBACK_MISMATCH);
+		expect(outcome.stderr.at(-1)).toContain('rather than exactly "state:new"');
+	});
+
+	it("names the renamed label, never the old one, when the repo lacks it", async () => {
+		const {outcome, seams} = await emit(renamed([INTAKE_LABEL], []), undefined, TITLE, RENAMED);
+		expect(outcome.code).toBe(NO_TARGET);
+		const said = outcome.stderr.join("\n");
+		expect(said).toContain('label "state:new" does not exist');
+		expect(said).not.toContain(INTAKE_LABEL);
+		expect(seams.requests.some((line) => CREATE.test(line))).toBe(false);
+	});
+
+	it("refuses a board nobody could read before reading anything", async () => {
+		const {outcome, seams} = await emit(
+			healthy(),
+			undefined,
+			TITLE,
+			declaredBoard({boardVocabulary: {statuses: {needsTriage: ""}}}),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain("cannot read .fabrika.jsonc's board vocabulary");
+		expect(seams.requests).toEqual([]);
 	});
 });
 

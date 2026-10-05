@@ -26,9 +26,6 @@ import {clean, type GuardVerdict, unknown, violation, zeroScope} from "./verdict
 
 export const VERB = "guard pitch-guard check";
 
-/** The label that puts an issue in scope: the requirement binds when triage makes it pickable. */
-export const TRIAGED_LABEL = "status:triaged";
-
 /**
  * Lane-entering work, exactly: an epic is a bet, and so is a standalone feature. A `type:feature`
  * WITH a parent inherits its epic's pitch — that check lives in {@link isLaneEntering}. Maintenance
@@ -37,8 +34,14 @@ export const TRIAGED_LABEL = "status:triaged";
  */
 export const LANE_ENTERING_TYPES: ReadonlyArray<string> = ["type:epic", "type:feature"];
 
-/** The labels an issue-scope check needs before an empty result may read as "out of scope". */
-export const SCOPE_LABELS: ReadonlyArray<string> = [TRIAGED_LABEL, ...LANE_ENTERING_TYPES];
+/**
+ * The labels an issue-scope check needs before an empty result may read as "out of scope": the
+ * board's triaged status — the label whose stamp makes work pickable — and the lane-entering types.
+ */
+export const scopeLabels = (triaged: string): ReadonlyArray<string> => [
+	triaged,
+	...LANE_ENTERING_TYPES,
+];
 
 /** The five fields, in canonical order. All are required; a missing one is a malformed pitch. */
 export const PITCH_FIELDS = ["Problem", "Arc", "Appetite", "Rabbit-holes", "No-gos"] as const;
@@ -64,6 +67,11 @@ export interface Candidate {
 	readonly number: number;
 	readonly title: string;
 	readonly labels: ReadonlyArray<string>;
+	/**
+	 * Whether the issue carries the board's triaged status. Resolved against the repo's declared
+	 * vocabulary by the IO shell, as `authorized` is at the ACL, so the core never names a status label.
+	 */
+	readonly triaged: boolean;
 	/** True when the issue is a sub-issue — it inherits its epic's pitch and needs none. */
 	readonly hasParent: boolean;
 	/** The milestone the issue is homed on, or `null` on a standing lane. */
@@ -159,16 +167,22 @@ export const rulingPointers = (
 };
 
 /**
- * What the guard scanned. `backlog` is the whole open lane-entering `status:triaged` set; `issue` is
- * the per-issue seam check that fires the moment triage stamps the label.
+ * What the guard scanned. `backlog` is the whole open lane-entering triaged set; `issue` is the
+ * per-issue seam check that fires the moment triage stamps the label. `triaged` is the board's
+ * triaged status the scan was cut by, so a report names the label this repo actually uses.
  *
  * Issue scope carries the label `universe` for the same reason `homing-guard`'s does: an empty issue
  * scope reads either "not lane-entering work" or "this repo has none of the scoping labels", and
  * only the label universe separates them.
  */
 export type Scope =
-	| {readonly _tag: "backlog"}
-	| {readonly _tag: "issue"; readonly number: number; readonly universe: LabelUniverse};
+	| {readonly _tag: "backlog"; readonly triaged: string}
+	| {
+			readonly _tag: "issue";
+			readonly triaged: string;
+			readonly number: number;
+			readonly universe: LabelUniverse;
+	  };
 
 const heading = /^\s{0,3}#{2,6}\s*pitch\s*$/i;
 const anyHeading = /^\s{0,3}#{1,6}\s/;
@@ -550,7 +564,7 @@ export const describeBetTable = (table: BetTable): string =>
 
 /** Lane-entering: an epic, or a parentless feature; triaged in both cases. */
 export const isLaneEntering = (candidate: Candidate): boolean => {
-	if (!candidate.labels.includes(TRIAGED_LABEL)) return false;
+	if (!candidate.triaged) return false;
 	if (candidate.labels.includes("type:epic")) return true;
 	return candidate.labels.includes("type:feature") && !candidate.hasParent;
 };
@@ -559,8 +573,10 @@ export const isLaneEntering = (candidate: Candidate): boolean => {
  * The one issue kind a founder ruling can stand in for a pitch on. An epic is lane-entering too and
  * always owes its pitch.
  */
-export const takesPitchRuling = (candidate: Pick<Candidate, "labels" | "hasParent">): boolean =>
-	candidate.labels.includes(TRIAGED_LABEL) &&
+export const takesPitchRuling = (
+	candidate: Pick<Candidate, "labels" | "triaged" | "hasParent">,
+): boolean =>
+	candidate.triaged &&
 	candidate.labels.includes("type:feature") &&
 	!candidate.labels.includes("type:epic") &&
 	!candidate.hasParent;
@@ -799,7 +815,7 @@ export type PitchVerdict =
  */
 export const judge = (
 	candidates: ReadonlyArray<Candidate>,
-	scope: Scope = {_tag: "backlog"},
+	scope: Scope,
 	table: BetTable = TABLE_NOT_CONSULTED,
 ): PitchVerdict => {
 	const inScope = candidates.filter(isLaneEntering);
@@ -844,7 +860,7 @@ export const judge = (
 
 const scopeLabel = (scope: Scope): string =>
 	scope._tag === "backlog"
-		? "the open status:triaged lane-entering backlog"
+		? `the open ${scope.triaged} lane-entering backlog`
 		: `issue #${scope.number}`;
 
 /** The remediation, stated once — the draft/approve split is the whole point. */

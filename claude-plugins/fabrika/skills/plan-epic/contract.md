@@ -729,7 +729,7 @@ EOF
 | `<number>` | positional integer | yes | — | the parent epic |
 | `--title` | string | yes | — | the child's title; carries no type or priority prefix |
 | `--type` | string, one of `type:bug`/`type:feature`/`type:chore`/`type:decision`/`type:investigation` | yes | — | the child's type label; `type:decision` with `--ready-for agent` is refused on `10` |
-| `--priority` | string, one of `p0`/`p1`/`p2` | yes | — | the child's priority label; `p3` is retired, not admitted |
+| `--priority` | string, one of the board's `boardVocabulary.priorities` (`p0`/`p1`/`p2` by default) | yes | — | the child's priority label; `p3` is retired, not admitted |
 | `--ready-for` | string, one of `human`/`agent` | **optional at the parser, refused in the body** | none | the child's audience; an absent value is refused on `10`, never defaulted |
 | `--assignee` | string (login) | no | none | required when `--ready-for human`; born-assignment is the enforced hold |
 | `--milestone` | string (open milestone title) | **required unless a `--label` carries a standing lane** | none | the child's home; `.fabrika.jsonc`'s board vocabulary is read on every call, with or without this flag, and one that does not resolve is `11`; without the flag a call whose `--label`s name no declared standing lane is refused on `10` before anything is read from GitHub |
@@ -865,7 +865,7 @@ link, deliberately** — see step 5.
 | `ledger child: milestone "<title>" is not an open milestone of <repo>.` | 10 | refusal |
 | `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (<the declared lanes, comma-joined>). A homeless child groups under no campaign and no lane, so nothing on the board shows where it belongs.` | 10 | refusal |
 | ``ledger child: a child needs a home — pass --milestone <open milestone title>; this repo declares no standing lane (`boardVocabulary.standingLanes`), so a milestone is the only home. A homeless child groups under no campaign and no lane, so nothing on the board shows where it belongs.`` | 10 | refusal |
-| `ledger child: --priority <v> is off the closed set (p0, p1, p2).` | 10 | refusal |
+| `ledger child: --priority <v> is off the closed set (<the board's priorities, comma-joined>).` | 10 | refusal |
 | `ledger child: cannot read <what>: <reason> — nothing was created.` | 11 | refusal |
 | `ledger child: this lane does not hold #<n>'s claim.` | 15 | refusal |
 | `ledger child: created #<c> and could not prove the sub-issue link — the child exists, is recorded in the run manifest as linked:false, and is unlinked on GitHub.` | 23 | refusal |
@@ -912,7 +912,8 @@ $ echo $?
 - v1 scar (`link-child.sh:22-24`) — the link was reported from the POST response and verified
   nowhere; `confirm-links.sh` was a separate manual step whose only assertion was a comment.
 - `POST .../labels` creates unknown labels; the vocabulary check is a precondition.
-- The priority set is `{p0,p1,p2}`; `p3` is retired, not admitted.
+- The priority set is the board's `boardVocabulary.priorities`: `{p0,p1,p2}` where the repo
+  declares none, and `p3` is retired, not admitted.
 
 ---
 
@@ -998,7 +999,7 @@ Every judgment runs before the first write, so a refusal before step 6 writes no
    parent endpoint names another epic, is `10`. A failed read is `11`.
 4. **Judge it through the gate's own readers**
    ([`ledger/adoption.ts`](../../../../packages/fabrika-cli/src/ledger/adoption.ts)). A
-   `type:epic`, `status:needs-triage`, a missing `type:`/`status:`/priority label, or
+   `type:epic`, the board's needs-triage status, a missing type, status or priority label, or
    `ready-for:human` with nobody assigned is `10`. Those are the gate's own `MISSING_LABEL`,
    `NEEDS_TRIAGE_LABEL` and `HELD_CHILD_UNASSIGNED` predicates, imported. A status other than
    `status:triaged` or `status:planned` is `10` too. Criteria that read absent
@@ -1040,7 +1041,7 @@ composed, and it needs a human eye.
 | `7` | the epic, or the issue, is proven absent or closed |
 | `8` | the amendment PATCH, or the park on `status:planned`, was attempted and could not be proven — UNKNOWN; re-run |
 | `9` | amended, and the body does not read back as the prior body plus the amendment |
-| `10` | not a `type:epic`; `status:planned` absent from the repository's labels; `--child` is the epic, a pull request, a `type:epic`, `status:needs-triage`, on a status other than `status:triaged` or `status:planned`, missing a `type:`/`status:`/priority label, held with nobody assigned, or a sub-issue of another epic; `--stories` or `--containment` off its vocabulary |
+| `10` | not a `type:epic`; `status:planned` absent from the repository's labels; `--child` is the epic, a pull request, a `type:epic`, the board's needs-triage status, on a status other than `status:triaged` or `status:planned`, missing a type, status or priority label, held with nobody assigned, or a sub-issue of another epic; `--stories` or `--containment` off its vocabulary |
 | `11` | a precondition read failed — **nothing was written** |
 | `15` | this lane does not hold the epic's claim |
 | `23` | the issue is recorded `linked:false` and its sub-issue link could not be proven; re-run |

@@ -314,6 +314,29 @@ describe("runChild", () => {
 		expect(outcome.stderr.at(-1)).toContain("off the closed set (p0, p1, p2)");
 	});
 
+	it("takes its priority set off the board a repo declares", async () => {
+		const files = {
+			[runJsonPath(DIR)]: RUN_JSON(),
+			[`${DIR}/${CONFIG_PATH}`]: JSON.stringify({boardVocabulary: {priorities: ["sev1", "sev2"]}}),
+		};
+		const shipped = await run({priority: "p1"}, HAPPY, files);
+		expect(shipped.outcome.code).toBe(OFF_VOCABULARY);
+		expect(shipped.outcome.stderr.at(-1)).toContain("off the closed set (sev1, sev2)");
+
+		const labels = MINTED_LABELS.map((label) => (label === "p1" ? "sev1" : label));
+		const minted = await run(
+			{priority: "sev1"},
+			[
+				...HAPPY.filter(([pattern]) => pattern !== LABELS && pattern !== READBACK),
+				[LABELS, labelSet(...DEFAULT_LABELS, "sev1")],
+				[READBACK, childIssue({number: 4301, labels, milestone: HOME})],
+			],
+			files,
+		);
+		expect(minted.outcome.code).toBe(0);
+		expect(sent(minted, CREATE).labels).toContain("sev1");
+	});
+
 	/** `POST .../labels` CREATES an unknown label rather than rejecting it. */
 	it("refuses a label absent from the repo taxonomy rather than minting it", async () => {
 		const {outcome, requests} = await run({labels: ["not-a-label"]});

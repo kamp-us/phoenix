@@ -1,6 +1,8 @@
 import {Clock, type Crypto, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import type {BoardRead} from "../config/resolve-board.ts";
 import {issueDocuments, listLabels, resolveRepo} from "../io/issues.ts";
+import {intakeLabel} from "../status/repo-board.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {NO_TARGET, QUEUE_UNREADABLE, SEARCH_UNREADABLE} from "./codes.ts";
 import {loadIndex} from "./index-cache.ts";
@@ -27,7 +29,10 @@ export interface DedupOptions {
 	readonly query: string;
 	readonly closedDays?: number;
 	readonly refresh?: boolean;
-	readonly label: string;
+	/** The `--label` the operator named, or `null` for the board's needs-triage status. */
+	readonly label: string | null;
+	/** The board the omitted `--label` is read off, by the adapter. */
+	readonly board: BoardRead;
 	readonly limit: number;
 	readonly repo: string | null;
 	readonly json: boolean;
@@ -44,7 +49,7 @@ export const runDedup = (
 	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path | Crypto.Crypto
 > =>
 	Effect.gen(function* () {
-		const {label, limit, json, exclude} = options;
+		const {limit, json, exclude} = options;
 		const closedDays = options.closedDays ?? DEFAULT_CLOSED_DAYS;
 		if (!Number.isSafeInteger(closedDays) || closedDays < 0 || closedDays > 36500)
 			return refuse(FAILED, "report dedup: --closed-days must be an integer from 0 to 36500.");
@@ -61,6 +66,17 @@ export const runDedup = (
 			);
 		}
 		const repo = repoAttempt.value;
+
+		// An omitted --label over an unreadable board names no queue at all, which is the queue half
+		// unread rather than empty.
+		const chosen = intakeLabel(options.label, options.board);
+		if (chosen._tag === "Refused") {
+			return refuse(
+				QUEUE_UNREADABLE,
+				`report dedup: ${chosen.reason}, so the outcome is UNKNOWN, never "none". Pass --label to name the queue.`,
+			);
+		}
+		const {label} = chosen;
 
 		// The label precondition runs BEFORE either source read, because it is what makes the queue
 		// half's scope non-zero. Reading it here also means an unreadable label set refuses as UNKNOWN

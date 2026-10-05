@@ -2,6 +2,7 @@ import {NodeCrypto} from "@effect/platform-node";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {declaredBoard, SHIPPED_BOARD} from "../status/board.test-support.ts";
 import {NO_TARGET, QUEUE_UNREADABLE, SEARCH_UNREADABLE} from "./codes.ts";
 import {runDedup} from "./dedup-verb.ts";
 import {IndexSnapshot} from "./index-cache.ts";
@@ -28,7 +29,8 @@ const searchHits = issueRows;
 const options = {
 	query: "retry helper swallows the abort reason",
 	closedDays: 0,
-	label: "status:needs-triage",
+	label: "status:needs-triage" as string | null,
+	board: SHIPPED_BOARD,
 	limit: 20,
 	repo: null,
 	json: false,
@@ -49,6 +51,54 @@ const labelsOk = [LABELS, labelSet("status:needs-triage", "type:bug", "p0")] as 
 /** The reported query whose twelve AND-joined terms matched nothing. */
 const LONG_QUERY =
 	"review render seed authenticated notification rows state suffix reserved unimplemented exit capture";
+
+describe("runDedup — the queue label", () => {
+	const RENAMED = declaredBoard({boardVocabulary: {statuses: {needsTriage: "state:new"}}});
+
+	it("reads the board's needs-triage status when --label is omitted", async () => {
+		const seams = fakeSeams([
+			[LABELS, labelSet("status:needs-triage", "state:new")],
+			[/labels=state%3Anew/, issueRows([4312, "retry helper swallows the abort reason"])],
+			[SEARCH, searchHits()],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDedup({...options, label: null, board: RENAMED}),
+				Layer.mergeAll(seams.layer, fakeFs({}).layer, NodeCrypto.layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("4312");
+		expect(seams.requests.some((c) => c.includes("labels=status%3Aneeds-triage"))).toBe(false);
+	});
+
+	it("keeps an explicit --label as that run's queue, and still checks it exists", async () => {
+		const out = await run([[LABELS, labelSet("state:new")]], {
+			label: "status:needs-triage",
+			board: RENAMED,
+		});
+		expect(out.code).toBe(NO_TARGET);
+		expect(out.stderr.at(-1)).toContain('has no "status:needs-triage" label');
+	});
+
+	it("refuses an omitted --label over a board nobody could read, reading nothing", async () => {
+		const seams = fakeSeams([]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runDedup({
+					...options,
+					label: null,
+					board: declaredBoard({boardVocabulary: {statuses: {needsTriage: 7}}}),
+				}),
+				Layer.mergeAll(seams.layer, fakeFs({}).layer, NodeCrypto.layer),
+			),
+		);
+		expect(out.code).toBe(QUEUE_UNREADABLE);
+		expect(out.stderr.at(-1)).toContain("cannot read .fabrika.jsonc's board vocabulary");
+		expect(out.stderr.at(-1)).toContain("never the shipped name");
+		expect(seams.requests).toEqual([]);
+	});
+});
 
 describe("runDedup", () => {
 	it("exits 0 with a ranked candidates list", async () => {

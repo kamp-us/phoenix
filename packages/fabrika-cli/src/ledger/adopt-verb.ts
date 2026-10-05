@@ -34,7 +34,8 @@ import {PLANNED, TRIAGED} from "../labels.ts";
 import {listSubIssues} from "../plan/github.ts";
 import {compose} from "../report/amend.ts";
 import {normalizeForReadback} from "../report/compose.ts";
-import {missingLabelRemedy, readBoard} from "../status/label-remedy.ts";
+import {missingLabelRemedy} from "../status/label-remedy.ts";
+import {BOARD_SUBJECT, readBoard, refusalReason} from "../status/repo-board.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {amendmentSection, judgeAdoption, parseStoriesFlag} from "./adoption.ts";
 import {
@@ -112,6 +113,14 @@ export const runAdopt = (
 				notes,
 			);
 		}
+		const board = yield* readBoard(options.cwd);
+		if (board._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				MESSAGES.unreadable(BOARD_SUBJECT, refusalReason(board)),
+				notes,
+			);
+		}
 
 		const issue = yield* readAdoptee(options.env, repo, child);
 		if (issue._tag === "Unknown") {
@@ -152,6 +161,7 @@ export const runAdopt = (
 			assignees: adoptee.assignees,
 			cycleDoc: run.value.cycleDoc,
 			vocabulary: vocabulary.value,
+			board: board.resolved.board,
 			stories,
 			containment: options.containment,
 		});
@@ -182,7 +192,7 @@ export const runAdopt = (
 				);
 			}
 			if (!taxonomy.value.includes(PLANNED)) {
-				const remedy = missingLabelRemedy(PLANNED, yield* readBoard(options.cwd));
+				const remedy = missingLabelRemedy(PLANNED, board);
 				return refuse(
 					OFF_VOCABULARY,
 					`${VERB}: label "${PLANNED}" is absent from ${repo}'s taxonomy — refusing to create it. ${remedy}`,

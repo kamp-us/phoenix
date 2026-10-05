@@ -498,6 +498,8 @@ milestone's number as a string, or the standing-lane label for an issue with no 
 The lanes are the ones `.fabrika.jsonc` declares under `boardVocabulary.standingLanes`; a repo that
 declares none has no lane home, and a declaration that could not be read refuses on `11`. `bet` says
 whether the table in force bet on it. **Bets first**, then `p0` → `p1` → `p2`, milestone order within a bucket (below).
+The buckets are the board's `boardVocabulary.priorities` in declared order, `p0`/`p1`/`p2` where
+the repo declares none, and `scanned` carries one key per bucket in that order.
 **An empty pool is a fact and prints `{"pool": [], ...}` on exit 0** with the scanned counts proving
 what was searched — never an empty stdout (interface convention rule 2).
 

@@ -333,6 +333,27 @@ describe("runPick", () => {
 		});
 	});
 
+	/** The buckets are the board's priorities: under the shipped p0..p2 a renamed board lists nothing. */
+	it("reads one bucket per declared priority, in declared order", async () => {
+		const SEVERITIES = fakeFs({
+			files: {
+				"/repo/.fabrika.jsonc": JSON.stringify({boardVocabulary: {priorities: ["sev1", "sev2"]}}),
+			},
+		});
+		const out = await run(
+			[
+				[bucket("sev1"), EMPTY],
+				[bucket("sev2"), candidatePage({number: 600, labels: [...TRIAGED, "sev2"]})],
+			],
+			{},
+			SEVERITIES,
+		);
+		expect(out.code).toBe(0);
+		expect(pool(out).map((row) => row.number)).toEqual([600]);
+		expect(JSON.parse(out.stdout).scanned).toEqual({sev1: 0, sev2: 1});
+		expect(out.stderr[0]).toContain("scanned sev1 0, sev2 1 in o/r");
+	});
+
 	it("prints an empty pool as a FACT on exit 0, with the scanned counts beside it", async () => {
 		const out = await run([
 			[bucket("p0"), EMPTY],

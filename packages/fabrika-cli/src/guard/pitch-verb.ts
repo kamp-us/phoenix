@@ -35,6 +35,7 @@ import {
 	resolveRepo,
 } from "../io/issues.ts";
 import {permissionFor} from "../io/pulls.ts";
+import {BOARD_SUBJECT, readBoard, refusalReason} from "../status/repo-board.ts";
 import type {BetRow as TableBetRow} from "../table/bet-rows.ts";
 import {readBetRows} from "../table/bet-rows-read.ts";
 import type {TableRead} from "../table/bets-read.ts";
@@ -56,9 +57,8 @@ import {
 	type PointedRuling,
 	type RulingPointer,
 	rulingPointers,
-	SCOPE_LABELS,
 	type Scope,
-	TRIAGED_LABEL,
+	scopeLabels,
 	takesPitchRuling,
 	toGuardVerdict,
 	VERB,
@@ -88,7 +88,7 @@ export interface PitchGuardOptions {
 	/** One issue to scope the scan to, or `null` for the whole open lane-entering backlog. */
 	readonly issue: number | null;
 	readonly repo: string | null;
-	/** Where `.fabrika.jsonc` is looked up, for the dollar amount each size names. */
+	/** Where `.fabrika.jsonc` is looked up, for the board's triaged status and each size's amount. */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** Where the table's `bet` rows come from; the shipped read unless a test hands in another. */
@@ -115,8 +115,8 @@ const isWritePlus = (
 	});
 
 /** The label-only pre-filter. It cannot see the parent link, so the core re-checks scope after. */
-const looksLaneEntering = (record: IssueRecord): boolean =>
-	record.labels.includes(TRIAGED_LABEL) &&
+const looksLaneEntering = (record: IssueRecord, triaged: string): boolean =>
+	record.labels.includes(triaged) &&
 	record.labels.some((label) => LANE_ENTERING_TYPES.includes(label));
 
 type Hydrated =
@@ -201,6 +201,7 @@ const readRuling = (
 
 const hydrate = (
 	repo: string,
+	triaged: string,
 	record: IssueRecord,
 ): Effect.Effect<Hydrated, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
@@ -220,10 +221,11 @@ const hydrate = (
 			body: comment.body,
 		}));
 		const hasParent = record.parent._tag !== "None";
+		const isTriaged = record.labels.includes(triaged);
 		// Only a parentless feature's pointers are read, and each read sits behind a pointer: an
 		// issue with none costs no call beyond the three above.
 		const rulings: Array<PointedRuling> = [];
-		if (takesPitchRuling({labels: record.labels, hasParent})) {
+		if (takesPitchRuling({labels: record.labels, triaged: isTriaged, hasParent})) {
 			for (const pointer of rulingPointers(record.number, resolved, repo)) {
 				rulings.push(yield* readRuling(repo, record.number, pointer));
 			}
@@ -234,6 +236,7 @@ const hydrate = (
 				number: record.number,
 				title: record.title,
 				labels: record.labels,
+				triaged: isTriaged,
 				hasParent,
 				milestone: record.milestone,
 				body: record.body,
@@ -246,6 +249,7 @@ const hydrate = (
 /** Re-read one shortlisted issue singly: the list endpoint omits the parent link scope turns on. */
 const readOne = (
 	repo: string,
+	triaged: string,
 	number: number,
 ): Effect.Effect<Hydrated, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
@@ -259,22 +263,23 @@ const readOne = (
 				reason: `issue #${number} was in the sweep and then did not exist — the board moved under the read`,
 			};
 		}
-		return yield* hydrate(repo, found.value);
+		return yield* hydrate(repo, triaged, found.value);
 	});
 
 const backlogScan = (
 	repo: string,
+	triaged: string,
 ): Effect.Effect<Scan, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const attempt = yield* openIssuesWithLabelRecords(repo, TRIAGED_LABEL);
+		const attempt = yield* openIssuesWithLabelRecords(repo, triaged);
 		if (attempt._tag === "Failure") {
 			return refused(
-				`${VERB}: cannot read the open ${TRIAGED_LABEL} set in ${repo}: ${attempt.reason} — the scan could not be completed, so the verdict is UNKNOWN, never clean.`,
+				`${VERB}: cannot read the open ${triaged} set in ${repo}: ${attempt.reason} — the scan could not be completed, so the verdict is UNKNOWN, never clean.`,
 			);
 		}
 		const candidates: Array<Candidate> = [];
-		for (const record of attempt.value.filter(looksLaneEntering)) {
-			const one = yield* readOne(repo, record.number);
+		for (const record of attempt.value.filter((row) => looksLaneEntering(row, triaged))) {
+			const one = yield* readOne(repo, triaged, record.number);
 			if (one._tag === "Unreadable") {
 				return refused(
 					`${VERB}: ${one.reason} — part of the lane-entering set went unread, so the verdict is UNKNOWN, never clean.`,
@@ -282,11 +287,12 @@ const backlogScan = (
 			}
 			candidates.push(one.candidate);
 		}
-		return {_tag: "Scanned", candidates, scope: {_tag: "backlog"}};
+		return {_tag: "Scanned", candidates, scope: {_tag: "backlog", triaged}};
 	});
 
 const issueScan = (
 	repo: string,
+	triaged: string,
 	number: number,
 ): Effect.Effect<Scan, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
@@ -308,21 +314,25 @@ const issueScan = (
 				`${VERB}: #${number} in ${repo} is a pull request, not an issue — a pitch binds at intake and never at merge, so the verdict is UNKNOWN, never clean.`,
 			);
 		}
-		if (!looksLaneEntering(found.value)) {
-			const universe = yield* universeOf(repo, SCOPE_LABELS);
+		if (!looksLaneEntering(found.value, triaged)) {
+			const universe = yield* universeOf(repo, scopeLabels(triaged));
 			return universe === null
 				? refused(
 						`${VERB}: issue #${number} is not lane-entering work, and the label set of ${repo} could not be read to tell that from a repo that never defined the scoping labels — the verdict is UNKNOWN, never clean.`,
 					)
-				: {_tag: "Scanned", candidates: [], scope: {_tag: "issue", number, universe}};
+				: {
+						_tag: "Scanned",
+						candidates: [],
+						scope: {_tag: "issue", triaged, number, universe},
+					};
 		}
-		const one = yield* hydrate(repo, found.value);
+		const one = yield* hydrate(repo, triaged, found.value);
 		return one._tag === "Unreadable"
 			? refused(`${VERB}: ${one.reason} — the verdict is UNKNOWN, never clean.`)
 			: {
 					_tag: "Scanned",
 					candidates: [one.candidate],
-					scope: {_tag: "issue", number, universe: PRESENT},
+					scope: {_tag: "issue", triaged, number, universe: PRESENT},
 				};
 	});
 
@@ -394,6 +404,16 @@ export const runPitchGuard = (
 				options.env,
 			);
 		}
+		const board = yield* readBoard(options.cwd);
+		if (board._tag === "Refused") {
+			return emitVerdict(
+				unknown(
+					`${VERB}: cannot read ${BOARD_SUBJECT}: ${refusalReason(board)} — which label is the triaged status is unread, never the shipped name. Nothing was scanned, so the verdict is UNKNOWN.`,
+				),
+				options.env,
+			);
+		}
+		const {triaged} = board.resolved.board.statuses;
 		const target = yield* resolveRepo(options.repo, options.env);
 		if (target._tag === "Failure") {
 			return emitVerdict(
@@ -404,8 +424,8 @@ export const runPitchGuard = (
 			);
 		}
 		const scan = yield* options.issue === null
-			? backlogScan(target.value)
-			: issueScan(target.value, options.issue);
+			? backlogScan(target.value, triaged)
+			: issueScan(target.value, triaged, options.issue);
 		if (scan._tag === "Refused") return emitVerdict(scan.verdict, options.env);
 		if (!scan.candidates.some(isLaneEntering)) {
 			return emitVerdict(

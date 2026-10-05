@@ -4,8 +4,8 @@
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/7393#issuecomment-5519748588
  *
- * The scan is the guard's own: the same paged `status:triaged` read and the same record mapping, so
- * the plan in `./sweep-homes.ts` is judged over the set the guard judges.
+ * The scan is the guard's own: the same paged read under the board's triaged status and the same
+ * record mapping, so the plan in `./sweep-homes.ts` is judged over the set the guard judges.
  *
  * **A dry run is the default.** Writes happen only under `--apply`, and only there is the trail
  * citation read from stdin.
@@ -19,8 +19,8 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import type {Read} from "../config/read-key.ts";
-import {TRIAGED_LABEL, unhomedRemedy} from "../guard/homing.ts";
+import type {BoardRead} from "../config/resolve-board.ts";
+import {unhomedRemedy} from "../guard/homing.ts";
 import {toTriaged} from "../guard/homing-verb.ts";
 import {
 	clearMilestone,
@@ -31,6 +31,7 @@ import {
 	resolveRepo,
 } from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {BOARD_SUBJECT, refusalReason} from "../status/repo-board.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
 import {
@@ -65,8 +66,8 @@ export type SweepMode = "dry-run" | "apply";
 
 export interface SweepHomesOptions {
 	readonly mode: SweepMode;
-	/** The lanes this repo declares, as read from `.fabrika.jsonc` by the delivery layer. */
-	readonly standingLanes: Read<ReadonlyArray<string>>;
+	/** The board this repo declares — its triaged status and standing lanes — read by the adapter. */
+	readonly board: BoardRead;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -198,15 +199,16 @@ export const runSweepHomes = (
 		}
 		const repo = repoAttempt.value;
 
-		// An unreadable declaration is never "no lanes": that reading plans every lane-homed issue
-		// as un-homed and finds no double mark to clear.
-		if (options.standingLanes._tag === "Refused") {
+		// An unreadable board is neither "no lanes" nor the shipped triaged name: the first plans every
+		// lane-homed issue as un-homed, the second reads a renamed board's backlog as empty.
+		if (options.board._tag === "Refused") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the standing lanes this repo declares: ${options.standingLanes.reason.replace(/\.$/, "")} — nothing was written; the sweep is UNKNOWN, never clean.`,
+				`${VERB}: cannot read ${BOARD_SUBJECT}: ${refusalReason(options.board)} — nothing was written; the sweep is UNKNOWN, never clean.`,
 			);
 		}
-		const declared = options.standingLanes.value;
+		const {standingLanes: declared, statuses} = options.board.resolved.board;
+		const {triaged} = statuses;
 
 		let citation = "";
 		if (mode === "apply") {
@@ -215,19 +217,19 @@ export const runSweepHomes = (
 			citation = authored.text;
 		}
 
-		const read = yield* openIssuesWithLabelRecords(repo, TRIAGED_LABEL);
+		const read = yield* openIssuesWithLabelRecords(repo, triaged);
 		if (read._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the open ${TRIAGED_LABEL} set in ${repo}: ${read.reason} — nothing was written; the sweep is UNKNOWN, never clean.`,
+				`${VERB}: cannot read the open ${triaged} set in ${repo}: ${read.reason} — nothing was written; the sweep is UNKNOWN, never clean.`,
 			);
 		}
-		const scanned = scannedLine(VERB, repo, read.value.length, `open ${TRIAGED_LABEL} issue`);
-		const plan = planSweep(read.value.map(toTriaged), declared);
+		const scanned = scannedLine(VERB, repo, read.value.length, `open ${triaged} issue`);
+		const plan = planSweep(read.value.map(toTriaged), declared, triaged);
 		if (plan._tag === "ZeroScope") {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: the open ${TRIAGED_LABEL} set in ${repo} is empty — an empty backlog cannot be told from a broken read, so nothing was swept and nothing is reported clean.`,
+				`${VERB}: the open ${triaged} set in ${repo} is empty — an empty backlog cannot be told from a broken read, so nothing was swept and nothing is reported clean.`,
 				[scanned],
 			);
 		}

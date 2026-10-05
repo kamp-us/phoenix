@@ -23,7 +23,7 @@ import {
 	requiredEdges,
 } from "../build/dependencies.ts";
 import {openIssue} from "../build/target.ts";
-import type {StatusNames} from "../config/board.ts";
+import type {BoardVocabulary, StatusNames} from "../config/board.ts";
 import {CONFIG_PATH} from "../config/document.ts";
 import {
 	CONTAINMENT_VOCABULARY,
@@ -360,6 +360,7 @@ export const deriveFloorFor = (
 	repo: string,
 	ledger: LedgerScope,
 	vocabulary: ContainmentVocabulary,
+	board: BoardVocabulary,
 	required: ReadonlyArray<RequiredEdge>,
 ): Effect.Effect<
 	FloorRead,
@@ -445,6 +446,7 @@ export const deriveFloorFor = (
 				observed,
 				epicBlockers: own.open,
 				vocabulary,
+				board,
 			}),
 		};
 	});

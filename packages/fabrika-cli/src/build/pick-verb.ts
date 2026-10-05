@@ -30,6 +30,9 @@
  * order below. It is an order and never a filter: a bet still passes every axis above, and an issue
  * nobody bet on is still offered. With no table project the pool is exactly the order below.
  *
+ * **The buckets are the board's priorities, in declared order.** A repo that renamed its priorities
+ * is read under its own names; under the shipped ones it would list nothing and answer an empty pool.
+ *
  * **Either every bucket was read in full, or the answer is `11`.** v1's pool printed nothing for a
  * failed bucket and kept going, so a `gh` 5xx on the p0 bucket read as "no p0s"
  * (`step1-candidate-pool.sh:12-13`); a bucket whose paginated output stops mid-page is the same fact
@@ -68,10 +71,6 @@ import {resolveTargetRepo} from "./target.ts";
 
 const VERB = "build pick";
 
-/** The priority buckets, in the order the spine reads them. */
-const BUCKETS = ["p0", "p1", "p2"] as const;
-type Bucket = (typeof BUCKETS)[number];
-
 export interface PickOptions {
 	readonly repo: string | null;
 	readonly limit: number;
@@ -85,7 +84,8 @@ export interface PickOptions {
 interface PoolEntry {
 	readonly number: number;
 	readonly title: string;
-	readonly priority: Bucket;
+	/** One of the board's priorities — the bucket the issue was listed under. */
+	readonly priority: string;
 	readonly type: string;
 	readonly home: string | null;
 }
@@ -211,7 +211,7 @@ export const runPick = (
 				`${VERB}: cannot read ${BOARD_SUBJECT}: ${refusalReason(board)} — which labels this board runs on is UNKNOWN, never the shipped names.`,
 			);
 		}
-		const {statuses, standingLanes} = board.resolved.board;
+		const {statuses, standingLanes, priorities} = board.resolved.board;
 
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
@@ -224,10 +224,10 @@ export const runPick = (
 			);
 		}
 
-		const scanned: Record<Bucket, number> = {p0: 0, p1: 0, p2: 0};
+		const scanned: Record<string, number> = {};
 		const admitted: PoolEntry[] = [];
 		const excluded: ExclusionEntry[] = [];
-		for (const bucket of BUCKETS) {
+		for (const bucket of priorities) {
 			const listed = yield* listLabelled(options.env, resolved.repo, [statuses.triaged, bucket]);
 			if (listed._tag === "Failure") {
 				return refuse(
@@ -307,7 +307,7 @@ export const runPick = (
 				bets: betsReport(bets, pool),
 			}),
 			[
-				`${VERB}: scanned p0 ${scanned.p0}, p1 ${scanned.p1}, p2 ${scanned.p2} in ${resolved.repo}; ${pool.length} candidate(s) survived the filter, ${excluded.length} excluded — ${excluded.length - criteriaExcluded - graphExcluded} by the admission test, ${criteriaExcluded} for no acceptance-criteria block, ${graphExcluded} on the blocked_by graph. ${unread} admitted candidate(s) left unread once --limit ${options.limit} filled.`,
+				`${VERB}: scanned ${priorities.map((bucket) => `${bucket} ${scanned[bucket]}`).join(", ")} in ${resolved.repo}; ${pool.length} candidate(s) survived the filter, ${excluded.length} excluded — ${excluded.length - criteriaExcluded - graphExcluded} by the admission test, ${criteriaExcluded} for no acceptance-criteria block, ${graphExcluded} on the blocked_by graph. ${unread} admitted candidate(s) left unread once --limit ${options.limit} filled.`,
 				betsLine(bets, pool),
 				...blockedEdges,
 				...unreadableEdges,

@@ -126,6 +126,7 @@ export const runCheck = (
 			repo,
 			ledger,
 			vocabulary.vocabulary,
+			board.read.resolved.board,
 			read.required,
 		);
 		if (derived._tag === "Refused") return derived.outcome;

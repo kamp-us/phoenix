@@ -72,9 +72,6 @@ export const TYPES: ReadonlyArray<string> = [
 	"type:investigation",
 ];
 
-/** `p3` is retired, not admitted. */
-export const PRIORITIES: ReadonlyArray<string> = ["p0", "p1", "p2"];
-
 export const AUDIENCES: ReadonlyArray<string> = ["human", "agent"];
 
 /**
@@ -150,17 +147,17 @@ export const runChild = (
 				`${VERB}: --type ${DECISION} with --ready-for agent is refused — a child minted now carries no ruling comment of its own, and the citation that opens a decision claim names a comment on the decision issue itself, so the first builder refuses it on the type axis. Mint it --ready-for human with --assignee, record the ruling on the child, then flip it with \`fabrika decision rule <n> --cites <child-comment-url>\`.`,
 			);
 		}
-		if (!PRIORITIES.includes(options.priority)) {
-			return refuse(
-				OFF_VOCABULARY,
-				`${VERB}: --priority ${options.priority} is off the closed set (${PRIORITIES.join(", ")}).`,
-			);
-		}
 		const board = yield* readBoard(options.cwd);
 		if (board._tag === "Refused") {
 			return refuse(PRECONDITION_UNKNOWN, MESSAGES.unreadable(BOARD_SUBJECT, refusalReason(board)));
 		}
-		const {statuses, standingLanes} = board.resolved.board;
+		const {statuses, standingLanes, priorities} = board.resolved.board;
+		if (!priorities.includes(options.priority)) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --priority ${options.priority} is off the closed set (${priorities.join(", ")}).`,
+			);
+		}
 
 		// A home is a milestone or a standing lane, and the lanes are the one set every reader takes
 		// from the repo's declaration.

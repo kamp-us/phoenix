@@ -18,7 +18,7 @@ import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
-import {readStandingLanes} from "../triage/standing-lanes.ts";
+import {readBoard} from "../status/repo-board.ts";
 import {runCatalogGuard} from "./catalog-verb.ts";
 import {runChangeDetectGuard} from "./change-detect-verb.ts";
 import {runCodeownersCpGuard} from "./codeowners-cp-verb.ts";
@@ -219,7 +219,7 @@ const homingCheck = leafCommand(
 	{
 		issue: Flag.integer("issue").pipe(
 			Flag.optional,
-			Flag.withDescription("check one issue (default: the whole open status:triaged backlog)"),
+			Flag.withDescription("check one issue (default: the whole open triaged backlog)"),
 		),
 		repo: repoFlag,
 	},
@@ -227,7 +227,7 @@ const homingCheck = leafCommand(
 		yield* emit(
 			yield* runHomingGuard({
 				issue: Option.getOrNull(issue),
-				standingLanes: yield* readStandingLanes(process.cwd()),
+				board: yield* readBoard(process.cwd()),
 				repo: Option.getOrNull(repo),
 				env: process.env,
 			}),
@@ -237,12 +237,12 @@ const homingCheck = leafCommand(
 	Command.withShortDescription("Red unless every triaged issue is homed or standing-lane exempt."),
 	Command.withDescription(
 		leafHelp("homing-guard check", [
-			"Prints a one-line all-clear when every status:triaged issue carries exactly one home.",
+			"Prints a one-line all-clear when every triaged issue carries exactly one home.",
 			"  A home is an arc/campaign milestone or one declared standing-lane label, never both.",
-			"  The lanes are boardVocabulary.standingLanes; none declared exempts nothing.",
+			"  Triaged and the lanes are boardVocabulary.statuses.triaged and .standingLanes.",
 			"  A red puts the per-class remedy on stderr, with ::error annotations under Actions.",
 			"  7: zero scope: the backlog sweep found no triaged issue",
-			"  11: the board, labels, issue or lane config was unreadable (UNKNOWN)",
+			"  11: the issues, labels or board vocabulary was unreadable (UNKNOWN)",
 			"  12: an issue has no home, or claims two",
 		]),
 	),
@@ -263,7 +263,7 @@ const pitchCheck = leafCommand(
 		issue: Flag.integer("issue").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"check one issue (default: the whole open lane-entering status:triaged backlog)",
+				"check one issue (default: the whole open lane-entering triaged backlog)",
 			),
 		),
 		repo: repoFlag,
@@ -284,10 +284,11 @@ const pitchCheck = leafCommand(
 		leafHelp("pitch-guard check", [
 			"Prints an all-clear when every lane-entering issue carries a founder-approved pitch.",
 			"  A parentless feature also passes on a linked founder ruling.",
-			"  Binds at intake only; it is never wired to red a pull request.",
-			"  A red puts the per-issue remedy on stderr, with ::error annotations under Actions.",
+			"  Triaged means boardVocabulary.statuses.triaged.",
+			"  Binds at intake only, never on a pull request.",
+			"  A red prints the per-issue remedy on stderr (::error under Actions).",
 			"  7: zero scope: the backlog sweep found no lane-entering issue",
-			"  11: the board, labels, an issue, its comments, a linked ruling or .fabrika.jsonc unread (UNKNOWN)",
+			"  11: an issue, comment, label, linked ruling or .fabrika.jsonc unread (UNKNOWN)",
 			"  12: a pickable bet carries no founder-approved pitch",
 		]),
 	),
