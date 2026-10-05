@@ -91,3 +91,33 @@ over it would stop a driver mid-drive on a fact that is not the one it needs.
   where it stands today rather than refusing on a fact nothing proved.
 - The refusal costs one GraphQL read per issue-keyed boot over an absent directory, and none at all
   on a chore lane, a resume, or an offline boot.
+
+## Amendment (2026-10-05, [#10317](https://github.com/kamp-us/phoenix/issues/10317)) — an issue reopened after its work landed boots a second lane
+
+Consequences says "There is no override flag, because an override on the boot end is the bypass this
+record closes." That stays true of a flag. It is no longer true of the board: one board fact now
+opens `63`.
+
+The founder ruled it on 2026-10-03
+([the ruling comment](https://github.com/kamp-us/phoenix/issues/10317#issuecomment-5974128993)): when
+an issue is reopened after its work merged, a driver can set the finished lane aside and start a
+second one. The ruling is those words. The shape below is triage's reading of it.
+
+**The fact.** `lane open` asks a second board read whenever the prior-lane read answers `Prior`
+(`packages/fabrika-cli/src/lane/reopen.ts`). It boots when the issue is open, every pull request on
+its closing edge is merged, and the latest reopen on its timeline came after the last of those
+merges. No flag asks for it and no flag can skip it. A read that fails refuses at `11`, never boots.
+
+**Why a full budget.** Point 3 returns a spent budget only through a recorded grant. That rule guards
+a lane's own unfinished work. Here the first lane's work merged and the issue was reopened for new
+work, so the second lane owes nothing the first one spent. It boots from the template as it stands,
+and the answer names the merged pull requests and the reopen time it stood on.
+
+**What still refuses at `63`.** An open closing pull request. A merged one on an issue the board does
+not show reopened after it. The refusal now names which of those facts failed, and names
+`lane archive <n> --reopened` as the way to set a finished lane aside.
+
+**Setting the finished lane aside.** The boot runs over an absent directory only, so the `complete`
+ledger leaves the key first through `lane archive --reopened` (ADR
+[0389](0389-a-bricked-lane-is-archived-while-its-issue-is-open.md)'s amendment of the same date). A
+driver that meets `14` on such an issue is told so by the refusal.

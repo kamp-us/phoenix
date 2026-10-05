@@ -87,6 +87,7 @@ import {recordBoard, recordScreenCheck, runRecord} from "./record-verb.ts";
 import {queueReadOf, runRecover} from "./recover-verb.ts";
 import {runRefresh} from "./refresh-verb.ts";
 import {keyRefusal} from "./refusals.ts";
+import {reopenReader} from "./reopen.ts";
 import {
 	AXIS_ISSUE_CAUSES,
 	classesForEvent,
@@ -855,6 +856,7 @@ const open = leafCommand(
 					priorLane: priorLaneReader(Option.getOrNull(repo), process.env),
 					fromBoard,
 					boardSeat: boardSeatReader(Option.getOrNull(repo), process.env),
+					reopen: reopenReader(Option.getOrNull(repo), process.env),
 					record: boardRecorder(Option.getOrNull(repo), process.env),
 					cap,
 					claimed: claimHoldReader(Option.getOrNull(repo), process.env),
@@ -1918,6 +1920,12 @@ const archive = leafCommand(
 				"move a lane whose log replays to `diagnosed` with no pull request and no spent round, so a re-triaged issue can boot a fresh lane. Every other final refuses at 73; a later move of the same key takes the next free <lane>.archived-<n> slot",
 			),
 		),
+		reopened: Flag.boolean("reopened").pipe(
+			Flag.withDefault(false),
+			Flag.withDescription(
+				"move a lane whose log replays to `complete` once the board shows its issue open, every closing PR merged, and reopened after the last merge, so `lane open` boots a second lane. Anything else refuses at 76; a later move of the same key takes the next free <lane>.archived-<n> slot",
+			),
+		),
 		root: rootFlag,
 		archivedRoot: Flag.string("archived-root").pipe(
 			Flag.optional,
@@ -1938,12 +1946,30 @@ const archive = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, sweep, retriaged, root, archivedRoot: archived, token, repo}) {
-		if (sweep && retriaged) {
+	Effect.fn(function* ({
+		lane,
+		sweep,
+		retriaged,
+		reopened,
+		root,
+		archivedRoot: archived,
+		token,
+		repo,
+	}) {
+		if (retriaged && reopened) {
 			yield* emit(
 				refuse(
 					FAILED,
-					"fabrika lane archive: --retriaged names one lane an operator judged re-triaged, and --sweep walks every lane on the unreplayable gate — the two are different jobs, so nothing was moved. Drop one.",
+					"fabrika lane archive: --retriaged moves a `diagnosed` lane and --reopened a `complete` one — a lane stands on one final, so nothing was moved. Drop one.",
+				),
+			);
+			return;
+		}
+		if (sweep && (retriaged || reopened)) {
+			yield* emit(
+				refuse(
+					FAILED,
+					`fabrika lane archive: ${retriaged ? "--retriaged" : "--reopened"} names one lane an operator judged, and --sweep walks every lane on the unreplayable gate — the two are different jobs, so nothing was moved. Drop one.`,
 				),
 			);
 			return;
@@ -2012,7 +2038,11 @@ const archive = leafCommand(
 			yield* onGround("archive", [ref.root, destination], process.cwd(), () =>
 				runArchive({
 					ref,
-					route: retriaged ? "retriaged" : "unreplayable",
+					route: reopened
+						? {_tag: "reopened", reopen: reopenReader(Option.getOrNull(repo), process.env)}
+						: retriaged
+							? "retriaged"
+							: "unreplayable",
 					archivedRoot: destination,
 					templatePaths,
 					issue: keyIssue(parsed.key),
@@ -2025,12 +2055,12 @@ const archive = leafCommand(
 	}),
 ).pipe(
 	Command.withShortDescription(
-		"Move an unreplayable or re-triaged diagnosed lane out of the swept root.",
+		"Move an unreplayable, re-triaged or reopened lane out of the swept root.",
 	),
 	Command.withDescription(
 		laneHelp(
 			"archive",
-			"Moves an unreplayable lane aside, or sweeps; --retriaged moves a diagnosed no-PR one; prints JSON.",
+			"Moves a lane aside or sweeps; --retriaged a diagnosed no-PR one, --reopened a complete one; JSON.",
 			{
 				4: "bad lane record",
 				7: "no lane",
@@ -2044,12 +2074,14 @@ const archive = leafCommand(
 				50: "the log replays, nothing to move",
 				65: ROOT_EXITS[65],
 				73: "--retriaged: not diagnosed, or a PR or spent round",
+				76: "--reopened: not complete, or no reopen after landing",
 			},
 		),
 	),
 	Command.withExamples([
 		{command: "fabrika lane archive 6037"},
 		{command: "fabrika lane archive 10054 --retriaged --token <your lane-claim token>"},
+		{command: "fabrika lane archive 10317 --reopened --token <your lane-claim token>"},
 		{command: "fabrika lane archive 8810 --token <the token `fabrika lane claim` printed>"},
 		{command: "fabrika lane archive --sweep"},
 	]),

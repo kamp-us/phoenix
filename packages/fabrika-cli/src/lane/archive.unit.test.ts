@@ -4,7 +4,7 @@ import {describe, expect, it} from "vitest";
 import type {Claimant} from "../build/claim.ts";
 import {fakeFs} from "../fakes.test-support.ts";
 import type {VerbOutcome} from "../verb.ts";
-import {judgeArchive, judgeRetriage} from "./archive.ts";
+import {judgeArchive, judgeCompletion, judgeRetriage} from "./archive.ts";
 import {type ClaimRetractor, type ClaimsReader, runArchive} from "./archive-verb.ts";
 import type {ClaimHoldReader} from "./claim-hold.ts";
 import {
@@ -17,6 +17,7 @@ import {
 	MARKER_READBACK,
 	MIGRATION_UNSAFE,
 	NOT_DIAGNOSED,
+	NOT_REOPENED,
 } from "./codes.ts";
 import {seatsIn} from "./concurrency.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
@@ -26,6 +27,7 @@ import {type CompiledLane, compileText} from "./machine.ts";
 import {runMigrate} from "./migrate-verb.ts";
 import {runOpen} from "./open-verb.ts";
 import {runReconcile} from "./reconcile-verb.ts";
+import type {ReopenRead, ReopenReader} from "./reopen.ts";
 import {DEFAULT_ARCHIVED_LANES_ROOT, DEFAULT_LANES_ROOT} from "./store.ts";
 
 const ROOT = DEFAULT_LANES_ROOT;
@@ -639,6 +641,7 @@ describe("lane archive --retriaged", () => {
 				priorLane: () => Effect.succeed({_tag: "Fresh" as const}),
 				fromBoard: false,
 				boardSeat: null,
+				reopen: null,
 				record: null,
 				cap: {_tag: "Value", value: null, note: "test"} as const,
 				claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
@@ -763,5 +766,271 @@ describe("lane archive --retriaged", () => {
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(deleted).toEqual([]);
 		expect(fs.written.size).toBe(0);
+	});
+
+	it("names --reopened when it refuses a `complete` lane at 73", async () => {
+		const fs = laneOnDisk(log("WIP", "DONE", "PASS", "DONE"));
+		const out = await run(fs, runArchive(RETRIAGED));
+
+		expect(out.code).toBe(NOT_DIAGNOSED);
+		expect(out.stderr.join("\n")).toContain("fabrika lane archive 6037 --reopened");
+	});
+});
+
+/** A lane whose work landed: built, reviewed, passed, and shipped, so its fold reads `complete`. */
+const COMPLETE_LOG = log("WIP", "DONE", "PASS", "DONE");
+
+/** A lane that ran out of repair budget: every round failed until the task parked and tripped. */
+const TRIPPED_LOG = log("WIP", "DONE", "FAIL", "DONE", "FAIL", "DONE", "FAIL", "DONE", "FAIL");
+
+/** A lane the board settled: parked, then cancelled with the issue's own close reason. */
+const CANCELLED_LOG: ReadonlyArray<LogEntry> = [
+	...log("WIP", "BLOCKED"),
+	{
+		task: "issue",
+		event: "ISSUE.CANCELLED",
+		at: "2026-08-19T00:00:00.000Z",
+		outcome: "not_planned",
+	},
+];
+
+const REOPENED_READ: ReopenRead = {
+	_tag: "Reopened",
+	pulls: [7001],
+	landedAt: "2026-10-01T10:00:00Z",
+	reopenedAt: "2026-10-01T18:00:00Z",
+};
+
+/** A board reader answering `read`, counting how often it was asked. */
+const board = (read: ReopenRead, asked: {count: number} = {count: 0}): ReopenReader<never> => {
+	return () => {
+		asked.count += 1;
+		return Effect.succeed(read);
+	};
+};
+
+const reopenedRoute = (read: ReopenRead, asked?: {count: number}) => ({
+	...OPTIONS,
+	route: {_tag: "reopened" as const, reopen: board(read, asked)},
+	templatePaths: [],
+});
+
+describe("judgeCompletion", () => {
+	it("answers `Complete` for a lane whose own machine folds its log to `complete`", () => {
+		expect(judgeCompletion(compiled(coderTemplateText()), COMPLETE_LOG)).toEqual({
+			_tag: "Complete",
+			state: "complete",
+		});
+	});
+
+	it("answers `NotComplete` for every other final and for a lane in flight", () => {
+		const lane = compiled(coderTemplateText());
+		const tripped = judgeCompletion(lane, TRIPPED_LOG);
+
+		expect(tripped).toEqual({_tag: "NotComplete", state: "tripped"});
+		expect(judgeCompletion(lane, DIAGNOSED_LOG)).toEqual({
+			_tag: "NotComplete",
+			state: "diagnosed",
+		});
+		expect(judgeCompletion(lane, CANCELLED_LOG)).toEqual({
+			_tag: "NotComplete",
+			state: "board:cancelled",
+		});
+		expect(judgeCompletion(lane, log("WIP"))._tag).toBe("NotComplete");
+	});
+
+	it("answers `Unreplayable` for a log the lane's own machine cannot fold", () => {
+		expect(judgeCompletion(compiled(coderTemplateText()), log("PASS"))._tag).toBe("Unreplayable");
+	});
+});
+
+describe("lane archive --reopened", () => {
+	it("moves a `complete` lane the board shows reopened after landing, byte for byte", async () => {
+		const fs = laneOnDisk(COMPLETE_LOG);
+		const out = await run(fs, runArchive(reopenedRoute(REOPENED_READ)));
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			answer: "archived",
+			route: "reopened",
+			lane: "6037",
+			issue: 6037,
+			from: DIR,
+			to: MOVED,
+			state: "complete",
+			pulls: [7001],
+			landedAt: "2026-10-01T10:00:00Z",
+			reopenedAt: "2026-10-01T18:00:00Z",
+			retracted: [],
+		});
+		expect(fs.written.get(`${MOVED}/events.jsonl`)).toBe(jsonl(COMPLETE_LOG));
+		expect(fs.written.has(`${DIR}/events.jsonl`)).toBe(false);
+	});
+
+	it("leaves the archived log readable through `lane history` at the archived root", async () => {
+		const fs = laneOnDisk(COMPLETE_LOG);
+		await run(fs, runArchive(reopenedRoute(REOPENED_READ)));
+		const out = await run(fs, runHistory({root: ARCHIVED, lane: "6037"}));
+
+		expect(out.code).toBe(0);
+	});
+
+	it("sets the finished lane aside so `lane open` boots a second one, at a full budget", async () => {
+		const fs = laneOnDisk(COMPLETE_LOG);
+		const open = () =>
+			runOpen({
+				root: ROOT,
+				lane: "6037",
+				templatePath: TEMPLATE,
+				issue: 6037,
+				expectation: () =>
+					Effect.succeed({
+						_tag: "Read" as const,
+						expectation: {_tag: "Single" as const},
+						classes: [],
+					}),
+				priorLane: () => Effect.succeed({_tag: "Prior" as const, pulls: [7001]}),
+				fromBoard: false,
+				boardSeat: null,
+				reopen: board(REOPENED_READ),
+				record: null,
+				cap: {_tag: "Value", value: null, note: "test"} as const,
+				claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
+			});
+
+		const before = await run(fs, open());
+		const archived = await run(fs, runArchive(reopenedRoute(REOPENED_READ)));
+		const after = await run(fs, open());
+
+		expect(before.code).toBe(LANE_EXISTS);
+		expect(archived.code).toBe(0);
+		expect(after.code).toBe(0);
+		expect(JSON.parse(after.stdout)).toMatchObject({answer: "opened", reopened: {pulls: [7001]}});
+		expect(fs.written.get(`${DIR}/workflow.json`)).toBe(coderTemplateText());
+		expect(fs.written.get(`${MOVED}/events.jsonl`)).toBe(jsonl(COMPLETE_LOG));
+	});
+
+	it("refuses when the board does not show a reopen after landing, retracting and moving nothing", async () => {
+		const fs = laneOnDisk(COMPLETE_LOG);
+		const {deleted, retract} = recorder();
+		const out = await run(
+			fs,
+			runArchive({
+				...reopenedRoute({_tag: "NotReopened", why: "the board shows no reopen on #6037"}),
+				claims: holds(claimant(11, TOKEN)),
+				retract,
+				token: TOKEN,
+			}),
+		);
+
+		expect(out.code).toBe(NOT_REOPENED);
+		expect(out.stderr.join("\n")).toContain("the board shows no reopen on #6037");
+		expect(deleted).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses an unreadable board read as UNKNOWN, never as a reopen", async () => {
+		const fs = laneOnDisk(COMPLETE_LOG);
+		const out = await run(
+			fs,
+			runArchive(reopenedRoute({_tag: "Unknown", reason: "the API answered 502"})),
+		);
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stderr.join("\n")).toContain("502");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it.each([
+		["tripped", TRIPPED_LOG],
+		["diagnosed", DIAGNOSED_LOG],
+		["board:cancelled", CANCELLED_LOG],
+		["in flight", log("WIP")],
+	])("refuses a lane folded %s without asking the board, retracting and moving nothing", async (_, entries) => {
+		const fs = laneOnDisk(entries);
+		const {deleted, retract} = recorder();
+		const asked = {count: 0};
+		const out = await run(
+			fs,
+			runArchive({
+				...reopenedRoute(REOPENED_READ, asked),
+				claims: holds(claimant(11, TOKEN)),
+				retract,
+				token: TOKEN,
+			}),
+		);
+
+		expect(out.code).toBe(NOT_REOPENED);
+		expect(asked.count).toBe(0);
+		expect(deleted).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses an unreplayable log, which is the other route's lane", async () => {
+		const fs = brokenLane();
+		const out = await run(fs, runArchive(reopenedRoute(REOPENED_READ)));
+
+		expect(out.code).toBe(NOT_REOPENED);
+		expect(out.stderr.join("\n")).toContain("drop --reopened");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("takes the next free slot for an issue reopened again, burying no earlier archive", async () => {
+		const first = `${MOVED}/events.jsonl`;
+		const second = `${ARCHIVED}/6037.archived-2`;
+		const fs = laneOnDisk(
+			COMPLETE_LOG,
+			{[`${MOVED}/workflow.json`]: coderTemplateText(), [first]: "earlier\n"},
+			[MOVED],
+		);
+		const out = await run(fs, runArchive(reopenedRoute(REOPENED_READ)));
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({to: second});
+		expect(fs.written.get(`${second}/events.jsonl`)).toBe(jsonl(COMPLETE_LOG));
+		expect(fs.written.has(first)).toBe(false);
+	});
+
+	it("retracts the live lane claim under the caller's token before moving", async () => {
+		const fs = laneOnDisk(COMPLETE_LOG);
+		const {deleted, retract} = recorder();
+		const out = await run(
+			fs,
+			runArchive({
+				...reopenedRoute(REOPENED_READ),
+				claims: holds(claimant(11, TOKEN)),
+				retract,
+				token: TOKEN,
+			}),
+		);
+
+		expect(out.code).toBe(0);
+		expect(deleted).toEqual([11]);
+	});
+
+	it("refuses a live lane claim this caller did not name, at 31", async () => {
+		const fs = laneOnDisk(COMPLETE_LOG);
+		const {deleted, retract} = recorder();
+		const out = await run(
+			fs,
+			runArchive({
+				...reopenedRoute(REOPENED_READ),
+				claims: holds(claimant(11, TOKEN)),
+				retract,
+				token: null,
+			}),
+		);
+
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(deleted).toEqual([]);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("leaves the unreplayable route refusing a replaying `complete` lane at 50", async () => {
+		const fs = laneOnDisk(COMPLETE_LOG);
+		const out = await run(fs, runArchive({...OPTIONS, templatePaths: [TEMPLATE]}));
+
+		expect(out.code).toBe(LOG_REPLAYS);
+		expect(out.stderr.join("\n")).toContain("--reopened");
 	});
 });

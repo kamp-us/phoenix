@@ -445,6 +445,12 @@ discards no branch or worktree.
 pull request that proves it. Drive the pull request the refusal names, or record the clearance that
 reopens the frozen lane's door. Never retire a directory to get past it.
 
+**An issue reopened after its work merged boots without a `63`.** `lane open` reads the reopen off
+the board itself: when the issue is open, every closing pull request merged, and the latest reopen
+came after the last merge, it boots a second lane at a full budget. When it still answers `63`, the
+refusal names which of those facts failed, so that `63` is a real stop. When the finished lane is
+still in the key, the boot answers `14` instead; the reopened-issue passage in step 4 has the verbs.
+
 **One shape of that `63` is not a stop, and it is the one a second operator account produces.** When
 the prior ledger was written on another machine it is unreachable forever, so no clearance can
 produce it and driving the PR through a lane is exactly what you cannot do. That case re-runs the
@@ -2293,10 +2299,30 @@ its log, and keeps the log byte for byte. Everything else refuses at `73` and st
 second re-triage of one issue takes the next `<lane>.archived-<n>` slot. This is an engine step,
 never an ask for the founder, so route any refusal by its code.
 
-**A `complete` fold over an issue the board still calls buildable is a defect, and it has a repair.**
-It means the merge behind the ship's `DONE` carried `Part of #N` and the recorded line never said so,
-so the lane folded past the arm that would have sent it round again. Report the terminal
-as it reads — nothing here is yours to change — and name the two verbs that fix it:
+**A `complete` lane whose issue was reopened after its work merged gets a second lane the same way.**
+The old ledger is final, so `lane open` refuses at `14` while it stands in the key. Unlike a
+re-triage, the trigger is a board read, not a brief: both verbs below read the reopen themselves.
+Run them when the issue is open again over a `complete` fold:
+
+```bash
+node <fabrika> lane archive $lane_key --reopened --token <your lane-claim token>
+node <fabrika> lane claim $lane_key
+node <fabrika> lane open $lane_key
+```
+
+The archive moves only a lane that folds to `complete` over an issue the board shows open, with every
+closing pull request merged and reopened after the last merge. Everything else refuses at `76` and
+stays where it is; `11` is a board read that failed. The boot then passes the `63` the merged pull
+request would raise and starts at a full budget, because the first lane's work landed. Re-claim for
+the same reason as above, keep the new token, and continue at step 2.
+
+**A `complete` fold over an issue that is open again is one of two cases, and the archive above
+tells them apart.** Run `lane archive --reopened` first. When it moves the lane, the issue was
+reopened after its work merged, and the boot above is yours. When it refuses at `76` saying no merged
+pull request closes the issue, the fold is a defect with a repair: the merge behind the ship's `DONE`
+carried `Part of #N` and the recorded line never said so, so the lane folded past the arm that would
+have sent it round again. Report the terminal as it reads — nothing in that case is yours to change —
+and name the two verbs that fix it:
 `fabrika lane migrate <lane>` where that lane's machine predates the guard, then
 `fabrika lane reconcile --check`, which says which lanes are in this state and appends the correcting
 line when re-run without the flag.
@@ -2454,7 +2480,9 @@ has no door; no event recorded on top of a final fold; `lane record`'s answer na
 lane the record `posted` or `unchanged`, or the `4`, `5`, `9` or UNKNOWN code that kept it off; on a
 chore lane the `lane history` bytes handed to the caller; a `diagnosed` fold your caller names as
 re-triaged is not this terminal, because `lane archive --retriaged`, `lane claim` and `lane open`
-boot it fresh — above) ·
+boot it fresh — above; nor is a `complete` fold that `lane archive --reopened` moves, because the
+board shows its issue reopened after the work merged and the same two verbs boot a second lane —
+above) ·
 **`LANE-PARKED`** (the fold reads `blocked`, `human:*` or `frozen` — either it already did and no
 event was owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
 posted on the driven issue, and on a `tripped` fold the lane record beside it) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns

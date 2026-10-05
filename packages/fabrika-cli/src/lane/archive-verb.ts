@@ -23,6 +23,15 @@
  * `<lane>`, `<lane>.archived-<n>` slot rather than refusing on the first; the unreplayable route
  * still refuses an occupied destination.
  *
+ * **`--reopened` is the third, and a separate route too.** A lane whose own machine folds its log to
+ * `complete` landed its work, and that final holds the key for good, so an issue reopened for
+ * follow-up had no verb that could drive it. Under the flag the lane moves only when it folds to
+ * `complete` ({@link judgeCompletion}) AND the board shows the issue reopened after that landing
+ * ([`reopen.ts`](reopen.ts)) — read, never taken on the flag's word. Every other final, a lane in
+ * flight, an unfoldable log and a board that shows no such reopen refuse on {@link NOT_REOPENED}; a
+ * read that failed refuses as UNKNOWN. An issue reopened twice takes the next free slot, as a
+ * re-triaged one does.
+ *
  * **An open issue is no longer a refusal.** A bricked ledger whose issue is still open had
  * no route at all: repair needs the replay that is broken, `settle` needs a board closure, and the
  * archive's own closed-issue gate refused it — so the seat stayed held and the lane could only be
@@ -47,7 +56,7 @@ import {type Claimants, readClaimants} from "../build/claim.ts";
 import {exists, readFile, rename} from "../io/fs.ts";
 import {deleteComment, resolveRepo} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {judgeArchive, judgeRetriage} from "./archive.ts";
+import {judgeArchive, judgeCompletion, judgeRetriage} from "./archive.ts";
 import {LANE_CLAIM} from "./claim.ts";
 import {
 	APPEND_UNKNOWN,
@@ -57,8 +66,10 @@ import {
 	LOG_REPLAYS,
 	MARKER_READBACK,
 	NOT_DIAGNOSED,
+	NOT_REOPENED,
 } from "./codes.ts";
 import {loadRefusal} from "./refusals.ts";
+import type {ReopenReader} from "./reopen.ts";
 import {type LaneRef, type LoadedLane, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane archive";
@@ -114,8 +125,14 @@ export const boardClaimSeams = (
 	};
 };
 
-/** Which entitlement the caller moves this lane on — `--retriaged` picks the second. */
-export type ArchiveRoute = "unreplayable" | "retriaged";
+/**
+ * Which entitlement the caller moves this lane on — `--retriaged` picks the second, `--reopened` the
+ * third, which carries the board read it cannot move without.
+ */
+export type ArchiveRoute<R = never> =
+	| "unreplayable"
+	| "retriaged"
+	| {readonly _tag: "reopened"; readonly reopen: ReopenReader<R>};
 
 /** What the judgement proved the move stands on, carried through to the answer. */
 type Entitlement =
@@ -124,7 +141,14 @@ type Entitlement =
 			readonly through: "current" | "candidate";
 			readonly defects: ReadonlyArray<string>;
 	  }
-	| {readonly route: "retriaged"; readonly state: string};
+	| {readonly route: "retriaged"; readonly state: string}
+	| {
+			readonly route: "reopened";
+			readonly state: string;
+			readonly pulls: ReadonlyArray<number>;
+			readonly landedAt: string;
+			readonly reopenedAt: string;
+	  };
 
 type Judged =
 	| {readonly _tag: "Entitled"; readonly entitlement: Entitlement}
@@ -185,7 +209,7 @@ const judgeUnreplayable = (
 			return refused(
 				refuse(
 					LOG_REPLAYS,
-					`${VERB}: ${loaded.logPath} replays through every machine that exists for this lane, so every sweep can judge it — this is not a lane to move out of their scope. A lane that ended \`diagnosed\` with no pull request, over an issue triage has since rewritten, moves with --retriaged. Nothing was moved.`,
+					`${VERB}: ${loaded.logPath} replays through every machine that exists for this lane, so every sweep can judge it — this is not a lane to move out of their scope. A lane that ended \`diagnosed\` with no pull request, over an issue triage has since rewritten, moves with --retriaged; a lane that ended \`complete\`, over an issue reopened after its work landed, moves with --reopened. Nothing was moved.`,
 				),
 			);
 		}
@@ -195,7 +219,7 @@ const judgeUnreplayable = (
 		};
 	});
 
-const judgeRetriaged = (loaded: LoadedLaneRecord): Judged => {
+const judgeRetriaged = (loaded: LoadedLaneRecord, lane: string): Judged => {
 	const judged = judgeRetriage(loaded.lane, loaded.entries);
 	switch (judged._tag) {
 		case "Diagnosed":
@@ -211,7 +235,7 @@ const judgeRetriaged = (loaded: LoadedLaneRecord): Judged => {
 			return refused(
 				refuse(
 					NOT_DIAGNOSED,
-					`${VERB}: ${loaded.logPath} folds to ${judged.state}, not a diagnosis final — --retriaged moves only a lane that ended \`diagnosed\` with no pull request, and every other final stays where it is. Nothing was moved.`,
+					`${VERB}: ${loaded.logPath} folds to ${judged.state}, not a diagnosis final — --retriaged moves only a lane that ended \`diagnosed\` with no pull request, and every other final stays where it is.${judged.state === loaded.lane.terminals.complete ? ` A \`complete\` lane whose issue the board shows reopened after its work landed moves with --reopened instead: \`fabrika lane archive ${lane} --reopened\`.` : ""} Nothing was moved.`,
 				),
 			);
 		case "Published":
@@ -233,8 +257,8 @@ const judgeRetriaged = (loaded: LoadedLaneRecord): Judged => {
 
 export interface ArchiveOptions<R = never> {
 	readonly ref: LaneRef;
-	/** Which entitlement this move stands on; the unreplayable one unless `--retriaged` names the other. */
-	readonly route: ArchiveRoute;
+	/** Which entitlement this move stands on; the unreplayable one unless a flag names another. */
+	readonly route: ArchiveRoute<R>;
 	/** Where the lane moves to — the archived root, which no sweep is handed. */
 	readonly archivedRoot: string;
 	/** The committed templates this root's lanes may have booted from; the lane's `id` picks. */
@@ -247,6 +271,67 @@ export interface ArchiveOptions<R = never> {
 	readonly retract: ClaimRetractor<R>;
 }
 
+const judgeReopened = <R>(
+	loaded: LoadedLaneRecord,
+	lane: string,
+	issue: number | null,
+	reopen: ReopenReader<R>,
+): Effect.Effect<Judged, never, R> =>
+	Effect.gen(function* () {
+		const judged = judgeCompletion(loaded.lane, loaded.entries);
+		if (judged._tag === "Unreplayable") {
+			return refused(
+				refuse(
+					NOT_REOPENED,
+					`${VERB}: ${loaded.logPath} does not replay through the lane's own machine (${judged.defects.join("; ")}), so it cannot be proven \`complete\` — drop --reopened, and the unreplayable route judges it. Nothing was moved.`,
+				),
+			);
+		}
+		if (judged._tag === "NotComplete") {
+			return refused(
+				refuse(
+					NOT_REOPENED,
+					`${VERB}: ${loaded.logPath} folds to ${judged.state}, not \`complete\` — --reopened moves only a lane whose work landed, and every other final stays where it is. Nothing was moved.`,
+				),
+			);
+		}
+		if (issue === null) {
+			return refused(
+				refuse(
+					NOT_REOPENED,
+					`${VERB}: "${lane}" names no issue, so there is nothing the board could show reopened. Nothing was moved.`,
+				),
+			);
+		}
+		const read = yield* reopen(issue);
+		if (read._tag === "Unknown") {
+			return refused(
+				refuse(
+					LANE_UNREADABLE,
+					`${VERB}: ${read.reason} — UNKNOWN, never "reopened", and nothing was moved.`,
+				),
+			);
+		}
+		if (read._tag === "NotReopened") {
+			return refused(
+				refuse(
+					NOT_REOPENED,
+					`${VERB}: ${loaded.logPath} folds to \`complete\`, and the board does not show #${issue} reopened after it landed: ${read.why}. --reopened reads the reopen off the board, never off the flag. Nothing was moved.`,
+				),
+			);
+		}
+		return {
+			_tag: "Entitled",
+			entitlement: {
+				route: "reopened",
+				state: judged.state,
+				pulls: read.pulls,
+				landedAt: read.landedAt,
+				reopenedAt: read.reopenedAt,
+			},
+		};
+	});
+
 export const runArchive = <R = never>(
 	options: ArchiveOptions<R>,
 ): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> =>
@@ -257,10 +342,13 @@ export const runArchive = <R = never>(
 		const loaded = yield* loadLane(ref);
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
 
+		const {route} = options;
 		const judged =
-			options.route === "retriaged"
-				? judgeRetriaged(loaded)
-				: yield* judgeUnreplayable(loaded, options.templatePaths);
+			route === "retriaged"
+				? judgeRetriaged(loaded, ref.lane)
+				: route === "unreplayable"
+					? yield* judgeUnreplayable(loaded, options.templatePaths)
+					: yield* judgeReopened(loaded, ref.lane, issue, route.reopen);
 		if (judged._tag === "Refused") return judged.outcome;
 		const {entitlement} = judged;
 
@@ -309,8 +397,9 @@ export const runArchive = <R = never>(
 			}
 		}
 
-		// The unreplayable route keeps its one slot; a re-triaged issue can leave a ledger per triage.
-		const slots = entitlement.route === "retriaged" ? ARCHIVE_SLOTS : 1;
+		// The unreplayable route keeps its one slot; a re-triaged or reopened issue can leave a ledger
+		// per triage or reopen.
+		const slots = entitlement.route === "unreplayable" ? 1 : ARCHIVE_SLOTS;
 		let destination: string | null = null;
 		for (let slot = 1; slot <= slots && destination === null; slot += 1) {
 			const candidate = path.join(options.archivedRoot, slotLeaf(ref.lane, slot));
@@ -352,7 +441,14 @@ export const runArchive = <R = never>(
 		const proven =
 			entitlement.route === "retriaged"
 				? {state: entitlement.state}
-				: {through: entitlement.through, defects: entitlement.defects};
+				: entitlement.route === "reopened"
+					? {
+							state: entitlement.state,
+							pulls: entitlement.pulls,
+							landedAt: entitlement.landedAt,
+							reopenedAt: entitlement.reopenedAt,
+						}
+					: {through: entitlement.through, defects: entitlement.defects};
 		return answer(
 			JSON.stringify({
 				answer: "archived",
@@ -367,7 +463,9 @@ export const runArchive = <R = never>(
 			[
 				entitlement.route === "retriaged"
 					? `${VERB}: moved ${loaded.dir} to ${destination}; the log replays to \`${entitlement.state}\` and names no pull request, so the key is free for a fresh lane.`
-					: `${VERB}: moved ${loaded.dir} to ${destination}; the log does not replay through the ${entitlement.through === "current" ? "lane's own machine" : "committed template"}.`,
+					: entitlement.route === "reopened"
+						? `${VERB}: moved ${loaded.dir} to ${destination}; the log replays to \`${entitlement.state}\`, its work landed in ${entitlement.pulls.map((pull) => `#${pull}`).join(", ")} (last merged ${entitlement.landedAt}), and #${issue} was reopened at ${entitlement.reopenedAt}, so \`fabrika lane open ${ref.lane}\` boots a second lane at a full repair budget.`
+						: `${VERB}: moved ${loaded.dir} to ${destination}; the log does not replay through the ${entitlement.through === "current" ? "lane's own machine" : "committed template"}.`,
 				retracted.length === 0
 					? `${VERB}: ${issue === null ? `"${ref.lane}" names no issue, so there was no lane claim to retract` : `#${issue} carried no live lane claim, so there was none to retract`}.`
 					: `${VERB}: retracted the lane claim on #${issue} — marker comment(s) ${retracted.join(", ")}. The issue is claimable again, and \`fabrika lane open ${ref.lane}\` decides whether it re-lanes.`,

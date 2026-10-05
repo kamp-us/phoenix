@@ -548,6 +548,94 @@ export const pullsClosing = (
 			}),
 	);
 
+/** One pull request on an issue's closing edge, with the state and merge time a reopen judgement reads. */
+export interface CloserState {
+	readonly number: number;
+	readonly state: "OPEN" | "MERGED" | "CLOSED";
+	/** When it merged, or `null` for a pull request that has not. */
+	readonly mergedAt: string | null;
+}
+
+/** What the board says about one issue's reopen: its state, its latest reopen, and its closers. */
+export interface ReopenFacts {
+	readonly state: "OPEN" | "CLOSED";
+	/** The latest `ReopenedEvent` on the issue's timeline, or `null` when it was never reopened. */
+	readonly reopenedAt: string | null;
+	readonly closers: ReadonlyArray<CloserState>;
+}
+
+/** One page of closers is the bound: an issue past it reads UNKNOWN rather than truncated. */
+const REOPEN_QUERY =
+	"query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){state timelineItems(itemTypes:[REOPENED_EVENT],last:1){nodes{... on ReopenedEvent{createdAt}}} closedByPullRequestsReferences(first:100,includeClosedPrs:true){pageInfo{hasNextPage} nodes{number state mergedAt}}}}}";
+
+const CLOSER_STATE_NAMES: ReadonlySet<string> = new Set(["OPEN", "MERGED", "CLOSED"]);
+
+/**
+ * The issue's state, its latest reopen, and every pull request on its closing edge, in one read.
+ *
+ * The same closing edge {@link pullsClosing} reads, so a mention is never a closer; any shape that is
+ * not what was asked for is a failure, never an empty answer.
+ */
+export const issueReopenFacts = (repo: string, issue: number): Shell<Attempt<ReopenFacts>> =>
+	authed(
+		(token): Api<Attempt<ReopenFacts>> =>
+			Effect.gen(function* () {
+				const [owner, name] = repo.split("/");
+				if (owner === undefined || name === undefined) return fail(`\`${repo}\` is not owner/name`);
+				const outcome: Rest = yield* graphqlRead(token, REOPEN_QUERY, {owner, name, number: issue});
+				if (outcome._tag === "Unreachable") return fail(outcome.reason);
+				if (outcome.status < 200 || outcome.status >= 300) return fail(refusalText(outcome));
+				const parsed: unknown = outcome.body;
+				if (isRecord(parsed) && Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+					return fail("GitHub answered 200 and the GraphQL query carried errors");
+				}
+				const data = isRecord(parsed) && isRecord(parsed.data) ? parsed.data : null;
+				const repository = data !== null && isRecord(data.repository) ? data.repository : null;
+				const node = repository !== null && isRecord(repository.issue) ? repository.issue : null;
+				if (node === null || (node.state !== "OPEN" && node.state !== "CLOSED")) {
+					return fail("GitHub answered 200 but its output is not an issue with a state");
+				}
+				const timeline = isRecord(node.timelineItems) ? node.timelineItems : null;
+				if (timeline === null || !Array.isArray(timeline.nodes)) {
+					return fail("GitHub answered 200 but the issue's reopen timeline is not a list");
+				}
+				let reopenedAt: string | null = null;
+				for (const event of timeline.nodes) {
+					if (!isRecord(event) || typeof event.createdAt !== "string" || event.createdAt === "") {
+						return fail("GitHub answered 200 but one reopen event carries no time");
+					}
+					reopenedAt = event.createdAt;
+				}
+				const set = isRecord(node.closedByPullRequestsReferences)
+					? node.closedByPullRequestsReferences
+					: null;
+				if (set === null || !Array.isArray(set.nodes)) {
+					return fail("GitHub answered 200 but its output is not a closing-pull page");
+				}
+				if (isRecord(set.pageInfo) && set.pageInfo.hasNextPage === true) {
+					return fail("more than 100 pull requests close this issue, so the set read is partial");
+				}
+				const closers: CloserState[] = [];
+				for (const pull of set.nodes) {
+					if (
+						!isRecord(pull) ||
+						typeof pull.number !== "number" ||
+						typeof pull.state !== "string" ||
+						!CLOSER_STATE_NAMES.has(pull.state) ||
+						(pull.mergedAt !== null && typeof pull.mergedAt !== "string")
+					) {
+						return fail("GitHub answered 200 but one node is not a pull request");
+					}
+					closers.push({
+						number: pull.number,
+						state: pull.state as CloserState["state"],
+						mergedAt: pull.mergedAt as string | null,
+					});
+				}
+				return ok({state: node.state, reopenedAt, closers});
+			}),
+	);
+
 /** One pull request as a branch lookup sees it — enough to pick the newest and state what it is. */
 export interface BranchPull {
 	readonly number: number;

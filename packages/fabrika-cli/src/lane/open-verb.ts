@@ -53,6 +53,14 @@
  * adoption is recorded on the issue before anything lands on disk. Everything the board does not
  * prove refuses at {@link PRIOR_LANE} exactly as it did.
  *
+ * **An issue reopened after its work landed is the other arm, and the board opens that one too.**
+ * When every pull request closing the issue merged and its latest reopen came after the last merge
+ * ([`reopen.ts`](reopen.ts)), the prior lane finished and the reopen asks for new work, so the boot
+ * places the template as it stands, at a full repair budget: nothing the first lane spent is owed by
+ * the second. The finished ledger leaves the key through `lane archive --reopened` first. A merged
+ * closer on an issue the board does not show reopened after it, and an open closer, still refuse at
+ * {@link PRIOR_LANE}.
+ *
  * The lane's origin — where it came from — is written as its first fact ([`facts.ts`](facts.ts))
  * right after the machine is placed, a driver pick unless `--origin` says otherwise.
  *
@@ -91,6 +99,7 @@ import type {ExpectationReader} from "./expectation.ts";
 import {recordOrigin} from "./facts.ts";
 import type {PriorLaneReader} from "./prior-lane.ts";
 import {placementRefusal, say} from "./refusals.ts";
+import type {ReopenReader, ReopenVerdict} from "./reopen.ts";
 import {type LaneRef, placeMachine, probeLane} from "./store.ts";
 
 const VERB = "fabrika lane open";
@@ -126,8 +135,9 @@ const priorRefusal = (
 	issue: number,
 	pulls: ReadonlyArray<number>,
 	root: string,
+	notReopened: string | null,
 ): string =>
-	`${verb}: #${issue} already had a lane — the board hangs ${pulls.length === 1 ? "pull request" : "pull requests"} ${pulls.map((pull) => `#${pull}`).join(", ")} off it, which only a driven lane opens, and the ledger that drove them is not under ${root}. A ledger is a lane's whole state and it is gitignored, so booting a second one restores the first one's spent repair budget with nothing recording that a round was granted. Drive the pull request that is already there. Where that prior ledger is unreachable — it was written on another operator's machine, so no clearance can produce it — \`fabrika lane open ${issue} --from-board\` boots a lane the board admits: one open pull request with every namespace its head derives answered, seated with its repair budget declared spent and the adoption recorded on the issue. A spent budget itself comes back only through a granted round recorded on the board — \`lane clear\`, which grants the lane's round and its pull request's together, or \`build clear ${pulls[0] ?? issue}\` for a founder's bare PR-side grant — never a retire and re-open. Nothing was written.`;
+	`${verb}: #${issue} already had a lane${notReopened === null ? "" : `, and the board does not show it reopened after that work landed (${notReopened})`} — the board hangs ${pulls.length === 1 ? "pull request" : "pull requests"} ${pulls.map((pull) => `#${pull}`).join(", ")} off it, which only a driven lane opens, and the ledger that drove them is not under ${root}. A ledger is a lane's whole state and it is gitignored, so booting a second one restores the first one's spent repair budget with nothing recording that a round was granted. Drive the pull request that is already there. Where that prior ledger is unreachable — it was written on another operator's machine, so no clearance can produce it — \`fabrika lane open ${issue} --from-board\` boots a lane the board admits: one open pull request with every namespace its head derives answered, seated with its repair budget declared spent and the adoption recorded on the issue. A spent budget itself comes back only through a granted round recorded on the board — \`lane clear\`, which grants the lane's round and its pull request's together, or \`build clear ${pulls[0] ?? issue}\` for a founder's bare PR-side grant — never a retire and re-open. An issue the board shows reopened after its closing pull requests all merged boots here at a full budget, once \`fabrika lane archive ${issue} --reopened\` has set the finished lane aside. Nothing was written.`;
 
 export interface OpenOptions<R = never> extends LaneRef {
 	/** The committed coder template's on-disk path — resolved by the adapter beside this module. */
@@ -157,6 +167,16 @@ export interface OpenOptions<R = never> extends LaneRef {
 	 * ordinary boot pays for no verdict read at all.
 	 */
 	readonly boardSeat: BoardSeatReader<R> | null;
+	/**
+	 * Whether the board shows the issue reopened after its work landed, or `null` for the offline boot.
+	 *
+	 * Asked only where the prior-lane refusal would fire, and before `--from-board`: a reopen after
+	 * landing boots at a full budget whatever the flag says, and anything else falls through to the
+	 * refusal or the board seat exactly as before.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10317#issuecomment-5974128993
+	 */
+	readonly reopen: ReopenReader<R> | null;
 	/**
 	 * Where the adoption is recorded — the board, through a caller-passed writer.
 	 *
@@ -252,6 +272,8 @@ export const runOpen = <R = never>(
 		// carrier between the prior-lane read above and the placement below, so the bytes placed and
 		// the answer printed cannot disagree about whether this lane was seated.
 		let seated: {readonly pr: number; readonly head: string; readonly text: string} | null = null;
+		// The reopen the board proved, or `null` on every boot that never needed one.
+		let reopened: Extract<ReopenVerdict, {readonly _tag: "Reopened"}> | null = null;
 		if (issue !== null && options.priorLane !== null) {
 			// Only over an absent directory: a lane already there is the resume `lane open`'s own
 			// `LANE_EXISTS` names, and answering this code instead would stop a driver mid-drive.
@@ -264,9 +286,24 @@ export const runOpen = <R = never>(
 						`${VERB}: cannot establish whether #${issue} already had a lane: ${read.reason} — refusing to boot over UNKNOWN. Nothing was written.`,
 					);
 				}
-				if (read._tag === "Prior") {
+				let notReopened: string | null = null;
+				if (read._tag === "Prior" && options.reopen !== null) {
+					const reopen = yield* options.reopen(issue);
+					if (reopen._tag === "Unknown") {
+						return refuse(
+							LANE_UNREADABLE,
+							`${VERB}: #${issue} already had a lane, and ${reopen.reason} — UNKNOWN, never "reopened", so refusing to boot. Nothing was written.`,
+						);
+					}
+					if (reopen._tag === "Reopened") reopened = reopen;
+					else notReopened = reopen.why;
+				}
+				if (read._tag === "Prior" && reopened === null) {
 					if (!options.fromBoard || options.boardSeat === null) {
-						return refuse(PRIOR_LANE, priorRefusal(VERB, issue, read.pulls, options.root));
+						return refuse(
+							PRIOR_LANE,
+							priorRefusal(VERB, issue, read.pulls, options.root, notReopened),
+						);
 					}
 					const seat = yield* options.boardSeat(issue, read.pulls);
 					if (seat._tag === "Unknown") {
@@ -326,7 +363,7 @@ export const runOpen = <R = never>(
 			return refuse(
 				LANE_EXISTS,
 				say(
-					`${VERB}: a lane already exists at ${placed.dir} — resuming needs no boot, so drive the lane that is there (\`fabrika lane status ${options.lane}\`). Removing ${placed.dir} and booting again is not the remedy: the ledger is the lane's whole state and it is gitignored, so the re-boot restores its spent repair budget with nothing recording that a round was granted. A spent budget comes back only through a granted round recorded on the board.`,
+					`${VERB}: a lane already exists at ${placed.dir} — resuming needs no boot, so drive the lane that is there (\`fabrika lane status ${options.lane}\`). Removing ${placed.dir} and booting again is not the remedy: the ledger is the lane's whole state and it is gitignored, so the re-boot restores its spent repair budget with nothing recording that a round was granted. A spent budget comes back only through a granted round recorded on the board. Where the lane folds \`complete\` and its issue was reopened after that work landed, \`fabrika lane archive ${options.lane} --reopened\` sets it aside, and this verb then boots the second lane.`,
 					...stranded,
 				),
 			);
@@ -354,11 +391,25 @@ export const runOpen = <R = never>(
 				...(seated === null
 					? {}
 					: {fromBoard: {pr: seated.pr, head: seated.head, maxRetries: 0, record}}),
+				...(reopened === null
+					? {}
+					: {
+							reopened: {
+								pulls: reopened.pulls,
+								landedAt: reopened.landedAt,
+								reopenedAt: reopened.reopenedAt,
+							},
+						}),
 			}),
 			[
 				seed._tag === "Seeded"
 					? `${VERB}: booted ${placed.dir} from ${options.templatePath}, seeded ${renderClasses(seed.classes)}.`
 					: `${VERB}: booted ${placed.dir} from ${options.templatePath}.`,
+				...(reopened === null
+					? []
+					: [
+							`${VERB}: #${issue} was reopened at ${reopened.reopenedAt}, after ${reopened.pulls.map((pull) => `#${pull}`).join(", ")} last merged at ${reopened.landedAt} — the first lane's work landed, so this second lane boots at a full repair budget.`,
+						]),
 				...(seated === null
 					? []
 					: [

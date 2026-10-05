@@ -7,6 +7,7 @@ import {
 	compareFiles,
 	getPullDiff,
 	getPullRequest,
+	issueReopenFacts,
 	listPullFiles,
 	patchComment,
 	permissionFor,
@@ -160,6 +161,73 @@ describe("pullsClosing", () => {
 
 		expect(result._tag).toBe("Failure");
 		expect(http.calls).toEqual([]);
+	});
+});
+
+describe("issueReopenFacts", () => {
+	const issueNode = (overrides: Record<string, unknown> = {}): HttpReply =>
+		served(200, {
+			data: {
+				repository: {
+					issue: {
+						state: "OPEN",
+						timelineItems: {nodes: [{createdAt: "2026-10-01T18:00:00Z"}]},
+						closedByPullRequestsReferences: {
+							pageInfo: {hasNextPage: false},
+							nodes: [
+								{number: 7001, state: "MERGED", mergedAt: "2026-10-01T10:00:00Z"},
+								{number: 7000, state: "CLOSED", mergedAt: null},
+							],
+						},
+						...overrides,
+					},
+				},
+			},
+		});
+
+	const read = (reply: HttpReply) => {
+		const {layer} = wired([[GRAPHQL, reply]]);
+		return Effect.runPromise(Effect.provide(issueReopenFacts("o/r", 42), layer));
+	};
+
+	it("reads the state, the latest reopen and every closer in one query", async () => {
+		expect(await read(issueNode())).toEqual({
+			_tag: "Ok",
+			value: {
+				state: "OPEN",
+				reopenedAt: "2026-10-01T18:00:00Z",
+				closers: [
+					{number: 7001, state: "MERGED", mergedAt: "2026-10-01T10:00:00Z"},
+					{number: 7000, state: "CLOSED", mergedAt: null},
+				],
+			},
+		});
+	});
+
+	it("reads an issue never reopened as a null reopen, not a failure", async () => {
+		const result = await read(issueNode({timelineItems: {nodes: []}}));
+
+		expect(result).toMatchObject({_tag: "Ok", value: {reopenedAt: null}});
+	});
+
+	it("refuses a closer set past one page rather than judging a partial set", async () => {
+		const result = await read(
+			issueNode({closedByPullRequestsReferences: {pageInfo: {hasNextPage: true}, nodes: []}}),
+		);
+
+		expect(result._tag).toBe("Failure");
+	});
+
+	it("refuses a 200 whose issue carries no state", async () => {
+		expect((await read(issueNode({state: "WHATEVER"})))._tag).toBe("Failure");
+	});
+
+	it("refuses a 200 that carries GraphQL errors", async () => {
+		expect((await read(served(200, {errors: [{message: "boom"}]})))._tag).toBe("Failure");
+	});
+
+	it("refuses when GitHub does not serve the query", async () => {
+		expect((await read(served(502, {message: "Bad Gateway"})))._tag).toBe("Failure");
 	});
 });
 

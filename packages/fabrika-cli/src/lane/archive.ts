@@ -2,9 +2,10 @@
  * The archive judgement — is this lane's log one no sweep can ever judge?
  *
  * The entitlement `lane archive` needs before it moves a directory, the closed-issue gate that used
- * to stand beside it having been retired; {@link judgeRetriage} below is the one other, taken only
- * under `--retriaged`. This module reads no disk and writes none; the verb's remaining board work is
- * retracting the lane claim, not judging the log.
+ * to stand beside it having been retired; {@link judgeRetriage} below is a second, taken only under
+ * `--retriaged`, and {@link judgeCompletion} a third, taken only under `--reopened`. This module
+ * reads no disk and writes none; the verb's remaining board work is retracting the lane claim and,
+ * under `--reopened`, reading the reopen — not judging the log.
  *
  * The judgement is [`migrate.ts`](migrate.ts)'s, deliberately and by call rather than by
  * re-derivation: the lanes an archive is for are exactly the ones `lane migrate` already refuses as
@@ -129,6 +130,40 @@ const spendIn = (
 		return [];
 	}),
 ];
+
+/**
+ * The reopen judgement's lane half — did this lane's own machine fold its log to `complete`?
+ *
+ * The third thing that entitles `lane archive` to move a lane, taken only under `--reopened`, and the
+ * lane half alone: whether the issue was reopened after landing is the board's to say
+ * ([`reopen.ts`](reopen.ts)), and the verb asks it only once this answers `Complete`. Only the
+ * lane's own machine is folded, as for {@link judgeRetriage}: the question is which final this lane
+ * stands on. Every other final — `shipped` or `tripped`, a diagnosis final, a board final — and a
+ * lane still in flight is `NotComplete`.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10317#issuecomment-5974128993
+ */
+export type CompletionVerdict =
+	| {readonly _tag: "Complete"; readonly state: string}
+	/** The lane's own machine cannot fold the log — the unreplayable route's lane, not this one's. */
+	| {readonly _tag: "Unreplayable"; readonly defects: ReadonlyArray<string>}
+	/** The fold stands on another final, or has not ended at all. */
+	| {readonly _tag: "NotComplete"; readonly state: string};
+
+export const judgeCompletion = (
+	current: CompiledLane,
+	entries: ReadonlyArray<LogEntry>,
+): CompletionVerdict => {
+	const folded = foldLog(current, entries);
+	if (folded._tag !== "Folded") return {_tag: "Unreplayable", defects: folded.defects};
+	const {status, stateValue} = deriveStatus(current, folded.states);
+	if (typeof stateValue !== "string") {
+		return {_tag: "NotComplete", state: JSON.stringify(stateValue)};
+	}
+	return status === "done" && stateValue === current.terminals.complete
+		? {_tag: "Complete", state: stateValue}
+		: {_tag: "NotComplete", state: stateValue};
+};
 
 export const judgeRetriage = (
 	current: CompiledLane,
