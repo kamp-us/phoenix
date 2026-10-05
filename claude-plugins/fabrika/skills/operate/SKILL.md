@@ -1543,24 +1543,45 @@ refused at `20` and the only move left was a `BLOCKED` over a lane that had fini
 A `SHIPPED-PR` and an epic child's `BUILT-NO-PR` carry no such field and fold to `review` exactly as
 they always did.
 
-**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Six terminal tokens
+**A machinery failure is recorded as a lap, not as the artifact's `FAIL`.** Seven terminal tokens
 belong to no shell's vocabulary — `lane report` groups them as `machinery` in
 [`report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)'s `SHELL_VOCABULARIES` — and each
 one says the pipeline carrying the artifact failed while nothing about the artifact was judged. All
-six map to the machine's `LAP` event, and each names exactly one park cause:
+seven map to the machine's `LAP` event, and each names exactly one park cause:
 
 | Token | The observed failure | The cause it carries |
 | --- | --- | --- |
 | `REPLAY-COLLIDED` | a child's replay onto the assembly tip hit a hunk that is not a plain keep-both, so the collision owes a judgment about content — `lane integrate` exit `42`'s replay arm | `replay-conflict` |
 | `BASE-CONFLICTED` | the PR's base moved under it and the merge now conflicts — `ship enqueue`'s pre-arm read at exit `21`. The head owes a rebase and the re-review that comes with it, so this is the one lap out of `ship` that folds the task to `build` | `base-conflicted` |
+| `TEXT-REVIEW-STALE` | a `review:ui` `PASS` was refused at `23` because a text verdict the head owes stopped binding: a merge from the base reached a path the PR changed. The text review is owed again, so this is the one lap out of `review:ui` that folds the task to `review` | `text-review-stale` |
 | `QUEUE-EJECTED` | the merge queue ejected the PR before it merged — a sibling's red, a base that moved under the batch, a queue timeout — and no verdict against it changed | `queue-ejected` |
 | `SEAT-DIRTY` | a working tree still holds the lane branch this build or replay must stand on — `lane integrate` exit `54`, `build branch --resume-lane` exit `11` | `worktree-holds-branch` |
 | `SHELL-DEAD` | the shell driving this lane's stage was killed by its provider before it recorded a terminal | `spawn-dead` |
 | `BASE-RED` | a code validator failed over the merged tree and over the pre-merge assembly head too, so the base was broken before the child arrived — `lane integrate` exit `75` | `assembly-base-red` |
 
-Four of the six are yours because no shell observes them — the three `integrate` rows and the dead
-spawn. The other two have a shell in front of them, and where its own terminal already recorded
-the failure you record nothing second: `ship` reports `QUEUE-EJECTED` and `BASE-CONFLICTED` itself.
+Five of the seven are yours because no shell records them — the three `integrate` rows, the dead
+spawn and the stale text review. The other two have a shell in front of them, and where its own
+terminal already recorded the failure you record nothing second: `ship` reports `QUEUE-EJECTED` and
+`BASE-CONFLICTED` itself.
+
+**`TEXT-REVIEW-STALE` is recorded in this step, on one read.** It opens when a task stands in
+`review:ui` and its `PASS` is refused at `23`, on the ui reviewer's own `lane report` or on your
+`lane transition`, and
+`node <fabrika> build verdicts --pr <n>` shows a `"current": false` row in a namespace other than
+`review-ui`. That pair says the head was not judged wrong and a text verdict went stale under it.
+Record the lap, not a `FAIL` and not a hand-spawned reviewer:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token TEXT-REVIEW-STALE
+```
+
+The fold then reads `review`, so the next pass dispatches the text reviewer through `lane brief`
+like any other review. Its `FAIL` is an ordinary repair round. Its `PASS`, with `ui` relayed as
+always, walks back into `review:ui`, and the ui reviewer runs there again. A stale row in
+`review-ui` alone is not this read. Exit `12` on the report means the lane's `workflow.json` predates the route: run
+`node <fabrika> lane migrate <lane>` and record it again. When `lane migrate` answers `generated`,
+the lane runs an emitted epic machine, which carries the route only when it was emitted after it
+landed with `machineryLaps.onEmit` on; record the pre-lap park the next paragraphs name.
 
 **`BASE-RED` is the one lap you cannot record on your own word.** It takes
 `--integrate-exit 75 --assembly-head <sha>`, and `lane report` lands it only when the record
@@ -1581,7 +1602,9 @@ spends `laps`, a counter of its own. Recording both charges the ticket for the p
 anyway, which is the whole thing this group exists to stop. The lap arm sends the task to the stage
 that has to run again — `integrate`'s to `review`, a single-issue lane's `build` to `build`, and a
 `ship` cell's back to `ship` unless the lap's own cause routes it elsewhere, which `base-conflicted`
-does because a rebase is a builder's act — so a lap is another pass, not a park. When the laps run
+does because a rebase is a builder's act. A `review:ui` cell's lap returns to `review:ui` except
+`text-review-stale`'s, which goes to `review` because the text verdicts are a text reviewer's to
+write. So a lap is another pass, not a park. When the laps run
 out it parks on `human:machinery-stall`
 instead: a plain state with an `UNBLOCKED` door, not the repair budget's own `human:budget-spent`
 final, because nothing about the artifact was ever wrong.

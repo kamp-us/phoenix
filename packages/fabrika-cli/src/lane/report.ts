@@ -86,6 +86,9 @@ export const SHELL_VOCABULARIES = {
 		// behind its base that merges clean is no machinery failure.
 		"BASE-DRIFTED": "LAP",
 		"BASE-CONFLICTED": "LAP",
+		// A `review:ui` `PASS` refused at `23` because a text verdict stopped binding at the head: the
+		// base moved under the PR, so no reviewer judged this head wrong and no repair round is owed.
+		"TEXT-REVIEW-STALE": "LAP",
 		"QUEUE-EJECTED": "LAP",
 		"SEAT-DIRTY": "LAP",
 		// A shell the provider killed is machinery by the same test as the four above: nothing about
@@ -699,6 +702,28 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
+	 * A lane in `review:ui` whose `PASS` is refused at `lane prove`'s `23` because a text verdict the
+	 * head owes — `review-code`, `governance` or another non-rendered namespace — stopped binding: a
+	 * merge from the base reached a path the PR changed, so the verdict's content digest no longer
+	 * matches. Nothing about the artifact was judged, so the round it owes is not a repair.
+	 *
+	 * The round belongs to `review`, which writes the text verdicts again, and not to `review:ui`,
+	 * where the same refusal waits — which is why this cause routes the lap rather than looping it.
+	 *
+	 * No remedy: re-reviewing the head is a judgment, and a verb that "removed" this cause would be
+	 * making it.
+	 *
+	 * Route `driver`: a base that moved is machinery, and no product call is in it.
+	 *
+	 * @ruling https://github.com/kamp-us/phoenix/issues/10452#issuecomment-5983095196
+	 */
+	"text-review-stale": {
+		meaning:
+			"a text verdict the head owes stopped binding while the lane waited in review:ui, so the text review runs again before the rendered gate can pass",
+		route: "driver",
+		remedy: null,
+	},
+	/**
 	 * The merge queue ejected the PR before it merged — a sibling's red, a base that moved under the
 	 * batch, a queue timeout. The head is where the shipper left it and the verdicts still stand.
 	 *
@@ -911,6 +936,7 @@ export const MACHINERY_CAUSES: Readonly<Record<string, ParkCause>> = {
 	"REPLAY-COLLIDED": "replay-conflict",
 	"BASE-DRIFTED": "head-behind-base",
 	"BASE-CONFLICTED": "base-conflicted",
+	"TEXT-REVIEW-STALE": "text-review-stale",
 	"QUEUE-EJECTED": "queue-ejected",
 	"SEAT-DIRTY": "worktree-holds-branch",
 	"SHELL-DEAD": "spawn-dead",
@@ -963,16 +989,23 @@ export const baseRedEvent = (
  * A lane keeps its own copy of `workflow.json`, written at `lane open` and never rewritten, so a
  * lane on disk can hold a lap cell that predates a cause. Every other machinery cause survives that
  * gracefully: an ejection or a dirty seat wants the stage run again, which is exactly what an
- * unrouted lap cell does. `base-conflicted` does not — its whole point is that the round belongs to
- * a different stage, so an old cell would fold it back into `ship`, where the next enqueue read
- * refuses identically, until sixteen laps have gone and the lane parks having done nothing. Refusing
- * it with the log untouched is what leaves the shipper a fallback to take.
+ * unrouted lap cell does. A routed cause does not — its whole point is that the round belongs to a
+ * different stage. An old cell would fold `base-conflicted` back into `ship`, where the next enqueue
+ * read refuses identically, and `text-review-stale` back into `review:ui`, where the next `PASS` is
+ * refused at `23` again, until sixteen laps have gone and the lane parks having done nothing.
+ * Refusing it with the log untouched leaves the recorder its pre-lap fallback.
  *
- * The epic tail's `ship:queued` cell carries no routes for the same reason it needs none:
- * `base-conflicted` is `ship enqueue`'s `21`, which fires only from the `ship` stage, and a PR that
- * leaves the queue reports `QUEUE-EJECTED` instead.
+ * Each cause is admitted in exactly the one cell that can observe it. `base-conflicted` is
+ * `ship enqueue`'s `21`, so only `ship` routes it, and a PR that leaves the queue reports
+ * `QUEUE-EJECTED` instead. `text-review-stale` is a `review:ui` `PASS` refused at `23`, so only
+ * `review:ui` routes it; recorded anywhere else it is refused here.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10452#issuecomment-5983095196
  */
-export const ROUTED_MACHINERY_CAUSES: ReadonlySet<string> = new Set<ParkCause>(["base-conflicted"]);
+export const ROUTED_MACHINERY_CAUSES: ReadonlySet<string> = new Set<ParkCause>([
+	"base-conflicted",
+	"text-review-stale",
+]);
 
 /** The cause a machinery terminal carries on its own, or `null` for every other token. */
 export const machineryCause = (token: string): ParkCause | null =>

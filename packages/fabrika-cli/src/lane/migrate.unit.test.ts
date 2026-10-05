@@ -4,7 +4,11 @@ import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {LANE_ABSENT, MIGRATION_UNSAFE, SHAPE_MISMATCH} from "./codes.ts";
 import type {ExpectationReader} from "./expectation.ts";
-import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
+import {
+	choreTemplateText,
+	coderTemplateText,
+	preStaleRouteTemplate,
+} from "./fixtures.test-support.ts";
 import {foldLog, type LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 import {graftContext, judgeMigration} from "./migrate.ts";
@@ -193,6 +197,39 @@ describe("lane migrate", () => {
 		const migrated = written.get(`${ROOT}/42/workflow.json`) ?? "";
 		const fold = foldLog(compiled(migrated), rewound);
 		expect(fold._tag === "Folded" && fold.states.issue?.type).toBe("queued");
+	});
+
+	it("brings a lane waiting in review:ui onto the text-review-stale route its old machine lacked", async () => {
+		const atReviewUi: ReadonlyArray<LogEntry> = [
+			{task: "issue", event: "ISSUE.WIP", at: "2026-10-04T00:00:00.000Z", classes: ["ui"]},
+			...log("DONE", "PASS"),
+		];
+		const lapped: ReadonlyArray<LogEntry> = [
+			...atReviewUi,
+			{
+				task: "issue",
+				event: "ISSUE.LAP",
+				at: "2026-10-04T00:00:00.000Z",
+				cause: "text-review-stale",
+			},
+		];
+		expect(foldLog(compiled(preStaleRouteTemplate()), lapped)).toMatchObject({
+			_tag: "Folded",
+			states: {issue: {type: "review:ui"}},
+		});
+
+		const {outcome, written} = await sweep(
+			{
+				[`${ROOT}/42/workflow.json`]: preStaleRouteTemplate(),
+				[`${ROOT}/42/events.jsonl`]: `${atReviewUi.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+			},
+			{dirs: {[ROOT]: ["42"]}},
+		);
+
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout).summary).toMatchObject({migrated: 1, unsafe: 0});
+		const fold = foldLog(compiled(written.get(`${ROOT}/42/workflow.json`) ?? ""), lapped);
+		expect(fold._tag === "Folded" && fold.states.issue?.type).toBe("review");
 	});
 
 	it("reads a booted lane as current past the formatting `lane open` copied in", async () => {

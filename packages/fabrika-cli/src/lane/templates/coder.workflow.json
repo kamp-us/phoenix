@@ -101,6 +101,7 @@
 									"ISSUE.PASS": "ship",
 									"ISSUE.BLOCKED": "blocked",
 									"ISSUE.LAP": [
+										{ "target": "review", "guard": "lap:text-review-stale" },
 										{
 											"target": "review:ui",
 											"guard": "lapsRemaining",

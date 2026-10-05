@@ -29,6 +29,7 @@ import {
 	laneWrites,
 	parkCauseDeclared,
 	parkCauseRead,
+	preStaleRouteTemplate,
 } from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
 import {PARK_CAUSE_TOKENS, PROOF_CONDITIONAL_TERMINALS, SHELL_VOCABULARIES} from "./report.ts";
@@ -150,13 +151,17 @@ describe("lane report — every shell terminal token maps to one operator event"
 		shipper: "ship",
 		machinery: "ship",
 	};
+	// A routed machinery cause records only in the one cell that holds its arm.
+	const tokenStateFor: Readonly<Record<string, keyof typeof LOG_AT>> = {
+		"TEXT-REVIEW-STALE": "review:ui",
+	};
 
 	for (const [shell, vocabulary] of Object.entries(SHELL_VOCABULARIES)) {
 		if (shell === "integrator") continue;
 		for (const [token, event] of Object.entries(vocabulary)) {
 			if (token === "BASE-RED") continue;
 			it(`${shell} ${token} records ${event}`, async () => {
-				const fs = laneAt(LOG_AT[stateFor[shell as keyof typeof stateFor]]);
+				const fs = laneAt(LOG_AT[tokenStateFor[token] ?? stateFor[shell as keyof typeof stateFor]]);
 
 				// The flat table is a floor for the one conditional token, so the run that proves the
 				// floor is the one whose advanced arm the board refuses. Its earned arm has its own
@@ -1071,6 +1076,46 @@ describe("lane report — a machinery terminal lands its own cause", () => {
 		expect(out.code).toBe(EVENT_REFUSED);
 		expect(out.stderr.join("\n")).toContain("log unappended");
 		expect(out.stderr.join("\n")).toContain('no arm for cause "base-conflicted"');
+		expect(fs.written.size).toBe(0);
+	});
+
+	// A `review:ui` `PASS` refused at `23` over a stale text verdict owes the text review again, so
+	// the lap folds to `review` and spends no repair retry.
+	it("routes a TEXT-REVIEW-STALE lap out of review:ui to review, spending no retry", async () => {
+		const fs = laneAt(LOG_AT["review:ui"]);
+
+		const out = await run(fs, "TEXT-REVIEW-STALE");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			event: "ISSUE.LAP",
+			cause: "text-review-stale",
+			previous: {pipeline: {issue: "review:ui"}},
+			current: {pipeline: {issue: "review"}},
+		});
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({cause: "text-review-stale"});
+	});
+
+	it("refuses TEXT-REVIEW-STALE at 12 anywhere but review:ui, log untouched", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "TEXT-REVIEW-STALE");
+
+		expect(out.code).toBe(EVENT_REFUSED);
+		expect(out.stderr.join("\n")).toContain('no arm for cause "text-review-stale"');
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses TEXT-REVIEW-STALE at 12 on a lane whose machine predates the route", async () => {
+		const fs = fakeFs({
+			files: {[WORKFLOW]: preStaleRouteTemplate(), [LOG]: LOG_AT["review:ui"]},
+		});
+
+		const out = await run(fs, "TEXT-REVIEW-STALE");
+
+		expect(out.code).toBe(EVENT_REFUSED);
+		expect(out.stderr.join("\n")).toContain("log unappended");
+		expect(out.stderr.join("\n")).toContain('no arm for cause "text-review-stale"');
 		expect(fs.written.size).toBe(0);
 	});
 
