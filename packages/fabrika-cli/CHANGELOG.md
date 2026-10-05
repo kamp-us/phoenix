@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.10.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.9.0...fabrika-cli-v0.10.0) (2026-10-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* the five commands above no longer exist, `status open` prints six fields, and `governance sweep` requires a PR and --record.
+* a cause-less park is refused at exit 52 unless the repo declares `"parkCause": {"uncaused": "record"}` in `.fabrika.jsonc`.
+
+### Features
+
+* A Deviations heading at the wrong level is refused, with no automatic repair, after a ruling to add one ([#10555](https://github.com/kamp-us/phoenix/issues/10555)) ([880c08b](https://github.com/kamp-us/phoenix/commit/880c08bf54586ad2b13cdf5295f6ea825b562576))
+* A finished lane leaves its worktrees on disk: 537 on one machine ([#10355](https://github.com/kamp-us/phoenix/issues/10355)) ([89231bd](https://github.com/kamp-us/phoenix/commit/89231bd7bbab8dcaf38730edb1764781aeda2958))
+* **epic:** Run a test-audit subsystem sweep over every test surface in the repo ([#10122](https://github.com/kamp-us/phoenix/issues/10122)) ([e9210e4](https://github.com/kamp-us/phoenix/commit/e9210e418cf0913607579d1cc8420ac7a9a6ff32))
+* fabrika cannot send a report anywhere: no Discord or Slack webhook, so a missed target is only seen at the weekly table ([#10411](https://github.com/kamp-us/phoenix/issues/10411)) ([f99a015](https://github.com/kamp-us/phoenix/commit/f99a015df1811411d2a7fc89bed5b10a7a3fb7ef))
+* **fabrika-cli:** a .fabrika.jsonc key lets ship scope run from the main working tree ([#10034](https://github.com/kamp-us/phoenix/issues/10034)) ([#10481](https://github.com/kamp-us/phoenix/issues/10481)) ([50f5347](https://github.com/kamp-us/phoenix/commit/50f53474b7994616a1ffecca2521dca22f4f07ac))
+* **fabrika-cli:** a catalogGuard key in .fabrika.jsonc turns catalog-guard off, and every red names it ([#10477](https://github.com/kamp-us/phoenix/issues/10477)) ([#10512](https://github.com/kamp-us/phoenix/issues/10512)) ([7eee9a1](https://github.com/kamp-us/phoenix/commit/7eee9a178a505440b67ae0fcfa81e9917b64555b))
+* **fabrika-cli:** a merge held for an owner's hand step parks on owner-action-required ([#10316](https://github.com/kamp-us/phoenix/issues/10316)) ([#10590](https://github.com/kamp-us/phoenix/issues/10590)) ([3cfbb0c](https://github.com/kamp-us/phoenix/commit/3cfbb0ccdc3ca7df12337f98829e564a8e12069f))
+* **fabrika-cli:** a reopened issue sets its complete lane aside and boots a second one ([#10586](https://github.com/kamp-us/phoenix/issues/10586)) ([df0e6da](https://github.com/kamp-us/phoenix/commit/df0e6da0a6432bd85b80fd9247568071d3bcbb5d))
+* **fabrika-cli:** lane open --from-board seats an unreviewed PR at review with its full repair budget ([#10589](https://github.com/kamp-us/phoenix/issues/10589)) ([5ea1f5f](https://github.com/kamp-us/phoenix/commit/5ea1f5f0aa08eb04dfb793b444d3c4693bc36db7))
+* **fabrika-cli:** status bootstrap fabrika-config writes a starting .fabrika.jsonc ([#10041](https://github.com/kamp-us/phoenix/issues/10041)) ([#10505](https://github.com/kamp-us/phoenix/issues/10505)) ([9c9f235](https://github.com/kamp-us/phoenix/commit/9c9f235c9f47b091c9002149fec7a342af3d5da1))
+* **fabrika-cli:** table prep brings a ruled Tails row in as bet, up to the week's free rows ([#10351](https://github.com/kamp-us/phoenix/issues/10351)) ([#10576](https://github.com/kamp-us/phoenix/issues/10576)) ([966faf1](https://github.com/kamp-us/phoenix/commit/966faf126e36a77c345193c78b2b1aaf5e8e336a))
+* **fabrika-cli:** table prep holds table.customerRows agenda rows for Customers ([#10167](https://github.com/kamp-us/phoenix/issues/10167)) ([#10577](https://github.com/kamp-us/phoenix/issues/10577)) ([a8d1309](https://github.com/kamp-us/phoenix/commit/a8d1309bb8103a4de36fefcf4e78314259d5623c))
+* **fabrika:** add build comments, a verb that prints an issue's comment thread ([#10449](https://github.com/kamp-us/phoenix/issues/10449)) ([#10556](https://github.com/kamp-us/phoenix/issues/10556)) ([f809187](https://github.com/kamp-us/phoenix/commit/f8091872c040584c25843bd3f3a6f61086ed5bf8))
+* **fabrika:** let a ruled decision lane build the code its ruling calls for, not only the record ([#10516](https://github.com/kamp-us/phoenix/issues/10516)) ([#10558](https://github.com/kamp-us/phoenix/issues/10558)) ([ab0ca8e](https://github.com/kamp-us/phoenix/commit/ab0ca8e92e1c5c6c978a94b6eb80a4182984a63f))
+* On-call clocks and routing follow when prep ran, not when the issue arrived ([#10303](https://github.com/kamp-us/phoenix/issues/10303)) ([a3cf4e3](https://github.com/kamp-us/phoenix/commit/a3cf4e329d0204fe07e16aee9319de61e5e01828))
+* Retire the governance readout: it has never run, and its fixed issue shows as 50 days late in every report ([#10552](https://github.com/kamp-us/phoenix/issues/10552)) ([62b4e0a](https://github.com/kamp-us/phoenix/commit/62b4e0a29d6ac648531c698d210d95455d65035f))
+* **table:** table route --dry-run plans its on-call adds, cells and table-row deletes without sending them ([#10305](https://github.com/kamp-us/phoenix/issues/10305)) ([#10306](https://github.com/kamp-us/phoenix/issues/10306)) ([3e4eae4](https://github.com/kamp-us/phoenix/commit/3e4eae4a2a4e4f6469d52142c183a69a2185d33c))
+* The mixed-builder shell has no lane state, so the machine can never spawn it ([#10392](https://github.com/kamp-us/phoenix/issues/10392)) ([7779414](https://github.com/kamp-us/phoenix/commit/777941434c5c015402850a6da03e5dc9bd5a7838))
+
+
+### Bug Fixes
+
+* A class:ui issue under the hand-check rule was reviewed as code only and nobody was asked to look at the screen ([#10532](https://github.com/kamp-us/phoenix/issues/10532)) ([d359e67](https://github.com/kamp-us/phoenix/commit/d359e67e3ae73e43fc9e544bce880ff59d694d98))
+* A driver's lane transition BLOCKED accepts no cause, which strands the lane on a human ([#10408](https://github.com/kamp-us/phoenix/issues/10408)) ([6065ff3](https://github.com/kamp-us/phoenix/commit/6065ff30a9350c145a7e97897a3ece2ebd4fbe78))
+* A lane whose remaining work waits on a founder ruling has no park cause, so the driver cannot park it ([#10395](https://github.com/kamp-us/phoenix/issues/10395)) ([11e394c](https://github.com/kamp-us/phoenix/commit/11e394c8e20013c6821655d7bb3b005fee17f632))
+* A shell that runs outside a lane has no way to remove its own worktree when it ends ([#10491](https://github.com/kamp-us/phoenix/issues/10491)) ([99a5803](https://github.com/kamp-us/phoenix/commit/99a580336ec86079292293906c1821b40918d2d6))
+* build check stops its guard sweep at the first red guard, hiding every guard after it ([#10519](https://github.com/kamp-us/phoenix/issues/10519)) ([52eea5d](https://github.com/kamp-us/phoenix/commit/52eea5d7fb81ef798255f810d66cf593f3a87f62))
+* build reap cannot drain the worktree backlog: its per-spawn run outlasts its 120s budget and it keeps 351 trees a branch already covers ([#10367](https://github.com/kamp-us/phoenix/issues/10367)) ([03b8f17](https://github.com/kamp-us/phoenix/commit/03b8f1729086d5048f222ed77b38da320cde4a16))
+* **config:** remove the surfaceDispositions key and its --surfaces readout ([#6412](https://github.com/kamp-us/phoenix/issues/6412)) ([#10423](https://github.com/kamp-us/phoenix/issues/10423)) ([6ea4249](https://github.com/kamp-us/phoenix/commit/6ea42492b9809995b43e4636796df06b7a21e587))
+* **containment:** compare patch ids byte for byte, so whitespace-only divergence is not Squashed ([#9040](https://github.com/kamp-us/phoenix/issues/9040)) ([#10472](https://github.com/kamp-us/phoenix/issues/10472)) ([df6d6a2](https://github.com/kamp-us/phoenix/commit/df6d6a25cf5caf38f674ebbbcbb5c8cf497fc4d2))
+* **fabrika-cli:** an agent-stamped comment never counts as the owner's sign-off ([#10591](https://github.com/kamp-us/phoenix/issues/10591)) ([#10592](https://github.com/kamp-us/phoenix/issues/10592)) ([56fe289](https://github.com/kamp-us/phoenix/commit/56fe2891a92ae38d00d0427ae9c5fed4647895e9))
+* **fabrika-cli:** guards, plan floor and intake verbs read the board's declared labels ([#10563](https://github.com/kamp-us/phoenix/issues/10563)) ([dc952e6](https://github.com/kamp-us/phoenix/commit/dc952e65e00928e6d08e7eaba9c11509410052da))
+* **fabrika-cli:** on-call route takes a list of rules, so a repo can opt in to sending only p0/p1 and customer bugs to on-call ([#10574](https://github.com/kamp-us/phoenix/issues/10574)) ([8a3afcc](https://github.com/kamp-us/phoenix/commit/8a3afcc03e2eeaabe33d6c035e4b7fa21c3bfe9b))
+* **fabrika:** put the catalogGuard off switch in the starter config and setup guide ([#10548](https://github.com/kamp-us/phoenix/issues/10548)) ([#10565](https://github.com/kamp-us/phoenix/issues/10565)) ([59069e0](https://github.com/kamp-us/phoenix/commit/59069e0367fd73f545341be039219b190ce92249))
+* **fabrika:** read classic protection off the branch record so the workflow token can see it ([#10540](https://github.com/kamp-us/phoenix/issues/10540)) ([#10554](https://github.com/kamp-us/phoenix/issues/10554)) ([3c4377b](https://github.com/kamp-us/phoenix/commit/3c4377bc502d0fc8f1520a3bb98a81abe84eec2a))
+* **hook:** worktree-create no longer runs build reap before it provisions ([#10342](https://github.com/kamp-us/phoenix/issues/10342)) ([#10352](https://github.com/kamp-us/phoenix/issues/10352)) ([fc80a96](https://github.com/kamp-us/phoenix/commit/fc80a96af89993ec82473229bb0472b1a8b002ca))
+* lane brief and review criteria drop an owner ruling posted as a plain comment ([#10399](https://github.com/kamp-us/phoenix/issues/10399)) ([d8ac988](https://github.com/kamp-us/phoenix/commit/d8ac988bc73595c9eb7421871e78312139dffc86))
+* lane integrate re-runs a red validator on the base, so a broken base spends a lap and the repair builder sees what failed ([#10559](https://github.com/kamp-us/phoenix/issues/10559)) ([646f784](https://github.com/kamp-us/phoenix/commit/646f78446fadef717cc9d3667c9be364878835ac))
+* **lane:** a PR that conflicts while its lane waits in review laps to a builder ([#9954](https://github.com/kamp-us/phoenix/issues/9954)) ([#10573](https://github.com/kamp-us/phoenix/issues/10573)) ([15f2c62](https://github.com/kamp-us/phoenix/commit/15f2c62c557e9265cec294510e8c85568230a64d))
+* **lane:** a review:ui lane with a stale text verdict laps back to review ([#10569](https://github.com/kamp-us/phoenix/issues/10569)) ([4346149](https://github.com/kamp-us/phoenix/commit/434614900da959e9ce719f57073f0a8576e73d11))
+* No preview D1 carries a test account, so every :auth render refuses and signed-in surfaces are unjudgeable ([#10341](https://github.com/kamp-us/phoenix/issues/10341)) ([6cee27a](https://github.com/kamp-us/phoenix/commit/6cee27a708e83e43eb745ddff41be06632288daf))
+* pitch-guard still reds a parentless feature whose pitch a named founder ruling discharged ([#10393](https://github.com/kamp-us/phoenix/issues/10393)) ([3f469ec](https://github.com/kamp-us/phoenix/commit/3f469ec23584c4b2417c1eb9c2ed157c22292d82))
+* pitch-guard's workflow cannot read the table, so a bet alone reds in CI ([#10528](https://github.com/kamp-us/phoenix/issues/10528)) ([38b661e](https://github.com/kamp-us/phoenix/commit/38b661e97a0b13a9b16e66b17d3cd5c443b5f0c1))
+* review-ui route counts the builder's own UI evidence comment as the owner's hand-check ([#10377](https://github.com/kamp-us/phoenix/issues/10377)) ([4c89a83](https://github.com/kamp-us/phoenix/commit/4c89a835f20b1f9411ab4acb6f908a2c1bed419c))
+* **ship:** a head behind its base that merges clean is no longer parked ([#6918](https://github.com/kamp-us/phoenix/issues/6918)) ([#10510](https://github.com/kamp-us/phoenix/issues/10510)) ([623a29e](https://github.com/kamp-us/phoenix/commit/623a29e463c720d43ec86f6caf74ad8671986304))
+* **status:** setup writes the hand-check rule for an app with no hosting ([#10362](https://github.com/kamp-us/phoenix/issues/10362)) ([#10384](https://github.com/kamp-us/phoenix/issues/10384)) ([bef2f05](https://github.com/kamp-us/phoenix/commit/bef2f058a3018f0c17ae97fc9ed50b545afd0f6d))
+* **table:** a bet row is a member of no other row's group, so sync and prep leave its Section ([#9972](https://github.com/kamp-us/phoenix/issues/9972)) ([#10414](https://github.com/kamp-us/phoenix/issues/10414)) ([26afbd4](https://github.com/kamp-us/phoenix/commit/26afbd4d6e7fd1008389bd1f9aab08dc286912ec))
+* The shipped governedRoots default names phoenix's claude-plugins/ directory ([#10383](https://github.com/kamp-us/phoenix/issues/10383)) ([277a42d](https://github.com/kamp-us/phoenix/commit/277a42d20f5dcfc03990fe7e03cc87792b5b6f5d))
+* The UI review's stop note does not tell the owner exactly what to post to clear it ([#10379](https://github.com/kamp-us/phoenix/issues/10379)) ([40e48f1](https://github.com/kamp-us/phoenix/commit/40e48f14a02163357572c982bcec0a68ca11b411))
+* **ui:** missing design manifest routes to /fabrika:front-door, and setup creates the file ([#10361](https://github.com/kamp-us/phoenix/issues/10361)) ([#10371](https://github.com/kamp-us/phoenix/issues/10371)) ([7ca7830](https://github.com/kamp-us/phoenix/commit/7ca78309b3c1e4565b329686dff9c5190da8a489))
+
 ## [0.9.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.8.1...fabrika-cli-v0.9.0) (2026-09-30)
 
 
