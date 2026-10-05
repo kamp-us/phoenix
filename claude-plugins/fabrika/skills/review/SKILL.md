@@ -132,8 +132,8 @@ written before the fix, a runtime observation. `criteria` prints that source as 
 counts the marked rows on stderr, so you never have to recognise one in prose. For each marked row,
 go and read what the source names — the PR body prose where the author wrote what they observed, an
 artifact, a comment — and grade on that. No verb serves that source, so read it where it lives; the
-read list at the end of this skill names it as an input for that criterion alone. **Then name it in the verdict body**: say which criterion rested on
-which evidence and what you read there. `review post` refuses a `PASS` whose body names no evidence
+read list at the end of this skill names it as an input for that criterion alone. **Then name it
+in the verdict body**: say which criterion rested on which evidence and what you read there. `review post` refuses a `PASS` whose body names no evidence
 for a marked criterion (`19`), because a `PASS` citing none has graded the criterion on nothing.
 Evidence you looked for and could not find is a `FAIL` that names what is missing — never a `PASS`
 with a caveat. An **unmarked** criterion has two rules, and which one applies is what the row asks

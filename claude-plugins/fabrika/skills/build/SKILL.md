@@ -231,9 +231,9 @@ that row's proof is yours to write.** The field names where the proof lives — 
 a pre-fix artifact, a runtime observation — and stderr quotes every marked row so you cannot miss
 one. Do that verification and write what you observed where the criterion's source names — the PR
 body, for an observation of your own — naming that source. No verb serves it, and the reviewer
-reads it there for that row anyway: `review post` refuses a `PASS` whose verdict body cites no evidence for a marked
-criterion (exit `19`), so a row you left unevidenced costs the lane a repair round on a PR that is
-otherwise fine. An `evidence` of `null` is the proven absence of a marker, and what discharges that
+reads it there for that row anyway: `review post` refuses a `PASS` whose verdict body cites no
+evidence for a marked criterion (exit `19`), so a row you left unevidenced costs the lane a repair
+round on a PR that is otherwise fine. An `evidence` of `null` is the proven absence of a marker, and what discharges that
 row is what it asks for: a row that asks you to report something is discharged by the `## Report`
 section step 5 has you write, and every other unmarked row by the diff. An epic child writes no
 such section, and step 5 says what it does with that row.

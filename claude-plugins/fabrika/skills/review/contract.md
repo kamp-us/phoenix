@@ -1350,8 +1350,8 @@ which `build push`, `build pr` and `build pr-body` run before they post a body a
 `malformed` section against, so a body those verbs accepted reads `found` or `absent` here. A body
 edited outside the build verbs is how `malformed` still arrives.
 
-On `absent` and `malformed` the format's own reason goes to stderr. Both answer at exit `0`: each is a proven
-fact about a body that was read, which is what lets the skill grade a criterion on it. A body that
+On `absent` and `malformed` the format's own reason goes to stderr. Both answer at exit `0`: each
+is a proven fact about a body that was read, which is what lets the skill grade a criterion on it. A body that
 could not be read is exit `11` with nothing on stdout.
 
 **The read binds no commit.** A PR body is not part of any tree, so this verb takes no `--sha` and

@@ -1,7 +1,9 @@
 # Code rubric — the `review-code` namespace
 
 Applied to the code-class slice of the diff. The verdict is conjunctive and default-deny: one
-miss, or one ambiguity the diff cannot resolve, is a FAIL — never an "it's-probably-fine" pass.
+miss, or one ambiguity a row's source cannot resolve, is a FAIL — never an "it's-probably-fine"
+pass. That source is the diff, except for the marked rows and report rows that
+[Per-criterion verification](#per-criterion-verification) grades on their own sources.
 
 ## What CI already answers — expect, never recompute
 
