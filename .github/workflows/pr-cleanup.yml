@@ -74,7 +74,9 @@ jobs:
       # `pnpm-name` its workspace package; `needs-auth` whether the app's worker binds
       # BETTER_AUTH_SECRET (@kampus/web reads it `Effect.orDie` in config.ts, so its
       # destroy passes the secret; a future auth-less app sets `needs-auth: false`).
-      # Checks out the BASE branch (main) — see the security note on the destroy job.
+      # Checks out the BASE branch (main) on a close, and the dispatched ref on a
+      # dispatch, which the cleanup job refuses unless it is main — see the security
+      # note on the destroy job.
       - uses: actions/checkout@v4.2.2
       - id: roster
         run: |
@@ -150,6 +152,7 @@ jobs:
       # that needs BETTER_AUTH_SECRET (config.ts reads it `Effect.orDie`) just like
       # the deploy; a future auth-less app never binds it (matrix.needs-auth).
       - name: Destroy ${{ matrix.app }} preview stage ${{ env.STAGE }}
+        id: destroy
         run: pnpm --filter ${{ matrix.pnpm-name }} exec alchemy destroy --stage "$STAGE" --yes
         env:
           CI: "true"
@@ -294,9 +297,11 @@ jobs:
       # Flip the sticky preview comment to "torn down" so it never points at a
       # destroyed stage. Each matrix job rewrites only its own app line; the last
       # job to run leaves the comment reading "torn down" for both apps.
-      # `always()`: update it even if the destroy step errored.
+      # `always()`: update it even if the destroy step errored. Only a run that
+      # reached the destroy, though: a refused dispatch (off `main`, or a bad stage)
+      # skips it, and the comment must keep pointing at the still-live preview.
       - name: Update preview comment (torn down, ${{ matrix.app }})
-        if: always()
+        if: always() && steps.destroy.outcome != 'skipped'
         uses: actions/github-script@v7.0.1
         env:
           APP: ${{ matrix.app }}
