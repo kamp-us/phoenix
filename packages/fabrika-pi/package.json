@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/fabrika-pi",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "@kampus/fabrika-pi — every fabrika skill and agent shell, bundled for pi projects (ADR 0332)",
 	"license": "MIT",
 	"repository": {
