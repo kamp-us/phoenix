@@ -36,7 +36,7 @@ export const LINKED_WORKTREE: Scripted = [
 const API = "https:\\/\\/api\\.github\\.com";
 
 export const RULES = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/rules\\/branches\\/main\\?`);
-export const PROTECTION = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/branches\\/main\\/protection$`);
+export const PROTECTION = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/branches\\/main$`);
 
 /** A terminal page: 200 with no `rel="next"`, which is what the exhaustion proof reads. */
 const served = (body: unknown, status = 200): HttpReply => ({status, body: JSON.stringify(body)});
@@ -56,9 +56,13 @@ export const rules = (...contexts: ReadonlyArray<string>): HttpReply =>
 				],
 	);
 
+/** A `branches/<branch>` record whose classic protection is enabled and requires `contexts`. */
 export const protection = (...contexts: ReadonlyArray<string>): HttpReply =>
-	served({required_status_checks: {contexts}});
-
+	served({
+		name: "main",
+		protected: true,
+		protection: {enabled: true, required_status_checks: {enforcement_level: "everyone", contexts}},
+	});
 /** A served refusal — the status is the fact, and the message is what GitHub prints beside it. */
 export const httpError = (status: number, message = "refused"): HttpReply => ({
 	status,

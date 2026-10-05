@@ -166,6 +166,18 @@ describe("runSweep refuses a board it could not read whole", () => {
 		expect(out.stderr.at(-1)).toContain('UNKNOWN, never "none stranded"');
 	});
 
+	// The scheduled workflow's token answers the branch read itself; a denial there is still a board
+	// nobody could classify, never one whose base declares nothing.
+	it("refuses on 11 when the base branch's protection read is denied", async () => {
+		const out = await run([
+			[PROTECTION, httpError(403, "Resource not accessible by integration")],
+			...classifiable([OPEN_PULLS, openPulls({number: 4321, head: HEAD})]),
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
+	});
+
 	it("refuses a board larger than --limit rather than answering over a subset", async () => {
 		const out = await run(
 			[[OPEN_PULLS, openPulls({number: 4321, head: HEAD}, {number: 4322, head: HEAD})]],

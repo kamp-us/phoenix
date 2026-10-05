@@ -18,6 +18,7 @@
 import {Effect} from "effect";
 import {
 	ambientToken,
+	attemptOf,
 	authed,
 	authedExistence,
 	existenceOf,
@@ -31,7 +32,7 @@ import {
 	type ServedStatus,
 } from "../io/gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
-import {type Existence, unknown} from "../io/issues.ts";
+import type {Existence} from "../io/issues.ts";
 import {isRecord} from "../io/json.ts";
 import {isBaseConflict, readDefiniteMergeability} from "../ship/mergeability.ts";
 
@@ -190,31 +191,55 @@ export const rerunRun = (repo: string, run: number): Shell<Attempt<void>> =>
 export type Answered<A> = {readonly read: A} & ServedStatus;
 
 /**
- * What a base branch's protection endpoint said — and the one thing its 404 does **not** say.
+ * The required contexts one branch record's `protection` object declares.
  *
- * `GET /branches/{branch}/protection` answers `404 "Branch not protected"` both when a branch
- * genuinely has no protection and when the caller lacks the admin permission to see it. It is
- * ambiguous by construction, so `Absent` here is never on its own evidence of anything.
+ * A disabled or absent `protection` declares nothing. A body that is not a branch record, or a
+ * `protection` whose `enabled` is not a boolean, is refused: zero contexts read off a shape nobody
+ * recognised would tell a caller the branch gates nothing.
+ */
+const protectionContexts = (body: unknown): Attempt<ReadonlyArray<string>> => {
+	if (!isRecord(body) || typeof body.name !== "string") {
+		return fail("GitHub answered 200 but its body is not a branch record");
+	}
+	const protection = body.protection;
+	if (protection === undefined) return ok([]);
+	if (!isRecord(protection) || typeof protection.enabled !== "boolean") {
+		return fail("GitHub answered 200 but the branch's protection object has no `enabled` flag");
+	}
+	if (!protection.enabled) return ok([]);
+	const required = protection.required_status_checks;
+	if (!isRecord(required)) return ok([]);
+	const named = Array.isArray(required.contexts)
+		? required.contexts.filter((c): c is string => typeof c === "string")
+		: [];
+	const checked = Array.isArray(required.checks)
+		? required.checks.flatMap((c) =>
+				isRecord(c) && typeof c.context === "string" ? [c.context] : [],
+			)
+		: [];
+	return ok([...new Set([...named, ...checked])]);
+};
+
+/**
+ * The required contexts classic branch protection declares on one branch, read off the branch record.
+ *
+ * The read is `GET /branches/{branch}`, not `GET /branches/{branch}/protection`: the latter needs the
+ * Administration permission, which a workflow's `GITHUB_TOKEN` can never be granted, so it answers
+ * that token `403 Resource not accessible by integration` on every call. The branch record is a
+ * contents-level read and carries the same `protection.required_status_checks` summary. A 404 here
+ * says the branch itself is missing, so it is a failure like any other non-2xx, never zero contexts.
  */
 export const branchProtectionContexts = (
 	repo: string,
 	branch: string,
-): Shell<Answered<Existence<ReadonlyArray<string>>>> =>
+): Shell<Answered<Attempt<ReadonlyArray<string>>>> =>
 	Effect.gen(function* () {
 		const token = yield* ambientToken;
-		if (token._tag === "Failure") {
-			return {read: unknown<ReadonlyArray<string>>(token.reason), status: null};
-		}
+		if (token._tag === "Failure") return {read: token, status: null};
 		const outcome = yield* onTransport(
-			restRead(token.value, "GET", `repos/${repo}/branches/${branch}/protection`),
+			restRead(token.value, "GET", `repos/${repo}/branches/${branch}`),
 		);
-		const read = existenceOf<ReadonlyArray<string>>(outcome, (body) => {
-			if (!isRecord(body))
-				return fail("GitHub answered 200 but its body is not a protection record");
-			const required = body.required_status_checks;
-			if (!isRecord(required) || !Array.isArray(required.contexts)) return ok([]);
-			return ok(required.contexts.filter((c): c is string => typeof c === "string"));
-		});
+		const read = attemptOf(outcome, protectionContexts);
 		return outcome._tag === "Unreachable"
 			? {read, status: null}
 			: {read, status: outcome.status, message: githubMessage(outcome)};

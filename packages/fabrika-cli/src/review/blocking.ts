@@ -55,8 +55,9 @@ const refused = (answer: ServedStatus, what: string, reason: string): DeclaredRe
 /**
  * The declared required contexts for one base branch: branch protection ∪ the rulesets that match it.
  *
- * `no-requirements` needs a **successful** rules read returning zero required contexts *and* the
- * protection endpoint's 404 — both, never the 404 alone.
+ * `no-requirements` needs a **successful** rules read returning zero required contexts *and* a
+ * successful branch read whose protection is disabled or declares none — both reads answered, never
+ * one of them assumed.
  */
 export const readDeclared = (repo: string, base: string): Shell<DeclaredRead> =>
 	Effect.gen(function* () {
@@ -68,13 +69,12 @@ export const readDeclared = (repo: string, base: string): Shell<DeclaredRead> =>
 
 		const answered = yield* branchProtectionContexts(repo, base);
 		const protection = answered.read;
-		if (protection._tag === "Unknown") {
+		if (protection._tag === "Failure") {
 			return refused(answered, "the branch protection", protection.reason);
 		}
-		const fromProtection = protection._tag === "Present" ? protection.value : [];
 		return {
 			_tag: "Declared" as const,
-			contexts: [...new Set([...fromProtection, ...rules.value.contexts])],
+			contexts: [...new Set([...protection.value, ...rules.value.contexts])],
 			scanned: rules.value.scanned,
 		};
 	});

@@ -381,6 +381,22 @@ describe("runDiagnose answers", () => {
 		expect(out.stderr.at(-1)).toContain("which checks block is UNKNOWN, never none.");
 	});
 
+	it("refuses when the rules read passes but the branch's protection read is denied", async () => {
+		const out = await run(
+			script([
+				[
+					CHECK_RUNS,
+					reply(checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "failure"}])),
+				],
+				[RULES, rules("ci-required")],
+				[PROTECTION, httpError(403, "Resource not accessible by integration")],
+			]),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot read main's required status checks");
+	});
+
 	// A private repository on the free plan cannot declare a required check, so the undeclared
 	// branch's definition answers there and the class is derivable.
 	it("classifies over a plan-gated base, naming the plan gate as the authority", async () => {

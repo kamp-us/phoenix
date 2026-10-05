@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, linkNext, type Scripted} from "../fakes.test-support.ts";
+import {fakeSeams, type HttpReply, linkNext, type Scripted} from "../fakes.test-support.ts";
 import {
 	httpError,
 	PROTECTION,
@@ -20,6 +20,16 @@ import {
 	reportingNote,
 	unreadableCause,
 } from "./blocking.ts";
+
+/** A `branches/main` record carrying `protection` as given, or no `protection` key at all. */
+const branchRecord = (protection: unknown): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(
+		protection === undefined
+			? {name: "main", protected: false}
+			: {name: "main", protected: true, protection},
+	),
+});
 
 const read = (script: ReadonlyArray<Scripted>) =>
 	Effect.runPromise(Effect.provide(readBlockingSet("o/r", "main"), fakeSeams(script).layer));
@@ -67,18 +77,76 @@ describe("readBlockingSet over the three read outcomes", () => {
 		expect([...answered.set.contexts].sort()).toEqual(["ci-required", "governance floor at head"]);
 	});
 
-	it("answers no-requirements only on a successful read that named zero contexts", async () => {
+	it("reads classic protection's contexts off the branch record, never the admin-only endpoint", async () => {
 		const answered = await read([
 			[RULES, rules()],
-			[PROTECTION, httpError(404, "Branch not protected")],
+			[
+				PROTECTION,
+				branchRecord({
+					enabled: true,
+					required_status_checks: {
+						contexts: ["governance floor at head"],
+						checks: [{context: "ci-required", app_id: null}],
+					},
+				}),
+			],
+		]);
+		expect(answered._tag).toBe("Set");
+		if (answered._tag !== "Set") return;
+		expect([...answered.set.contexts].sort()).toEqual(["ci-required", "governance floor at head"]);
+	});
+
+	// Main's own answer today: classic protection off, its required set left behind as an empty shell.
+	it("counts zero contexts from a branch whose protection is disabled", async () => {
+		const answered = await read([
+			[RULES, rules("ci-required")],
+			[
+				PROTECTION,
+				branchRecord({
+					enabled: false,
+					required_status_checks: {contexts: ["stale"], checks: [], enforcement_level: "off"},
+				}),
+			],
+		]);
+		expect(answered._tag).toBe("Set");
+		if (answered._tag !== "Set") return;
+		expect(answered.set.contexts).toEqual(["ci-required"]);
+	});
+
+	it("answers no-requirements only on two successful reads that named zero contexts", async () => {
+		const answered = await read([
+			[RULES, rules()],
+			[PROTECTION, branchRecord(undefined)],
 		]);
 		expect(answered._tag).toBe("Set");
 		if (answered._tag !== "Set") return;
 		expect(answered.set.token).toBe("no-requirements");
 	});
 
-	// The 404 above is ambiguous by construction, so a permission denial must never wear the same
-	// answer: one says the branch declares nothing, the other that nobody could look.
+	it("is Unknown, never zero contexts, over a body that is not a branch record", async () => {
+		for (const body of [
+			[],
+			{message: "ok"},
+			{name: "main", protection: {required_status_checks: {}}},
+		]) {
+			const answered = await read([
+				[RULES, rules()],
+				[PROTECTION, {status: 200, body: JSON.stringify(body)}],
+			]);
+			expect(answered._tag).toBe("Unknown");
+		}
+	});
+
+	it("is Unknown, never zero contexts, when the branch itself answers 404", async () => {
+		const answered = await read([
+			[RULES, rules()],
+			[PROTECTION, httpError(404, "Branch not found")],
+		]);
+		expect(answered._tag).toBe("Unknown");
+	});
+
+	// A permission denial must never wear the undeclared branch's answer: one says the branch
+	// declares nothing, the other that nobody could look.
 	it("keeps a permission denial unprobeable rather than collapsing it into no-requirements", async () => {
 		const answered = await read([
 			[RULES, httpError(403, "Resource not accessible by integration")],
@@ -86,12 +154,17 @@ describe("readBlockingSet over the three read outcomes", () => {
 		expect(answered._tag).toBe("Unprobeable");
 	});
 
-	it("is unprobeable when the rules read passes and protection is denied", async () => {
-		const answered = await read([
-			[RULES, rules("ci-required")],
-			[PROTECTION, httpError(401, "Bad credentials")],
-		]);
-		expect(answered._tag).toBe("Unprobeable");
+	it("is unprobeable when the rules read passes and the branch read is denied", async () => {
+		for (const denied of [
+			httpError(401, "Bad credentials"),
+			httpError(403, "Resource not accessible by integration"),
+		]) {
+			const answered = await read([
+				[RULES, rules("ci-required")],
+				[PROTECTION, denied],
+			]);
+			expect(answered._tag).toBe("Unprobeable");
+		}
 	});
 
 	// A private repository on the free plan: no token can read either surface, and no branch there
