@@ -771,10 +771,16 @@ repair round spends its budget undoing work the PR already carries.
 `conflicting` says the PR cannot merge into its base, and that is real repair work an all-PASS fold
 would otherwise let you read as nothing to do — so a fold with no rows is not a no-work answer over
 a conflicting PR. `unknown` is GitHub not having computed the field yet, never a clean read: treat
-it as unproven and re-run. Who clears the conflict is **not ruled** — neither fixing it in this lane
-nor handing it on is this skill's instruction — so what you owe is that the conflict leaves the
-lane named: state it in your `build note` and in your terminal report, and never end a round
-claiming there was nothing to fix.
+it as unproven and re-run.
+
+**A `conflicting` PR is yours to clear, in this round** — a base conflict out of `review`,
+`review:ui` or `ship` lands the lane on a builder for exactly this. Fetch the PR's
+base and merge it into the branch: `git fetch origin <base>`, then `git merge origin/<base>`. Never
+rebase: that rewrites commits the PR already published, and `build push --force-with-lease` refuses
+it at `23`. Resolve each conflicted hunk so both sides' changes survive, run `build check`, and
+conclude the merge through `build commit`. Where a hunk keeps only one side's change, say which and
+why in your `build note`. A hunk you cannot resolve without a product choice the served issue does
+not make is a stop: release your claim, name the file in your `build note` and end `STOPPED`.
 
 **Read the fold's `requiredChecks` beside its rows too, because no gate emits a FAIL for a red
 required check.** A reviewer's PASS can land before CI settles, so every row can read PASS over a

@@ -29,6 +29,7 @@ import {
 	laneWrites,
 	parkCauseDeclared,
 	parkCauseRead,
+	preReviewConflictRouteTemplate,
 	preStaleRouteTemplate,
 } from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
@@ -1077,6 +1078,45 @@ describe("lane report — a machinery terminal lands its own cause", () => {
 		expect(out.stderr.join("\n")).toContain("log unappended");
 		expect(out.stderr.join("\n")).toContain('no arm for cause "base-conflicted"');
 		expect(fs.written.size).toBe(0);
+	});
+
+	// A PR that conflicts with its base while the lane waits for a reviewer gets no CI run, so no
+	// reviewer can grade it: the round is a builder's, out of either review cell, and spends a lap.
+	it("routes a BASE-CONFLICTED lap out of review to build and out of review:ui to build:ui", async () => {
+		const fromReview = laneAt(LOG_AT.review);
+		const fromReviewUi = laneAt(LOG_AT["review:ui"]);
+
+		const toBuild = await run(fromReview, "BASE-CONFLICTED");
+		const toBuildUi = await run(fromReviewUi, "BASE-CONFLICTED");
+
+		expect(toBuild.code).toBe(0);
+		expect(JSON.parse(toBuild.stdout)).toMatchObject({
+			event: "ISSUE.LAP",
+			cause: "base-conflicted",
+			previous: {pipeline: {issue: "review"}},
+			current: {pipeline: {issue: "build"}},
+		});
+		expect(JSON.parse(appendedLine(fromReview))).toMatchObject({cause: "base-conflicted"});
+		expect(toBuildUi.code).toBe(0);
+		expect(JSON.parse(toBuildUi.stdout)).toMatchObject({
+			event: "ISSUE.LAP",
+			cause: "base-conflicted",
+			previous: {pipeline: {issue: "review:ui"}},
+			current: {pipeline: {issue: "build:ui"}},
+		});
+	});
+
+	it("refuses BASE-CONFLICTED at 12 in either review cell of a lane whose machine predates the route", async () => {
+		for (const at of [LOG_AT.review, LOG_AT["review:ui"]]) {
+			const fs = fakeFs({files: {[WORKFLOW]: preReviewConflictRouteTemplate(), [LOG]: at}});
+
+			const out = await run(fs, "BASE-CONFLICTED");
+
+			expect(out.code).toBe(EVENT_REFUSED);
+			expect(out.stderr.join("\n")).toContain("log unappended");
+			expect(out.stderr.join("\n")).toContain('no arm for cause "base-conflicted"');
+			expect(fs.written.size).toBe(0);
+		}
 	});
 
 	// A `review:ui` `PASS` refused at `23` over a stale text verdict owes the text review again, so

@@ -149,13 +149,25 @@ const lapArm = (
 const SHIP_LAP_ROUTES: Readonly<Record<string, string>> = {"base-conflicted": "build"};
 
 /**
+ * The tail's PR conflicts with its base while it waits in review, and no reviewer can grade a head
+ * CI will not run on, so the round is a builder's — the coder template's same route. The tail has
+ * one construction cell, so both of its review cells send this lap to `build`.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/9954#issuecomment-5983100185
+ */
+const REVIEW_LAP_ROUTES: Readonly<Record<string, string>> = {"base-conflicted": "build"};
+
+/**
  * A tail `PASS` out of `review:ui` was refused at `23` because a text verdict stopped binding when
  * the base moved, so the round is `review`'s — the coder template's same route, since the tail's
- * `review:ui` owes the same whole derived set.
+ * `review:ui` owes the same whole derived set. A base conflict there is {@link REVIEW_LAP_ROUTES}'s.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/10452#issuecomment-5983095196
  */
-const REVIEW_UI_LAP_ROUTES: Readonly<Record<string, string>> = {"text-review-stale": "review"};
+const REVIEW_UI_LAP_ROUTES: Readonly<Record<string, string>> = {
+	"text-review-stale": "review",
+	...REVIEW_LAP_ROUTES,
+};
 
 /**
  * A child's repair arm: go round again while retries remain, else park on `human:budget-spent`, with
@@ -366,7 +378,7 @@ const epicRegion = (ns: string, machinery: boolean): Record<string, unknown> => 
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:budget-spent"},
 				],
-				...(machinery ? {[`${ns}.LAP`]: lapArm("review")} : {}),
+				...(machinery ? {[`${ns}.LAP`]: lapArm("review", REVIEW_LAP_ROUTES)} : {}),
 			},
 		},
 		"review:ui": {

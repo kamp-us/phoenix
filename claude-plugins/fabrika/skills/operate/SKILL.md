@@ -557,7 +557,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | Leaf state | Action |
 | --- | --- |
 | `queued` | record `WIP` — the task enters build |
-| `build` / `build:ui` / `build:mixed` / `review` / `review:ui` / `ship` | dispatch through `lane brief` — below. On an epic lane, `build` is a child's construction **or** the tail's repair round, and the brief says which: a tail repair's `## Ground` names the assembly branch beside the run's one PR |
+| `build` / `build:ui` / `build:mixed` / `review` / `review:ui` / `ship` | dispatch through `lane brief` — below. On an epic lane, `build` is a child's construction **or** the tail's repair round, and the brief says which: a tail repair's `## Ground` names the assembly branch beside the run's one PR. Before a `review` or `review:ui` brief, read the PR's mergeability: a `conflicting` PR takes the `BASE-CONFLICTED` lap instead of a reviewer (step 3) |
 | `ship:queued` | the PR is in the merge queue and nothing is wrong — re-read the queue yourself, below. Never a park, and never a shell |
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
@@ -1402,7 +1402,8 @@ the lane kind:
 
 - **A single-issue lane** — a `WIP` out of `queued`, and a FAIL out of `review` or `review:ui`. Its
   other routes back to construction land a mixed lane in `build`, as they do any lane: a FAIL out of
-  `ship`, `ship:queued` or `human:cp-approval`, and the `base-conflicted` lap.
+  `ship`, `ship:queued` or `human:cp-approval`, and the `base-conflicted` lap out of `ship` or
+  `review`. That lap out of `review:ui` lands it in `build:ui`.
 - **An epic child** — a `WIP` out of `queued`, and a FAIL out of `review` or `integrate`. A child has
   no `review:ui`.
 - **An epic tail** — never. It repairs in its one `build` cell whatever classes stand.
@@ -1552,7 +1553,7 @@ seven map to the machine's `LAP` event, and each names exactly one park cause:
 | Token | The observed failure | The cause it carries |
 | --- | --- | --- |
 | `REPLAY-COLLIDED` | a child's replay onto the assembly tip hit a hunk that is not a plain keep-both, so the collision owes a judgment about content — `lane integrate` exit `42`'s replay arm | `replay-conflict` |
-| `BASE-CONFLICTED` | the PR's base moved under it and the merge now conflicts — `ship enqueue`'s pre-arm read at exit `21`. The head owes a rebase and the re-review that comes with it, so this is the one lap out of `ship` that folds the task to `build` | `base-conflicted` |
+| `BASE-CONFLICTED` | the PR's base moved under it and the merge now conflicts — `ship enqueue`'s pre-arm read at exit `21`, or a `conflicting` mergeability read while the task waits in `review` or `review:ui`. The head owes a merge of its base and the re-review that comes with it, so this lap folds the task to a builder: `build` out of `ship` and `review`, `build:ui` out of `review:ui` | `base-conflicted` |
 | `TEXT-REVIEW-STALE` | a `review:ui` `PASS` was refused at `23` because a text verdict the head owes stopped binding: a merge from the base reached a path the PR changed. The text review is owed again, so this is the one lap out of `review:ui` that folds the task to `review` | `text-review-stale` |
 | `QUEUE-EJECTED` | the merge queue ejected the PR before it merged — a sibling's red, a base that moved under the batch, a queue timeout — and no verdict against it changed | `queue-ejected` |
 | `SEAT-DIRTY` | a working tree still holds the lane branch this build or replay must stand on — `lane integrate` exit `54`, `build branch --resume-lane` exit `11` | `worktree-holds-branch` |
@@ -1562,7 +1563,30 @@ seven map to the machine's `LAP` event, and each names exactly one park cause:
 Five of the seven are yours because no shell records them — the three `integrate` rows, the dead
 spawn and the stale text review. The other two have a shell in front of them, and where its own
 terminal already recorded the failure you record nothing second: `ship` reports `QUEUE-EJECTED` and
-`BASE-CONFLICTED` itself.
+`BASE-CONFLICTED` itself. Out of a review cell, `BASE-CONFLICTED` is yours too.
+
+**`BASE-CONFLICTED` out of `review` or `review:ui` is recorded on one read, before the brief.** No
+CI runs on a conflicted head, so a reviewer dispatched over one can only end `UNKNOWN` and park the
+lane. So before you brief either review cell, read the PR:
+
+```bash
+node <fabrika> build verdicts --pr <n>
+```
+
+When its `mergeability` reads `conflicting`, record the lap instead of briefing a reviewer:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token BASE-CONFLICTED --pr <pr-url>
+```
+
+The fold then reads `build` out of `review`, or `build:ui` out of `review:ui` (an epic tail's one
+`build` out of either), and the next pass briefs that builder, which merges the base in ([build's repair section](../build/SKILL.md#repair)).
+Its `DONE` returns the lane to `review`. Only an observed `conflicting` opens this. `unknown` is
+GitHub not having computed the field yet: re-read it, and never record the lap on it or on a guess
+that a merge would conflict. `mergeable` is no conflict, so brief the reviewer. Exit `12` on the
+report means the lane's `workflow.json` predates the route: run `node <fabrika> lane migrate <lane>`
+and record it again. A lane that already parked `blocked` over the conflict returns to its review
+cell on the `UNBLOCKED`, and this read then routes it.
 
 **`TEXT-REVIEW-STALE` is recorded in this step, on one read.** It opens when a task stands in
 `review:ui` and its `PASS` is refused at `23`, on the ui reviewer's own `lane report` or on your
@@ -1602,9 +1626,11 @@ spends `laps`, a counter of its own. Recording both charges the ticket for the p
 anyway, which is the whole thing this group exists to stop. The lap arm sends the task to the stage
 that has to run again — `integrate`'s to `review`, a single-issue lane's `build` to `build`, and a
 `ship` cell's back to `ship` unless the lap's own cause routes it elsewhere, which `base-conflicted`
-does because a rebase is a builder's act. A `review:ui` cell's lap returns to `review:ui` except
-`text-review-stale`'s, which goes to `review` because the text verdicts are a text reviewer's to
-write. So a lap is another pass, not a park. When the laps run
+does because merging the base in is a builder's act. A `review` cell's lap returns to `review`
+except `base-conflicted`'s, which goes to `build` for the same reason. A `review:ui` cell's lap
+returns to `review:ui` except two: `text-review-stale`'s goes to `review` because the text verdicts
+are a text reviewer's to write, and `base-conflicted`'s goes to `build:ui`. So a lap is another
+pass, not a park. When the laps run
 out it parks on `human:machinery-stall`
 instead: a plain state with an `UNBLOCKED` door, not the repair budget's own `human:budget-spent`
 final, because nothing about the artifact was ever wrong.

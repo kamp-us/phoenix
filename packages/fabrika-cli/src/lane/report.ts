@@ -679,16 +679,18 @@ export const PARK_CAUSES = {
 		remedy: null,
 	},
 	/**
-	 * `ship enqueue`'s pre-arm read answered a definite `mergeable_state: dirty` — the base moved
-	 * under the branch and the merge now conflicts. Nothing about the artifact was judged, so the
-	 * round it owes is not one the repair budget is bounding.
+	 * A definite read says the base moved under the branch and the merge now conflicts —
+	 * `ship enqueue`'s pre-arm `mergeable_state: dirty`, or the driver's `build verdicts` read of
+	 * `conflicting` while the lane waits in `review` or `review:ui`. Nothing about the artifact was
+	 * judged, so the round it owes is not one the repair budget is bounding.
 	 *
 	 * Distinct from a head merely *behind* its base: that one merges clean, parks nothing and lands
 	 * through the merge queue as it is. This one has a hunk two sides both edited, so it needs a
 	 * builder.
 	 * The re-review is owed with it — a dirty base moves the merge-base blob every verdict's content
 	 * digest covers (`../review/content-binding.ts`), so every verdict on the PR is void — which is
-	 * why this cause routes the lap to `build` rather than back to `ship`.
+	 * why this cause routes the lap to a builder rather than back to the stage that read it: `build`
+	 * out of `ship` and `review`, `build:ui` out of `review:ui`.
 	 *
 	 * No remedy: rebasing a conflicted branch is a judgment about content, and a verb that "removed"
 	 * this cause would be making it.
@@ -991,16 +993,19 @@ export const baseRedEvent = (
  * gracefully: an ejection or a dirty seat wants the stage run again, which is exactly what an
  * unrouted lap cell does. A routed cause does not — its whole point is that the round belongs to a
  * different stage. An old cell would fold `base-conflicted` back into `ship`, where the next enqueue
- * read refuses identically, and `text-review-stale` back into `review:ui`, where the next `PASS` is
+ * read refuses identically, or into a review cell, where no CI runs on the conflicted head for a
+ * reviewer to read, and `text-review-stale` back into `review:ui`, where the next `PASS` is
  * refused at `23` again, until sixteen laps have gone and the lane parks having done nothing.
  * Refusing it with the log untouched leaves the recorder its pre-lap fallback.
  *
- * Each cause is admitted in exactly the one cell that can observe it. `base-conflicted` is
- * `ship enqueue`'s `21`, so only `ship` routes it, and a PR that leaves the queue reports
- * `QUEUE-EJECTED` instead. `text-review-stale` is a `review:ui` `PASS` refused at `23`, so only
- * `review:ui` routes it; recorded anywhere else it is refused here.
+ * Each cause is admitted only in the cells that can observe it. `base-conflicted` is a definite
+ * conflicting mergeability read while the PR stands at `ship` (`ship enqueue`'s `21`), `review` or
+ * `review:ui`, so those three route it, and a PR that leaves the queue reports `QUEUE-EJECTED`
+ * instead. `text-review-stale` is a `review:ui` `PASS` refused at `23`, so only `review:ui` routes
+ * it. Recorded anywhere else, either is refused here.
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/10452#issuecomment-5983095196
+ * @ruling https://github.com/kamp-us/phoenix/issues/9954#issuecomment-5983100185
  */
 export const ROUTED_MACHINERY_CAUSES: ReadonlySet<string> = new Set<ParkCause>([
 	"base-conflicted",
