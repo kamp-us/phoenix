@@ -3,9 +3,10 @@
  * is a property of {@link planPrep} over rows already in step, not of a live run.
  *
  * Three steps, in order. {@link candidatesOf} sorts the open board into the agenda sections and
- * names the Customers reports that must be triaged first. {@link admit} takes the candidates one at
- * a time with the group each heads, and keeps a row count under the cap. {@link planPrep} then
- * decides every write against the rows as they read.
+ * names the Customers reports that must be triaged first. {@link selectAgenda} takes the candidates
+ * one at a time with the group each heads, and keeps a row count under the cap with
+ * `table.customerRows` of it held for Customers. {@link planPrep} then decides every write against
+ * the rows as they read.
  *
  * The rules it holds:
  * - **A row is a real, open issue.** The only add is an issue by number, so no draft can be made;
@@ -297,7 +298,7 @@ export interface Chosen {
 
 export interface Selection {
 	readonly chosen: ReadonlyArray<Chosen>;
-	/** Candidates the cap left out, in the order they were offered. */
+	/** Candidates the cap, or the rows it holds for Customers, left out, in the order they were offered. */
 	readonly overflow: ReadonlyArray<number>;
 }
 
@@ -307,24 +308,58 @@ export const EMPTY_SELECTION: Selection = {chosen: [], overflow: []};
 export const coveredBy = (selection: Selection): ReadonlySet<number> =>
 	new Set(selection.chosen.flatMap((chosen) => issuesOf(chosen.group)));
 
+const isCustomersRow = (chosen: Chosen): boolean => chosen.candidate.section === CUSTOMERS;
+
 /**
  * Offer one candidate with the group it heads. A candidate a chosen row already covers is skipped;
  * a chosen row this group covers moves inside it, freeing its place; and the row is admitted only
  * when the agenda still has room under `cap`.
+ *
+ * `held` rows of `cap` are kept for Customers: a row from another section is admitted only while
+ * the rows Customers has not filled yet still fit beside it. A standing row is never held back,
+ * since it keeps its place.
  */
 export const admit = (
 	selection: Selection,
 	candidate: Candidate,
 	group: Group,
 	cap: number,
+	held = 0,
 ): Selection => {
 	if (coveredBy(selection).has(candidate.issue)) return selection;
 	const members = new Set(membersOf(group));
 	const kept = selection.chosen.filter((chosen) => !members.has(chosen.candidate.issue));
-	if (kept.length + 1 > cap) {
+	const exempt = candidate.section === CUSTOMERS || candidate.reason._tag === "Standing";
+	const unfilled = exempt ? 0 : Math.max(0, held - kept.filter(isCustomersRow).length);
+	if (kept.length + 1 + unfilled > cap) {
 		return {...selection, overflow: [...selection.overflow, candidate.issue]};
 	}
 	return {...selection, chosen: [...kept, {candidate, group}]};
+};
+
+/**
+ * The agenda prep proposes from `offers`, in their order, under `cap` with `customerRows` held for
+ * Customers. A held row Customers cannot fill goes back to the other sections: the hold shrinks to
+ * the Customers rows the last pass chose and the offers are admitted again, until every held row is
+ * filled. A hold of 0 admits exactly as {@link admit} alone does.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10167#issuecomment-5974134857
+ */
+export const selectAgenda = (
+	offers: ReadonlyArray<Chosen>,
+	cap: number,
+	customerRows: number,
+): Selection => {
+	let held = Math.min(customerRows, cap);
+	for (;;) {
+		const pass = offers.reduce(
+			(selection, offer) => admit(selection, offer.candidate, offer.group, cap, held),
+			EMPTY_SELECTION,
+		);
+		const filled = pass.chosen.filter(isCustomersRow).length;
+		if (filled >= held) return pass;
+		held = filled;
+	}
 };
 
 /** The cells prep writes on a chosen row. */

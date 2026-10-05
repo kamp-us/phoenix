@@ -17,6 +17,7 @@ describe("the shipped table", () => {
 			timeZone: "UTC",
 			sections: ["Tails", "Customers", "New bets", "Outside the bets"],
 			agendaCap: 25,
+			customerRows: 0,
 			ruledStage: "proposed",
 			flagMultiple: 1,
 			stopMultiple: 2,
@@ -107,6 +108,31 @@ describe("a declared table block", () => {
 		expect(declared({ruledStage: "yes"})).toMatchObject({
 			_tag: "Malformed",
 			reason: expect.stringContaining("`table.ruledStage` is not one of proposed, bet"),
+		});
+	});
+
+	it("takes the rows held for Customers from 0 up to the agenda cap", () => {
+		expect(declared({customerRows: 10})).toMatchObject({
+			_tag: "Declared",
+			value: {agendaCap: 25, customerRows: 10},
+		});
+		expect(declared({agendaCap: 10, customerRows: 10})).toMatchObject({
+			_tag: "Declared",
+			value: {customerRows: 10},
+		});
+		expect(declared({customerRows: 0})).toMatchObject({_tag: "Declared", value: {customerRows: 0}});
+	});
+
+	it.each([
+		[{customerRows: 26}, "`table.customerRows` (26) is above `table.agendaCap` (25)"],
+		[{agendaCap: 3, customerRows: 4}, "`table.customerRows` (4) is above `table.agendaCap` (3)"],
+		[{customerRows: -1}, "`table.customerRows` is not a whole number of 0 or more"],
+		[{customerRows: 2.5}, "`table.customerRows` is not a whole number of 0 or more"],
+		[{customerRows: "5"}, "`table.customerRows` is not a whole number of 0 or more"],
+	])("refuses the whole block on rows held for Customers of %j", (table, reason) => {
+		expect(declared(table)).toMatchObject({
+			_tag: "Malformed",
+			reason: expect.stringContaining(reason),
 		});
 	});
 
