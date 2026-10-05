@@ -7,11 +7,11 @@
  *
  * The declared read itself moved to `../review/blocking.ts` when it became the blocking authority
  * every head-reading verb consults; it is re-exported here so this group's own callers keep one
- * import, and the permission split it carries is the load-bearing part. It was **probed live**
- * rather than assumed: `GET /branches/{base}/protection` answers `404 "Branch not protected"` both
- * when a branch has no protection and when the token cannot see it, so a 404 alone is evidence of
- * nothing; the rules read answers at ordinary `repo` scope and is what carries the answer.
- * Collapsing `unprobeable` into `no-requirements` would tell an adopter their repo gates nothing
+ * import, and the permission split it carries is the load-bearing part: both of its reads, the
+ * branch's rules and the branch record's protection summary, answer at contents-level scope, so a
+ * 401 or 403 on either is a token that cannot see the surface, never a branch that declares nothing.
+ * `GET /branches/{base}/protection` is not read: it needs the Administration permission, which a
+ * workflow's `GITHUB_TOKEN` can never hold, so it answers that token `403`. Collapsing `unprobeable` into `no-requirements` would tell an adopter their repo gates nothing
  * when it may gate everything.
  */
 import {isInformational} from "../review/rollup.ts";

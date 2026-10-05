@@ -63,12 +63,12 @@ describe("runSurface compares the two sides and judges neither", () => {
 		expect(out.stdout.split("\n")[0]).toBe(`surface\tcovered\t${HEAD}`);
 	});
 
-	it("answers no-requirements only on a SUCCESSFUL rules read plus the protection 404", async () => {
+	it("answers no-requirements only on a SUCCESSFUL rules read plus a branch read declaring none", async () => {
 		const out = await run([
 			[PULL, reply(pull())],
 			[CHECK_RUNS, reply(checkRuns(1, [completed("unit tests")]))],
 			[RULES, rules()],
-			[PROTECTION, httpError(404, "Branch not protected")],
+			[PROTECTION, protection()],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
