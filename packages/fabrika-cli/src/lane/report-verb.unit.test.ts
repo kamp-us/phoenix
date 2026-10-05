@@ -1544,6 +1544,24 @@ describe("lane report — an integrate FAIL carries the exit and head it failed 
 			expect(appendedTo(reopened)).toMatchObject({event: `${TASK.toUpperCase()}.LAP`});
 		});
 
+		it("parks where the machine holds no LAP cell, still off integrate's record", async () => {
+			const paired = epicAt(AT_INTEGRATE, {records: record("red")});
+			const bare = epicAt(AT_INTEGRATE);
+
+			const parked = await run(paired, "BASE-RED", BASE_RED);
+			const refused = await run(bare, "BASE-RED", BASE_RED);
+
+			expect(parked.code).toBe(0);
+			expect(appendedTo(paired)).toMatchObject({
+				event: `${TASK.toUpperCase()}.BLOCKED`,
+				cause: "assembly-base-red",
+				baseRed: {head: HEAD},
+			});
+			expect(parked.stderr.join("\n")).toContain("no LAP cell");
+			expect(refused.code).toBe(INTEGRATE_EVIDENCE);
+			expect(laneWrites(bare.written)).toEqual([]);
+		});
+
 		it("reads the cap off the repo's declared baseRedLaps, and refuses an unreadable one", async () => {
 			const zero = epicAt(AT_INTEGRATE, {records: record("red"), machinery: true});
 			const parked = await run(zero, "BASE-RED", {

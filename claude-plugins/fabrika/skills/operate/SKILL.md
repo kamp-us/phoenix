@@ -802,11 +802,13 @@ install that cannot honour the merged lockfile is exit `43` and a `FAIL`, and so
 
 Read which `FAIL` you have off the exit code, because they take different repairs: `42` with no
 replay attempted, the child conflicts and nothing was installed; `43` the merged lockfile does not
-install or the install changed a tracked file; `44` the merged tree failed a validator — the
-semantic collision, two ranges that each passed alone and do not hold together. Those three are the
-whole `FAIL` set — `42`'s replay arm is the park, not a fourth — and they are the
-only exits that judge the merged tree, and every other one says something about the lane record, the
-worktrees or this checkout, which is never the child's to repair. **Exit `45` is the one that looks
+install or the install changed a tracked file; `44` the merged tree failed a validator that passed
+over the pre-merge head — the semantic collision, two ranges that each passed alone and do not hold
+together. Those three are the whole `FAIL` set — `42`'s replay arm is the park, not a fourth. Exit
+`75` judges the merged tree too, but the same validator failed over the pre-merge head, so the base
+was broken before the child arrived: that is the `BASE-RED` machinery lap, never the child's to
+repair. Every other exit says something about the lane record, the worktrees or this checkout,
+which is never the child's to repair either. **Exit `45` is the one that looks
 like a `FAIL` and is not**: the seat already held modified tracked files, so the merge was never
 attempted — dirt on the driver's tree reads as the child's conflict or its bad lockfile if you let
 it. Clean the seat, then integrate the same
@@ -1566,6 +1568,8 @@ the failure you record nothing second: `ship` reports `QUEUE-EJECTED` and `BASE-
 what it printed over the base, for whoever fixes the base. A task gets `baseRedLaps` of these free
 (`.fabrika.jsonc`, shipped `2`) since its last `UNBLOCKED` or `DONE`; past that the same report
 lands the `BLOCKED` park on `assembly-base-red` instead, and the lane waits for the base to be fixed.
+It lands that park too where the task's state holds no `LAP` cell, so this is the one machinery
+token with no pre-lap park for you to type.
 
 **A head behind its base that merges clean is no machinery failure.** The merge queue lands it as it
 is, so it earns no lap and no park. `BASE-DRIFTED` and the `head-behind-base` cause stay in
@@ -1604,7 +1608,8 @@ dispatched. A single-issue lane is a different document: it boots from the commi
 ([`coder.workflow.json`](../../../../packages/fabrika-cli/src/lane/templates/coder.workflow.json)),
 which the key does not gate and which carries the cell in `build`, `build:ui`, `build:mixed`,
 `review`, `review:ui`, `ship` and `ship:queued`. So a machinery token recorded where the task's state holds no
-`LAP` cell is `lane report` exit `12` with the log unappended — not a token to retype. Record the
+`LAP` cell is `lane report` exit `12` with the log unappended — not a token to retype. `BASE-RED` is
+the one exception: the same report lands its park itself. For every other token, record the
 pre-lap park instead, naming the same cause the table above gives it (`BLOCKED --cause
 replay-conflict` for a `REPLAY-COLLIDED` an epic machine cannot take), and accept what that costs: a
 `BLOCKED` arm carries no `incrementRetries` in either region of `emit.ts` or in the coder template,
@@ -1625,7 +1630,7 @@ different next moves, and the verdict line is what tells them apart:
 | `42` | a replay ran and hit a hunk that is not a plain keep-both — the branch was reset and proved back | `REPLAY-COLLIDED` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause replay-conflict` |
 | `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL --integrate-exit 43 --assembly-head <sha>` |
 | `44` | the merged tree failed a code validator, and that validator passed over the pre-merge head, so the red is the child's | `FAIL --integrate-exit 44 --assembly-head <sha>` |
-| `75` | the merged tree failed a code validator, and that validator failed over the pre-merge head too, so the base was already broken | `BASE-RED --integrate-exit 75 --assembly-head <sha>` — the machinery lap above, its cause derived; past `baseRedLaps` the same report lands the park. Where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause assembly-base-red` |
+| `75` | the merged tree failed a code validator, and that validator failed over the pre-merge head too, so the base was already broken | `BASE-RED --integrate-exit 75 --assembly-head <sha>` — the machinery lap above, its cause derived. The same report lands the `assembly-base-red` park past `baseRedLaps`, and where the task's state holds no `LAP` cell, so there is no pre-lap park to type |
 | `54` | the replay landed and the child's branch would not follow it — nothing was merged, and a working tree standing on that branch is the usual reason | `SEAT-DIRTY` — the machinery lap above, its cause derived; where the task's state holds no `LAP` cell, the pre-lap `BLOCKED --cause worktree-holds-branch` |
 | `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` · `65` | the lane record, the lanes root, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
 

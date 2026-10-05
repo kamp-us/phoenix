@@ -94,7 +94,7 @@ export const SHELL_VOCABULARIES = {
 		"SHELL-DEAD": "LAP",
 		// `lane integrate` exit `75`: the validator that failed over the merged tree failed over the
 		// pre-merge head too, so the base was broken before the child arrived. It is the one lap whose
-		// evidence is integrate's own record, and past `machineryLaps.baseRedLaps` it lands as the park
+		// evidence is integrate's own record, and past the `baseRedLaps` key it lands as the park
 		// on the same cause instead ({@link baseRedEvent}).
 		"BASE-RED": "LAP",
 	},
@@ -807,7 +807,7 @@ export const PARK_CAUSES = {
 	 * failed over the pre-merge assembly head with the child's merge not in it. The base was broken
 	 * before the child arrived, so the red is machinery and charges the child no repair try. The
 	 * `BASE-RED` lap carries it, and so does the park that lap becomes once the task has spent
-	 * `machineryLaps.baseRedLaps` of them since its last `UNBLOCKED` or `DONE`.
+	 * `baseRedLaps` of them since its last `UNBLOCKED` or `DONE`.
 	 *
 	 * The line names the validator and keeps what it printed over the base, off integrate's own
 	 * record, so whoever fixes the base reads what failed there.

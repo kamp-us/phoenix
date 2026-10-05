@@ -1231,7 +1231,7 @@ const integrate = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"integrate",
-			"Merges a reviewed child into the assembly worktree and validates it; ends on INTEGRATE-VERDICT.",
+			"Merges a reviewed child into the assembly, validates it, ends on INTEGRATE-VERDICT.",
 			{
 				4: "bad lane record",
 				7: "no lane",
@@ -1242,12 +1242,12 @@ const integrate = leafCommand(
 				39: ROOT_EXITS[39],
 				41: "no worktree holds epic/<n>",
 				42: "child conflicts, reset",
-				43: "merged lockfile does not install",
-				44: "merged tree fails a validator the base passes",
-				45: "assembly worktree was dirty",
-				54: "child branch did not follow the replay",
+				43: "merged lockfile won't install",
+				44: "validator red, base green",
+				45: "assembly worktree dirty",
+				54: "child branch missed the replay",
 				65: ROOT_EXITS[65],
-				75: "that validator fails on the base too",
+				75: "validator red on base too",
 			},
 		),
 	),

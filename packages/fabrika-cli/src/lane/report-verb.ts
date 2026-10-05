@@ -304,7 +304,9 @@ type Landing =
 
 /**
  * The event this report lands as. Every token but a `BASE-RED` lap lands as the event it maps to;
- * that lap lands as the park on its own cause once the task has spent `baseRedLaps` of them.
+ * that lap lands as the park on its own cause where the task's state holds no `LAP` cell, and once
+ * the task has spent `baseRedLaps` of them. Both parks stand on integrate's record like the lap, so
+ * no driver ever types the red-base park on its own word.
  */
 const landBaseRed = (
 	event: OperatorEvent,
@@ -312,9 +314,17 @@ const landBaseRed = (
 	entries: ReadonlyArray<LogEntry>,
 	taskId: string,
 	cap: Read<number>,
+	holdsLap: boolean,
 ): Landing => {
 	if (cause !== BASE_RED_CAUSE || event !== MACHINERY_EVENT) {
 		return {_tag: "Event", event, note: null};
+	}
+	if (!holdsLap) {
+		return {
+			_tag: "Event",
+			event: "BLOCKED",
+			note: `${VERB}: task "${taskId}" stands where its machine holds no LAP cell — recording the ${BASE_RED_CAUSE} park instead of the lap; the base needs fixing before UNBLOCKED.`,
+		};
 	}
 	if (cap._tag === "Refused") {
 		return {
@@ -335,6 +345,17 @@ const landBaseRed = (
 				: `${VERB}: task "${taskId}" already spent ${landed.spent} red-base lap(s), the cap of ${landed.cap} (${cap.note}) — recording the ${BASE_RED_CAUSE} park instead of another lap; the base needs fixing before UNBLOCKED.`,
 	};
 };
+
+/** Whether the task's current cell takes a machinery lap — the same walk {@link tryAdvance} makes. */
+const holdsLapCell = (
+	lane: CompiledLane,
+	states: Readonly<Record<string, TaskState>>,
+	taskId: string,
+	at: string,
+	classes: ReadonlyArray<string> | null,
+): boolean =>
+	applyEvent(lane, states, taskId, MACHINERY_EVENT, at, classes, null, null, null, BASE_RED_CAUSE)
+		._tag !== "Refused";
 
 type Evidence =
 	| {
@@ -483,6 +504,7 @@ export const runReport = <R>(
 			loaded.entries,
 			task.taskId,
 			options.baseRedLaps,
+			holdsLapCell(loaded.lane, fold.states, task.taskId, at, classed.classes),
 		);
 		if (landing._tag === "Refused") return landing.outcome;
 		const event: OperatorEvent = landing.event;
@@ -586,6 +608,7 @@ export const runReport = <R>(
 					fresh.entries,
 					freshTask.taskId,
 					options.baseRedLaps,
+					holdsLapCell(fresh.lane, freshFold.states, freshTask.taskId, at, classed.classes),
 				);
 				if (freshLanding._tag === "Refused") return freshLanding.outcome;
 				if (freshLanding.event !== event) {

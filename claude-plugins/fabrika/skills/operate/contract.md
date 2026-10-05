@@ -340,8 +340,9 @@ carries `red: {validator, output}`, the merged run's kept output. `BASE-RED` tak
 carries `baseRed: {head, red: {validator, output}}`, the base run's kept output. A record that is
 missing or says the other thing refuses at `68`. `BASE-RED` and its cause `assembly-base-red` are
 recorded out of `integrate` only. Once the task has spent `baseRedLaps` of those laps since its
-last UNBLOCKED or DONE (`.fabrika.jsonc`, shipped `2`), `BASE-RED` lands as the BLOCKED park on the
-same cause instead of the lap.
+last UNBLOCKED or DONE (`.fabrika.jsonc`, shipped `2`), or where the task's state holds no `LAP`
+cell, `BASE-RED` lands as the BLOCKED park on the same cause instead of the lap, over the same
+record.
 
 stdout is `{token, previous, event, current, taskAffected}` plus the refs, plus `deferred` when the
 proof deferred anything, `routed` when it stood on a route, `routedBasis` when that route carried a
