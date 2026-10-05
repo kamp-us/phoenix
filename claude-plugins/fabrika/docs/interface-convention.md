@@ -310,8 +310,9 @@ of any kind can make a variable-rooted invocation usable at an agent's top-level
   ([skill-conventions §4](skill-conventions.md#4-the-invocation-surface-is-a-plain-literal)). That
   carve-out reaches skill bodies only — a hook command has no caller argument to bind and stays
   literal end to end.
-- **The literal is `fabrika`.** Every fence in every fabrika skill writes
-  `fabrika <group> <verb> …` and nothing else. The command and the package are deliberately
+- **The literal is `fabrika`.** Every fence in every fabrika skill writes this short form,
+  `fabrika <group> <verb> …`, except the fences [the scratch-copy exception](#the-scratch-copy-exception)
+  below names. The command and the package are deliberately
   **different names** — `fabrika` is the `bin` *key* of the CLI package, which keeps its own name on
   the registry and its own directory in the repo. [Delivery](#delivery--one-name-two-installs)
   below is how the command comes to resolve.
@@ -325,6 +326,61 @@ of any kind can make a variable-rooted invocation usable at an agent's top-level
 - A verb never requires an env var to *locate* itself. Configuration may still arrive by env
   (a session id, a target repo), and each such variable is named in `--help` with its default and
   what happens when it is unset.
+
+<a id="the-scratch-copy-exception"></a>
+### The scratch-copy exception — where the short form can run another tree's code
+
+A **scratch copy** is a git worktree of the repo that an agent works in for one run. It is the one
+place where the short `fabrika` command can run code other than the tree the agent stands in,
+because a newly cut one often has no install of its own. What the short form does there is
+[Delivery](#delivery--one-name-two-installs)'s resolution, and it has three outcomes
+([`delegate/resolve.ts`](../../../packages/fabrika-cli/src/delegate/resolve.ts)):
+
+- **The scratch copy has its own install**: the short form hands the call to that copy, so the tree
+  you stand in answers.
+- **It has none**: the short form runs the global install, which is not this tree's code, and says so
+  loudly on stderr, naming the repo root and both versions in play — the global's and the one the
+  repo's manifest declares.
+- **The copy you invoked belongs to a different repository** from the one you stand in: it refuses
+  and exits `126`.
+
+The second outcome is the hazard. The warning is loud, but an agent that acts on stdout still
+receives an answer about code it is not standing in. So where a command runs in a scratch copy, the
+fence names the copy outright, in the **resolved form**:
+
+```bash
+node <fabrika> <group> <verb> …
+```
+
+`<fabrika>` is a placeholder written into the command textually, like `<verb>`, never a shell
+variable, so the string still passes the literal rule above. It is one of two paths:
+
+- **A checkout of fabrika's own repo**: the in-tree source, repo-relative,
+  `packages/fabrika-cli/src/bin.ts`, so each worktree runs its own copy.
+- **Any repo that installs fabrika**: the installed bin, absolute,
+  `<repo>/node_modules/@kampus/fabrika-cli/dist/bin.js`, because a worktree carries no
+  `node_modules` of its own.
+
+`fabrika lane brief` resolves the same two paths and prints the answer in every spawn prompt's
+`fabrika:` field, so a spawned shell is handed its path rather than working it out.
+
+**The exception's scope**, which is the whole of it:
+
+- **`operate` writes every fence in the resolved form.** The driver works out `<fabrika>` once,
+  before its first verb, and runs every verb through it.
+- **The stage skills write the resolved form only on the lane verbs that take a spawn brief's
+  fields**: `lane working`, `lane report` and `lane cleanup` in `build`, `build-ui`, `review`,
+  `review-ui` and `ship`. `heal-ci` names the driver's own `recipe unpark` the way `operate` writes
+  it.
+- **A shell spawned with a brief runs every verb through the brief's `fabrika:` field**, its skill's
+  short-form fences included. The brief's rule does that substitution at run time, and the skill's
+  text stays in the short form.
+- **Everything else takes the short form**: every other fence in every skill, every `--help`
+  example and contract spec, and every command written for a person to run. A person's command —
+  in a park comment, a stop note or a closing message — writes `fabrika` and no path to the CLI.
+  The person stands in the repo's main checkout, where the `fabrika` they installed is on their path;
+  a global install leaves no `node_modules` copy to point at; and an absolute path would carry a
+  home directory into a public comment.
 
 <a id="delivery--one-name-two-installs"></a>
 ### Delivery — one name, two installs, both of them real
