@@ -564,7 +564,8 @@ time.
 Boots one lane: creates `<root>/<key>/` and places the committed template the key selects as its
 `workflow.json`, the coder template for an issue number and the chore template for a
 `chore:<name>` key. The lane is placed at its initial state, not at a stage: walk it with
-`lane transition`, which proves each event against the board before it records one.
+`lane transition`, which proves each event against the board before it records one. The one
+exception is `--from-board`'s unreviewed seat, below, which boots its task at `review`.
 
 **Class seeding.** For an issue, its `class:<name>` labels seed `machine.context.issue.classes`.
 Without class labels, the template stays byte-identical. Unsupported class names refuse at `38`
@@ -597,7 +598,7 @@ The parent edge rides the issue read already made, so the type and the two link 
 between them. A `chore:<name>` key drives no issue and is never asked.
 
 **The prior-lane check.** An issue key whose lane directory is absent is then asked whether the
-board already hangs a pull request off that issue, one only a driven lane opens. A hit is refused at
+board already hangs a pull request off that issue. A hit is refused at
 `63` with nothing written. A ledger is a lane's whole state and `.fabrika/` is gitignored, so
 removing the directory and booting again would restore a spent repair budget and record no granted
 round anywhere. The refusal names the pull request to drive, and the one door out of a spent budget:
@@ -623,8 +624,9 @@ seats:
 - **Unreviewed.** No comment on it reads as a verdict marker, a routed-elsewhere record or a
   control-plane advisory, in any namespace and at any head, so no repair round was ever spent. A
   stale verdict counts as a review, and so does a carrier that drifted. The boot places the template
-  as it stands, at the repair budget it declares, and the answer carries
-  `fromBoard: {seat: "unreviewed", pr, head, budget: "declared", record}`.
+  at the repair budget it declares and boots its task at `review`, so the lane's first shell is the
+  reviewer and the log starts empty. The answer carries
+  `fromBoard: {seat: "unreviewed", pr, head, budget: "declared", at: "review", record}`.
 - **Verified.** Every namespace its head derives has answered on the same fold `lane prove` takes for
   a PASS. The boot places the document with `maxRetries: 0`, so this lane mints no repair budget the
   board did not prove, and a FAIL parks at `human:budget-spent` until `lane clear` grants a round.

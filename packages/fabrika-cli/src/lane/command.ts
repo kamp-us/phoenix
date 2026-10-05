@@ -829,7 +829,7 @@ const open = leafCommand(
 		fromBoard: Flag.boolean("from-board").pipe(
 			Flag.withDefault(false),
 			Flag.withDescription(
-				"seat the lane from what the board proves when no ledger here can drive the one open PR: a PR no review has touched boots at its declared repair budget, one with every derived namespace answered at head boots with its budget declared spent; either way the adoption is recorded on the issue",
+				"seat the lane from what the board proves when no ledger here can drive the one open PR: a PR no review has touched boots at review with its declared repair budget, one with every derived namespace answered at head boots with its budget declared spent; either way the adoption is recorded on the issue",
 			),
 		),
 		origin: Flag.string("origin").pipe(

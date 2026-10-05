@@ -16,6 +16,7 @@ import {
 	adoptionRecord,
 	boardSeatReader,
 	reviewTrace,
+	seatAtReview,
 	seatFromProof,
 	solePull,
 	spendBudget,
@@ -92,6 +93,42 @@ describe("spendBudget", () => {
 
 	it("refuses a document with no task to declare it on", () => {
 		expect(spendBudget(JSON.stringify({machine: {context: {}}}))._tag).toBe("Unseedable");
+	});
+});
+
+describe("seatAtReview", () => {
+	it("boots the task at review and leaves its declared budget alone", () => {
+		const atReview = seatAtReview(coderTemplateText());
+		if (atReview._tag !== "AtReview") throw new Error(`refused: ${atReview.reason}`);
+		const compiled = compileText(atReview.text);
+		if (compiled._tag === "Malformed") throw new Error(compiled.defects.join("; "));
+		const template = compileText(coderTemplateText());
+		if (template._tag === "Malformed") throw new Error(template.defects.join("; "));
+
+		expect(compiled.lane.tasks.issue?.initial.type).toBe("review");
+		expect(compiled.lane.tasks.issue?.initial.maxRetries).toBe(
+			template.lane.tasks.issue?.initial.maxRetries,
+		);
+	});
+
+	it("refuses a region with no review cell to boot in", () => {
+		const document = JSON.stringify({
+			machine: {
+				initial: "pipeline",
+				states: {
+					pipeline: {
+						type: "parallel",
+						states: {issue: {initial: "queued", states: {queued: {}, build: {}}}},
+					},
+				},
+			},
+		});
+
+		expect(seatAtReview(document)).toMatchObject({_tag: "Unseedable"});
+	});
+
+	it("refuses a document with no task region at all", () => {
+		expect(seatAtReview(JSON.stringify({machine: {states: {}}}))._tag).toBe("Unseedable");
 	});
 });
 

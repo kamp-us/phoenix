@@ -50,8 +50,9 @@
  * pull request — exactly one, open, every namespace its head derives answered on `lane prove`'s own
  * fold — places a document that declares the repair budget **spent**, because the board proves the
  * work is verified and proves nothing at all about how many rounds the prior lane burned. An open
- * pull request no review has touched places the template as it stands, at its declared budget,
- * because a pull request nobody reviewed has spent no round. Either way the adoption is recorded on
+ * pull request no review has touched places the template at its declared budget, because a pull
+ * request nobody reviewed has spent no round, and boots it at review, because building over work
+ * nobody graded is the step the founder ruled out. Either way the adoption is recorded on
  * the issue before anything lands on disk, and everything the board does not prove refuses at
  * {@link PRIOR_LANE} exactly as it did.
  *
@@ -81,6 +82,7 @@ import {
 	type BoardRecorder,
 	type BoardSeatReader,
 	type Seat,
+	seatAtReview,
 	spendBudget,
 	strandedRecord,
 } from "./board-seat.ts";
@@ -144,11 +146,12 @@ const priorRefusal = (
 
 /**
  * What the answer says about a board seat. Only the verified seat carries `maxRetries: 0`, because
- * only it declared one: the unreviewed seat placed the template's own budget and names no number.
+ * only it declared one: the unreviewed seat placed the template's own budget and names no number,
+ * and it names the cell it booted in, because that is the one placement fact the template does not.
  */
 const fromBoardAnswer = (seat: Seat, record: string | null) =>
 	seat._tag === "Unreviewed"
-		? {seat: "unreviewed", pr: seat.pr, head: seat.head, budget: "declared", record}
+		? {seat: "unreviewed", pr: seat.pr, head: seat.head, budget: "declared", at: "review", record}
 		: {seat: "verified", pr: seat.pr, head: seat.head, maxRetries: 0, record};
 
 export interface OpenOptions<R = never> extends LaneRef {
@@ -331,7 +334,14 @@ export const runOpen = <R = never>(
 						);
 					}
 					if (seat._tag === "Unreviewed") {
-						seated = {seat, text: seed.text};
+						const atReview = seatAtReview(seed.text);
+						if (atReview._tag === "Unseedable") {
+							return refuse(
+								LANE_UNREADABLE,
+								`${VERB}: cannot boot ${options.templatePath} at review: ${atReview.reason} — a pull request nobody reviewed starts at its review, never at a build over it. Nothing was written.`,
+							);
+						}
+						seated = {seat, text: atReview.text};
 					} else {
 						const spent = spendBudget(seed.text);
 						if (spent._tag === "Unseedable") {
@@ -427,10 +437,15 @@ export const runOpen = <R = never>(
 				...(seated === null
 					? []
 					: [
-							seated.seat._tag === "Unreviewed"
-								? `${VERB}: seated from the board on #${seated.seat.pr} at ${seated.seat.head}, which no review has touched — the lane carries the repair budget its template declares, and the review runs inside it.`
-								: `${VERB}: seated from the board on #${seated.seat.pr} at ${seated.seat.head}, with the repair budget declared spent — a FAIL parks at human:budget-spent until \`lane clear\` grants a round.`,
-							`${VERB}: the adoption is recorded at ${record}. The lane stands at its initial state: walk it with \`fabrika lane transition ${options.lane} <event>\`, which proves every event against the board before it records one.`,
+							...(seated.seat._tag === "Unreviewed"
+								? [
+										`${VERB}: seated from the board on #${seated.seat.pr} at ${seated.seat.head}, which no review has touched — the lane carries the repair budget its template declares, and the review runs inside it.`,
+										`${VERB}: the adoption is recorded at ${record}. The lane stands at review, not at build: its first shell is the reviewer, and a FAIL there spends one of its declared rounds.`,
+									]
+								: [
+										`${VERB}: seated from the board on #${seated.seat.pr} at ${seated.seat.head}, with the repair budget declared spent — a FAIL parks at human:budget-spent until \`lane clear\` grants a round.`,
+										`${VERB}: the adoption is recorded at ${record}. The lane stands at its initial state: walk it with \`fabrika lane transition ${options.lane} <event>\`, which proves every event against the board before it records one.`,
+									]),
 						]),
 			],
 		);

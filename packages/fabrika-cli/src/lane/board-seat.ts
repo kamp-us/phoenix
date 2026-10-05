@@ -25,8 +25,8 @@
  * builder can open one outside any lane, and then there is no prior ledger to have spent anything:
  * the budget is spent only by a content `FAIL`, and a pull request carrying no verdict of any kind
  * has had none — {@link reviewTrace} reads that off the comments, so `roundsOn` over them is zero by
- * construction. That seat places the template as it stands, so the review and its repair rounds run
- * inside the lane. Any trace of a review at all, at any head and in any namespace, sends the pull
+ * construction. That seat places the template at its own budget and boots it at review
+ * ({@link seatAtReview}), so the review and its repair rounds run inside the lane. Any trace of a review at all, at any head and in any namespace, sends the pull
  * request back to the verified bar and its zero budget: a stale verdict is still a review somebody
  * ran, and how many rounds it cost is again what no read here can say.
  *
@@ -37,6 +37,7 @@
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9435#issuecomment-5752589286
  * @ruling https://github.com/kamp-us/phoenix/issues/10321#issuecomment-5974129700
+ * @ruling https://github.com/kamp-us/phoenix/issues/10321#issuecomment-5983085462
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -49,7 +50,7 @@ import {getPullRequest} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
 import {read as readRoute} from "../wire/routed-elsewhere.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
-import {foldNamespaces, type Proof} from "./prove.ts";
+import {foldNamespaces, type Proof, REVIEW_STATE} from "./prove.ts";
 import {readNamespaceRows} from "./prove-verb.ts";
 
 export type BoardSeat =
@@ -193,6 +194,62 @@ export const spendBudget = (text: string): BudgetSeed => {
 	};
 };
 
+export type ReviewSeed =
+	| {readonly _tag: "AtReview"; readonly text: string}
+	| {readonly _tag: "Unseedable"; readonly reason: string};
+
+/**
+ * Boot every task region of the document about to be placed at {@link REVIEW_STATE}.
+ *
+ * The unreviewed seat's first step is the review, never a build over work nobody has graded yet. It
+ * is a placement, not a walk: the region's `initial` names the cell it boots in, the way an emitted
+ * epic's tail region boots at `review`, so the log stays empty and nothing at boot asserts an event
+ * `lane transition` would have to prove. The fact that cell stands on — one open pull request linking
+ * the issue — is the one the admission read already took. A region with no `review` cell refuses,
+ * because booting it anywhere else would be the build-first start this seat exists not to be.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10321#issuecomment-5983085462
+ */
+export const seatAtReview = (text: string): ReviewSeed => {
+	const document = parseJson(text);
+	if (!isRecord(document)) return {_tag: "Unseedable", reason: "the document is not JSON"};
+	const machine = document.machine;
+	if (!isRecord(machine) || !isRecord(machine.states)) {
+		return {_tag: "Unseedable", reason: "the document carries no `machine.states` object"};
+	}
+	const reseated: Record<string, unknown> = {};
+	let regions = 0;
+	for (const [name, node] of Object.entries(machine.states)) {
+		if (!isRecord(node) || node.type !== "parallel" || !isRecord(node.states)) {
+			reseated[name] = node;
+			continue;
+		}
+		const tasks: Record<string, unknown> = {};
+		for (const [task, region] of Object.entries(node.states)) {
+			if (
+				!isRecord(region) ||
+				!isRecord(region.states) ||
+				region.states[REVIEW_STATE] === undefined
+			) {
+				return {
+					_tag: "Unseedable",
+					reason: `task "${task}" has no \`${REVIEW_STATE}\` state to boot in`,
+				};
+			}
+			tasks[task] = {...region, initial: REVIEW_STATE};
+			regions += 1;
+		}
+		reseated[name] = {...node, states: tasks};
+	}
+	if (regions === 0) {
+		return {_tag: "Unseedable", reason: "the document declares no task region"};
+	}
+	return {
+		_tag: "AtReview",
+		text: `${JSON.stringify({...document, machine: {...machine, states: reseated}}, null, "\t")}\n`,
+	};
+};
+
 /**
  * The comment this boot lands on the issue — the record that makes the succession reviewable.
  *
@@ -216,6 +273,9 @@ export const adoptionRecord = (issue: number, seat: Seat): string => {
 			"",
 			"**The new ledger carries the repair budget its template declares.** No review ran, so no",
 			"repair round was spent, and the review and its repair rounds run inside this lane.",
+			"",
+			"**The lane starts at review, not at build.** Its first step grades the work that is already",
+			"there, before any builder touches it.",
 		].join("\n");
 	}
 	return [

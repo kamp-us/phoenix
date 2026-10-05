@@ -469,9 +469,11 @@ every namespace its head derives answered boots with its **repair budget declare
 proves how many rounds the prior lane burned, so a `FAIL` parks at `human:budget-spent` until
 `lane clear` grants one. Anything short of those, including a reviewed PR that is not verified, is
 `63` again carrying the board's own reason, so a second `63` here is the real stop. The answer's
-`fromBoard.seat` says which seat it took. Either way the lane lands at its initial state rather than
-at a stage — walk it forward with `lane transition`, which proves each event against the board
-before recording it. End `STOPPED` naming the code only when the flag's own read refuses.
+`fromBoard.seat` says which seat it took, and the seat says where the lane lands. An unreviewed seat
+lands at `review`, so your next shell is the reviewer, never a builder over work nobody has graded.
+A verified seat lands at its initial state rather than at a stage, so walk it forward with
+`lane transition`, which proves each event against the board before recording it. End `STOPPED`
+naming the code only when the flag's own read refuses.
 
 Both verbs live beside `status`/`transition`/`history`/`print` in
 `packages/fabrika-cli/src/lane/`, and each verb's `--help` is its interface. Any other exit is a stop, not a fallback: `4` is a record read in full and not

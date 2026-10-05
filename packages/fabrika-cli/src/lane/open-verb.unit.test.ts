@@ -3,7 +3,13 @@ import {Effect, type FileSystem, type Path} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {answer, type VerbOutcome} from "../verb.ts";
-import type {BoardRecord, BoardRecorder, BoardSeat, BoardSeatReader} from "./board-seat.ts";
+import {
+	type BoardRecord,
+	type BoardRecorder,
+	type BoardSeat,
+	type BoardSeatReader,
+	seatAtReview,
+} from "./board-seat.ts";
 import {
 	APPEND_UNKNOWN,
 	CLASS_UNRECOGNISED,
@@ -483,11 +489,20 @@ describe("lane open", () => {
 					machine: {context: {issue: {maxRetries: number}}};
 				};
 
+				const atReview = seatAtReview(coderTemplateText());
+				if (atReview._tag !== "AtReview") throw new Error(atReview.reason);
+
 				expect(out.code).toBe(0);
-				expect(fs.written.get(WORKFLOW)).toBe(coderTemplateText());
+				expect(fs.written.get(WORKFLOW)).toBe(atReview.text);
 				expect(answered).toMatchObject({
 					answer: "opened",
-					fromBoard: {seat: "unreviewed", pr: 7991, head: "77aa05b", budget: "declared"},
+					fromBoard: {
+						seat: "unreviewed",
+						pr: 7991,
+						head: "77aa05b",
+						budget: "declared",
+						at: "review",
+					},
 				});
 				expect(answered.fromBoard).not.toHaveProperty("maxRetries");
 				expect(template.machine.context.issue.maxRetries).toBeGreaterThan(0);
@@ -518,12 +533,13 @@ describe("lane open", () => {
 				expect(posted[0]).toContain("77aa05b");
 				expect(posted[0]).toContain("no verdict was found");
 				expect(posted[0]).toContain("repair budget its template declares");
+				expect(posted[0]).toContain("starts at review, not at build");
 				expect(posted[0]).not.toContain("no repair budget");
 			});
 
-			it("places the lane at its initial state with no event, and `lane transition` walks it to review on the board's proof", async () => {
+			it("boots the lane at review with no event, so its first FAIL spends one declared round and goes to build", async () => {
 				const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
-				await run(
+				const out = await run(
 					fs,
 					runOpen({
 						...OPTIONS,
@@ -534,56 +550,45 @@ describe("lane open", () => {
 					}),
 				);
 
+				expect(out.stderr.join("\n")).toContain("The lane stands at review, not at build");
 				expect(fs.written.has(LOG)).toBe(false);
 				const status = await run(fs, runStatus({root: ROOT, lane: "42"}));
 				expect(JSON.parse(status.stdout)).toMatchObject({
-					stateValue: {pipeline: {issue: "queued"}},
+					stateValue: {pipeline: {issue: "review"}},
+					context: {issue: {retries: 0}},
 				});
 
 				const board = fakeProverByEvent({
-					WIP: {outcome: answer(JSON.stringify({proof: "proven", event: "WIP", issue: 42}))},
-					DONE: {
-						outcome: answer(
-							JSON.stringify({
-								proof: "proven",
-								event: "DONE",
-								issue: 42,
-								evidence: {kind: "open-pull", pr: 7991},
-							}),
-						),
-					},
+					FAIL: {outcome: answer(JSON.stringify({proof: "proven", event: "FAIL", issue: 42}))},
 				});
-				const walk = (event: string) =>
-					run(
-						fs,
-						runTransition(
-							{
-								root: ROOT,
-								lane: "42",
-								event,
-								task: null,
-								cause: null,
-								axisIssue: null,
-								rulingIssue: null,
-								founderAct: null,
-								parkCause: parkCauseRead(),
-								classes: [],
-								waitGrant: null,
-								rationale: null,
-								repo: "o/r",
-								cwd: "/checkout",
-								env: {},
-							},
-							board.prove,
-						),
-					);
+				const failed = await run(
+					fs,
+					runTransition(
+						{
+							root: ROOT,
+							lane: "42",
+							event: "FAIL",
+							task: null,
+							cause: null,
+							axisIssue: null,
+							rulingIssue: null,
+							founderAct: null,
+							parkCause: parkCauseRead(),
+							classes: [],
+							waitGrant: null,
+							rationale: null,
+							repo: "o/r",
+							cwd: "/checkout",
+							env: {},
+						},
+						board.prove,
+					),
+				);
 
-				expect((await walk("WIP")).code).toBe(0);
-				const done = await walk("DONE");
-
-				expect(done.code).toBe(0);
-				expect(JSON.parse(done.stdout)).toMatchObject({current: {pipeline: {issue: "review"}}});
-				expect(board.asked.map((asked) => asked.event.toUpperCase())).toEqual(["WIP", "DONE"]);
+				expect(failed.code).toBe(0);
+				expect(JSON.parse(failed.stdout)).toMatchObject({current: {pipeline: {issue: "build"}}});
+				const after = await run(fs, runStatus({root: ROOT, lane: "42"}));
+				expect(JSON.parse(after.stdout)).toMatchObject({context: {issue: {retries: 1}}});
 			});
 		});
 

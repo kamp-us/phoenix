@@ -9,7 +9,7 @@ tags: [lane, fabrika-cli, operate]
 # 0478 — An open pull request no review has touched seats a lane at its declared repair budget, never at zero
 
 **What this decides:** `lane open --from-board` also boots a lane on an open pull request that nobody
-has reviewed yet, and that lane keeps the repair rounds its template declares.
+has reviewed yet. That lane keeps the repair rounds its template declares, and it starts at review.
 
 ## Context
 
@@ -27,6 +27,11 @@ lane and the first FAIL parked on a person. That was reported on
 The founder ruled it in
 [this comment](https://github.com/kamp-us/phoenix/issues/10321#issuecomment-5974129700): a lane can
 start on an open pull request that nobody has reviewed yet, with its normal repair rounds.
+
+He then ruled where such a lane starts, in
+[a later comment](https://github.com/kamp-us/phoenix/issues/10321#issuecomment-5983085462): "Straight
+at review", over the desk's recommendation of the normal first step, with the note "i dont think we
+should start building w/o reviewing first".
 
 ## Decision
 
@@ -49,21 +54,32 @@ The adoption comment still lands on the issue before anything is written to disk
 names the pull request and head, says no verdict was found, and says the lane carries its declared
 budget. It never reuses the zero-budget wording.
 
-0403's placement rule holds for this seat too. The lane is placed at its initial state and the boot
-appends no events; `lane transition` walks it forward on the board's proof.
+**The lane boots at review, not at build.** The placed document sets the task region's `initial` to
+`review`, so the lane's first shell is the reviewer and nothing builds over work nobody has graded.
+The boot still appends no events, and the log starts empty. This is a placement, the same kind an
+emitted epic's tail region already uses when it boots at `review`. It is not a walk, so it is not the
+second copy of the proof path 0403 rejected: no event is asserted, and `lane transition` still proves
+every event the lane records from there. The one fact the `review` cell stands on, an open pull
+request linking the issue, is the fact the admission read already took. A template with no `review`
+cell refuses with exit 11 rather than booting anywhere else.
 
-**This amends ADR [0403](0403-board-seated-lane-boot.md) in one clause.** 0403 says the seat it admits
-is a verified pull request and that the placed document declares `maxRetries: 0`. That stays true for
-a pull request a review has touched. For one no review has touched, the seat is the second one above
-and the document is the template as it stands.
+**This amends ADR [0403](0403-board-seated-lane-boot.md) in two clauses.** 0403 says the seat it
+admits is a verified pull request and that the placed document declares `maxRetries: 0`. It also says
+the lane is placed at its initial state, not at a stage. Both stay true for a pull request a review
+has touched. For one no review has touched, the seat is the second one above, the document keeps the
+template's budget, and the task boots at `review`.
 
 ### Alternatives rejected
 
 - **A flag that lets a driver say the pull request is unreviewed.** Rejected: the flag would assert
   the one fact the guard exists to read, which is the override shape
   [ADR 0384](0384-a-retired-lane-does-not-re-open-over-its-own-work.md) closed.
-- **Seat it at the review step by appending events at boot.** Rejected for the reason 0403 gives: a
-  second copy of the proof path `lane transition` already owns.
+- **Place it at its initial state and let `lane transition` walk it to review.** Rejected by the
+  founder's second ruling: from the initial state a driver's next step dispatches a builder, which
+  builds before anyone reviewed the work.
+- **Reach review by appending `WIP` and `DONE` at boot.** Rejected for the reason 0403 gives: a
+  second copy of the proof path `lane transition` already owns. Setting the region's `initial`
+  reaches the same cell with no event to prove.
 - **Read only the head's required namespaces.** Rejected: a verdict at an older head, or in a
   namespace the head no longer derives, is still a review someone ran, and how many rounds it cost is
   what no read here can prove.
@@ -71,7 +87,7 @@ and the document is the template as it stands.
 ## Consequences
 
 A pull request opened outside a lane enters one with one command, and its review and repair rounds
-run inside that lane.
+run inside that lane, review first.
 
 The board cannot tell "never reviewed" from "reviewed, then the verdict comment was deleted". A
 deleted verdict leaves no trace, so such a pull request would seat at a full budget. The cap that
