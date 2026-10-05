@@ -225,8 +225,10 @@ was the pool's own, so a number handed straight to `build claim` met no criteria
 end, and failed a review gate no branch could repair.
 
 **The type axis has one arm, and a citation is the only thing that opens it.** A `type:decision`
-whose choice a founder has already recorded on the issue is buildable, because the deliverable is
-then transcription rather than judgement.
+whose choice a founder has already recorded on the issue is buildable, because the judgement is
+then done: the lane builds what the issue's acceptance criteria ask for, the ADR or amendment
+recording the ruling and the code the ruling calls for alike, and a gap the ruling left open goes
+back to the founder.
 `build claim --cites <url>` names that ruling comment, in the grammar
 `https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>`, and the verb refuses a URL
 that names another repository or another issue — a ruling recorded elsewhere opens nothing here. It
@@ -536,7 +538,7 @@ The filter, fail-closed on every axis:
   picker that ignores assignment walks straight into them.
 - `type:` is one of `feature` / `chore` / `bug` / `investigation`. `type:decision` and `type:epic`
   never enter *this pool*, which is narrower than never being built: a decision issue carrying a
-  founder ruling comment is buildable as transcription and is entered by number at `build claim`,
+  founder ruling comment is buildable, record and code alike, and is entered by number at `build claim`,
   never picked — a blind pick has no ruling to cite, which is why the exclusion here stands. A
   rendered-visual deliverable is excluded by the *skill* at reading time, not by this verb, because
   modality is not a label.
@@ -995,7 +997,7 @@ claim — a founder ruling.
 Triage routes a decision to `ready-for:human` by default, so a decision-record PR's repair lane was failing a
 fence it could normally never pass — the only way through was `--override`, which spent a
 founder-authorized escape hatch on routine repair. That default is not an exclusion: a decision
-issue carrying a founder ruling comment is buildable as transcription, which is why the
+issue carrying a founder ruling comment is buildable, record and code alike, which is why the
 exemption is read off the target rather than off the impossibility of the pairing. This axis reads
 the `ready-for:` label the issue carries and never infers one from the type, in either direction;
 which decision issues end up carrying `ready-for:agent` is decided by triage's `--ready-for` routing
@@ -2265,7 +2267,7 @@ fabrika build resume-child 9 [--cites <url>] [--token <token>] [--lane <lane> --
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic child whose standing-`FAIL` repair lane this opens |
 | `--token` | string | no | — | the repair claim this lane already holds, when it is re-running; the claim step then answers off the standing marker and writes nothing. Omitting it on a re-run over a held claim is not a shorter spelling of the same run: the claim step mints a second marker, loses the earliest-wins tiebreak to this lane's own prior claim and refuses on `15` |
-| `--cites` | string | no | — | the founder ruling comment a `type:decision` child's repair transcribes, as `https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>`. Carried to the claim step unchanged and read by no other step here; `build claim` binds it to this repository and this child and opens its type axis with it. Needed on a first entry only — a `--token` continuation answers off the standing marker, so the citation is not asked for twice |
+| `--cites` | string | no | — | the founder ruling comment a `type:decision` child's repair acts on, as `https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>`. Carried to the claim step unchanged and read by no other step here; `build claim` binds it to this repository and this child and opens its type axis with it. Needed on a first entry only — a `--token` continuation answers off the standing marker, so the citation is not asked for twice |
 | `--lane` / `--lane-root` | string | epic child, both or neither | — | the brief's `lane` and `root`, carried to the claim step unchanged: it reads that lane's ledger for a standing integrate `FAIL` on this child, the one record of a child that passed review and then failed `lane integrate` ([the integrate arm](#build-claim-build-confirm-build-release-build-adopt)) |
 
 **Output** — machine. One JSON object:
@@ -2348,7 +2350,7 @@ $ fabrika build resume-child 9
 {"answer":"resumed","issue":9,"token":"build:s-9f2e:c1a4d6f8-…","branch":"build/9-search-index-bootstrap-c1a4d6f8","root":"/abs/path","claim":{"number":9,"nonce":"c1a4d6f8"}}
 ```
 
-A ruled `type:decision` child, whose repair the type axis refuses without the ruling it transcribes:
+A ruled `type:decision` child, whose repair the type axis refuses without the ruling it acts on:
 
 ```
 $ fabrika build resume-child 9
@@ -2356,7 +2358,7 @@ build resume-child: stopped at the claim step on exit 30; the steps after it did
 build claim: type: type:decision — the type axis binds a build claim against an issue.
 build claim: type not buildable — this issue carries type:decision, whose deliverable is not a pull request an agent build lane produces; a decision is /adr's lane unless the choice is already recorded on it, in which case pass --cites https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id> naming that founder ruling comment.
 $ fabrika build resume-child 9 --cites https://github.com/<owner>/<repo>/issues/9#issuecomment-5335398768
-build claim: type: type:decision — admitted as transcription of the founder ruling at https://github.com/<owner>/<repo>/issues/9#issuecomment-5335398768; the deliverable is that ruling written down, nothing more.
+build claim: type: type:decision — admitted on the founder ruling at https://github.com/<owner>/<repo>/issues/9#issuecomment-5335398768; the deliverable is what the issue's acceptance criteria ask for, the ruling's record and the code it calls for alike, and a gap the ruling left open goes back to the founder.
 {"answer":"resumed","issue":9,"token":"build:s-9f2e:c1a4d6f8-…","branch":"build/9-search-index-bootstrap-c1a4d6f8","root":"/abs/path","claim":{"number":9,"nonce":"c1a4d6f8"}}
 ```
 

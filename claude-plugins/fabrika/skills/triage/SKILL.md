@@ -384,8 +384,9 @@ anything resting on a product call nobody has made. Get it wrong and a document 
 lands in a builder's candidate pool.
 
 **A `type:decision` goes to `agent` when the choice is already recorded on it.** Send it there when
-the issue carries a founder ruling comment that made the call: the deliverable is then transcription
-— write that ruling into the ADR or amendment it names — and transcription executes cold. This is
+the issue carries a founder ruling comment that made the call: the deliverable is then the ADR or
+amendment recording that ruling plus any code the ruling calls for, built in one lane, and that
+executes cold. This is
 the stamp `build`'s citation arm reads; without it the arm is unreachable and the ruling costs
 another human round-trip. No such comment, and the default above stands: `human`. You cite the
 comment rather than judging the question settled yourself, and a ruling that left a gap open is

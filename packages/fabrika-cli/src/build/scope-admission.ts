@@ -54,7 +54,7 @@ export {READY_FOR_AGENT};
  * Triage routes such an issue to `ready-for:human` by default, which is the collision
  * {@link RepairClaim} answers: an ADR PR's repair lane would otherwise fail a fence it could not
  * pass. The default is not an exclusion — a decision issue carrying a founder ruling comment is
- * buildable as transcription, and triage may route that one to `ready-for:agent` instead.
+ * buildable, record and code alike, and triage may route that one to `ready-for:agent` instead.
  * Which ones it does is triage's per-issue judgement; this axis reads the audience label it finds
  * and never infers one from the type, in either direction.
  */
@@ -150,7 +150,7 @@ export const criteriaAxisOf = (issue: IssueFacts): CriteriaAxis => {
  * A founder ruling recorded on the issue, named by the comment it lives in.
  *
  * It is what opens the type axis on a `type:decision`: once the choosing has happened on the board,
- * the deliverable is transcription and transcription is a pull request like any other. The
+ * the deliverable is the ruling's record and the code it calls for, a pull request like any other. The
  * citation is the fence — an agent points at the comment or it refuses — so what this module can
  * check is the pointer's shape and its target, never whether the comment rules anything. Judging
  * that stays the reader's, and the arm is worth exactly as much as that honesty: it rules out a
@@ -553,7 +553,7 @@ export const criteriaAxisBinds = (
  * Whether a cited ruling opens the type axis on this label.
  *
  * One label has an arm and the rest do not: a `type:decision` whose choice is already recorded is
- * transcription, which an agent may build. An epic's
+ * work an agent may build. An epic's
  * deliverable is a ledger no citation turns into a pull request, so it has no arm at all.
  */
 export const citationOpens = (label: string, citation: Citation): boolean =>
@@ -724,8 +724,12 @@ export const purposeBlockednessLine = (verb: string, purpose: ClaimPurpose): str
  * The type line, or `null` on the ordinary case where the issue's type is buildable.
  *
  * A taken arm is the one thing here nobody may have to infer: when a citation admits a decision, the
- * comment it points at is printed, so the transcription's authority is on the record beside the
- * claim rather than only inside whatever the lane later writes.
+ * comment it points at is printed, so the lane's authority is on the record beside the claim rather
+ * than only inside whatever the lane later writes.
+ *
+ * The lane builds the code the ruling calls for as well as its record.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10516#issuecomment-5984033730
  */
 export const typeScopeLine = (
 	verb: string,
@@ -734,7 +738,7 @@ export const typeScopeLine = (
 ): string | null => {
 	if (type._tag === "Buildable") return null;
 	return citationOpens(type.label, citation) && citation._tag === "Cited"
-		? `${verb}: type: ${type.label} — admitted as transcription of the founder ruling at ${citation.url}; the deliverable is that ruling written down, nothing more.`
+		? `${verb}: type: ${type.label} — admitted on the founder ruling at ${citation.url}; the deliverable is what the issue's acceptance criteria ask for, the ruling's record and the code it calls for alike, and a gap the ruling left open goes back to the founder.`
 		: `${verb}: type: ${type.label} — the type axis binds a build claim against an issue.`;
 };
 

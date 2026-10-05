@@ -1,7 +1,7 @@
 ---
 id: 0400
 title: A relayed founder ruling counts, posted as a quoted authorization by decision rule
-status: accepted
+status: amended-in-part by [0473](0473-a-ruled-decision-lane-ships-its-code.md)
 date: 2026-09-16
 tags: [fabrika, decision, governance, pipeline-hardening]
 ---
@@ -61,6 +61,8 @@ record transcribes it; the choice is not the author's.
   survives untouched: a citable ruling comment exists on the issue before the claim, the refusal is
   the default branch with no such comment, the builder cites rather than judging the question
   settled, it transcribes only what the ruling says, and the URL lands inside the artifact.
+  ([0473](0473-a-ruled-decision-lane-ships-its-code.md) amends that clause: the lane also builds
+  the code the ruling calls for.)
 - **Exactly one flag names the ruling.** `--cites <url>` when the ruling is already a comment on the
   issue, `--authorization <file>` when it was given in conversation. Neither, or both, is exit `1` at
   the adapter: a verb that picked between two authorities would be the one deciding which comment a

@@ -265,7 +265,7 @@ const claim = leafCommand(
 		cites: Flag.string("cites").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				`the founder ruling comment this build transcribes, as ${CITATION_GRAMMAR} — the type axis's one arm, and only on a ${DECISION_TYPE_LABEL}`,
+				`the founder ruling comment this build acts on, as ${CITATION_GRAMMAR} — the type axis's one arm, and only on a ${DECISION_TYPE_LABEL}`,
 			),
 		),
 		resume: Flag.boolean("resume").pipe(
@@ -659,7 +659,7 @@ const resumeChild = leafCommand(
 		cites: Flag.string("cites").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				`the founder ruling comment a ${DECISION_TYPE_LABEL} child's repair transcribes, as ${CITATION_GRAMMAR} — forwarded unchanged to the claim step, which is the only step that reads it, and a malformed or foreign URL is a usage error there; needed on a first entry, never on a --token continuation`,
+				`the founder ruling comment a ${DECISION_TYPE_LABEL} child's repair acts on, as ${CITATION_GRAMMAR} — forwarded unchanged to the claim step, which is the only step that reads it, and a malformed or foreign URL is a usage error there; needed on a first entry, never on a --token continuation`,
 			),
 		),
 		lane: laneFlag,
