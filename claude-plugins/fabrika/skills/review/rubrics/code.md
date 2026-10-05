@@ -1,7 +1,9 @@
 # Code rubric — the `review-code` namespace
 
 Applied to the code-class slice of the diff. The verdict is conjunctive and default-deny: one
-miss, or one ambiguity the diff cannot resolve, is a FAIL — never an "it's-probably-fine" pass.
+miss, or one ambiguity a row's source cannot resolve, is a FAIL — never an "it's-probably-fine"
+pass. That source is the diff, except for the marked rows and report rows that
+[Per-criterion verification](#per-criterion-verification) grades on their own sources.
 
 ## What CI already answers — expect, never recompute
 
@@ -14,12 +16,20 @@ and at worst a verdict that overrules the thing actually blocking the button.
 
 ## Per-criterion verification
 
-One row per acceptance criterion, graded against the diff and the CI-at-head facts:
+One row per acceptance criterion, graded against the diff and the CI-at-head facts — except two
+kinds of row, each graded on its own source under the rules in
+[`review` §2](../SKILL.md#2--read-the-contract-you-grade-against-and-the-prior-verdicts):
+
+- A row carrying an `[evidence: <source>]` marker is graded on the evidence that source names.
+- An unmarked row that asks the author to report something is graded on the PR body's `## Report`
+  section.
+
+Every other row:
 
 - **Evidence, not vibes.** Each `[PASS]` row cites the file and lines that satisfy the criterion;
   each `[FAIL]` row states what is missing or wrong, specifically enough to repair from.
-- A criterion the diff cannot evidence either way is `[FAIL]` with the ambiguity named — the
-  conjunctive verdict never carries an unresolved row as a pass.
+- A diff-graded criterion the diff cannot evidence either way is `[FAIL]` with the ambiguity named —
+  the conjunctive verdict never carries an unresolved row as a pass.
 - `[N/A]` only on positively-established non-obligation, never as "could not tell".
 
 ## Standing checks (judgement CI cannot make)

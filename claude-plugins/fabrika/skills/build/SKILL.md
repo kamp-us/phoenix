@@ -229,10 +229,11 @@ That is the issue body and its acceptance criteria, off the verb, never off memo
 **A criterion whose `evidence` field is not `null` is telling you the diff cannot settle it, and
 that row's proof is yours to write.** The field names where the proof lives — a hand-verification,
 a pre-fix artifact, a runtime observation — and stderr quotes every marked row so you cannot miss
-one. Do that verification and write what you observed into the PR body, naming the source the
-criterion named: `review post` refuses a `PASS` whose verdict body cites no evidence for a marked
-criterion (exit `19`), so a row you left unevidenced costs the lane a repair round on a PR that is
-otherwise fine. An `evidence` of `null` is the proven absence of a marker, and what discharges that
+one. Do that verification and write what you observed where the criterion's source names — the PR
+body, for an observation of your own — naming that source. No verb serves it, and the reviewer
+reads it there for that row anyway: `review post` refuses a `PASS` whose verdict body cites no
+evidence for a marked criterion (exit `19`), so a row you left unevidenced costs the lane a repair
+round on a PR that is otherwise fine. An `evidence` of `null` is the proven absence of a marker, and what discharges that
 row is what it asks for: a row that asks you to report something is discharged by the `## Report`
 section step 5 has you write, and every other unmarked row by the diff. An epic child writes no
 such section, and step 5 says what it does with that row.
@@ -515,9 +516,10 @@ per criterion that asks. Such a row carries no evidence marker and needs none: t
 discharges it. Its grammar is the registered `report` wire format
 ([`wire/report.ts`](../../../../packages/fabrika-cli/src/wire/report.ts)), which the verb that opens
 the PR and the gate that reads it back both resolve, so a heading that drifted is refused when you
-post the body. It is the only body prose besides `## Deviations` the reviewer is
-served ([`review report`](../review/SKILL.md)), and a report-shaped criterion over a body without
-the section is a FAIL.
+post the body. It is the only body prose besides `## Deviations` a verb serves the reviewer
+([`review report`](../review/SKILL.md)), and a report-shaped criterion over a body without the
+section is a FAIL. The marked-row evidence step 3 has you write is read too, by the reviewer going
+to the source the row names; no verb serves it.
 
 **An epic child has no PR body, so it writes no `## Report`.** No verb serves a report on a child
 yet. Name each report-shaped row in your `build note` as a row no verb serves on a child, and write

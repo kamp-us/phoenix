@@ -140,15 +140,14 @@ This is what a PR author states in answer to an acceptance criterion that asks f
 audit's scope, why a duplication was kept, the overlap with another ticket. No diff holds such a
 statement, so it is carried in the PR body under `## Report` and the review gate grades the
 criterion from that section. The content is free prose, since what a report holds is the criterion's
-to say. The grammar is the heading (level 2, that spelling) over a non-empty section that runs to
-the next level-1 or level-2 heading, so an author's own `###` subheadings stay inside it.
+to say. The grammar is not restated here: the heading, where the section ends and which headings
+reach for it are
+[`packages/fabrika-cli/src/wire/report.ts`](../../../packages/fabrika-cli/src/wire/report.ts)'s.
 
 Most PRs answer no such criterion and owe no section, so `Absent` is an ordinary answer here and
-only `Malformed` is a defect. The reach is narrow on purpose: a heading reaches for the section
-when its text, case and punctuation aside, is `report` or `reports`, so `## Test report` is the
-author's own heading and reads `Absent`. The verbs that post a PR body run this read and refuse a
-`Malformed` section, so a drifted heading is caught where the body is written, and a reviewer who
-reads `Absent` holds a proven fact about the body.
+only `Malformed` is a defect. The verbs that post a PR body run this read and refuse a `Malformed`
+section, so a drifted heading is caught where the body is written, and a reviewer who reads
+`Absent` holds a proven fact about the body.
 
 An epic child opens no PR, so it has no body to carry the section. No format serves a report there
 yet.
