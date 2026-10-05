@@ -22,11 +22,17 @@
  *   reads "needs your pick" with its options, never "yes".
  * - **A ruling nobody built comes back.** An open issue carrying a ruling ({@link RuledUnbuilt}) is
  *   a Tails candidate, oldest ruling first, until someone answers it at the table.
+ * - **A ruling can arrive as its own yes.** Where `table.ruledStage` is `bet`, a ruled row arrives
+ *   at `bet` while the running bets leave agenda rows free; every other row, a ruled row past that
+ *   room and one that needs a pick arrive `proposed`. Only a `Ruled` reason can build a `Bet` row
+ *   ({@link AgendaRow}).
  *
  * @ruling https://github.com/kamp-us/phoenix/issues/9821
  * @ruling https://github.com/kamp-us/phoenix/issues/9989
  * @ruling https://github.com/kamp-us/phoenix/issues/9872#issuecomment-5852556900
  * @ruling https://github.com/kamp-us/phoenix/issues/9972#issuecomment-5974135601
+ * @ruling https://github.com/kamp-us/phoenix/issues/10351
+ * @ruling https://github.com/kamp-us/phoenix/issues/10351#issuecomment-5983086943
  */
 
 import type {AppetiteSizes, Size} from "../config/keys/appetite-sizes.ts";
@@ -432,6 +438,12 @@ const baseRec = (reason: Reason, settings: TableSettings): string => {
 	}
 };
 
+/** The first issue in the group that waits on a person's pick, if any. */
+const pickOf = (group: Group, open: ReadonlyMap<number, ListedIssue>): ListedIssue | undefined =>
+	issuesOf(group)
+		.map((issue) => open.get(issue))
+		.find((issue) => issue?.labels.includes(READY_FOR_HUMAN) === true);
+
 /**
  * The Size, Rec and In plain words line for one chosen row, each covering the whole group. A chain
  * row names what it needs first; a row where any issue waits on a person reads as a pick.
@@ -452,9 +464,7 @@ export const cellsOf = (
 			? `${/[.!?]$/.test(headWords) ? headWords : `${headWords}.`} It needs ${numbers(members)} done first.`
 			: headWords;
 
-	const ruling = issuesOf(group)
-		.map((issue) => open.get(issue))
-		.find((issue) => issue?.labels.includes(READY_FOR_HUMAN) === true);
+	const ruling = pickOf(group, open);
 	if (ruling !== undefined) return {size, plainWords, rec: pickRec(ruling, candidate.issue)};
 
 	const whole =
@@ -482,14 +492,67 @@ export interface PrepFields {
 	readonly tableDay: string;
 }
 
-/** One row prep writes onto the agenda. `cells` is `null` for a standing row, left as it reads. */
-export interface AgendaRow {
+interface AgendaPlace {
 	readonly issue: number;
 	readonly section: string;
 	readonly group: Group;
-	readonly flaggedBet: boolean;
-	readonly cells: RowCells | null;
 }
+
+/**
+ * One row prep writes onto the agenda, tagged by the Stage it arrives at. A standing row is left as
+ * it reads; a flagged bet keeps its Stage and Size. A `Bet` row carries the ruling it arrives on, so
+ * no other reason can be written as `bet`.
+ */
+export type AgendaRow = AgendaPlace &
+	(
+		| {readonly _tag: "Standing"}
+		| {readonly _tag: "Flagged"; readonly cells: RowCells}
+		| {readonly _tag: "Proposed"; readonly cells: RowCells}
+		| {
+				readonly _tag: "Bet";
+				readonly cells: RowCells;
+				readonly ruling: Extract<Reason, {readonly _tag: "Ruled"}>;
+		  }
+	);
+
+/** The cells prep writes on the row; `null` on a standing row. */
+export const cellsOfRow = (row: AgendaRow): RowCells | null =>
+	row._tag === "Standing" ? null : row.cells;
+
+/**
+ * The agenda rows for the chosen candidates, in order. Where `settings.ruledStage` is `bet`, a ruled
+ * row arrives as `bet` while the `running` bets leave rows of the agenda cap free, oldest ruling
+ * first; a ruled row past that room, or one whose group waits on a pick, arrives `proposed`.
+ */
+export const agendaOf = (
+	chosen: ReadonlyArray<Chosen>,
+	open: ReadonlyMap<number, ListedIssue>,
+	settings: TableSettings,
+	sizes: AppetiteSizes,
+	running: number,
+): ReadonlyArray<AgendaRow> => {
+	let room = settings.ruledStage === BET_STAGE ? Math.max(0, settings.agendaCap - running) : 0;
+	const rows: AgendaRow[] = [];
+	for (const one of chosen) {
+		const {candidate, group} = one;
+		const place: AgendaPlace = {issue: candidate.issue, section: candidate.section, group};
+		const {reason} = candidate;
+		if (reason._tag === "Standing") {
+			rows.push({...place, _tag: "Standing"});
+			continue;
+		}
+		const cells = cellsOf(one, open, settings, sizes);
+		if (reason._tag === "Flagged") {
+			rows.push({...place, _tag: "Flagged", cells});
+		} else if (reason._tag === "Ruled" && room > 0 && pickOf(group, open) === undefined) {
+			room -= 1;
+			rows.push({...place, _tag: "Bet", cells, ruling: reason});
+		} else {
+			rows.push({...place, _tag: "Proposed", cells});
+		}
+	}
+	return rows;
+};
 
 export type PrepWrite =
 	| Write
@@ -592,10 +655,12 @@ export const prepPlan = (input: PrepInput): PrepPlan => {
 		const row = rows.get(entry.issue);
 		if (row === undefined) {
 			add(entry.issue);
-		} else if (entry.cells !== null) {
+		} else if (entry._tag !== "Standing") {
 			const {cells} = entry;
-			if (!entry.flaggedBet && optionOf(row, FIELD.stage) !== PROPOSED) {
-				setOn(row, FIELD.stage, fields.stage.id, option(fields.stage, PROPOSED), PROPOSED);
+			const flagged = entry._tag === "Flagged";
+			const stage = entry._tag === "Bet" ? BET_STAGE : PROPOSED;
+			if (!flagged && optionOf(row, FIELD.stage) !== stage) {
+				setOn(row, FIELD.stage, fields.stage.id, option(fields.stage, stage), stage);
 			}
 			if (optionOf(row, FIELD.section) !== entry.section) {
 				setOn(
@@ -607,7 +672,7 @@ export const prepPlan = (input: PrepInput): PrepPlan => {
 				);
 			}
 			dateOn(row);
-			if (!entry.flaggedBet && optionOf(row, FIELD.size) === null) {
+			if (!flagged && optionOf(row, FIELD.size) === null) {
 				setOn(row, FIELD.size, fields.size.id, option(fields.size, cells.size), cells.size);
 			}
 			recOn(row, cells.rec);

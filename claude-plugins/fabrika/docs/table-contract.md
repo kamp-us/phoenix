@@ -281,10 +281,20 @@ a real, open issue, never a draft:
 
 A row already `bet`, `not now`, `in lane`, `shipped` or `check` is never proposed again, except a
 flagged running bet, which moves to Tails with its Stage and Size untouched. Each proposed row gets
-Stage `proposed`, its Section, the table's Table day, a Size (only when unset: an epic is L,
+Stage `proposed` (a ruled row may get `bet`, below), its Section, the table's Table day, a Size (only when unset: an epic is L,
 otherwise the smallest size covering its issues' pitch sizes, an unpitched issue counting as S), a
 Rec (only into an empty cell; see **Rec**) and an In plain words line — the issue's
 `## In plain words` summary, else its title.
+
+**A ruled row can arrive as `bet`.** With `table.ruledStage` set to `bet` (the default is
+`proposed`), a ruled row arrives at Stage `bet` instead, since the ruling already is the yes. The
+rows the running bets leave free under `table.agendaCap` bound how many do: every open `bet` row
+takes one, and ruled rows fill what is left, oldest ruling first. A ruled row past that room, a
+ruled row whose group needs a pick (below), and every other kind of row arrive `proposed`. A ruled
+issue the cap leaves in `overflow` gets no row and no write, as any other. `--dry-run` names each
+such row as `would set #<n> Stage to "bet"`. A row prep set to `bet` is a standing row on a re-run
+for the same table, so it is left as it reads. Prep needs the Stage option `bet` either way, and
+refuses on `23` without it.
 
 A candidate with open `blocked_by` issues is one chain row over them (followed transitively), and an
 epic one row over its open sub-issues. The row counts once toward the cap, its Size and Rec cover

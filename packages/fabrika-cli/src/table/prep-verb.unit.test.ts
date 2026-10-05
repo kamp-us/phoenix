@@ -833,13 +833,134 @@ describe("table prep's ruled-unbuilt Tails", () => {
 		]);
 		expect(agenda.some((row) => [102, 103, 104].includes(row.issue))).toBe(false);
 		expect(cell(101, "Rec")).toBe("yes: you ruled on it 2026-09-02 and it is not built yet.");
+		// The shipped `table.ruledStage` asks for the yes at the table.
 		expect(cell(101, "Stage")).toBe("proposed");
+		expect(cell(100, "Stage")).toBe("proposed");
 		expect(posts[0]?.body).toContain(
 			"- Ruled, not built, oldest ruling first: #101 (2026-09-02), #100 (2026-09-20)",
 		);
 		expect(out.stderr).toContain(
 			"table prep: ruled and not built, oldest ruling first: #101, #100.",
 		);
+	});
+
+	const BET_RULED = (table: Record<string, unknown> = {}) =>
+		fakeFs({
+			files: {"/repo/.fabrika.jsonc": JSON.stringify({table: {ruledStage: "bet", ...table}})},
+		}).layer;
+
+	it("brings a ruled row in as bet where ruledStage is bet, and every other row as before", async () => {
+		const {board, cell} = world(RULED);
+		const out = await prep(board, BET_RULED());
+
+		expect(out.code, out.stderr.join("\n")).toBe(0);
+		expect(cell(101, "Stage")).toBe("bet");
+		expect(cell(100, "Stage")).toBe("bet");
+		expect(cell(101, "Section")).toBe("Tails");
+		expect(cell(11, "Stage")).toBe("proposed");
+		expect(cell(30, "Stage")).toBe("proposed");
+		expect(cell(20, "Stage")).toBe("proposed");
+		expect(cell(60, "Stage")).toBe("proposed");
+		expect(cell(70, "Stage")).toBe("bet");
+		expect(cell(70, "Size")).toBe("S");
+	});
+
+	it("keeps a ruled row that needs a pick at proposed", async () => {
+		const picked: Readonly<Record<number, IssueSpec>> = {
+			...RULED,
+			101: {...RULED[101], blockedBy: [105]},
+			105: {labels: ["status:triaged", "ready-for:human"]},
+		};
+		const {board, cell} = world(picked);
+		await prep(board, BET_RULED());
+
+		expect(String(cell(101, "Rec"))).toMatch(/^needs your pick/);
+		expect(cell(101, "Stage")).toBe("proposed");
+		expect(cell(100, "Stage")).toBe("bet");
+	});
+
+	it("brings only as many ruled rows in as bet as the running bets leave rows of the cap free", async () => {
+		const {board, cell} = world(RULED);
+		const out = await prep(board, BET_RULED({agendaCap: 3}));
+		const answer = JSON.parse(out.stdout);
+
+		expect((answer.agenda as ReadonlyArray<AgendaOut>).map((row) => row.issue)).toEqual([
+			70, 101, 100,
+		]);
+		expect(cell(101, "Stage")).toBe("bet");
+		expect(cell(100, "Stage")).toBe("proposed");
+	});
+
+	it("gives a ruled issue the cap leaves in overflow no row and no Stage", async () => {
+		const {board, items} = world(RULED);
+		const out = await prep(board, BET_RULED({agendaCap: 2}));
+		const answer = JSON.parse(out.stdout);
+
+		expect(answer.overflow).toContain(100);
+		expect(items.has(100)).toBe(false);
+		expect(String(answer.changes)).not.toContain("#100");
+	});
+
+	it("refuses on the not-set-up code and writes nothing on a board whose Stage has no bet option", async () => {
+		const {board, posts, items} = world(RULED);
+		const noBet: ProjectSnapshot = {
+			...PROJECT,
+			fields: PROJECT.fields.map((field) =>
+				field.name === "Stage" && field._tag === "SingleSelect"
+					? {...field, options: field.options.filter((option) => option.name !== "bet")}
+					: field,
+			),
+		};
+		const out = await prep(
+			{
+				...board,
+				locate: () => Effect.succeed({_tag: "Ok", value: {_tag: "Located", project: noBet}}),
+			},
+			BET_RULED(),
+		);
+
+		expect(out.code).toBe(23);
+		expect(out.stderr.join("\n")).toContain('the Stage option "bet"');
+		expect(posts).toHaveLength(0);
+		expect([...items.keys()].sort((a, b) => a - b)).toEqual([70, 71, 80, 90]);
+	});
+
+	it("--dry-run names each ruled row it would set to bet, and a live run sends exactly those", async () => {
+		const dry = await prep(world(RULED).board, BET_RULED(), {}, NOW, true);
+		const planned = (JSON.parse(dry.stdout).planned as ReadonlyArray<PlannedWrite>).filter(
+			(write) => write._tag === "Set" && write.field === "Stage" && write.value === "bet",
+		);
+
+		expect(planned.map((write) => (write._tag === "Set" ? write.issue : null))).toEqual([101, 100]);
+		expect(dry.stderr).toContain('table prep: would set #101 Stage to "bet".');
+		expect(dry.stderr).toContain('table prep: would set #100 Stage to "bet".');
+
+		const live = await prep(world(RULED).board, BET_RULED());
+		const changes = JSON.parse(live.stdout).changes as ReadonlyArray<string>;
+		expect(changes.filter((change) => / Stage to bet$/.test(change))).toEqual([
+			"set #101 Stage to bet",
+			"set #100 Stage to bet",
+		]);
+	});
+
+	it("writes nothing to a row it set to bet on a second run for the same table", async () => {
+		const fake = world(RULED);
+		await prep(fake.board, BET_RULED());
+		let reads = 0;
+		const unposted: PrepBoard<never> = {
+			...fake.board,
+			statusUpdates: (projectId) =>
+				reads++ === 0
+					? Effect.succeed({_tag: "Ok", value: []})
+					: fake.board.statusUpdates(projectId),
+		};
+		const again = await prep(unposted, BET_RULED());
+		const changes = JSON.parse(again.stdout).changes as ReadonlyArray<string>;
+
+		expect(again.code, again.stderr.join("\n")).toBe(0);
+		const ruledRow = (change: string) => [100, 101].some((issue) => change.includes(`#${issue} `));
+		expect(changes.filter(ruledRow)).toEqual([]);
+		expect(fake.cell(101, "Stage")).toBe("bet");
 	});
 
 	it("never re-proposes a ruled issue someone already answered or put in a lane", async () => {
