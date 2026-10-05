@@ -58,7 +58,9 @@ Every other engine ask you send upward is a defect in this skill or in a verb, s
 its cause's, off the closed cause table the CLI carries, and that one setting for a spent budget.
 What it costs you is the weekly machinery review, where each rationale you recorded is read back.
 
-Every command below is written `node <fabrika> <group> <verb> …`. How to invoke fabrika, which path
+Every command you run below is written `node <fabrika> <group> <verb> …`, or with `<fabrika>`
+already filled in as this repo's own source path. A command you write for a person is the one
+exception, in the next paragraph. How to invoke fabrika, which path
 `<fabrika>` stands for, and why this skill writes that form are one rule, owned by
 [interface-convention §5](../../docs/interface-convention.md#5-every-documented-invocation-is-a-plain-literal-command-string)
 and its [scratch-copy exception](../../docs/interface-convention.md#the-scratch-copy-exception).
@@ -392,7 +394,7 @@ lines above it were folded by a different task set. A task new to the topology b
 that has not started may move to any phase, later ones included.
 
 It reconciles nothing, and that is deliberate: the block is read exactly as it stands, so a block
-still naming a child the board closed is `fabrika plan restage`'s to repair before you amend.
+still naming a child the board closed is `node <fabrika> plan restage`'s to repair before you amend.
 
 **Four refusals, and each is proven before anything is written** — on all four the lane's
 `events.jsonl` is byte for byte what it was:
@@ -407,7 +409,7 @@ still naming a child the board closed is `fabrika plan restage`'s to repair befo
   `--defer`, the paragraph below.
 - **`62`** — the `## Dependencies` block is not a topology (an unparseable line, a child in two
   phases, a requires subject in none). The defect is the **issue body's**, not the ledger's, so
-  `fabrika plan restage` is the repair and nothing under `.fabrika/lanes/` is at fault.
+  `node <fabrika> plan restage` is the repair and nothing under `.fabrika/lanes/` is at fault.
 - **`64`** — a `--defer` does not describe this lane: the task is not in this machine, the new
   topology still places it, it carries no recorded history to defer, `--defer` and `--defer-reason`
   were not given together, or a live build claim on the child says a worker is still on it. Every one
@@ -1254,7 +1256,7 @@ this order:
 
 - **Read its final message.** What the spawn printed before it stopped is the only account of what
   it was doing, and both the filing and the park comment come out of it.
-- **File what it could not file.** A dying agent cannot run `fabrika report file` itself, so the
+- **File what it could not file.** A dying agent cannot run `node <fabrika> report file` itself, so the
   incident reaches the board only if you file it — through [`report`](../report/SKILL.md), as the
   spawn would have.
 - **Release the claim it stranded.** `node <fabrika> build release <issue>`
@@ -1265,7 +1267,7 @@ this order:
   a steal and eviction inferred from plain absence all stay banned. The budget-proved death is a
   narrow arm on that ban rather than a hole in it: it reaches exactly the `spawn-dead` park a driver
   already recorded, and the age ban stands everywhere else.
-- **Retire the worktree it left**, with `fabrika build retire <n>`. A tree left standing holds the
+- **Retire the worktree it left**, with `node <fabrika> build retire <n>`. A tree left standing holds the
   lane branch checked out, which refuses the next repair round's `build branch --resume-lane` on
   exit `11`. The verb does the two dead-spawn steps in their order —
   salvage the tree's uncommitted work onto its own branch, then `git worktree remove` **without
@@ -1315,8 +1317,8 @@ covers.
 
 **A claim stranded by a gone session is releasable, once you say so on the board.** `build release`
 refuses it on `15` — proven-foreign — until an adopt marker names that session as dead and this one
-as its successor: `fabrika build adopt <n> --session <its session id> --reason "<why>"`, then
-`fabrika build release <n> --token <the token adopt printed>` — succession is attested on the board
+as its successor: `node <fabrika> build adopt <n> --session <its session id> --reason "<why>"`, then
+`node <fabrika> build release <n> --token <the token adopt printed>` — succession is attested on the board
 or it does not happen. The adopt is disclosed on the
 issue and reversible by deleting it; a claim you are not willing to state that about stays where it
 is, named in the park comment with its token.
@@ -1831,7 +1833,7 @@ chase. A kept tree is neither a park nor a retry. **Every other non-zero exit is
 named in your closing line and the release still runs**: `8` and `11` are UNKNOWN, `7` is a claim
 held over a lane that never booted (step 1's `lane open` exit `51`), which recorded no tree, and
 `4`, `21`, `39` and `65` removed nothing. The keep rule and the exits are the verb's
-section (`fabrika wire doc-section --heading "lane cleanup" < <skill-base>/contract.md`).
+section (`node <fabrika> wire doc-section --heading "lane cleanup" < <skill-base>/contract.md`).
 
 Both ends of the loop release the claim, and it is the **last** thing the run does to the lane —
 after the park comment or the record has landed, so a successor that wins the lane the moment you
@@ -1875,7 +1877,7 @@ and `11` are UNKNOWN: name the code in your closing message. No exit here change
 A run a person started in a checkout they work in skips this step, because that tree is theirs
 ([skill-conventions §17](../../docs/skill-conventions.md#a-shell-no-lane-holds-removes-the-worktree-it-was-given)).
 The keep rule and the exits are the verb's section
-(`fabrika wire doc-section --heading "lane leave" < <skill-base>/contract.md`).
+(`node <fabrika> wire doc-section --heading "lane leave" < <skill-base>/contract.md`).
 
 
 **A run never ends `LANE-PARKED` while the fold reads a non-parked state.** `human:*`, `blocked`
@@ -2165,7 +2167,7 @@ nothing for a human to clear. Five lanes once spent a human cycle each on this p
 a defect this verb repairs.
 
 **The sanctioned body-repair set is two verbs, not one.** The other is
-`fabrika ledger retopology <epic>`, which owns an epic's `## Dependencies` block exactly as
+`node <fabrika> ledger retopology <epic>`, which owns an epic's `## Dependencies` block exactly as
 `triage repair-criteria` owns a criteria block: it rewrites that block from the live child links
 and nothing else, so a founder descope stops wedging `lane emit` at `16` — the boot step above is
 where you meet it, and its four-call fence lives there. It refuses rather than guesses on every

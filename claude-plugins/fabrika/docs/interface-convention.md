@@ -345,8 +345,9 @@ because a newly cut one often has no install of its own. What the short form doe
   and exits `126`.
 
 The second outcome is the hazard. The warning is loud, but an agent that acts on stdout still
-receives an answer about code it is not standing in. So where a command runs in a scratch copy, the
-fence names the copy outright, in the **resolved form**:
+receives an answer about code it is not standing in. So the fences the scope list below names
+write the copy outright, in the **resolved form**, and a briefed shell resolves its short-form
+fences the same way at run time:
 
 ```bash
 node <fabrika> <group> <verb> …
@@ -366,8 +367,9 @@ variable, so the string still passes the literal rule above. It is one of two pa
 
 **The exception's scope**, which is the whole of it:
 
-- **`operate` writes every fence in the resolved form.** The driver works out `<fabrika>` once,
-  before its first verb, and runs every verb through it.
+- **`operate` writes every command its driver runs in the resolved form.** The driver works out
+  `<fabrika>` once, before its first verb, and runs every verb through it. A command `operate` has
+  the driver write for a person is the last bullet's.
 - **The stage skills write the resolved form only on the lane verbs that take a spawn brief's
   fields**: `lane working`, `lane report` and `lane cleanup` in `build`, `build-ui`, `review`,
   `review-ui` and `ship`. `heal-ci` names the driver's own `recipe unpark` the way `operate` writes

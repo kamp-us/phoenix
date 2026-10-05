@@ -43,7 +43,7 @@ case is its one named exception.**
   the short form can run another tree's code, so a fence run there writes `node <fabrika>`, where
   `<fabrika>` is the repo-relative source path in fabrika's own repo and the absolute installed bin
   everywhere else.
-- **The exception reaches** every fence in `operate`, the lane verbs the stage skills run off a
+- **The exception reaches** every command `operate`'s driver runs, the lane verbs the stage skills run off a
   spawn brief's fields, and, at run time, every verb a briefed shell runs through its brief's
   `fabrika:` field. Nothing else.
 - **The hazard is stated as the #5764 trace found it**: the short form runs the calling tree's copy
