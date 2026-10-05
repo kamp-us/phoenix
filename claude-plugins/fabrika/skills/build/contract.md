@@ -93,6 +93,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build retire-branch` | rename an epic child's superseded lane branches out of `build/` so one carrying branch is left | the survivor is the branch an authorized claim marker's nonce names; no guess, no delete |
 | `build reap` | classify finished agent worktrees KEEP/REMOVE/PRUNE and, with `--execute`, remove and prune them | a fixed order of arms over git facts, one stat and a board read of the tree's branch; *when to sweep* stays with the operator |
 | `build issue` | the claimed issue's body + parsed acceptance criteria, through the content gate | fetch + parse via the wire module; *judging* the criteria stays in the skill |
+| `build comments` | one issue's comment thread, open or closed, oldest first, each body through the content gate, each comment with its citation URL | a listing over the shared `listComments` reader; *which comment to cite or act on* stays in the skill |
 | `build branch` | cut (or resume) the lane's nonce branch off a freshly fetched base | fetch, derive, create — the nonce is a function of the claim token |
 | `build resume-child` | open an epic child's standing-`FAIL` repair lane: claim, confirm, clean tree, resume the branch, prove the armed lane — in that order | a fixed sequence of five verbs whose order is derivable from what each one needs; every refusal is the composed verb's own, and *fixing the FAIL* stays in the skill |
 | `build scratch` | the per-lane scratch path, allocated fail-closed | deterministic path derivation keyed session + issue + claim nonce |
@@ -1906,6 +1907,78 @@ build issue: 1 of 2 criteria mark evidence outside the diff — write that evide
   acceptance criteria", which is a gate grading a PR over nothing.
 - The builder is the party that produces outside-diff evidence, so dropping the marker here spent
   the repair round `review post`'s `19` exists to save.
+
+---
+
+## `build comments`
+
+**Invocation**
+
+```
+fabrika build comments 4 [--repo <owner/name>]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `<number>` | positional integer | yes | — | the issue whose comments are read |
+| `--repo` | string | no | the `origin` remote's `owner/name` | the repository read |
+
+**Output** — machine. One JSON object, `comments` oldest first:
+
+```
+{"number": 4, "state": "closed", "comments": [{"id": 9, "author": "octocat", "createdAt": "2026-09-10T04:12:00Z",
+ "updatedAt": "2026-09-10T04:12:00Z", "url": "https://github.com/<owner>/<repo>/issues/4#issuecomment-9", "body": "..."}]}
+```
+
+| Field | Meaning |
+|---|---|
+| `id` | the comment's numeric id |
+| `author` | the login that wrote it |
+| `createdAt`, `updatedAt` | GitHub's created and last-written stamps |
+| `url` | the comment's own link, `https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<id>` — the form `--cites` takes |
+| `body` | the comment text, passed through the content gate as `comment-body` |
+
+Every comment is printed whoever wrote it, with `author` on each row; the reading posture is the
+content gate's, not this verb's. The verb serves a **closed** issue as readily as an open one,
+because a ruling is often cited from an issue its own transcription closed — the one place it
+differs from `build issue`. It writes nothing. An issue with no comments answers `"comments": []`
+on `0`, which is a proven empty thread; a failed read is `11` with nothing on stdout, so the two
+never print the same thing.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `7` | the issue is proven absent (404) |
+| `11` | the issue or its comment list could not be read — the thread is UNKNOWN |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `build comments: issue #<n> is proven absent.` | 7 | refusal |
+| `build comments: cannot read #<n>: <reason> — its comment thread is UNKNOWN.` | 11 | refusal |
+| `build comments: cannot read the comments on #<n>: <reason> — its comment thread is UNKNOWN.` | 11 | refusal |
+
+**Scope** — one issue's whole thread. Not a judging verb; the first stderr line counts the comments
+read, so an empty answer is auditable.
+
+**Example**
+
+```
+$ fabrika build comments 4
+build comments: scanned 1 comment; #4 in owner/name is closed.
+{"number":4,"state":"closed","comments":[{"id":9,"author":"octocat","createdAt":"2026-09-10T04:12:00Z","updatedAt":"2026-09-10T04:12:00Z","url":"https://github.com/…/issues/4#issuecomment-9","body":"**Ruled:** …"}]}
+```
+
+**Grounding**
+
+- The build skill reads issue comments "only through a verb, never through a raw fetch"; this is
+  that verb for a lane that reads or cites a comment.
+- It reads through the `listComments` reader `build claim` already walks the thread with, and adds
+  no second GitHub comment read.
 
 ---
 
