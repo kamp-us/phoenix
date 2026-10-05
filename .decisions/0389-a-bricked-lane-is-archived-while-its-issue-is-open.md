@@ -240,3 +240,41 @@ issue, and not the driver, which is type-blind. The driver's caller names it in 
 **Repeated re-triage.** One issue can be re-triaged more than once, so the route takes the first
 free slot of `<lane>`, `<lane>.archived-2`, `<lane>.archived-3` and on, and never buries an earlier
 archive. The unreplayable route keeps its single slot and its `14`.
+
+## Amendment (2026-10-05, [#10317](https://github.com/kamp-us/phoenix/issues/10317)) — a `complete` lane over a reopened issue is the third entitlement
+
+The 2026-09-29 amendment above says every final other than `diagnosed` refuses at `73`. Under
+`--retriaged` that still holds. A `complete` lane now has a route of its own: `lane archive
+--reopened`.
+
+The founder ruled it on 2026-10-03
+([the ruling comment](https://github.com/kamp-us/phoenix/issues/10317#issuecomment-5974128993)): when
+an issue is reopened after its work merged, a driver can set the finished lane aside and start a
+second one. The ruling is those words. The shape below is triage's reading of it.
+
+**The fact, in two halves.** The lane's own machine folds its log to `complete`. And the board shows
+the issue reopened after that landing: the issue is open, every pull request on its closing edge is
+merged, and the latest reopen on its timeline came after the last of those merges. The verb reads
+the board half itself (`packages/fabrika-cli/src/lane/reopen.ts`). The flag only names the route. A
+read that fails refuses as UNKNOWN at `11`, never as a reopen.
+
+**What the route refuses.** Every other final (`shipped`, `tripped`, `diagnosed`, the board finals),
+a lane still in flight, and a log its own machine cannot fold refuse at `76` `NOT_REOPENED` before the
+board is asked. A board that does not show the reopen refuses at `76` too. Nothing is retracted or
+moved on any refusal.
+
+**What holds unchanged.**
+
+- `--retriaged` still refuses a `complete` lane at `73`. Its refusal now names `--reopened`.
+- Without a flag, a replaying log still refuses at `50`. That refusal names both flags.
+- §2's claim rule. The reopened route retracts the lane claim under the same `--token` guard, before
+  the move, and refuses a claim the caller does not name at `31`.
+- The log moves byte for byte and stays readable with `lane history` at the archived root. No final
+  is reopened in place.
+
+**Repeated reopens.** The route takes the first free `<lane>`, `<lane>.archived-<n>` slot, as
+`--retriaged` does, and never buries an earlier archive.
+
+**§3 changes for this case only.** The boot after the move no longer refuses at ADR 0384's `63` over
+the merged pull request alone. That half is ADR
+[0384](0384-a-retired-lane-does-not-re-open-over-its-own-work.md)'s amendment of the same date.

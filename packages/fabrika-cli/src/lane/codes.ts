@@ -757,3 +757,15 @@ export const TREES_KEPT = 74;
  * @ruling https://github.com/kamp-us/phoenix/issues/10257#issuecomment-5974130674
  */
 export const ASSEMBLY_BASE_RED = 75;
+
+/**
+ * `lane archive --reopened` was pointed at a lane it may not move: the lane's own machine does not
+ * fold its log to `complete` — another final, a lane still in flight, or a log it cannot fold — or
+ * the board does not show the issue reopened after its work landed: the issue is closed, a closing
+ * pull request is still open, none merged, or the latest reopen is not after the last merge.
+ * Nothing was retracted or moved. Its own seat rather than {@link NOT_DIAGNOSED}'s, so a driver
+ * tells the two routes' refusals apart by the exit alone.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10317#issuecomment-5974128993
+ */
+export const NOT_REOPENED = 76;

@@ -20,6 +20,7 @@ import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
 import type {PriorLane} from "./prior-lane.ts";
+import type {ReopenRead} from "./reopen.ts";
 import {runStatus} from "./status-verb.ts";
 import {DEFAULT_CHORES_ROOT} from "./store.ts";
 
@@ -68,6 +69,7 @@ const OPTIONS = {
 	priorLane: undriven,
 	fromBoard: false,
 	boardSeat: null,
+	reopen: null,
 	record: null,
 	cap: UNCAPPED,
 	claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
@@ -159,6 +161,7 @@ describe("lane open", () => {
 			priorLane: null,
 			fromBoard: false,
 			boardSeat: null,
+			reopen: null,
 			record: null,
 			cap: UNCAPPED,
 			claimed: () => Effect.succeed({_tag: "Unclaimed"} as const),
@@ -581,5 +584,123 @@ describe("lane open", () => {
 		expect(out.code).toBe(LANE_EXISTS);
 		expect(asked).toBe(0);
 		expect(fs.written.size).toBe(0);
+	});
+
+	describe("an issue reopened after its work landed", () => {
+		const landed = drove({_tag: "Prior", pulls: [7991]});
+		const answers =
+			(read: ReopenRead, asked: {count: number} = {count: 0}) =>
+			() => {
+				asked.count += 1;
+				return Effect.succeed(read);
+			};
+		const REOPENED: ReopenRead = {
+			_tag: "Reopened",
+			pulls: [7991],
+			landedAt: "2026-10-01T10:00:00Z",
+			reopenedAt: "2026-10-01T18:00:00Z",
+		};
+
+		it("boots a second lane at a full repair budget over the merged closing pull request", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+			const out = await run(
+				fs,
+				runOpen({...OPTIONS, priorLane: landed, reopen: answers(REOPENED)}),
+			);
+			const printed = await run(fs, runPrint({root: ROOT, lane: "42"}));
+
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toMatchObject({
+				answer: "opened",
+				reopened: {pulls: [7991], reopenedAt: "2026-10-01T18:00:00Z"},
+			});
+			expect(JSON.parse(out.stdout).fromBoard).toBeUndefined();
+			// The template as it stands, so the budget is the template's own, never declared spent.
+			expect(fs.written.get(WORKFLOW)).toBe(coderTemplateText());
+			expect(JSON.parse(printed.stdout).tasks.issue.maxRetries).toBeGreaterThan(0);
+		});
+
+		it("boots the same way under --from-board, which a reopened issue never needs", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+			const out = await run(
+				fs,
+				runOpen({...OPTIONS, priorLane: landed, fromBoard: true, reopen: answers(REOPENED)}),
+			);
+
+			expect(out.code).toBe(0);
+			expect(fs.written.get(WORKFLOW)).toBe(coderTemplateText());
+		});
+
+		it("still refuses at 63 when the board shows no reopen after landing, naming why", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+			const out = await run(
+				fs,
+				runOpen({
+					...OPTIONS,
+					priorLane: landed,
+					reopen: answers({_tag: "NotReopened", why: "the board shows no reopen on #42"}),
+				}),
+			);
+
+			expect(out.code).toBe(PRIOR_LANE);
+			expect(fs.written.size).toBe(0);
+			const said = out.stderr.join("\n");
+			expect(said).toContain("the board shows no reopen on #42");
+			expect(said).toContain("fabrika lane archive 42 --reopened");
+		});
+
+		it("still refuses at 63 over an open closing pull request", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+			const out = await run(
+				fs,
+				runOpen({
+					...OPTIONS,
+					priorLane: landed,
+					reopen: answers({
+						_tag: "NotReopened",
+						why: "#42 has open closing pull request(s) #7991, so a lane's work on it is still in flight",
+					}),
+				}),
+			);
+
+			expect(out.code).toBe(PRIOR_LANE);
+			expect(fs.written.size).toBe(0);
+		});
+
+		it("refuses an unreadable reopen as UNKNOWN, never as a reopen", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+			const out = await run(
+				fs,
+				runOpen({
+					...OPTIONS,
+					priorLane: landed,
+					reopen: answers({_tag: "Unknown", reason: "the API answered 502"}),
+				}),
+			);
+
+			expect(out.code).toBe(LANE_UNREADABLE);
+			expect(fs.written.size).toBe(0);
+			expect(out.stderr.join("\n")).toContain("502");
+		});
+
+		it("asks nothing about a reopen for an issue the board never saw driven", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+			const asked = {count: 0};
+			const out = await run(fs, runOpen({...OPTIONS, reopen: answers(REOPENED, asked)}));
+
+			expect(out.code).toBe(0);
+			expect(asked.count).toBe(0);
+		});
+
+		it("names the reopened route when the finished lane is still in the key", async () => {
+			const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}, directories: [DIR]});
+			const out = await run(
+				fs,
+				runOpen({...OPTIONS, priorLane: landed, reopen: answers(REOPENED)}),
+			);
+
+			expect(out.code).toBe(LANE_EXISTS);
+			expect(out.stderr.join("\n")).toContain("fabrika lane archive 42 --reopened");
+		});
 	});
 });
