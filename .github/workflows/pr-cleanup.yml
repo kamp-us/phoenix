@@ -1,8 +1,8 @@
 name: PR cleanup
 
 # Tears down a merged/closed PR's per-app preview stack (worker + D1 + DOs +
-# Flagship app/flags). Lives in its own workflow, on `pull_request_target`, for
-# ONE load-bearing reason (issue #2299):
+# Flagship app/flags), or one open PR's on a manual dispatch. Lives in its own
+# workflow, on `pull_request_target`, for ONE load-bearing reason (issue #2299):
 #
 #   A `pull_request`-triggered run is bound to `refs/pull/<n>/merge`, computed from
 #   the PR head. This repo has `delete_branch_on_merge: true`, so the merge-queue
@@ -24,20 +24,32 @@ name: PR cleanup
 on:
   pull_request_target:
     types: [closed]
+  # Wipe one open PR's preview stage so its next deploy starts on a fresh database —
+  # the CI answer to a D1 migration-drift refusal on a `pr-<n>` stage (issue #10406).
+  # Same teardown a close runs; preview data is lost, exactly as on close.
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR whose preview stage (pr-<n>) to tear down
+        type: number
+        required: true
 
 # Per-PR scope so two PRs closing at once never share a group. Under
 # `pull_request_target` `github.ref` is `refs/heads/main` for EVERY close, so a
 # `github.ref`-keyed group would serialize all cleanups into one group and GitHub
 # would drop older pending runs — re-leaking under merge-queue bursts. Keying on the
-# PR number isolates each teardown. `cancel-in-progress: false`: never cancel a
-# teardown mid-destroy (a half-torn-down stage leaks a worker + D1 + DOs).
+# PR number isolates each teardown, and a dispatched wipe shares its PR's group with
+# that PR's close. `cancel-in-progress: false`: never cancel a teardown mid-destroy
+# (a half-torn-down stage leaks a worker + D1 + DOs).
 concurrency:
-  group: pr-cleanup-${{ github.event.pull_request.number }}
+  group: pr-cleanup-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: false
 
-# This job only ever runs on a closed PR, so the stage is always `pr-<n>`.
+# The stage is always `pr-<n>`: the closing PR's number, or the dispatched one. The
+# cleanup job's first step refuses any STAGE that is not exactly `pr-<positive int>`.
 env:
-  STAGE: pr-${{ github.event.pull_request.number }}
+  PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+  STAGE: pr-${{ github.event.pull_request.number || inputs.pr_number }}
 
 permissions:
   contents: read
@@ -62,7 +74,9 @@ jobs:
       # `pnpm-name` its workspace package; `needs-auth` whether the app's worker binds
       # BETTER_AUTH_SECRET (@kampus/web reads it `Effect.orDie` in config.ts, so its
       # destroy passes the secret; a future auth-less app sets `needs-auth: false`).
-      # Checks out the BASE branch (main) — see the security note on the destroy job.
+      # Checks out the BASE branch (main) on a close, and the dispatched ref on a
+      # dispatch, which the cleanup job refuses unless it is main — see the security
+      # note on the destroy job.
       - uses: actions/checkout@v4.2.2
       - id: roster
         run: |
@@ -81,9 +95,14 @@ jobs:
     # Dependabot guard (issue #1901): a Dependabot PR's deploy is skipped (empty
     # `dependabot`-scoped secrets → no stage created), so there's nothing to destroy
     # AND the secret-less `destroy` would AuthError. Skip it to mirror the deploy skip.
+    #
+    # A dispatch carries no PR payload to gate on. Only an account with write access can
+    # dispatch, and the run is refused off `main` below, so it runs trusted code; a fork
+    # PR's stage was never deployed, so a dispatched wipe of one destroys nothing.
     if: >-
-      github.actor != 'dependabot[bot]' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event_name == 'workflow_dispatch' ||
+      (github.actor != 'dependabot[bot]' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     needs: app-roster
     runs-on: ubuntu-latest
     permissions:
@@ -95,6 +114,24 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.app-roster.outputs.matrix) }}
     steps:
+      # A dispatch checks out the ref it was run on, so off `main` it would run
+      # unreviewed branch code with prod secrets. Same refusal as deploy.yml's.
+      - name: Refuse dispatch outside main
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Manual preview wipes must run from refs/heads/main."
+          exit 1
+
+      # Runs before checkout so nothing with secrets starts on a bad stage. The exact
+      # `pr-<positive int>` shape keeps a destroy off `prod`, and the anchors keep a
+      # dispatched number from naming anything but its own PR's stage.
+      - name: Safety check — only one PR's preview stage
+        run: |
+          if ! [[ "$STAGE" =~ ^pr-[1-9][0-9]*$ ]]; then
+            echo "::error::refusing to destroy stage '${STAGE}': cleanup only tears down a pr-<n> preview stage"
+            exit 1
+          fi
+
       # SECURITY (pull_request_target): checkout with NO `ref` resolves to the BASE
       # branch (main) under `pull_request_target`, NOT the PR head. That is
       # deliberate — the destroy must run trusted base code with prod secrets, never
@@ -110,20 +147,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # STAGE is only ever `pr-<n>` in this job (it runs on closed PRs), but fail
-      # loudly rather than ever let a destroy reach the prod stage.
-      - name: Safety check — never destroy prod
-        run: |
-          if [ "$STAGE" = "prod" ]; then
-            echo "ERROR: refusing to destroy the prod stage in cleanup"
-            exit 1
-          fi
-
       # Tears down one app's isolated preview stack (worker + D1 + DOs). `destroy`
       # loads `alchemy.run.ts`, which builds the worker layer → for apps with auth
       # that needs BETTER_AUTH_SECRET (config.ts reads it `Effect.orDie`) just like
       # the deploy; a future auth-less app never binds it (matrix.needs-auth).
       - name: Destroy ${{ matrix.app }} preview stage ${{ env.STAGE }}
+        id: destroy
         run: pnpm --filter ${{ matrix.pnpm-name }} exec alchemy destroy --stage "$STAGE" --yes
         env:
           CI: "true"
@@ -148,7 +177,7 @@ jobs:
       # The trailing dash anchors the stage so `pr-12-` never matches `pr-120-…`. Runs only
       # on a SUCCESSFUL destroy (default `if: success()`) — a destroy that already errored
       # reds the job on its own; this step catches the SILENT exit-0 no-op. STAGE is always
-      # `pr-<n>` here (cleanup is closed-PR-only), so this never inspects prod.
+      # `pr-<n>` here (the job's first step refuses anything else), so this never inspects prod.
       - name: Verify teardown — no surviving preview worker (${{ matrix.app }})
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -202,7 +231,7 @@ jobs:
       # scheme the D1 prefix `phoenix-phoenix-db-${STAGE}-` at the deploy job uses). The trailing
       # dash anchors the stage so `pr-12-` never matches `pr-120-…` (#1296). Default `if:
       # success()` like the worker check — a destroy that already errored reds the job; this
-      # catches the SILENT exit-0 no-op. STAGE is always `pr-<n>` here (cleanup is closed-PR-only).
+      # catches the SILENT exit-0 no-op. STAGE is always `pr-<n>` here (the job's first step refuses anything else).
       - name: Verify teardown — no surviving preview Flagship app/flags (${{ matrix.app }})
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -268,9 +297,11 @@ jobs:
       # Flip the sticky preview comment to "torn down" so it never points at a
       # destroyed stage. Each matrix job rewrites only its own app line; the last
       # job to run leaves the comment reading "torn down" for both apps.
-      # `always()`: update it even if the destroy step errored.
+      # `always()`: update it even if the destroy step errored. Only a run that
+      # reached the destroy, though: a refused dispatch (off `main`, or a bad stage)
+      # skips it, and the comment must keep pointing at the still-live preview.
       - name: Update preview comment (torn down, ${{ matrix.app }})
-        if: always()
+        if: always() && steps.destroy.outcome != 'skipped'
         uses: actions/github-script@v7.0.1
         env:
           APP: ${{ matrix.app }}
@@ -299,7 +330,7 @@ jobs:
             for (let attempt = 0; attempt < 5; attempt++) {
               try {
                 const {data: comments} = await github.rest.issues.listComments({
-                  ...context.repo, issue_number: context.issue.number, per_page: 100,
+                  ...context.repo, issue_number: Number(process.env.PR_NUMBER), per_page: 100,
                 });
                 const existing = comments.find((c) => c.body?.includes(marker));
                 if (!existing) return;
