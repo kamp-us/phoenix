@@ -42,11 +42,17 @@ import {
 } from "../io/pulls.ts";
 import {prOwnershipLine} from "../ownership/pr-ownership.ts";
 import {readPrOwnership} from "../ownership/read.ts";
-import {authorityNote, readBlockingSet, reportedLine, unreadableCause} from "../review/blocking.ts";
+import {
+	authorityNote,
+	readBlockingSet,
+	reportedLine,
+	UNFOLLOWED,
+	unreadableCause,
+} from "../review/blocking.ts";
 import {classConfigOfPull} from "../review/class-config.ts";
 import {partitionWithUi, shipNamespacesOf, touchesGovernanceRoot} from "../review/classes.ts";
 import {platformCapLine, platformFileSet} from "../review/local-file-set.ts";
-import {isStalled, rollupOf, statusOf} from "../review/rollup.ts";
+import {isFailing, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {inForce, ROUTABLE} from "../ship/gate-verb.ts";
 import {
 	behindBase,
@@ -73,6 +79,7 @@ import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {commitPushedAt, readBaseConflict} from "./github.ts";
 import {buildBound, type LaneToken, laneFor, type Standing} from "./lane.ts";
 import {type Link, linkOf, renderLink} from "./link.ts";
+import {rollupReach} from "./named-jobs.ts";
 import {type CiToken, classifyStall, type StallToken, strandAgeMinutes} from "./stall.ts";
 import {compare} from "./surface.ts";
 
@@ -374,7 +381,24 @@ export const diagnoseOne = (
 		}
 		const blocking = latest.filter((run) => authority.set.blocks(run.name));
 		notices.push(authorityNote(VERB, pull.baseRef, authority.set));
-		notices.push(...reportedLine(VERB, authority.set, latest));
+		// A red outside the required set may still block through a failing required roll-up that
+		// names it, so those roll-ups' logs are read — only when such a red exists to judge.
+		const outside = latest.some((run) => !authority.set.blocks(run.name) && isFailing(run));
+		const followed = outside
+			? yield* rollupReach(
+					VERB,
+					repo,
+					bound,
+					blocking.filter(
+						(run) =>
+							run.status === "completed" &&
+							!["success", "neutral", "skipped"].includes(statusOf(run)),
+					),
+					authority.set.blocks,
+				)
+			: {reach: UNFOLLOWED, notices: []};
+		notices.push(...followed.notices);
+		notices.push(...reportedLine(VERB, authority.set, latest, followed.reach));
 
 		const stranded = blocking.filter(isStalled).map((run) => run.name);
 		const wedged = stranded.length > 0 && headAgeMinutes >= params.wedgeDwellMinutes;

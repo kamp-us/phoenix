@@ -97,6 +97,31 @@ export const judgeJob = (job: JobInput): JobReport => {
 	};
 };
 
+/**
+ * One per-job `FAIL` line as {@link judgeJob} and {@link judge} print it, anywhere on a log line.
+ *
+ * Unanchored because a runner renders each printed line behind its own prefix (a timestamp, an
+ * `##[error]` annotation). The key class is GitHub's own job-id grammar, so a match is a job key
+ * and never a fragment of prose.
+ */
+const FAIL_LINE =
+	/(?:^|[\s\]])([A-Za-z_][A-Za-z0-9_-]*): (?:should_run=(?:true|false) )?result=\S+ (?:→|->) FAIL\b/;
+
+/**
+ * The job keys a roll-up log names on its `FAIL` lines, in first-seen order, each once.
+ *
+ * This is the reader of the grammar the two functions above write, kept beside them so a change
+ * to the line's text and a change to how it is read are one edit.
+ */
+export const failedJobKeys = (log: string): ReadonlyArray<string> => {
+	const keys: string[] = [];
+	for (const line of log.split("\n")) {
+		const key = FAIL_LINE.exec(line)?.[1];
+		if (key !== undefined && !keys.includes(key)) keys.push(key);
+	}
+	return keys;
+};
+
 export interface CiRequiredInput {
 	/** `needs.changes.result` — the required-ness source job's own conclusion. */
 	readonly changesResult: JobResult;

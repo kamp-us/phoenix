@@ -546,13 +546,19 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | `heal-ci diagnose: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
 | `heal-ci diagnose: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `heal-ci diagnose: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
+| `heal-ci diagnose: failing outside the required set: <job> — blocks through the failing required context <roll-up>.` | 0 | notice |
+| `heal-ci diagnose: failing outside the required set: <list> — whether a failing required context names it is UNKNOWN: <reason>.` — `<reason>` names the roll-up read that failed, or, per untied key, `<roll-up> names job <key>, which no check run could be tied to` | 0 | notice |
+| `heal-ci diagnose: <roll-up> names job <key>, which cannot be tied to a check run: <reason> — no log is read in its place.` | 0 | notice |
 | `heal-ci diagnose: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `heal-ci diagnose: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `heal-ci diagnose: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 
 **Scope** — one PR's metadata, mergeability, changed files, comments, check runs, workflow runs,
 reviews and timeline, each paginated to exhaustion, plus its base branch's declared required
-contexts. Every one
+contexts. Where a red outside that set stands beside a failing required context, it also reads that
+context's log and its run's workflow file, to say whether the red blocks through a roll-up that names
+it; a read there that fails, or a job key it names that cannot be tied to a check run (see
+`heal-ci logs`), names the question UNKNOWN on stderr and changes no class. Every one
 of those but the changed-file list is also count-checked: GitHub computes the pull-request record's
 `changed_files` against a base it cached at the last push, so the file list is taken as the file set
 and the disagreement is reported. An **empty** list still refuses — this is the verb an operator
@@ -901,9 +907,9 @@ fabrika heal-ci logs 9412 [--sha 03135b91] [--context <name>] [--max-bytes 65536
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
-**Output** — machine channel. First line: `logs\t<count>\t<sha>` — the number of failing gating
-contexts whose log follows. Then, per context, a header line and the log bytes delimited so a
-consumer can split without guessing:
+**Output** — machine channel. First line: `logs\t<count>\t<sha>` — the number of frames that
+follow: one per failing gating context, plus one per job a failing required roll-up names. Then,
+per context, a header line and the log bytes delimited so a consumer can split without guessing:
 
 ```
 ==== context <name> job <id> bytes <k> truncated <true|false> ====
@@ -924,6 +930,28 @@ own English error text onto the same stream, interleaved with the log — so a c
 pattern-matching the log for failure signatures matched heal-ci's own prose as if it were CI
 output. Every scope line, truncation notice and read failure goes to stderr.
 
+**A failing required roll-up brings the jobs it names.** A roll-up context restates other jobs'
+verdicts, one `FAIL` line per job that did not pass, and those jobs block only through it — none is
+required by its own name. So when a failing gating context's log carries such lines, `logs` reads
+each named job's log too and emits its frame right after the roll-up's, which puts the job's
+`class` line right after the roll-up's `derived` one. Which context is a roll-up is read off its
+log, never off a configured name. A job that is itself required already has its own frame and is not
+emitted twice, and a job named by two roll-ups is emitted once. A named job that concluded without
+failing (a skip the roll-up called a should-have-run silent no-op) has no failure log, so it gets no
+frame and a stderr line says why.
+
+**The job key is tied to a check-run name without a guess.** A `FAIL` line names the workflow job
+key (`packages-tests`), and a check run carries the display name (`packages unit tests`). `logs`
+reads the workflow file the roll-up's own run executed, at the head, and takes the job's `name:` — or
+the key itself when there is none, as GitHub names such a job. The name must then match exactly one
+job of that same run. A key whose name the platform composes at run time — an expression in
+`name:`, a matrix job, a reusable-workflow call — or that matches no job or several, is untied: it
+is named on stderr by its key with the reason, and no other job's log is emitted in its place.
+While an untied key stands, every failing red outside the required set that no tied job accounts
+for may be that job — a matrix job `lint` fails as the check run `lint (22)` — so it gets the
+UNKNOWN line naming the untied key, never "reported, never blocking". A forged `FAIL` line in a log
+can only name a job of the same run, whose failing log this verb would read anyway.
+
 **A failing context with no job behind it is an answer, not a refusal.** A check run posted by an
 app or an external service has no workflow job and therefore no log. Such a context is emitted with
 `job -`, `bytes 0`, `truncated false` and an empty body, and it counts toward the header's total.
@@ -939,7 +967,7 @@ bytes it never saw.
 | Code | Trigger |
 |---|---|
 | `7` | the PR or the `--sha` commit is proven absent (404), or `--context` names a context that does not exist at this head |
-| `11` | the check runs, the run list, or a job log could not be read after retries — whether a failure log exists is UNKNOWN, never empty |
+| `11` | the check runs, the run list, a job log, or a failing roll-up's workflow file could not be read after retries — whether a failure log exists is UNKNOWN, never empty |
 | `13` | the check-run or job enumeration is provably short of its declared count, or the base branch's ruleset walk never reached a terminal page |
 | `15` | proven: the platform reports the run's logs expired or purged — a fact about the run, and no retry can change it |
 
@@ -959,16 +987,22 @@ bytes it never saw.
 | `heal-ci logs: <base> declares no required status checks, so every non-informational check blocks — an undeclared branch is one nobody has said what gates.` | 0 | notice |
 | `heal-ci logs: <base>'s plan offers no branch protection or rulesets — every non-informational check blocks, because the branch cannot declare a required check.` | 0 | notice |
 | `heal-ci logs: failing outside the required set: <list> — reported, never blocking.` | 0 | notice |
+| `heal-ci logs: failing outside the required set: <job> — blocks through the failing required context <roll-up>.` | 0 | notice |
+| `heal-ci logs: failing outside the required set: <list> — whether a failing required context names it is UNKNOWN: <reason>.` — `<reason>` is `--context narrowed the read past the other failing gating contexts`, or, per untied key, `<roll-up> names job <key>, which no check run could be tied to` | 0 | notice |
+| `heal-ci logs: <roll-up> names job <key>, which cannot be tied to a check run: <reason> — no log is read in its place.` | 0 | notice |
+| `heal-ci logs: <roll-up> names job <key> (<job>), which concluded <conclusion> — no failure log to read.` | 0 | notice |
 | `heal-ci logs: cannot read <base>'s required status checks at this token's permission: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `heal-ci logs: cannot read <what> for <base>: <reason> — which checks block is UNKNOWN, never none.` | 11 | refusal |
 | `heal-ci logs: <base>'s ruleset read never reached a terminal page after <n> rule(s) — pagination is unexhausted, so which checks block is UNKNOWN, never none.` | 13 | refusal |
 
-**Scope** — the blocking check runs at one commit, the workflow runs behind them, and one log per
-failing context, each read paginated and count-checked. The base branch's declared required set is
-read before anything is fetched, so a failure outside it never enters this lane — it leaves named on
-stderr instead. A base branch declaring nothing required falls back to the informational-name
-denylist, and so does a plan-gated base (see `surface`), whose branch cannot declare a required
-check; a required set that could not be read is `11` naming that read as the cause.
+**Scope** — the blocking check runs at one commit, the workflow runs behind them, one log per
+failing context, and, behind a failing roll-up, its run's workflow file and one log per job it names,
+each read paginated and count-checked. The base branch's declared required set is read before
+anything is fetched, so a failure outside it enters this lane only when a failing required roll-up
+names it — any other leaves named on stderr instead. A base branch declaring nothing required falls
+back to the informational-name denylist, and so does a plan-gated base (see `surface`), whose branch
+cannot declare a required check; a required set that could not be read is `11` naming that read as
+the cause.
 
 **Examples**
 
@@ -995,7 +1029,8 @@ logs	0	03135b91
   the documented-empty answer — which is exactly what it does when `gh` exits 0 with no bytes.
 - v1's three `gh run` calls omitted `--repo`, so a run id resolved against whatever repository the
   process happened to be standing in.
-- Only reds the base branch declares required reach this lane; the required-set read happens before the fetch.
+- Only reds the base branch declares required reach this lane, plus the jobs a failing required
+  roll-up names; the required-set read happens before the fetch.
 
 ---
 
@@ -1055,8 +1090,10 @@ context goes red because a job it watches did not succeed, and its log holds tha
 no failure of its own. `logic` would name a defect the log does not contain, and `unclassified`
 would file one defect twice: once for the job that failed and once for the roll-up repeating it.
 The token does not mean "ignore this line". The roll-up's FAIL lines name the job to route, and
-when that job never reported, the roll-up is the only context that shows the failure, which is why
-`heal-ci logs` still emits it. `unclassified` keeps its meaning: nothing matched.
+`heal-ci logs` emits each named job's frame right after the roll-up's, so the `class` line of the
+job a `derived` line names follows it. When that job never reported, or `logs` could not tie its
+key to a check run, the roll-up is the only context that shows the failure, which is why `heal-ci
+logs` still emits it. `unclassified` keeps its meaning: nothing matched.
 
 **`derived` is a signature class, and `gate-failed` is a stall class.** The first lives in the
 signature table (`signatures.ts`) and answers why one log cannot be read as a defect of its own;
