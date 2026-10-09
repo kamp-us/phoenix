@@ -3,29 +3,15 @@
  * studio, its state (and so its idempotency ledger) kept in a file between runs.
  */
 import {createHash} from "node:crypto";
-import {refuse} from "@demlik/tea";
 import {run} from "@demlik/tea/effect";
-import {fileStore} from "@demlik/tea/node";
 import {Effect, Ref} from "effect";
-import {isFinished, type Outcome, reelsMachine, type State} from "./machine.ts";
+import {ledgerStore} from "./ledger.ts";
+import {isFinished, type Outcome, reelsMachine} from "./machine.ts";
 import type {Reel} from "./reel.ts";
 import {Studio, StudioError} from "./studio.ts";
 
 export const reelHash = (engine: string, reel: Reel): string =>
 	createHash("sha256").update(engine).update(JSON.stringify(reel)).digest("hex").slice(0, 16);
-
-const parseState = (raw: unknown) => {
-	if (raw === null) return null;
-	if (
-		typeof raw === "object" &&
-		"type" in raw &&
-		"ledger" in raw &&
-		typeof raw.ledger === "object"
-	) {
-		return raw as State;
-	}
-	return refuse("not a reels batch state");
-};
 
 export interface BatchOptions {
 	readonly only: ReadonlyArray<string>;
@@ -57,7 +43,9 @@ export const runBatch = Effect.fn("Reels.runBatch")(function* (options: BatchOpt
 	};
 
 	const handle = yield* run(reelsMachine({concurrency: options.concurrency}), {
-		store: fileStore(options.ledger, parseState),
+		store: ledgerStore(options.ledger),
+		onError: (error, context) =>
+			process.stderr.write(`reels: runtime error in ${context.phase}: ${String(error)}\n`),
 		terminal: isFinished,
 		interpret: {
 			soundtrack: (cmd) =>

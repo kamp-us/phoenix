@@ -63,7 +63,14 @@ it without any I/O:
    stored in the idempotency ledger under the hash of its script plus the engine source.
 
 [`src/studio.ts`](src/studio.ts) performs every side effect, and [`src/pipeline.ts`](src/pipeline.ts)
-connects the two. The machine's state persists through tea's `fileStore` as `out/ledger.json`.
+connects the two. Only the ledger persists between runs, as `out/ledger.json`, through tea's
+`fileStore` and an Effect Schema decode ([`src/ledger.ts`](src/ledger.ts)). A run that dies
+mid-render reloads as an idle machine with its ledger, and the next batch renders what is missing.
+
+Remotion pins `zod` 4.5.4 exactly, but the workspace holds Remotion's `zod` at the catalog's
+4.4.3 (see the overrides in [`pnpm-workspace.yaml`](../../pnpm-workspace.yaml)), because a second
+`zod` splits `drizzle-orm` in `apps/web`. Studio prints a version warning at startup. Reels pass
+no Zod schema to Remotion, so nothing reads `zod` at render time.
 
 Remotion is free for individuals and for companies of up to three people. Larger companies need a
 [company license](https://www.remotion.dev/license).

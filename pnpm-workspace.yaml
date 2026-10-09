@@ -180,6 +180,13 @@ overrides:
   '@earendil-works/pi-ai': 0.85.1
   '@earendil-works/pi-telemetry': 0.85.1
   '@earendil-works/pi-tui': 0.85.1
+  # Remotion 4.0.528 pins zod 4.5.4 exactly. A second zod re-resolves the zod peer of better-auth
+  # and drizzle-orm in some importers, splitting drizzle-orm into two copies whose types apps/web
+  # cannot mix. Holding Remotion's own zod at the catalog version keeps one zod in the tree.
+  '@remotion/media>zod': 4.4.3
+  '@remotion/studio>zod': 4.4.3
+  '@remotion/studio-protocol>zod': 4.4.3
+  '@remotion/studio-server>zod': 4.4.3
 
 cleanupUnusedCatalogs: true
 
