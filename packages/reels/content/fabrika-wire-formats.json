@@ -1,0 +1,50 @@
+{
+	"id": "fabrika-wire-formats",
+	"brand": "fabrika",
+	"title": "Our agents don't chat. They sign contracts.",
+	"description": "fabrika's agents hand work to each other through 22 registered wire formats: byte-level agreements on the issue or PR, each owned by one schema module, with a declared writer and reader. No hidden chat context.",
+	"hashtags": ["#aiagents", "#multiagent", "#claudecode", "#softwarearchitecture", "#devtools"],
+	"scenes": [
+		{
+			"_tag": "hook",
+			"kicker": "fabrika",
+			"text": "Our agents don't chat. They sign *contracts.*"
+		},
+		{
+			"_tag": "versus",
+			"before": "Agents pass context through a chat log nobody can audit.",
+			"after": "Every handoff is a *typed artifact* on the PR."
+		},
+		{
+			"_tag": "terminal",
+			"caption": "Each format has *one writer* and declared readers",
+			"title": "fabrika",
+			"lines": [
+				{ "cmd": "fabrika wire formats" },
+				{ "out": "[dim]derived from the registry[/dim]" },
+				{ "out": "[accent]acceptance-criteria[/accent] triage→build" },
+				{ "out": "[accent]deviations[/accent]     build→review" },
+				{ "out": "[accent]verdict-marker[/accent] review→ship" },
+				{ "out": "[accent]handoff-pack[/accent]   session→next" },
+				{ "out": "[dim]…and 18 more[/dim]" }
+			]
+		},
+		{ "_tag": "stat", "value": 22, "label": "wire formats, each owned by *one schema*" },
+		{
+			"_tag": "pipeline",
+			"caption": "How a PR moves, *artifact by artifact*",
+			"stages": [
+				{ "name": "triage", "detail": "writes acceptance criteria" },
+				{ "name": "build", "detail": "writes its deviations" },
+				{ "name": "review", "detail": "writes a SHA-bound verdict" },
+				{ "name": "ship", "detail": "reads the verdict, merges" }
+			],
+			"stamp": "SHIPPED"
+		},
+		{
+			"_tag": "outro",
+			"text": "Agents that hand off like *engineers.*",
+			"cta": "Follow for daily builds"
+		}
+	]
+}
