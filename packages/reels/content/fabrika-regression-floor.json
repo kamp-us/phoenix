@@ -1,0 +1,39 @@
+{
+	"id": "fabrika-regression-floor",
+	"brand": "fabrika",
+	"title": "Every mistake becomes a test forever",
+	"description": "fabrika's regression floor: every incident an agent causes becomes an eval case, and that floor must pass at 100%. It only ever rises.",
+	"hashtags": ["#aiagents", "#evals", "#llm", "#testing", "#devtools"],
+	"scenes": [
+		{
+			"_tag": "hook",
+			"kicker": "fabrika",
+			"text": "Every mistake our agents make becomes a *test.*"
+		},
+		{
+			"_tag": "versus",
+			"before": "Agent breaks something. Someone fixes it. It happens again next week.",
+			"after": "The incident becomes an *eval case* the agents must pass."
+		},
+		{
+			"_tag": "stat",
+			"value": 100,
+			"suffix": "%",
+			"label": "required pass rate on the *regression floor*"
+		},
+		{
+			"_tag": "pipeline",
+			"caption": "The floor only goes *up*",
+			"stages": [
+				{ "name": "incident", "detail": "a real issue or PR" },
+				{ "name": "case", "detail": "prompt + assertions" },
+				{ "name": "floor", "detail": "100% or no merge" }
+			]
+		},
+		{
+			"_tag": "outro",
+			"text": "Agents that *can't repeat* their mistakes.",
+			"cta": "Follow for daily builds"
+		}
+	]
+}

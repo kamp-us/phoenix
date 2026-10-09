@@ -1,0 +1,32 @@
+{
+	"id": "fabrika-decision-records",
+	"brand": "fabrika",
+	"title": "Hundreds of decision records, written for agents",
+	"description": "kamp.us keeps every architecture decision as a numbered record. Agents look up the governing decision before changing a choice, instead of guessing from the code.",
+	"hashtags": ["#adr", "#softwarearchitecture", "#aiagents", "#claudecode", "#devtools"],
+	"scenes": [
+		{
+			"_tag": "hook",
+			"kicker": "fabrika",
+			"text": "Our agents check the *decision* before the code."
+		},
+		{ "_tag": "stat", "value": 464, "label": "architecture decision records in *one repo*" },
+		{
+			"_tag": "terminal",
+			"caption": "Code shows *what*. Decisions show *why*.",
+			"title": ".decisions/",
+			"lines": [
+				{ "cmd": "ls .decisions | wc -l" },
+				{ "out": "[accent]464[/accent]" },
+				{ "cmd": "fabrika adr --help" },
+				{ "out": "Record one architecture decision," },
+				{ "out": "from id to [ok]citations[/ok]." }
+			]
+		},
+		{
+			"_tag": "outro",
+			"text": "Agents that know *why*, not just what.",
+			"cta": "Follow for daily builds"
+		}
+	]
+}

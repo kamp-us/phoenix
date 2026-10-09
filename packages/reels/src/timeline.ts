@@ -3,6 +3,7 @@
  * short-form medium. Durations are derived from content, never authored, so a scene always
  * stays on screen long enough to read and never longer.
  */
+import {accentWords, visibleText} from "./markup.ts";
 import type {Reel, Scene} from "./reel.ts";
 
 export const FPS = 30;
@@ -26,7 +27,7 @@ export const MAX_HOOK_SECONDS = 3;
 /** Characters that fit one display line of a 1080px-wide terminal at the stage's type size. */
 export const TERMINAL_COLUMNS = 40;
 
-const words = (text: string): number => text.split(/\s+/).filter((word) => word.length > 0).length;
+const words = (text: string): number => accentWords(text).length;
 
 const reading = (...texts: ReadonlyArray<string | undefined>): number =>
 	READ_SETTLE + READ_PER_WORD * texts.reduce((sum, text) => sum + (text ? words(text) : 0), 0);
@@ -90,7 +91,7 @@ export const DESK_STEP = 0.45;
 export const sceneBeats = (scene: Scene): ReadonlyArray<number> => {
 	switch (scene._tag) {
 		case "hook":
-			return scene.text.split(/\s+/).map((_, index) => 0.15 + index * HOOK_WORD_STEP);
+			return accentWords(scene.text).map((_, index) => 0.15 + index * HOOK_WORD_STEP);
 		case "terminal":
 			return terminalCues(scene.lines)
 				.filter((cue) => !cue.typed)
@@ -151,8 +152,7 @@ export const judgeReel = (reel: Reel): Verdict => {
 	reel.scenes.forEach((scene, index) => {
 		if (scene._tag !== "terminal") return;
 		scene.lines.forEach((line) => {
-			const text = "cmd" in line ? `$ ${line.cmd}` : line.out;
-			const visible = text.replace(/\[\/?[a-z]+\]/g, "");
+			const visible = "cmd" in line ? `$ ${line.cmd}` : visibleText(line.out);
 			if (visible.length > TERMINAL_COLUMNS) {
 				reasons.push(
 					`scene ${index} line "${visible}" is ${visible.length} columns; the terminal fits ${TERMINAL_COLUMNS}`,

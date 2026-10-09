@@ -1,0 +1,37 @@
+{
+	"id": "fabrika-own-homework",
+	"brand": "fabrika",
+	"title": "Your AI agent is grading its own homework",
+	"description": "In fabrika the agent that writes the code never approves it. A separate reviewer posts a verdict bound to the exact head SHA, so a new push invalidates the old approval.",
+	"hashtags": ["#aiagents", "#codereview", "#claudecode", "#softwareengineering", "#devtools"],
+	"scenes": [
+		{
+			"_tag": "hook",
+			"kicker": "hot take",
+			"text": "Your AI agent is grading its *own homework.*"
+		},
+		{
+			"_tag": "versus",
+			"before": "The agent that wrote the code says it looks good.",
+			"after": "A *separate reviewer* signs off on one exact commit."
+		},
+		{
+			"_tag": "terminal",
+			"caption": "The verdict is bound to the *head SHA*",
+			"title": "pull request #10592",
+			"lines": [
+				{ "out": "[dim]reviewer:[/dim]" },
+				{ "out": "review: [ok]PASS[/ok] @ [accent]56fe289[/accent]" },
+				{ "cmd": "git push" },
+				{ "out": "[dim]head moved → 8a9bbe8[/dim]" },
+				{ "out": "[bad]✗ verdict is for an old head[/bad]" },
+				{ "out": "[warn]review again before merge[/warn]" }
+			]
+		},
+		{
+			"_tag": "outro",
+			"text": "Push again, *review again.* No stale approvals.",
+			"cta": "Follow for daily builds"
+		}
+	]
+}

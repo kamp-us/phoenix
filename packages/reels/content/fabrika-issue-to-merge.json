@@ -1,0 +1,36 @@
+{
+	"id": "fabrika-issue-to-merge",
+	"brand": "fabrika",
+	"title": "You file the issue. Agents ship the PR.",
+	"description": "fabrika is an open agent pipeline for any GitHub repo: triage, plan, build, review and ship, each stage leaving its record on the issue or PR. Runs on Claude Code, Codex and pi.",
+	"hashtags": ["#aiagents", "#claudecode", "#devtools", "#github", "#opensource", "#buildinpublic"],
+	"scenes": [
+		{ "_tag": "hook", "kicker": "fabrika", "text": "You file the *issue.* Agents ship the *PR.*" },
+		{
+			"_tag": "pipeline",
+			"caption": "One chain of agents, *five stages*",
+			"stages": [
+				{ "name": "triage", "detail": "sizes it, labels it" },
+				{ "name": "plan", "detail": "acceptance criteria first" },
+				{ "name": "build", "detail": "branch, code, tests" },
+				{ "name": "review", "detail": "a different agent judges" },
+				{ "name": "ship", "detail": "green CI, then merge" }
+			],
+			"stamp": "MERGED"
+		},
+		{
+			"_tag": "terminal",
+			"caption": "Every stage leaves a *record*, not a chat log",
+			"title": "fabrika",
+			"lines": [
+				{ "cmd": "fabrika status" },
+				{ "out": "[dim]lanes[/dim]" },
+				{ "out": "[accent]#10591[/accent] ship    [ok]✓ merged[/ok]" },
+				{ "out": "[accent]#10589[/accent] review  [warn]● in review[/warn]" },
+				{ "out": "[accent]#10586[/accent] build   [warn]● building[/warn]" },
+				{ "out": "[accent]#10582[/accent] triage  [dim]queued[/dim]" }
+			]
+		},
+		{ "_tag": "outro", "text": "Works in *any* GitHub repo.", "cta": "Follow for daily builds" }
+	]
+}

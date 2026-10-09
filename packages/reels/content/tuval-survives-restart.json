@@ -1,0 +1,35 @@
+{
+	"id": "tuval-survives-restart",
+	"brand": "tuval",
+	"title": "Kill the app. Your agents keep their place.",
+	"description": "tuval checkpoints every program on Ctrl-C. Restart the desk and your Claude, Pi and shell sessions come back where they were.",
+	"hashtags": ["#aiagents", "#claudecode", "#devtools", "#terminal", "#localfirst"],
+	"scenes": [
+		{ "_tag": "hook", "kicker": "tuval", "text": "Kill the app. Your agents *keep their place.*" },
+		{
+			"_tag": "terminal",
+			"caption": "Ctrl-C *checkpoints* every program",
+			"title": "apps/tuval",
+			"lines": [
+				{ "cmd": "pnpm dev" },
+				{ "out": "[ok]●[/ok] claude   [dim]running[/dim]" },
+				{ "out": "[ok]●[/ok] pi       [dim]running[/dim]" },
+				{ "out": "[ok]●[/ok] shell    [dim]running[/dim]" },
+				{ "out": "[warn]^C[/warn]" },
+				{ "out": "[accent]checkpointed 3 programs[/accent]" },
+				{ "cmd": "pnpm dev" },
+				{ "out": "[ok]✓ restored 3 programs[/ok]" }
+			]
+		},
+		{
+			"_tag": "pipeline",
+			"caption": "Programs talk only through *typed ports*",
+			"stages": [
+				{ "name": "kernel", "detail": "owns every process" },
+				{ "name": "ports", "detail": "typed messages only" },
+				{ "name": "windows", "detail": "what you see" }
+			]
+		},
+		{ "_tag": "outro", "text": "Your desk *remembers.*", "cta": "Follow for daily builds" }
+	]
+}

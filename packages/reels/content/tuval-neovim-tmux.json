@@ -1,0 +1,48 @@
+{
+	"id": "tuval-neovim-tmux",
+	"brand": "tuval",
+	"title": "Neovim + tmux, but for AI agents",
+	"description": "tuval is a local desk that hosts Claude, Codex, Pi and your shell as processes that talk through typed ports, survive restarts, and show up in windows.",
+	"hashtags": ["#aiagents", "#neovim", "#tmux", "#claudecode", "#devtools", "#terminal"],
+	"scenes": [
+		{ "_tag": "hook", "kicker": "tuval", "text": "*Neovim + tmux,* but for AI agents." },
+		{
+			"_tag": "versus",
+			"before": "Six terminal tabs. Three agents. No idea who is doing what.",
+			"after": "One *desk.* Every agent is a *process* in a window."
+		},
+		{
+			"_tag": "desk",
+			"caption": "Claude, Codex, Pi and a shell. *One desk.*",
+			"panes": [
+				{
+					"program": "claude",
+					"lines": [
+						"reading src/lane/fold.ts",
+						"planning 3 edits",
+						"editing fold.ts",
+						"running vitest",
+						"✓ 42 passed"
+					]
+				},
+				{
+					"program": "codex",
+					"lines": ["review requested", "reading the diff", "2 findings", "posting verdict"]
+				},
+				{
+					"program": "pi",
+					"lines": ["session restored", "summarising issue", "drafting plan", "plan ready"]
+				},
+				{
+					"program": "shell",
+					"lines": ["$ pnpm dev", "desk on :5173", "$ git status", "3 files changed"]
+				}
+			]
+		},
+		{
+			"_tag": "outro",
+			"text": "Runs *locally.* Your machine, your agents.",
+			"cta": "Follow for daily builds"
+		}
+	]
+}
