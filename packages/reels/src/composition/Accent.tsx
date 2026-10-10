@@ -1,17 +1,20 @@
 import {accentSpans} from "../markup.ts";
-import {glow} from "./frame.ts";
+import {useLook} from "./looks/look.ts";
 
-/** Display text with its `*accent*` spans painted in the accent. */
-export const Accent = ({text}: {readonly text: string}) => (
-	<>
-		{accentSpans(text).map((span, index) =>
-			span.accent ? (
-				<span key={index} style={{color: "var(--accent)", textShadow: glow(18)}}>
-					{span.text}
-				</span>
-			) : (
-				<span key={index}>{span.text}</span>
-			),
-		)}
-	</>
-);
+/** Display text with its `*accent*` spans painted by the look; `from` is when the text lands. */
+export const Accent = ({text, from = 0}: {readonly text: string; readonly from?: number}) => {
+	const {AccentSpan} = useLook();
+	return (
+		<>
+			{accentSpans(text).map((span, index) =>
+				span.accent ? (
+					<AccentSpan key={index} from={from}>
+						{span.text}
+					</AccentSpan>
+				) : (
+					<span key={index}>{span.text}</span>
+				),
+			)}
+		</>
+	);
+};

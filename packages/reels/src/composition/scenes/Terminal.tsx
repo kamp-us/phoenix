@@ -3,7 +3,9 @@ import {type Tone, toneSpans} from "../../markup.ts";
 import type {TerminalLine} from "../../reel.ts";
 import {TYPE_CPS, terminalCues} from "../../timeline.ts";
 import {Caption} from "../Caption.tsx";
-import {glow, SAFE, SAFE_WIDTH} from "../frame.ts";
+import {SAFE, SAFE_WIDTH} from "../frame.ts";
+import {useLook} from "../looks/look.ts";
+import {Window} from "../Window.tsx";
 
 const TONE: Record<Tone, string> = {
 	plain: "var(--text-secondary)",
@@ -43,21 +45,17 @@ export const Terminal = ({
 	});
 	const visible = shown.slice(-VISIBLE_LINES);
 	const blink = Math.floor(frame / 9) % 2 === 0;
+	const {glow} = useLook();
 
 	return (
 		<>
 			{caption === undefined ? null : <Caption text={caption} />}
-			<div
+			<Window
 				style={{
 					position: "absolute",
 					top: SAFE.top + (caption === undefined ? 40 : 230),
 					left: SAFE.left - 12,
 					width: SAFE_WIDTH + 24,
-					borderRadius: 16,
-					border: "2px solid var(--border)",
-					background: "color-mix(in oklab, var(--surface) 92%, transparent)",
-					boxShadow: "var(--shadow-overlay)",
-					overflow: "hidden",
 				}}
 			>
 				<div
@@ -112,7 +110,7 @@ export const Terminal = ({
 						),
 					)}
 				</div>
-			</div>
+			</Window>
 		</>
 	);
 };

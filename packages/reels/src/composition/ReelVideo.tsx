@@ -4,15 +4,16 @@ import {
 	continueRender,
 	delayRender,
 	Html5Audio,
-	interpolate,
 	Sequence,
 	staticFile,
 	useCurrentFrame,
 } from "remotion";
-import type {Reel, Scene} from "../reel.ts";
+import {DEFAULT_LOOK, type LookName, type Reel, type Scene} from "../reel.ts";
 import {planTimeline, sceneBeats} from "../timeline.ts";
-import {Backdrop, Screen} from "./Backdrop.tsx";
 import {SAFE, WIDTH} from "./frame.ts";
+import {LOOKS} from "./looks/index.ts";
+import {LookContext, useLook} from "./looks/look.ts";
+import {ThemeScope} from "./looks/ThemeScope.tsx";
 import {Desk} from "./scenes/Desk.tsx";
 import {Hook} from "./scenes/Hook.tsx";
 import {Outro} from "./scenes/Outro.tsx";
@@ -23,6 +24,8 @@ import {Versus} from "./scenes/Versus.tsx";
 
 export interface ReelProps extends Record<string, unknown> {
 	readonly reel: Reel;
+	/** Overrides the look the script names, so one script can be rendered in every look. */
+	readonly look?: LookName;
 	/** The soundtrack's path under the bundle's public dir; absent renders silent. */
 	readonly soundtrack?: string;
 }
@@ -57,29 +60,18 @@ const SceneBody = ({scene}: {readonly scene: Scene}) => {
 	}
 };
 
-/** Each cut lands with a short glitch: a sideways jolt and an accent ghost behind the content. */
-const Cut = ({children}: {readonly children: React.ReactNode}) => {
-	const frame = useCurrentFrame();
-	const jolt = interpolate(frame, [0, 2, 4, 6], [18, -10, 4, 0], {extrapolateRight: "clamp"});
-	const ghost = interpolate(frame, [0, 6], [0.6, 0], {extrapolateRight: "clamp"});
-	return (
-		<AbsoluteFill style={{transform: `translateX(${jolt}px)`}}>
-			<AbsoluteFill
-				style={{
-					opacity: ghost,
-					transform: "translate(8px, 0)",
-					filter: "blur(1px) sepia(1) saturate(6) hue-rotate(-30deg)",
-				}}
-			>
-				{children}
-			</AbsoluteFill>
-			<AbsoluteFill>{children}</AbsoluteFill>
-		</AbsoluteFill>
-	);
-};
-
-const Chrome = ({reel, total}: {readonly reel: Reel; readonly total: number}) => {
-	const frame = useCurrentFrame();
+/** The progress bar and brand label, drawn inside each scene so they take its field's colours. */
+const Chrome = ({
+	reel,
+	total,
+	offset,
+}: {
+	readonly reel: Reel;
+	readonly total: number;
+	readonly offset: number;
+}) => {
+	const frame = useCurrentFrame() + offset;
+	const look = useLook();
 	return (
 		<>
 			<div
@@ -90,7 +82,7 @@ const Chrome = ({reel, total}: {readonly reel: Reel; readonly total: number}) =>
 					height: 10,
 					width: WIDTH * (frame / total),
 					background: "var(--accent)",
-					boxShadow: "0 0 18px var(--accent)",
+					boxShadow: look.glow(9),
 				}}
 			/>
 			<div
@@ -113,7 +105,8 @@ const Chrome = ({reel, total}: {readonly reel: Reel; readonly total: number}) =>
 	);
 };
 
-export const ReelVideo = ({reel, soundtrack}: ReelProps) => {
+export const ReelVideo = ({reel, look: lookName, soundtrack}: ReelProps) => {
+	const look = LOOKS[lookName ?? reel.look ?? DEFAULT_LOOK];
 	const [fonts] = useState(() => delayRender("brand faces"));
 	useEffect(() => {
 		Promise.all(FACES.map((face) => document.fonts.load(face))).then(
@@ -124,29 +117,30 @@ export const ReelVideo = ({reel, soundtrack}: ReelProps) => {
 	const timeline = planTimeline(reel);
 
 	return (
-		<AbsoluteFill
-			data-theme="dark"
-			style={{fontFamily: "var(--font-body)", color: "var(--text-primary)"}}
-		>
-			<Backdrop seed={reel.id} />
-			{timeline.scenes.map((window) => {
-				const scene = reel.scenes[window.index];
-				return scene === undefined ? null : (
-					<Sequence
-						key={window.index}
-						from={window.startFrame}
-						durationInFrames={window.frames}
-						name={scene._tag}
-					>
-						<Cut>
-							<SceneBody scene={scene} />
-						</Cut>
-					</Sequence>
-				);
-			})}
-			<Chrome reel={reel} total={timeline.totalFrames} />
-			<Screen />
-			{soundtrack === undefined ? null : <Html5Audio src={staticFile(soundtrack)} />}
-		</AbsoluteFill>
+		<LookContext.Provider value={look}>
+			<AbsoluteFill style={{fontFamily: "var(--font-body)"}}>
+				<ThemeScope theme={look.theme} style={{position: "absolute", inset: 0}}>
+					<look.Backdrop seed={reel.id} />
+					{timeline.scenes.map((window) => {
+						const scene = reel.scenes[window.index];
+						return scene === undefined ? null : (
+							<Sequence
+								key={window.index}
+								from={window.startFrame}
+								durationInFrames={window.frames}
+								name={scene._tag}
+							>
+								<look.Scene index={window.index}>
+									<SceneBody scene={scene} />
+									<Chrome reel={reel} total={timeline.totalFrames} offset={window.startFrame} />
+								</look.Scene>
+							</Sequence>
+						);
+					})}
+					<look.Overlay />
+				</ThemeScope>
+				{soundtrack === undefined ? null : <Html5Audio src={staticFile(soundtrack)} />}
+			</AbsoluteFill>
+		</LookContext.Provider>
 	);
 };

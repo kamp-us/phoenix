@@ -1,6 +1,7 @@
 import {Easing, interpolate, useCurrentFrame, useVideoConfig} from "remotion";
 import {Accent} from "../Accent.tsx";
-import {glow, SAFE, SAFE_WIDTH} from "../frame.ts";
+import {SAFE, SAFE_WIDTH} from "../frame.ts";
+import {useLook} from "../looks/look.ts";
 
 export const Stat = ({
 	value,
@@ -13,6 +14,7 @@ export const Stat = ({
 }) => {
 	const frame = useCurrentFrame();
 	const {fps} = useVideoConfig();
+	const {glow} = useLook();
 	const progress = interpolate(frame, [0.2 * fps, 1.0 * fps], [0, 1], {
 		extrapolateLeft: "clamp",
 		extrapolateRight: "clamp",
@@ -43,7 +45,7 @@ export const Stat = ({
 					}),
 				}}
 			>
-				<Accent text={label} />
+				<Accent text={label} from={Math.round(0.6 * fps)} />
 			</div>
 		</div>
 	);

@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import {Composition} from "remotion";
-import {Reel} from "../reel.ts";
+import {DEFAULT_LOOK, LOOK_NAMES, Reel} from "../reel.ts";
 import {soundtrackFile} from "../soundtrack-file.ts";
 import {FPS, planTimeline} from "../timeline.ts";
 import {HEIGHT, WIDTH} from "./frame.ts";
@@ -30,18 +30,25 @@ const reels = content
 
 export const Root = () => (
 	<>
-		{reels.map((reel) => (
-			<Composition
-				key={reel.id}
-				id={reel.id}
-				component={ReelVideo}
-				width={WIDTH}
-				height={HEIGHT}
-				fps={FPS}
-				durationInFrames={planTimeline(reel).totalFrames}
-				defaultProps={{reel, soundtrack: soundtrackFile(reel.id)}}
-				calculateMetadata={({props}) => ({durationInFrames: planTimeline(props.reel).totalFrames})}
-			/>
-		))}
+		{reels.flatMap((reel) =>
+			LOOK_NAMES.map((look) => {
+				const own = look === (reel.look ?? DEFAULT_LOOK);
+				return (
+					<Composition
+						key={`${reel.id}-${look}`}
+						id={own ? reel.id : `${reel.id}-${look}`}
+						component={ReelVideo}
+						width={WIDTH}
+						height={HEIGHT}
+						fps={FPS}
+						durationInFrames={planTimeline(reel).totalFrames}
+						defaultProps={{reel, soundtrack: soundtrackFile(reel.id), ...(own ? {} : {look})}}
+						calculateMetadata={({props}) => ({
+							durationInFrames: planTimeline(props.reel).totalFrames,
+						})}
+					/>
+				);
+			}),
+		)}
 	</>
 );

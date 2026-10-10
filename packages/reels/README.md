@@ -6,9 +6,18 @@ what gets posted. Each script is one JSON file. A batch renders every changed sc
 H.264 MP4 with a synthesized soundtrack, plus a caption file holding the title, description and
 hashtags to paste when posting.
 
-The look follows [brand-imagery.md](../../brand-imagery.md): a phosphor-CRT screen in the dark
-register, the scene above ground and coral roots glowing below it. Colors and type come from the
-role tokens and fonts of [`@kampus/design`](../design/README.md), never raw hex.
+Colors and type come from the role tokens and fonts of [`@kampus/design`](../design/README.md),
+never raw hex. A reel renders in one of three looks ([`src/composition/looks/`](src/composition/looks/)):
+
+| Look | Direction |
+|---|---|
+| `cutaway` (default) | [brand-imagery.md](../../brand-imagery.md)'s phosphor-CRT screen: the scene above ground, coral roots glowing below |
+| `paper` | Editorial print: ink on warm paper, a dot grid and margin rule, highlighter accents, dark windows pasted on |
+| `poster` | Flat Swiss poster: coral, ink and paper fields per scene, oversized type, knock-out accent blocks, hard wipes |
+
+Only `cutaway` is ratified brand imagery; the other two are explorations until brand-imagery.md
+says otherwise. A script picks its look with `"look"`, and `render --look <name>` renders any script
+in another look to `out/<id>.<look>.mp4`. Studio lists every reel in every look.
 
 ## Use it
 
@@ -20,7 +29,9 @@ pnpm --filter @kampus/reels render -- --force --concurrency 2
 node packages/reels/src/bin.ts soundtracks && pnpm --filter @kampus/reels studio   # preview in Remotion Studio
 ```
 
-`render` writes `out/<id>.mp4` and `out/<id>.txt`, and keeps `out/ledger.json` between runs. A reel
+`render` writes `out/<id>.mp4` and `out/<id>.txt`, and keeps `out/ledger.json` between runs. Run one
+batch at a time: two `render` processes share `public/` and Remotion's bundle cache, so use
+`--concurrency` inside one batch instead. A reel
 whose script and engine source are unchanged since its last render is reported `unchanged` and
 skipped; `--force` renders it again. `REELS_BROWSER` points the render at a specific Chrome or
 headless shell; otherwise the newest Playwright headless shell under `PLAYWRIGHT_BROWSERS_PATH` is

@@ -1,7 +1,8 @@
 import {interpolate, spring, useCurrentFrame, useVideoConfig} from "remotion";
 import {PIPELINE_STEP} from "../../timeline.ts";
 import {Caption} from "../Caption.tsx";
-import {glow, SAFE, SAFE_WIDTH} from "../frame.ts";
+import {SAFE, SAFE_WIDTH} from "../frame.ts";
+import {useLook} from "../looks/look.ts";
 
 export const Pipeline = ({
 	caption,
@@ -14,6 +15,7 @@ export const Pipeline = ({
 }) => {
 	const frame = useCurrentFrame();
 	const {fps} = useVideoConfig();
+	const {glow} = useLook();
 	const top = SAFE.top + (caption === undefined ? 40 : 230);
 	const rowHeight = Math.min(150, 760 / stages.length);
 	const lit = (index: number) => frame - Math.round((0.5 + index * PIPELINE_STEP) * fps);

@@ -7,7 +7,7 @@ import {run} from "@demlik/tea/effect";
 import {Effect, Ref} from "effect";
 import {ledgerStore} from "./ledger.ts";
 import {isFinished, type Outcome, reelsMachine} from "./machine.ts";
-import type {Reel} from "./reel.ts";
+import type {LookName, Reel} from "./reel.ts";
 import {Studio, StudioError} from "./studio.ts";
 
 export const reelHash = (engine: string, reel: Reel): string =>
@@ -18,6 +18,8 @@ export interface BatchOptions {
 	readonly force: boolean;
 	readonly concurrency: number;
 	readonly ledger: string;
+	/** Renders every chosen reel in this look rather than the one its script names. */
+	readonly look: LookName | undefined;
 }
 
 /** A studio failure, as the declared error tag its command's `_err` Msg carries. */
@@ -28,8 +30,10 @@ const tagged =
 export const runBatch = Effect.fn("Reels.runBatch")(function* (options: BatchOptions) {
 	const studio = yield* Studio;
 	const all = yield* studio.reels;
-	const chosen =
+	const picked =
 		options.only.length === 0 ? all : all.filter((reel) => options.only.includes(reel.id));
+	const {look} = options;
+	const chosen = look === undefined ? picked : picked.map((reel) => ({...reel, look}));
 	const unknown = options.only.filter((id) => !all.some((reel) => reel.id === id));
 	const engine = yield* studio.engineHash;
 	const byId = new Map(chosen.map((reel) => [reel.id, reel]));

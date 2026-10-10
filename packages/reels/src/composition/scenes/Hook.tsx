@@ -1,11 +1,13 @@
 import {interpolate, spring, useCurrentFrame, useVideoConfig} from "remotion";
 import {accentWords} from "../../markup.ts";
 import {HOOK_WORD_STEP} from "../../timeline.ts";
-import {glow, SAFE, SAFE_WIDTH} from "../frame.ts";
+import {SAFE, SAFE_WIDTH} from "../frame.ts";
+import {useLook} from "../looks/look.ts";
 
 export const Hook = ({kicker, text}: {readonly kicker?: string; readonly text: string}) => {
 	const frame = useCurrentFrame();
 	const {fps} = useVideoConfig();
+	const {display, AccentSpan} = useLook();
 	return (
 		<div style={{position: "absolute", top: SAFE.top + 220, left: SAFE.left, width: SAFE_WIDTH}}>
 			{kicker === undefined ? null : (
@@ -25,14 +27,15 @@ export const Hook = ({kicker, text}: {readonly kicker?: string; readonly text: s
 			)}
 			<div
 				style={{
-					font: "700 112px/1.02 var(--font-body)",
-					letterSpacing: "-0.035em",
+					font: `${display.weight} ${Math.round(112 * display.scale)}px/1.02 var(--font-body)`,
+					letterSpacing: display.tracking,
 					color: "var(--text-primary)",
 				}}
 			>
 				{accentWords(text).map((word, index) => {
+					const lands = Math.round((0.15 + index * HOOK_WORD_STEP) * fps);
 					const pop = spring({
-						frame: frame - Math.round((0.15 + index * HOOK_WORD_STEP) * fps),
+						frame: frame - lands,
 						fps,
 						config: {damping: 12, stiffness: 220},
 					});
@@ -44,11 +47,9 @@ export const Hook = ({kicker, text}: {readonly kicker?: string; readonly text: s
 								marginRight: "0.24em",
 								opacity: pop,
 								transform: `translateY(${(1 - pop) * 40}px) scale(${0.85 + pop * 0.15})`,
-								color: word.accent ? "var(--accent)" : undefined,
-								textShadow: word.accent ? glow(24) : undefined,
 							}}
 						>
-							{word.text}
+							{word.accent ? <AccentSpan from={lands}>{word.text}</AccentSpan> : word.text}
 						</span>
 					);
 				})}

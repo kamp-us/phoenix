@@ -1,6 +1,7 @@
 import {interpolate, spring, useCurrentFrame, useVideoConfig} from "remotion";
 import {Accent} from "../Accent.tsx";
 import {SAFE, SAFE_WIDTH} from "../frame.ts";
+import {useLook} from "../looks/look.ts";
 
 const Label = ({text, color}: {readonly text: string; readonly color: string}) => (
 	<div
@@ -28,6 +29,7 @@ export const Versus = ({
 }) => {
 	const frame = useCurrentFrame();
 	const {fps} = useVideoConfig();
+	const {display} = useLook();
 	const strike = interpolate(frame, [afterAt * fps - 14, afterAt * fps - 2], [0, 1], {
 		extrapolateLeft: "clamp",
 		extrapolateRight: "clamp",
@@ -62,12 +64,12 @@ export const Versus = ({
 				<Label text="what we do" color="var(--accent)" />
 				<div
 					style={{
-						font: "700 80px/1.08 var(--font-body)",
-						letterSpacing: "-0.03em",
+						font: `${display.weight} ${Math.round(80 * display.scale)}px/1.08 var(--font-body)`,
+						letterSpacing: display.tracking,
 						color: "var(--text-primary)",
 					}}
 				>
-					<Accent text={after} />
+					<Accent text={after} from={Math.round(afterAt * fps)} />
 				</div>
 			</div>
 		</div>

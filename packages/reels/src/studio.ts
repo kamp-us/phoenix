@@ -11,9 +11,13 @@ import {renderMedia, selectComposition} from "@remotion/renderer";
 import {Console, Context, Effect, FileSystem, Layer} from "effect";
 import * as Schema from "effect/Schema";
 import {synthesize} from "./audio.ts";
-import {decodeReel, type Reel} from "./reel.ts";
+import {DEFAULT_LOOK, decodeReel, type Reel} from "./reel.ts";
 import {soundtrackFile} from "./soundtrack-file.ts";
 import {FPS, judgeReel, planTimeline} from "./timeline.ts";
+
+/** A reel in the default look renders to `<id>.mp4`; one in any other, to `<id>.<look>.mp4`. */
+export const videoFile = (reel: Reel): string =>
+	(reel.look ?? DEFAULT_LOOK) === DEFAULT_LOOK ? `${reel.id}.mp4` : `${reel.id}.${reel.look}.mp4`;
 
 export class StudioError extends Schema.TaggedError<StudioError>()("@kampus/reels/StudioError", {
 	step: Schema.String,
@@ -137,7 +141,11 @@ export const StudioLive = (paths: StudioPaths) =>
 					if (verdict._tag === "Refused") {
 						return yield* new StudioError({step: "judge", message: verdict.reasons.join("; ")});
 					}
-					const inputProps = {reel, soundtrack: soundtrackFile(reel.id)};
+					const inputProps = {
+						reel,
+						look: reel.look ?? DEFAULT_LOOK,
+						soundtrack: soundtrackFile(reel.id),
+					};
 					const browser = paths.browser === undefined ? {} : {browserExecutable: paths.browser};
 					const composition = yield* attempt("select composition", () =>
 						selectComposition({
@@ -149,7 +157,7 @@ export const StudioLive = (paths: StudioPaths) =>
 							logLevel: "error",
 						}),
 					);
-					const video = join(paths.out, `${reel.id}.mp4`);
+					const video = join(paths.out, videoFile(reel));
 					let reported = -1;
 					yield* attempt("render", () =>
 						renderMedia({

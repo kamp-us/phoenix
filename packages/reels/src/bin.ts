@@ -6,9 +6,10 @@
 import {existsSync, readdirSync} from "node:fs";
 import {join, resolve} from "node:path";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Console, Effect, Layer} from "effect";
+import {Console, Effect, Layer, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {runBatch} from "./pipeline.ts";
+import {LOOK_NAMES} from "./reel.ts";
 import {Studio, StudioError, StudioLive} from "./studio.ts";
 import {judgeReel} from "./timeline.ts";
 
@@ -94,13 +95,18 @@ const render = Command.make(
 			Flag.withDefault(1),
 			Flag.withDescription("reels rendered at once"),
 		),
+		look: Flag.choice("look", LOOK_NAMES).pipe(
+			Flag.optional,
+			Flag.withDescription("render in this look instead of each script's own"),
+		),
 	},
-	({ids, content, out, force, concurrency}) =>
+	({ids, content, out, force, concurrency, look}) =>
 		Effect.gen(function* () {
 			const result = yield* runBatch({
 				only: ids,
 				force,
 				concurrency,
+				look: Option.getOrUndefined(look),
 				ledger: join(out, "ledger.json"),
 			});
 			for (const id of result.unknown) yield* Console.log(`? ${id} has no script`);

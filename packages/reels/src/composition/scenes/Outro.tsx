@@ -1,24 +1,26 @@
 import {interpolate, spring, useCurrentFrame, useVideoConfig} from "remotion";
 import {Accent} from "../Accent.tsx";
-import {glow, SAFE, SAFE_WIDTH} from "../frame.ts";
+import {SAFE, SAFE_WIDTH} from "../frame.ts";
+import {useLook} from "../looks/look.ts";
 
 export const Outro = ({text, cta}: {readonly text: string; readonly cta: string}) => {
 	const frame = useCurrentFrame();
 	const {fps} = useVideoConfig();
+	const {glow, display} = useLook();
 	const rise = spring({frame, fps, config: {damping: 16}});
 	const chip = spring({frame: frame - 12, fps, config: {damping: 11}});
 	return (
 		<div style={{position: "absolute", top: SAFE.top + 240, left: SAFE.left, width: SAFE_WIDTH}}>
 			<div
 				style={{
-					font: "700 92px/1.05 var(--font-body)",
-					letterSpacing: "-0.03em",
+					font: `${display.weight} ${Math.round(92 * display.scale)}px/1.05 var(--font-body)`,
+					letterSpacing: display.tracking,
 					color: "var(--text-primary)",
 					opacity: rise,
 					transform: `translateY(${(1 - rise) * 40}px)`,
 				}}
 			>
-				<Accent text={text} />
+				<Accent text={text} from={4} />
 			</div>
 			<div
 				style={{

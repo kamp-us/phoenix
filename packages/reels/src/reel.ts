@@ -1,11 +1,18 @@
 /**
- * A reel script: the authored, vertical short-form video one render produces. The stage
- * (`stage/stage.js`) paints it; the timeline (`timeline.ts`) decides how long each scene holds.
+ * A reel script: the authored, vertical short-form video one render produces. The Remotion
+ * composition (`composition/`) paints it; the timeline (`timeline.ts`) decides how long each scene
+ * holds.
  */
 import * as Schema from "effect/Schema";
 
 export const Brand = Schema.Literals(["fabrika", "tuval"]);
 export type Brand = typeof Brand.Type;
+
+/** The art directions a reel can render in; `cutaway` is brand-imagery.md's. */
+export const LOOK_NAMES = ["cutaway", "paper", "poster"] as const;
+export const LookName = Schema.Literals(LOOK_NAMES);
+export type LookName = typeof LookName.Type;
+export const DEFAULT_LOOK: LookName = "cutaway";
 
 /** `*word*` in any display text paints that word in the accent. */
 const Text = Schema.String;
@@ -76,6 +83,7 @@ export type Scene = typeof Scene.Type;
 export const Reel = Schema.Struct({
 	id: Schema.String,
 	brand: Brand,
+	look: Schema.optionalKey(LookName),
 	title: Schema.String,
 	description: Schema.String,
 	hashtags: Schema.Array(Schema.String),

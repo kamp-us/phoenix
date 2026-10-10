@@ -1,7 +1,8 @@
 import {interpolate, useCurrentFrame, useVideoConfig} from "remotion";
 import {DESK_STEP} from "../../timeline.ts";
 import {Caption} from "../Caption.tsx";
-import {glow, SAFE, SAFE_WIDTH} from "../frame.ts";
+import {SAFE, SAFE_WIDTH} from "../frame.ts";
+import {Window} from "../Window.tsx";
 
 const PANE_LINES = 6;
 
@@ -36,21 +37,17 @@ export const Desk = ({
 				const shown = pane.lines.filter((_, line) => time >= 0.5 + line * DESK_STEP + index * 0.12);
 				const isFocused = index === focused;
 				return (
-					<div
+					<Window
 						key={index}
+						focused={isFocused}
 						style={{
 							position: "absolute",
 							left: SAFE.left - 12 + column * (paneWidth + gap),
 							top: top + row * (paneHeight + gap),
 							width: paneWidth,
 							height: paneHeight,
-							borderRadius: 14,
-							border: `3px solid ${isFocused ? "var(--accent)" : "var(--border)"}`,
-							boxShadow: isFocused ? glow(14) : "var(--shadow-raised)",
-							background: "color-mix(in oklab, var(--surface) 94%, transparent)",
-							overflow: "hidden",
 							opacity: appear,
-							transform: `scale(${0.94 + appear * 0.06})`,
+							scale: `${0.94 + appear * 0.06}`,
 						}}
 					>
 						<div
@@ -84,7 +81,7 @@ export const Desk = ({
 								</div>
 							))}
 						</div>
-					</div>
+					</Window>
 				);
 			})}
 		</>
