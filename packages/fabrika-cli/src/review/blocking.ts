@@ -231,7 +231,40 @@ export const reportingNote = (
 };
 
 /**
- * The runs failing outside the blocking set, by name: real reds a caller reports rather than routes.
+ * Which reds outside the blocking set a failing required roll-up names, as far as a verb read it.
+ *
+ * Such a red still stops the merge — through the roll-up, which is required — so it is no
+ * "never blocking" red. `Read` maps each such check-run name to the roll-up context naming it, and
+ * lists every job key a roll-up named that no check run could be tied to: while one stands, any
+ * other red outside the set may be that job, so it is UNKNOWN rather than "never blocking". A verb
+ * that does not follow roll-ups passes {@link UNFOLLOWED}.
+ *
+ * @ruling https://github.com/kamp-us/phoenix/issues/10432#issuecomment-5983093271
+ */
+export type RollupReach =
+	| {
+			readonly _tag: "Read";
+			readonly through: ReadonlyMap<string, string>;
+			readonly untied: ReadonlyArray<UntiedKey>;
+	  }
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+/** A job key a failing required roll-up named that no check run of its run could be tied to. */
+export interface UntiedKey {
+	readonly rollup: string;
+	readonly key: string;
+}
+
+export const UNFOLLOWED: RollupReach = {_tag: "Read", through: new Map(), untied: []};
+
+const untiedReason = (untied: ReadonlyArray<UntiedKey>): string =>
+	untied
+		.map(({rollup, key}) => `${rollup} names job ${key}, which no check run could be tied to`)
+		.join("; ");
+
+/**
+ * The runs failing outside the blocking set, by name: real reds a caller reports rather than routes,
+ * unless a failing required roll-up names them.
  *
  * The selection lives here rather than at each caller so every verb that reads a head names the same
  * reds as non-blocking; a caller that filtered for itself could drift from `set.blocks`.
@@ -240,13 +273,31 @@ export const reportedLine = (
 	verb: string,
 	set: BlockingSet,
 	runs: ReadonlyArray<RollupRun & {readonly name: string}>,
+	reach: RollupReach = UNFOLLOWED,
 ): ReadonlyArray<string> => {
 	const names = runs
 		.filter((run) => !set.blocks(run.name) && isFailing(run))
-		.map((run) => run.name);
-	return names.length === 0
-		? []
-		: [
-				`${verb}: failing outside the required set: ${names.sort().join(", ")} — reported, never blocking.`,
-			];
+		.map((run) => run.name)
+		.sort();
+	if (names.length === 0) return [];
+	const unknownLine = (unread: ReadonlyArray<string>, reason: string) =>
+		`${verb}: failing outside the required set: ${unread.join(", ")} — whether a failing required context names it is UNKNOWN: ${reason}.`;
+	if (reach._tag === "Unknown") return [unknownLine(names, reach.reason)];
+	const plain = names.filter((name) => !reach.through.has(name));
+	const plainLines = (): ReadonlyArray<string> => {
+		if (plain.length === 0) return [];
+		if (reach.untied.length > 0) return [unknownLine(plain, untiedReason(reach.untied))];
+		return [
+			`${verb}: failing outside the required set: ${plain.join(", ")} — reported, never blocking.`,
+		];
+	};
+	return [
+		...plainLines(),
+		...names
+			.filter((name) => reach.through.has(name))
+			.map(
+				(name) =>
+					`${verb}: failing outside the required set: ${name} — blocks through the failing required context ${reach.through.get(name)}.`,
+			),
+	];
 };
