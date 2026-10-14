@@ -5,6 +5,7 @@
  */
 
 import {describe, expect, it} from "vitest";
+import {ProjectLabels} from "../../projects/labels.ts";
 import {noEntries, type PickerEntries, programEntries} from "./entries.ts";
 import {processId, programId, programRow, windowId} from "./fixtures.ts";
 import {pickerFrame} from "./frame.ts";
@@ -82,6 +83,33 @@ describe("picker frame", () => {
 		expect(processes?.options.map((option) => option.name)).toEqual([
 			"Counter — process p-1, no parent",
 			"Counter — process p-2, child of p-1",
+		]);
+	});
+
+	it("shows a project's ids under its label, never the path key its state is stored under (#9987)", () => {
+		const key = "-Users-ada-code-github.com-kamp_-us-phoenix";
+		const scoped: PickerEntries = {
+			programs: [{_tag: "Program", programId: programId(`${key}/counter`), label: "counter"}],
+			processes: [
+				{
+					_tag: "Process",
+					processId: processId(`${key}/7f3a9c2e-1b4d-4e8a-9c61-2d5f0e8b7a14`),
+					programId: programId(`${key}/counter`),
+					label: "phoenix/counter",
+					parentId: processId(`${key}/log`),
+				},
+			],
+		};
+		const projects = ProjectLabels.of([{key, label: "phoenix"}]);
+		const [programs, processes] = pickerFrame(window, scoped, mountPicker(), {projects}).groups;
+		expect(programs?.options.map((option) => [option.name, option.detail])).toEqual([
+			["counter — program phoenix/counter", "phoenix/counter"],
+		]);
+		expect(processes?.options.map((option) => [option.name, option.detail])).toEqual([
+			[
+				"phoenix/counter — process phoenix/7f3a9c2e…, child of phoenix/log",
+				"phoenix/7f3a9c2e-1b4d-4e8a-9c61-2d5f0e8b7a14 ← phoenix/log",
+			],
 		]);
 	});
 
