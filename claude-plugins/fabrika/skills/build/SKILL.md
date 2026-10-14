@@ -512,8 +512,8 @@ absence would change no reviewer behaviour.
 
 **The body holds what a gate grades, and never a copy of CI state.** The checks own CI state, and a
 copy in the body is stale the moment they re-run, so no "CI at this head" block, check table or
-pass count goes in it. A per-round log, a
-repair case table or any running record belongs in a `build note` comment, per the Repair section.
+pass count goes in it. A per-round log, a repair case table or any running record belongs in a
+`build note` comment, per the Repair section.
 
 **A criterion that asks you to report something earns a third: `## Report`.** An audit's scope, why
 a duplication was kept, the overlap with another ticket — state each in that section, one statement
@@ -884,15 +884,18 @@ rows are the review-appended criteria past the freeze — note them, do not chas
 round's work — each one you verify is still unfixed, because nothing retires a row from that fold.
 
 **A repair round reports through `build note` and edits the PR body only when a graded part of it
-changed.** Those parts are the summary, the closing reference, `## Deviations` and `## Report`. Each
+changed.** Those parts are the summary, the closing reference, `## Deviations`, `## Report` and the
+evidence prose step 3 has you write there for a criterion carrying an `[evidence: …]` marker. Each
 body edit fires the forge's `edited` event, so any workflow listening for it re-runs and everyone
 watching is notified; an edit that moves no graded line spends that for nothing. So the round's
-report, a repair case table and any similar running log go in the `build note` comment, which
-`review` and the other gates never read as input. CI state is never written into the body: the
+report, a repair case table and any similar running log go in the `build note` comment, which no
+gate reads as input. CI state is never written into the body: the
 checks own it, and the fold's `requiredChecks` is where you read it. A report that discharges a
 criterion is not a running log: it stays in `## Report` in the body, because `review report` reads
-the body only. When a graded part did change, send the corrected body through `build pr-body`,
-below, and nothing else.
+the body only. Marked-row evidence stays where its source names, the body for an observation of your
+own. When a FAIL names it missing, the fix is a body edit and not a note, because the reviewer reads
+that source. When a graded part did change, send the corrected body through `build pr-body`, below,
+and nothing else.
 
 **When the whole fix is the PR body, the route is `fabrika build pr-body <pr>` and nothing else.**
 The recurring one is a FAIL reading `deviations malformed`: the head does not need to move, so a
