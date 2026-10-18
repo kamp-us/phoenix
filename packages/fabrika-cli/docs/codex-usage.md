@@ -10,8 +10,14 @@ Its [capture record](../src/spend/__fixtures__/PROVENANCE.md) distinguishes runt
 ## Repository collection policy
 
 The tracked `.fabrika.jsonc` key `codexUsage` accepts exactly `"on"` or `"off"`. It defaults to
-`"on"` when the file or key is absent. `fabrika status settings` reports its value and provenance.
-It is not eligible for `.fabrika.local.jsonc`, and has no environment override or global setting.
+`"on"` when the file or key is absent. Automatic dispatch and native hooks read the primary
+checkout's current file, because that checkout owns the shared usage ledger. A linked source or
+child worktree's branch copy does not control collection, even when its value differs or the
+primary edit is uncommitted. The primary checkout must remain readable.
+
+`fabrika status settings --root <primary-checkout>` reports the effective value and provenance.
+Without `--root`, settings describes the caller's checkout. The key is not eligible for
+`.fabrika.local.jsonc`, and has no environment override or global setting.
 
 With `"off"`, dispatch startup, periodic ticks and exit/interruption finalizers skip automatic
 collection. Native hooks return quietly on every callback, even when an earlier dispatch left a

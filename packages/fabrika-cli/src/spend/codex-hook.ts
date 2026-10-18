@@ -4,6 +4,7 @@ import {codexUsageKey} from "../config/keys/codex-usage.ts";
 import {readKey} from "../config/read-key.ts";
 import {execCapture} from "../io/exec.ts";
 import {readStdin} from "../io/stdin.ts";
+import {configRootOrRefuse} from "../lane/ground.ts";
 import {runCodexHook} from "./codex-hook-verb.ts";
 
 Effect.gen(function* () {
@@ -15,11 +16,15 @@ Effect.gen(function* () {
 		);
 		return;
 	}
-	const policy = yield* readKey(process.cwd(), codexUsageKey);
+	const configRoot = yield* configRootOrRefuse("Fabrika Codex usage", process.cwd());
+	const policy =
+		typeof configRoot === "string"
+			? yield* readKey(configRoot, codexUsageKey)
+			: ({_tag: "Refused", reason: configRoot.stderr.join(" ")} as const);
 	if (policy._tag === "Refused") {
 		yield* Console.log(
 			JSON.stringify({
-				systemMessage: `Fabrika Codex usage unavailable: ${policy.reason}. Work is unchanged.`,
+				systemMessage: `Fabrika Codex usage unavailable: ${policy.reason}${typeof configRoot === "string" ? ` (primary checkout ${configRoot})` : ""}. Work is unchanged.`,
 			}),
 		);
 		return;

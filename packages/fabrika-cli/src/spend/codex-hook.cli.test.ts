@@ -27,19 +27,32 @@ describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIME
 		"malformed",
 		"unreadable",
 	])("handles %s policy before stale dispatch bindings or transcripts", (policy) => {
-		const cwd = mkdtempSync(join(tmpdir(), "codex-hook-policy-"));
-		dirs.push(cwd);
-		execFileSync("git", ["init", "--quiet"], {cwd});
+		const seat = mkdtempSync(join(tmpdir(), "codex-hook-policy-"));
+		dirs.push(seat);
+		const primary = join(seat, "primary"),
+			cwd = join(seat, "child");
+		mkdirSync(primary);
+		const git = (...args: string[]) => execFileSync("git", args, {cwd: primary});
+		git("init", "--quiet");
+		git("config", "user.name", "fixture");
+		git("config", "user.email", "fixture@example.test");
+		const configPath = join(primary, ".fabrika.jsonc");
+		writeFileSync(configPath, JSON.stringify({codexUsage: policy === "off" ? "on" : "off"}));
+		git("add", ".");
+		git("commit", "--quiet", "-m", "fixture");
+		git("worktree", "add", "--detach", cwd, "HEAD");
 		mkdirSync(join(cwd, "packages"));
 		symlinkSync(
 			fileURLToPath(new URL("../../", import.meta.url)),
 			join(cwd, "packages", "fabrika-cli"),
 		);
-		const configPath = join(cwd, ".fabrika.jsonc");
-		if (policy === "unreadable") mkdirSync(configPath);
-		else writeFileSync(configPath, JSON.stringify({codexUsage: policy === "off" ? "off" : false}));
-		const state = join(cwd, ".git", "fabrika-codex-usage"),
-			home = join(cwd, "codex");
+		if (policy === "unreadable") {
+			rmSync(configPath);
+			mkdirSync(configPath);
+		} else
+			writeFileSync(configPath, JSON.stringify({codexUsage: policy === "off" ? "off" : false}));
+		const state = join(primary, ".git", "fabrika-codex-usage"),
+			home = join(seat, "codex");
 		mkdirSync(join(state, "dispatch"), {recursive: true});
 		const binding = join(state, "dispatch", `${encodeURIComponent(cwd)}.json`);
 		const saved = JSON.stringify({work: {repo: "o/r", issue: 8950, run: "old-dispatch"}});
@@ -78,7 +91,7 @@ describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIME
 		expect(readFileSync(binding, "utf8")).toBe(saved);
 		expect(readFileSync(transcript, "utf8")).toBe("retained native transcript\n");
 		expect(existsSync(join(state, "native.active.json"))).toBe(false);
-		expect(existsSync(join(cwd, ".fabrika", "spend-ledger.jsonl"))).toBe(false);
+		expect(existsSync(join(primary, ".fabrika", "spend-ledger.jsonl"))).toBe(false);
 		expect(existsSync(home)).toBe(false);
 	});
 	it("records native usage through the installed hook", () => {

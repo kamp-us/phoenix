@@ -99,12 +99,17 @@ export const runDispatch = Effect.fn("lane.dispatch")(function* (
 	if (!path.isAbsolute(options.worktree) || !path.isAbsolute(options.skills)) {
 		return refuse(LANE_UNREADABLE, `${VERB}: --worktree and --skills must be absolute paths.`);
 	}
-	const codexUsage = yield* readKey(options.cwd, codexUsageKey);
+	const configRoot = yield* configRootOrRefuse(VERB, options.cwd);
+	if (typeof configRoot !== "string") return configRoot;
+	const codexUsage = yield* readKey(configRoot, codexUsageKey);
 	if (codexUsage._tag === "Refused")
-		return refuse(LANE_UNREADABLE, `${VERB}: ${codexUsage.reason}.`);
+		return refuse(
+			LANE_UNREADABLE,
+			`${VERB}: primary checkout ${configRoot}: ${codexUsage.reason}.`,
+		);
 	if (codexUsage.value === "off")
 		yield* Console.warn(
-			`Fabrika usage: automatic Codex collection is off (${codexUsage.note}); accounting is unavailable.`,
+			`Fabrika usage: automatic Codex collection is off (${codexUsage.note}; primary checkout ${configRoot}); accounting is unavailable.`,
 		);
 	const refreshed = yield* refreshBeforeChild(options, refresh);
 	if (refreshed._tag === "Refused") return refreshed.outcome;

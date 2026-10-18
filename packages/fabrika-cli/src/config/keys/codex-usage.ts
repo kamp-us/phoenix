@@ -20,6 +20,6 @@ export const codexUsageKey: KeyGroup<CodexUsage> = {
 		type: "string",
 		enum: CodexUsage.literals,
 		description:
-			"Automatic Codex usage collection: on (the shipped default) or off (dispatch and native hooks skip transcript, association and ledger collection; accounting is unavailable). Tracked repository policy only. Manual spend commands, existing records, native logs and other providers are unchanged.",
+			"Automatic Codex usage collection: on (the shipped default) or off (dispatch and native hooks skip transcript, association and ledger collection; accounting is unavailable). Read from the primary checkout's tracked policy, including uncommitted edits, rather than linked worktree copies. Manual spend commands, existing records, native logs and other providers are unchanged.",
 	},
 };

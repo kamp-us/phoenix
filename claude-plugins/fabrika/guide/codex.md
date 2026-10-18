@@ -70,7 +70,8 @@ with that coverage. A recording error prints a warning and never changes the tas
 
 ## Disable automatic usage collection
 
-Set this key in the repository's tracked `.fabrika.jsonc`:
+Locate the primary checkout with `git worktree list` (the first entry). Set this key in that
+checkout's tracked `.fabrika.jsonc`, which owns the shared usage ledger:
 
 ```json
 {
@@ -78,9 +79,14 @@ Set this key in the repository's tracked `.fabrika.jsonc`:
 }
 ```
 
-Run `fabrika status settings` to confirm the value and its source, then start a new dispatch.
-Native hooks read the policy on their next callback and return quietly, including with an old
-dispatch binding. An active dispatch keeps its entry policy. Set `"on"` or remove the key to
+Run `fabrika status settings --root <primary-checkout>` with that path to confirm the value and
+its source, then start a new dispatch. Settings without `--root` describes the caller's checkout.
+Keep the primary checkout readable. Its uncommitted policy edit applies immediately; no commit
+or synchronization of existing worktrees is required. A different value in a linked source or
+dispatched child checkout does not override it.
+
+Native hooks read the primary policy on their next callback and return quietly, including with
+an old dispatch binding. An active dispatch keeps its entry policy. Set `"on"` or remove the key to
 restore the default collection behavior. The key cannot be set in `.fabrika.local.jsonc` or an
 environment variable.
 
