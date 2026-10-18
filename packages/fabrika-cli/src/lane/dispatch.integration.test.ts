@@ -6,13 +6,17 @@ import {
 	mkdtempSync,
 	readFileSync,
 	realpathSync,
+	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {fileURLToPath} from "node:url";
 import {NodeServices} from "@effect/platform-node";
-import {Effect} from "effect";
+import {Console, Deferred, Effect, Fiber, FileSystem, Layer} from "effect";
+import {TestClock} from "effect/testing";
+import {ChildProcessSpawner} from "effect/unstable/process";
 import {describe, expect, it} from "vitest";
 import {execCapture} from "../io/exec.ts";
 import {readUsageLedger} from "../spend/usage-ledger.ts";
@@ -35,7 +39,7 @@ const neverRefreshed = () => {
 const git = (cwd: string, ...args: string[]) =>
 	execFileSync("git", args, {cwd, encoding: "utf8"}).trim();
 
-const fixture = (mode = "report") => {
+const fixture = (mode = "report", policy?: unknown) => {
 	const seat = realpathSync(mkdtempSync(join(tmpdir(), "fabrika-codex-dispatch-")));
 	const cwd = join(seat, "primary");
 	const root = join(seat, "lanes");
@@ -48,6 +52,8 @@ const fixture = (mode = "report") => {
 	git(cwd, "config", "user.email", "fixture@example.test");
 	writeFileSync(join(cwd, "tracked.txt"), "primary bytes\n");
 	writeFileSync(join(cwd, ".gitignore"), ".fabrika/\n");
+	if (policy !== undefined)
+		writeFileSync(join(cwd, ".fabrika.jsonc"), JSON.stringify({codexUsage: policy}));
 	git(cwd, "add", ".");
 	git(cwd, "commit", "-m", "fixture");
 	writeFileSync(join(root, "8617", "workflow.json"), coderTemplateText());
@@ -62,6 +68,29 @@ const fixture = (mode = "report") => {
 	const fake = join(bin, "codex");
 	const codexHome = join(seat, "codex-home");
 	mkdirSync(join(codexHome, "sessions"), {recursive: true});
+	const observer = join(seat, "observe-collection.cjs");
+	writeFileSync(
+		observer,
+		String.raw`const fs = require('node:fs');
+const append = fs.appendFileSync;
+const roots = JSON.parse(process.env.FIXTURE_COLLECTION_ROOTS);
+for (const api of [fs, fs.promises]) {
+  for (const name of Object.keys(api)) {
+    const method = api[name];
+    if (typeof method !== 'function') continue;
+    api[name] = function (...args) {
+      const file = args[0];
+      if (typeof file === 'string' && roots.some(root => file === root || file.startsWith(root + '/'))) {
+        append(process.env.FIXTURE_COLLECTION_LOG, JSON.stringify({method:name,file}) + '\n');
+        if (process.env.FIXTURE_POISON === 'on') throw new Error('disabled hook touched collection storage');
+      }
+      return Reflect.apply(method, this, args);
+    };
+  }
+}
+require('node:module').syncBuiltinESMExports();
+`,
+	);
 	writeFileSync(
 		fake,
 		`#!${process.execPath}\nconst fs = require('node:fs');\nconst input = fs.readFileSync(0, 'utf8');\nfs.writeFileSync('observed.json', JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2),input,identity:process.env.FABRIKA_SESSION_ID,model:process.env.FIXTURE_MODEL}));
@@ -70,7 +99,17 @@ for(const [id,parent] of [['native-root',null],['native-child','native-root'],['
 const rows=[{type:'session_meta',payload:{id,parent_thread_id:parent,session_id:'native-root',cwd:process.cwd(),cli_version:'0.154.0',model_provider:'openai'}},{type:'turn_context',payload:{turn_id:'turn',model:'native-model'}},{type:'token_usage_record',payload:{thread_id:id,session_id:'native-root',turn_id:'turn',root_turn_id:'turn',response_id:'response',usage,turn_token_usage:usage,thread_token_usage:usage}}];
 fs.writeFileSync(process.env.CODEX_HOME+'/sessions/'+id+'.jsonl',rows.map(row=>JSON.stringify(row)).join('\\n')+'\\n');
 }
-if(process.env.FIXTURE_MODE === 'fail') process.exit(9);\nif(process.env.FIXTURE_MODE === 'report') fs.appendFileSync(process.env.FIXTURE_LOG, JSON.stringify({task:'issue',event:'ISSUE.DONE',at:'2026-09-08T00:01:00Z',pr:'https://example.test/pr/1'})+'\\n');\n`,
+if(process.env.FIXTURE_MODE === 'hooks') {
+const results=[];
+for(const hook_event_name of ['PreToolUse','Stop','SessionEnd']) {
+const input={hook_event_name,session_id:'native-root',turn_id:'turn',cwd:process.cwd(),transcript_path:process.env.CODEX_HOME+'/sessions/native-root.jsonl',tool_input:{command:'fabrika build issue 8617'}};
+const child=require('node:child_process').spawnSync(process.execPath,['--require',process.env.FIXTURE_FS_OBSERVER,process.env.FIXTURE_HOOK],{cwd:process.cwd(),env:process.env,input:JSON.stringify(input),encoding:'utf8'});
+if(child.status !== 0) throw new Error(child.stderr || String(child.error));
+results.push(JSON.parse(child.stdout));
+}
+fs.writeFileSync('hooks.json',JSON.stringify(results));
+}
+if(process.env.FIXTURE_MODE === 'fail') process.exit(9);\nif(['report','hooks'].includes(process.env.FIXTURE_MODE)) fs.appendFileSync(process.env.FIXTURE_LOG, JSON.stringify({task:'issue',event:'ISSUE.DONE',at:'2026-09-08T00:01:00Z',pr:'https://example.test/pr/1'})+'\\n');\n`,
 	);
 	chmodSync(fake, 0o755);
 	return {
@@ -95,6 +134,15 @@ if(process.env.FIXTURE_MODE === 'fail') process.exit(9);\nif(process.env.FIXTURE
 			FIXTURE_MODE: mode,
 			FIXTURE_MODEL: "kept",
 			FIXTURE_LOG: join(root, "8617", "events.jsonl"),
+			FIXTURE_HOOK: fileURLToPath(new URL("../spend/codex-hook.ts", import.meta.url)),
+			FIXTURE_FS_OBSERVER: observer,
+			FIXTURE_COLLECTION_ROOTS: JSON.stringify([
+				codexHome,
+				join(cwd, ".git", "fabrika-codex-usage"),
+				join(cwd, ".fabrika", "spend-ledger.jsonl"),
+			]),
+			FIXTURE_COLLECTION_LOG: join(seat, "hook-collection.jsonl"),
+			FIXTURE_POISON: "off",
 		},
 	};
 };
@@ -118,6 +166,197 @@ const briefFor = (options: ReturnType<typeof fixture>) =>
 describe("Codex dispatch against real git and a fake child process", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
+	it.each([
+		{primaryPolicy: "off", childPolicy: "on"},
+		{primaryPolicy: "off", childPolicy: undefined},
+		{primaryPolicy: "on", childPolicy: "off"},
+		{primaryPolicy: undefined, childPolicy: "off"},
+	])("uses primary $primaryPolicy across dispatch and native hooks with child $childPolicy", async ({
+		primaryPolicy,
+		childPolicy,
+	}) => {
+		const options = fixture("hooks", childPolicy);
+		const primary = options.cwd;
+		const caller = join(primary, "..", "caller");
+		git(primary, "worktree", "add", "--detach", caller, "HEAD");
+		options.cwd = caller;
+		const config = join(primary, ".fabrika.jsonc");
+		if (primaryPolicy === undefined) rmSync(config);
+		else writeFileSync(config, JSON.stringify({codexUsage: primaryPolicy}));
+		options.env.FIXTURE_POISON = primaryPolicy === "off" ? "on" : "off";
+		const notices: string[] = [];
+		let proved = false;
+		const result = await Effect.runPromise(
+			runDispatch(
+				options,
+				() => Effect.succeed(answer(briefFor(options))),
+				() => {
+					proved = true;
+					return Effect.succeed(answer("proven"));
+				},
+				neverRefreshed,
+			).pipe(
+				Effect.provideService(Console.Console, {
+					...console,
+					warn: (...args: unknown[]) => {
+						notices.push(args.join(" "));
+					},
+				}),
+				Effect.provide(NodeServices.layer),
+			),
+		);
+		expect(result.code).toBe(0);
+		expect(proved).toBe(true);
+		const hooks = JSON.parse(readFileSync(join(options.worktree, "hooks.json"), "utf8"));
+		const ledger = join(primary, ".fabrika", "spend-ledger.jsonl");
+		if (primaryPolicy === "off") {
+			expect(existsSync(options.env.FIXTURE_COLLECTION_LOG)).toBe(false);
+			expect(hooks).toEqual([{}, {}, {}]);
+			expect(notices).toHaveLength(1);
+			expect(notices[0]).toContain(primary);
+			expect(existsSync(ledger)).toBe(false);
+			expect(existsSync(join(primary, ".git", "fabrika-codex-usage"))).toBe(false);
+		} else {
+			expect(readFileSync(options.env.FIXTURE_COLLECTION_LOG, "utf8")).toContain(
+				"native-root.jsonl",
+			);
+			expect(notices.some((notice) => notice.includes("collection is off"))).toBe(false);
+			expect(readUsageLedger(readFileSync(ledger, "utf8")).records.length).toBeGreaterThan(0);
+		}
+	});
+	it.each([
+		"on",
+		"off",
+	])("honors %s through repeated ticks, completion and interruption", async (policy) => {
+		for (const ending of ["report", "interrupt"]) {
+			const options = fixture("report", policy);
+			const touched: string[] = [],
+				notices: string[] = [];
+			let proved = false;
+			const program = Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+				const started = yield* Deferred.make<void>(),
+					finish = yield* Deferred.make<void>();
+				const ledger = join(options.cwd, ".fabrika", "spend-ledger.jsonl");
+				const forbidden = [
+					options.env.CODEX_HOME,
+					join(options.cwd, ".git", "fabrika-codex-usage"),
+					ledger,
+				];
+				const layerStub = new Proxy(fs, {
+					get(target, property) {
+						const method = Reflect.get(target, property);
+						if (typeof method !== "function") return method;
+						return (...args: unknown[]) => {
+							const file = args[0];
+							if (typeof file === "string" && forbidden.some((prefix) => file.startsWith(prefix))) {
+								touched.push(`${String(property)}:${file}`);
+								if (policy === "off")
+									return Effect.die("disabled dispatch touched collection storage");
+							}
+							return Reflect.apply(method, target, args);
+						};
+					},
+				});
+				const dispatch = runDispatch(
+					options,
+					() => Effect.succeed(answer(briefFor(options))),
+					() => {
+						proved = true;
+						return Effect.succeed(answer("proven"));
+					},
+					neverRefreshed,
+				).pipe(
+					Effect.provideService(FileSystem.FileSystem, layerStub),
+					Effect.provideService(Console.Console, {
+						...console,
+						warn: (...args: unknown[]) => {
+							notices.push(args.join(" "));
+						},
+					}),
+					Effect.provideService(
+						ChildProcessSpawner.ChildProcessSpawner,
+						ChildProcessSpawner.make((command) =>
+							Effect.map(spawner.spawn(command), (handle) =>
+								command._tag !== "StandardCommand" || command.command !== "codex"
+									? handle
+									: {
+											...handle,
+											exitCode: Effect.gen(function* () {
+												const code = yield* handle.exitCode;
+												yield* Deferred.succeed(started, undefined);
+												yield* Deferred.await(finish);
+												return code;
+											}),
+										},
+							),
+						),
+					),
+				);
+				const fiber = yield* Effect.forkChild(dispatch);
+				yield* Effect.raceFirst(
+					Deferred.await(started),
+					Fiber.join(fiber).pipe(Effect.andThen(Effect.die("dispatch ended before child"))),
+				);
+				const initial = touched.length;
+				yield* TestClock.adjust("5 seconds");
+				yield* TestClock.adjust("5 seconds");
+				const ticks = touched.length;
+				if (ending === "interrupt") yield* Fiber.interrupt(fiber);
+				else {
+					yield* Deferred.succeed(finish, undefined);
+					const result = yield* Fiber.join(fiber);
+					expect(result.code).toBe(0);
+				}
+				expect(proved).toBe(ending === "report");
+				if (policy === "off") {
+					expect(touched).toEqual([]);
+					expect(notices).toHaveLength(1);
+					expect(notices[0]).toContain("`codexUsage` as declared in .fabrika.jsonc");
+					expect(notices[0]).toContain("unavailable");
+					expect(existsSync(ledger)).toBe(false);
+				} else {
+					expect(initial).toBeGreaterThan(0);
+					expect(ticks).toBeGreaterThan(initial);
+					expect(touched.length).toBeGreaterThan(ticks);
+				}
+			});
+			await Effect.runPromise(
+				program.pipe(Effect.provide(Layer.merge(NodeServices.layer, TestClock.layer()))),
+			);
+		}
+	});
+	it.each([
+		"malformed",
+		"unreadable",
+	])("refuses %s policy before preparing or launching a stage", async (kind) => {
+		const options = fixture("report", "off");
+		const primary = options.cwd;
+		options.cwd = join(primary, "..", "caller");
+		git(primary, "worktree", "add", "--detach", options.cwd, "HEAD");
+		const config = join(primary, ".fabrika.jsonc");
+		if (kind === "unreadable") {
+			rmSync(config);
+			mkdirSync(config);
+		} else writeFileSync(config, JSON.stringify({codexUsage: false}));
+		const result = await Effect.runPromise(
+			runDispatch(
+				options,
+				() => {
+					throw new Error("brief reached");
+				},
+				() => {
+					throw new Error("proof reached");
+				},
+				neverRefreshed,
+			).pipe(Effect.provide(NodeServices.layer)),
+		);
+		expect(result.code).toBe(11);
+		expect(result.stderr.join(" ")).toContain(kind === "malformed" ? "`codexUsage`" : ".fabrika");
+		expect(existsSync(options.worktree)).toBe(false);
+		expect(existsSync(join(primary, ".git", "fabrika-codex-usage"))).toBe(false);
+	});
 	it("isolates actual child cwd, preloads the role, preserves brief and configuration, and proves the report", async () => {
 		const options = fixture();
 		const original = git(options.cwd, "rev-parse", "HEAD");

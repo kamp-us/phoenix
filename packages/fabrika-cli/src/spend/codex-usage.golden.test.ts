@@ -42,6 +42,7 @@ it("persists captured native usage before issue resolution and replays it withou
 	const run = (command: string) =>
 		Effect.runPromise(
 			runCodexHook({
+				policy: "on",
 				input: JSON.stringify({...event, tool_input: {command}}),
 				sessions,
 				state: join(dir, "state"),

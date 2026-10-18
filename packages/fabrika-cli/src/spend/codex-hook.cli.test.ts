@@ -1,5 +1,6 @@
 import {execFileSync} from "node:child_process";
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -21,6 +22,78 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, {recursive: true, force: true});
 });
 describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
+	it.each([
+		"off",
+		"malformed",
+		"unreadable",
+	])("handles %s policy before stale dispatch bindings or transcripts", (policy) => {
+		const seat = mkdtempSync(join(tmpdir(), "codex-hook-policy-"));
+		dirs.push(seat);
+		const primary = join(seat, "primary"),
+			cwd = join(seat, "child");
+		mkdirSync(primary);
+		const git = (...args: string[]) => execFileSync("git", args, {cwd: primary});
+		git("init", "--quiet");
+		git("config", "user.name", "fixture");
+		git("config", "user.email", "fixture@example.test");
+		const configPath = join(primary, ".fabrika.jsonc");
+		writeFileSync(configPath, JSON.stringify({codexUsage: policy === "off" ? "on" : "off"}));
+		git("add", ".");
+		git("commit", "--quiet", "-m", "fixture");
+		git("worktree", "add", "--detach", cwd, "HEAD");
+		mkdirSync(join(cwd, "packages"));
+		symlinkSync(
+			fileURLToPath(new URL("../../", import.meta.url)),
+			join(cwd, "packages", "fabrika-cli"),
+		);
+		if (policy === "unreadable") {
+			rmSync(configPath);
+			mkdirSync(configPath);
+		} else
+			writeFileSync(configPath, JSON.stringify({codexUsage: policy === "off" ? "off" : false}));
+		const state = join(primary, ".git", "fabrika-codex-usage"),
+			home = join(seat, "codex");
+		mkdirSync(join(state, "dispatch"), {recursive: true});
+		const binding = join(state, "dispatch", `${encodeURIComponent(cwd)}.json`);
+		const saved = JSON.stringify({work: {repo: "o/r", issue: 8950, run: "old-dispatch"}});
+		writeFileSync(binding, saved);
+		const transcript = join(cwd, "transcript.jsonl");
+		writeFileSync(transcript, "retained native transcript\n");
+		const config = JSON.parse(
+			readFileSync(new URL("../../docs/codex-hooks.json", import.meta.url), "utf8"),
+		);
+		for (const hook_event_name of [
+			"SessionStart",
+			"PreToolUse",
+			"Stop",
+			"SubagentStop",
+			"Interrupt",
+			"SessionEnd",
+		]) {
+			const output = execFileSync("/bin/sh", ["-c", config.hooks.PreToolUse[0].hooks[0].command], {
+				cwd,
+				env: {...process.env, CODEX_HOME: home},
+				input: JSON.stringify({
+					session_id: "native",
+					turn_id: "turn",
+					cwd,
+					transcript_path: transcript,
+					agent_id: "child",
+					hook_event_name,
+					tool_input: {command: "fabrika build issue 8950"},
+				}),
+				encoding: "utf8",
+			});
+			const result = JSON.parse(output);
+			if (policy === "off") expect(result).toEqual({});
+			else expect(result.systemMessage).toContain("usage unavailable");
+		}
+		expect(readFileSync(binding, "utf8")).toBe(saved);
+		expect(readFileSync(transcript, "utf8")).toBe("retained native transcript\n");
+		expect(existsSync(join(state, "native.active.json"))).toBe(false);
+		expect(existsSync(join(primary, ".fabrika", "spend-ledger.jsonl"))).toBe(false);
+		expect(existsSync(home)).toBe(false);
+	});
 	it("records native usage through the installed hook", () => {
 		const command = "node packages/fabrika-cli/src/bin.ts build claim 8950";
 		const cwd = mkdtempSync(join(tmpdir(), "codex-hook-cli-"));

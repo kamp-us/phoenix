@@ -58,7 +58,7 @@ it("accepts the captured native SessionStart key set without inventing a turn or
 		.replace(event.transcript_path as string, transcript);
 	const ledger = join(dir, "ledger.jsonl");
 	const result = await Effect.runPromise(
-		runCodexHook({input, sessions, state, ledger, repo: "fixture/repo"}).pipe(
+		runCodexHook({policy: "on", input, sessions, state, ledger, repo: "fixture/repo"}).pipe(
 			Effect.provide(NodeServices.layer),
 		),
 	);

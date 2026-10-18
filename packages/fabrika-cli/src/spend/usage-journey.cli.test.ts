@@ -55,7 +55,14 @@ describe("assembled usage journey", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () =>
 				cwd,
 				...extra,
 			};
-			const options = {input: JSON.stringify(input), sessions, state, ledger, repo: "fixture/repo"};
+			const options = {
+				policy: "on",
+				input: JSON.stringify(input),
+				sessions,
+				state,
+				ledger,
+				repo: "fixture/repo",
+			};
 			const program = `import {Effect} from ${JSON.stringify(effect)}; import {NodeServices} from ${JSON.stringify(nodeServices)}; import {runCodexHook} from ${JSON.stringify(codexHook)}; const result = await Effect.runPromise(runCodexHook(${JSON.stringify(options)}).pipe(Effect.provide(NodeServices.layer))); console.log(result.stdout);`;
 			const result = spawnSync(process.execPath, ["--input-type=module", "-e", program], {
 				cwd,

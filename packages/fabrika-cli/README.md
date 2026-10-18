@@ -68,6 +68,8 @@ exit table is in `fabrika triage sweep-homes --help` and the
 
 ## Reference
 
+- The primary checkout's tracked `codexUsage: "off"` setting disables automatic Codex accounting;
+  it defaults to `"on"`. See [collection policy and coverage](docs/codex-usage.md#repository-collection-policy).
 - [`docs/usage-recording.md`](./docs/usage-recording.md) describes the shared host recording API,
   versioned usage envelopes, issue/run model and token summaries, native counter meanings and
   recovery. Claude and Codex totals report their coverage; Pi observation remains unavailable.

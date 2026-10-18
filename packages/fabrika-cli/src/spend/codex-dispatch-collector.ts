@@ -1,8 +1,10 @@
 import {Console, Effect, FileSystem, Path} from "effect";
+import type {CodexUsage} from "../config/keys/codex-usage.ts";
 import {collectCodexFrom, readCodexInventory} from "./codex-collector.ts";
 import type {CodexWork} from "./codex-records.ts";
 
 export interface CodexDispatchCollection {
+	readonly policy: CodexUsage;
 	readonly sessions: string;
 	readonly ledger: string;
 	readonly worktree: string;
@@ -11,6 +13,7 @@ export interface CodexDispatchCollection {
 }
 export const collectCodexDispatch = Effect.fn("spend.collectCodexDispatch")(
 	function* (options: CodexDispatchCollection) {
+		if (options.policy === "off") return;
 		const fs = yield* FileSystem.FileSystem;
 		const path = yield* Path.Path;
 		yield* fs.makeDirectory(options.state, {recursive: true});

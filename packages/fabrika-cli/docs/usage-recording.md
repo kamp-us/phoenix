@@ -4,6 +4,10 @@ The common recorder accepts native usage facts from host integrations. It owns v
 identity comparison and storage. Host adapters own native parsing, launch bindings and descendant
 discovery. The recorder never starts a model or changes its settings or task result.
 
+Automatic Codex collection follows the primary checkout's tracked
+[`codexUsage` policy](codex-usage.md#repository-collection-policy). Disabling it makes new
+automatic accounting unavailable; manual commands below and previously recorded facts remain usable.
+
 ## Entry points
 
 `spend record [--ledger <path>]` reads one version-2 JSON envelope from stdin. The default path is

@@ -19,6 +19,7 @@ import {capClearAuthorsKey} from "./keys/cap-clear-authors.ts";
 import {catalogGuardKey} from "./keys/catalog-guard.ts";
 import {ciKey} from "./keys/ci.ts";
 import {codeValidatorsKey} from "./keys/code-validators.ts";
+import {codexUsageKey} from "./keys/codex-usage.ts";
 import {configValidatorsKey} from "./keys/config-validators.ts";
 import {containmentVocabularyKey} from "./keys/containment-vocabulary.ts";
 import {unreadableCodeownersKey} from "./keys/control-plane.ts";
@@ -55,6 +56,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(catalogGuardKey),
 	register(ciKey),
 	register(codeValidatorsKey),
+	register(codexUsageKey),
 	register(configValidatorsKey),
 	register(containmentVocabularyKey),
 	register(cycleDocKey),

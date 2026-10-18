@@ -7,6 +7,16 @@ and an absent worktree path outside the source and primary checkout. Multi-task 
 `--task`. The normal repository-derived lanes root remains the default. Dispatch accepts the
 five shell states that `lane brief` emits and no other state or harness.
 
+Before preparing the stage, dispatch resolves the tracked
+[`codexUsage` policy](codex-usage.md#repository-collection-policy) once from the primary checkout
+that owns the shared usage ledger. Native hooks resolve from that same owner, independently of
+the source or child worktree's committed copy. An uncommitted edit in the primary checkout applies;
+the primary checkout must remain readable. An unreadable or malformed policy refuses at `11`
+before launch or accounting IO. With `"off"`, it prints one notice naming the setting, its layer
+and the primary checkout, and performs no startup, periodic or finalizer collection;
+accounting is unavailable. Worktree creation, native execution settings and terminal proof follow
+their ordinary path. The resolved policy remains fixed for this dispatch.
+
 On an epic run's child the verb first refreshes the assembly branch the worktree will be cut from,
 through `lane refresh`'s own code and before the brief is emitted, gated by
 `assemblyRefresh.onDispatch`, read from the `.fabrika.jsonc` of the repository that OWNS the cwd —

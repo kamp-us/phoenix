@@ -1,10 +1,12 @@
 import {Crypto, Effect, FileSystem, Path, Result} from "effect";
+import type {CodexUsage} from "../config/keys/codex-usage.ts";
 import {answer} from "../verb.ts";
 import {codexAttribution} from "./codex-attribution.ts";
 import {collectCodex} from "./codex-collector.ts";
 import {type CodexWork, id, json, object, readCodexSession} from "./codex-records.ts";
 
 export interface CodexHookOptions {
+	readonly policy: CodexUsage;
 	readonly input: string;
 	readonly sessions: string;
 	readonly state: string;
@@ -31,6 +33,7 @@ const readWork = (value: unknown): CodexWork | undefined => {
 };
 export const runCodexHook = Effect.fn("spend.codexHook")(
 	function* (options: CodexHookOptions) {
+		if (options.policy === "off") return advisory([]);
 		const fs = yield* FileSystem.FileSystem;
 		const path = yield* Path.Path;
 		const event = object(json(options.input));

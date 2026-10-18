@@ -1,7 +1,10 @@
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect, Path} from "effect";
+import {codexUsageKey} from "../config/keys/codex-usage.ts";
+import {readKey} from "../config/read-key.ts";
 import {execCapture} from "../io/exec.ts";
 import {readStdin} from "../io/stdin.ts";
+import {configRootOrRefuse} from "../lane/ground.ts";
 import {runCodexHook} from "./codex-hook-verb.ts";
 
 Effect.gen(function* () {
@@ -11,6 +14,23 @@ Effect.gen(function* () {
 		yield* Console.log(
 			JSON.stringify({systemMessage: "Fabrika usage hook input unreadable; work is unchanged."}),
 		);
+		return;
+	}
+	const configRoot = yield* configRootOrRefuse("Fabrika Codex usage", process.cwd());
+	const policy =
+		typeof configRoot === "string"
+			? yield* readKey(configRoot, codexUsageKey)
+			: ({_tag: "Refused", reason: configRoot.stderr.join(" ")} as const);
+	if (policy._tag === "Refused") {
+		yield* Console.log(
+			JSON.stringify({
+				systemMessage: `Fabrika Codex usage unavailable: ${policy.reason}${typeof configRoot === "string" ? ` (primary checkout ${configRoot})` : ""}. Work is unchanged.`,
+			}),
+		);
+		return;
+	}
+	if (policy.value === "off") {
+		yield* Console.log("{}");
 		return;
 	}
 	const common = yield* execCapture("git", [
@@ -32,6 +52,7 @@ Effect.gen(function* () {
 	}
 	const state = path.join(common.stdout.trim(), "fabrika-codex-usage");
 	const result = yield* runCodexHook({
+		policy: policy.value,
 		input: input.text,
 		sessions: path.join(home, "sessions"),
 		state,

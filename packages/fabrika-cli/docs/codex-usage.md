@@ -7,6 +7,35 @@ The [Codex setup guide](../../../claude-plugins/fabrika/guide/codex.md) installs
 The hook handler also runs against a [captured native SessionStart input](../src/spend/__fixtures__/codex-session-start.payload.golden.json).
 Its [capture record](../src/spend/__fixtures__/PROVENANCE.md) distinguishes runtime input from constructed usage scenarios.
 
+## Repository collection policy
+
+The tracked `.fabrika.jsonc` key `codexUsage` accepts exactly `"on"` or `"off"`. It defaults to
+`"on"` when the file or key is absent. Automatic dispatch and native hooks read the primary
+checkout's current file, because that checkout owns the shared usage ledger. A linked source or
+child worktree's branch copy does not control collection, even when its value differs or the
+primary edit is uncommitted. The primary checkout must remain readable.
+
+`fabrika status settings --root <primary-checkout>` reports the effective value and provenance.
+Without `--root`, settings describes the caller's checkout. The key is not eligible for
+`.fabrika.local.jsonc`, and has no environment override or global setting.
+
+With `"off"`, dispatch startup, periodic ticks and exit/interruption finalizers skip automatic
+collection. Native hooks return quietly on every callback, even when an earlier dispatch left a
+binding. Neither path reads transcripts or inventory, reads or writes association/binding/roster
+state, or writes the usage ledger. Dispatch prints one notice naming the setting and its source:
+accounting is unavailable. No measured-zero total or complete coverage row is created.
+
+Each automatic entry resolves the policy once before collection IO. A malformed value or an
+unreadable configuration refuses dispatch before launch; a native hook returns a nonfatal usage
+unavailable notice. Neither falls back to enabled collection. An already-running dispatch retains
+the policy it resolved at entry; a later dispatch or callback reads the current policy.
+
+Manual `spend record`, reads and rollups, previously recorded facts, native Codex session logs,
+execution settings and other providers are unchanged. Existing totals remain historical facts,
+not coverage of work performed while collection was disabled. See the
+[setup guide](../../../claude-plugins/fabrika/guide/codex.md#disable-automatic-usage-collection)
+for the configuration step.
+
 ## Supported records
 
 The reader accepts Codex 0.153.4 and 0.154.0. A committed
@@ -33,7 +62,7 @@ unknown meaning. Unknown versions, invalid counters and identity gaps produce in
 
 ## Entry points and recovery
 
-[dispatch-verb.ts](../src/lane/dispatch-verb.ts) saves the issue/run association before launching
+[dispatch-verb.ts](../src/lane/dispatch-verb.ts), when collection is enabled, saves the issue/run association before launching
 Codex. It scans native sessions at start, every five seconds while the process runs, and on exit
 or Effect interruption. The verified worktree selects native root sessions; parent links select
 descendants recursively. Collection never sets model, permission or approval options.

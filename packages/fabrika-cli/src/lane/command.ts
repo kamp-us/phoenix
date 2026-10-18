@@ -194,13 +194,14 @@ const dispatch = leafCommand(
 			"dispatch",
 			"Runs one lane task under Codex in a fresh worktree and prints {harness, task, event, worktree}.",
 			{
-				11: "input, isolation, process or state failure",
+				11: "input, config, isolation, process or state failure",
 				18: "unsupported harness or inactive state",
 				22: "no unique new terminal",
 				39: ROOT_EXITS[39],
 				42: "assembly refresh conflicted, nothing created",
 				65: ROOT_EXITS[65],
 			},
+			["Automatic accounting reads the primary checkout's codexUsage policy (default on)."],
 		),
 	),
 	Command.withExamples([
