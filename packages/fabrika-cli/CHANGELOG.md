@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.10.0...fabrika-cli-v0.11.0) (2026-10-18)
+
+
+### Features
+
+* Let repositories turn automatic Codex usage collection off ([#10714](https://github.com/kamp-us/phoenix/issues/10714)) ([b653804](https://github.com/kamp-us/phoenix/commit/b65380474d5e218d6ff71e3982330810ab59e7ce))
+* **spend:** share automatic usage collection policy ([#10716](https://github.com/kamp-us/phoenix/issues/10716)) ([#10717](https://github.com/kamp-us/phoenix/issues/10717)) ([4802776](https://github.com/kamp-us/phoenix/commit/4802776ad4911ac025ecfbf7bc49f6c17e13e2bb))
+
 ## [0.10.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.9.0...fabrika-cli-v0.10.0) (2026-10-05)
 
 
