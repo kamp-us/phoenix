@@ -165,7 +165,7 @@ const entriesFrom = (
 		_tag: "Process" as const,
 		processId: row.id,
 		programId: row.programId,
-		label: row.programId,
+		label: projects.displayId(row.programId),
 		parentId: row.parentId._tag === "Some" ? row.parentId.value : null,
 	})),
 });
@@ -491,6 +491,7 @@ export function AttachedDesk({
 			board={board}
 			windowTitles={windowTitles}
 			processRemove={processRemove}
+			projects={projects}
 		/>
 	);
 

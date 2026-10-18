@@ -45,6 +45,7 @@ import type {Key, PrefixTable} from "@kampus/tuval-ui/keys";
 import type {ReactElement, ReactNode} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {usePalette} from "../../palette/index.ts";
+import {ProjectLabels} from "../../projects/labels.ts";
 import {commandIndexFor} from "../commands/index.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
@@ -136,6 +137,8 @@ export interface DeskProps {
 	 * key each empty window's picker answers. Off — the default — leaves both absent.
 	 */
 	readonly processRemove?: boolean;
+	/** The open projects' labels, which each picker shows scoped ids under (#9987). */
+	readonly projects?: ProjectLabels;
 }
 
 export function Desk({
@@ -155,6 +158,7 @@ export function Desk({
 	board = false,
 	windowTitles = false,
 	processRemove = false,
+	projects = ProjectLabels.none,
 }: DeskProps): ReactElement {
 	// The picker's "Open project…" asks over the same socket the palette does (#9697), so a desk with
 	// no kernel behind it offers no row it could not carry out.
@@ -357,6 +361,7 @@ export function Desk({
 			reducedMotion={reducedMotion}
 			processRemove={processRemove}
 			opener={opener}
+			projects={projects}
 		/>
 	);
 
