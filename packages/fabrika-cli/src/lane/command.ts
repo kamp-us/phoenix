@@ -192,7 +192,7 @@ const dispatch = leafCommand(
 	Command.withDescription(
 		laneHelp(
 			"dispatch",
-			"Runs one lane task under Codex in a fresh worktree and prints {harness, task, event, worktree}. Automatic accounting reads the primary checkout's codexUsage policy (default on).",
+			"Runs one lane task under Codex in a fresh worktree and prints {harness, task, event, worktree}.",
 			{
 				11: "input, config, isolation, process or state failure",
 				18: "unsupported harness or inactive state",
@@ -201,6 +201,7 @@ const dispatch = leafCommand(
 				42: "assembly refresh conflicted, nothing created",
 				65: ROOT_EXITS[65],
 			},
+			["Automatic accounting reads the primary checkout's codexUsage policy (default on)."],
 		),
 	),
 	Command.withExamples([
