@@ -37,7 +37,7 @@ describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIME
 		git("config", "user.name", "fixture");
 		git("config", "user.email", "fixture@example.test");
 		const configPath = join(primary, ".fabrika.jsonc");
-		writeFileSync(configPath, JSON.stringify({codexUsage: policy === "off" ? "on" : "off"}));
+		writeFileSync(configPath, JSON.stringify({usageCollection: policy === "off" ? "on" : "off"}));
 		git("add", ".");
 		git("commit", "--quiet", "-m", "fixture");
 		git("worktree", "add", "--detach", cwd, "HEAD");
@@ -50,7 +50,10 @@ describe("installed repository Codex hook entry", {timeout: SUBPROCESS_TEST_TIME
 			rmSync(configPath);
 			mkdirSync(configPath);
 		} else
-			writeFileSync(configPath, JSON.stringify({codexUsage: policy === "off" ? "off" : false}));
+			writeFileSync(
+				configPath,
+				JSON.stringify({usageCollection: policy === "off" ? "off" : false}),
+			);
 		const state = join(primary, ".git", "fabrika-codex-usage"),
 			home = join(seat, "codex");
 		mkdirSync(join(state, "dispatch"), {recursive: true});

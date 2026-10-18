@@ -9,32 +9,12 @@ Its [capture record](../src/spend/__fixtures__/PROVENANCE.md) distinguishes runt
 
 ## Repository collection policy
 
-The tracked `.fabrika.jsonc` key `codexUsage` accepts exactly `"on"` or `"off"`. It defaults to
-`"on"` when the file or key is absent. Automatic dispatch and native hooks read the primary
-checkout's current file, because that checkout owns the shared usage ledger. A linked source or
-child worktree's branch copy does not control collection, even when its value differs or the
-primary edit is uncommitted. The primary checkout must remain readable.
-
-`fabrika status settings --root <primary-checkout>` reports the effective value and provenance.
-Without `--root`, settings describes the caller's checkout. The key is not eligible for
-`.fabrika.local.jsonc`, and has no environment override or global setting.
-
-With `"off"`, dispatch startup, periodic ticks and exit/interruption finalizers skip automatic
-collection. Native hooks return quietly on every callback, even when an earlier dispatch left a
-binding. Neither path reads transcripts or inventory, reads or writes association/binding/roster
-state, or writes the usage ledger. Dispatch prints one notice naming the setting and its source:
-accounting is unavailable. No measured-zero total or complete coverage row is created.
-
-Each automatic entry resolves the policy once before collection IO. A malformed value or an
-unreadable configuration refuses dispatch before launch; a native hook returns a nonfatal usage
-unavailable notice. Neither falls back to enabled collection. An already-running dispatch retains
-the policy it resolved at entry; a later dispatch or callback reads the current policy.
-
-Manual `spend record`, reads and rollups, previously recorded facts, native Codex session logs,
-execution settings and other providers are unchanged. Existing totals remain historical facts,
-not coverage of work performed while collection was disabled. See the
-[setup guide](../../../claude-plugins/fabrika/guide/codex.md#disable-automatic-usage-collection)
-for the configuration step.
+Dispatch and native callbacks follow the common
+[`usageCollection` policy](usage-recording.md#automatic-collection-policy), default on and owned by
+the primary checkout. Off skips automatic collection and makes new accounting unavailable;
+invalid policy refuses dispatch or warns nonfatally from a native hook. The same policy controls
+Claude lifecycle collection. The [setup guide](../../../claude-plugins/fabrika/guide/codex.md#disable-automatic-usage-collection)
+gives the configuration step; enabled Codex coverage remains partial as described below.
 
 ## Supported records
 

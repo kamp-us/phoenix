@@ -7,13 +7,17 @@ import {KEY_GROUPS} from "../registry.ts";
 const absent: ConfigSource = {_tag: "Absent"};
 const declared = (value: unknown): ConfigSource => ({
 	_tag: "Text",
-	text: JSON.stringify({codexUsage: value}),
+	text: JSON.stringify({usageCollection: value}),
 });
 
-describe("codexUsage configuration and settings", () => {
+describe("usageCollection configuration and settings", () => {
 	it.each([
 		{source: absent, expected: {provenance: "default", value: "on"}},
 		{source: {_tag: "Text", text: "{}"}, expected: {provenance: "default", value: "on"}},
+		{
+			source: {_tag: "Text", text: '{"codexUsage":"off"}'},
+			expected: {provenance: "default", value: "on"},
+		},
 		{source: declared("on"), expected: {provenance: "declared", layer: "tracked", value: "on"}},
 		{source: declared("off"), expected: {provenance: "declared", layer: "tracked", value: "off"}},
 		...[true, false, null, "disabled", " off ", [], {}].map((value) => ({
@@ -27,7 +31,7 @@ describe("codexUsage configuration and settings", () => {
 		expected: object;
 	}>)("exposes $source with $expected", ({source, expected}) => {
 		const row = settingRows({tracked: source, local: absent}).find(
-			(one) => one.key === "codexUsage",
+			(one) => one.key === "usageCollection",
 		);
 		expect(row).toMatchObject(expected);
 		if (row?.provenance === "unknown") expect(row).not.toHaveProperty("value");
@@ -35,16 +39,20 @@ describe("codexUsage configuration and settings", () => {
 
 	it("refuses a machine-local opt-out and leaves it out of the local editor schema", () => {
 		const rows = settingRows({tracked: absent, local: declared("off")});
-		expect(rows.find((one) => one.key === "codexUsage")).toMatchObject({provenance: "unknown"});
+		expect(rows.find((one) => one.key === "usageCollection")).toMatchObject({
+			provenance: "unknown",
+		});
 		const tracked = assembleSchema(KEY_GROUPS),
 			local = assembleLocalSchema(KEY_GROUPS);
 		expect(tracked._tag).toBe("Complete");
 		expect(local._tag).toBe("Complete");
 		if (tracked._tag !== "Complete" || local._tag !== "Complete") return;
-		expect(tracked.schema.properties.codexUsage).toMatchObject({
+		expect(tracked.schema.properties.usageCollection).toMatchObject({
 			type: "string",
 			enum: ["on", "off"],
 		});
-		expect(local.schema.properties).not.toHaveProperty("codexUsage");
+		expect(rows.some((one) => one.key === "codexUsage")).toBe(false);
+		expect(tracked.schema.properties).not.toHaveProperty("codexUsage");
+		expect(local.schema.properties).not.toHaveProperty("usageCollection");
 	});
 });

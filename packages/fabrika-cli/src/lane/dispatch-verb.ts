@@ -1,8 +1,8 @@
 import {Console, Effect, FileSystem, Path, Result, Stream} from "effect";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
 import {assemblyRefreshKey} from "../config/keys/assembly-refresh.ts";
-import {codexUsageKey} from "../config/keys/codex-usage.ts";
 import {dependencyReconcilerKey} from "../config/keys/dependency-reconciler.ts";
+import {usageCollectionKey} from "../config/keys/usage-collection.ts";
 import {readKey} from "../config/read-key.ts";
 import {execCapture, execStatus} from "../io/exec.ts";
 import {sessionIdFrom, sessionIdUnset} from "../io/session-id.ts";
@@ -101,15 +101,15 @@ export const runDispatch = Effect.fn("lane.dispatch")(function* (
 	}
 	const configRoot = yield* configRootOrRefuse(VERB, options.cwd);
 	if (typeof configRoot !== "string") return configRoot;
-	const codexUsage = yield* readKey(configRoot, codexUsageKey);
-	if (codexUsage._tag === "Refused")
+	const usageCollection = yield* readKey(configRoot, usageCollectionKey);
+	if (usageCollection._tag === "Refused")
 		return refuse(
 			LANE_UNREADABLE,
-			`${VERB}: primary checkout ${configRoot}: ${codexUsage.reason}.`,
+			`${VERB}: primary checkout ${configRoot}: ${usageCollection.reason}.`,
 		);
-	if (codexUsage.value === "off")
+	if (usageCollection.value === "off")
 		yield* Console.warn(
-			`Fabrika usage: automatic Codex collection is off (${codexUsage.note}; primary checkout ${configRoot}); accounting is unavailable.`,
+			`Fabrika usage: automatic collection is off (${usageCollection.note}; primary checkout ${configRoot}); accounting is unavailable.`,
 		);
 	const refreshed = yield* refreshBeforeChild(options, refresh);
 	if (refreshed._tag === "Refused") return refreshed.outcome;
@@ -260,7 +260,7 @@ export const runDispatch = Effect.fn("lane.dispatch")(function* (
 		}
 		const codexHome = options.env.CODEX_HOME ?? path.join(options.env.HOME ?? "", ".codex");
 		const usage = {
-			policy: codexUsage.value,
+			policy: usageCollection.value,
 			sessions: path.join(codexHome, "sessions"),
 			ledger: path.join(primary, ".fabrika", "spend-ledger.jsonl"),
 			state: path.join(common.stdout.trim(), "fabrika-codex-usage", "dispatch"),

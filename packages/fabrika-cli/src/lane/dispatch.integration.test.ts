@@ -53,7 +53,7 @@ const fixture = (mode = "report", policy?: unknown) => {
 	writeFileSync(join(cwd, "tracked.txt"), "primary bytes\n");
 	writeFileSync(join(cwd, ".gitignore"), ".fabrika/\n");
 	if (policy !== undefined)
-		writeFileSync(join(cwd, ".fabrika.jsonc"), JSON.stringify({codexUsage: policy}));
+		writeFileSync(join(cwd, ".fabrika.jsonc"), JSON.stringify({usageCollection: policy}));
 	git(cwd, "add", ".");
 	git(cwd, "commit", "-m", "fixture");
 	writeFileSync(join(root, "8617", "workflow.json"), coderTemplateText());
@@ -182,7 +182,7 @@ describe("Codex dispatch against real git and a fake child process", {
 		options.cwd = caller;
 		const config = join(primary, ".fabrika.jsonc");
 		if (primaryPolicy === undefined) rmSync(config);
-		else writeFileSync(config, JSON.stringify({codexUsage: primaryPolicy}));
+		else writeFileSync(config, JSON.stringify({usageCollection: primaryPolicy}));
 		options.env.FIXTURE_POISON = primaryPolicy === "off" ? "on" : "off";
 		const notices: string[] = [];
 		let proved = false;
@@ -313,7 +313,7 @@ describe("Codex dispatch against real git and a fake child process", {
 				if (policy === "off") {
 					expect(touched).toEqual([]);
 					expect(notices).toHaveLength(1);
-					expect(notices[0]).toContain("`codexUsage` as declared in .fabrika.jsonc");
+					expect(notices[0]).toContain("`usageCollection` as declared in .fabrika.jsonc");
 					expect(notices[0]).toContain("unavailable");
 					expect(existsSync(ledger)).toBe(false);
 				} else {
@@ -339,7 +339,7 @@ describe("Codex dispatch against real git and a fake child process", {
 		if (kind === "unreadable") {
 			rmSync(config);
 			mkdirSync(config);
-		} else writeFileSync(config, JSON.stringify({codexUsage: false}));
+		} else writeFileSync(config, JSON.stringify({usageCollection: false}));
 		const result = await Effect.runPromise(
 			runDispatch(
 				options,
@@ -353,7 +353,9 @@ describe("Codex dispatch against real git and a fake child process", {
 			).pipe(Effect.provide(NodeServices.layer)),
 		);
 		expect(result.code).toBe(11);
-		expect(result.stderr.join(" ")).toContain(kind === "malformed" ? "`codexUsage`" : ".fabrika");
+		expect(result.stderr.join(" ")).toContain(
+			kind === "malformed" ? "`usageCollection`" : ".fabrika",
+		);
 		expect(existsSync(options.worktree)).toBe(false);
 		expect(existsSync(join(primary, ".git", "fabrika-codex-usage"))).toBe(false);
 	});

@@ -39,8 +39,9 @@ const claudeSpend = leafCommand(
 	Command.withDescription(
 		[
 			"Records Claude model and token usage from the native hook payload on stdin.",
-			"  stdout: a `systemMessage` warning when collection fails; diagnostics go to stderr",
-			"  Never refuses: a collection failure is a visible warning; replay the payload to recover.",
+			"  Uses the hook cwd's primary-checkout usageCollection policy (default on).",
+			"  stdout: {} when off; a `systemMessage` warning on unavailable or incomplete collection",
+			"  Never refuses: policy or recording failures warn nonfatally; diagnostics go to stderr.",
 			"  Derivation: the fabrika plugin's docs/claude-usage.md",
 		].join("\n"),
 	),

@@ -201,7 +201,7 @@ const dispatch = leafCommand(
 				42: "assembly refresh conflicted, nothing created",
 				65: ROOT_EXITS[65],
 			},
-			["Automatic accounting reads the primary checkout's codexUsage policy (default on)."],
+			["Automatic accounting reads the primary checkout's usageCollection policy (default on)."],
 		),
 	),
 	Command.withExamples([

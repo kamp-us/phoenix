@@ -1,10 +1,10 @@
 import {Console, Effect, FileSystem, Path} from "effect";
-import type {CodexUsage} from "../config/keys/codex-usage.ts";
+import type {UsageCollection} from "../config/keys/usage-collection.ts";
 import {collectCodexFrom, readCodexInventory} from "./codex-collector.ts";
 import type {CodexWork} from "./codex-records.ts";
 
 export interface CodexDispatchCollection {
-	readonly policy: CodexUsage;
+	readonly policy: UsageCollection;
 	readonly sessions: string;
 	readonly ledger: string;
 	readonly worktree: string;

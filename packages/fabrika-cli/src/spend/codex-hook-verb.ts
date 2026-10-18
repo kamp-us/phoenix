@@ -1,12 +1,12 @@
 import {Crypto, Effect, FileSystem, Path, Result} from "effect";
-import type {CodexUsage} from "../config/keys/codex-usage.ts";
+import type {UsageCollection} from "../config/keys/usage-collection.ts";
 import {answer} from "../verb.ts";
 import {codexAttribution} from "./codex-attribution.ts";
 import {collectCodex} from "./codex-collector.ts";
 import {type CodexWork, id, json, object, readCodexSession} from "./codex-records.ts";
 
 export interface CodexHookOptions {
-	readonly policy: CodexUsage;
+	readonly policy: UsageCollection;
 	readonly input: string;
 	readonly sessions: string;
 	readonly state: string;
