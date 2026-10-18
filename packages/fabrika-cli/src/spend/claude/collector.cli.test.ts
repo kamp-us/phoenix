@@ -1,5 +1,13 @@
-import {spawnSync} from "node:child_process";
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {execFileSync, spawnSync} from "node:child_process";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -66,6 +74,101 @@ const hook = (s: ReturnType<typeof setup>, event: string, extra = {}, env = {}) 
 const read = (s: ReturnType<typeof setup>) => readUsageLedger(readFileSync(s.ledger, "utf8"));
 
 describe("Claude collector CLI", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
+	it.each([
+		{policy: "off", childPolicy: "on"},
+		{policy: "off", childPolicy: undefined},
+		{policy: "on", childPolicy: "off"},
+		{policy: undefined, childPolicy: "off"},
+		{policy: "invalid", childPolicy: "on"},
+		{policy: "unreadable", childPolicy: "on"},
+	])("uses primary $policy from hook cwd with stale child $childPolicy and inventory", ({
+		policy,
+		childPolicy,
+	}) => {
+		const s = setup();
+		const primary = join(s.dir, "primary"),
+			child = join(s.dir, "child");
+		mkdirSync(primary);
+		const git = (...args: string[]) => execFileSync("git", args, {cwd: primary});
+		git("init", "--quiet");
+		git("config", "user.name", "fixture");
+		git("config", "user.email", "fixture@example.test");
+		writeFileSync(join(primary, "tracked.txt"), "fixture\n");
+		const config = join(primary, ".fabrika.jsonc");
+		if (childPolicy !== undefined)
+			writeFileSync(config, JSON.stringify({usageCollection: childPolicy}));
+		git("add", ".");
+		git("commit", "--quiet", "-m", "fixture");
+		git("worktree", "add", "--detach", child, "HEAD");
+		const cwd = join(child, "nested");
+		mkdirSync(cwd);
+		writeFileSync(config, JSON.stringify({usageCollection: "on"}));
+		write(s.transcript, [response("prior")]);
+		const initial = hook(s, "SessionStart", {cwd});
+		expect(initial.status, initial.stderr).toBe(0);
+		const ledger = join(child, ".fabrika/spend-ledger.jsonl");
+		const prior = readFileSync(ledger, "utf8");
+		const inventory = join(child, ".fabrika/claude-usage");
+		const snapshot = () =>
+			Object.fromEntries(
+				readdirSync(inventory, {recursive: true, withFileTypes: true})
+					.filter((entry) => entry.isFile())
+					.map((entry) => {
+						const file = join(entry.parentPath, entry.name);
+						return [file, readFileSync(file, "utf8")];
+					}),
+			);
+		const saved = snapshot();
+		if (policy === undefined) rmSync(config);
+		else if (policy === "unreadable") {
+			rmSync(config);
+			mkdirSync(config);
+		} else
+			writeFileSync(
+				config,
+				JSON.stringify({usageCollection: policy === "invalid" ? false : policy}),
+			);
+		write(s.transcript, [response("prior"), response("new")]);
+		const native = readFileSync(s.transcript, "utf8");
+		const enabled = policy === "on" || policy === undefined;
+		for (const event of [
+			"SessionStart",
+			"SubagentStart",
+			"SubagentStop",
+			"PostToolUse",
+			"Stop",
+			"StopFailure",
+			"SessionEnd",
+			"Stop",
+		]) {
+			const result = hook(s, event, {
+				cwd,
+				agent_id: "later-child",
+				agent_transcript_path: join(s.dir, "missing.jsonl"),
+			});
+			expect(result.status, result.stderr).toBe(0);
+			if (policy === "off") {
+				expect(JSON.parse(result.stdout)).toEqual({});
+				expect(result.stderr).toBe("");
+			} else
+				expect(JSON.parse(result.stdout).systemMessage).toContain(
+					enabled ? "incomplete" : "usage unavailable",
+				);
+		}
+		if (enabled) {
+			expect(
+				readUsageLedger(readFileSync(ledger, "utf8")).records.filter(
+					(row) => row.kind === "measurement",
+				),
+			).toHaveLength(2);
+		} else {
+			expect(readFileSync(ledger, "utf8")).toBe(prior);
+			expect(snapshot()).toEqual(saved);
+		}
+		expect(existsSync(join(primary, ".fabrika"))).toBe(false);
+		expect(readFileSync(s.transcript, "utf8")).toBe(native);
+	});
+
 	it("persists starts before interruption and recovers missing descendants on a later hook", () => {
 		const s = setup();
 		write(s.transcript, [

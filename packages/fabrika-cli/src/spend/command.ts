@@ -151,6 +151,7 @@ const record = leafCommand(
 	Command.withDescription(
 		[
 			'Records one version-2 usage envelope from stdin and prints {"status":"recorded"|"duplicate"}.',
+			"  Explicit recording remains available when usageCollection is off.",
 			"  11: recording failed; retry the same envelope",
 			'  Derivation: packages/fabrika-cli/docs/usage-recording.md, "Entry points"',
 		].join("\n"),

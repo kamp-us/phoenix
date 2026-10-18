@@ -1,12 +1,22 @@
 # Claude usage collector
 
 `fabrika hook claude-spend` reads a native lifecycle JSON payload on stdin. It emits only a
-`systemMessage` warning on stdout and diagnostics on stderr, and exits 0 even when collection
-fails. It emits no decisions, updated settings, tool inputs or model context. Events that discard
+`systemMessage` warning on stdout and diagnostics on stderr when collection is incomplete, or `{}`
+when disabled, and exits 0 even when collection fails. It emits no decisions, updated settings, tool inputs or model context. Events that discard
 `systemMessage`, including `StopFailure` and `PreCompact`, retain stderr diagnostics; the next
 ordinary session hook reports incomplete coverage again.
 
 The [setup guide](claude-usage-setup.md) covers installation and replay.
+
+## Repository collection policy
+
+Claude follows the common [`usageCollection` policy](../../../packages/fabrika-cli/docs/usage-recording.md#automatic-collection-policy),
+default on. The validated hook payload's `cwd` selects the primary checkout's current policy,
+including uncommitted edits; the process cwd and linked checkout's config do not override it.
+Off returns quietly before inventory or transcript access, including with saved inventory.
+Unreadable or malformed primary policy produces a nonfatal usage unavailable notice before
+collection IO. Enabled coverage remains incomplete. The policy leaves the existing per-checkout
+inventory and ledger locations, explicit recording, native logs and task results intact.
 
 ## Attribution and discovery
 

@@ -4,9 +4,42 @@ The common recorder accepts native usage facts from host integrations. It owns v
 identity comparison and storage. Host adapters own native parsing, launch bindings and descendant
 discovery. The recorder never starts a model or changes its settings or task result.
 
-Automatic Codex collection follows the primary checkout's tracked
-[`codexUsage` policy](codex-usage.md#repository-collection-policy). Disabling it makes new
-automatic accounting unavailable; manual commands below and previously recorded facts remain usable.
+## Automatic collection policy
+
+The tracked `.fabrika.jsonc` key `usageCollection` accepts exactly `"on"` or `"off"`, with
+`"on"` as the shipped default when the file or key is absent. It controls every existing automatic
+Fabrika collector: Codex dispatch and native callbacks, and Claude lifecycle hooks. Pi observation
+remains unsupported. This setting controls Fabrika accounting, independently of native provider analytics.
+
+Both hosts read the primary checkout's current policy, including uncommitted tracked edits.
+A linked source or child checkout's stale, absent or different value does not override it.
+Claude derives that owner from the validated hook payload's `cwd`, independently of the hook
+process's directory. A non-Git cwd retains its existing cwd-relative configuration fallback;
+an unreadable repository identity refuses rather than guessing an owner.
+
+`fabrika status settings --root <primary-checkout>` reports the value and provenance. Without
+`--root`, settings describes the caller's checkout. The key is barred from `.fabrika.local.jsonc`
+and has no per-provider switch, environment override or global preference.
+
+With `"off"`, Codex skips startup, periodic and exit/interruption collection. Both hosts' native
+hooks return quietly on repeated callbacks, including with saved bindings or inventories.
+The policy boundary precedes transcript/history discovery, usage binding/association/roster/inventory
+access and ledger collection. Dispatch prints one generic notice naming the setting, its layer
+and primary checkout: accounting is unavailable. No measured zero or complete coverage is created.
+
+Each automatic entry resolves external policy once before collection IO and passes the validated
+value inward. A running dispatch keeps that value; the next dispatch or hook reads the current
+policy. Malformed or unreadable primary policy refuses dispatch before launch and gives native
+hooks a concise nonfatal unavailable notice. Neither falls back to on or a child config.
+
+Manual `spend record`, the public explicit `recordUsage` API, reads and rollups remain usable.
+Existing facts, native log bytes, agent execution, task results and proof/quality gates are retained.
+Claude inventory and ledger locations remain per checkout; Codex's remain shared in the primary
+checkout. The policy moves no facts. Historical totals do not establish coverage of disabled work.
+
+See the [Codex setup](../../../claude-plugins/fabrika/guide/codex.md#disable-automatic-usage-collection)
+or [Claude setup](../../../claude-plugins/fabrika/docs/claude-usage-setup.md#disable-automatic-usage-collection)
+for the configuration step. Enabled collection retains the coverage limits below.
 
 ## Entry points
 

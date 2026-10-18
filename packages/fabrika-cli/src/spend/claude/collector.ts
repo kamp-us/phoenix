@@ -1,7 +1,10 @@
 import {Effect, Path, Result} from "effect";
+import {usageCollectionKey} from "../../config/keys/usage-collection.ts";
+import {readKey} from "../../config/read-key.ts";
 import {execCapture} from "../../io/exec.ts";
 import {parseOwnerRepo} from "../../io/git.ts";
 import type {StdinRead} from "../../io/stdin.ts";
+import {configRootOrRefuse} from "../../lane/ground.ts";
 import {answer} from "../../verb.ts";
 import {recordUsage} from "../usage-ledger.ts";
 import type {UsageRecord} from "../usage-record.ts";
@@ -33,6 +36,17 @@ export const runClaudeSpend = Effect.fn("spend.claude.collect")(
 		if (Result.isFailure(decoded))
 			return report(["Claude usage incomplete: invalid hook payload. Task unchanged."]);
 		const hook = decoded.success;
+		const configRoot = yield* configRootOrRefuse("Fabrika Claude usage", hook.cwd);
+		if (typeof configRoot !== "string")
+			return report([
+				`Fabrika Claude usage unavailable: ${configRoot.stderr.join(" ")} Task unchanged.`,
+			]);
+		const policy = yield* readKey(configRoot, usageCollectionKey);
+		if (policy._tag === "Refused")
+			return report([
+				`Fabrika Claude usage unavailable: ${policy.reason} (primary checkout ${configRoot}). Task unchanged.`,
+			]);
+		if (policy.value === "off") return answer("{}");
 		const path = yield* Path.Path;
 		const checkout = yield* execCapture("git", ["-C", hook.cwd, "rev-parse", "--show-toplevel"]);
 		const directory = checkout.ok ? checkout.stdout.trim() : hook.cwd;

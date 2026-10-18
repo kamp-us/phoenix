@@ -1,6 +1,6 @@
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect, Path} from "effect";
-import {codexUsageKey} from "../config/keys/codex-usage.ts";
+import {usageCollectionKey} from "../config/keys/usage-collection.ts";
 import {readKey} from "../config/read-key.ts";
 import {execCapture} from "../io/exec.ts";
 import {readStdin} from "../io/stdin.ts";
@@ -19,7 +19,7 @@ Effect.gen(function* () {
 	const configRoot = yield* configRootOrRefuse("Fabrika Codex usage", process.cwd());
 	const policy =
 		typeof configRoot === "string"
-			? yield* readKey(configRoot, codexUsageKey)
+			? yield* readKey(configRoot, usageCollectionKey)
 			: ({_tag: "Refused", reason: configRoot.stderr.join(" ")} as const);
 	if (policy._tag === "Refused") {
 		yield* Console.log(

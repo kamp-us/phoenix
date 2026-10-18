@@ -60,7 +60,7 @@ hooks. This uses Codex's supported repository hook path and writes no per-user c
 
 Restart Codex, trust the repository, then review and trust these definitions with `/hooks`.
 Start Fabrika work normally. The hook binds the issue when Fabrika reads or claims it and replays
-usage at later callbacks. With the default `codexUsage: "on"` policy, lane dispatch also collects without hooks.
+usage at later callbacks. With the default `usageCollection: "on"` policy, lane dispatch also collects without hooks.
 
 Collection reads Codex 0.153.4 and 0.154.0 session files; another version records incomplete
 coverage rather than guessing. Coverage is always `partial`, because readable files cannot prove
@@ -71,11 +71,11 @@ with that coverage. A recording error prints a warning and never changes the tas
 ## Disable automatic usage collection
 
 Locate the primary checkout with `git worktree list` (the first entry). Set this key in that
-checkout's tracked `.fabrika.jsonc`, which owns the shared usage ledger:
+checkout's tracked `.fabrika.jsonc`. This common policy controls automatic Claude and Codex collection:
 
 ```json
 {
-  "codexUsage": "off"
+  "usageCollection": "off"
 }
 ```
 
@@ -97,7 +97,7 @@ or unreadable policy refuses a new dispatch before launch; hooks give a nonfatal
 
 ## Recover interrupted collection
 
-Enable collection before replaying; `codexUsage: "off"` also skips recovery callbacks.
+Enable collection before replaying; `usageCollection: "off"` also skips recovery callbacks.
 
 If the hook reports an unresolved issue association, run an issue read with a literal number,
 such as `node packages/fabrika-cli/src/bin.ts review criteria 123`. The next callback replays

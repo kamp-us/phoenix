@@ -9,7 +9,7 @@ import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {NodeServices} from "@effect/platform-node";
-import {Effect, Layer} from "effect";
+import {Effect, FileSystem, Layer} from "effect";
 import {afterEach, describe, expect, it} from "vitest";
 import {fakeShell} from "../../fakes.test-support.ts";
 import {readUsageLedger} from "../usage-ledger.ts";
@@ -76,6 +76,83 @@ const measurements = (s: ReturnType<typeof setup>) =>
 	read(s).records.filter((row) => row.kind === "measurement");
 
 describe("Claude collector", () => {
+	it.each([
+		"off",
+		"invalid",
+		"unreadable",
+		"unknown-repo",
+		"on",
+		undefined,
+	])("checks %s policy before any lifecycle collection IO", async (policy) => {
+		const s = setup();
+		const config = join(s.dir, ".fabrika.jsonc");
+		if (policy === "unknown-repo") writeFileSync(join(s.dir, ".git"), "gitdir: /fixture/missing\n");
+		else if (policy === "unreadable") mkdirSync(config);
+		else if (policy !== undefined)
+			writeFileSync(
+				config,
+				JSON.stringify({usageCollection: policy === "invalid" ? false : policy}),
+			);
+		const touched: string[] = [];
+		const enabled = policy === "on" || policy === undefined;
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const guarded = new Proxy(fs, {
+					get(target, property) {
+						const method = Reflect.get(target, property);
+						if (typeof method !== "function") return method;
+						return (...args: unknown[]) => {
+							const file = args[0];
+							if (
+								typeof file === "string" &&
+								(file === s.transcript || file.startsWith(join(s.dir, ".fabrika/")))
+							) {
+								touched.push(`${String(property)}:${file}`);
+								return Effect.die("collection IO reached");
+							}
+							return Reflect.apply(method, target, args);
+						};
+					},
+				});
+				for (const hook_event_name of [
+					"SessionStart",
+					"SubagentStart",
+					"SubagentStop",
+					"PostToolUse",
+					"Stop",
+					"StopFailure",
+					"SessionEnd",
+				]) {
+					const result = yield* runClaudeSpend({
+						stdin: Effect.succeed({
+							_tag: "Text",
+							text: JSON.stringify({
+								session_id: "native",
+								transcript_path: s.transcript,
+								cwd: s.dir,
+								hook_event_name,
+								agent_id: "stale-child",
+								agent_transcript_path: s.transcript,
+							}),
+						}),
+						env: {},
+					}).pipe(Effect.provideService(FileSystem.FileSystem, guarded));
+					expect(result.code).toBe(0);
+					if (policy === "off") {
+						expect(result.stderr).toEqual([]);
+						expect(JSON.parse(result.stdout)).toEqual({});
+					} else
+						expect(result.stderr.join(" ")).toContain(
+							enabled ? "collector failed" : "usage unavailable",
+						);
+				}
+			}).pipe(Effect.provide(Layer.merge(NodeServices.layer, fakeShell([]).layer))),
+		);
+		if (enabled) expect(touched.length).toBeGreaterThan(0);
+		else expect(touched).toEqual([]);
+	});
+
 	it("collects interactive native responses with additive cache counters and TTL subsets", async () => {
 		const s = setup();
 		write(s.transcript, [response("msg-1"), response("msg-1")]);

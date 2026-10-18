@@ -19,7 +19,6 @@ import {capClearAuthorsKey} from "./keys/cap-clear-authors.ts";
 import {catalogGuardKey} from "./keys/catalog-guard.ts";
 import {ciKey} from "./keys/ci.ts";
 import {codeValidatorsKey} from "./keys/code-validators.ts";
-import {codexUsageKey} from "./keys/codex-usage.ts";
 import {configValidatorsKey} from "./keys/config-validators.ts";
 import {containmentVocabularyKey} from "./keys/containment-vocabulary.ts";
 import {unreadableCodeownersKey} from "./keys/control-plane.ts";
@@ -41,6 +40,7 @@ import {shipScopeKey} from "./keys/ship-scope.ts";
 import {tableKey} from "./keys/table.ts";
 import {triageFacetsKey} from "./keys/triage-facets.ts";
 import {uiCaptureKey, uiSurfacesKey} from "./keys/ui-surfaces.ts";
+import {usageCollectionKey} from "./keys/usage-collection.ts";
 import {workflowValidatorsKey} from "./keys/workflow-validators.ts";
 
 export const KEY_GROUPS: ReadonlyArray<Registration> = [
@@ -56,7 +56,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(catalogGuardKey),
 	register(ciKey),
 	register(codeValidatorsKey),
-	register(codexUsageKey),
+	register(usageCollectionKey),
 	register(configValidatorsKey),
 	register(containmentVocabularyKey),
 	register(cycleDocKey),
